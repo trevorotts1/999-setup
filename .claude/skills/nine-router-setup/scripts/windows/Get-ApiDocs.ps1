@@ -1,4 +1,4 @@
-# Get-ApiDocs.ps1 — resolve the real Documents folder and locate API docs.md.
+# Get-ApiDocs.ps1 - resolve the real Documents folder and locate API docs.md.
 # Outputs the path on success, or a precise blocker. Never prints contents.
 #Requires -Version 5.1
 [CmdletBinding()]

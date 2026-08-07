@@ -1,4 +1,4 @@
-# Protect-LocalState.ps1 — protect the local 9Router API token with DPAPI
+# Protect-LocalState.ps1 - protect the local 9Router API token with DPAPI
 # (current-user only) and write the route-state JSON. Idempotent.
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -10,6 +10,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 does not auto-load System.Security (PowerShell 7 does).
+Add-Type -AssemblyName System.Security
+
 $StateFile = Join-Path $StateDir 'router-session.json'
 $TokenFile = Join-Path $StateDir 'router-token.bin'
 
@@ -19,7 +22,9 @@ function Protect-Token([string]$value) {
     $enc = [System.Security.Cryptography.ProtectedData]::Protect(
         $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
     [System.IO.File]::WriteAllBytes($TokenFile, $enc)
-    [System.Security.Cryptography.ProtectedData]::ZeroMemory($enc, $bytes.Length)
+    # Clear both buffers in-place (ProtectedData has no ZeroMemory method).
+    [Array]::Clear($enc, 0, $enc.Length)
+    [Array]::Clear($bytes, 0, $bytes.Length)
     $value = $null
 }
 

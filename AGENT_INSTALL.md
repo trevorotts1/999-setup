@@ -64,29 +64,38 @@ Windows and macOS each have one orchestrator. There is no shared fallback path.
 
 If the repository was already acquired by the user, skip this step.
 
-## 5. Install the personal skill
+## 5. Install the personal skills
 
-Install the personal Claude Code skill into the user's **existing** Claude config root so
-it is visible to both `claude` and `claude-nine`. Do not create a second config root for
-`claude-nine`; do not set a separate `CLAUDE_CONFIG_DIR`.
+Install BOTH bundled personal Claude Code skills into the user's **existing** Claude
+config root so they are visible to both `claude` and `claude-nine`. Do not create a
+second config root for `claude-nine`; do not set a separate `CLAUDE_CONFIG_DIR`.
 
 ```text
 Source:  <repo>/.claude/skills/nine-router-setup
 Target:  <Claude config root>/skills/nine-router-setup
+
+Source:  <repo>/.claude/skills/spec-protocol
+Target:  <Claude config root>/skills/spec-protocol
 ```
 
 `<Claude config root>` is `~/.claude` by default, or `$CLAUDE_CONFIG_DIR` if the user has
 set it.
 
-- If a previous `nine-router-setup` skill already exists at the target, **back it up**
-  first (move it aside with a timestamp suffix) before copying the new one.
-- Copy the whole `nine-router-setup` directory, including `references/` and `scripts/`.
+- If a previous `nine-router-setup` or `spec-protocol` skill already exists at the
+  target, **back it up** first (move it aside with a timestamp suffix) before copying
+  the new one.
+- Copy each whole skill directory, including `references/`, `scripts/`, `tools/`, and
+  `PROMPT-QC-INSTRUCTIONS.md`.
 
-## 6. Read SKILL.md fully
+## 6. Read SKILL.md files fully
 
 Read `<Claude config root>/skills/nine-router-setup/SKILL.md` in full before running
 anything. It defines the skill's behavior, ordering, and safety rules for this run and for
 future `/nine-router-setup` repair runs.
+
+The bundled `spec-protocol` skill is also installed for the user's future use (build a
+fully-built, QC'd, staged, merged-to-GitHub app or website). It is not required for the
+999-setup bootstrap itself, but it ships with this repository so the client gets both.
 
 ## 7. Run exactly one orchestrator
 

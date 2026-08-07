@@ -25,6 +25,7 @@ const PLAN = process.env.OLLAMA_PLAN || "pro";
 const AGNES_PLAN = process.env.AGNES_PLAN || "starter";
 const FLASH_VARIANT = process.env.DEEPSEEK_FLASH_VARIANT || "";
 const OVERRIDE_0731 = FLASH_VARIANT === "ollama-0731";
+const DEFAULT_DASHBOARD_PW = "123456";
 
 const RESOLVED_ROUTES = {};
 
@@ -54,10 +55,13 @@ async function main() {
   const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN } };
   const settings = await client.getSettings();
 
-  // 2. Rotate password if mustChangePassword (fresh install). Generate a strong
-  //    random password, set it, and remember it for the state file (caller writes it).
+  // 2. Rotate the dashboard password. Rule: if we just logged in successfully
+  //    with the well-known default (123456), the password IS the default and must
+  //    be rotated regardless of the mustChangePassword flag (that flag can be
+  //    false once the default has been persisted to the settings DB). Never leave
+  //    a live dashboard on the default password.
   let dashboardPassword = pw;
-  if (login.mustChangePassword) {
+  if (login.mustChangePassword || pw === DEFAULT_DASHBOARD_PW) {
     dashboardPassword = randomPassword();
     await client.patchSettings({ currentPassword: pw, newPassword: dashboardPassword });
     report.dashboardPasswordRotated = true;
@@ -163,12 +167,18 @@ async function main() {
     err("DEEPSEEK_FLASH_VARIANT=ollama-0731 is set but the live Ollama catalog lacks deepseek-v4-flash:0731");
   }
 
+  // Model-string notation (two documented mechanisms, deliberately):
+  //   ds/deepseek-v4-flash(max)   - "(max)" is 9Router's thinking-effort suffix,
+  //                                 parsed by stripThinkingSuffix/applyThinking.
+  //   ds/deepseek-v4-pro-max      - "pro-max" is a registry model variant that
+  //                                 maps upstream to deepseek-v4-pro. This is the
+  //                                 verified 9Router form for the Pro/Max lane.
+  // Subagent must ALSO be the max route (spec: CLAUDE_CODE_SUBAGENT_MODEL = Flash
+  // max), not the plain model — an unmetered subagent lane silently loses max.
   const dsPrefix = "ds";
   const olPrefix = "ollama";
   const agPrefix = "agnes";
 
-  const dsFlash = `${dsPrefix}/deepseek-v4-flash`;
-  const dsPro = `${dsPrefix}/deepseek-v4-pro`;
   const dsFlashMax = `${dsPrefix}/deepseek-v4-flash(max)`;
   const dsProMax = `${dsPrefix}/deepseek-v4-pro-max`;
   const olGlm = `${olPrefix}/glm-5.2`;
@@ -182,7 +192,7 @@ async function main() {
   RESOLVED_ROUTES.opus = dsProMax;
   RESOLVED_ROUTES.sonnet = olGlm;
   RESOLVED_ROUTES.haiku = olKimi;
-  RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlash;
+  RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
   RESOLVED_ROUTES.vision = olKimi;
 
   // 6. Combos.
@@ -240,17 +250,40 @@ async function main() {
     report.providerThinking = { deepseek: "reused" };
   }
 
-  report.resolvedRoutes = RESOLVED_ROUTES;
+  // 9. Post-configuration live verification: probe every configured lane through
+  //    the router and record pass/fail. The completion report derives its
+  //    "OK" lines from these results — never hardcode "Agnes AI: OK" when the
+  //    lane is actually broken (a silent ignore is exactly the failure mode that
+  //    shipped before).
+  report.verified = {};
+  const probes = [
+    ["fable", RESOLVED_ROUTES.fable],
+    ["opus", RESOLVED_ROUTES.opus],
+    ["sonnet", RESOLVED_ROUTES.sonnet],
+    ["haiku", RESOLVED_ROUTES.haiku],
+    ["agnes", `${agPrefix}/agnes-2.5-flash`],
+  ];
+  for (const [name, route] of probes) {
+    try {
+      const r = await client.chat(route, { maxTokens: 16, prompt: "ok" });
+      report.verified[name] = r.status === 200 ? "ok" : `HTTP ${r.status}`;
+    } catch (e) {
+      report.verified[name] = `error: ${e.message}`;
+    }
+  }
+
   report.concurrency = planToConcurrency(PLAN);
+  report.dashboardUrl = `${BASE.replace(/\/+$/, "")}`;
   report.notes = [
     OVERRIDE_0731
       ? "DEEPSEEK_FLASH_VARIANT=ollama-0731 enabled: Flash routed to Ollama Cloud deepseek-v4-flash:0731; concurrency recalculated."
       : "Flash routed to DeepSeek Direct by default; Ollama Fusion panel holds 2 models.",
     "PDF auto-switch disabled (not verified end-to-end).",
     "Audio auto-switch disabled (Gemma 4 31B has no audio input).",
+    "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
   ];
 
-  // 9. Password report (the orchestrator writes it to protected state, never to repo).
+  // 10. Password report (the orchestrator writes it to protected state, never to repo).
   report.dashboardPassword = dashboardPassword;
 
   // Machine-readable output for the orchestrators: a sentinel line followed by ONE

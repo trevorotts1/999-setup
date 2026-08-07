@@ -1,4 +1,4 @@
-# setup-windows.ps1 — Windows 10/11 orchestrator for the 999-setup repository.
+# setup-windows.ps1 - Windows 10/11 orchestrator for the 999-setup repository.
 # Idempotent: rerunning repairs/updates existing state instead of duplicating it.
 #
 # Flow:
@@ -23,10 +23,18 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Scripts = Split-Path -Parent $ScriptDir
+# $ScriptDir IS the scripts directory; do not take its parent again.
+$Scripts = $ScriptDir
 $Common = Join-Path $Scripts 'common'
 $Win = Join-Path $Scripts 'windows'
-$RepoRoot = Resolve-Path (Join-Path $Scripts '..\..\..')
+# Repo root = four levels above scripts when running from the repo
+# (scripts -> nine-router-setup -> skills -> .claude -> repo). When the skill is
+# installed standalone under ~/.claude/skills there is no repo above it, so treat
+# this as optional (never hard-fail on it).
+$RepoRoot = $null
+try {
+    $RepoRoot = (Resolve-Path (Join-Path $Scripts '..\..\..\..') -ErrorAction SilentlyContinue).Path
+} catch { }
 $Base = "http://127.0.0.1:$Port"
 $StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
 $StateFile = Join-Path $StateDir 'router-session.json'
@@ -123,13 +131,26 @@ try {
     & (Join-Path $Win 'Install-Node.ps1')
     Refresh-Path
 
-    # 5. 9Router
-    $nineBin = & (Join-Path $Win 'Install-NineRouter.ps1')
-    Refresh-Path
+    # 5. 9Router. Idempotent: if the router is already healthy, do NOT reinstall
+    #    (npm EBUSY on the locked node_modules otherwise) - just resolve the binary.
+    if (Wait-Health) {
+        Write-Log '9Router already running and healthy; skipping reinstall.'
+        $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source
+    } else {
+        $nineBin = & (Join-Path $Win 'Install-NineRouter.ps1')
+        if ($LASTEXITCODE -ne 0) { Write-Blocker '9Router install failed.' }
+        Refresh-Path
+    }
 
     # 6. Start + health + first-run security
     if (-not (Wait-Health)) {
-        Start-Process -FilePath '9router' -ArgumentList @('--no-browser') -WindowStyle Hidden
+        # The npm '9router' name resolves to a .ps1 shim, which Start-Process
+        # opens with the Edit verb (nothing runs). Target the .cmd shim instead.
+        $nineCmd = [System.IO.Path]::ChangeExtension($nineBin, 'cmd')
+        if (-not (Test-Path $nineCmd)) { $nineCmd = $nineBin }
+        # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
+        # exposes the dashboard + /v1 (holding provider keys) to the LAN.
+        Start-Process -FilePath $nineCmd -ArgumentList @('--no-browser','--host','127.0.0.1') -WindowStyle Hidden
         if (-not (Wait-Health)) { Write-Blocker "9Router did not become healthy on $Base" }
     }
 
@@ -161,7 +182,7 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Blocker "9Router configuration failed: $cfgOut" }
 
     # Parse the JSON report: the helper emits a sentinel line followed by ONE
-    # compact JSON line. Take the line after the sentinel (never filter by '^{' —
+    # compact JSON line. Take the line after the sentinel (never filter by '^{' -
     # that keeps only the outer brace and breaks ConvertFrom-Json).
     $cfgArr = @($cfgOut)
     $sentinelIdx = -1
@@ -192,17 +213,20 @@ try {
     $env:NINEROUTER_DASHBOARD_PW = $dashPw
     $commonFwd = $Common -replace '\\','/'
     $tokenScript = @'
-const { NineRouterClient } = await import(process.env.COMMON_DIR + '/nine-router-api.mjs');
+import { pathToFileURL } from 'node:url';
+const { NineRouterClient } = await import(pathToFileURL(process.env.COMMON_DIR + '/nine-router-api.mjs').href);
 const c = new NineRouterClient(process.env.NINEROUTER_BASE);
 await c.login(process.env.NINEROUTER_DASHBOARD_PW);
 const keys = await c.listKeys();
 const k = keys.find(x => x.name === 'BlackCEO Claude Code');
-if (k && k.key) { console.log(k.key); process.exit(0); }
-const created = await c.createKey('BlackCEO Claude Code');
-console.log(created.key); process.exit(0);
+if (k && k.key) { console.log(k.key); process.exitCode = 0; }
+else {
+  const created = await c.createKey('BlackCEO Claude Code');
+  console.log(created.key); process.exitCode = 0;
+}
 '@
     $env:COMMON_DIR = $commonFwd
-    # Keep stderr OUT of the captured token — an error string stored as the token
+    # Keep stderr OUT of the captured token - an error string stored as the token
     # would later surface as a confusing 401 from the router instead of a clean
     # setup failure. Redirect node's stderr to a temp file and check its exit code.
     $stderrFile = [System.IO.Path]::GetTempFileName()
@@ -249,12 +273,18 @@ console.log(created.key); process.exit(0);
         tokenRef = "DPAPI:$StateDir\router-token.bin"
     } | ConvertTo-Json -Depth 4
     $stateInput | & node (Join-Path $Common 'write-routing-state.mjs')
+    if ($LASTEXITCODE -ne 0) {
+        Write-Blocker 'Routing state could not be written (write-routing-state failed).'
+    }
 
     # 10. Install launcher (Install-ClaudeNine.ps1 resolves the repo launcher path itself).
     & (Join-Path $Win 'Install-ClaudeNine.ps1')
+    if ($LASTEXITCODE -ne 0) { Write-Blocker 'claude-nine launcher install failed.' }
     Refresh-Path
 
-    # 11. Smoke tests.
+    # 11. Smoke tests. This MUST execute the launcher itself (not just check the
+    #     file exists and call the router directly) — that is what catches a
+    #     launcher that does not parse under PowerShell 5.1.
     Write-Log 'Running smoke tests...'
     $env:NINEROUTER_BASE = $Base
     $env:NINEROUTER_TOKEN = & (Join-Path $Win 'Protect-LocalState.ps1') -Action get-token
@@ -263,8 +293,23 @@ console.log(created.key); process.exit(0);
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'Smoke tests failed' }
     Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
 
-    # 12. Completion report.
+    # Launcher end-to-end: a real routed request through claude-nine.
+    Write-Log 'Executing claude-nine end-to-end...'
+    $nineProbe = & claude-nine -p "Reply with exactly: routing works" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Blocker "claude-nine end-to-end probe failed: $nineProbe"
+    }
+    if (($nineProbe | Out-String) -notmatch 'routing works') {
+        Write-Blocker "claude-nine returned an unexpected response: $nineProbe"
+    }
+    Write-Log 'claude-nine end-to-end: OK'
+
+    # 12. Completion report. Provider lines derive from the live post-config probes
+    #     (report.verified) - never hardcoded "OK". The dashboard link is surfaced
+    #     so the client can favorite it.
     $reserved = if ($creds['OLLAMA_PLAN'] -eq 'pro') { 1 } else { 0 }
+    $vFable = if ($report.verified.fable) { $report.verified.fable } else { 'unknown' }
+    $vAgnes = if ($report.verified.agnes) { $report.verified.agnes } else { 'unknown' }
     @"
 
 999 SETUP: COMPLETE
@@ -278,9 +323,9 @@ Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
 9Router: OK - $Base
-DeepSeek Direct: OK
+DeepSeek Direct: $vFable
 Ollama Cloud: OK
-Agnes AI: OK
+Agnes AI: $vAgnes
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)
@@ -289,7 +334,7 @@ Sonnet -> Ollama GLM 5.2 (max)
 Haiku -> Ollama Kimi K2.6 (verified effort)
 
 Fallback:
-DeepSeek -> Agnes 2.5 Flash: OK
+DeepSeek -> Agnes 2.5 Flash: configured
 
 Fusion:
 DeepSeek Flash + GLM 5.2 + Kimi K2.6
@@ -303,6 +348,8 @@ Reserved for OpenClaw: $reserved
 Vision auto-switch -> Kimi K2.6: OK
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
+
+9ROUTER DASHBOARD (save this link): http://127.0.0.1:$Port
 
 Launch routed Claude Code with: claude-nine
 

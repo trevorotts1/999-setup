@@ -104,12 +104,27 @@ launchers/                     platform-native claude-nine launchers
         windows/               Windows-specific helpers
         macos/                 macOS-specific helpers
         common/                shared Node.js management-API helpers
+.claude/skills/spec-protocol/
+    SKILL.md                   the spec-protocol skill (build a finished app/site)
+    references/                pipeline, interview, research, QC docs
+    tools/                     ledger.sh
+    PROMPT-QC-INSTRUCTIONS.md  the ten QC categories
 templates/                     API docs.md template
 tests/                         smoke-test scaffolding
 ```
 
 The setup is **idempotent**: running it again repairs and updates existing state rather
 than duplicating providers, combos, PATH entries, or keys.
+
+## Bundled skills
+
+This repository installs **two** personal Claude Code skills, both visible to `claude`
+and `claude-nine`:
+
+- **`nine-router-setup`** — provisions and repairs the 9Router / `claude-nine`
+  environment (the subject of this README).
+- **`spec-protocol`** — turns any idea into a fully-built, QC'd, staged, merged-to-GitHub
+  app or website. Invoke it later with `/spec-protocol`.
 
 ## License
 

@@ -1,4 +1,4 @@
-# verify-windows.ps1 — standalone Windows platform tests (spec §22 Windows platform tests).
+# verify-windows.ps1 - standalone Windows platform tests (spec section22 Windows platform tests).
 # Safe to run repeatedly; makes no changes. Prints PASS/FAIL per check.
 #Requires -Version 5.1
 [CmdletBinding()]

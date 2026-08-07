@@ -1,4 +1,4 @@
-# Install-Node.ps1 — install/repair Node.js via WinGet only when below minimum.
+# Install-Node.ps1 - install/repair Node.js via WinGet only when below minimum.
 # Idempotent. Refreshes the current process PATH after install.
 #Requires -Version 5.1
 [CmdletBinding()]

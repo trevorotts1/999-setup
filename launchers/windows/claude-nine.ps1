@@ -1,16 +1,22 @@
-# claude-nine.ps1 — Windows launcher: start/verify 9Router, load protected
+# claude-nine.ps1 - Windows launcher: start/verify 9Router, load protected
 # routed-session state, export routing env vars only into the child process, and
 # launch the same Claude Code installation through 9Router.
 #
+# NOTES FOR WINDOWS POWERSHELL 5.1:
+# - No [CmdletBinding()]/param(): PowerShell's common-parameter prefix matching
+#   would hijack real args like -p (-> -PipelineVariable). Read $args verbatim.
+# - System.Security is not auto-loaded in 5.1; Add-Type is required for DPAPI.
+# - This file is ASCII-only. A non-ASCII byte (e.g. an em dash) decoded as ANSI
+#   under 5.1 produces a stray double-quote that collapses the whole script.
+#
 # Never echoes API keys, the router token, or the dashboard password.
 #Requires -Version 5.1
-[CmdletBinding()]
-param(
-    [Parameter(ValueFromRemainingArguments=$true)]
-    [string[]]$ForwardedArgs
-)
-
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
+
+# Forwarded arguments, verbatim (automatic $args under powershell -File).
+$ForwardedArgs = $args
+
 $Port = 20128
 $Base = "http://127.0.0.1:$Port"
 $StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
@@ -33,10 +39,14 @@ function Escape-Argument([string]$a) {
 }
 
 function Start-Router {
-    # Resolve the installed 9router binary.
+    # Resolve the 9router binary. Get-Command resolves the npm .ps1 shim; pass it
+    # through Start-Process and it opens with the Edit verb (nothing runs). Target
+    # the .cmd shim instead. --host 127.0.0.1 keeps the router loopback-only.
     $r = Get-Command 9router -ErrorAction SilentlyContinue
     if (-not $r) { throw '9router executable not found on PATH.' }
-    Start-Process -FilePath $r.Source -ArgumentList @('--no-browser') -WindowStyle Hidden
+    $exe = [System.IO.Path]::ChangeExtension($r.Source, 'cmd')
+    if (-not (Test-Path $exe)) { $exe = $r.Source }
+    Start-Process -FilePath $exe -ArgumentList @('--no-browser','--host','127.0.0.1') -WindowStyle Hidden
     for ($i = 0; $i -lt 40; $i++) {
         if (Test-Health) { return }
         Start-Sleep -Milliseconds 500
@@ -64,9 +74,9 @@ try {
     $tokenStr = [System.Text.Encoding]::UTF8.GetString($token)
     if (-not $tokenStr) { throw 'Protected token is empty. Re-run /nine-router-setup.' }
 
-    # 3. Ensure 9Router is up.
+    # 3. Ensure 9Router is up (router is not a service; this is the daily path).
     if (-not (Test-Health)) {
-        Write-Host "9Router not healthy on :$Port — starting it..." -ForegroundColor Yellow
+        Write-Host "9Router not healthy on :$Port - starting it..." -ForegroundColor Yellow
         Start-Router
     }
 
@@ -83,7 +93,7 @@ try {
     if ($state.maxOutputTokens) { $childEnv['CLAUDE_CODE_MAX_OUTPUT_TOKENS']   = [string]$state.maxOutputTokens }
     if ($state.concurrency)     { $childEnv['CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY'] = [string]$state.concurrency }
 
-    # Never launch unrouted — a corrupt state file would silently behave like
+    # Never launch unrouted - a corrupt state file would silently behave like
     # plain claude. Assert the routing boundary is armed before starting.
     foreach ($k in @('ANTHROPIC_DEFAULT_FABLE_MODEL','ANTHROPIC_DEFAULT_OPUS_MODEL','ANTHROPIC_DEFAULT_SONNET_MODEL','ANTHROPIC_DEFAULT_HAIKU_MODEL')) {
         if (-not $childEnv.ContainsKey($k) -or -not $childEnv[$k]) {
@@ -92,10 +102,9 @@ try {
     }
 
     # 5. Launch the same claude with the child env, forwarding all args.
-    #    NOTE: Windows PowerShell 5.1 runs on .NET Framework 4.x, where
-    #    ProcessStartInfo.ArgumentList and .Environment do NOT exist (they were
-    #    added in .NET Core). Use EnvironmentVariables and a quoted Arguments
-    #    string so the launcher works under PowerShell 5.1.
+    #    Windows PowerShell 5.1 runs on .NET Framework 4.x, where
+    #    ProcessStartInfo.ArgumentList and .Environment do NOT exist. Use
+    #    EnvironmentVariables and a quoted Arguments string instead.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $claude.Source
     $psi.UseShellExecute = $false

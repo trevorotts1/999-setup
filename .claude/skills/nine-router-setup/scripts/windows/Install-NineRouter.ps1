@@ -1,4 +1,4 @@
-# Install-NineRouter.ps1 — install/update 9Router globally on Windows via npm.
+# Install-NineRouter.ps1 - install/update 9Router globally on Windows via npm.
 # Idempotent. Resolves and outputs the actual executable path.
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -17,7 +17,9 @@ try {
     }
 
     Write-Host 'Installing 9router@latest (npm global)...'
-    npm install -g 9router@latest
+    # Out-Host keeps npm's stdout off the pipeline so only the binary path is
+    # returned to the caller (a String[], not an array of npm log lines).
+    npm install -g 9router@latest | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "npm install 9router failed (exit $LASTEXITCODE)."
     }

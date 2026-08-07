@@ -38,7 +38,10 @@ function readStdin() {
 }
 
 async function main() {
-  const input = JSON.parse((await readStdin()) || "{}");
+  // Windows PowerShell 5.1 emits a UTF-8 BOM when piping text to a native
+  // command; strip it before JSON.parse or the first key is mangled.
+  const raw = (await readStdin()).replace(/^﻿/, "");
+  const input = JSON.parse(raw || "{}");
   const statePath = input.statePath;
   if (!statePath) {
     console.error("write-routing-state: statePath required");

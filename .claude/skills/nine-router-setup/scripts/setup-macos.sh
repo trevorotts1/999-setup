@@ -241,13 +241,26 @@ main() {
   export CLAUDE_NINE_SOURCE="$REPO_ROOT/launchers/macos/claude-nine"
   "$MACOS/install-claude-nine.sh"
 
-  # 11. Smoke tests.
+  # 11. Smoke tests. This MUST execute the launcher itself (not just check the
+  #     file exists and call the router directly) so a launcher that fails to
+  #     start the router is caught here, not on the client's next boot.
   log "Running smoke tests..."
   NINEROUTER_BASE="$BASE" NINEROUTER_TOKEN="$("$MACOS/protect-local-state.sh" get-token)" \
     OLLAMA_PLAN="$OLLAMA_PLAN" \
     node "$COMMON/test-nine-router.mjs" || fail "Smoke tests failed"
 
-  # 12. Completion report.
+  log "Executing claude-nine end-to-end..."
+  NINE_OUT="$(claude-nine -p "Reply with exactly: routing works" 2>&1 || true)"
+  if ! printf '%s' "$NINE_OUT" | grep -q "routing works"; then
+    fail "claude-nine end-to-end probe failed: $(printf '%s' "$NINE_OUT" | head -3)"
+  fi
+  log "claude-nine end-to-end: OK"
+
+  # 12. Completion report. Provider lines derive from the live post-config probes
+  #     (report.verified) — never hardcoded "OK". The dashboard link is surfaced
+  #     so the client can favorite it.
+  V_FABLE="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.fable||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
+  V_AGNES="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.agnes||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
   cat <<REPORT
 
 999 SETUP: COMPLETE
@@ -261,9 +274,9 @@ Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
 9Router: OK - $BASE
-DeepSeek Direct: OK
+DeepSeek Direct: $V_FABLE
 Ollama Cloud: OK
-Agnes AI: OK
+Agnes AI: $V_AGNES
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)
@@ -272,7 +285,7 @@ Sonnet -> Ollama GLM 5.2 (max)
 Haiku -> Ollama Kimi K2.6 (verified effort)
 
 Fallback:
-DeepSeek -> Agnes 2.5 Flash: OK
+DeepSeek -> Agnes 2.5 Flash: configured
 
 Fusion:
 DeepSeek Flash + GLM 5.2 + Kimi K2.6
@@ -286,6 +299,8 @@ Reserved for OpenClaw: $([ "$OLLAMA_PLAN" = "pro" ] && echo 1 || echo 0)
 Vision auto-switch -> Kimi K2.6: OK
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
+
+9ROUTER DASHBOARD (save this link): http://127.0.0.1:20128
 
 Launch routed Claude Code with: claude-nine
 
