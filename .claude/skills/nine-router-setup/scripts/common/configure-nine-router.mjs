@@ -18,7 +18,7 @@
 // Outputs a JSON report on stdout with NO secrets.
 
 import crypto from "node:crypto";
-import { NineRouterClient, mask } from "./nine-router-api.mjs";
+import { NineRouterClient } from "./nine-router-api.mjs";
 
 const BASE = process.env.NINEROUTER_BASE || "http://127.0.0.1:20128";
 const PLAN = process.env.OLLAMA_PLAN || "pro";
@@ -253,7 +253,12 @@ async function main() {
   // 9. Password report (the orchestrator writes it to protected state, never to repo).
   report.dashboardPassword = dashboardPassword;
 
-  console.log(JSON.stringify(report, null, 2));
+  // Machine-readable output for the orchestrators: a sentinel line followed by ONE
+  // compact JSON line. Line-based extractors on both platforms parse exactly this
+  // line; pretty-printed/nested JSON must NOT be emitted here (nested braces
+  // break sed-range and PowerShell line-filter parsing).
+  console.log("===999-CONFIG-REPORT===");
+  console.log(JSON.stringify(report));
 }
 
 function randomPassword(len = 24) {

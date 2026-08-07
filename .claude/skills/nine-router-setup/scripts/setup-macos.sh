@@ -165,9 +165,11 @@ main() {
     RESOLVED_MODELS="$RESOLVED_JSON" \
     node "$COMMON/configure-nine-router.mjs" 2>&1
   )" || fail "9Router configuration failed"
-  CONFIG_REPORT="$(printf '%s\n' "$CONFIGURE_OUT" | sed -n '/^{/,/^}/p' || true)"
+  # The helper emits a sentinel line followed by ONE compact JSON line. Extract
+  # exactly that line (never sed-range over braces — nested JSON truncates).
+  CONFIG_REPORT="$(printf '%s\n' "$CONFIGURE_OUT" | awk 'found {print; exit} /^===999-CONFIG-REPORT===$/ {found=1}')"
   if [ -z "$CONFIG_REPORT" ]; then
-    CONFIG_REPORT="{}"
+    fail "configure-nine-router.mjs did not emit a config report (check 9Router health)"
   fi
 
   # Extract the (possibly rotated) dashboard password and the local API key.
@@ -181,7 +183,11 @@ main() {
 
   # Store the local router token in Keychain. GET /api/keys returns the raw key
   # value (verified 0.5.45), so list then create-if-absent is reliable.
-  TOKEN="$(cd "$COMMON" && NINEROUTER_BASE="$BASE" NINEROUTER_DASHBOARD_PW="$DASHBOARD_PW" node -e '
+  # Keep stderr OUT of the captured token — an error string stored as the token
+  # would later surface as a confusing 401 from the router instead of a clean
+  # setup failure.
+  TOKEN_ERR="$(mktemp)"
+  if ! TOKEN="$(cd "$COMMON" && NINEROUTER_BASE="$BASE" NINEROUTER_DASHBOARD_PW="$DASHBOARD_PW" node -e '
     import("./nine-router-api.mjs").then(async ({NineRouterClient}) => {
       const c = new NineRouterClient(process.env.NINEROUTER_BASE);
       await c.login(process.env.NINEROUTER_DASHBOARD_PW);
@@ -191,9 +197,14 @@ main() {
       const created = await c.createKey("BlackCEO Claude Code");
       console.log(created.key);
     }).catch((e) => { console.error(e.message); process.exit(1); });
-  ' 2>&1 || true)"
+  ' 2>"$TOKEN_ERR")"; then
+    fail "Could not obtain the local 9Router API key: $(head -c 200 "$TOKEN_ERR" 2>/dev/null)"
+  fi
+  rm -f "$TOKEN_ERR"
+  # Validate the token shape before storing: non-empty, single line, no whitespace.
   case "$TOKEN" in
-    "") fail "Could not obtain the local 9Router API key. Re-run setup." ;;
+    "") fail "Could not obtain the local 9Router API key (empty result). Re-run setup." ;;
+    *[[:space:]]*) fail "Local 9Router API key had an unexpected shape; refusing to store it." ;;
   esac
 
   "$MACOS/protect-local-state.sh" set-token "$TOKEN"

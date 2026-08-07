@@ -4,7 +4,11 @@
 # clearly marked, idempotent profile block. Preserves unrelated profile content.
 set -euo pipefail
 
-LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$HOME/.claude/skills/nine-router-setup/launchers/macos/claude-nine}"
+# Default launcher source: the repo copy next to this script (this script lives
+# at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the launcher
+# lives at <repo>/launchers/macos/claude-nine). CLAUDE_NINE_SOURCE overrides it.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../launchers/macos/claude-nine}"
 LAUNCHER="$HOME/.local/bin/claude-nine"
 
 log() { printf '[install-claude-nine] %s\n' "$*" >&2; }
@@ -12,16 +16,8 @@ log() { printf '[install-claude-nine] %s\n' "$*" >&2; }
 install_launcher() {
   mkdir -p "$HOME/.local/bin"
   if [ ! -f "$LAUNCHER_SRC" ]; then
-    # The skill copies launchers into the skill dir during install; if that did
-    # not happen, fall back to the repo copy next to this script.
-    local repo_src
-    repo_src="$(cd "$(dirname "$0")/../../.." 2>/dev/null && pwd)/launchers/macos/claude-nine"
-    if [ -f "$repo_src" ]; then
-      LAUNCHER_SRC="$repo_src"
-    else
-      echo "launcher source not found at $LAUNCHER_SRC or repo path." >&2
-      exit 1
-    fi
+    echo "launcher source not found at $LAUNCHER_SRC (set CLAUDE_NINE_SOURCE to override)." >&2
+    exit 1
   fi
   install -m 700 "$LAUNCHER_SRC" "$LAUNCHER"
   log "installed $LAUNCHER (mode 700)"
@@ -29,47 +25,48 @@ install_launcher() {
 
 manage_profile() {
   # Which profile: ~/.zprofile for zsh users, ~/.bash_profile for bash users.
-  # Default to ~/.zprofile (current macOS default shell is zsh).
+  # Default to ~/.zprofile (current macOS default shell is zsh). Only switch to
+  # ~/.bash_profile when .zprofile does not exist and .bash_profile does.
   local profile="$HOME/.zprofile"
-  if [ -n "${BASH_VERSION:-}" ] && [ ! -f "$HOME/.zprofile" ]; then
-    profile="$HOME/.bash_profile"
-  fi
-  # If .zprofile absent but .bash_profile exists and is the user's shell, honor it.
-  if [ ! -f "$HOME/.zprofile" ] && [ -f "$HOME/.bash_profile" ] && [ -n "${BASH_VERSION:-}" ]; then
+  if [ ! -f "$HOME/.zprofile" ] && [ -f "$HOME/.bash_profile" ]; then
     profile="$HOME/.bash_profile"
   fi
 
   local marker="# >>> 999-setup: claude-nine path >>>"
   local marker_end="# <<< 999-setup: claude-nine path <<<"
+  # The PATH block itself — the markers are NOT part of this string. Both the
+  # append and the replace paths wrap it with exactly one marker pair, so
+  # reruns are byte-idempotent and never double the markers.
   local block
   block="$(cat <<'EOF'
-# >>> 999-setup: claude-nine path >>>
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
-# <<< 999-setup: claude-nine path <<<
 EOF
 )"
 
   if [ -f "$profile" ] && grep -qF "$marker" "$profile" 2>/dev/null; then
     # Managed block already present — replace it in place to keep it idempotent
-    # while preserving everything outside the block.
+    # while preserving everything outside the block. Replace from the FIRST
+    # opening marker to the LAST closing marker so any orphaned markers left by
+    # an older buggy write are collapsed into exactly one block.
     if command -v python3 >/dev/null 2>&1; then
-      python3 - "$profile" "$marker" "$marker_end" "$block" <<'PY'
-import sys
-p, m1, m2, block = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+      MANAGED="$(printf '%s\n%s\n%s' "$marker" "$block" "$marker_end")" \
+      python3 - "$profile" "$marker" "$marker_end" <<'PY'
+import os, sys
+p, m1, m2 = sys.argv[1], sys.argv[2], sys.argv[3]
+managed = os.environ["MANAGED"]
 text = open(p, encoding="utf-8").read()
 start = text.find(m1)
-end = text.find(m2)
-if start != -1 and end != -1 and end >= start:
-    end = end + len(m2)
-    new_text = text[:start] + block + text[end:]
+end = text.rfind(m2)
+if start != -1 and end != -1 and end > start:
+    new_text = text[:start] + managed + text[end + len(m2):]
 else:
-    # Fallback: append a fresh managed block (should not happen when marker found).
+    # Marker found by grep but no clean closing pair — append a fresh block.
     if text and not text.endswith("\n"):
         text += "\n"
-    new_text = text + "\n" + block + "\n"
+    new_text = text + "\n" + managed + "\n"
 open(p, "w", encoding="utf-8").write(new_text)
 PY
     else
@@ -80,7 +77,7 @@ PY
     fi
     log "updated managed PATH block in $profile"
   else
-    # Append a fresh managed block.
+    # Append a fresh managed block (exactly one marker pair).
     {
       printf '\n%s\n' "$marker"
       printf '%s\n' "$block"

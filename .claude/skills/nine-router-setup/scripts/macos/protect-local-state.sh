@@ -19,15 +19,17 @@ set_token() {
     exit 2
   fi
   mkdir -p "$STATE_DIR"
-  # -U updates in place; never creates a duplicate.
+  # No trailing keychain-path argument: `security` then targets the user's
+  # default (login) keychain deterministically. Passing a directory here is
+  # ambiguous and must not be relied on. -U updates in place; never duplicates.
   if security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-       -w "$token" -U -T "" "$STATE_DIR" >/dev/null 2>&1; then
-    log "Keychain item updated in place."
+       -w "$token" -U -T "" >/dev/null 2>&1; then
+    log "Keychain item stored in the default login keychain."
   else
-    log "Keychain add/update via security returned non-zero."
-    # Retry with an explicit update path.
+    # Surface the real error this time (no stderr suppression) so the caller
+    # gets one precise Keychain blocker instead of a silent failure.
     security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-         -w "$token" -U -T "" "$STATE_DIR"
+         -w "$token" -U -T ""
   fi
   # Drop the token from the environment immediately.
   unset token

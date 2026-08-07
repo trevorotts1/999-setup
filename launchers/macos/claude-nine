@@ -4,7 +4,7 @@
 # Claude Code installation through 9Router.
 #
 # Never echoes API keys, the router token, or the dashboard password.
-set -uo pipefail
+set -euo pipefail
 
 PORT="${NINEROUTER_PORT:-20128}"
 BASE="http://127.0.0.1:$PORT"
@@ -77,13 +77,19 @@ main() {
   unset token
 
   # Parse the state file once into exported vars (single node call, no secrets).
-  eval "$(node - "$STATE_FILE" <<'NODE'
+  # A corrupt/unparseable state file MUST fail loudly — never launch claude
+  # unrouted with no routing vars set (that silently behaves like plain claude
+  # and defeats the activation boundary).
+  local exports
+  if ! exports="$(node - "$STATE_FILE" <<'NODE'
 const fs = require("fs");
-let s = "";
-try { s = fs.readFileSync(process.argv[2], "utf8"); } catch {}
-let st = {};
-try { st = JSON.parse(s); } catch {}
+let s = fs.readFileSync(process.argv[2], "utf8");
+let st;
+try { st = JSON.parse(s); } catch { throw new Error("corrupt router-session.json"); }
 const r = st.routes || {};
+if (!r.fable && !r.opus && !r.sonnet && !r.haiku) {
+  throw new Error("router-session.json has no resolved routes");
+}
 const out = [];
 const pairs = [
   ["F", "ANTHROPIC_DEFAULT_FABLE_MODEL", r.fable],
@@ -100,9 +106,20 @@ for (const [, envName, val] of pairs) {
 }
 process.stdout.write(out.join("\n") + "\n");
 NODE
-)"
+)"; then
+    echo "claude-nine: could not parse routed session state at $STATE_FILE. Re-run /nine-router-setup." >&2
+    exit 1
+  fi
+  eval "$exports"
 
-  # 5. Exec the same claude binary, forwarding all args.
+  # 5. Assert the routing boundary is actually armed before exec — never launch
+  #    claude unrouted. If a required var is missing, the state is corrupt.
+  : "${ANTHROPIC_DEFAULT_FABLE_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
+  : "${ANTHROPIC_DEFAULT_OPUS_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
+  : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
+  : "${ANTHROPIC_DEFAULT_HAIKU_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
+
+  # 6. Exec the same claude binary, forwarding all args.
   exec "$claude" "$@"
 }
 

@@ -12,12 +12,6 @@ export const REQUIRED_OLLAMA = ["glm-5.2", "kimi-k2.6", "minimax-m3", "gemma4:31
 export const OLLAMA_0731 = "deepseek-v4-flash:0731";
 export const REQUIRED_AGNES = ["agnes-2.5-flash"];
 
-export function mask(v) {
-  if (typeof v !== "string" || v.length === 0) return "<empty>";
-  if (v.length <= 6) return "<short>";
-  return `${v.slice(0, 3)}…${v.slice(-3)}`;
-}
-
 async function fetchJson(url, headers = {}) {
   const res = await fetch(url, { headers });
   if (!res.ok) {
@@ -132,7 +126,8 @@ export async function resolveAll(credentials) {
 
 // CLI entry point for manual verification: node resolve-models.mjs --deepseek|--ollama|--agnes|--all
 // Intentionally avoids printing keys — caller passes via env, not argv.
-if (import.meta.url === `file://${process.argv[1]}`) {
+import { pathToFileURL } from "node:url";
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const arg = process.argv[2];
   const run = async () => {
     if (arg === "--deepseek" && process.env.DEEPSEEK_API_KEY) {

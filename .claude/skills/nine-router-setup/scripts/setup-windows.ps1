@@ -80,7 +80,12 @@ function Validate-Plan([string]$plan, [string]$allowed, [string]$name) {
 function Resolve-Claude {
     $c = Get-Command claude -ErrorAction SilentlyContinue
     if ($c) {
-        try { & claude --version 2>$null | Out-Null } catch { }
+        # Verify the resolved binary actually runs. A broken claude on PATH must
+        # block setup (spec step 3), not be carried into claude-nine.
+        & $c.Source --version 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Blocker "Claude Code is on PATH but '$($c.Source) --version' failed. Reinstall Claude Code, then rerun."
+        }
         return $c.Source
     }
     Write-Blocker 'Claude Code not found. Install it first (see README), then rerun.'
@@ -155,9 +160,18 @@ try {
     $cfgOut = & node (Join-Path $Common 'configure-nine-router.mjs') 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "9Router configuration failed: $cfgOut" }
 
-    # Parse the JSON report tail (the node script prints a JSON object).
-    $cfgLines = $cfgOut | Where-Object { $_ -match '^{' }
-    $report = $cfgLines -join "`n" | ConvertFrom-Json
+    # Parse the JSON report: the helper emits a sentinel line followed by ONE
+    # compact JSON line. Take the line after the sentinel (never filter by '^{' —
+    # that keeps only the outer brace and breaks ConvertFrom-Json).
+    $cfgArr = @($cfgOut)
+    $sentinelIdx = -1
+    for ($i = 0; $i -lt $cfgArr.Count; $i++) {
+        if ($cfgArr[$i] -match '^===999-CONFIG-REPORT===') { $sentinelIdx = $i; break }
+    }
+    if ($sentinelIdx -lt 0 -or ($sentinelIdx + 1) -ge $cfgArr.Count) {
+        Write-Blocker "configure-nine-router.mjs did not emit a config report (check 9Router health)."
+    }
+    $report = $cfgArr[$sentinelIdx + 1] | ConvertFrom-Json
 
     # Rotate password if changed by configure.
     if ($report.dashboardPassword -and $report.dashboardPassword -ne $dashPw) {
@@ -188,10 +202,27 @@ const created = await c.createKey('BlackCEO Claude Code');
 console.log(created.key); process.exit(0);
 '@
     $env:COMMON_DIR = $commonFwd
-    $token = (& node --input-type=module -e $tokenScript 2>&1 | Select-Object -Last 1).Trim()
+    # Keep stderr OUT of the captured token — an error string stored as the token
+    # would later surface as a confusing 401 from the router instead of a clean
+    # setup failure. Redirect node's stderr to a temp file and check its exit code.
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+    $tokenRaw = & node --input-type=module -e $tokenScript 2>$stderrFile
+    $nodeExit = $LASTEXITCODE
     Remove-Item Env:COMMON_DIR -ErrorAction SilentlyContinue
+    if ($nodeExit -ne 0) {
+        $errText = ''
+        if (Test-Path $stderrFile) { $errText = (Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue).Trim() }
+        Remove-Item $stderrFile -ErrorAction SilentlyContinue
+        Write-Blocker "Could not obtain the local 9Router API key: $errText"
+    }
+    Remove-Item $stderrFile -ErrorAction SilentlyContinue
+    $token = ($tokenRaw | Select-Object -Last 1).Trim()
+    # Validate the token shape before storing: non-empty, no whitespace.
     if (-not $token) {
-        Write-Blocker "Could not obtain the local 9Router API key."
+        Write-Blocker "Could not obtain the local 9Router API key (empty result)."
+    }
+    if ($token -match '\s') {
+        Write-Blocker "Local 9Router API key had an unexpected shape; refusing to store it."
     }
     & (Join-Path $Win 'Protect-LocalState.ps1') -Action set-token -Token $token
     Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY -ErrorAction SilentlyContinue

@@ -24,6 +24,14 @@ function Test-Health {
     } catch { return $false }
 }
 
+# Quote a single command-line argument safely for ProcessStartInfo.Arguments
+# (which takes one flat string, not a list, on .NET Framework).
+function Escape-Argument([string]$a) {
+    if ($null -eq $a) { return '""' }
+    if ($a -notmatch '[ "\t]') { return $a }
+    return '"' + ($a -replace '"', '\"') + '"'
+}
+
 function Start-Router {
     # Resolve the installed 9router binary.
     $r = Get-Command 9router -ErrorAction SilentlyContinue
@@ -75,16 +83,30 @@ try {
     if ($state.maxOutputTokens) { $childEnv['CLAUDE_CODE_MAX_OUTPUT_TOKENS']   = [string]$state.maxOutputTokens }
     if ($state.concurrency)     { $childEnv['CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY'] = [string]$state.concurrency }
 
+    # Never launch unrouted — a corrupt state file would silently behave like
+    # plain claude. Assert the routing boundary is armed before starting.
+    foreach ($k in @('ANTHROPIC_DEFAULT_FABLE_MODEL','ANTHROPIC_DEFAULT_OPUS_MODEL','ANTHROPIC_DEFAULT_SONNET_MODEL','ANTHROPIC_DEFAULT_HAIKU_MODEL')) {
+        if (-not $childEnv.ContainsKey($k) -or -not $childEnv[$k]) {
+            throw "routed session state is corrupt (missing $k); re-run /nine-router-setup."
+        }
+    }
+
     # 5. Launch the same claude with the child env, forwarding all args.
+    #    NOTE: Windows PowerShell 5.1 runs on .NET Framework 4.x, where
+    #    ProcessStartInfo.ArgumentList and .Environment do NOT exist (they were
+    #    added in .NET Core). Use EnvironmentVariables and a quoted Arguments
+    #    string so the launcher works under PowerShell 5.1.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $claude.Source
-    foreach ($kv in $childEnv.GetEnumerator()) {
-        $psi.Environment[$kv.Key] = $kv.Value
-    }
-    foreach ($arg in $ForwardedArgs) {
-        $psi.ArgumentList.Add($arg)
-    }
     $psi.UseShellExecute = $false
+    foreach ($kv in $childEnv.GetEnumerator()) {
+        $psi.EnvironmentVariables[$kv.Key] = $kv.Value
+    }
+    $escaped = @()
+    foreach ($arg in $ForwardedArgs) {
+        $escaped += Escape-Argument $arg
+    }
+    $psi.Arguments = ($escaped -join ' ')
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.WaitForExit()
     exit $proc.ExitCode
