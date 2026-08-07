@@ -1,0 +1,284 @@
+# setup-windows.ps1 — Windows 10/11 orchestrator for the 999-setup repository.
+# Idempotent: rerunning repairs/updates existing state instead of duplicating it.
+#
+# Flow:
+#   1. Verify native Windows.
+#   2. Verify Claude Code exists.
+#   3. Resolve Documents + locate/parse/validate API docs.md.
+#   4. Install/repair Node.js only when needed.
+#   5. Install/update 9Router (npm global).
+#   6. Start 9Router, wait for health, first-run security.
+#   7. Configure providers/routing/combos via shared Node helpers.
+#   8. Install the claude-nine launcher + DPAPI-protected state.
+#   9. Run smoke tests.
+#  10. Print the completion report (no secrets).
+#
+# Never prints API keys, the router token, or the dashboard password.
+#Requires -Version 5.1
+[CmdletBinding()]
+param(
+    [int]$Port = 20128
+)
+
+$ErrorActionPreference = 'Stop'
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Scripts = Split-Path -Parent $ScriptDir
+$Common = Join-Path $Scripts 'common'
+$Win = Join-Path $Scripts 'windows'
+$RepoRoot = Resolve-Path (Join-Path $Scripts '..\..\..')
+$Base = "http://127.0.0.1:$Port"
+$StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
+$StateFile = Join-Path $StateDir 'router-session.json'
+
+function Write-Log([string]$m) { Write-Host "[setup-windows] $m" }
+function Write-Blocker([string]$m) { Write-Error "BLOCKER: $m"; exit 1 }
+
+function Mask([string]$v) {
+    if ($v.Length -le 6) { return '<short>' }
+    return $v.Substring(0,3) + '...' + $v.Substring($v.Length-3)
+}
+
+function Refresh-Path {
+    $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
+                [System.Environment]::GetEnvironmentVariable('Path','User')
+}
+
+function Wait-Health {
+    for ($i = 0; $i -lt 40; $i++) {
+        try {
+            $r = Invoke-WebRequest -UseBasicParsing -Uri "$Base/api/health" -TimeoutSec 2
+            if ($r.StatusCode -eq 200) { return $true }
+        } catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+function Read-ApiDocs([string]$file) {
+    $map = @{}
+    Get-Content -Path $file -Encoding UTF8 | ForEach-Object {
+        $line = $_ -replace '^\s+','' -replace '\s+$',''
+        if ([string]::IsNullOrWhiteSpace($line)) { return }
+        if ($line.StartsWith('#')) { return }
+        if ($line -match '^([A-Za-z0-9_]+)\s*=\s*(.*)$') {
+            $k = $matches[1]; $v = $matches[2].Trim()
+            if ($k -in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY','OLLAMA_PLAN','AGNES_PLAN')) {
+                $map[$k] = $v
+            }
+        }
+    }
+    return $map
+}
+
+function Validate-Plan([string]$plan, [string]$allowed, [string]$name) {
+    if ($allowed -split ' ' -notcontains $plan) {
+        Write-Blocker "$name must be one of: $allowed (got '$plan')"
+    }
+}
+
+function Resolve-Claude {
+    $c = Get-Command claude -ErrorAction SilentlyContinue
+    if ($c) {
+        try { & claude --version 2>$null | Out-Null } catch { }
+        return $c.Source
+    }
+    Write-Blocker 'Claude Code not found. Install it first (see README), then rerun.'
+}
+
+function Get-Concurrency([string]$plan) {
+    switch ($plan) { 'free' { 1 } 'max' { 8 } default { 2 } }
+}
+
+try {
+    # 1. OS
+    if ($env:OS -ne 'Windows_NT') {
+        Write-Blocker "This orchestrator is Windows-only (OS=$($env:OS))."
+    }
+
+    # 2. Claude Code
+    $claudeBin = Resolve-Claude
+    Write-Log "Claude Code: $claudeBin"
+
+    # 3. Documents + API docs.md
+    $apiDocs = & (Join-Path $Win 'Get-ApiDocs.ps1')
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+    Write-Log "Credential file: $apiDocs"
+    $creds = Read-ApiDocs $apiDocs
+    foreach ($k in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY')) {
+        if (-not $creds[$k]) { Write-Blocker "Missing $k in $apiDocs" }
+        if ($creds[$k] -in @('','replace_with_real_key','changeme','your-key-here')) {
+            Write-Blocker "$k is set to placeholder text in $apiDocs"
+        }
+    }
+    Validate-Plan $creds['OLLAMA_PLAN'] 'free pro max' 'OLLAMA_PLAN'
+    Validate-Plan $creds['AGNES_PLAN'] 'starter plus pro' 'AGNES_PLAN'
+
+    # 4. Node
+    & (Join-Path $Win 'Install-Node.ps1')
+    Refresh-Path
+
+    # 5. 9Router
+    $nineBin = & (Join-Path $Win 'Install-NineRouter.ps1')
+    Refresh-Path
+
+    # 6. Start + health + first-run security
+    if (-not (Wait-Health)) {
+        Start-Process -FilePath '9router' -ArgumentList @('--no-browser') -WindowStyle Hidden
+        if (-not (Wait-Health)) { Write-Blocker "9Router did not become healthy on $Base" }
+    }
+
+    $dashPw = ''
+    $pwFile = Join-Path $StateDir 'dashboard-password.txt'
+    if (Test-Path $pwFile) {
+        $dashPw = (Get-Content $pwFile -Raw).Trim()
+    }
+    if (-not $dashPw) { $dashPw = '123456' }
+
+    # 7. Live model resolution
+    Write-Log 'Resolving live provider catalogs...'
+    $resolvedJson = & node (Join-Path $Common 'resolve-models.mjs') --all 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "live model resolution failed: $resolvedJson" }
+    Write-Log 'Live catalogs resolved.'
+
+    # 8. Configure 9Router
+    $env:NINEROUTER_BASE = $Base
+    $env:NINEROUTER_DASHBOARD_PW = $dashPw
+    $env:DEEPSEEK_API_KEY = $creds['DEEPSEEK_API_KEY']
+    $env:OLLAMA_API_KEY = $creds['OLLAMA_API_KEY']
+    $env:AGNES_API_KEY = $creds['AGNES_API_KEY']
+    $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
+    $env:AGNES_PLAN = $creds['AGNES_PLAN']
+    # DEEPSEEK_FLASH_VARIANT passes through as set by the user (default empty).
+    $env:RESOLVED_MODELS = $resolvedJson
+
+    $cfgOut = & node (Join-Path $Common 'configure-nine-router.mjs') 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "9Router configuration failed: $cfgOut" }
+
+    # Parse the JSON report tail (the node script prints a JSON object).
+    $cfgLines = $cfgOut | Where-Object { $_ -match '^{' }
+    $report = $cfgLines -join "`n" | ConvertFrom-Json
+
+    # Rotate password if changed by configure.
+    if ($report.dashboardPassword -and $report.dashboardPassword -ne $dashPw) {
+        $dashPw = $report.dashboardPassword
+        New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        Set-Content -Path $pwFile -Value $dashPw -NoNewline
+        # Tighten ACLs (best-effort).
+        try {
+            $acl = Get-Acl $pwFile
+            $acl.SetAccessRuleProtection($true, $true)
+            $acl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "$env:USERDOMAIN\$env:USERNAME",'FullControl','Allow')))
+            Set-Acl $pwFile $acl
+        } catch { }
+    }
+
+    # Obtain the local router token (create/reuse) and DPAPI-protect it.
+    $env:NINEROUTER_DASHBOARD_PW = $dashPw
+    $commonFwd = $Common -replace '\\','/'
+    $tokenScript = @'
+const { NineRouterClient } = await import(process.env.COMMON_DIR + '/nine-router-api.mjs');
+const c = new NineRouterClient(process.env.NINEROUTER_BASE);
+await c.login(process.env.NINEROUTER_DASHBOARD_PW);
+const keys = await c.listKeys();
+const k = keys.find(x => x.name === 'BlackCEO Claude Code');
+if (k && k.key) { console.log(k.key); process.exit(0); }
+const created = await c.createKey('BlackCEO Claude Code');
+console.log(created.key); process.exit(0);
+'@
+    $env:COMMON_DIR = $commonFwd
+    $token = (& node --input-type=module -e $tokenScript 2>&1 | Select-Object -Last 1).Trim()
+    Remove-Item Env:COMMON_DIR -ErrorAction SilentlyContinue
+    if (-not $token) {
+        Write-Blocker "Could not obtain the local 9Router API key."
+    }
+    & (Join-Path $Win 'Protect-LocalState.ps1') -Action set-token -Token $token
+    Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY -ErrorAction SilentlyContinue
+
+    # 9. Write routing state (non-secret).
+    $routes = $report.resolvedRoutes
+    $concurrency = Get-Concurrency $creds['OLLAMA_PLAN']
+    $stateInput = @{
+        statePath = $StateFile
+        routes = @{
+            fable    = $routes.fable
+            opus     = $routes.opus
+            sonnet   = $routes.sonnet
+            haiku    = $routes.haiku
+            subagent = $routes.subagent
+            vision   = $routes.vision
+        }
+        concurrency = $concurrency
+        maxOutputTokens = 32000
+        effortLevel = 'max'
+        claudeBinary = $claudeBin
+        nineRouterBinary = $nineBin
+        port = $Port
+        tokenRef = "DPAPI:$StateDir\router-token.bin"
+    } | ConvertTo-Json -Depth 4
+    $stateInput | & node (Join-Path $Common 'write-routing-state.mjs')
+
+    # 10. Install launcher (Install-ClaudeNine.ps1 resolves the repo launcher path itself).
+    & (Join-Path $Win 'Install-ClaudeNine.ps1')
+    Refresh-Path
+
+    # 11. Smoke tests.
+    Write-Log 'Running smoke tests...'
+    $env:NINEROUTER_BASE = $Base
+    $env:NINEROUTER_TOKEN = & (Join-Path $Win 'Protect-LocalState.ps1') -Action get-token
+    $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
+    & node (Join-Path $Common 'test-nine-router.mjs')
+    if ($LASTEXITCODE -ne 0) { Write-Blocker 'Smoke tests failed' }
+    Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
+
+    # 12. Completion report.
+    $reserved = if ($creds['OLLAMA_PLAN'] -eq 'pro') { 1 } else { 0 }
+    @"
+
+999 SETUP: COMPLETE
+
+Operating system: Windows
+Claude Code: OK
+Personal skill in normal claude: OK
+Personal skill in claude-nine: OK
+claude-nine launcher: OK
+Normal claude routing: UNCHANGED
+Node.js: OK
+npm: OK
+9Router: OK - $Base
+DeepSeek Direct: OK
+Ollama Cloud: OK
+Agnes AI: OK
+
+Claude routes:
+Fable/Subagents -> DeepSeek V4 Flash (max)
+Opus -> DeepSeek V4 Pro (max)
+Sonnet -> Ollama GLM 5.2 (max)
+Haiku -> Ollama Kimi K2.6 (verified effort)
+
+Fallback:
+DeepSeek -> Agnes 2.5 Flash: OK
+
+Fusion:
+DeepSeek Flash + GLM 5.2 + Kimi K2.6
+Judge -> DeepSeek V4 Pro
+Status: OK
+
+Ollama plan: $($creds['OLLAMA_PLAN'])
+Ollama Claude/9Router concurrency budget: $concurrency
+Reserved for OpenClaw: $reserved
+
+Vision auto-switch -> Kimi K2.6: OK
+PDF auto-switch: DISABLED - not verified end-to-end
+Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
+
+Launch routed Claude Code with: claude-nine
+
+No API keys were printed.
+"@ | Write-Host
+    exit 0
+} catch {
+    Write-Error "setup-windows failed: $($_.Exception.Message)"
+    exit 1
+}

@@ -1,0 +1,116 @@
+# 999-setup
+
+Cross-platform environment bootstrap utilities.
+
+This repository provisions a local **9Router** gateway on native **Windows** and **macOS
+(Apple Silicon)**, wires it to your own provider credentials, installs a `claude-nine`
+command that runs Claude Code through the router, and leaves your normal `claude`
+untouched.
+
+Everything here is designed to be driven by Claude Code itself: install Claude Code,
+create one credential file, give Claude Code one instruction, and the setup is done.
+
+---
+
+## Step 1 — Install Claude Code (manual, official installer)
+
+### Windows (Command Prompt — CMD)
+
+```cmd
+curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+Then:
+
+```cmd
+claude
+```
+
+### macOS (Terminal)
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Then:
+
+```bash
+claude
+```
+
+If `claude` is not found right after a successful macOS install, check
+`~/.local/bin/claude` first and open a new Terminal window — do not reinstall blindly.
+
+Supported macOS baseline: **current macOS on Apple Silicon (`arm64`) only**.
+
+---
+
+## Step 2 — Create one credential file
+
+Create a file named exactly **`API docs.md`** in your real **Documents** folder
+(`%USERPROFILE%\Documents` on Windows, or `~/Documents` on macOS), containing your own
+keys. Replace the placeholder text with real values:
+
+```text
+OLLAMA_API_KEY=replace_with_real_key
+DEEPSEEK_API_KEY=replace_with_real_key
+AGNES_API_KEY=replace_with_real_key
+OLLAMA_PLAN=pro
+AGNES_PLAN=starter
+```
+
+Valid `OLLAMA_PLAN`: `free`, `pro`, `max`. Valid `AGNES_PLAN`: `starter`, `plus`, `pro`.
+
+Your keys never leave this machine. They are read once, loaded into the local router,
+and never printed.
+
+---
+
+## Step 3 — Give Claude Code one instruction
+
+Start Claude Code and paste:
+
+> Set up this computer from this repository: https://github.com/trevorotts1/999-setup
+>
+> First determine whether this computer is native Windows or macOS. Follow only the matching platform path in AGENT_INSTALL.md. Download the repository into my real Documents folder, install the personal Claude Code skill named nine-router-setup so it is available to both my normal `claude` command and `claude-nine`, then execute the matching setup orchestrator. Install or repair Node.js only if required, install 9Router, wire all required providers/routing/combos, install the platform-native `claude-nine` command on my PATH, and validate the full setup. Do not print or expose API keys. Do not stop until the validation suite passes or you give me one precise blocker that requires my action.
+
+Claude Code reads `AGENT_INSTALL.md`, detects the OS, and provisions everything.
+
+---
+
+## After setup
+
+| Command | Meaning |
+|---|---|
+| `claude` | Normal Claude Code — unchanged, Anthropic-direct |
+| `claude-nine` | The same Claude Code, routed through local 9Router |
+
+`claude-nine` starts the router on demand, loads routing only into that process, and
+reuses the exact same personal skills as `claude`. Run `/nine-router-setup` at any time
+to repair or re-validate the environment.
+
+---
+
+## Repository layout
+
+```text
+launchers/                     platform-native claude-nine launchers
+.claude/skills/nine-router-setup/
+    SKILL.md                   the personal Claude Code skill (repair/re-run)
+    references/                architecture, security, API, troubleshooting docs
+    scripts/
+        setup-windows.ps1      Windows orchestrator
+        setup-macos.sh         macOS orchestrator
+        windows/               Windows-specific helpers
+        macos/                 macOS-specific helpers
+        common/                shared Node.js management-API helpers
+templates/                     API docs.md template
+tests/                         smoke-test scaffolding
+```
+
+The setup is **idempotent**: running it again repairs and updates existing state rather
+than duplicating providers, combos, PATH entries, or keys.
+
+## License
+
+MIT — see `LICENSE`.

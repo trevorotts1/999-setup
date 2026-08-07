@@ -1,0 +1,20 @@
+# Never commit credentials, secrets, or generated local state.
+API docs.md
+.env
+.env.*
+*.secret
+*.secrets
+credentials*
+secrets*
+
+# Local OS droppings
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Local state / logs written during setup runs on any machine
+router-session.json
+route-state.json
+*.log
