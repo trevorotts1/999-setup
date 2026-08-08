@@ -133,14 +133,9 @@ main() {
 
   # First-run password handling. If the dashboard password file exists, reuse it;
   # otherwise the configure helper will rotate from the default on first run.
-  DASHBOARD_PW=""
-  if [ -f "$STATE_DIR/dashboard-password" ]; then
-    DASHBOARD_PW="$(cat "$STATE_DIR/dashboard-password")"
-  fi
-  # If we have no stored password and requireLogin needs the default, try default.
-  if [ -z "$DASHBOARD_PW" ]; then
-    DASHBOARD_PW="123456"
-  fi
+  # No dashboard password rotation: the user owns the 9Router dashboard password
+  # and manages it themselves. Use the default only to log in and configure.
+  DASHBOARD_PW="${NINEROUTER_DASHBOARD_PW:-123456}"
 
   # 7. Live model resolution (shared helper; env keys stay in memory only).
   log "Resolving live provider catalogs..."
@@ -170,15 +165,6 @@ main() {
   CONFIG_REPORT="$(printf '%s\n' "$CONFIGURE_OUT" | awk 'found {print; exit} /^===999-CONFIG-REPORT===$/ {found=1}')"
   if [ -z "$CONFIG_REPORT" ]; then
     fail "configure-nine-router.mjs did not emit a config report (check 9Router health)"
-  fi
-
-  # Extract the (possibly rotated) dashboard password and the local API key.
-  NEW_PW="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{console.log(JSON.parse(s).dashboardPassword||"")}catch{console.log("")}})' 2>/dev/null || true)"
-  if [ -n "$NEW_PW" ] && [ "$NEW_PW" != "$DASHBOARD_PW" ]; then
-    DASHBOARD_PW="$NEW_PW"
-    mkdir -p "$STATE_DIR"
-    ( umask 077; printf '%s' "$DASHBOARD_PW" > "$STATE_DIR/dashboard-password" )
-    chmod 600 "$STATE_DIR/dashboard-password"
   fi
 
   # Store the local router token in Keychain. GET /api/keys returns the raw key

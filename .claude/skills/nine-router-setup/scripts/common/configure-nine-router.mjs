@@ -17,7 +17,6 @@
 //
 // Outputs a JSON report on stdout with NO secrets.
 
-import crypto from "node:crypto";
 import { NineRouterClient } from "./nine-router-api.mjs";
 
 const BASE = process.env.NINEROUTER_BASE || "http://127.0.0.1:20128";
@@ -25,7 +24,6 @@ const PLAN = process.env.OLLAMA_PLAN || "pro";
 const AGNES_PLAN = process.env.AGNES_PLAN || "starter";
 const FLASH_VARIANT = process.env.DEEPSEEK_FLASH_VARIANT || "";
 const OVERRIDE_0731 = FLASH_VARIANT === "ollama-0731";
-const DEFAULT_DASHBOARD_PW = "123456";
 
 const RESOLVED_ROUTES = {};
 
@@ -46,7 +44,8 @@ function err(msg, code = 1) {
 async function main() {
   const client = new NineRouterClient(BASE);
 
-  // 1. Login with the dashboard password (initial or rotated).
+  // 1. Login with the dashboard password. No password rotation is performed:
+  //    the user owns the dashboard password and manages it themselves.
   const pw = process.env.NINEROUTER_DASHBOARD_PW;
   if (!pw) err("NINEROUTER_DASHBOARD_PW not set");
   const login = await client.login(pw).catch((e) => err(`dashboard login failed: ${e.message}`));
@@ -55,21 +54,7 @@ async function main() {
   const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN } };
   const settings = await client.getSettings();
 
-  // 2. Rotate the dashboard password. Rule: if we just logged in successfully
-  //    with the well-known default (123456), the password IS the default and must
-  //    be rotated regardless of the mustChangePassword flag (that flag can be
-  //    false once the default has been persisted to the settings DB). Never leave
-  //    a live dashboard on the default password.
-  let dashboardPassword = pw;
-  if (login.mustChangePassword || pw === DEFAULT_DASHBOARD_PW) {
-    dashboardPassword = randomPassword();
-    await client.patchSettings({ currentPassword: pw, newPassword: dashboardPassword });
-    report.dashboardPasswordRotated = true;
-  } else {
-    report.dashboardPasswordRotated = false;
-  }
-
-  // 3. Create/reuse the local API key.
+  // 2. Create/reuse the local API key.
   let apiKey = null;
   {
     const keys = await client.listKeys();
@@ -283,23 +268,12 @@ async function main() {
     "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
   ];
 
-  // 10. Password report (the orchestrator writes it to protected state, never to repo).
-  report.dashboardPassword = dashboardPassword;
-
   // Machine-readable output for the orchestrators: a sentinel line followed by ONE
   // compact JSON line. Line-based extractors on both platforms parse exactly this
   // line; pretty-printed/nested JSON must NOT be emitted here (nested braces
   // break sed-range and PowerShell line-filter parsing).
   console.log("===999-CONFIG-REPORT===");
   console.log(JSON.stringify(report));
-}
-
-function randomPassword(len = 24) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
-  const out = [];
-  const bytes = crypto.randomBytes(len);
-  for (let i = 0; i < len; i++) out.push(chars[bytes[i] % chars.length]);
-  return out.join("");
 }
 
 main().catch((e) => {

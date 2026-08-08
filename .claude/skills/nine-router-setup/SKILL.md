@@ -99,8 +99,9 @@ Homebrew-managed environment that satisfies the requirements.
 - Install `9router@latest` (npm global on Windows; user-local npm prefix on macOS).
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
-- Rotate the default dashboard password (`123456`) to a strong random value via
-  `PATCH /api/settings` with `currentPassword` + `newPassword`.
+- No dashboard password rotation — the user owns the 9Router dashboard password and
+  manages it themselves. The setup uses the default `123456` only to log in and
+  configure.
 - Create/reuse a local 9Router API key named `BlackCEO Claude Code` via `POST /api/keys`.
 - Keep `requireLogin=true` and `requireApiKey=true`.
 

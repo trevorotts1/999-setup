@@ -154,12 +154,9 @@ try {
         if (-not (Wait-Health)) { Write-Blocker "9Router did not become healthy on $Base" }
     }
 
-    $dashPw = ''
-    $pwFile = Join-Path $StateDir 'dashboard-password.txt'
-    if (Test-Path $pwFile) {
-        $dashPw = (Get-Content $pwFile -Raw).Trim()
-    }
-    if (-not $dashPw) { $dashPw = '123456' }
+    # No dashboard password rotation: the user owns the 9Router dashboard password
+    # and manages it themselves. Use the default only to log in and configure.
+    $dashPw = '123456'
 
     # 7. Live model resolution
     Write-Log 'Resolving live provider catalogs...'
@@ -193,21 +190,6 @@ try {
         Write-Blocker "configure-nine-router.mjs did not emit a config report (check 9Router health)."
     }
     $report = $cfgArr[$sentinelIdx + 1] | ConvertFrom-Json
-
-    # Rotate password if changed by configure.
-    if ($report.dashboardPassword -and $report.dashboardPassword -ne $dashPw) {
-        $dashPw = $report.dashboardPassword
-        New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
-        Set-Content -Path $pwFile -Value $dashPw -NoNewline
-        # Tighten ACLs (best-effort).
-        try {
-            $acl = Get-Acl $pwFile
-            $acl.SetAccessRuleProtection($true, $true)
-            $acl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "$env:USERDOMAIN\$env:USERNAME",'FullControl','Allow')))
-            Set-Acl $pwFile $acl
-        } catch { }
-    }
 
     # Obtain the local router token (create/reuse) and DPAPI-protect it.
     $env:NINEROUTER_DASHBOARD_PW = $dashPw

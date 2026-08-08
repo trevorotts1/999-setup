@@ -18,14 +18,16 @@ tunnelDashboardAccess = false
 ## First-run hardening
 
 1. Start 9Router and poll `http://localhost:20128` until healthy.
-2. Log in with the default/initial password.
-3. Rotate the dashboard password to a strong random value via
-   `PATCH /api/settings` (`currentPassword` + `newPassword`). Store it in local user-only
-   state if needed for repair runs; never in Git.
+2. Log in with the default/initial password (`123456`) to configure.
+3. **No dashboard password rotation.** The user owns the 9Router dashboard password and
+   manages it themselves; the setup never changes it. The default `123456` is used only
+   for the authenticated login that drives configuration.
 4. Create/reuse a local 9Router API key named `BlackCEO Claude Code`. Use it for
    `ANTHROPIC_AUTH_TOKEN` when Claude Code connects to the local router.
-5. If an existing install already has a changed password, **do not reset it destructively** —
-   detect existing state and use a safe repair path.
+5. If an existing install already has a changed password and the default no longer works,
+   stop with one precise instruction: the user must provide the current dashboard
+   password (via `NINEROUTER_DASHBOARD_PW`) for the login to succeed. Do not reset it
+   destructively.
 
 ## Secret handling
 

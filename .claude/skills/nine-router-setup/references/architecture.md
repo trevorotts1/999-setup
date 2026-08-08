@@ -56,7 +56,8 @@ None of these are persisted to global Claude settings or shell startup files. Pl
 1. **OS detection** picks exactly one orchestrator (`setup-windows.ps1` / `setup-macos.sh`).
 2. **Documents resolution** locates `API docs.md`.
 3. **Node check** — repair only when below Node 20+ / npm 10+.
-4. **9Router install** → first-run security (loopback bind, password rotation, API key).
+4. **9Router install** → first-run security (loopback bind, dashboard login, API key).
+   No dashboard password rotation — the user owns the dashboard password.
 5. **Provider import** — keys into 9Router provider storage; never printed.
 6. **Live model resolution** — provider catalogs are queried; exact IDs used.
 7. **Combos** — fallback + fusion via the management API.

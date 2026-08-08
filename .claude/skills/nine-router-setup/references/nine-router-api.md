@@ -13,8 +13,10 @@ chat/v1 gateway is protected by the **API key** (`Authorization: Bearer`). They 
 
 ### Authentication — two valid paths for `/api/*`
 
-1. **Dashboard session cookie** (`auth_token`) from `POST /api/auth/login`. Spec §7 uses
-   this path: log in, rotate password, keep the cookie in memory.
+1. **Dashboard session cookie** (`auth_token`) from `POST /api/auth/login`. This repo uses
+   this path: log in with the dashboard password (default `123456`, or the user's current
+   password via `NINEROUTER_DASHBOARD_PW`) and keep the cookie in memory. **No password
+   rotation is performed** — the user owns the dashboard password.
 2. **`x-9r-cli-token` header** — the machine-id-derived CLI token
    (`sha256(machineId + "9r-cli-auth" + cliSecret)[:16]`). The dashboard guard
    (`src/dashboardGuard.js`) accepts it for all `/api/*` routes. Useful as a repair path

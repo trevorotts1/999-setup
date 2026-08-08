@@ -110,8 +110,9 @@ Run the orchestrator for the detected OS only. Pass no secrets on the command li
 
 The orchestrator performs, in order: OS + architecture verification; Claude Code
 existence check; Documents resolution; `API docs.md` locate/parse/validate; Node.js
-install/repair only when needed; 9Router install; first-run security (password rotation,
-API key creation, localhost-only bind); provider credential import; live model
+install/repair only when needed; 9Router install; first-run security (dashboard login,
+API key creation, localhost-only bind; **no dashboard password rotation** — the user
+owns the dashboard password); provider credential import; live model
 resolution; provider connections; fallback + fusion combos; capacity auto-switch
 (vision only); `claude-nine` launcher install; routed-session concurrency guardrails;
 and the smoke-test suite.
