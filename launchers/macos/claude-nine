@@ -31,7 +31,9 @@ start_router() {
     return 1
   fi
   mkdir -p "$LOG_DIR"
-  nohup "$bin" --no-browser > "$LOG_DIR/9router.log" 2>&1 &
+  # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
+  # exposes the dashboard + /v1 (holding provider keys) to the LAN.
+  nohup "$bin" --no-browser --host 127.0.0.1 > "$LOG_DIR/9router.log" 2>&1 &
   local i
   for i in $(seq 1 40); do
     port_healthy && return 0

@@ -11,7 +11,7 @@ Target: native Windows 10/11. Windows PowerShell 5.1+ is the default runtime; Po
 | Credential file | `<resolved Documents>\API docs.md` |
 | Launcher bin dir | `%LOCALAPPDATA%\BlackCEO\999\bin` |
 | Launcher shim | `%LOCALAPPDATA%\BlackCEO\999\bin\claude-nine.cmd` |
-| Launcher script | `%LOCALAPPDATA%\BlackCEO\999\bin\claude-nine.ps1` |
+| Launcher script | `%LOCALAPPDATA%\BlackCEO\999\lib\claude-nine.ps1` (off PATH; the `.cmd` shim in `bin\` invokes it) |
 | Protected session state | `%LOCALAPPDATA%\BlackCEO\999\router-session.json` (token DPAPI-encrypted) |
 | Node.js | WinGet `OpenJS.NodeJS.LTS`, or a healthy existing Node 20+/npm 10+ |
 | 9Router | npm global (`npm install -g 9router@latest`), binary found via `Get-Command 9router` |

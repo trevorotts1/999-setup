@@ -5,13 +5,15 @@
 #   1. Verify native Windows.
 #   2. Verify Claude Code exists.
 #   3. Resolve Documents + locate/parse/validate API docs.md.
-#   4. Install/repair Node.js only when needed.
-#   5. Install/update 9Router (npm global).
-#   6. Start 9Router, wait for health, first-run security.
-#   7. Configure providers/routing/combos via shared Node helpers.
-#   8. Install the claude-nine launcher + DPAPI-protected state.
-#   9. Run smoke tests.
-#  10. Print the completion report (no secrets).
+#   4. Dependency preflight: prove DPAPI loads, install/repair Node (absolute
+#      path, real-execution re-verify — never trust a cached PATH entry) and
+#      9Router (real --version proof), verify npm can reach its registry, and
+#      print an honest dependency summary before any provisioning starts.
+#   5. Start 9Router, wait for health, first-run security.
+#   6. Configure providers/routing/combos via shared Node helpers.
+#   7. Install the claude-nine launcher + DPAPI-protected state.
+#   8. Run smoke tests (including the launcher itself, end to end).
+#   9. Print the completion report (no secrets).
 #
 # Never prints API keys, the router token, or the dashboard password.
 #Requires -Version 5.1
@@ -103,7 +105,21 @@ function Get-Concurrency([string]$plan) {
     switch ($plan) { 'free' { 1 } 'max' { 8 } default { 2 } }
 }
 
+# Dependency-preflight summary lines. Populated only by real-execution
+# probes below; never hand-set to a status the probe did not produce.
+$DepSummary = @()
+
 try {
+    # 0. DPAPI (System.Security) — proved here, early, rather than letting a
+    #    load failure surface deep inside Protect-LocalState.ps1 or
+    #    claude-nine.ps1 later as an unrelated-looking error.
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction Stop
+        $DepSummary += 'System.Security (DPAPI) OK   assembly loaded'
+    } catch {
+        Write-Blocker "The .NET System.Security assembly could not be loaded (required to protect the local router token): $($_.Exception.Message)"
+    }
+
     # 1. OS
     if ($env:OS -ne 'Windows_NT') {
         Write-Blocker "This orchestrator is Windows-only (OS=$($env:OS))."
@@ -112,6 +128,7 @@ try {
     # 2. Claude Code
     $claudeBin = Resolve-Claude
     Write-Log "Claude Code: $claudeBin"
+    $DepSummary += "claude          OK   $claudeBin"
 
     # 3. Documents + API docs.md
     $apiDocs = & (Join-Path $Win 'Get-ApiDocs.ps1')
@@ -127,12 +144,51 @@ try {
     Validate-Plan $creds['OLLAMA_PLAN'] 'free pro max' 'OLLAMA_PLAN'
     Validate-Plan $creds['AGNES_PLAN'] 'starter plus pro' 'AGNES_PLAN'
 
-    # 4. Node
-    & (Join-Path $Win 'Install-Node.ps1')
+    # 4. Dependency preflight. git/repository-acquisition is intentionally NOT
+    #    probed here: this script only runs from an already-acquired
+    #    checkout (Claude Code performs acquisition per AGENT_INSTALL.md,
+    #    outside this script's scope) — matches setup-macos.sh's equivalent
+    #    scoping note, keeping the two platforms behaviourally equivalent.
+
+    # Node 20+ / npm 10+: Install-Node.ps1 installs/repairs ONLY when needed
+    # (winget presence/execution is checked THERE, right when it is actually
+    # needed) and writes the ABSOLUTE path to a proven-working node binary
+    # via Write-Output. Re-verify it for real, in THIS process, right now —
+    # never trust a cached PATH entry.
+    $NodeBin = & (Join-Path $Win 'Install-Node.ps1')
+    if ($LASTEXITCODE -ne 0) { Write-Blocker 'Node.js install/verify failed.' }
     Refresh-Path
+    if (-not $NodeBin) { $NodeBin = (Get-Command node -ErrorAction SilentlyContinue).Source }
+    if (-not $NodeBin -or -not (Test-Path $NodeBin)) { Write-Blocker 'Could not resolve an absolute path to node after install/verify.' }
+    $nodeVerOut = & $NodeBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "node at $NodeBin does not execute (--version failed): $nodeVerOut" }
+    $nodeVerStr = ($nodeVerOut | Select-Object -Last 1).ToString()
+    $nodeMajorParsed = 0
+    if (-not [int]::TryParse((($nodeVerStr.TrimStart('v')) -split '\.')[0], [ref]$nodeMajorParsed)) {
+        Write-Blocker "node at $NodeBin reported an unparseable version: $nodeVerStr"
+    }
+    if ($nodeMajorParsed -lt 20) {
+        Write-Blocker "node at $NodeBin reports $nodeVerStr (< 20) even right after install/verify."
+    }
+    $NodeDir = Split-Path $NodeBin
+    $NpmBin = Join-Path $NodeDir 'npm.cmd'
+    if (-not (Test-Path $NpmBin)) { $NpmBin = (Get-Command npm -ErrorAction SilentlyContinue).Source }
+    if (-not $NpmBin -or -not (Test-Path $NpmBin)) { Write-Blocker "npm not found next to node at $NodeDir." }
+    $npmVerOut = & $NpmBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "npm at $NpmBin does not execute (--version failed): $npmVerOut" }
+    $npmVerStr = ($npmVerOut | Select-Object -Last 1).ToString()
+    $DepSummary += "node            OK   v$nodeVerStr ($NodeBin)"
+    $DepSummary += "npm             OK   v$npmVerStr ($NpmBin)"
+
+    Write-Log 'Verifying npm registry reachability...'
+    $npmPingOut = & $NpmBin ping --registry https://registry.npmjs.org/ 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "npm cannot reach the registry (required to install 9router): $npmPingOut" }
+    $DepSummary += 'npm registry    OK   ping succeeded'
 
     # 5. 9Router. Idempotent: if the router is already healthy, do NOT reinstall
     #    (npm EBUSY on the locked node_modules otherwise) - just resolve the binary.
+    #    Install-NineRouter.ps1 PROVES the binary executes (--version, not a
+    #    Get-Command resolution alone) before returning its absolute path.
     if (Wait-Health) {
         Write-Log '9Router already running and healthy; skipping reinstall.'
         $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source
@@ -141,6 +197,15 @@ try {
         if ($LASTEXITCODE -ne 0) { Write-Blocker '9Router install failed.' }
         Refresh-Path
     }
+    if (-not $nineBin) { $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source }
+    if (-not $nineBin) { Write-Blocker '9router executable could not be resolved.' }
+    $nineVerOut = & $nineBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "9router at $nineBin does not execute (--version failed): $nineVerOut" }
+    $nineVerStr = ($nineVerOut | Select-Object -Last 1).ToString()
+    $DepSummary += "9router         OK   v$nineVerStr ($nineBin)"
+
+    Write-Log 'Dependency preflight complete:'
+    foreach ($line in $DepSummary) { Write-Log "  $line" }
 
     # 6. Start + health + first-run security
     if (-not (Wait-Health)) {
@@ -160,7 +225,7 @@ try {
 
     # 7. Live model resolution
     Write-Log 'Resolving live provider catalogs...'
-    $resolvedJson = & node (Join-Path $Common 'resolve-models.mjs') --all 2>&1
+    $resolvedJson = & $NodeBin (Join-Path $Common 'resolve-models.mjs') --all 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "live model resolution failed: $resolvedJson" }
     Write-Log 'Live catalogs resolved.'
 
@@ -175,7 +240,7 @@ try {
     # DEEPSEEK_FLASH_VARIANT passes through as set by the user (default empty).
     $env:RESOLVED_MODELS = $resolvedJson
 
-    $cfgOut = & node (Join-Path $Common 'configure-nine-router.mjs') 2>&1
+    $cfgOut = & $NodeBin (Join-Path $Common 'configure-nine-router.mjs') 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "9Router configuration failed: $cfgOut" }
 
     # Parse the JSON report: the helper emits a sentinel line followed by ONE
@@ -212,7 +277,7 @@ else {
     # would later surface as a confusing 401 from the router instead of a clean
     # setup failure. Redirect node's stderr to a temp file and check its exit code.
     $stderrFile = [System.IO.Path]::GetTempFileName()
-    $tokenRaw = & node --input-type=module -e $tokenScript 2>$stderrFile
+    $tokenRaw = & $NodeBin --input-type=module -e $tokenScript 2>$stderrFile
     $nodeExit = $LASTEXITCODE
     Remove-Item Env:COMMON_DIR -ErrorAction SilentlyContinue
     if ($nodeExit -ne 0) {
@@ -254,7 +319,7 @@ else {
         port = $Port
         tokenRef = "DPAPI:$StateDir\router-token.bin"
     } | ConvertTo-Json -Depth 4
-    $stateInput | & node (Join-Path $Common 'write-routing-state.mjs')
+    $stateInput | & $NodeBin (Join-Path $Common 'write-routing-state.mjs')
     if ($LASTEXITCODE -ne 0) {
         Write-Blocker 'Routing state could not be written (write-routing-state failed).'
     }
@@ -271,13 +336,18 @@ else {
     $env:NINEROUTER_BASE = $Base
     $env:NINEROUTER_TOKEN = & (Join-Path $Win 'Protect-LocalState.ps1') -Action get-token
     $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
-    & node (Join-Path $Common 'test-nine-router.mjs')
+    & $NodeBin (Join-Path $Common 'test-nine-router.mjs')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'Smoke tests failed' }
     Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
 
-    # Launcher end-to-end: a real routed request through claude-nine.
+    # Launcher end-to-end: a real routed request through claude-nine. Use the
+    # absolute installed path, not a bare PATH lookup — a fresh shell's PATH
+    # may not have refreshed yet even though Install-ClaudeNine.ps1 just
+    # updated the User PATH (the equivalent of the macOS F7 fix).
     Write-Log 'Executing claude-nine end-to-end...'
-    $nineProbe = & claude-nine -p "Reply with exactly: routing works" 2>&1
+    $claudeNineCmd = "$env:LOCALAPPDATA\BlackCEO\999\bin\claude-nine.cmd"
+    if (-not (Test-Path $claudeNineCmd)) { Write-Blocker "claude-nine launcher not found at $claudeNineCmd after install." }
+    $nineProbe = & $claudeNineCmd -p "Reply with exactly: routing works" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Blocker "claude-nine end-to-end probe failed: $nineProbe"
     }

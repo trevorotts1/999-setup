@@ -69,10 +69,12 @@ npm install -g --prefix "$HOME/.local/share/999/npm" 9router@latest
 Expected executable: `$HOME/.local/share/999/npm/bin/9router`. The launcher resolves the
 exact binary path rather than assuming shell PATH ordering.
 
-Start 9Router non-interactively with stdout/stderr to the user-local log:
+Start 9Router non-interactively with stdout/stderr to the user-local log. `--host 127.0.0.1`
+is mandatory: 9Router's default bind is `0.0.0.0`, which would expose the dashboard and the
+`/v1` gateway (holding provider keys) to the LAN:
 
 ```bash
-$HOME/.local/share/999/npm/bin/9router > "$HOME/Library/Logs/BlackCEO-999/9router.log" 2>&1 &
+$HOME/.local/share/999/npm/bin/9router --no-browser --host 127.0.0.1 > "$HOME/Library/Logs/BlackCEO-999/9router.log" 2>&1 &
 ```
 
 Do **not** install a permanent LaunchDaemon/LaunchAgent by default. `claude-nine` starts

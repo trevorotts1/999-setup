@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // configure-nine-router.mjs — idempotent provider/routing/combos configuration
-// through the 9Router management API. Verified against 9router 0.5.45.
+// through the 9Router management API. Verified against 9router 0.5.45; surface
+// re-verified 0.5.50 on 2026-08-08.
 //
 // Reads credentials from environment variables (set by the platform orchestrator
 // from API docs.md, kept in memory only). Never prints keys.
@@ -48,7 +49,9 @@ async function main() {
   //    the user owns the dashboard password and manages it themselves.
   const pw = process.env.NINEROUTER_DASHBOARD_PW;
   if (!pw) err("NINEROUTER_DASHBOARD_PW not set");
-  const login = await client.login(pw).catch((e) => err(`dashboard login failed: ${e.message}`));
+  const login = await client.login(pw).catch((e) =>
+    err(`dashboard login failed: ${e.message}. If you changed the dashboard password, re-run with NINEROUTER_DASHBOARD_PW=<your password>.`)
+  );
   if (!login.success) err("dashboard login rejected");
 
   const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN } };
@@ -63,10 +66,16 @@ async function main() {
       apiKey = existing.key;
       report.localApiKey = "reused";
     } else if (existing) {
-      // Listed key may be masked; we need the raw value, so create is not an option
-      // if a masked key exists — the orchestrator should have stored the raw key
-      // at creation. Signal caller to supply it.
-      report.localApiKey = "exists-masked";
+      // Listed key may be masked; we need the raw value, and create is not an
+      // option while a same-named key already exists (POST would either
+      // duplicate it or the dashboard would reject it). Continuing with
+      // apiKey=null here would let every one of the 9 verification probes
+      // below fail with 401 while the script still exits 0 — a "complete"
+      // run with every lane silently unverified. Hard-stop instead.
+      err(
+        "a local API key named 'BlackCEO Claude Code' exists but its value cannot be read — delete it in the dashboard Keys page and re-run.",
+        3
+      );
     } else {
       const created = await client.createKey("BlackCEO Claude Code");
       apiKey = created.key;
@@ -86,7 +95,11 @@ async function main() {
   if (deepseekKey) {
     const existing = providers.find((p) => p.provider === "deepseek");
     if (existing) {
-      report.providers.deepseek = "reused";
+      // Real repair-on-rerun (README: "running it again repairs and
+      // updates"): PUT the current key every run rather than silently
+      // ignoring a rotated key on an existing connection.
+      await client.updateProvider(existing.id, { provider: "deepseek", apiKey: deepseekKey, name: "DeepSeek Direct" });
+      report.providers.deepseek = "reused (key refreshed)";
     } else {
       await client.createProvider({ provider: "deepseek", apiKey: deepseekKey, name: "DeepSeek Direct" });
       report.providers.deepseek = "created";
@@ -96,7 +109,8 @@ async function main() {
   if (ollamaKey) {
     const existing = providers.find((p) => p.provider === "ollama");
     if (existing) {
-      report.providers.ollama = "reused";
+      await client.updateProvider(existing.id, { provider: "ollama", apiKey: ollamaKey, name: "Ollama Cloud" });
+      report.providers.ollama = "reused (key refreshed)";
     } else {
       await client.createProvider({ provider: "ollama", apiKey: ollamaKey, name: "Ollama Cloud" });
       report.providers.ollama = "created";
@@ -124,7 +138,10 @@ async function main() {
       await client.createProvider({ provider: agnesNode.id, apiKey: agnesKey, name: "Agnes AI" });
       report.providers.agnes += ", connection-created";
     } else {
-      report.providers.agnes += ", connection-reused";
+      // Real repair-on-rerun: PUT the current key rather than silently
+      // ignoring a rotated AGNES_API_KEY on an existing connection.
+      await client.updateProvider(agnesConn.id, { provider: agnesNode.id, apiKey: agnesKey, name: "Agnes AI" });
+      report.providers.agnes += ", connection-reused (key refreshed)";
     }
   }
 
@@ -182,10 +199,23 @@ async function main() {
 
   // 6. Combos.
   const combos = await client.listCombos();
+  const sameModels = (a, b) => {
+    const aa = Array.isArray(a) ? a : [];
+    const bb = Array.isArray(b) ? b : [];
+    return aa.length === bb.length && aa.every((m, i) => m === bb[i]);
+  };
   const upsertCombo = async (name, models) => {
     const existing = combos.find((c) => c.name === name);
     if (existing) {
-      report.combos[name] = "reused";
+      // Real repair-on-rerun: PUT the current model list when it differs
+      // from what is stored — a corrected combo must not be silently
+      // ignored just because a combo with that name already exists.
+      if (!sameModels(existing.models, models)) {
+        await client.updateCombo(existing.id, { name, models, kind: existing.kind ?? null });
+        report.combos[name] = "reused (models updated)";
+      } else {
+        report.combos[name] = "reused";
+      }
     } else {
       await client.createCombo({ name, models, kind: null });
       report.combos[name] = "created";

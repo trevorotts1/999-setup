@@ -1,5 +1,11 @@
 # 999-setup
 
+> **Do not run this on the operator Mac Mini.** The operator machine already runs its
+> own `claude-nine` with a separate, dedicated config root. This installer would replace
+> `~/.claude/skills/nine-router-setup` and `~/.local/bin/claude-nine` with this repo's
+> class-facing versions, breaking that setup. This repository is for a student's own
+> Mac or Windows machine.
+
 Cross-platform environment bootstrap utilities.
 
 This repository provisions a local **9Router** gateway on native **Windows** and **macOS
@@ -88,6 +94,10 @@ Claude Code reads `AGENT_INSTALL.md`, detects the OS, and provisions everything.
 `claude-nine` starts the router on demand, loads routing only into that process, and
 reuses the exact same personal skills as `claude`. Run `/nine-router-setup` at any time
 to repair or re-validate the environment.
+
+The **first** time you run `claude-nine` on macOS, you may see a Keychain prompt asking
+whether to allow access to the stored router token — click **"Always Allow"** so future
+runs do not prompt again.
 
 ---
 

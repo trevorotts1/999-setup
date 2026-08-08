@@ -32,8 +32,11 @@ else
   echo "SKIP  route-state file permissions (state file not present)"
 fi
 
-# 7. Keychain token retrievable
-if security find-generic-password -a "BlackCEO-999" -s "9router-api-token" -w >/dev/null 2>&1; then
+# 7. Keychain token retrievable (account/service order must match how the
+#    launcher and protect-local-state.sh actually store it: account
+#    "9router-api-token", service "BlackCEO-999" — reversed here would fail
+#    on every correctly provisioned Mac).
+if security find-generic-password -a "9router-api-token" -s "BlackCEO-999" -w >/dev/null 2>&1; then
   passes=$((passes+1)); echo "PASS  Keychain token retrievable"
 else
   failures=$((failures+1)); echo "FAIL  Keychain token retrievable"

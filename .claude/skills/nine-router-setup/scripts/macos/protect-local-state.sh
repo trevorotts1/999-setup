@@ -37,8 +37,24 @@ set_token() {
 
 # Usage: protect-local-state.sh get-token
 #   Prints the token to stdout — used by the launcher ONLY. Caller must not echo it.
+#   stderr is captured (never silently suppressed) so a real Keychain error is
+#   distinguishable from an absent item: exit 44 is `security`'s own
+#   "item not found" code — never treat it as evidence of anything else, and
+#   never conflate a genuine access-denial (user clicked Deny / non-interactive
+#   session with no consent UI) with a plain "not set up yet".
 get_token() {
-  security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
+  local out rc=0
+  out="$(security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if [ "$rc" -eq 44 ]; then
+    echo "protect-local-state: Keychain item not found (service $KEYCHAIN_SERVICE, account $KEYCHAIN_ACCOUNT). Re-run /nine-router-setup." >&2
+  else
+    echo "protect-local-state: Keychain access denied or another error (exit $rc): $out" >&2
+  fi
+  return "$rc"
 }
 
 # Usage: protect-local-state.sh ensure-600

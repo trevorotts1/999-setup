@@ -45,6 +45,20 @@ case ":$PATH:" in
 esac
 EOF
 )"
+  # If the orchestrator installed a repo-managed Node runtime (no system Node
+  # satisfied the minimum), that runtime lives off any default PATH. Fold its
+  # bin dir into this SAME managed block so a FUTURE terminal — not just this
+  # setup run — can still resolve `node`, which the claude-nine launcher calls
+  # directly. The value is baked in literally (not as a variable reference):
+  # it must resolve in a fresh shell that never ran this setup.
+  if [ -n "${CLAUDE_NINE_EXTRA_PATH_DIR:-}" ]; then
+    local extra="$CLAUDE_NINE_EXTRA_PATH_DIR"
+    block="$block
+case \":\$PATH:\" in
+  *\":$extra:\"*) ;;
+  *) export PATH=\"$extra:\$PATH\" ;;
+esac"
+  fi
 
   if [ -f "$profile" ] && grep -qF "$marker" "$profile" 2>/dev/null; then
     # Managed block already present — replace it in place to keep it idempotent

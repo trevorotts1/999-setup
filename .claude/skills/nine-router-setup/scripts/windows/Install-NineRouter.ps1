@@ -15,6 +15,19 @@ try {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         throw 'node not available; run Install-Node.ps1 first.'
     }
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        throw 'npm not available; run Install-Node.ps1 first.'
+    }
+    node --version | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'node is on PATH but does not execute (--version failed).' }
+
+    # Prove npm can actually reach the registry before attempting the install
+    # — a registry-unreachable failure buried inside `npm install -g` output
+    # is a confusing way to learn there is no network.
+    npm ping --registry https://registry.npmjs.org/ | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'npm cannot reach the npm registry (https://registry.npmjs.org/); check network connectivity, then re-run.'
+    }
 
     Write-Host 'Installing 9router@latest (npm global)...'
     # Out-Host keeps npm's stdout off the pipeline so only the binary path is
@@ -29,7 +42,14 @@ try {
     if (-not $bin) {
         throw '9router executable not found on PATH after install.'
     }
-    Write-Host "9router: $($bin.Source)"
+    # Real-execution proof, never a file/PATH-resolution check alone: a
+    # binary Get-Command can locate but that does not run is not "installed"
+    # in any sense that matters downstream.
+    $nineVer = & $bin.Source --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "9router resolved to $($bin.Source) but '--version' failed (exit $LASTEXITCODE): $nineVer"
+    }
+    Write-Host "9router: $($bin.Source) (version $nineVer)"
     Write-Output $bin.Source
     exit 0
 } catch {

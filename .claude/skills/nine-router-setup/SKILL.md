@@ -140,7 +140,7 @@ Using the authenticated management API and the shared helpers under `scripts/com
 ## Step 9 — `claude-nine` launcher + routed-session guardrails
 
 - Install the platform-native launcher (Windows: `%LOCALAPPDATA%\BlackCEO\999\bin\claude-nine.cmd`
-  + `.ps1`; macOS: `$HOME/.local/bin/claude-nine`, mode 700).
+  + `%LOCALAPPDATA%\BlackCEO\999\lib\claude-nine.ps1`; macOS: `$HOME/.local/bin/claude-nine`, mode 700).
 - The launcher: resolves the same `claude` binary, preserves the existing config root, starts
   9Router on demand with bounded retries, loads protected session state, exports routing vars
   only into the child process, and never echoes secrets.

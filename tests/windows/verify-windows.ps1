@@ -5,6 +5,9 @@
 param()
 
 $ErrorActionPreference = 'Continue'
+# Windows PowerShell 5.1 does not auto-load System.Security (PowerShell 7
+# does) — required before check 5 below can call ProtectedData.
+Add-Type -AssemblyName System.Security
 $failures = 0; $passes = 0
 function Check([bool]$ok, [string]$name) {
     if ($ok) { $script:passes++; Write-Host "PASS  $name" }
@@ -18,9 +21,13 @@ Check ($env:OS -eq 'Windows_NT') 'native Windows branch selected'
 $docs = [Environment]::GetFolderPath('MyDocuments')
 Check (($docs) -and (Test-Path $docs)) "resolved Documents path is valid ($docs)"
 
-# 3. Launcher files installed
+# 3. Launcher files installed. The .cmd shim lives ON PATH in bin\; the .ps1
+#    it invokes lives OFF PATH in lib\ (Install-ClaudeNine.ps1 deletes any
+#    bin\claude-nine.ps1 it finds — a .ps1 on PATH loses resolution to the
+#    .cmd and trips the default execution policy).
 $binDir = "$env:LOCALAPPDATA\BlackCEO\999\bin"
-Check ((Test-Path (Join-Path $binDir 'claude-nine.cmd')) -and (Test-Path (Join-Path $binDir 'claude-nine.ps1'))) 'Windows launcher files installed'
+$libDir = "$env:LOCALAPPDATA\BlackCEO\999\lib"
+Check ((Test-Path (Join-Path $binDir 'claude-nine.cmd')) -and (Test-Path (Join-Path $libDir 'claude-nine.ps1'))) 'Windows launcher files installed'
 
 # 4. claude-nine available from CMD and PowerShell after PATH refresh
 $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
