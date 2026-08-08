@@ -54,7 +54,7 @@ tunnelDashboardAccess = false
 
 ## Install strategy
 
-- Install `9router@latest`, not an old pinned build.
+- When an install is actually needed, install `9router@latest`, never an old pinned build; an existing working install is kept as-is (no forced upgrade).
 - macOS: never `sudo npm install -g` as the default. Use a user-local npm prefix.
 - Do not edit 9Router's persistence database directly; use the authenticated management API.
 - Keep setup scripts inspectable plain text. Do not download and execute arbitrary

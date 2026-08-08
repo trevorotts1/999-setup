@@ -252,13 +252,21 @@ main() {
   NPM_PING_OUT="$("$NPM_BIN" ping --registry https://registry.npmjs.org/ 2>&1)" || fail "npm cannot reach the registry (required to install 9router): $NPM_PING_OUT"
   DEP_SUMMARY+=("$(printf '%-14s OK   ping succeeded' 'npm registry')")
 
-  # 9Router: install-nine-router.sh installs/updates it and PROVES it executes
+  # 9Router: install-nine-router.sh installs only when missing or broken;
+  # existing working installs are kept as-is, and it PROVES the binary executes
   # (a real `--version` run, not a file-exists check) before returning its
   # absolute path.
   NINE_BIN="$("$MACOS/install-nine-router.sh")" || exit 1
   [ -n "$NINE_BIN" ] && [ -x "$NINE_BIN" ] || fail "install-nine-router.sh did not return an executable path (got: '$NINE_BIN')."
   NINE_VER="$("$NINE_BIN" --version 2>&1)" || fail "9router at $NINE_BIN does not execute (--version failed): $NINE_VER"
   DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' 9router "$NINE_VER" "$NINE_BIN")")
+  NINE_MODE_RAW="$(head -1 "${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}/last-install-mode" 2>/dev/null || true)"
+  case "$NINE_MODE_RAW" in
+    kept) NINE_MODE="existing install kept (no reinstall, no upgrade)" ;;
+    reinstalled-broken) NINE_MODE="was present but broken - reinstalled" ;;
+    fresh-install) NINE_MODE="freshly installed" ;;
+    *) NINE_MODE="unknown" ;;
+  esac
 
   log "Dependency preflight complete:"
   for line in "${DEP_SUMMARY[@]}"; do
@@ -465,7 +473,7 @@ claude-nine launcher: OK
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
-9Router: OK - $BASE
+9Router: OK - $BASE ($NINE_MODE, v$NINE_VER)
 DeepSeek Direct: $V_FABLE
 Ollama Cloud: $V_OLLAMA_LINE
 Agnes AI: $V_AGNES

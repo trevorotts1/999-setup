@@ -96,7 +96,7 @@ Homebrew-managed environment that satisfies the requirements.
 
 ## Step 5 — 9Router install and first-run security
 
-- Install `9router@latest` (npm global on Windows; user-local npm prefix on macOS).
+- Install `9router@latest` only when 9Router is absent or broken (proven by a real `--version` run); an existing working install is kept as-is — no reinstall, no upgrade. (npm global on Windows; user-local npm prefix on macOS.)
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
 - No dashboard password rotation — the user owns the 9Router dashboard password and

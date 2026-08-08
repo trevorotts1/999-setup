@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-nine-router.sh — install/update 9Router into a user-local npm prefix on
+# install-nine-router.sh — install only when absent or broken; an existing working install is kept as-is (no reinstall, no upgrade) 9Router into a user-local npm prefix on
 # macOS, without sudo. Resolves the exact binary path. Idempotent.
 #
 # Contract: on success, prints the ABSOLUTE path to a 9router binary that has
@@ -27,6 +27,30 @@ main() {
   fi
 
   mkdir -p "$NPM_PREFIX" "$LOG_DIR"
+
+  # Reinstall guard: a 9Router that already RUNS is kept exactly as-is — upgrading a
+  # live, patched router mid-class can renumber chunks and invalidate guard patches.
+  # Real-execution proof only: never `command -v` alone, never file-existence alone.
+  local existing ever erc
+  existing=""
+  if [ -x "$BIN" ]; then
+    existing="$BIN"
+  else
+    existing="$(command -v 9router 2>/dev/null || true)"
+  fi
+  if [ -n "$existing" ]; then
+    ever="$("$existing" --version 2>&1)" && erc=0 || erc=$?
+    if [ "$erc" -eq 0 ]; then
+      log "9Router $ever already installed — kept as-is (no reinstall, no upgrade): $existing"
+      printf 'kept' > "$NPM_PREFIX/last-install-mode"
+      printf '%s' "$existing"
+      return 0
+    fi
+    log "9router found at $existing but '--version' failed (exit $erc): $ever — broken install; reinstalling."
+    INSTALL_MODE="reinstalled-broken"
+  else
+    INSTALL_MODE="fresh-install"
+  fi
 
   # Prove npm can actually reach the registry before attempting the install —
   # a registry-unreachable failure buried inside `npm install -g` output is a
@@ -67,6 +91,7 @@ main() {
     exit 1
   fi
   log "9router version: $ver"
+  printf '%s' "$INSTALL_MODE" > "$NPM_PREFIX/last-install-mode"
   printf '%s' "$BIN"
 }
 

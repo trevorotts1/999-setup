@@ -192,10 +192,20 @@ try {
     if (Wait-Health) {
         Write-Log '9Router already running and healthy; skipping reinstall.'
         $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source
+        $nineMode = 'existing install kept - router already running (no reinstall, no upgrade)'
     } else {
         $nineBin = & (Join-Path $Win 'Install-NineRouter.ps1')
         if ($LASTEXITCODE -ne 0) { Write-Blocker '9Router install failed.' }
         Refresh-Path
+        $StateDir999 = Join-Path $env:LOCALAPPDATA 'BlackCEO\999'
+        $ModeFile = Join-Path $StateDir999 'last-install-mode.txt'
+        $nineModeRaw = Get-Content -Path $ModeFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        switch ($nineModeRaw) {
+            'kept'                { $nineMode = 'existing install kept (no reinstall, no upgrade)' }
+            'reinstalled-broken'  { $nineMode = 'was present but broken - reinstalled' }
+            'fresh-install'       { $nineMode = 'freshly installed' }
+            default               { $nineMode = 'unknown' }
+        }
     }
     if (-not $nineBin) { $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source }
     if (-not $nineBin) { Write-Blocker '9router executable could not be resolved.' }
@@ -396,7 +406,7 @@ claude-nine launcher: OK
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
-9Router: OK - $Base
+9Router: OK - $Base ($nineMode, v$nineVerStr)
 DeepSeek Direct: $vFable
 Ollama Cloud: OK
 Agnes AI: $vAgnes

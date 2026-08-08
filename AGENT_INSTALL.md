@@ -110,7 +110,7 @@ Run the orchestrator for the detected OS only. Pass no secrets on the command li
 
 The orchestrator performs, in order: OS + architecture verification; Claude Code
 existence check; Documents resolution; `API docs.md` locate/parse/validate; Node.js
-install/repair only when needed; 9Router install; first-run security (dashboard login,
+install/repair only when needed; 9Router install (an existing working install — proven by a real `--version` run — is kept as-is, no reinstall, no upgrade); first-run security (dashboard login,
 API key creation, localhost-only bind; **no dashboard password rotation** — the user
 owns the dashboard password); provider credential import; live model
 resolution; provider connections; fallback + fusion combos; capacity auto-switch
