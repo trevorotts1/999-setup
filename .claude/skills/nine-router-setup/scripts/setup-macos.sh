@@ -155,6 +155,16 @@ probe_install() {
 # instruction fallback when python3 is absent. Recorded, never a hard blocker.
 probe_python3() {
   local out
+  # Guard: on a fresh Mac with no Xcode Command Line Tools installed,
+  # /usr/bin/python3 is the CLT stub — invoking it pops the "Install command
+  # line developer tools?" GUI dialog mid-setup and returns nonzero. Check
+  # for the CLT first (xcode-select -p is a fast, side-effect-free probe);
+  # only run python3 --version when the CLT (and therefore a real python3,
+  # if any) is actually present.
+  if ! xcode-select -p >/dev/null 2>&1; then
+    DEP_SUMMARY+=("$(printf '%-14s MISSING (optional — Xcode Command Line Tools not installed; profile rerun-merge falls back to a printed manual PATH line)' python3)")
+    return 0
+  fi
   if out="$(python3 --version 2>&1)"; then
     DEP_SUMMARY+=("$(printf '%-14s OK   %s' python3 "$out")")
   else
@@ -173,24 +183,18 @@ main() {
   CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)"
   DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' claude "$CLAUDE_VER" "$CLAUDE_BIN")")
 
-  # 3. Documents + API docs.md
-  API_DOCS="$("$MACOS/get-api-docs.sh")" || exit 1
-  log "Credential file: $API_DOCS"
-  parse_api_docs "$API_DOCS"
-  for k in OLLAMA_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY; do
-    [ -n "${!k:-}" ] || fail "Missing $k in $API_DOCS"
-    case "${!k}" in
-      ""|replace_with_real_key|changeme|your-key-here) fail "$k is set to placeholder text in $API_DOCS" ;;
-    esac
-  done
-  validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"
-  validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"
-
-  # 4. Dependency preflight. git/repository-acquisition is intentionally NOT
+  # 3. Dependency preflight. git/repository-acquisition is intentionally NOT
   #    probed here: this script only runs from an already-acquired checkout
   #    (Claude Code performs acquisition per AGENT_INSTALL.md, outside this
   #    script's scope). jq and openssl were audited and are unused by any
   #    script in this repository.
+  # Runs BEFORE step 4 (Documents + API docs.md) on purpose: get-api-docs.sh
+  # calls osascript internally to resolve the real Documents folder, with a
+  # silent try/fallback (2>/dev/null || true) — if osascript is broken, that
+  # call degrades quietly instead of naming the problem. Probing osascript
+  # (and the other stock tools) for real HERE means a broken tool is caught
+  # with one precise blocker instead of surfacing as a confusing downstream
+  # Documents-resolution failure.
   log "Dependency preflight..."
   probe_tool curl curl --version
   probe_tool osascript osascript -e '1+1'
@@ -233,7 +237,7 @@ main() {
   # setup-macos.sh's OWN process — the parent of everything that follows —
   # not a grandchild whose export dies on exit.
   export PATH="$NODE_DIR:$PATH"
-  DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' node "$NODE_VER" "$NODE_BIN")")
+  DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' node "$NODE_VER" "$NODE_BIN")")
   DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' npm "$NPM_VER" "$NPM_BIN")")
   # If install-node.sh had to fall back to a repo-managed runtime (no system
   # Node satisfied the minimum), that runtime is off any default PATH in a
@@ -260,6 +264,19 @@ main() {
   for line in "${DEP_SUMMARY[@]}"; do
     log "  $line"
   done
+
+  # 4. Documents + API docs.md
+  API_DOCS="$("$MACOS/get-api-docs.sh")" || exit 1
+  log "Credential file: $API_DOCS"
+  parse_api_docs "$API_DOCS"
+  for k in OLLAMA_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY; do
+    [ -n "${!k:-}" ] || fail "Missing $k in $API_DOCS"
+    case "${!k}" in
+      ""|replace_with_real_key|changeme|your-key-here) fail "$k is set to placeholder text in $API_DOCS" ;;
+    esac
+  done
+  validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"
+  validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"
 
   # 5. Start + health + first-run security
   if ! curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null; then

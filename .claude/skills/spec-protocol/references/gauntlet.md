@@ -274,6 +274,14 @@ Gate 3 is a blind comparison. The critic does not know which artifact is ours
   model name; the alias is authoritative and what it resolves to can change
   (see SKILL.md, "Fable, Sonnet, Haiku, Opus are router aliases"). On regular
   Claude Code it is a built-in tier different from the builder's.
+- **Vision-capable critic, proven before the FIRST visual verdict.** A text-only
+  model given an image does not error — it stalls or invents. Before the first
+  visual Gate 3 verdict, send the frozen reference package's probe screenshot to
+  the exact alias/tier that will judge, and require it to name one concrete
+  visible detail (a button label, a heading). If the critic cannot describe the
+  probe, route visual verdicts to a vision-capable alias (9router's vision
+  adapter, if wired — read the config) or record the verdict seat BLOCKED. Never
+  let a critic judge screenshots it was never proven to see.
 - **Labels stripped.** Both artifacts are presented without provenance (Law 49) —
   **no timestamps, no authorship markers, no "this one took 14 rounds," no builder
   identity.** The critic cannot tell ours from the reference, and must never know

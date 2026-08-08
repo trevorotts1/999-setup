@@ -11,16 +11,17 @@ questions, and they are hard to unpick later because they look like decisions.
 One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
 **State the expected question count up front, plainly:** "I will ask you about
-fifteen short questions, one at a time, and then you can walk away." (Eighteen
-is the ceiling — A1 is usually measured rather than asked, and the two fast
-paths below can fold blocks B and C into yes/no confirmations. Never promise
-fewer than you will actually ask; say "about fifteen" and mean it.)
+nineteen short questions, one at a time, and then you can walk away." (Twenty-two
+is the ceiling — A1 is usually measured rather than asked, the two fast paths
+below can fold blocks B and C into yes/no confirmations, and block D's four
+questions always run — they are the user's own decisions and have no defaults.
+Never promise fewer than you will actually ask; say "about nineteen" and mean it.)
 
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
 A8 with the recommended defaults) and the small-plan collapse (if the block-A
 answers reveal a tiny plan, blocks B and C collapse to defaults with yes/no
-confirmations).
+confirmations). Block D never collapses.
 
 **The project folder + `00-INPUT/` exist BEFORE the brainstorm starts** (Law 23).
 The entry-mode choice in SKILL.md creates them immediately, so the verbatim
@@ -110,8 +111,8 @@ not change code, so there is nothing to decide."
 
 ## Step 2 — The interview, in three blocks
 
-Eighteen questions, asked in three named blocks, in this order — eight in block A,
-four in block B, six in block C. The order is not cosmetic: the capacity answers
+Twenty-two questions, asked in four named blocks, in this order — eight in block A,
+four in block B, six in block C, four in block D. The order is not cosmetic: the capacity answers
 set what the repository and loop answers may be. Ask everything in a block, then
 move on.
 
@@ -170,6 +171,11 @@ number into this project's execution plan.
   to improve and how; then fixes.
 - **Merger** — default Haiku → GLM 5.2 (low load, fine at 8 to 10 concurrency). Ask
   which model; offer to wire it in 9router if not already wired.
+- **Comparative critic (Gate 3)** — default Opus → (read the current wiring and
+  report it). On a router, two aliases can resolve to the same underlying model.
+  Read the router config and VERIFY the builder, judge, and comparative-critic
+  seats resolve to different underlying models — different alias names prove
+  nothing.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
 is currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"). Ask if they want to change
@@ -184,7 +190,7 @@ example "1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier examp
 balance vs a rough token estimate — rough, not final). Save the VERIFIED matrix —
 never the example numbers above — to the execution plan.
 
-**Fast path 1 — the defaults offer (right after A2).** Eighteen questions is a lot
+**Fast path 1 — the defaults offer (right after A2).** Twenty-two questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
 
 > I can ask you about a dozen more questions, or you can use my recommended
@@ -213,7 +219,7 @@ their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
 live at its URL. A yes records the whole block as defaults (each marked
 "default — confirmed yes/no" rather than "their answer"). A no re-opens the block
 question by question. The collapse is the reason a tiny plan gets asked "about
-fifteen short questions" instead of eighteen-plus.
+nineteen short questions" instead of twenty-two-plus.
 
 ---
 
@@ -281,6 +287,27 @@ definition.
 
 ---
 
+### Block D — The measuring stick (the Gauntlet questions)
+
+These four are the only questions that skip every fast path and run on BOTH
+harnesses. Nothing here can be measured, and nothing here may be defaulted —
+each answer is the user's own decision (Laws 40 and 46): their taste, their
+win condition, their machine, their dislikes. Ask them ONE AT A TIME. The
+answers SEED the bar-candidates step in `research.md` — they do not replace
+it: the bar itself is still picked there, from real, validated candidates.
+
+| # | The question (plain) | What it sets |
+|---|---|---|
+| **D1** | **Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"?** Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick. | Seeds the bar-candidate list in `research.md`. A named answer is validated like every other candidate — Named, Fetchable, Comparable — and presented first among the researched ones. If it cannot actually be opened today, say so plainly and present the ones that can. It never skips the selection step. |
+| **D2** | **When your finished app stands next to that example, which is the goal?** (a) *Mine stands shoulder to shoulder with it* — as good as it, or better; a tie counts as done. (b) *The example is more like a rulebook* — mine has to meet every requirement it stands for. Pick one. It gets written down the moment we choose the example, and it does not quietly change later. | The comparison relationship — (a) is "wins or ties", (b) is "meet all requirements" (`gauntlet.md`, Section 3). Frozen into THE BAR TO HIT at bar selection, ratified in the decision register. |
+| **D3** | **To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay?** If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it. | Consent for the capture preflight (SKILL.md step 9 / `environment-sweep.md`). A "no" is recorded in the decision register; captures then use only a browser tool already PROVEN present, and if none exists, visual comparisons are reported BLOCKED — honestly, never silently skipped, never passed unproven. |
+| **D4** | **Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours?** Something that annoys you, slows you down, or gets in your way. "Nothing comes to mind" is a real answer. | The avoid-that delta. Merged with the survey's "what it got wrong — AVOID THAT" findings (`research.md`, Step 2) and frozen into the blind-comparison dimensions at bar selection: the app is judged for being LIKE the example where it is good and UNLIKE it where the user said to avoid it. |
+
+D1 to D4 keep every existing question's number — nothing above them was
+renumbered to make room (the same rule that placed A7, A8, and C0).
+
+---
+
 ## Step 3 — Write the answers down before designing anything
 
 Into the budget section of the execution plan (document 16) for block A, and into
@@ -292,6 +319,9 @@ arithmetic beside it.
 C0's answer is recorded whichever way it went, in the decision register, in the
 words it was given in. The shape test reads it; a shape test with no recorded input
 is a judgement wearing a derivation's clothes.
+
+Block D's four answers go to the decision register verbatim; D1 seeds the
+bar-candidates step in `research.md`, and D3 gates the step 9 capture download.
 
 After Step 3, the research steps run (see `research.md` — Domain research, then
 Reference apps), and only then does the current-state pass start (Law 28). The

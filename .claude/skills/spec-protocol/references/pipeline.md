@@ -229,7 +229,10 @@ ADDITION TO the ten-category score, never as a replacement:
 
 - A fresh-context critic on a DIFFERENT model from the builder and the judge opens
   the actual shipped artifact AND the frozen external benchmark, under normalized
-  conditions.
+  conditions. On a router, two aliases can resolve to the same underlying model.
+  Read the router config and VERIFY the builder, judge, and comparative-critic
+  seats resolve to different underlying models — different alias names prove
+  nothing.
 - It strips labels (the critic never sees which side is ours), randomizes order,
   and makes a binary decision: **OURS / BAR / INDETERMINATE**.
 - On ITERATE it names the single largest gap between ours and the bar — one gap,

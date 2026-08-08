@@ -168,6 +168,13 @@ a way that can itself download or hang.**
 **Step 2 — if none of the above answered, INSTALL, then prove it with a real
 capture.**
 
+Check the decision register for the D3 answer BEFORE installing. D3 = yes →
+proceed. D3 = no → do NOT download; use only a browser tool already proven
+present (real probe screenshot); if none exists, record the capture row as
+BLOCKED-BY-USER-CHOICE and report plainly that visual comparisons cannot be
+proven — never silently skip, never pass unproven. D3 unasked (older project)
+→ ask it now, before the download, in Block D's exact wording.
+
 1. Run, foreground, with a timeout:
    ```
    npx playwright install chromium
@@ -325,6 +332,7 @@ under a "Credentials and Environment" section:
 | N8N_API_KEY | ~/.claude.json MCP env | SET | n8n MCP tools reachable |
 | VERCEL_TOKEN | project-local `.env` | NOT SET | — |
 | Capture tool (Gate 3 visual bars) | Playwright (Chromium) | INSTALLED (was missing, installed via `npx playwright install chromium`, ~130 MB download) | real probe screenshot `capture-probe.png`: exit 0, file present and non-empty |
+| Vision-capable critic (Gate 3 visual verdicts) | the alias/tier that will judge | PROVEN — critic named a concrete visible detail from `capture-probe.png` | send the probe screenshot to that exact alias/tier BEFORE the first visual verdict; if it cannot describe the probe, route to a vision-capable alias (9router vision adapter, if wired) or record the seat BLOCKED — never let a critic judge screenshots it was never proven to see (`references/gauntlet.md`, Section 5) |
 
 This is data for the specification, not a finding to act on. The ask-the-user
 fallback handles any NOT SET (a credential) or genuinely-failed-to-install (a

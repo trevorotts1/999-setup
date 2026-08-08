@@ -177,7 +177,7 @@ try {
     $npmVerOut = & $NpmBin --version 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "npm at $NpmBin does not execute (--version failed): $npmVerOut" }
     $npmVerStr = ($npmVerOut | Select-Object -Last 1).ToString()
-    $DepSummary += "node            OK   v$nodeVerStr ($NodeBin)"
+    $DepSummary += "node            OK   $nodeVerStr ($NodeBin)"
     $DepSummary += "npm             OK   v$npmVerStr ($NpmBin)"
 
     Write-Log 'Verifying npm registry reachability...'
@@ -220,8 +220,11 @@ try {
     }
 
     # No dashboard password rotation: the user owns the 9Router dashboard password
-    # and manages it themselves. Use the default only to log in and configure.
-    $dashPw = '123456'
+    # and manages it themselves. Honor NINEROUTER_DASHBOARD_PW if the user has
+    # already changed it from the default (parity with setup-macos.sh:294;
+    # without this, a student who changed the password hits an unrecoverable
+    # login blocker whose own error message tells them to set this variable).
+    $dashPw = if ($env:NINEROUTER_DASHBOARD_PW) { $env:NINEROUTER_DASHBOARD_PW } else { '123456' }
 
     # 7. Live model resolution
     # Provider keys must be exported BEFORE resolve-models.mjs runs: it reads

@@ -65,7 +65,12 @@ esac"
     # while preserving everything outside the block. Replace from the FIRST
     # opening marker to the LAST closing marker so any orphaned markers left by
     # an older buggy write are collapsed into exactly one block.
-    if command -v python3 >/dev/null 2>&1; then
+    # Gate on xcode-select -p, not just `command -v python3`: on a fresh Mac
+    # with no Xcode Command Line Tools, /usr/bin/python3 is the CLT stub —
+    # its NAME resolves (command -v passes) but actually invoking it below
+    # pops the "Install command line developer tools?" GUI dialog mid-setup.
+    # xcode-select -p is a fast, side-effect-free presence check.
+    if command -v python3 >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then
       MANAGED="$(printf '%s\n%s\n%s' "$marker" "$block" "$marker_end")" \
       python3 - "$profile" "$marker" "$marker_end" <<'PY'
 import os, sys

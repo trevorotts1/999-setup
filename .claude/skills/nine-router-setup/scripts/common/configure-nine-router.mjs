@@ -150,6 +150,14 @@ async function main() {
   let resolved = {};
   try { resolved = JSON.parse(process.env.RESOLVED_MODELS || "{}"); } catch {}
 
+  // resolve-models.mjs --all never fails the process on a per-lane error - it
+  // embeds the message in .errors and exits 0, so a bad key or dead lane was
+  // previously silently swallowed here (falling through to the hardcoded
+  // fallback catalogs below), turning the "never substitute models" gate into
+  // a no-op. All three provider keys are mandatory, so any resolution error
+  // is fatal at this preflight step, named, instead of a confusing 401 later.
+  if (resolved.errors?.length) err("live catalog resolution failed: " + resolved.errors.join("; "));
+
   // Assert each lane's model is present in the resolved catalog (defense in depth).
   const has = (list, id) => Array.isArray(list) && list.includes(id);
   const dsIds = resolved.deepseek || ["deepseek-v4-flash", "deepseek-v4-pro"];

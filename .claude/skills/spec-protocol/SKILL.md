@@ -1,6 +1,6 @@
 ---
 name: spec-protocol
-description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code): runs the capacity interview on Claude-Nine (up to 18 questions, fast paths for small plans), uses built-in defaults on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 16-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline with loop engineering and multi-terminal orchestration. Ultracode gate applies to both modes (hard stop if off)."
+description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code): runs the capacity interview on Claude-Nine (up to 22 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 16-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline with loop engineering and multi-terminal orchestration. Ultracode gate applies to both modes (hard stop if off)."
 trigger: /spec-protocol
 ---
 
@@ -84,7 +84,7 @@ ONE skill, two modes. Detect the harness with real filesystem checks. Never gues
 | Signal | Harness | Mode |
 |--------|---------|------|
 | `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
-| `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview, use built-in defaults |
+| `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview except Block D, use built-in defaults |
 
 If `~/.claude-nine/` exists but none of the three 9router signals above is found,
 treat it as **regular Claude Code** and say so plainly. Report the detected
@@ -109,10 +109,21 @@ things up. You do not need to answer any setup questions." Concurrency: the harn
 allows up to 20 workflows × 16 subagents (320) to be dispatched, but only about 16
 run truly concurrent — measure yours and use 16 as the working cap.
 
+**The four questions no default can answer.** Even on the defaults path, four
+answers belong to the user alone — their taste, their win condition, their
+machine, their dislikes — and inventing any of them would be the skill
+deciding the user's own intent (Laws 40, 46). Ask the four Block D questions
+from `references/interview.md` (D1 gold-standard example, D2 as-good-as vs
+rulebook, D3 the ~130 MB screenshot-tool download consent, D4 the avoid-that
+list), one at a time, in the same plain wording, right after announcing the
+defaults. Record each in the decision register. D1 seeds the bar-candidates
+step in `references/research.md`; D3 gates the step 9 capture download. Block
+D is the only part of the capacity interview that runs on BOTH harnesses.
+
 ### Claude-Nine — run the capacity interview
 
 9router-routed models. **Run the full capacity interview** before building — the
-v4 section-4.5 interview (18 questions, three blocks), adapted for model
+v4 section-4.5 interview (22 questions, four blocks), adapted for model
 intelligence. See `references/interview.md`. Measure what you can (repo count,
 branch, code state — go look); ask only what no command can reveal (subscription
 tier, effort setting, which models they want).
@@ -124,6 +135,7 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 | App builder | Sonnet → DeepSeek v4 Pro | Up to 500 subagents; cap at 20 workflows × 16 = 320. Recommend DeepSeek direct ($20+) for the swarm. |
 | QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
+| Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. |
 
 For each role: read the 9router config and report the current wiring ("Haiku is
 currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"); ask if the user wants to change
@@ -207,11 +219,11 @@ your understanding in one paragraph before proceeding. Then proceed.
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** Up to eighteen questions, three
-   blocks (capacity, repositories, loop shape), one at a time, with the expected
-   count stated up front ("about fifteen short questions, then you can walk
+6. **Capacity interview (Claude-Nine only).** Up to twenty-two questions, four
+   blocks (capacity, repositories, loop shape, the measuring stick), one at a time, with the expected
+   count stated up front ("about nineteen short questions, then you can walk
    away"). The two fast paths can shrink it: the archetype defaults offer and the
-   small-plan collapse. Measure what you can (on the detected-harness path, A1 is
+   small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. See
    `references/interview.md`.
 7. **Domain research (BOTH modes).** Dispatch reader agents (the conductor never

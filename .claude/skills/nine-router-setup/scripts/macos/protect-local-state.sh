@@ -22,14 +22,22 @@ set_token() {
   # No trailing keychain-path argument: `security` then targets the user's
   # default (login) keychain deterministically. Passing a directory here is
   # ambiguous and must not be relied on. -U updates in place; never duplicates.
+  # -T /usr/bin/security (not -T ""): an empty -T grants NO trusted
+  # applications, so the very first read (get-token below, the launcher, and
+  # verify-macos.sh) pops the macOS "security wants to use your confidential
+  # information" Allow/Deny dialog — mid-setup this looks like a hang, and a
+  # non-interactive/SSH session gets a silent Deny (empty token). Pre-
+  # authorizing the /usr/bin/security CLI itself matches the Windows DPAPI
+  # CurrentUser threat model (any user-context process can decrypt there)
+  # while eliminating the prompt entirely for this single-user student Mac.
   if security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-       -w "$token" -U -T "" >/dev/null 2>&1; then
+       -w "$token" -U -T /usr/bin/security >/dev/null 2>&1; then
     log "Keychain item stored in the default login keychain."
   else
     # Surface the real error this time (no stderr suppression) so the caller
     # gets one precise Keychain blocker instead of a silent failure.
     security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-         -w "$token" -U -T ""
+         -w "$token" -U -T /usr/bin/security
   fi
   # Drop the token from the environment immediately.
   unset token
