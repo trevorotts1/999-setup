@@ -13,6 +13,8 @@ Claude Code
     +--> Ollama Cloud
     |
     +--> Agnes AI
+    |
+    +--> OpenRouter (optional)
 ```
 
 - **`claude`** = normal Claude Code, Anthropic-direct, untouched by this repository.
@@ -26,7 +28,7 @@ Claude Code
 | `claude` | Normal Claude Code CLI | Installed by the user via the official installer |
 | `9router` | Local gateway / model router | npm global (Windows) or user-local npm prefix (macOS); listens on `http://localhost:20128` |
 | `claude-nine` | Launcher that starts 9Router and launches Claude Code through it | `%LOCALAPPDATA%\BlackCEO\999\bin\claude-nine.cmd` (+`.ps1`) on Windows; `$HOME/.local/bin/claude-nine` on macOS |
-| Provider credentials | DeepSeek, Ollama Cloud, Agnes keys | Read once from `<Documents>/API docs.md`, loaded into 9Router's protected provider storage |
+| Provider credentials | DeepSeek, Ollama Cloud, Agnes keys, and optionally OpenRouter | Read once from `<Documents>/API docs.md`, loaded into 9Router's protected provider storage |
 | Routed-session state | Local router API key + resolved route names | Windows: DPAPI-protected state under `%LOCALAPPDATA%\BlackCEO\999\`; macOS: Keychain item (`service: BlackCEO-999`, `account: 9router-api-token`) + mode-600 state file |
 | Personal skill | `nine-router-setup` | `<Claude config root>/skills/nine-router-setup/` (shared by `claude` and `claude-nine`) |
 
@@ -58,7 +60,8 @@ None of these are persisted to global Claude settings or shell startup files. Pl
 3. **Node check** — repair only when below Node 20+ / npm 10+.
 4. **9Router install** → first-run security (loopback bind, dashboard login, API key).
    No dashboard password rotation — the user owns the dashboard password.
-5. **Provider import** — keys into 9Router provider storage; never printed.
+5. **Provider import** — keys into 9Router provider storage; never printed. (OpenRouter
+   only when the optional key is present.)
 6. **Live model resolution** — provider catalogs are queried; exact IDs used.
 7. **Combos** — fallback + fusion via the management API.
 8. **Capacity auto-switch** — vision only (verified).

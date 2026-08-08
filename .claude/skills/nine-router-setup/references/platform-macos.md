@@ -111,7 +111,7 @@ rather than bypassing privacy controls.
    BlackCEO-999 -a 9router-api-token -w`), exports routing vars only into the child, and
    execs the same `claude` binary.
 
-Provider API keys (DeepSeek/Ollama/Agnes) are **not** stored in the launcher Keychain item —
+Provider API keys (DeepSeek/Ollama/Agnes/OpenRouter) are **not** stored in the launcher Keychain item —
 they belong inside 9Router's provider storage.
 
 ## Idempotency notes

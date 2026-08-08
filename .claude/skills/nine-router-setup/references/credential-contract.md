@@ -19,6 +19,7 @@ Windows; `osascript`-resolved on macOS), never a hardcoded `C:\Users\<name>\Docu
 OLLAMA_API_KEY=replace_with_real_key
 DEEPSEEK_API_KEY=replace_with_real_key
 AGNES_API_KEY=replace_with_real_key
+OPENROUTER_API_KEY=replace_with_real_key
 OLLAMA_PLAN=pro
 AGNES_PLAN=starter
 ```
@@ -28,6 +29,7 @@ AGNES_PLAN=starter
 | `OLLAMA_API_KEY` | yes | any non-empty, non-placeholder string |
 | `DEEPSEEK_API_KEY` | yes | any non-empty, non-placeholder string |
 | `AGNES_API_KEY` | yes | any non-empty, non-placeholder string |
+| `OPENROUTER_API_KEY` | **optional** | real key, or placeholder/absent = skip OpenRouter |
 | `OLLAMA_PLAN` | yes | `free`, `pro`, `max` |
 | `AGNES_PLAN` | yes | `starter`, `plus`, `pro` |
 
@@ -51,6 +53,7 @@ discover the plan by saturating Ollama Cloud with concurrent requests.
 - Malformed (no valid lines, or a missing required key) → report which key is missing by
   name; never print a value.
 - Invalid plan value → report the allowed set.
+- A missing/placeholder OPTIONAL key is not malformed — it means "not provided."
 
 ## Platform protection
 

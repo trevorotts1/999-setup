@@ -138,7 +138,12 @@ Creates an API-key provider connection.
 ```
 
 - `provider` is normalized via `normalizeProviderId` (accepts the built-in slug `deepseek`,
-  `ollama`, or a custom-node id).
+  `ollama`, `openrouter`, or a custom-node id).
+- `openrouter` (verified against installed 9router 0.5.50 registry): `authType` `apikey`,
+  transport `thinkingFormat` `openai`, a live `modelsFetcher` (type `openrouter-free`) against
+  `https://openrouter.ai/api/v1/models`, and `passthroughModels: true` — every catalog model
+  routes as `openrouter/<vendor>/<model>` once the connection exists. 9Router's own dashboard
+  provider validator uses `GET https://openrouter.ai/api/v1/auth/key`.
 - For a built-in provider, `apiKey` is required (except `ollama-local`).
 - For an **OpenAI-compatible** custom node, the node must already exist (see below) and the
   connection's `providerSpecificData` (prefix/baseUrl/nodeName) is pulled from the node

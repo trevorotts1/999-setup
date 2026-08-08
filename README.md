@@ -61,11 +61,14 @@ keys. Replace the placeholder text with real values:
 OLLAMA_API_KEY=replace_with_real_key
 DEEPSEEK_API_KEY=replace_with_real_key
 AGNES_API_KEY=replace_with_real_key
+OPENROUTER_API_KEY=replace_with_real_key
 OLLAMA_PLAN=pro
 AGNES_PLAN=starter
 ```
 
 Valid `OLLAMA_PLAN`: `free`, `pro`, `max`. Valid `AGNES_PLAN`: `starter`, `plus`, `pro`.
+`OPENROUTER_API_KEY` is optional — leave the placeholder (or omit the line) and setup
+skips OpenRouter; add a real key and setup wires it.
 
 Your keys never leave this machine. They are read once, loaded into the local router,
 and never printed.

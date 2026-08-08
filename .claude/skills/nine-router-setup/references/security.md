@@ -31,9 +31,9 @@ tunnelDashboardAccess = false
 
 ## Secret handling
 
-- Provider API keys (DeepSeek, Ollama, Agnes) live inside 9Router's protected provider
-  storage after setup. They are **not** stored in the `claude-nine` launcher state or the
-  macOS Keychain item used by the launcher.
+- Provider API keys (DeepSeek, Ollama, Agnes, and optionally OpenRouter) live inside
+  9Router's protected provider storage after setup. They are **not** stored in the
+  `claude-nine` launcher state or the macOS Keychain item used by the launcher.
 - The **local 9Router API key** is the only router secret in launcher state:
   - Windows: DPAPI/current-user protection.
   - macOS: Keychain item (`service: BlackCEO-999`, `account: 9router-api-token`) via the

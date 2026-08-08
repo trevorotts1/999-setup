@@ -76,7 +76,7 @@ parse_api_docs() {
         key="$(printf '%s' "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         case "$key" in
-          OLLAMA_API_KEY|DEEPSEEK_API_KEY|AGNES_API_KEY|OLLAMA_PLAN|AGNES_PLAN)
+          OLLAMA_API_KEY|DEEPSEEK_API_KEY|AGNES_API_KEY|OPENROUTER_API_KEY|OLLAMA_PLAN|AGNES_PLAN)
             export "$key=$value" ;;
         esac
         ;;
@@ -286,6 +286,16 @@ main() {
   validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"
   validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"
 
+  # OPENROUTER_API_KEY is OPTIONAL: absent/placeholder = skip the lane, never a blocker.
+  case "${OPENROUTER_API_KEY:-}" in
+    ""|replace_with_real_key|changeme|your-key-here) export OPENROUTER_API_KEY="" ;;
+  esac
+  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    log "OpenRouter: optional key found - lane will be wired"
+  else
+    log "OpenRouter: no OPENROUTER_API_KEY in API docs.md - lane will be skipped"
+  fi
+
   # 5. Start + health + first-run security
   if ! curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null; then
     mkdir -p "$HOME/Library/Logs/BlackCEO-999"
@@ -307,6 +317,7 @@ main() {
     DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
     OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
     AGNES_API_KEY="${AGNES_API_KEY:-}" \
+    OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
     "$NODE_BIN" "$COMMON/resolve-models.mjs" --all
   )" || fail "live model resolution failed"
   log "Live catalogs resolved."
@@ -318,6 +329,7 @@ main() {
     DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
     OLLAMA_API_KEY="${OLLAMA_API_KEY:-}" \
     AGNES_API_KEY="${AGNES_API_KEY:-}" \
+    OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
     OLLAMA_PLAN="$OLLAMA_PLAN" \
     AGNES_PLAN="$AGNES_PLAN" \
     DEEPSEEK_FLASH_VARIANT="${DEEPSEEK_FLASH_VARIANT:-}" \
@@ -392,12 +404,37 @@ main() {
   export CLAUDE_NINE_SOURCE="$REPO_ROOT/launchers/macos/claude-nine"
   "$MACOS/install-claude-nine.sh"
 
+  # Extract verified-probe results from the config report NOW (moved ahead of
+  # the completion report so OPENROUTER_PROBE_ROUTE is available to the smoke
+  # tests below) — restructured to parse the JSON once into `rep`.
+  VERIFIED_EXPORTS="$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e '
+    let s="";
+    process.stdin.on("data",c=>s+=c).on("end",()=>{
+      let rep={};
+      try { rep = JSON.parse(s) || {}; } catch {}
+      const v = rep.verified || {};
+      const esc=(x)=>JSON.stringify(String(x==null?"unknown":x));
+      process.stdout.write(
+        "V_FABLE="+esc(v.fable)+"\n"+
+        "V_OPUS="+esc(v.opus)+"\n"+
+        "V_SONNET="+esc(v.sonnet)+"\n"+
+        "V_HAIKU="+esc(v.haiku)+"\n"+
+        "V_AGNES="+esc(v.agnes)+"\n"+
+        "V_OPENROUTER="+esc(v.openrouter)+"\n"+
+        "OPENROUTER_PROBE_ROUTE="+esc(rep.openrouterProbe||"")+"\n"
+      );
+    })' 2>/dev/null)" || VERIFIED_EXPORTS=""
+  eval "$VERIFIED_EXPORTS"
+  : "${V_FABLE:=unknown}"; : "${V_OPUS:=unknown}"; : "${V_SONNET:=unknown}"; : "${V_HAIKU:=unknown}"; : "${V_AGNES:=unknown}"; : "${V_OPENROUTER:=unknown}"
+  : "${OPENROUTER_PROBE_ROUTE:=}"
+
   # 10. Smoke tests. This MUST execute the launcher itself (not just check the
   #     file exists and call the router directly) so a launcher that fails to
   #     start the router is caught here, not on the client's next boot.
   log "Running smoke tests..."
   NINEROUTER_BASE="$BASE" NINEROUTER_TOKEN="$("$MACOS/protect-local-state.sh" get-token)" \
     OLLAMA_PLAN="$OLLAMA_PLAN" \
+    OPENROUTER_PROBE_ROUTE="$OPENROUTER_PROBE_ROUTE" \
     "$NODE_BIN" "$COMMON/test-nine-router.mjs" || fail "Smoke tests failed"
 
   log "Executing claude-nine end-to-end..."
@@ -411,22 +448,8 @@ main() {
   #     fail()-gated step above it (Claude Code, Node.js, npm, 9Router) or
   #     derived from report.verified / an actual filesystem check right here
   #     — never a hardcoded "OK" for something that was never probed.
-  VERIFIED_EXPORTS="$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e '
-    let s="";
-    process.stdin.on("data",c=>s+=c).on("end",()=>{
-      let v={};
-      try { v = (JSON.parse(s).verified)||{}; } catch {}
-      const esc=(x)=>JSON.stringify(String(x==null?"unknown":x));
-      process.stdout.write(
-        "V_FABLE="+esc(v.fable)+"\n"+
-        "V_OPUS="+esc(v.opus)+"\n"+
-        "V_SONNET="+esc(v.sonnet)+"\n"+
-        "V_HAIKU="+esc(v.haiku)+"\n"+
-        "V_AGNES="+esc(v.agnes)+"\n"
-      );
-    })' 2>/dev/null)" || VERIFIED_EXPORTS=""
-  eval "$VERIFIED_EXPORTS"
-  : "${V_FABLE:=unknown}"; : "${V_OPUS:=unknown}"; : "${V_SONNET:=unknown}"; : "${V_HAIKU:=unknown}"; : "${V_AGNES:=unknown}"
+  #     (V_FABLE..V_OPENROUTER and OPENROUTER_PROBE_ROUTE were already
+  #     extracted above, ahead of the smoke tests.)
 
   # Ollama Cloud serves both the sonnet (glm-5.2) and haiku (kimi-k2.6) lanes —
   # "OK" only when BOTH verified probes came back ok.
@@ -477,6 +500,7 @@ npm: OK
 DeepSeek Direct: $V_FABLE
 Ollama Cloud: $V_OLLAMA_LINE
 Agnes AI: $V_AGNES
+OpenRouter (optional): $V_OPENROUTER
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)

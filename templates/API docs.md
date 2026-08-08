@@ -1,5 +1,7 @@
 OLLAMA_API_KEY=replace_with_real_key
 DEEPSEEK_API_KEY=replace_with_real_key
 AGNES_API_KEY=replace_with_real_key
+OPENROUTER_API_KEY=replace_with_real_key
 OLLAMA_PLAN=pro
 AGNES_PLAN=starter
+# OPENROUTER_API_KEY is optional - leave the placeholder to skip OpenRouter

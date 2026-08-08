@@ -73,7 +73,7 @@ function Read-ApiDocs([string]$file) {
         if ($line.StartsWith('#')) { return }
         if ($line -match '^([A-Za-z0-9_]+)\s*=\s*(.*)$') {
             $k = $matches[1]; $v = $matches[2].Trim()
-            if ($k -in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY','OLLAMA_PLAN','AGNES_PLAN')) {
+            if ($k -in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY','OPENROUTER_API_KEY','OLLAMA_PLAN','AGNES_PLAN')) {
                 $map[$k] = $v
             }
         }
@@ -143,6 +143,12 @@ try {
     }
     Validate-Plan $creds['OLLAMA_PLAN'] 'free pro max' 'OLLAMA_PLAN'
     Validate-Plan $creds['AGNES_PLAN'] 'starter plus pro' 'AGNES_PLAN'
+
+    # OPENROUTER_API_KEY is OPTIONAL: absent/placeholder = skip the lane, never a blocker.
+    $openrouterKey = $creds['OPENROUTER_API_KEY']
+    if (-not $openrouterKey -or $openrouterKey -in @('replace_with_real_key','changeme','your-key-here')) { $openrouterKey = '' }
+    if ($openrouterKey) { Write-Log 'OpenRouter: optional key found - lane will be wired' }
+    else { Write-Log 'OpenRouter: no OPENROUTER_API_KEY in API docs.md - lane will be skipped' }
 
     # 4. Dependency preflight. git/repository-acquisition is intentionally NOT
     #    probed here: this script only runs from an already-acquired
@@ -246,6 +252,7 @@ try {
     $env:DEEPSEEK_API_KEY = $creds['DEEPSEEK_API_KEY']
     $env:OLLAMA_API_KEY = $creds['OLLAMA_API_KEY']
     $env:AGNES_API_KEY = $creds['AGNES_API_KEY']
+    $env:OPENROUTER_API_KEY = $openrouterKey
     $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
     $env:AGNES_PLAN = $creds['AGNES_PLAN']
     Write-Log 'Resolving live provider catalogs...'
@@ -328,7 +335,7 @@ else {
         Write-Blocker "Local 9Router API key had an unexpected shape; refusing to store it."
     }
     & (Join-Path $Win 'Protect-LocalState.ps1') -Action set-token -Token $token
-    Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY,Env:OPENROUTER_API_KEY -ErrorAction SilentlyContinue
 
     # 9. Write routing state (non-secret).
     $routes = $report.resolvedRoutes
@@ -368,9 +375,11 @@ else {
     $env:NINEROUTER_BASE = $Base
     $env:NINEROUTER_TOKEN = & (Join-Path $Win 'Protect-LocalState.ps1') -Action get-token
     $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
+    $env:OPENROUTER_PROBE_ROUTE = if ($report.openrouterProbe) { $report.openrouterProbe } else { '' }
     & $NodeBin (Join-Path $Common 'test-nine-router.mjs')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'Smoke tests failed' }
     Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:OPENROUTER_PROBE_ROUTE -ErrorAction SilentlyContinue
 
     # Launcher end-to-end: a real routed request through claude-nine. Use the
     # absolute installed path, not a bare PATH lookup — a fresh shell's PATH
@@ -394,6 +403,7 @@ else {
     $reserved = if ($creds['OLLAMA_PLAN'] -eq 'pro') { 1 } else { 0 }
     $vFable = if ($report.verified.fable) { $report.verified.fable } else { 'unknown' }
     $vAgnes = if ($report.verified.agnes) { $report.verified.agnes } else { 'unknown' }
+    $vOpenRouter = if ($report.verified.openrouter) { $report.verified.openrouter } else { 'unknown' }
     @"
 
 999 SETUP: COMPLETE
@@ -410,6 +420,7 @@ npm: OK
 DeepSeek Direct: $vFable
 Ollama Cloud: OK
 Agnes AI: $vAgnes
+OpenRouter (optional): $vOpenRouter
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)

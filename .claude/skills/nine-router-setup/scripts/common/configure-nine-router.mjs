@@ -12,6 +12,7 @@
 //   DEEPSEEK_API_KEY           (optional — skips DeepSeek if absent)
 //   OLLAMA_API_KEY             (optional — skips Ollama if absent)
 //   AGNES_API_KEY              (optional — skips Agnes if absent)
+//   OPENROUTER_API_KEY         (optional — skips OpenRouter if absent; failures never block the other providers)
 //   OLLAMA_PLAN                free|pro|max
 //   AGNES_PLAN                 starter|plus|pro
 //   DEEPSEEK_FLASH_VARIANT     (optional) ollama-0731 override
@@ -145,6 +146,27 @@ async function main() {
     }
   }
 
+  // OpenRouter: OPTIONAL. Built-in apikey provider (slug "openrouter", verified
+  // 0.5.50: thinkingFormat openai, live modelsFetcher, passthroughModels) — every
+  // catalog model routes as openrouter/<vendor>/<model> once this connection exists.
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      const existing = providers.find((p) => p.provider === "openrouter");
+      if (existing) {
+        await client.updateProvider(existing.id, { provider: "openrouter", apiKey: openrouterKey, name: "OpenRouter" });
+        report.providers.openrouter = "reused (key refreshed)";
+      } else {
+        await client.createProvider({ provider: "openrouter", apiKey: openrouterKey, name: "OpenRouter" });
+        report.providers.openrouter = "created";
+      }
+    } catch (e) {
+      report.providers.openrouter = `error: ${e.message}`;
+    }
+  } else {
+    report.providers.openrouter = "skipped (no OPENROUTER_API_KEY)";
+  }
+
   // 5. Route strings are built from the provider IDs validated against the live
   //    catalogs (resolve-models.mjs ran first). Use the exact returned IDs.
   let resolved = {};
@@ -154,9 +176,14 @@ async function main() {
   // embeds the message in .errors and exits 0, so a bad key or dead lane was
   // previously silently swallowed here (falling through to the hardcoded
   // fallback catalogs below), turning the "never substitute models" gate into
-  // a no-op. All three provider keys are mandatory, so any resolution error
-  // is fatal at this preflight step, named, instead of a confusing 401 later.
-  if (resolved.errors?.length) err("live catalog resolution failed: " + resolved.errors.join("; "));
+  // a no-op. DeepSeek/Ollama/Agnes are mandatory, so any resolution error on
+  // those three is fatal at this preflight step, named, instead of a confusing
+  // 401 later. OpenRouter is OPTIONAL: its resolution error is captured and
+  // reported honestly on its own line later, never fatal here.
+  const allErrors = resolved.errors || [];
+  const openrouterResolveError = allErrors.find((m) => m.startsWith("openrouter:")) || "";
+  const mandatoryErrors = allErrors.filter((m) => !m.startsWith("openrouter:"));
+  if (mandatoryErrors.length) err("live catalog resolution failed: " + mandatoryErrors.join("; "));
 
   // Assert each lane's model is present in the resolved catalog (defense in depth).
   const has = (list, id) => Array.isArray(list) && list.includes(id);
@@ -296,6 +323,34 @@ async function main() {
     }
   }
 
+  // OpenRouter verification probe: OPTIONAL, account-condition-aware. 402/429
+  // mean auth succeeded and the request routed — that is a correctly configured
+  // provider, not a setup failure, so it is reported as an account condition,
+  // never an error.
+  let openrouterProbe = "";
+  if (!openrouterKey) {
+    report.verified.openrouter = "skipped - no OPENROUTER_API_KEY found in API docs.md";
+  } else if (openrouterResolveError) {
+    report.verified.openrouter = `error: ${openrouterResolveError}`;
+  } else if (String(report.providers.openrouter).startsWith("error")) {
+    report.verified.openrouter = report.providers.openrouter;
+  } else {
+    const freeIds = resolved.openrouter?.free || [];
+    if (freeIds.length === 0) {
+      report.verified.openrouter = "error: no :free model available to verify with";
+    } else {
+      openrouterProbe = `openrouter/${freeIds[0]}`;   // live-discovered, never hardcoded
+      try {
+        const r = await client.chat(openrouterProbe, { maxTokens: 16, prompt: "ok" });
+        if (r.status === 200) report.verified.openrouter = `ok (via ${openrouterProbe})`;
+        else if (r.status === 402) report.verified.openrouter = "account: HTTP 402 insufficient credits - provider configured correctly, not a setup failure";
+        else if (r.status === 429) report.verified.openrouter = "account: HTTP 429 free-tier rate limit - provider configured correctly, not a setup failure";
+        else report.verified.openrouter = `HTTP ${r.status}`;
+      } catch (e) { report.verified.openrouter = `error: ${e.message}`; }
+    }
+  }
+  report.openrouterProbe = openrouterProbe;
+
   report.concurrency = planToConcurrency(PLAN);
   report.dashboardUrl = `${BASE.replace(/\/+$/, "")}`;
   report.notes = [
@@ -306,6 +361,11 @@ async function main() {
     "Audio auto-switch disabled (Gemma 4 31B has no audio input).",
     "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
   ];
+  if (openrouterKey) {
+    report.notes.push(
+      "OpenRouter wired as optional fourth provider (all catalog models route via openrouter/<vendor>/<model>; only the :free lane is verified)."
+    );
+  }
 
   // Machine-readable output for the orchestrators: a sentinel line followed by ONE
   // compact JSON line. Line-based extractors on both platforms parse exactly this

@@ -6,6 +6,7 @@
 const DEEPSEEK_MODELS_URL = "https://api.deepseek.com/models";
 const OLLAMA_TAGS_URL = "https://ollama.com/api/tags";
 const AGNES_BASE = "https://apihub.agnes-ai.com/v1";
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export const REQUIRED_DEEPSEEK = ["deepseek-v4-flash", "deepseek-v4-pro"];
 export const REQUIRED_OLLAMA = ["glm-5.2", "kimi-k2.6", "minimax-m3", "gemma4:31b"];
@@ -106,6 +107,21 @@ export async function resolveAgnes(apiKey) {
 }
 
 /**
+ * Resolve OpenRouter (OPTIONAL provider). Validates the key via /auth/key,
+ * then live-discovers the catalog and its :free models. Never hardcodes IDs.
+ * @returns {Promise<{free:string[], total:number}>}
+ */
+export async function resolveOpenRouter(apiKey) {
+  const auth = await fetch(`${OPENROUTER_BASE}/auth/key`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (auth.status === 401 || auth.status === 403) throw new Error(`OpenRouter credential rejected (HTTP ${auth.status})`);
+  const data = await fetchJson(`${OPENROUTER_BASE}/models`, { Authorization: `Bearer ${apiKey}` });
+  const ids = (data?.data || []).map((m) => m.id).filter(Boolean);
+  const free = ids.filter((id) => id.endsWith(":free"));
+  if (free.length === 0) throw new Error("live OpenRouter catalog returned no :free models");
+  return { free, total: ids.length };
+}
+
+/**
  * Resolve all three catalogs. Returns a single report object. Never prints keys.
  */
 export async function resolveAll(credentials) {
@@ -120,6 +136,9 @@ export async function resolveAll(credentials) {
   }
   if (credentials.agnes) {
     report.agnes = await resolveAgnes(credentials.agnes);
+  }
+  if (credentials.openrouter) {
+    report.openrouter = await resolveOpenRouter(credentials.openrouter);
   }
   return report;
 }
@@ -141,6 +160,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     } else if (arg === "--agnes" && process.env.AGNES_API_KEY) {
       const ids = await resolveAgnes(process.env.AGNES_API_KEY);
       console.log(`Agnes OK (${ids.length} models)`);
+    } else if (arg === "--openrouter" && process.env.OPENROUTER_API_KEY) {
+      const r = await resolveOpenRouter(process.env.OPENROUTER_API_KEY);
+      console.log(`OpenRouter OK (${r.free.length} free of ${r.total} models)`);
     } else if (arg === "--all") {
       const out = {};
       const errors = [];
@@ -158,6 +180,10 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         try { out.agnes = await resolveAgnes(process.env.AGNES_API_KEY); }
         catch (e) { errors.push(`agnes: ${e.message}`); }
       }
+      if (process.env.OPENROUTER_API_KEY) {
+        try { out.openrouter = await resolveOpenRouter(process.env.OPENROUTER_API_KEY); }
+        catch (e) { errors.push(`openrouter: ${e.message}`); }
+      }
       if (errors.length) {
         // Partial resolution is acceptable when a lane is optional; report which
         // lanes failed so the caller can skip them.
@@ -165,7 +191,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
       }
       process.stdout.write(JSON.stringify(out));
     } else {
-      console.error("usage: DEEPSEEK_API_KEY=... node resolve-models.mjs --deepseek|--ollama|--agnes|--all");
+      console.error("usage: DEEPSEEK_API_KEY=... node resolve-models.mjs --deepseek|--ollama|--agnes|--openrouter|--all");
       process.exit(2);
     }
   };

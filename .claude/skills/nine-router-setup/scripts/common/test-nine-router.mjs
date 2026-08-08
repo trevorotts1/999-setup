@@ -9,7 +9,11 @@
 //   OLLAMA_PLAN          free|pro|max (derives concurrency expectation)
 //
 // Optional env to skip provider lanes:
-//   SKIP_DEEPSEEK=1  SKIP_OLLAMA=1  SKIP_AGNES=1  SKIP_FUSION=1
+//   SKIP_DEEPSEEK=1  SKIP_OLLAMA=1  SKIP_AGNES=1  SKIP_FUSION=1  SKIP_OPENROUTER=1
+//
+// Optional OpenRouter lane (fourth, optional provider):
+//   OPENROUTER_PROBE_ROUTE   a live-discovered "openrouter/<vendor>/<model>:free"
+//                            route to probe; empty/absent = skip the lane (exit 0)
 
 import { NineRouterClient } from "./nine-router-api.mjs";
 
@@ -75,6 +79,21 @@ async function main() {
     check("Agnes 2.5 Flash route", ag.status === 200, `HTTP ${ag.status}`);
   } else {
     console.log("SKIP  Agnes lane (SKIP_AGNES=1)");
+  }
+
+  // OpenRouter lane: OPTIONAL fourth provider. No probe route (key absent,
+  // resolution/provider error, or no :free model) = skip, still exit 0.
+  const orRoute = process.env.OPENROUTER_PROBE_ROUTE || "";
+  if (process.env.SKIP_OPENROUTER || !orRoute) {
+    console.log("SKIP  OpenRouter lane (optional - no OPENROUTER_API_KEY / no probe route)");
+  } else {
+    const or = await client.chat(orRoute, { maxTokens: 16, prompt: "ok" });
+    if (or.status === 402 || or.status === 429) {
+      passes++;
+      console.log(`PASS  OpenRouter route (account condition HTTP ${or.status}: auth accepted, request routed - insufficient credits/rate limit is an ACCOUNT state, not a config failure)`);
+    } else {
+      check("OpenRouter :free route", or.status === 200, `HTTP ${or.status} via ${orRoute}`);
+    }
   }
 
   // 2. Thinking probes — max where verified; downgrade per-route and record.

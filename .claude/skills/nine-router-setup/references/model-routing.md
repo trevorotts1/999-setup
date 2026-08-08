@@ -14,6 +14,7 @@
 | Vision auto-switch | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | Must pass image smoke test |
 | PDF auto-switch | — | — | — | Disabled until verified end-to-end |
 | Audio auto-switch | — | — | — | Disabled; Gemma 4 31B has no audio input |
+| Selectable (optional) | OpenRouter | any live-catalog model via `openrouter/<vendor>/<model>`; `:free` lane verified | `thinkingFormat` openai (built-in) | never in default combos/lanes |
 
 ## Provider model IDs
 
@@ -77,6 +78,34 @@ baseUrl: https://apihub.agnes-ai.com/v1
 
 Model: `agnes-2.5-flash`. Do not substitute `agnes-2.0-flash` or another model without
 explicit user approval.
+
+### OpenRouter (optional)
+
+Built-in `apikey` provider (slug `openrouter`, verified against installed 9router 0.5.50):
+
+```text
+transport baseUrl: https://openrouter.ai/api/v1/chat/completions
+auth-key endpoint: https://openrouter.ai/api/v1/auth/key
+live catalog:      https://openrouter.ai/api/v1/models
+thinkingFormat:    openai (native, no custom-node translation needed)
+passthroughModels: true — every catalog model routes as openrouter/<vendor>/<model>
+                    the moment the connection exists; there is no per-model
+                    "register" endpoint in the management API.
+```
+
+OpenRouter joins **none** of the default combos or Claude lanes (Fable/Opus/Sonnet/Haiku/
+Subagent/Vision), because free-tier caps (200 req/day, 429s) would poison fallback lanes
+clients depend on. It is an additional selectable provider only.
+
+Only the live-discovered `:free` lane is verified (a zero-credit account still passes;
+paid models are never probed — that would 402 on a zero-credit account and could burn
+client money otherwise). A 402 (insufficient credits) or 429 (free-tier rate limit) on the
+verification probe means the credential is valid and the request routed correctly — this
+is an **account condition**, reported as such, and still counts as a passing setup, never a
+config failure.
+
+Credential rejection (`HTTP 401`/`403` from `/auth/key`) is the only OpenRouter condition
+that is reported as an error — and even then it never blocks DeepSeek/Ollama/Agnes.
 
 ## The DeepSeek Flash 0731 correction
 
