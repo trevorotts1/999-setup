@@ -28,7 +28,7 @@ SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
 COMMON="$SCRIPTS/common"
 MACOS="$SCRIPTS/macos"
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 
 PORT="${NINEROUTER_PORT:-20128}"
 BASE="http://127.0.0.1:$PORT"

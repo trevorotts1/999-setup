@@ -39,6 +39,13 @@ Before anything else, say this to the user in their own register:
 > left off. See `references/if-the-power-goes-out.md` — write a copy into the
 > project folder as `IF-THE-POWER-GOES-OUT.md` beside the launch command, so the
 > client can find it without digging into the skill.
+>
+> **If a piece is correct and built exactly as you asked, but is not yet as good
+> as the example you picked to measure it against** — that gets written down for
+> you too, plainly, as "not yet as good as the example you picked — here is the
+> one gap." You can accept it as it is, ask for one more round on just that gap,
+> or pick an easier example to measure against. Nothing sits waiting for a win it
+> may never score.
 
 ---
 
@@ -49,13 +56,22 @@ anything else, check whether ultracode is ON. A system-reminder in this turn
 confirms ultracode's state when it is on.
 
 1. **Ultracode ON** → continue to harness detection.
-2. **Ultracode OFF or unconfirmed** → STOP. Tell the user plainly:
+2. **Ultracode OFF or unconfirmed** → STOP. Tell the user plainly, with the exact
+   steps to turn it on — do not just name the setting, show how to set it:
 
    > This skill needs ultracode (multi-agent orchestration) turned on — it builds
    > your app with workflows and subagents working in parallel, and it cannot run
-   > inline. Turn ultracode on and run `/spec-protocol` again. Nothing has run
-   > yet. (If you do not know how to turn it on, say so and I will help you find
-   > the setting.)
+   > inline. Nothing has run yet. Here is exactly how to turn it on:
+   >
+   > 1. **Recommended — for the whole session:** type `/effort ultracode` and
+   >    press enter (this build runs for hours, so the session-wide switch is
+   >    the one you want). Then run `/spec-protocol` again.
+   > 2. **Or, just for one message:** put the word `ultracode` in the same
+   >    message as the command — for example, type `ultracode /spec-protocol`
+   >    instead of `/spec-protocol` by itself. This only covers that one turn.
+   >
+   > Either way, a small note will appear confirming ultracode turned on — that
+   > is what lets me check again and continue.
 
    No degraded inline run. No partial run. No "let me try anyway." Hard stop.
 
@@ -67,7 +83,7 @@ ONE skill, two modes. Detect the harness with real filesystem checks. Never gues
 
 | Signal | Harness | Mode |
 |--------|---------|------|
-| `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:20128/v1`); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
+| `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
 | `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview, use built-in defaults |
 
 If `~/.claude-nine/` exists but none of the three 9router signals above is found,
@@ -111,14 +127,26 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 
 For each role: read the 9router config and report the current wiring ("Haiku is
 currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"); ask if the user wants to change
-or needs wiring help. Check context windows (web-research the Ollama Cloud models
-— MiniMax = 512k not 1M, GLM 5.2 Haiku output = 64k). Check rate limits (Gemini
-free = 20/min, $40 = 1500/5h, $100 = 7500/5h; Ollama Cloud $20 = 3 concurrent,
-$100 = 10 — use 8). Check budget (OpenRouter/DeepSeek balance vs a rough token
-estimate — rough, not final). Ask the fallback per model (Rule 3.35 — a plan with
-one model per role is incomplete). Apply Law 44 (hold a reserve back from any
-provider's cap). Recommend DeepSeek direct for the swarm; warn Ollama-Cloud-$20
-users the build is slow (a week+). Save the matrix to the execution plan.
+or needs wiring help. Check context windows and rate limits by WEB-RESEARCHING
+them fresh, right now, for the account actually running this session — never
+recite a remembered number. **The figures below are EXAMPLES to illustrate the
+shape of the check, not facts about anyone's account:** they are one operator's
+own numbers from one day, they drift (providers change limits without notice),
+and they are almost certainly wrong for whoever is running this skill, on this
+run, in this class. Example only — MiniMax context window "512k not 1M" (a
+real gap between the marketed figure and the delivered one, which is *why* you
+check instead of assuming); GLM 5.2 Haiku output example "64k". Example only —
+rate limits: a Gemini free tier example "20/min", a $40-tier example
+"1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example "3
+concurrent", a $100-tier example "10 (use 8)". Re-verify every one of these
+against the actual provider docs and the actual account before writing any
+number into the execution plan. Check budget (OpenRouter/DeepSeek balance vs a
+rough token estimate — rough, not final). Ask the fallback per model (Rule 3.35
+— a plan with one model per role is incomplete). Apply Law 44 (hold a reserve
+back from any provider's cap). Recommend DeepSeek direct for the swarm; warn
+Ollama-Cloud-$20 users the build may be slow — verify current throughput rather
+than assuming the week-plus figure from the example above still holds. Save the
+VERIFIED matrix (never the example numbers) to the execution plan.
 
 ---
 
@@ -204,7 +232,14 @@ your understanding in one paragraph before proceeding. Then proceed.
    in the decision register (Law 46) before the spec is written. See
    `references/research.md`.
 9. **Environment sweep (BOTH modes).** Check ALL env files for the keys the project
-   needs. Ask where they will host and stage. See `references/environment-sweep.md`.
+   needs. Ask where they will host and stage. Also run the capture-tooling
+   preflight for any visual Gate 3 bar: detect a working capture tool by
+   actually running it; if none answers, install one (`npx playwright install
+   chromium`) and prove the install with a real probe screenshot, never a
+   version string — install-then-prove, never detect-and-warn when installing
+   is possible. Only if installation genuinely
+   fails does this fall back to reporting the gap and its consequence for
+   visual bars. See `references/environment-sweep.md`.
 10. **Current-state pass.** Go and measure the real system before writing a single
     unit (Law 28). A specification written from inference is a list of guesses.
     The research findings join it as measured facts with sources.
@@ -215,15 +250,19 @@ your understanding in one paragraph before proceeding. Then proceed.
     the specification is written (Law 46). Anything open → ask now, one at a
     time.
 12.5. **Generate the three-part Gauntlet Loop block.** From the approved
-    foundation (master-spec requirements + GOAL.md + acceptance criteria + the
-    REQUIRED bar), compile exactly three labeled sections in this order: **THE
+    foundation (the confirmed feature list (step 11) + the closed decisions
+    (step 12) + GOAL.md + the ratified bar), compile exactly three labeled
+    sections in this order: **THE
     TASK** (WHAT), **THE BUILD METHOD** (HOW), **THE BAR TO HIT** (WHEN TO STOP).
     Enforce each part's must-not-contain list (THE TASK: no method/stop/critic/
     orchestration language; THE BUILD METHOD: no bar/success-stop; THE BAR TO
     HIT: no new scope). The B2H is never merged into the Build Method. **The bar
     is REQUIRED — bar selection (step 8) is a mandatory output, every project has
     a bar, and every work item carries one (references/gauntlet.md, Section 12); a
-    project with no comparable bar is INFEASIBLE, never bar-less.** See
+    project with no comparable bar is INFEASIBLE, never bar-less.** The project
+    emits ONE three-part block (document 16). Per-unit comparison runs from each
+    build card's bar slice; the templates in `references/gauntlet.md` §6 are the
+    shape of that one block, not a template repeated per unit. See
     `references/gauntlet.md` for the full template, the GL-001…GL-008 validation
     rules, and the three-gate stack (8.5 = hard, GOAL.md fidelity = on-brief,
     B2H = comparative). The block lives in the execution plan (document 16) and
@@ -284,7 +323,9 @@ your understanding in one paragraph before proceeding. Then proceed.
     USER STOPPED are never relabeled as success); platform commands are verified
     or written as capability-first adapters. Any failure → reject and regenerate
     (structural failure). All census `grep` commands in the audit must invoke
-    `/usr/bin/grep` explicitly — the bare `grep` shim is broken on this machine.
+    `/usr/bin/grep` explicitly — some machines shadow `grep` with a broken shim;
+    prove the instrument on a known-positive first (see the by-command census,
+    `references/documents.md`).
     Anything below 8.5 → fix, re-grade, repeat. Hand over only at 8.5+.
 21. **Hand over and start.** Give the user the paste-in commands. Tell them they
     can walk away. The pipeline runs.

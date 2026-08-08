@@ -102,7 +102,7 @@ Assume the user does NOT know:
   will live there when it is done."
 
 When giving a path, use the shorter form: `~/Downloads/projects/...` not
-`/Users/<username>/Downloads/projects/...`. The shorter form is what the
+`/Users/blackceomacmini/Downloads/projects/...`. The shorter form is what the
 terminal accepts and what the user can type if they need to.
 
 ---

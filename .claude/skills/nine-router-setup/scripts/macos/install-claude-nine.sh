@@ -8,7 +8,7 @@ set -euo pipefail
 # at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the launcher
 # lives at <repo>/launchers/macos/claude-nine). CLAUDE_NINE_SOURCE overrides it.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../launchers/macos/claude-nine}"
+LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-nine}"
 LAUNCHER="$HOME/.local/bin/claude-nine"
 
 log() { printf '[install-claude-nine] %s\n' "$*" >&2; }

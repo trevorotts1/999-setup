@@ -224,19 +224,38 @@ try {
     $dashPw = '123456'
 
     # 7. Live model resolution
-    Write-Log 'Resolving live provider catalogs...'
-    $resolvedJson = & $NodeBin (Join-Path $Common 'resolve-models.mjs') --all 2>&1
-    if ($LASTEXITCODE -ne 0) { Write-Blocker "live model resolution failed: $resolvedJson" }
-    Write-Log 'Live catalogs resolved.'
-
-    # 8. Configure 9Router
-    $env:NINEROUTER_BASE = $Base
-    $env:NINEROUTER_DASHBOARD_PW = $dashPw
+    # Provider keys must be exported BEFORE resolve-models.mjs runs: it reads
+    # process.env.*_API_KEY to hit each provider's live catalog. Exporting
+    # them only at step 8 (as before) meant resolution ran with ZERO keys,
+    # silently returning {} and falling through to configure-nine-router.mjs's
+    # hardcoded fallback catalogs - the live-catalog validation gate was a
+    # no-op. Move the exports here, ahead of the resolve call.
     $env:DEEPSEEK_API_KEY = $creds['DEEPSEEK_API_KEY']
     $env:OLLAMA_API_KEY = $creds['OLLAMA_API_KEY']
     $env:AGNES_API_KEY = $creds['AGNES_API_KEY']
     $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
     $env:AGNES_PLAN = $creds['AGNES_PLAN']
+    Write-Log 'Resolving live provider catalogs...'
+    # Keep stderr OUT of the captured JSON (same rationale/pattern as the
+    # token capture below at :279-289): 2>&1 would space-join stderr lines
+    # into $resolvedJson (corrupting RESOLVED_MODELS), and under PS 5.1
+    # EAP=Stop a stray stderr line (e.g. an npm/node notice) can raise a
+    # terminating NativeCommandError before $LASTEXITCODE is even checked.
+    $resolveStderrFile = [System.IO.Path]::GetTempFileName()
+    $resolvedJson = & $NodeBin (Join-Path $Common 'resolve-models.mjs') --all 2>$resolveStderrFile
+    $resolveExit = $LASTEXITCODE
+    if ($resolveExit -ne 0) {
+        $resolveErrText = ''
+        if (Test-Path $resolveStderrFile) { $resolveErrText = (Get-Content $resolveStderrFile -Raw -ErrorAction SilentlyContinue).Trim() }
+        Remove-Item $resolveStderrFile -ErrorAction SilentlyContinue
+        Write-Blocker "live model resolution failed: $resolveErrText"
+    }
+    Remove-Item $resolveStderrFile -ErrorAction SilentlyContinue
+    Write-Log 'Live catalogs resolved.'
+
+    # 8. Configure 9Router
+    $env:NINEROUTER_BASE = $Base
+    $env:NINEROUTER_DASHBOARD_PW = $dashPw
     # DEEPSEEK_FLASH_VARIANT passes through as set by the user (default empty).
     $env:RESOLVED_MODELS = $resolvedJson
 

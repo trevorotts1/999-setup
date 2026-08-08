@@ -150,10 +150,21 @@ for two things gets an answer about one of them.
 
 **The model-intelligence half of A5 — the role defaults for this skill:**
 
-- **App builder** — default Sonnet → DeepSeek v4 Pro (up to 500 subagents; cap at
-  20 workflows × 16 = 320). Recommend DeepSeek direct ($20+) for the swarm.
-  DeepSeek v4 Flash direct = up to 2,500 subagents. Ollama Cloud DeepSeek capped at
-  plan limit ($20 = 3 concurrent, $100 = 10 — use 8).
+**Every cap and limit below is an EXAMPLE, not a fact about the person running this
+interview.** They are one operator's own account numbers from one day; providers
+change tier limits without notice, and a class member on a different plan, a
+different provider tier, or a different day will get different numbers. Keep the
+figures as illustrations of the SHAPE of the check ("this provider's concurrency
+cap depends on paid tier"), and re-verify every one of them (web-research the
+provider's current docs, or read the account's own dashboard) before writing any
+number into this project's execution plan.
+
+- **App builder** — default Sonnet → DeepSeek v4 Pro. Example concurrency figures
+  to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; cap at 20
+  workflows × 16 = 320; DeepSeek v4 Flash direct example "up to 2,500 subagents";
+  Ollama Cloud DeepSeek example "$20 tier = 3 concurrent, $100 tier = 10 — use 8."
+  Recommend DeepSeek direct ($20+) for the swarm, but confirm today's cap before
+  relying on any of the numbers above.
 - **QC and fixer** — default Fable → Qwen 3.8 (5×5 = 25). Finds gaps, defects,
   blockers, and improvements; lists (1) what is wrong and how to fix it, (2) what
   to improve and how; then fixes.
@@ -162,11 +173,16 @@ for two things gets an answer about one of them.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
 is currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"). Ask if they want to change
-anything or need wiring help. Check context windows (web-research the Ollama Cloud
-models — MiniMax = 512k not 1M, GLM 5.2 Haiku output = 64k). Check rate limits
-(Gemini free = 20/min, $40 = 1500/5h, $100 = 7500/5h; Ollama Cloud $20 = 3
-concurrent, $100 = 10 — use 8). Check budget (OpenRouter/DeepSeek balance vs a
-rough token estimate — rough, not final). Save the matrix to the execution plan.
+anything or need wiring help. Check context windows by web-researching the actual
+current model docs — do not recite a remembered figure. Example only, to verify
+fresh: an Ollama Cloud MiniMax example "512k not 1M" (a real gap between the
+marketed figure and the delivered one, which is *why* this gets checked instead of
+assumed), a GLM 5.2 Haiku output example "64k". Check rate limits the same way —
+example only, to verify fresh: a Gemini free-tier example "20/min", a $40-tier
+example "1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example
+"3 concurrent", a $100-tier example "10 — use 8". Check budget (OpenRouter/DeepSeek
+balance vs a rough token estimate — rough, not final). Save the VERIFIED matrix —
+never the example numbers above — to the execution plan.
 
 **Fast path 1 — the defaults offer (right after A2).** Eighteen questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:

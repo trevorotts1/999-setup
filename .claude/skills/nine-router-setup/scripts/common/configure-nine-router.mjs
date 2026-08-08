@@ -196,6 +196,7 @@ async function main() {
   RESOLVED_ROUTES.haiku = olKimi;
   RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
   RESOLVED_ROUTES.vision = olKimi;
+  report.resolvedRoutes = RESOLVED_ROUTES;
 
   // 6. Combos.
   const combos = await client.listCombos();

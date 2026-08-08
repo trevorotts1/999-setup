@@ -56,7 +56,7 @@ try {
         throw "winget is on PATH but does not execute (--version failed: $wingetVer). Repair winget (Microsoft Store > App Installer), or install Node.js 20+ manually from https://nodejs.org/, then re-run."
     }
 
-    winget install --id OpenJS.NodeJS.LTS --exact --accept-package-agreements --accept-source-agreements
+    winget install --id OpenJS.NodeJS.LTS --exact --accept-package-agreements --accept-source-agreements | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "WinGet Node install failed (exit $LASTEXITCODE)."
     }
