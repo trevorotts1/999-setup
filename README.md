@@ -1,5 +1,11 @@
 # 999-setup
 
+> **Do not run this on the operator Mac Mini.** The operator machine already runs its
+> own `claude-nine` with a separate, dedicated config root. This installer would replace
+> `~/.claude/skills/nine-router-setup` and `~/.local/bin/claude-nine` with this repo's
+> class-facing versions, breaking that setup. This repository is for a student's own
+> Mac or Windows machine.
+
 Cross-platform environment bootstrap utilities.
 
 This repository provisions a local **9Router** gateway on native **Windows** and **macOS
@@ -55,11 +61,14 @@ keys. Replace the placeholder text with real values:
 OLLAMA_API_KEY=replace_with_real_key
 DEEPSEEK_API_KEY=replace_with_real_key
 AGNES_API_KEY=replace_with_real_key
+OPENROUTER_API_KEY=replace_with_real_key
 OLLAMA_PLAN=pro
 AGNES_PLAN=starter
 ```
 
 Valid `OLLAMA_PLAN`: `free`, `pro`, `max`. Valid `AGNES_PLAN`: `starter`, `plus`, `pro`.
+`OPENROUTER_API_KEY` is optional — leave the placeholder (or omit the line) and setup
+skips OpenRouter; add a real key and setup wires it.
 
 Your keys never leave this machine. They are read once, loaded into the local router,
 and never printed.
@@ -88,6 +97,10 @@ Claude Code reads `AGENT_INSTALL.md`, detects the OS, and provisions everything.
 `claude-nine` starts the router on demand, loads routing only into that process, and
 reuses the exact same personal skills as `claude`. Run `/nine-router-setup` at any time
 to repair or re-validate the environment.
+
+The **first** time you run `claude-nine` on macOS, you may see a Keychain prompt asking
+whether to allow access to the stored router token — click **"Always Allow"** so future
+runs do not prompt again.
 
 ---
 

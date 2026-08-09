@@ -22,8 +22,8 @@ leaving plain `claude` unchanged.
 6. **Never downgrade provider/model IDs silently.** If a required model is absent from the
    live provider catalog, stop that provider configuration with a precise error.
 7. **Use live provider model discovery.** Query the live provider catalog
-   (`https://ollama.com/api/tags`, DeepSeek `/models`, Agnes `/models` or a tiny probe) rather
-   than trusting a static list.
+   (`https://ollama.com/api/tags`, DeepSeek `/models`, Agnes `/models` or a tiny probe,
+   OpenRouter `https://openrouter.ai/api/v1/models`) rather than trusting a static list.
 8. **Use the 9Router management API**, not direct edits to 9Router's persistence database.
 9. **Plain `claude` must remain non-routed.** Only `claude-nine` activates 9Router routing,
    and only in the routed child-process environment — never globally.
@@ -39,3 +39,7 @@ leaving plain `claude` unchanged.
     `deepseek-v4-flash:0731` variant is an explicit override (`DEEPSEEK_FLASH_VARIANT=ollama-0731`)
     only, and enabling it recalculates Ollama concurrency safety.
 16. **Do not modify 9Router's persistence database directly.**
+17. **OpenRouter is an OPTIONAL fourth provider.** Wire it only when `OPENROUTER_API_KEY`
+    exists in `API docs.md`; absence or a placeholder is a skip, never an error; its
+    failures never block DeepSeek/Ollama/Agnes; it never joins the default combos or
+    Claude lanes.

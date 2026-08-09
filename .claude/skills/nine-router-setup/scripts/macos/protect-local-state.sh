@@ -22,14 +22,22 @@ set_token() {
   # No trailing keychain-path argument: `security` then targets the user's
   # default (login) keychain deterministically. Passing a directory here is
   # ambiguous and must not be relied on. -U updates in place; never duplicates.
+  # -T /usr/bin/security (not -T ""): an empty -T grants NO trusted
+  # applications, so the very first read (get-token below, the launcher, and
+  # verify-macos.sh) pops the macOS "security wants to use your confidential
+  # information" Allow/Deny dialog — mid-setup this looks like a hang, and a
+  # non-interactive/SSH session gets a silent Deny (empty token). Pre-
+  # authorizing the /usr/bin/security CLI itself matches the Windows DPAPI
+  # CurrentUser threat model (any user-context process can decrypt there)
+  # while eliminating the prompt entirely for this single-user student Mac.
   if security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-       -w "$token" -U -T "" >/dev/null 2>&1; then
+       -w "$token" -U -T /usr/bin/security >/dev/null 2>&1; then
     log "Keychain item stored in the default login keychain."
   else
     # Surface the real error this time (no stderr suppression) so the caller
     # gets one precise Keychain blocker instead of a silent failure.
     security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-         -w "$token" -U -T ""
+         -w "$token" -U -T /usr/bin/security
   fi
   # Drop the token from the environment immediately.
   unset token
@@ -37,8 +45,24 @@ set_token() {
 
 # Usage: protect-local-state.sh get-token
 #   Prints the token to stdout — used by the launcher ONLY. Caller must not echo it.
+#   stderr is captured (never silently suppressed) so a real Keychain error is
+#   distinguishable from an absent item: exit 44 is `security`'s own
+#   "item not found" code — never treat it as evidence of anything else, and
+#   never conflate a genuine access-denial (user clicked Deny / non-interactive
+#   session with no consent UI) with a plain "not set up yet".
 get_token() {
-  security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
+  local out rc=0
+  out="$(security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if [ "$rc" -eq 44 ]; then
+    echo "protect-local-state: Keychain item not found (service $KEYCHAIN_SERVICE, account $KEYCHAIN_ACCOUNT). Re-run /nine-router-setup." >&2
+  else
+    echo "protect-local-state: Keychain access denied or another error (exit $rc): $out" >&2
+  fi
+  return "$rc"
 }
 
 # Usage: protect-local-state.sh ensure-600

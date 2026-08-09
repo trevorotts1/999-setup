@@ -12,15 +12,16 @@ One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
 **State the expected question count up front, plainly:** "I will ask you about
 nineteen short questions, one at a time, and then you can walk away." (Twenty-two
-is the ceiling — A1 is usually measured rather than asked, and the two fast
-paths below can fold blocks B and C into yes/no confirmations. Never promise
-fewer than you will actually ask; say "about nineteen" and mean it.)
+is the ceiling — A1 is usually measured rather than asked, the two fast paths
+below can fold blocks B and C into yes/no confirmations, and block D's four
+questions always run — they are the user's own decisions and have no defaults.
+Never promise fewer than you will actually ask; say "about nineteen" and mean it.)
 
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
 A8 with the recommended defaults) and the small-plan collapse (if the block-A
 answers reveal a tiny plan, blocks B and C collapse to defaults with yes/no
-confirmations).
+confirmations). Block D never collapses.
 
 **The project folder + `00-INPUT/` exist BEFORE the brainstorm starts** (Law 23).
 The entry-mode choice in SKILL.md creates them immediately, so the verbatim
@@ -150,28 +151,49 @@ for two things gets an answer about one of them.
 
 **The model-intelligence half of A5 — the role defaults for this skill:**
 
-- **App builder** — default Sonnet → DeepSeek v4 Pro (up to 500 subagents; cap at
-  20 workflows × 16 = 320). Recommend DeepSeek direct ($20+) for the swarm.
-  DeepSeek v4 Flash direct = up to 2,500 subagents. Ollama Cloud DeepSeek capped at
-  plan limit ($20 = 3 concurrent, $100 = 10 — use 8).
+**Every cap and limit below is an EXAMPLE, not a fact about the person running this
+interview.** They are one operator's own account numbers from one day; providers
+change tier limits without notice, and a class member on a different plan, a
+different provider tier, or a different day will get different numbers. Keep the
+figures as illustrations of the SHAPE of the check ("this provider's concurrency
+cap depends on paid tier"), and re-verify every one of them (web-research the
+provider's current docs, or read the account's own dashboard) before writing any
+number into this project's execution plan.
+
+- **App builder** — default Sonnet → DeepSeek v4 Pro. Example concurrency figures
+  to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; cap at 20
+  workflows × 16 = 320; DeepSeek v4 Flash direct example "up to 2,500 subagents";
+  Ollama Cloud DeepSeek example "$20 tier = 3 concurrent, $100 tier = 10 — use 8."
+  Recommend DeepSeek direct ($20+) for the swarm, but confirm today's cap before
+  relying on any of the numbers above.
 - **QC and fixer** — default Fable → Qwen 3.8 (5×5 = 25). Finds gaps, defects,
   blockers, and improvements; lists (1) what is wrong and how to fix it, (2) what
   to improve and how; then fixes.
 - **Merger** — default Haiku → GLM 5.2 (low load, fine at 8 to 10 concurrency). Ask
   which model; offer to wire it in 9router if not already wired.
+- **Comparative critic (Gate 3)** — default Opus → (read the current wiring and
+  report it). On a router, two aliases can resolve to the same underlying model.
+  Read the router config and VERIFY the builder, judge, and comparative-critic
+  seats resolve to different underlying models — different alias names prove
+  nothing.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
 is currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"). Ask if they want to change
-anything or need wiring help. Check context windows (web-research the Ollama Cloud
-models — MiniMax = 512k not 1M, GLM 5.2 Haiku output = 64k). Check rate limits
-(Gemini free = 20/min, $40 = 1500/5h, $100 = 7500/5h; Ollama Cloud $20 = 3
-concurrent, $100 = 10 — use 8). Check budget (OpenRouter/DeepSeek balance vs a
-rough token estimate — rough, not final). Save the matrix to the execution plan.
+anything or need wiring help. Check context windows by web-researching the actual
+current model docs — do not recite a remembered figure. Example only, to verify
+fresh: an Ollama Cloud MiniMax example "512k not 1M" (a real gap between the
+marketed figure and the delivered one, which is *why* this gets checked instead of
+assumed), a GLM 5.2 Haiku output example "64k". Check rate limits the same way —
+example only, to verify fresh: a Gemini free-tier example "20/min", a $40-tier
+example "1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example
+"3 concurrent", a $100-tier example "10 — use 8". Check budget (OpenRouter/DeepSeek
+balance vs a rough token estimate — rough, not final). Save the VERIFIED matrix —
+never the example numbers above — to the execution plan.
 
 **Fast path 1 — the defaults offer (right after A2).** Twenty-two questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
 
-> I can ask you about fifteen more questions, or you can use my recommended
+> I can ask you about a dozen more questions, or you can use my recommended
 > defaults for how hard the thinking is, how many helpers run at once, and which
 > helpers plan versus build. If the defaults turn out wrong, we can change them
 > later. Want to use my recommended defaults?
@@ -197,9 +219,7 @@ their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
 live at its URL. A yes records the whole block as defaults (each marked
 "default — confirmed yes/no" rather than "their answer"). A no re-opens the block
 question by question. The collapse is the reason a tiny plan gets asked "about
-nineteen short questions" instead of twenty-two-plus. Block D (the four
-measuring-stick questions) never collapses — it runs on BOTH harnesses
-regardless of project size.
+nineteen short questions" instead of twenty-two-plus.
 
 ---
 
@@ -267,25 +287,24 @@ definition.
 
 ---
 
-### Block D — The measuring stick (the four questions that run on BOTH harnesses)
+### Block D — The measuring stick (the Gauntlet questions)
 
-These four questions belong to the user alone — their taste, their win condition,
-their machine, their dislikes. Inventing any of them would be the skill deciding
-the user's own intent (Laws 40, 46). Block D is the ONLY part of the capacity
-interview that runs on BOTH Claude-Nine AND regular Claude Code.
-
-Ask these ONE AT A TIME, plain and warm:
+These four are the only questions that skip every fast path and run on BOTH
+harnesses. Nothing here can be measured, and nothing here may be defaulted —
+each answer is the user's own decision (Laws 40 and 46): their taste, their
+win condition, their machine, their dislikes. Ask them ONE AT A TIME. The
+answers SEED the bar-candidates step in `research.md` — they do not replace
+it: the bar itself is still picked there, from real, validated candidates.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **D1** | **Is there a real app, website, or product you want yours to be as good as?** Pick one you think is excellent — something you would be happy if yours measured up to. Give me its name or web address. | The bar (Law 48). D1 is REQUIRED — every project has a bar; a project with no comparable bar is INFEASIBLE, never bar-less. Feeds the bar-candidates step in research.md. The user's answer seeds the reference-apps survey: the conductor offers TWO to THREE candidate bars derived from D1, and the user picks one. |
-| **D2** | **If you had to choose: would you rather it be correct and on-brief but not as good as the example you picked, or as good as the example but maybe not exactly on-brief?** This tells me which gate matters more when I have to choose. | Whether Gate 2 (on-brief) or Gate 3 (comparative B2H) takes precedence when they conflict. |
-| **D3** | **My tool may need to download a browser (~130 MB) to take comparison screenshots. Is that okay?** If you are not sure, I will not download it — I will use what you already have, and the comparison will run with what is available. | Whether the capture-tooling preflight in step 9 may download Playwright. "No" (or anything other than a clear "yes") → use existing tooling only. |
-| **D4** | **Is there anything you have seen in other apps or websites that you definitely DO NOT want in yours?** Things you find annoying, confusing, pushy — whatever they are, tell me and I will make sure they stay out. | The "avoid that" list — becomes EXCLUSIONS in every build unit and a comparative dimension in the B2H. |
+| **D1** | **Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"?** Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick. | Seeds the bar-candidate list in `research.md`. A named answer is validated like every other candidate — Named, Fetchable, Comparable — and presented first among the researched ones. If it cannot actually be opened today, say so plainly and present the ones that can. It never skips the selection step. |
+| **D2** | **When your finished app stands next to that example, which is the goal?** (a) *Mine stands shoulder to shoulder with it* — as good as it, or better; a tie counts as done. (b) *The example is more like a rulebook* — mine has to meet every requirement it stands for. Pick one. It gets written down the moment we choose the example, and it does not quietly change later. | The comparison relationship — (a) is "wins or ties", (b) is "meet all requirements" (`gauntlet.md`, Section 3). Frozen into THE BAR TO HIT at bar selection, ratified in the decision register. |
+| **D3** | **To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay?** If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it. | Consent for the capture preflight (SKILL.md step 9 / `environment-sweep.md`). A "no" is recorded in the decision register; captures then use only a browser tool already PROVEN present, and if none exists, visual comparisons are reported BLOCKED — honestly, never silently skipped, never passed unproven. |
+| **D4** | **Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours?** Something that annoys you, slows you down, or gets in your way. "Nothing comes to mind" is a real answer. | The avoid-that delta. Merged with the survey's "what it got wrong — AVOID THAT" findings (`research.md`, Step 2) and frozen into the blind-comparison dimensions at bar selection: the app is judged for being LIKE the example where it is good and UNLIKE it where the user said to avoid it. |
 
-Record each answer in the decision register (document 10). D1 is the bar seed;
-D2 tunes the gate priority. D4 prevents the builder from copying the bar's own
-mistakes.
+D1 to D4 keep every existing question's number — nothing above them was
+renumbered to make room (the same rule that placed A7, A8, and C0).
 
 ---
 
@@ -300,6 +319,9 @@ arithmetic beside it.
 C0's answer is recorded whichever way it went, in the decision register, in the
 words it was given in. The shape test reads it; a shape test with no recorded input
 is a judgement wearing a derivation's clothes.
+
+Block D's four answers go to the decision register verbatim; D1 seeds the
+bar-candidates step in `research.md`, and D3 gates the step 9 capture download.
 
 After Step 3, the research steps run (see `research.md` — Domain research, then
 Reference apps), and only then does the current-state pass start (Law 28). The

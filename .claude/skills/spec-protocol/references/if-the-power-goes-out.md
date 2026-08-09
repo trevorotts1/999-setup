@@ -37,13 +37,15 @@ So when you start up again, the new session reads that record, sees exactly wher
 
 ## What if I do not remember which terminal was doing what?
 
-Run this in any terminal:
+If your setup has the `/purpose` helper, run it in any terminal:
 
 ```
 /purpose
 ```
 
 It will tell you which project each terminal was working on, how far along it is (as a percentage), and what is left. Then you know which launch command to paste.
+
+If you do not have `/purpose` (or you type it and get "unknown command"): open `CONTROL/LEDGER.md` in your project folder instead — the top of that file says where things stand.
 
 ---
 

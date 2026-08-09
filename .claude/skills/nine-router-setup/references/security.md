@@ -31,9 +31,9 @@ tunnelDashboardAccess = false
 
 ## Secret handling
 
-- Provider API keys (DeepSeek, Ollama, Agnes) live inside 9Router's protected provider
-  storage after setup. They are **not** stored in the `claude-nine` launcher state or the
-  macOS Keychain item used by the launcher.
+- Provider API keys (DeepSeek, Ollama, Agnes, and optionally OpenRouter) live inside
+  9Router's protected provider storage after setup. They are **not** stored in the
+  `claude-nine` launcher state or the macOS Keychain item used by the launcher.
 - The **local 9Router API key** is the only router secret in launcher state:
   - Windows: DPAPI/current-user protection.
   - macOS: Keychain item (`service: BlackCEO-999`, `account: 9router-api-token`) via the
@@ -54,7 +54,7 @@ tunnelDashboardAccess = false
 
 ## Install strategy
 
-- Install `9router@latest`, not an old pinned build.
+- When an install is actually needed, install `9router@latest`, never an old pinned build; an existing working install is kept as-is (no forced upgrade).
 - macOS: never `sudo npm install -g` as the default. Use a user-local npm prefix.
 - Do not edit 9Router's persistence database directly; use the authenticated management API.
 - Keep setup scripts inspectable plain text. Do not download and execute arbitrary

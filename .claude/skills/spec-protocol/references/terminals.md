@@ -67,7 +67,7 @@ width breaks. See `audience.md` for the full rules. Every instruction must:
 - Have one line per step.
 - State its waits — "wait for this to finish before pasting the next one."
 - Use the shorter form of a path (`~/Downloads/projects/...`, not
-  `/Users/<username>/Downloads/projects/...`).
+  `/Users/blackceomacmini/Downloads/projects/...`).
 
 ---
 
@@ -115,12 +115,41 @@ background processes (as of August 2026)" — and a later reader can re-check.
 
 ## Determining if the skill can create terminals itself
 
-Check `~/.claude/skills/orchestrate/` and `~/.claude/skills/swarm/`. If present, the
-skill may be able to orchestrate terminals — say so plainly and use those tools. If
-not, the user must open terminals manually. State the result plainly:
+No tool on either harness (regular Claude Code or Claude-Nine) drives the macOS
+Terminal app — nothing opens an OS-level window and pastes a command into it for
+the user. `~/.claude/skills/orchestrate/` and `~/.claude/skills/swarm/`, an
+earlier draft's guess at where that capability might live, do not exist on any
+known installation; a probe that checks for them always answers "cannot," which
+makes it no check at all. The user always opens the three Terminal windows by
+hand, per the instructions below.
 
-> I checked whether I can open terminals for you. [I can / I cannot — you will need
-> to open them yourself. Here is how.]
+What the check should actually establish is whether THIS session can run the
+build/QC/merge roles itself, as subagents inside its own single session,
+instead of the human opening three independent windows. That capability is
+real and present on both harnesses:
+
+- **The Agent/Task tool (subagent dispatch).** Present in every Claude Code and
+  Claude-Nine session — the same mechanism SKILL.md step 41 already uses to fan
+  out builders. The current session can dispatch the build, QC+fix, and merge
+  roles as its own subagents, in parallel.
+- **The Workflow tool (dependency-aware multi-agent orchestration).** Fires only
+  when the user has opted into multi-agent orchestration (`ultracode`, GATE 0).
+  When it is on, it is the fuller mechanism — dependency-ordered waves, not a
+  flat subagent fan-out.
+
+This is a genuinely different mechanism from three terminals, not a drop-in
+replacement for them: subagents dispatched by one orchestrating session share
+that session's own context and turn budget, while three independent terminals
+are three fully separate processes that can each run unattended, in parallel,
+for as long as their own session lasts. State the result plainly, naming which
+mechanism is actually available this session — never the retired file check:
+
+> I checked whether I can run the build, QC, and merge roles for you inside
+> this one session instead of you opening three windows. I can, using [the
+> Agent/Task tool | the Workflow tool, because ultracode is on] — here is what
+> that looks like, and how it differs from three independent terminals. You
+> can still open three Terminal windows yourself for true unattended
+> parallelism; here is how, either way.
 
 Never assume the user knows that three lines means three commands. Spell it out.
 

@@ -37,7 +37,9 @@ start_router() {
       return 1
     fi
     mkdir -p "$LOG_DIR"
-    nohup "$bin" --no-browser > "$LOG_DIR/9router.log" 2>&1 &
+    # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
+    # exposes the dashboard + /v1 (holding provider keys) to the LAN.
+    nohup "$bin" --no-browser --host 127.0.0.1 > "$LOG_DIR/9router.log" 2>&1 &
   fi
   local i
   for i in $(seq 1 40); do
@@ -91,7 +93,8 @@ main() {
   unset token
 
   # Production-default routes (see references/model-routing.md). The (max) suffix
-  # is 9Router's thinking-effort mechanism, parsed per-route.
+  # is 9Router's thinking-effort mechanism, parsed per-route. A router-session
+  # state file that resolves routes overrides these per-launch (see step 6).
   export ANTHROPIC_DEFAULT_FABLE_MODEL="ds/deepseek-v4-flash(max)"
   export ANTHROPIC_DEFAULT_OPUS_MODEL="ds-max/deepseek-v4-pro(max)"
   export ANTHROPIC_DEFAULT_SONNET_MODEL="ds/deepseek-v4-flash(max)"
@@ -100,10 +103,11 @@ main() {
   # Haiku fallback: Agnes AI when the DS Light lane is down (provider-level).
   export ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK="agnes/agnes-2.5-flash"
 
-  # Parse the state file once into exported vars (single node call, no secrets).
-  # A corrupt/unparseable state file MUST fail loudly — never launch claude
-  # unrouted with no routing vars set (that silently behaves like plain claude
-  # and defeats the activation boundary).
+  # 6. Parse the state file once into exported vars (single node call, no secrets).
+  #    A corrupt/unparseable state file MUST fail loudly — never launch claude
+  #    unrouted with no routing vars set (that silently behaves like plain claude
+  #    and defeats the activation boundary). Resolved routes override the static
+  #    defaults above; unresolvable routes fall back to the static defaults.
   local exports
   if ! exports="$(node - "$STATE_FILE" <<'NODE'
 const fs = require("fs");
@@ -136,14 +140,14 @@ NODE
   fi
   eval "$exports"
 
-  # 6. Assert the routing boundary is actually armed before exec — never launch
+  # 7. Assert the routing boundary is actually armed before exec — never launch
   #    claude unrouted. If a required var is missing, the state is corrupt.
   : "${ANTHROPIC_DEFAULT_FABLE_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_OPUS_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_HAIKU_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
 
-  # 7. Banner: show which models are wired (model ids only — never tokens).
+  # 8. Banner: show which models are wired (model ids only — never tokens).
   echo "🚀 claude-nine via 9Router (http://127.0.0.1:$PORT/v1)" >&2
   echo "   fable/subagent: $ANTHROPIC_DEFAULT_FABLE_MODEL" >&2
   echo "   opus:           $ANTHROPIC_DEFAULT_OPUS_MODEL" >&2
@@ -151,7 +155,7 @@ NODE
   echo "   haiku:          $ANTHROPIC_DEFAULT_HAIKU_MODEL" >&2
   echo "   haiku fallback: ${ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK:-none}" >&2
 
-  # 8. Exec the same claude binary, forwarding all args.
+  # 9. Exec the same claude binary, forwarding all args.
   exec "$claude" "$@"
 }
 

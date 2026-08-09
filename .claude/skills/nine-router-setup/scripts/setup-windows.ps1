@@ -5,13 +5,15 @@
 #   1. Verify native Windows.
 #   2. Verify Claude Code exists.
 #   3. Resolve Documents + locate/parse/validate API docs.md.
-#   4. Install/repair Node.js only when needed.
-#   5. Install/update 9Router (npm global).
-#   6. Start 9Router, wait for health, first-run security.
-#   7. Configure providers/routing/combos via shared Node helpers.
-#   8. Install the claude-nine launcher + DPAPI-protected state.
-#   9. Run smoke tests.
-#  10. Print the completion report (no secrets).
+#   4. Dependency preflight: prove DPAPI loads, install/repair Node (absolute
+#      path, real-execution re-verify — never trust a cached PATH entry) and
+#      9Router (real --version proof), verify npm can reach its registry, and
+#      print an honest dependency summary before any provisioning starts.
+#   5. Start 9Router, wait for health, first-run security.
+#   6. Configure providers/routing/combos via shared Node helpers.
+#   7. Install the claude-nine launcher + DPAPI-protected state.
+#   8. Run smoke tests (including the launcher itself, end to end).
+#   9. Print the completion report (no secrets).
 #
 # Never prints API keys, the router token, or the dashboard password.
 #Requires -Version 5.1
@@ -71,7 +73,7 @@ function Read-ApiDocs([string]$file) {
         if ($line.StartsWith('#')) { return }
         if ($line -match '^([A-Za-z0-9_]+)\s*=\s*(.*)$') {
             $k = $matches[1]; $v = $matches[2].Trim()
-            if ($k -in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY','OLLAMA_PLAN','AGNES_PLAN')) {
+            if ($k -in @('OLLAMA_API_KEY','DEEPSEEK_API_KEY','AGNES_API_KEY','OPENROUTER_API_KEY','OLLAMA_PLAN','AGNES_PLAN')) {
                 $map[$k] = $v
             }
         }
@@ -103,7 +105,21 @@ function Get-Concurrency([string]$plan) {
     switch ($plan) { 'free' { 1 } 'max' { 8 } default { 2 } }
 }
 
+# Dependency-preflight summary lines. Populated only by real-execution
+# probes below; never hand-set to a status the probe did not produce.
+$DepSummary = @()
+
 try {
+    # 0. DPAPI (System.Security) — proved here, early, rather than letting a
+    #    load failure surface deep inside Protect-LocalState.ps1 or
+    #    claude-nine.ps1 later as an unrelated-looking error.
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction Stop
+        $DepSummary += 'System.Security (DPAPI) OK   assembly loaded'
+    } catch {
+        Write-Blocker "The .NET System.Security assembly could not be loaded (required to protect the local router token): $($_.Exception.Message)"
+    }
+
     # 1. OS
     if ($env:OS -ne 'Windows_NT') {
         Write-Blocker "This orchestrator is Windows-only (OS=$($env:OS))."
@@ -112,6 +128,7 @@ try {
     # 2. Claude Code
     $claudeBin = Resolve-Claude
     Write-Log "Claude Code: $claudeBin"
+    $DepSummary += "claude          OK   $claudeBin"
 
     # 3. Documents + API docs.md
     $apiDocs = & (Join-Path $Win 'Get-ApiDocs.ps1')
@@ -127,20 +144,84 @@ try {
     Validate-Plan $creds['OLLAMA_PLAN'] 'free pro max' 'OLLAMA_PLAN'
     Validate-Plan $creds['AGNES_PLAN'] 'starter plus pro' 'AGNES_PLAN'
 
-    # 4. Node
-    & (Join-Path $Win 'Install-Node.ps1')
+    # OPENROUTER_API_KEY is OPTIONAL: absent/placeholder = skip the lane, never a blocker.
+    $openrouterKey = $creds['OPENROUTER_API_KEY']
+    if (-not $openrouterKey -or $openrouterKey -in @('replace_with_real_key','changeme','your-key-here')) { $openrouterKey = '' }
+    if ($openrouterKey) { Write-Log 'OpenRouter: optional key found - lane will be wired' }
+    else { Write-Log 'OpenRouter: no OPENROUTER_API_KEY in API docs.md - lane will be skipped' }
+
+    # 4. Dependency preflight. git/repository-acquisition is intentionally NOT
+    #    probed here: this script only runs from an already-acquired
+    #    checkout (Claude Code performs acquisition per AGENT_INSTALL.md,
+    #    outside this script's scope) — matches setup-macos.sh's equivalent
+    #    scoping note, keeping the two platforms behaviourally equivalent.
+
+    # Node 20+ / npm 10+: Install-Node.ps1 installs/repairs ONLY when needed
+    # (winget presence/execution is checked THERE, right when it is actually
+    # needed) and writes the ABSOLUTE path to a proven-working node binary
+    # via Write-Output. Re-verify it for real, in THIS process, right now —
+    # never trust a cached PATH entry.
+    $NodeBin = & (Join-Path $Win 'Install-Node.ps1')
+    if ($LASTEXITCODE -ne 0) { Write-Blocker 'Node.js install/verify failed.' }
     Refresh-Path
+    if (-not $NodeBin) { $NodeBin = (Get-Command node -ErrorAction SilentlyContinue).Source }
+    if (-not $NodeBin -or -not (Test-Path $NodeBin)) { Write-Blocker 'Could not resolve an absolute path to node after install/verify.' }
+    $nodeVerOut = & $NodeBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "node at $NodeBin does not execute (--version failed): $nodeVerOut" }
+    $nodeVerStr = ($nodeVerOut | Select-Object -Last 1).ToString()
+    $nodeMajorParsed = 0
+    if (-not [int]::TryParse((($nodeVerStr.TrimStart('v')) -split '\.')[0], [ref]$nodeMajorParsed)) {
+        Write-Blocker "node at $NodeBin reported an unparseable version: $nodeVerStr"
+    }
+    if ($nodeMajorParsed -lt 20) {
+        Write-Blocker "node at $NodeBin reports $nodeVerStr (< 20) even right after install/verify."
+    }
+    $NodeDir = Split-Path $NodeBin
+    $NpmBin = Join-Path $NodeDir 'npm.cmd'
+    if (-not (Test-Path $NpmBin)) { $NpmBin = (Get-Command npm -ErrorAction SilentlyContinue).Source }
+    if (-not $NpmBin -or -not (Test-Path $NpmBin)) { Write-Blocker "npm not found next to node at $NodeDir." }
+    $npmVerOut = & $NpmBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "npm at $NpmBin does not execute (--version failed): $npmVerOut" }
+    $npmVerStr = ($npmVerOut | Select-Object -Last 1).ToString()
+    $DepSummary += "node            OK   $nodeVerStr ($NodeBin)"
+    $DepSummary += "npm             OK   v$npmVerStr ($NpmBin)"
+
+    Write-Log 'Verifying npm registry reachability...'
+    $npmPingOut = & $NpmBin ping --registry https://registry.npmjs.org/ 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "npm cannot reach the registry (required to install 9router): $npmPingOut" }
+    $DepSummary += 'npm registry    OK   ping succeeded'
 
     # 5. 9Router. Idempotent: if the router is already healthy, do NOT reinstall
     #    (npm EBUSY on the locked node_modules otherwise) - just resolve the binary.
+    #    Install-NineRouter.ps1 PROVES the binary executes (--version, not a
+    #    Get-Command resolution alone) before returning its absolute path.
     if (Wait-Health) {
         Write-Log '9Router already running and healthy; skipping reinstall.'
         $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source
+        $nineMode = 'existing install kept - router already running (no reinstall, no upgrade)'
     } else {
         $nineBin = & (Join-Path $Win 'Install-NineRouter.ps1')
         if ($LASTEXITCODE -ne 0) { Write-Blocker '9Router install failed.' }
         Refresh-Path
+        $StateDir999 = Join-Path $env:LOCALAPPDATA 'BlackCEO\999'
+        $ModeFile = Join-Path $StateDir999 'last-install-mode.txt'
+        $nineModeRaw = Get-Content -Path $ModeFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        switch ($nineModeRaw) {
+            'kept'                { $nineMode = 'existing install kept (no reinstall, no upgrade)' }
+            'reinstalled-broken'  { $nineMode = 'was present but broken - reinstalled' }
+            'fresh-install'       { $nineMode = 'freshly installed' }
+            default               { $nineMode = 'unknown' }
+        }
     }
+    if (-not $nineBin) { $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source }
+    if (-not $nineBin) { Write-Blocker '9router executable could not be resolved.' }
+    $nineVerOut = & $nineBin --version 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Blocker "9router at $nineBin does not execute (--version failed): $nineVerOut" }
+    $nineVerStr = ($nineVerOut | Select-Object -Last 1).ToString()
+    $DepSummary += "9router         OK   v$nineVerStr ($nineBin)"
+
+    Write-Log 'Dependency preflight complete:'
+    foreach ($line in $DepSummary) { Write-Log "  $line" }
 
     # 6. Start + health + first-run security
     if (-not (Wait-Health)) {
@@ -155,27 +236,50 @@ try {
     }
 
     # No dashboard password rotation: the user owns the 9Router dashboard password
-    # and manages it themselves. Use the default only to log in and configure.
-    $dashPw = '123456'
+    # and manages it themselves. Honor NINEROUTER_DASHBOARD_PW if the user has
+    # already changed it from the default (parity with setup-macos.sh:294;
+    # without this, a student who changed the password hits an unrecoverable
+    # login blocker whose own error message tells them to set this variable).
+    $dashPw = if ($env:NINEROUTER_DASHBOARD_PW) { $env:NINEROUTER_DASHBOARD_PW } else { '123456' }
 
     # 7. Live model resolution
+    # Provider keys must be exported BEFORE resolve-models.mjs runs: it reads
+    # process.env.*_API_KEY to hit each provider's live catalog. Exporting
+    # them only at step 8 (as before) meant resolution ran with ZERO keys,
+    # silently returning {} and falling through to configure-nine-router.mjs's
+    # hardcoded fallback catalogs - the live-catalog validation gate was a
+    # no-op. Move the exports here, ahead of the resolve call.
+    $env:DEEPSEEK_API_KEY = $creds['DEEPSEEK_API_KEY']
+    $env:OLLAMA_API_KEY = $creds['OLLAMA_API_KEY']
+    $env:AGNES_API_KEY = $creds['AGNES_API_KEY']
+    $env:OPENROUTER_API_KEY = $openrouterKey
+    $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
+    $env:AGNES_PLAN = $creds['AGNES_PLAN']
     Write-Log 'Resolving live provider catalogs...'
-    $resolvedJson = & node (Join-Path $Common 'resolve-models.mjs') --all 2>&1
-    if ($LASTEXITCODE -ne 0) { Write-Blocker "live model resolution failed: $resolvedJson" }
+    # Keep stderr OUT of the captured JSON (same rationale/pattern as the
+    # token capture below at :279-289): 2>&1 would space-join stderr lines
+    # into $resolvedJson (corrupting RESOLVED_MODELS), and under PS 5.1
+    # EAP=Stop a stray stderr line (e.g. an npm/node notice) can raise a
+    # terminating NativeCommandError before $LASTEXITCODE is even checked.
+    $resolveStderrFile = [System.IO.Path]::GetTempFileName()
+    $resolvedJson = & $NodeBin (Join-Path $Common 'resolve-models.mjs') --all 2>$resolveStderrFile
+    $resolveExit = $LASTEXITCODE
+    if ($resolveExit -ne 0) {
+        $resolveErrText = ''
+        if (Test-Path $resolveStderrFile) { $resolveErrText = (Get-Content $resolveStderrFile -Raw -ErrorAction SilentlyContinue).Trim() }
+        Remove-Item $resolveStderrFile -ErrorAction SilentlyContinue
+        Write-Blocker "live model resolution failed: $resolveErrText"
+    }
+    Remove-Item $resolveStderrFile -ErrorAction SilentlyContinue
     Write-Log 'Live catalogs resolved.'
 
     # 8. Configure 9Router
     $env:NINEROUTER_BASE = $Base
     $env:NINEROUTER_DASHBOARD_PW = $dashPw
-    $env:DEEPSEEK_API_KEY = $creds['DEEPSEEK_API_KEY']
-    $env:OLLAMA_API_KEY = $creds['OLLAMA_API_KEY']
-    $env:AGNES_API_KEY = $creds['AGNES_API_KEY']
-    $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
-    $env:AGNES_PLAN = $creds['AGNES_PLAN']
     # DEEPSEEK_FLASH_VARIANT passes through as set by the user (default empty).
     $env:RESOLVED_MODELS = $resolvedJson
 
-    $cfgOut = & node (Join-Path $Common 'configure-nine-router.mjs') 2>&1
+    $cfgOut = & $NodeBin (Join-Path $Common 'configure-nine-router.mjs') 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "9Router configuration failed: $cfgOut" }
 
     # Parse the JSON report: the helper emits a sentinel line followed by ONE
@@ -231,7 +335,7 @@ else {
     # would later surface as a confusing 401 from the router instead of a clean
     # setup failure. Redirect node's stderr to a temp file and check its exit code.
     $stderrFile = [System.IO.Path]::GetTempFileName()
-    $tokenRaw = & node --input-type=module -e $tokenScript 2>$stderrFile
+    $tokenRaw = & $NodeBin --input-type=module -e $tokenScript 2>$stderrFile
     $nodeExit = $LASTEXITCODE
     Remove-Item Env:COMMON_DIR -ErrorAction SilentlyContinue
     if ($nodeExit -ne 0) {
@@ -250,7 +354,7 @@ else {
         Write-Blocker "Local 9Router API key had an unexpected shape; refusing to store it."
     }
     & (Join-Path $Win 'Protect-LocalState.ps1') -Action set-token -Token $token
-    Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:DEEPSEEK_API_KEY,Env:OLLAMA_API_KEY,Env:AGNES_API_KEY,Env:OPENROUTER_API_KEY -ErrorAction SilentlyContinue
 
     # 9. Write routing state (non-secret).
     $routes = $report.resolvedRoutes
@@ -273,7 +377,7 @@ else {
         port = $Port
         tokenRef = "DPAPI:$StateDir\router-token.bin"
     } | ConvertTo-Json -Depth 4
-    $stateInput | & node (Join-Path $Common 'write-routing-state.mjs')
+    $stateInput | & $NodeBin (Join-Path $Common 'write-routing-state.mjs')
     if ($LASTEXITCODE -ne 0) {
         Write-Blocker 'Routing state could not be written (write-routing-state failed).'
     }
@@ -290,13 +394,20 @@ else {
     $env:NINEROUTER_BASE = $Base
     $env:NINEROUTER_TOKEN = & (Join-Path $Win 'Protect-LocalState.ps1') -Action get-token
     $env:OLLAMA_PLAN = $creds['OLLAMA_PLAN']
-    & node (Join-Path $Common 'test-nine-router.mjs')
+    $env:OPENROUTER_PROBE_ROUTE = if ($report.openrouterProbe) { $report.openrouterProbe } else { '' }
+    & $NodeBin (Join-Path $Common 'test-nine-router.mjs')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'Smoke tests failed' }
     Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:OPENROUTER_PROBE_ROUTE -ErrorAction SilentlyContinue
 
-    # Launcher end-to-end: a real routed request through claude-nine.
+    # Launcher end-to-end: a real routed request through claude-nine. Use the
+    # absolute installed path, not a bare PATH lookup — a fresh shell's PATH
+    # may not have refreshed yet even though Install-ClaudeNine.ps1 just
+    # updated the User PATH (the equivalent of the macOS F7 fix).
     Write-Log 'Executing claude-nine end-to-end...'
-    $nineProbe = & claude-nine -p "Reply with exactly: routing works" 2>&1
+    $claudeNineCmd = "$env:LOCALAPPDATA\BlackCEO\999\bin\claude-nine.cmd"
+    if (-not (Test-Path $claudeNineCmd)) { Write-Blocker "claude-nine launcher not found at $claudeNineCmd after install." }
+    $nineProbe = & $claudeNineCmd -p "Reply with exactly: routing works" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Blocker "claude-nine end-to-end probe failed: $nineProbe"
     }
@@ -314,6 +425,7 @@ else {
     $vOpus = if ($report.verified.opus) { $report.verified.opus } else { 'unknown' }
     $vSonnet = if ($report.verified.sonnet) { $report.verified.sonnet } else { 'unknown' }
     $vHaiku = if ($report.verified.haiku) { $report.verified.haiku } else { 'unknown' }
+    $vOpenRouter = if ($report.verified.openrouter) { $report.verified.openrouter } else { 'unknown' }
 
     # Route strings come from the config report; fall back to the new defaults
     # only if the report lacks them (it never should after a successful configure run).
@@ -354,10 +466,11 @@ claude-nine launcher: OK
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
-9Router: OK - $Base
+9Router: OK - $Base ($nineMode, v$nineVerStr)
 DeepSeek Direct: $vFable
 Ollama Cloud: OK
 Agnes AI: $vAgnes
+OpenRouter (optional): $vOpenRouter
 
 Claude routes:
 Fable/Subagents -> $rFable

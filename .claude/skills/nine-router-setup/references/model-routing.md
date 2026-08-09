@@ -4,19 +4,19 @@
 
 | Role / feature | Provider | Model | Thinking | Notes |
 |---|---|---|---|---|
-| Fable / subagents | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Also `CLAUDE_CODE_SUBAGENT_MODEL` |
+| Fable / subagents | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Also set `CLAUDE_CODE_SUBAGENT_MODEL` |
 | Opus | DS Max (custom) | `ds-max/deepseek-v4-pro` | Max | Custom node forces max |
 | Sonnet | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Swarm builder |
 | Haiku | DS Light (custom) | `ds-light/deepseek-v4-flash` | Off | Cheap reads |
-| Haiku fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | — |
-| Selectable | Ollama Cloud | `ollama/glm-5.2` | Max | ~976K |
+| Haiku fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | OpenAI-compatible |
+| Selectable | Ollama Cloud | `ollama/glm-5.2` | Max | ~976K cloud context |
 | Selectable | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | 256K, Text+Image |
-| Selectable | Ollama Cloud | `ollama/gemma4:31b` | Provider-supported | 256K, no audio |
-| Selectable | Ollama Cloud | `ollama/minimax-m3` | Provider-supported | 512K operational |
-| Fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | Universal |
-| Vision auto-switch | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | Image smoke test |
-| PDF auto-switch | — | — | — | Disabled |
-| Audio auto-switch | — | — | — | Disabled |
+| Selectable | Ollama Cloud | `ollama/gemma4:31b` | Provider-supported | 256K, Text+Image, **no audio** |
+| Selectable | Ollama Cloud | `ollama/minimax-m3` | Provider-supported | Use 512K operational context |
+| Vision auto-switch | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | Must pass image smoke test |
+| PDF auto-switch | — | — | — | Disabled until verified end-to-end |
+| Audio auto-switch | — | — | — | Disabled; Gemma 4 31B has no audio input |
+| Selectable (optional) | OpenRouter | any live-catalog model via `openrouter/<vendor>/<model>`; `:free` lane verified | `thinkingFormat` openai (built-in) | never in default combos/lanes |
 
 ## Provider model IDs
 
@@ -91,6 +91,34 @@ DS Max:    prefix=ds-max,    baseUrl=https://api.deepseek.com/anthropic, model=d
 ```
 
 These exist because the 9Router `(max)` suffix mechanism (`stripThinkingSuffix`/`applyThinking`) is parsed per-route and is not verified — a custom node with explicit provider-level thinking wiring is deterministic. DS Light gives Haiku fast reads without thinking overhead; DS Max ensures Opus always gets max reasoning.
+
+### OpenRouter (optional)
+
+Built-in `apikey` provider (slug `openrouter`, verified against installed 9router 0.5.50):
+
+```text
+transport baseUrl: https://openrouter.ai/api/v1/chat/completions
+auth-key endpoint: https://openrouter.ai/api/v1/auth/key
+live catalog:      https://openrouter.ai/api/v1/models
+thinkingFormat:    openai (native, no custom-node translation needed)
+passthroughModels: true — every catalog model routes as openrouter/<vendor>/<model>
+                    the moment the connection exists; there is no per-model
+                    "register" endpoint in the management API.
+```
+
+OpenRouter joins **none** of the default combos or Claude lanes (Fable/Opus/Sonnet/Haiku/
+Subagent/Vision), because free-tier caps (200 req/day, 429s) would poison fallback lanes
+clients depend on. It is an additional selectable provider only.
+
+Only the live-discovered `:free` lane is verified (a zero-credit account still passes;
+paid models are never probed — that would 402 on a zero-credit account and could burn
+client money otherwise). A 402 (insufficient credits) or 429 (free-tier rate limit) on the
+verification probe means the credential is valid and the request routed correctly — this
+is an **account condition**, reported as such, and still counts as a passing setup, never a
+config failure.
+
+Credential rejection (`HTTP 401`/`403` from `/auth/key`) is the only OpenRouter condition
+that is reported as an error — and even then it never blocks DeepSeek/Ollama/Agnes.
 
 ## The DeepSeek Flash 0731 correction
 

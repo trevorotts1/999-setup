@@ -24,6 +24,7 @@ Create a file named exactly 'API docs.md' in your Documents folder with this tem
   OLLAMA_API_KEY=replace_with_real_key
   DEEPSEEK_API_KEY=replace_with_real_key
   AGNES_API_KEY=replace_with_real_key
+  OPENROUTER_API_KEY=replace_with_real_key   (optional)
   OLLAMA_PLAN=pro
   AGNES_PLAN=starter
 "@

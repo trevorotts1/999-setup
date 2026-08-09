@@ -2,8 +2,9 @@
 
 > Re-verify against the installed version before relying on any schema. 9Router is actively
 > developed; the request/response shapes below were verified against **9router 0.5.45**
-> (2026-08-07). Source of truth: `https://github.com/decolua/9router` and the installed
-> package. Use the management API, never direct database edits.
+> (2026-08-07); surface re-verified against **0.5.50** on 2026-08-08. Source of truth:
+> `https://github.com/decolua/9router` and the installed package. Use the management API,
+> never direct database edits.
 
 ## Authentication
 
@@ -18,10 +19,12 @@ chat/v1 gateway is protected by the **API key** (`Authorization: Bearer`). They 
    password via `NINEROUTER_DASHBOARD_PW`) and keep the cookie in memory. **No password
    rotation is performed** — the user owns the dashboard password.
 2. **`x-9r-cli-token` header** — the machine-id-derived CLI token
-   (`sha256(machineId + "9r-cli-auth" + cliSecret)[:16]`). The dashboard guard
-   (`src/dashboardGuard.js`) accepts it for all `/api/*` routes. Useful as a repair path
-   when the dashboard password is unknown; the shared `NineRouterClient` supports it via
-   `useCliToken()`, falling back to it automatically when no session cookie is set.
+   (`sha256(machineId + "9r-cli-auth" + cliSecret)[:16]`). The management API's
+   authentication middleware accepts it for all `/api/*` routes (no `src/dashboardGuard.js`
+   file exists in 0.5.50 — the mechanism is confirmed live, the file citation is dropped).
+   Useful as a repair path when the dashboard password is unknown; the shared
+   `NineRouterClient` supports it via `useCliToken()`, falling back to it automatically
+   when no session cookie is set.
 
 The chat gateway (`/v1/*`) is gated separately by `requireApiKey` and the API key.
 
@@ -150,7 +153,12 @@ Creates an API-key provider connection.
 ```
 
 - `provider` is normalized via `normalizeProviderId` (accepts the built-in slug `deepseek`,
-  `ollama`, or a custom-node id).
+  `ollama`, `openrouter`, or a custom-node id).
+- `openrouter` (verified against installed 9router 0.5.50 registry): `authType` `apikey`,
+  transport `thinkingFormat` `openai`, a live `modelsFetcher` (type `openrouter-free`) against
+  `https://openrouter.ai/api/v1/models`, and `passthroughModels: true` — every catalog model
+  routes as `openrouter/<vendor>/<model>` once the connection exists. 9Router's own dashboard
+  provider validator uses `GET https://openrouter.ai/api/v1/auth/key`.
 - For a built-in provider, `apiKey` is required (except `ollama-local`).
 - For an **OpenAI-compatible** custom node, the node must already exist (see below) and the
   connection's `providerSpecificData` (prefix/baseUrl/nodeName) is pulled from the node

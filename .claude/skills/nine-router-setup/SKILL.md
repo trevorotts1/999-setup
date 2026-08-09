@@ -1,6 +1,6 @@
 ---
 name: nine-router-setup
-description: "Set up a local 9Router on native Windows or macOS, wire DeepSeek Direct, Ollama Cloud, and Agnes AI from the user's own API docs.md, install the claude-nine launcher (routed Claude Code) while leaving plain claude untouched, and validate the full setup. Idempotent repair and re-run safe. Use when the user asks to set up, repair, or re-validate the 999-setup / 9Router / claude-nine environment. Never prints API keys."
+description: "Set up a local 9Router on native Windows or macOS, wire DeepSeek Direct, Ollama Cloud, and Agnes AI — plus OpenRouter as an optional fourth when OPENROUTER_API_KEY is present — from the user's own API docs.md, install the claude-nine launcher (routed Claude Code) while leaving plain claude untouched, and validate the full setup. Idempotent repair and re-run safe. Use when the user asks to set up, repair, or re-validate the 999-setup / 9Router / claude-nine environment. Never prints API keys."
 trigger:
   - /nine-router-setup
   - "set up this computer from this repository"
@@ -16,6 +16,7 @@ trigger:
 
 This skill provisions a **local 9Router** on native Windows or macOS, wires three primary
 providers (DeepSeek Direct, Ollama Cloud, Agnes AI) from the user's own `API docs.md`,
+and, when the optional `OPENROUTER_API_KEY` exists, OpenRouter as a fourth,
 installs a **`claude-nine`** launcher, and validates everything — while leaving plain
 `claude` completely untouched and Anthropic-direct.
 
@@ -76,6 +77,7 @@ lines and Markdown headings/comments. Require and validate:
 OLLAMA_API_KEY      (required, non-empty, not placeholder)
 DEEPSEEK_API_KEY    (required, non-empty, not placeholder)
 AGNES_API_KEY       (required, non-empty, not placeholder)
+OPENROUTER_API_KEY  (OPTIONAL: real key wires OpenRouter; absent or placeholder skips it — never a blocker)
 OLLAMA_PLAN         (required: free | pro | max)
 AGNES_PLAN          (required: starter | plus | pro)
 ```
@@ -99,7 +101,7 @@ Homebrew-managed environment that satisfies the requirements.
 
 ## Step 5 — 9Router install and first-run security
 
-- Install `9router@latest` (npm global on Windows; user-local npm prefix on macOS).
+- Install `9router@latest` only when 9Router is absent or broken (proven by a real `--version` run); an existing working install is kept as-is — no reinstall, no upgrade. (npm global on Windows; user-local npm prefix on macOS.)
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
 - No dashboard password rotation is performed only when the dashboard starts clean. Full
@@ -153,6 +155,14 @@ Create two additional custom OpenAI-compatible nodes using the same `DEEPSEEK_AP
 These give the routing matrix explicit thinking control per tier instead of relying on
 the 9Router `(max)` suffix mechanism.
 
+- **OpenRouter** (built-in provider, slug `openrouter`, verified 0.5.50): import
+  `OPENROUTER_API_KEY` only when present; validate via
+  `https://openrouter.ai/api/v1/auth/key`; live-discover
+  `https://openrouter.ai/api/v1/models`; all models route by passthrough as
+  `openrouter/<vendor>/<model>`; verify with one live-discovered `:free` model;
+  402/429 = account condition, never a config failure; never added to default
+  combos/lanes.
+
 ## Step 7 — Combos: fallback and fusion
 
 The routing matrix this skill wires:
@@ -166,6 +176,7 @@ The routing matrix this skill wires:
 | Subagents | DeepSeek Direct | ds/deepseek-v4-flash | Max |
 | Haiku Fallback | Agnes AI | agnes/agnes-2.5-flash | Provider-supported |
 | Vision | Ollama Cloud | ollama/kimi-k2.6 | Provider-supported |
+| OpenRouter (optional) | OpenRouter | openrouter/<vendor>/<model> | Passthrough (openai format) |
 
 - Create/update `blackceo-fable-fallback` and `blackceo-opus-fallback` (DeepSeek first,
   Agnes second) — fallback strategy via settings `comboStrategies`.
@@ -185,7 +196,7 @@ The routing matrix this skill wires:
 ## Step 9 — `claude-nine` launcher + routed-session guardrails
 
 - Install the platform-native launcher (Windows: `%LOCALAPPDATA%\BlackCEO\999\bin\claude-nine.cmd`
-  + `.ps1`; macOS: `$HOME/.local/bin/claude-nine`, mode 700).
+  + `%LOCALAPPDATA%\BlackCEO\999\lib\claude-nine.ps1`; macOS: `$HOME/.local/bin/claude-nine`, mode 700).
 - The launcher: resolves the same `claude` binary, preserves the existing config root, starts
   9Router on demand with bounded retries, loads protected session state, exports routing vars
   only into the child process, and never echoes secrets.
@@ -243,12 +254,13 @@ Dashboard: http://localhost:20128 — open this in your browser to manage provid
 DeepSeek Direct: OK
 Ollama Cloud: OK
 Agnes AI: OK
+OpenRouter (optional): OK (via <free model>) | skipped - no OPENROUTER_API_KEY found in API docs.md | account: HTTP 402 ...
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)
-Opus -> DeepSeek V4 Pro (max)
-Sonnet -> Ollama GLM 5.2 (max)
-Haiku -> Ollama Kimi K2.6 (<verified effort>)
+Opus -> DeepSeek V4 Pro via DS Max (max)
+Sonnet -> DeepSeek V4 Flash (max)
+Haiku -> DeepSeek V4 Flash via DS Light (off)
 
 Fallback:
 DeepSeek -> Agnes 2.5 Flash: OK
@@ -291,6 +303,8 @@ cannot safely continue:
 - Node checksum mismatch → delete the download, stop; never extract it.
 - Keychain denied → the exact Keychain permission blocker; never fall back to plaintext.
 - Read-only/managed shell profile → install the launcher and state the one manual PATH line.
+- OpenRouter key invalid / 402 / 429 → record honestly on the OpenRouter line only; never
+  block the other providers; absence of the key is not a failure at all.
 
 See `references/troubleshooting.md` for the full catalog.
 

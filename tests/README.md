@@ -19,7 +19,9 @@ OLLAMA_PLAN=pro \
 node ../.claude/skills/nine-router-setup/scripts/common/test-nine-router.mjs
 ```
 
-Optional skips: `SKIP_DEEPSEEK=1`, `SKIP_OLLAMA=1`, `SKIP_AGNES=1`, `SKIP_FUSION=1`.
+Optional skips: `SKIP_DEEPSEEK=1`, `SKIP_OLLAMA=1`, `SKIP_AGNES=1`, `SKIP_FUSION=1`,
+`SKIP_OPENROUTER=1`. OpenRouter is an optional fourth provider; its lane also skips
+automatically (still exit 0) when `OPENROUTER_PROBE_ROUTE` is empty/absent.
 
 ## Live model resolution
 
@@ -30,6 +32,7 @@ provider catalogs:
 DEEPSEEK_API_KEY=... node ../.claude/skills/nine-router-setup/scripts/common/resolve-models.mjs --deepseek
 OLLAMA_API_KEY=...   node ../.claude/skills/nine-router-setup/scripts/common/resolve-models.mjs --ollama
 AGNES_API_KEY=...    node ../.claude/skills/nine-router-setup/scripts/common/resolve-models.mjs --agnes
+OPENROUTER_API_KEY=... node ../.claude/skills/nine-router-setup/scripts/common/resolve-models.mjs --openrouter
 ```
 
 ## Platform verification checklist

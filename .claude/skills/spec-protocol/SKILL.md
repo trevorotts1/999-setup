@@ -1,6 +1,6 @@
 ---
 name: spec-protocol
-description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code): runs the capacity interview on Claude-Nine (up to 18 questions, fast paths for small plans), uses built-in defaults on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 16-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline with loop engineering and multi-terminal orchestration. Ultracode gate applies to both modes (hard stop if off)."
+description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code): runs the capacity interview on Claude-Nine (up to 22 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 16-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline with loop engineering and multi-terminal orchestration. Ultracode gate applies to both modes (hard stop if off)."
 trigger: /spec-protocol
 ---
 
@@ -39,6 +39,13 @@ Before anything else, say this to the user in their own register:
 > left off. See `references/if-the-power-goes-out.md` — write a copy into the
 > project folder as `IF-THE-POWER-GOES-OUT.md` beside the launch command, so the
 > client can find it without digging into the skill.
+>
+> **If a piece is correct and built exactly as you asked, but is not yet as good
+> as the example you picked to measure it against** — that gets written down for
+> you too, plainly, as "not yet as good as the example you picked — here is the
+> one gap." You can accept it as it is, ask for one more round on just that gap,
+> or pick an easier example to measure against. Nothing sits waiting for a win it
+> may never score.
 
 ---
 
@@ -76,8 +83,8 @@ ONE skill, two modes. Detect the harness with real filesystem checks. Never gues
 
 | Signal | Harness | Mode |
 |--------|---------|------|
-| `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:20128/v1`); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
-| `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview, use built-in defaults |
+| `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
+| `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview except Block D, use built-in defaults |
 
 If `~/.claude-nine/` exists but none of the three 9router signals above is found,
 treat it as **regular Claude Code** and say so plainly. Report the detected
@@ -104,18 +111,19 @@ run truly concurrent — measure yours and use 16 as the working cap.
 
 **The four questions no default can answer.** Even on the defaults path, four
 answers belong to the user alone — their taste, their win condition, their
-machine, their dislikes. Ask the four Block D questions from
-`references/interview.md` (D1 gold-standard example, D2 as-good-as vs
-rulebook, D3 the screenshot-tool download consent, D4 the avoid-that
+machine, their dislikes — and inventing any of them would be the skill
+deciding the user's own intent (Laws 40, 46). Ask the four Block D questions
+from `references/interview.md` (D1 gold-standard example, D2 as-good-as vs
+rulebook, D3 the ~130 MB screenshot-tool download consent, D4 the avoid-that
 list), one at a time, in the same plain wording, right after announcing the
 defaults. Record each in the decision register. D1 seeds the bar-candidates
-step in `references/research.md`; D3 gates step 9 capture download. Block
+step in `references/research.md`; D3 gates the step 9 capture download. Block
 D is the only part of the capacity interview that runs on BOTH harnesses.
 
 ### Claude-Nine — run the capacity interview
 
 9router-routed models. **Run the full capacity interview** before building — the
-v4 section-4.5 interview (18 questions, three blocks), adapted for model
+v4 section-4.5 interview (22 questions, four blocks), adapted for model
 intelligence. See `references/interview.md`. Measure what you can (repo count,
 branch, code state — go look); ask only what no command can reveal (subscription
 tier, effort setting, which models they want).
@@ -127,22 +135,30 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 | App builder | Sonnet → DeepSeek v4 Pro | Up to 500 subagents; cap at 20 workflows × 16 = 320. Recommend DeepSeek direct ($20+) for the swarm. |
 | QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
-| Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick. Blind A/B verdicts only. |
+| Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. |
 
 For each role: read the 9router config and report the current wiring ("Haiku is
 currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"); ask if the user wants to change
-or needs wiring help. Check context windows (web-research the Ollama Cloud models
-— MiniMax = 512k not 1M, GLM 5.2 Haiku output = 64k). Check rate limits (Gemini
-free = 20/min, $40 = 1500/5h, $100 = 7500/5h; Ollama Cloud $20 = 3 concurrent,
-$100 = 10 — use 8). Check budget (OpenRouter/DeepSeek balance vs a rough token
-estimate — rough, not final). Ask the fallback per model (Rule 3.35 — a plan with
-one model per role is incomplete). Apply Law 44 (hold a reserve back from any
-provider's cap). Recommend DeepSeek direct for the swarm; warn Ollama-Cloud-$20
-users the build is slow (a week+). Save the matrix to the execution plan.
-
-- **Comparative critic (Gate 3 — blind A/B verdicts)** — default Opus → read
-  the current wiring and report it. One additional concurrent read per review
-  tick, counted in the 9.4 budget.
+or needs wiring help. Check context windows and rate limits by WEB-RESEARCHING
+them fresh, right now, for the account actually running this session — never
+recite a remembered number. **The figures below are EXAMPLES to illustrate the
+shape of the check, not facts about anyone's account:** they are one operator's
+own numbers from one day, they drift (providers change limits without notice),
+and they are almost certainly wrong for whoever is running this skill, on this
+run, in this class. Example only — MiniMax context window "512k not 1M" (a
+real gap between the marketed figure and the delivered one, which is *why* you
+check instead of assuming); GLM 5.2 Haiku output example "64k". Example only —
+rate limits: a Gemini free tier example "20/min", a $40-tier example
+"1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example "3
+concurrent", a $100-tier example "10 (use 8)". Re-verify every one of these
+against the actual provider docs and the actual account before writing any
+number into the execution plan. Check budget (OpenRouter/DeepSeek balance vs a
+rough token estimate — rough, not final). Ask the fallback per model (Rule 3.35
+— a plan with one model per role is incomplete). Apply Law 44 (hold a reserve
+back from any provider's cap). Recommend DeepSeek direct for the swarm; warn
+Ollama-Cloud-$20 users the build may be slow — verify current throughput rather
+than assuming the week-plus figure from the example above still holds. Save the
+VERIFIED matrix (never the example numbers) to the execution plan.
 
 ---
 
@@ -203,11 +219,11 @@ your understanding in one paragraph before proceeding. Then proceed.
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** Up to eighteen questions, three
-   blocks (capacity, repositories, loop shape), one at a time, with the expected
-   count stated up front ("about fifteen short questions, then you can walk
+6. **Capacity interview (Claude-Nine only).** Up to twenty-two questions, four
+   blocks (capacity, repositories, loop shape, the measuring stick), one at a time, with the expected
+   count stated up front ("about nineteen short questions, then you can walk
    away"). The two fast paths can shrink it: the archetype defaults offer and the
-   small-plan collapse. Measure what you can (on the detected-harness path, A1 is
+   small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. See
    `references/interview.md`.
 7. **Domain research (BOTH modes).** Dispatch reader agents (the conductor never
@@ -246,15 +262,19 @@ your understanding in one paragraph before proceeding. Then proceed.
     the specification is written (Law 46). Anything open → ask now, one at a
     time.
 12.5. **Generate the three-part Gauntlet Loop block.** From the approved
-    foundation (master-spec requirements + GOAL.md + acceptance criteria + the
-    REQUIRED bar), compile exactly three labeled sections in this order: **THE
+    foundation (the confirmed feature list (step 11) + the closed decisions
+    (step 12) + GOAL.md + the ratified bar), compile exactly three labeled
+    sections in this order: **THE
     TASK** (WHAT), **THE BUILD METHOD** (HOW), **THE BAR TO HIT** (WHEN TO STOP).
     Enforce each part's must-not-contain list (THE TASK: no method/stop/critic/
     orchestration language; THE BUILD METHOD: no bar/success-stop; THE BAR TO
     HIT: no new scope). The B2H is never merged into the Build Method. **The bar
     is REQUIRED — bar selection (step 8) is a mandatory output, every project has
     a bar, and every work item carries one (references/gauntlet.md, Section 12); a
-    project with no comparable bar is INFEASIBLE, never bar-less.** See
+    project with no comparable bar is INFEASIBLE, never bar-less.** The project
+    emits ONE three-part block (document 16). Per-unit comparison runs from each
+    build card's bar slice; the templates in `references/gauntlet.md` §6 are the
+    shape of that one block, not a template repeated per unit. See
     `references/gauntlet.md` for the full template, the GL-001…GL-008 validation
     rules, and the three-gate stack (8.5 = hard, GOAL.md fidelity = on-brief,
     B2H = comparative). The block lives in the execution plan (document 16) and
@@ -315,7 +335,9 @@ your understanding in one paragraph before proceeding. Then proceed.
     USER STOPPED are never relabeled as success); platform commands are verified
     or written as capability-first adapters. Any failure → reject and regenerate
     (structural failure). All census `grep` commands in the audit must invoke
-    `/usr/bin/grep` explicitly — the bare `grep` shim is broken on this machine.
+    `/usr/bin/grep` explicitly — some machines shadow `grep` with a broken shim;
+    prove the instrument on a known-positive first (see the by-command census,
+    `references/documents.md`).
     Anything below 8.5 → fix, re-grade, repeat. Hand over only at 8.5+.
 21. **Hand over and start.** Give the user the paste-in commands. Tell them they
     can walk away. The pipeline runs.

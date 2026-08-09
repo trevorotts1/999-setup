@@ -20,11 +20,11 @@ if it is still genuinely unanswerable.
 A wall of text gets skimmed or skipped. One thing at a time gets done. A screen full
 of information is the same as no information — keep every message to ONE screen.
 
-The capacity interview has up to eighteen questions, but the user sees them one at
+The capacity interview has up to twenty-two questions, but the user sees them one at
 a time, in plain language, with the consequence of each answer stated before they
-answer. State the count up front ("about fifteen short questions, then you can walk
-away") and use the fast paths (the defaults offer, the small-plan collapse) so a
-small plan is never asked eighteen questions.
+answer. State the count up front ("about nineteen short questions, then you can walk
+away") and use the fast paths (the defaults offer, the small-plan collapse — block D
+never collapses) so a small plan is never asked twenty-two questions.
 
 ---
 
@@ -102,7 +102,7 @@ Assume the user does NOT know:
   will live there when it is done."
 
 When giving a path, use the shorter form: `~/Downloads/projects/...` not
-`/Users/<username>/Downloads/projects/...`. The shorter form is what the
+`/Users/blackceomacmini/Downloads/projects/...`. The shorter form is what the
 terminal accepts and what the user can type if they need to.
 
 ---

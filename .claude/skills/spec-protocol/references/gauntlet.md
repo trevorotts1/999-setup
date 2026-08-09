@@ -171,6 +171,34 @@ then stop. The user's pick is REQUIRED — every work item has a bar (Section 12
 and is ratified in the decision register (`references/documents.md`, document 10,
 Law 46) before the spec is written.
 
+**Two more questions, asked at bar-selection time (the PDF's bar-selection
+rows — decided now, never decided later, never decided by the critic):**
+
+- **Is it hard enough?** A bar picked because it is easy to beat proves
+  nothing. The bar must be a genuine best-in-class example of the same kind of
+  work — not a weak stand-in chosen to make the pass easy.
+- **Is "beat" the right relationship?** Not every bar is beaten. For
+  standards, source fidelity, or a required methodology, the correct result
+  may be "meet all requirements," not "beat." A style guide is met, not
+  outscored; a required field list is satisfied, not out-designed.
+
+**The relationship is frozen at selection time, into THE BAR TO HIT.** Every
+ratified bar declares, right now, which of two relationships governs its blind
+A/B — recorded in the decision register (Law 46) alongside the pick, and
+carried verbatim into THE BAR TO HIT (never decided at verdict time — Section
+5):
+
+- **"wins or ties"** — the ordinary comparative relationship: the critic's
+  OURS/BAR/INDETERMINATE call decides it on the dimensions (Section 5).
+- **"meet all requirements"** — the build passes when it satisfies every
+  stated requirement of the bar's dimensions, whether or not it would "win" a
+  subjective comparison. This is the right relationship for standards, source
+  fidelity, and required methodology, where matching the reference is the
+  point, not outscoring it.
+
+The critic never chooses between these two — it reads whichever one the bar
+already declared.
+
 **No bar is not an outcome.** Bar selection never drops Gate 3. If no comparable
 reference can be found for the work item, that item is INFEASIBLE (a non-success
 stop, GL-007) — never a silent skip. Gates 1 and 2 remain, and the 8.5 gate is
@@ -196,16 +224,32 @@ The bar is a snapshot, never a live target. The frozen reference package records
 **The frozen snapshot IS the bar — never the live URL.** A moving target cannot
 change mid-loop: if the reference site updates while the Gauntlet runs, the build
 is being measured against a bar nobody froze. The snapshot is captured once and
-locked. The frozen package is stored in the **current-state document** (project
-document 15 — `references/documents.md`), which already owns measured facts, as a
-dated finding with its capture command.
+locked. The frozen package's FACTS (name, source, capture date, version/commit,
+viewport/conditions, test data, exclusions) are stored in the **current-state
+document** (project document 15 — `references/documents.md`), which already owns
+measured facts, as a dated finding with its capture command. The frozen
+package's ARTIFACTS — the actual screenshots, diffs, and other binary capture
+output — cannot live inside that markdown document, so they land in
+**`captures/<unit-id>/`**, the sanctioned infrastructure directory
+(`references/documents.md`, "Infrastructure that is NOT a seventeenth document");
+the current-state document cites those paths by reference rather than inlining
+them.
 
 **Capture tooling.** Selection is per project execution plan (document 16), never
-global. For web bars, **Playwright is the DEFAULT capture tool** (real browser,
-viewport-pinned, unlabeled, deterministic screenshots); if Playwright is
-unavailable, **Agent-Browser is the sanctioned FALLBACK**; otherwise any
-browser-automation tool the harness offers. For visual bars the proven pattern is
-the **Claude-of-Duty** pattern: `baseline.mjs` for bit-identical capture (same
+global, and is preflighted — installed, then proved by actually running it,
+never just detected and reported — before the build
+(`references/environment-sweep.md`'s capture-tooling preflight; `SKILL.md` step
+9). For web bars, **Playwright is the DEFAULT capture tool** (real browser,
+viewport-pinned, unlabeled, deterministic screenshots) — installed with
+`npx playwright install chromium` if it is not already present, and proved
+with a real probe screenshot (the environment sweep's capture preflight owns
+the exact command) before anything is dispatched against it. If Playwright
+genuinely cannot be installed (a real, captured
+failure — never a name-resolution check like `command -v`), the fallback is
+**any browser-automation tool the harness offers**; the operator's fleet tool
+("Agent-Browser"), if installed, is one example of such a tool — never assume
+it is present; a class member has no access to it. For visual bars the proven
+pattern is the **Claude-of-Duty** pattern: `baseline.mjs` for bit-identical capture (same
 input, same conditions, byte-equal reference render) and `imagediff.mjs` for a
 per-pixel gate between the build and the baseline. Two further Claude-of-Duty
 lessons bind the capture: **shared state made its captures inconsistent — isolate
@@ -230,6 +274,14 @@ Gate 3 is a blind comparison. The critic does not know which artifact is ours
   model name; the alias is authoritative and what it resolves to can change
   (see SKILL.md, "Fable, Sonnet, Haiku, Opus are router aliases"). On regular
   Claude Code it is a built-in tier different from the builder's.
+- **Vision-capable critic, proven before the FIRST visual verdict.** A text-only
+  model given an image does not error — it stalls or invents. Before the first
+  visual Gate 3 verdict, send the frozen reference package's probe screenshot to
+  the exact alias/tier that will judge, and require it to name one concrete
+  visible detail (a button label, a heading). If the critic cannot describe the
+  probe, route visual verdicts to a vision-capable alias (9router's vision
+  adapter, if wired — read the config) or record the verdict seat BLOCKED. Never
+  let a critic judge screenshots it was never proven to see.
 - **Labels stripped.** Both artifacts are presented without provenance (Law 49) —
   **no timestamps, no authorship markers, no "this one took 14 rounds," no builder
   identity.** The critic cannot tell ours from the reference, and must never know
@@ -246,11 +298,19 @@ allows), interaction parity (the flows work the same way), content parity
 for (the "avoid that" items from `references/research.md` that make ours better).
 Dimensions are written into THE BAR TO HIT, never improvised at verdict time.
 
-**Binary decision rule.** The critic returns exactly one of:
+**Binary decision rule.** Which relationship governs this call — "wins or
+ties" or "meet all requirements" — was frozen into THE BAR TO HIT at
+selection time (Section 3); the critic reads it, never decides it. The critic
+returns exactly one of:
 
-- **OURS** — our build is as good as or better than the bar on the dimensions.
-- **BAR** — the reference is better; our build falls short.
-- **INDETERMINATE** — cannot tell on the evidence supplied.
+- **OURS** — under "wins or ties": our build is as good as or better than the
+  bar on the dimensions. Under "meet all requirements": our build satisfies
+  every stated requirement of the bar's dimensions.
+- **BAR** — under "wins or ties": the reference is better; our build falls
+  short. Under "meet all requirements": our build fails to meet one or more
+  stated requirements.
+- **INDETERMINATE** — cannot tell on the evidence supplied, under either
+  relationship.
 
 Every verdict carries an **evidence package**: the specific dimension, the
 specific divergence, and the proof (a screenshot, a diff, a repro step). A
@@ -258,7 +318,10 @@ verdict with no evidence is not a verdict.
 
 **On BAR (ITERATE):** exactly ONE largest gap is returned to the builder (the
 single-largest-gap rule, Section 1.2) as the next build instruction. Not a list.
-The cycle repeats BUILD → INSPECT → COMPARE → DECIDE.
+The cycle repeats BUILD → INSPECT → COMPARE → DECIDE. **If this unit also has
+open Gate-1 findings**, the arbitration rule in `references/pipeline.md` (Stage
+2, "Arbitration when Gate 1 and Gate 3 both fail at once") governs the order:
+Gate-1 fixes land first, and this gap re-checks only after.
 
 **Dissent recorded.** The critic's verdict and its evidence are recorded in the
 ledger (`references/documents.md`, document 6) regardless of outcome. A dissent
@@ -277,6 +340,11 @@ passed unit stays passed unless integration or regression reveals a problem
 ---
 
 ## 6. TEMPLATES
+
+The project emits ONE three-part Gauntlet Loop block (`SKILL.md` step 12.5,
+document 16); per-unit comparison runs from each build card's bar slice, and
+the templates below are the shape of that one block — never a separate
+gauntlet prompt repeated per unit.
 
 ### 6a. Implementation-grade template (all required elements)
 
@@ -466,8 +534,11 @@ Non-success stop states: BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED
 labels stripped, order randomized — returned **BAR**. Evidence package:
 dimension — price clarity in the first screen; divergence — the bar shows the
 per-month price on the card face, ours buries it behind the toggle; proof —
-`captures/gym-04/ours-desktop-c2.png` vs `captures/gym-04/bar-desktop.png`,
-both at 1440×900. The ONE largest gap returned to the builder: "show the
+`captures/gym-04/ours-desktop-c2.png` vs `captures/gym-04/bar-desktop.png` —
+`captures/` is the sanctioned infrastructure directory for evidence artifacts
+(`references/documents.md`, "Infrastructure that is NOT a seventeenth
+document"), one subfolder per unit — both at 1440×900. The ONE largest gap
+returned to the builder: "show the
 monthly price on the card face at first paint." Not a list — the next cycle
 fixes exactly this, then re-runs. An INDETERMINATE verdict or a thin gap
 earns a second critic (Section 5); two INDETERMINATEs mean the comparison
@@ -610,11 +681,15 @@ come FIRST; verified platform syntax is attached per harness.
   re-fire mechanic, NOT by itself a B2H evaluator. `/loop` re-fires the gauntlet
   prompt on an interval; it does not judge. The judging stays in the critic
   (`references/loops.md` owns the scheduler; this file owns the verdict).
-- **`ultracode` is a harness mode (GATE 0).** It is not an official documented
-  Claude Code feature. The Gauntlet may check it as GATE 0 does
-  (see SKILL.md), but it is never embedded as a dependency in the portable text —
-  a reader on another harness must not be blocked by a reference to a mode they
-  do not have.
+- **`ultracode` is a harness mode (GATE 0).** In Claude Code it is a real, verified
+  effort level — `/effort ultracode` sets it session-wide (xhigh plus dynamic
+  workflow orchestration), and including the word `ultracode` in a message enables
+  it for that one turn. Verified 2026-08-08 against the installed Claude Code
+  binary; it is not a CLI flag and not a `claude config` key. On Claude Code,
+  GATE 0 (SKILL.md) requires it — a hard stop, no branch, no bypass. The
+  requirement is the skill's, per harness, and is never embedded in the
+  **portable** text: a reader on another harness must get the capability
+  ("run independent builders and critics in parallel"), not this harness's syntax.
 - **`/goal` is condition-based continuation.** It continues a session while a
   condition holds. It is a continuation mechanic, not a verdict. Verify its
   presence per harness before relying on it — never assume it exists everywhere.
@@ -633,7 +708,7 @@ dependency map.
   Claude-of-Duty measurement is the rule, not the anecdote: on coupled systems,
   parallel fan-out LOST to sequential — +0.46 quality vs +1.00, with defects
   climbing 60→47→66 across waves vs falling 66→26 in the sequential pass. Coupled
-  visuals measured; parallelism won. **A shared visual subsystem is coupled work;
+  visuals measured; sequential won. **A shared visual subsystem is coupled work;
   run it sequential, one owner, and measure your own numbers** (Law 38 — no
   capacity is assumed; the figures transfer only the method).
 
@@ -655,6 +730,21 @@ why, in the execution plan (document 16).
   happens in the reference-apps / bar-selection step
   (`references/research.md`). A work item with no comparable reference is
   INFEASIBLE (GL-007) — a non-success stop, never a skipped gate.
+- **The unit's bar slice, and where it is judged.** A unit's bar slice is the
+  portion of the project bar that its Task requirement traces to (Section 8,
+  traceability). Most units trace to a comparable dimension directly and are
+  judged individually, at the unit level, exactly as above. A unit whose
+  requirements trace ONLY to hard gates (Gate 1/Gate 2 — a deploy script, a
+  database migration, a config file with no user-visible surface) has no
+  individual comparison surface of its own. That unit still carries a bar
+  slice: the comparative dimension "contributes to the integrated artifact's
+  comparison" — and it is comparatively judged at the INTEGRATED/BATCH level
+  (`references/pipeline.md`, "Final integrated comparative review,"
+  L402-420 — the blind A/B that runs on the whole batch before the ripple),
+  where its contribution IS comparable, because the batch it is part of has a
+  surface. **Gate 3 stays mandatory for this unit; only the execution level
+  moves** from per-unit to per-batch. This is never a silent skip and never a
+  reason to invent a fake per-unit bar.
 - **Concurrency cost.** The comparative critic is an ADDITIONAL concurrent
   consumer. Count it against the agent ceiling in the 9.4 budget derivation
   (`references/loops.md`) — one more concurrent agent, one more line in the

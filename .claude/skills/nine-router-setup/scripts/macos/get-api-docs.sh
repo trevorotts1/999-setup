@@ -33,6 +33,7 @@ main() {
     echo "  OLLAMA_API_KEY=replace_with_real_key" >&2
     echo "  DEEPSEEK_API_KEY=replace_with_real_key" >&2
     echo "  AGNES_API_KEY=replace_with_real_key" >&2
+    echo "  OPENROUTER_API_KEY=replace_with_real_key   (optional)" >&2
     echo "  OLLAMA_PLAN=pro" >&2
     echo "  AGNES_PLAN=starter" >&2
     exit 1

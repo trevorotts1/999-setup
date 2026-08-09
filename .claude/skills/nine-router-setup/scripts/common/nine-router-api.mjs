@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // nine-router-api.mjs — authenticated client for the 9Router local management API.
 //
-// Verified against 9router 0.5.45 (2026-08-07). Uses the dashboard login session
-// (auth_token cookie) for the /api/* management surface and the local API key for
-// the /v1/* gateway. Never prints secrets.
+// Verified against 9router 0.5.45 (2026-08-07); surface re-verified 0.5.50 on
+// 2026-08-08. Uses the dashboard login session (auth_token cookie) for the
+// /api/* management surface and the local API key for the /v1/* gateway.
+// Never prints secrets.
 //
 // Exposes a small class + a handful of high-level helpers used by the shared
 // configure/test scripts.
@@ -142,13 +143,20 @@ export class NineRouterClient {
   }
 
   /**
-   * Update a provider connection (name, priority, defaultModel, isActive, ...).
-   * @param {string} id Connection id (provider column value for custom nodes)
-   * @param {Object} partial e.g. { defaultModel: "agnes-2.5-flash" }
+   * Update an existing provider connection in place (e.g. a rotated API key).
+   * Real repair-on-rerun, not a silent "reused" no-op.
+   */
+  async updateProvider(id, body) {
+    const data = await this._req("PUT", `/api/providers/${encodeURIComponent(id)}`, body);
+    return data?.connection || data;
+  }
+
+  /**
+   * Alias of updateProvider — the defaultModel ensure step calls this name;
+   * both hit the same PUT /api/providers/<id> endpoint.
    */
   async patchProvider(id, partial) {
-    const data = await this._req("PUT", `/api/providers/${encodeURIComponent(id)}`, partial);
-    return data?.connection || data;
+    return this.updateProvider(id, partial);
   }
 
   async listProviderNodes() {
@@ -174,6 +182,14 @@ export class NineRouterClient {
 
   async createCombo(body) {
     return this._req("POST", "/api/combos", body);
+  }
+
+  /**
+   * Update an existing combo in place (e.g. a corrected model list). Real
+   * repair-on-rerun, not a silent "reused" no-op.
+   */
+  async updateCombo(id, body) {
+    return this._req("PUT", `/api/combos/${encodeURIComponent(id)}`, body);
   }
 
   // ---- models ----

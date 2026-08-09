@@ -25,6 +25,9 @@
 | Credential invalid | bad key | name only the failing provider; never print the key |
 | Plain `claude` shows router errors | routing leaked globally | verify no `ANTHROPIC_BASE_URL` persisted; this repo never writes it globally |
 | Ollama concurrency rejections | budget overrun | honor the plan budget (free→1, pro→2, max→8); no third Ollama panel on Pro |
+| OpenRouter probe HTTP 402 | account has insufficient credits | config is CORRECT; add credit or use `:free` models |
+| OpenRouter probe HTTP 429 | free-tier daily cap | config is CORRECT, retry later |
+| "no coverage for openrouter" from the router | the checkout that ran setup predated OpenRouter support | refresh the repo (AGENT_INSTALL step 4) and re-run the same setup prompt |
 
 ## Windows-specific
 

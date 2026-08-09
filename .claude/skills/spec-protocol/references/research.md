@@ -166,8 +166,19 @@ time, no jargon — one question presenting the candidates, never a menu):
 (This is the same one-question form gauntlet.md Section 3 mandates for the
 conductor's bar selection — the two files state one question, not two.)
 
+If interview question D1 named a gold standard, validate it first (Named /
+Fetchable / Comparable) and present it FIRST among the candidates — it is the
+user's own pick. If it fails validation, say so plainly ("I could not open X
+today, so I cannot honestly compare against it") and present the ones that
+passed.
+
 - **If the user selects one**, it becomes the frozen bar — captured into the
   current-state document (document 15), next to the survey itself.
+  Freeze D2 and D4 beside it, in the same breath: the D2 relationship ("wins
+  or ties" or "meet all requirements") and the D4 avoid-that items (merged
+  with the survey's AVOID THAT findings) are ratified into the decision
+  register with the bar (gauntlet.md, Section 3) — three decisions, one
+  ratification moment.
 - **The user MUST pick one.** Bar selection is required (references/gauntlet.md,
   Section 12) — there is no "select none" outcome that drops the comparative gate.
   One plain-language question, the user picks the bar, and the pick is ratified in

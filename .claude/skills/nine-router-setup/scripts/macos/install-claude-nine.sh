@@ -8,7 +8,7 @@ set -euo pipefail
 # at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the launcher
 # lives at <repo>/launchers/macos/claude-nine). CLAUDE_NINE_SOURCE overrides it.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../launchers/macos/claude-nine}"
+LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-nine}"
 LAUNCHER="$HOME/.local/bin/claude-nine"
 
 log() { printf '[install-claude-nine] %s\n' "$*" >&2; }
@@ -45,13 +45,32 @@ case ":$PATH:" in
 esac
 EOF
 )"
+  # If the orchestrator installed a repo-managed Node runtime (no system Node
+  # satisfied the minimum), that runtime lives off any default PATH. Fold its
+  # bin dir into this SAME managed block so a FUTURE terminal — not just this
+  # setup run — can still resolve `node`, which the claude-nine launcher calls
+  # directly. The value is baked in literally (not as a variable reference):
+  # it must resolve in a fresh shell that never ran this setup.
+  if [ -n "${CLAUDE_NINE_EXTRA_PATH_DIR:-}" ]; then
+    local extra="$CLAUDE_NINE_EXTRA_PATH_DIR"
+    block="$block
+case \":\$PATH:\" in
+  *\":$extra:\"*) ;;
+  *) export PATH=\"$extra:\$PATH\" ;;
+esac"
+  fi
 
   if [ -f "$profile" ] && grep -qF "$marker" "$profile" 2>/dev/null; then
     # Managed block already present — replace it in place to keep it idempotent
     # while preserving everything outside the block. Replace from the FIRST
     # opening marker to the LAST closing marker so any orphaned markers left by
     # an older buggy write are collapsed into exactly one block.
-    if command -v python3 >/dev/null 2>&1; then
+    # Gate on xcode-select -p, not just `command -v python3`: on a fresh Mac
+    # with no Xcode Command Line Tools, /usr/bin/python3 is the CLT stub —
+    # its NAME resolves (command -v passes) but actually invoking it below
+    # pops the "Install command line developer tools?" GUI dialog mid-setup.
+    # xcode-select -p is a fast, side-effect-free presence check.
+    if command -v python3 >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then
       MANAGED="$(printf '%s\n%s\n%s' "$marker" "$block" "$marker_end")" \
       python3 - "$profile" "$marker" "$marker_end" <<'PY'
 import os, sys

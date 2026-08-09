@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // configure-nine-router.mjs — idempotent provider/routing/combos configuration
-// through the 9Router management API. Verified against 9router 0.5.45.
+// through the 9Router management API. Verified against 9router 0.5.45; surface
+// re-verified 0.5.50 on 2026-08-08.
 //
 // Reads credentials from environment variables (set by the platform orchestrator
 // from API docs.md, kept in memory only). Never prints keys.
@@ -11,6 +12,7 @@
 //   DEEPSEEK_API_KEY           (optional — skips DeepSeek if absent)
 //   OLLAMA_API_KEY             (optional — skips Ollama if absent)
 //   AGNES_API_KEY              (optional — skips Agnes if absent)
+//   OPENROUTER_API_KEY         (optional — skips OpenRouter if absent; failures never block the other providers)
 //   OLLAMA_PLAN                free|pro|max
 //   AGNES_PLAN                 starter|plus|pro
 //   DEEPSEEK_FLASH_VARIANT     (optional) ollama-0731 override
@@ -140,7 +142,9 @@ async function main() {
   // 1. Login with the dashboard password.
   const pw = process.env.NINEROUTER_DASHBOARD_PW;
   if (!pw) err("NINEROUTER_DASHBOARD_PW not set");
-  const login = await client.login(pw).catch((e) => err(`dashboard login failed: ${e.message}`));
+  const login = await client.login(pw).catch((e) =>
+    err(`dashboard login failed: ${e.message}. If you changed the dashboard password, re-run with NINEROUTER_DASHBOARD_PW=<your password>.`)
+  );
   if (!login.success) err("dashboard login rejected");
 
   // Password rotation: when the dashboard still uses the default (fresh install),
@@ -180,10 +184,16 @@ async function main() {
       apiKey = existing.key;
       report.localApiKey = "reused";
     } else if (existing) {
-      // Listed key may be masked; we need the raw value, so create is not an option
-      // if a masked key exists — the orchestrator should have stored the raw key
-      // at creation. Signal caller to supply it.
-      report.localApiKey = "exists-masked";
+      // Listed key may be masked; we need the raw value, and create is not an
+      // option while a same-named key already exists (POST would either
+      // duplicate it or the dashboard would reject it). Continuing with
+      // apiKey=null here would let every one of the 9 verification probes
+      // below fail with 401 while the script still exits 0 — a "complete"
+      // run with every lane silently unverified. Hard-stop instead.
+      err(
+        "a local API key named 'BlackCEO Claude Code' exists but its value cannot be read — delete it in the dashboard Keys page and re-run.",
+        3
+      );
     } else {
       const created = await client.createKey("BlackCEO Claude Code");
       apiKey = created.key;
@@ -226,7 +236,11 @@ async function main() {
   if (deepseekKey) {
     const existing = providers.find((p) => p.provider === "deepseek");
     if (existing) {
-      report.providers.deepseek = "reused";
+      // Real repair-on-rerun (README: "running it again repairs and
+      // updates"): PUT the current key every run rather than silently
+      // ignoring a rotated key on an existing connection.
+      await client.updateProvider(existing.id, { provider: "deepseek", apiKey: deepseekKey, name: "DeepSeek Direct" });
+      report.providers.deepseek = "reused (key refreshed)";
     } else {
       await client.createProvider({ provider: "deepseek", apiKey: deepseekKey, name: "DeepSeek Direct" });
       report.providers.deepseek = "created";
@@ -240,7 +254,8 @@ async function main() {
   if (ollamaKey) {
     const existing = providers.find((p) => p.provider === "ollama");
     if (existing) {
-      report.providers.ollama = "reused";
+      await client.updateProvider(existing.id, { provider: "ollama", apiKey: ollamaKey, name: "Ollama Cloud" });
+      report.providers.ollama = "reused (key refreshed)";
     } else {
       await client.createProvider({ provider: "ollama", apiKey: ollamaKey, name: "Ollama Cloud" });
       report.providers.ollama = "created";
@@ -273,7 +288,10 @@ async function main() {
       report.providers.agnes += ", connection-created";
       await refreshProviders();  // new connection is not in the stale `providers` array
     } else {
-      report.providers.agnes += ", connection-reused";
+      // Real repair-on-rerun: PUT the current key rather than silently
+      // ignoring a rotated AGNES_API_KEY on an existing connection.
+      await client.updateProvider(agnesConn.id, { provider: agnesNode.id, apiKey: agnesKey, name: "Agnes AI" });
+      report.providers.agnes += ", connection-reused (key refreshed)";
     }
     // Agnes connection default model (refetch above guarantees a fresh lookup).
     const agnesConnFresh = providers.find((p) => p.provider === agnesNode.id);
@@ -289,10 +307,44 @@ async function main() {
     report.providers.agnes += agnesKv ? ", kv-models-registered" : ", kv-models-FAILED";
   }
 
+  // OpenRouter: OPTIONAL. Built-in apikey provider (slug "openrouter", verified
+  // 0.5.50: thinkingFormat openai, live modelsFetcher, passthroughModels) — every
+  // catalog model routes as openrouter/<vendor>/<model> once this connection exists.
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      const existing = providers.find((p) => p.provider === "openrouter");
+      if (existing) {
+        await client.updateProvider(existing.id, { provider: "openrouter", apiKey: openrouterKey, name: "OpenRouter" });
+        report.providers.openrouter = "reused (key refreshed)";
+      } else {
+        await client.createProvider({ provider: "openrouter", apiKey: openrouterKey, name: "OpenRouter" });
+        report.providers.openrouter = "created";
+      }
+    } catch (e) {
+      report.providers.openrouter = `error: ${e.message}`;
+    }
+  } else {
+    report.providers.openrouter = "skipped (no OPENROUTER_API_KEY)";
+  }
+
   // 5. Route strings are built from the provider IDs validated against the live
   //    catalogs (resolve-models.mjs ran first). Use the exact returned IDs.
   let resolved = {};
   try { resolved = JSON.parse(process.env.RESOLVED_MODELS || "{}"); } catch {}
+
+  // resolve-models.mjs --all never fails the process on a per-lane error - it
+  // embeds the message in .errors and exits 0, so a bad key or dead lane was
+  // previously silently swallowed here (falling through to the hardcoded
+  // fallback catalogs below), turning the "never substitute models" gate into
+  // a no-op. DeepSeek/Ollama/Agnes are mandatory, so any resolution error on
+  // those three is fatal at this preflight step, named, instead of a confusing
+  // 401 later. OpenRouter is OPTIONAL: its resolution error is captured and
+  // reported honestly on its own line later, never fatal here.
+  const allErrors = resolved.errors || [];
+  const openrouterResolveError = allErrors.find((m) => m.startsWith("openrouter:")) || "";
+  const mandatoryErrors = allErrors.filter((m) => !m.startsWith("openrouter:"));
+  if (mandatoryErrors.length) err("live catalog resolution failed: " + mandatoryErrors.join("; "));
 
   // Assert each lane's model is present in the resolved catalog (defense in depth).
   const has = (list, id) => Array.isArray(list) && list.includes(id);
@@ -412,13 +464,27 @@ async function main() {
   RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
   RESOLVED_ROUTES.vision = olKimi;  // keep
   RESOLVED_ROUTES.haikuFallback = agFlash;  // Haiku fallback lane (Agnes AI), carried through to routing state
+  report.resolvedRoutes = RESOLVED_ROUTES;
 
   // 6. Combos.
   const combos = await client.listCombos();
+  const sameModels = (a, b) => {
+    const aa = Array.isArray(a) ? a : [];
+    const bb = Array.isArray(b) ? b : [];
+    return aa.length === bb.length && aa.every((m, i) => m === bb[i]);
+  };
   const upsertCombo = async (name, models) => {
     const existing = combos.find((c) => c.name === name);
     if (existing) {
-      report.combos[name] = "reused";
+      // Real repair-on-rerun: PUT the current model list when it differs
+      // from what is stored — a corrected combo must not be silently
+      // ignored just because a combo with that name already exists.
+      if (!sameModels(existing.models, models)) {
+        await client.updateCombo(existing.id, { name, models, kind: existing.kind ?? null });
+        report.combos[name] = "reused (models updated)";
+      } else {
+        report.combos[name] = "reused";
+      }
     } else {
       await client.createCombo({ name, models, kind: null });
       report.combos[name] = "created";
@@ -535,6 +601,34 @@ async function main() {
     }
   }
 
+  // OpenRouter verification probe: OPTIONAL, account-condition-aware. 402/429
+  // mean auth succeeded and the request routed — that is a correctly configured
+  // provider, not a setup failure, so it is reported as an account condition,
+  // never an error.
+  let openrouterProbe = "";
+  if (!openrouterKey) {
+    report.verified.openrouter = "skipped - no OPENROUTER_API_KEY found in API docs.md";
+  } else if (openrouterResolveError) {
+    report.verified.openrouter = `error: ${openrouterResolveError}`;
+  } else if (String(report.providers.openrouter).startsWith("error")) {
+    report.verified.openrouter = report.providers.openrouter;
+  } else {
+    const freeIds = resolved.openrouter?.free || [];
+    if (freeIds.length === 0) {
+      report.verified.openrouter = "error: no :free model available to verify with";
+    } else {
+      openrouterProbe = `openrouter/${freeIds[0]}`;   // live-discovered, never hardcoded
+      try {
+        const r = await client.chat(openrouterProbe, { maxTokens: 16, prompt: "ok" });
+        if (r.status === 200) report.verified.openrouter = `ok (via ${openrouterProbe})`;
+        else if (r.status === 402) report.verified.openrouter = "account: HTTP 402 insufficient credits - provider configured correctly, not a setup failure";
+        else if (r.status === 429) report.verified.openrouter = "account: HTTP 429 free-tier rate limit - provider configured correctly, not a setup failure";
+        else report.verified.openrouter = `HTTP ${r.status}`;
+      } catch (e) { report.verified.openrouter = `error: ${e.message}`; }
+    }
+  }
+  report.openrouterProbe = openrouterProbe;
+
   report.concurrency = planToConcurrency(PLAN);
   // The verified live routes the orchestrators' completion report reads — emitted
   // here so the report never falls back to hardcoded defaults.
@@ -563,6 +657,11 @@ async function main() {
     "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
     "blackceo-haiku-fallback: ds-light/deepseek-v4-flash (thinking OFF) → agnes/agnes-2.5-flash.",
   ];
+  if (openrouterKey) {
+    report.notes.push(
+      "OpenRouter wired as optional fourth provider (all catalog models route via openrouter/<vendor>/<model>; only the :free lane is verified)."
+    );
+  }
 
   // Machine-readable output for the orchestrators: a sentinel line followed by ONE
   // compact JSON line. Line-based extractors on both platforms parse exactly this

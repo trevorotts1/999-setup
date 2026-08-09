@@ -243,7 +243,10 @@ ADDITION TO the ten-category score, never as a replacement:
 
 - A fresh-context critic on a DIFFERENT model from the builder and the judge opens
   the actual shipped artifact AND the frozen external benchmark, under normalized
-  conditions.
+  conditions. On a router, two aliases can resolve to the same underlying model.
+  Read the router config and VERIFY the builder, judge, and comparative-critic
+  seats resolve to different underlying models — different alias names prove
+  nothing.
 - It strips labels (the critic never sees which side is ours), randomizes order,
   and makes a binary decision: **OURS / BAR / INDETERMINATE**.
 - On ITERATE it names the single largest gap between ours and the bar — one gap,
@@ -262,6 +265,30 @@ never lowers or replaces it.
 2. What to improve + how (improvements, UX, features) — recorded, never
    applied. A scope addition requires the user's explicit yes (Law 42,
    Law 46); an improvement finding is a note for the user, not a dispatch.
+
+### Arbitration when Gate 1 and Gate 3 both fail at once
+
+Gate 1 (the ten-category score, the fail-closed rules, the mutation proof) and
+Gate 3 (the blind A/B against the frozen bar, `references/gauntlet.md`) can
+both fail on the same unit in the same cycle. Fixes fan out per finding
+(Law 32) and the Gauntlet returns exactly one largest gap per cycle (Section
+1.2) — two rules that would otherwise collide with no arbitration. One rule
+decides which drives:
+
+1. **Gate-1 findings fan out per finding (Law 32).** Every Gate-1 finding
+   dispatches its own fixer, in parallel, exactly as this stage already runs.
+2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
+   single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
+   same fix list, under the SAME per-finding 3-cycle cap (Rule 3.22). It is
+   one more row in the fix list, never a second, competing cycle counter.
+3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
+   correctness is the floor; re-judging a comparison against a build that has
+   not yet cleared Gate 1 wastes a critic on a moving target. The order is
+   always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
+
+Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
+Gate-3 largest-gap finding each carry their OWN 3-cycle counter (Rule 3.22),
+because they are different findings, not because they are different gates.
 
 ---
 

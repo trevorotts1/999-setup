@@ -182,6 +182,13 @@ FAIL if: <exact condition> → incomplete because <reason>
   proof, merge record — the judge writes these; this is where the refused verdict
   tickets and digest live); (c) the restart steps (the literal resume procedure,
   verbatim with real paths; this is where the refused resume playbook lives).
+  **Every verdict block records the per-finding cycle count** — which cycle this
+  finding is on, of the 3-cycle fix cap (Rule 3.22; `references/pipeline.md`), as
+  "cycle count: n of 3" — so a session resuming cold after a crash or a
+  compaction reads which cycle a finding is on directly from the block instead of
+  reconstructing it from ledger history. Recorded by whichever role writes that
+  verdict block (the judge on a Gate 1/2 finding; the critic on a Gauntlet Gate 3
+  finding, `references/gauntlet.md` Section 5).
 - **Batch merge records live here too** — as a section appended by the merge-writer
   inside the verdict/merge-record section (the merge-writer already owns appending
   merge records here). One entry per batch: batch id, repository, units landed,
@@ -194,6 +201,8 @@ FAIL if: <exact condition> → incomplete because <reason>
   folds into document 6 (which already holds merge records) and no permission is
   needed.
 - **What makes it wrong:** a hand-edited entry; a verdict without quoted proof; a
+  verdict block with no cycle count, or a cycle count that disagrees with the
+  number of prior verdict blocks for that same finding; a
   state that disagrees with the primary source; a batch with no merge record; a
   reconciliation where a pen item is missing from all three outcomes. (Law 1: when
   git disagrees, git wins and the prose is corrected.)
@@ -203,13 +212,16 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Writer:** the orchestrator (instantiated from the QC rulebook,
   PROMPT-QC-INSTRUCTIONS.md, with this project's real paths at generation time)
 - **Readers:** every judge, every gate loop, every fixer
-- **Shape:** the complete quality law — the ten categories (each with its four-band
-  description), the evidence rules, the break-it pass, the mutation proof, the
-  fail-closed rules, the truth gates, the finding/verdict format, the one-page
-  checklist. Instantiated with this project's real paths.
+- **Shape:** the complete quality law, built ONLY from what this skill actually
+  ships — the ten categories (`PROMPT-QC-INSTRUCTIONS.md`, in this skill
+  directory) plus `references/pipeline.md`'s break-it pass, mutation proof,
+  fail-closed rules, and the six-part finding format (Stage 2 and Stage 3).
+  Instantiated with this project's real paths.
 - **What makes it wrong:** a rule invented rather than carried (the ten categories
-  are the same for everything — do not create a competing standard); an instantiated
-  path that does not exist.
+  are the same for everything — do not create a competing standard); a category
+  band, evidence rule, or checklist copied from anywhere outside this skill
+  directory (there is no such source to copy from — do not invent one); an
+  instantiated path that does not exist.
 
 ### Document 8 — Goal document
 - **Path:** `SPEC/GOAL.md` (v4 13.1 puts the goal under SPEC/ — it states the
@@ -283,13 +295,24 @@ FAIL if: <exact condition> → incomplete because <reason>
 
 ### Document 13 — Heartbeat
 - **Path:** `CONTROL/HEARTBEAT.md`
-- **Writer:** each agent, its own line only
+- **Writer:** each agent, its own line only — written through `tools/ledger.sh`'s
+  UPSERT mode (`ledger.sh <home> CONTROL/HEARTBEAT.md "<line>" "<agent label>"`),
+  never a plain append and never a hand-edit. The agent's own label is the upsert
+  key: `ledger.sh` removes that agent's prior line and writes the new one as one
+  locked read-modify-write, which is what makes "overwritten on every real
+  progress step" (below) hold true even with many agents heartbeating at once —
+  a plain append would grow the file forever, and an unlocked overwrite would
+  race the same way the plain-append primitive used to (see document 6's ledger,
+  and `tools/ledger.sh`'s own header comment, for the concurrent-writer bug this
+  closes).
 - **Readers:** the stall-detection loop; the watchdog
 - **Shape:** one line per live agent, overwritten on every real progress step:
   `timestamp | agent label | work item | stage`. Must stay small.
 - **What makes it wrong:** a heartbeat driven by a timer rather than progress; an
   agent that stamps another agent's line; an agent with no heartbeat at all (died at
-  launch — reconcile against the dispatch log, not the heartbeat).
+  launch — reconcile against the dispatch log, not the heartbeat); a heartbeat
+  written by appending instead of through `ledger.sh`'s upsert mode (the file
+  grows instead of staying one line per agent).
 
 ### Document 14 — Morning report
 - **Path:** `MORNING-REPORT-YYYY-MM-DD.md`
@@ -390,6 +413,15 @@ not count against the closed sixteen and never need a Rule 3.28 ask:
 - **SCOPE.md** — the scope fence's file (`references/pipeline.md`). RATIFIED as
   INFRASTRUCTURE, not a seventeenth document. It lists the in-scope set, and its
   writer is the orchestrator.
+- **captures/** — the Gauntlet's evidence artifacts (screenshots, diffs, and other
+  binary capture output from the capture tooling — `references/gauntlet.md`
+  Section 4). One subfolder per unit, `captures/<unit-id>/`, e.g.
+  `captures/gym-04/ours-desktop-c2.png`. RATIFIED as INFRASTRUCTURE, not a
+  seventeenth document — PNGs and other binaries cannot live inside the markdown
+  ledger that Law 39 folds evidence into (document 6), so the ledger and the
+  current-state document (document 15) cite these paths by reference rather than
+  inlining the artifacts. Its writer is whichever agent runs the capture (the
+  builder or the critic).
 - The skill's own `references/` files (gauntlet.md, pipeline.md, the rest) — read
   by the skill at runtime, never part of any project folder.
 
