@@ -191,6 +191,19 @@ try {
     }
     $report = $cfgArr[$sentinelIdx + 1] | ConvertFrom-Json
 
+    # Rotated dashboard password. When the configure helper rotated the dashboard
+    # away from the default this run, the report carries the ACTUAL new password
+    # (report.dashboardPassword — the single sanctioned exception to never printing
+    # keys). Use exactly that value for the token fetch and every later API call;
+    # never regenerate a password here — a locally regenerated one would differ
+    # from what the router has and every subsequent API call would fail auth.
+    # When the field is absent no rotation happened this run, so the original
+    # password is kept. The value flows through an env var and is never printed.
+    if ($report.dashboardPassword) {
+        $dashPw = [string]$report.dashboardPassword
+        Write-Log 'Dashboard password rotated from the default (new password used for API calls; not printed)'
+    }
+
     # Obtain the local router token (create/reuse) and DPAPI-protect it.
     $env:NINEROUTER_DASHBOARD_PW = $dashPw
     $commonFwd = $Common -replace '\\','/'
@@ -198,7 +211,13 @@ try {
 import { pathToFileURL } from 'node:url';
 const { NineRouterClient } = await import(pathToFileURL(process.env.COMMON_DIR + '/nine-router-api.mjs').href);
 const c = new NineRouterClient(process.env.NINEROUTER_BASE);
-await c.login(process.env.NINEROUTER_DASHBOARD_PW);
+let ok = (await c.login(process.env.NINEROUTER_DASHBOARD_PW).catch(() => null))?.success;
+// Idempotent-rerun fallback: a password that did not rotate (or was already
+// rotated on an earlier run) must not fail the token fetch on login.
+if (!ok && process.env.NINEROUTER_DASHBOARD_PW !== '123456') {
+  ok = (await c.login('123456').catch(() => null))?.success;
+}
+if (!ok) throw new Error('dashboard login failed');
 const keys = await c.listKeys();
 const k = keys.find(x => x.name === 'BlackCEO Claude Code');
 if (k && k.key) { console.log(k.key); process.exitCode = 0; }
@@ -292,6 +311,37 @@ else {
     $reserved = if ($creds['OLLAMA_PLAN'] -eq 'pro') { 1 } else { 0 }
     $vFable = if ($report.verified.fable) { $report.verified.fable } else { 'unknown' }
     $vAgnes = if ($report.verified.agnes) { $report.verified.agnes } else { 'unknown' }
+    $vOpus = if ($report.verified.opus) { $report.verified.opus } else { 'unknown' }
+    $vSonnet = if ($report.verified.sonnet) { $report.verified.sonnet } else { 'unknown' }
+    $vHaiku = if ($report.verified.haiku) { $report.verified.haiku } else { 'unknown' }
+
+    # Route strings come from the config report; fall back to the new defaults
+    # only if the report lacks them (it never should after a successful configure run).
+    $r = $report.resolvedRoutes
+    $rFable   = if ($r.fable)   { $r.fable }   else { 'ds/deepseek-v4-flash(max)' }
+    $rOpus    = if ($r.opus)    { $r.opus }    else { 'ds-max/deepseek-v4-pro(max)' }
+    $rSonnet  = if ($r.sonnet)  { $r.sonnet }  else { 'ds/deepseek-v4-flash(max)' }
+    $rHaiku   = if ($r.haiku)   { $r.haiku }   else { 'ds-light/deepseek-v4-flash' }
+    $rVision  = if ($r.vision)  { $r.vision }  else { 'ollama/kimi-k2.6' }
+    $dashUrl  = if ($report.dashboardUrl) { $report.dashboardUrl } else { "http://127.0.0.1:$Port" }
+
+    # Thinking verification from the config report: one line per verified lane
+    # ("verified max" / "verified off"), with downgrades surfaced as warnings.
+    $thinkingLines = @()
+    $labelMap = @{ opus = 'DS Max thinking'; sonnet = 'DS Flash thinking'; fable = 'DS Flash (subagent) thinking'; haiku = 'DS Light thinking' }
+    foreach ($key in $labelMap.Keys) {
+        if (-not $report.thinkingVerified) { break }
+        $status = $report.thinkingVerified.$key
+        if (-not $status) { continue }
+        if ($status -eq 'ok-thinking')      { $thinkingLines += "$($labelMap[$key]): verified max" }
+        elseif ($status -eq 'ok-no-thinking') { $thinkingLines += "$($labelMap[$key]): verified off" }
+        else                                { $thinkingLines += "WARNING: $($labelMap[$key]) could not be verified ($status)" }
+    }
+
+    $rotatedNote = ''
+    if ($report.dashboardPasswordRotated -eq $true) {
+        $rotatedNote = "Dashboard password: ROTATED from the default on first login (value never printed).`n"
+    }
     @"
 
 999 SETUP: COMPLETE
@@ -310,32 +360,28 @@ Ollama Cloud: OK
 Agnes AI: $vAgnes
 
 Claude routes:
-Fable/Subagents -> DeepSeek V4 Flash (max)
-Opus -> DeepSeek V4 Pro (max)
-Sonnet -> Ollama GLM 5.2 (max)
-Haiku -> Ollama Kimi K2.6 (verified effort)
+Fable/Subagents -> $rFable
+Opus -> $rOpus
+Sonnet -> $rSonnet
+Haiku -> $rHaiku (thinking off)
+Vision -> $rVision
 
 Fallback:
-DeepSeek -> Agnes 2.5 Flash: configured
-
-Fusion:
-DeepSeek Flash + GLM 5.2 + Kimi K2.6
-Judge -> DeepSeek V4 Pro
-Status: OK
-
+Haiku -> $rHaiku, then agnes/agnes-2.5-flash: configured
+$(if ($thinkingLines.Count) { $thinkingLines -join "`n" })
+$rotatedNote
 Ollama plan: $($creds['OLLAMA_PLAN'])
 Ollama Claude/9Router concurrency budget: $concurrency
 Reserved for OpenClaw: $reserved
 
-Vision auto-switch -> Kimi K2.6: OK
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
 
-9ROUTER DASHBOARD (save this link): http://127.0.0.1:$Port
+Dashboard: $dashUrl - open this in your browser to manage providers and models.
 
 Launch routed Claude Code with: claude-nine
 
-No API keys were printed.
+No API keys or passwords were printed.
 "@ | Write-Host
     exit 0
 } catch {

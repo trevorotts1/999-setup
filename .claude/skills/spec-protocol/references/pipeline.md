@@ -56,6 +56,11 @@ it is the same defect as doing less, it is harder to detect, and it costs more.
 A one-hour build expanded into a three-day project is not an improvement; it is
 a defect. The QC mirror of this check is fail-closed rule 8 (Stage 2).
 
+**The over-engineering check runs ONCE before the first builder dispatches.**
+The spec must build EXACTLY what the user asked — not more, not less. A spec
+that adds features the user did not ask for is corrected now. The user's
+brainstorm and the confirmed feature list are the source of truth.
+
 ---
 
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
@@ -72,6 +77,15 @@ available.
 | Claude-Nine, Ollama Cloud $20 | 3 concurrent (use 8 for the $100 plan) | Ollama Cloud rejects one more. |
 | Claude-Nine, DeepSeek direct $20+ | up to 500 subagents; cap at 320 | DeepSeek ceiling. Recommend for the swarm. |
 | Claude-Nine, DeepSeek v4 Flash direct | up to 2,500 subagents | Flash is cheaper, wider. |
+
+### Capture-tooling preflight
+
+For any visual Gate 3 bar, a working capture tool must exist BEFORE the bar is
+frozen. Detect it by actually running it (a probe screenshot, never a version
+string). If none is found, install one: `npx playwright install chromium` and
+prove the install with a real probe screenshot. Only if installation genuinely
+fails does this fall back to reporting the gap and its consequence for visual
+bars — install-then-prove, never detect-and-warn when installing is possible.
 
 ### Slice the spec (Law 5)
 

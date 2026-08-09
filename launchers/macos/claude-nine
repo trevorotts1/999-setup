@@ -13,25 +13,32 @@ STATE_FILE="$STATE_DIR/router-session.json"
 KEYCHAIN_SERVICE="BlackCEO-999"
 KEYCHAIN_ACCOUNT="9router-api-token"
 LOG_DIR="$HOME/Library/Logs/BlackCEO-999"
+DUPFIX_GUARD="$HOME/.local/bin/9router-dupfix-guard.sh"
 
 port_healthy() {
   curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null
 }
 
 start_router() {
-  local bin="${NINEROUTER_BINARY:-}"
-  if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-    bin="$HOME/.local/share/999/npm/bin/9router"
+  local launchctl_bin="/bin/launchctl"
+  if [ -x "$launchctl_bin" ] && \
+     "$launchctl_bin" print "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1; then
+    "$launchctl_bin" kickstart -k "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1 || true
+  else
+    local bin="${NINEROUTER_BINARY:-}"
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+      bin="$HOME/.local/share/999/npm/bin/9router"
+    fi
+    if [ ! -x "$bin" ]; then
+      bin="$(command -v 9router 2>/dev/null || true)"
+    fi
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+      echo "claude-nine: 9router binary not found. Re-run /nine-router-setup." >&2
+      return 1
+    fi
+    mkdir -p "$LOG_DIR"
+    nohup "$bin" --no-browser > "$LOG_DIR/9router.log" 2>&1 &
   fi
-  if [ ! -x "$bin" ]; then
-    bin="$(command -v 9router 2>/dev/null || true)"
-  fi
-  if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-    echo "claude-nine: 9router binary not found. Re-run /nine-router-setup." >&2
-    return 1
-  fi
-  mkdir -p "$LOG_DIR"
-  nohup "$bin" --no-browser > "$LOG_DIR/9router.log" 2>&1 &
   local i
   for i in $(seq 1 40); do
     port_healthy && return 0
@@ -65,16 +72,33 @@ main() {
     exit 1
   fi
 
-  # 3. Ensure 9Router is up (never a second instance when healthy).
+  # 3. Keep the stream-translator dup-fix applied; npm i -g 9router or a
+  #    self-update silently reverts it. Never blocks the launch.
+  if [ -x "$DUPFIX_GUARD" ]; then
+    "$DUPFIX_GUARD" --quiet || \
+      echo "claude-nine: 9router dup-fix could not be applied — expect tool-call errors." >&2
+  fi
+
+  # 4. Ensure 9Router is up (never a second instance when healthy).
   if ! port_healthy; then
     echo "claude-nine: 9Router not healthy on :$PORT — starting it..." >&2
     start_router || exit 1
   fi
 
-  # 4. Routing env — export only into this process (child inherits it).
+  # 5. Routing env — export only into this process (child inherits it).
   export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT/v1"
   export ANTHROPIC_AUTH_TOKEN="$token"
   unset token
+
+  # Production-default routes (see references/model-routing.md). The (max) suffix
+  # is 9Router's thinking-effort mechanism, parsed per-route.
+  export ANTHROPIC_DEFAULT_FABLE_MODEL="ds/deepseek-v4-flash(max)"
+  export ANTHROPIC_DEFAULT_OPUS_MODEL="ds-max/deepseek-v4-pro(max)"
+  export ANTHROPIC_DEFAULT_SONNET_MODEL="ds/deepseek-v4-flash(max)"
+  export ANTHROPIC_DEFAULT_HAIKU_MODEL="ds-light/deepseek-v4-flash"
+  export CLAUDE_CODE_SUBAGENT_MODEL="ds/deepseek-v4-flash(max)"
+  # Haiku fallback: Agnes AI when the DS Light lane is down (provider-level).
+  export ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK="agnes/agnes-2.5-flash"
 
   # Parse the state file once into exported vars (single node call, no secrets).
   # A corrupt/unparseable state file MUST fail loudly — never launch claude
@@ -112,14 +136,22 @@ NODE
   fi
   eval "$exports"
 
-  # 5. Assert the routing boundary is actually armed before exec — never launch
+  # 6. Assert the routing boundary is actually armed before exec — never launch
   #    claude unrouted. If a required var is missing, the state is corrupt.
   : "${ANTHROPIC_DEFAULT_FABLE_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_OPUS_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
   : "${ANTHROPIC_DEFAULT_HAIKU_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
 
-  # 6. Exec the same claude binary, forwarding all args.
+  # 7. Banner: show which models are wired (model ids only — never tokens).
+  echo "🚀 claude-nine via 9Router (http://127.0.0.1:$PORT/v1)" >&2
+  echo "   fable/subagent: $ANTHROPIC_DEFAULT_FABLE_MODEL" >&2
+  echo "   opus:           $ANTHROPIC_DEFAULT_OPUS_MODEL" >&2
+  echo "   sonnet:         $ANTHROPIC_DEFAULT_SONNET_MODEL" >&2
+  echo "   haiku:          $ANTHROPIC_DEFAULT_HAIKU_MODEL" >&2
+  echo "   haiku fallback: ${ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK:-none}" >&2
+
+  # 8. Exec the same claude binary, forwarding all args.
   exec "$claude" "$@"
 }
 

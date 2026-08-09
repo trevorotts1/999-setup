@@ -4,16 +4,19 @@
 
 | Role / feature | Provider | Model | Thinking | Notes |
 |---|---|---|---|---|
-| Fable / subagents | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Also set `CLAUDE_CODE_SUBAGENT_MODEL` |
-| Opus | DeepSeek Direct | `ds/deepseek-v4-pro` (via `ds/deepseek-v4-pro-max`) | Max | Use the verified Pro-Max route |
-| Sonnet | Ollama Cloud | `ollama/glm-5.2` | Max | ~976K cloud context |
-| Haiku | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified, target Max | 256K, Text+Image |
-| Selectable | Ollama Cloud | `ollama/gemma4:31b` | Provider-supported | 256K, Text+Image, **no audio** |
-| Selectable | Ollama Cloud | `ollama/minimax-m3` | Provider-supported | Use 512K operational context |
-| Fallback | Agnes AI | `agnes/agnes-2.5-flash` | Highest verified | OpenAI-compatible |
-| Vision auto-switch | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | Must pass image smoke test |
-| PDF auto-switch | — | — | — | Disabled until verified end-to-end |
-| Audio auto-switch | — | — | — | Disabled; Gemma 4 31B has no audio input |
+| Fable / subagents | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Also `CLAUDE_CODE_SUBAGENT_MODEL` |
+| Opus | DS Max (custom) | `ds-max/deepseek-v4-pro` | Max | Custom node forces max |
+| Sonnet | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Swarm builder |
+| Haiku | DS Light (custom) | `ds-light/deepseek-v4-flash` | Off | Cheap reads |
+| Haiku fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | — |
+| Selectable | Ollama Cloud | `ollama/glm-5.2` | Max | ~976K |
+| Selectable | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | 256K, Text+Image |
+| Selectable | Ollama Cloud | `ollama/gemma4:31b` | Provider-supported | 256K, no audio |
+| Selectable | Ollama Cloud | `ollama/minimax-m3` | Provider-supported | 512K operational |
+| Fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | Universal |
+| Vision auto-switch | Ollama Cloud | `ollama/kimi-k2.6` | Highest verified | Image smoke test |
+| PDF auto-switch | — | — | — | Disabled |
+| Audio auto-switch | — | — | — | Disabled |
 
 ## Provider model IDs
 
@@ -78,6 +81,17 @@ baseUrl: https://apihub.agnes-ai.com/v1
 Model: `agnes-2.5-flash`. Do not substitute `agnes-2.0-flash` or another model without
 explicit user approval.
 
+### DS Light and DS Max — DeepSeek custom provider nodes
+
+Two custom OpenAI-compatible nodes for deterministic thinking control:
+
+```text
+DS Light:  prefix=ds-light,  baseUrl=https://api.deepseek.com/anthropic, model=deepseek-v4-flash, thinking=off
+DS Max:    prefix=ds-max,    baseUrl=https://api.deepseek.com/anthropic, model=deepseek-v4-pro,  thinking=max
+```
+
+These exist because the 9Router `(max)` suffix mechanism (`stripThinkingSuffix`/`applyThinking`) is parsed per-route and is not verified — a custom node with explicit provider-level thinking wiring is deterministic. DS Light gives Haiku fast reads without thinking overhead; DS Max ensures Opus always gets max reasoning.
+
 ## The DeepSeek Flash 0731 correction
 
 - `deepseek-v4-flash` and `deepseek-v4-pro` are **DeepSeek Direct** API model IDs.
@@ -107,12 +121,15 @@ safety — do not silently violate the reserved-capacity policy.
 
 Desired effort per route (probe, don't assume):
 
-| Route | Desired | Fallback |
-|---|---|---|
-| DeepSeek Flash / Pro | `max` | none (deepseek format honors max) |
-| GLM 5.2 | `max` | highest verified |
-| Kimi K2.6 | max, only if a live probe confirms | highest verified |
-| Agnes 2.5 Flash | max, only if accepted | provider-supported default |
+| Route | Desired | Fallback | Mechanism |
+|---|---|---|---|
+| DeepSeek Flash (direct) | `max` | high | `(max)` suffix |
+| DS Max (custom node) | `max` | N/A | Provider-level forced |
+| DS Light (custom node) | `off` | N/A | Provider-level forced |
+| GLM 5.2 | `max` | highest verified | zai binary on/off |
+| Kimi K2.6 | max if probed | highest verified | Probe required |
+| Agnes 2.5 Flash | max if accepted | provider default | OpenRouter format |
+| Agnes 2.5 Pro/Alpha | provider-supported | provider-supported | — |
 
 Do not fail the entire installation solely because Agnes (or any provider) lacks a `max`
 effort parameter. Downgrade only that route, keep reasoning enabled, and record it.
@@ -161,20 +178,12 @@ model to the default Fusion panel on Pro.
 ## Combo definitions
 
 ```text
-blackceo-fable-fallback:
-  1. ds/deepseek-v4-flash (max)
-  2. agnes/agnes-2.5-flash (highest verified reasoning)
-
-blackceo-opus-fallback:
-  1. ds/deepseek-v4-pro (max)
-  2. agnes/agnes-2.5-flash (highest verified reasoning)
-
-blackceo-fusion (strategy: fusion):
-  Panels:
-  1. ds/deepseek-v4-flash (max)
-  2. ollama/glm-5.2 (max)
-  3. ollama/kimi-k2.6 (highest verified, target max)
-  Judge: ds/deepseek-v4-pro (max)
+blackceo-fable-fallback:  ds/deepseek-v4-flash(max) → agnes/agnes-2.5-flash
+blackceo-opus-fallback:   ds-max/deepseek-v4-pro(max) → agnes/agnes-2.5-flash
+blackceo-haiku-fallback:  ds-light/deepseek-v4-flash → agnes/agnes-2.5-flash
+blackceo-fusion:
+  Panels: ds/deepseek-v4-flash(max), ollama/glm-5.2(max), ollama/kimi-k2.6
+  Judge: ds-max/deepseek-v4-pro(max)
 ```
 
 Fallback activates on real upstream failure conditions (timeout, 429, upstream 5xx) where

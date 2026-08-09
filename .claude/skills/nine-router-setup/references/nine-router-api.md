@@ -106,6 +106,21 @@ The SSE chat handler reads `comboStrategies[comboName]` for `fallbackStrategy` (
 fallback/round-robin) and `judgeModel` for fusion. Without `judgeModel`, fusion falls back
 to the first panel model.
 
+### Provider thinking for custom nodes
+
+Custom nodes use their full `providerNodes.id` (e.g. `openai-compatible-chat-<uuid>`) as the key in `settings.providerThinking`. The dashboard UI does not expose this for custom nodes — it must be set via `PATCH /api/settings`:
+
+```json
+{
+  "providerThinking": {
+    "<ds-light-node-id>": {"mode": "off"},
+    "<ds-max-node-id>": {"mode": "max"}
+  }
+}
+```
+
+The `mode` values map to the same format table as built-in providers (see model-routing.md reasoning effort rules). `"off"` means no thinking fields are sent. `"max"` maps to the provider's highest tier.
+
 ## API keys — `POST /api/keys`
 
 ```json
@@ -155,6 +170,24 @@ Creates a custom OpenAI-compatible node (used for Agnes):
   "apiType": "chat",
   "baseUrl": "https://apihub.agnes-ai.com/v1"
 }
+
+// DS Light — DeepSeek v4 Flash with thinking OFF
+{
+  "name": "DS Light",
+  "prefix": "ds-light",
+  "type": "openai-compatible",
+  "apiType": "chat",
+  "baseUrl": "https://api.deepseek.com/anthropic"
+}
+
+// DS Max — DeepSeek v4 Pro with thinking MAX
+{
+  "name": "DS Max",
+  "prefix": "ds-max",
+  "type": "openai-compatible",
+  "apiType": "chat",
+  "baseUrl": "https://api.deepseek.com/anthropic"
+}
 ```
 
 - `type` defaults to `openai-compatible`; `apiType` must be `chat` or `responses`.
@@ -196,6 +229,56 @@ Fetches the live model list for a provider connection. Verified endpoints used b
 
 Use this (or the provider's direct catalog) for live model resolution; never trust a static
 list more than the live catalog.
+
+### Model registration for custom providers — `kv` table
+
+Custom provider nodes (Agnes AI, DS Light, DS Max) require model registration in
+the `kv` table for the dashboard to show available models and for routing to work
+deterministically. Without `kv` rows, the dashboard shows an empty model list even
+when the node and connection are correctly configured.
+
+**Schema:**
+```sql
+CREATE TABLE IF NOT EXISTS kv (
+  scope TEXT NOT NULL,   -- 'customModels' for model registration
+  key   TEXT NOT NULL,   -- '<nodeId>|<modelId>|llm'
+  value TEXT NOT NULL,   -- JSON: {"providerAlias":"<nodeId>","id":"<modelId>","type":"llm","name":"<modelId>"}
+  PRIMARY KEY (scope, key)
+);
+```
+
+**Insert pattern (gateway stopped — see Platform section):**
+```bash
+/usr/bin/python3 - <<'PY'
+import sqlite3, os, json, uuid
+NODE_ID = os.environ["NODE_ID"]      # set by caller, never printed
+MODELS  = os.environ["MODELS"].split(",")  # comma-separated model IDs
+db = sqlite3.connect(os.path.expanduser("~/.9router/db/data.sqlite"))
+for mid in MODELS:
+    key = f"{NODE_ID}|{mid.strip()}|llm"
+    value = json.dumps({"providerAlias": NODE_ID, "id": mid.strip(), "type": "llm", "name": mid.strip()},
+                       separators=(",", ":"))
+    db.execute("INSERT OR REPLACE INTO kv(scope,key,value) VALUES(?,?,?)",
+               ("customModels", key, value))
+db.commit()
+print(f"registered {len(MODELS)} models under {NODE_ID}")
+PY
+```
+
+**Verification:**
+```bash
+sqlite3 -header ~/.9router/db/data.sqlite \
+  "SELECT key FROM kv WHERE scope='customModels' AND key LIKE '<NODE_ID>|%';"
+```
+
+**Required registers per provider:**
+- Agnes AI: `agnes-2.5-flash`, `agnes-2.5-pro`, `agnes-2.5-pro-alpha`
+- DS Light: `deepseek-v4-flash`
+- DS Max: `deepseek-v4-pro`
+
+**TRAP — compact JSON:** The value must use `separators=(",", ":")` — no spaces.
+A space between `:` and the value (`{"key": "value"}`) still parses, but a
+hand-written row is visually obvious in a diff against dashboard-written rows.
 
 ## Chat gateway
 

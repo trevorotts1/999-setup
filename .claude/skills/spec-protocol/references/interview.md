@@ -11,10 +11,10 @@ questions, and they are hard to unpick later because they look like decisions.
 One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
 **State the expected question count up front, plainly:** "I will ask you about
-fifteen short questions, one at a time, and then you can walk away." (Eighteen
+nineteen short questions, one at a time, and then you can walk away." (Twenty-two
 is the ceiling — A1 is usually measured rather than asked, and the two fast
 paths below can fold blocks B and C into yes/no confirmations. Never promise
-fewer than you will actually ask; say "about fifteen" and mean it.)
+fewer than you will actually ask; say "about nineteen" and mean it.)
 
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
@@ -110,8 +110,8 @@ not change code, so there is nothing to decide."
 
 ## Step 2 — The interview, in three blocks
 
-Eighteen questions, asked in three named blocks, in this order — eight in block A,
-four in block B, six in block C. The order is not cosmetic: the capacity answers
+Twenty-two questions, asked in four named blocks, in this order — eight in block A,
+four in block B, six in block C, four in block D. The order is not cosmetic: the capacity answers
 set what the repository and loop answers may be. Ask everything in a block, then
 move on.
 
@@ -168,10 +168,10 @@ models — MiniMax = 512k not 1M, GLM 5.2 Haiku output = 64k). Check rate limits
 concurrent, $100 = 10 — use 8). Check budget (OpenRouter/DeepSeek balance vs a
 rough token estimate — rough, not final). Save the matrix to the execution plan.
 
-**Fast path 1 — the defaults offer (right after A2).** Eighteen questions is a lot
+**Fast path 1 — the defaults offer (right after A2).** Twenty-two questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
 
-> I can ask you about a dozen more questions, or you can use my recommended
+> I can ask you about fifteen more questions, or you can use my recommended
 > defaults for how hard the thinking is, how many helpers run at once, and which
 > helpers plan versus build. If the defaults turn out wrong, we can change them
 > later. Want to use my recommended defaults?
@@ -197,7 +197,9 @@ their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
 live at its URL. A yes records the whole block as defaults (each marked
 "default — confirmed yes/no" rather than "their answer"). A no re-opens the block
 question by question. The collapse is the reason a tiny plan gets asked "about
-fifteen short questions" instead of eighteen-plus.
+nineteen short questions" instead of twenty-two-plus. Block D (the four
+measuring-stick questions) never collapses — it runs on BOTH harnesses
+regardless of project size.
 
 ---
 
@@ -262,6 +264,28 @@ loop runs forever — it wakes, finds nothing to do, sleeps, and repeats until t
 capacity is gone. An answer of "when it works" is not an answer. Push until it is
 something a command can test, and write that command into the completion
 definition.
+
+---
+
+### Block D — The measuring stick (the four questions that run on BOTH harnesses)
+
+These four questions belong to the user alone — their taste, their win condition,
+their machine, their dislikes. Inventing any of them would be the skill deciding
+the user's own intent (Laws 40, 46). Block D is the ONLY part of the capacity
+interview that runs on BOTH Claude-Nine AND regular Claude Code.
+
+Ask these ONE AT A TIME, plain and warm:
+
+| # | The question (plain) | What it sets |
+|---|---|---|
+| **D1** | **Is there a real app, website, or product you want yours to be as good as?** Pick one you think is excellent — something you would be happy if yours measured up to. Give me its name or web address. | The bar (Law 48). D1 is REQUIRED — every project has a bar; a project with no comparable bar is INFEASIBLE, never bar-less. Feeds the bar-candidates step in research.md. The user's answer seeds the reference-apps survey: the conductor offers TWO to THREE candidate bars derived from D1, and the user picks one. |
+| **D2** | **If you had to choose: would you rather it be correct and on-brief but not as good as the example you picked, or as good as the example but maybe not exactly on-brief?** This tells me which gate matters more when I have to choose. | Whether Gate 2 (on-brief) or Gate 3 (comparative B2H) takes precedence when they conflict. |
+| **D3** | **My tool may need to download a browser (~130 MB) to take comparison screenshots. Is that okay?** If you are not sure, I will not download it — I will use what you already have, and the comparison will run with what is available. | Whether the capture-tooling preflight in step 9 may download Playwright. "No" (or anything other than a clear "yes") → use existing tooling only. |
+| **D4** | **Is there anything you have seen in other apps or websites that you definitely DO NOT want in yours?** Things you find annoying, confusing, pushy — whatever they are, tell me and I will make sure they stay out. | The "avoid that" list — becomes EXCLUSIONS in every build unit and a comparative dimension in the B2H. |
+
+Record each answer in the decision register (document 10). D1 is the bar seed;
+D2 tunes the gate priority. D4 prevents the builder from copying the bar's own
+mistakes.
 
 ---
 

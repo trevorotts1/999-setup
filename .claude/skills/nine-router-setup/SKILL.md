@@ -37,6 +37,9 @@ shared Node.js management-API helpers are under `<skill-dir>/scripts/common/`.
    entry point, and routing lives only in its child-process environment.
 3. **Never use a separate Claude config root for `claude-nine`.** The skill installs once to
    the existing config root, so both `claude` and `claude-nine` see the same personal skills.
+   This is deliberate, unlike skills that keep a separate profile: `claude-nine` reuses the
+   same config root so both profiles see the same personal skills. The routing is scoped to
+   the child process environment only — nothing persists globally.
 4. **Never infer the OS from the shell.** Detect from the OS (Windows_NT / Darwin / else stop).
 5. **Never substitute a model the user did not ask for.** If a required model is absent from
    the live provider catalog, stop that provider with a precise error.
@@ -99,9 +102,16 @@ Homebrew-managed environment that satisfies the requirements.
 - Install `9router@latest` (npm global on Windows; user-local npm prefix on macOS).
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
-- No dashboard password rotation — the user owns the 9Router dashboard password and
-  manages it themselves. The setup uses the default `123456` only to log in and
-  configure.
+- No dashboard password rotation is performed only when the dashboard starts clean. Full
+  rotation, matching the live skill's Stage 3 step 7:
+  1. Login with the default `123456` and read the login response — it carries a
+     `mustChangePassword` flag.
+  2. If `mustChangePassword: true`, generate a strong random password, then call
+     `PATCH /api/settings` with `currentPassword` + `newPassword` (via
+     `scripts/common/configure-nine-router.mjs`, which never prints it).
+  3. Re-login with the new password for all subsequent API calls.
+  4. Prove the password changed: SHA256 fingerprint before/after — the two must DIFFER.
+  5. Never print or store the new password — keep it in memory during setup only.
 - Create/reuse a local 9Router API key named `BlackCEO Claude Code` via `POST /api/keys`.
 - Keep `requireLogin=true` and `requireApiKey=true`.
 
@@ -119,8 +129,43 @@ Using the authenticated management API and the shared helpers under `scripts/com
   `{name: "Agnes AI", prefix: "agnes", type: "openai-compatible", apiType: "chat",
   baseUrl: "https://apihub.agnes-ai.com/v1"}` and a paired connection carrying
   `AGNES_API_KEY`; validate `agnes-2.5-flash` with a tiny probe.
+- Register **ALL THREE** Agnes models in the router's `kv` table so the dashboard's
+  "Available Models" list is complete — never just the flash lane:
+
+  ```text
+  agnes-2.5-flash        (required — the default)
+  agnes-2.5-pro
+  agnes-2.5-pro-alpha
+  ```
+
+  `scripts/common/configure-nine-router.mjs` handles this registration idempotently —
+  the skill verifies the roster landed rather than re-writing it by hand.
+
+**DS Light and DS Max — DeepSeek custom provider nodes**
+
+Create two additional custom OpenAI-compatible nodes using the same `DEEPSEEK_API_KEY`:
+
+- **DS Light**: prefix `ds-light`, baseUrl `https://api.deepseek.com/anthropic`, thinking
+  OFF, default `deepseek-v4-flash`
+- **DS Max**: prefix `ds-max`, baseUrl `https://api.deepseek.com/anthropic`, thinking
+  MAX, default `deepseek-v4-pro`
+
+These give the routing matrix explicit thinking control per tier instead of relying on
+the 9Router `(max)` suffix mechanism.
 
 ## Step 7 — Combos: fallback and fusion
+
+The routing matrix this skill wires:
+
+| Alias | Provider | Model | Thinking |
+|-------|----------|-------|----------|
+| Fable | DeepSeek Direct | ds/deepseek-v4-flash | Max |
+| Opus | DS Max | ds-max/deepseek-v4-pro | Max |
+| Sonnet | DeepSeek Direct | ds/deepseek-v4-flash | Max |
+| Haiku | DS Light | ds-light/deepseek-v4-flash | Off |
+| Subagents | DeepSeek Direct | ds/deepseek-v4-flash | Max |
+| Haiku Fallback | Agnes AI | agnes/agnes-2.5-flash | Provider-supported |
+| Vision | Ollama Cloud | ollama/kimi-k2.6 | Provider-supported |
 
 - Create/update `blackceo-fable-fallback` and `blackceo-opus-fallback` (DeepSeek first,
   Agnes second) — fallback strategy via settings `comboStrategies`.
@@ -146,13 +191,17 @@ Using the authenticated management API and the shared helpers under `scripts/com
   only into the child process, and never echoes secrets.
 - Routed-session env: `ANTHROPIC_BASE_URL=http://localhost:20128/v1`,
   `ANTHROPIC_AUTH_TOKEN=<local router key>`, the four alias pins
-  (`ANTHROPIC_DEFAULT_FABLE_MODEL` = DeepSeek Flash max, `ANTHROPIC_DEFAULT_OPUS_MODEL` =
-  DeepSeek Pro max, `ANTHROPIC_DEFAULT_SONNET_MODEL` = Ollama GLM 5.2 max,
-  `ANTHROPIC_DEFAULT_HAIKU_MODEL` = Ollama Kimi K2.6 highest-verified),
-  `CLAUDE_CODE_SUBAGENT_MODEL` = DeepSeek Flash, `CLAUDE_CODE_EFFORT_LEVEL=max`,
+  (`ANTHROPIC_DEFAULT_FABLE_MODEL` = `ds/deepseek-v4-flash(max)`,
+  `ANTHROPIC_DEFAULT_OPUS_MODEL` = `ds-max/deepseek-v4-pro`,
+  `ANTHROPIC_DEFAULT_SONNET_MODEL` = `ds/deepseek-v4-flash(max)`,
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL` = `ds-light/deepseek-v4-flash`),
+  `CLAUDE_CODE_SUBAGENT_MODEL` = `ds/deepseek-v4-flash(max)`,
+  `CLAUDE_CODE_EFFORT_LEVEL=max`,
   `CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000`, and
   `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` derived from `OLLAMA_PLAN`
   (free→1, pro→2, max→8).
+  The launcher must fail closed (refuse to exec `claude` unrouted) when any of the four
+  alias pins is missing from the routed-session state.
 - Protect session state: Windows DPAPI/current-user; macOS Keychain for the token + mode-600
   state file.
 - Plain `claude` is never modified: no routing vars in global settings or shell startup files.
@@ -170,7 +219,9 @@ The orchestrator runs the platform tests and shared routing tests:
 `claude-nine` on PATH, provider micro-requests through the router, thinking probes
 (max where verified; downgrade per-route and record when rejected), vision routing via
 capacity adapter, DeepSeek→Agnes fallback (non-destructive), `blackceo-fusion` one-shot,
-plain-`claude` isolation, and a `claude-nine` end-to-end routed request.
+plain-`claude` isolation, and a `claude-nine` end-to-end routed request. Thinking probes
+per route: max verified on DS Max, off verified on DS Light, max verified on DS Flash,
+provider-default on Agnes.
 
 ## Step 12 — Completion report
 
@@ -188,6 +239,7 @@ Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
 9Router: OK - http://localhost:20128
+Dashboard: http://localhost:20128 — open this in your browser to manage providers and models.
 DeepSeek Direct: OK
 Ollama Cloud: OK
 Agnes AI: OK

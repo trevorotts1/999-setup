@@ -49,13 +49,22 @@ anything else, check whether ultracode is ON. A system-reminder in this turn
 confirms ultracode's state when it is on.
 
 1. **Ultracode ON** → continue to harness detection.
-2. **Ultracode OFF or unconfirmed** → STOP. Tell the user plainly:
+2. **Ultracode OFF or unconfirmed** → STOP. Tell the user plainly, with the exact
+   steps to turn it on — do not just name the setting, show how to set it:
 
    > This skill needs ultracode (multi-agent orchestration) turned on — it builds
    > your app with workflows and subagents working in parallel, and it cannot run
-   > inline. Turn ultracode on and run `/spec-protocol` again. Nothing has run
-   > yet. (If you do not know how to turn it on, say so and I will help you find
-   > the setting.)
+   > inline. Nothing has run yet. Here is exactly how to turn it on:
+   >
+   > 1. **Recommended — for the whole session:** type `/effort ultracode` and
+   >    press enter (this build runs for hours, so the session-wide switch is
+   >    the one you want). Then run `/spec-protocol` again.
+   > 2. **Or, just for one message:** put the word `ultracode` in the same
+   >    message as the command — for example, type `ultracode /spec-protocol`
+   >    instead of `/spec-protocol` by itself. This only covers that one turn.
+   >
+   > Either way, a small note will appear confirming ultracode turned on — that
+   > is what lets me check again and continue.
 
    No degraded inline run. No partial run. No "let me try anyway." Hard stop.
 
@@ -93,6 +102,16 @@ things up. You do not need to answer any setup questions." Concurrency: the harn
 allows up to 20 workflows × 16 subagents (320) to be dispatched, but only about 16
 run truly concurrent — measure yours and use 16 as the working cap.
 
+**The four questions no default can answer.** Even on the defaults path, four
+answers belong to the user alone — their taste, their win condition, their
+machine, their dislikes. Ask the four Block D questions from
+`references/interview.md` (D1 gold-standard example, D2 as-good-as vs
+rulebook, D3 the screenshot-tool download consent, D4 the avoid-that
+list), one at a time, in the same plain wording, right after announcing the
+defaults. Record each in the decision register. D1 seeds the bar-candidates
+step in `references/research.md`; D3 gates step 9 capture download. Block
+D is the only part of the capacity interview that runs on BOTH harnesses.
+
 ### Claude-Nine — run the capacity interview
 
 9router-routed models. **Run the full capacity interview** before building — the
@@ -108,6 +127,7 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 | App builder | Sonnet → DeepSeek v4 Pro | Up to 500 subagents; cap at 20 workflows × 16 = 320. Recommend DeepSeek direct ($20+) for the swarm. |
 | QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
+| Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick. Blind A/B verdicts only. |
 
 For each role: read the 9router config and report the current wiring ("Haiku is
 currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"); ask if the user wants to change
@@ -119,6 +139,10 @@ estimate — rough, not final). Ask the fallback per model (Rule 3.35 — a plan
 one model per role is incomplete). Apply Law 44 (hold a reserve back from any
 provider's cap). Recommend DeepSeek direct for the swarm; warn Ollama-Cloud-$20
 users the build is slow (a week+). Save the matrix to the execution plan.
+
+- **Comparative critic (Gate 3 — blind A/B verdicts)** — default Opus → read
+  the current wiring and report it. One additional concurrent read per review
+  tick, counted in the 9.4 budget.
 
 ---
 
@@ -204,7 +228,14 @@ your understanding in one paragraph before proceeding. Then proceed.
    in the decision register (Law 46) before the spec is written. See
    `references/research.md`.
 9. **Environment sweep (BOTH modes).** Check ALL env files for the keys the project
-   needs. Ask where they will host and stage. See `references/environment-sweep.md`.
+   needs. Ask where they will host and stage. Also run the capture-tooling
+   preflight for any visual Gate 3 bar: detect a working capture tool by
+   actually running it; if none answers, install one (`npx playwright install
+   chromium`) and prove the install with a real probe screenshot, never a
+   version string — install-then-prove, never detect-and-warn when installing
+   is possible. Only if installation genuinely
+   fails does this fall back to reporting the gap and its consequence for
+   visual bars. See `references/environment-sweep.md`.
 10. **Current-state pass.** Go and measure the real system before writing a single
     unit (Law 28). A specification written from inference is a list of guesses.
     The research findings join it as measured facts with sources.

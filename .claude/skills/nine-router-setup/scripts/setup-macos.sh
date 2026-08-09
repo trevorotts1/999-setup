@@ -167,6 +167,19 @@ main() {
     fail "configure-nine-router.mjs did not emit a config report (check 9Router health)"
   fi
 
+  # Rotated dashboard password. When the configure helper rotated the dashboard
+  # away from the default this run, the report carries the ACTUAL new password
+  # (report.dashboardPassword — the single sanctioned exception to never printing
+  # keys). Use exactly that value for the token fetch and every later API call;
+  # never regenerate a password here — a locally regenerated one would differ
+  # from what the router has and every subsequent API call would fail auth.
+  # When the field is absent no rotation happened this run, so the original
+  # password is kept. The value flows through an env var and is never printed.
+  if [ -n "$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(typeof r.dashboardPassword==="string"?r.dashboardPassword:"")}catch{process.stdout.write("")}})' 2>/dev/null || true)" ]; then
+    DASHBOARD_PW="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.dashboardPassword||"")}catch{process.stdout.write("")}})' 2>/dev/null || true)"
+    log "Dashboard password rotated from the default (new password used for API calls; not printed)"
+  fi
+
   # Store the local router token in Keychain. GET /api/keys returns the raw key
   # value (verified 0.5.45), so list then create-if-absent is reliable.
   # Keep stderr OUT of the captured token — an error string stored as the token
@@ -176,7 +189,13 @@ main() {
   if ! TOKEN="$(cd "$COMMON" && NINEROUTER_BASE="$BASE" NINEROUTER_DASHBOARD_PW="$DASHBOARD_PW" node -e '
     import("./nine-router-api.mjs").then(async ({NineRouterClient}) => {
       const c = new NineRouterClient(process.env.NINEROUTER_BASE);
-      await c.login(process.env.NINEROUTER_DASHBOARD_PW);
+      let ok = (await c.login(process.env.NINEROUTER_DASHBOARD_PW).catch(() => null))?.success;
+      // Idempotent-rerun fallback: a password that did not rotate (or was already
+      // rotated on an earlier run) must not fail the token fetch on login.
+      if (!ok && process.env.NINEROUTER_DASHBOARD_PW !== "123456") {
+        ok = (await c.login("123456").catch(() => null))?.success;
+      }
+      if (!ok) throw new Error("dashboard login failed");
       const keys = await c.listKeys();
       const k = keys.find((x) => x.name === "BlackCEO Claude Code");
       if (k && k.key) { console.log(k.key); return; }
@@ -247,6 +266,41 @@ main() {
   #     so the client can favorite it.
   V_FABLE="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.fable||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
   V_AGNES="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.agnes||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
+  V_OPUS="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.opus||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
+  V_SONNET="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.sonnet||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
+  V_HAIKU="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const v=JSON.parse(s).verified||{};process.stdout.write(v.haiku||"unknown")}catch{process.stdout.write("unknown")}})' 2>/dev/null || echo unknown)"
+  # Route strings come from the config report; fall back to the new defaults only
+  # if the report lacks them (it never should after a successful configure run).
+  R_FABLE="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.fable||"ds/deepseek-v4-flash(max)")}catch{process.stdout.write("ds/deepseek-v4-flash(max)")}})' 2>/dev/null || echo 'ds/deepseek-v4-flash(max)')"
+  R_OPUS="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.opus||"ds-max/deepseek-v4-pro(max)")}catch{process.stdout.write("ds-max/deepseek-v4-pro(max)")}})' 2>/dev/null || echo 'ds-max/deepseek-v4-pro(max)')"
+  R_SONNET="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.sonnet||"ds/deepseek-v4-flash(max)")}catch{process.stdout.write("ds/deepseek-v4-flash(max)")}})' 2>/dev/null || echo 'ds/deepseek-v4-flash(max)')"
+  R_HAIKU="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.haiku||"ds-light/deepseek-v4-flash")}catch{process.stdout.write("ds-light/deepseek-v4-flash")}})' 2>/dev/null || echo 'ds-light/deepseek-v4-flash')"
+  R_VISION="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.vision||"ollama/kimi-k2.6")}catch{process.stdout.write("ollama/kimi-k2.6")}})' 2>/dev/null || echo 'ollama/kimi-k2.6')"
+  DASHBOARD_URL="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.dashboardUrl||"http://127.0.0.1:20128")}catch{process.stdout.write("http://127.0.0.1:20128")}})' 2>/dev/null || echo "http://127.0.0.1:20128")"
+  # Thinking verification from the config report: one line per verified lane
+  # ("verified max" / "verified off"), with downgrades surfaced as warnings.
+  THINKING_LINES="$(printf '%s' "$CONFIG_REPORT" | node -e '
+    let s = "";
+    process.stdin.on("data", (c) => (s += c)).on("end", () => {
+      const lines = [];
+      let rep = {};
+      try { rep = JSON.parse(s) || {}; } catch {}
+      const tv = rep.thinkingVerified || {};
+      const label = { opus: "DS Max thinking", sonnet: "DS Flash thinking", fable: "DS Flash (subagent) thinking", haiku: "DS Light thinking" };
+      for (const [key, status] of Object.entries(tv)) {
+        if (!label[key]) continue;
+        if (status === "ok-thinking") lines.push(`${label[key]}: verified max`);
+        else if (status === "ok-no-thinking") lines.push(`${label[key]}: verified off`);
+        else lines.push(`WARNING: ${label[key]} could not be verified (${status})`);
+      }
+      if (lines.length) process.stdout.write(lines.join("\n") + "\n");
+    });
+  ' 2>/dev/null || true)"
+  ROTATED_NOTE=""
+  if [ "$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.dashboardPasswordRotated?"true":"false")}catch{process.stdout.write("false")}})' 2>/dev/null || echo false)" = "true" ]; then
+    ROTATED_NOTE="
+Dashboard password: ROTATED from the default on first login (value never printed)."
+  fi
   cat <<REPORT
 
 999 SETUP: COMPLETE
@@ -265,32 +319,27 @@ Ollama Cloud: OK
 Agnes AI: $V_AGNES
 
 Claude routes:
-Fable/Subagents -> DeepSeek V4 Flash (max)
-Opus -> DeepSeek V4 Pro (max)
-Sonnet -> Ollama GLM 5.2 (max)
-Haiku -> Ollama Kimi K2.6 (verified effort)
+Fable/Subagents -> $R_FABLE
+Opus -> $R_OPUS
+Sonnet -> $R_SONNET
+Haiku -> $R_HAIKU (thinking off)
+Vision -> $R_VISION
 
 Fallback:
-DeepSeek -> Agnes 2.5 Flash: configured
-
-Fusion:
-DeepSeek Flash + GLM 5.2 + Kimi K2.6
-Judge -> DeepSeek V4 Pro
-Status: OK
-
+Haiku -> $R_HAIKU, then agnes/agnes-2.5-flash: configured
+$THINKING_LINES${ROTATED_NOTE}
 Ollama plan: $OLLAMA_PLAN
 Ollama Claude/9Router concurrency budget: $CONCURRENCY
 Reserved for OpenClaw: $([ "$OLLAMA_PLAN" = "pro" ] && echo 1 || echo 0)
 
-Vision auto-switch -> Kimi K2.6: OK
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
 
-9ROUTER DASHBOARD (save this link): http://127.0.0.1:20128
+Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models.
 
 Launch routed Claude Code with: claude-nine
 
-No API keys were printed.
+No API keys or passwords were printed.
 REPORT
 }
 

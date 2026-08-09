@@ -119,9 +119,12 @@ comparative sub-stage (`references/gauntlet.md`), and its fresh-context critic i
 an ADDITIONAL concurrent consumer: count it against the agent ceiling N like a
 builder — one more concurrent agent, one more line in the spend-per-window
 arithmetic. Unbudgeted critics break the budget the same way unbudgeted builders
-do. Extra critics (the close-call second critic, the batch-level council) are
-DEPTH, not width (Law 45): surplus capacity spent on more judgement per item,
-never on more items in flight.
+do. That makes FOUR roles that concurrently consume budget on a review tick —
+builder + QC fixer + merger + comparative critic — four lines in the
+spend-per-window arithmetic, not three. Any derivation that counts three roles
+under-counts by one reader per tick. Extra critics (the close-call second critic,
+the batch-level council) are DEPTH, not width (Law 45): surplus capacity spent on
+more judgement per item, never on more items in flight.
 
 ---
 
@@ -281,6 +284,7 @@ watches something it is not part of.
 | **Why it exists** | Reaching a limit is not a failure; it is a scheduled event. What turns it into a disaster is agents being cut off mid-flight with nothing recorded. |
 | **The tick** | Watch for the harness's own limit signal and for the budget watch's warning. On either: stop claiming new work first, write a park record to the tracker for every in-flight agent (which item, which stage, next action), then let in-flight ticks finish and land what is finished. |
 | **On resume** | Run the ledger's restart steps. The park record makes step 2 short instead of forensic. |
+| **If the session crashes instead** | The user pastes the same command again and the run picks up from the ledger — see `../if-the-power-goes-out.md`. |
 | **Owns** | The run's own parked-or-running state, nothing belonging to an item. |
 | **Stop condition** | The run's completion definition is met, or a Named Stop is outstanding and no work remains unblocked. |
 | **The trap** | Parking late. Parking after the limit lands records nothing, because there is no capacity left to record with. Park on the warning, not on the wall. |

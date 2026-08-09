@@ -141,6 +141,16 @@ export class NineRouterClient {
     return data?.connection || data;
   }
 
+  /**
+   * Update a provider connection (name, priority, defaultModel, isActive, ...).
+   * @param {string} id Connection id (provider column value for custom nodes)
+   * @param {Object} partial e.g. { defaultModel: "agnes-2.5-flash" }
+   */
+  async patchProvider(id, partial) {
+    const data = await this._req("PUT", `/api/providers/${encodeURIComponent(id)}`, partial);
+    return data?.connection || data;
+  }
+
   async listProviderNodes() {
     const data = await this._req("GET", "/api/provider-nodes");
     return data?.nodes || [];
