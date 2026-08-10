@@ -492,11 +492,29 @@ main() {
   VISION_LINE="OK"
   [ "$V_HAIKU" = "ok" ] || VISION_LINE="NOT VERIFIED (haiku/vision route: $V_HAIKU)"
 
-  # Skill visibility: an actual filesystem check, not an assumption. `claude`
-  # and `claude-nine` share the same config root by design (no separate
-  # CLAUDE_CONFIG_DIR), so one check honestly covers both report lines.
-  CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  # Skill visibility: an actual filesystem check, not an assumption. The
+  # claude-nine launcher sets CLAUDE_CONFIG_DIR=$HOME/.claude-nine, so the skills
+  # must live under THAT config root — $HOME/.claude/skills is invisible to a
+  # claude-nine session. Check the claude-nine root explicitly.
+  CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
   SKILL_CHECK_PATH="$CLAUDE_SKILLS_ROOT/skills/nine-router-setup/SKILL.md"
+  # INSTALL the skills into the claude-nine config root if missing (the launcher
+  # reads slash commands from $CLAUDE_CONFIG_DIR/skills/ ONLY). Symlink from the
+  # repo's skill dir when present, else copy. This is the fix for skills being
+  # installed into ~/.claude/skills and never visible to claude-nine.
+  REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  if [ ! -f "$SKILL_CHECK_PATH" ]; then
+    mkdir -p "$CLAUDE_SKILLS_ROOT/skills"
+    for s in nine-router-setup spec-protocol; do
+      if [ -d "$REPO_SKILL_DIR/../$s" ]; then
+        ln -sfn "$REPO_SKILL_DIR/../$s" "$CLAUDE_SKILLS_ROOT/skills/$s"
+        echo "skill linked: $s -> $CLAUDE_SKILLS_ROOT/skills/$s"
+      elif [ -d "$HOME/.claude/skills/$s" ]; then
+        ln -sfn "$HOME/.claude/skills/$s" "$CLAUDE_SKILLS_ROOT/skills/$s"
+        echo "skill linked from ~/.claude: $s"
+      fi
+    done
+  fi
   if [ -f "$SKILL_CHECK_PATH" ]; then
     SKILL_VISIBLE="OK"
   else
