@@ -280,7 +280,7 @@ sqlite3 -header ~/.9router/db/data.sqlite \
 ```
 
 **Required registers per provider:**
-- Agnes AI: `agnes-2.5-flash`, `agnes-2.5-pro`, `agnes-2.5-pro-alpha`
+- Agnes AI: `agnes-2.5-flash`, `agnes-2.5-pro`
 - DS Light: `deepseek-v4-flash`
 - DS Max: `deepseek-v4-pro`
 

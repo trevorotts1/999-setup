@@ -17,8 +17,9 @@
   wiring and reports it before the build; the Claude-Nine role table carries four roles
   (builder, QC/fixer, merger, comparative critic); thinking levels are **verified per
   route with real probes** (1500-token floor) and recorded in `report.thinkingVerified`.
-- **Agnes AI full roster** — all three models (`agnes-2.5-flash`, `agnes-2.5-pro`,
-  `agnes-2.5-pro-alpha`) registered in the `kv` table; `defaultModel` set per connection.
+- **Agnes AI roster** — both models (`agnes-2.5-flash`, `agnes-2.5-pro`) registered in
+  the `kv` table; `defaultModel` set per connection. (`agnes-2.5-pro-alpha` was an
+  unrequested addition and was removed.)
 - **`resolvedRoutes` emitted** — the verified live routes reach the orchestrators, so
   completion reports never fall back to hardcoded defaults.
 

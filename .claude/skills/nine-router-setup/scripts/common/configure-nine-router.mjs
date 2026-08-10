@@ -303,7 +303,7 @@ async function main() {
     // keeps this idempotent) — via node:sqlite when available, else the platform
     // python (Windows uses `python`/`py -3`, macOS /usr/bin/python3). nodeId is
     // the custom node id, which is the connection's provider id.
-    const agnesKv = kvRegisterModels(agnesNode.id, ["agnes-2.5-flash", "agnes-2.5-pro", "agnes-2.5-pro-alpha"]);
+    const agnesKv = kvRegisterModels(agnesNode.id, ["agnes-2.5-flash", "agnes-2.5-pro"]);
     report.providers.agnes += agnesKv ? ", kv-models-registered" : ", kv-models-FAILED";
   }
 

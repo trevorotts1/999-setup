@@ -137,7 +137,6 @@ Using the authenticated management API and the shared helpers under `scripts/com
   ```text
   agnes-2.5-flash        (required — the default)
   agnes-2.5-pro
-  agnes-2.5-pro-alpha
   ```
 
   `scripts/common/configure-nine-router.mjs` handles this registration idempotently —
