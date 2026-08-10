@@ -49,6 +49,25 @@ Before anything else, say this to the user in their own register:
 
 ---
 
+## OPERATOR RULES (binding, 2026-08-10 — these override skill defaults)
+
+### RULE 1 — NEVER RECREATE A GIVEN FOLDER (the "you gave me a folder" rule)
+When the operator provides a folder ("Here is the info"), THAT FOLDER IS THE PROJECT. Do NOT:
+- copy its contents into a new project structure
+- "assemble" or "rebuild" documents that already exist in it
+- treat the provided folder as raw material for a fresh apparatus
+The provided folder's documents ARE the sixteen-document apparatus. The build reads them and dispatches. Missing documents (e.g. an absent ledger or QC report) are CREATED — but existing documents are used as-is, never recreated. A missing document is the ONLY case where a new document is written into a provided folder.
+
+### RULE 2 — MAXIMUM-PARALLELISM DOCTRINE (the "leverage the complete power" rule)
+The skill's conservative defaults (20 workflows x 16 subagents, reserve, 10-merge batches) are SUPERSEDED by the operator's doctrine:
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: 16 sub-agents per workflow when the work benefits, up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling (e.g. DeepSeek v4 Flash: 2,500).
+- AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never reserved, never self-limited.
+- A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
+- Batch merging: time-triggered (every 15 minutes, whatever is ready merges as ONE batch with one atomic stamp: version + tag + changelog + README + update-script). NO count cap. Never piecemeal merges.
+- QC runs as a parallel pool — one QC sub-agent per completed work item, dispatched the instant the item completes, NEVER a serial blocker.
+
+---
+
 ## GATE 0 — Ultracode hard stop (RUN FIRST)
 
 This skill runs on workflows and subagents — it cannot run inline. Before
@@ -200,6 +219,8 @@ seeds GOAL.md. Do not design here. Then proceed.
 **"Here is the info" path:** read everything they provide, and copy it into
 `00-INPUT/` untouched. Extract the same four things from the material. Confirm
 your understanding in one paragraph before proceeding. Then proceed.
+
+When the operator provides a folder, that folder IS the project. Its documents ARE the apparatus. Do NOT copy, assemble, or recreate them. Only MISSING documents (e.g. an absent ledger or QC report) are created — with extreme precision and detail.
 
 ---
 
@@ -603,16 +624,12 @@ See `references/audience.md` for the full audience UX rules.
 |---------|---------|-----|
 | Project folder root | `~/Downloads/projects/<project-slug>/` | v4 Part 13 layout |
 | Quality gate | 8.5 of 10 (ten categories, each 1–10) | The fleet standard. It does not move. |
-| Builders per wave (regular Claude Code) | 20 dispatched, ~16 truly concurrent; cap 16 | Platform ceiling. Measure yours. |
-| Builder cap (Claude-Nine, Ollama Cloud) | 3 concurrent ($20), 10 ($100 — use 8) | Ollama Cloud rejects one more. |
-| Builder cap (Claude-Nine, DeepSeek direct) | up to 500 subagents; cap at 320 | Recommend for the swarm. |
-| QC fan-out (Fable → Qwen) | 5×5 = 25 | Fable = thinker/reviewer. |
+| Capacity defaults | SUPERSEDED by the operator's MAXIMUM-PARALLELISM DOCTRINE (see OPERATOR RULES): max workflows/sub-agents in parallel wherever it makes sense, auto-adapting, no reserve, no gating | The operator doctrine overrides the conservative caps (20 workflows x 16 subagents, per-provider builder caps, QC 5x5, reserve). |
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
-| Batch size (landing queue) | 10 merges or 15 minutes, whichever first | Rule 3.26. Derived, never assumed; a wave close also triggers the pass. |
+| Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
 | Fix loop cap | 3 cycles per finding | Rule 3.22. After three, mark blocked-repeated-fail, move on. |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
-| Reserve | a quarter of the cap or two free slots, whichever is larger | Law 44. The operator's answer replaces it. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |
 | Git merge style | --no-ff, never rebase mid-wave, never force-push | Laws 19, 20 |

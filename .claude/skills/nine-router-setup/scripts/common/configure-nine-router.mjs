@@ -326,6 +326,37 @@ async function main() {
     }
   } else {
     report.providers.openrouter = "skipped (no OPENROUTER_API_KEY)";
+    // Per the operator: still set up the NVIDIA-free provider and request the key
+    // — never silently skip. The key is required for the fusion panel member.
+  }
+
+  // NVIDIA-free custom node (openrouter-nvidia-free) — the fusion panel's third
+  // member. Built when an OpenRouter key exists; otherwise recorded as missing
+  // so the completion report can request the key from the user.
+  let nvidiaNode = null;
+  if (openrouterKey) {
+    try {
+      nvidiaNode = nodes.find((n) => n.prefix === "openrouter-nvidia-free");
+      if (!nvidiaNode) {
+        nvidiaNode = await client.createProviderNode({
+          name: "OpenRouter Nvidia Free",
+          prefix: "openrouter-nvidia-free",
+          type: "openai-compatible",
+          apiType: "chat",
+          baseUrl: "https://openrouter.ai/api/v1",
+        });
+        await client.createProvider({ provider: nvidiaNode.id, apiKey: openrouterKey, name: "OpenRouter Nvidia Free" });
+        await ensureDefaultModel({ id: nvidiaNode.id }, "nvidia/nemotron-3-ultra-550b-a55b:free");
+        kvRegisterModels(nvidiaNode.id, ["nvidia/nemotron-3-ultra-550b-a55b:free"]);
+        report.providers.nvidiaFree = "created";
+      } else {
+        report.providers.nvidiaFree = "reused";
+      }
+    } catch (e) {
+      report.providers.nvidiaFree = `error: ${e.message}`;
+    }
+  } else {
+    report.providers.nvidiaFree = "MISSING_KEY — request the user's OpenRouter API key";
   }
 
   // 5. Route strings are built from the provider IDs validated against the live
@@ -368,8 +399,9 @@ async function main() {
   // DS Light and DS Max: two custom OpenAI-compatible DeepSeek nodes for explicit
   // thinking control (deterministic provider-level wiring instead of the (max)
   // suffix). DS Light (deepseek-v4-flash) is the cheap no-thinking Haiku lane; DS
-  // Max (deepseek-v4-pro) forces max thinking for Opus. Reuse existing nodes with
-  // the same prefix — idempotent. Both use the DeepSeek API key.
+  // Max (deepseek-v4-flash) forces max thinking for Opus — the operator's verified
+  // canary config (DS Max = DeepSeek v4 FLASH + max, NOT pro). Reuse existing
+  // nodes with the same prefix — idempotent. Both use the DeepSeek API key.
   let dsLightNode = null;
   let dsMaxNode = null;
   const dsLightPrefix = "ds-light";
@@ -383,7 +415,7 @@ async function main() {
       prefix,
       type: "openai-compatible",
       apiType: "chat",
-      baseUrl: "https://api.deepseek.com/anthropic",
+      baseUrl: "https://api.deepseek.com",
     });
     if (existing) existing.push(created);
     return created;
@@ -407,16 +439,17 @@ async function main() {
     // would silently skip defaultModel on first-run connections.
     await refreshProviders();
 
-    // defaultModel per custom-node connection (DS Light → flash, DS Max → pro).
+    // defaultModel per custom-node connection (DS Light → flash, DS Max → flash
+    // — the operator's canary: DS Max = DeepSeek v4 Flash with max thinking).
     const dsLightConn = providers.find((p) => p.provider === dsLightNode.id);
     const dsMaxConn = providers.find((p) => p.provider === dsMaxNode.id);
     await ensureDefaultModel(dsLightConn, "deepseek-v4-flash");
-    await ensureDefaultModel(dsMaxConn, "deepseek-v4-pro");
+    await ensureDefaultModel(dsMaxConn, "deepseek-v4-flash");
 
     // Register the single model each node serves in the kv table (same mechanism
     // as the Agnes registration above — INSERT OR REPLACE keeps this idempotent).
     const lightKv = kvRegisterModels(dsLightNode.id, ["deepseek-v4-flash"]) ? "kv-ok" : "kv-failed";
-    const maxKv = kvRegisterModels(dsMaxNode.id, ["deepseek-v4-pro"]) ? "kv-ok" : "kv-failed";
+    const maxKv = kvRegisterModels(dsMaxNode.id, ["deepseek-v4-flash"]) ? "kv-ok" : "kv-failed";
     report.providers.dsLight = `${dsLightNode.prefix} (${lightKv})`;
     report.providers.dsMax = `${dsMaxNode.prefix} (${maxKv})`;
 
@@ -446,8 +479,9 @@ async function main() {
   // level, not via the (max) suffix): DS Light has thinking OFF — no "(max)".
   // DS Max carries "(max)" as a belt-and-braces signal on top of the provider
   // wiring; 9Router's stripThinkingSuffix/applyThinking handles it deterministically.
+  // DS Max = DeepSeek v4 FLASH + max (the operator's canary), NOT pro.
   const dsLightFlash = `${dsLightPrefix}/deepseek-v4-flash`; // no (max) — thinking OFF
-  const dsMaxPro = `${dsMaxPrefix}/deepseek-v4-pro(max)`;
+  const dsMaxFlash = `${dsMaxPrefix}/deepseek-v4-flash(max)`; // DS Max = Flash + max
   const dsFlashMax = `${dsPrefix}/deepseek-v4-flash(max)`;
   const dsProMax = `${dsPrefix}/deepseek-v4-pro-max`;
   const olGlm = `${olPrefix}/glm-5.2`;
@@ -455,12 +489,18 @@ async function main() {
   const agFlash = `${agPrefix}/agnes-2.5-flash`;
   const overrideFlash = `${olPrefix}/deepseek-v4-flash:0731`;
 
-  const fableLane = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
+  // NVIDIA-free panel member via OpenRouter (custom node openrouter-nvidia-free),
+  // built only when an OpenRouter key exists on the box. Thinking max.
+  const nvidiaFree = "openrouter-nvidia-free/nvidia/nemotron-3-ultra-550b-a55b:free";
 
-  RESOLVED_ROUTES.fable = fableLane;  // keep existing
-  RESOLVED_ROUTES.opus = dsMaxPro;  // NEW: Opus → DS Max (DeepSeek v4 Pro, thinking MAX)
-  RESOLVED_ROUTES.sonnet = OVERRIDE_0731 ? overrideFlash : dsFlashMax;  // Sonnet → DS Flash Max (was olGlm)
-  RESOLVED_ROUTES.haiku = dsLightFlash;  // NEW: Haiku → DS Light (DeepSeek v4 Flash, thinking OFF)
+  // Standard wiring (the operator's Spaulding spec): Fable = the fusion combo,
+  // Opus = DS Max (Flash+max), Sonnet = Agnes 2.5 Flash, Haiku = DS Light (off).
+  const fableLane = OVERRIDE_0731 ? overrideFlash : "fleet-fusion";
+
+  RESOLVED_ROUTES.fable = fableLane;  // the fusion combo
+  RESOLVED_ROUTES.opus = dsMaxFlash;  // Opus → DS Max (DeepSeek v4 FLASH, thinking MAX)
+  RESOLVED_ROUTES.sonnet = agFlash;  // Sonnet → Agnes 2.5 Flash (custom provider)
+  RESOLVED_ROUTES.haiku = dsLightFlash;  // Haiku → DS Light (DeepSeek v4 Flash, thinking OFF)
   RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
   RESOLVED_ROUTES.vision = olKimi;  // keep
   RESOLVED_ROUTES.haikuFallback = agFlash;  // Haiku fallback lane (Agnes AI), carried through to routing state
@@ -492,9 +532,16 @@ async function main() {
   };
 
   await upsertCombo("blackceo-fable-fallback", [dsFlashMax, agFlash]);
-  await upsertCombo("blackceo-opus-fallback", [dsProMax, agFlash]);
+  await upsertCombo("blackceo-opus-fallback", [dsMaxFlash, agFlash]);
   await upsertCombo("blackceo-haiku-fallback", [dsLightFlash, agFlash]);
-  await upsertCombo("blackceo-fusion", [dsFlashMax, olGlm, olKimi]);
+  // The standard fleet fusion combo — panels: DS Max (Flash+max), GLM 5.2
+  // (Ollama Cloud), NVIDIA-free (OpenRouter) — judge: DeepSeek v4 Pro max.
+  // The NVIDIA panel member is only included when an OpenRouter key exists;
+  // otherwise the combo still builds with the two panels it has.
+  const fusionModels = openrouterKey
+    ? [dsMaxFlash, olGlm, nvidiaFree]
+    : [dsMaxFlash, olGlm];
+  await upsertCombo("FusioN-smartest-agent", fusionModels);
 
   // 7. Combo strategies + capacity adapter + security defaults via PATCH /api/settings.
   const patch = {
@@ -504,7 +551,7 @@ async function main() {
       "blackceo-fable-fallback": { fallbackStrategy: "fallback" },
       "blackceo-opus-fallback": { fallbackStrategy: "fallback" },
       "blackceo-haiku-fallback": { fallbackStrategy: "fallback" },
-      "blackceo-fusion": {
+      "FusioN-smartest-agent": {
         fallbackStrategy: "fusion",
         judgeModel: dsProMax,
         fusionTuning: { minPanel: 2, stragglerGraceMs: 8000, panelHardTimeoutMs: 90000 },

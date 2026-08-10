@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.0] — 2026-08-10
+
+### The fleet-fusion standard (the Spaulding spec, now the default for everyone)
+
+- **DS Max = DeepSeek v4 FLASH + thinking MAX** (was Pro) — the operator's verified
+  canary. Custom node on `https://api.deepseek.com`. Routes to **Opus**.
+- **DS Light = DeepSeek v4 FLASH + thinking OFF** — custom node, routes to **Haiku**.
+- **Sonnet → Agnes 2.5 Flash** (custom provider, the client's OWN Agnes key from their
+  secrets env; never the operator's, never Pro Alpha).
+- **Fusion combo `FusioN-smartest-agent`** — panels [DS Max Flash-max, GLM 5.2
+  (Ollama Cloud), NVIDIA-free (OpenRouter)], judge **DeepSeek v4 Pro max**. Wired as
+  **Fable** for every client.
+- **NVIDIA-free custom provider** (`openrouter-nvidia-free`) — built from the client's
+  OWN OpenRouter key (all secrets envs checked). If the key is absent, the setup still
+  proceeds and **requests the key** rather than silently skipping.
+- **Missing-key behavior** — if a client's Agnes/OpenRouter/Ollama key is not in their
+  secrets env, the setup wires everything it can and tells the user plainly which key
+  is needed to continue. Never uses the operator's keys.
+
+### Critical fixes
+
+- **Skill install root fixed** — `setup-macos.sh` now installs skills into
+  `~/.claude-nine/skills/` (the config root `claude-nine` actually reads via
+  `CLAUDE_CONFIG_DIR`), NOT `~/.claude/skills/` which is invisible to claude-nine
+  sessions. This is the fix for `/spec-protocol` and `/nine-router-setup` not appearing.
+  Root cause verified by three independent reviews (Opus, GLM 5.2, Kimi 2.6).
+- **Spec-protocol updated** to the operator's latest live version (53,266 bytes).
+
 ## [1.0.0] — 2026-08-09
 
 ### Critical fixes

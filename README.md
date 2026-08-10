@@ -142,3 +142,17 @@ and `claude-nine`:
 ## License
 
 MIT — see `LICENSE`.
+
+---
+
+## Release notes
+
+**v1.1.0 (2026-08-10)** — The fleet-fusion standard. DS Max is now DeepSeek v4 **Flash**
++ thinking MAX (was Pro) and routes to Opus; DS Light (Flash, thinking OFF) routes to
+Haiku; Sonnet routes to the client's own Agnes 2.5 Flash custom provider; the fusion
+combo `FusioN-smartest-agent` (panels: DS Max Flash-max, GLM 5.2 Ollama Cloud,
+NVIDIA-free via OpenRouter; judge: DeepSeek v4 Pro max) is the default Fable. Fixed the
+skill-install root (skills now install into `~/.claude-nine/skills/`, the root
+`claude-nine` actually reads). Clients' own keys are always used — never the operator's;
+missing keys are requested, never silently skipped. Spec-protocol synced to the latest
+live version.
