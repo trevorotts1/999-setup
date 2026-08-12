@@ -491,6 +491,42 @@ main() {
     log "Agent Teams enablement: $AGENT_TEAMS_STATUS"
   fi
 
+  # 9.6. Clear the ultracode/effort override (detect + remediate, backed up;
+  #      never disturbs running work). CLAUDE_CODE_EFFORT_LEVEL in the
+  #      environment OVERRIDES the in-session /effort picker, so `/effort
+  #      ultracode` snaps back to whatever the variable says. The launcher fix
+  #      (v1.2.0) stopped THIS repo exporting it; it cannot reach a box where
+  #      the variable comes from a shell startup file, the launchd user domain,
+  #      a settings.json env map, or a parent process. This step is that reach,
+  #      so a fleet roll fixes every box regardless of source.
+  #      The fixer proves its own scanner on a planted control before accepting
+  #      any "clean", backs every file up before editing it (never overwriting
+  #      an existing backup), COMMENTS OUT offending shell lines behind a dated
+  #      marker rather than deleting them, MERGE-removes only that one key from
+  #      settings env maps with validation and restore-on-failure, and refuses
+  #      to touch anything it cannot remediate safely — reporting the exact
+  #      manual command instead. It takes effect in NEW shells and NEW sessions:
+  #      nothing running is signalled, restarted, or interrupted.
+  #      NEVER fatal to setup: rc 1 (a source needing one manual command) and
+  #      rc 2 (a tooling failure, backups restored) are both reported honestly
+  #      in the completion report and the install still completes.
+  #      Its report arrives on stdout; its progress log goes to stderr.
+  ULTRACODE_FIX_REPORT=""
+  ULTRACODE_FIX_STATUS="SKIPPED - fix-ultracode-override.sh not found"
+  if [ -f "$MACOS/fix-ultracode-override.sh" ]; then
+    set +e
+    ULTRACODE_FIX_REPORT="$(NODE_BIN="$NODE_BIN" bash "$MACOS/fix-ultracode-override.sh")"
+    ULTRACODE_FIX_RC=$?
+    set -e
+    ULTRACODE_FIX_STATUS="$(printf '%s\n' "$ULTRACODE_FIX_REPORT" | awk '/^ULTRACODE OVERRIDE:$/ { getline; print; exit }')"
+    [ -n "$ULTRACODE_FIX_STATUS" ] || ULTRACODE_FIX_STATUS="UNKNOWN (the fixer produced no status line, rc=$ULTRACODE_FIX_RC)"
+    case "$ULTRACODE_FIX_RC" in
+      0|1|2) : ;;
+      *) ULTRACODE_FIX_STATUS="UNKNOWN (the fixer exited $ULTRACODE_FIX_RC, which it does not define)" ;;
+    esac
+    log "Ultracode override: $ULTRACODE_FIX_STATUS"
+  fi
+
   # Extract verified-probe results from the config report NOW (moved ahead of
   # the completion report so OPENROUTER_PROBE_ROUTE is available to the smoke
   # tests below) — restructured to parse the JSON once into `rep`.
@@ -680,6 +716,9 @@ Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
 
 Agent Teams (experimental; applies to NEW Claude Code sessions only): $AGENT_TEAMS_STATUS
 $AGENT_TEAMS_REPORT
+
+Ultracode/effort override (applies to NEW shells and NEW sessions only): $ULTRACODE_FIX_STATUS
+$ULTRACODE_FIX_REPORT
 
 Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models.
 

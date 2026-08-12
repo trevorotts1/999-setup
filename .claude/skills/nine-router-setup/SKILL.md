@@ -220,6 +220,44 @@ The routing matrix this skill wires:
   state file.
 - Plain `claude` is never modified: no routing vars in global settings or shell startup files.
 
+## Step 9.6 — Clear the ultracode/effort override (both platforms)
+
+`CLAUDE_CODE_EFFORT_LEVEL` in the environment **overrides the in-session `/effort` picker**:
+with it set, `/effort ultracode` returns *"CLAUDE_CODE_EFFORT_LEVEL=… overrides effort this
+session"* and the selection is not applied. Only `low|medium|high|xhigh` are persistable, so
+`max` cannot be saved at all. Step 9 stopped the launcher exporting it — that fix cannot reach
+a box where the variable comes from somewhere else, so the orchestrators run a dedicated
+remediation step: `scripts/macos/fix-ultracode-override.sh` and
+`scripts/windows/Fix-UltracodeOverride.ps1`.
+
+- **Detects, and names every source it checked** — the current process environment; the
+  launchd user domain (macOS) or the User and Machine environment scopes (Windows); six shell
+  startup files (macOS) or the four PowerShell profiles (Windows); the `env` map of
+  `~/.claude/settings.json`, `settings.local.json` and the `~/.claude-nine` pair; and, macOS,
+  candidate service env files. `~/.zlogin`, `~/.bash_login` and `/etc/*` are checked read-only.
+- **Proves its own scanner on a planted control first.** A failed control degrades the run to
+  detect-only and reports UNDETERMINED — never "clean". `launchctl getenv` and each
+  environment-scope read get a known-non-empty control too.
+- **Remediates safely** — every edited file is backed up first (never overwriting an existing
+  backup, path printed); shell/profile lines are **commented out** behind a dated marker,
+  never deleted; `launchctl unsetenv` and the User scope are cleared and re-read to prove it;
+  `settings.json` gets a **merge-remove of only that key**, validated against every
+  pre-existing leaf value, with the backup restored on any failure.
+- **Refuses to guess.** The current process environment, the Machine scope, an AllUsers
+  profile, a service env file, and any unrecognised line form are reported with the exact
+  manual command instead of edited.
+- **Idempotent, standalone, and never disruptive.** Rerunning is a byte-identical no-op. The
+  script runs on an already-installed box without a reinstall. It takes effect in **NEW**
+  shells and **NEW** sessions; nothing is killed, signalled, restarted, reloaded, or `exec`ed.
+- Never fatal to setup: exit 1 (manual step needed) and exit 2 (tooling failure, backups
+  restored) are both reported honestly in the completion report and the install completes.
+
+Run it standalone on an already-installed box:
+
+```bash
+bash ~/.claude/skills/nine-router-setup/scripts/macos/fix-ultracode-override.sh
+```
+
 ## Step 10 — Verify skill visibility and isolation
 
 - The `nine-router-setup` personal skill is visible from both `claude` and `claude-nine`.
