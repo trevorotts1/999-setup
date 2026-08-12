@@ -407,7 +407,7 @@ main() {
           routes,
           concurrency: Number(process.env.CONCURRENCY || 2),
           maxOutputTokens: 32000,
-          effortLevel: "max",
+          effortLevel: "xhigh",
           claudeBinary: process.env.CLAUDE_BIN,
           nineRouterBinary: process.env.NINE_BIN,
           port: Number(process.env.PORT || 20128),
@@ -422,6 +422,33 @@ main() {
   # 9. Install launcher.
   export CLAUDE_NINE_SOURCE="$REPO_ROOT/launchers/macos/claude-nine"
   "$MACOS/install-claude-nine.sh"
+
+  # 9.5. Enable Agent Teams (merge-only, backed up; never disturbs running work).
+  #      Turns the experimental Agent Teams flag on in ~/.claude/settings.json and
+  #      sets the tmux split-pane teammate display, for FUTURE Claude Code
+  #      sessions only. The enabler backs the file up first, MERGES exactly two
+  #      keys, validates the result, restores the backup on any failure, and
+  #      defers anything that would disturb work that is running right now.
+  #      NEVER fatal to setup: a blocked or failed enablement is reported
+  #      honestly in the completion report and the rest of the install still
+  #      completes (a routed Claude Code does not depend on Agent Teams).
+  #      Its Phase-13 report arrives on stdout; its progress log goes to stderr
+  #      and stays visible live.
+  AGENT_TEAMS_REPORT=""
+  AGENT_TEAMS_STATUS="SKIPPED - enable-agent-teams.sh not found"
+  if [ -f "$MACOS/enable-agent-teams.sh" ]; then
+    set +e
+    AGENT_TEAMS_REPORT="$(NODE_BIN="$NODE_BIN" CLAUDE_BIN="$CLAUDE_BIN" bash "$MACOS/enable-agent-teams.sh")"
+    AGENT_TEAMS_RC=$?
+    set -e
+    case "$AGENT_TEAMS_RC" in
+      0) AGENT_TEAMS_STATUS="$(printf '%s\n' "$AGENT_TEAMS_REPORT" | awk '/^AGENT TEAMS:$/ { getline; print; exit }')" ;;
+      1) AGENT_TEAMS_STATUS="BLOCKED - Claude Code is below the Agent Teams version floor. Nothing was modified; Claude Code was NOT updated (never automatic)." ;;
+      *) AGENT_TEAMS_STATUS="NOT ENABLED - the enabler reported a tooling failure; the settings backup was restored where one existed." ;;
+    esac
+    [ -n "$AGENT_TEAMS_STATUS" ] || AGENT_TEAMS_STATUS="UNKNOWN (the enabler produced no status line)"
+    log "Agent Teams enablement: $AGENT_TEAMS_STATUS"
+  fi
 
   # Extract verified-probe results from the config report NOW (moved ahead of
   # the completion report so OPENROUTER_PROBE_ROUTE is available to the smoke
@@ -588,6 +615,9 @@ Reserved for OpenClaw: $([ "$OLLAMA_PLAN" = "pro" ] && echo 1 || echo 0)
 Vision auto-switch -> Kimi K2.6: $VISION_LINE
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
+
+Agent Teams (experimental; applies to NEW Claude Code sessions only): $AGENT_TEAMS_STATUS
+$AGENT_TEAMS_REPORT
 
 Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models.
 

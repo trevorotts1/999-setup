@@ -93,10 +93,13 @@ ANTHROPIC_DEFAULT_OPUS_MODEL
 ANTHROPIC_DEFAULT_SONNET_MODEL
 ANTHROPIC_DEFAULT_HAIKU_MODEL
 CLAUDE_CODE_SUBAGENT_MODEL
-CLAUDE_CODE_EFFORT_LEVEL
 CLAUDE_CODE_MAX_OUTPUT_TOKENS
 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
 ```
+
+`CLAUDE_CODE_EFFORT_LEVEL` is deliberately absent from that list: the launcher
+exports it ONLY under `CLAUDE_NINE_FORCE_EFFORT=<level>`, opt-in per launch.
+Exporting it unconditionally silently overrode the in-session `/effort` picker.
 
 None of these are persisted to global Claude settings or shell startup files. The user must
 be able to run `claude` and get ordinary Anthropic-direct behavior.

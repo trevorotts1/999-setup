@@ -45,10 +45,16 @@ ANTHROPIC_DEFAULT_OPUS_MODEL=<DeepSeek Direct V4 Pro Max route>
 ANTHROPIC_DEFAULT_SONNET_MODEL=<Ollama GLM 5.2 Max route>
 ANTHROPIC_DEFAULT_HAIKU_MODEL=<Ollama Kimi K2.6 route>
 CLAUDE_CODE_SUBAGENT_MODEL=<DeepSeek Direct Flash route>
-CLAUDE_CODE_EFFORT_LEVEL=max
 CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=<free=1 | pro=2 | max=8>
 ```
+
+`CLAUDE_CODE_EFFORT_LEVEL` is **NOT** in that list. The launcher exports it only
+when `CLAUDE_NINE_FORCE_EFFORT=<level>` is set for that launch — exporting it
+unconditionally overrode every in-session `/effort` selection (the 2026-08-11
+ultracode-revert bug). The profile's `settings.json` `effortLevel` (seeded
+`xhigh`, the highest PERSISTABLE level — `"max"` is session-scoped and cannot be
+saved) is the recorded default, and `/effort` changes persist there normally.
 
 None of these are persisted to global Claude settings or shell startup files. Plain
 `claude` therefore stays Anthropic-direct.

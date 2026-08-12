@@ -89,7 +89,12 @@ try {
     if ($state.routes.sonnet)   { $childEnv['ANTHROPIC_DEFAULT_SONNET_MODEL']  = $state.routes.sonnet }
     if ($state.routes.haiku)    { $childEnv['ANTHROPIC_DEFAULT_HAIKU_MODEL']   = $state.routes.haiku }
     if ($state.routes.subagent) { $childEnv['CLAUDE_CODE_SUBAGENT_MODEL']      = $state.routes.subagent }
-    if ($state.effortLevel)     { $childEnv['CLAUDE_CODE_EFFORT_LEVEL']        = $state.effortLevel }
+    # CLAUDE_CODE_EFFORT_LEVEL is deliberately NOT exported from the state file.
+    # /effort selections persist via the profile's settings.json effortLevel; a
+    # forced env export overrides the picker (the 2026-08-11 ultracode-revert
+    # bug). Router thinking hints live in the route suffixes ((max)), not here.
+    # Opt back in per launch with CLAUDE_NINE_FORCE_EFFORT=<level>.
+    if ($env:CLAUDE_NINE_FORCE_EFFORT) { $childEnv['CLAUDE_CODE_EFFORT_LEVEL']  = $env:CLAUDE_NINE_FORCE_EFFORT }
     if ($state.maxOutputTokens) { $childEnv['CLAUDE_CODE_MAX_OUTPUT_TOKENS']   = [string]$state.maxOutputTokens }
     if ($state.concurrency)     { $childEnv['CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY'] = [string]$state.concurrency }
 

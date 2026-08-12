@@ -17,6 +17,17 @@ below can fold blocks B and C into yes/no confirmations, and block D's four
 questions always run — they are the user's own decisions and have no defaults.
 Never promise fewer than you will actually ask; say "about nineteen" and mean it.)
 
+**The count moves with WHAT is being built, and you say the new number out loud.**
+Step 1c asks one more question (what are we building), Step 1d asks three or four
+that apply only to that target, and a funnel adds up to two more about images and
+video. So the honest number, stated the moment the target is known, is about
+twenty-three for an app, twenty-three or twenty-four for a website, and
+twenty-four for a funnel — twenty-six if it needs images and video. Say it as a
+correction, never as a surprise: "That is a few more than I first said — the extra
+ones only apply because you said funnel." Never state a number you will then
+exceed. On regular Claude Code, where block A does not run, the same rule applies
+to block D's four questions plus the target questions.
+
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
 A8 with the recommended defaults) and the small-plan collapse (if the block-A
@@ -109,6 +120,220 @@ not change code, so there is nothing to decide."
 
 ---
 
+## Step 1c — The Build Target (one question, after the archetype)
+
+After the archetype is chosen, ask ONE question to determine WHAT is being built.
+Ask it plainly, in the user's register:
+
+> For this project, what are we building — an app or piece of software, a
+> website, or a sales funnel with pages and automated follow-ups?
+
+The archetype named the KIND OF JOB; the Build Target names WHAT THE THING IS.
+Both are needed, because "building something new from scratch" can mean an app, a
+website, or a funnel — three different credential gates, three different build
+pipelines, three different sets of dependencies. Record the answer in the decision
+register in their own words.
+
+| Target | What it means | Credential gates | Skill dependencies |
+|---|---|---|---|
+| **App / Software** | A standalone application — could be web-based, a CLI tool, a mobile app, or desktop software. Built with code in a repository. | GitHub token required. Hosting token(s) per the environment sweep. | Standard spec-protocol build pipeline. No GHL dependency. |
+| **Website** | A website with one or more pages (home, about, services, contact, blog, etc.). Could be simple (static HTML) or complex (JavaScript, frameworks, backend). | GitHub token required. For complex sites: Vercel token (hosting). For simple sites deployed into GHL: GHL credentials. | Standard build pipeline. Skill 6 for GHL deployment if the site goes into GHL. Skill 08 (Vercel) for complex hosting. |
+| **Sales Funnel** | A multi-step marketing funnel with landing pages, upsell/downsell pages, checkout, thank you pages, email sequences, and text message sequences. Built inside Convert and Flow / GoHighLevel (GHL). | **HARD GATE:** the GHL Location PIT, the GHL Location ID, and the GHL Firebase refresh token are ALL required. If any is missing, stop and ask for it — the funnel cannot be built without them. | Skill 6 (ghl-install-pages) for page building. Skill 44 (convert-and-flow-operator) for workflow and automation building. Skill 38 (conversation playbook) for email and SMS copy. Kie.ai or Agnes-AI for images and videos. |
+
+The credential gates are NAMED here and CHECKED in `environment-sweep.md` — the
+exact variable names, the alias lists, the resolution order, and the
+per-operating-system instructions all live there, one owner, so the two files can
+never disagree. The funnel's page types and its email and text-message decision
+matrices live in `funnel-architecture.md`.
+
+**The funnel gate — stated plainly to the user.** If the user answers "funnel,"
+state this BEFORE proceeding:
+
+> This kind of project works with Convert and Flow (also called GoHighLevel or
+> GHL). It is the system we use to build funnels, pages, automations, and
+> follow-up sequences. If you do not have a Convert and Flow account, I
+> cannot build a funnel for you — I would be happy to help you set one up
+> first, or we can pick a different kind of project.
+>
+> I will check that your Convert and Flow keys are ready in a moment. If they
+> are not, I will tell you exactly what I need and how to get it.
+
+Say it once, warmly, then wait. It is a fact about what the tool can do, never a
+judgement about the person — and it is said BEFORE the discovery questions so that
+nobody answers four questions about a funnel that cannot be built today.
+
+**Smart terminology matching.** "Convert and Flow," "GoHighLevel," "GHL,"
+"convertandflow.com," "gohighlevel.com," and "leadconnectorhq.com" all refer to
+the same platform. When the user says any of them — or pastes a link containing
+one — map it to the GHL credential check and carry on. Never ask "which platform
+do you mean." Asking a person to disambiguate six names for one product is a
+jargon test, and they did not sign up for one.
+
+---
+
+## Step 1c-bis — Just-in-Time Research (runs during the interview)
+
+After the build target is chosen, BEFORE asking the target-specific questions,
+dispatch a READER agent to web-research the domain. The research takes 30–90
+seconds and runs in the background while the conductor carries on with the
+questions that do not need it. The user is never asked to wait for it, and never
+told to watch it.
+
+**Research dispatch by target type** — send one, with the blanks filled from what
+they just told you:
+
+- **If APP:** "Research [app domain]: find 3-5 similar apps. For each: name, URL,
+  key features, what users praise, what users complain about, pricing model. Also
+  find current best practices for [app type] in [year]."
+- **If WEBSITE:** "Research [website type]: find 3-5 similar websites. For each:
+  URL, page structure (what pages they have), design patterns, what makes them
+  effective. Also find current web design best practices for [website type]."
+- **If FUNNEL:** "Research [funnel type] funnels: find best practices for stage
+  count, page types, email sequence cadence, SMS integration, conversion rate
+  benchmarks. Also find 2-3 examples of successful [industry] funnels with their
+  stage architecture."
+
+**How the research feeds the interview.** When it returns — usually within one or
+two questions — the conductor integrates it in its own voice, as something it went
+and looked at, never as something it already knew:
+
+- **For apps:** "While we were talking, I looked at some similar apps. [App A],
+  [App B], and [App C] are popular in this space. They all have [common feature 1]
+  and [common feature 2]. [App A] also has [distinctive feature] — would you like
+  something like that in yours?"
+- **For websites:** "I looked at some similar websites. Most of them have a home
+  page, an about page, a services page, and a contact page. Some also have [extra
+  page type]. Does that match what you had in mind?"
+- **For funnels:** "I researched what works best for [funnel type]. Most
+  successful ones use [N] stages: [list stages]. The follow-up sequence is
+  typically [X] emails over [Y] days. Does that sound right for what you are
+  trying to do?"
+
+**Every claim carries its source.** The conductor says "I found this by looking at
+[source 1], [source 2], and [source 3]," and the URLs go into the capture file
+with it. Research is never presented as the conductor's own knowledge. If the
+reader comes back empty or late, say so plainly and ask the question without it —
+this pass INFORMS the interview and never gates it (`research.md`).
+
+---
+
+## Step 1d — Target-Specific Discovery (branches by build target)
+
+Ask only the branch that matches the Step 1c answer. One question at a time, in
+their words, waiting for each answer before the next. These are discovery
+questions, not lettered interview questions: they belong to the brainstorm, and
+their answers go into the capture file and GOAL.md with everything else the person
+said.
+
+### If APP / SOFTWARE — ask these:
+
+1. "What kind of app — something that runs in a web browser, a phone app, a
+   desktop program, or a command-line tool?"
+2. "Does it need a database, or does it work with files and memory alone?"
+3. "Does it need user accounts and login, or is it open to anyone?"
+
+### If WEBSITE — ask these:
+
+1. "What pages do you picture? Walk me through them — home page, about page,
+   services, contact, maybe a blog or a portfolio?"
+2. "Is this a simple site — mostly text, images, and a contact form, the kind that
+   works as plain HTML and CSS? Or does it need anything interactive — a booking
+   system, a store, a membership area, or complex JavaScript?"
+3. "Do you already have a place to put it online, or should I set that up?"
+
+The second question decides the hosting path, so do not accept a shrug for it —
+describe both pictures and let them point at one:
+
+- **If SIMPLE (plain HTML and CSS):** it can go straight into GHL's page builder
+  (if they have GHL) or onto Vercel as a static site (if they do not). Ask the
+  placement question plainly: "Do you want this site inside your Convert and Flow
+  account, or on its own web address?"
+- **If COMPLEX (JavaScript, a framework, a backend):** it is hosted externally —
+  Vercel is the default — and it can be EMBEDDED into GHL afterwards. Say it as a
+  plan, not a menu: "I will build this as a standalone site and host it on Vercel
+  — it will have its own address. If you want it inside your Convert and Flow
+  account too, I can embed it there so it appears as part of your funnel or
+  website. Does that sound right?"
+
+Four permutations follow from those two answers — simple into GHL, simple onto
+Vercel, complex onto Vercel, and complex onto Vercel then embedded in GHL — and
+each needs a different set of keys. The permutation table and every credential
+check live in `environment-sweep.md`: name the path here, check the keys there.
+Nothing about a token is ever asked of the user until a check has actually failed,
+and then it is asked in plain words, with where to find it.
+
+### If SALES FUNNEL — ask these (the funnel discovery):
+
+1. "What is the one thing you want someone to do by the end of this funnel —
+   buy something, book a call, join a list, or something else?"
+2. "What are you offering, and at what price? Walk me through what happens after
+   someone says yes."
+3. "Do you already have any of these pieces — a lead magnet, an existing list,
+   a payment processor connected to Convert and Flow?"
+4. "I am going to research the best way to structure this kind of funnel. I will
+   come back with a recommended number of stages and the page types that tend to
+   work best — things like a lead capture page, a sales page, an upsell page,
+   a downsell page, a checkout page, a thank you page, and follow-up sequences
+   over email and text. Does that sound right, or do you already know exactly
+   what stages you want?"
+
+Then the Just-in-Time reader's funnel findings (Step 1c-bis) shape the recommended
+architecture, which the conductor presents as a recommendation with a real choice
+attached (Law 40 — recommend, never persuade):
+
+> Based on what works best for [funnel type], here is what I recommend:
+> - A [N]-stage funnel: [list each stage with its page type]
+> - [X] email follow-ups: [describe the sequence and decision points]
+> - [Y] text message follow-ups: [describe the sequence and decision points]
+>
+> Does this look right to you, or would you like to adjust it?
+
+The page types and the email and text-message decision matrices this
+recommendation is built from live in `funnel-architecture.md`. Present the shape,
+not the matrices — the person is choosing a funnel, not reading a specification.
+
+### Media and Creative (funnel builds only — after the architecture is confirmed)
+
+Two more questions, and only these two:
+
+> Your funnel will need images — page graphics, maybe Facebook ads, product
+> photos. And you might want a video sales letter or testimonial clips. I can
+> generate these for you. Two questions:
+>
+> 1. Do you want me to generate images and videos for this funnel?
+> 2. I can use Kie.ai, which costs you money for each image or video, or your
+>    Agnes-AI account, which includes a daily allowance on the paid plan. Which
+>    would you prefer?
+
+Question 2 is asked only when BOTH keys are present — otherwise it is a question
+with one possible answer, which is not a question. Verify the Agnes allowance
+against agnes-ai.com at run time before quoting any figure for it, and say which
+source the figure came from. The gate behavior:
+
+- **One key found** → use that provider automatically, say which one, move on.
+- **Both keys found** → ask question 2 and record the choice.
+- **Both keys missing AND they want media** → say it plainly: "I need either a
+  Kie.ai API key or an Agnes-AI API key to generate images and videos. Without one
+  of these, I cannot create media for your funnel. Would you like me to build the
+  funnel without media, or would you prefer to get one of these keys first?"
+- **They do not want media generated** → skip both key checks and record in the
+  decision register: "Media: user will provide their own."
+
+The key checks themselves belong to `environment-sweep.md`; the model rules, the
+prompt band, and the image and video pipelines belong to `media-pipeline.md`. The
+interview's whole job here is the choice, and the consent to spend money.
+
+---
+
+**Steps 1c, 1c-bis, and 1d obey the same audience rules as everything else:** one
+question at a time, plain words, warm, no jargon, and "I do not know" is always a
+real answer that earns a conservative default recorded AS a default. The two fast
+paths below still apply to blocks A, B, and C exactly as written, and block D
+still never collapses — the target branches add questions to the discovery half of
+the interview, never to the four questions only the person can answer.
+
+---
+
 ## Step 2 — The interview, in three blocks
 
 Twenty-two questions, asked in four named blocks, in this order — eight in block A,
@@ -132,8 +357,8 @@ Ask these ONE AT A TIME, in plain language. Wait for each answer before the next
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
-| **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. | The allowance "A" in the budget derivation. |
+| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11) — on the operator's box, fable resolves to the same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
+| **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. **Then ask it once per paid service, not once for the machine** — the tier is per account, and each one changes the arithmetic. Measure what you can first (read the router config and the environment for keys), say plainly what you found, and ask only the plan they pay for. The exact wording per service is below, under "Resolving which provider path this build will run on". | The allowance "A" in the budget derivation, and the per-service tier rows the Capacity Ledger reads (`capacity.md`) — which builder model, on which account, at which ceiling. |
 | **A3** | **Is the "effort" or "reasoning" setting turned up?** Both tools have one. If you do not know, that is a real answer — I will assume the safest setting. | The tier multiplier "T". A deeper effort setting multiplies the spend of every tick. |
 | **A4** | **How many agents do you want running at the same time?** Not what the tool says it CAN do — what YOU want. | The starting value for the agent ceiling "N", which the derivation then confirms or reduces. |
 | **A5** | **Which model should plan and think, and which model should build and execute?** The planner thinks through the architecture; the builder does the hands-on work. | The model split. Nobody on a small plan can afford the strongest model end to end (Law 38). See the role defaults below. |
@@ -161,11 +386,17 @@ provider's current docs, or read the account's own dashboard) before writing any
 number into this project's execution plan.
 
 - **App builder** — default Sonnet → DeepSeek v4 Pro. Example concurrency figures
-  to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; cap at 20
-  workflows × 16 = 320; DeepSeek v4 Flash direct example "up to 2,500 subagents";
-  Ollama Cloud DeepSeek example "$20 tier = 3 concurrent, $100 tier = 10 — use 8."
-  Recommend DeepSeek direct ($20+) for the swarm, but confirm today's cap before
-  relying on any of the numbers above.
+  to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; DeepSeek v4
+  Flash direct example "up to 2,500 subagents"; Ollama Cloud DeepSeek example
+  "$20 tier = 3 concurrent, $100 tier = 10 — use 8." Every one of those is a
+  PROVIDER ceiling (axis 3) and none of them is a width. Harness width is a
+  separate axis: min(16, cores−2) subagents per workflow, MEASURED on this
+  machine at run time, with a hard ceiling of 30 workflows — never write a fixed
+  "workflows × 16" product, which is the conflation that put a false 320 promise
+  into an earlier version of this skill. The Capacity Ledger reconciles the three
+  axes and names the governing number (`references/capacity.md` §3). Recommend
+  DeepSeek direct ($20+) for the swarm, but confirm today's cap before relying on
+  any of the numbers above.
 - **QC and fixer** — default Fable → Qwen 3.8 (5×5 = 25). Finds gaps, defects,
   blockers, and improvements; lists (1) what is wrong and how to fix it, (2) what
   to improve and how; then fixes.
@@ -189,6 +420,68 @@ example "1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier examp
 "3 concurrent", a $100-tier example "10 — use 8". Check budget (OpenRouter/DeepSeek
 balance vs a rough token estimate — rough, not final). Save the VERIFIED matrix —
 never the example numbers above — to the execution plan.
+
+**The provider-path rule (binding):** if, after A1–A8 and the config read, the
+skill still cannot determine which provider path the build will actually run on
+(which alias serves the builder swarm, on which account, at which tier), it must
+NOT silently assume one. It writes what it checked and what it could not
+determine into the Capacity Ledger, reasons about the candidates explicitly, and
+asks ONE plain question. Block A's answers are INPUTS to the Capacity Ledger
+(SKILL.md step 6.5, references/capacity.md) — the interview is not finished
+until the ledger can be computed from its answers.
+
+**The execution-architecture inputs (2026-08-11 doctrine):** the interview's
+outputs also feed PROJECT-MANIFEST.md and the orchestration-mode decision. The
+skill answers the twelve execution questions ITSELF, in writing, at
+manifest-writing time (references/execution-architecture.md) — the client is
+never asked about task graphs, commanders, or workflows. The ONE thing the
+client may be asked, in plain words at step 16.9, is the Agent-Team consent
+question when a team is warranted and the feature needs turning on
+(references/agent-team.md carries the exact wording and the settings-backup
+promise). One question, once, with a recommendation attached (Law 40 — never
+persuasion).
+
+**Resolving which provider path this build will run on — the plain questions
+that do it.** This is the half of A2 that cannot be answered once for the whole
+machine: the tier is per ACCOUNT, and the resource math needs each one. Do it in
+this order.
+
+1. **Measure first (Law 28).** Read the router configuration and the environment
+   for provider keys, and resolve each role's alias to the model it actually
+   points at (`capacity.md` §11). Then report what you found in plain words:
+   "Your builder is set to DeepSeek v4 Flash, and I can see an Ollama Cloud key
+   and an Agnes key." Names only — never print a key's value, ever.
+2. **Then ask only the part no command can reveal — which plan they pay for.**
+   One service at a time, and only for the services actually found:
+   - "Is your DeepSeek account the direct one — the one you topped up with a
+     balance — or are you reaching DeepSeek through Ollama?" *(Direct v4 Flash
+     and direct v4 Pro have very different ceilings, and DeepSeek reached
+     through Ollama Cloud is a version behind, so it is never the builder.)*
+   - "Your Ollama Cloud plan — is it the twenty-dollar one or the hundred-dollar
+     one?" *(The twenty-dollar plan allows 3 at once and this skill uses 2; the
+     hundred-dollar plan allows 10 and this skill uses 8 — headroom is always
+     left free, Law 44.)*
+   - "Your Agnes account — is it the free one, the forty-dollar plan, or the
+     hundred-dollar plan?" *(Free is 20 requests a minute; the forty-dollar plan
+     is 1,500 requests every 5 hours; the hundred-dollar plan is 7,500 every 5
+     hours.)*
+   - "Do you have an OpenRouter key?" — usually measurable; ask only when the
+     environment cannot be read.
+3. **The Agnes figures are VERIFIED LIVE, never recited.** Before the ledger uses
+   them, web-research agnes-ai.com's current rate rules; the figures above are
+   the FALLBACK for when that research fails, and the Capacity Ledger records
+   WHICH source was used — the live page or the fallback. The same re-verify rule
+   governs every other provider figure in this file.
+4. **"I do not know" is a real answer.** Record it, assume the SMALLEST tier the
+   evidence allows, mark it "assumed — not their answer," and say so out loud: "I
+   will plan as if it is the smaller plan; that is the safe direction to be wrong
+   in, and we can raise it later."
+5. **One plain question, never a guess.** If the path is still unclear after all
+   of that, ask the one question that closes it — per the binding rule above.
+
+None of these questions asks the person to know what a terminal, an API, or a
+router is. Every one is answerable from a billing page, a receipt, or a memory of
+what they signed up for — and "I do not know" is a real answer to all of them.
 
 **Fast path 1 — the defaults offer (right after A2).** Twenty-two questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
@@ -252,7 +545,7 @@ Two repositories means two trains, two writers, two queues (Law 3).
 | **C0** | **Does this project run once while you are watching, or does it keep running on its own until it is done?** Answer in your own words: "it runs once and I will be watching" — or "it runs by itself, overnight, while I am asleep." | Whether this project has loops at all. This is the question that decides between a scheduler and a payload. The shape test acts on the answer, not on anybody's judgement. |
 | **C1** | **Which file holds the state that the loops read?** Usually the live ledger — I will point to it. | The one place every loop reads and writes. Exactly one thing is the tracker. |
 | **C2** | **Do you want to approve merges, or should the loop merge on its own?** If you want to approve, your approval will be a mark on the tracker, not a message — the loop watches for it just like it watches for anything else. | Where the autonomy line falls (Rule 3.23). Human approval is a state on the tracker, not a message (Law 36). |
-| **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the four survival loops are sized for one window or many. |
+| **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
 | **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
 | **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
 
@@ -322,6 +615,23 @@ is a judgement wearing a derivation's clothes.
 
 Block D's four answers go to the decision register verbatim; D1 seeds the
 bar-candidates step in `research.md`, and D3 gates the step 9 capture download.
+
+The Build Target and its branch answers (Steps 1c and 1d) go to the decision
+register too — the target itself, the hosting or platform path chosen, the media
+choice, and every "I do not know" recorded as one. They are what the credential
+gates and the build pipeline are selected from later, so a target recorded only in
+conversation is a target already lost (Law 25).
+
+**These answers ARE the acceptance criteria, and they are written down BEFORE
+anything is built.** C5's testable "done," block D's bar and its avoid-that list,
+the Build Target's branch answers, and the brainstorm's picture of finished are
+what the spec's acceptance criteria are derived from — defined while the spec is
+being written, never invented after the build, and never quietly adjusted
+afterwards to match whatever got built. If an acceptance criterion cannot be
+traced back to something the person actually said here, it was invented, and
+inventing one is the defect. The same rule forbids inventing the answers
+themselves: an unasked question has no answer, a silence is recorded as a silence,
+and a default is recorded as a default — never as theirs.
 
 After Step 3, the research steps run (see `research.md` — Domain research, then
 Reference apps), and only then does the current-state pass start (Law 28). The

@@ -18,7 +18,8 @@
 //     },
 //     "concurrency": 2,
 //     "maxOutputTokens": 32000,
-//     "effortLevel": "max",
+//     "effortLevel": "xhigh",       // highest PERSISTABLE effort ("max" is
+//                                   // session-scoped and cannot be saved)
 //     "claudeBinary": "/abs/path/to/claude",       // resolved by caller
 //     "nineRouterBinary": "/abs/path/to/9router",   // resolved by caller
 //     "port": 20128
@@ -120,7 +121,12 @@ async function main() {
     routes: input.routes || {},
     concurrency: input.concurrency,
     maxOutputTokens: input.maxOutputTokens,
-    effortLevel: input.effortLevel || "max",
+    // Seeded at "xhigh": the highest effort Claude Code can PERSIST in a
+    // profile ("max" is session-scoped only). The launcher no longer exports
+    // this as CLAUDE_CODE_EFFORT_LEVEL — that env var overrides the in-session
+    // /effort picker (the 2026-08-11 ultracode-revert bug) — so this value is
+    // the recorded default, honoured only under CLAUDE_NINE_FORCE_EFFORT.
+    effortLevel: input.effortLevel || "xhigh",
     claudeBinary: input.claudeBinary || "",
     nineRouterBinary: input.nineRouterBinary || "",
     // tokenRef only: the launcher resolves the actual token from platform storage.

@@ -36,9 +36,44 @@ with the single launched session named as owner of every transition, and run the
 ownership check. Every transition owned exactly once, still.
 
 And the other half: registering loops a one-shot project will never run is bloat
-(Law 39, prohibition 1). Nine loops for a run that finishes in one sitting is the
+(Law 39, prohibition 1). Ten loops for a run that finishes in one sitting is the
 exact failure the skip conditions exist to stop. A loop with no reason is a cost
 with no result.
+
+---
+
+## Loops vs direct fan-out — two primitives, not one
+
+This file describes LOOPS — scheduled, recurring ticks that each do one piece of
+work. Loops are correct for:
+- Work that repeats on a timer (merge train, stall detection, budget watch)
+- Work where the next piece depends on the previous piece's result
+- Work that must be serialized (one merge writer per repo — Law 3)
+
+Loops are NOT correct for:
+- "All of this independent work, right now" — that is a FAN-OUT DISPATCH
+- The initial swarm launch — decomposing work into N streams and launching N
+  workflows simultaneously is a fan-out, not a loop tick
+
+**The swarm launch is a fan-out dispatch, not a loop.** Before the loops start,
+the orchestrator performs ONE fan-out dispatch: decompose the spec into
+independent streams, launch one workflow per stream, all in the same turn.
+The loops then handle ongoing work — new items discovered during the build,
+re-dispatching after fixes, the merge train, survival monitoring.
+
+A project that uses ONLY loops for parallelism will always be sequential at
+the macro level — because loops, by design, do one piece of work per tick.
+The fan-out dispatch is the missing primitive that turns a pipeline into a swarm.
+
+**A fan-out dispatch is a BUDGETED act, never an improvised one.** Its width —
+how many workflows, and how many agents inside each — is not decided at the
+moment of launch: it comes from the Capacity Ledger (`references/capacity.md`,
+computed at SKILL.md step 6.5), and every stream it launches is named in advance
+in the Parallelism Plan (SKILL.md step 12.7, a section of the execution plan).
+A dispatch that cites neither is a defect. Each workflow the fan-out launches is
+validated per `references/workflows.md` — the capability probe, the declared
+workflow fields, and each subagent class's ownership fields — BEFORE it launches,
+never after it returns.
 
 ---
 
@@ -59,6 +94,12 @@ The arithmetic transfers; the figures do not. Run it with your own measurements.
 | **D** | The duty cycle: minutes of real agent work one wake-up does | Measured over the first few ticks. Never larger than I |
 | **T** | The tier multiplier: what one minute of a tier costs relative to the cheapest execution tier | Measured. The cheapest execution tier is 1 by definition |
 | **P** | How many ticks pass between runs of the planning tier | Chosen, then checked by the arithmetic |
+
+The N and W inputs come from the Capacity Ledger (`references/capacity.md`) — the
+ledger is computed first, and this derivation cites it; a derivation that
+contradicts the ledger is a defect. In Agent-Team mode the lead and each commander
+are persistent concurrent consumers: N_persistent = commanders + 1, counted before
+any workflow width (capacity.md §12).
 
 **The rule the arithmetic enforces: what a window costs must fit in what a window
 holds.**
@@ -173,13 +214,14 @@ not a new loop; only the register row's naming makes the B2H visible:
 ```
 loops = 4 core                         (spec, build, review, gate)
       + 1 merge-train loop PER LANE    (Law 3 — one train per lane)
-      + 4 survival                     (stall, park-and-resume, compaction, budget watch)
+      + 5 survival                     (stall, park-and-resume, compaction, budget watch, swarm watch)
       - every loop whose SKIP CONDITION below is true for THIS project
 ```
 
-Publish the sum with its parts (Rule 3.12). The middle term varies with the
-repository count and nothing else. The last line is what stops the count being the
-same nine on every project regardless of what the project is.
+Publish the sum with its parts (Rule 3.12). One lane sums to TEN (4 + 1 + 5); each
+additional repository adds one. The middle term varies with the repository count and
+nothing else. The last line is what stops the count being the same ten on every
+project regardless of what the project is.
 
 ### Never a fixed round count — the B2H success exit vs the 3-cycle cap
 
@@ -211,6 +253,29 @@ Gauntlet block, `references/gauntlet.md`) that the existing review and gate loop
 read. When a project's C0 answer is "repeatedly, or unattended, or overnight," the
 scheduler already exists; the B2H only feeds the review and gate loops' stop
 conditions. Nothing in this section adds a loop.
+
+---
+
+## The outer operating loop — the conductor's revolution (owns the TASK level)
+
+Above these loops sits ONE outer loop: the conductor's revolution over the task
+graph — the 19-station canonical loop (references/gauntlet.md §14, fusing the
+doctrine's 16-step operating cycle, the six-workflow Gauntlet topology, and the
+Agent-Team control flow into one). It owns a DIFFERENT state vocabulary: task
+transitions (PENDING → IN PROGRESS → COMPLETED on the native graph), never item
+transitions. The four core loops below own item transitions (unbuilt → built →
+reviewed → passed → landed → merged) INSIDE whichever task is running. No
+collision: two vocabularies, each owned exactly once (Law 36). A cron tick fires
+ONE revolution entered at station 1 (READ PROJECT MANIFEST) — the tick contract
+in `references/gauntlet.md` §14.4, which governs. A tick that finds no ready task
+still executes stations 1–3 (read the manifest, the task state, and the project
+state) and station 16 (RECONCILE NATIVE TASKS), and writes
+RECONCILE | clean | counts=…, never a contentless heartbeat. The reconciler is
+station 16, not the entry step: a revolution ORIENTS by reading the three state
+layers and RECONCILES them before it closes.
+The merge train stays a CONCURRENT consumer outside the
+revolution: it drains the pen on its own cadence while revolutions continue —
+a merge is never a barrier and never a station the revolution waits at.
 
 ---
 
@@ -260,10 +325,10 @@ Each merge-train loop:
 
 ---
 
-## The four survival loops (8.7)
+## The survival loops (8.7)
 
-The four core loops do the work. These four keep them alive. **A loop cannot rescue
-itself** — the loop that hung is not going to notice that it hung. Each of the four
+The four core loops do the work. These five keep them alive. **A loop cannot rescue
+itself** — the loop that hung is not going to notice that it hung. Each of the five
 watches something it is not part of.
 
 ### Loop 5 — STALL DETECTION
@@ -309,7 +374,19 @@ watches something it is not part of.
 | **Stop condition** | Same as loop 6. |
 | **The trap** | Re-deriving from assumed inputs instead of measured ones. The duty cycle is the input that most often turns out to be wrong. Measure it again before re-deriving. |
 
-### Two rules for all four
+### Loop 9 — SWARM WATCH (the enforcement loop)
+
+| Property | Value |
+|---|---|
+| **Why it exists** | Rules that are only described are not rules. This loop makes RULE 3–5 fail-closed: it runs the S1–S11 checks (SKILL.md, RULE 5) against the live `/workflows` view, the dispatch log, the heartbeat, the ledger, and (in Agent-Team mode) ListAgents. |
+| **The tick** | Count running workflow trees vs independent streams with runnable work (S1/S2/S7); check prefixes (S3); check width vs the Capacity Ledger (S4/S5); check heartbeat freshness (S6); check item flow (S8); check the conductor's tree is clean of build-file edits and every landing commit has a prior dispatch row (S9); run tools/anchor.sh --mode reconcile (S10 — the three-way reconcile, including the terminal-drift counter); check no user-facing terminal-chore text was produced (S11); in Agent-Team mode, census commanders via ListAgents against project_state.json (a missing commander is raised to the lead for re-spawn, references/agent-team.md). Violations are appended to the ledger and corrected on the conductor's next turn — zero-workflow (S2) is corrected IN THE SAME TURN. |
+| **Owns** | No item transition. It restores enforcement state only. |
+| **Interval** | 5 minutes. Its cron prompt is command-shaped (`run /<swarm-watch-workflow>` or the anchor call) — never free-form. |
+| **Stop condition** | Same as loop 6. |
+| **Skip condition** | Attended one-shot runs (C0 = once, watched): the human is the watch. |
+| **The trap** | A watch that writes contentless heartbeats is itself the disease (references/anti-drift.md — 740 of 2,366 real ledger lines were exactly that). Every watch line carries the violation count, even when it is zero — `S-CHECK | violations=0` is state; `heartbeat (auto-tick)` is noise. |
+
+### Two rules for all five
 
 They may not depend on each other. Loop 8 warns loop 6 through the tracker, like
 everything else. A survival loop that waits for a message from another survival loop
@@ -337,6 +414,7 @@ removed, and the count is derived rather than felt.
 | **6. Park and resume** | The budget projection puts the entire run inside one capacity window with the stated margin to spare. | Omitted on short runs. Re-test on every re-derivation. |
 | **7. Compaction checkpoint** | Every tick starts a fresh session, and the longest single tick is shorter than the shortest gap between summaries actually measured. | Omitted on attended runs and genuinely cold-start runs. |
 | **8. Budget watch** | Capacity is not metered at all, or the projection puts the run at a small fraction of the allowance and the run is bounded. | Near-universal on any metered plan. |
+| **9. Swarm watch** | The run is an attended one-shot (C0 = once, watched) — the human is the watch. Omitting the loop never omits the reconcile: `tools/anchor.sh --mode reconcile` still runs at every phase boundary and before every dispatch (`references/anti-drift.md`). | Omitted on attended runs only. |
 
 **The governing rule:** omitting a loop must never leave a transition unowned. If a
 loop is left out, either its transitions do not exist in this project's vocabulary,
@@ -346,7 +424,7 @@ or another loop takes them and the register says which.
 
 ## The minimum viable set — three loops for a first project
 
-Nine loops is not a first project. Apply the conditions honestly to a first project
+Ten loops is not a first project. Apply the conditions honestly to a first project
 — one repository, one person, present while it runs, inside a single capacity window
 — and the derivation returns three:
 
@@ -368,7 +446,9 @@ discovered during the build; a second merge train the moment a second repository
 enters; stall detection the first tick that hands work to an agent nobody is
 watching; session-limit park the first run that spans a window boundary; compaction
 checkpoint the first unattended run; budget watch the first metered run near the
-allowance.
+allowance; swarm watch the first run that dispatches while nobody is watching — it
+is what makes RULE 3–5 fail-closed. Added one at a time, a one-lane project reaches
+the derived ten.
 
 ---
 
@@ -396,7 +476,12 @@ OWNS       <state A>  ->  <state B>     — this loop, and no other loop
 3. <anything else that must be true before work begins>
 
 ## THE TICK — one item, one transition
-1. Read the tracker fresh. Assume you remember nothing from the last tick.
+0. TERMINAL-DRIFT GATE: if CONTROL/TERMINAL-DRIFT.flag exists, STOP — write one
+   line naming the flag and do nothing else this tick (references/anti-drift.md).
+1. RECONCILE: run tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile; execute
+   any RECONCILE-ACTIONS it emits; on a DRIFT-ALARM stop and reconcile per
+   references/anti-drift.md before any work. Then read the tracker fresh. Assume
+   you remember nothing from the last tick.
 2. Claim ONE item in <state A>. Write the claim down BEFORE acting on it.
 3. Do the work. <cite the section that owns this procedure — do not copy it here>
 4. Write the result to disk and push it.

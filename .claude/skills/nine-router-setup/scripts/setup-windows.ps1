@@ -371,7 +371,7 @@ else {
         }
         concurrency = $concurrency
         maxOutputTokens = 32000
-        effortLevel = 'max'
+        effortLevel = 'xhigh'
         claudeBinary = $claudeBin
         nineRouterBinary = $nineBin
         port = $Port
@@ -386,6 +386,46 @@ else {
     & (Join-Path $Win 'Install-ClaudeNine.ps1')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'claude-nine launcher install failed.' }
     Refresh-Path
+
+    # 10.5 Enable Agent Teams (merge-only, backed up; never disturbs running work).
+    #      Turns the experimental Agent Teams flag on in
+    #      %USERPROFILE%\.claude\settings.json for FUTURE Claude Code sessions
+    #      only. The enabler backs the file up first, MERGES exactly one key,
+    #      validates the result, and restores the backup on any failure.
+    #      teammateMode is NOT written on Windows: it stays
+    #      DEFERRED-UNDETERMINED because tmux is a Unix assumption and no
+    #      Windows display mode has been probed - the skill's runtime probe is
+    #      the authority, never this installer.
+    #      NEVER fatal to setup: a blocked or failed enablement is reported
+    #      honestly in the completion report and the rest of the install still
+    #      completes (a routed Claude Code does not depend on Agent Teams).
+    $agentTeamsReport = ''
+    $agentTeamsStatus = 'SKIPPED - Enable-AgentTeams.ps1 not found'
+    $enableTeams = Join-Path $Win 'Enable-AgentTeams.ps1'
+    if (Test-Path $enableTeams) {
+        try {
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $agentTeamsReport = (& $enableTeams -ClaudeBin $claudeBin | Out-String)
+            $agentTeamsRc = $LASTEXITCODE
+            $ErrorActionPreference = $prevEap
+            switch ($agentTeamsRc) {
+                0 {
+                    $agentTeamsStatus = 'UNKNOWN (the enabler produced no status line)'
+                    $lines = @($agentTeamsReport -split "`r?`n")
+                    for ($i = 0; $i -lt $lines.Count - 1; $i++) {
+                        if ($lines[$i].Trim() -eq 'AGENT TEAMS:') { $agentTeamsStatus = $lines[$i + 1].Trim(); break }
+                    }
+                }
+                1 { $agentTeamsStatus = 'BLOCKED - Claude Code is below the Agent Teams version floor. Nothing was modified; Claude Code was NOT updated (never automatic).' }
+                default { $agentTeamsStatus = 'NOT ENABLED - the enabler reported a tooling failure; the settings backup was restored where one existed.' }
+            }
+        } catch {
+            $ErrorActionPreference = 'Stop'
+            $agentTeamsStatus = "NOT ENABLED - the enabler could not be run: $($_.Exception.Message)"
+        }
+        Write-Log "Agent Teams enablement: $agentTeamsStatus"
+    }
 
     # 11. Smoke tests. This MUST execute the launcher itself (not just check the
     #     file exists and call the router directly) — that is what catches a
@@ -489,6 +529,9 @@ Reserved for OpenClaw: $reserved
 
 PDF auto-switch: DISABLED - not verified end-to-end
 Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
+
+Agent Teams (experimental; applies to NEW Claude Code sessions only): $agentTeamsStatus
+$agentTeamsReport
 
 Dashboard: $dashUrl - open this in your browser to manage providers and models.
 
