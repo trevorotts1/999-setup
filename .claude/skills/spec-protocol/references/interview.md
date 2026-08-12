@@ -26,13 +26,16 @@ because I remembered your answers and went and checked the machine myself."
 
 **The count moves with WHAT is being built, and you say the new number out loud.**
 Step 1c asks one more question (what are we building), Step 1d asks three or four
-that apply only to that target, and a funnel adds up to two more about images and
-video. So the honest number, stated the moment the target is known, is about
-twenty-three for an app, twenty-three or twenty-four for a website, and
-twenty-four for a funnel — twenty-six if it needs images and video. Say it as a
-correction, never as a surprise: "That is a few more than I first said — the extra
-ones only apply because you said funnel." Never state a number you will then
-exceed. On regular Claude Code, where block A does not run, the same rule applies
+that apply only to that target, and any build that needs artwork adds up to three
+more about images and video — a funnel almost always does, and an app or a website
+does whenever its plan calls for pictures of its own. So the honest number, stated
+the moment the target is known, is about twenty-three for an app, twenty-three or
+twenty-four for a website, and twenty-four for a funnel — and where artwork is
+wanted, up to twenty-six for an app, twenty-six or twenty-seven for a website, and
+twenty-seven for a funnel. Say it as a correction, never as a surprise: "That is a
+few more than I first said — the extra ones only apply because you said funnel."
+Never state a number you will then exceed. On regular Claude Code, where block A
+does not run, the same rule applies
 to block D's four questions plus the target questions. **The count also moves with
 HOW it runs:** a project that runs on its own overnight gets one extra question
 (C6, below) about what to do if one of their accounts hits a limit while nobody is
@@ -242,6 +245,14 @@ said.
 2. "Does it need a database, or does it work with files and memory alone?"
 3. "Does it need user accounts and login, or is it open to anyone?"
 
+**Then, only if the plan they just described calls for artwork of its own** —
+front-page pictures, icons, a short clip showing it off — run the "Media and
+Creative" block below. It is no longer funnel-only. Its opening question in this
+branch is: "Your app is going to need some artwork — pictures for the front page,
+maybe icons, maybe a short video showing it off. Do you want me to create those
+for you, or will you be supplying your own?" If the plan needs no artwork, skip
+the block entirely and say nothing about it.
+
 ### If WEBSITE — ask these:
 
 1. "What pages do you picture? Walk me through them — home page, about page,
@@ -250,6 +261,13 @@ said.
    works as plain HTML and CSS? Or does it need anything interactive — a booking
    system, a store, a membership area, or complex JavaScript?"
 3. "Do you already have a place to put it online, or should I set that up?"
+
+**Then, only if the pages they just described call for artwork of their own** —
+hero images, a banner, a short clip — run the "Media and Creative" block below,
+opening it in this build's own words ("Your site is going to need some artwork —
+pictures for the front page, maybe a short video showing it off. Do you want me to
+create those for you, or will you be supplying your own?"). A site whose pictures
+they are supplying, or that needs none, skips the block entirely.
 
 The second question decides the hosting path, so do not accept a shrug for it —
 describe both pictures and let them point at one:
@@ -302,36 +320,136 @@ The page types and the email and text-message decision matrices this
 recommendation is built from live in `funnel-architecture.md`. Present the shape,
 not the matrices — the person is choosing a funnel, not reading a specification.
 
-### Media and Creative (funnel builds only — after the architecture is confirmed)
+### Media and Creative (any build that needs artwork — after the shape is confirmed)
 
-Two more questions, and only these two:
+**A funnel almost always needs artwork; an app or a website needs it whenever the
+plan calls for pictures of its own** — front-page art, icons, a short clip showing
+the thing off. Ask this block whenever that is true of what they just described,
+and skip it entirely when it is not.
+
+Up to three questions, and only these:
 
 > Your funnel will need images — page graphics, maybe Facebook ads, product
 > photos. And you might want a video sales letter or testimonial clips. I can
-> generate these for you. Two questions:
->
-> 1. Do you want me to generate images and videos for this funnel?
-> 2. I can use Kie.ai, which costs you money for each image or video, or your
->    Agnes-AI account, which includes a daily allowance on the paid plan. Which
->    would you prefer?
+> generate these for you.
 
-Question 2 is asked only when BOTH keys are present — otherwise it is a question
-with one possible answer, which is not a question. Verify the Agnes allowance
-against agnes-ai.com at run time before quoting any figure for it, and say which
-source the figure came from. The gate behavior:
+For an app or a website the block opens in that build's own words instead, and
+that opening IS question 1 — do not then ask question 1 again:
 
-- **One key found** → use that provider automatically, say which one, move on.
+> Your app is going to need some artwork — pictures for the front page, maybe
+> icons, maybe a short video showing it off. Do you want me to create those for
+> you, or will you be supplying your own?
+
+Then, in this order:
+
+> 1. Do you want me to generate images and videos for this build? (Funnel builds
+>    only — on an app or a website the opening question above already asked it.)
+> 2. You have two accounts I can use for artwork. I'd suggest Kie.ai — it has the
+>    strongest set of picture models — but it charges real money for each picture,
+>    a few cents apiece. Your Agnes account includes a big daily allowance
+>    instead, at no extra charge today. Which would you like me to use?
+> 3. For the pictures themselves I'd recommend the one called GPT Image 2 — it's
+>    the best I've found at getting words onto an image correctly, and it runs
+>    about a nickel a picture. Want me to go with that, or is there a particular
+>    model you'd like me to use instead? If you're not sure, I'll choose for you —
+>    that's a fine answer.
+
+**Question 2 is asked only when BOTH keys are present** — otherwise it is a
+question with one possible answer, which is not a question. When only one key is
+found, that provider is used automatically and you say which one. The suggestion
+inside question 2 comes from the detection ladder in `media-pipeline.md` (Kie.ai
+first when both are there), but **the client still chooses** — Kie.ai bills real
+money per picture while Agnes carries a daily allowance, and consent to spend
+outranks convenience. Verify the Agnes allowance and the Kie.ai prices against
+their own current pages at run time before quoting any figure, and say which
+source each figure came from.
+
+**If they told you last time which one they prefer** (the saved-answers file holds
+exactly one media entry, `MEDIA_PROVIDER_PREF` — `capacity.md` §13.3), offer it as
+the default rather than asking cold: "last time you preferred Kie.ai — same
+again?" It is an OFFER, never a silent application, exactly like the concurrency
+preference.
+
+**Question 3 is asked once the provider is known, immediately after it resolves.**
+**The model NAME and the price in that sentence are filled in from the run's own
+catalog research and its smoke test — never recited from this page.** "GPT Image
+2" and "about a nickel" are the 2026-08-12 exhibit; the run names whichever member
+of the recommended family it actually resolved and priced this time
+(`media-pipeline.md` owns the family requirement and the succession rule — this
+skill never pins a model id as doctrine).
+
+- **The expert path.** If they name a model, they are an expert and they get what
+  they asked for: verify the name against the LIVE catalog research. **Found** →
+  seat it, record their choice in their own words in the decision register, and
+  read that model's own constraint table rather than the recommendation's.
+  **Not found** → an honest miss and the nearest real thing, never a silent
+  substitution: "I couldn't find one by that name on your account today. The
+  closest I do see is [x] — use that, or my recommendation?"
+- **"I don't know" or "you choose"** → the recommendation, recorded as a DEFAULT
+  they confirmed rather than as their answer.
+- **The video model is NOT asked.** Choosing the video engine and its backups is
+  this skill's job, not theirs. The only time a video model's name is ever put in
+  front of the client is at spend time, for the premium engines — see the runtime
+  gate below.
+
+The gate behaviour on the keys:
+
+- **One key found** → use that provider automatically, and SAY the detection out
+  loud rather than quietly acting on it: "We're going to need pictures for this.
+  I can see you already have a Kie.ai account set up on this machine — shall I use
+  that one?" Then go straight to question 3.
 - **Both keys found** → ask question 2 and record the choice.
-- **Both keys missing AND they want media** → say it plainly: "I need either a
-  Kie.ai API key or an Agnes-AI API key to generate images and videos. Without one
-  of these, I cannot create media for your funnel. Would you like me to build the
-  funnel without media, or would you prefer to get one of these keys first?"
+- **Both keys missing AND they want media** → **ASK for one.** Say this, in these
+  words:
+
+  > "To create your artwork I need a key for one of two services — Kie.ai, or your
+  > Agnes account. I looked in the places this computer keeps its keys and didn't
+  > find one for either. I only ever check the NAMES — I never read or need the
+  > keys themselves. Do you have one of these keys already, or an account with
+  > either service? One thing, whatever you do: please don't paste the key into
+  > our chat. I never need to see it — I just need to know where it lives."
+
+  **⛔ There is NO "paste your key here" flow, ever, on any branch.** A key typed
+  into this conversation lands in the transcript, in the session history, in every
+  ledger the run writes, and possibly in a commit — and it cannot be un-leaked.
+  This rule is carried HERE, in the interviewer's own words, not only by
+  reference: ask WHETHER a key exists, say WHERE to put it, then RE-DETECT it by
+  name. The only thing ever learned is "present" or "absent".
+
+  The five branches — **has a key** (guided placement into a store the sweep
+  provably reads, then re-detect), **has an account but no key** (where the
+  dashboard button is), **has neither** (what it is for, the real costs from live
+  research, and an honest choice with no signup push), **declines** (the real
+  build-without-media path), and **re-detect fails** (name exactly what was
+  checked, run the sweep's known-positive control, one concrete step, and if the
+  control ALSO fails say plainly that the checker is broken, not the client) —
+  are written out in full in `media-pipeline.md` §9. Follow them there; do not
+  improvise a sixth.
+
+  **Say the without-media path UP FRONT, never at the end:** "Here's what that
+  means for tonight: you'll get the whole build, working, with neat marked spaces
+  where the pictures go and a ready-made list of every picture it needs. What you
+  won't get yet is the pictures themselves. Filling them in is quick once a key
+  exists." That list is a real deliverable with a name — the **MEDIA-GAPS
+  manifest** — carrying one entry per empty slot: where it goes, what size and
+  shape, the fully-prepared instruction that will generate it, and what it will
+  cost. It is what makes "later" a promise instead of a hope: the moment a key
+  exists, the whole picture pass is one batch with nothing to work out again. A
+  declared, labelled gap plus that manifest is honest scaffolding; a stock image
+  or a generated stand-in passed off as final art is a lie.
 - **They do not want media generated** → skip both key checks and record in the
   decision register: "Media: user will provide their own."
 
 The key checks themselves belong to `environment-sweep.md`; the model rules, the
 prompt band, and the image and video pipelines belong to `media-pipeline.md`. The
 interview's whole job here is the choice, and the consent to spend money.
+
+**The premium-engine spend gate (`media-pipeline.md` §6b) is a RUNTIME ask, not
+an interview question — never pre-collect a blanket yes here.** Those engines are
+asked about one generation at a time, at the moment the money would be spent, with
+that clip's real price and the standard engine's price beside it. A yes collected
+in the interview would be consent to a number nobody had computed yet. (The swarm
+watch enforces that gate at runtime as **S14** — SKILL.md, RULE 5.)
 
 ---
 
@@ -697,12 +815,21 @@ Two repositories means two trains, two writers, two queues (Law 3).
 | **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
 | **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
 | **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
-| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. |
+| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. |
 
 **C0 is numbered zero because it is asked before C1 and because nothing above it
 was renumbered to make room.** Every question under it assumes an answer to it.
 **C6 is numbered last for the same reason** — it was added after C0 to C5 existed,
 and none of them moved to make room (the rule that placed A7, A8, and D1 to D4).
+**The artwork clause is a CLAUSE of C6, not a C7** — the answer is collected
+before they walk away precisely because a run that cannot ask must never stop to
+ask. Whichever of the three they choose, the binding floor is the same: the build
+NEVER stalls waiting for an answer nobody is awake to give; a key that DIES
+mid-run (a working key that starts refusing) is recorded as a capacity event and
+degrades to this same policy with a note queued for the morning; and **the premium
+video engines stay parked regardless of the answer** — this clause governs the
+missing-key case, never spending authority, which is asked one generation at a
+time or not at all.
 
 **Say the consequence of C0 out loud, because both answers are allowed:**
 

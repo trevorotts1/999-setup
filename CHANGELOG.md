@@ -1,5 +1,178 @@
 # Changelog
 
+## [1.4.0] — 2026-08-12
+
+### Media generation became intelligence instead of a hardcoded name
+
+- **The media file named one image model and called it a rule.** "Every image uses
+  `gpt-image-2`; no other model is acceptable" is a pin, and a pin is stale the day the vendor
+  ships the next version — the same defect the role tables were corrected for. Image and video
+  selection are now stated as **requirement families**: the qualifying member is the newest one
+  in the family that documents the variants the work needs, passes this run's smoke test, and
+  supports the resolutions the work items actually call for. The successor qualifies **the day
+  it exists, with no edit to the file.** Every model id that remains is a dated exhibit, a
+  sourced fact, a prohibition, or an item marked undetermined — never doctrine.
+- **Version succession is a procedure, not a hope.** Once per run, at media-planning time and
+  again before the first batch, the run researches the provider's live catalogue, picks the
+  newest member, reads that member's own constraint table rather than this file's, and smoke
+  tests it. The smoke test is one cheap generation that proves four things at once: the id
+  resolves, the auth works, the account has credit, and what the generation really costs. **An
+  exhibit id that still passes a live smoke test is a measurement; an exhibit id recited
+  without one is folklore, and is never used.**
+- **A detection ladder decides the engine, and its fourth rung is a question rather than a
+  dead end.** Kie.ai key present recommends Kie.ai; otherwise an Agnes key makes Agnes the
+  engine for images and video; both present sets a recommendation but **the client still
+  chooses**, because one bills real money per asset and the other carries a daily allowance,
+  and cost-is-consent outranks convenience. Neither present, with media wanted, now **asks** —
+  five written branches covering has-a-key, has-an-account, has-neither, declines, and
+  re-detect-failed. **There is no "paste your key here" flow on any branch**: the skill asks
+  whether a key exists and says where to put it, and the only thing it ever learns is present
+  or absent.
+- **A failed re-detect accuses the instrument before it accuses the client.** When someone says
+  they placed a key and the sweep does not see it, the run names the variables and files it
+  checked, runs the sweep's own known-positive control, and offers exactly one concrete next
+  step. If the control also fails, the finding is **broken instrument**, said plainly as the
+  skill's problem and not the client's. A second failure ends the round trips rather than
+  starting a third.
+- **Video has a default, two affordable backups, and a permanently excluded engine.** The Veo
+  family through Kie.ai is the default — quality lane for finals, economy lane for drafts —
+  with the model enum read live rather than hardcoded, because the id survived a version
+  upgrade unchanged and pinning either the old or the new string would be wrong. Each backup
+  must be in the live catalogue, outside the gated tier, and at or under roughly six cents a
+  second. Backup two is **named with its price before first use**, never assumed.
+- **The gated tier spends nothing without a specific yes, every single time.** Seedance,
+  Seedream and Hailuo are gated **by family, matched prefix-insensitively because ids drift**.
+  Each generation requires its own permission: no standing pre-authorization, no blanket batch
+  consent, and "yes for all of tonight" authorizes only the items enumerated with their prices
+  in that same message. **The gate cannot be routed around by using a cheap variant — the
+  family is gated, not the price point.** The ask names **both** numbers, the gated one and the
+  default path's, so the answer is informed rather than frightened; a refusal generates on the
+  default path or skips, recorded either way and never silently substituted. On an unattended
+  run the item parks with a note and the build carries on.
+- **The honest note that keeps the gate from lying.** These families are not uniformly
+  expensive — at default resolutions one of them is cheaper per second than the default path's
+  quality lane. Where the money actually runs away is specific and named: a thirty-second
+  billing unit charged for a six-second clip, and long clips at the top resolutions. Quoting
+  "premium" as if it meant "always dearer" would be a confident wrong number, so the file says
+  what is true instead.
+- **Polling is the design, not the fallback.** A run executes on the client's own machine,
+  which has no public callback receiver, so the callback parameter is an enhancement used only
+  when a run has proved a receiver exists. Both providers get written poll schedules, backoffs
+  and per-task timeouts, and a conservative poll budget that is safe if polls bill and
+  invisible if they do not. **A timed-out task is never blind-resubmitted**: it is recorded
+  failed with its task id, because a task that timed out may still complete and still bill, and
+  the cost is reconciled from the provider's own record afterwards. Re-check before any
+  resubmit, or pay twice.
+- **A missing key no longer costs the client the build.** The proceed-without-media path is a
+  real path: everything else is built at full quality, every media slot gets a **declared,
+  labelled placeholder** with the right dimensions reserved and alt text written, and the
+  **MEDIA-GAPS manifest becomes a required deliverable** — one entry per slot with its
+  location, size, the fully-prepared generation prompt, and its estimated cost. The moment a
+  key exists the whole media pass is one resumable batch with nothing to work out again. It is
+  said **up front**, never discovered at the end. A declared gap is honest scaffolding; a stock
+  image passed off as final art is a lie.
+- **The overnight case is pre-declared, never asked at three in the morning.** When a run is
+  unattended and the build generates media, the existing overnight-policy question grows one
+  clause — no new question is spent — recording whether a missing or dying key should produce
+  placeholders and a manifest (the default), a skip with a note, or a parked media lane. The
+  build never stalls waiting for an answer nobody is awake to give, and **the gated tier stays
+  parked regardless of that policy**, because it governs the missing-key case and never spend
+  authority.
+
+### The sweep now looks for the media keys, and looks where it says it looks
+
+- **The documentation promised two checks the tool did not perform.** The environment sweep
+  claimed the two media keys were checked "in the same stores and with the same controls as
+  every other check here", and `tools/env-sweep.sh` contained neither name. Both are now real
+  phases with their alias spellings, a status line each, and a network-guarded liveness check
+  for the one provider that documents a cheap endpoint. The other is **presence-only, and says
+  so** rather than implying a check it cannot make. The selftest plants and asserts **10**
+  credentials in a known-positive control and proves all 10 report missing in an empty one.
+- **`~/.env` was named as a store and never read — which would have broken the guided
+  placement flow at exactly the moment it mattered.** The tool now sources it live at every
+  run, first in precedence so the canonical stores keep the last word, and the report line
+  names it among the stores searched. **The placement target a client is sent to must be a file
+  the checker actually reads**, and a third selftest control proves it: a key placed only in
+  the sandbox `~/.env` is detected, while a key placed nowhere still reports missing in the
+  same run. Without this, every guided placement on a non-fleet machine would have ended in a
+  failed re-detect through no fault of the client's.
+
+### Media is a line item in the ledger, never an invisible cost
+
+- **Three meters, one provider, and they are never added together.** An Agnes image draws the
+  images-per-day meter, a clip draws the video-seconds-per-day meter, and neither draws the
+  five-hour text request window. Budgeting pictures against the request window mis-classes the
+  ceiling, and a mis-classed ceiling is discovered at three in the morning. A language-model
+  seat on that provider and the media pipeline on the same provider therefore do not compete
+  for the same figure. Kie.ai sits in a different class again — a **prepaid credit balance**,
+  the token-balance class, checked before every batch and at wave boundaries, with the figure
+  going to the burn table and never to the profile.
+- **Every planned batch is written before it dispatches**, with its provider, resolved model,
+  mode, item count, cost estimate, the meter it draws, and whether it is gated. Every executed
+  generation reconciles actual against estimate from the provider's own task record, and **a
+  per-item underestimate of more than a quarter re-estimates the rest of the batch before it
+  dispatches, out loud** — a two-hundred-image funnel is a real bill, and the moment to mention
+  it is before it is spent.
+- **The price instrument is ranked, and the run's own measurement wins.** Measured cost from
+  this run's smoke test outranks the model's documentation page, which outranks the pricing
+  page, which outranks third-party comparisons — and a third-party figure is **never the sole
+  support for a spend question** when a measurement is obtainable. A promotional price is a
+  price with an expiry nobody announces, so it is re-read every run.
+- **A quota refusal that contradicts the claimed allowance corrects the claim, not the
+  arithmetic.** A payment-required error arriving while the run's own day-count is still well
+  under the documented cap means the claim is wrong — a promotion ended, the plan differs, or
+  the account is shared. The run downgrades to measured reality and queues a plain note. **A
+  tripwire only ever shrinks a claim, never grows one.**
+
+### One new remembered fact, and three that may never be remembered
+
+- **`MEDIA_PROVIDER_PREF` is the only media fact the capacity profile may store** — which of
+  the two providers the client preferred last time, offered back as a default question and
+  never silently applied. The allowlist a tool enforces does not grow by implication, so this
+  is a real, single-key change to `tools/capacity-profile.sh` with its own round-trip test.
+- **Three media facts are refused mechanically, each for a different reason, and the selftest
+  proves all three.** A media key name is refused by the deny-list; key *presence* is refused
+  because it is measured every run and a remembered presence is a confident wrong branch; and
+  **any gated-tier pre-authorization is refused because a stored standing yes-to-spend must be
+  impossible rather than merely discouraged.** The suite now runs **23 passed / 0 failed**.
+
+### The corrections of record
+
+- **The daily video allowance is 500 seconds, not 800.** The larger figure was an unverified
+  note; the provider's own token-plan documentation is the source, and it is dated. A per-day
+  quota is not a per-minute rate — they are different axes and both bind.
+- **The provider's live tier names are Starter, Plus and Pro, and they carry weekly caps as
+  well as the five-hour window.** The older free / forty-dollar / hundred-dollar mapping is
+  remembered *plan membership* rather than doctrine, and a third and larger tier exists that
+  the earlier tables never mentioned. The operator's rows stand unchanged as the fallback when
+  live research fails, now explicitly scoped to the text window only.
+- **"About one image a minute" is not a documented rate.** No provider publishes one. It is a
+  planning assumption, it is marked as one, and it is **replaced by measurement** — time the
+  run's own first three generations and re-plan the batch from the wall clock. Whether the
+  documented daily image allowance extends to a free account is stated as undetermined rather
+  than assumed, along with eleven other open questions, each with the exact test that would
+  settle it.
+
+### S14 — the media spend gate joins the swarm watch
+
+- **A rule that is only described is not a rule.** The five-minute watch loop gained a
+  fourteenth standard: every gated-family generation must have a matching consent line written
+  **before** its dispatch, and every media batch must have a ledger line carrying a cost
+  estimate. A gated dispatch without consent is a defect of the highest class — the media lane
+  stops and the violation is reported; an unestimated batch dispatches only after its estimate
+  is written. The watch's own citations were widened from thirteen checks to fourteen wherever
+  they appear, including the tick list that enumerates each check by name, so the new standard
+  is actually run rather than merely written down.
+
+### Verification and scope
+
+- **Every tool ships proven.** `anchor.sh` 13/13, `capacity-resolver.sh` PASS, `env-sweep.sh`
+  6/6, `capacity-profile.sh` 23 passed / 0 failed, all run with `HOME` overridden to a sandbox.
+- **Deliberately unchanged.** `tools/ledger.sh` is byte-identical. The document list, the nine
+  refused artifacts, the quality gate, the fifty-law table, the three capacity axes and every
+  concurrency ceiling are untouched — the ceiling set was extracted, diffed and re-proved with
+  a planted control. No history was rewritten: nothing was force-pushed, rebased or reset.
+
 ## [1.3.0] — 2026-08-12
 
 ### Capacity is measured, not remembered — a freshness contract for every number the skill acts on

@@ -31,6 +31,29 @@
 # 12–17 of the freshness contract):
 #   OLLAMA_PLAN  AGNES_PLAN  DEEPSEEK_PATH  RESERVE_PCT  USAGE_WINDOW
 #   EFFORT_SETTING  FALLBACKS  LAST_A4_WIDTH  OVERNIGHT_CAPACITY_POLICY
+#   MEDIA_PROVIDER_PREF
+#
+# MEDIA_PROVIDER_PREF (values: kie | agnes) is the ONE media fact that may be
+# remembered: a cross-project USER PREFERENCE, the same class as RESERVE_PCT.
+# It is recalled as the OFFERED DEFAULT in the both-keys provider question
+# ("last time you preferred Kie.ai — same again?") and is NEVER silently
+# applied. Three media facts are deliberately NOT here, and this list is the
+# place that says so out loud, because an allowlist a tool enforces must not
+# grow by implication:
+#   - MEDIA KEY PRESENCE (kie/Agnes key found or not) — MEASURED EVERY RUN by
+#     tools/env-sweep.sh, classification row 4. A user may add a key between
+#     projects, or revoke one, and a remembered presence would send the run
+#     down the wrong branch with total confidence. Storing it is FORBIDDEN.
+#   - "WANTS MEDIA / DOES NOT WANT MEDIA" — per-PROJECT taste. The same client's
+#     funnel needs artwork and their API tool does not; it lives in that
+#     project's decision register only.
+#   - ANY GATED-TIER PRE-AUTHORIZATION (a standing yes to spend on the
+#     expensive video families) — NEVER STORABLE ANYWHERE, in this file or any
+#     other. The gate is per-generation by standing rule, and a remembered yes
+#     is precisely the spend-without-consent this whole contract exists to
+#     prevent. There must be no way to leave a standing permission to spend.
+# All three are refused by the allowlist below, by NAME, and the selftest
+# proves each refusal.
 #
 # WHAT IS FORBIDDEN — the deny-list, enforced HERE, not by good intentions.
 # Every one of these makes `write` REFUSE and exit 2, naming the KEY only:
@@ -88,7 +111,7 @@ set -o pipefail
 
 # --- Constants ---------------------------------------------------------------
 SCHEMA_VERSION=1
-ANSWER_KEYS="OLLAMA_PLAN AGNES_PLAN DEEPSEEK_PATH RESERVE_PCT USAGE_WINDOW EFFORT_SETTING FALLBACKS LAST_A4_WIDTH OVERNIGHT_CAPACITY_POLICY"
+ANSWER_KEYS="OLLAMA_PLAN AGNES_PLAN DEEPSEEK_PATH RESERVE_PCT USAGE_WINDOW EFFORT_SETTING FALLBACKS LAST_A4_WIDTH OVERNIGHT_CAPACITY_POLICY MEDIA_PROVIDER_PREF"
 META_KEYS="PROJECT CONFIG_FP CONFIG_FP_COMPUTED_AT CONFIG_FP_INPUT"
 ANSWER_SUFFIXES="_SOURCE _ANSWERED_AT _CONFIRMED_AT _CONFIRM_COUNT"
 MAX_VALUE_LEN=64          # write-side deny rule, verbatim from the contract
@@ -1019,6 +1042,66 @@ EOF
     _bad "an over-length value was not refused (rc=${rc})"
   fi
 
+  # --- 12b. MEDIA_PROVIDER_PREF round-trips (the ONE sanctioned media fact) -
+  # A cross-project user preference, recalled only as an OFFERED default. If it
+  # cannot round-trip, the recall silently degrades to asking every time — a
+  # soft failure that no other check here would notice.
+  printf 'PROJECT=media-selftest\nMEDIA_PROVIDER_PREF=kie\nMEDIA_PROVIDER_PREF_SOURCE=user-answer\nMEDIA_PROVIDER_PREF_CONFIRM_COUNT=2\n' > "${sandbox}/media-pref.txt"
+  out="$(_run write "${sandbox}/media-pref-out.json" "${sandbox}/media-pref.txt")"; rc=$?
+  _cap "${out}"
+  local mp_ok=0
+  if [ "${rc}" -eq 0 ] && printf '%s\n' "${out}" | /usr/bin/grep -q '^WRITE_STATUS=OK$'; then
+    out="$(_run read "${sandbox}/media-pref-out.json")"; rc=$?
+    _cap "${out}"
+    if [ "${rc}" -eq 0 ] \
+       && printf '%s\n' "${out}" | /usr/bin/grep -qxF 'MEDIA_PROVIDER_PREF=kie' \
+       && printf '%s\n' "${out}" | /usr/bin/grep -qxF 'MEDIA_PROVIDER_PREF_SOURCE=user-answer' \
+       && printf '%s\n' "${out}" | /usr/bin/grep -qxF 'MEDIA_PROVIDER_PREF_CONFIRM_COUNT=2'; then
+      mp_ok=1
+    fi
+  fi
+  if [ "${mp_ok}" -eq 1 ]; then
+    _ok "MEDIA_PROVIDER_PREF round-trips with its provenance fields — the one sanctioned media memory is genuinely on the allowlist, not merely documented"
+  else
+    _bad "MEDIA_PROVIDER_PREF did not round-trip (rc=${rc}) — the allowlist and the header comment disagree"
+  fi
+
+  # --- 12c. THE THREE MEDIA FACTS THAT MAY NEVER BE STORED -----------------
+  # This is the check that keeps the allowlist from growing by implication.
+  # Each fixture is refused for a DIFFERENT reason, and the reasons matter:
+  #   media-secret-name  MEDIA_API_KEY      -> the deny-list (name matches KEY)
+  #                      proves the deny-list still WINS and discriminates from
+  #                      the new MEDIA_PROVIDER_PREF entry.
+  #   media-presence     KIE_PRESENCE       -> the ALLOWLIST (no secret-shaped
+  #                      substring at all, so nothing but the allowlist can
+  #                      refuse it). Key presence is MEASURED EVERY RUN; a
+  #                      remembered presence is a confident wrong branch.
+  #   media-preauth      MEDIA_GATED_PREAUTH-> the ALLOWLIST, likewise. A stored
+  #                      standing yes-to-spend must be impossible, not merely
+  #                      discouraged.
+  local mrefuse_fail=0 fx fxkey
+  for fx in 'media-secret-name:MEDIA_API_KEY=nothing-real' \
+            'media-presence:KIE_PRESENCE=found' \
+            'media-preauth:MEDIA_GATED_PREAUTH=yes-all-night'; do
+    fxkey="${fx#*:}"; fxkey="${fxkey%%=*}"
+    printf '%s\n' "${fx#*:}" > "${sandbox}/${fx%%:*}.txt"
+    out="$(_run write "${sandbox}/${fx%%:*}-out.json" "${sandbox}/${fx%%:*}.txt")"; rc=$?
+    _cap "${out}"
+    if [ "${rc}" -eq 2 ] \
+       && printf '%s\n' "${out}" | /usr/bin/grep -qxF "WRITE_REFUSED_KEY=${fxkey}" \
+       && [ ! -e "${sandbox}/${fx%%:*}-out.json" ]; then
+      :
+    else
+      mrefuse_fail=$(( mrefuse_fail + 1 ))
+      echo "        NOT refused: ${fxkey} (rc=${rc})"
+    fi
+  done
+  if [ "${mrefuse_fail}" -eq 0 ]; then
+    _ok "media deny proof: MEDIA_API_KEY (deny-list), KIE_PRESENCE (measured every run) and MEDIA_GATED_PREAUTH (a standing permission to spend) are each REFUSED by name, and no file is created — adding MEDIA_PROVIDER_PREF widened the allowlist by exactly one key"
+  else
+    _bad "media deny proof: ${mrefuse_fail} of 3 forbidden media keys was accepted — the allowlist grew by implication"
+  fi
+
   # --- 13. FINGERPRINT: order-independence and discrimination --------------
   printf 'role.builder=deepseek-v4-flash\nlauncher=claude-nine\nkey-present=DEEPSEEK\n' > "${sandbox}/fp-a.txt"
   printf 'key-present=DEEPSEEK\nlauncher=claude-nine\nrole.builder=deepseek-v4-flash\n' > "${sandbox}/fp-b.txt"
@@ -1111,7 +1194,9 @@ capacity-profile.sh — the one sanctioned memory of the spec-protocol skill
   capacity-profile.sh --selftest
       Known-positive, known-negative, corrupt, bad-schema, unreadable,
       foreign-box, forbidden-key, secret-name, secret-value, over-length,
-      fingerprint discrimination, leak proof, containment proof.
+      MEDIA_PROVIDER_PREF round-trip, the three-media-facts deny proof (key
+      presence, "wants media", gated-tier pre-authorization), fingerprint
+      discrimination, leak proof, containment proof.
 
 Default profile path: \$SPEC_PROTOCOL_PROFILE, else \$HOME/.claude/spec-protocol/capacity-profile.json
 USAGE
