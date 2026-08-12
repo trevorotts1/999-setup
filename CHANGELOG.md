@@ -1,5 +1,108 @@
 # Changelog
 
+## [1.2.0] — 2026-08-12
+
+### Spec-protocol rebuilt — execution architecture, agent teams, capacity, anti-drift
+
+- **Three-layer execution architecture** — the skill no longer keeps its working state
+  in a single markdown ledger. State now lives in three layers held together by an
+  explicit reconciliation step: `SPEC/PROJECT-MANIFEST.md` (how the project is supposed
+  to operate), the native Claude Code task graph (`TaskCreate`/`TaskUpdate` with real
+  `blocks`/`blockedBy` edges — what work exists, is ready, is blocked, is done), and
+  machine-readable `CONTROL/project_state.json` (round, scores, locks, defects, tests,
+  checkpoints, release-ready). The ledger stays what it always should have been: the
+  human-readable narrative, one honest layer among three rather than all of them.
+- **Seventeen project documents** — `PROJECT-MANIFEST.md` joins the sixteen as document
+  17, added through the closed list's own amendment gate rather than around it. No
+  existing document is dropped, renamed, or absorbed; the refused artifacts stay
+  refused; the 8.5 QC gate stays.
+- **The Capacity Ledger** — computed per run *before* any dispatch, on three axes that
+  are never conflated: concurrency width (`min(16, cores−2)`, cores measured rather than
+  assumed), the session token budget (tracked decrementing), and per-class policy caps.
+  Carries the resolved role→alias→model map, the agent-budget declaration, commander
+  slots, and a burn governor. `tools/capacity-resolver.sh` computes it.
+- **One canonical 19-station operating loop** — the previously competing loop
+  descriptions are fused into a single revolution used in both team mode and
+  single-session mode. There is no second, competing loop diagram left in the skill.
+- **Anti-drift, capture-proof** — `tools/anchor.sh` is a three-way reconciler (manifest
+  against task graph against the artifacts actually on disk) that proves its own
+  instrument on a known-positive and a known-negative before it is permitted to report
+  "clean". It carries a TERMINAL-DRIFT hard stop gated by a flag file that lives
+  *outside* the captured context, a repeated-intent stall detector, BEFORE/AFTER ledger
+  discipline, and a ban on contentless heartbeats.
+- **Agent Teams orchestration** — a Team Lead plus four persistent commanders (Build,
+  Visual QA, Technical QA, Release), spawned by the lead through the Agent tool's `name`
+  parameter. Commanders are line items in the Capacity Ledger, they challenge each other
+  on the record, and they are rebuilt from the three state layers on resume (teammates
+  do not survive `/resume`). Persistent teammates are never used as bulk workers — that
+  is what dynamic workflows and subagents are for. When the probe fails, consent is
+  refused, or the project is too small, the commander stations collapse onto the lead
+  and the same single loop runs single-session.
+- **The multi-terminal client handoff is retired** — after one consent the skill spawns
+  and drives every session itself. Telling the client to open terminal windows survives
+  only as a labeled last-resort rung, and only on the client's own request.
+- **New in the skill tree** — ten reference documents (`agent-team`, `anti-drift`,
+  `capacity`, `command-center-integration`, `execution-architecture`,
+  `funnel-architecture`, `media-pipeline`, `resume`, `worked-example`, `workflows`) and
+  three tools (`anchor.sh`, `env-sweep.sh`, `capacity-resolver.sh`). The skill grows
+  from 13 files to 26; `tools/ledger.sh` is carried across unchanged.
+
+### Critical fixes
+
+- **Ultracode / effort selections no longer revert** — the launchers exported
+  `CLAUDE_CODE_EFFORT_LEVEL` into every `claude-nine` session (macOS forced `"max"`
+  whenever the routed-session state carried no level; Windows exported whatever the
+  state held). Claude Code treats that env var as an override: `/effort ultracode`
+  returned *"CLAUDE_CODE_EFFORT_LEVEL=max overrides effort this session"* and the status
+  line kept reporting the old level, so the selection appeared to snap back. Both
+  launchers now export it **only** when the operator opts in with
+  `CLAUDE_NINE_FORCE_EFFORT=<level>`; the routed-session state seeds `effortLevel` at
+  `"xhigh"` (the highest level Claude Code can persist — `"max"` is session-scoped);
+  the router's own thinking mechanism, the `(max)` route suffixes, is untouched.
+  Verified before/after against the launcher's export block; the override branch is
+  quoted from the shipped Claude Code binary.
+- **Not covered by this change —**
+  `client-box env exports: flagged, needs operator GO.`
+  Boxes that already export `CLAUDE_CODE_EFFORT_LEVEL=max` from a shell profile,
+  `launchd`, or an OpenClaw process still override the picker until that export is
+  cleared per box. That is a fleet action on client machines and is not performed here.
+
+### Installers
+
+- **Agent Teams enablement, both platforms** — `setup-macos.sh` runs the new
+  `scripts/macos/enable-agent-teams.sh` and `setup-windows.ps1` runs the new
+  `scripts/windows/Enable-AgentTeams.ps1`. Both back the settings file up first (never
+  overwriting an existing backup), **merge** only the keys they own, validate the result
+  including every pre-existing leaf value, and restore the backup on any failure — a
+  broken `settings.json` is never left behind. macOS sets
+  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` plus `teammateMode: "tmux"` and the three
+  tmux config lines (idempotently; tmux is installed only when Homebrew already exists,
+  and Homebrew is never installed here). Windows sets the env flag only. The enablement
+  applies to **new** Claude Code sessions: no running session, workflow, subagent,
+  terminal, or tmux server is killed, restarted, signalled, or reloaded, and no team,
+  teammate, or pane is created as a side effect. Enablement is never fatal to setup —
+  a blocked or failed attempt is reported honestly in the completion report and the
+  install still finishes, because routed Claude Code does not depend on Agent Teams.
+
+### Known residual risks (accepted, documented)
+
+- **`teammateMode` on native Windows is UNDETERMINED** — `tmux` is a Unix assumption and
+  no Windows teammate display mode has been probed. The Windows enabler therefore does
+  **not** write the key, and records it as `DEFERRED-UNDETERMINED`. The skill's runtime
+  probe is the only authority on whether teams function there; the installer never is.
+- **`SendMessage` (with `ListAgents`) is macOS/Linux only** — a real gap on native
+  Windows. Even with the experimental flag set, teammate-to-teammate messaging is
+  unavailable, so peer challenge between commanders does not run; that path falls back
+  to single-session mode with the disagreement protocol handled by the lead alone.
+- **Agent Teams under 9Router is UNDETERMINED** — never proven. A live per-session probe
+  ships with the skill and is the only permitted basis for a claim; until it passes,
+  single-session mode is the default under `claude-nine` / `claude-codex`. Whether
+  teammate sessions share one rate-limit bucket with the lead is also undetermined and
+  is budgeted pessimistically as shared.
+- **This repository ships no `claude-codex` launcher** — the macOS launchers remain
+  `claude-nine` only. The skill detects `claude-codex` when it is present, but nothing
+  here installs it.
+
 ## [1.1.0] — 2026-08-10
 
 ### The fleet-fusion standard (the Spaulding spec, now the default for everyone)

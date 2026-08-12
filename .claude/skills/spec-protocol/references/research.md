@@ -30,6 +30,53 @@ must be EMPOWERING — see its section below. Never discouraging.
 
 ---
 
+## Just-in-Time Interview Research (runs DURING the interview, at Step 1c-bis)
+
+**This is a third, earlier, lighter research pass, and it is not one of the two
+steps below.** The two steps below run after the interview. The Just-in-Time
+pass runs INSIDE it — between the build-target question (Step 1c) and the
+target-specific discovery (Step 1d) — because the interview asks better
+questions when it already knows something about the domain.
+
+Without it the conductor cannot say "here are similar apps and what they
+offer," cannot say "for this funnel type, this many stages tends to work best,"
+and cannot say "websites like yours usually have these pages." It asks blind,
+and a blind question makes the user do the conductor's homework.
+
+**Shape of the pass:**
+
+- **One reader agent, 30–90 seconds.** The cheapest tier that understands what
+  it reads. The conductor does NOT research in the main loop (Law 12, Law 41) —
+  it dispatches and keeps talking to the user.
+- **It runs in the background** while the conductor continues with the interview
+  questions that do not need research. The findings usually land within a
+  question or two.
+- **The dispatch briefs, one per build target, are in `interview.md`, Step
+  1c-bis.** They are written there so the interview owns its own questions; do
+  not keep a second copy of them here.
+- **Focused on patterns and benchmarks that shape the QUESTIONS** — similar
+  apps and their features, typical page structures, stage counts, cadence and
+  conversion benchmarks. Not the deep pass.
+
+**Distinct from the deeper research below.** The Just-in-Time pass informs the
+interview. Steps 1 and 2 below run after the interview and before the
+current-state pass and the specification — they are deeper, they feed the master
+spec, the current-state document, and the decision register, and they produce
+the bar candidates. Both passes happen; neither replaces the other.
+
+**Sourced, always.** Every claim the reader returns carries its URL, and the
+conductor says where it came from: *"I found this by looking at [source 1],
+[source 2], and [source 3]."* **Never present research as the conductor's own
+knowledge** — a claim with no source is a guess wearing a confident voice.
+
+**Empowering, never a stop gate — the same rule as Step 2.** Findings are
+offered as material to choose from ("most successful ones do X — does that
+sound right for what you are trying to do?"), and the user's answer shapes the
+spec. The pass never concludes that something already exists and therefore
+should not be built.
+
+---
+
 ## Step 1 — Domain research (dispatched reader agents)
 
 **Dispatch pattern.** Send reader agents (the cheapest tier that understands what
@@ -211,3 +258,40 @@ they got right, never copy what they built.
 
 A claim from either research step carries its source URL. An unsourced research
 claim is a rumour, exactly like an unmeasured number (Law 14).
+
+---
+
+## Provider limits are RESEARCHED LIVE, never quoted from a frozen table
+
+The two steps above research what the user is BUILDING. This section covers the
+other thing that must be researched every run: **the current limits of the
+providers and platforms the run depends on.**
+
+**The rule: re-research the limit at run time, and state which source the run
+used.** Not the source's existence — the source the run actually read. A limit
+copied out of a table written weeks ago is exactly the same defect as a number
+nobody measured, and it is worse in one way: it is confidently wrong, and the
+run discovers the truth at the moment it hits the ceiling.
+
+**Agnes AI is the standing example and the binding case.** Its rate rules are
+**re-researched live at `agnes-ai.com` on every run** — never trusted from the
+frozen table. The figures recorded in `references/capacity.md` are the
+**FALLBACK, used only when the live research fails**, and the Capacity Ledger
+**records which of the two the run used**, with the date. The same rule applies
+to every other externally-owned number the run leans on: provider ceilings,
+plan tiers, per-day allowances, API prompt caps, pricing, and any compliance
+rule with a date on it (`references/media-pipeline.md`,
+`references/funnel-architecture.md`).
+
+**Proven and sourced, or not stated.** A live-research claim is only a claim if
+the agent actually fetched something and can name it. The three honest outcomes:
+
+1. **Confirmed live** — the figure, the URL, and the date it was read. Use it.
+2. **Fallback used** — the live check failed for a stated reason; the recorded
+   figure and ITS date are used, and the ledger says "fallback."
+3. **UNDETERMINED** — nothing could be confirmed. Say so, budget
+   pessimistically, and continue. This is a correct answer, and it is always
+   better than a confident number nobody proved.
+
+What is never acceptable is a limit asserted from memory. There is no fourth
+outcome.

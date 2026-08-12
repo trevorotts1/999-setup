@@ -8,8 +8,8 @@ loops own scheduling and re-firing. The Gauntlet owns one thing neither owns:
 bar?"** It does this with a three-part gauntlet prompt, a three-gate stack, and a
 blind A/B verdict.
 
-This file is **skill infrastructure**, not a project document — it is NOT a
-seventeenth entry on the 16-document closed list (`references/documents.md`,
+This file is **skill infrastructure**, not a project document — it is NOT an
+eighteenth entry on the 17-document closed list (`references/documents.md`,
 Law 39). It is read by the skill at build-planning and gate time, the way
 `references/pipeline.md` is. Creating it adds no document to any project folder.
 
@@ -231,8 +231,8 @@ measured facts, as a dated finding with its capture command. The frozen
 package's ARTIFACTS — the actual screenshots, diffs, and other binary capture
 output — cannot live inside that markdown document, so they land in
 **`captures/<unit-id>/`**, the sanctioned infrastructure directory
-(`references/documents.md`, "Infrastructure that is NOT a seventeenth document");
-the current-state document cites those paths by reference rather than inlining
+(`references/documents.md`, "Infrastructure that is NOT one of the seventeen
+documents"); the current-state document cites those paths by reference rather than inlining
 them.
 
 **Capture tooling.** Selection is per project execution plan (document 16), never
@@ -536,8 +536,8 @@ dimension — price clarity in the first screen; divergence — the bar shows th
 per-month price on the card face, ours buries it behind the toggle; proof —
 `captures/gym-04/ours-desktop-c2.png` vs `captures/gym-04/bar-desktop.png` —
 `captures/` is the sanctioned infrastructure directory for evidence artifacts
-(`references/documents.md`, "Infrastructure that is NOT a seventeenth
-document"), one subfolder per unit — both at 1440×900. The ONE largest gap
+(`references/documents.md`, "Infrastructure that is NOT one of the seventeen
+documents"), one subfolder per unit — both at 1440×900. The ONE largest gap
 returned to the builder: "show the
 monthly price on the card face at first paint." Not a list — the next cycle
 fixes exactly this, then re-runs. An INDETERMINATE verdict or a thin gap
@@ -681,6 +681,9 @@ come FIRST; verified platform syntax is attached per harness.
   re-fire mechanic, NOT by itself a B2H evaluator. `/loop` re-fires the gauntlet
   prompt on an interval; it does not judge. The judging stays in the critic
   (`references/loops.md` owns the scheduler; this file owns the verdict).
+- **Scheduled prompts cannot start workflows via the ultracode keyword** (Claude
+  Code ≥ 2.1.210): a cron tick must invoke a SAVED workflow command by name
+  (`run /<name>`) — `references/anti-drift.md` carries the cron-tick contract.
 - **`ultracode` is a harness mode (GATE 0).** In Claude Code it is a real, verified
   effort level — `/effort ultracode` sets it session-wide (xhigh plus dynamic
   workflow orchestration), and including the word `ultracode` in a message enables
@@ -754,3 +757,347 @@ why, in the execution plan (document 16).
   (Section 5, close calls) does not increase how many items run at once. It
   spends surplus capacity on MORE JUDGEMENT per item, never on more items in
   flight. Width still comes from the dependency graph; the cap can only lower it.
+
+---
+
+## 13. THE GAUNTLET WORKFLOW TOPOLOGY (the six-workflow architecture — the operator's canonical shape)
+
+The operator's own Gauntlet architecture defines **SIX workflow types and no
+others.** Do not invent additional workflow stages unless a documented dependency
+makes one necessary. The six TYPES are canon; the tasks that carry them are
+derived per project (Section 13.5).
+
+Every workflow declares its model seat **by ROLE and ALIAS — never by a hardcoded
+model id** (`SKILL.md`, "Fable, Sonnet, Haiku, Opus are router aliases"). The
+operator's own wiring appears below as his illustrative resolution, never as a
+constant: the resolved model for each seat is read from the live config at run
+time and written into the Capacity Ledger (`references/capacity.md` — role →
+alias → resolved model, three hops; resolution RECORDS, it never reroutes).
+
+The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
+are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
+
+### 13.1 The six workflows
+
+**WF01 — BLUEPRINT LOCK.** Planner seat (operator's illustrative wiring: the
+`OPUS` alias, resolving on his box to DeepSeek V4 Flash, thinking MAX). **Exact
+subagents: 8** — the architecture planner, the domain/mechanics planner, the two
+personalization planners, the visual-world planner, the UX / feel planner, and
+the testing / privacy / performance planner. **These agents DO NOT independently
+begin production coding.** Their outputs are synthesized into: locked
+architecture; MVP specification; workstream boundaries; acceptance matrix;
+evidence requirements; regression requirements. **Total agent executions: 8.**
+
+**WF02 — PRIMARY BUILD.** Builder seat (operator's wiring: the `OPUS` alias →
+DeepSeek V4 Flash, thinking MAX). **Exact subagents: 16.** Each builder receives
+EXPLICIT OWNERSHIP; **uncontrolled overlapping edits are not permitted.** The ten
+subagent-ownership fields — agent name/number, model role, responsibility, scope
+of ownership, inputs, deliverable, acceptance criteria, FILES OR COMPONENTS
+OWNED, CAN MODIFY CODE Y/N, CAN VERIFY ITS OWN WORK Y/N — are declared per
+builder in the Parallelism Plan (`SKILL.md` step 12.7,
+`references/workflows.md`). **Total agent executions: 16.**
+
+**WF03 — BLIND VISUAL GAUNTLET.** Blind-judge seat (operator's wiring: the
+`HAIKU` alias, resolving on his box to MiniMax 3, thinking HIGH). **Exact
+subagents: 16 blind judges.** These judges receive RENDERED EVIDENCE. **They do
+NOT receive builder reasoning.** Section 5's blind protocol governs every one of
+them: fresh context, a different resolved model from the builder, labels
+stripped, order randomized, and vision proven before the first visual verdict.
+**Total agent executions: 16.**
+
+**WF04 — TECHNICAL GAUNTLET.** Technical-judge seat (operator's wiring: the
+`SONNET` alias → DeepSeek V4 Pro, thinking MAX). **Exact subagents: 8** — logic;
+domain behaviour / AI; architecture / state; the asset or data pipeline;
+performance / memory; security / privacy / upload; automated regression;
+integration / release-blocker. **Total agent executions: 8.**
+
+**WF05 — FINAL RELEASE COUNCIL.** Release-judge seat (`SONNET` alias → DeepSeek
+V4 Pro, thinking MAX). **Exact subagents: 4** — the product / domain release
+judge; the technical / stability release judge; the privacy / performance release
+judge; the adversarial overall release judge. **All four judges evaluate
+independently. RELEASE REQUIRES 4 OUT OF 4 = PASS. A FAIL or UNVERIFIED from ANY
+release judge prevents release.** **Total agent executions: 4.**
+
+**WF06 — SELECTIVE REPAIR LOOP.** A REUSABLE DYNAMIC WORKFLOW. **Do NOT rerun
+every previous agent.** Let **N = the number of FAILED workstreams**:
+
+- **REPAIR BUILD.** Spawn exactly ONE repair agent (builder seat) for each failed
+  workstream — `REPAIR_COUNT = N`. **Maximum per repair wave: 12.** If N > 12,
+  split the failed workstreams into additional repair waves.
+- **VISUAL RE-VERIFICATION.** For each repaired workstream requiring visual
+  verification, spawn exactly ONE NEW blind verifier. **Never reuse the previous
+  verifier's judgment.** `REVERIFY_COUNT = the number of repaired visual
+  workstreams`; maximum concurrent verifiers 16 (scaled by the Capacity Ledger).
+- **TECHNICAL RE-VERIFICATION.** Spawn only the technical judges whose domains
+  could have been affected by the repairs. **Do not rerun unrelated technical
+  judges.**
+- **FINAL RECHECK.** After all failed workstreams have cleared, **ALWAYS rerun
+  the 4 Final Release Council judges.**
+
+### 13.2 The agent budget
+
+| Quantity | Value | Obligation |
+|---|---|---|
+| Expected initial gauntlet run | **52** agent executions (8+16+16+8+4) | The declared baseline in the Capacity Ledger. |
+| Expected normal complete project | **75–125** | The soft budget band, scaled to this project's task graph. |
+| Warning threshold | **150** | The orchestrator MUST analyze whether measurable progress is still occurring — and record the analysis. |
+| Hard project cap | **200** | **STOP.** Spawn no additional agents. |
+
+At **200 executions: STOP.** Do not spawn additional agents. **Preserve the best
+stable build.** Produce a blocker report explaining why the Gauntlet has failed
+to reach the BAR. This is a **LIMIT REACHED** non-success state (Section 9) —
+**never relabeled PASS**; the machine-readable exit is `run_status =
+STOPPED_CAP`. The three named exits of a gauntlet run are **PASS** (the council
+returns 4 OUT OF 4 and the B2H successful stop rule is satisfied), **STOPPED_CAP**
+(the hard cap, above), and **stop-and-diagnose** (`STOPPED_STALL` on
+TERMINAL-DRIFT, `references/anti-drift.md`; `BLOCKED_HUMAN` when the Named Stops
+exhaust unblocked work). Every one of them carries the obligations Section 9
+already assigns to its state.
+
+These figures count **workflow agent executions**. They are not the same counter
+as the harness's per-session subagent budget (1,000 per session) or the
+per-workflow concurrency width — the Capacity Ledger records all three separately
+and never conflates them (`references/capacity.md`).
+
+### 13.3 THE IMPORTANT CAPACITY RULE (verbatim — the operator's own words)
+
+> "Provider capacity is NOT an instruction to maximize agent count. Do not spawn
+> additional agents simply because DeepSeek or OpenRouter can support them. Every
+> spawned agent must have: unique responsibility; evidence to inspect or work to
+> perform; an explicit deliverable; an acceptance criterion. More agents are useful
+> only when the work can actually be decomposed into independent valuable tasks.
+> Quality per agent matters more than raw agent count."
+
+A wide ceiling is permission, never instruction. A workflow that cannot name what
+each of its agents owns is over-wide by definition — cut it to the agents that
+can be given the four things above.
+
+### 13.4 Scaling rule (the counts are derived, the order is not)
+
+The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
+9Router + DeepSeek direct, where the harness governs at 30 workflows ×
+min(16, cores−2). **The topology survives at any capacity; only the widths
+shrink**, per the Capacity Ledger:
+
+- At wave size W, WF02 runs `min(16, W_builder)` builders and stages the rest
+  through `pipeline()` — the phase still completes, it simply takes more passes.
+- On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
+  reserve), the same six phases run at width 1–2, and the run says so plainly up
+  front: this will take longer.
+- Per-workflow concurrency is **min(16, cores−2)** — measured at run time
+  (`sysctl -n hw.ncpu` on macOS, `nproc` on Linux), which is **10** on the
+  operator's 12-core Mac Mini. Never inherit that 10 as a constant and never
+  write "×16" as a promise.
+- On Anthropic-billed Claude Code the operator's standing **20-agents-per-wave**
+  cap governs total width, and when an Agent Team is active the lead plus each
+  commander occupy persistent slots INSIDE that cap before any workflow width is
+  allocated (lead + 4 commanders = 5 occupants; 15 slots remain).
+
+**The six-phase ORDER is the invariant; the widths are derived.**
+
+### 13.5 The tasks that carry these workflows are DERIVED per project
+
+The six workflow TYPES are canon. The task names, the workstream boundaries, and
+the subagent lists are **this project's own**, derived from this project's task
+graph — never copied. The illustrative subagent lists above belong to a
+Pac-Man-style game build; they are **exhibits, never templates.** A build that
+ships "Ghost AI Planner" as one of its tasks has copied an exhibit instead of
+deriving its own graph.
+
+### 13.6 Selective repair reconciled with the fix loop (two granularities, one system)
+
+**SELECTIVE REPAIR** means selective. Locked components are skipped; only
+affected judges re-run; the council always re-runs; **already-passing work is
+never rerun.** Repair is targeted — never a wholesale rebuild. A rebuild throws
+away every passing workstream to fix one failing one, which is how a run destroys
+its own best known state.
+
+The two repair granularities compose rather than collide:
+
+- **FINDING-level repair** (`references/pipeline.md` Stage 3: one fixer per
+  finding, 3-cycle cap, Rule 3.22) runs INSIDE a workstream.
+- **WORKSTREAM-level repair** (WF06: one repair agent per failed workstream,
+  ≤12 per wave) is the repair TASK's workflow, and the repair agent OWNS its
+  workstream — multiple findings inside it may still fan out per finding under
+  that ownership.
+
+**No two repairers ever share a workstream**, so the fix-loop fan-out rule and
+the ownership rule hold at the same time.
+
+**LOCK PASSING WORK.** A workstream that has passed its gates is LOCKED and is
+not re-opened by a later repair wave. A lock lifts only on its declared reopen
+conditions — an integration or regression failure that implicates it, a
+requirement change that invalidates it, or a defect traced into it — and the lift
+is recorded, never assumed (`references/pipeline.md`;
+`references/execution-architecture.md`).
+
+**CHECKPOINTS — never let a broken iteration destroy the best known stable
+build.** A checkpoint is taken at each of the seven named moments: the first
+functional MVP; major milestone completion; the first complete integration; a new
+highest quality score; a zero-critical-defect state; the release candidate; the
+final release. The best stable build is preserved across every repair wave and is
+what the 200-execution stop hands back. The checkpoint and restore mechanism
+itself lives in `references/pipeline.md` and `CONTROL/project_state.json`
+(`references/execution-architecture.md`); this file's rule is the one above — a
+repair wave may never leave the run with nothing to fall back to.
+
+### 13.7 Loop engineering is a decided step, never an accident
+
+Step 12.7's Parallelism Plan names WHICH of the six workflows this project
+instantiates, each mapped to its register row in `references/loops.md` when the
+run is unattended. **WF06 is the standing example of a loop engineered on
+purpose:** a re-entrant repair workflow with a written entry condition (failed
+workstreams > 0), a width rule (N ≤ 12 per wave), and a stop condition (the
+council returns 4/4) — never an accidental while-loop.
+
+---
+
+## 14. THE CANONICAL OPERATING LOOP (one loop — the doctrine's 16 steps, the six workflows, and the Agent-Team control flow, fused)
+
+> "Three source loops exist in the doctrine record: the 16-step operating cycle
+> (execution addendum §21), the six-workflow Gauntlet topology (the PDF), and the
+> Agent-Team GAUNTLET CONTROL FLOW (multi-agent addendum). They are NOT three
+> competing loops — they are one loop seen at three altitudes: §21 is the SPINE
+> (the stations), the six workflows are the CONTENT of the run-workflow and
+> verify stations, and the Agent-Team flow names WHO stands at each station.
+> Dependencies gate PHASES (a future task stays blocked until its dependencies
+> actually pass — the blueprint lock and the council are real gates); items
+> STREAM inside phases (Law 4 — stages are roles, not gates, within a task).
+> One revolution = one ready task, start to commit."
+
+**This table is the skill's ONE loop.** No other loop diagram supersedes it; any
+file that draws a loop points here. In Agent-Team mode the WHO column names the
+commander; in single-session mode the commander stations **collapse onto the
+lead**, which wears each hat in turn — the same nineteen stations, the same
+order, one loop in both modes.
+
+| # | Station | Who (team / single) | Carrier |
+|---|---|---|---|
+| 1 | READ PROJECT MANIFEST | lead / lead | SPEC/PROJECT-MANIFEST.md (doc 17) |
+| 2 | READ TASK STATE | lead (TaskList → snapshot) / same | the native graph (or checklist fallback) |
+| 3 | READ PROJECT STATE | lead / lead | CONTROL/project_state.json |
+| 4 | IDENTIFY READY TASK | lead / lead | first PENDING task with every blockedBy COMPLETED (edges, §3 — never document order; never a merge edge without MERGE-EDGE-JUSTIFIED) |
+| 5 | RESPONSIBLE COMMANDER REVIEWS REQUIREMENTS | the task's commander / the lead wearing that hat | the manifest task block (11 fields) + the task's acceptance criteria |
+| 6 | MARK TASK IN PROGRESS | lead (TaskUpdate — one writer) / same | native graph |
+| 7 | RUN THE REQUIRED WORKFLOW | lead launches; commander supervises / lead both | the task's WORKFLOW REQUIREMENT — WF01…WF06 shape (Section 13), widths from the Capacity Ledger; the per-item build→QC→fix→pen pipeline (references/pipeline.md) runs INSIDE build/verify tasks here |
+| 8 | COLLECT RESULTS | workflow returns; commander reads / lead | .filter(Boolean); results on disk |
+| 9 | EXECUTE / TEST | per the task's VERIFY | foreground gates with timeout (Law 6) |
+| 10 | EVIDENCE CREATED | builders/judges | the §8 evidence types, named per task IN ADVANCE |
+| 11 | VERIFY (quality workflow; technical workflow when required) | blind/technical judges; commanders interpret / lead | WF03/WF04 + the three-gate stack; REQUIREMENT + ACTUAL OUTPUT + OBJECTIVE BAR → INDEPENDENT VERIFIER — "the builder says it's fixed" is BANNED |
+| 12 | COMMANDERS COMMUNICATE FINDINGS (the challenge station) | peer SendMessage + project_state record; lead adjudicates by requirements/evidence/tests/bar/state — never by siding with the builder / lead runs the same adjudication across its hats | references/agent-team.md (the disagreement protocol) |
+| 13 | REPAIR IF NECESSARY | failures>0 activates the repair task → WF06 | selective repair (Section 13) — targeted, never a rebuild |
+| 14 | REGRESSION TEST | fresh blind re-verifiers; affected technical judges; batch suite | WF06 rules + the B2H regression gate |
+| 15 | UPDATE PROJECT STATE | lead / lead | project_state.json (§11's twelve questions current) |
+| 16 | RECONCILE NATIVE TASKS | lead runs tools/anchor.sh --mode reconcile; executes its ACTIONS | RECONCILE TASKS NOW (references/anti-drift.md) |
+| 17 | MARK TASK COMPLETE ONLY IF PASSED — then LOCK | lead (TaskUpdate) — gated by the six-condition completion law; passing components locked | execution-architecture.md; pipeline.md locks |
+| 18 | UNBLOCK DEPENDENCIES | the graph's edges release dependents | never a merge gate (D11 cut) |
+| 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; ≥200 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
+
+### 14.1 The source map — nothing from any source loop was dropped
+
+- **The 16-step operating cycle (execution addendum §21) is the SPINE.** Its
+  seventeen nodes — the sixteen steps plus the wrap-around SELECT NEXT READY TASK
+  — land on seventeen stations: **1–4** (read manifest, read task state, read
+  project state, identify the ready task), **6–11** (mark in progress, run the
+  required workflow, collect results, execute/test, evidence created, verify),
+  and **13–19** (repair, regression, update project state, reconcile, mark
+  complete only if passed, unblock dependencies, and the release/stop check that
+  wraps around to station 4). Nothing in §21 is unrepresented.
+- **The Agent-Team GAUNTLET CONTROL FLOW contributes its nineteen nodes
+  one-to-one**, and supplies two stations the spine does not have: **station 5**
+  (the responsible commander reviews requirements, before any work starts) and
+  **station 12** (the commanders' findings and challenge). It also supplies the
+  entire WHO column — for all nineteen stations, in both modes.
+- **The six workflows are the CONTENT of four stations.** WF01 BLUEPRINT LOCK and
+  WF02 PRIMARY BUILD are what station 7 runs; WF03 BLIND VISUAL GAUNTLET and WF04
+  TECHNICAL GAUNTLET are what station 11 runs; WF06 SELECTIVE REPAIR LOOP is
+  station 13 and drives station 14's re-verification rules; WF05 FINAL RELEASE
+  COUNCIL is the release read at station 19 (and always re-runs after repairs,
+  Section 13.1).
+- **The two vocabularies are the same stations at two grains.** §21's
+  "COLLECT RESULTS / EXECUTE / VERIFY" and the control flow's "QUALITY WORKFLOW /
+  TECHNICAL WORKFLOW" describe one thing at two altitudes — the spine names the
+  step, the control flow names the workflow that performs it. Neither was
+  discarded to make room for the other.
+
+### 14.2 The challenge station is a mechanism, not a sentiment
+
+Commanders are expected to DISAGREE, and station 12 is where the disagreement is
+put on the record instead of into the build. The shape of a real one:
+
+- **BUILD:** "the feature is complete."
+- **VISUAL QA:** "it fails the benchmark."
+- **TECHNICAL QA:** "it passes visually but leaks memory."
+- **RELEASE / INTEGRATION:** "both pass, but the integration fails after
+  restart."
+
+The Team Lead **adjudicates** — on the requirements, the evidence, the tests, the
+BAR, and the current project state. **It never adjudicates by defaulting to the
+builder.** A commander that rubber-stamps is a defect, not a cooperative
+teammate; the point of the layer is independent judgement, and a layer that
+always agrees has none. The verdict, the dissent, and the evidence are all
+recorded (`references/documents.md` document 6, and
+`CONTROL/project_state.json`). In single-session mode the lead runs the same
+adjudication across its own hats and records the same rows — the mechanism does
+not disappear when the commanders do. The full disagreement protocol lives in
+`references/agent-team.md`.
+
+### 14.3 What runs OUTSIDE the revolution
+
+- **The merge train.** It drains the pen concurrently, on its own cadence
+  (`references/loops.md`). **It is not a station** — a merge is never a barrier
+  and never gates a dependent task. TASK COMPLETE (the six-condition completion
+  law) unblocks dependents at station 18; MERGED is the delivery state that
+  closes the run and feeds the morning report.
+- **The survival loops.** The swarm watch, the stall detector, park-and-resume,
+  the compaction handler, and the budget governor keep the revolution alive
+  without being part of it (`references/loops.md`). They observe and re-fire the
+  loop; they never sit inside it as steps.
+
+### 14.4 The cron tick contract
+
+**One tick = one revolution, entered at station 1.** A tick that finds no ready
+task still executes stations 1–3 and 16 and writes `RECONCILE | clean` — state,
+never noise. A tick that appends a contentless heartbeat instead of reconciling
+is a banned write (`references/anti-drift.md`): on the operator's real ledger 740
+of 2,366 lines were contentless ticks, and the longest run of them — 139 lines,
+about seven hours — was the TAIL of the file. The run drifted and never came
+back, and every one of those ticks looked like activity.
+
+---
+
+## 15. VERIFICATION IS DESIGNED IN, NEVER IMPROVISED
+
+Verification is written into the task BEFORE implementation, never invented after
+the build lands. Every task definition carries, in advance:
+
+- **The acceptance criteria** — what must exist; what must work; what must not
+  break; the threshold; the automatic-failure conditions.
+- **The verification requirement** — how it will be tested, and by whom.
+- **The evidence type, named from the twelve** — automated test results;
+  screenshots; browser tests; video; console logs; performance metrics; API
+  responses; database checks; visual comparisons; accessibility checks; security
+  checks; regression tests. The type is chosen per task at spec time; "we will
+  verify it somehow" is not a verification requirement.
+
+**The verifier is INDEPENDENT.** Fresh context, and a **different resolved
+model** — not merely a different alias name, since two aliases can resolve to the
+same model and a model's blind spot cannot bless itself (Law 7; the resolution is
+read from the Capacity Ledger, `references/capacity.md`).
+
+**The formula, verbatim:**
+
+```
+REQUIREMENT + ACTUAL OUTPUT + OBJECTIVE BAR → INDEPENDENT VERIFIER
+```
+
+All four terms are required. A missing REQUIREMENT gives the verifier nothing to
+measure against; a missing ACTUAL OUTPUT makes it judge a claim instead of an
+artifact; a missing OBJECTIVE BAR turns the verdict into taste; a missing
+INDEPENDENT VERIFIER is the builder marking its own homework. **"The builder says
+it is fixed" is not verification** — the builder finishing its work is a
+milestone, never a completion (Section 14's station 17 and the six-condition
+completion law).
+
+The Visual QA commander's charter carries the same formula for the same reason
+(`references/agent-team.md`).
