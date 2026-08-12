@@ -83,6 +83,7 @@ CLAUDE.md                         repository rules for agents
 templates/API docs.md             placeholder credential template
 launchers/windows/                claude-nine.cmd + claude-nine.ps1
 launchers/macos/claude-nine       POSIX shell launcher
+launchers/macos/claude-codex      claude-nine pinned to a cx/ Codex model
 .claude/skills/nine-router-setup/
   SKILL.md                        the personal skill
   references/                     this documentation set

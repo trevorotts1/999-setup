@@ -30,6 +30,18 @@ COMMON="$SCRIPTS/common"
 MACOS="$SCRIPTS/macos"
 REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 
+# HELPER INVOCATION CONVENTION: every helper in $MACOS is called through an
+# explicit `bash` prefix, never executed directly. The repo's shell scripts are
+# tracked mode 755 so a plain `git clone` lands them executable, but the exec bit
+# is the one piece of a checkout that does NOT reliably survive every delivery
+# path — a GitHub source .zip, a copy across an exFAT/SMB volume, an extraction
+# under a restrictive umask, or a clone with core.fileMode=false all strip it.
+# When that happens a direct `"$MACOS/foo.sh"` dies with `Permission denied`
+# (exit 126) partway through provisioning. The `bash` prefix depends on the mode
+# bit not at all, so the install completes either way. Every helper here carries
+# `#!/usr/bin/env bash`, so running it under `bash` is exactly what its shebang
+# already asks for. The .mjs helpers follow the same rule via "$NODE_BIN".
+
 PORT="${NINEROUTER_PORT:-20128}"
 BASE="http://127.0.0.1:$PORT"
 STATE_DIR="$HOME/Library/Application Support/BlackCEO/999"
@@ -210,7 +222,7 @@ main() {
   # as a separate child process, so any `export PATH=...` there dies the
   # instant it exits (this was the exact F2 bug). Every downstream node
   # invocation in this script uses $NODE_BIN directly instead.
-  NODE_BIN="$("$MACOS/install-node.sh")" || fail "Node.js install/verify failed."
+  NODE_BIN="$(bash "$MACOS/install-node.sh")" || fail "Node.js install/verify failed."
   [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || fail "install-node.sh did not return an executable node path (got: '$NODE_BIN')."
   # Re-resolve and re-confirm in THIS shell, right now — belt-and-suspenders
   # against exactly the class of bug F2 was: never carry a stale/absent PATH
@@ -256,7 +268,7 @@ main() {
   # existing working installs are kept as-is, and it PROVES the binary executes
   # (a real `--version` run, not a file-exists check) before returning its
   # absolute path.
-  NINE_BIN="$("$MACOS/install-nine-router.sh")" || exit 1
+  NINE_BIN="$(bash "$MACOS/install-nine-router.sh")" || exit 1
   [ -n "$NINE_BIN" ] && [ -x "$NINE_BIN" ] || fail "install-nine-router.sh did not return an executable path (got: '$NINE_BIN')."
   NINE_VER="$("$NINE_BIN" --version 2>&1)" || fail "9router at $NINE_BIN does not execute (--version failed): $NINE_VER"
   DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' 9router "$NINE_VER" "$NINE_BIN")")
@@ -274,7 +286,7 @@ main() {
   done
 
   # 4. Documents + API docs.md
-  API_DOCS="$("$MACOS/get-api-docs.sh")" || exit 1
+  API_DOCS="$(bash "$MACOS/get-api-docs.sh")" || exit 1
   log "Credential file: $API_DOCS"
   parse_api_docs "$API_DOCS"
   for k in OLLAMA_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY; do
@@ -389,7 +401,7 @@ main() {
     *[[:space:]]*) fail "Local 9Router API key had an unexpected shape; refusing to store it." ;;
   esac
 
-  "$MACOS/protect-local-state.sh" set-token "$TOKEN"
+  bash "$MACOS/protect-local-state.sh" set-token "$TOKEN"
   unset TOKEN
 
   # 8. Write routing state (non-secret). Route strings come from the config report.
@@ -417,11 +429,12 @@ main() {
     '
   )"
   printf '%s' "$STATE_INPUT" | "$NODE_BIN" "$COMMON/write-routing-state.mjs"
-  "$MACOS/protect-local-state.sh" ensure-600
+  bash "$MACOS/protect-local-state.sh" ensure-600
 
-  # 9. Install launcher.
+  # 9. Install launchers (claude-nine, and claude-codex alongside it).
   export CLAUDE_NINE_SOURCE="$REPO_ROOT/launchers/macos/claude-nine"
-  "$MACOS/install-claude-nine.sh"
+  export CLAUDE_CODEX_SOURCE="$REPO_ROOT/launchers/macos/claude-codex"
+  bash "$MACOS/install-claude-nine.sh"
 
   # 9.5. Enable Agent Teams (merge-only, backed up; never disturbs running work).
   #      Turns the experimental Agent Teams flag on in ~/.claude/settings.json and
@@ -478,7 +491,7 @@ main() {
   #     file exists and call the router directly) so a launcher that fails to
   #     start the router is caught here, not on the client's next boot.
   log "Running smoke tests..."
-  NINEROUTER_BASE="$BASE" NINEROUTER_TOKEN="$("$MACOS/protect-local-state.sh" get-token)" \
+  NINEROUTER_BASE="$BASE" NINEROUTER_TOKEN="$(bash "$MACOS/protect-local-state.sh" get-token)" \
     OLLAMA_PLAN="$OLLAMA_PLAN" \
     OPENROUTER_PROBE_ROUTE="$OPENROUTER_PROBE_ROUTE" \
     "$NODE_BIN" "$COMMON/test-nine-router.mjs" || fail "Smoke tests failed"
@@ -548,6 +561,17 @@ main() {
     SKILL_VISIBLE="MISSING at $SKILL_CHECK_PATH"
   fi
 
+  # claude-codex launcher: a real filesystem check, never a hardcoded OK. It is
+  # installed alongside claude-nine, but it pins a `cx/` Codex route and this
+  # setup wires DeepSeek/Ollama/Agnes/OpenRouter only — so INSTALLED is the
+  # honest claim here, and it is deliberately NOT smoke-tested end to end the way
+  # claude-nine is (there is no provisioned route to test it against).
+  if [ -x "$HOME/.local/bin/claude-codex" ]; then
+    CODEX_LINE="INSTALLED - needs a cx/ Codex provider added in 9Router (not wired by this setup)"
+  else
+    CODEX_LINE="NOT INSTALLED"
+  fi
+
   # Route strings come from the config report; fall back to the new defaults only
   # if the report lacks them (it never should after a successful configure run).
   R_FABLE="$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s).resolvedRoutes||{};process.stdout.write(r.fable||"ds/deepseek-v4-flash(max)")}catch{process.stdout.write("ds/deepseek-v4-flash(max)")}})' 2>/dev/null || echo 'ds/deepseek-v4-flash(max)')"
@@ -589,6 +613,7 @@ Claude Code: OK
 Personal skill in normal claude: $SKILL_VISIBLE
 Personal skill in claude-nine: $SKILL_VISIBLE
 claude-nine launcher: OK
+claude-codex launcher: $CODEX_LINE
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
@@ -622,6 +647,7 @@ $AGENT_TEAMS_REPORT
 Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models.
 
 Launch routed Claude Code with: claude-nine
+(claude-codex is the same session pinned to a Codex model — add a cx/ provider first.)
 
 No API keys or passwords were printed.
 REPORT

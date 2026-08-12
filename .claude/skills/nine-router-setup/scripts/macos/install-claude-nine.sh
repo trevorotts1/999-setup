@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# install-claude-nine.sh — install the claude-nine launcher at $HOME/.local/bin
-# (mode 700) and ensure $HOME/.local/bin is on PATH for new login shells via a
-# clearly marked, idempotent profile block. Preserves unrelated profile content.
+# install-claude-nine.sh — install the claude-nine and claude-codex launchers at
+# $HOME/.local/bin (mode 700) and ensure $HOME/.local/bin is on PATH for new
+# login shells via a clearly marked, idempotent profile block. Preserves
+# unrelated profile content.
 set -euo pipefail
 
-# Default launcher source: the repo copy next to this script (this script lives
-# at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the launcher
-# lives at <repo>/launchers/macos/claude-nine). CLAUDE_NINE_SOURCE overrides it.
+# Default launcher sources: the repo copies next to this script (this script
+# lives at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the
+# launchers live at <repo>/launchers/macos/). CLAUDE_NINE_SOURCE and
+# CLAUDE_CODEX_SOURCE override them.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-nine}"
 LAUNCHER="$HOME/.local/bin/claude-nine"
+CODEX_SRC="${CLAUDE_CODEX_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-codex}"
+CODEX_LAUNCHER="$HOME/.local/bin/claude-codex"
 
 log() { printf '[install-claude-nine] %s\n' "$*" >&2; }
 
@@ -21,6 +25,24 @@ install_launcher() {
   fi
   install -m 700 "$LAUNCHER_SRC" "$LAUNCHER"
   log "installed $LAUNCHER (mode 700)"
+}
+
+# claude-codex: claude-nine pinned to the Codex model with a 350K auto-compact
+# window (see the launcher's own header for why the window is required).
+# `install -m 700` sets the destination mode outright, so this does not depend
+# on the source file's mode in the checkout, and rerunning it simply overwrites
+# with the same bytes — idempotent by construction.
+#
+# NEVER fatal: claude-nine is the launcher this setup provisions routes for, and
+# claude-codex additionally needs a `cx/` provider that this setup does not wire.
+# A missing source is reported honestly and the install still completes.
+install_codex_launcher() {
+  if [ ! -f "$CODEX_SRC" ]; then
+    log "claude-codex source not found at $CODEX_SRC — SKIPPED (claude-nine is unaffected)"
+    return 0
+  fi
+  install -m 700 "$CODEX_SRC" "$CODEX_LAUNCHER"
+  log "installed $CODEX_LAUNCHER (mode 700)"
 }
 
 manage_profile() {
@@ -108,11 +130,16 @@ PY
 
 main() {
   install_launcher
+  install_codex_launcher
   manage_profile
-  # Make launcher discoverable in the CURRENT process too.
+  # Make launchers discoverable in the CURRENT process too.
   export PATH="$HOME/.local/bin:$PATH"
   log "done — claude-nine is at $LAUNCHER"
   command -v claude-nine >/dev/null 2>&1 && log "resolves on PATH"
+  if [ -x "$CODEX_LAUNCHER" ]; then
+    log "claude-codex is at $CODEX_LAUNCHER"
+    command -v claude-codex >/dev/null 2>&1 && log "claude-codex resolves on PATH"
+  fi
 }
 
 main "$@"
