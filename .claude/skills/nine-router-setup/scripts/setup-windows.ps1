@@ -427,6 +427,52 @@ else {
         Write-Log "Agent Teams enablement: $agentTeamsStatus"
     }
 
+    # 10.6 Clear the ultracode/effort override (detect + remediate, backed up;
+    #      never disturbs running work). CLAUDE_CODE_EFFORT_LEVEL in the
+    #      environment OVERRIDES the in-session /effort picker, so
+    #      `/effort ultracode` snaps back to whatever the variable says. The
+    #      launcher fix (v1.2.0) stopped THIS repo exporting it; it cannot reach
+    #      a box where the variable comes from the User or Machine environment
+    #      scope, a PowerShell profile, a settings.json env map, or a parent
+    #      process. This step is that reach, so a fleet roll fixes every box
+    #      regardless of source.
+    #      The fixer proves its own scanner on a planted control before
+    #      accepting any "clean", backs every file up before editing it (never
+    #      overwriting an existing backup), COMMENTS OUT offending profile lines
+    #      behind a dated marker rather than deleting them, MERGE-removes only
+    #      that one key from settings env maps with validation and
+    #      restore-on-failure, and refuses to touch the Machine scope or an
+    #      AllUsers profile - reporting the exact elevated command instead. It
+    #      takes effect in NEW shells and NEW sessions: nothing running is
+    #      signalled, restarted, or interrupted.
+    #      NEVER fatal to setup: rc 1 (a source needing one manual command) and
+    #      rc 2 (a tooling failure, backups restored) are both reported honestly
+    #      in the completion report and the install still completes.
+    $ultracodeReport = ''
+    $ultracodeStatus = 'SKIPPED - Fix-UltracodeOverride.ps1 not found'
+    $fixUltracode = Join-Path $Win 'Fix-UltracodeOverride.ps1'
+    if (Test-Path $fixUltracode) {
+        try {
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $ultracodeReport = (& $fixUltracode | Out-String)
+            $ultracodeRc = $LASTEXITCODE
+            $ErrorActionPreference = $prevEap
+            $ultracodeStatus = "UNKNOWN (the fixer produced no status line, rc=$ultracodeRc)"
+            $lines = @($ultracodeReport -split "`r?`n")
+            for ($i = 0; $i -lt $lines.Count - 1; $i++) {
+                if ($lines[$i].Trim() -eq 'ULTRACODE OVERRIDE:') { $ultracodeStatus = $lines[$i + 1].Trim(); break }
+            }
+            if ($ultracodeRc -notin @(0, 1, 2)) {
+                $ultracodeStatus = "UNKNOWN (the fixer exited $ultracodeRc, which it does not define)"
+            }
+        } catch {
+            $ErrorActionPreference = 'Stop'
+            $ultracodeStatus = "NOT RUN - the fixer could not be started: $($_.Exception.Message)"
+        }
+        Write-Log "Ultracode override: $ultracodeStatus"
+    }
+
     # 11. Smoke tests. This MUST execute the launcher itself (not just check the
     #     file exists and call the router directly) — that is what catches a
     #     launcher that does not parse under PowerShell 5.1.
@@ -532,6 +578,9 @@ Audio auto-switch: DISABLED - Gemma 4 31B has no audio input
 
 Agent Teams (experimental; applies to NEW Claude Code sessions only): $agentTeamsStatus
 $agentTeamsReport
+
+Ultracode/effort override (applies to NEW shells and NEW sessions only): $ultracodeStatus
+$ultracodeReport
 
 Dashboard: $dashUrl - open this in your browser to manage providers and models.
 

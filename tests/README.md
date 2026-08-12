@@ -44,6 +44,9 @@ OPENROUTER_API_KEY=... node ../.claude/skills/nine-router-setup/scripts/common/r
 - Windows launcher files installed under `%LOCALAPPDATA%\BlackCEO\999\bin`
 - `claude-nine` callable from CMD and PowerShell after PATH refresh
 - protected local token can be decrypted by the current user (DPAPI)
+- `CLAUDE_CODE_EFFORT_LEVEL` is absent from the User environment scope and from the
+  four PowerShell profiles after `Fix-UltracodeOverride.ps1` (Machine scope is reported,
+  never changed)
 
 ### macOS (`tests/macos/`)
 
@@ -57,6 +60,10 @@ OPENROUTER_API_KEY=... node ../.claude/skills/nine-router-setup/scripts/common/r
 - route-state file permissions are 600
 - the 9Router token can be retrieved from the expected Keychain item
 - no router-specific `ANTHROPIC_*` variables were written to shell startup files
+- `CLAUDE_CODE_EFFORT_LEVEL` is absent from `launchctl getenv`, from the six shell
+  startup files, and from every `settings.json` env map after
+  `fix-ultracode-override.sh` (its own `--selftest` proves detection and remediation
+  in both directions, in a sandbox `HOME`)
 
 ## Destructive / paid behavior
 
