@@ -954,6 +954,14 @@ council returns 4/4) — never an accidental while-loop.
 
 ## 14. THE CANONICAL OPERATING LOOP (one loop — the doctrine's 16 steps, the six workflows, and the Agent-Team control flow, fused)
 
+**READ THIS FIRST — a station is a STEP, not a window.** Each of the nineteen
+stations below is a step the lead performs. **A station is never a window, a tab,
+or a session to open.** One trip through all nineteen stations processes **ONE
+task**, start to finish. The number of live sessions a run actually holds open is
+**one** in single-session mode, and **five** in team mode — the lead plus the four
+commanders, which **the lead spawns itself**. Nobody opens nineteen of anything,
+and **the client opens nothing at all**.
+
 > "Three source loops exist in the doctrine record: the 16-step operating cycle
 > (execution addendum §21), the six-workflow Gauntlet topology (the PDF), and the
 > Agent-Team GAUNTLET CONTROL FLOW (multi-agent addendum). They are NOT three
@@ -992,6 +1000,22 @@ order, one loop in both modes.
 | 17 | MARK TASK COMPLETE ONLY IF PASSED — then LOCK | lead (TaskUpdate) — gated by the six-condition completion law; passing components locked | execution-architecture.md; pipeline.md locks |
 | 18 | UNBLOCK DEPENDENCIES | the graph's edges release dependents | never a merge gate (D11 cut) |
 | 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; ≥200 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
+
+**The five phases — the human's handle on nineteen rows.** The table above is the
+MACHINE's checklist: nineteen discrete stations, each with an owner and a carrier,
+none skippable. The five phases below are the HUMAN's handle on those same
+nineteen stations — a way to hold one revolution in your head. They add no steps,
+rename no station, and change no numbering.
+
+| Phase | Stations | What happens |
+|---|---|---|
+| **ORIENT** | 1–4 | Read the three state files, pick the next ready task |
+| **ARM** | 5–6 | The responsible commander checks the requirements; mark it in progress |
+| **BUILD** | 7–10 | Run the task's workflow, collect results, run/test it, capture evidence |
+| **JUDGE** | 11–14 | Blind + technical verification, commanders argue on the record, targeted repair, regression |
+| **CLOSE** | 15–19 | Write state, reconcile, mark complete only if passed and lock, unblock dependents, check release/stop, wrap around |
+
+Compressed to a mnemonic: **READ → PICK → BUILD → JUDGE → RECORD → NEXT**.
 
 ### 14.1 The source map — nothing from any source loop was dropped
 

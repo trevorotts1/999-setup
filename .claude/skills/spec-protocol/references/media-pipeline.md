@@ -121,8 +121,8 @@ to them belongs to `references/capacity.md`:
 | Agnes plan | Ceiling | Skill uses (25% reserve applied) |
 |---|---|---|
 | Free | 20 requests/minute | budget 15/min |
-| $40 plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) |
-| $100 plan | 7,500 requests / 5 hours (= 25/min sustained) | budget 5,625 / 5h (= 18.75/min) |
+| $40/year plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) |
+| $100/year plan | 7,500 requests / 5 hours (= 25/min sustained) | budget 5,625 / 5h (= 18.75/min) |
 
 **A second, different quantity, also VERIFY-LIVE:** the operator's 2026-08-10
 note records a paid-tier **daily allowance** of roughly 4,000 images and 800

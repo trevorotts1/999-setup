@@ -11,7 +11,8 @@
 #   BUILDER_PROVIDER=anthropic|deepseek-direct|deepseek-ollama|ollama-cloud|agnes|openrouter
 #   DEEPSEEK_TIER=flash|pro               (when provider is deepseek-direct; default flash)
 #   OLLAMA_PLAN=20|100                    (when provider is ollama-cloud)
-#   AGNES_PLAN=free|40|100                (when provider is agnes)
+#   AGNES_PLAN=free|40|100                (when provider is agnes; 40/100 are the
+#                                          ANNUAL plan prices, not monthly)
 #   THROTTLE=full|gentle                  (default full for deepseek-direct, gentle otherwise)
 #   RESERVE_PCT=<number>                  (Law 44 — default 25)
 #   MODE=team|single                      (default single — Agent Teams off until probed + consented)
@@ -230,11 +231,11 @@ resolve() {
           REQUEST_BUDGET="15 requests/min (20/min ceiling − 25% reserve)"
           ;;
         40)
-          PROVIDER_LABEL="Agnes AI, \$40 plan — 1,500 requests / 5 hours (VERIFY-LIVE)"
+          PROVIDER_LABEL="Agnes AI, \$40/year plan — 1,500 requests / 5 hours (VERIFY-LIVE)"
           REQUEST_BUDGET="1,125 requests / 5h (1,500 − 25%) = 3.75/min sustained; at ~25 API requests per agent-task → 45 Agnes agent-tasks per 5-hour window (state the assumption, measure it over the first 5 tasks, re-derive)"
           ;;
         100)
-          PROVIDER_LABEL="Agnes AI, \$100 plan — 7,500 requests / 5 hours (VERIFY-LIVE)"
+          PROVIDER_LABEL="Agnes AI, \$100/year plan — 7,500 requests / 5 hours (VERIFY-LIVE)"
           REQUEST_BUDGET="5,625 requests / 5h (7,500 − 25%) = 18.75/min sustained"
           ;;
         *)
@@ -478,7 +479,7 @@ EOF
   _assert "team mode refused by arithmetic" "REFUSED BY ARITHMETIC" "${tmp}/c.out"
   _assert "1 workflow × 2 agents" "WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤2" "${tmp}/c.out"
 
-  # --- Scenario (d): Ollama Cloud $100 + Agnes $40 request budget -----------
+  # --- Scenario (d): Ollama Cloud $100 + Agnes $40/year request budget ------
   cat > "${tmp}/d.answers" <<'EOF'
 HARNESS=claude-nine
 BUILDER_PROVIDER=ollama-cloud
@@ -501,7 +502,7 @@ MODE=single
 PROJECT=selftest-d2
 EOF
   resolve "${tmp}/d2.answers" > "${tmp}/d2.out" 2>"${tmp}/d2.err"
-  echo "SCENARIO (d) — Agnes \$40 request budget"
+  echo "SCENARIO (d) — Agnes \$40/year request budget"
   _assert "1,125 / 5h = 3.75/min" "1,125 requests / 5h (1,500 − 25%) = 3.75/min sustained" "${tmp}/d2.out"
   _assert "45 Agnes agent-tasks per window" "45 Agnes agent-tasks per 5-hour window" "${tmp}/d2.out"
 
