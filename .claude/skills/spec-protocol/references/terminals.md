@@ -122,7 +122,7 @@ width breaks. See `audience.md` for the full rules. Every instruction must:
 - Have one line per step.
 - State its waits — "wait for this to finish before pasting the next one."
 - Use the shorter form of a path (`~/Downloads/projects/...`, not
-  `/Users/blackceomacmini/Downloads/projects/...`).
+  `/Users/yourname/Downloads/projects/...`).
 
 ---
 

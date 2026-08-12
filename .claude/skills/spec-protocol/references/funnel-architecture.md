@@ -460,7 +460,10 @@ written above.
    dependency on the page it fires from being built first — and every SMS row
    additionally blocked on the PEWC capture item (section 7).
 9. **Media choice** (Kie.ai vs Agnes-AI) with its credential gate —
-   `references/media-pipeline.md`.
+   `references/media-pipeline.md` — and the per-project media folder is created
+   in the client's GoHighLevel location BEFORE the first generation, per
+   `media-pipeline.md` section 13, so a folder-create failure is discovered
+   before any credit is spent.
 10. The build plan orders the work: **Skill 6 page builds → Skill 44 automation
     builds → Skill 38 conversation playbooks** where TRINITY applies.
 

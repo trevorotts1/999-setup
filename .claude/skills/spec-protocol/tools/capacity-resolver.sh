@@ -55,7 +55,7 @@
 #   AXIS 1 WIDTH  — per-workflow concurrency = min(16, cores−2), cores MEASURED
 #                   at run time; hard ceiling of 30 workflows per session.
 #   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
-#                   budget of 1,000 — his spend policy, NOT a platform limit (the
+#                   budget of 1,000 — a spend POLICY, NOT a platform limit (the
 #                   platform documents no total-per-session limit; its 20-concurrent
 #                   default is exempted for ultracode sessions, and GATE 0 requires
 #                   ultracode). A decrementing count, never a simultaneity limit.
@@ -65,7 +65,7 @@
 # The wave width is the SMALLEST of the three; this script shows all three
 # with the winner marked.
 #
-# The concurrency numbers below are Trevor's live-account DOCTRINE and stay
+# The concurrency numbers below are the operator's live-account DOCTRINE and stay
 # (see references/capacity.md). They are NOT to be web-researched away —
 # except the Agnes figures, which are VERIFY-LIVE: web-research the current
 # rules at run time and fall back to these only when research fails,
@@ -73,9 +73,9 @@
 
 set -u
 
-WORKFLOW_CEILING=30          # Trevor's explicit rule: 30 workflows per session, hard
+WORKFLOW_CEILING=30          # the operator's explicit rule: 30 workflows per session, hard
 OPERATOR_WAVE_CAP=20         # standing operator doctrine, Anthropic-billed Claude Code
-SESSION_AGENT_BUDGET=1000    # the OPERATOR's session budget — his POLICY, a LIFETIME
+SESSION_AGENT_BUDGET=1000    # the OPERATOR's session budget — a POLICY, a LIFETIME
                              # COUNT. The settings key CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
                              # is undocumented upstream and treated as INERT; this
                              # decrementing count is the only enforcement relied on.
@@ -278,13 +278,13 @@ resolve() {
       case "${OLLAMA_PLAN}" in
         20)
           PROVIDER_CEILING=3
-          PROVIDER_USABLE=2            # Trevor's reserve — never consume 100%
+          PROVIDER_USABLE=2            # the operator's reserve — never consume 100%
           PROVIDER_LABEL="Ollama Cloud \$20 plan — 3 concurrent, USE 2"
           PROVIDER_NOTE="Two concurrent slots. Builder and critic SHARE them: allocate 1+1 or time-slice, and show the allocation. A 24-unit build is ≥12 sequential rounds per stage — say so up front."
           ;;
         100)
           PROVIDER_CEILING=10
-          PROVIDER_USABLE=8            # Trevor's reserve
+          PROVIDER_USABLE=8            # the operator's reserve
           PROVIDER_LABEL="Ollama Cloud \$100 plan — 10 concurrent, USE 8"
           ;;
         *)
