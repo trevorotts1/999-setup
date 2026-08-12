@@ -1,5 +1,106 @@
 # Changelog
 
+## [1.6.0] — 2026-08-12
+
+### The ultracode fix now reaches the box, not just the launcher
+
+- **v1.2.0 fixed the launcher; it could not fix the machine.** `CLAUDE_CODE_EFFORT_LEVEL`
+  in the environment **overrides the in-session `/effort` picker**: with it set to
+  anything other than `xhigh`, selecting `ultracode` returns *"CLAUDE_CODE_EFFORT_LEVEL=…
+  overrides effort this session — clear it and ultracode takes over"* and the selection is
+  never applied, so it looks like it snaps back. The shipped binary's save path accepts only
+  `low|medium|high|xhigh`, so **`max` is not persistable at all**. v1.2.0 stopped *this
+  repository's* launchers exporting it and named the residual risk in plain words:
+  *"boxes that already export `CLAUDE_CODE_EFFORT_LEVEL=max` from a shell profile, `launchd`,
+  or an OpenClaw process still override the picker until that export is cleared per box."*
+  That residual risk is now closed by the installer instead of by hand, so **a fleet roll
+  fixes every box regardless of which source the variable came from.**
+- **A new remediation step runs on both platforms** — `scripts/macos/fix-ultracode-override.sh`
+  at phase 9.6 of `setup-macos.sh`, and `scripts/windows/Fix-UltracodeOverride.ps1` at phase
+  10.6 of `setup-windows.ps1`. Both are also **standalone-runnable on an already-installed
+  box**, which is what makes remediating the existing fleet possible without a reinstall.
+
+### What it detects — and what it admits it did not check
+
+- **Every source is named, found or clean.** The current process environment; the launchd
+  user domain (macOS) or the **User and Machine** environment scopes (Windows); six shell
+  startup files — `.zshrc`, `.zprofile`, `.zshenv`, `.bash_profile`, `.bashrc`, `.profile`
+  — or the four PowerShell profiles; the `env` map of `~/.claude/settings.json`,
+  `settings.local.json` and the `~/.claude-nine` pair; and candidate service env files.
+  `~/.zlogin`, `~/.bash_login` and the `/etc` startup files are checked read-only.
+- **Shell matching is tolerant, and classified rather than pattern-matched blindly.** Bare
+  assignments, `export`, `declare -x`, `typeset -x`, and a `launchctl setenv` line inside a
+  startup file all count — through any quoting and any whitespace. An `unset` line is
+  recognised as a **fix, not a fault**, and is never commented out; commenting it out would
+  re-break the machine.
+- **A negative is proved before it is reported.** The scanner is run against a **planted
+  positive and a planted negative on every run**, `launchctl getenv` against a
+  known-non-empty name, and each Windows environment scope against `Path`. **A failed control
+  degrades the run to detect-only and reports UNDETERMINED — never "clean" — and edits
+  nothing**, because acting on an instrument that just failed its own control is worse than
+  not acting. `grep` is not used in the detection path at all: its `rc>=2` is an *error* and
+  is trivially misread as "no match".
+- **The report ends with what was NOT checked** — per-project `.claude/settings.json` files,
+  other users' home directories, other processes' environments, and (Windows) `cmd.exe`
+  AutoRun entries, Group Policy logon scripts, and WSL — so the report is never read as
+  coverage it does not have.
+
+### What it changes — and what it refuses to touch
+
+- **Every mutation is backed up first**, timestamped, **never overwriting an existing
+  backup**, with the path printed. A backup that could not be written means the file is not
+  edited: nothing is ever changed without a way back.
+- **Shell and profile lines are COMMENTED OUT behind a dated marker, never deleted.** A
+  commented line is reversible and visible; a deleted one is neither. Restoring it is
+  deleting one `#`. A rerun never double-comments — the disabled line is a comment, so it is
+  no longer live.
+- **`launchctl unsetenv`** for the launchd user domain and
+  `[Environment]::SetEnvironmentVariable(...,$null,'User')` for the Windows User scope, each
+  **re-read afterwards from launchd or the registry** to prove it took.
+- **`settings.json` gets a MERGE-remove of exactly that one key**, validated against **every
+  pre-existing leaf value** — model aliases, routing, permissions, hooks, MCP, other env
+  vars — with the **backup restored on any failure**. A broken settings file is never left
+  behind. Same discipline the Agent Teams enabler already uses.
+- **Four sources are deliberately NOT edited, and are reported with the exact manual command
+  instead of guessed at**: the current process environment (a child cannot alter its
+  parent's), the Windows **Machine** scope and **AllUsers** profiles (administrator-owned,
+  shared by every account), **service env files** such as OpenClaw's (credential files whose
+  change only takes effect on a restart this installer will never perform), and **any line
+  form the scanner does not positively recognise**.
+- **Nothing is killed, signalled, restarted, reloaded, or `exec`ed** — no process, session,
+  workflow, subagent, terminal, or tmux server, and no shell-profile reload. The report says
+  so line by line. **The change takes effect in NEW shells and NEW sessions**; a terminal
+  that is open keeps the environment it started with, and a Claude Code session that is
+  running keeps the effort level it is running at.
+- **No secret is ever printed.** Settings files are read for this one key's name and value
+  only — never dumped, no other value printed. Shell and profile files are reported by line
+  **number and classification**, never by line content, so scanning a file that also holds
+  credentials cannot leak one.
+
+### Idempotent, self-testing, and honest about the platform it could not run on
+
+- **A rerun is a byte-identical no-op** that says so, writes nothing, and creates no second
+  backup.
+- **`--selftest` proves detection AND remediation in both directions** in a sandbox `HOME`,
+  with a stub `launchctl` so the real user domain is never touched: planted positives in five
+  shell files plus `settings.json` plus launchd are all caught and cleared; a clean box is
+  left byte-identical with no backup written; `unset` and already-disabled lines survive
+  untouched; an existing backup is never overwritten; a forced validation failure restores
+  the settings backup byte for byte. **Three of the eleven checks are mutation proofs that
+  the checks can fail** — `--dry-run` on a planted positive must still report it and write
+  nothing; a `launchctl` whose control answers empty must be UNDETERMINED rather than CLEAN;
+  and a scanner stubbed to always answer "clean" must fail its control, poison every negative
+  in the report, edit nothing, and exit 2. That third proof caught two real defects during
+  development: the script used to keep editing after its own instrument failed, and
+  `make_backup` used to swallow a failed `cp`. Both are fixed.
+- **The Windows script is UNDETERMINED — written, reviewed, NOT EXECUTED.** No PowerShell
+  exists on the machine this was authored on (`pwsh` and `powershell` both returned 127
+  against working controls in the same shell), so its `-SelfTest` has never been run. It is
+  written to this repository's existing PowerShell conventions and its here-string and brace
+  structure was checked against the shipped `Enable-AgentTeams.ps1` as a known-good baseline,
+  but **no claim is made that it has been tested.** Run `-SelfTest` on a Windows box before
+  trusting it. The macOS twin is fully self-tested.
+
 ## [1.5.0] — 2026-08-12
 
 ### One key, one bill, and an asset that outlives the link it arrived on
