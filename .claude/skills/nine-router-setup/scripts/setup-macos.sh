@@ -184,6 +184,34 @@ probe_python3() {
   fi
 }
 
+# Link the bundled skills into one Claude config root. Idempotent: `ln -sfn`
+# re-points an existing symlink instead of nesting a new one inside it, so
+# re-runs converge rather than accumulate. Never creates a config root it was
+# not handed — callers decide which roots are real.
+link_skills_into_root() {
+  local root="$1"
+  local s src dst_real
+  [ -n "$root" ] || return 0
+  mkdir -p "$root/skills" 2>/dev/null || return 0
+  for s in nine-router-setup spec-protocol; do
+    src=""
+    if [ -d "$REPO_SKILL_DIR/../$s" ]; then
+      src="$(cd "$REPO_SKILL_DIR/../$s" && pwd -P)" || src=""
+    elif [ -d "$HOME/.claude/skills/$s" ]; then
+      src="$(cd "$HOME/.claude/skills/$s" && pwd -P)" || src=""
+    fi
+    [ -n "$src" ] || continue
+    # Never point a path at itself — the shared-root case, where the source of
+    # the link and its destination are the same directory.
+    dst_real="$(cd "$root/skills/$s" 2>/dev/null && pwd -P)" || dst_real=""
+    [ "$src" != "$dst_real" ] || continue
+    if ln -sfn "$src" "$root/skills/$s" 2>/dev/null; then
+      echo "skill linked: $s -> $root/skills/$s"
+    fi
+  done
+  return 0
+}
+
 main() {
   # 1. OS + arch
   [ "$(uname -s)" = "Darwin" ] || fail "This orchestrator is macOS-only (uname -s = $(uname -s))."
@@ -532,28 +560,37 @@ main() {
   VISION_LINE="OK"
   [ "$V_HAIKU" = "ok" ] || VISION_LINE="NOT VERIFIED (haiku/vision route: $V_HAIKU)"
 
-  # Skill visibility: an actual filesystem check, not an assumption. The
-  # claude-nine launcher sets CLAUDE_CONFIG_DIR=$HOME/.claude-nine, so the skills
-  # must live under THAT config root — $HOME/.claude/skills is invisible to a
-  # claude-nine session. Check the claude-nine root explicitly.
-  CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
+  # Skill visibility: an actual filesystem check, not an assumption.
+  #
+  # TOPOLOGY. The shipped claude-nine launcher never sets CLAUDE_CONFIG_DIR. It
+  # injects routing — base URL, Keychain token, alias exports — into the child
+  # process only, and leaves the Claude config root exactly as it found it
+  # (CLAUDE.md rule 10; nine-router-setup SKILL.md step 10). The config root is
+  # therefore the ordinary $HOME/.claude, and that is where the skills must
+  # land for a claude-nine session to see them. An operator whose own wrapper
+  # exports CLAUDE_CONFIG_DIR is honored automatically by resolving from the
+  # live environment, so no topology is assumed in either direction.
+  CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   SKILL_CHECK_PATH="$CLAUDE_SKILLS_ROOT/skills/nine-router-setup/SKILL.md"
-  # INSTALL the skills into the claude-nine config root if missing (the launcher
-  # reads slash commands from $CLAUDE_CONFIG_DIR/skills/ ONLY). Symlink from the
-  # repo's skill dir when present, else copy. This is the fix for skills being
-  # installed into ~/.claude/skills and never visible to claude-nine.
   REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+  # Secondary root, linked ONLY when $HOME/.claude-nine already exists as a real
+  # config root — proved by its own settings.json, not by the bare directory.
+  # That is an operator-style box, and linking there as well means both
+  # topologies see the skills. This never CREATES the directory: conjuring
+  # $HOME/.claude-nine on a box running the shipped launcher would plant a
+  # false signal for anything that probes for that path to identify the harness.
+  CLAUDE_SKILLS_ROOT_ALT=""
+  if [ -f "$HOME/.claude-nine/settings.json" ] \
+     && [ "$HOME/.claude-nine" != "$CLAUDE_SKILLS_ROOT" ]; then
+    CLAUDE_SKILLS_ROOT_ALT="$HOME/.claude-nine"
+  fi
+
   if [ ! -f "$SKILL_CHECK_PATH" ]; then
-    mkdir -p "$CLAUDE_SKILLS_ROOT/skills"
-    for s in nine-router-setup spec-protocol; do
-      if [ -d "$REPO_SKILL_DIR/../$s" ]; then
-        ln -sfn "$REPO_SKILL_DIR/../$s" "$CLAUDE_SKILLS_ROOT/skills/$s"
-        echo "skill linked: $s -> $CLAUDE_SKILLS_ROOT/skills/$s"
-      elif [ -d "$HOME/.claude/skills/$s" ]; then
-        ln -sfn "$HOME/.claude/skills/$s" "$CLAUDE_SKILLS_ROOT/skills/$s"
-        echo "skill linked from ~/.claude: $s"
-      fi
-    done
+    link_skills_into_root "$CLAUDE_SKILLS_ROOT"
+  fi
+  if [ -n "$CLAUDE_SKILLS_ROOT_ALT" ]; then
+    link_skills_into_root "$CLAUDE_SKILLS_ROOT_ALT"
   fi
   if [ -f "$SKILL_CHECK_PATH" ]; then
     SKILL_VISIBLE="OK"
