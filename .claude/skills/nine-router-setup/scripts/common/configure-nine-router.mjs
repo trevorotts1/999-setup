@@ -493,7 +493,7 @@ async function main() {
   // built only when an OpenRouter key exists on the box. Thinking max.
   const nvidiaFree = "openrouter-nvidia-free/nvidia/nemotron-3-ultra-550b-a55b:free";
 
-  // Standard wiring (the operator's Spaulding spec): Fable = the fusion combo,
+  // Standard wiring (the operator's standard spec): Fable = the fusion combo,
   // Opus = DS Max (Flash+max), Sonnet = Agnes 2.5 Flash, Haiku = DS Light (off).
   const fableLane = OVERRIDE_0731 ? overrideFlash : "fleet-fusion";
 

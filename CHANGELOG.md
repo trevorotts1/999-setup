@@ -1,5 +1,66 @@
 # Changelog
 
+## [1.2.6] — 2026-08-12
+
+### No personal names in a repository everyone installs, and the skill-root defect that shipped one box's topology to every client
+
+- **A client's surname was naming the standard.** Two places attributed the fleet-fusion
+  wiring to a named individual — the `1.1.0` heading in this changelog and a code comment in
+  `.claude/skills/nine-router-setup/scripts/common/configure-nine-router.mjs`. Both now read
+  neutrally: "The fleet-fusion standard (now the default for everyone)" and "the operator's
+  standard spec". Nothing technical moved — only the naming. This repository ships to
+  everyone, the standard is not named after a person, and a public repository is the wrong
+  place to carry a client's name at all. This entry deliberately does not repeat the name it
+  removes.
+- **The whole repository was swept, not just that one name.** A per-name sweep over every
+  known client and personal name, plus structural sweeps for possessives, capitalised
+  name-pairs, e-mail addresses and telephone numbers, over every tracked file (no binary
+  files exist, so nothing was skipped). Every instrument was run with both a known-positive
+  and a known-absent control so a zero could be trusted, and the final zero was re-proved by
+  planting the name back in, catching it, and removing it again. The only remaining personal
+  name is the operator's own, in `LICENSE` — which belongs there.
+- **Scope, stated plainly.** This corrects the files as they stand. The name remains in older
+  commits and no history was rewritten: nothing was force-pushed, rebased or reset, because
+  that would break every existing clone.
+
+### The setup script installed skills where the shipped launcher cannot see them
+
+- **`setup-macos.sh` asserted a launcher behaviour that does not exist.** Its skill-root block
+  commented that "the claude-nine launcher sets `CLAUDE_CONFIG_DIR=$HOME/.claude-nine`" and
+  defaulted `CLAUDE_SKILLS_ROOT` to that path. The shipped launcher does no such thing —
+  `launchers/macos/claude-nine` contains zero `CLAUDE_CONFIG_DIR` references and injects
+  routing (base URL, Keychain token, alias exports) into the child process only, leaving the
+  config root untouched. So do `claude-codex` and both Windows launchers.
+- **The consequence on a client box was real.** Setup installed the skills into
+  `~/.claude-nine/skills/` while the launcher there reads `~/.claude` — so `/spec-protocol`
+  and `/nine-router-setup` landed exactly where that box could not find them. The `1.1.0`
+  "skill-root fix" diagnosed a genuine symptom on the operator's own machine, where a personal
+  wrapper does set a separate config root, and then encoded that one machine's topology as the
+  default for every client.
+- **Worse, it conjured a directory that misleads harness detection.** Creating
+  `~/.claude-nine/` on a box that has no such config root plants a false signal for anything
+  that probes for that path to decide which harness it is running on.
+- **The root is now resolved from the environment, defaulting to the shared root.**
+  `CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"`, matching what five sources in
+  this repository already state by design — `CLAUDE.md` rule 10, `AGENT_INSTALL.md`,
+  `nine-router-setup/SKILL.md` step 10, `references/platform-macos.md`, and the shipped
+  launcher itself. An operator whose own wrapper exports `CLAUDE_CONFIG_DIR` is honoured
+  automatically, so the script is correct on both topologies without assuming either.
+- **Operator-style boxes get both roots, and the directory is never created.** When
+  `$HOME/.claude-nine` already exists as a real config root — proved by its own
+  `settings.json`, not by a bare directory — the skills are linked into it as well, so both
+  topologies see them. The script never creates that directory.
+- **Proved in a sandbox with `HOME` overridden, never against a real home directory.** A fresh
+  client box resolves to `~/.claude`, links the skills there, and creates no `~/.claude-nine`;
+  a box with a real `~/.claude-nine` gets both roots; an exported `CLAUDE_CONFIG_DIR` wins and
+  de-duplicates; a bare `~/.claude-nine` with no `settings.json` is correctly not treated as a
+  config root. Re-running three times converges instead of nesting links, and a root that
+  already holds the real skill directories is not linked onto itself.
+- **Deliberately unchanged.** The launchers are correct as shipped and were not touched. The
+  documentation stating the one-config-root design was already right and stands as-is.
+  `setup-windows.ps1` was read and carries no skills-root resolution at all, so it does not
+  share this defect and needed no change. `tools/ledger.sh` is byte-identical.
+
 ## [1.2.5] — 2026-08-12
 
 ### Correcting 1.2.4 — the Gate-3 critic seat should never have named an alias at all
@@ -345,7 +406,7 @@
 
 ## [1.1.0] — 2026-08-10
 
-### The fleet-fusion standard (the Spaulding spec, now the default for everyone)
+### The fleet-fusion standard (now the default for everyone)
 
 - **DS Max = DeepSeek v4 FLASH + thinking MAX** (was Pro) — the operator's verified
   canary. Custom node on `https://api.deepseek.com`. Routes to **Opus**.
