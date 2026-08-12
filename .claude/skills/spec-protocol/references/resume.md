@@ -246,7 +246,7 @@ and keep a run alive overnight:
 4. **Budget watch** — reads consumption against the budget; if the
    projection exceeds the allowance, throttle: raise the interval, lower
    the agent ceiling, drop the planning tier's frequency, drop tiers.
-5. **Swarm watch** — runs the S1–S13 checks against the live `/workflows`
+5. **Swarm watch** — runs the S1–S14 checks against the live `/workflows`
    view, the dispatch log, the heartbeat, and the ledger; runs
    `tools/anchor.sh --mode reconcile` (S10); in Agent-Team mode censuses
    commanders via ListAgents and raises a missing one to the lead for

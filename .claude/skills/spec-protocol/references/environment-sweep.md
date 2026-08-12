@@ -31,7 +31,10 @@ when the script is unavailable.
 1. **Project-local `.env`** — `<project-folder>/.env`, if the project has
    already started (e.g. framework scaffolding created one). The most
    portable location on any machine; check it first.
-2. **`~/.env`** — a user-level env file some non-fleet setups use.
+2. **`~/.env`** — a user-level env file some non-fleet setups use (sourced live
+   by `tools/env-sweep.sh` at every run — this is the guided-placement target on
+   non-fleet boxes, and the only one outside the fleet stores that a re-detect
+   will actually see).
 3. **The live shell environment** — check by NAME only
    (`[ -n "${KEY:-}" ]`), never by dumping it. A key exported in
    `.zshrc`/`.bashrc`/`.profile`, or set for the current session only, shows
@@ -542,13 +545,44 @@ every other check here:
 | Kie.ai | `KIE_API_KEY` | The user chose Kie.ai, or the provider is still undecided |
 | Agnes-AI | `AGNES_AI_API_KEY` | The user chose Agnes-AI, or the provider is still undecided |
 
+**The alias names actually searched**, because a key found under a second
+spelling is still a key found: Kie.ai — `KIE_API_KEY`, `KIE_AI_API_KEY`,
+`KIE_KEY`. Agnes-AI — `AGNES_AI_API_KEY`, `AGNES_API_KEY`, `AGNES_KEY`.
+
+**The liveness statuses**, in the same vocabulary as every other gate here:
+`FOUND` (the NAME resolved), `LIVE` (the name resolved and a cheap authenticated
+call answered), `FOUND_NOT_LIVE` (the name resolved and the call was refused),
+`FOUND_NOT_VERIFIED` (the name resolved and liveness was NOT tested — network
+suppressed, `curl` absent, or the request itself failed), `MISSING`.
+**Kie.ai liveness** is `GET https://api.kie.ai/api/v1/chat/credit`, and the
+credit BALANCE is never read or printed by the sweep — that figure is capacity
+and it belongs to the burn table, not to a credential check. **Agnes-AI is
+PRESENCE-ONLY**: no cheap authenticated liveness endpoint is documented for it,
+so this gate never reports LIVE for Agnes (`references/media-pipeline.md`
+section 12, item 8, carries the test that would settle it).
+
+**These two checks are implemented in `tools/env-sweep.sh` (KIE and AGNES
+phases) and proven by its selftest — a sweep whose selftest has not run is not
+believed.**
+
 **Gate behavior.**
 
-- **Both keys missing AND the user wants media** → say plainly: "I need either a
-  Kie.ai API key or an Agnes-AI API key to generate images and videos. Without
-  one of these, I cannot create media for your funnel. Would you like me to
-  build the funnel without media, or would you prefer to get one of these keys
-  first?" Wait for the answer — never build media-shaped work items against a
+- **Both keys missing AND the user wants media** → this is the detection
+  ladder's **fourth rung: ASK.** It is never a bare stop and never a silent
+  no-media build. The wording and all five branches — has a key (guided
+  placement into a store this tool provably sources, then re-detect), has an
+  account but no key, has neither, declines, and re-detect fails — belong to
+  `references/media-pipeline.md` section 9.2. Follow them there; do not
+  improvise a sixth. **⛔ There is no "paste your key here" flow on any branch:
+  the sweep asks WHETHER a key exists and says WHERE to put it, never receives,
+  echoes or stores a key VALUE, and the only thing it ever learns is "present"
+  or "absent."** **The re-detect contract:** re-detection re-runs this sweep —
+  the placement instruction may only ever target a store this tool provably
+  sources (see the stores list above, and the sweep's own "Searched:" report
+  line, which is the authority on this box), and a failed re-detect runs the
+  known-positive control before ANY absence claim; if the control also fails,
+  the instrument is broken and that is what is reported, not a missing key.
+  Wait for the answer — never build media-shaped work items against a
   provider that has no key.
 - **One key found** → use that provider automatically. Say which one and why,
   and do not ask a preference question that has only one available answer.

@@ -66,6 +66,16 @@ live-account doctrine and they stay.
 
 ## 2. The operator concurrency doctrine (BINDING — 2026-08-11)
 
+**These rows govern the TEXT request window only.** Agnes media draws two
+SEPARATE meters — images per day and video-seconds per day — governed by
+section 13.8. Budgeting a generated image against the 5-hour request window
+mis-classes the ceiling and produces a plan that is wrong in both directions at
+once. And the live tier NAMES on Agnes's own current documentation are
+**Starter / Plus / Pro**, carrying weekly caps as well as the 5-hour window, so
+the operator's free/$40/$100 rows below are the remembered plan MEMBERSHIP
+(section 13, row 12) mapped onto those names — VERIFY-LIVE every run, with the
+rows below standing unchanged as the fallback when research fails.
+
 | Provider path | Ceiling | Skill uses (reserve applied) | Verify at runtime? |
 |---|---|---|---|
 | DeepSeek v4 Flash, direct (9Router) | 2,500 concurrent subagents | usable = ceiling − 25% reserve = 1,875 (harness almost always binds first — see delivery layer) | Balance/liveness only |
@@ -295,6 +305,18 @@ SEAT | seat=<role> | dispatched=<id> | resolved=<model from probe> | lane=<alias
   a declared 900K), so per-SEAT is the only honest unit.
   Independence compares RESOLVED ids, never alias names — alias names prove
   nothing (Laws 7, 30).
+MEDIA — one line per planned media batch, written only when the build generates
+images or video. A media model is a seat like any other: choosing it chooses a
+ceiling and a budget (section 11's rule, applied to pictures), so it carries the
+same ceiling-class discipline as a judge seat. Section 13.8 is the procedure.
+MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from the smoke test>
+      | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units>
+      | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day>
+      | gate=<none|consent-required> | proof=<smoke ISO8601>
+  Every media figure carries its provenance mark like every other value in this
+  card — [MEASURED creditsConsumed <ISO8601>], [RESEARCHED <model doc url>
+  <date>], or [ASSUMED <why> <ISO8601>]. An unmarked media cost is ASSUMED and
+  sized conservatively, exactly as everywhere else.
 Per-provider ceiling | reserve | usable:   <one line per provider in play>
   source: [researched <url> <date>] | [operator doctrine fallback — research failed: <error>]
 Governing number: harness=<a> operator-cap=<b> provider-usable=<c> → GOVERNS: <min> (<which>)
@@ -373,7 +395,7 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
 ### The gate
 
 **"No Capacity Ledger on disk → no dispatch. Every dispatch names the ledger line
-it derives from. A dispatch citing no ledger is a defect the swarm watch (S1–S13)
+it derives from. A dispatch citing no ledger is a defect the swarm watch (S1–S14)
 flags."**
 
 ---
@@ -496,6 +518,9 @@ half of "selecting a model is selecting a ceiling" (section 11).
 | 9Router / provider liveness probe | ONLY on an error cluster (≥3 failures from one provider inside one tick) — never constant polling | Loopback probe, or one cheap known-good request |
 | Requests per agent-task | First 5 tasks, then re-derive | Burn table |
 | Model pool + seat callability | At every seat-assignment decision (section 13's decision-time rule) | `GET /v1/models` + the seat smoke test (section 11) |
+| kie.ai credit balance (media) | Before every media batch, and at every wave boundary | `GET https://api.kie.ai/api/v1/chat/credit` — the FIGURE to the burn table, pass/fail to the transcript, **never a key value, and never into the capacity profile** |
+| Agnes media meters — images/day and video-seconds/day | Before every media batch, and after each batch completes | The run's OWN generated counts against the researched daily caps (section 13.8) — two separate counters, never added together and never charged to the request window |
+| Media per-item actual cost | Every completed generation | kie's task record `creditsConsumed`; a >25% per-item underestimate re-estimates the REST of the batch before it dispatches, and the new total is said out loud |
 
 **The control rule (the negative-result contract, mid-run):** before declaring a
 provider DOWN, run the known-good control on the SAME transport — one request to
@@ -510,9 +535,15 @@ Every detected change writes one state-carrying ledger line through `ledger.sh`:
 
 ```
 <ISO8601> | CAPACITY-EVENT | provider=<p> | event=<429-cluster|balance-low|
-  provider-down|tier-tripwire|budget-starved|recovered> | evidence=<counts/rc> |
-  response=<throttle|fallback|park|pause|retry-4x|none>
+  provider-down|tier-tripwire|budget-starved|quota-exhausted|recovered> |
+  evidence=<counts/rc> | response=<throttle|fallback|park|pause|retry-4x|none>
 ```
+
+**The two media causes.** `balance-low` fires when the kie credit balance drops
+below the remaining media batch's estimate; `quota-exhausted` fires on an Agnes
+402 (balance or quota insufficient) or on a media meter reaching its researched
+daily cap. Both descend the same 6.3 ladder as every other event — a media lane
+throttles, then parks, and never abandons silently (section 13.8).
 
 …plus a REVISION line in `CAPACITY-LEDGER.md` whenever a ledger value changes.
 `CAPACITY-EVENT` is excluded from the reconciler's state-delta fingerprint
@@ -658,6 +689,30 @@ Rules for this path:
   Agnes tiers are ANNUAL, not monthly). Then
   web-research agnes-ai.com for the current rate rules and record the source
   line; the section 2 quotas are the fallback.
+- **When the build generates media, check the two media meters as well** — images
+  per day and video-seconds per day. They are SEPARATE from the request window
+  and separate from each other; research their current caps with the rate rules
+  in the same pass, and record which source each figure came from (section 13.8).
+
+### Media engines (kie.ai and Agnes) — only when the build generates media
+- **Presence, by NAME only:** `KIE_API_KEY` (alias `KIE_AI_API_KEY`) and
+  `AGNES_AI_API_KEY` (alias `AGNES_API_KEY`), through the environment sweep like
+  every other key. Presence booleans only — a media key's VALUE is never read,
+  echoed, stored, or asked for in chat (`references/media-pipeline.md` owns the
+  ask and its no-paste rule).
+- **kie credit balance:** `GET https://api.kie.ai/api/v1/chat/credit` with Bearer
+  auth — the FIGURE goes to the burn table, pass/fail goes to the transcript,
+  **never a key value**, and never into the capacity profile. A balance that
+  cannot be read is `UNDETERMINED` in the burn table with a warning — never
+  reported as zero. This is the kie ceiling: a prepaid token-balance class, so it
+  behaves like OpenRouter's, not like a concurrency ceiling.
+- **Agnes media liveness:** no cheap documented liveness endpoint has been found
+  (wiki index, quickstart and FAQ checked 2026-08-12) — presence-only until one
+  is; recorded as UNDETERMINED rather than assumed live.
+- **The smoke test is the real proof.** A key that is present but fails its first
+  cheapest generation is NOT USABLE NOW: say which check failed (pass/fail, never
+  values), try the other rung of the ladder, and never batch against an unproven
+  key.
 
 ### OpenRouter
 - Check for `OPENROUTER_API_KEY`. If present, estimate the **token burn** of the
@@ -1031,7 +1086,7 @@ defaulted.
 | 1 | Harness + launcher (claude / claude-nine / claude-codex) | M-RUN | Filesystem and session-env checks, milliseconds. Wrong ⇒ the whole interview branch and the budget math are wrong. |
 | 2 | Cores → per-workflow width min(16, cores−2) | M-RUN | `/usr/sbin/sysctl -n hw.ncpu` (note: `/usr/bin/sysctl` returns rc=127 — a shell abort, never an answer) or `nproc`. Never inherited, never remembered. |
 | 3 | Role→alias→model resolution | M-RUN | Read from the live session env / config (section 11). **This is exactly what the operator rewires between projects** — a cached copy is lying within one rewire. The profile may NEVER be a source for it. The alias map is one of TWO pool inputs, not the pool (row 21). |
-| 4 | Which providers are wired (key PRESENCE, by name) | M-RUN | `tools/env-sweep.sh`. Wrong ⇒ the interview asks about accounts that do not exist, or misses ones that do. |
+| 4 | Which providers are wired (key PRESENCE, by name) — **including the two media keys** (`KIE_API_KEY`/`KIE_AI_API_KEY`, `AGNES_AI_API_KEY`/`AGNES_API_KEY`) | M-RUN | `tools/env-sweep.sh`. Wrong ⇒ the interview asks about accounts that do not exist, or misses ones that do. **Media-key presence is this row's class and is FORBIDDEN in the profile**: it is re-taken at every decision it gates (13.5) — media planning, each media batch, and immediately when a user says they have just placed one. A key added mid-run to a store the sweep sources is found by re-running the sweep; a stale reading is never argued from. |
 | 5 | Key LIVENESS (GitHub, DeepSeek, Vercel, GHL) | M-RUN | Smoke tests, pass/fail only, never values. An expired key found at hour 6 costs a night; found at minute 1 costs a sentence. |
 | 6 | 9Router liveness | M-RUN + on error clusters | Loopback probe at run start; re-probe only when one provider's errors cluster (section 6.1). A router being down is a fact about NOW, never about the config. |
 | 7 | Context window per resolved model | M-RUN via research, cached per project in the ledger; re-verified on a STALE RESUME (`[RESEARCHED]` date older than 7 days) | Drifts slowly; being wrong is silent data loss through mis-set autocompact. |
@@ -1049,10 +1104,11 @@ defaulted.
 | 19 | Session agent budget remaining · gauntlet counters | Internal counters in `project_state.json`, audited by the reconciler | Self-measured; never profiled. |
 | 20 | Ultracode gate | M-RUN (GATE 0) | Unchanged. |
 | 21 | Router MODEL POOL (the gateway's model list + per-seat callability + resolved-model verification) | M-RUN, re-taken at every seat-assignment decision | One local GET, seconds (section 11). Wrong ⇒ every independence finding and every per-seat ceiling is fiction, and a stale pool re-creates the four-slot fallacy. |
+| 22 | Media catalog + media pricing (kie families, members and credit costs; Agnes media models, tiers and meters) | M-RUN — web research at media-planning time, plus the smoke-test measurement; `creditsConsumed` from the run's own smoke is authoritative over every published page | A pinned media id or price is stale by the next catalog revision, and a promotional price expires unannounced. Selecting a media model selects a ceiling and a budget, so a stale catalog mis-sizes a real bill (13.8). |
 
-**The rule the table enforces: rows 1–11 and 21 may NEVER appear in the profile as
-inputs. Rows 12–17 are the profile's entire legitimate content. Row 18 lives
-nowhere but the project's own decision register.**
+**The rule the table enforces: rows 1–11, 21 and 22 may NEVER appear in the
+profile as inputs. Rows 12–17 are the profile's entire legitimate content. Row 18
+lives nowhere but the project's own decision register.**
 
 ### 13.2 Provenance marks — making staleness visible
 
@@ -1089,7 +1145,23 @@ between boxes, never synced by a fleet roll.** A backup
 and the backup path is stated in the same message as the write.
 
 It stores rows 12–17 only, each as `{ value, source, answered_at,
-last_confirmed_at, confirm_count }`, plus a `config_fingerprint` block whose
+last_confirmed_at, confirm_count }` — **and exactly one media entry,
+`MEDIA_PROVIDER_PREF` (`kie` | `agnes`)**, which is a cross-project user
+preference of precisely row 17's class: recalled as the OFFERED default in the
+both-keys question ("last time you preferred Kie.ai — same again?"), never
+silently applied. `tools/capacity-profile.sh` enforces the allowlist
+mechanically, so this entry exists there or it does not exist at all — an
+enforced allowlist does not grow by implication.
+
+**Explicitly REFUSED, so nobody optimises them in later:** media-key PRESENCE
+(row 4, measured every run); "wants media / does not want media" (row 18 — a
+funnel needs pictures and the same client's API tool does not, so it is
+per-project taste and lives in that project's decision register); and any
+pre-authorisation of the gated premium media tier, which is **never storable
+anywhere** — that gate is per-generation by standing rule, and a remembered yes
+is exactly the spend-without-consent this section exists to prevent.
+
+Alongside those, a `config_fingerprint` block whose
 `inputs` list exists ONLY so a mismatch can be NAMED in plain words ("your builder
 used to point at one model; now it points at another"). **The fingerprint is a
 comparator, never a source: no run may read a capacity value out of it.**
@@ -1101,10 +1173,11 @@ not by good intentions:**
   `KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL`; no value matching a known secret shape;
   no value over 64 characters. The write REFUSES, exits 2, and names the offending
   KEY only — never the value.
-- **Anything in rows 1–11 or 21**: balances, rate counts, burn figures, core
+- **Anything in rows 1–11, 21 or 22**: balances, rate counts, burn figures, core
   counts, harness/launcher, resolved aliases (outside the fingerprint
-  comparator), key liveness, context windows, Agnes rate rules, router state, the
-  model pool. Measured things are measured.
+  comparator), key liveness (media keys included), context windows, Agnes rate
+  rules, router state, the model pool, the media catalog and its prices.
+  Measured things are measured.
 - **Row 18's answers** — per project, in that project's decision register only.
 - **Client names or any cross-client material.** The profile describes accounts on
   THIS box for THIS user.
@@ -1248,3 +1321,104 @@ attached (never persuasion, no second ask) → CONSENT, one question, once.
 - **Absent client (unattended start):** R4/R5 findings that make the build
   impossible stop it honestly before dispatch; R1–R3, R6, R7 proceed conservative
   with the finding queued for the human and marked in the ledger.
+
+### 13.8 Media meters and the media catalog
+
+A generated image or clip is a Capacity Ledger line, never an invisible cost.
+Everything in this subsection is the same doctrine as the rest of section 13,
+applied to pictures: **selecting a media model selects a ceiling and a budget**,
+exactly as selecting a judge's model does (section 11's rule). The pipeline
+itself — providers, families, prompts, the detection ladder and its ask — lives
+in `references/media-pipeline.md`; what lives HERE is the arithmetic and the
+freshness contract.
+
+**The ceiling classes (exhibit figures dated 2026-08-12 — VERIFY-LIVE, never
+recited):**
+
+| Provider path | Ceiling class | Governing figure (exhibit) | Instrument |
+|---|---|---|---|
+| kie.ai (all media) | **prepaid credit balance** — the token-balance class, like OpenRouter's | the account's current credit count | `GET https://api.kie.ai/api/v1/chat/credit`, M-RUN before each batch and M-TICK at wave boundaries; figure to the burn table, **never the profile** |
+| Agnes images | **images-per-day meter** | 4,000 per day, documented for all named tiers `[RESEARCHED wiki.agnes-ai.com/en/docs/tokenplan.md 2026-08-12]` | the run's own image count against the researched cap |
+| Agnes video | **video-seconds-per-day meter** | 500 seconds per day, same source | the run's own generated-seconds count |
+| Agnes text (existing) | requests per 5-hour window, plus a weekly cap | section 2's rows, plus weekly caps carried by the live tier names | the existing burn machinery, with the weekly axis added |
+
+**THREE METERS, ONE PROVIDER — and they are never conflated.** An Agnes IMAGE
+draws the images-per-day meter. An Agnes CLIP draws the video-seconds-per-day
+meter. Neither draws the 5-hour text request window. An LLM seat on `agnes/*`
+and the media pipeline on Agnes therefore do NOT compete for the same figure —
+the one open question is whether polling GETs bill against the request window,
+which is UNDETERMINED and conservatively capped in `media-pipeline.md` until a
+run settles it. Adding these three numbers together, or charging a picture to
+the request window, is the "selecting a model is selecting a ceiling" failure in
+its media form: wrong meter ⇒ wrong ceiling class ⇒ wrong budget.
+
+**Two corrections of record, carried here because the arithmetic depends on
+them:** the daily video allowance is **500 seconds, not 800** (the 800 was an
+unverified note; tokenplan.md is the source and the date is above); and Agnes's
+own current documentation names its tiers **Starter / Plus / Pro** with weekly
+caps as well as the 5-hour window, so the free/$40/$100 mapping is remembered
+plan MEMBERSHIP (row 12), not doctrine.
+
+**The ledger line.** Every planned batch is written BEFORE it dispatches, in the
+section 4 template's MEDIA block (the swarm watch enforces this as **S14** —
+SKILL.md, RULE 5):
+
+```
+MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from the smoke test>
+      | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units>
+      | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day>
+      | gate=<none|consent-required> | proof=<smoke ISO8601>
+```
+
+Every executed generation then RECONCILES: kie's task record carries
+`creditsConsumed`, and actual-versus-estimate feeds the burn table. **A per-item
+underestimate of more than 25% re-estimates the remainder of the batch BEFORE it
+dispatches, and the new total is said out loud** — a two-hundred-image funnel is
+a real bill, and the moment to mention it is before it is spent.
+
+**The price instrument, ranked** (higher rank always wins):
+
+1. **`creditsConsumed` from the run's own smoke test** — measured, authoritative.
+2. The model's own documentation page.
+3. The provider's pricing page, web-researched this run.
+4. Third-party comparisons — lowest rank, and **never the sole support for a
+   spend-consent question when rank 1 is obtainable.**
+
+Agnes prices come from its model docs' own price lines, re-read every run:
+**a promotional price is a price with an expiry nobody announces.**
+
+**Provenance marks are mandatory on media figures, exactly as everywhere else** —
+`[MEASURED creditsConsumed <ISO8601>]`, `[RESEARCHED <doc url> <date>]`,
+`[ASSUMED <why> <ISO8601>]`, `[UNDETERMINED <what was checked>]`. One case is
+called out because it is easy to launder into a fact: **"about one image a
+minute" is NOT a documented rate.** No provider documents it. It is an
+operator's planning estimate and it enters the ledger as
+`[ASSUMED operator-estimate — no documented rate <ISO8601>]`, then is REPLACED by
+measurement — time the run's own first three generations and re-plan the batch
+from the wall clock. Measurement beats memory here as everywhere (P1).
+
+**The tripwire (extending 13.6).** An Agnes **402** (balance or quota
+insufficient) arriving while the run's own day-count is still below the claimed
+4,000 means the CLAIM is wrong — a promotion ended, the plan differs, or the
+account is shared. Downgrade to measured reality NOW: REVISION line
+`trigger=tier-tripwire`, `CAPACITY-EVENT … event=quota-exhausted`, and a plain
+note queued for the user. **Never the reverse — a tripwire only ever shrinks a
+claim, never restores one.** A kie balance below the remaining batch estimate
+fires `event=balance-low` on the same ladder. Media lanes inherit the overnight
+capacity policy: throttle, then park the media lane, never abandon silently.
+
+**Concurrency.** Agnes image batches size to the budgeted requests-per-minute
+after reserve AND to the daily meter's remaining count, whichever is smaller;
+kie batches size to balance ÷ measured per-item cost, reserve applied. **The 25%
+reserve doctrine applies to media meters exactly as it applies to request
+windows** (Law 44) — never consume the last of a day's allowance any more than
+the last of a window's.
+
+**Freshness classification, in one line each.** Media-key PRESENCE is row 4:
+measured every run, re-taken at every decision it gates, FORBIDDEN in the
+profile. The media catalog and its prices are row 22: researched every run,
+smoke-measured, never pinned. `MEDIA_PROVIDER_PREF` is the single media entry the
+profile may hold, at row 17's class — an offered default, never silently applied
+(13.3). Everything else about media — whether this project wants it, and any
+permission to spend on the premium tier — is per-project or per-generation and is
+stored in neither the profile nor anywhere else.
