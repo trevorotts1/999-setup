@@ -297,8 +297,9 @@ and they are almost certainly wrong for whoever is running this skill, on this
 run, in this class. Example only — MiniMax context window "512k not 1M" (a
 real gap between the marketed figure and the delivered one, which is *why* you
 check instead of assuming); GLM 5.2 Haiku output example "64k". Example only —
-rate limits: a Gemini free tier example "20/min", a $40-tier example
-"1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example "3
+rate limits: a Gemini free tier example "20/min", an Agnes $40/year-tier example
+"1500/5h", an Agnes $100/year-tier example "7500/5h" (Agnes tiers are ANNUAL
+prices, not monthly); an Ollama Cloud $20-tier example "3
 concurrent", a $100-tier example "10 (use 8)". Re-verify every one of these
 against the actual provider docs and the actual account before writing any
 number into the execution plan. Check budget (OpenRouter/DeepSeek balance vs a
