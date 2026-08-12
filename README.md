@@ -126,6 +126,7 @@ pin effort on purpose for a single launch, run `CLAUDE_NINE_FORCE_EFFORT=xhigh c
 
 ```text
 launchers/                     platform-native claude-nine launchers
+                               (macOS also ships claude-codex — Codex-pinned)
 .claude/skills/nine-router-setup/
     SKILL.md                   the personal Claude Code skill (repair/re-run)
     references/                architecture, security, API, troubleshooting docs

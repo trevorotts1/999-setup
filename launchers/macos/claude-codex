@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# claude-codex — macOS launcher: claude-nine pinned to the Codex (ChatGPT
+# subscription) model. It does not talk to 9Router itself; it resolves the
+# installed claude-nine and execs it with two extra flags, so every guarantee
+# claude-nine makes (localhost-only router, Keychain token, never launching
+# unrouted) is inherited unchanged.
+#
+# Same profile as claude-nine: same skills, memory, projects and history. The
+# ONLY differences are the model and the auto-compact window.
+#
+# REQUIRES A CODEX PROVIDER IN 9ROUTER. The 999 setup wires DeepSeek Direct,
+# Ollama Cloud, Agnes AI and (optionally) OpenRouter — it does NOT wire a `cx/`
+# provider. This launcher is installed ready for operators who have added one;
+# without it the router answers with an unknown-model error naming the route
+# below. Add the provider in the 9Router dashboard, or keep using claude-nine.
+#
+# WHY THE 350K WINDOW:
+#   9Router reports cx/gpt-5.6-sol with a 372,000-token context window. Claude
+#   Code has no per-model context setting — the context ceiling it believes it
+#   has is one global value for the whole profile (CLAUDE_CODE_MAX_CONTEXT_TOKENS
+#   where a profile sets one; some 999 profiles set it as high as 900000, which
+#   is correct for DeepSeek v4-flash's ~917K real ceiling but far above Codex's).
+#   A Codex session inheriting a ceiling larger than its own would wait for a
+#   compaction trigger that can never arrive, hit Codex's 372K wall, and die with
+#   no compaction having run.
+#
+#   --autocompact is per LAUNCH, so it gives the per-model behaviour the global
+#   setting cannot: compact at 350K, ~22K clear of the wall. The slack matters
+#   because compaction itself has to send the conversation to summarise it;
+#   triggering flush against the ceiling makes the cleanup the thing that fails.
+#
+#   If you switch models mid-session with /model, this window does NOT follow —
+#   it is fixed for the launch. Use /autocompact <n> to change it in place.
+#
+# OTHER CODEX MODELS have different ceilings — change BOTH values together:
+#   cx/gpt-5.6-sol                372K  -> --autocompact 350k
+#   cx/gpt-5.5, cx/gpt-5.4        400K  -> --autocompact 375k
+#   cx/gpt-5.6-terra, ...-luna    272K  -> --autocompact 250k
+#
+# Anything you pass through still works: claude-codex -p "...", --resume, etc.
+#
+# Never echoes API keys, the router token, or the dashboard password.
+set -euo pipefail
+
+CODEX_MODEL="cx/gpt-5.6-sol(high)"
+CODEX_AUTOCOMPACT="350k"
+
+# Resolve the installed claude-nine the same way claude-nine resolves the
+# binaries it depends on: explicit override, then PATH, then the known install
+# location this repo's installer uses. PATH first keeps a relocated install
+# working; the fallback keeps it working when claude-codex is invoked from a
+# context with a minimal PATH (cron, launchd, a non-login shell).
+CLAUDE_NINE_BIN="${CLAUDE_NINE_BINARY:-}"
+if [ -z "$CLAUDE_NINE_BIN" ] || [ ! -x "$CLAUDE_NINE_BIN" ]; then
+  CLAUDE_NINE_BIN="$(command -v claude-nine 2>/dev/null || true)"
+fi
+if [ -z "$CLAUDE_NINE_BIN" ] || [ ! -x "$CLAUDE_NINE_BIN" ]; then
+  CLAUDE_NINE_BIN="$HOME/.local/bin/claude-nine"
+fi
+if [ ! -x "$CLAUDE_NINE_BIN" ]; then
+  echo "claude-codex: claude-nine not found (looked at \$CLAUDE_NINE_BINARY, PATH, and $HOME/.local/bin/claude-nine)." >&2
+  echo "Re-run /nine-router-setup to install it, then try again." >&2
+  exit 1
+fi
+
+# Guard against a claude-nine that resolves back to this file (a bad symlink or
+# a copy installed under the wrong name) — that would recurse until the shell
+# runs out of processes instead of failing with something readable.
+if [ "$(cd "$(dirname "$CLAUDE_NINE_BIN")" && pwd)/$(basename "$CLAUDE_NINE_BIN")" = "$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" ]; then
+  echo "claude-codex: resolved claude-nine is this same file ($CLAUDE_NINE_BIN); refusing to recurse." >&2
+  echo "Re-run /nine-router-setup to reinstall both launchers." >&2
+  exit 1
+fi
+
+echo "🧠 claude-codex — claude-nine pinned to $CODEX_MODEL (autocompact $CODEX_AUTOCOMPACT)" >&2
+
+exec "$CLAUDE_NINE_BIN" \
+  --model "$CODEX_MODEL" \
+  --autocompact "$CODEX_AUTOCOMPACT" \
+  "$@"
