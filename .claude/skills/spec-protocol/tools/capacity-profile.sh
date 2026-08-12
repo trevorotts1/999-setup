@@ -9,7 +9,7 @@
 #
 # THE DESIGN PRINCIPLE (references/capacity.md §13, the freshness contract):
 #   MEASUREMENT BEATS MEMORY WHENEVER MEASUREMENT IS AFFORDABLE.
-# The operator does not rewire mid-project — he rewires BETWEEN projects. So
+# The operator does not rewire mid-project — only BETWEEN projects. So
 # configuration is stable WITHIN a run and may be completely different BETWEEN
 # runs. Anything a command can reveal in seconds is MEASURED every run and is
 # FORBIDDEN here. This file remembers only what no command can observe:
@@ -71,7 +71,7 @@
 #      project; they live in that project's decision register only.
 #   4. CLIENT NAMES or any cross-client material. This profile describes
 #      accounts on THIS box for THIS user.
-#   5. FREE-TEXT NOTES ABOUT THE USER. It stores answers he gave, and nothing
+#   5. FREE-TEXT NOTES ABOUT THE USER. It stores the answers given, and nothing
 #      editorializing.
 #
 # THE FINGERPRINT is a COMPARATOR, NEVER A SOURCE. config_fingerprint.inputs

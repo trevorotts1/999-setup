@@ -46,6 +46,10 @@ OPENCLAW_ENV="${HOME}/.openclaw/.env"
 # ~/.env store control.
 USER_ENV="${HOME}/.env"
 NINE_ROUTER_DIR="${HOME}/.config/9router"
+# Project-local .env is deliberately NOT a store (operator ruling 2026-08-12):
+# it lives inside the project's git repo, and one careless commit publishes
+# every secret in it. Home-level stores only; the report's "Not searched" line
+# is documented intent, not a gap.
 PROJECT_ENV=".env"
 PROJECT_ENV_LOCAL=".env.local"
 SHELL_ENV_FILE="/dev/null"  # We source live env, not a file for this

@@ -170,6 +170,8 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
 | **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
 | **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
+| **S15 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class |
+| **S16 — Video duration fit** | Every video work item's requested duration is validated against the seated model's duration×RESOLUTION table at SPEC time — as a pair, never on either axis alone — and every video estimate prices the BILLED unit, not a pro-rata second (references/media-pipeline.md 6d, references/capacity.md 13.8) | An item dispatched past its ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip parent without a stitch-or-gap answer (ffmpeg detected by execution, or NEEDS-JOINING declared) is not dispatchable |
 
 ---
 
@@ -303,7 +305,7 @@ actually resolved to.
 
 | Role | Requirement — resolved per run (default lane) | Why / caps |
 |------|---------------|------------|
-| App builder | **REQUIREMENT: the strongest available lane** — Trevor's decided law, stated verbatim: "strongest available lane; on his wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| App builder | **REQUIREMENT: the strongest available lane** — the operator's decided law, stated verbatim: "strongest available lane; on [the operator's] wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
 | Technical + release judge | **REQUIREMENT:** rubric-depth verdict capability, and it MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder — by the FAMILY RULE: strip the provider prefix and the thinking/pricing/version suffixes, then compare base ids; same-base lanes differing only in thinking level are ONE model. Default lane: `Sonnet`. | Enough concurrency for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1), less the 25% reserve. **Read the CEILING CLASS off the RESOLVED model, never off the lane** — a DeepSeek node bills a concurrency ceiling, an Agnes node bills a requests-per-5-hours window, an OpenRouter node bills token balance. Wrong model ⇒ wrong ceiling CLASS ⇒ wrong burn budget. Different alias names prove nothing. |
 | QC + fixer | **REQUIREMENT:** strong enough to find gaps, defects, blockers and improvements AND to fix them; where this seat also serves as a review seat, it inherits that seat's independence constraint. Default lane: `Fable`. | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | **REQUIREMENT:** reliable at low concurrency on mechanical work; no independence constraint. Default lane: `Haiku`. | Low load, fine at 8–10 concurrent. |
@@ -313,7 +315,7 @@ actually resolved to.
 EXHIBIT, never an input.** These are the lane→model wirings that used to be
 pinned in the table above, kept for what they TEACH and stripped of all
 authority. On the operator's own box: `Opus` resolved to DeepSeek v4 Flash
-(thinking max), provider ceiling 2,500 concurrent subagents (Trevor's doctrine);
+(thinking max), provider ceiling 2,500 concurrent subagents (the operator's doctrine);
 `Sonnet` to DeepSeek v4 Pro, ceiling 500 concurrent; `Fable` to Qwen 3.8; `Haiku`
 to GLM 5.2. **Three of those four are already wrong for the wiring this repo's
 own installer ships**, which puts Agnes 2.5 Flash on `sonnet` (a
@@ -409,7 +411,7 @@ and they are almost certainly wrong for whoever is running this skill, on this
 run, in this class. Example only — MiniMax context window "512k not 1M" (a
 real gap between the marketed figure and the delivered one, which is *why* you
 check instead of assuming); GLM 5.2 Haiku output example "64k". Example only —
-rate limits: an Agnes free-tier example "20/min" (Trevor-confirmed — this figure
+rate limits: an Agnes free-tier example "20/min" (operator-confirmed — this figure
 belongs to Agnes free, not to any other provider), an Agnes $40/year-tier example
 "1500/5h", an Agnes $100/year-tier example "7500/5h" (Agnes tiers are ANNUAL
 prices, not monthly); an Ollama Cloud $20-tier example "3
@@ -494,10 +496,14 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** Up to twenty-two questions, four
-   blocks (capacity, repositories, loop shape, the measuring stick), one at a time, with the expected
-   count stated up front ("about nineteen short questions, then you can walk
-   away"). The two fast paths can shrink it: the archetype defaults offer and the
+6. **Capacity interview (Claude-Nine only).** Twenty-three lettered questions in
+   four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8,
+   B1–B4, C0–C6, D1–D4 — of which **at most twenty-two are ever asked on an
+   ATTENDED run**, because C6 is the twenty-third and fires only when C0 says the
+   run is unattended. One at a time, with the expected count stated up front
+   ("about nineteen short questions, then you can walk away" — A1 is usually
+   measured rather than asked, and the two fast paths fold blocks B and C into
+   confirmations; `references/interview.md` owns the reconciliation). The two fast paths can shrink it: the archetype defaults offer and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
@@ -538,7 +544,11 @@ When the operator provides a folder, that folder IS the project. Its documents A
     METERS: the media catalog researched and smoke-tested at media-planning time,
     and the ceiling each planned batch draws — the kie credit balance, or Agnes's
     images-per-day and video-seconds-per-day meters, which are separate from each
-    other and from the text request window (`references/capacity.md` 13.8). A
+    other and from the text request window (`references/capacity.md` 13.8) — and
+    the media PERSISTENCE fields (`stored=`, `perm-url=`, `persist-proof=`) on
+    every MEDIA line, because a media item is not done until its asset is durable
+    and its permanent URL is recorded (`references/media-pipeline.md` section 13;
+    enforced as S15). A
     seat then resolves one of
     two ways, and the ledger records which: **LANE** — role → alias → resolved
     model, the three hops; or **DIRECT** — role → a capability-selected model
