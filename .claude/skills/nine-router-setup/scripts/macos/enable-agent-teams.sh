@@ -23,6 +23,26 @@
 #       required" (https://code.claude.com/docs/en/agent-teams.md). P0 runs
 #       AFTER the version gate, so a version-blocked run probes nothing and
 #       still reports TMUX: NOT CHECKED rather than a finding it never made.
+#       DETECTION IS AN INVOCATION, NEVER A NAME LOOKUP. P0 RUNS `tmux -V`,
+#       captures its stdout and its stderr, and reads its EXIT CODE. PRESENT
+#       means rc 0 AND a version string on stdout — nothing less. `command -v`
+#       proves a NAME resolves and never that the program runs, so it decides
+#       nothing here: a name resolving to a broken, half-installed, or
+#       wrong-architecture binary would otherwise get `teammateMode: "tmux"`
+#       written against a program that cannot start, which is the exact failure
+#       this phase exists to prevent.
+#       When the probe fails, P0 records WHY, and the two reasons are DIFFERENT
+#       FACTS that the report keeps apart instead of blurring into "missing":
+#         rc 127       NAME DID NOT RESOLVE — the shell found nothing to run.
+#                      A shell abort, not a program's verdict about anything.
+#         any other rc RESOLVED BUT FAILED TO RUN — a binary WAS found, it ran,
+#                      and it failed. Something IS installed and it is broken.
+#       Either way the outcome is ABSENT and teammateMode is omitted; only the
+#       sentence in the report differs, because only the sentence should.
+#       (references/agent-team.md §5.5 steps 4-5: a split-pane host is PROVEN
+#       PRESENT BY RUNNING IT — `tmux -V`, with its exit code read.)
+#       P0 is also placed ahead of P2 so that P2's read-only session listing
+#       consumes this PROOF instead of resolving the name a second time.
 #   P1  read-only Claude Code version check (floor 2.1.178). Never runs the
 #       Claude Code self-update command, never reinstalls Claude Code — the
 #       operator decides when to update, never this script.
@@ -32,9 +52,12 @@
 #   P4  MERGE "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" into the existing
 #       "env" object of EVERY root — add/update ONLY that key.
 #   P5  MERGE top-level "teammateMode": "tmux" into every root — ONLY when P0
-#       PROVED tmux is present. A display mode is never pointed at an absent
-#       binary: with no tmux the key is not written at all and Claude Code's
-#       built-in in-process display mode applies. If P6 installs tmux, P5 is
+#       PROVED tmux is present, and P0's proof is a real `tmux -V` run whose
+#       exit code was read, never a name that merely resolves. A display mode is
+#       never pointed at an absent binary: with no tmux the key is not written at
+#       all and Claude Code's built-in in-process display mode applies. Nor is it
+#       ever pointed at a binary that resolves but cannot run — that case is
+#       treated as ABSENT, identically. If P6 installs tmux, P5 is
 #       re-run per root so the written mode matches reality.
 #   P6  tmux: already installed -> record the path, never reinstall. Absent and
 #       Homebrew present -> `brew install tmux`. Absent and no Homebrew ->
@@ -42,7 +65,10 @@
 #       display mode) and keep validating. Homebrew is NEVER installed here
 #       (repo rule 11) — that rule is unchanged; only the wording of the
 #       outcome changed, from "blocked" to "degraded", because tmux absence
-#       does not block Agent Teams.
+#       does not block Agent Teams. A tmux that P6 installs here is RE-PROVED
+#       the same way P0 proves one — by RUNNING `tmux -V` — so a `brew install`
+#       that reports success while leaving nothing runnable is caught at this
+#       step and reported as ABSENT rather than believed.
 #   P7  timestamped backup of ~/.tmux.conf when it exists.
 #   P8  ensure the three Claude Code tmux lines exist, idempotently, never
 #       duplicated, never replacing an existing conflicting choice. Written
@@ -135,7 +161,9 @@ log() { printf '[enable-agent-teams] %s\n' "$*" >&2; }
 
 usage() {
   # The whole header block, through the Usage and Exit codes sections.
-  sed -n '2,93p' "$0" >&2
+  # The end line tracks the header: it currently ends on the "2  tooling
+  # failure" exit-code line, immediately above `set -euo pipefail`.
+  sed -n '2,119p' "$0" >&2
   exit 2
 }
 
@@ -178,6 +206,106 @@ make_backup() {
   done
   cp -p "$src" "$b"
   printf '%s' "$b"
+}
+
+# ---------------------------------------------------------------------------
+# PROVING A PROGRAM IS THERE — BY RUNNING IT
+#
+# THE BINDING RULE: `command -v` proves a NAME resolves, and NEVER that the
+# program runs. A split-pane host is therefore proven the only way a program can
+# honestly be proven — by INVOKING it and READING ITS EXIT CODE.
+# (references/agent-team.md §5.5 steps 4-5.)
+#
+# There is no iTerm2 / `it2` split-pane detection anywhere in this script — it
+# has never had one, so there was no name-based it2 probe to convert. If one is
+# ever added it goes through run_version_probe below, exactly like tmux, and it
+# is PRESENT only on rc 0 with a version string on stdout. Never a name lookup.
+# ---------------------------------------------------------------------------
+
+# run_version_probe <program> <version-flag> — RUN it, capture stdout and stderr
+# SEPARATELY, and report the real exit code. Sets, in the caller's scope:
+#   PROBE_RC   the exit code actually observed (127 = the shell aborted because
+#              the name did not resolve; anything else non-zero means a program
+#              really ran and really failed — different facts, kept apart)
+#   PROBE_OUT  stdout only, trimmed of trailing newlines
+#   PROBE_ERR  stderr only, trimmed of trailing newlines
+# Returns the probed program's exit code. Nothing is signalled, started,
+# attached to, or torn down: `tmux -V` starts no server and touches no session.
+run_version_probe() {
+  local prog="$1" flag="$2" errf=""
+  PROBE_RC=0
+  PROBE_OUT=""
+  PROBE_ERR=""
+  errf="$(mktemp "${TMPDIR:-/tmp}/enable-agent-teams-probe.XXXXXX" 2>/dev/null || printf '')"
+  if [ -n "$errf" ]; then
+    set +e
+    PROBE_OUT="$("$prog" "$flag" 2>"$errf")"
+    PROBE_RC=$?
+    set -e
+    PROBE_ERR="$(cat "$errf" 2>/dev/null || true)"
+    rm -f "$errf"
+  else
+    # No writable temp file. Still RUN it — the exit code is the proof, and the
+    # missing stderr is reported as missing rather than silently invented.
+    set +e
+    PROBE_OUT="$("$prog" "$flag" 2>/dev/null)"
+    PROBE_RC=$?
+    set -e
+    PROBE_ERR="(stderr not captured: no writable temp file was available)"
+  fi
+  return "$PROBE_RC"
+}
+
+# path_label <program> — an absolute path FOR THE REPORT ONLY, and only ever
+# called AFTER that program has already been PROVEN to run by a real invocation
+# whose exit code was read. Name resolution is a LABEL here and is never the
+# proof; the proof is the exit code. An empty result is a missing label, never a
+# finding about the program.
+path_label() {
+  command -v "$1" 2>/dev/null || true
+}
+
+# probe_tmux — PROVE, BY RUNNING IT, whether a tmux split-pane host exists.
+# PRESENT means one thing only: `tmux -V` RAN, exited 0, and printed a version
+# string on stdout. Sets, in the caller's scope:
+#   TMUX_PRESENT        1 only when rc 0 AND a version string was printed
+#   TMUX_VERSION        that version string (empty when absent)
+#   TMUX_PROBE_RC       the exit code actually observed
+#   TMUX_ABSENT_REASON  WHY it is absent, distinguishing the two different facts
+#                       named in the header (rc 127 = the name did not resolve;
+#                       any other non-zero rc = it resolved, ran, and failed).
+#                       Empty when present.
+#   TMUX_BIN            the path, for the report only, and only once presence is
+#                       already proven. A label, never the proof.
+# Returns 0 when present, 1 when absent.
+probe_tmux() {
+  TMUX_PRESENT=0
+  TMUX_VERSION=""
+  TMUX_PROBE_RC=""
+  TMUX_ABSENT_REASON=""
+  TMUX_BIN=""
+  run_version_probe tmux -V || true
+  TMUX_PROBE_RC="$PROBE_RC"
+  if [ "$PROBE_RC" -eq 0 ] && [ -n "$PROBE_OUT" ]; then
+    TMUX_PRESENT=1
+    TMUX_VERSION="$PROBE_OUT"
+    TMUX_BIN="$(path_label tmux)"
+    if [ -z "$TMUX_BIN" ]; then
+      TMUX_BIN="(ran successfully; path not resolvable for display)"
+    fi
+    return 0
+  fi
+  if [ "$PROBE_RC" -eq 0 ]; then
+    TMUX_ABSENT_REASON="RAN AND EXITED 0 BUT PRINTED NO VERSION STRING (rc 0, empty stdout) — not a usable tmux, so it is treated as ABSENT"
+  elif [ "$PROBE_RC" -eq 127 ]; then
+    TMUX_ABSENT_REASON="NAME DID NOT RESOLVE (rc 127 — the shell found nothing to run; a shell abort, not a program's verdict)"
+  else
+    TMUX_ABSENT_REASON="RESOLVED BUT FAILED TO RUN (rc $PROBE_RC — a tmux binary WAS found and executing it failed; something is installed and it is broken)"
+  fi
+  if [ -n "$PROBE_ERR" ]; then
+    TMUX_ABSENT_REASON="$TMUX_ABSENT_REASON [stderr: $(printf '%s' "$PROBE_ERR" | tr '\n' ' ')]"
+  fi
+  return 1
 }
 
 resolve_node() {
@@ -548,6 +676,34 @@ main() {
     R_MAILBOX="BELOW $MAILBOX_MIN_VERSION — teammates can be spawned, but ListAgents/SendMessage are unavailable"
   fi
 
+  # ---- P0. TMUX DETECTION — DISPLAY MODE ONLY, READ-ONLY -------------------
+  # tmux is NOT required for Agent Teams. The documented default display mode is
+  # in-process and needs no extra setup; teammateMode selects DISPLAY ONLY.
+  # This probe decides whether P5 may write teammateMode at all: a display mode
+  # is never pointed at an absent binary.
+  #
+  # THE PROBE IS AN INVOCATION. `tmux -V` is RUN and its EXIT CODE is read;
+  # PRESENT requires rc 0 AND a version string on stdout. `command -v` proves a
+  # NAME resolves and never that the program runs, so it decides nothing here —
+  # a name resolving to a binary that cannot start would otherwise get
+  # teammateMode written against a program that cannot start.
+  #
+  # This phase now runs BEFORE P2, so P2's read-only session listing uses this
+  # PROOF rather than resolving the name a second time. It is still AFTER the
+  # version gate, so a version-blocked run still probes nothing at all and still
+  # reports TMUX: NOT CHECKED rather than a finding it never made.
+  local TMUX_PRESENT=0 TMUX_VERSION="" TMUX_PROBE_RC="" TMUX_ABSENT_REASON="" TMUX_BIN=""
+  local WRITE_TEAMMATE_MODE=0
+  probe_tmux || true
+  if [ "$TMUX_PRESENT" -eq 1 ]; then
+    WRITE_TEAMMATE_MODE=1
+    log "P0 display-mode detection: tmux PROVED PRESENT BY RUNNING IT — \`tmux -V\` exited 0 and printed \"$TMUX_VERSION\" ($TMUX_BIN) — teammateMode will be set to \"$TEAMMATE_MODE\""
+  else
+    WRITE_TEAMMATE_MODE=0
+    log "P0 display-mode detection: tmux ABSENT — $TMUX_ABSENT_REASON"
+    log "P0 display-mode detection: teammateMode will NOT be written (in-process display mode applies)"
+  fi
+
   # ---- P2. INSPECT CURRENTLY RUNNING WORK (READ-ONLY) ----------------------
   # The procedure's `ps aux | grep '[c]laude'`, written with awk so the result
   # never depends on how `grep` resolves in the caller's environment.
@@ -560,7 +716,9 @@ main() {
     *) R_ACTIVE="YES ($CLAUDE_PROCS Claude-related processes observed; none touched)" ;;
   esac
   TMUX_SESSIONS=""
-  if command -v tmux >/dev/null 2>&1; then
+  # Gated on P0's PROOF, not on a name: asking a binary that cannot run to list
+  # sessions tells you nothing, and a name that resolves is not a running tmux.
+  if [ "$TMUX_PRESENT" -eq 1 ]; then
     TMUX_SESSIONS="$(tmux list-sessions 2>/dev/null || true)"
   fi
   log "Read-only inspection: $R_ACTIVE"
@@ -569,21 +727,6 @@ main() {
     printf '%s\n' "$TMUX_SESSIONS" | while IFS= read -r l; do log "  $l"; done
   fi
   # Regardless of what was found: ASSUME ACTIVE WORK MUST BE PRESERVED.
-
-  # ---- P0. TMUX DETECTION — DISPLAY MODE ONLY, READ-ONLY -------------------
-  # tmux is NOT required for Agent Teams. The documented default display mode is
-  # in-process and needs no extra setup; teammateMode selects DISPLAY ONLY.
-  # This probe decides whether P5 may write teammateMode at all: a display mode
-  # is never pointed at an absent binary.
-  local TMUX_BIN WRITE_TEAMMATE_MODE=0
-  TMUX_BIN="$(command -v tmux 2>/dev/null || true)"
-  if [ -n "$TMUX_BIN" ]; then
-    WRITE_TEAMMATE_MODE=1
-    log "P0 display-mode detection: tmux present ($TMUX_BIN) — teammateMode will be set to \"$TEAMMATE_MODE\""
-  else
-    WRITE_TEAMMATE_MODE=0
-    log "P0 display-mode detection: tmux absent — teammateMode will NOT be written (in-process display mode applies)"
-  fi
 
   # ---- P3. BACK UP CLAUDE CODE SETTINGS — PER ROOT -------------------------
   local B
@@ -607,35 +750,38 @@ main() {
   merge_all_roots
 
   # ---- P6. VERIFY TMUX ------------------------------------------------------
-  # TMUX_BIN was probed read-only in P0 and is re-probed here only if an install
-  # actually runs.
+  # P0 already PROVED the answer by RUNNING `tmux -V`. This phase re-proves it
+  # the same way, and only if an install actually runs — a `brew install` that
+  # reports success is a claim, and it is checked, not believed.
   local TMUX_INSTALLED_HERE=0
-  if [ -n "$TMUX_BIN" ]; then
-    R_TMUX="INSTALLED"
+  if [ "$TMUX_PRESENT" -eq 1 ]; then
+    R_TMUX="INSTALLED (PROVED BY RUNNING \`tmux -V\`: rc 0, \"$TMUX_VERSION\")"
     R_TMUX_PATH="$TMUX_BIN"
-    log "tmux already installed at $TMUX_BIN — not reinstalled"
+    log "tmux already installed at $TMUX_BIN ($TMUX_VERSION) — not reinstalled"
   elif [ "$ALLOW_INSTALL" -eq 1 ] && command -v brew >/dev/null 2>&1; then
-    log "tmux not found; Homebrew is present — installing tmux (no terminal or session is touched)"
+    log "tmux did not run ($TMUX_ABSENT_REASON); Homebrew is present — installing tmux (no terminal or session is touched)"
     if brew install tmux >&2; then
-      TMUX_BIN="$(command -v tmux 2>/dev/null || true)"
-      if [ -n "$TMUX_BIN" ]; then
-        R_TMUX="INSTALLED"
+      # RE-PROVE BY RUNNING IT. "brew said it worked" is not a proof that a
+      # program runs, and it is not accepted as one here.
+      probe_tmux || true
+      if [ "$TMUX_PRESENT" -eq 1 ]; then
+        R_TMUX="INSTALLED (installed here, then PROVED BY RUNNING \`tmux -V\`: rc 0, \"$TMUX_VERSION\")"
         R_TMUX_PATH="$TMUX_BIN"
         TMUX_INSTALLED_HERE=1
       else
-        R_TMUX="NOT INSTALLED (brew install reported success but tmux is not resolvable)"
+        R_TMUX="NOT INSTALLED (brew install reported success, but \`tmux -V\` still did not prove a runnable tmux: $TMUX_ABSENT_REASON)"
       fi
     else
       R_TMUX="NOT INSTALLED (brew install tmux failed — see the log above)"
     fi
   elif [ "$ALLOW_INSTALL" -eq 0 ]; then
-    R_TMUX="NOT INSTALLED (probed with command -v; install skipped: --no-install)"
+    R_TMUX="NOT INSTALLED (probed by RUNNING \`tmux -V\`: $TMUX_ABSENT_REASON; install skipped: --no-install)"
   else
     # Homebrew is NEVER installed by this task (repo rule 11 and the procedure).
-    R_TMUX="NOT INSTALLED (command -v tmux found nothing, and command -v brew found no Homebrew)"
+    R_TMUX="NOT INSTALLED (running \`tmux -V\` proved no usable tmux: $TMUX_ABSENT_REASON; and command -v brew found no Homebrew)"
   fi
 
-  if [ -z "$TMUX_BIN" ]; then
+  if [ "$TMUX_PRESENT" -ne 1 ]; then
     # DEGRADATION, NOT BLOCKAGE. tmux is a DISPLAY choice; Agent Teams are
     # enabled and fully usable without it in the in-process display mode.
     R_TMUX_MODE_LINE="$TMUX_DEGRADE_LINE"
@@ -646,9 +792,10 @@ main() {
   Everything else was still validated. Agent Teams are ENABLED and usable right
   now in the in-process display mode — Claude Code's documented default, which
   works in any terminal with no extra setup. Install tmux yourself whenever you
-  want split panes, then rerun this step to switch the display mode over."
+  want split panes, then rerun this step to switch the display mode over.
+  WHY tmux was judged absent, from the probe that RAN it: $TMUX_ABSENT_REASON"
   else
-    R_TMUX_MODE_LINE="tmux (split panes) — $TMUX_BIN"
+    R_TMUX_MODE_LINE="tmux (split panes) — $TMUX_BIN — $TMUX_VERSION (proved by running \`tmux -V\`)"
   fi
 
   # ---- P5 (reconciliation) -------------------------------------------------
@@ -817,7 +964,7 @@ main() {
   # teammates are displayed, so its absence downgrades the display, never the
   # readiness.
   if [ "$R_JSON" = "VALID" ]; then
-    if [ -n "$TMUX_BIN" ]; then
+    if [ "$TMUX_PRESENT" -eq 1 ]; then
       if [ "$R_TMUX_CONF" = "READY" ] || [ "$R_TMUX_CONF" = "RELOAD DEFERRED" ]; then
         R_READY="YES"
       else
@@ -843,7 +990,9 @@ main() {
   done
 
   printf '\nWHEN YOU ARE READY, open a SEPARATE NEW terminal window and run:\n\n'
-  if [ -n "$TMUX_BIN" ]; then
+  # Branch on the PROOF, never on a name: telling the operator to run a program
+  # that cannot start is the same defect one step further downstream.
+  if [ "$TMUX_PRESENT" -eq 1 ]; then
     printf '    tmux\n'
     printf '    claude --teammate-mode tmux\n'
     if [ "$NINE_CONFIGURED" -eq 1 ]; then
@@ -1085,29 +1234,47 @@ REPORT
 }
 
 # ---------------------------------------------------------------------------
-# --selftest — exercises the eight behaviours the safety envelope depends on, in
+# --selftest — exercises the nine behaviours the safety envelope depends on, in
 # a sandbox HOME. Touches nothing outside its own temp directory, installs
 # nothing, and never spawns or signals anything.
 #
 # Every case runs the script with HOME pointed at its own throwaway directory,
 # with an absolute NODE_BIN and BASH so the result never depends on the caller's
-# PATH, and with a FAKE tmux (a two-line no-op that never starts a server) so
-# the display-mode cases are deterministic on hosts with and without real tmux.
-# Case 7 deliberately runs with a sanitised PATH that resolves no tmux at all,
-# and refuses to render a verdict unless that control holds.
+# PATH, and with a FAKE tmux so the display-mode cases are deterministic on
+# hosts with and without real tmux. The fake ANSWERS `tmux -V` — because that is
+# now how the script proves presence — and does nothing at all for every other
+# invocation, so it never starts a server, never lists a session, and is never
+# signalled.
+#
+# Two cases carry their own CONTROL and refuse to render a verdict unless it
+# holds, because each is asserting a NEGATIVE about tmux:
+#   Case 7 runs with a sanitised PATH where the tmux NAME resolves to nothing at
+#          all; its control requires `tmux -V` to abort with rc 127.
+#   Case 9 runs with a PATH where the tmux NAME DOES resolve, to a binary that
+#          cannot run; its control requires BOTH halves of that — the name must
+#          resolve, and running it must fail — or the sandbox is not reproducing
+#          the defect and the case proves nothing.
 # ---------------------------------------------------------------------------
 
 selftest() {
-  local box fake nobin rc fails=0 total=8
+  local box fake nobin rc fails=0 total=9
   box="$(mktemp -d "${TMPDIR:-/tmp}/enable-agent-teams-selftest.XXXXXX")"
   fake="$box/bin"
   nobin="$box/nobin"
   mkdir -p "$fake" "$nobin"
   printf '#!/bin/sh\necho "2.1.227 (Claude Code)"\n' > "$fake/claude"
   chmod 755 "$fake/claude"
-  # A fake tmux: it resolves, it never starts a server, it never lists a
-  # session, it is never signalled. Presence is all the script probes for.
-  printf '#!/bin/sh\nexit 1\n' > "$fake/tmux"
+  # A fake tmux that is PROVABLE BY RUNNING IT, because that is how the script
+  # detects one: `tmux -V` prints a version and exits 0. EVERY OTHER invocation
+  # exits 1 without doing anything, so it never starts a server, never lists a
+  # session, and is never signalled.
+  cat > "$fake/tmux" <<'FAKETMUX'
+#!/bin/sh
+case "$1" in
+  -V) echo "tmux 3.5a"; exit 0 ;;
+esac
+exit 1
+FAKETMUX
   chmod 755 "$fake/tmux"
 
   local NODE_T BASH_T
@@ -1311,13 +1478,22 @@ JSON
   fi
 
   # 7. NO TMUX -> teammateMode ABSENT, degradation reported, NOT blocked.
-  #    CONTROL FIRST: the sanitised PATH must resolve no tmux at all, or this
-  #    case proves nothing and says so instead of rendering a verdict.
+  #    CONTROL FIRST, and run the same way the script now probes: `tmux -V`
+  #    under the sanitised PATH must abort with rc 127, the shell's "nothing to
+  #    run" code. A version printed, or any other exit code, means the sandbox
+  #    is not clean — this case then proves nothing and SAYS SO rather than
+  #    rendering a verdict. The control runs in a fresh `bash -c` so no command
+  #    hash from this shell can make the name resolve behind the sandbox PATH.
   local h7="$box/case7" SAFE_PATH="$nobin:/usr/bin:/bin"
+  local CTL7_OUT CTL7_RC=0
   mkdir -p "$h7/.claude"
   printf '{ "env": { "SENTINEL": "seven" }, "model": "seven-model" }\n' > "$h7/.claude/settings.json"
-  if PATH="$SAFE_PATH" command -v tmux >/dev/null 2>&1; then
-    printf 'FAIL  7. no-tmux degradation — CONTROL FAILED: tmux still resolves under the sandbox PATH, so the case is invalid\n'
+  set +e
+  CTL7_OUT="$(PATH="$SAFE_PATH" "$BASH_T" -c 'tmux -V' 2>&1)"
+  CTL7_RC=$?
+  set -e
+  if [ "$CTL7_RC" -ne 127 ]; then
+    printf 'FAIL  7. no-tmux degradation — CONTROL FAILED: `tmux -V` under the sandbox PATH exited %s (want 127); output: %s. tmux is reachable there, so the case is invalid\n' "$CTL7_RC" "$CTL7_OUT"
     fails=$((fails + 1))
   else
     rc=0
@@ -1335,10 +1511,14 @@ JSON
           && !has(s, "teammateMode")            // never a mode pointing at an absent binary
           && s.env.SENTINEL === "seven" && s.model === "seven-model"
           && rep.indexOf(process.env.DEGRADE) !== -1
+          // the WHY, and the RIGHT why: this is non-resolution, not a broken binary
+          && rep.indexOf("NAME DID NOT RESOLVE") !== -1
+          && rep.indexOf("rc 127") !== -1
+          && rep.indexOf("RESOLVED BUT FAILED TO RUN") === -1
           && rep.indexOf("INSTALLATION BLOCKED") === -1
           && /READY FOR A NEW AGENT-TEAM SESSION:\nYES/.test(rep);
         process.exit(ok ? 0 : 1);'; then
-      printf 'PASS  7. no tmux -> teammateMode stays ABSENT, teams still ENABLED, degradation not blockage (exit 0)\n'
+      printf 'PASS  7. no tmux -> teammateMode stays ABSENT, teams still ENABLED, degradation not blockage, reason reported as rc 127 non-resolution (exit 0)\n'
     else
       printf 'FAIL  7. no-tmux degradation (exit %s) — see %s\n' "$rc" "$h7/log.txt"
       fails=$((fails + 1))
@@ -1381,6 +1561,72 @@ JSON
   else
     printf 'FAIL  8. routed-profile model check (exit %s/%s) — see %s and %s\n' "$rc" "$rc8b" "$h8a/log.txt" "$h8b/log.txt"
     fails=$((fails + 1))
+  fi
+
+  # 9. A tmux NAME THAT RESOLVES TO A BINARY THAT CANNOT RUN IS *ABSENT*.
+  #    THE REGRESSION TEST FOR THE `command -v` DEFECT. Name resolution said
+  #    "tmux is here"; the binary exits non-zero the moment it is asked to do
+  #    anything. Detection by name would have written teammateMode: "tmux"
+  #    against a program that cannot start — a working setup turned into a
+  #    support call. Detection by INVOCATION must call this ABSENT, omit the
+  #    key, and report the degradation with the right reason.
+  #
+  #    CONTROL FIRST, BOTH HALVES, or the sandbox is not reproducing the defect:
+  #      (a) the NAME must RESOLVE under this PATH — checked with `type -P`,
+  #          which is the trap being tested, used here deliberately to prove the
+  #          trap is armed, and never as the script's own presence proof; and
+  #      (b) RUNNING it must FAIL with rc 3.
+  #    If either half does not hold, no verdict is rendered and the case says so.
+  local h9="$box/case9" broken="$box/brokenbin" BROKEN_PATH RESOLVED_TO
+  local CTL9_OUT CTL9_RC=0
+  mkdir -p "$broken" "$h9/.claude"
+  cat > "$broken/tmux" <<'BROKENTMUX'
+#!/bin/sh
+echo "dyld: Library not loaded: libevent-2.1.7.dylib" >&2
+exit 3
+BROKENTMUX
+  chmod 755 "$broken/tmux"
+  BROKEN_PATH="$broken:/usr/bin:/bin"
+  printf '{ "env": { "SENTINEL": "nine" }, "model": "nine-model" }\n' > "$h9/.claude/settings.json"
+  set +e
+  RESOLVED_TO="$(PATH="$BROKEN_PATH" "$BASH_T" -c 'type -P tmux' 2>/dev/null)"
+  CTL9_OUT="$(PATH="$BROKEN_PATH" "$BASH_T" -c 'tmux -V' 2>&1)"
+  CTL9_RC=$?
+  set -e
+  if [ "$RESOLVED_TO" != "$broken/tmux" ] || [ "$CTL9_RC" -ne 3 ]; then
+    printf 'FAIL  9. resolved-but-broken tmux — CONTROL FAILED: the NAME must resolve to %s (resolved to "%s") while RUNNING it fails with rc 3 (got rc %s: %s). The sandbox is not reproducing the defect, so the case is invalid\n' \
+      "$broken/tmux" "$RESOLVED_TO" "$CTL9_RC" "$CTL9_OUT"
+    fails=$((fails + 1))
+  else
+    rc=0
+    HOME="$h9" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$BROKEN_PATH" \
+      AGENT_TEAMS_SETTINGS="$h9/.claude/settings.json" \
+      AGENT_TEAMS_TMUX_CONF="$h9/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h9/.claude-nine/settings.json" \
+      AGENT_TEAMS_BACKUP_STAMP="" AGENT_TEAMS_FORCE_VALIDATION_FAILURE="" \
+      "$BASH_T" "$SELF" --no-install > "$h9/report.txt" 2> "$h9/log.txt" || rc=$?
+    if [ "$rc" -eq 0 ] && SETTINGS="$h9/.claude/settings.json" REPORT="$h9/report.txt" \
+       DEGRADE="$TMUX_DEGRADE_LINE" st_node '
+        const fs = require("fs");
+        const s = JSON.parse(fs.readFileSync(process.env.SETTINGS, "utf8"));
+        const rep = fs.readFileSync(process.env.REPORT, "utf8");
+        const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+        const ok = s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+          // THE WHOLE POINT: a name that resolves is not a program that runs
+          && !has(s, "teammateMode")
+          && s.env.SENTINEL === "nine" && s.model === "nine-model"
+          && rep.indexOf(process.env.DEGRADE) !== -1
+          // the WHY, and the RIGHT why: something IS installed and it is broken
+          && rep.indexOf("RESOLVED BUT FAILED TO RUN") !== -1
+          && rep.indexOf("rc 3") !== -1
+          && rep.indexOf("NAME DID NOT RESOLVE") === -1
+          && rep.indexOf("INSTALLATION BLOCKED") === -1
+          && /READY FOR A NEW AGENT-TEAM SESSION:\nYES/.test(rep);
+        process.exit(ok ? 0 : 1);'; then
+      printf 'PASS  9. a tmux NAME that resolves to a binary that cannot run is ABSENT — teammateMode omitted, degradation reported as rc 3 resolved-but-failing (exit 0)\n'
+    else
+      printf 'FAIL  9. resolved-but-broken tmux treated as absent (exit %s) — see %s\n' "$rc" "$h9/log.txt"
+      fails=$((fails + 1))
+    fi
   fi
 
   printf '\nselftest: %s/%s passed\n' "$((total - fails))" "$total"
