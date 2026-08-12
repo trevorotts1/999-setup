@@ -472,8 +472,10 @@ case-insensitive, `heartbeat` and `auto-tick` in either order with anything
 between them, and tolerant of `auto tick` / `auto_tick`. Never re-narrow it to
 a literal.
 
-`anchor.sh --selftest` proves the tool still discriminates: twelve cases in a
-temporary home — clean anchor (which also asserts NO alarm fires),
+`anchor.sh --selftest` proves the tool still discriminates: its full case list
+runs in a temporary home — the tool's own `SELFTEST COMPLETE` line states the
+total, and that printed total is the only count to trust; never restate it here.
+The cases: clean anchor (which also asserts NO alarm fires),
 unit-not-in-plan, missing file, sabotaged fixture, false-complete,
 terminal-drift with the counter primed to N−1, and the repeated-intent
 signature with its own known-negative control window; then the
@@ -481,10 +483,13 @@ signature with its own known-negative control window; then the
 reconciles must still increment the no-delta counter, with the other-direction
 control that a real state-carrying line still resets it — an exclusion that
 blinded the fingerprint would pass the first half and fail the second); and
-finally the four class-6 budget controls: claimed == dispatched must NOT fire,
+finally the class-6 budget controls: claimed == dispatched must NOT fire,
 a divergence past tolerance MUST fire, the hard cap MUST emit `BUDGET-CAP` plus
-both ACTIONs at exit 3 (never 4), and absent budget fields MUST report
-undetermined and MUST NOT alarm. It prints one PASS line per case and exits
+both ACTIONs at exit 3 (never 4), absent budget fields MUST report
+undetermined and MUST NOT alarm, and a NEGATIVE claimed spend MUST alarm as
+`budget-negative-spend` — never laundered into `budget-ok` by the tolerance, and
+never downgraded to `budget-undetermined` by an absent dispatch log. It prints
+one PASS line per case and exits
 nonzero if any case fails. Run it after any edit to the tool, and whenever a
 result surprises you.
 

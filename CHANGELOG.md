@@ -1,5 +1,115 @@
 # Changelog
 
+## [1.7.0] — 2026-08-12
+
+### The pre-fleet-roll review — three blockers closed, and the count/pointer drift swept
+
+A full review of the skill ahead of a fleet roll found three blockers and twelve
+defects. All fifteen are closed here. Each blocker was a case of two right-looking
+texts that could not both be true, in a file an agent obeys literally.
+
+- **The reserve contradiction, resolved as WIDTH VERSUS WORK.** RULE 2 said
+  independent work fans out *"never gated, never reserved"*; Law 44, binding in the
+  same file, said hold a quarter of every provider's cap back — so the usable-capacity
+  number every dispatch cites differed by 25% depending on which sentence the executing
+  agent read. **RULE 2 now governs one question only — do we hold agents back when
+  there is work for them? — and Law 44's reserve is untouched in the ceiling
+  arithmetic.** The two act on different quantities in a fixed order: ceiling minus
+  reserve gives the usable number; dispatch never leaves runnable work idle *inside*
+  that number. Consuming 100% of a provider is still a Law 44 violation, and neither
+  rule buys the other any slack. The phrases *"no reserve"* and *"never reserved"* are
+  gone from the tree.
+- **The three-terminal handover is out of the file every client message is written
+  from.** `audience.md` §9 still promised *"Terminal 1 builds your app. Terminal 2
+  checks the quality and fixes things. Terminal 3 puts the finished work on
+  GitHub."* — the exact defect the HANDOVER RULE was written to stop, on the happy
+  path, in the one file that governs every user-facing sentence. §9 now says the skill
+  spawns and drives its own seats, the client opens nothing, and the only paste they
+  ever receive is the single crash-restart command.
+- **The wiring report is a SHAPE, not a recital.** `interview.md` told the agent to
+  report a client's router wiring by reciting four model names this repo supplied.
+  Three of those four are wrong for the wiring the installer actually ships, so an
+  agent following the template told a client false facts about their own machine. The
+  template is now `"<alias> is currently <resolved model id>"`, every name read live,
+  and the old names moved into the dated historical exhibit that already existed
+  beside it.
+
+### Seat wirings are expiring exhibits, not standing doctrine
+
+`gauntlet.md` §13 declared each of the six workflows' model seats with a pinned
+model id attached — the same defect the wiring report carried, one file over.
+**Every seat now declares a REQUIREMENT** (the strongest available lane; vision
+proven by probe; rubric depth; a different underlying model from the builder) and
+the model names are quarantined in **§13.1e, an exhibit whose authority has
+expired** — dated, marked as one machine on one day, kept only for what it teaches
+about the shape of a declaration. The topology is unchanged: WF01–WF06, 8/16/16/8/4
+agents, repair waves capped at 12, release still requires 4 out of 4, and §14's
+nineteen stations are byte-identical. The same cure was applied to the three
+remaining recitals in `pipeline.md` (build, QC and merge seats) and two in
+`interview.md`. **No pinned model id remains anywhere as doctrine** — every
+surviving mention is a family name, a dated exhibit, a sourced quotation, a
+prohibition, or an item explicitly marked undetermined.
+
+### Question B3 is retired — the merge cadence is a default, not a question
+
+B3 asked the client how many finished pieces should land per train run. RULE 2 had
+already removed the merge count cap, so there was nothing left for that answer to
+set: the train is time-triggered and whatever is ready merges as one batch, however
+much that is. It was also a question a non-technical client cannot reason about.
+**The standard drain timer is now the only path — applied silently and reported,
+never asked.** The ids stay B1, B2, B4 with B3 marked RETIRED and dated in the file,
+so a later pass cannot quietly restore it. The lettered ceiling drops from 23 to 22
+and the attended ceiling from 22 to 21, and every surface that states a count moved
+with it.
+
+### The S-check roster updates itself
+
+The swarm watch enumerated S1–S14 while RULE 5 defined sixteen checks, so S15 (media
+persistence) and S16 (video duration) were specified but never watched. The tick now
+covers all sixteen **and defers to RULE 5 by name as the roster's only owner** — a
+seventeenth check is enforced by adding a row, with no edit to the loop. No file
+freezes an S-range any more.
+
+### The count and pointer drift sweep
+
+Every remaining defect was a cross-file count or pointer that had gone stale — the
+class a publish-time consistency checker would catch mechanically, and the strongest
+argument for building one.
+
+- `interview.md` **owns every question-count claim**; other files cite it and now
+  agree with it.
+- The interview no longer claims regular Claude Code skips it entirely — **Block D
+  runs on both harnesses** and never collapses.
+- **4 core + 5 survival loops**, corrected where it said four survival.
+- The reading order now lists **all twenty references**, including the two largest
+  files that were reachable only by accident, each with its load condition
+  (`media-pipeline.md` — media builds only; `command-center-integration.md` — funnel
+  builds only), and the step pointer that named a step that does not exist is fixed.
+- **Line-number citations are gone.** `gauntlet.md` §12 cited a section of
+  `pipeline.md` by a line range that had moved 200 lines; it now cites by section
+  name and says why a line number is never used.
+- `anti-drift.md` cited a case count that its own selftest had outgrown; it now cites
+  the selftest's full case list.
+- The refused-artifact destinations say **the sixteen prior documents** — accurate,
+  because the nine refusals predate document 17 and none of their content routes to it.
+- Operator-box snapshots inside binding tables — *"on this box `fable` resolves
+  to…"* — are marked as dated examples to be resolved on the machine the run is
+  actually on.
+- RULE 2 no longer states an unqualified 16 sub-agents per workflow; it is
+  `min(16, cores−2)`, measured at run time, everywhere.
+
+### Verified before publish
+
+All four tool selftests pass from a fresh clone — `anchor.sh` 13/13, `env-sweep.sh`
+6/6 with zero secret values printed, `capacity-resolver.sh` and `capacity-profile.sh`
+full pass. All five tools ship 100755. `ledger.sh` is byte-identical to its recorded
+hash. Every ceiling in the tree is unmoved, proved by two independent differs — a
+per-file token multiset and a per-file count of each named ceiling — each proved
+against its own planted control, including one designed to defeat a differ that only
+looks at totals and one designed to defeat a differ that only looks at deleted lines.
+The tree carries no operator name, no gendered pronoun referring to the operator, and
+no personal path beyond `/Users/yourname` placeholders.
+
 ## [1.6.0] — 2026-08-12
 
 ### The ultracode fix now reaches the box, not just the launcher

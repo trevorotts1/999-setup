@@ -1048,7 +1048,9 @@ intent_stall() {
 }
 
 #==============================================================================
-# SELFTEST — twelve cases in a temp home. It proves the detector still
+# SELFTEST — the cases enumerated below, in a temp home. The count printed by
+# the SELFTEST COMPLETE line is the authoritative one; do not restate it here.
+# It proves the detector still
 # DISCRIMINATES: every case asserts both what must fire and what must not.
 #
 #   1-7   the original drift cases (clean, unit-not-in-plan, missing file,
@@ -1057,10 +1059,14 @@ intent_stall() {
 #   8     CAPACITY-EVENT lines are EXCLUDED from the state-delta fingerprint
 #         (positive: only capacity events => the no-delta counter still
 #         climbs; negative control: a real state line still resets it)
-#   9-12  CLASS 6 BUDGET AUDIT, all four controls: agree (must NOT fire),
+#   9-12  CLASS 6 BUDGET AUDIT, the first four controls: agree (must NOT fire),
 #         diverge past tolerance (MUST fire), hard cap (MUST emit BUDGET-CAP
 #         and both ACTIONs at exit 3, not 4), fields absent (MUST report
 #         undetermined and MUST NOT alarm)
+#   13    CLASS 6 BUDGET AUDIT, negative claimed spend (MUST alarm as
+#         budget-negative-spend — never laundered into budget-ok by the
+#         tolerance, never downgraded to budget-undetermined by an absent
+#         dispatch log)
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0

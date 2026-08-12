@@ -400,8 +400,8 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
 ### The gate
 
 **"No Capacity Ledger on disk → no dispatch. Every dispatch names the ledger line
-it derives from. A dispatch citing no ledger is a defect the swarm watch (S1–S14)
-flags."**
+it derives from. A dispatch citing no ledger is a defect the swarm watch (the
+S-checks in SKILL.md RULE 5) flags."**
 
 ---
 

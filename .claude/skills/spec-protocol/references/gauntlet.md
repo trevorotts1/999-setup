@@ -773,8 +773,10 @@ why, in the execution plan (document 16).
   individual comparison surface of its own. That unit still carries a bar
   slice: the comparative dimension "contributes to the integrated artifact's
   comparison" — and it is comparatively judged at the INTEGRATED/BATCH level
-  (`references/pipeline.md`, "Final integrated comparative review,"
-  L402-420 — the blind A/B that runs on the whole batch before the ripple),
+  (`references/pipeline.md`, the section titled "Final integrated comparative
+  review (batch level, before ripple)" — the blind A/B that runs on the whole
+  batch before the ripple; cite that section BY NAME, never by line number, a
+  line number is stale the next time either file is edited),
   where its contribution IS comparable, because the batch it is part of has a
   surface. **Gate 3 stays mandatory for this unit; only the execution level
   moves** from per-unit to per-batch. This is never a silent skip and never a
@@ -815,19 +817,25 @@ are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
 
 ### 13.1 The six workflows
 
-**The seat wirings named in this section are a worked example from ONE machine on
-ONE day (2026-08-12) — HISTORICAL EXHIBIT, never an input.** No run reads them as
-data. The live config read plus pool discovery (`references/capacity.md` §11) is
-the ONLY source of a seat's resolved model. When this exhibit and the live read
-disagree, the live read wins and this exhibit is simply out of date — that is not
-a conflict to resolve, it is the definition of an exhibit. This machine is the
-operator's box, the least representative machine in the fleet: nothing here is a
-default for anyone. What the exhibit teaches is the SHAPE of the declaration —
-role, seat, subagent count, and the obligation to record the resolved model — and
-that shape is binding; the model names in it are not.
+**Each workflow below declares its seat by REQUIREMENT — never by a model name.**
+The requirement is the doctrine: the capability the seat must have, the
+independence it must hold against the builder, and the obligation to record what
+it actually resolved to. **No model name appears in the six declarations.** The
+operator's own wiring on one day is quarantined in the dated exhibit at the END of
+this section (13.1e), and **that exhibit's authority has expired** — it is kept
+for what it teaches about the shape of a declaration, not for what it names.
 
-**WF01 — BLUEPRINT LOCK.** Planner seat (operator's illustrative wiring: the
-`OPUS` alias, resolving on the operator's box to DeepSeek V4 Flash, thinking MAX). **Exact
+The live config read plus pool discovery (`references/capacity.md` §11) is the
+ONLY source of a seat's resolved model, and the run's Capacity Ledger is the only
+place a resolved model id is written down. What is binding here is the SHAPE of
+the declaration — role, requirement, subagent count, and the obligation to record
+the resolved model. Any model name you find anywhere in this file is an
+illustration to be resolved live, never a constant to be obeyed.
+
+**WF01 — BLUEPRINT LOCK.** Planner seat — **REQUIREMENT: a lane with the context
+headroom to hold the whole plan and the reasoning depth to lock an architecture;
+thinking set to the highest level the seated model actually supports.** Resolved
+live, recorded in the Capacity Ledger. **Exact
 subagents: 8** — the architecture planner, the domain/mechanics planner, the two
 personalization planners, the visual-world planner, the UX / feel planner, and
 the testing / privacy / performance planner. **These agents DO NOT independently
@@ -835,8 +843,11 @@ begin production coding.** Their outputs are synthesized into: locked
 architecture; MVP specification; workstream boundaries; acceptance matrix;
 evidence requirements; regression requirements. **Total agent executions: 8.**
 
-**WF02 — PRIMARY BUILD.** Builder seat (operator's wiring: the `OPUS` alias →
-DeepSeek V4 Flash, thinking MAX). **Exact subagents: 16.** Each builder receives
+**WF02 — PRIMARY BUILD.** Builder seat — **REQUIREMENT: the STRONGEST AVAILABLE
+LANE on this machine** (`references/capacity.md` §11, builder row), on a
+high-ceiling provider node; **this seat sets the run's governing number, and every
+other seat's independence is measured AGAINST it.** Resolved live, recorded in the
+Capacity Ledger. **Exact subagents: 16.** Each builder receives
 EXPLICIT OWNERSHIP; **uncontrolled overlapping edits are not permitted.** The ten
 subagent-ownership fields — agent name/number, model role, responsibility, scope
 of ownership, inputs, deliverable, acceptance criteria, FILES OR COMPONENTS
@@ -844,22 +855,31 @@ OWNED, CAN MODIFY CODE Y/N, CAN VERIFY ITS OWN WORK Y/N — are declared per
 builder in the Parallelism Plan (`SKILL.md` step 12.7,
 `references/workflows.md`). **Total agent executions: 16.**
 
-**WF03 — BLIND VISUAL GAUNTLET.** Blind-judge seat (operator's wiring: the
-`HAIKU` alias, resolving on the operator's box to MiniMax 3, thinking HIGH). **Exact
+**WF03 — BLIND VISUAL GAUNTLET.** Blind-judge seat — **REQUIREMENT: a
+VISION-capable lane whose vision is PROVEN BY PROBE before the first visual
+verdict** (§5 — a text-only model handed an image does not error, it invents),
+resolving to a DIFFERENT UNDERLYING MODEL than the builder by the family rule.
+Resolved live, recorded in the Capacity Ledger. **Exact
 subagents: 16 blind judges.** These judges receive RENDERED EVIDENCE. **They do
 NOT receive builder reasoning.** Section 5's blind protocol governs every one of
 them: fresh context, a different resolved model from the builder, labels
 stripped, order randomized, and vision proven before the first visual verdict.
 **Total agent executions: 16.**
 
-**WF04 — TECHNICAL GAUNTLET.** Technical-judge seat (operator's wiring: the
-`SONNET` alias → DeepSeek V4 Pro, thinking MAX). **Exact subagents: 8** — logic;
+**WF04 — TECHNICAL GAUNTLET.** Technical-judge seat — **REQUIREMENT:
+rubric-depth verdict capability, resolving to a DIFFERENT UNDERLYING MODEL than
+the builder** (family rule, `references/capacity.md` §11), with the per-verdict
+headroom floor `max_tokens ≥ max(4000, 4 × expected verdict length)` read off the
+RESOLVED model rather than the lane. Resolved live, recorded in the Capacity
+Ledger. **Exact subagents: 8** — logic;
 domain behaviour / AI; architecture / state; the asset or data pipeline;
 performance / memory; security / privacy / upload; automated regression;
 integration / release-blocker. **Total agent executions: 8.**
 
-**WF05 — FINAL RELEASE COUNCIL.** Release-judge seat (`SONNET` alias → DeepSeek
-V4 Pro, thinking MAX). **Exact subagents: 4** — the product / domain release
+**WF05 — FINAL RELEASE COUNCIL.** Release-judge seat — **REQUIREMENT: the same
+verdict-depth and builder-independence requirements as the technical judge**, with
+context sized to the whole-product view rather than one unit. Resolved live,
+recorded in the Capacity Ledger. **Exact subagents: 4** — the product / domain release
 judge; the technical / stability release judge; the privacy / performance release
 judge; the adversarial overall release judge. **All four judges evaluate
 independently. RELEASE REQUIRES 4 OUT OF 4 = PASS. A FAIL or UNVERIFIED from ANY
@@ -880,6 +900,36 @@ every previous agent.** Let **N = the number of FAILED workstreams**:
   judges.**
 - **FINAL RECHECK.** After all failed workstreams have cleared, **ALWAYS rerun
   the 4 Final Release Council judges.**
+
+### 13.1e The seat wirings as they stood on ONE machine on ONE day — EXPIRED EXHIBIT, never an input
+
+**Nothing in this block is a default for anyone, and its authority has already
+expired.** It records what the six seats happened to resolve to on the operator's
+box on **2026-08-12** — the least representative machine in the fleet — and it
+will go stale, because the operator rewires between projects. That is the point.
+No run reads it as data. When this exhibit and the live read disagree, **the live
+read wins and this exhibit is simply out of date** — that is not a conflict to
+resolve, it is the definition of an exhibit. Three of the four alias lanes on a
+freshly installed box already resolve differently from the names below
+(`SKILL.md`'s wiring exhibit), so an agent that recites this block is telling a
+client false facts about their own machine.
+
+| Seat | Requirement (the doctrine — never expires) | What it resolved to that day (expired) |
+|---|---|---|
+| WF01 planner | Plan-wide context + architecture-locking depth | the `OPUS` alias → DeepSeek V4 Flash, thinking MAX |
+| WF02 builder | The strongest available lane; sets the governing ceiling | the `OPUS` alias → DeepSeek V4 Flash, thinking MAX |
+| WF03 blind judge | Vision PROVEN by probe; different model from the builder | the `HAIKU` alias → MiniMax 3, thinking HIGH |
+| WF04 technical judge | Rubric-depth verdict; different model from the builder | the `SONNET` alias → DeepSeek V4 Pro, thinking MAX |
+| WF05 release judge | Verdict depth + independence, whole-product context | the `SONNET` alias → DeepSeek V4 Pro, thinking MAX |
+| WF06 repair | Inherits WF02's builder requirement per repair agent | inherited the builder seat above |
+
+**The lesson that does not expire even after every id above does:** a role word is
+not a model. Two different seats can collapse onto the SAME resolved model on a
+given box — as the planner and builder seats did that day, and as the technical
+and release seats did — which silently voids the independence the blind protocol
+and Laws 7 and 30 rest on. **Only a live read can tell you whether that has
+happened on the machine you are actually on**, and the run's Capacity Ledger is
+where the answer is written down.
 
 ### 13.2 The agent budget
 
