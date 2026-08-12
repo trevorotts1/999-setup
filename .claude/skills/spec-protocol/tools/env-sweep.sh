@@ -11,10 +11,12 @@
 # NOT_VERIFIED) and the stores that were searched.
 #
 # --selftest proves the instrument before any run is believed (ground rule 11):
-# a known-positive control, a known-negative control, and a leak proof that
-# plants a sentinel value in every checked variable and requires the sentinel
-# to appear ZERO times in the output. A detector whose known-positive comes
-# back MISSING reports BROKEN INSTRUMENT — never "clean".
+# a known-positive control, a known-negative control, a ~/.env STORE control
+# (proving the tool reads the store it tells users to place a key in — not
+# merely that it lists it), and a leak proof that plants a sentinel value in
+# every checked variable and requires the sentinel to appear ZERO times in the
+# output. A detector whose known-positive comes back MISSING reports BROKEN
+# INSTRUMENT — never "clean".
 #
 # SWEEP_NO_NETWORK=1 makes every smoke test hermetic (no curl, no gh, no npx).
 # The selftest sets it; a normal run does not.
@@ -34,6 +36,15 @@ esac
 # --- Where to look ---
 SECRETS_ENV="${HOME}/.openclaw/secrets/.env"
 OPENCLAW_ENV="${HOME}/.openclaw/.env"
+# USER_ENV — the user-level env file. environment-sweep.md has listed it as a
+# store since the file was written, but the tool never sourced it, so a key
+# placed there was invisible to a re-detect and every guided key placement on a
+# non-fleet box ended in "I still can't find it". It is the ONE universal,
+# harmless placement target on a box that has no ~/.openclaw/ directory (never
+# conjure that directory to hold a key — a fabricated fleet path is a false
+# topology signal). Sourced in Phase 1, and proven read by the selftest's
+# ~/.env store control.
+USER_ENV="${HOME}/.env"
 NINE_ROUTER_DIR="${HOME}/.config/9router"
 PROJECT_ENV=".env"
 PROJECT_ENV_LOCAL=".env.local"
@@ -205,6 +216,46 @@ smoke_test_openrouter() {
   esac
 }
 
+# --- Smoke test a kie.ai key (media generation — images and video) ---
+# Aliases follow this file's house pattern of three accepted names per
+# provider: KIE_API_KEY and KIE_AI_API_KEY are the two the media contract
+# names, and KIE_KEY is the house bare form (cf. DEEPSEEK_KEY, OLLAMA_KEY).
+#
+# Liveness endpoint: the account's credit endpoint, the cheapest authenticated
+# call kie documents. THE BALANCE FIGURE IS NEVER READ OR PRINTED HERE:
+# curl_bearer_status discards the body (-o /dev/null) and returns only the HTTP
+# status code. A balance is a CAPACITY figure — it belongs to the burn table,
+# measured at media-planning time — and a credential sweep that printed it
+# would be reporting an account's money in a report about NAMES.
+#
+# CREDENTIAL SAFETY: handled by curl_bearer_status above — the value never
+# reaches a command line, and the measured quoting trap is documented there.
+smoke_test_kie() {
+  local key="${KIE_API_KEY:-${KIE_AI_API_KEY:-${KIE_KEY:-}}}"
+  if [[ -z "${key}" ]]; then
+    echo "MISSING"
+    return 1
+  fi
+  if [[ "${NO_NET}" == "1" ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
+  local resp rc
+  resp="$(curl_bearer_status "https://api.kie.ai/api/v1/chat/credit" "${key}")"
+  rc=$?
+  # rc != 0 is a broken instrument (curl absent -> 127 is a shell abort, DNS
+  # down, timeout), never a fact about the key. Report UNDETERMINED liveness.
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
+  case "${resp}" in
+    200)     echo "LIVE" ;;
+    401|403) echo "FOUND_NOT_LIVE" ;;
+    *)       echo "FOUND_NOT_VERIFIED" ;;
+  esac
+}
+
 # --- Smoke test a Vercel token ---
 smoke_test_vercel() {
   local token="${VERCEL_TOKEN:-${VERCEL_API_TOKEN:-${VERCEL_ACCESS_TOKEN:-}}}"
@@ -283,6 +334,8 @@ run_selftest() {
       GOHIGHLEVEL_API_KEY="${sentinel}" \
       GOHIGHLEVEL_LOCATION_ID="${sentinel}" \
       GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN="${sentinel}" \
+      KIE_API_KEY="${sentinel}" \
+      AGNES_AI_API_KEY="${sentinel}" \
       bash "${self}" funnel 2>&1)"
   rc_pos=$?
 
@@ -292,6 +345,39 @@ run_selftest() {
       SWEEP_NO_NETWORK=1 \
       bash "${self}" funnel 2>&1)"
   rc_neg=$?
+
+  # --- Control 3: THE ~/.env STORE CONTROL.
+  #
+  # A key planted ONLY in the sandbox's ~/.env — with an otherwise EMPTY
+  # environment — must come back detected. This is the control that proves the
+  # tool genuinely SOURCES ~/.env rather than merely listing it in a report.
+  # Without it, the whole guided key-placement flow fails by default: the user
+  # is told to put a key in ~/.env, does exactly that, and is then told the key
+  # cannot be found — a false negative that reads as the user's mistake.
+  #
+  # It runs in a SECOND sandbox HOME so that control 2's empty environment
+  # stays genuinely empty; sharing one HOME would make the known-negative
+  # control assert against a store this control had just populated.
+  #
+  # AGNES is deliberately left unplanted here: a run in which the new store is
+  # read must still report MISSING for a key that is in no store at all. That
+  # is what makes this a discriminating control rather than a run that says
+  # FOUND to everything.
+  local sandbox2 out_env rc_env
+  sandbox2="$(mktemp -d "${TMPDIR:-/tmp}/env-sweep-selftest-userenv.XXXXXX")" || {
+    echo "SELFTEST: FAIL — could not create the second sandbox HOME" >&2
+    rm -rf "${sandbox}"
+    return 1
+  }
+  # printf is a shell builtin: the planted value never becomes an argv entry of
+  # any process, exactly as in curl_bearer_status.
+  printf 'KIE_API_KEY=%s\n' "${sentinel}" > "${sandbox2}/.env"
+  chmod 600 "${sandbox2}/.env" 2>/dev/null
+  out_env="$(env -i \
+      HOME="${sandbox2}" PATH="${PATH}" TMPDIR="${TMPDIR:-/tmp}" \
+      SWEEP_NO_NETWORK=1 \
+      bash "${self}" funnel 2>&1)"
+  rc_env=$?
 
   # --- Check 1: both runs exited clean.
   if [[ "${rc_pos}" -eq 0 && "${rc_neg}" -eq 0 ]]; then
@@ -303,14 +389,14 @@ run_selftest() {
 
   # --- Check 2: the known-positive is DETECTED (instrument proof).
   local pos_missing=0 k
-  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
+  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE KIE AGNES; do
     if printf '%s\n' "${out_pos}" | /usr/bin/grep -qE "^${k}: MISSING$"; then
       pos_missing=$((pos_missing + 1))
       echo "  [FAIL] known-positive control: ${k} reported MISSING with a value present"
     fi
   done
   if [[ "${pos_missing}" -eq 0 ]]; then
-    echo "  [PASS] known-positive control: all 8 planted credentials detected"
+    echo "  [PASS] known-positive control: all 10 planted credentials detected"
   else
     echo "  [BROKEN INSTRUMENT] ${pos_missing} planted credential(s) read as MISSING — this sweep cannot be trusted to report a zero"
     fails=$((fails + 1))
@@ -318,14 +404,14 @@ run_selftest() {
 
   # --- Check 3: the known-negative is ABSENT (the detector discriminates).
   local neg_found=0
-  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
+  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE KIE AGNES; do
     if ! printf '%s\n' "${out_neg}" | /usr/bin/grep -qE "^${k}: MISSING$"; then
       neg_found=$((neg_found + 1))
       echo "  [FAIL] known-negative control: ${k} did not report MISSING in an empty environment"
     fi
   done
   if [[ "${neg_found}" -eq 0 ]]; then
-    echo "  [PASS] known-negative control: all 8 report MISSING in an empty environment"
+    echo "  [PASS] known-negative control: all 10 report MISSING in an empty environment"
   else
     echo "  [BROKEN INSTRUMENT] the sweep does not discriminate — positive and negative read alike"
     fails=$((fails + 1))
@@ -353,8 +439,14 @@ run_selftest() {
   #     VERCEL_TOKEN environment variable, and on macOS a child's environment is
   #     itself readable (`ps -E`), so that is a lateral move, not a fix. It is
   #     recorded as an open finding rather than silently passed.
+  #
+  #     THE SCAN COVERS EVERY CONTROL THAT CARRIES THE SENTINEL — the planted
+  #     environment (control 1) AND the planted ~/.env store (control 3). A
+  #     leak proof that scanned only one surface would pass while the other
+  #     printed the value; a store the tool newly READS is a new surface it
+  #     could newly PRINT from, so it is scanned here by construction.
   local leaks
-  leaks="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -c "${sentinel}")"
+  leaks="$(printf '%s\n%s\n' "${out_pos}" "${out_env}" | /usr/bin/grep -c "${sentinel}")"
 
   local argv_hits url_hits
   argv_hits="$(/usr/bin/grep -cE '^[^#]*-H[[:space:]]+.{0,3}Authorization' "${self}")"
@@ -369,20 +461,48 @@ run_selftest() {
     fails=$((fails + 1))
   fi
 
-  # --- Check 5: the report shape is intact (all 9 keys present).
+  # --- Check 5: the report shape is intact (all 11 keys present).
   local keys_found
-  keys_found="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -cE '^(GITHUB|DEEPSEEK|OLLAMA_CLOUD|OPENROUTER|VERCEL|GHL_PIT|GHL_LOCATION_ID|GHL_FIREBASE|NINE_ROUTER): ')"
-  if [[ "${keys_found}" -eq 9 ]]; then
-    echo "  [PASS] report shape: all 9 report lines present"
+  keys_found="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -cE '^(GITHUB|DEEPSEEK|OLLAMA_CLOUD|OPENROUTER|VERCEL|GHL_PIT|GHL_LOCATION_ID|GHL_FIREBASE|KIE|AGNES|NINE_ROUTER): ')"
+  if [[ "${keys_found}" -eq 11 ]]; then
+    echo "  [PASS] report shape: all 11 report lines present"
   else
-    echo "  [FAIL] report shape: expected 9 report lines, found ${keys_found}"
+    echo "  [FAIL] report shape: expected 11 report lines, found ${keys_found}"
     fails=$((fails + 1))
   fi
 
-  rm -rf "${sandbox}"
+  # --- Check 6: the ~/.env STORE IS ACTUALLY SOURCED (control 3).
+  #
+  # Two assertions in one verdict, because either alone would be worthless:
+  #   (a) the key planted ONLY in ~/.env is DETECTED — the store is read;
+  #   (b) a key planted NOWHERE still reports MISSING in that same run — the
+  #       detection in (a) is a measurement, not a run that says FOUND to
+  #       everything.
+  # A tool that passes (a) and fails (b) is broken in the direction that hides
+  # every future absence, so (b) is asserted here rather than inferred from the
+  # other controls' separate runs.
+  local userenv_pos=0 userenv_neg=0
+  printf '%s\n' "${out_env}" | /usr/bin/grep -qE '^KIE: (FOUND|LIVE|FOUND_NOT_LIVE|FOUND_NOT_VERIFIED)$' && userenv_pos=1
+  printf '%s\n' "${out_env}" | /usr/bin/grep -qE '^AGNES: MISSING$' && userenv_neg=1
+  if [[ "${rc_env}" -eq 0 && "${userenv_pos}" -eq 1 && "${userenv_neg}" -eq 1 ]]; then
+    echo "  [PASS] ~/.env store control: a key placed ONLY in \$HOME/.env is detected, and a key placed nowhere still reports MISSING in the same run — the store is read AND the detector still discriminates"
+  else
+    if [[ "${rc_env}" -ne 0 ]]; then
+      echo "  [FAIL] ~/.env store control: the control run did not exit 0 (rc=${rc_env})"
+    fi
+    if [[ "${userenv_pos}" -ne 1 ]]; then
+      echo "  [BROKEN INSTRUMENT] ~/.env store control: a key placed in \$HOME/.env read as MISSING — the tool does not source ~/.env, so every guided key placement there will be reported back to the user as a missing key. That is a false negative about the USER, and it is not permitted."
+    fi
+    if [[ "${userenv_neg}" -ne 1 ]]; then
+      echo "  [BROKEN INSTRUMENT] ~/.env store control: a credential planted in NO store did not report MISSING — the sweep does not discriminate and its FOUND means nothing"
+    fi
+    fails=$((fails + 1))
+  fi
+
+  rm -rf "${sandbox}" "${sandbox2}"
   echo
   if [[ "${fails}" -eq 0 ]]; then
-    echo "SELFTEST: PASS (5/5) — instrument proven, 0 secret values printed"
+    echo "SELFTEST: PASS (6/6) — instrument proven, 0 secret values printed"
     return 0
   fi
   echo "SELFTEST: FAIL (${fails} check(s) failed)"
@@ -397,6 +517,15 @@ fi
 # --- Main ---
 
 # Phase 1: Source all env stores
+#
+# ORDER IS PRECEDENCE, and it is deliberate: a later source overwrites an
+# earlier one, so ~/.env goes FIRST and the openclaw stores keep the last word.
+# A stray user-level file must never shadow the canonical fleet secrets store.
+# This costs the guided-placement flow nothing — that flow only reaches ~/.env
+# when the openclaw stores DON'T carry the key, so there is no collision to
+# lose. Presence detection is unaffected either way; only a same-name collision
+# is decided here, and it is decided toward the authoritative store.
+source_env_file "${USER_ENV}" || true
 source_env_file "${SECRETS_ENV}" || true
 source_env_file "${OPENCLAW_ENV}" || true
 
@@ -502,7 +631,41 @@ if [[ "${TARGET_TYPE}" == "funnel" ]] || [[ "${TARGET_TYPE}" == "website" ]]; th
   done
 fi
 
-# Phase 8: Check 9Router presence (for Claude-Nine detection)
+# Phase 8: Check kie.ai (media generation — images and video)
+# Checked on EVERY target, not just funnels: an app or a website needs hero art
+# and screenshots as readily as a funnel does, and a media key that goes
+# undetected sends the run down the ask-for-a-key path for no reason.
+KIE_STATUS="MISSING"
+for var in KIE_API_KEY KIE_AI_API_KEY KIE_KEY; do
+  if check_env_var "${var}" | /usr/bin/grep -q "FOUND"; then
+    KIE_STATUS="FOUND"
+    break
+  fi
+done
+if [[ "${KIE_STATUS}" == "FOUND" ]]; then
+  KIE_STATUS=$(smoke_test_kie)
+fi
+
+# Phase 9: Check Agnes-AI (media generation — images and video)
+#
+# PRESENCE ONLY, BY DESIGN — and the report says so. No cheap authenticated
+# liveness endpoint is documented for Agnes: the wiki index, the quickstart and
+# the FAQ were checked 2026-08-12 and none names one. Stamping LIVE off an
+# undocumented guess would be exactly the fabricated positive this sweep exists
+# to prevent, and stamping FOUND_NOT_LIVE off a 404 would be worse — it would
+# read as a dead key when it is only an absent endpoint. So this phase resolves
+# NAMES and stops there. A candidate probe (an authenticated GET on the
+# OpenAI-compatible /v1/models path) is recorded as an open question in the
+# media contract; until one is PROVEN, presence-only stands.
+AGNES_STATUS="MISSING"
+for var in AGNES_AI_API_KEY AGNES_API_KEY AGNES_KEY; do
+  if check_env_var "${var}" | /usr/bin/grep -q "FOUND"; then
+    AGNES_STATUS="FOUND"
+    break
+  fi
+done
+
+# Phase 10: Check 9Router presence (for Claude-Nine detection)
 NINE_ROUTER_FOUND="MISSING"
 if [[ -d "${HOME}/.claude-nine" ]]; then
   if [[ -f "${HOME}/.9router/db/data.sqlite" ]]; then
@@ -515,7 +678,7 @@ if [[ -d "${HOME}/.claude-nine" ]]; then
   fi
 fi
 
-# Phase 9: Output results as plain text
+# Phase 11: Output results as plain text
 cat <<REPORT
 
 ENVIRONMENT SWEEP — $(date '+%Y-%m-%d %H:%M:%S')
@@ -529,12 +692,28 @@ VERCEL: ${VERCEL_STATUS}
 GHL_PIT: ${GHL_PIT_STATUS}
 GHL_LOCATION_ID: ${GHL_LOCATION_STATUS}
 GHL_FIREBASE: ${GHL_FIREBASE_STATUS}
+KIE: ${KIE_STATUS}
+AGNES: ${AGNES_STATUS}
 NINE_ROUTER: ${NINE_ROUTER_FOUND}
 
-Searched: ${SECRETS_ENV}, ${OPENCLAW_ENV}
+Searched: ${USER_ENV}, ${SECRETS_ENV}, ${OPENCLAW_ENV}
 Not searched: project .env / .env.local (${PROJECT_ENV}, ${PROJECT_ENV_LOCAL}) — a
-MISSING above is a statement about the two stores named on the line before it.
+MISSING above is a statement about the three stores named on the line before it,
+plus this process's inherited environment. Shell rc files (.zshrc/.bashrc/
+.profile) are NOT read either: a key added to one of those is invisible here
+until a new shell exports it, so never point anyone at an rc file to place a key
+this sweep is expected to re-detect. ${USER_ENV} IS read live at every run, which
+is what makes "put it there, then tell me, and I'll look again" work without a
+session restart.
 OPENROUTER names searched: OPENROUTER_API_KEY, OPENROUTER_KEY, OPENROUTER_TOKEN.
+KIE names searched: KIE_API_KEY, KIE_AI_API_KEY, KIE_KEY.
+AGNES names searched: AGNES_AI_API_KEY, AGNES_API_KEY, AGNES_KEY.
+AGNES is PRESENCE-ONLY: no cheap authenticated liveness endpoint is documented
+for it, so this sweep never reports LIVE for Agnes — FOUND means the NAME
+resolved, and nothing more is claimed. KIE liveness, when tested, is GET
+api.kie.ai/api/v1/chat/credit; the credit BALANCE is never read or printed here
+— that figure is capacity, and it belongs to the burn table, not to a
+credential sweep.
 FOUND_NOT_VERIFIED = the name resolved but liveness was NOT tested (network
 suppressed, curl absent, or the request failed) — never a claim about the
 account. OPENROUTER liveness, when tested, is GET openrouter.ai/api/v1/key, not
