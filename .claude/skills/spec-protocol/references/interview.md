@@ -407,14 +407,41 @@ number into this project's execution plan.
   to improve and how; then fixes.
 - **Merger** — default Haiku → GLM 5.2 (low load, fine at 8 to 10 concurrency). Ask
   which model; offer to wire it in 9router if not already wired.
-- **Comparative critic (Gate 3)** — default Fable → (read the current wiring and
-  report it). **Never the builder's alias** — a critic running the builder's own
-  model is not blind, it is grading its own homework. Fable is recommended because
-  it is the seat most likely to resolve to a different model FAMILY, not merely a
-  different model, and a reviewer from another lineage cannot inherit the builder's
-  blind spots. Sonnet is unavailable (it is the technical/release judge seat, and
-  reusing it would collapse critic and judge into one model), and Haiku is too
-  light for a comparative verdict. On a router, two aliases can resolve to the same
+- **Comparative critic (Gate 3)** — **no default seat; this is a REQUIREMENT,
+  resolved at run time, never a named alias.** The critic MUST resolve to a
+  DIFFERENT UNDERLYING MODEL than the builder. **Never the builder's alias** — a
+  critic running the builder's own model is not blind, it is grading its own
+  homework. And a different alias NAME proves nothing: compare RESOLVED models, at
+  run time, on this box.
+  **The candidate pool is NOT the alias set.** Aliases are a convenience layer, not
+  a boundary — under Claude-Nine the router exposes far more models than the four
+  alias routes touch, and any model it serves can take the critic seat. Enumerate
+  what the router ACTUALLY exposes at run time; never reason about availability
+  from the alias table.
+  **Selection procedure:** (1) resolve the builder's alias to its actual model;
+  (2) enumerate the models the router actually serves right now; (3) show the user
+  that resolved list; (4) pick a critic whose RESOLVED model differs from the
+  builder's — preferring by PROPERTY, never by name: a different PROVIDER or model
+  FAMILY beats merely a different thinking level on the same base model, because a
+  thinking level is not a second lineage and a same-lineage reviewer inherits the
+  builder's blind spots; (5) record the resolved model of every seat in the
+  execution plan. **Independence is normally easy to satisfy — treat it as the
+  expected outcome.** Note that on the wiring this repo ships, several aliases
+  resolve to the SAME base model at different thinking levels; that is precisely
+  why an alias swap is not evidence of independence. If `fable` is considered,
+  check first that on THIS box it is neither holding a fusion combo nor serving as
+  the fixer seat; if either is true it is not available.
+  **When discovery fails:** if the pool cannot be enumerated — router unreachable,
+  or plain `claude` with no router at all — fall back to what the session can PROVE
+  it has, and say so plainly. On regular Claude Code the pool genuinely is the
+  Anthropic models available to that session. Under Claude-Nine, "no independent
+  model available" is a DISCOVERY FAILURE, never an empty pool: surface it as a
+  finding and repair the discovery. Never claim independence the run cannot prove,
+  and never silently pretend the critic is blind.
+  **Give a reasoning-model critic real token headroom** — on a small budget it can
+  spend the whole allowance thinking and return empty text with
+  `stop_reason: max_tokens`, which reads as a dead seat and is not one.
+  On a router, two aliases can resolve to the same
   underlying model. Read the router config and VERIFY the builder, judge, and
   comparative-critic seats resolve to different underlying models — different alias
   names prove nothing.

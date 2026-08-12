@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.2.5] — 2026-08-12
+
+### Correcting 1.2.4 — the Gate-3 critic seat should never have named an alias at all
+
+- **1.2.4's `Fable` pin was incorrect, on two independent counts.** 1.2.4 fixed a real defect
+  — the blind comparative critic shared the builder's `Opus` alias — but it fixed it by moving
+  the seat onto `Fable`, and `Fable` was the wrong destination. First, on the standard wiring
+  this repository's own installer writes
+  (`.claude/skills/nine-router-setup/scripts/common/configure-nine-router.mjs`), the `fable`
+  route carries the fusion combo; pinning the critic there commandeers the combo slot for a
+  read-only reviewer. Second, `Fable` is already the QC and fixer seat in this skill's own role
+  tables, so 1.2.4 made the blind critic share an alias with the agent that FIXES the code it
+  later reviews. Neither was caught because the change reasoned about alias NAMES instead of
+  resolving them.
+- **The deeper error was naming a slot at all.** It is the same mistake as the older
+  "`opus` → v4 Pro" block this project already removed: encoding a specific alias instead of
+  stating the requirement. The operator rewires between projects, and any hardcoded seat goes
+  stale the moment he does.
+- **The Gate-3 critic is now a runtime-resolved requirement, not an assignment.** Both role
+  tables — the Claude-Nine table in `SKILL.md` and the matching role list in
+  `references/interview.md` — state the rule and the selection procedure instead of a name: the
+  critic MUST resolve to a different underlying model than the builder; a different alias NAME
+  proves nothing, so RESOLVED models are compared at run time; and the preference is expressed
+  by PROPERTY — a different provider or model family beats merely a different thinking level on
+  the same base model, because a thinking level is not a second lineage and a same-lineage
+  reviewer inherits the builder's blind spots.
+- **The candidate pool is not the alias set.** Aliases are a convenience layer, not a boundary.
+  A live probe against a running 9Router confirmed it: models bound to no alias route at all
+  answered normally, while a nonsense model id returned nothing — so the positives are real and
+  the instrument discriminates. Independence is therefore normally easy to satisfy, and the
+  skill now says so. Under a router, "no independent model available" is a DISCOVERY FAILURE to
+  be surfaced and repaired, never an empty pool. On regular Claude Code with no router the pool
+  genuinely is the Anthropic models available to that session, and the skill falls back to what
+  it can prove it has and says so.
+- **`fable` is no longer recommended — only permitted after a check.** It may be considered
+  only where, on the box in question, it is neither holding a fusion combo nor serving as the
+  fixer seat. If either is true it is not available.
+- **A reasoning-model critic needs token headroom.** On a small budget a reasoning model can
+  spend the entire allowance thinking and return empty text with `stop_reason: max_tokens`,
+  which reads as a dead seat and is not one. Both role entries now say so.
+- **Correcting forward, not rewriting.** 1.2.4 stays in history and in this changelog; nothing
+  was force-pushed, rebased or reverted. This entry supersedes its `Fable` recommendation.
+- **Deliberately unchanged.** The builder's `Opus` assignment and the technical and release
+  judge's `Sonnet` assignment both stand — the operator's decisions, not reopened. Every
+  concurrency ceiling is untouched, proved by a line-number-independent census keyed on file and
+  value, tokenised before filtering so a comma-grouped ceiling can never be miscounted as a
+  shorter one; the differ itself was proved by planting a change in a throwaway copy and
+  confirming it was caught, and by diffing an unmodified copy and confirming it came back clean.
+  `references/gauntlet.md` is byte-identical — §13's six-workflow topology and §14's canonical
+  loop with all 19 stations. `tools/ledger.sh` is byte-identical. `tools/anchor.sh --selftest`
+  passes 7 of 7 and `tools/capacity-resolver.sh --selftest` passes, both exiting 0.
+
 ## [1.2.4] — 2026-08-12
 
 ### Gate 3's blind comparative critic was grading its own homework
