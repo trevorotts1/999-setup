@@ -95,7 +95,7 @@ available.
 | Layer | The number | Source |
 |---|---|---|
 | Per workflow | min(16, cores−2) truly concurrent (10 on a 12-core machine — measured, re-measure per machine) | Measured — the harness runtime cap |
-| Per session | ≤ 30 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION (1000 in both profiles) caps total session spawns. | Operator doctrine + measured config |
+| Per session | ≤ 30 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
 | Anthropic Claude Code | ≤ 20 concurrent agents per wave (operator cap); in Agent-Team mode the lead + commanders occupy persistent slots inside it first | Operator doctrine |
 | Provider (9Router paths) | ceiling − reserve, per `references/capacity.md` (DeepSeek v4 Flash 2,500 / Pro 500 / Ollama $20 use 2 / $100 use 8 / Agnes verify-live) | Capacity Ledger |
 
@@ -371,13 +371,34 @@ ADDITION TO the ten-category score, never as a replacement:
   conditions. On a router, two aliases can resolve to the same underlying model.
   Read the router config and VERIFY the builder, judge, and comparative-critic
   seats resolve to different underlying models — different alias names prove
-  nothing.
+  nothing. The critic seat need not be an alias at all: select it from the
+  router's discovered model pool (capacity.md §11), preferring a different
+  provider node, then a different model family — same-base lanes differing only
+  in thinking level are ONE model. Verification compares RESOLVED ids from the
+  seat probes, never dispatch-time names, and the ledger records it. Under a
+  router, **"no independent model available" is a DISCOVERY FAILURE, never an
+  empty pool** — re-run pool discovery with its control, name what was checked,
+  and only then report.
 - It strips labels (the critic never sees which side is ours), randomizes order,
   and makes a binary decision: **OURS / BAR / INDETERMINATE**.
 - On ITERATE it names the single largest gap between ours and the bar — one gap,
   the biggest, stated as a fixable defect.
 - It records evidence and any dissent into the verdict, in the same shape as every
   other Stage 2 finding.
+- **Token headroom is a dispatch parameter, not an afterthought.** Every
+  verdict-shaped call — judge score, blind A/B, release council, refuter — on any
+  seat not proven reasoning-free is dispatched with `max_tokens ≥ max(4000, 4 ×
+  the expected verdict length)`; every probe or known-answer smoke test to a pool
+  model gets `max_tokens ≥ 600`. Treat every non-Anthropic pool model as
+  reasoning-capable until proven otherwise. **An EMPTY response with
+  `stop_reason: max_tokens` is a BUDGET problem, never a dead model** — a
+  reasoning seat spent its whole budget thinking (measured 2026-08-12: one model
+  returned nothing at 60 tokens and answered cleanly at 600). Diagnose it as
+  BUDGET-STARVED, retry once at 4× the budget, then once at the model's
+  documented output ceiling (16k when unknown); still empty ⇒ that seat is
+  UNDETERMINED-instrument and the next candidate is selected. **A starved empty
+  is a NON-VERDICT: never PASS, never FAIL, never INDETERMINATE — it is
+  reissued**, never recorded as a verdict.
 
 The comparative sub-stage is additive: it cannot lower an 8.5 pass, and an
 INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The 8.5

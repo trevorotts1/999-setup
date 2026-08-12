@@ -404,7 +404,7 @@ carries an explicit instruction — **RECONCILE TASKS NOW** — and the run exec
 at every major phase boundary, at every loop or cron tick, after every compaction,
 and before every dispatch.
 
-The ten reconcile steps, the five detection classes, the instrument self-proof, the
+The ten reconcile steps, the six detection classes, the instrument self-proof, the
 drift alarm, and the capture-proof TERMINAL-DRIFT stop are owned in full by
 `references/anti-drift.md`, and the tool that performs the comparison is
 `tools/anchor.sh --mode reconcile`. This section states only the law they serve:
