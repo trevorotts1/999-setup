@@ -281,16 +281,18 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 
 | Role | Default alias | Why / caps |
 |------|---------------|------------|
-| App builder | Sonnet → DeepSeek v4 Pro | Provider ceiling 500 concurrent subagents (Trevor's doctrine), less the 25% reserve. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = 1,000 subagent executions per session, a lifetime count and never a width; AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| App builder | Opus → DeepSeek v4 Flash | Provider ceiling 2,500 concurrent subagents (Trevor's doctrine), less the 25% reserve. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = 1,000 subagent executions per session, a lifetime count and never a width; AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| Technical + release judge | Sonnet → DeepSeek v4 Pro | Provider ceiling 500 concurrent subagents, less the 25% reserve — ample for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1). Must resolve to a DIFFERENT underlying model than the builder — different alias names prove nothing. |
 | QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
 | Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. |
 
 For each role: read the 9router config and report the current wiring ("Haiku is
-currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"); ask if the user wants to change
-or needs wiring help. Check context windows and rate limits by WEB-RESEARCHING
-them fresh, right now, for the account actually running this session — never
-recite a remembered number. **The figures below are EXAMPLES to illustrate the
+currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…"); ask
+if the user wants to change or needs wiring help. Check context windows and rate
+limits by WEB-RESEARCHING them fresh, right now, for the account actually running
+this session — never recite a remembered number. **The figures below are
+EXAMPLES to illustrate the
 shape of the check, not facts about anyone's account:** they are one operator's
 own numbers from one day, they drift (providers change limits without notice),
 and they are almost certainly wrong for whoever is running this skill, on this

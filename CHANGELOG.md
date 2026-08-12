@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.2] — 2026-08-12
+
+### Spec-protocol builder-role correction — the stronger DeepSeek variant now builds
+
+- **v4 Flash builds, v4 Pro judges — an operator correction.** The skill recommended
+  DeepSeek **v4 Pro** for the app-builder role. That was backwards, and it cost twice.
+  **v4 Flash is the stronger of the two variants**, and it is the one that carries the
+  higher provider ceiling — **2,500 concurrent subagents against v4 Pro's 500**. The
+  builder does the most work in the pipeline, so the old recommendation handed the
+  heaviest seat the weaker model at one fifth of the available width. The builder role
+  is now recommended through the alias that resolves to **v4 Flash**, and **v4 Pro**
+  is recommended for the Sonnet-tier technical and release judge seats, where 500 is
+  ample for the eight technical and four release judges that use it. Caught by the
+  operator against his own live wiring. `references/gauntlet.md` §13.1 already had it
+  right — WF02 builds on the Opus alias → v4 Flash, WF04 and WF05 judge on the Sonnet
+  alias → v4 Pro — so this brings `SKILL.md`, `references/interview.md`, and
+  `references/pipeline.md` into line with the six-workflow spec they were contradicting.
+- **No ceiling number moved.** 2,500 stays attached to v4 Flash and 500 stays attached
+  to v4 Pro everywhere either appears. `references/capacity.md`,
+  `tools/capacity-resolver.sh`, and the Stage-1 concurrency table are untouched, and so
+  are all four tools — only the role each variant is recommended FOR changed.
+- **Still recommendations, still alias-resolved.** These are starting points for someone
+  wiring up from scratch, expressed through the router alias layer. The binding rule is
+  unchanged: read the live aliases at run time and report what is actually wired, never
+  assume anyone's wiring, never hardcode a raw model id for a role, and verify that the
+  builder, judge, and comparative-critic seats resolve to different underlying models —
+  different alias names prove nothing.
+
 ## [1.2.1] — 2026-08-12
 
 ### Spec-protocol clarity fixes — the operating loop reads as steps, Agnes prices read as annual
