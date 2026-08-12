@@ -68,8 +68,8 @@ live-account doctrine and they stay.
 | Ollama Cloud, $20/mo plan (any model) | 3 concurrent | **USE 2** (Trevor's reserve — never consume 100%) | Plan tier: ask if undetectable |
 | Ollama Cloud, $100/mo plan (any model) | 10 concurrent | **USE 8** | Plan tier: ask if undetectable |
 | Agnes AI, free | 20 requests/minute | budget 15/min (25% reserve) | **VERIFY-LIVE: web-research agnes-ai.com rate rules at run time; these figures are the FALLBACK when research fails, and the ledger records which was used** |
-| Agnes AI, $40 plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) | VERIFY-LIVE (same) |
-| Agnes AI, $100 plan | 7,500 requests / 5 hours (= 25/min sustained) | budget 5,625 / 5h (= 18.75/min) | VERIFY-LIVE (same) |
+| Agnes AI, $40/year plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) | VERIFY-LIVE (same) |
+| Agnes AI, $100/year plan | 7,500 requests / 5 hours (= 25/min sustained) | budget 5,625 / 5h (= 18.75/min) | VERIFY-LIVE (same) |
 | OpenRouter | detect key; research current limits; burn-rate warn | fallback role only | VERIFY-LIVE |
 
 **The supersession, stated so it can never drift back:** an earlier build
@@ -341,11 +341,11 @@ so the when-to-use gate answers "single-session" and says so plainly to the
 client. The commander stations collapse onto the lead and the same canonical loop
 runs single-session (`references/agent-team.md`).
 
-### Scenario (d) — Ollama Cloud $100 + Agnes $40
+### Scenario (d) — Ollama Cloud $100 + Agnes $40/year
 
 Ollama: 10, **USE 8** → builder lanes 8 concurrent (1 workflow × 8).
 
-Agnes $40: 1,500 requests / 5 hours − 25% = 1,125 per 5h = 3.75 requests/minute
+Agnes $40/year: 1,500 requests / 5 hours − 25% = 1,125 per 5h = 3.75 requests/minute
 sustained. Assume **~25 API requests per agent-task** — state the assumption,
 measure the real figure over the first 5 tasks, and re-derive. 1,125 ÷ 25 = **45
 Agnes agent-tasks per 5-hour window** → Agnes carries LOW-FREQUENCY roles (blind
@@ -477,7 +477,8 @@ Rules for this path:
   ceiling, and the skill uses 2-vs-8 (section 2).
 
 ### Agnes AI
-- Check for the Agnes key and ask which plan (free / $40 / $100). Then
+- Check for the Agnes key and ask which plan (free / $40 a year / $100 a year —
+  Agnes tiers are ANNUAL, not monthly). Then
   web-research agnes-ai.com for the current rate rules and record the source
   line; the section 2 quotas are the fallback.
 

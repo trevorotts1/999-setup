@@ -415,8 +415,9 @@ current model docs — do not recite a remembered figure. Example only, to verif
 fresh: an Ollama Cloud MiniMax example "512k not 1M" (a real gap between the
 marketed figure and the delivered one, which is *why* this gets checked instead of
 assumed), a GLM 5.2 Haiku output example "64k". Check rate limits the same way —
-example only, to verify fresh: a Gemini free-tier example "20/min", a $40-tier
-example "1500/5h", a $100-tier example "7500/5h"; an Ollama Cloud $20-tier example
+example only, to verify fresh: a Gemini free-tier example "20/min", an Agnes
+$40/year-tier example "1500/5h", an Agnes $100/year-tier example "7500/5h" (Agnes
+tiers are ANNUAL prices, not monthly); an Ollama Cloud $20-tier example
 "3 concurrent", a $100-tier example "10 — use 8". Check budget (OpenRouter/DeepSeek
 balance vs a rough token estimate — rough, not final). Save the VERIFIED matrix —
 never the example numbers above — to the execution plan.
