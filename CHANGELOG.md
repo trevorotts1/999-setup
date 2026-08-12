@@ -1,5 +1,93 @@
 # Changelog
 
+## [1.2.3] — 2026-08-12
+
+### Fresh-clone install blocker — the orchestrator could not execute at all
+
+- **Every shell script in this repository was tracked mode `100644`** — non-executable. A
+  fresh `git clone` therefore landed an installer that could not be run at all:
+  `AGENT_INSTALL.md`, `SKILL.md`, and `CLAUDE.md` all direct the agent to run
+  `scripts/setup-macos.sh` directly, and doing so died instantly with `permission denied`
+  before a single line of the script executed. Seven further helper invocations inside
+  `setup-macos.sh` would have failed the same way. Reproduced on a clean clone of `main` at
+  `21e1aac`: exit code **126**, which is the shell's "found but not executable" — not a
+  missing file, and not anything the script itself reported.
+- **Fixed on both axes, deliberately.** Ten files are now tracked `100755` — the macOS
+  orchestrator, all six of its `scripts/macos/` helpers, `tests/macos/verify-macos.sh`, and
+  both macOS launchers — so a plain clone lands them executable. Independently, all seven
+  direct helper invocations inside `setup-macos.sh` now carry an explicit `bash` prefix,
+  matching the pattern the Agent Teams call already used. The two halves cover different
+  failures: the mode bit fixes the entry points that nothing inside the repository can reach,
+  and the `bash` prefix keeps the internal calls working even when a delivery path strips the
+  mode bit — a GitHub source `.zip`, a copy across an exFAT/SMB volume, an extraction under a
+  restrictive umask, or a clone with `core.fileMode=false`.
+- **The `.mjs` helpers stay `100644` on purpose.** Every invocation of them — in both
+  orchestrators and in `tests/README.md` — passes them to `node` explicitly; none depends on
+  the shebang, so an exec bit there would be decoration.
+- **Windows is unaffected.** `setup-windows.ps1` invokes `.ps1` files through PowerShell,
+  which has no executable bit. No `.ps1`, no `.cmd`, and no Windows launcher was modified,
+  and no mode on any of them changed.
+- **`launchers/macos/claude-nine` was `100644` too** — harmless in practice, because
+  `install-claude-nine.sh` places it with `install -m 700`, which sets the destination mode
+  outright regardless of the source. Corrected anyway, so the repository copy is runnable
+  where it sits.
+
+### `claude-codex` now ships and installs
+
+- **The macOS launcher set gains `claude-codex`** — `claude-nine` pinned to
+  `cx/gpt-5.6-sol(high)` with `--autocompact 350k`. `install-claude-nine.sh` installs it
+  alongside `claude-nine` at `$HOME/.local/bin/claude-codex` (mode 700), and `setup-macos.sh`
+  passes its source path exactly the way it passes `claude-nine`'s. Idempotent by
+  construction: `install -m 700` overwrites with the same bytes and sets the destination mode
+  outright, so a rerun changes nothing. A missing source is reported and skipped, never fatal
+  — `claude-nine` is the launcher this setup actually provisions routes for.
+- **Supersedes the 1.2.0 residual-risk note** recording that this repository ships no
+  `claude-codex` launcher. It ships one now.
+- **Why the 350K window, preserved in the launcher's own header** — 9Router reports
+  `cx/gpt-5.6-sol` with a 372,000-token context window. Claude Code has no per-model context
+  setting; the ceiling it believes it has is a single global value for the whole profile. A
+  Codex session inheriting a ceiling larger than its own waits for a compaction trigger that
+  can never arrive, hits the 372K wall, and dies with no compaction having run.
+  `--autocompact` is per **launch**, so it supplies the per-model behaviour the global setting
+  cannot — and 350K leaves ~22K of slack, because compaction itself has to send the
+  conversation up to summarise it, so triggering flush against the ceiling makes the cleanup
+  the thing that fails. The header carries the ceiling table for the other Codex models
+  (`gpt-5.5`/`gpt-5.4` at 400K, `gpt-5.6-terra`/`-luna` at 272K) so the model and the window
+  are always changed together.
+- **It resolves `claude-nine` instead of hardcoding a path** — `$CLAUDE_NINE_BINARY`, then
+  `PATH`, then `$HOME/.local/bin/claude-nine`: the same override → PATH → known-location order
+  `claude-nine` itself uses to find `9router`. It refuses to run when that resolves back to
+  itself, so a bad symlink or a misnamed copy fails with one readable line instead of
+  recursing until the process table fills.
+- **It requires a `cx/` provider that this setup does not wire.** The orchestrator wires
+  DeepSeek Direct, Ollama Cloud, Agnes AI and optionally OpenRouter. The completion report
+  reports `INSTALLED` from a real filesystem check and names the missing prerequisite beside
+  it; the launcher is deliberately **not** smoke-tested end to end the way `claude-nine` is,
+  because there is no provisioned route to test it against and a green line there would be a
+  claim nothing proved.
+
+### Repository hygiene
+
+- **A junk file is gone from the repository root** — a tracked, 0-byte file whose 115-byte
+  name was the tail of a Python one-liner swallowed by a stray shell redirect
+  (`,sorted(v.keys()) … isinstance(v,dict)]\" 2>&1`, plus an embedded newline and a trailing
+  quote). It reached a public repository by accident. Its blob was git's canonical empty blob
+  `e69de29`, and nothing in the repository referenced it. **Exactly one file was removed**:
+  the tracked file count went 68 → 67, and it was both the only tracked path in the
+  repository containing shell metacharacters and the only 0-byte tracked file. No sibling
+  junk of the same origin exists.
+
+### Known residual risks (accepted, documented)
+
+- **A Windows `claude-codex` is UNDETERMINED** — none is shipped. The source artifact is a
+  bash launcher, no Windows equivalent has ever been written or run, and PowerShell is not
+  installed on the machine this change was made on: `pwsh` and `powershell` both returned
+  exit **127** (a shell abort, not a fact about Windows) against a `bash --version` control on
+  the same instrument that returned 0. Nothing could have been syntax-checked there, let alone
+  executed, and shipping an unverified `.ps1` into a public cross-platform installer would be
+  worse than the gap. Recorded the way `teammateMode` and `SendMessage` already are: a named
+  platform gap rather than a silent one.
+
 ## [1.2.2] — 2026-08-12
 
 ### Spec-protocol builder-role correction — the stronger DeepSeek variant now builds
