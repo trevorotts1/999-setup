@@ -20,11 +20,14 @@ if it is still genuinely unanswerable.
 A wall of text gets skimmed or skipped. One thing at a time gets done. A screen full
 of information is the same as no information — keep every message to ONE screen.
 
-The capacity interview has up to twenty-two questions, but the user sees them one at
-a time, in plain language, with the consequence of each answer stated before they
-answer. State the count up front ("about nineteen short questions, then you can walk
-away") and use the fast paths (the defaults offer, the small-plan collapse — block D
-never collapses) so a small plan is never asked twenty-two questions.
+The capacity interview is the long one, but the user sees the questions one at a
+time, in plain language, with the consequence of each answer stated before they
+answer. State the count up front ("about <the number `interview.md` tells you to
+say> short questions, then you can walk away"). **`interview.md` owns every count
+claim in this skill** — take the number from there, never invent one on this page,
+and never state a number you will then exceed. Use the fast paths (the defaults
+offer, the small-plan collapse — block D never collapses) so a small plan is never
+asked the whole list.
 
 ---
 
@@ -149,12 +152,27 @@ a raw error message without a plain-English explanation.
 
 ## 9. The morning promise.
 
+**The skill runs its own sessions. The user opens nothing.** The building, the
+checking and fixing, and the putting-on-GitHub are seats this skill spawns and
+drives itself — never chores handed to the user as windows to open. That is THE
+HANDOVER RULE (`terminals.md`, binding), and S11 (SKILL.md RULE 5) makes any
+user-facing text that assigns the user a terminal window a failable violation.
+The only thing the user is ever asked to paste is the one restart command in
+`LAUNCH-COMMAND.md` (document 11), and only if their computer crashed.
+
 At the end of the launch instructions:
 
-> Terminal 1 builds your app. Terminal 2 checks the quality and fixes things.
-> Terminal 3 puts the finished work on GitHub. When you wake up, open the "Morning
-> Report" file in your project folder. It will tell you what was built, what is
-> done, and whether anything needs your attention.
+> I am doing all of it for you — building your app, checking the work and fixing
+> anything that is not good enough yet, and putting the finished pieces safely on
+> GitHub. You do not need to open anything, start anything, or watch anything.
+>
+> Go and have your evening. When you wake up, open the "Morning Report" file in
+> your project folder. It will tell you what was built, what is done, and whether
+> anything needs your attention.
+
+Never offer windows first. Only if the user asks, unprompted, for separate windows
+of their own does `terminals.md`'s labelled last-resort rung come into play — and
+then every rule on this page still governs how those instructions are written.
 
 ---
 

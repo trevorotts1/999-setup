@@ -1,8 +1,10 @@
 # The Capacity and Model-Intelligence Interview (v4 Section 4.5, adapted)
 
 This is the interview from the v4 Super Spec Document, section 4.5, adapted for
-the spec-protocol skill's model-intelligence purpose. It runs on **Claude-Nine
-only** — regular Claude Code skips it and uses built-in defaults. It runs BEFORE
+the spec-protocol skill's model-intelligence purpose. Its capacity blocks run on
+**Claude-Nine only** — regular Claude Code skips blocks A, B and C and uses
+built-in defaults, and **still asks Block D** (D1–D4, the Gauntlet questions),
+which runs on BOTH harnesses and never collapses. It runs BEFORE
 the current-state pass. It has two halves in a fixed order: **discovery, then
 interrogation.** Do not reverse them. A question list handed to somebody who has
 not yet said what they are trying to build produces answers to the wrong
@@ -11,17 +13,17 @@ questions, and they are hard to unpick later because they look like decisions.
 One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
 **State the expected question count up front, plainly:** "I will ask you about
-nineteen short questions, one at a time, and then you can walk away."
-(**Twenty-three is the ceiling** — the four lettered blocks hold A1–A8, B1–B4,
-C0–C6, D1–D4; C6 is the twenty-third and fires only when C0 says the run is
-unattended, so an attended run's ceiling is twenty-two. A1 is usually measured
-rather than asked, the two fast paths below can fold blocks B and C into yes/no
-confirmations, and block D's four questions always run — they are the user's own
-decisions and have no defaults.
-Never promise fewer than you will actually ask; say "about nineteen" and mean it.)
+eighteen short questions, one at a time, and then you can walk away."
+(**Twenty-two is the ceiling** — the four lettered blocks hold A1–A8, B1/B2/B4
+(B3 retired 2026-08-12), C0–C6, D1–D4; C6 is the twenty-second and fires only when
+C0 says the run is unattended, so an attended run's ceiling is twenty-one. A1 is
+usually measured rather than asked, the two fast paths below can fold blocks B and
+C into yes/no confirmations, and block D's four questions always run — they are the
+user's own decisions and have no defaults.
+Never promise fewer than you will actually ask; say "about eighteen" and mean it.)
 **On a repeat project with a saved profile and an unchanged machine, the
 provider-path questions collapse to one confirmation; say the smaller real
-number** — "about sixteen short questions this time, fewer than last time,
+number** — "about fifteen short questions this time, fewer than last time,
 because I remembered your answers and went and checked the machine myself."
 
 **The count moves with WHAT is being built, and you say the new number out loud.**
@@ -29,10 +31,10 @@ Step 1c asks one more question (what are we building), Step 1d asks three or fou
 that apply only to that target, and any build that needs artwork adds up to three
 more about images and video — a funnel almost always does, and an app or a website
 does whenever its plan calls for pictures of its own. So the honest number, stated
-the moment the target is known, is about twenty-three for an app, twenty-three or
-twenty-four for a website, and twenty-four for a funnel — and where artwork is
-wanted, up to twenty-six for an app, twenty-six or twenty-seven for a website, and
-twenty-seven for a funnel. Say it as a correction, never as a surprise: "That is a
+the moment the target is known, is about twenty-two for an app, twenty-two or
+twenty-three for a website, and twenty-three for a funnel — and where artwork is
+wanted, up to twenty-five for an app, twenty-five or twenty-six for a website, and
+twenty-six for a funnel. Say it as a correction, never as a surprise: "That is a
 few more than I first said — the extra ones only apply because you said funnel."
 Never state a number you will then exceed. On regular Claude Code, where block A
 does not run, the same rule applies
@@ -519,11 +521,11 @@ the interview, never to the four questions only the person can answer.
 
 ---
 
-## Step 2 — The interview, in three blocks
+## Step 2 — The interview, in four blocks
 
-Twenty-two questions, asked in four named blocks, in this order — eight in block A,
-four in block B, six in block C (seven when the project runs on its own and C6
-applies), four in block D. The order is not cosmetic: the capacity answers
+Twenty-one questions, asked in four named blocks, in this order — eight in block A,
+three in block B (B3 retired 2026-08-12), six in block C (seven when the project
+runs on its own and C6 applies), four in block D. The order is not cosmetic: the capacity answers
 set what the repository and loop answers may be. Ask everything in a block, then
 move on.
 
@@ -552,7 +554,7 @@ older reading.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11) — on the operator's box, fable resolves to the same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
+| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11), read live from the machine this run is on — never recited. **Dated example, from one operator box, never a fact about a client machine — resolve it on the machine you are on:** there, `fable` resolved to that same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
 | **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. **Then ask it once per paid service, not once for the machine** — the tier is per account, and each one changes the arithmetic. Measure what you can first (read the router config and the environment for keys), say plainly what you found, and ask only the plan they pay for. The exact wording per service is below, under "Resolving which provider path this build will run on". | The allowance "A" in the budget derivation, and the per-service tier rows the Capacity Ledger reads (`capacity.md`) — which builder model, on which account, at which ceiling. |
 | **A3** | **Is the "effort" or "reasoning" setting turned up?** Both tools have one. If you do not know, that is a real answer — I will assume the safest setting. | The tier multiplier "T". A deeper effort setting multiplies the spend of every tick. |
 | **A4** | **How many agents do you want running at the same time?** Not what the tool says it CAN do — what YOU want. | The starting value for the agent ceiling "N", which the derivation then confirms or reduces. |
@@ -680,8 +682,14 @@ conflict to resolve, it is what makes it an exhibit.
   comparative-critic seats resolve to different underlying models — different alias
   names prove nothing.
 
-For each role: show how 9router is currently wired (read the config; report "Haiku
-is currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…").
+For each role: read the 9router config and report the current wiring. Report it
+in the SHAPE `"<alias> is currently <resolved model id>"` — one line per lane,
+every name read LIVE from this box on this run, never recited from this file.
+**No model name is written here on purpose:** the names that used to sit in this
+sentence are in the dated HISTORICAL EXHIBIT above, where three of the four are
+already wrong for the wiring this repo's own installer ships. A wiring report
+that names a model this file supplied is not a report, it is a recitation — and
+it is the exact defect the exhibit was created to stop.
 **Then say what else is available, because the four lanes are not the whole
 list:** the wiring report includes a one-line pool summary — "your router also
 serves N other models across these providers: …" — so that when you ask whether
@@ -729,8 +737,10 @@ this order.
 1. **Measure first (Law 28).** Read the router configuration and the environment
    for provider keys, and resolve each role's alias to the model it actually
    points at (`capacity.md` §11). Then report what you found in plain words:
-   "Your builder is set to DeepSeek v4 Flash, and I can see an Ollama Cloud key
-   and an Agnes key." Names only — never print a key's value, ever.
+   "Your builder is set to <the model the config actually named>, and I can see
+   <the provider keys you actually found>." **Every name in that sentence is READ
+   from the machine, never supplied by this file** — the same shape rule the wiring
+   report obeys. Names only — never print a key's value, ever.
 
    **1b. Then RECALL what they told you last time — one question in place of
    three or four.** Read the saved-answers file (`capacity.md` §13; it holds only
@@ -752,8 +762,9 @@ this order.
      they first said it. **"No"** → "Which part changed?" and re-ask ONLY the parts
      they name, in the plain wordings below. **"I do not know"** → step 4.
    - **The machine does NOT match what was saved** → say what changed, in plain
-     words, one line each: "your builder used to point at DeepSeek v4 Flash — now
-     it points at something else"; "I found an Agnes key last time and I do not
+     words, one line each: "your builder used to point at <the model the saved
+     answers recorded> — now it points at <what you just read>"; "I found an Agnes
+     key last time and I do not
      find one now." Re-ask only the questions those changes touch, and carry
      everything untouched into the same single confirmation. A machine that changed
      is the case this was built for, not a problem — knowing exactly what changed
@@ -807,7 +818,7 @@ None of these questions asks the person to know what a terminal, an API, or a
 router is. Every one is answerable from a billing page, a receipt, or a memory of
 what they signed up for — and "I do not know" is a real answer to all of them.
 
-**Fast path 1 — the defaults offer (right after A2).** Twenty-two questions is a lot
+**Fast path 1 — the defaults offer (right after A2).** Twenty-one questions is a lot
 for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
 
 > I can ask you about a dozen more questions, or you can use my recommended
@@ -829,14 +840,16 @@ Collapse each to its default and ask for ONE yes/no confirmation per block:
 > unless you say otherwise: [the block's defaults in one plain sentence each].
 > Is that all right?
 
-B1→B4 collapse to: one repository, branch "main", batch size derived from the
-project size, no forbidden push targets. C0→C5 collapse to: runs once while you
+B1, B2 and B4 collapse to: one repository, branch "main", no forbidden push
+targets. (The merge cadence is NOT among them — the standard drain timer is a
+standing default now, applied silently and reported; B3 was retired, above.)
+C0→C5 collapse to: runs once while you
 watch (unless they said otherwise), the live ledger holds state, merges happen on
 their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
 live at its URL. A yes records the whole block as defaults (each marked
 "default — confirmed yes/no" rather than "their answer"). A no re-opens the block
 question by question. The collapse is the reason a tiny plan gets asked "about
-nineteen short questions" instead of twenty-two-plus.
+eighteen short questions" instead of twenty-one-plus.
 
 ---
 
@@ -850,8 +863,18 @@ and do not ask.
 |---|---|---|
 | **B1** | **How many GitHub repositories will this project put code in?** One is most common. If you already have repos for this, I have already found them — I am asking about anything beyond those. | The number of merge trains — one per repository, because repositories merge independently. This is the answer with the largest structural consequence in the whole interview. |
 | **B2** | **What is each repository's main branch called, and who may push to it?** Usually "main" — I just want to confirm. And do YOU push to it, or does the tool? | The trunk each train fast-forwards, and whether the merge-writer is permitted to do it at all. |
-| **B3** | **How many finished pieces should land per train run?** If you do not have a view, I will derive it from the project size and tell you what I used. | The batch size in the landing queue (Rule 3.26). |
 | **B4** | **Is there anywhere the loops must not push?** A branch, a repo, a server — anything that should never receive an automatic push. | Becomes a hard constraint and a fail-closed rule, not a preference. |
+
+**⛔ B3 IS RETIRED — 2026-08-12. Do not restore it, and do not renumber B4 into
+its place.** It asked the client how much finished work should land per train run.
+RULE 2 removed the merge count cap, so there is nothing left for that answer to
+set: the merge train is TIME-TRIGGERED and whatever is ready merges as ONE batch,
+however much that is (`pipeline.md` Rule 3.21, trigger 1). It was also a question a
+non-technical client cannot reason about. **The standard drain timer is now the
+only path — applied silently and REPORTED, never asked.** Tell them what cadence
+you used when you tell them the work went up; do not put the choice to them. The
+ids stay B1, B2, B4 on purpose, so that a later pass reading "B1–B4" cannot quietly
+re-add a third question.
 
 **Say the consequence of B1 out loud, because it is the one people get wrong:** one
 train serving two repositories is wrong, and it is wrong in a way that looks tidy —
