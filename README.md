@@ -102,6 +102,24 @@ The **first** time you run `claude-nine` on macOS, you may see a Keychain prompt
 whether to allow access to the stored router token — click **"Always Allow"** so future
 runs do not prompt again.
 
+### Effort and ultracode
+
+`claude-nine` does **not** pin an effort level, so the in-session picker is yours:
+
+| What you want | What to type |
+|---|---|
+| Highest effort for the whole session | `/effort ultracode` |
+| Highest effort for one message only | start the message with `ultracode` — e.g. `ultracode /spec-protocol` |
+| A saved default for new sessions | `/effort xhigh` |
+
+`low`, `medium`, `high`, and `xhigh` are saved as your default for new sessions; `max`
+and `ultracode` apply to the current session only.
+
+If a selection snaps back to the previous setting, an inherited
+`CLAUDE_CODE_EFFORT_LEVEL` in your environment is overriding the picker — Claude Code
+says so in its reply. Clear it (`unset CLAUDE_CODE_EFFORT_LEVEL`) and select again. To
+pin effort on purpose for a single launch, run `CLAUDE_NINE_FORCE_EFFORT=xhigh claude-nine`.
+
 ---
 
 ## Repository layout

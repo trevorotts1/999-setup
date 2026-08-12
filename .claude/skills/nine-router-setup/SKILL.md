@@ -206,10 +206,14 @@ The routing matrix this skill wires:
   `ANTHROPIC_DEFAULT_SONNET_MODEL` = `ds/deepseek-v4-flash(max)`,
   `ANTHROPIC_DEFAULT_HAIKU_MODEL` = `ds-light/deepseek-v4-flash`),
   `CLAUDE_CODE_SUBAGENT_MODEL` = `ds/deepseek-v4-flash(max)`,
-  `CLAUDE_CODE_EFFORT_LEVEL=max`,
   `CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000`, and
   `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` derived from `OLLAMA_PLAN`
   (free→1, pro→2, max→8).
+  `CLAUDE_CODE_EFFORT_LEVEL` is NOT exported: the launcher sets it only when
+  `CLAUDE_NINE_FORCE_EFFORT=<level>` is present for that launch. Unconditional
+  export overrode every in-session `/effort` selection; the profile's
+  `settings.json` `effortLevel` (seeded `xhigh` — the highest persistable level)
+  is the recorded default instead.
   The launcher must fail closed (refuse to exec `claude` unrouted) when any of the four
   alias pins is missing from the routed-session state.
 - Protect session state: Windows DPAPI/current-user; macOS Keychain for the token + mode-600
