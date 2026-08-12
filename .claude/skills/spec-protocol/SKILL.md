@@ -169,6 +169,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S11 — Terminal-chore ban** | No user-facing text produced this session instructs the client to open a terminal window (outside the labeled last-resort rung of references/terminals.md) | VIOLATION — the instruction is retracted and replaced with the skill doing the thing itself (references/agent-team.md) |
 | **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
 | **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
+| **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
 
 ---
 
@@ -520,14 +521,25 @@ When the operator provides a folder, that folder IS the project. Its documents A
     shared-bucket assumption for teammates until probed). Where the provider is
     Agnes or OpenRouter, web-research the provider's current limits FIRST and fall
     back to the encoded doctrine only when research fails — recording which source
-    was used. If the provider path cannot be determined, reason about it
+    was used. The same research-first rule governs MEDIA: when the build
+    generates media, web-research the media catalog and its current prices before
+    the ledger is written (`references/media-pipeline.md`). Media model names and
+    prices are never recited from documentation — the run's own catalog research
+    and its smoke-test measurement are the sources of record. If the provider
+    path cannot be determined, reason about it
     explicitly in the ledger and ASK — never silently assume. **No dispatch may
     occur before this file exists; every dispatch decision cites it.** Full
     procedure and four worked scenarios: `references/capacity.md`.
     The 6.5 measurement set also includes **POOL DISCOVERY** (`GET /v1/models`
     through the session's own gateway and auth — the procedure above) and a
     PLATFORM re-detect; both are free, both are `[MEASURED]`, and both are
-    re-taken HERE rather than inherited from step 2. A seat then resolves one of
+    re-taken HERE rather than inherited from step 2. When the build generates
+    media, the measurement set also includes MEDIA DISCOVERY and the MEDIA
+    METERS: the media catalog researched and smoke-tested at media-planning time,
+    and the ceiling each planned batch draws — the kie credit balance, or Agnes's
+    images-per-day and video-seconds-per-day meters, which are separate from each
+    other and from the text request window (`references/capacity.md` 13.8). A
+    seat then resolves one of
     two ways, and the ledger records which: **LANE** — role → alias → resolved
     model, the three hops; or **DIRECT** — role → a capability-selected model
     from the discovered pool. Both end in the same place: a RESOLVED model id,
