@@ -154,10 +154,11 @@ costs the whole set the tail of its slowest member.
   (`sysctl -n hw.ncpu` on macOS, `nproc` on Linux). On the operator's 12-core Mac
   Mini that is **10**. Never inherit the number — a 24-core box gets 16, an 8-core
   box gets 6. Write the formula and the measured value together, always.
-- **1,000 agents lifetime per workflow run.** This is a different counter from the
-  per-session `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` cap (also 1,000). The Capacity
-  Ledger records both — per-workflow-run executions and per-session spawns
-  (`references/capacity.md` §3).
+- **1,000 agents lifetime per workflow run.** This is a different counter from
+  `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` (also 1,000) — a configuration record
+  treated as **INERT** (`references/capacity.md` §3); the operator's budget is the
+  only enforcement this skill relies on. The Capacity Ledger records both —
+  per-workflow-run executions and per-session spawns.
 - **4,096 items maximum per `pipeline()` or `parallel()` call.** Above that, split
   the roster across runs.
 - **30 workflow runs in flight is the hard session ceiling.** On this 12-core

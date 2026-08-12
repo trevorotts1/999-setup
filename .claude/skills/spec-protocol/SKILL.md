@@ -1,6 +1,6 @@
 ---
 name: spec-protocol
-description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (up to 22 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
+description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (up to 23 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
 trigger: /spec-protocol
 ---
 
@@ -167,6 +167,8 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S9 — Inline-work ban** | No build artifact was edited by the conductor itself: every landing commit has a prior dispatch-log row, and the conductor's own working tree is clean of build files. (Doctrine #2, Level 1: the Team Lead's primary job is ORCHESTRATION — it does NOT personally implement.) | VIOLATION — the unit is re-done by a dispatched agent; the violation is logged; the inline edit is quarantined |
 | **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS — see references/anti-drift.md |
 | **S11 — Terminal-chore ban** | No user-facing text produced this session instructs the client to open a terminal window (outside the labeled last-resort rung of references/terminals.md) | VIOLATION — the instruction is retracted and replaced with the skill doing the thing itself (references/agent-team.md) |
+| **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
+| **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
 
 ---
 
@@ -200,16 +202,27 @@ confirms ultracode's state when it is on.
 
 ## The harness auto-detect — one skill, two modes, three launchers
 
-ONE skill, two modes. Detect the harness with real filesystem checks. Never guess.
+ONE skill, two modes. Detect the harness with real filesystem checks AND a real
+read of the session's own environment. Never guess.
 
 | Signal | Harness | Mode |
 |--------|---------|------|
-| `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
-| `~/.claude-nine/` missing — OR it exists but none of the three 9router signals above is found | **Regular Claude Code** | Skip the interview except Block D, use built-in defaults |
+| Any ONE of: **(d)** the CURRENT SESSION's own environment carries a loopback `ANTHROPIC_BASE_URL` (test it BY NAME — report loopback yes/no, never print the value) or a provider-prefixed session model id; or `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
+| None of the four signals found — no loopback base URL in the session env, and `~/.claude-nine/` missing (or present with none of the three 9router signals) | **Regular Claude Code** | Skip the interview except Block D, use built-in defaults |
 
-If `~/.claude-nine/` exists but none of the three 9router signals above is found,
-treat it as **regular Claude Code** and say so plainly. Report the detected
-harness to the user in one line before proceeding.
+**Signal (d) is the one that works on a CLIENT box.** The shipped `claude-nine`
+launcher never creates a separate config root — it injects routing into the child
+process environment only — so on every shipped-launcher box `~/.claude-nine/`
+does NOT exist and signals (a)–(c) are all silent while the session is fully
+routed. Reading the session's own environment is the only instrument that works
+on BOTH topologies, because it reads what is actually IN FORCE rather than what a
+file intends. Signals (a)–(c) remain for operator-style boxes whose personal
+wrapper does set a second config root. **Any one of the four suffices.** Test the
+variable by NAME and report loopback yes/no — never print its value, and never
+dump the environment.
+
+If none of the four signals is found, treat it as **regular Claude Code** and say
+so plainly. Report the detected harness to the user in one line before proceeding.
 
 ### The three launchers (detect the LAUNCHER as well as the mode)
 
@@ -272,26 +285,122 @@ D is the only part of the capacity interview that runs on BOTH harnesses.
 ### Claude-Nine — run the capacity interview
 
 9router-routed models. **Run the full capacity interview** before building — the
-v4 section-4.5 interview (22 questions, four blocks), adapted for model
+v4 section-4.5 interview (23 questions, four blocks), adapted for model
 intelligence. See `references/interview.md`. Measure what you can (repo count,
 branch, code state — go look); ask only what no command can reveal (subscription
 tier, effort setting, which models they want).
 
-Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
+Key model SEATS for Claude-Nine. **This table states REQUIREMENTS, not model
+names.** Every seat is RESOLVED PER RUN — against the router's discovered model
+pool under Claude-Nine, against the built-in tiers on regular Claude Code (see
+"Router aliases" below and `references/capacity.md` §11). The **default lane** in
+each row is the alias used when the pool is undiscoverable (regular Claude Code;
+router down) — it is a fallback, never a pin. A requirement cannot go stale,
+because it names a property; a pinned model name goes stale the next time anyone
+rewires. The run's own Capacity Ledger is the single authority on what each seat
+actually resolved to.
 
-| Role | Default alias | Why / caps |
+| Role | Requirement — resolved per run (default lane) | Why / caps |
 |------|---------------|------------|
-| App builder | Opus → DeepSeek v4 Flash | Provider ceiling 2,500 concurrent subagents (Trevor's doctrine), less the 25% reserve. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = 1,000 subagent executions per session, a lifetime count and never a width; AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
-| Technical + release judge | Sonnet → DeepSeek v4 Pro | Provider ceiling 500 concurrent subagents, less the 25% reserve — ample for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1). Must resolve to a DIFFERENT underlying model than the builder — different alias names prove nothing. |
-| QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
-| Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
+| App builder | **REQUIREMENT: the strongest available lane** — Trevor's decided law, stated verbatim: "strongest available lane; on his wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| Technical + release judge | **REQUIREMENT:** rubric-depth verdict capability, and it MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder — by the FAMILY RULE: strip the provider prefix and the thinking/pricing/version suffixes, then compare base ids; same-base lanes differing only in thinking level are ONE model. Default lane: `Sonnet`. | Enough concurrency for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1), less the 25% reserve. **Read the CEILING CLASS off the RESOLVED model, never off the lane** — a DeepSeek node bills a concurrency ceiling, an Agnes node bills a requests-per-5-hours window, an OpenRouter node bills token balance. Wrong model ⇒ wrong ceiling CLASS ⇒ wrong burn budget. Different alias names prove nothing. |
+| QC + fixer | **REQUIREMENT:** strong enough to find gaps, defects, blockers and improvements AND to fix them; where this seat also serves as a review seat, it inherits that seat's independence constraint. Default lane: `Fable`. | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
+| Merger | **REQUIREMENT:** reliable at low concurrency on mechanical work; no independence constraint. Default lane: `Haiku`. | Low load, fine at 8–10 concurrent. |
 | Comparative critic (Gate 3) | **No default seat — RESOLVED AT RUN TIME** (this cell names a requirement, never an alias) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. **THE REQUIREMENT:** the critic MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder. **Never the builder's alias** — a critic running the builder's own model is not blind, it is grading its own homework. And a different alias NAME proves nothing: compare RESOLVED models, at run time, on THIS box (`references/pipeline.md`, the comparative sub-stage). **THE CANDIDATE POOL IS NOT THE ALIAS SET.** Aliases are a convenience layer, not a boundary — under Claude-Nine the router exposes far more models than the four alias routes touch, and any model it serves can take the critic seat. Enumerate what the router ACTUALLY exposes at run time; never reason about availability from the alias table. **SELECTION PROCEDURE:** (1) resolve the builder's alias to its actual model; (2) enumerate the models the router actually serves right now; (3) pick a critic whose RESOLVED model differs from the builder's — preferring by PROPERTY, never by name: a different PROVIDER or model FAMILY beats merely a different thinking level on the same base model, because a thinking level is not a second lineage and a same-lineage reviewer inherits the builder's blind spots; (4) record the resolved model of every seat in the execution plan. **Independence is normally easy to satisfy — treat it as the expected outcome.** Note that on the wiring this repo ships, several aliases resolve to the SAME base model at different thinking levels; that is precisely why an alias swap is not evidence of independence. If `fable` is considered, check first that on THIS box it is neither holding a fusion combo nor serving as the fixer seat; if either is true it is not available. **WHEN DISCOVERY FAILS:** if the pool cannot be enumerated — router unreachable, or plain `claude` with no router at all — fall back to what the session can PROVE it has, and say so plainly. On regular Claude Code the pool genuinely is the Anthropic models available to that session. Under Claude-Nine, "no independent model available" is a DISCOVERY FAILURE, never an empty pool: surface it as a finding and repair the discovery. Never claim independence the run cannot prove, and never silently pretend the critic is blind. **Give a reasoning-model critic real token headroom** — on a small budget it can spend the whole allowance thinking and return empty text with `stop_reason: max_tokens`, which reads as a dead seat and is not one. |
 
-For each role: read the 9router config and report the current wiring ("Haiku is
-currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…"); ask
-if the user wants to change or needs wiring help. Check context windows and rate
+**A worked example from ONE machine on ONE day (2026-08-12) — HISTORICAL
+EXHIBIT, never an input.** These are the lane→model wirings that used to be
+pinned in the table above, kept for what they TEACH and stripped of all
+authority. On the operator's own box: `Opus` resolved to DeepSeek v4 Flash
+(thinking max), provider ceiling 2,500 concurrent subagents (Trevor's doctrine);
+`Sonnet` to DeepSeek v4 Pro, ceiling 500 concurrent; `Fable` to Qwen 3.8; `Haiku`
+to GLM 5.2. **Three of those four are already wrong for the wiring this repo's
+own installer ships**, which puts Agnes 2.5 Flash on `sonnet` (a
+requests-per-5-hours WINDOW budget, NOT a concurrency ceiling — a live instance
+of "selecting a model is selecting a ceiling"), a fusion COMBO on `fable`, and
+DeepSeek v4 Flash with thinking OFF on `haiku` (the same base model as the
+builder's lane — which is exactly why an alias swap is never evidence of
+independence). No run reads this exhibit as data. The live config read plus pool
+discovery is the ONLY source of a seat's model. When this exhibit and the live
+read disagree, the live read wins and this exhibit is simply out of date — that
+is not a conflict to resolve, it is the definition of an exhibit. The operator's
+box is the least representative machine in the fleet: nothing here is a default
+for anyone.
+
+### Discover the POOL first, then report the wiring (Claude-Nine)
+
+The four aliases are DEFAULT LANES, not the option space. Before reporting any
+wiring, discover what the router actually serves. This is an M-RUN measurement
+(one local GET, seconds) and it is re-taken at every seat-assignment decision —
+never measured once and carried:
+
+1. **Establish the gateway base URL from the SESSION's own environment** — the
+   loopback `ANTHROPIC_BASE_URL`. Test it BY NAME; report loopback yes/no; never
+   print the value, never dump the environment.
+2. **`GET <base>/v1/models`**, using the same auth path the session itself uses
+   (the profile's `apiKeyHelper` — invoke it; never read key material into the
+   transcript). Record in the Capacity Ledger: the model COUNT, the set of
+   provider prefixes, and the timestamp, marked
+   `[MEASURED gateway-/v1/models <ISO8601>]`. **Never enumerate every model id
+   into any document** — count + prefixes + the selected seats' ids only.
+3. **Where reachable, enrich from the router's admin API** (`GET /api/providers`,
+   `GET /api/combos`, `GET /api/models` — endpoint shapes CITED from
+   `nine-router-setup`'s `nine-router-api.mjs`, never duplicated here): which
+   prefixes are real provider nodes vs custom nodes, and combo membership.
+   Admin-API reachability is per-box UNDETERMINED until probed; `/v1/models`
+   alone is the guaranteed minimum, and discovery degrades to it gracefully —
+   recording WHICH instrument answered.
+4. **Regular Claude Code (no router): there is no pool endpoint.** The pool is
+   the Anthropic tiers the harness exposes. That is a SMALLER POOL, not a failed
+   discovery — record `pool=anthropic-builtin (no router)` and proceed on the
+   defaults path. Never turn a loopback probe into a Claude-Nine verdict on a box
+   whose session environment shows no loopback base URL.
+5. **Router expected but discovery fails — separate BROKEN INSTRUMENT from
+   router-down with the control.** A Claude-Nine session that is executing this
+   very skill is standing proof the gateway answers something. Session works but
+   `/v1/models` errors ⇒ instrument/endpoint failure: pool UNDETERMINED, seating
+   falls back to alias lanes only, conservative, said plainly in the ledger.
+   Session itself cannot complete requests ⇒ the router-down case
+   (`references/capacity.md` §6).
+6. **Three proof levels, never conflated.** **LISTED** — the id appears in
+   `/v1/models`; proves the router knows the name, and NOTHING about whether its
+   upstream key is live. **CALLABLE** — a known-answer smoke test through
+   `/v1/messages` returned real text AND the response's `model` field names the
+   requested model (or its recorded resolution), at `max_tokens ≥ 600`; required
+   per selected non-alias seat BEFORE that seat enters the ledger, and the suite
+   itself is proven once per run by a FAKE-MODEL NEGATIVE CONTROL — a smoke suite
+   whose control passes cannot silently rubber-stamp. **VERIFIED-INDEPENDENT** —
+   the CALLABLE proof's resolved id differs from the other seats' by the family
+   rule. Compare RESOLVED ids, never dispatch-time names.
+7. **Token headroom is a floor on every probe and every verdict.** Probes and
+   smoke tests: `max_tokens ≥ 600` (measured-sufficient, against a
+   measured-failing 60 — one model, one day, marked as such). Verdict-shaped
+   calls (judge score, blind A/B, release council, refuter) on any model not
+   proven reasoning-free: `max_tokens ≥ max(4000, 4 × expected verdict length)`.
+   Treat every non-Anthropic pool model as reasoning-capable until proven
+   otherwise. **Empty text with `stop_reason: max_tokens` is BUDGET-STARVED,
+   never a dead model:** retry ONCE at 4× the budget, then once at the model's
+   documented output ceiling (16k when unknown); still starved ⇒ UNDETERMINED
+   instrument for that seat and the next candidate is selected. A starved empty
+   is a NON-VERDICT — never PASS, never FAIL, never INDETERMINATE. It is
+   reissued.
+
+Then, and only then, report the wiring.
+
+For each role: read the 9router config and report the current wiring. Report it
+in the SHAPE `"<alias> is currently <resolved model id>"` — one line per lane,
+every name read LIVE from this box on this run, never recited from this file.
+**No model name is written here on purpose:** the names that used to sit in this
+sentence are in the dated HISTORICAL EXHIBIT above, where three of the four are
+already wrong for the wiring this repo's own installer ships. A wiring report
+that names a model this file supplied is not a report, it is a recitation — and
+it is the exact defect the exhibit was created to stop. Then ask if the user
+wants to change anything or needs wiring help. Check context windows and rate
 limits by WEB-RESEARCHING them fresh, right now, for the account actually running
-this session — never recite a remembered number. **The figures below are
+this session — never recite a remembered number. Record each seat's HEADROOM
+FLOOR (item 7 above) beside its context window: the floor is part of the seat's
+wiring, not an afterthought, and a fallback whose lane drops the thinking level
+or differs in reasoning appetite changes the floor its dispatches need. **The figures below are
 EXAMPLES to illustrate the
 shape of the check, not facts about anyone's account:** they are one operator's
 own numbers from one day, they drift (providers change limits without notice),
@@ -299,7 +408,8 @@ and they are almost certainly wrong for whoever is running this skill, on this
 run, in this class. Example only — MiniMax context window "512k not 1M" (a
 real gap between the marketed figure and the delivered one, which is *why* you
 check instead of assuming); GLM 5.2 Haiku output example "64k". Example only —
-rate limits: a Gemini free tier example "20/min", an Agnes $40/year-tier example
+rate limits: an Agnes free-tier example "20/min" (Trevor-confirmed — this figure
+belongs to Agnes free, not to any other provider), an Agnes $40/year-tier example
 "1500/5h", an Agnes $100/year-tier example "7500/5h" (Agnes tiers are ANNUAL
 prices, not monthly); an Ollama Cloud $20-tier example "3
 concurrent", a $100-tier example "10 (use 8)". Re-verify every one of these
@@ -360,7 +470,17 @@ When the operator provides a folder, that folder IS the project. Its documents A
 ## The flow — what happens, in order
 
 1. **GATE 0.** Check ultracode. If off, stop.
-2. **Auto-detect harness.** Claude-Nine or regular Claude Code. Report it.
+2. **Auto-detect platform, then harness.** PLATFORM FIRST — `uname -s` (`Darwin`
+   = macOS, `Linux` = Linux, `MINGW*`/`MSYS*`/`CYGWIN*` = Windows-with-Git-Bash;
+   `uname` absent or failing in a PowerShell context = native Windows). **Never
+   infer the operating system from the current shell** — PowerShell runs on
+   macOS and bash runs on Windows. Then the harness: Claude-Nine or regular
+   Claude Code. Report both in one line, and write
+   `Platform: <os> (<how detected>) | shell: <sh>` into the Capacity Ledger
+   header. The platform decides which command vocabulary is spoken and which
+   steps can run at all — a step the platform cannot run is SKIPPED WITH A NAMED
+   REASON, never attempted and never reported as done. See
+   `references/platform.md`.
 3. **Offer entry modes.** "Interview me" or "Here is the info." **Create the
    project folder + `00-INPUT/` immediately after they choose** (Law 23 — the
    brainstorm's verbatim capture gets a durable home before it is spoken, not two
@@ -378,7 +498,10 @@ When the operator provides a folder, that folder IS the project. Its documents A
    count stated up front ("about nineteen short questions, then you can walk
    away"). The two fast paths can shrink it: the archetype defaults offer and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
-   measured, never asked); ask only what no command can reveal. See
+   measured, never asked); ask only what no command can reveal. On a repeat
+   project, the capacity profile (`references/capacity.md` §13) turns the
+   provider-path questions into one recall-and-confirm; a profile that cannot be
+   read fails toward asking, never toward assuming. See
    `references/interview.md`.
 6.5. **Compute the Capacity Ledger (BOTH modes, every launcher — before anything
     dispatches).** From the detected launcher, the measured core count, the
@@ -401,6 +524,29 @@ When the operator provides a folder, that folder IS the project. Its documents A
     explicitly in the ledger and ASK — never silently assume. **No dispatch may
     occur before this file exists; every dispatch decision cites it.** Full
     procedure and four worked scenarios: `references/capacity.md`.
+    The 6.5 measurement set also includes **POOL DISCOVERY** (`GET /v1/models`
+    through the session's own gateway and auth — the procedure above) and a
+    PLATFORM re-detect; both are free, both are `[MEASURED]`, and both are
+    re-taken HERE rather than inherited from step 2. A seat then resolves one of
+    two ways, and the ledger records which: **LANE** — role → alias → resolved
+    model, the three hops; or **DIRECT** — role → a capability-selected model
+    from the discovered pool. Both end in the same place: a RESOLVED model id,
+    probed CALLABLE, recorded with its provider node and its ceiling CLASS.
+    The ledger records the CONFIG FINGERPRINT and a PROVENANCE MARK on every
+    value (`references/capacity.md` §13); **a value without a mark is ASSUMED and
+    sized conservatively.**
+    Then, after the ledger is computed and BEFORE anything dispatches, run the
+    **RIG-FITNESS checks** (`references/capacity.md` §13) — this is the one
+    moment the full measured picture exists and nothing is yet in flight. A
+    failed check raises a plain-language recommendation with consent: the skill
+    NEVER rewires without an explicit yes, and a declined recommendation is
+    recorded and never re-raised in the same run. Where the remedy is a DISPATCH
+    PARAMETER rather than a rewire — seating a role on an independent model
+    selected from the discovered pool — take it directly; nothing is mutated, so
+    no consent gate applies. The recommendation-and-consent machinery is reserved
+    for the cases that genuinely need a WRITE to the router (pool undiscoverable,
+    or the builder lane itself misconfigured), and the BUILDER lane is never
+    touched without a yes.
 7. **Domain research (BOTH modes).** Dispatch reader agents (the conductor never
    researches in the main loop — Law 12) to web-research the app's domain,
    current best practices, candidate stacks and libraries, and common pitfalls.
@@ -980,6 +1126,25 @@ fact. When this skill says "the Fable review," it means "the review tier driven
 by whatever the Fable alias currently resolves to." On regular Claude Code, they
 are the built-in Anthropic model tiers.
 
+**The aliases are DEFAULT LANES over the router's full model pool, not the pool
+itself.** Under Claude-Nine the addressable pool is the router's live model list
+(`GET /v1/models` through the session's own gateway and auth), discovered every
+run — hundreds of models no alias touches, including custom-provider nodes and
+combos. An unqualified role name resolves through its alias; a seat may equally
+be a DIRECTLY-ADDRESSED pool model, recorded in the Capacity Ledger. On regular
+Claude Code the pool is the built-in Anthropic tiers, and this section's scarcity
+does still apply there.
+
+**"Aliases are authoritative" — restated precisely, because it is not weakened
+by the above.** The rule's target is BYPASSING THE ROUTER: calling a provider
+directly on its own key, or silently re-pointing what an alias means. So:
+(a) never reroute or reinterpret an alias — resolution RECORDS, it never
+reroutes; (b) never go around the router to a provider; (c) naming a listed pool
+model in a dispatch, through the router's own gateway, same auth, same
+transport, IS the configured routing — the router serves that list on purpose —
+and violates nothing. The alias lanes appear IN the pool list themselves; a lane
+is a pool member, not a fence around it.
+
 ---
 
 ## How to invoke
@@ -1011,3 +1176,4 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 15. `references/funnel-architecture.md` — funnel page types and email/SMS decision matrices (funnel builds only)
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
 17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, the disagreement protocol, the team-size gate (Steps 2.5, 16.9, handover)
+18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)

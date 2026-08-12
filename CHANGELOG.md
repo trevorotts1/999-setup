@@ -1,5 +1,141 @@
 # Changelog
 
+## [1.3.0] — 2026-08-12
+
+### Capacity is measured, not remembered — a freshness contract for every number the skill acts on
+
+- **The skill trusted its own memory about a world that moves.** Balances, plan tiers, model
+  catalogues and core counts were liable to be recalled from a previous run and used as if
+  they were current. A capacity figure that is one run stale is not a smaller number, it is a
+  wrong one, and it silently sizes an entire build. The governing rule is now explicit:
+  **measure everything that is measurable, every run**; remember only the small set of facts
+  that cannot be observed from the machine at all.
+- **`tools/capacity-profile.sh` is the one sanctioned memory, and its deny-list is enforced in
+  code rather than by good intentions.** It stores only unobservable billing facts and user
+  policy — never a balance, never a core count, never anything a run could go and look at. The
+  write path refuses a non-sanctioned key by name, refuses a secret-shaped key name, refuses a
+  value matching a known secret shape, and refuses any value over 64 characters as a blunt
+  anti-secret guard. Every stored value is re-presented as a **proposed answer to be confirmed
+  this run, never as an input**.
+- **Recall without confirmation was the actual hazard, so recall now ends in a question.** A
+  remembered answer is offered back for confirmation instead of being applied. On a machine
+  the profile does not belong to, the profile reads as absent-with-a-note and **none of its
+  answers is printed** — a profile from another box is not a weaker source, it is the wrong
+  source.
+- **Every value in the ledger now carries a provenance mark.** `[MEASURED …]`,
+  `[RECALLED-CONFIRMED …]`, `[DEFAULT-CONFIRMED …]` and `[ASSUMED …]` make the difference
+  between a number that was looked at and a number that was inherited visible on the page.
+  An unrecognised mark kind degrades to `ASSUMED` rather than being printed as fact.
+  Provenance is presentation only — **a mark never moves a ceiling**.
+- **Capacity is re-verified mid-run, and observing capacity is no longer mistaken for
+  progress.** Long runs outlive their own measurements, so capacity is re-checked as the run
+  proceeds and revisions are recorded rather than overwritten. Because a `CAPACITY-EVENT` line
+  is an observation and not work, it is **excluded from the drift fingerprint** — otherwise a
+  run could look alive purely by re-reading its own balance. The anti-drift selftest proves
+  both directions: the no-delta counter climbs across consecutive capacity events, and a real
+  state line resets it.
+- **A resumed run re-measures the world before it trusts a word of its own ledger (step 0.5).**
+  The ledger describes the world as it was when the run stopped, which may be hours or days
+  ago. Step 0.5 re-measures first and produces a revised Capacity Ledger; the later
+  reconciliation step orients on that result and deliberately re-measures nothing itself, so
+  the two do not overlap or contradict each other.
+
+### The platform contract — a skill that had only ever run on one operating system said so nowhere
+
+- **`references/platform.md` is new, and it exists because the skill was quietly macOS-shaped.**
+  It states the detection procedure, what detection writes into the ledger, and how detection
+  is allowed to fail. The binding rule throughout: **never infer the operating system from the
+  current shell** — PowerShell runs on macOS and bash runs on Windows, so the shell proves
+  nothing about the box.
+- **A capability matrix now says what each platform can and cannot do**, job by job, with the
+  command vocabulary for the same job on each side. The formula is identical everywhere; only
+  the instrument changes.
+- **Native PowerShell cannot run this skill's bash tools — Git Bash is required on Windows.**
+  `anchor.sh`, `ledger.sh`, `env-sweep.sh`, `capacity-resolver.sh` and `capacity-profile.sh`
+  are bash scripts. On a native Windows box without Git Bash, every bash-tool verdict is
+  **UNDETERMINED and the run says so**. It never pretends the checks ran, and it never converts
+  a missing interpreter into a clean result — a missing interpreter reports `127`, which is a
+  shell abort and never a fact about the system under test.
+- **Unavailable is now `PLATFORM-SKIP` with a named reason, never a silent pass.** A skip
+  records which platform, which instrument, and why, so a downstream reader can tell "this box
+  cannot do that" apart from "that was checked and was fine". `teammateMode: "tmux"` must never
+  be written on Windows, and the Windows peer-messaging gap is surfaced rather than hidden.
+- **The file is honest about the limits of its own evidence.** The one-box exhibit is dated and
+  explicitly marked as not a fleet fact, and **no PowerShell behaviour in the file was verified
+  on the machine that wrote it** — `pwsh` and `powershell` both returned `127` there against a
+  control that returned 0. Those rows are documented intent, listed as UNDETERMINED, each with
+  the specific test that would settle it.
+
+### Model selection — the alias set is not the model pool
+
+- **The skill had been reasoning about alias NAMES instead of the models behind them.** A live
+  catalogue query on the operator's box returned **958 models**, and models bound to no alias
+  at all were **proven callable**. Choosing from the four or five configured aliases was
+  therefore choosing from a hand-drawn subset of what the machine could actually reach.
+- **Seats are selected against requirements, with `ceiling-class` as a required per-seat
+  field.** A seat now declares whether its ceiling is expressed as concurrency, requests per
+  window, or token balance — three quantities that are not interchangeable and cannot be
+  compared without saying which one is meant.
+- **The role tables no longer name models; they state requirements.** This continues the
+  correction 1.2.5 began. A hardcoded seat goes stale the moment the operator rewires, and the
+  tables now describe what a seat must be able to do, leaving resolution to run time.
+
+### Corrections
+
+- **The 1,000 figure is operator policy, not a platform cap.** Anthropic documents no limit on
+  the total number of subagents a session may spawn, and
+  `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` is undocumented upstream — a configuration record,
+  now treated as **INERT** wherever it appears. `references/capacity.md` already carried this
+  ruling; `references/agent-team.md`, `references/workflows.md` and `references/pipeline.md`
+  still asserted the opposite and now agree with it. **The number itself is unchanged.** The
+  operator's 1,000-spawn budget stands exactly as it was and remains the only enforcement this
+  skill relies on — only the attribution changed, from a platform guarantee that does not exist
+  to a policy that does. The Workflow tool's 1,000-agents-lifetime cap per workflow *run* is a
+  genuinely different meter that happens to share the number, and both are still tracked.
+- **A provider was credited to the wrong vendor.** The remaining `Gemini` attributions were
+  corrected to Agnes; the string no longer appears anywhere in the skill.
+- **The OpenRouter detection gap is closed.** A present OpenRouter key could go undetected, so
+  a configured provider was invisible to capacity planning. It is detected and its row is
+  amended: it is no longer "fallback role only", but it still never joins the builder swarm.
+
+### Budget and credential safety
+
+- **`tools/anchor.sh` gained a Class 6 budget audit, with a negative-spend guard.** The
+  reconciler compares claimed spend against agents actually dispatched and raises a drift alarm
+  on a mismatch, emitting the reconcile action rather than stalling. A **negative** claimed
+  spend is caught as its own fault: it is neither laundered into "agreement" by the tolerance
+  window nor downgraded to "undetermined" by an absent dispatch log. Absent budget fields
+  report `budget-undetermined` instead of a fabricated agreement, and approaching the ceiling
+  exits as `STOPPED_CAP`. The selftest covers all five budget states and now runs **13 cases,
+  all passing**.
+- **`tools/env-sweep.sh` no longer puts credentials where other processes can read them.**
+  Bearer tokens were being passed on the command line, which places them in the process table
+  for any user on the box to see, and credentials could be interpolated into a URL. Both are
+  fixed. The selftest asserts the property directly rather than assuming it: across the whole
+  run, **0 secret values printed, 0 bearer credentials on any command line, 0 credentials
+  interpolated into a URL**, proved with a known-positive control that plants eight credentials
+  and a known-negative control that proves an empty environment reports them missing.
+
+### Interview
+
+- **A repeat run stopped re-asking what it already knew.** Where the provider-path block asked
+  four questions every time, a machine whose configuration has not changed now answers them
+  with **one confirmation**, folding everything untouched into a single prompt. A machine that
+  *has* changed still gets the full set. This joins the existing small-plan collapse; block D
+  still never collapses.
+
+### Verification and scope
+
+- **Every tool ships proven, and each selftest proves its instrument in both directions.**
+  `anchor.sh` 13/13, `capacity-resolver.sh` PASS, `env-sweep.sh` 5/5, `capacity-profile.sh` 21
+  passed / 0 failed. `capacity-profile.sh` additionally proves containment — every file it
+  wrote lives under its one sanctioned path, and nothing was created elsewhere under the
+  sandbox home. All tests run with `HOME` overridden to a sandbox; none touches a real home
+  directory.
+- **Deliberately unchanged.** `tools/ledger.sh` is byte-identical. The 1,000 budget, the
+  30-workflow session ceiling, the 20-agent wave cap and the `min(16, cores−2)` width formula
+  are untouched. No history was rewritten: nothing was force-pushed, rebased or reset.
+
 ## [1.2.6] — 2026-08-12
 
 ### No personal names in a repository everyone installs, and the skill-root defect that shipped one box's topology to every client
