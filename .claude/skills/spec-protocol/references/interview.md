@@ -385,7 +385,7 @@ cap depends on paid tier"), and re-verify every one of them (web-research the
 provider's current docs, or read the account's own dashboard) before writing any
 number into this project's execution plan.
 
-- **App builder** — default Sonnet → DeepSeek v4 Pro. Example concurrency figures
+- **App builder** — default Opus → DeepSeek v4 Flash. Example concurrency figures
   to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; DeepSeek v4
   Flash direct example "up to 2,500 subagents"; Ollama Cloud DeepSeek example
   "$20 tier = 3 concurrent, $100 tier = 10 — use 8." Every one of those is a
@@ -397,6 +397,11 @@ number into this project's execution plan.
   axes and names the governing number (`references/capacity.md` §3). Recommend
   DeepSeek direct ($20+) for the swarm, but confirm today's cap before relying on
   any of the numbers above.
+- **Technical and release judge** — default Sonnet → DeepSeek v4 Pro. Example
+  ceiling to verify, never assume: up to 500 subagents on DeepSeek v4 Pro —
+  ample for the judge seats (8 technical + 4 release judges,
+  `references/gauntlet.md` §13.1). Must resolve to a DIFFERENT underlying model
+  than the builder; different alias names prove nothing.
 - **QC and fixer** — default Fable → Qwen 3.8 (5×5 = 25). Finds gaps, defects,
   blockers, and improvements; lists (1) what is wrong and how to fix it, (2) what
   to improve and how; then fixes.
@@ -409,9 +414,10 @@ number into this project's execution plan.
   nothing.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
-is currently GLM 5.2, Sonnet is DeepSeek v4 Pro…"). Ask if they want to change
-anything or need wiring help. Check context windows by web-researching the actual
-current model docs — do not recite a remembered figure. Example only, to verify
+is currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…").
+Ask if they want to change anything or need wiring help. Check context windows by
+web-researching the actual current model docs — do not recite a remembered
+figure. Example only, to verify
 fresh: an Ollama Cloud MiniMax example "512k not 1M" (a real gap between the
 marketed figure and the delivered one, which is *why* this gets checked instead of
 assumed), a GLM 5.2 Haiku output example "64k". Check rate limits the same way —

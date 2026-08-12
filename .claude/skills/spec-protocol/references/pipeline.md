@@ -87,7 +87,7 @@ brainstorm and the confirmed feature list are the source of truth.
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
 
 **Model:** the app-builder model from the capacity interview. On Claude-Nine,
-Sonnet (router alias → DeepSeek v4 Pro). On regular Claude Code, Sonnet if
+Opus (router alias → DeepSeek v4 Flash). On regular Claude Code, Sonnet if
 available.
 
 ### Concurrency caps — READ THE CAPACITY LEDGER, do not re-derive here
