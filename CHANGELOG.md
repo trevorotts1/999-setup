@@ -1,5 +1,120 @@
 # Changelog
 
+## [1.8.0] — 2026-08-12
+
+### Agent Teams are gated PER CONFIG ROOT, and there are exactly two of them
+
+`enable-agent-teams.sh` configured a single config root. That was the headline
+defect: the flag `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is read out of the
+settings file of the root the launcher is using, so enabling one root is
+**INVISIBLE** to the other launcher. Backup, merge, and validate/restore now all
+run **per root**, each with its own backup.
+
+- **`claude` uses `~/.claude`. `claude-nine` uses `~/.claude-nine`.** Measured,
+  not assumed: `~/.local/bin/claude-nine` line 32 exports
+  `CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"`.
+- **`claude-codex` is NOT a third root.** `~/.local/bin/claude-codex` line 32 is
+  `exec "$HOME/.local/bin/claude-nine"` — it is a pinned front end for the same
+  launcher and SHARES `~/.claude-nine`. It is never probed as a separate box and
+  never counted as a third root; doing so would double-count one root.
+- The routed root is configured **only when its directory already exists**. A
+  routed profile the operator never created is never invented.
+- `--settings PATH` still forces a single-root run against exactly that file.
+
+### tmux is a DISPLAY verdict — degradation, not a dead end
+
+The documented default display mode is **in-process**, which "works in any
+terminal, no extra setup required". `teammateMode` selects DISPLAY ONLY, so tmux
+was never a prerequisite for Agent Teams — but the old text let a reader convert
+`TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` into a stop gate on the build
+itself.
+
+`references/platform.md` §5.1 now states both halves of the rule in the file that
+owns it. The per-OS half is unchanged (never `tmux` on Windows). The new per-box
+half binds **every** OS: write the key only where tmux — or iTerm2 + `it2` — is
+**PROVEN present on that box**, by RUNNING the probe and reading its exit code,
+because `command -v` proves only that a name resolves. Absent or UNDETERMINED
+takes the ABSENT branch and the key is **OMITTED** — omission is the action;
+there is no "write in-process instead" step, the harness's own default applies.
+A no-tmux, no-Homebrew Mac is a **DEGRADED-DISPLAY box, never a BLOCKED box**,
+and the correct ledger line is a `PLATFORM-SKIP` naming the display consequence
+and stating that team formation is UNAFFECTED. The `it2` probe flag is recorded
+as **UNDETERMINED** rather than guessed — it was never run on the box, so no flag
+string in that file is a measurement.
+
+### The teammate default-model failure — proven, reported, never written
+
+A teammate spawned with **no explicit model** falls back to the provider-default
+Opus model, which a local 9Router need not serve. Session `6d3fcc76`: two
+teammates, both `"idleReason":"failed"`, `"failureReason":"There's an issue with
+the selected model (claude-opus-5). It may not exist or you may not have access
+to it."`
+
+The presentation is the dangerous part. Both teammates rendered as **running
+spinners from 10:46 to the 14:44 idle notice** — roughly four silent hours,
+witnessed. A spinner is therefore not evidence of progress, and "still working"
+is never a status a lead may report on a teammate's behalf.
+
+- The stage C probe teammate is now **PINNED to the lead's own current model**, so
+  the probe tests team infrastructure instead of model-default resolution.
+- Stage C gets its own split verdict — **"infra PASS / teammate model FAIL"** —
+  with the `failureReason` string recorded **VERBATIM**, including the model id it
+  names, because that string is the whole diagnosis.
+- Real commanders are spawned with an explicit model for the same reason.
+- The official settings key that fixes it is **`teammateDefaultModel`**. This
+  skill **REPORTS that key and NEVER writes it.** Models, routing and providers
+  belong to the client, and multiple clients have hand-tuned custom providers that
+  must survive untouched.
+
+### A session cannot self-report whether Teams is active — only EXTERNAL instruments count
+
+Proven, and the reason every teams verdict in this release cites an instrument
+outside the session under test: a live teammate held its own tmux pane while the
+session said "Agent Teams not active, no pane", `ListAgents` never listed it, and
+`TaskOutput` errored "No task found" while that teammate's inbox existed on disk.
+`ListAgents` is not a census.
+
+The two instruments that do count are named as such: the `tmux list-panes` pane
+count, and the on-disk artifact
+`{config root}/teams/session-{id8}/inboxes/{name}.json`. This is the control
+discipline applied to teams — prove a negative on an instrument you can also see
+a positive with.
+
+Recorded alongside it, as a **dated one-box observation and not a standing
+claim**: headless `claude -p` did not engage Agent Teams at all. Same flag, same
+settings, same binary — a named agent spawned, but no team directory, no tmux
+session, no teammate protocol. Teams presented as an interactive-session feature.
+Teammates also do not survive `/resume` or `/rewind`; the team config directory is
+removed at session end.
+
+### The skill can now tell it is stale, and take the update itself
+
+New `VERSION`, `tools/check-update.sh`, and `tools/self-update.sh`. The check runs
+once, the moment the harness and launcher are known, and it is **a check, never a
+gate** — no outcome of it ever stops a run.
+
+- **Exit 0** — say nothing and continue. The silence is the point.
+- **Exit 1** — tell the operator plainly and **name BOTH versions**; a version
+  offer with no numbers is not an offer. On yes, **the skill runs the self-update
+  itself** — the client never opens a terminal, which is THE HANDOVER RULE binding
+  the skill's own maintenance exactly as it binds everything else. On no, the
+  declined offer is recorded and never raised again this run. A failed self-update
+  is a finding, never a stopped build.
+- **Exit 2** — say **UNDETERMINED** in one line and continue. Never report
+  "current" from a check that could not reach its source: an exit code is a fact
+  about the check, never a fact about the version.
+
+The outcome is carried into the Capacity Ledger header beside the launcher line,
+timestamped.
+
+### `VERSION` replaces the file count as the rollout proof
+
+The skill goes **28 files → 31 files** (`VERSION`, `tools/check-update.sh`,
+`tools/self-update.sh` are new; nothing was removed). A file count was never a
+version, and it stops being the rollout proof here — a box now proves what it has
+by reading `VERSION`, which is a number that can be compared, rather than by
+counting files, which cannot distinguish two different trees of the same size.
+
 ## [1.7.0] — 2026-08-12
 
 ### The pre-fleet-roll review — three blockers closed, and the count/pointer drift swept
