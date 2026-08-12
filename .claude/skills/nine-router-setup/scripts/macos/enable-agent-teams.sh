@@ -2,30 +2,66 @@
 # enable-agent-teams.sh — turn on Claude Code Agent Teams and split-pane
 # teammates for FUTURE Claude Code sessions on macOS. CONFIGURATION ONLY.
 #
+# THE CONFIG ROOTS — Agent Teams are gated PER CONFIG ROOT, so this script
+# configures EVERY root that exists, not just one:
+#   ~/.claude       the root the `claude` launcher uses.
+#   ~/.claude-nine  the root the `claude-nine` launcher uses. The `claude-codex`
+#                   launcher execs claude-nine and therefore SHARES this same
+#                   root — it is NOT a third root and needs no separate step.
+#                   This root is configured ONLY when its directory already
+#                   exists: a routed profile the operator never created is never
+#                   invented here.
+#   Enabling one root is INVISIBLE to the other launcher. Configuring a single
+#   root was this script's headline defect; the backup, merge, and
+#   validate/restore phases now all run PER ROOT, each with its own backup.
+#   `--settings PATH` still forces a single-root run against exactly that file.
+#
 # Implements the operator's binding enablement procedure phase by phase:
+#   P0  read-only tmux DETECTION. It decides the DISPLAY MODE and nothing else.
+#       tmux is NOT required for Agent Teams: the documented default display
+#       mode is in-process, which "works in any terminal, no extra setup
+#       required" (https://code.claude.com/docs/en/agent-teams.md). P0 runs
+#       AFTER the version gate, so a version-blocked run probes nothing and
+#       still reports TMUX: NOT CHECKED rather than a finding it never made.
 #   P1  read-only Claude Code version check (floor 2.1.178). Never runs the
 #       Claude Code self-update command, never reinstalls Claude Code — the
 #       operator decides when to update, never this script.
 #   P2  read-only inspection of running Claude/tmux work. Observation only.
-#   P3  timestamped backup of the settings file; never overwrites a backup.
+#   P3  timestamped backup of EVERY targeted settings file, ONE PER ROOT; never
+#       overwrites a backup, and every backup path is printed in the report.
 #   P4  MERGE "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" into the existing
-#       "env" object — add/update ONLY that key.
-#   P5  MERGE top-level "teammateMode": "tmux".
+#       "env" object of EVERY root — add/update ONLY that key.
+#   P5  MERGE top-level "teammateMode": "tmux" into every root — ONLY when P0
+#       PROVED tmux is present. A display mode is never pointed at an absent
+#       binary: with no tmux the key is not written at all and Claude Code's
+#       built-in in-process display mode applies. If P6 installs tmux, P5 is
+#       re-run per root so the written mode matches reality.
 #   P6  tmux: already installed -> record the path, never reinstall. Absent and
 #       Homebrew present -> `brew install tmux`. Absent and no Homebrew ->
-#       report TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND and keep
-#       validating. Homebrew is NEVER installed here (repo rule 11).
+#       report the DEGRADATION (teams are enabled and usable in the in-process
+#       display mode) and keep validating. Homebrew is NEVER installed here
+#       (repo rule 11) — that rule is unchanged; only the wording of the
+#       outcome changed, from "blocked" to "degraded", because tmux absence
+#       does not block Agent Teams.
 #   P7  timestamped backup of ~/.tmux.conf when it exists.
 #   P8  ensure the three Claude Code tmux lines exist, idempotently, never
-#       duplicated, never replacing an existing conflicting choice.
-#   P9  validate the settings JSON, both configured keys, and EVERY pre-existing
-#       leaf value. On ANY failure RESTORE THE BACKUP — never leave a broken
-#       settings.json.
+#       duplicated, never replacing an existing conflicting choice. Written
+#       even when tmux is absent, so a later `brew install tmux` needs no
+#       further edit.
+#   P9  validate the settings JSON OF EVERY ROOT, the configured key(s), and
+#       EVERY pre-existing leaf value of that root. On ANY failure RESTORE THAT
+#       ROOT'S BACKUP — never leave a broken settings.json.
 #   P10 validate the tmux configuration.
 #   P11 no Agent Team, teammate, pane, tmux server, or Claude session is created.
 #   P12 the current session is never restarted, reloaded, or signalled.
-#   P13 final report on stdout, in the procedure's exact format.
-#   P14 print the next command — told, never run.
+#   P13 final report on stdout, in the procedure's exact format, PER ROOT.
+#   P14 print the next command — told, never run — matching the display mode
+#       that was actually configured.
+#
+# MODELS ARE NEVER WRITTEN. When a routed (~/.claude-nine) root has no
+# "teammateDefaultModel", the report WARNS and recommends — it never writes a
+# model key of any kind. Model choice belongs to the operator and to the client,
+# absolutely. The validator proves the key was not introduced.
 #
 # THE SAFETY ENVELOPE (binding on every line of this script):
 #   NEVER kill, restart, signal, interrupt, detach, reload, or "clean up" any
@@ -40,8 +76,9 @@
 #   tmux server or session teardown, no tmux configuration reload, no signal
 #   delivery, no Claude Code self-update or reinstall, and no launch of a
 #   teammate-mode session. The only commands that mutate anything are: writing
-#   the settings file, writing the tmux configuration file, copying backups, and
-#   (only when tmux is missing and Homebrew already exists) installing tmux.
+#   the settings file of each targeted root, writing the tmux configuration file,
+#   copying backups, and (only when tmux is missing and Homebrew already exists)
+#   installing tmux.
 #
 # Idempotent and re-run safe: a second run adds nothing, duplicates nothing, and
 # reports the same READY state.
@@ -63,14 +100,42 @@ FLAG_VALUE="1"
 TEAMMATE_MODE="tmux"
 
 SETTINGS_PATH="${AGENT_TEAMS_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS_OVERRIDE=0
+if [ -n "${AGENT_TEAMS_SETTINGS:-}" ]; then SETTINGS_OVERRIDE=1; fi
 TMUX_CONF="${AGENT_TEAMS_TMUX_CONF:-$HOME/.tmux.conf}"
 NINE_PROFILE="${AGENT_TEAMS_NINE_SETTINGS:-$HOME/.claude-nine/settings.json}"
 ALLOW_INSTALL=1
 
+# The exact degradation wording. tmux absence is a DISPLAY downgrade, never a
+# blocker: Agent Teams are enabled and usable without it.
+TMUX_DEGRADE_LINE="TMUX ABSENT — TEAMS ENABLED IN IN-PROCESS DISPLAY MODE (no action required; split panes appear if tmux is ever installed)"
+
+# The routed-profile model warning. REPORT ONLY — this string is printed, and
+# the key it names is never written by this script under any circumstance.
+NINE_MODEL_WARNING="WARNING: routed profile has no teammateDefaultModel — teammates spawned without an explicit model will fail at start
+(observed 2026-08-12: claude-opus-5 rejected by the local router). Recommendation: set teammateDefaultModel to null
+(inherit the lead) or to a router-served alias. NOT WRITTEN — models are the operator's."
+
+# Per-root state. Parallel arrays (bash 3.2 has no associative arrays), always
+# indexed 0..ROOT_COUNT-1 and always fully initialised by add_root, so `set -u`
+# can never trip on an unset element.
+ROOT_COUNT=0
+ROOT_LABEL=()        # "CLAUDE ROOT" / "CLAUDE-NINE ROOT"
+ROOT_PATH=()         # absolute settings.json path
+ROOT_KIND=()         # claude | nine
+ROOT_BACKUP=()       # display string for the report
+ROOT_BACKUP_PATHS=() # the real backup file path, or "" when none was needed
+ROOT_JSON=()
+ROOT_FLAG=()
+ROOT_MODE=()
+ROOT_EXISTING=()
+ROOT_NOTE=()
+
 log() { printf '[enable-agent-teams] %s\n' "$*" >&2; }
 
 usage() {
-  sed -n '2,50p' "$0" >&2
+  # The whole header block, through the Usage and Exit codes sections.
+  sed -n '2,93p' "$0" >&2
   exit 2
 }
 
@@ -132,6 +197,48 @@ resolve_claude() {
   return 1
 }
 
+# add_root <label> <settings path> <kind> — registers one config root with every
+# report field pre-filled. Nothing is read or written here.
+add_root() {
+  ROOT_LABEL[$ROOT_COUNT]="$1"
+  ROOT_PATH[$ROOT_COUNT]="$2"
+  ROOT_KIND[$ROOT_COUNT]="$3"
+  ROOT_BACKUP[$ROOT_COUNT]="N/A"
+  ROOT_BACKUP_PATHS[$ROOT_COUNT]=""
+  ROOT_JSON[$ROOT_COUNT]="NOT VALIDATED"
+  ROOT_FLAG[$ROOT_COUNT]="NOT CONFIRMED"
+  ROOT_MODE[$ROOT_COUNT]="NOT CONFIRMED"
+  ROOT_EXISTING[$ROOT_COUNT]="PRESERVED (nothing was modified)"
+  ROOT_NOTE[$ROOT_COUNT]=""
+  ROOT_COUNT=$((ROOT_COUNT + 1))
+}
+
+# root_kind_for_path <path> -> claude | nine. Used only for the --settings
+# single-root override, so an override aimed at the routed profile still gets
+# the routed-profile model check.
+root_kind_for_path() {
+  case "$1" in
+    *claude-nine*) printf 'nine' ;;
+    *) printf 'claude' ;;
+  esac
+}
+
+# build_root_set — the DEFAULT target set is every config root that exists.
+build_root_set() {
+  local kind label
+  if [ "$SETTINGS_OVERRIDE" -eq 1 ]; then
+    kind="$(root_kind_for_path "$SETTINGS_PATH")"
+    if [ "$kind" = "nine" ]; then label="CLAUDE-NINE ROOT (single-root override)"; else label="CLAUDE ROOT (single-root override)"; fi
+    add_root "$label" "$SETTINGS_PATH" "$kind"
+    return 0
+  fi
+  add_root "CLAUDE ROOT" "$SETTINGS_PATH" "claude"
+  # The routed root is configured only when the operator already has one.
+  if [ -d "$(dirname "$NINE_PROFILE")" ]; then
+    add_root "CLAUDE-NINE ROOT" "$NINE_PROFILE" "nine"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Node helpers. Node is already a hard dependency of this repo's setup flow and
 # is the only JSON parser guaranteed present (python3 is optional on macOS —
@@ -139,16 +246,20 @@ resolve_claude() {
 # same directory, original mode preserved, then rename.
 # ---------------------------------------------------------------------------
 
-# merge_settings — P4 + P5 in ONE atomic write, so the file is never observed
-# half-configured. Both keys are still validated independently in P9.
-# stdout: EXISTED=0|1 / PREV_FLAG=... / PREV_MODE=...
+# merge_settings <settings path> <write teammateMode 0|1>
+# P4 (+ P5 when the second argument is 1) in ONE atomic write, so the file is
+# never observed half-configured. Every key is still validated independently in
+# P9. This function touches EXACTLY the flag key, plus teammateMode when and
+# only when tmux was proven present. It never writes a model key.
+# stdout: EXISTED=0|1 / PREV_FLAG=... / PREV_MODE=... / HAS_TEAMMATE_DEFAULT_MODEL=0|1
 # exit 3: the existing file is unparseable or structurally unexpected — nothing
 #         is written (an unreadable settings.json is never treated as empty).
 merge_settings() {
-  SETTINGS_PATH="$1" FLAG_KEY="$FLAG_KEY" FLAG_VALUE="$FLAG_VALUE" \
+  SETTINGS_PATH="$1" WRITE_MODE="$2" FLAG_KEY="$FLAG_KEY" FLAG_VALUE="$FLAG_VALUE" \
   TEAMMATE_MODE="$TEAMMATE_MODE" "$NODE" -e '
     const fs = require("fs");
     const p = process.env.SETTINGS_PATH;
+    const writeMode = process.env.WRITE_MODE === "1";
     let existed = false, raw = null;
     try { raw = fs.readFileSync(p, "utf8"); existed = true; }
     catch (e) { if (e.code !== "ENOENT") { console.error("READ_FAILED: " + e.message); process.exit(3); } }
@@ -165,15 +276,23 @@ merge_settings() {
     }
     const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const prevMode = hasOwn(obj, "teammateMode") ? obj.teammateMode : undefined;
+    const hadModelKey = hasOwn(obj, "teammateDefaultModel");
     if (!hasOwn(obj, "env") || obj.env === undefined) obj.env = {};
     const env = obj.env;
     if (env === null || typeof env !== "object" || Array.isArray(env)) {
       console.error("ENV_NOT_A_JSON_OBJECT"); process.exit(3);
     }
     const prevFlag = hasOwn(env, process.env.FLAG_KEY) ? env[process.env.FLAG_KEY] : undefined;
-    // MERGE: add/update ONLY these two keys. Nothing else is touched.
+    // MERGE: add/update ONLY these keys. Nothing else is touched.
     env[process.env.FLAG_KEY] = process.env.FLAG_VALUE;
-    obj.teammateMode = process.env.TEAMMATE_MODE;
+    // teammateMode is DISPLAY ONLY and is written only when tmux was proven
+    // present. With no tmux the key is left exactly as it was (usually absent),
+    // so the mode never names a binary that is not there.
+    if (writeMode) obj.teammateMode = process.env.TEAMMATE_MODE;
+    // Hard guard: this script never introduces a model key, ever.
+    if (!hadModelKey && hasOwn(obj, "teammateDefaultModel")) {
+      console.error("REFUSED_TO_WRITE_MODEL_KEY"); process.exit(3);
+    }
     const out = JSON.stringify(obj, null, 2) + "\n";
     const dir = require("path").dirname(p);
     fs.mkdirSync(dir, { recursive: true });
@@ -184,18 +303,23 @@ merge_settings() {
     console.log("EXISTED=" + (existed ? "1" : "0"));
     console.log("PREV_FLAG=" + (prevFlag === undefined ? "<absent>" : String(prevFlag)));
     console.log("PREV_MODE=" + (prevMode === undefined ? "<absent>" : String(prevMode)));
+    console.log("HAS_TEAMMATE_DEFAULT_MODEL=" + (hadModelKey ? "1" : "0"));
   '
 }
 
-# validate_settings — P9. Valid JSON, both keys exactly right, and every leaf
-# value that existed in the backup still present and unchanged (model aliases,
-# routing, env vars, permissions, hooks, MCP, provider config — all of it).
+# validate_settings <settings path> <backup path or ""> <write teammateMode 0|1>
+# P9, per root. Valid JSON, the configured key(s) exactly right, and every leaf
+# value that existed in that root's backup still present and unchanged (model
+# aliases, routing, env vars, permissions, hooks, MCP, provider config — all of
+# it). Also proves no model key was introduced.
 # exit 0 clean; exit 4 with a named reason on stderr.
 validate_settings() {
-  SETTINGS_PATH="$1" BACKUP_PATH="${2:-}" FLAG_KEY="$FLAG_KEY" \
+  SETTINGS_PATH="$1" BACKUP_PATH="${2:-}" WRITE_MODE="${3:-1}" FLAG_KEY="$FLAG_KEY" \
   FLAG_VALUE="$FLAG_VALUE" TEAMMATE_MODE="$TEAMMATE_MODE" "$NODE" -e '
     const fs = require("fs");
+    const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const readJson = (p) => JSON.parse(fs.readFileSync(p, "utf8").replace(/^\uFEFF/, ""));
+    const writeMode = process.env.WRITE_MODE === "1";
     let cur;
     try { cur = readJson(process.env.SETTINGS_PATH); }
     catch (e) { console.error("INVALID_JSON: " + e.message); process.exit(4); }
@@ -206,14 +330,25 @@ validate_settings() {
     if (!cur.env || typeof cur.env !== "object" || cur.env[flagKey] !== process.env.FLAG_VALUE) {
       console.error("FLAG_NOT_CONFIRMED"); process.exit(4);
     }
-    if (cur.teammateMode !== process.env.TEAMMATE_MODE) {
-      console.error("TEAMMATE_MODE_NOT_CONFIRMED"); process.exit(4);
+    if (writeMode) {
+      if (cur.teammateMode !== process.env.TEAMMATE_MODE) {
+        console.error("TEAMMATE_MODE_NOT_CONFIRMED"); process.exit(4);
+      }
     }
     const bak = process.env.BACKUP_PATH;
+    let old = null;
     if (bak) {
-      let old;
       try { old = readJson(bak); }
       catch (e) { console.error("BACKUP_UNREADABLE: " + e.message); process.exit(4); }
+    }
+    // MODEL SOVEREIGNTY: prove this run did not introduce a model key. Without
+    // a backup the file was created by this run, so the key must be absent.
+    const oldHadModel = old !== null && typeof old === "object" && !Array.isArray(old)
+      ? hasOwn(old, "teammateDefaultModel") : false;
+    if (!oldHadModel && hasOwn(cur, "teammateDefaultModel")) {
+      console.error("MODEL_KEY_WRITTEN"); process.exit(4);
+    }
+    if (bak) {
       const leaves = (o, prefix, out) => {
         if (o !== null && typeof o === "object") {
           if (Array.isArray(o)) {
@@ -231,7 +366,10 @@ validate_settings() {
       const oldLeaves = []; leaves(old, "", oldLeaves);
       const newLeaves = []; leaves(cur, "", newLeaves);
       const newMap = new Map(newLeaves);
-      const allowed = new Set(["env." + flagKey, "teammateMode"]);
+      // Only the keys this script is allowed to touch may differ. teammateMode
+      // is allowed to differ ONLY when it was actually written this run.
+      const allowed = new Set(["env." + flagKey]);
+      if (writeMode) allowed.add("teammateMode");
       const lost = [];
       for (const [path, val] of oldLeaves) {
         if (allowed.has(path)) continue;
@@ -342,16 +480,33 @@ main() {
   # NOT CHECKED, never a bare negative: a phase that never ran must not report a
   # finding it did not make (the version gate exits before the tmux phases).
   local R_TMUX="NOT CHECKED" R_TMUX_PATH="N/A" R_JSON="NOT VALIDATED"
-  local R_SETTINGS_BACKUP="N/A" R_TMUX_CONF="NOT CHECKED" R_TMUX_CONF_BACKUP="N/A"
+  local R_TMUX_MODE_LINE="NOT CHECKED"
+  local R_MODE_VALUE="NOT DECIDED"
+  local R_TMUX_CONF="NOT CHECKED" R_TMUX_CONF_BACKUP="N/A"
   local R_EXISTING="PRESERVED (nothing was modified)" R_ACTIVE="UNKNOWN" R_READY="NO"
-  local R_NINE="NOT PRESENT — NOT CREATED (this installer does not own a claude-nine profile file)"
+  local R_NINE="NOT PRESENT — NOT CREATED (no claude-nine profile directory exists; this installer never creates one)"
   local DEFERRED=""
+  local i=0
 
   NODE="$(resolve_node || true)"
   if [ -z "${NODE:-}" ]; then
     log "BLOCKER: node was not found (set NODE_BIN or put node on PATH)."
     log "Nothing was inspected, backed up, or modified."
     exit 2
+  fi
+
+  # ---- TARGET SET ----------------------------------------------------------
+  # Read-only: this only decides which files WILL be processed, and is built
+  # before the version gate so even a blocked run reports its targets honestly.
+  build_root_set
+  if [ "$SETTINGS_OVERRIDE" -eq 1 ]; then
+    log "single-root override in effect: ${ROOT_PATH[0]}"
+  else
+    i=0
+    while [ "$i" -lt "$ROOT_COUNT" ]; do
+      log "target root: ${ROOT_LABEL[$i]} -> ${ROOT_PATH[$i]}"
+      i=$((i + 1))
+    done
   fi
 
   # ---- P1. READ-ONLY VERSION CHECK -----------------------------------------
@@ -415,47 +570,46 @@ main() {
   fi
   # Regardless of what was found: ASSUME ACTIVE WORK MUST BE PRESERVED.
 
-  # ---- P3. BACK UP CLAUDE CODE SETTINGS ------------------------------------
-  local BACKUP=""
-  mkdir -p "$(dirname "$SETTINGS_PATH")"
-  if [ -f "$SETTINGS_PATH" ]; then
-    BACKUP="$(make_backup "$SETTINGS_PATH")"
-    R_SETTINGS_BACKUP="$BACKUP"
-    log "settings backup: $BACKUP"
+  # ---- P0. TMUX DETECTION — DISPLAY MODE ONLY, READ-ONLY -------------------
+  # tmux is NOT required for Agent Teams. The documented default display mode is
+  # in-process and needs no extra setup; teammateMode selects DISPLAY ONLY.
+  # This probe decides whether P5 may write teammateMode at all: a display mode
+  # is never pointed at an absent binary.
+  local TMUX_BIN WRITE_TEAMMATE_MODE=0
+  TMUX_BIN="$(command -v tmux 2>/dev/null || true)"
+  if [ -n "$TMUX_BIN" ]; then
+    WRITE_TEAMMATE_MODE=1
+    log "P0 display-mode detection: tmux present ($TMUX_BIN) — teammateMode will be set to \"$TEAMMATE_MODE\""
   else
-    R_SETTINGS_BACKUP="N/A (no settings.json existed; a new one was created)"
-    log "no settings.json at $SETTINGS_PATH — a new one will be created"
+    WRITE_TEAMMATE_MODE=0
+    log "P0 display-mode detection: tmux absent — teammateMode will NOT be written (in-process display mode applies)"
   fi
 
-  # ---- P4 + P5. MERGE THE TWO KEYS (one atomic write) ----------------------
-  local MERGE_OUT MERGE_RC=0
-  set +e
-  MERGE_OUT="$(merge_settings "$SETTINGS_PATH" 2>&1)"
-  MERGE_RC=$?
-  set -e
-  if [ "$MERGE_RC" -ne 0 ]; then
-    log "settings merge failed: $MERGE_OUT"
-    if [ -n "$BACKUP" ]; then
-      cp -p "$BACKUP" "$SETTINGS_PATH"
-      log "RESTORED the backup: $BACKUP -> $SETTINGS_PATH"
-      R_EXISTING="PRESERVED (restored from backup — no change landed)"
+  # ---- P3. BACK UP CLAUDE CODE SETTINGS — PER ROOT -------------------------
+  local B
+  i=0
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    mkdir -p "$(dirname "${ROOT_PATH[$i]}")"
+    if [ -f "${ROOT_PATH[$i]}" ]; then
+      B="$(make_backup "${ROOT_PATH[$i]}")"
+      ROOT_BACKUP_PATHS[$i]="$B"
+      ROOT_BACKUP[$i]="$B"
+      log "${ROOT_LABEL[$i]} settings backup: $B"
+    else
+      ROOT_BACKUP_PATHS[$i]=""
+      ROOT_BACKUP[$i]="N/A (no settings.json existed at this root; a new one was created)"
+      log "${ROOT_LABEL[$i]}: no settings.json at ${ROOT_PATH[$i]} — a new one will be created"
     fi
-    R_JSON="INVALID"
-    R_TEAMS="FAILED"
-    print_report
-    exit 2
-  fi
-  case "$MERGE_OUT" in
-    *"PREV_MODE=<absent>"*|*"PREV_MODE=tmux"*) : ;;
-    *) DEFERRED="$DEFERRED
-- teammateMode already had a different value; it was set to \"$TEAMMATE_MODE\" as the
-  procedure requires. The previous value is preserved in the backup above." ;;
-  esac
-  log "merged $FLAG_KEY=\"$FLAG_VALUE\" into env, and top-level teammateMode=\"$TEAMMATE_MODE\""
+    i=$((i + 1))
+  done
+
+  # ---- P4 + P5. MERGE THE KEY(S) — PER ROOT, one atomic write each ---------
+  merge_all_roots
 
   # ---- P6. VERIFY TMUX ------------------------------------------------------
-  local TMUX_BIN
-  TMUX_BIN="$(command -v tmux 2>/dev/null || true)"
+  # TMUX_BIN was probed read-only in P0 and is re-probed here only if an install
+  # actually runs.
+  local TMUX_INSTALLED_HERE=0
   if [ -n "$TMUX_BIN" ]; then
     R_TMUX="INSTALLED"
     R_TMUX_PATH="$TMUX_BIN"
@@ -467,6 +621,7 @@ main() {
       if [ -n "$TMUX_BIN" ]; then
         R_TMUX="INSTALLED"
         R_TMUX_PATH="$TMUX_BIN"
+        TMUX_INSTALLED_HERE=1
       else
         R_TMUX="NOT INSTALLED (brew install reported success but tmux is not resolvable)"
       fi
@@ -478,11 +633,38 @@ main() {
   else
     # Homebrew is NEVER installed by this task (repo rule 11 and the procedure).
     R_TMUX="NOT INSTALLED (command -v tmux found nothing, and command -v brew found no Homebrew)"
-    log "TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND"
+  fi
+
+  if [ -z "$TMUX_BIN" ]; then
+    # DEGRADATION, NOT BLOCKAGE. tmux is a DISPLAY choice; Agent Teams are
+    # enabled and fully usable without it in the in-process display mode.
+    R_TMUX_MODE_LINE="$TMUX_DEGRADE_LINE"
+    log "$TMUX_DEGRADE_LINE"
     DEFERRED="$DEFERRED
-- TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND. Homebrew is never installed by
-  this step. Everything else was still validated. Install tmux yourself when you
-  want split-pane teammates; the Agent Teams flag above is already set."
+- $TMUX_DEGRADE_LINE
+  Homebrew is never installed by this step, and tmux was not installed here.
+  Everything else was still validated. Agent Teams are ENABLED and usable right
+  now in the in-process display mode — Claude Code's documented default, which
+  works in any terminal with no extra setup. Install tmux yourself whenever you
+  want split panes, then rerun this step to switch the display mode over."
+  else
+    R_TMUX_MODE_LINE="tmux (split panes) — $TMUX_BIN"
+  fi
+
+  # ---- P5 (reconciliation) -------------------------------------------------
+  # If P6 installed tmux just now, the display mode decided in P0 is stale. Redo
+  # the merge per root so the written mode matches reality, instead of making
+  # the operator run this step twice.
+  if [ "$TMUX_INSTALLED_HERE" -eq 1 ] && [ "$WRITE_TEAMMATE_MODE" -eq 0 ]; then
+    WRITE_TEAMMATE_MODE=1
+    log "tmux became available during P6 — re-merging teammateMode=\"$TEAMMATE_MODE\" per root"
+    merge_all_roots
+  fi
+
+  if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
+    R_MODE_VALUE="$TEAMMATE_MODE"
+  else
+    R_MODE_VALUE="in-process (Claude Code's documented default — no teammateMode key was written)"
   fi
 
   # ---- P7. BACK UP TMUX CONFIGURATION --------------------------------------
@@ -492,6 +674,8 @@ main() {
   fi
 
   # ---- P8. CONFIGURE TMUX FOR CLAUDE CODE ----------------------------------
+  # Written even when tmux is absent: the file is inert without tmux, and a
+  # later install then needs no further edit.
   local TMUX_LINES_OUT TMUX_LINES_RC=0
   set +e
   TMUX_LINES_OUT="$(ensure_tmux_lines "$TMUX_CONF" 2>&1)"
@@ -531,41 +715,70 @@ main() {
     esac
   fi
 
-  # ---- P9. VALIDATE SETTINGS.JSON ------------------------------------------
-  local VALID_OUT VALID_RC=0
-  set +e
-  VALID_OUT="$(validate_settings "$SETTINGS_PATH" "$BACKUP" 2>&1)"
-  VALID_RC=$?
-  set -e
-  # Test-only seam: --selftest uses it to prove the restore path really restores.
-  if [ -n "${AGENT_TEAMS_FORCE_VALIDATION_FAILURE:-}" ]; then
-    VALID_RC=4
-    VALID_OUT="FORCED_VALIDATION_FAILURE (selftest seam)"
-  fi
-  if [ "$VALID_RC" -eq 0 ]; then
+  # ---- P9. VALIDATE SETTINGS.JSON — PER ROOT -------------------------------
+  # Each root is validated against ITS OWN backup, and a failure restores THAT
+  # root's backup. A root that already validated stays configured: rolling back
+  # a good root because a different root failed would delete a landed, verified
+  # change the operator asked for.
+  local VALID_OUT VALID_RC ANY_INVALID=0
+  i=0
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    VALID_RC=0
+    set +e
+    VALID_OUT="$(validate_settings "${ROOT_PATH[$i]}" "${ROOT_BACKUP_PATHS[$i]}" "$WRITE_TEAMMATE_MODE" 2>&1)"
+    VALID_RC=$?
+    set -e
+    # Test-only seam: --selftest uses it to prove the restore path really restores.
+    if [ -n "${AGENT_TEAMS_FORCE_VALIDATION_FAILURE:-}" ]; then
+      VALID_RC=4
+      VALID_OUT="FORCED_VALIDATION_FAILURE (selftest seam)"
+    fi
+    if [ "$VALID_RC" -eq 0 ]; then
+      ROOT_JSON[$i]="VALID"
+      ROOT_FLAG[$i]="CONFIRMED"
+      ROOT_EXISTING[$i]="PRESERVED"
+      if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
+        ROOT_MODE[$i]="CONFIRMED (\"$TEAMMATE_MODE\")"
+      fi
+    else
+      ANY_INVALID=1
+      ROOT_JSON[$i]="INVALID"
+      ROOT_FLAG[$i]="NOT CONFIRMED"
+      ROOT_MODE[$i]="NOT CONFIRMED"
+      log "${ROOT_LABEL[$i]}: settings validation FAILED: $VALID_OUT"
+      case "$VALID_OUT" in
+        *PRE_EXISTING_SETTINGS_LOST*) ROOT_EXISTING[$i]="PROBLEM FOUND ($VALID_OUT)" ;;
+        *MODEL_KEY_WRITTEN*) ROOT_EXISTING[$i]="PROBLEM FOUND (a model key appeared — refused and rolled back)" ;;
+      esac
+      if [ -n "${ROOT_BACKUP_PATHS[$i]}" ] && [ -f "${ROOT_BACKUP_PATHS[$i]}" ]; then
+        cp -p "${ROOT_BACKUP_PATHS[$i]}" "${ROOT_PATH[$i]}"
+        log "RESTORED the backup: ${ROOT_BACKUP_PATHS[$i]} -> ${ROOT_PATH[$i]}"
+        ROOT_EXISTING[$i]="PRESERVED (restored from backup — no change landed)"
+      else
+        log "${ROOT_LABEL[$i]}: no backup existed (the file was created by this run); the new file was left in place for inspection"
+      fi
+    fi
+    i=$((i + 1))
+  done
+
+  if [ "$ANY_INVALID" -eq 0 ]; then
     R_JSON="VALID"
     R_FLAG="CONFIRMED"
-    R_MODE="CONFIRMED"
     R_TEAMS="ENABLED"
     R_EXISTING="PRESERVED"
+    if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
+      R_MODE="CONFIRMED"
+    else
+      R_MODE="NOT WRITTEN — tmux is absent, and a display mode is never pointed at a binary that is not installed"
+    fi
   else
     R_JSON="INVALID"
     R_TEAMS="FAILED"
     R_FLAG="NOT CONFIRMED"
     R_MODE="NOT CONFIRMED"
-    log "settings validation FAILED: $VALID_OUT"
-    case "$VALID_OUT" in
-      *PRE_EXISTING_SETTINGS_LOST*) R_EXISTING="PROBLEM FOUND ($VALID_OUT)" ;;
-    esac
-    if [ -n "$BACKUP" ] && [ -f "$BACKUP" ]; then
-      cp -p "$BACKUP" "$SETTINGS_PATH"
-      log "RESTORED the backup: $BACKUP -> $SETTINGS_PATH"
-      R_EXISTING="PRESERVED (restored from backup — no change landed)"
-    else
-      log "no backup existed (the file was created by this run); the new file was left in place for inspection"
-    fi
+    R_EXISTING="PRESERVED (restored from backup — no change landed)"
     print_report
-    printf '\nAgent Teams were NOT enabled. Your settings file was restored from the backup above.\n'
+    printf '\nAgent Teams were NOT enabled on at least one root. That root was restored from its backup above.\n'
     printf 'Nothing that was running was touched.\n'
     exit 2
   fi
@@ -578,11 +791,21 @@ main() {
   fi
 
   # ---- The claude-nine profile ---------------------------------------------
-  # The skill's own consent flow owns this file: 9Router Agent Teams
-  # compatibility is UNDETERMINED until its runtime probe passes, so a hand-tuned
-  # claude-nine profile is never mutated by this installer.
-  if [ -f "$NINE_PROFILE" ]; then
-    R_NINE="EXISTING — NOT MODIFIED ($NINE_PROFILE; the skill's consent flow owns it, 9Router Agent Teams compatibility UNDETERMINED)"
+  # It is a CONFIG ROOT, not a footnote: `claude-nine` (and `claude-codex`,
+  # which execs it) reads settings from there and from nowhere else, so leaving
+  # it alone left routed sessions with Agent Teams switched off.
+  if [ "$SETTINGS_OVERRIDE" -eq 1 ]; then
+    if [ -f "$NINE_PROFILE" ]; then
+      R_NINE="PRESENT — NOT PROCESSED (--settings single-root override was in effect; rerun without --settings to configure every root)"
+    fi
+  else
+    i=0
+    while [ "$i" -lt "$ROOT_COUNT" ]; do
+      if [ "${ROOT_KIND[$i]}" = "nine" ]; then
+        R_NINE="CONFIGURED — ${ROOT_PATH[$i]} (see CLAUDE-NINE ROOT above; \`claude-codex\` shares this root)"
+      fi
+      i=$((i + 1))
+    done
   fi
 
   # ---- P11 / P12 -----------------------------------------------------------
@@ -590,22 +813,55 @@ main() {
   # tmux, started another Claude Code instance, or restarted this session.
 
   # ---- READY ----------------------------------------------------------------
-  if [ "$R_JSON" = "VALID" ] && [ "$R_TMUX" = "INSTALLED" ] && \
-     { [ "$R_TMUX_CONF" = "READY" ] || [ "$R_TMUX_CONF" = "RELOAD DEFERRED" ]; }; then
-    R_READY="YES"
+  # Teams are READY whenever the settings validated. tmux only decides HOW
+  # teammates are displayed, so its absence downgrades the display, never the
+  # readiness.
+  if [ "$R_JSON" = "VALID" ]; then
+    if [ -n "$TMUX_BIN" ]; then
+      if [ "$R_TMUX_CONF" = "READY" ] || [ "$R_TMUX_CONF" = "RELOAD DEFERRED" ]; then
+        R_READY="YES"
+      else
+        R_READY="YES (in-process display mode; the tmux config is not complete — see DEFERRED below)"
+      fi
+    else
+      R_READY="YES (in-process display mode — split panes need tmux, which is not installed)"
+    fi
   else
-    R_READY="NO (Agent Teams are enabled in settings; split-pane teammates need tmux — see DEFERRED below)"
+    R_READY="NO"
   fi
 
   print_report
 
   # ---- P14. THE NEXT COMMAND — TOLD, NEVER RUN -----------------------------
+  # Two branches, and the one printed is the one that matches what was actually
+  # configured on this machine.
+  local NINE_CONFIGURED=0
+  i=0
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    if [ "${ROOT_KIND[$i]}" = "nine" ]; then NINE_CONFIGURED=1; fi
+    i=$((i + 1))
+  done
+
+  printf '\nWHEN YOU ARE READY, open a SEPARATE NEW terminal window and run:\n\n'
+  if [ -n "$TMUX_BIN" ]; then
+    printf '    tmux\n'
+    printf '    claude --teammate-mode tmux\n'
+    if [ "$NINE_CONFIGURED" -eq 1 ]; then
+      printf '\nFor the routed launcher, the same two lines with claude-nine:\n\n'
+      printf '    tmux\n'
+      printf '    claude-nine --teammate-mode tmux\n'
+    fi
+  else
+    printf '    claude\n'
+    if [ "$NINE_CONFIGURED" -eq 1 ]; then
+      printf '    claude-nine        # the routed launcher, same setting, its own root\n'
+    fi
+    printf '\n%s\n' "$TMUX_DEGRADE_LINE"
+    printf 'No --teammate-mode flag is needed or wanted: teammates run in the in-process\n'
+    printf 'display mode, which works in any terminal. Install tmux later and rerun this\n'
+    printf 'step if you want split panes.\n'
+  fi
   cat <<'NEXT'
-
-WHEN YOU ARE READY, open a SEPARATE NEW terminal window and run:
-
-    tmux
-    claude --teammate-mode tmux
 
 These commands were NOT run for you. The setting applies to NEW Claude Code
 sessions only; anything running right now keeps running exactly as it is.
@@ -614,6 +870,131 @@ NEXT
     printf '\nDEFERRED (reported, not performed — running work comes first):%s\n' "$DEFERRED"
   fi
   exit 0
+}
+
+# merge_all_roots — P4 (+P5) across every targeted root. Split out so the P6
+# reconciliation can rerun it without duplicating the failure handling.
+merge_all_roots() {
+  local i=0 MERGE_OUT MERGE_RC
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    MERGE_RC=0
+    set +e
+    MERGE_OUT="$(merge_settings "${ROOT_PATH[$i]}" "$WRITE_TEAMMATE_MODE" 2>&1)"
+    MERGE_RC=$?
+    set -e
+    if [ "$MERGE_RC" -ne 0 ]; then
+      log "${ROOT_LABEL[$i]}: settings merge failed: $MERGE_OUT"
+      if [ -n "${ROOT_BACKUP_PATHS[$i]}" ] && [ -f "${ROOT_BACKUP_PATHS[$i]}" ]; then
+        cp -p "${ROOT_BACKUP_PATHS[$i]}" "${ROOT_PATH[$i]}"
+        log "RESTORED the backup: ${ROOT_BACKUP_PATHS[$i]} -> ${ROOT_PATH[$i]}"
+        ROOT_EXISTING[$i]="PRESERVED (restored from backup — no change landed)"
+      fi
+      ROOT_JSON[$i]="INVALID"
+      R_JSON="INVALID"
+      R_TEAMS="FAILED"
+      print_report
+      exit 2
+    fi
+
+    # teammateMode reporting, per root.
+    if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
+      case "$MERGE_OUT" in
+        *"PREV_MODE=<absent>"*|*"PREV_MODE=$TEAMMATE_MODE"*) : ;;
+        *) DEFERRED="$DEFERRED
+- ${ROOT_LABEL[$i]}: teammateMode already had a different value; it was set to
+  \"$TEAMMATE_MODE\" as the procedure requires. The previous value is preserved in
+  that root's backup above." ;;
+      esac
+      ROOT_MODE[$i]="WRITTEN (\"$TEAMMATE_MODE\")"
+    else
+      case "$MERGE_OUT" in
+        *"PREV_MODE=<absent>"*)
+          ROOT_MODE[$i]="NOT WRITTEN — in-process display mode (tmux is not installed)" ;;
+        *)
+          ROOT_MODE[$i]="NOT WRITTEN — your existing teammateMode was left untouched (tmux is not installed)" ;;
+      esac
+    fi
+
+    # ---- ROUTED-PROFILE MODEL CHECK — REPORT ONLY, NEVER A WRITE -----------
+    # A routed root serves models through the local router. A teammate spawned
+    # with no explicit model falls back to the provider default, which the
+    # router may not serve at all — the teammate then presents as a spinner and
+    # only fails hours later. The fix key is named and recommended here and is
+    # NEVER written: models belong to the operator and to the client.
+    if [ "${ROOT_KIND[$i]}" = "nine" ]; then
+      case "$MERGE_OUT" in
+        *"HAS_TEAMMATE_DEFAULT_MODEL=1"*)
+          ROOT_NOTE[$i]="  TEAMMATE DEFAULT MODEL: present — left exactly as it is (never read for its value, never written)" ;;
+        *)
+          ROOT_NOTE[$i]="$NINE_MODEL_WARNING"
+          printf '%s\n' "$NINE_MODEL_WARNING" >&2 ;;
+      esac
+    fi
+
+    log "${ROOT_LABEL[$i]}: merged $FLAG_KEY=\"$FLAG_VALUE\" into env (${ROOT_MODE[$i]})"
+    i=$((i + 1))
+  done
+}
+
+# build_roots_report — the PER ROOT section of the report. Each root prints its
+# own label, its own file, and its own backup path.
+build_roots_report() {
+  local i=0 out=""
+  if [ "$ROOT_COUNT" -eq 0 ]; then
+    printf 'NONE (no target root was resolved)'
+    return 0
+  fi
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    out="$out${ROOT_LABEL[$i]}: ${ROOT_PATH[$i]}
+  SETTINGS JSON:     ${ROOT_JSON[$i]}
+  EXPERIMENTAL FLAG: ${ROOT_FLAG[$i]}
+  TEAMMATE MODE:     ${ROOT_MODE[$i]}
+  BACKUP:            ${ROOT_BACKUP[$i]}
+  EXISTING VALUES:   ${ROOT_EXISTING[$i]}
+"
+    if [ -n "${ROOT_NOTE[$i]}" ]; then
+      out="$out${ROOT_NOTE[$i]}
+"
+    fi
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
+# build_backups_report — every backup path, one line per root.
+build_backups_report() {
+  local i=0 out=""
+  if [ "$ROOT_COUNT" -eq 0 ]; then
+    printf 'N/A'
+    return 0
+  fi
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    if [ "$i" -gt 0 ]; then
+      out="$out
+"
+    fi
+    out="$out${ROOT_LABEL[$i]}: ${ROOT_BACKUP[$i]}"
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
+# build_files_report — every targeted settings file, one line per root.
+build_files_report() {
+  local i=0 out=""
+  if [ "$ROOT_COUNT" -eq 0 ]; then
+    printf 'N/A'
+    return 0
+  fi
+  while [ "$i" -lt "$ROOT_COUNT" ]; do
+    if [ "$i" -gt 0 ]; then
+      out="$out
+"
+    fi
+    out="$out${ROOT_LABEL[$i]}: ${ROOT_PATH[$i]}"
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
 }
 
 print_report() {
@@ -639,7 +1020,7 @@ $FLAG_KEY=$FLAG_VALUE
 $R_FLAG
 
 TEAMMATE MODE:
-$TEAMMATE_MODE
+$R_MODE_VALUE
 $R_MODE
 
 TMUX:
@@ -648,15 +1029,20 @@ $R_TMUX
 TMUX PATH:
 $R_TMUX_PATH
 
+TMUX DISPLAY MODE:
+$R_TMUX_MODE_LINE
+
 CLAUDE SETTINGS JSON:
 $R_JSON
 
 CLAUDE SETTINGS FILE:
-$SETTINGS_PATH
+$(build_files_report)
 
 CLAUDE SETTINGS BACKUP:
-$R_SETTINGS_BACKUP
+$(build_backups_report)
 
+CONFIGURED ROOTS:
+$(build_roots_report)
 TMUX CONFIG:
 $R_TMUX_CONF
 
@@ -699,31 +1085,58 @@ REPORT
 }
 
 # ---------------------------------------------------------------------------
-# --selftest — exercises the five behaviours the safety envelope depends on, in
+# --selftest — exercises the eight behaviours the safety envelope depends on, in
 # a sandbox HOME. Touches nothing outside its own temp directory, installs
 # nothing, and never spawns or signals anything.
+#
+# Every case runs the script with HOME pointed at its own throwaway directory,
+# with an absolute NODE_BIN and BASH so the result never depends on the caller's
+# PATH, and with a FAKE tmux (a two-line no-op that never starts a server) so
+# the display-mode cases are deterministic on hosts with and without real tmux.
+# Case 7 deliberately runs with a sanitised PATH that resolves no tmux at all,
+# and refuses to render a verdict unless that control holds.
 # ---------------------------------------------------------------------------
 
 selftest() {
-  local box fake rc fails=0
+  local box fake nobin rc fails=0 total=8
   box="$(mktemp -d "${TMPDIR:-/tmp}/enable-agent-teams-selftest.XXXXXX")"
   fake="$box/bin"
-  mkdir -p "$fake"
+  nobin="$box/nobin"
+  mkdir -p "$fake" "$nobin"
   printf '#!/bin/sh\necho "2.1.227 (Claude Code)"\n' > "$fake/claude"
   chmod 755 "$fake/claude"
+  # A fake tmux: it resolves, it never starts a server, it never lists a
+  # session, it is never signalled. Presence is all the script probes for.
+  printf '#!/bin/sh\nexit 1\n' > "$fake/tmux"
+  chmod 755 "$fake/tmux"
 
-  local NODE_T
+  local NODE_T BASH_T
   NODE_T="$(resolve_node || true)"
   if [ -z "${NODE_T:-}" ]; then
     printf 'FAIL  selftest: node not found (set NODE_BIN or put node on PATH)\n'
     exit 1
   fi
+  BASH_T="${BASH:-$(command -v bash)}"
 
-  st_run() { # st_run <home> [extra args...]
+  # Every seam is set EXPLICITLY on every run, including the ones being cleared,
+  # so an inherited AGENT_TEAMS_* variable in the caller's environment can never
+  # steer a selftest case at a real file.
+  st_run() { # st_run <home> [extra args...] — single-root, fake tmux present
     local h="$1"; shift
-    HOME="$h" CLAUDE_BIN="$fake/claude" AGENT_TEAMS_SETTINGS="$h/.claude/settings.json" \
+    HOME="$h" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$fake:$PATH" \
+      AGENT_TEAMS_SETTINGS="$h/.claude/settings.json" \
       AGENT_TEAMS_TMUX_CONF="$h/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h/.claude-nine/settings.json" \
-      bash "$SELF" --no-install "$@" > "$h/report.txt" 2> "$h/log.txt"
+      AGENT_TEAMS_BACKUP_STAMP="" AGENT_TEAMS_FORCE_VALIDATION_FAILURE="" \
+      "$BASH_T" "$SELF" --no-install "$@" > "$h/report.txt" 2> "$h/log.txt"
+  }
+
+  st_run_multi() { # st_run_multi <home> [extra args...] — DEFAULT multi-root
+    local h="$1"; shift
+    HOME="$h" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$fake:$PATH" \
+      AGENT_TEAMS_SETTINGS="" \
+      AGENT_TEAMS_TMUX_CONF="$h/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h/.claude-nine/settings.json" \
+      AGENT_TEAMS_BACKUP_STAMP="" AGENT_TEAMS_FORCE_VALIDATION_FAILURE="" \
+      "$BASH_T" "$SELF" --no-install "$@" > "$h/report.txt" 2> "$h/log.txt"
   }
 
   st_node() { "$NODE_T" -e "$1"; }
@@ -776,10 +1189,11 @@ JSON
   decoy="$h3/.claude/settings.json.backup.$stamp"
   printf 'DECOY-DO-NOT-TOUCH\n' > "$decoy"
   rc=0
-  HOME="$h3" CLAUDE_BIN="$fake/claude" AGENT_TEAMS_SETTINGS="$h3/.claude/settings.json" \
+  HOME="$h3" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$fake:$PATH" \
+    AGENT_TEAMS_SETTINGS="$h3/.claude/settings.json" \
     AGENT_TEAMS_TMUX_CONF="$h3/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h3/.claude-nine/settings.json" \
     AGENT_TEAMS_BACKUP_STAMP="$stamp" \
-    bash "$SELF" --no-install > "$h3/report.txt" 2> "$h3/log.txt" || rc=$?
+    "$BASH_T" "$SELF" --no-install > "$h3/report.txt" 2> "$h3/log.txt" || rc=$?
   if [ "$rc" -eq 0 ] && [ "$(cat "$decoy")" = "DECOY-DO-NOT-TOUCH" ] && [ -f "$decoy-1" ] && \
      SETTINGS="$decoy-1" st_node '
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
@@ -819,10 +1233,11 @@ JSON
   printf '{\n  "env": { "SENTINEL": "five" },\n  "model": "sonnet"\n}\n' > "$h5/.claude/settings.json"
   cp "$h5/.claude/settings.json" "$h5/original.json"
   rc=0
-  HOME="$h5" CLAUDE_BIN="$fake/claude" AGENT_TEAMS_SETTINGS="$h5/.claude/settings.json" \
+  HOME="$h5" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$fake:$PATH" \
+    AGENT_TEAMS_SETTINGS="$h5/.claude/settings.json" \
     AGENT_TEAMS_TMUX_CONF="$h5/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h5/.claude-nine/settings.json" \
     AGENT_TEAMS_FORCE_VALIDATION_FAILURE=1 \
-    bash "$SELF" --no-install > "$h5/report.txt" 2> "$h5/log.txt" || rc=$?
+    "$BASH_T" "$SELF" --no-install > "$h5/report.txt" 2> "$h5/log.txt" || rc=$?
   if [ "$rc" -eq 2 ] && cmp -s "$h5/original.json" "$h5/.claude/settings.json" && \
      awk '/^CLAUDE SETTINGS JSON:$/ { getline; if ($0 == "INVALID") found = 1 } END { exit found ? 0 : 1 }' "$h5/report.txt"; then
     printf 'PASS  5. a failed validation restores the backup and reports INVALID (exit 2)\n'
@@ -831,11 +1246,149 @@ JSON
     fails=$((fails + 1))
   fi
 
+  # 6. MULTI-ROOT — BOTH config roots configured, each with its own backup, and
+  #    every hand-tuned value in each root untouched.
+  local h6="$box/case6"
+  mkdir -p "$h6/.claude" "$h6/.claude-nine"
+  cat > "$h6/.claude/settings.json" <<'JSON'
+{
+  "model": "plain-root-model",
+  "env": { "SENTINEL": "six-plain" },
+  "permissions": { "allow": ["Bash(ls:*)"], "deny": [] }
+}
+JSON
+  cat > "$h6/.claude-nine/settings.json" <<'JSON'
+{
+  "model": "routed-alias",
+  "teammateDefaultModel": null,
+  "env": { "SENTINEL": "six-routed", "ANTHROPIC_BASE_URL": "http://127.0.0.1:9999" },
+  "permissions": { "allow": ["Bash(git status:*)"], "deny": [] },
+  "customProviders": { "local-router": { "models": ["alias-a", "alias-b"] } }
+}
+JSON
+  rc=0; st_run_multi "$h6" || rc=$?
+  if [ "$rc" -eq 0 ] && HOME6="$h6" REPORT="$h6/report.txt" st_node '
+      const fs = require("fs");
+      const h = process.env.HOME6;
+      const rep = fs.readFileSync(process.env.REPORT, "utf8");
+      const plain = JSON.parse(fs.readFileSync(h + "/.claude/settings.json", "utf8"));
+      const nine  = JSON.parse(fs.readFileSync(h + "/.claude-nine/settings.json", "utf8"));
+      const baks = (d) => fs.readdirSync(d).filter((f) => /^settings\.json\.backup\./.test(f));
+      const bp = baks(h + "/.claude"), bn = baks(h + "/.claude-nine");
+      // Prove the per-root backups exist BEFORE reading them, so a genuine
+      // failure reports one clear line instead of an unhandled ENOENT trace.
+      if (bp.length !== 1 || bn.length !== 1) {
+        console.error("EXPECTED exactly one backup per root; found " + bp.length +
+          " in .claude and " + bn.length + " in .claude-nine");
+        process.exit(1);
+      }
+      const bpj = JSON.parse(fs.readFileSync(h + "/.claude/" + bp[0], "utf8"));
+      const bnj = JSON.parse(fs.readFileSync(h + "/.claude-nine/" + bn[0], "utf8"));
+      const ok =
+        plain.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+        && nine.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+        && plain.teammateMode === "tmux" && nine.teammateMode === "tmux"
+        && plain.env.SENTINEL === "six-plain" && nine.env.SENTINEL === "six-routed"
+        && plain.model === "plain-root-model" && nine.model === "routed-alias"
+        && nine.teammateDefaultModel === null
+        && nine.customProviders["local-router"].models.length === 2
+        && nine.permissions.allow[0] === "Bash(git status:*)"
+        // one backup per root, in that root, and each holds the PRE-merge file
+        && bp.length === 1 && bn.length === 1
+        && !bpj.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+        && !bnj.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+        && bpj.env.SENTINEL === "six-plain" && bnj.env.SENTINEL === "six-routed"
+        // both roots are reported under their own labels, with their own backups
+        && rep.indexOf("CLAUDE ROOT: " + h + "/.claude/settings.json") !== -1
+        && rep.indexOf("CLAUDE-NINE ROOT: " + h + "/.claude-nine/settings.json") !== -1
+        && rep.indexOf(h + "/.claude/" + bp[0]) !== -1
+        && rep.indexOf(h + "/.claude-nine/" + bn[0]) !== -1;
+      process.exit(ok ? 0 : 1);'; then
+    printf 'PASS  6. a multi-root run configures BOTH roots, each with its own backup, nothing else touched\n'
+  else
+    printf 'FAIL  6. multi-root configuration (exit %s) — see %s\n' "$rc" "$h6/log.txt"
+    fails=$((fails + 1))
+  fi
+
+  # 7. NO TMUX -> teammateMode ABSENT, degradation reported, NOT blocked.
+  #    CONTROL FIRST: the sanitised PATH must resolve no tmux at all, or this
+  #    case proves nothing and says so instead of rendering a verdict.
+  local h7="$box/case7" SAFE_PATH="$nobin:/usr/bin:/bin"
+  mkdir -p "$h7/.claude"
+  printf '{ "env": { "SENTINEL": "seven" }, "model": "seven-model" }\n' > "$h7/.claude/settings.json"
+  if PATH="$SAFE_PATH" command -v tmux >/dev/null 2>&1; then
+    printf 'FAIL  7. no-tmux degradation — CONTROL FAILED: tmux still resolves under the sandbox PATH, so the case is invalid\n'
+    fails=$((fails + 1))
+  else
+    rc=0
+    HOME="$h7" CLAUDE_BIN="$fake/claude" NODE_BIN="$NODE_T" PATH="$SAFE_PATH" \
+      AGENT_TEAMS_SETTINGS="$h7/.claude/settings.json" \
+      AGENT_TEAMS_TMUX_CONF="$h7/.tmux.conf" AGENT_TEAMS_NINE_SETTINGS="$h7/.claude-nine/settings.json" \
+      "$BASH_T" "$SELF" --no-install > "$h7/report.txt" 2> "$h7/log.txt" || rc=$?
+    if [ "$rc" -eq 0 ] && SETTINGS="$h7/.claude/settings.json" REPORT="$h7/report.txt" \
+       DEGRADE="$TMUX_DEGRADE_LINE" st_node '
+        const fs = require("fs");
+        const s = JSON.parse(fs.readFileSync(process.env.SETTINGS, "utf8"));
+        const rep = fs.readFileSync(process.env.REPORT, "utf8");
+        const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+        const ok = s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+          && !has(s, "teammateMode")            // never a mode pointing at an absent binary
+          && s.env.SENTINEL === "seven" && s.model === "seven-model"
+          && rep.indexOf(process.env.DEGRADE) !== -1
+          && rep.indexOf("INSTALLATION BLOCKED") === -1
+          && /READY FOR A NEW AGENT-TEAM SESSION:\nYES/.test(rep);
+        process.exit(ok ? 0 : 1);'; then
+      printf 'PASS  7. no tmux -> teammateMode stays ABSENT, teams still ENABLED, degradation not blockage (exit 0)\n'
+    else
+      printf 'FAIL  7. no-tmux degradation (exit %s) — see %s\n' "$rc" "$h7/log.txt"
+      fails=$((fails + 1))
+    fi
+  fi
+
+  # 8. ROUTED-PROFILE MODEL CHECK — report only, never a write. Both halves:
+  #    absent -> the warning appears and NO model key is written;
+  #    present -> no warning, and the operator's value is left exactly as it is.
+  local h8a="$box/case8a" h8b="$box/case8b"
+  mkdir -p "$h8a/.claude" "$h8a/.claude-nine" "$h8b/.claude" "$h8b/.claude-nine"
+  printf '{ "env": { "SENTINEL": "eight-a-plain" } }\n' > "$h8a/.claude/settings.json"
+  printf '{ "model": "routed-alias", "env": { "SENTINEL": "eight-a-routed" } }\n' > "$h8a/.claude-nine/settings.json"
+  printf '{ "env": { "SENTINEL": "eight-b-plain" } }\n' > "$h8b/.claude/settings.json"
+  printf '{ "model": "routed-alias", "teammateDefaultModel": null, "env": { "SENTINEL": "eight-b-routed" } }\n' > "$h8b/.claude-nine/settings.json"
+  rc=0; st_run_multi "$h8a" || rc=$?
+  local rc8b=0; st_run_multi "$h8b" || rc8b=$?
+  if [ "$rc" -eq 0 ] && [ "$rc8b" -eq 0 ] && \
+     A="$h8a" B="$h8b" WARN="$NINE_MODEL_WARNING" st_node '
+      const fs = require("fs");
+      const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+      const warnHead = process.env.WARN.split("\n")[0];
+      const a = process.env.A, b = process.env.B;
+      const aNine = JSON.parse(fs.readFileSync(a + "/.claude-nine/settings.json", "utf8"));
+      const bNine = JSON.parse(fs.readFileSync(b + "/.claude-nine/settings.json", "utf8"));
+      const aRep = fs.readFileSync(a + "/report.txt", "utf8");
+      const bRep = fs.readFileSync(b + "/report.txt", "utf8");
+      const ok =
+        // absent: warned, in full, and STILL not written
+        aRep.indexOf(process.env.WARN) !== -1
+        && !has(aNine, "teammateDefaultModel")
+        && aNine.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+        && aNine.model === "routed-alias"
+        // present (the control): no warning, value untouched
+        && bRep.indexOf(warnHead) === -1
+        && has(bNine, "teammateDefaultModel") && bNine.teammateDefaultModel === null
+        && bNine.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1";
+      process.exit(ok ? 0 : 1);'; then
+    printf 'PASS  8. routed root without teammateDefaultModel warns and writes NO model key (control: present -> no warning, untouched)\n'
+  else
+    printf 'FAIL  8. routed-profile model check (exit %s/%s) — see %s and %s\n' "$rc" "$rc8b" "$h8a/log.txt" "$h8b/log.txt"
+    fails=$((fails + 1))
+  fi
+
+  printf '\nselftest: %s/%s passed\n' "$((total - fails))" "$total"
   if [ "$fails" -eq 0 ]; then
     rm -rf "$box"
     exit 0
   fi
-  printf '\nselftest artifacts kept for inspection: %s\n' "$box"
+  printf 'selftest artifacts kept for inspection: %s\n' "$box"
   exit 1
 }
 
@@ -843,7 +1396,7 @@ SELF="$0"
 DO_SELFTEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --settings) [ $# -ge 2 ] || usage; SETTINGS_PATH="$2"; shift 2 ;;
+    --settings) [ $# -ge 2 ] || usage; SETTINGS_PATH="$2"; SETTINGS_OVERRIDE=1; shift 2 ;;
     --tmux-conf) [ $# -ge 2 ] || usage; TMUX_CONF="$2"; shift 2 ;;
     --no-install) ALLOW_INSTALL=0; shift ;;
     --selftest) DO_SELFTEST=1; shift ;;

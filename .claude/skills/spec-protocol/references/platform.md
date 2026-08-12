@@ -85,7 +85,7 @@ always carries the test that would settle it (§8 lists them together).
 | **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash REQUIRED**; native PowerShell **CANNOT** run them | On native Windows without Git Bash, every bash-tool verdict is **UNDETERMINED** and the run says so. It never pretends the checks ran, and it never converts a missing interpreter into a clean result. |
 | **Core count** (feeds width `min(16, cores−2)`) | `/usr/sbin/sysctl -n hw.ncpu` — **AVAILABLE**. The `/usr/bin/sysctl` path returns **rc=127**, a shell abort, never an answer. Alternate: `getconf _NPROCESSORS_ONLN` | PowerShell `[Environment]::ProcessorCount`; or `%NUMBER_OF_PROCESSORS%`; or `nproc` under Git Bash — **AVAILABLE** | The FORMULA is identical everywhere; only the instrument changes. Cores are measured, never inherited (`tools/capacity-resolver.sh` enforces this itself). |
 | **Home / config root** | `$HOME`, `~/.claude` — **AVAILABLE** | `$env:USERPROFILE`, `%USERPROFILE%\.claude` — **AVAILABLE** | Separator differs (`/` vs `\`). **Never hardcode `/Users/…`** or a drive letter. Resolve the config root from `CLAUDE_CONFIG_DIR` when set, else the platform default. |
-| **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. |
+| **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box; absent → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
 | **Agent Teams (in-process)** | **AVAILABLE — but probe first**; enablement is per-box, not per-OS | **UNDETERMINED** — the docs state no OS restriction for in-process teams, and nothing affirms native Windows either | The AGENT-TEAM-PROBE (`references/agent-team.md` §3) is the decider, per box, on BOTH platforms. Probe, never assume — same rule either way. |
 | **Cross-session messaging** (`ListAgents` / `SendMessage` between independent sessions) | **AVAILABLE** (v2.1.224+; documented macOS + Linux/WSL2) | **NOT AVAILABLE on native Windows (documented)** | A real Windows gap. A Windows run must **SURFACE** it whenever any design leans on peer messaging — never silently degrade. Without peer messaging there is no peer challenge: the disagreement protocol routes through the lead alone and single-session mode is the honest fallback (`references/agent-team.md`). |
 | **Package manager** | Homebrew IF already present — **never install Homebrew as a side effect** (`999-setup` `CLAUDE.md` rule 11: Homebrew is not a macOS prerequisite) | winget / choco IF already present | An install step names the platform's manager, or reports **BLOCKED** with the exact manual step. Never bootstrap a package manager to satisfy a convenience. |
@@ -206,6 +206,51 @@ not presence of the program. Absent tmux and absent Homebrew, the step
 reports `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` and keeps validating
 everything else; it never installs Homebrew to get there.
 
+#### The per-box half of the same rule — the half that is NOT about the OS
+
+The clause above is a per-OS ban. This clause binds **every** platform,
+macOS and Linux included, and it is the half that decides what a box with no
+tmux actually gets:
+
+> On any OS, `teammateMode: "tmux"` is written **only when tmux (or iTerm2 +
+> `it2`) is PROVEN present on that box**. Absent → the key is **omitted** and
+> in-process is the answer — the documented default, which works in any
+> terminal with no extra setup. **A no-tmux, no-Homebrew Mac is a
+> DEGRADED-DISPLAY box, never a BLOCKED box.**
+
+The three clauses fail differently, so read them separately:
+
+- **PROVEN present means RUN, not resolved.** `tmux -V` with the exit code
+  read, per §3: `command -v` proves only that a NAME resolves. For the
+  iTerm2 + `it2` path the same standard applies — RUN `it2` with a harmless
+  flag and read the exit code; **the exact flag is UNDETERMINED here** (`it2`
+  was never probed on the box in §7, so no flag string in this file is a
+  measurement). A probe that was not run leaves the verdict
+  **UNDETERMINED**, and UNDETERMINED takes the ABSENT branch — the key is
+  omitted. Writing the key on an unproven box is exactly the failure this
+  rule exists to prevent.
+- **OMITTED — not set to a fallback string.** There is no "write in-process
+  instead" step. `teammateMode` is left unwritten and the harness's own
+  documented default (in-process, "works in any terminal, no extra setup
+  required") applies. **Omission is the action.**
+- **DEGRADED DISPLAY ≠ BLOCKED RUN.** `teammateMode` selects DISPLAY ONLY.
+  tmux is therefore never a prerequisite for Agent Teams; its absence never
+  blocks team formation, never blocks the build, and is never grounds to stop
+  and ask the client to install anything. It costs split panes and nothing
+  else.
+
+**Scope of the `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` report
+above:** that string names the tmux **installation** — an optional
+convenience — as blocked. It never names the run, the teams, or the build as
+blocked. The paragraph above already says the step "keeps validating
+everything else"; this clause states the consequence in the ledger's own
+vocabulary so no reader can convert an install-side BLOCKED into a stop gate.
+The correct ledger line for such a box is the §4.1 PLATFORM-SKIP:
+
+```
+<ts> | PLATFORM-SKIP | step=tmux-display-mode | reason=tmux not proven present on this box (tmux -V did not return 0) | consequence=teammateMode OMITTED; in-process display; team formation UNAFFECTED — degraded display, not a blocked run
+```
+
 ### 5.2 The Windows peer-messaging gap must be SURFACED, never hidden
 
 `ListAgents` / `SendMessage` cross-session messaging is documented as macOS
@@ -281,6 +326,53 @@ Every Windows-side claim above is sourced from documentation or from the
 `999-setup` Windows branch, and the Windows-side UNDETERMINED items in §8 stay
 UNDETERMINED until someone runs them on an actual Windows box.
 
+### 7.1 Agent-Teams DISPLAY exhibits, one box, 2026-08-12
+
+**These are DATED OBSERVATIONS, not standing claims.** Each says what one
+box did on one day. None of them is a property of macOS, of the harness, or
+of any other machine, and none may be recalled as an input to a later run —
+re-observe, exactly as §7's preamble requires of every value above.
+
+They are recorded here because both bear on §5.1: they are the evidence that
+a missing tmux pane is a display fact, not a run fact.
+
+| # | Dated observation (2026-08-12, one box) | EXTERNAL instrument that produced it | Standing |
+|---|---|---|---|
+| A | **Headless `claude -p` did not engage Agent Teams at all.** Same feature flag, same settings, same binary: a named agent spawned, but there was **no team directory, no tmux session, and no teammate protocol**. Reading: teams presented as an INTERACTIVE-session feature on that box that day. | Absence of `{config root}/teams/session-{id8}/` on disk, plus `tmux list-sessions` — both run OUTSIDE the session under test | Dated observation. One box, one day, one invocation mode. Not a documented product limit. |
+| B | **Team formation under the routed launcher (`claude-nine`) was proven IN-PROCESS, with NO tmux pane.** The team formed and the teammate's on-disk inbox existed while no split pane had been created. Reading: tmux was not required for a team to form on that box that day. | `{config root}/teams/session-{id8}/inboxes/{name}.json` present on disk, and `tmux list-panes` pane count showing no added pane | Dated observation. Consistent with the documented in-process default (§5.1), but the DOCS are the authority for the general rule; this row is only one box's confirmation. |
+
+**Why the instrument column says EXTERNAL.** A session cannot self-report
+whether Agent Teams is active, so neither observation above may be sourced
+from a session's own account of itself. Only instruments outside the session
+count — the `tmux list-panes` pane count and the on-disk artifact
+`{config root}/teams/session-{id8}/inboxes/{name}.json`. This is the §4.3
+control discipline applied to teams: prove a negative the way you would prove
+a positive, on an instrument you can also see a positive with.
+
+### 7.2 Launcher / config-root exhibit, same box, 2026-08-12
+
+Recorded in the same measured form as §7's table, because "which config root
+does this launcher use" is a per-box, per-launcher fact that decides where
+every per-root setting must be read and written.
+
+| Fact | Value | Instrument (literal) | rc |
+|---|---|---|---|
+| Config root of the routed launcher `claude-nine` | `~/.claude-nine` | `grep -n -E 'CLAUDE_CONFIG_DIR' ~/.local/bin/claude-nine` → line 32: `export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"` | 0 |
+| **`claude-codex` is NOT a third config root** | It **shares `~/.claude-nine`** — it is a pinned front end for the same launcher, not a separate root | `grep -n -E '^exec ' ~/.local/bin/claude-codex` → line 32: `exec "$HOME/.local/bin/claude-nine" \` | 0 |
+| **CONTROL** (same shell, same transport, answer known non-empty) | `7` occurrences of a token known to be present in this file | `grep -c 'teammateMode' <this file>` | 0 |
+
+Consequences that follow from the `exec` line, and only from it:
+
+- **Two config roots per box, not three.** `claude` reads `~/.claude`;
+  `claude-nine` and `claude-codex` both read `~/.claude-nine`. Enabling a
+  per-root setting in one root stays **INVISIBLE** to the other launcher.
+- **`claude-codex` is never probed as a separate box or counted as a third
+  root.** Any per-root verdict recorded for `claude-nine` already covers it;
+  recording it twice would double-count one root.
+- **Resolve the root, never hardcode it.** §2's config-root row still governs:
+  read `CLAUDE_CONFIG_DIR` when set, else the platform default. The values
+  above are what this box's launchers export, measured — not a fleet fact.
+
 ---
 
 ## 8. UNDETERMINED — stated, with the test that settles each one
@@ -303,7 +395,7 @@ UNDETERMINED until someone runs them on an actual Windows box.
 | `SKILL.md` flow step 2 | "Auto-detect platform, then harness" — §1 runs FIRST, and its result selects the vocabulary the harness detection then uses |
 | `SKILL.md` flow step 6.5 / `references/capacity.md` §4 | The `Platform:` ledger header line (§1.2); the core-count instrument (§2); the capability verdicts the ledger cites |
 | `references/capacity.md` | The decision-time re-measurement rule applies to detection — it is free, so it is re-taken, not carried |
-| `references/agent-team.md` §3, §5.5 | The tmux / `teammateMode` rule (§5.1) and the peer-messaging gap (§5.2), by citation — this file is the owner |
+| `references/agent-team.md` §3, §5.5 | The tmux / `teammateMode` rule (§5.1) and the peer-messaging gap (§5.2), by citation — this file is the owner. §5.1 has TWO halves and both live here: the per-OS ban (never on Windows) and the per-box rule (any OS — write only where tmux/iTerm2+`it2` is PROVEN present; absent → key OMITTED, in-process, DEGRADED-DISPLAY not BLOCKED). Also the launcher/config-root exhibit (§7.2), including `claude-codex` sharing `~/.claude-nine` |
 | `references/resume.md` step 0.5 | Platform re-detect on every resume (free, `[MEASURED]`) |
 | `references/environment-sweep.md`, `tools/*.sh` | The bash-interpreter requirement (§2, row 1) and the UNDETERMINED-not-pass rule when it is absent |
 | `work-999-setup` (separate repo) | The two-branch consistency clause (§6) |
