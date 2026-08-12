@@ -1,6 +1,6 @@
 ---
 name: spec-protocol
-description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (up to 23 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
+description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (up to 22 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
 trigger: /spec-protocol
 ---
 
@@ -86,9 +86,26 @@ When the operator provides a folder ("Here is the info"), THAT FOLDER IS THE PRO
 The provided folder's documents ARE the seventeen-document apparatus. The build reads them and dispatches. Missing documents (e.g. an absent ledger or QC report) are CREATED — but existing documents are used as-is, never recreated. A missing document is the ONLY case where a new document is written into a provided folder.
 
 ### RULE 2 — MAXIMUM-PARALLELISM DOCTRINE (the "leverage the complete power" rule)
-The skill's conservative defaults (20 workflows x 16 subagents, reserve, 10-merge batches) are SUPERSEDED by the operator's doctrine:
-- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: 16 sub-agents per workflow when the work benefits, up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling (e.g. DeepSeek v4 Flash: 2,500).
-- AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never reserved, never self-limited.
+**WHAT THIS RULE GOVERNS: WIDTH VERSUS WORK — not how much of a provider we consume.**
+It answers exactly one question: *do we hold agents back when there is work for them?*
+**No.** It does NOT answer *how much of a provider's ceiling do we take?* — that is
+Law 44's question, and its answer is **never 100%**. Both are binding, and they never
+collide, because they act on different quantities and in a fixed order:
+1. **CEILING ARITHMETIC (Law 44, the reserve — unchanged and not superseded).** Take the
+   provider's cap, subtract the reserve, and that remainder is the USABLE number. The
+   derivation lives in `references/capacity.md` §2/§5 and the governing width is the
+   SMALLEST of {harness delivery capacity, operator wave cap, usable}. Every dispatch
+   cites the Capacity Ledger's computed number — never a raw provider cap.
+2. **DISPATCH (this rule).** Inside that usable number, never dispatch fewer streams than
+   the work allows. No artificial gate, no timid fixed figure, no capacity sitting idle
+   with runnable work in front of it.
+Read them in that order and there is only ever one width. Consuming 100% of a provider
+is a Law 44 violation; leaving dispatchable work undispatched inside the usable number is
+a violation of this rule. **Neither one buys the other any slack.**
+
+The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: min(16, cores−2) sub-agents per workflow when the work benefits (the harness runtime cap, MEASURED at run time — never a fixed 16), up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2).
+- AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
 - Batch merging: time-triggered (every 15 minutes, whatever is ready merges as ONE batch with one atomic stamp: version + tag + changelog + README + update-script). NO count cap. Never piecemeal merges.
 - QC runs as a parallel pool — one QC sub-agent per completed work item, dispatched the instant the item completes, NEVER a serial blocker.
@@ -235,7 +252,7 @@ and record it in the Capacity Ledger — the budget math differs:
 | Launcher | How to detect | What changes |
 |---|---|---|
 | `claude` | Regular-Claude-Code mode per the table above | Anthropic tiers; the operator cap of 20 concurrent agents per wave governs width. |
-| `claude-nine` | Claude-Nine mode per the table above; session model is a router alias or provider-prefixed id | Provider ceilings minus reserve govern width; run the capacity interview. Resolve every role's alias to its ACTUAL model (references/capacity.md §11) — on this box `fable` resolves to the Codex model with a 372K real context ceiling despite the profile's 900K declaration. |
+| `claude-nine` | Claude-Nine mode per the table above; session model is a router alias or provider-prefixed id | Provider ceilings minus reserve govern width; run the capacity interview. Resolve every role's alias to its ACTUAL model (references/capacity.md §11) — resolve on the MACHINE YOU ARE ON, never from an example. *(Dated example of the trap, from one box on one day — never a fact about this run's machine: an alias resolved to a Codex-family model whose real context ceiling was 372K despite the profile declaring 900K. What travels is the lesson — a profile's declared ceiling is not the delivered one — not the names or the figures.)* |
 | `claude-codex` | Claude-Nine mode AND the session model id starts with `cx/` (it is claude-nine pinned to `cx/gpt-5.6-sol(high)` with `--autocompact 350k`) | Context ceiling is ~372K, NOT the profile's 900K — budget context accordingly; the session model is PINNED for the launch, so alias-repointing advice does not apply to the conductor's own seat. Subagent routing still follows the router. |
 
 If the launcher cannot be determined from the session model and the mode signals,
@@ -288,7 +305,7 @@ D is the only part of the capacity interview that runs on BOTH harnesses.
 ### Claude-Nine — run the capacity interview
 
 9router-routed models. **Run the full capacity interview** before building — the
-v4 section-4.5 interview (23 questions, four blocks), adapted for model
+v4 section-4.5 interview (22 questions, four blocks), adapted for model
 intelligence. See `references/interview.md`. Measure what you can (repo count,
 branch, code state — go look); ask only what no command can reveal (subscription
 tier, effort setting, which models they want).
@@ -496,12 +513,13 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** Twenty-three lettered questions in
+6. **Capacity interview (Claude-Nine only).** Twenty-two lettered questions in
    four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8,
-   B1–B4, C0–C6, D1–D4 — of which **at most twenty-two are ever asked on an
-   ATTENDED run**, because C6 is the twenty-third and fires only when C0 says the
+   B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4 — of which **at most twenty-one
+   are ever asked on an ATTENDED run**, because C6 is the twenty-second and fires
+   only when C0 says the
    run is unattended. One at a time, with the expected count stated up front
-   ("about nineteen short questions, then you can walk away" — A1 is usually
+   ("about eighteen short questions, then you can walk away" — A1 is usually
    measured rather than asked, and the two fast paths fold blocks B and C into
    confirmations; `references/interview.md` owns the reconciliation). The two fast paths can shrink it: the archetype defaults offer and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
@@ -1043,7 +1061,8 @@ See `references/audience.md` for the full audience UX rules.
 |---------|---------|-----|
 | Project folder root | `~/Downloads/projects/<project-slug>/` | v4 Part 13 layout |
 | Quality gate | 8.5 of 10 (ten categories, each 1–10) | The fleet standard. It does not move. |
-| Capacity defaults | SUPERSEDED by the operator's MAXIMUM-PARALLELISM DOCTRINE (see OPERATOR RULES): max workflows/sub-agents in parallel wherever it makes sense, auto-adapting, no reserve, no gating | The operator doctrine overrides the conservative caps (20 workflows x 16 subagents, per-provider builder caps, QC 5x5, reserve). |
+| Capacity defaults (WIDTH) | SUPERSEDED by the operator's MAXIMUM-PARALLELISM DOCTRINE (see OPERATOR RULES): max workflows/sub-agents in parallel wherever it makes sense, auto-adapting, no gating, no idle capacity while runnable work waits. This is **width versus work** only. | The operator doctrine overrides the conservative WIDTH caps (20 workflows x 16 subagents, per-provider builder caps, QC 5x5). |
+| Provider reserve (CEILING ARITHMETIC) | **NOT superseded.** Law 44 stands: usable = provider ceiling − reserve, and the governing width is the smallest of {harness, operator wave cap, usable}. "Max parallel" means max *within* the usable number — never a raw provider ceiling. | A reserve is not a width cap, so the maximum-parallelism doctrine never reaches it. Never consume 100% of a provider's headroom; the client's own tooling shares those accounts. The arithmetic and every worked derivation live at `references/capacity.md` §2/§5, and each dispatch cites the Capacity Ledger's computed number. |
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
@@ -1181,13 +1200,13 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 
 ## References (read in this order when you reach the step)
 
-1. `references/interview.md` — the brainstorm + archetypes + fast paths + 18-question capacity interview (Steps 4–6)
+1. `references/interview.md` — the brainstorm + archetypes + fast paths + the lettered capacity interview: 22 questions, at most 21 ever asked on an attended run (B3 retired 2026-08-12). **This file OWNS the question count** — read it there, never restate it from memory (Steps 4–6)
 2. `references/research.md` — the Domain research step + the Reference apps step (study and mirror), the REQUIRED bar selection, reader-agent dispatch, the empowering framing (Steps 7–8)
 3. `references/environment-sweep.md` — env-file checks, hosting, ask-the-user fallback (Step 9)
 4. `references/documents.md` — the 17-document closed list, each one's shape, the 9 refused artifacts, the census commands (Steps 10–13, 20)
 5. `references/gauntlet.md` — the three-part Gauntlet Loop block (THE TASK / THE BUILD METHOD / THE BAR TO HIT), the three-gate stack, the GL-001…GL-008 validation rules, the blind A/B protocol, the frozen reference package, the non-success states (Steps 12.5, 20 — and throughout the QC pipeline)
 6. `references/pipeline.md` — build→QC→pen→batched-merge, the scope fence, the post-merge artifact check, Land/Merged, the 8 Named Stops, Law 29's per-card rubric, version-surfaces, clean commits (Steps 13–21)
-7. `references/loops.md` — loop engineering, the loop register, 4 core + 4 survival loops, the C0 zero-loops case, the 9.4 budget derivation (Steps 16–18)
+7. `references/loops.md` — loop engineering, the loop register, 4 core + 5 survival loops, the C0 zero-loops case, the 9.4 budget derivation (Steps 16–18)
 8. `references/terminals.md` — THE HANDOVER RULE (the skill drives; the client consents once), the three SEATS, and the labeled last-resort three-window rung: Rules 3.36/3.37, the pasted-and-runnable launch commands, plain-English one-command-at-a-time (Step 19)
 9. `references/audience.md` — the ~68-year-old non-technical UX rules (all steps)
 10. `references/capacity.md` — the capacity doctrine, the Capacity Ledger, the agent-budget declaration, the role→alias→model resolution, commander accounting, the four worked scenarios, the burn-rate governor, the fallback table (Steps 6, 6.5)
@@ -1197,5 +1216,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 14. `references/worked-example.md` — the full end-to-end worked example: capacity ledger → manifest → task graph → team → six workflows → reconcile → merged app (read once before the first real run)
 15. `references/funnel-architecture.md` — funnel page types and email/SMS decision matrices (funnel builds only)
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
-17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, the disagreement protocol, the team-size gate (Steps 2.5, 16.9, handover)
+17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover)
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
+19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
+20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
