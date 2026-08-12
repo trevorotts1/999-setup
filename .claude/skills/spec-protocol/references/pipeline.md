@@ -86,9 +86,11 @@ brainstorm and the confirmed feature list are the source of truth.
 
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
 
-**Model:** the app-builder model from the capacity interview. On Claude-Nine,
-Opus (router alias → DeepSeek v4 Flash). On regular Claude Code, Sonnet if
-available.
+**Model:** the app-builder model from the capacity interview. The default LANE is
+`Opus` on Claude-Nine, `Sonnet` on regular Claude Code if available — **a lane, not
+a model.** What either lane resolves to is a per-machine fact read live at run time
+(`references/capacity.md` §11) and recorded in the Capacity Ledger; no model id is
+supplied by this page.
 
 ### Concurrency caps — READ THE CAPACITY LEDGER, do not re-derive here
 
@@ -257,8 +259,9 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
-**Model:** the QC model from the capacity interview. On Claude-Nine, Fable (router
-alias → Qwen 3.8), 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
+**Model:** the QC model from the capacity interview. The default LANE on
+Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
+named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
 (Law 7 — one model's blind spot cannot bless itself). Review streams as features
 land — not in a batch at the end (inherit warfix streaming review).
 
@@ -522,9 +525,10 @@ couple two lanes that the schedule went to some trouble to keep apart.
 
 ## Stage 5 — BATCHED GITHUB MERGE (one train per repo, drain in batches)
 
-**Model:** the merger model from the capacity interview. On Claude-Nine, Haiku
-(router alias → GLM 5.2), one per repository. On regular Claude Code, Haiku if
-available.
+**Model:** the merger model from the capacity interview. The default LANE is
+`Haiku` on both harnesses — a lane, not a model; what it resolves to is read live
+(`references/capacity.md` §11) and recorded in the Capacity Ledger. One merger per
+repository.
 
 ### GitHub repo — new or pre-existing?
 

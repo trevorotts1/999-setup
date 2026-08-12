@@ -451,7 +451,10 @@ FAIL if: <exact condition> → incomplete because <reason>
 
 These were ordered into existence by earlier versions of the protocol. The v4
 second amendment refused them one by one. Their content goes into the sixteen
-instead. Do not create them. Do not reinvent them under another name — a refused
+prior documents instead — none of it routes to document 17 — and the
+destinations are named in the table below, one per refused artifact, so the
+count is never what tells you where anything goes. Do not create them. Do not
+reinvent them under another name — a refused
 artifact does not return under a new name (Law 39, clause 2). A "per-item brief" is
 a per-unit card. A "status cache" is a digest.
 
