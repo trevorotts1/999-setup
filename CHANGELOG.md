@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.1] — 2026-08-12
+
+### Spec-protocol clarity fixes — the operating loop reads as steps, Agnes prices read as annual
+
+- **A station is a step, not a window** — the 19-station canonical operating loop
+  (`references/gauntlet.md` §14) was read as an instruction to open nineteen windows or
+  tabs. It never was. §14 now opens with a plain-language statement before the table: a
+  station is a step the lead performs, one trip through all nineteen processes ONE task
+  start to finish, and the live-session count is **one** in single-session mode and
+  **five** in team mode (the lead plus the four commanders, which the lead spawns
+  itself). Nobody opens nineteen of anything, and the client opens nothing at all.
+- **The five-phase grouping** — nineteen rows now carry a human-sized handle placed with
+  the station table: ORIENT (1–4), ARM (5–6), BUILD (7–10), JUDGE (11–14), CLOSE (15–19),
+  compressed to the mnemonic **READ → PICK → BUILD → JUDGE → RECORD → NEXT**. The table
+  stays the machine's checklist; the phases are the human's handle. No station is
+  renumbered, merged, reordered, or dropped — the count stays 19 and §14.1's source map
+  stays accurate.
+- **Agnes AI tiers are ANNUAL prices** — the paid tiers were written bare as "$40 plan"
+  and "$100 plan", which reads as monthly next to Ollama Cloud's genuinely monthly
+  $20/mo and $100/mo rows during the capacity interview. Every Agnes tier mention now
+  says so explicitly across `references/capacity.md`, `references/media-pipeline.md`,
+  `references/interview.md`, `SKILL.md`, and `tools/capacity-resolver.sh`. **No rate
+  limit changed** — free stays 20 requests/minute, $40/year stays 1,500 requests per 5
+  hours, $100/year stays 7,500 requests per 5 hours, and the binding rule that Agnes
+  limits are re-researched live at `agnes-ai.com` every run (these figures being the
+  dated fallback) stands untouched. `AGNES_PLAN=free|40|100` keeps its accepted values,
+  so the resolver's interface is unchanged.
+
 ## [1.2.0] — 2026-08-12
 
 ### Spec-protocol rebuilt — execution architecture, agent teams, capacity, anti-drift
