@@ -285,7 +285,7 @@ Key model roles for Claude-Nine (router aliases — see "Router aliases" below):
 | Technical + release judge | Sonnet → DeepSeek v4 Pro | Provider ceiling 500 concurrent subagents, less the 25% reserve — ample for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1). Must resolve to a DIFFERENT underlying model than the builder — different alias names prove nothing. |
 | QC + fixer | Fable → Qwen 3.8 | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | Haiku → GLM 5.2 | Low load, fine at 8–10 concurrent. |
-| Comparative critic (Gate 3) | Opus → (read the current wiring and report it) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. |
+| Comparative critic (Gate 3) | Fable → (read the current wiring and report it) | One additional concurrent read per review tick, counted in the 9.4 budget. Blind A/B verdicts only. **Never the builder's alias** — a critic running the builder's own model is not blind, it is grading its own homework. Fable is recommended because it is the seat most likely to resolve to a different model FAMILY, not merely a different model, and a reviewer from another lineage cannot inherit the builder's blind spots. Sonnet is unavailable (it is the technical/release judge seat; reusing it collapses critic and judge into one model), and Haiku is too light for a comparative verdict. Resolve the alias at run time and confirm it differs from the builder's — never assume. |
 
 For each role: read the 9router config and report the current wiring ("Haiku is
 currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…"); ask

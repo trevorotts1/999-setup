@@ -407,11 +407,17 @@ number into this project's execution plan.
   to improve and how; then fixes.
 - **Merger** — default Haiku → GLM 5.2 (low load, fine at 8 to 10 concurrency). Ask
   which model; offer to wire it in 9router if not already wired.
-- **Comparative critic (Gate 3)** — default Opus → (read the current wiring and
-  report it). On a router, two aliases can resolve to the same underlying model.
-  Read the router config and VERIFY the builder, judge, and comparative-critic
-  seats resolve to different underlying models — different alias names prove
-  nothing.
+- **Comparative critic (Gate 3)** — default Fable → (read the current wiring and
+  report it). **Never the builder's alias** — a critic running the builder's own
+  model is not blind, it is grading its own homework. Fable is recommended because
+  it is the seat most likely to resolve to a different model FAMILY, not merely a
+  different model, and a reviewer from another lineage cannot inherit the builder's
+  blind spots. Sonnet is unavailable (it is the technical/release judge seat, and
+  reusing it would collapse critic and judge into one model), and Haiku is too
+  light for a comparative verdict. On a router, two aliases can resolve to the same
+  underlying model. Read the router config and VERIFY the builder, judge, and
+  comparative-critic seats resolve to different underlying models — different alias
+  names prove nothing.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
 is currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…").
