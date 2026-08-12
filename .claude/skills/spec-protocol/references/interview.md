@@ -382,6 +382,11 @@ skill never pins a model id as doctrine).
   they asked for: verify the name against the LIVE catalog research. **Found** →
   seat it, record their choice in their own words in the decision register, and
   read that model's own constraint table rather than the recommendation's.
+  A model named by its BUILDER — "the Gemini one," "the Google one," "the OpenAI
+  picture model" — is a lineage reference to a Kie.ai catalog member, not a
+  reference to another account: verify it against the live Kie.ai catalog and
+  seat the Kie.ai member. It is never a cue to ask about a Google or an OpenAI
+  account.
   **Not found** → an honest miss and the nearest real thing, never a silent
   substitution: "I couldn't find one by that name on your account today. The
   closest I do see is [x] — use that, or my recommendation?"
@@ -391,6 +396,36 @@ skill never pins a model id as doctrine).
   this skill's job, not theirs. The only time a video model's name is ever put in
   front of the client is at spend time, for the premium engines — see the runtime
   gate below.
+- **A maker's name never means another account.** The model names carry their
+  builders' names inside them, and "GPT Image 2" will sound like OpenAI to
+  anybody who has heard of ChatGPT. Say this the moment any maker's name lands in
+  the conversation, in these words:
+
+  > "One thing so nothing about the model names is confusing: all of these
+  > picture and video engines — whoever originally made them, Google, OpenAI,
+  > anyone — run through the one Kie.ai account. Your Kie.ai key covers every one
+  > of them. You never need a Google account, an OpenAI account, or any other
+  > company's key for your artwork."
+
+  **⛔ And when the ask points them at a page — a dashboard, a login, a signup —
+  that pointer may name Kie.ai or agnes-ai.com and NOTHING else.** Never Google,
+  never OpenAI, never ByteDance, MiniMax, Alibaba, or any other model-builder's
+  console. No key from any of those can serve this build, so a client sent
+  hunting for one has been sent on an errand that cannot end — which is the
+  entire reason this rule exists. `media-pipeline.md` section 1 owns the rule.
+
+  **If they OFFER an upstream key** — "I have a Gemini key, use that," "my
+  ChatGPT plan includes pictures" — the answer is a warm no built on two facts:
+  it is not needed, and it would not work here.
+
+  > "Keep that one wherever it lives — I don't need it, and I couldn't use it
+  > here. The artwork runs through Kie.ai or your Agnes account, and your Kie.ai
+  > key already reaches the Google-built engines (and the OpenAI-built ones, and
+  > all the rest). Nothing else plugs in."
+
+  **Never accept it and never ask to see it** — the no-paste rule below binds
+  this branch exactly like every other — and record the exchange in the decision
+  register in their own words.
 
 The gate behaviour on the keys:
 
@@ -443,6 +478,28 @@ The gate behaviour on the keys:
 The key checks themselves belong to `environment-sweep.md`; the model rules, the
 prompt band, and the image and video pipelines belong to `media-pipeline.md`. The
 interview's whole job here is the choice, and the consent to spend money.
+
+**Where the pictures END UP is told, never asked — it is not a choice, it is what
+"finished" means.** No question is added for it and none may be invented here:
+every picture and video this build generates is saved into the client's own
+Convert and Flow media library, in a folder named for their project, and the
+saved copy's permanent link is what the pages point at. The link the picture
+service hands back is temporary and expires; the saved copy does not. Say it
+once, in passing, when artwork is agreed:
+
+> "Every picture and video I make gets saved into your own Convert and Flow media
+> library, in a folder with your project's name on it — so they're yours, sitting
+> in your own account, and your pages point at those saved copies rather than at
+> anything temporary."
+
+**When there is no Convert and Flow account** — only possible on an app or a
+website, since a funnel cannot be built without one — the pictures are kept
+inside the project itself, and that is said plainly rather than passed over:
+"your pictures are saved inside the project itself; I didn't find a Convert and
+Flow account to copy them into — here are the names I checked." Never a stall,
+never a silent skip, and never a picture left pointing at a temporary link. On an
+attended run you may offer, once, to wire Convert and Flow up later.
+`media-pipeline.md` owns the folder, the saving, and the permanent link.
 
 **The premium-engine spend gate (`media-pipeline.md` §6b) is a RUNTIME ask, not
 an interview question — never pre-collect a blanket yes here.** Those engines are
@@ -815,7 +872,7 @@ Two repositories means two trains, two writers, two queues (Law 3).
 | **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
 | **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
 | **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
-| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. |
+| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **The SAME question grows one further clause — still no new question number — covering what happens when a finished asset is LOST before it can be saved:** **"…And the last piece: once in a while a finished picture or clip can get lost before I manage to save it — the service throws it away very fast. If that happens overnight and remaking it still fits the budget we already agreed, may I remake it once on my own and show you both charges in the morning — or would you rather I always leave it for you to decide?"** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. The loss clause additionally records `MEDIA_LOSS_POLICY` = remake-once-within-budget \| note-and-wait, defaulting to **remake-once-within-budget** marked as a default they confirmed — it delivers the finished build and **cannot exceed what was already consented**, while `note-and-wait` is the cautious override for a cost-sensitive client. **Binding floors regardless of which they pick:** the gated premium tier NEVER auto-remakes — it parks, because that gate is spend authority and a loss policy never grants spend authority; the four conditions on an automatic redo (inside the consented envelope, meter permitting, first redo only, and announced with both charges shown) bind even under remake-once-within-budget; and the run never stalls on a question nobody is awake to answer (`references/media-pipeline.md` section 11's loss ladder). |
 
 **C0 is numbered zero because it is asked before C1 and because nothing above it
 was renumbered to make room.** Every question under it assumes an answer to it.

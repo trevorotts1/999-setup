@@ -27,7 +27,7 @@ script-orchestrated fan-out of subagents. The parent task is the outcome; the
 workflow is the machinery underneath it. Do not confuse the two.
 
 **A TEAMMATE (an Agent Team commander) is a PERSISTENT full session that SUPERVISES
-workflow results** — never the fan-out itself. Trevor, verbatim: *"Do NOT use
+workflow results** — never the fan-out itself. The operator, verbatim: *"Do NOT use
 persistent Agent Team teammates as hundreds of tiny workers. That is what DYNAMIC
 WORKFLOWS are for."*
 

@@ -205,7 +205,7 @@ This is the load-bearing paragraph of the whole file.
 | **Teammate / commander** (Level 2) | **Each other, directly** — `SendMessage`, plain text, peer to peer — and the lead | The shared task list + `project_state.json` | The session (dies with the lead) |
 | **Workflow** (Level 4) | Script-orchestrates SUBAGENTS; it does not orchestrate teammates | Its own inputs/outputs | The workflow run |
 
-Therefore: **Trevor's rule that "the commanders must challenge each other, not be a
+Therefore: **the operator's rule that "the commanders must challenge each other, not be a
 chain of yes-men" is mechanically possible at the teammate layer and mechanically
 impossible at the subagent layer.** Peer-to-peer `SendMessage` plus a shared task
 list is the technical mechanism that makes the disagreement protocol (§7) a real
@@ -683,7 +683,7 @@ The recovery is `resume.md` **step 8.5 — RE-HYDRATE THE COMMAND LAYER**:
    must reconcile against `project_state.json`. A mismatch is a finding, not a shrug.
 5. **Update `agents.commanders[].spawned_at`** and write the fresh RECONCILE line.
 
-**Trevor's design intent, quoted:** *"that's why we have a live ledger, a todo and a
+**The operator's design intent, quoted:** *"that's why we have a live ledger, a todo and a
 checklist — it figures out how to recover, figures out how to restart in case of a
 power outage."* The three layers are what make the ENTIRE command layer cold-
 reconstructible in under five minutes with zero conversation history.

@@ -12,8 +12,8 @@ secret value — confirm by NAME only.
 
 Two kinds of fact live here, and confusing them is how a skill starts lying.
 
-1. **THE OPERATOR DOCTRINE — binding numbers, Trevor's, dated 2026-08-11.**
-   These come from his live accounts and his explicit rulings. They are ground
+1. **THE OPERATOR DOCTRINE — binding numbers, the operator's, dated 2026-08-11.**
+   These come from the operator's live accounts and explicit rulings. They are ground
    truth. Do not web-research them away, do not "improve" them, do not average
    them against something a model remembers.
 2. **VERIFY-LIVE FACTS — web-researched fresh on every run.** Agnes AI rate
@@ -45,7 +45,7 @@ Ledger. A wrong context window means auto-compact misfires, which means silent
 data loss. If research is inconclusive, write the unknown into the ledger and use
 a conservative value — never silently assume.
 
-Trevor's example of why this is hard law: Ollama Cloud context windows differ
+The operator's example of why this is hard law: Ollama Cloud context windows differ
 from OpenRouter's for the SAME model name. A plan that assumes the OpenRouter
 figure for an Ollama Cloud model builds prompts that get truncated and compacted
 silently.
@@ -81,7 +81,7 @@ rows below standing unchanged as the fallback when research fails.
 | DeepSeek v4 Flash, direct (9Router) | 2,500 concurrent subagents | usable = ceiling − 25% reserve = 1,875 (harness almost always binds first — see delivery layer) | Balance/liveness only |
 | DeepSeek v4 Pro, direct (9Router) | 500 concurrent subagents | usable = 375 | Balance/liveness only |
 | DeepSeek via Ollama Cloud | never the builder (behind version) | — | — |
-| Ollama Cloud, $20/mo plan (any model) | 3 concurrent | **USE 2** (Trevor's reserve — never consume 100%) | Plan tier: ask if undetectable |
+| Ollama Cloud, $20/mo plan (any model) | 3 concurrent | **USE 2** (the operator's reserve — never consume 100%) | Plan tier: ask if undetectable |
 | Ollama Cloud, $100/mo plan (any model) | 10 concurrent | **USE 8** | Plan tier: ask if undetectable |
 | Agnes AI, free | 20 requests/minute | budget 15/min (25% reserve) | **VERIFY-LIVE: web-research agnes-ai.com rate rules at run time; these figures are the FALLBACK when research fails, and the ledger records which was used** |
 | Agnes AI, $40/year plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) | VERIFY-LIVE (same) |
@@ -151,8 +151,8 @@ script spawning more of itself. See `references/workflows.md`.
 
 ### AXIS 2 — BUDGET (how many run EVER, per session)
 
-**THE OPERATOR'S SESSION BUDGET: 1,000 agent executions — Trevor, verbatim: "it
-allows for up to 1000 subagents max."** The number is his and it binds. What it
+**THE OPERATOR'S SESSION BUDGET: 1,000 agent executions — the operator, verbatim: "it
+allows for up to 1000 subagents max."** The number is the operator's and it binds. What it
 is NOT is a platform fact: **1,000 is the operator's chosen spend governor, a
 POLICY.** The arithmetic, the ledger lines, and the enforcement below are
 unchanged by that correction — only the attribution stops being false.
@@ -218,7 +218,7 @@ probe proves otherwise (section 12).
 - **Anthropic-billed Claude Code:** the operator's standing **20-agents-per-wave**
   cap governs total concurrency. This is an OPERATOR policy, not a platform
   limit — do not confuse the two, and do not go looking for a documented "20" to
-  justify it. Trevor set it; it binds on Anthropic paths. (The platform's OWN
+  justify it. The operator set it; it binds on Anthropic paths. (The platform's OWN
   default of 20 concurrent subagents is a different 20, and it is **not in force
   here**: the documentation exempts ultracode sessions from it, and GATE 0
   requires ultracode. In a spec-protocol run the operator's cap is the only 20
@@ -312,7 +312,12 @@ same ceiling-class discipline as a judge seat. Section 13.8 is the procedure.
 MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from the smoke test>
       | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units>
       | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day>
+      | clips=<n> | clip-seconds=<per-clip or list> | total-seconds=<Σ>
+      | billed-unit=<per-second|per-clip|30s-block> | billed-cost=<the figure consent saw>
       | gate=<none|consent-required> | proof=<smoke ISO8601>
+      | stored=<ghl|repo|ghl+repo|local-pending|lost-paid>
+      | perm-url=<GHL URL and/or repo path|—>
+      | persist-proof=<read-back ISO8601|—>
   Every media figure carries its provenance mark like every other value in this
   card — [MEASURED creditsConsumed <ISO8601>], [RESEARCHED <model doc url>
   <date>], or [ASSUMED <why> <ISO8601>]. An unmarked media cost is ASSUMED and
@@ -435,7 +440,7 @@ shape is unchanged.
 
 ### Scenario (c) — Ollama Cloud $20
 
-Ceiling 3, **USE 2** (Trevor's reserve). **Governing number: 2.** → wave size 2,
+Ceiling 3, **USE 2** (the operator's reserve). **Governing number: 2.** → wave size 2,
 **1 workflow × 2 agents** (one tree, two concurrent — more trees add nothing).
 
 Builder and critic SHARE the 2 slots: allocate 1+1 or time-slice, and the
@@ -833,6 +838,13 @@ SMALLER POOL, not a failed discovery.
 The pool changes whenever a key, a custom node, or a combo is added. It is one
 local GET, seconds, so it is re-taken **at every seat-assignment decision**, not
 once per run and carried (section 13's decision-time rule).
+**Pool membership is PROOF of access, never a new requirement:** every model
+`/v1/models` lists is served on credentials ALREADY wired into the router. A pool
+model's unfamiliar builder name — MiniMax, GLM, Qwen — never sends anyone, agent
+or client, to that vendor for a key or an account. (The router is NOT a
+one-account aggregator the way kie.ai is: it fronts accounts the user wired
+themselves, and a DeepSeek-direct seat draws the user's own DeepSeek balance.
+"Already wired" is the claim — never "no account exists," which would be false.)
 
 1. Establish the gateway base URL from the session's own environment (the
    loopback `ANTHROPIC_BASE_URL` — test by NAME, report loopback yes/no, **never
@@ -918,7 +930,7 @@ what the lane resolves to.
 | Doctrine role | What it does | REQUIREMENT — resolved per run (default lane) |
 |---|---|---|
 | orchestrator | The lead seat — orchestrates, never implements | Capability to hold the whole plan and dispatch against it; context floor sized to the plan documents, not to one unit. No independence constraint. **Default lane: the conductor's own session** — this seat is never separately dispatched. |
-| builder | Writes the actual implementation | The strongest available lane, per Trevor's decided law (§11, and `SKILL.md`'s App-builder row). Needs a HIGH-CEILING provider node — this seat sets the run's governing number. Every other seat's independence is measured AGAINST this one. Default lane: `Opus`. |
+| builder | Writes the actual implementation | The strongest available lane, per the operator's decided law (§11, and `SKILL.md`'s App-builder row). Needs a HIGH-CEILING provider node — this seat sets the run's governing number. Every other seat's independence is measured AGAINST this one. Default lane: `Opus`. |
 | researcher | The reader — gathers, never decides | Long-context reading; low concurrency; no verdict authority, so no independence constraint. Context floor is the largest single document it must read whole. Default lane: the reader tier. |
 | visual verifier | Looks at the actual output against the reference and the bar | **VISION modality — PROVEN before the first visual verdict, never assumed** (a text-only model handed an image does not error, it stalls or invents: `references/gauntlet.md` §5's probe). If the probe fails, route to a vision-capable seat or record the seat BLOCKED. Default lane: `Haiku`. |
 | technical judge | Correctness, structure, tests | Rubric-depth verdict capability. MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder by the FAMILY RULE (§11). Headroom floor per verdict-shaped call: `max_tokens ≥ max(4000, 4 × expected verdict length)`. Read the CEILING CLASS off the RESOLVED model, never off the lane. Default lane: `Sonnet`. |
@@ -1105,8 +1117,10 @@ defaulted.
 | 20 | Ultracode gate | M-RUN (GATE 0) | Unchanged. |
 | 21 | Router MODEL POOL (the gateway's model list + per-seat callability + resolved-model verification) | M-RUN, re-taken at every seat-assignment decision | One local GET, seconds (section 11). Wrong ⇒ every independence finding and every per-seat ceiling is fiction, and a stale pool re-creates the four-slot fallacy. |
 | 22 | Media catalog + media pricing (kie families, members and credit costs; Agnes media models, tiers and meters) | M-RUN — web research at media-planning time, plus the smoke-test measurement; `creditsConsumed` from the run's own smoke is authoritative over every published page | A pinned media id or price is stale by the next catalog revision, and a promotional price expires unannounced. Selecting a media model selects a ceiling and a budget, so a stale catalog mis-sizes a real bill (13.8). |
+| 23 | GHL media-storage contract (endpoint shapes + Version header + PIT media-scope liveness + per-location storage quota) | M-RUN — the read-only /medias/files smoke at media-planning whenever media is generated and GHL creds resolve; shapes re-verified against the live docs | A scope missing from the PIT must be discovered before the first paid generation, never after; an endpoint that moved is discovered by the smoke, never by a failed upload at 3am |
+| 24 | Local stitch/transcode capability (ffmpeg + ffprobe presence, version, and the codecs the plan depends on) | M-RUN by EXECUTION at media-planning whenever a plan stitches — `ffmpeg -version` and `ffprobe -version`, both, exit 0 with a parsed version line; any codec the plan needs verified from `ffmpeg -codecs` at plan time | A binary is a per-box fact, and a name resolving is not a program running; a version string is not a codec list. Wrong ⇒ a multi-clip parent item promises a joined video the box cannot make, discovered after the clips are paid for (13.8, `references/media-pipeline.md` 6d) |
 
-**The rule the table enforces: rows 1–11, 21 and 22 may NEVER appear in the
+**The rule the table enforces: rows 1–11 and 21–24 may NEVER appear in the
 profile as inputs. Rows 12–17 are the profile's entire legitimate content. Row 18
 lives nowhere but the project's own decision register.**
 
@@ -1181,7 +1195,7 @@ not by good intentions:**
 - **Row 18's answers** — per project, in that project's decision register only.
 - **Client names or any cross-client material.** The profile describes accounts on
   THIS box for THIS user.
-- **Free-text notes about the user.** It stores the answers he gave and nothing
+- **Free-text notes about the user.** It stores the answers given and nothing
   editorialising.
 
 **Corruption fails toward ASKING.** A failed read is a broken instrument, not an
@@ -1341,6 +1355,7 @@ recited):**
 | Agnes images | **images-per-day meter** | 4,000 per day, documented for all named tiers `[RESEARCHED wiki.agnes-ai.com/en/docs/tokenplan.md 2026-08-12]` | the run's own image count against the researched cap |
 | Agnes video | **video-seconds-per-day meter** | 500 seconds per day, same source | the run's own generated-seconds count |
 | Agnes text (existing) | requests per 5-hour window, plus a weekly cap | section 2's rows, plus weekly caps carried by the live tier names | the existing burn machinery, with the weekly axis added |
+| Local stitch/transcode (ffmpeg) | **local CPU and wall clock** — neither credits nor any provider meter | none: this class draws **no** provider meter, no credit balance and no request window | measured by EXECUTION at media-planning (`ffmpeg -version` **and** `ffprobe -version`, both exit 0 with a parsed version line); wall-clock per operation enters the burn table as TIME lines. Stream-copy is near-instant; a re-encode is minutes per video-minute and is PLANNED, never discovered. Stitches run ≤1 concurrent alongside media polling |
 
 **THREE METERS, ONE PROVIDER — and they are never conflated.** An Agnes IMAGE
 draws the images-per-day meter. An Agnes CLIP draws the video-seconds-per-day
@@ -1351,6 +1366,38 @@ which is UNDETERMINED and conservatively capped in `media-pipeline.md` until a
 run settles it. Adding these three numbers together, or charging a picture to
 the request window, is the "selecting a model is selecting a ceiling" failure in
 its media form: wrong meter ⇒ wrong ceiling class ⇒ wrong budget.
+
+**THE DURATION AXIS — AGNES VIDEO ONLY. Read the heading; it is the whole
+point.** A seconds-per-day meter needs a seconds figure to consume it, and 13.8
+had none: nothing converted "the plan needs 11 clips" into "the plan needs 152
+seconds," so nothing could say whether a plan FITS. That is the same defect the
+per-resolution image-rate table fixed one meter over. The arithmetic, **for the
+Agnes video meter and for nothing else**:
+
+- **Plan in SECONDS, derive clips — never the reverse.** The raw meter is 500
+  video-seconds per day; with the standing 25% reserve the planning budget is
+  **375 seconds per day**. At Agnes's own maximum clip length (441 frames at
+  24fps ≈ 18.4s) that is **about 20 clips a day**; at an 8-second Agnes clip it
+  is **about 46**. Both figures are ARITHMETIC ON THE AGNES METER, and the clip
+  lengths in them are Agnes clip lengths.
+- The meter is charged from the response's own `seconds` field — truth over
+  request — so the burn table reconciles ACTUAL seconds, and a plan whose
+  Σ(clip-seconds) exceeds the remaining budgeted meter is re-shaped or split
+  across days BEFORE dispatch, said out loud, exactly like the image-batch
+  re-estimate rule.
+
+> **⛔ NEVER BLEND THE CEILING CLASSES. The seconds-per-day meter is AGNES's,
+> and only Agnes's.** kie video — Veo in every lane, and every other video model
+> in the kie catalog — has **NO seconds-per-day meter of any kind.** kie video is
+> bounded by two entirely different things: the **prepaid credit balance** (the
+> token-balance class, row 1 of the table above) and the **submission rate cap**
+> (≤10 new generation requests per 10 seconds, half kie's documented 20/10s —
+> `references/media-pipeline.md` section 2). A sentence that derives a clip count
+> from 375 or 500 seconds while naming Veo's 4/6/8-second durations is WRONG even
+> though each half of it is true on its own, because the two halves belong to
+> different ceiling classes. **Every "clips per day" figure names the provider it
+> belongs to, or it does not get written.** kie capacity is answered with
+> `balance ÷ the measured billed cost per clip`, never with seconds of allowance.
 
 **Two corrections of record, carried here because the arithmetic depends on
 them:** the daily video allowance is **500 seconds, not 800** (the 800 was an
@@ -1367,8 +1414,29 @@ SKILL.md, RULE 5):
 MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from the smoke test>
       | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units>
       | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day>
+      | clips=<n> | clip-seconds=<per-clip or list> | total-seconds=<Σ>
+      | billed-unit=<per-second|per-clip|30s-block> | billed-cost=<the figure consent saw>
       | gate=<none|consent-required> | proof=<smoke ISO8601>
+      | stored=<ghl|repo|ghl+repo|local-pending|lost-paid>
+      | perm-url=<GHL URL and/or repo path|—>
+      | persist-proof=<read-back ISO8601|—>
 ```
+
+**The last three fields are the persistence contract in ledger form**
+(`media-pipeline.md` owns the mechanism; what lives here is the accounting).
+`stored=` names which durable home the asset actually reached. `perm-url=`
+carries the permanent reference — the media-library URL and/or the repo path —
+and that is the reference the build consumes; a provider's own result URL is
+audit material only and never counts as a permanent URL. `persist-proof=` is the
+timestamp of the READ-BACK that proved the upload landed, never the timestamp of
+a 200. **`local-pending` — the PERSIST-PENDING state — is a real and legitimate
+resting state:** the asset is captured, checksummed and safe on local disk, and
+only its push to the media library is queued, so it is a fine thing to hold
+overnight and never a final answer; a media item is not done while it holds one.
+The MEDIA-GAPS manifest — the deliverable that already makes generation
+resumable — carries those queued pushes as its own section, so they drain as ONE
+resumable batch rather than as a second book. `lost-paid` is the honest loss
+state, reported in credits and dollars rather than buried in a log.
 
 Every executed generation then RECONCILES: kie's task record carries
 `creditsConsumed`, and actual-versus-estimate feeds the burn table. **A per-item
@@ -1407,17 +1475,83 @@ claim, never restores one.** A kie balance below the remaining batch estimate
 fires `event=balance-low` on the same ladder. Media lanes inherit the overnight
 capacity policy: throttle, then park the media lane, never abandon silently.
 
+**The VIDEO mirror of the same tripwire.** The rule above is written against the
+images-per-day claim; the video meter gets its own, identically shaped: a 402 or
+a limit response arriving while the run's own generated-SECONDS count is still
+below the claimed daily video budget means the CLAIM is wrong — the plan differs,
+a promotion ended, or the account is shared. Downgrade to measured reality NOW,
+same REVISION line, same `event=quota-exhausted`, same plain note. **A tripwire
+only ever shrinks a claim.** This tripwire is an AGNES instrument, because the
+seconds meter is an Agnes meter; the kie equivalent is `balance-low`, which
+watches a balance and knows nothing about seconds.
+
 **Concurrency.** Agnes image batches size to the budgeted requests-per-minute
 after reserve AND to the daily meter's remaining count, whichever is smaller;
 kie batches size to balance ÷ measured per-item cost, reserve applied. **The 25%
 reserve doctrine applies to media meters exactly as it applies to request
 windows** (Law 44) — never consume the last of a day's allowance any more than
-the last of a window's.
+the last of a window's. **Video batches size to their own axis:** an Agnes video
+batch sizes to the budgeted VIDEO-SECONDS meter (the duration axis above), and a
+kie video batch sizes to `balance ÷ the BILLED cost per clip` — the billed unit,
+never a pro-rata second (13.8's billing-unit rule; `references/media-pipeline.md`
+6d). The two are sized by different arithmetic because they are different ceiling
+classes, and neither figure is ever computed from the other's meter. **Stitches
+run at most ONE at a time** alongside media polling — wall-clock class, no
+provider meter, no spend consent, and no interaction with the overnight throttle
+ladder: a long re-encode costs TIME, not money, and the morning report simply
+says how long it took.
+
+**The Agnes image rate is per-RESOLUTION, not per-account — and batch sizing
+carries that axis or it is wrong.** "The budgeted requests-per-minute" is not one
+number: the documented limit moves by OUTPUT TIER, and across the table it moves
+by up to two orders of magnitude. Sizing a 1K batch against a 3K/4K rate throws
+away almost all of the
+throughput that was actually available; sizing a 4K batch against a 1K rate
+overruns the limit and collects 429s. The effective rate table
+`[RESEARCHED wiki.agnes-ai.com/en/docs/tokenplan.md 2026-08-12]`:
+
+| Output tier | `default` key | `enterprise` key | `TokenPlan` key |
+|---|---|---|---|
+| 1K | 20 | 40 | 100 |
+| 2K | 10 | 20 | 80 |
+| 3K | 1 | 1 | 1 |
+| 4K | 1 | 1 | 1 |
+
+Effective requests per minute. The vendor publishes a higher "allowed" figure per
+row; **effective is the planning figure** and the one the reserve is taken from.
+So the batch's own output tier selects its rate BEFORE the 25% reserve is
+applied, a mixed-resolution plan sizes each tier separately instead of averaging
+them, and the access type is MEASURED rather than assumed — extra keys of the
+same type share one pool and raise nothing. These are the 2026-08-12 exhibit
+figures: VERIFY-LIVE at row 22's class like every other media number, never
+recited from this page.
+
+**Persistence costs time and calls — and invents no new meter.** Capturing a
+generated asset, pushing it to the client's media library and reading it back to
+prove the push landed are one download, one upload and one read-back per asset,
+plus one folder list and at most one folder create per run. No researched
+per-call price exists for those calls, so they enter the burn table as WALL-CLOCK
+lines and nothing else: **the four PROVIDER ceilings above are untouched** — kie
+credits still measure kie generation, and the three Agnes meters still measure
+Agnes images, Agnes clips and the Agnes text window, exactly as "THREE METERS,
+ONE PROVIDER" requires. (The table's fifth row, local stitch/transcode, is not a
+fifth meter either — it is **this same wall-clock class**, which is precisely why
+it sits in the table with "none" where its governing figure would be.) **No fifth
+media meter exists and none may be invented for storage.** Uploads run at most two at a time so the push never competes with
+generation for the wall clock, and the media-storage API's own rate limits are
+VERIFY-LIVE at implementation against its live limits page rather than assumed
+unreachable. Until a per-location storage quota is established, the completion
+report states the total bytes pushed.
 
 **Freshness classification, in one line each.** Media-key PRESENCE is row 4:
 measured every run, re-taken at every decision it gates, FORBIDDEN in the
 profile. The media catalog and its prices are row 22: researched every run,
-smoke-measured, never pinned. `MEDIA_PROVIDER_PREF` is the single media entry the
+smoke-measured, never pinned. **GHL credential PRESENCE is measured every run
+like every other credential presence — row 4's sweep, never remembered, never
+carried from a previous run** — and the media-storage contract it feeds (the
+read-only media-list smoke that proves the storage scope before the first paid
+generation) is row 23: taken at media-planning every run that generates media,
+FORBIDDEN in the profile. `MEDIA_PROVIDER_PREF` is the single media entry the
 profile may hold, at row 17's class — an offered default, never silently applied
 (13.3). Everything else about media — whether this project wants it, and any
 permission to spend on the premium tier — is per-project or per-generation and is
