@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.2.4] — 2026-08-12
+
+### Gate 3's blind comparative critic was grading its own homework
+
+- **The critic and the builder resolved to the same model.** The Gauntlet's Gate-3
+  comparative critic exists to deliver a blind A/B verdict against the frozen bar, and the
+  skill states the governing rule in two places already — `references/pipeline.md` ("a
+  fresh-context critic on a DIFFERENT model from the builder and the judge") and
+  `references/interview.md` ("VERIFY the builder, judge, and comparative-critic seats resolve
+  to different underlying models — different alias names prove nothing"). Both role tables
+  nevertheless assigned the critic seat the **same `Opus` alias as the builder seat**. Since
+  1.2.2 moved the builder to `Opus` deliberately — the stronger model, the higher concurrency
+  ceiling — the two seats collapsed onto one alias, and on any wiring where that alias
+  resolves to a single model the critic was reviewing its own output. A critic on the
+  builder's model is not blind; it is grading its own homework, and it fails the exact rule
+  the surrounding paragraphs spend two sentences insisting on.
+- **The Gate-3 comparative critic now defaults to the `Fable` alias**, in both role tables:
+  the Claude-Nine table in `SKILL.md` and the matching role list in `references/interview.md`.
+- **Why `Fable`, and why the criterion is model FAMILY rather than model name.** Independence
+  is not achieved by a different label, and it is only partly achieved by a different model —
+  two models of the same lineage, trained on overlapping data with overlapping methods, share
+  their blind spots and will miss the same defect in unison. `Fable` is the remaining seat
+  most likely to resolve to a different model family than the builder's alias, which is what
+  makes it the most genuinely independent reviewer the alias layer can offer. `Sonnet` was
+  unavailable: it is already the technical and release judge seat, and reusing it would
+  collapse the critic and the judge into one model, trading one blindness for another.
+  `Haiku` is too light to carry a comparative verdict against a frozen external bar.
+- **These remain recommendations expressed through the alias layer, resolved at run time.**
+  Nothing here asserts what any particular box has wired, and no role is pinned to a raw model
+  id. The row still instructs the operator to read the current wiring and report it, and both
+  edits carry the standing obligation forward: confirm at run time that the critic's alias
+  resolves to a different underlying model than the builder's, because on a router two aliases
+  can resolve to the same model.
+- **Deliberately unchanged.** The builder's `Opus` assignment and the judge's `Sonnet`
+  assignment from 1.2.2 both stand. Every concurrency ceiling is untouched — 2,500 / 500 /
+  1,875 / 375 verified identical before and after by a line-number-independent census keyed on
+  file and value. `references/gauntlet.md` §13 assigns the planner, builder, blind visual
+  judge, technical judge and release judge seats but never the Gate-3 comparative critic, so
+  the six-workflow topology needed no edit; §14's canonical loop still carries all 19 stations.
+  A skill-wide wrap-tolerant sweep confirmed these two role tables are the only places any
+  alias is assigned to the critic seat — the remaining mentions in `pipeline.md`, `loops.md`
+  and `gauntlet.md` concern budget and topology and name no alias. `tools/anchor.sh
+  --selftest` passes 7 of 7 and `tools/capacity-resolver.sh --selftest` passes, unchanged.
+
 ## [1.2.3] — 2026-08-12
 
 ### Fresh-clone install blocker — the orchestrator could not execute at all
