@@ -26,11 +26,15 @@ when the script is unavailable.
 
 ## Where to look (check ALL of these)
 
-### Project-local and machine-generic — check these FIRST (work on any machine, fleet-managed or not)
+### Machine-generic, home-level — check these FIRST (work on any machine, fleet-managed or not)
 
-1. **Project-local `.env`** — `<project-folder>/.env`, if the project has
-   already started (e.g. framework scaffolding created one). The most
-   portable location on any machine; check it first.
+1. **Project-local `.env` — deliberately NOT a store** (the number is kept so
+   stores 2–11 stand). Resolved 2026-08-12: keys live in home-level stores
+   only. A project `.env` sits inside the project's git repository, and one
+   careless `git add .` commits every secret in it. If a framework scaffold
+   created one, it is the APP's config, read by the app — never a credential
+   source for this sweep, which is why the sweep's own report says "Not
+   searched: project .env / .env.local" BY DESIGN.
 2. **`~/.env`** — a user-level env file some non-fleet setups use (sourced live
    by `tools/env-sweep.sh` at every run — this is the guided-placement target on
    non-fleet boxes, and the only one outside the fleet stores that a re-detect
@@ -84,6 +88,13 @@ Ask what kind of app/site they are building, then check the relevant keys:
 | n8n | `N8N_API_URL`, `N8N_API_KEY` (in `~/.claude.json` MCP env) | n8n MCP server tools reachable |
 | Any other external API | The named token or key for that service | A read-only check where possible |
 | Hosting credentials | Depends on the host — ask the user | Read-only check where possible |
+
+One carve-out to the "any other external API" row: a model reached THROUGH a
+provider the project already holds a key for is NOT another external API.
+kie.ai's catalog models need only the kie key regardless of who built them
+(`references/media-pipeline.md` section 1), and a router-pool model runs on
+credentials already wired into the router (`references/capacity.md` §11). Never
+derive a new key requirement from a model's builder name.
 
 For each: report "SET" or "NOT SET" — never echo the value. Never print a secret.
 Never dump the full environment.
@@ -254,12 +265,12 @@ set -a; . ~/.openclaw/secrets/.env; set +a
 [ -n "${N8N_API_KEY:-}" ] && echo "n8n key: SET" || echo "n8n key: NOT SET"
 ```
 
-On any machine, fleet-managed or not — project-local `.env` or already-exported
-shell variables (check this form first; see "Project-local and machine-generic"
-above):
+On any machine, fleet-managed or not — the home-level `~/.env` or
+already-exported shell variables (check this form first; see "Machine-generic,
+home-level" above):
 
 ```sh
-[ -f ./.env ] && set -a && . ./.env && set +a
+[ -f ~/.env ] && set -a && . ~/.env && set +a
 [ -n "${GITHUB_TOKEN:-}" ] && echo "GitHub token: SET" || echo "GitHub token: NOT SET"
 ```
 
@@ -549,6 +560,23 @@ every other check here:
 spelling is still a key found: Kie.ai — `KIE_API_KEY`, `KIE_AI_API_KEY`,
 `KIE_KEY`. Agnes-AI — `AGNES_AI_API_KEY`, `AGNES_API_KEY`, `AGNES_KEY`.
 
+**⛔ The only media key NAMES that exist are the six above.** kie.ai is an
+AGGREGATOR: one kie key reaches every model in its catalog no matter who built
+it — GPT-Image (OpenAI), Veo and Nano Banana (Google), Seedance and Seedream
+(ByteDance), Hailuo (MiniMax), Wan (Alibaba), Kling (Kuaishou) —
+`references/media-pipeline.md` section 1 owns the rule. No upstream vendor's
+key — `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or any other — is
+ever required, searched, asked for, or accepted for media. A model builder's
+name in a catalog table is never a credential requirement.
+
+**TWO DOORS, MANY MAKERS, NO THIRD KEY.** Every media generation walks through
+exactly one of two doors — the kie door (kie key, kie credits, the whole kie
+catalog regardless of builder) or the Agnes door (Agnes key, Agnes daily
+meters, Agnes models). No third door exists, and no upstream vendor is a door.
+GoHighLevel is not a door either: it is the storage WAREHOUSE where generated
+assets are pushed afterwards (see the media-storage smoke at the end of this
+gate), never a model provider.
+
 **The liveness statuses**, in the same vocabulary as every other gate here:
 `FOUND` (the NAME resolved), `LIVE` (the name resolved and a cheap authenticated
 call answered), `FOUND_NOT_LIVE` (the name resolved and the call was refused),
@@ -556,10 +584,21 @@ call answered), `FOUND_NOT_LIVE` (the name resolved and the call was refused),
 suppressed, `curl` absent, or the request itself failed), `MISSING`.
 **Kie.ai liveness** is `GET https://api.kie.ai/api/v1/chat/credit`, and the
 credit BALANCE is never read or printed by the sweep — that figure is capacity
-and it belongs to the burn table, not to a credential check. **Agnes-AI is
-PRESENCE-ONLY**: no cheap authenticated liveness endpoint is documented for it,
-so this gate never reports LIVE for Agnes (`references/media-pipeline.md`
-section 12, item 8, carries the test that would settle it).
+and it belongs to the burn table, not to a credential check. **Agnes-AI
+liveness** is `GET https://apihub.agnes-ai.com/v1/models` — Agnes is NO LONGER
+presence-only. A live probe measured that endpoint returning **200 with the key
+and 401 without it** `[MEASURED agnes-/v1/models 2026-08-12]`: it discriminates
+authenticated from unauthenticated, which is the whole job of a liveness check,
+and it reads a catalog rather than a meter, so it exposes no usage figure and no
+balance. Report `LIVE` on 200, `FOUND_NOT_LIVE` when the call is refused (401 is
+the measured unauthenticated response), and `FOUND_NOT_VERIFIED` when the
+network is suppressed, `curl` is absent, or the request itself failed. The
+returned model list is never enumerated into any document — the status is the
+finding, not the catalog. This measurement REFUTES and supersedes the earlier
+"no cheap authenticated Agnes liveness endpoint is documented" position, and
+answers the open item in `references/media-pipeline.md` section 12 — item 8 at
+the time of writing — that asked for exactly this endpoint. Find that item by
+its text, not its number: section 12 renumbers as its items resolve.
 
 **These two checks are implemented in `tools/env-sweep.sh` (KIE and AGNES
 phases) and proven by its selftest — a sweep whose selftest has not run is not
@@ -597,6 +636,52 @@ The provider rules that follow from this choice — which model is mandatory,
 prompt construction, the prompt band, API shapes, and the video formula — are
 NOT in this file. They live in `references/media-pipeline.md`. This gate owns
 one question only: is a usable key present, by name.
+
+**One more check rides with this gate — the GHL media-storage SMOKE. It is a
+STORAGE question, not a key question.** Generated media does not stay where the
+provider put it: a provider result URL is a dying pointer to something already
+paid for, so every asset is pushed into a per-project folder in the client's own
+GoHighLevel media storage, and that permanent reference URL is the only link
+that persists (`references/media-pipeline.md` section 13 owns the contract).
+Prove the warehouse before paying for the cargo. When media will be generated
+AND Gate 1's / Gate 2's GHL credentials resolve, run ONE read-only
+`GET /medias/files` (limit 1, scoped to the Location ID) at media-planning time,
+BEFORE the first paid generation:
+
+- **200** → the PIT carries the media scope. Record it `[MEASURED]` and
+  continue.
+- **401 / 403** → the PIT is present but LACKS the media scope. That is a
+  discriminating, actionable FINDING — never an absence claim, never "GHL is
+  down," and never a value in the error report. Say it plainly ("open your
+  Convert and Flow private integration settings and tick the Media permissions,
+  then tell me — I'll re-check") while it still costs a sentence instead of a
+  paid batch.
+
+The smoke is read-only and prints no values; RULE 1 binds it exactly as it binds
+every other check here — the PIT rides in the executing process's Authorization
+header, never in logged command text.
+
+**Per client, always — nothing hardcoded.** The folder lives in THAT client's
+GHL location, reached with THAT client's OWN Location PIT and OWN Location ID,
+resolved from THEIR secrets environment through Gate 1's alias tables above.
+There is no default location, no fallback account, and no operator credential on
+this path, ever.
+
+**GHL credentials ABSENT** (reachable on non-funnel builds only — Gate 1 hard-
+stops funnels): a designed BRANCH, never a crash and never a silent skip. Media
+generation still proceeds — the media keys gate generation, GHL gates only the
+warehouse — and every asset persists to the project's own repo media directory
+instead. Record `stored=repo-only` with RULE 2's full evidence (the names
+searched, the stores read, what was not read and why), say it in one plain
+sentence in both the decision register and the completion report ("your pictures
+are saved inside the project itself; no Convert and Flow account was found to
+copy them into — the names I checked are listed"), and, attended only, offer
+once to wire GHL later. Never a stall, never a fabricated upload, never a
+generation skipped because the warehouse is missing.
+
+Everything past presence and this one smoke — the per-project folder, the
+capture-then-persist contract, the upload calls, and the permanent reference
+URL — belongs to `references/media-pipeline.md` section 13, not to this file.
 
 ---
 
@@ -643,10 +728,12 @@ location, a credential the project NEEDS is missing:
    **Which path to name.** If a canonical fleet path already exists on this
    machine (any of the Mac or VPS paths above), name that one — do not invent a
    second location. If NONE of the fleet paths exist (a non-fleet, class-member
-   machine — the common case), do not point at a folder that is not there:
-   create `<project-folder>/.env` (or add to it if it already exists) and name
-   THAT path instead. The message names a real, present-or-just-created file
-   every time — never a folder that does not exist on this machine.
+   machine — the common case), do not point at a folder that is not there: name
+   `~/.env` (creating it if absent) — the one universal, home-level store the
+   sweep provably sources on every box it runs on. The message names a real,
+   sweep-read file every time — never a file inside the project repo (a project
+   `.env` gets committed by accident) and never a folder that does not exist on
+   this machine.
 
 3. Wait for the answer.
 4. Record what happened in the session log.
@@ -676,7 +763,7 @@ under a "Credentials and Environment" section:
 | `gh` CLI | PATH | NOT INSTALLED — Homebrew absent; using token+git | `brew --version`: exit 127, no install attempted |
 | GitHub auth | `gh auth status` | SET | exit 0 |
 | N8N_API_KEY | ~/.claude.json MCP env | SET | n8n MCP tools reachable |
-| VERCEL_TOKEN | project-local `.env` | NOT SET | — |
+| VERCEL_TOKEN | `~/.env` | NOT SET | — |
 | Capture tool (Gate 3 visual bars) | Playwright (Chromium) | INSTALLED (was missing, installed via `npx playwright install chromium`, ~130 MB download) | real probe screenshot `capture-probe.png`: exit 0, file present and non-empty |
 | Vision-capable critic (Gate 3 visual verdicts) | the alias/tier that will judge | PROVEN — critic named a concrete visible detail from `capture-probe.png` | send the probe screenshot to that exact alias/tier BEFORE the first visual verdict; if it cannot describe the probe, route to a vision-capable alias (9router vision adapter, if wired) or record the seat BLOCKED — never let a critic judge screenshots it was never proven to see (`references/gauntlet.md`, Section 5) |
 

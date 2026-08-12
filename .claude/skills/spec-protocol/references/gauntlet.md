@@ -827,7 +827,7 @@ role, seat, subagent count, and the obligation to record the resolved model — 
 that shape is binding; the model names in it are not.
 
 **WF01 — BLUEPRINT LOCK.** Planner seat (operator's illustrative wiring: the
-`OPUS` alias, resolving on his box to DeepSeek V4 Flash, thinking MAX). **Exact
+`OPUS` alias, resolving on the operator's box to DeepSeek V4 Flash, thinking MAX). **Exact
 subagents: 8** — the architecture planner, the domain/mechanics planner, the two
 personalization planners, the visual-world planner, the UX / feel planner, and
 the testing / privacy / performance planner. **These agents DO NOT independently
@@ -845,7 +845,7 @@ builder in the Parallelism Plan (`SKILL.md` step 12.7,
 `references/workflows.md`). **Total agent executions: 16.**
 
 **WF03 — BLIND VISUAL GAUNTLET.** Blind-judge seat (operator's wiring: the
-`HAIKU` alias, resolving on his box to MiniMax 3, thinking HIGH). **Exact
+`HAIKU` alias, resolving on the operator's box to MiniMax 3, thinking HIGH). **Exact
 subagents: 16 blind judges.** These judges receive RENDERED EVIDENCE. **They do
 NOT receive builder reasoning.** Section 5's blind protocol governs every one of
 them: fresh context, a different resolved model from the builder, labels

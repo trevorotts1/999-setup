@@ -1,5 +1,180 @@
 # Changelog
 
+## [1.5.0] — 2026-08-12
+
+### One key, one bill, and an asset that outlives the link it arrived on
+
+- **kie.ai is an aggregator, and reading a maker's name as a credential requirement was the
+  defect.** Every model in the kie catalogue is called with the **same kie key, billed in the
+  same kie credits, on the same kie account — no matter who built it**. GPT-Image was built by
+  OpenAI; Veo and the Nano Banana imaging engines by Google; Seedance and Seedream by
+  ByteDance; Hailuo by MiniMax; Wan by Alibaba; Kling by Kuaishou. The builder's name changes
+  **which** model is picked, never **how** it is reached. **No upstream vendor account, key or
+  credential exists anywhere in this pipeline: not needed, not checked, not asked for, not
+  hunted for, and not accepted if offered.** A vendor name beside a model is *lineage* — what
+  the engine is made of, useful when judging output character — and a vendor-prefixed id is a
+  catalogue path. Neither is ever an access fact. If a table anywhere in the skill can be read
+  as "this model needs a Google key," **the table is wrong, and the fix is wording, never a
+  credential.**
+- **TWO DOORS, MANY MAKERS, NO THIRD KEY.** Every media generation walks through exactly one of
+  two doors — the kie door (kie key, kie credits, the whole catalogue regardless of builder) or
+  the Agnes door (Agnes key, Agnes daily meters, Agnes models). No third door exists and no
+  upstream vendor is a door. **GoHighLevel is a warehouse, not a door**: nothing is ever
+  generated "on" GHL, and its credentials are storage credentials, never a third media engine.
+- **The client is told this in their own words, before a maker's name can mislead them.** "All
+  of these picture and video engines — whoever originally made them, Google, OpenAI, anyone —
+  run through the one Kie.ai account." When a client **offers** an upstream key — "I have a
+  Gemini key, use that" — the answer is a warm no built on two facts: it is not needed, and it
+  would not work here. It is never accepted, never asked to be shown, and the exchange is
+  recorded in the decision register in their words. Any page the skill points a client at may
+  name **kie.ai or agnes-ai.com and nothing else** — a client sent hunting for a Google or
+  OpenAI key has been sent on an errand that cannot end.
+- **The gated tier is a price gate, never an access gate.** Both the gated path and the default
+  path bill the **same kie account in the same kie credits**. "Premium engine" beside a
+  ByteDance or MiniMax attribution reads, to a nervous client, like another account they do not
+  have; the gate now says in one sentence that nothing about a gated family requires another
+  vendor's key, another account, or another signup.
+
+### An asset is not done until it is durable
+
+- **The provider's result URL is a dying pointer to something already paid for.** A media work
+  item now reaches done only when all of: the bytes are **downloaded and verified**; the asset
+  is **stored in the project's own folder in the client's GoHighLevel media storage** (and the
+  repo's media directory when the build is a repo); the **permanent URL is recorded** on the
+  work item and its ledger line; and the upload is **verified by reading it back** — a file
+  that appears in a fresh listing with a non-zero size, never a 200 assumed to mean success.
+- **Capture races a clock; persistence does not.** Capture runs **in the same poll iteration
+  that observes terminal success**, with nothing scheduled in between — that is the
+  money-protection step. Upload is part of the generation step, not a later cleanup pass.
+- **A provider URL never enters a deliverable**, a spec document, generated code, or the
+  shipped app. This is enforced fail-closed as a new watch check, **S15**, whose deny-set is
+  built mechanically from the run's own ledger — every URL it recorded plus the provider hosts
+  it actually observed — so it needs no maintained host list and cannot silently rot. A done
+  item without a verified permanent URL reverts and is not merge-eligible.
+- **Why this is money rather than tidiness:** a measured task showed credits already consumed
+  at the **first** poll while the job was still generating. **kie commits billing at submission,
+  not at delivery.** An asset whose URL expires before it is captured is an asset that was
+  already paid for.
+
+### Four polling contracts, because the four paths genuinely differ
+
+- **kie jobs** poll a task record that outlives the asset, with a documented submission burst
+  limit — dispatch caps at **half** the documented burst, the reserve doctrine applied to a
+  rate rather than a count.
+- **Veo answers in a different envelope** through its own endpoint, with its own success flag
+  and its own restrictions; it is read on its own terms rather than assumed to match the jobs
+  API.
+- **Agnes images are synchronous and return `b64_json`** — the bytes arrive in-band, so there
+  is **no URL to race and no expiry to lose**. That is now the design rule for Agnes images,
+  not an incidental detail.
+- **Agnes video is asynchronous and documents no recovery endpoint at all.** An uncaptured clip
+  is unrecoverable, which is precisely why capture is same-iteration.
+- **A dropped connection is designed for rather than discovered.** A task that timed out may
+  still complete and still bill, so it is recorded failed with its task id and re-checked before
+  any resubmit — never blind-resubmitted.
+
+### Video duration stopped being an assumption
+
+- **Per-model clip ceilings are researched, not guessed**, and duration and resolution validate
+  **as a pair** — a legal duration at an illegal resolution passes both single-axis checks while
+  being impossible to generate. Checking them separately dispatches a request that cannot exist.
+- **Agnes's hard ceiling is 441 frames**, not a seconds figure. Seconds are frames divided by
+  frame rate, so the same ceiling is about eighteen seconds at the vendor's recommended rate and
+  considerably less at a higher one. The ledger records the **frames-and-rate pair**; a bare
+  seconds figure is not a ceiling.
+- **Multi-clip planning is explicit** — decomposition at shot boundaries, identical parameters
+  across siblings, and an honest declaration of what the skill does **not** do: it is not a video
+  editor, and where it cannot join, it says so and leaves a declared gap.
+- **A new watch check, S16, validates duration before dispatch.** An item dispatched past its
+  ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip
+  parent with no stitch-or-gap answer is not dispatchable.
+
+### Stitching is in scope; a video editor is not
+
+- **ffmpeg is detected by execution, never by assumption and never auto-installed.** Both
+  `ffmpeg` and `ffprobe` must run and parse. An install is offered only with consent and only
+  through a package manager already present; the Windows path is marked undetermined rather than
+  invented.
+- **Stream-copy where the inputs agree, exactly one re-encode where they do not** — and the
+  re-encode is planned, never discovered, because it costs minutes per video-minute.
+- **The output is ffprobe-verified and read-back verified**, like every other asset.
+- **Local stitching is its own capacity class**: local CPU and wall clock, drawing **no**
+  provider meter, no credit balance and no request window. It enters the burn table as time.
+
+### The billing-unit trap
+
+- **Seedance 2.5 bills in thirty-second blocks.** An eight-second clip therefore pays **3.75×**
+  what pro-rata arithmetic would predict. Selecting a model by duration without its billing
+  granularity wastes money invisibly.
+- **Every consent ask now prices the BILLED unit, never the requested duration** — "this clip is
+  eight seconds, but that engine charges for thirty no matter what" — so the client's yes is
+  informed about the **shape** of the price and not only its size. The estimate that reaches the
+  Capacity Ledger is the billed figure too.
+
+### Never blend two ceiling classes
+
+- **A sentence can be true in both halves and wrong as a whole.** Deriving a clip count from a
+  seconds-per-day allowance while naming another provider's clip durations is exactly that
+  error. **Agnes video's 500 seconds per day is an Agnes meter and nothing else.** kie video —
+  Veo, Seedance, Hailuo, every catalogue member — has **no seconds-per-day meter of any kind**;
+  it is bounded by the prepaid credit balance and the submission rate cap. kie capacity is
+  answered with balance divided by measured billed cost per clip, never with seconds of
+  allowance.
+- **Every "clips per day" figure names the provider it belongs to, or it does not get written.**
+
+### Corrections of record, each measured rather than argued
+
+- **kie commits credits at submission**, observed directly while a task was still generating.
+- **A kie result URL died at roughly forty minutes** — far tighter than the documented
+  twenty-four hours — yet the recovery endpoint minted a fresh link that **served verified
+  bytes past that death**. Recovery inside the window is now measured, not merely documented,
+  and it is a re-fetch, so it is free.
+- **The mint does not discriminate.** The same endpoint happily minted a link for a fabricated
+  URL, which then failed at fetch. **A successful mint proves nothing; only fetched bytes that
+  pass magic-byte and size verification prove recovery** — so the recovery path fetches and
+  verifies and never trusts the mint's answer.
+- **Agnes has a working liveness endpoint** and is no longer presence-only — and the same call
+  returns a machine-readable catalogue scoped to what the key can actually call, which outranks
+  the documentation index for discovery: the docs say what is documented, this says what the key
+  can call.
+- **Agnes video's daily allowance is 500 seconds, not 800.** The 800 was an unverified note; the
+  vendor's own plan documentation is the source and it is dated.
+
+### Agnes durability, stated precisely enough to be fair
+
+- **The established weakness is durability, and only durability.** kie results are recoverable
+  for a documented retention window; an uncaptured Agnes clip is not recoverable at all. **The
+  word "worse" without "on durability" attached is the sentence this skill refuses to write** —
+  **Agnes video quality remains undetermined and is labelled as such**, and a preference argued
+  from quality is invented rather than sourced.
+
+### The loss decision, designed once instead of improvised per incident
+
+- **A re-fetch is free; a re-spend is gated.** The recovery ladder is explicit: attempt recovery
+  first, and only then consider paying again — under stated conditions, with the gated and
+  non-gated families split, and governed by a recorded **`MEDIA_LOSS_POLICY`**. The client is
+  asked once, at interview time, what they want to happen if artwork is lost after it was paid
+  for; the default is conservative and the binding floors hold regardless of the answer.
+- **An asset lost after payment is reported by name.** Omitting such a line from the completion
+  report is a defect of the highest class.
+
+### Project-local `.env` is no longer a credential store
+
+- **Keys live in home-level stores only.** A project `.env` sits **inside the git repository**,
+  and one careless `git add .` — or a scaffold's over-broad commit — publishes every secret in
+  it. The sweep never searched project `.env` files; the documentation was the thing that was
+  wrong, and it now records the reason at the tool's own definition site so nobody "fixes" the
+  omission later. Guided key placement points at `~/.env`, a store the sweep provably sources
+  on every box it runs on, so "put it there, then tell me, and I'll look again" actually works.
+
+### The skill now names no person
+
+- **A universality pass removed the operator's name, username, personal paths and every
+  gendered pronoun referring to them** from all seventeen reference documents, the skill file
+  and the tools. Attribution that carried real authority is **preserved as "the operator"** —
+  nothing true was deleted, and every standing ruling still has an owner. What changed is that
+  the skill now reads the same for anyone who runs it, on any box.
+
 ## [1.4.0] — 2026-08-12
 
 ### Media generation became intelligence instead of a hardcoded name
