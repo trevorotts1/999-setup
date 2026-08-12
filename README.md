@@ -117,8 +117,28 @@ and `ultracode` apply to the current session only.
 
 If a selection snaps back to the previous setting, an inherited
 `CLAUDE_CODE_EFFORT_LEVEL` in your environment is overriding the picker — Claude Code
-says so in its reply. Clear it (`unset CLAUDE_CODE_EFFORT_LEVEL`) and select again. To
-pin effort on purpose for a single launch, run `CLAUDE_NINE_FORCE_EFFORT=xhigh claude-nine`.
+says so in its reply. Setup clears this for you, but you can run the fixer on its own at
+any time on an already-installed machine:
+
+```bash
+# macOS
+bash ~/.claude/skills/nine-router-setup/scripts/macos/fix-ultracode-override.sh
+```
+
+```powershell
+# Windows
+& "$env:USERPROFILE\.claude\skills\nine-router-setup\scripts\windows\Fix-UltracodeOverride.ps1"
+```
+
+It finds every place the variable is set — your shell startup files or PowerShell profiles,
+the launchd user domain or the Windows User environment, and the `env` map in
+`settings.json` — backs up anything it touches, comments the offending line out rather than
+deleting it, and prints exactly what it found and what it changed. Add `--dry-run`
+(`-DryRun` on Windows) to look without changing anything. It never restarts or interrupts
+anything: **the change applies to new terminals and new sessions.** In the terminal you are
+in right now, `unset CLAUDE_CODE_EFFORT_LEVEL` clears it immediately.
+
+To pin effort on purpose for a single launch, run `CLAUDE_NINE_FORCE_EFFORT=xhigh claude-nine`.
 
 ---
 
