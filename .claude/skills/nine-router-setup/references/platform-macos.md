@@ -23,6 +23,7 @@ download or system change.
 | Repo-managed npm prefix | `$HOME/.local/share/999/npm` |
 | 9Router binary | `$HOME/.local/share/999/npm/bin/9router` |
 | Launcher | `$HOME/.local/bin/claude-nine` (mode 700) |
+| Codex launcher | `$HOME/.local/bin/claude-codex` (mode 700) — claude-nine pinned to `cx/gpt-5.6-sol(high)` with `--autocompact 350k`; requires a `cx/` provider added in 9Router, which this setup does not wire |
 | Protected state dir | `$HOME/Library/Application Support/BlackCEO/999/` (state file mode 600) |
 | Keychain item | service `BlackCEO-999`, account `9router-api-token` |
 | Router log | `$HOME/Library/Logs/BlackCEO-999/9router.log` |
