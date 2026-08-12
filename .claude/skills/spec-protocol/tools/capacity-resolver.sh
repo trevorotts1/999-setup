@@ -21,8 +21,30 @@
 #   PROJECT=<name>                        (cosmetic — names the ledger)
 #   ROLE_BUILDER=<alias>→<resolved model>  (and ROLE_RESEARCHER / ROLE_VISUAL /
 #                                          ROLE_TECHNICAL / ROLE_SECURITY / ROLE_RELEASE —
-#                                          the three-hop resolution is read from the LIVE
-#                                          config by the conductor; this script only RECORDS it)
+#                                          a seat resolves by LANE (role→alias→model) or
+#                                          DIRECT (role→pool model), measured from the live
+#                                          config and the live model pool by the conductor;
+#                                          this script only RECORDS what it is given)
+#
+# PROVENANCE (references/capacity.md section 13.2) — optional, and their ABSENCE
+# is itself meaningful:
+#
+#   <KEY>_SOURCE=<kind>[:<detail>]        e.g. OLLAMA_PLAN_SOURCE=recalled-confirmed:answered=2026-08-01
+#                                              AGNES_PLAN_SOURCE=assumed:smallest-tier
+#                                              CORES_SOURCE=measured:sysctl-hw.ncpu 2026-08-12T14:02:11Z
+#                                              RESERVE_PCT_SOURCE=default-confirmed:2026-08-12T14:05:00Z
+#                                              DEEPSEEK_TIER_SOURCE / BUILDER_PROVIDER_SOURCE
+#     <kind> is one of: measured | researched | recalled-confirmed |
+#     recalled-unconfirmed | default-confirmed | assumed | undetermined.
+#     A supplied source prints its bracketed mark beside the card line it governs.
+#     **A MISSING source prints [ASSUMED no-source-given]** — a value nobody can
+#     trace is a value nobody should trust, and it is sized conservatively.
+#     An unrecognised kind is treated as ASSUMED, never as the kind it claimed.
+#   CONFIG_FP=<8-hex>                     the live config fingerprint (launcher, resolved
+#                                         role→model map, provider-key presence set — names
+#                                         and model ids only, NEVER values). Printed as a
+#                                         header line so a resume can compare worlds;
+#                                         absent prints UNDETERMINED, never a guess.
 #
 # Prints a Capacity Ledger card carrying the same fields as the Capacity
 # Ledger template, so the conductor can paste it straight into
@@ -32,8 +54,11 @@
 # THE THREE AXES, NEVER CONFLATED:
 #   AXIS 1 WIDTH  — per-workflow concurrency = min(16, cores−2), cores MEASURED
 #                   at run time; hard ceiling of 30 workflows per session.
-#   AXIS 2 BUDGET — how many agents run EVER this session (1,000 per session);
-#                   a decrementing count, never a simultaneity limit.
+#   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
+#                   budget of 1,000 — his spend policy, NOT a platform limit (the
+#                   platform documents no total-per-session limit; its 20-concurrent
+#                   default is exempted for ultracode sessions, and GATE 0 requires
+#                   ultracode). A decrementing count, never a simultaneity limit.
 #   AXIS 3 POLICY — the operator cap (20 concurrent agents per wave on
 #                   Anthropic-billed Claude Code) and the provider ceiling
 #                   minus its reserve.
@@ -50,7 +75,10 @@ set -u
 
 WORKFLOW_CEILING=30          # Trevor's explicit rule: 30 workflows per session, hard
 OPERATOR_WAVE_CAP=20         # standing operator doctrine, Anthropic-billed Claude Code
-SESSION_AGENT_BUDGET=1000    # CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION — a LIFETIME COUNT
+SESSION_AGENT_BUDGET=1000    # the OPERATOR's session budget — his POLICY, a LIFETIME
+                             # COUNT. The settings key CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
+                             # is undocumented upstream and treated as INERT; this
+                             # decrementing count is the only enforcement relied on.
 GAUNTLET_EXPECTED=52         # 8+16+16+8+4 — expected initial gauntlet run
 GAUNTLET_SOFT_LOW=75         # normal complete project 75–125
 GAUNTLET_SOFT_HIGH=125
@@ -59,19 +87,24 @@ GAUNTLET_HARD_STOP=200       # HARD STOP — preserve the best stable build, blo
 REPAIR_WAVE_CAP=12           # selective repair: N = failed workstreams, one repairer each, ≤12/wave
 
 # --- Measure cores. Never inherit a number. -----------------------------------
+# Prints "<n> <instrument>" — the instrument NAMES itself so the ledger's
+# [MEASURED …] mark can say which one answered (section 13.2). A silent number
+# is a number nobody can defend.
 measure_cores() {
-  local n=""
+  local n="" instrument=""
   if command -v sysctl >/dev/null 2>&1; then
     n="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+    [[ -n "${n}" ]] && instrument="sysctl-hw.ncpu"
   fi
   if [[ -z "${n}" ]] && command -v nproc >/dev/null 2>&1; then
     n="$(nproc 2>/dev/null || true)"
+    [[ -n "${n}" ]] && instrument="nproc"
   fi
   if [[ -z "${n}" ]]; then
     echo ""    # UNDETERMINED is a correct answer — the caller must ask
     return 1
   fi
-  echo "${n}"
+  echo "${n} ${instrument}"
 }
 
 per_workflow_width() {
@@ -80,6 +113,36 @@ per_workflow_width() {
   if (( w > 16 )); then w=16; fi
   if (( w < 1 )); then w=1; fi
   echo "${w}"
+}
+
+# --- Provenance marks (references/capacity.md section 13.2) -------------------
+# Renders "<kind>[:<detail>]" as the bracketed mark the Capacity Ledger requires.
+# THE ENFORCEMENT, not a style rule: no source given → [ASSUMED no-source-given],
+# and the conductor sizes that value conservatively. An unrecognised kind is
+# ASSUMED too — a mark that cannot be classified is never trusted as one.
+provenance_mark() {
+  local raw="${1:-}" kind detail lower upper
+  if [[ -z "${raw}" ]]; then
+    echo "[ASSUMED no-source-given]"
+    return 0
+  fi
+  kind="${raw%%:*}"
+  detail=""
+  if [[ "${raw}" == *:* ]]; then detail="${raw#*:}"; fi
+  lower="$(printf '%s' "${kind}" | tr '[:upper:]' '[:lower:]')"
+  case "${lower}" in
+    measured|researched|recalled-confirmed|recalled-unconfirmed|default-confirmed|assumed|undetermined) ;;
+    *)
+      echo "[ASSUMED unrecognised-source-kind(${kind}) — sized conservatively]"
+      return 0
+      ;;
+  esac
+  upper="$(printf '%s' "${lower}" | tr '[:lower:]' '[:upper:]')"
+  if [[ -n "${detail}" ]]; then
+    echo "[${upper} ${detail}]"
+  else
+    echo "[${upper}]"
+  fi
 }
 
 # =============================================================================
@@ -98,6 +161,9 @@ resolve() {
   MODE=""; COMMANDERS=""; CORES=""; PROJECT=""
   ROLE_BUILDER=""; ROLE_RESEARCHER=""; ROLE_VISUAL=""
   ROLE_TECHNICAL=""; ROLE_SECURITY=""; ROLE_RELEASE=""
+  CONFIG_FP=""; CORES_SOURCE=""; RESERVE_PCT_SOURCE=""
+  OLLAMA_PLAN_SOURCE=""; AGNES_PLAN_SOURCE=""; DEEPSEEK_TIER_SOURCE=""
+  BUILDER_PROVIDER_SOURCE=""
 
   while IFS='=' read -r k v; do
     [[ -z "${k}" ]] && continue
@@ -121,6 +187,13 @@ resolve() {
       ROLE_TECHNICAL) ROLE_TECHNICAL="${v}" ;;
       ROLE_SECURITY) ROLE_SECURITY="${v}" ;;
       ROLE_RELEASE) ROLE_RELEASE="${v}" ;;
+      CONFIG_FP) CONFIG_FP="${v}" ;;
+      CORES_SOURCE) CORES_SOURCE="${v}" ;;
+      RESERVE_PCT_SOURCE) RESERVE_PCT_SOURCE="${v}" ;;
+      OLLAMA_PLAN_SOURCE) OLLAMA_PLAN_SOURCE="${v}" ;;
+      AGNES_PLAN_SOURCE) AGNES_PLAN_SOURCE="${v}" ;;
+      DEEPSEEK_TIER_SOURCE) DEEPSEEK_TIER_SOURCE="${v}" ;;
+      BUILDER_PROVIDER_SOURCE) BUILDER_PROVIDER_SOURCE="${v}" ;;
     esac
   done < "${ANSWERS}"
 
@@ -145,9 +218,11 @@ resolve() {
   [[ -z "${RESERVE_PCT}" ]] && RESERVE_PCT=25
 
   # --- AXIS 1: WIDTH ---------------------------------------------------------
-  local cores_source="MEASURED"
+  local cores_source="MEASURED" cores_instrument="" measured=""
   if [[ -z "${CORES}" ]]; then
-    CORES="$(measure_cores)" || true
+    measured="$(measure_cores)" || true
+    CORES="${measured%% *}"
+    cores_instrument="${measured##* }"
     if [[ -z "${CORES}" ]]; then
       echo "ERROR: could not measure cores (sysctl/nproc both unavailable)." >&2
       echo "       UNDETERMINED — ASK the operator for the core count and rerun" >&2
@@ -312,11 +387,36 @@ resolve() {
     if [[ -n "$1" ]]; then echo "$1"; else echo "UNRESOLVED(resolve from live config)"; fi
   }
 
+  # --- PROVENANCE (section 13.2) — every value-bearing card line carries a mark.
+  # Cores are MEASURED by this instrument when this instrument measured them; a
+  # SUPPLIED core count is only ever as good as the source the caller names for
+  # it, and an unnamed source is ASSUMED.
+  local CORES_MARK RESERVE_MARK PLAN_MARK FP_LINE
+  if [[ "${cores_source}" == "MEASURED" ]]; then
+    CORES_MARK="[MEASURED ${cores_instrument} $(date -u '+%Y-%m-%dT%H:%M:%SZ')]"
+  else
+    CORES_MARK="$(provenance_mark "${CORES_SOURCE}")"
+  fi
+  RESERVE_MARK="$(provenance_mark "${RESERVE_PCT_SOURCE}")"
+  case "${BUILDER_PROVIDER}" in
+    ollama-cloud|deepseek-ollama) PLAN_MARK="$(provenance_mark "${OLLAMA_PLAN_SOURCE}")" ;;
+    agnes)                        PLAN_MARK="$(provenance_mark "${AGNES_PLAN_SOURCE}")" ;;
+    deepseek-direct)              PLAN_MARK="$(provenance_mark "${DEEPSEEK_TIER_SOURCE}")" ;;
+    *)                            PLAN_MARK="$(provenance_mark "${BUILDER_PROVIDER_SOURCE}")" ;;
+  esac
+  if [[ -n "${CONFIG_FP}" ]]; then
+    FP_LINE="Config fingerprint: ${CONFIG_FP}  (comparator only — launcher, resolved seat map, provider-key presence set; names and model ids, NEVER values)"
+  else
+    FP_LINE="Config fingerprint: UNDETERMINED (not supplied — compute it per capacity.md section 13.4 step 3; a resume compares worlds against it, and a missing one fails toward ASKING)"
+  fi
+
   # --- THE CARD (the Capacity Ledger's own fields, in its own order) ---------
   cat <<CARD
 # CAPACITY LEDGER — ${PROJECT} — $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 Launcher: ${LAUNCHER}      Harness mode: ${HARNESS}
+${FP_LINE}
 Cores: ${CORES} (${cores_source}) → per-workflow concurrency min(16, cores−2) = ${PER_WORKFLOW}
+  cores provenance: ${CORES_MARK}
 Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on \`cx/\` = ~372K real, NOT the profile's 900K)
 ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
   orchestrator=lead seat
@@ -326,8 +426,8 @@ ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved mod
   technical-judge=$(role_or_unresolved "${ROLE_TECHNICAL}")
   security-judge=$(role_or_unresolved "${ROLE_SECURITY}")
   release-judge=$(role_or_unresolved "${ROLE_RELEASE}")
-Ceilings: ${PROVIDER_LABEL} | operator cap $( (( OPERATOR_APPLIES == 1 )) && echo "${OPERATOR_WAVE_CAP}/wave" || echo "n/a (own provider keys)" )
-Reserve applied: ${RESERVE_PCT}%$( (( PROVIDER_APPLIES == 1 )) && echo " → provider usable ${PROVIDER_USABLE} of ${PROVIDER_CEILING}" || echo " (no numeric provider ceiling to reserve against)" )
+Ceilings: ${PROVIDER_LABEL} | operator cap $( (( OPERATOR_APPLIES == 1 )) && echo "${OPERATOR_WAVE_CAP}/wave" || echo "n/a (own provider keys)" )   ${PLAN_MARK}
+Reserve applied: ${RESERVE_PCT}%$( (( PROVIDER_APPLIES == 1 )) && echo " → provider usable ${PROVIDER_USABLE} of ${PROVIDER_CEILING}" || echo " (no numeric provider ceiling to reserve against)" )   ${RESERVE_MARK}
 Governing number: harness ${WORKFLOW_CEILING}×${PER_WORKFLOW}=${HARNESS_MAX} | operator-cap $( (( OPERATOR_APPLIES == 1 )) && echo "${OPERATOR_WAVE_CAP}" || echo "n/a" ) | provider $( (( PROVIDER_APPLIES == 1 )) && echo "${PROVIDER_USABLE}" || echo "n/a" ) → GOVERNS: ${GOVERNING} (${GOVERN_SRC})
 CARD
 
@@ -365,7 +465,8 @@ AGENT BUDGET DECLARATION (all eight §17 quantities):
   6. selective-repair formula: N = failed workstreams, one repairer each, ≤${REPAIR_WAVE_CAP}/wave
   7. soft budget: ${GAUNTLET_SOFT_LOW}–${GAUNTLET_SOFT_HIGH} scaled to this project's task graph; at ${GAUNTLET_REVIEW} analyze whether measurable progress is still occurring
   8. hard safety cap: ${GAUNTLET_HARD_STOP} executions → HARD STOP, preserve the best stable build, produce a blocker report (run_status=STOPPED_CAP)
-Session agent budget (AXIS 2 — a LIFETIME COUNT, never a width): ${SESSION_AGENT_BUDGET} per session,
+Session agent budget (AXIS 2 — the OPERATOR's policy, a LIFETIME COUNT, never a width
+  and never a platform fact): ${SESSION_AGENT_BUDGET} per session,
   tracked as a DECREMENTING budget in project_state.json (agents.session_budget_remaining).
   Every workflow's declared AGENT COUNT plus the repair formula must SUM against it BEFORE
   dispatch. Commander sessions are separate processes — whether they draw from the same
@@ -374,6 +475,17 @@ Request budget per 5h window: ${REQUEST_BUDGET}
 Burn governor: ${BURN_GOVERNOR}
 Throttle: ${THROTTLE}
 Fallback: builder/QC/merger/critic each fall back one tier — never onto the tier that produced the work being judged.
+SEAT lines: the conductor completes one SEAT line per seat in CAPACITY-LEDGER.md
+  (capacity.md section 4 template, procedure in section 11) — dispatched id, resolved
+  model, lane=<alias|direct|combo(members…)>, provider node, ceiling CLASS and figure,
+  which burn meter it feeds, headroom floor, independence proof. This script records
+  what it is handed; it never resolves a seat and never selects one.
+Provenance: every value-bearing line above carries a bracketed mark. Any line whose
+  mark reads ASSUMED with no source was handed to this script without its
+  \`<KEY>_SOURCE\` line and MUST be sized conservatively (capacity.md section 13.2).
+REVISIONS (append-only; the card above is never edited in place):
+  (none yet — a mid-run change appends: <ISO8601> | REVISION | field=<name> | old→new |
+   trigger=<measured|429-cluster|balance-check|tripwire|resume-remeasure> | source-mark=<new mark>)
 CARD
 
   if [[ -n "${PROVIDER_NOTE}" ]]; then
@@ -445,6 +557,11 @@ EOF
   # The needle is BUILT, never written literally: the dead "20 x 16" promise
   # must not survive anywhere in this file either.
   _refute "no dead 320 promise" "$(printf '= %d' $(( 20 * 16 )) )" "${tmp}/b.out"
+  # Provenance, direction 1: NO _SOURCE keys were supplied above, so every
+  # value-bearing line must fall back to the conservative default, and the
+  # fingerprint must say UNDETERMINED rather than invent one.
+  _assert "no source given → [ASSUMED no-source-given]" "[ASSUMED no-source-given]" "${tmp}/b.out"
+  _assert "no CONFIG_FP → fingerprint UNDETERMINED" "Config fingerprint: UNDETERMINED" "${tmp}/b.out"
 
   # --- Scenario (a) TEAM: plain Claude Code / Anthropic, 12-core, 4 commanders
   cat > "${tmp}/a.answers" <<'EOF'
@@ -506,6 +623,33 @@ EOF
   _assert "1,125 / 5h = 3.75/min" "1,125 requests / 5h (1,500 − 25%) = 3.75/min sustained" "${tmp}/d2.out"
   _assert "45 Agnes agent-tasks per window" "45 Agnes agent-tasks per 5-hour window" "${tmp}/d2.out"
 
+  # --- PROVENANCE, direction 2: supplied _SOURCE keys must PRINT their marks -
+  # Both directions are asserted on purpose: a marker that always prints
+  # [ASSUMED] proves nothing, and one that never does proves less.
+  cat > "${tmp}/p.answers" <<'EOF'
+HARNESS=claude-nine
+BUILDER_PROVIDER=ollama-cloud
+OLLAMA_PLAN=100
+OLLAMA_PLAN_SOURCE=recalled-confirmed:answered=2026-08-01 confirmed=2026-08-12T14:05:00Z
+RESERVE_PCT=25
+RESERVE_PCT_SOURCE=default-confirmed:2026-08-12T14:05:00Z
+CORES=12
+CORES_SOURCE=measured:sysctl-hw.ncpu 2026-08-12T14:02:11Z
+CONFIG_FP=a1b2c3d4
+MODE=single
+PROJECT=selftest-p
+EOF
+  resolve "${tmp}/p.answers" > "${tmp}/p.out" 2>"${tmp}/p.err"
+  echo "PROVENANCE — marks printed when the answers carry their sources"
+  _assert "config fingerprint printed" "Config fingerprint: a1b2c3d4" "${tmp}/p.out"
+  _assert "plan mark [RECALLED-CONFIRMED …]" "[RECALLED-CONFIRMED answered=2026-08-01 confirmed=2026-08-12T14:05:00Z]" "${tmp}/p.out"
+  _assert "reserve mark [DEFAULT-CONFIRMED …]" "[DEFAULT-CONFIRMED 2026-08-12T14:05:00Z]" "${tmp}/p.out"
+  _assert "cores mark [MEASURED …]" "[MEASURED sysctl-hw.ncpu 2026-08-12T14:02:11Z]" "${tmp}/p.out"
+  _refute "no conservative default when every source is named" "[ASSUMED no-source-given]" "${tmp}/p.out"
+  _assert "REVISIONS section present" "REVISIONS (append-only; the card above is never edited in place):" "${tmp}/p.out"
+  # The ceiling numbers are untouched by provenance: the $100 plan is still 10/USE 8.
+  _assert "provenance never moves a ceiling" "provider usable 8 of 10" "${tmp}/p.out"
+
   # --- INSTRUMENT PROOF: the resolver must FAIL on bad input ----------------
   # (A checker that accepts everything proves nothing about what it accepts.)
   echo "INSTRUMENT PROOF — the resolver must discriminate"
@@ -536,6 +680,19 @@ EOF
   else
     echo "  [PASS] missing answers file rejected (a read failure is never an empty answer)"
   fi
+  # A mark that cannot be classified must never be printed as if it were one.
+  cat > "${tmp}/badmark.answers" <<'EOF'
+HARNESS=claude-nine
+BUILDER_PROVIDER=ollama-cloud
+OLLAMA_PLAN=100
+OLLAMA_PLAN_SOURCE=wishful-thinking:2026-08-12
+CORES=12
+MODE=single
+PROJECT=selftest-badmark
+EOF
+  resolve "${tmp}/badmark.answers" > "${tmp}/badmark.out" 2>"${tmp}/badmark.err"
+  _assert "unrecognised mark kind falls back to ASSUMED" "[ASSUMED unrecognised-source-kind(wishful-thinking) — sized conservatively]" "${tmp}/badmark.out"
+  _refute "unrecognised kind never printed as a mark" "[WISHFUL-THINKING 2026-08-12]" "${tmp}/badmark.out"
 
   # --- LIVE MEASUREMENT: the formula holds on THIS machine ------------------
   echo "LIVE — cores measured on this machine (no CORES supplied)"

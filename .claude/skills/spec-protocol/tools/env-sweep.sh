@@ -63,7 +63,43 @@ source_env_file() {
   return 1
 }
 
+# --- Bearer-auth smoke helper: the ONE place the credential escaping lives ----
+#
+# CREDENTIAL SAFETY (references/environment-sweep.md RULE 1): the secret value
+# NEVER reaches a command line. curl reads the Authorization header from a
+# config file on STDIN, so the process table shows only "--config -"; printf is
+# a shell builtin, so the value never becomes an argv entry of any process; and
+# nothing is written to disk. Passing the secret as a shell-function argument is
+# safe for the same reason a local variable is — no process is execed, so it
+# cannot appear in `ps`.
+#
+# THE QUOTING TRAP, MEASURED: the curl config value MUST be quoted. An unquoted
+# `header = ...` line was measured to be SILENTLY DROPPED — the request went out
+# with no Authorization header at all and came back 401, which reads exactly
+# like a dead key. Backslashes and double quotes are therefore escaped for
+# curl's quoted form, proven byte-exact against a value containing \ " ` and $.
+# This is the near-silent, escaping-dependent failure class documented in
+# references/environment-sweep.md ("Prove the instrument before reporting any
+# NOT SET"), which is why this logic lives in exactly one function.
+#
+# Prints the HTTP status code on stdout; RETURNS curl's exit code. A non-zero
+# return is a BROKEN INSTRUMENT (curl absent -> 127 is a shell abort, DNS down,
+# timeout) and is NEVER a fact about the credential — every caller must branch
+# on it before interpreting the status.
+curl_bearer_status() {
+  local url="$1" secret="$2"
+  local esc="${secret//\\/\\\\}"
+  esc="${esc//\"/\\\"}"
+  printf 'header = "Authorization: Bearer %s"\n' "${esc}" \
+    | curl -s -o /dev/null -w "%{http_code}" --max-time 15 --config - "${url}" 2>/dev/null
+}
+
 # --- Smoke test a GitHub token ---
+# The token is NEVER interpolated into a URL: a credential in a git remote URL
+# is visible in the process table for the life of the request (and can be
+# captured by git's own trace/credential machinery). The API's /user endpoint
+# discriminates a live token from a revoked one, and it takes the header from
+# STDIN via curl_bearer_status.
 smoke_test_github() {
   if [[ "${NO_NET}" == "1" ]]; then
     echo "NOT_VERIFIED"
@@ -75,10 +111,14 @@ smoke_test_github() {
       return 0
     fi
   fi
-  # Fallback: git ls-remote with token
+  # Fallback: authenticate the token against the API, header on STDIN.
   if [[ -n "${GITHUB_TOKEN:-}" ]] || [[ -n "${GH_TOKEN:-}" ]]; then
     local token="${GITHUB_TOKEN:-${GH_TOKEN}}"
-    if git ls-remote "https://oauth2:${token}@github.com/blackceo/test.git" HEAD &>/dev/null 2>&1; then
+    local resp rc
+    resp="$(curl_bearer_status "https://api.github.com/user" "${token}")"
+    rc=$?
+    # rc != 0 is a broken instrument, never a fact about the token.
+    if [[ "${rc}" -eq 0 && "${resp}" == "200" ]]; then
       echo "LIVE"
       return 0
     fi
@@ -97,11 +137,16 @@ smoke_test_deepseek() {
     echo "FOUND_NOT_VERIFIED"
     return 0
   fi
-  # Lightweight: list models (cheapest possible endpoint)
-  local resp
-  resp=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${key}" \
-    "https://api.deepseek.com/v1/models" 2>/dev/null)
+  # Lightweight: list models (cheapest possible endpoint). The key goes in on
+  # STDIN via curl_bearer_status — never on the command line (RULE 1).
+  local resp rc
+  resp="$(curl_bearer_status "https://api.deepseek.com/v1/models" "${key}")"
+  rc=$?
+  # rc != 0 is a broken instrument, never a fact about the key.
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
   if [[ "${resp}" == "200" ]]; then
     echo "LIVE"
     return 0
@@ -117,6 +162,47 @@ smoke_test_ollama() {
     return 1
   fi
   echo "FOUND"
+}
+
+# --- Smoke test an OpenRouter key ---
+# capacity.md section 9 names OPENROUTER_API_KEY; the two extra aliases follow
+# this file's house pattern of three accepted names per provider.
+#
+# Two measured facts govern the endpoint choice (both taken 2026-08-12, curl
+# 8.7.1, no credential involved):
+#   1. GET https://openrouter.ai/api/v1/models answers 200 with NO Authorization
+#      header at all. It is PUBLIC, so it cannot tell a live key from a revoked
+#      one — smoking it would stamp LIVE on a dead account.
+#   2. GET https://openrouter.ai/api/v1/key answers 401 with no header and 401
+#      with a bogus bearer token, and OpenRouter's own docs say 200 + key
+#      metadata for a valid key. That endpoint discriminates; models does not.
+#
+# CREDENTIAL SAFETY: handled by curl_bearer_status above — the value never
+# reaches a command line, and the measured quoting trap is documented there.
+smoke_test_openrouter() {
+  local key="${OPENROUTER_API_KEY:-${OPENROUTER_KEY:-${OPENROUTER_TOKEN:-}}}"
+  if [[ -z "${key}" ]]; then
+    echo "MISSING"
+    return 1
+  fi
+  if [[ "${NO_NET}" == "1" ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
+  local resp rc
+  resp="$(curl_bearer_status "https://openrouter.ai/api/v1/key" "${key}")"
+  rc=$?
+  # rc != 0 is a broken instrument (curl absent -> 127 is a shell abort, DNS
+  # down, timeout), never a fact about the key. Report UNDETERMINED liveness.
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
+  case "${resp}" in
+    200)     echo "LIVE" ;;
+    401|403) echo "FOUND_NOT_LIVE" ;;
+    *)       echo "FOUND_NOT_VERIFIED" ;;
+  esac
 }
 
 # --- Smoke test a Vercel token ---
@@ -150,11 +236,16 @@ smoke_test_ghl() {
     echo "FOUND_NOT_VERIFIED"
     return 0
   fi
-  # Lightweight: get locations (read-only, cheap)
-  local resp
-  resp=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${pit}" \
-    "https://services.leadconnectorhq.com/locations/" 2>/dev/null)
+  # Lightweight: get locations (read-only, cheap). The PIT goes in on STDIN via
+  # curl_bearer_status — never on the command line (RULE 1).
+  local resp rc
+  resp="$(curl_bearer_status "https://services.leadconnectorhq.com/locations/" "${pit}")"
+  rc=$?
+  # rc != 0 is a broken instrument, never a fact about the PIT.
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "FOUND_NOT_VERIFIED"
+    return 0
+  fi
   if [[ "${resp}" == "200" ]] || [[ "${resp}" == "401" ]]; then
     # 401 still means the key resolves (just may not have the right scopes)
     echo "FOUND"
@@ -187,6 +278,7 @@ run_selftest() {
       GITHUB_TOKEN="${sentinel}" \
       DEEPSEEK_API_KEY="${sentinel}" \
       OLLAMA_API_KEY="${sentinel}" \
+      OPENROUTER_API_KEY="${sentinel}" \
       VERCEL_TOKEN="${sentinel}" \
       GOHIGHLEVEL_API_KEY="${sentinel}" \
       GOHIGHLEVEL_LOCATION_ID="${sentinel}" \
@@ -211,14 +303,14 @@ run_selftest() {
 
   # --- Check 2: the known-positive is DETECTED (instrument proof).
   local pos_missing=0 k
-  for k in GITHUB DEEPSEEK OLLAMA_CLOUD VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
+  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
     if printf '%s\n' "${out_pos}" | /usr/bin/grep -qE "^${k}: MISSING$"; then
       pos_missing=$((pos_missing + 1))
       echo "  [FAIL] known-positive control: ${k} reported MISSING with a value present"
     fi
   done
   if [[ "${pos_missing}" -eq 0 ]]; then
-    echo "  [PASS] known-positive control: all 7 planted credentials detected"
+    echo "  [PASS] known-positive control: all 8 planted credentials detected"
   else
     echo "  [BROKEN INSTRUMENT] ${pos_missing} planted credential(s) read as MISSING — this sweep cannot be trusted to report a zero"
     fails=$((fails + 1))
@@ -226,36 +318,64 @@ run_selftest() {
 
   # --- Check 3: the known-negative is ABSENT (the detector discriminates).
   local neg_found=0
-  for k in GITHUB DEEPSEEK OLLAMA_CLOUD VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
+  for k in GITHUB DEEPSEEK OLLAMA_CLOUD OPENROUTER VERCEL GHL_PIT GHL_LOCATION_ID GHL_FIREBASE; do
     if ! printf '%s\n' "${out_neg}" | /usr/bin/grep -qE "^${k}: MISSING$"; then
       neg_found=$((neg_found + 1))
       echo "  [FAIL] known-negative control: ${k} did not report MISSING in an empty environment"
     fi
   done
   if [[ "${neg_found}" -eq 0 ]]; then
-    echo "  [PASS] known-negative control: all 7 report MISSING in an empty environment"
+    echo "  [PASS] known-negative control: all 8 report MISSING in an empty environment"
   else
     echo "  [BROKEN INSTRUMENT] the sweep does not discriminate — positive and negative read alike"
     fails=$((fails + 1))
   fi
 
-  # --- Check 4: THE LEAK PROOF. The sentinel value must appear ZERO times.
+  # --- Check 4: THE LEAK PROOF, two surfaces.
+  #
+  # (a) THE OUTPUT surface: the sentinel value must appear ZERO times.
+  #
+  # (b) THE PROCESS-TABLE surface: the controls run with SWEEP_NO_NETWORK=1, so
+  #     they never execute a single network call — the output scan alone can
+  #     therefore NEVER see an argv leak, and a green (a) is not evidence about
+  #     (b). A credential passed on a command line is visible in `ps` for the
+  #     life of the request; that was PROVEN by inspection with
+  #     `ps -p <pid> -o args=` (value visible with -H, absent with --config -,
+  #     with a control confirming ps was not blind). Since the runtime path is
+  #     unreachable under the hermetic controls, (b) is enforced STATICALLY:
+  #     this source must contain no bearer credential on any command line, and
+  #     no credential interpolated into a URL. Every network smoke test routes
+  #     through curl_bearer_status, which puts the header on STDIN.
+  #
+  #     KNOWN EXCEPTION, deliberately not matched: smoke_test_vercel passes
+  #     `--token` to the vercel CLI. It is the same exposure class and it is
+  #     NOT fixed here — the CLI's only documented alternative is the
+  #     VERCEL_TOKEN environment variable, and on macOS a child's environment is
+  #     itself readable (`ps -E`), so that is a lateral move, not a fix. It is
+  #     recorded as an open finding rather than silently passed.
   local leaks
   leaks="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -c "${sentinel}")"
-  if [[ "${leaks}" -eq 0 ]]; then
-    echo "  [PASS] leak proof: 0 secret values printed (sentinel occurrences: 0)"
+
+  local argv_hits url_hits
+  argv_hits="$(/usr/bin/grep -cE '^[^#]*-H[[:space:]]+.{0,3}Authorization' "${self}")"
+  url_hits="$(/usr/bin/grep -cE '^[^#]*https?://[^"'"'"' ]*\$\{[A-Za-z_]' "${self}")"
+
+  if [[ "${leaks}" -eq 0 && "${argv_hits}" -eq 0 && "${url_hits}" -eq 0 ]]; then
+    echo "  [PASS] leak proof: 0 secret values printed; 0 bearer credentials on any command line; 0 credentials interpolated into a URL"
   else
-    echo "  [FAIL] leak proof: the sweep printed the secret VALUE ${leaks} time(s)"
+    [[ "${leaks}" -ne 0 ]] && echo "  [FAIL] leak proof: the sweep printed the secret VALUE ${leaks} time(s)"
+    [[ "${argv_hits}" -ne 0 ]] && echo "  [FAIL] leak proof: ${argv_hits} Authorization header(s) passed on a command line — visible in the process table (RULE 1). Use curl_bearer_status."
+    [[ "${url_hits}" -ne 0 ]] && echo "  [FAIL] leak proof: ${url_hits} credential(s) interpolated into a URL — visible in the process table (RULE 1)."
     fails=$((fails + 1))
   fi
 
-  # --- Check 5: the report shape is intact (all 8 keys present).
+  # --- Check 5: the report shape is intact (all 9 keys present).
   local keys_found
-  keys_found="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -cE '^(GITHUB|DEEPSEEK|OLLAMA_CLOUD|VERCEL|GHL_PIT|GHL_LOCATION_ID|GHL_FIREBASE|NINE_ROUTER): ')"
-  if [[ "${keys_found}" -eq 8 ]]; then
-    echo "  [PASS] report shape: all 8 report lines present"
+  keys_found="$(printf '%s\n' "${out_pos}" | /usr/bin/grep -cE '^(GITHUB|DEEPSEEK|OLLAMA_CLOUD|OPENROUTER|VERCEL|GHL_PIT|GHL_LOCATION_ID|GHL_FIREBASE|NINE_ROUTER): ')"
+  if [[ "${keys_found}" -eq 9 ]]; then
+    echo "  [PASS] report shape: all 9 report lines present"
   else
-    echo "  [FAIL] report shape: expected 8 report lines, found ${keys_found}"
+    echo "  [FAIL] report shape: expected 9 report lines, found ${keys_found}"
     fails=$((fails + 1))
   fi
 
@@ -324,7 +444,19 @@ for var in OLLAMA_API_KEY OLLAMA_CLOUD_KEY OLLAMA_KEY; do
   fi
 done
 
-# Phase 5: Check Vercel
+# Phase 5: Check OpenRouter
+OPENROUTER_STATUS="MISSING"
+for var in OPENROUTER_API_KEY OPENROUTER_KEY OPENROUTER_TOKEN; do
+  if check_env_var "${var}" | /usr/bin/grep -q "FOUND"; then
+    OPENROUTER_STATUS="FOUND"
+    break
+  fi
+done
+if [[ "${OPENROUTER_STATUS}" == "FOUND" ]]; then
+  OPENROUTER_STATUS=$(smoke_test_openrouter)
+fi
+
+# Phase 6: Check Vercel
 VERCEL_STATUS="MISSING"
 for var in VERCEL_TOKEN VERCEL_API_TOKEN VERCEL_ACCESS_TOKEN; do
   if check_env_var "${var}" | /usr/bin/grep -q "FOUND"; then
@@ -336,7 +468,7 @@ if [[ "${VERCEL_STATUS}" == "FOUND" ]]; then
   VERCEL_STATUS=$(smoke_test_vercel)
 fi
 
-# Phase 6: Check GHL (only for funnel/website targets)
+# Phase 7: Check GHL (only for funnel/website targets)
 GHL_PIT_STATUS="MISSING"
 GHL_LOCATION_STATUS="MISSING"
 GHL_FIREBASE_STATUS="MISSING"
@@ -370,7 +502,7 @@ if [[ "${TARGET_TYPE}" == "funnel" ]] || [[ "${TARGET_TYPE}" == "website" ]]; th
   done
 fi
 
-# Phase 7: Check 9Router presence (for Claude-Nine detection)
+# Phase 8: Check 9Router presence (for Claude-Nine detection)
 NINE_ROUTER_FOUND="MISSING"
 if [[ -d "${HOME}/.claude-nine" ]]; then
   if [[ -f "${HOME}/.9router/db/data.sqlite" ]]; then
@@ -383,7 +515,7 @@ if [[ -d "${HOME}/.claude-nine" ]]; then
   fi
 fi
 
-# Phase 8: Output results as plain text
+# Phase 9: Output results as plain text
 cat <<REPORT
 
 ENVIRONMENT SWEEP — $(date '+%Y-%m-%d %H:%M:%S')
@@ -392,6 +524,7 @@ Target: ${TARGET_TYPE}
 GITHUB: ${GITHUB_STATUS}
 DEEPSEEK: ${DEEPSEEK_STATUS}
 OLLAMA_CLOUD: ${OLLAMA_STATUS}
+OPENROUTER: ${OPENROUTER_STATUS}
 VERCEL: ${VERCEL_STATUS}
 GHL_PIT: ${GHL_PIT_STATUS}
 GHL_LOCATION_ID: ${GHL_LOCATION_STATUS}
@@ -401,6 +534,12 @@ NINE_ROUTER: ${NINE_ROUTER_FOUND}
 Searched: ${SECRETS_ENV}, ${OPENCLAW_ENV}
 Not searched: project .env / .env.local (${PROJECT_ENV}, ${PROJECT_ENV_LOCAL}) — a
 MISSING above is a statement about the two stores named on the line before it.
+OPENROUTER names searched: OPENROUTER_API_KEY, OPENROUTER_KEY, OPENROUTER_TOKEN.
+FOUND_NOT_VERIFIED = the name resolved but liveness was NOT tested (network
+suppressed, curl absent, or the request failed) — never a claim about the
+account. OPENROUTER liveness, when tested, is GET openrouter.ai/api/v1/key, not
+/v1/models: the models endpoint answers 200 with no key at all and so cannot
+tell a live key from a revoked one.
 Statuses report NAMES ONLY. No secret value is ever printed; prove it with
 --selftest.
 REPORT

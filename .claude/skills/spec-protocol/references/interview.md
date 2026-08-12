@@ -11,11 +11,18 @@ questions, and they are hard to unpick later because they look like decisions.
 One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
 **State the expected question count up front, plainly:** "I will ask you about
-nineteen short questions, one at a time, and then you can walk away." (Twenty-two
-is the ceiling — A1 is usually measured rather than asked, the two fast paths
-below can fold blocks B and C into yes/no confirmations, and block D's four
-questions always run — they are the user's own decisions and have no defaults.
+nineteen short questions, one at a time, and then you can walk away."
+(**Twenty-three is the ceiling** — the four lettered blocks hold A1–A8, B1–B4,
+C0–C6, D1–D4; C6 is the twenty-third and fires only when C0 says the run is
+unattended, so an attended run's ceiling is twenty-two. A1 is usually measured
+rather than asked, the two fast paths below can fold blocks B and C into yes/no
+confirmations, and block D's four questions always run — they are the user's own
+decisions and have no defaults.
 Never promise fewer than you will actually ask; say "about nineteen" and mean it.)
+**On a repeat project with a saved profile and an unchanged machine, the
+provider-path questions collapse to one confirmation; say the smaller real
+number** — "about sixteen short questions this time, fewer than last time,
+because I remembered your answers and went and checked the machine myself."
 
 **The count moves with WHAT is being built, and you say the new number out loud.**
 Step 1c asks one more question (what are we building), Step 1d asks three or four
@@ -26,7 +33,10 @@ twenty-four for a funnel — twenty-six if it needs images and video. Say it as 
 correction, never as a surprise: "That is a few more than I first said — the extra
 ones only apply because you said funnel." Never state a number you will then
 exceed. On regular Claude Code, where block A does not run, the same rule applies
-to block D's four questions plus the target questions.
+to block D's four questions plus the target questions. **The count also moves with
+HOW it runs:** a project that runs on its own overnight gets one extra question
+(C6, below) about what to do if one of their accounts hits a limit while nobody is
+awake — say that one out loud too, the moment C0 is answered that way.
 
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
@@ -337,7 +347,8 @@ the interview, never to the four questions only the person can answer.
 ## Step 2 — The interview, in three blocks
 
 Twenty-two questions, asked in four named blocks, in this order — eight in block A,
-four in block B, six in block C, four in block D. The order is not cosmetic: the capacity answers
+four in block B, six in block C (seven when the project runs on its own and C6
+applies), four in block D. The order is not cosmetic: the capacity answers
 set what the repository and loop answers may be. Ask everything in a block, then
 move on.
 
@@ -354,6 +365,15 @@ and make the derivation conservative.
 ### Block A — Capacity (nothing here can be measured; all of it must be asked)
 
 Ask these ONE AT A TIME, in plain language. Wait for each answer before the next.
+
+**Anything you measure, you measure again at the moment you use it.** A measured
+answer is only fresh for the decision it was measured for (`capacity.md` §13, the
+decision-time rule): settings can change while a session is running, because the
+person can change them. The Agent-Team enablement probe is the standing example —
+take it here in block A, take it again when the Capacity Ledger is computed, and
+again at the step 16.9 consent question. And if they say it changed ("it is turned
+on now"), that is a reason to go and look again, never a reason to argue from the
+older reading.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
@@ -374,7 +394,18 @@ both. A8 follows A5 in substance (A5 names the models; A8 names what happens whe
 one is not there) — which is why it cannot be folded into A5: a question that asks
 for two things gets an answer about one of them.
 
-**The model-intelligence half of A5 — the role defaults for this skill:**
+**The model-intelligence half of A5 — the role REQUIREMENTS for this skill:**
+
+**Each role below says what the seat must BE, never which model fills it.** Every
+machine is wired differently, so a model name written into this file is stale the
+moment somebody re-wires their router — which is why each row states properties
+(what the seat must be able to do, what it must differ from, which kind of ceiling
+it spends) and the run resolves them against the models the router actually serves
+that day. Each row keeps ONE alias: its **default lane**, used when the pool cannot
+be discovered — on regular Claude Code, or when the router is unreachable. The
+resolved model of every seat is recorded in the Capacity Ledger
+(`references/capacity.md`), and that ledger is the only authority on what a seat
+actually is.
 
 **Every cap and limit below is an EXAMPLE, not a fact about the person running this
 interview.** They are one operator's own account numbers from one day; providers
@@ -385,7 +416,12 @@ cap depends on paid tier"), and re-verify every one of them (web-research the
 provider's current docs, or read the account's own dashboard) before writing any
 number into this project's execution plan.
 
-- **App builder** — default Opus → DeepSeek v4 Flash. Example concurrency figures
+- **App builder** — requirement: the strongest lane available, on a HIGH-CEILING
+  provider, because this seat is the swarm and its provider's ceiling is what
+  governs the shape of every wave. **Default lane: `Opus`.** The standing operator
+  law, kept here as a requirement rather than a pin: the builder takes the
+  strongest available lane, and where both are present DeepSeek v4 Flash outranks
+  v4 Pro. Example concurrency figures
   to verify, never assume: up to 500 subagents on DeepSeek v4 Pro; DeepSeek v4
   Flash direct example "up to 2,500 subagents"; Ollama Cloud DeepSeek example
   "$20 tier = 3 concurrent, $100 tier = 10 — use 8." Every one of those is a
@@ -397,16 +433,39 @@ number into this project's execution plan.
   axes and names the governing number (`references/capacity.md` §3). Recommend
   DeepSeek direct ($20+) for the swarm, but confirm today's cap before relying on
   any of the numbers above.
-- **Technical and release judge** — default Sonnet → DeepSeek v4 Pro. Example
-  ceiling to verify, never assume: up to 500 subagents on DeepSeek v4 Pro —
-  ample for the judge seats (8 technical + 4 release judges,
-  `references/gauntlet.md` §13.1). Must resolve to a DIFFERENT underlying model
-  than the builder; different alias names prove nothing.
-- **QC and fixer** — default Fable → Qwen 3.8 (5×5 = 25). Finds gaps, defects,
+- **Technical and release judge** — requirement: a seat with enough room for the
+  judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1)
+  that resolves to a DIFFERENT underlying model than the builder; different alias
+  names prove nothing. **Default lane: `Sonnet`.** **Write down WHICH KIND of
+  ceiling this seat spends, because that is its budget:** concurrent slots, a
+  requests-per-window allowance, and a token balance are three different meters,
+  and the seat's provider — not its alias — decides which one it draws on.
+  Example ceiling to verify, never assume: up to 500 subagents on DeepSeek v4
+  Pro — but a machine whose judge lane sits on a requests-per-5-hours provider is
+  spending a WINDOW, not concurrent slots, and the ledger has to say so. Choosing
+  the model is choosing the ceiling.
+- **QC and fixer** — requirement: a working seat with room to run several passes
+  at once; independence from the builder is preferred here but not required,
+  because this seat fixes as well as finds. **Default lane: `Fable`.** Example
+  fan-out to verify, never assume: 5×5 = 25. Finds gaps, defects,
   blockers, and improvements; lists (1) what is wrong and how to fix it, (2) what
   to improve and how; then fixes.
-- **Merger** — default Haiku → GLM 5.2 (low load, fine at 8 to 10 concurrency). Ask
-  which model; offer to wire it in 9router if not already wired.
+- **Merger** — requirement: a cheap, reliable seat; the load on it is low.
+  **Default lane: `Haiku`.** Example load figure to verify, never assume: fine at
+  8 to 10 concurrency. Ask which model they want here; offer to wire it in 9router
+  if it is not already wired.
+
+**A worked example from ONE machine on ONE day (2026-08-12) — HISTORICAL EXHIBIT,
+never an input.** These are the model names this file used to state as defaults:
+builder `Opus` → DeepSeek v4 Flash; judge `Sonnet` → DeepSeek v4 Pro; QC and fixer
+`Fable` → Qwen 3.8; merger `Haiku` → GLM 5.2. Measured against what this repo's
+installer actually wires on a fresh box, three of those four were WRONG: the judge
+lane holds Agnes Flash (a custom provider drawing a requests-per-5-hours window,
+not a DeepSeek concurrency ceiling), the QC lane holds a fusion combo, and the
+merger lane holds DeepSeek v4 Flash with thinking turned off. No run reads this
+exhibit as data. The live config read is the only source of the role-to-model map;
+when this exhibit and the live read disagree, the live read wins — that is not a
+conflict to resolve, it is what makes it an exhibit.
 - **Comparative critic (Gate 3)** — **no default seat; this is a REQUIREMENT,
   resolved at run time, never a named alias.** The critic MUST resolve to a
   DIFFERENT UNDERLYING MODEL than the builder. **Never the builder's alias** — a
@@ -448,13 +507,19 @@ number into this project's execution plan.
 
 For each role: show how 9router is currently wired (read the config; report "Haiku
 is currently GLM 5.2, Opus is DeepSeek v4 Flash, Sonnet is DeepSeek v4 Pro…").
+**Then say what else is available, because the four lanes are not the whole
+list:** the wiring report includes a one-line pool summary — "your router also
+serves N other models across these providers: …" — so that when you ask whether
+they want to change anything, they are choosing from the real set of options
+rather than from four names. Count and provider names only; never paste the whole
+list at somebody.
 Ask if they want to change anything or need wiring help. Check context windows by
 web-researching the actual current model docs — do not recite a remembered
 figure. Example only, to verify
 fresh: an Ollama Cloud MiniMax example "512k not 1M" (a real gap between the
 marketed figure and the delivered one, which is *why* this gets checked instead of
 assumed), a GLM 5.2 Haiku output example "64k". Check rate limits the same way —
-example only, to verify fresh: a Gemini free-tier example "20/min", an Agnes
+example only, to verify fresh: an Agnes free-tier example "20/min", an Agnes
 $40/year-tier example "1500/5h", an Agnes $100/year-tier example "7500/5h" (Agnes
 tiers are ANNUAL prices, not monthly); an Ollama Cloud $20-tier example
 "3 concurrent", a $100-tier example "10 — use 8". Check budget (OpenRouter/DeepSeek
@@ -491,22 +556,56 @@ this order.
    points at (`capacity.md` §11). Then report what you found in plain words:
    "Your builder is set to DeepSeek v4 Flash, and I can see an Ollama Cloud key
    and an Agnes key." Names only — never print a key's value, ever.
+
+   **1b. Then RECALL what they told you last time — one question in place of
+   three or four.** Read the saved-answers file (`capacity.md` §13; it holds only
+   the handful of things no command can reveal — which plans they pay for, and how
+   much headroom they want left free) and compare this machine's fingerprint
+   against the one saved with it. If the file is not there, ask everything in
+   step 2 as written. If the file IS there but cannot be read, say so plainly, set
+   it aside, and ask everything in step 2 as written — a file you could not read is
+   never treated as a file that was not there.
+   - **The machine matches what was saved** → ask ONE question in place of the plan
+     questions below, with the blanks filled in from what they told you before:
+     > Last time we worked together (on [date]), you told me: your Ollama plan is
+     > the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one,
+     > your DeepSeek account is the direct one you topped up, and you wanted a
+     > quarter of everything left free. Nothing on this machine has changed since
+     > then. Is all of that still right?
+
+     **"Yes"** → record each value as *recalled and confirmed*, carrying the date
+     they first said it. **"No"** → "Which part changed?" and re-ask ONLY the parts
+     they name, in the plain wordings below. **"I do not know"** → step 4.
+   - **The machine does NOT match what was saved** → say what changed, in plain
+     words, one line each: "your builder used to point at DeepSeek v4 Flash — now
+     it points at something else"; "I found an Agnes key last time and I do not
+     find one now." Re-ask only the questions those changes touch, and carry
+     everything untouched into the same single confirmation. A machine that changed
+     is the case this was built for, not a problem — knowing exactly what changed
+     is what keeps the question short.
 2. **Then ask only the part no command can reveal — which plan they pay for.**
-   One service at a time, and only for the services actually found:
+   One service at a time, and only for the services actually found. *Asked in full
+   only on a first run, on a machine that changed, or when they said "that changed"
+   at the confirmation above — otherwise 1b's single question has already covered
+   the three plan questions:*
    - "Is your DeepSeek account the direct one — the one you topped up with a
      balance — or are you reaching DeepSeek through Ollama?" *(Direct v4 Flash
      and direct v4 Pro have very different ceilings, and DeepSeek reached
      through Ollama Cloud is a version behind, so it is never the builder.)*
-   - "Your Ollama Cloud plan — is it the twenty-dollar one or the hundred-dollar
-     one?" *(The twenty-dollar plan allows 3 at once and this skill uses 2; the
-     hundred-dollar plan allows 10 and this skill uses 8 — headroom is always
-     left free, Law 44.)*
-   - "Your Agnes account — is it the free one, the forty-dollar plan, or the
-     hundred-dollar plan?" *(Free is 20 requests a minute; the forty-dollar plan
-     is 1,500 requests every 5 hours; the hundred-dollar plan is 7,500 every 5
-     hours.)*
-   - "Do you have an OpenRouter key?" — usually measurable; ask only when the
-     environment cannot be read.
+   - "Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the
+     hundred-dollar-a-month one?" *(The twenty-dollar plan allows 3 at once and
+     this skill uses 2; the hundred-dollar plan allows 10 and this skill uses 8 —
+     headroom is always left free, Law 44. Ollama Cloud is billed MONTHLY, which is
+     why the question says "a month" — Agnes below is billed yearly, and mixing the
+     two up gets you the wrong plan.)*
+   - "Your Agnes account — is it the free one, the forty-dollar-a-year plan, or
+     the hundred-dollar-a-year plan?" *(Free is 20 requests a minute; the
+     forty-dollar plan is 1,500 requests every 5 hours; the hundred-dollar plan is
+     7,500 every 5 hours. Agnes prices are ANNUAL.)*
+   - **OpenRouter is MEASURED, not asked** — the environment sweep reports whether
+     a key is there, so there is no standing question here. Ask only when the
+     environment cannot be read, and then in plain words: "Do you have an
+     OpenRouter key?"
 3. **The Agnes figures are VERIFIED LIVE, never recited.** Before the ledger uses
    them, web-research agnes-ai.com's current rate rules; the figures above are
    the FALLBACK for when that research fails, and the Capacity Ledger records
@@ -516,6 +615,16 @@ this order.
    evidence allows, mark it "assumed — not their answer," and say so out loud: "I
    will plan as if it is the smaller plan; that is the safe direction to be wrong
    in, and we can raise it later."
+   **When it is the 1b confirmation they cannot answer and there IS a saved answer
+   from last time,** that saved answer is evidence, not proof — so use it, but only
+   where the run can catch it being wrong. Ollama's slots, Agnes's rate, and
+   DeepSeek's balance are all watched minute by minute while the build runs, and
+   the plan shrinks itself the moment the real numbers disagree with the
+   remembered one. So plan on the saved answer, mark it "recalled, not confirmed,"
+   name the watch that covers it, and say so: "I will plan on what you told me last
+   time, and the run will notice within minutes if that has changed." Where there
+   is no such watch, drop to the smallest tier the evidence allows and mark it
+   assumed, exactly as above.
 5. **One plain question, never a guess.** If the path is still unclear after all
    of that, ask the one question that closes it — per the binding rule above.
 
@@ -588,9 +697,12 @@ Two repositories means two trains, two writers, two queues (Law 3).
 | **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
 | **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
 | **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
+| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. |
 
 **C0 is numbered zero because it is asked before C1 and because nothing above it
 was renumbered to make room.** Every question under it assumes an answer to it.
+**C6 is numbered last for the same reason** — it was added after C0 to C5 existed,
+and none of them moved to make room (the rule that placed A7, A8, and D1 to D4).
 
 **Say the consequence of C0 out loud, because both answers are allowed:**
 

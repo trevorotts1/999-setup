@@ -268,12 +268,23 @@ Gate 3 is a blind comparison. The critic does not know which artifact is ours
 
 - **Fresh-context critic.** A fresh agent, no memory of the build, runs the
   comparison. Cold eyes only.
-- **Different model.** The critic runs on a DIFFERENT model tier from the builder
-  (Law 7 — one model's blind spot cannot bless itself). On Claude-Nine the tier is
-  a **router alias** — Fable, Sonnet, Haiku, Opus — NEVER a hardcoded underlying
-  model name; the alias is authoritative and what it resolves to can change
-  (see SKILL.md, "Fable, Sonnet, Haiku, Opus are router aliases"). On regular
-  Claude Code it is a built-in tier different from the builder's.
+- **Different model.** The critic runs on a DIFFERENT UNDERLYING MODEL from the
+  builder (Law 7 — one model's blind spot cannot bless itself), and the seat is
+  RESOLVED AT RUN TIME, never hardcoded here. On Claude-Nine the candidate pool
+  is the router's live model list, not the alias set: the four aliases are
+  DEFAULT LANES over that pool, and a seat may equally be a directly-addressed
+  pool model, including a custom-provider node or a combo. Independence is judged
+  on RESOLVED ids by the FAMILY RULE — strip the provider prefix and the
+  thinking/pricing/version suffixes, then compare base ids; same-base lanes
+  differing only in thinking level are ONE model, so an alias swap is never by
+  itself evidence of independence. Prefer a different PROVIDER NODE first, then a
+  different model FAMILY. Never bypass the router to a provider, and never
+  reroute what an alias means — addressing a listed pool model THROUGH the
+  router's own gateway IS the configured routing (see SKILL.md, "Fable, Sonnet,
+  Haiku, Opus are router aliases", and `references/capacity.md` §11). Under a
+  router, "no independent model available" is a DISCOVERY FAILURE, never an empty
+  pool. On regular Claude Code the pool genuinely is the built-in Anthropic tiers,
+  and the critic takes one different from the builder's.
 - **Vision-capable critic, proven before the FIRST visual verdict.** A text-only
   model given an image does not error — it stalls or invents. Before the first
   visual Gate 3 verdict, send the frozen reference package's probe screenshot to
@@ -472,8 +483,10 @@ mobile layout.
 Dependency map: the toggle depends on the cards; mobile layout depends on
 both. Orchestration: sequential single-owner — all three units share the page
 (Section 11, coupled work).
-Agent roles: one builder (Sonnet); one independent critic per cycle (Fable),
-fresh context, a different alias, labels stripped (Section 5).
+Agent roles: one builder (the builder seat, resolved per the Capacity Ledger);
+one independent critic per cycle (resolved at run time to a different underlying
+model than the builder — the SKILL.md critic-seat requirement), fresh context, a
+different resolved model, labels stripped (Section 5).
 Builder instructions: build the units in dependency order; run local checks
 on each before it is judged.
 Independent-critic instructions: the critic receives the Task requirement,
@@ -530,8 +543,10 @@ Non-success stop states: BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED
 | Test data / scenario | The first-visit browse — no account, no cookie banner dismissed. |
 | Exclusions | region-specific pricing, live chat widget, marketing animation. |
 
-**The worked blind A/B verdict.** The critic — fresh context, Fable alias,
-labels stripped, order randomized — returned **BAR**. Evidence package:
+**The worked blind A/B verdict.** The critic — fresh context, an
+independently-resolved seat (a different underlying model than the builder,
+verified per the Capacity Ledger), labels stripped, order randomized — returned
+**BAR**. Evidence package:
 dimension — price clarity in the first screen; divergence — the bar shows the
 per-month price on the card face, ours buries it behind the toggle; proof —
 `captures/gym-04/ours-desktop-c2.png` vs `captures/gym-04/bar-desktop.png` —
@@ -664,6 +679,22 @@ behaviours — a state is not a label, it is a set of obligations):
 
 None of the four is ever recorded as PASS (Law 50 — the bar wins by default).
 
+**A fifth thing that is NOT one of the four: the budget-starved non-verdict.** A
+critic or judge seat that returns EMPTY text with `stop_reason: max_tokens` has
+not failed, stalled, or died — it spent its entire budget on reasoning tokens
+(measured 2026-08-12: one reasoning model returned nothing at 60 tokens and
+answered cleanly at 600). **Diagnose it as a BUDGET problem, never a dead model,
+and never a verdict.** Every verdict-shaped dispatch carries `max_tokens ≥
+max(4000, 4 × the expected verdict length)`; every probe or known-answer smoke
+test carries `max_tokens ≥ 600`; every non-Anthropic pool model is treated as
+reasoning-capable until proven otherwise. On the signature: retry once at 4× the
+budget, then once at the model's documented output ceiling (16k when unknown);
+still empty ⇒ that seat is UNDETERMINED-instrument and the next candidate seat is
+selected (`references/pipeline.md`, the comparative sub-stage). A starved empty is
+**never PASS, never FAIL, never INDETERMINATE, and never BLOCKED / INFEASIBLE /
+LIMIT REACHED / USER STOPPED** — it is reissued. A judge lane producing repeated
+empties is diagnosed budget-before-model.
+
 ---
 
 ## 10. ADAPTER RULES
@@ -767,17 +798,33 @@ others.** Do not invent additional workflow stages unless a documented dependenc
 makes one necessary. The six TYPES are canon; the tasks that carry them are
 derived per project (Section 13.5).
 
-Every workflow declares its model seat **by ROLE and ALIAS — never by a hardcoded
-model id** (`SKILL.md`, "Fable, Sonnet, Haiku, Opus are router aliases"). The
-operator's own wiring appears below as his illustrative resolution, never as a
-constant: the resolved model for each seat is read from the live config at run
-time and written into the Capacity Ledger (`references/capacity.md` — role →
-alias → resolved model, three hops; resolution RECORDS, it never reroutes).
+Every workflow declares its model seat **by ROLE, resolved per run — never by a
+hardcoded model id.** The run's Capacity Ledger names the seated model id, which
+may be an alias lane OR a directly-addressed pool model (`SKILL.md`, "Fable,
+Sonnet, Haiku, Opus are router aliases" — the aliases are default lanes over the
+router's discovered model pool, not the pool itself). **No skill file hardcodes a
+model id for a seat.** The operator's own wiring appears below as a dated
+illustration, never as a constant: each seat's resolved model is read from the
+live config at run time — or selected from the discovered pool against the role's
+requirements — and written into the Capacity Ledger (`references/capacity.md`:
+role → alias → resolved model, the three hops; or role → selected pool model,
+probed callable; resolution RECORDS, it never reroutes).
 
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
 are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
 
 ### 13.1 The six workflows
+
+**The seat wirings named in this section are a worked example from ONE machine on
+ONE day (2026-08-12) — HISTORICAL EXHIBIT, never an input.** No run reads them as
+data. The live config read plus pool discovery (`references/capacity.md` §11) is
+the ONLY source of a seat's resolved model. When this exhibit and the live read
+disagree, the live read wins and this exhibit is simply out of date — that is not
+a conflict to resolve, it is the definition of an exhibit. This machine is the
+operator's box, the least representative machine in the fleet: nothing here is a
+default for anyone. What the exhibit teaches is the SHAPE of the declaration —
+role, seat, subagent count, and the obligation to record the resolved model — and
+that shape is binding; the model names in it are not.
 
 **WF01 — BLUEPRINT LOCK.** Planner seat (operator's illustrative wiring: the
 `OPUS` alias, resolving on his box to DeepSeek V4 Flash, thinking MAX). **Exact

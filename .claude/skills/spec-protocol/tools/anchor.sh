@@ -65,6 +65,8 @@
 #   ANCHOR_INTENT_K=5              repeated-intent window size
 #   ANCHOR_INTENT_OVERLAP_PCT=60   repeated-intent core-share threshold
 #   ANCHOR_CENSUS_DEPTH=6          filesystem census depth under repos/
+#   ANCHOR_HARD_CAP=200            class 6 hard agent-execution cap (STOPPED_CAP)
+#   ANCHOR_BUDGET_TOL=5            class 6 claimed-vs-dispatched tolerance
 #   ANCHOR_SELFTEST_BREAK_PATTERN=1  sabotage the tick pattern (selftest only)
 #==============================================================================
 
@@ -103,6 +105,8 @@ STALE_MIN="${ANCHOR_STALE_MIN:-10}"
 INTENT_K="${ANCHOR_INTENT_K:-5}"
 INTENT_PCT="${ANCHOR_INTENT_OVERLAP_PCT:-60}"
 CENSUS_DEPTH="${ANCHOR_CENSUS_DEPTH:-6}"
+HARD_CAP="${ANCHOR_HARD_CAP:-200}"
+BUDGET_TOL="${ANCHOR_BUDGET_TOL:-5}"
 
 WORKDIR=""
 SELFTEST_TMP=""
@@ -219,9 +223,20 @@ TICK_M1='heartbeat'
 TICK_M2='auto[ _-]?tick'
 BRITTLE_LIT='heartbeat (ledger auto-tick)'
 STATE_RE='(counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|MERGED)'
-# Lines this reconciler itself authors. They are excluded from the state-delta
-# fingerprint: appending a line is exactly what the captured system kept doing.
-SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|S-CHECK|OPERATOR-ESCALATION)'
+# Lines this reconciler itself authors, plus the OBSERVATIONAL lines the
+# freshness machinery emits. All are excluded from the state-delta fingerprint:
+# appending a line is exactly what the captured system kept doing.
+#
+# CAPACITY-EVENT (capacity.md section 6.1 — the burn governor's mid-run
+# re-checks: 429 clusters, low balances, a dead provider, a tier tripwire) is
+# excluded for the same reason and one more: RE-MEASURING THE WORLD IS NOT
+# PROGRESSING THE WORK. A run that emits nothing but capacity events while
+# runnable work exists must still walk into TERMINAL-DRIFT, or the freshness
+# machinery becomes a new way to look alive while doing nothing — the exact
+# disease anti-drift.md section 1 documents.
+# BUDGET-CAP is this script's own class-6 line and is excluded on the same
+# self-authored ground as the rest.
+SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP)'
 
 if [[ "${ANCHOR_SELFTEST_BREAK_PATTERN:-0}" == "1" ]]; then
   # Deliberate sabotage: swap the robust marker for the brittle literal that
@@ -390,6 +405,13 @@ case "$MODE" in
   *) die_tool "--mode must be anchor or reconcile (got: ${MODE})" ;;
 esac
 
+# The class-6 knobs are used in arithmetic. A non-numeric value would evaluate
+# to 0 inside (( )) WITHOUT an error — a tolerance of 0 that over-alarms, or a
+# cap of 0 that stops every run. A knob that silently becomes zero is a lying
+# instrument, so it is rejected loudly instead.
+[[ "$HARD_CAP"   =~ ^[0-9]+$ ]] || die_tool "ANCHOR_HARD_CAP must be a non-negative integer (got: ${HARD_CAP})"
+[[ "$BUDGET_TOL" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_BUDGET_TOL must be a non-negative integer (got: ${BUDGET_TOL})"
+
 #==============================================================================
 # THE MAIN RUN
 #==============================================================================
@@ -501,6 +523,16 @@ run_anchor() {
   local ACTIONS=0
   local alarm_ts esc
 
+  # Class-6 state. BUDGET_ADVISED rides in CONTROL/.anchor-fingerprint (a file
+  # this script already owns) so the review-threshold advisory is emitted ONCE
+  # per run rather than on every tick. No fourth self-written file is created.
+  local BUDGET_NOTE="budget-skipped(mode=anchor)"
+  local BUDGET_ADVISED=0
+  if [[ -f "$FPFILE" ]]; then
+    local _ba; _ba="$(sed -n 's/^budget_advisory=//p' "$FPFILE" | head -1)"
+    if [[ "${_ba:-0}" == "1" ]]; then BUDGET_ADVISED=1; fi
+  fi
+
   alarm() {  # alarm <class> <evidence>
     alarm_ts="$(iso_now)"
     ledger_write "CONTROL/LEDGER.md" "${alarm_ts} | DRIFT-ALARM | $1 | unit=${UNIT} | $(sanitize "$2")"
@@ -509,6 +541,153 @@ run_anchor() {
   action() {  # action <verb> <target> <evidence>
     printf 'ACTION|%s|%s|%s\n' "$1" "$2" "$(sanitize "$3")"
     ACTIONS=$(( ACTIONS + 1 ))
+  }
+
+  #--------------------------------------------------------------------------
+  # CLASS 6 helpers — THE BUDGET AUDIT.
+  #
+  #   capacity.md promised twice that "the reconciler audits the ledger's
+  #   claimed spend against actual executions". Until this class existed, this
+  #   script contained no budget reference and no STOPPED_CAP handling at all:
+  #   the doc promised what the tool did not do. This is the tool keeping it.
+  #
+  #   Two independent comparisons, and they are never merged into one word:
+  #     (i)  CLAIMED SPEND (agents.budget_initial - agents.session_budget_
+  #          remaining) vs the CONTROL/dispatch-log.md census. Divergence past
+  #          ANCHOR_BUDGET_TOL is DRIFT — the scoreboard and the write-ahead
+  #          log disagree about how much was spent.
+  #     (ii) agents.executions_total against the hard cap. Reaching a cap is
+  #          NOT drift: it is a legitimate, declared stop. It exits 3 (so the
+  #          conductor stops dispatching) and emits set-run-status|STOPPED_CAP
+  #          rather than exit 4, which is reserved for the stall.
+  #
+  #   FAIL-CLOSED EVERYWHERE. An absent field, an absent dispatch log, or a
+  #   dispatch log with content but no parseable row is UNDETERMINED and says
+  #   which path it checked. It is NEVER a silent zero and never a pass — the
+  #   same rule as the "no status field at all" parse failure above.
+  #--------------------------------------------------------------------------
+  jnum() {  # jnum <flat-json-file> <key> -> integer on stdout, or rc 1
+    local v
+    v="$(sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9]*\).*/\1/p' "$1" | head -1)"
+    [[ -n "$v" ]] || return 1
+    printf '%s\n' "$v"
+  }
+
+  # Sets DISPATCH_ROWS to a count, or to "" meaning UNDETERMINED. It ALWAYS
+  # returns 0, and is called as a plain statement, on purpose: returning a
+  # status would put every call inside a condition context, where `set -e` is
+  # suspended and a grep rc>=2 would quietly degrade a TOOLING FAILURE into an
+  # "undetermined" verdict. Called plainly, an instrument failure still exits 2.
+  dispatch_census() {
+    local rows nonblank heads content
+    DISPATCH_ROWS=""
+    [[ -f "$DL" ]] || return 0              # absent file: never counted as zero
+    # A dispatch row is document 12's shape: a leading timestamp then at least
+    # two pipe-separated fields (`ts | work item | stage | label | run id`).
+    rows="$(g_count '^[[:space:]]*(- )?[0-9]{4}-[0-9]{2}-[0-9]{2}[^|]*\|[^|]*\|' "$DL")"
+    if (( rows > 0 )); then DISPATCH_ROWS="$rows"; return 0; fi
+    nonblank="$(g_count '[^[:space:]]' "$DL")"
+    heads="$(g_count '^[[:space:]]*(#|-{3,}|\|)' "$DL")"
+    content=$(( nonblank - heads ))
+    # Content but no parseable row is a PARSE FAILURE, not an empty log.
+    if (( content > 0 )); then return 0; fi
+    DISPATCH_ROWS="0"                       # genuinely empty: a PROVEN zero
+    return 0
+  }
+
+  budget_audit() {  # sets BUDGET_NOTE; may alarm, act, and write BUDGET-CAP
+    BUDGET_NOTE="budget-undetermined(no --state given)"
+    [[ -n "$STATE" && -f "$STATE" ]] || return 0
+
+    local flat="$WORKDIR/state.budget.flat"
+    if ! tr -d '\n\r' < "$STATE" > "$flat" 2>/dev/null; then
+      BUDGET_NOTE="budget-undetermined(state-unreadable:${STATE})"
+      return 0
+    fi
+
+    local init rem exec_t warn_at cap_state
+    init="$(jnum   "$flat" 'budget_initial'           || true)"
+    rem="$(jnum    "$flat" 'session_budget_remaining' || true)"
+    exec_t="$(jnum "$flat" 'executions_total'         || true)"
+    warn_at="$(jnum "$flat" 'warn_at'                 || true)"
+    cap_state="$(jnum "$flat" 'hard_stop_at'          || true)"
+
+    if [[ -z "$init" && -z "$rem" && -z "$exec_t" ]]; then
+      BUDGET_NOTE="budget-undetermined(no-budget-fields)"
+      note "anchor.sh: CLASS 6 UNDETERMINED — ${STATE} carries none of agents.budget_initial, agents.session_budget_remaining, agents.executions_total. Checked that file only; the dispatch log was NOT consulted, and no budget verdict is claimed."
+      return 0
+    fi
+
+    # --- (ii) the caps. Independent of the dispatch log; run first so a run
+    #     that is over the cap stops even when the census is undetermined.
+    local CAP="$HARD_CAP" WARN capnote=""
+    if [[ -n "$cap_state" ]] && (( cap_state < CAP )); then CAP="$cap_state"; fi
+    WARN="${warn_at:-150}"
+    if [[ -n "$exec_t" ]] && (( exec_t >= CAP )); then
+      local bts; bts="$(iso_now)"
+      ledger_write "CONTROL/LEDGER.md" "${bts} | BUDGET-CAP | executions=${exec_t} | cap=${CAP} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=STOPPED_CAP; stop dispatching; preserve the best stable build; produce the blocker report"
+      action "stop-dispatching" "$UNIT" "hard cap reached: executions=${exec_t} >= cap=${CAP}"
+      action "set-run-status" "STOPPED_CAP" "executions=${exec_t} >= cap=${CAP}; preserve the best stable build and produce the blocker report. A cap is a LIMIT REACHED stop, never a PASS and never drift."
+      if (( SEVERITY < 3 )); then SEVERITY=3; fi
+      capnote="budget-cap(executions=${exec_t}/cap=${CAP})"
+    elif [[ -n "$exec_t" ]] && (( exec_t >= WARN )); then
+      if (( BUDGET_ADVISED == 0 )); then
+        action "review-budget" "$UNIT" "advisory (emitted once): executions=${exec_t} crossed the review threshold ${WARN}; hard cap ${CAP}"
+        BUDGET_ADVISED=1
+      fi
+      capnote="budget-warn(executions=${exec_t}/warn=${WARN})"
+    fi
+
+    # --- (i) claimed spend vs the dispatch-log census
+    local claimed="" disp="" cmp
+    if [[ -n "$init" && -n "$rem" ]]; then claimed=$(( init - rem )); fi
+    dispatch_census
+    disp="$DISPATCH_ROWS"
+
+    if [[ -z "$claimed" ]]; then
+      cmp="budget-undetermined(no-claimed-spend: budget_initial and/or session_budget_remaining absent from ${STATE})"
+    elif (( claimed < 0 )); then
+      # NEGATIVE CLAIMED SPEND — the scoreboard is impossible, not merely off.
+      #
+      # claimed = budget_initial - session_budget_remaining. A negative value
+      # means the run has MORE budget left than it started with. No sequence of
+      # dispatches produces that; it is a corrupt, swapped, or silently reset
+      # scoreboard.
+      #
+      # Why this needs its own branch: the comparison below takes the ABSOLUTE
+      # difference, so a small negative (claimed=-3 against a 0-row census)
+      # yielded diff=3, slipped under ANCHOR_BUDGET_TOL, and reported
+      # "budget-ok" — the audit blessing a state file that cannot exist. The
+      # magnitude was never the point; the SIGN is. It is caught before the
+      # tolerance test can launder it, and it is never a PASS at any tolerance.
+      #
+      # It is also tested BEFORE the dispatch-log census, on purpose: the
+      # impossibility is visible in the state file alone, so a missing or
+      # unparseable dispatch log must not be able to downgrade a proven
+      # corruption into "undetermined".
+      alarm "budget-negative-spend" "claimed=${claimed} — session_budget_remaining ${rem} EXCEEDS budget_initial ${init} in ${STATE}. A run cannot end with more budget than it began with: the scoreboard is corrupt, swapped, or was reset mid-run. The dispatch census (${disp:-undetermined}) is NOT consulted for this verdict — a census cannot validate an impossible scoreboard."
+      action "reconcile-budget" "${claimed}/${disp:-undetermined}" "NEGATIVE claimed spend: budget_initial=${init} session_budget_remaining=${rem}. Re-derive the budget fields from the dispatch log before dispatching again; do NOT trust either field until they are re-grounded."
+      cmp="budget-negative-spend(claimed=${claimed}/initial=${init}/remaining=${rem})"
+    elif [[ -z "$disp" ]]; then
+      if [[ -f "$DL" ]]; then
+        cmp="budget-undetermined(dispatch-log-unparseable: ${DL} has content but no timestamped rows)"
+      else
+        cmp="budget-undetermined(no-dispatch-log: ${DL} does not exist — an absent log is not a census of zero)"
+      fi
+    else
+      local diff=$(( claimed - disp ))
+      if (( diff < 0 )); then diff=$(( 0 - diff )); fi
+      if (( diff > BUDGET_TOL )); then
+        alarm "budget-mismatch" "claimed=${claimed} dispatched=${disp} — budget_initial ${init} minus session_budget_remaining ${rem} diverges from the dispatch-log census by ${diff} > ANCHOR_BUDGET_TOL ${BUDGET_TOL}"
+        action "reconcile-budget" "${claimed}/${disp}" "claimed spend ${claimed} vs ${disp} rows in ${DL}; diff=${diff} > tol=${BUDGET_TOL}"
+        cmp="budget-mismatch(claimed=${claimed}/dispatched=${disp})"
+      else
+        cmp="budget-ok(claimed=${claimed}/dispatched=${disp})"
+      fi
+    fi
+
+    if [[ -n "$capnote" ]]; then BUDGET_NOTE="${cmp}+${capnote}"; else BUDGET_NOTE="$cmp"; fi
+    return 0
   }
 
   if [[ "$UNIT" != "IDLE" ]]; then
@@ -551,7 +730,11 @@ run_anchor() {
   fi
 
   #--------------------------------------------------------------------------
-  # (7) THE FIVE DETECTION CLASSES (reconcile mode)
+  # (7) THE SIX DETECTION CLASSES (reconcile mode)
+  #     Classes 1-4 need --tasks AND --state. Class 5 needs --intents (below,
+  #     with the fingerprint). CLASS 6 (budget) needs --state only, so it runs
+  #     on its own gate — a run that cannot supply a task snapshot can still be
+  #     audited against its own spend.
   #--------------------------------------------------------------------------
   local CLASSES="skipped(mode=anchor)"
   if [[ "$MODE" == "reconcile" ]]; then
@@ -662,6 +845,10 @@ run_anchor() {
         esac
       done < "$WORKDIR/tasks.lines"
     fi
+
+    # CLASS 6 — THE BUDGET AUDIT. Its own gate: --state is enough.
+    budget_audit
+    CLASSES="${CLASSES},${BUDGET_NOTE}"
   fi
 
   #--------------------------------------------------------------------------
@@ -731,7 +918,8 @@ run_anchor() {
       NEWN=0; SINCE="$(iso_now)"          # real state moved: the run is alive
     fi
 
-    printf 'fp=%s\ncount=%s\nsince=%s\nts=%s\n' "$FP" "$NEWN" "$SINCE" "$(iso_now)" > "${FPFILE}.tmp.$$"
+    printf 'fp=%s\ncount=%s\nsince=%s\nts=%s\nbudget_advisory=%s\n' \
+      "$FP" "$NEWN" "$SINCE" "$(iso_now)" "$BUDGET_ADVISED" > "${FPFILE}.tmp.$$"
     mv "${FPFILE}.tmp.$$" "$FPFILE"
     NODELTA="${NEWN}/${TERMINAL_N}"
 
@@ -818,6 +1006,7 @@ run_anchor() {
 #   because progress lines share only function words.
 #------------------------------------------------------------------------------
 INTENT_SCORE=""
+DISPATCH_ROWS=""
 intent_stall() {
   local f="$1" unchanged="$2"
   (( unchanged == 1 )) || return 1
@@ -859,8 +1048,19 @@ intent_stall() {
 }
 
 #==============================================================================
-# SELFTEST — seven cases in a temp home. It proves the detector still
+# SELFTEST — twelve cases in a temp home. It proves the detector still
 # DISCRIMINATES: every case asserts both what must fire and what must not.
+#
+#   1-7   the original drift cases (clean, unit-not-in-plan, missing file,
+#         sabotaged fixture + the real-corpus check, false-complete,
+#         terminal-drift, repeated-intent with its negative control)
+#   8     CAPACITY-EVENT lines are EXCLUDED from the state-delta fingerprint
+#         (positive: only capacity events => the no-delta counter still
+#         climbs; negative control: a real state line still resets it)
+#   9-12  CLASS 6 BUDGET AUDIT, all four controls: agree (must NOT fire),
+#         diverge past tolerance (MUST fire), hard cap (MUST emit BUDGET-CAP
+#         and both ACTIONs at exit 3, not 4), fields absent (MUST report
+#         undetermined and MUST NOT alarm)
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -996,7 +1196,158 @@ EOF
      && (( rc_neg != 3 )); then ok=1; fi
   report 7 "repeated-intent" "$ok" "rc=${rc_pos} (want 3) on the photographed fixture; control window rc=${rc_neg} (must not be 3) — the detector discriminates"
 
-  printf 'SELFTEST COMPLETE | %s of 7 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- case 8: CAPACITY-EVENT is excluded from the state-delta fingerprint.
+  #     The world moving under a long run (a 429 cluster, a dead provider, a
+  #     low balance) is OBSERVATION, not progress. A run that emits nothing
+  #     but capacity events while runnable work exists must still march toward
+  #     TERMINAL-DRIFT. The control in the other direction is in the same
+  #     case: a genuine state-carrying line MUST reset the counter, or the
+  #     exclusion has simply blinded the fingerprint.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c8"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c8/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c8/CONTROL/project_state.json"
+  local c8args=( "$T/c8" "U-02" --mode reconcile --tasks "$T/c8/CONTROL/task-graph-snapshot.json" --state "$T/c8/CONTROL/project_state.json" )
+  runa "${c8args[@]}"                              # 1st: establishes the fingerprint
+  runa "${c8args[@]}"                              # 2nd: nothing moved -> count 1
+  local c8_base; c8_base="$(sed -n 's/^count=//p' "$T/c8/CONTROL/.anchor-fingerprint" | head -1)"
+  # Now the world moves but the WORK does not: capacity events only, written
+  # through ledger.sh exactly as capacity.md 6.2 specifies.
+  "$SCRIPT_DIR/ledger.sh" "$T/c8" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:14:00Z | CAPACITY-EVENT | provider=deepseek | event=429-cluster | evidence=rc429x4/1tick | response=throttle" >/dev/null 2>&1
+  "$SCRIPT_DIR/ledger.sh" "$T/c8" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:19:00Z | CAPACITY-EVENT | provider=ollama-cloud | event=tier-tripwire | evidence=reject@3-concurrent | response=fallback" >/dev/null 2>&1
+  runa "${c8args[@]}"
+  local c8_after; c8_after="$(sed -n 's/^count=//p' "$T/c8/CONTROL/.anchor-fingerprint" | head -1)"
+  local c8_rc_pos=$RC
+  # The negative control: a real state-carrying line MUST move the fingerprint.
+  "$SCRIPT_DIR/ledger.sh" "$T/c8" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:24:00Z | RESULT | unit=U-02 | verdict=8.7 | artifact=repos/app/src/parser.ts" >/dev/null 2>&1
+  runa "${c8args[@]}"
+  local c8_reset; c8_reset="$(sed -n 's/^count=//p' "$T/c8/CONTROL/.anchor-fingerprint" | head -1)"
+  ok=0
+  if [[ -n "$c8_base" && -n "$c8_after" && -n "$c8_reset" ]] \
+     && (( c8_after == c8_base + 1 )) && (( c8_reset == 0 )) && (( c8_rc_pos != 2 )); then ok=1; fi
+  report 8 "capacity-event-excluded" "$ok" \
+    "no-delta counter ${c8_base}->${c8_after} across 2 CAPACITY-EVENT lines (must climb: observation is not progress); a real state line reset it to ${c8_reset} (must be 0 — the control proving the fingerprint is not simply blind)"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control A (case 9): claimed spend AGREES with the dispatch
+  #     census. The detector MUST NOT fire. A budget audit that cannot stay
+  #     quiet on an honest ledger is an alarm, not a detector.
+  #--------------------------------------------------------------------------
+  mk_dispatch_log() {  # mk_dispatch_log <home> <n-rows>
+    local h="$1" n="$2" i=1
+    printf '# Dispatch log\n\n' > "$h/CONTROL/dispatch-log.md"
+    while (( i <= n )); do
+      printf '2026-08-12T0%d:%02d:00Z | U-%03d | build | builder-%d | run-%06d\n' \
+        $(( i % 10 )) $(( i % 60 )) "$i" "$i" "$i" >> "$h/CONTROL/dispatch-log.md"
+      i=$(( i + 1 ))
+    done
+  }
+  mk_state_budget() {  # mk_state_budget <home> <initial> <remaining> <executions>
+    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":%s,"budget_initial":%s,"session_budget_remaining":%s,"warn_at":150,"hard_stop_at":200},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' \
+      "$4" "$2" "$3" > "$1/CONTROL/project_state.json"
+  }
+  mk_home "$T/c9"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c9/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c9" 1000 964 36
+  mk_dispatch_log "$T/c9" 36
+  runa "$T/c9" "U-02" --mode reconcile --tasks "$T/c9/CONTROL/task-graph-snapshot.json" --state "$T/c9/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=36/dispatched=36)' \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c9/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c9/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 9 "budget-agree" "$ok" "rc=${RC} (want 0); classes carry budget-ok(claimed=36/dispatched=36); no budget-mismatch and no BUDGET-CAP (both negative controls held)"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control B (case 10): claimed spend DIVERGES past tolerance.
+  #     This is the promise capacity.md made and the tool never kept.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c10"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c10/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c10" 1000 900 100
+  mk_dispatch_log "$T/c10" 3
+  runa "$T/c10" "U-02" --mode reconcile --tasks "$T/c10/CONTROL/task-graph-snapshot.json" --state "$T/c10/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=100 dispatched=3' "$T/c10/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-budget|100/3|'; then ok=1; fi
+  report 10 "budget-mismatch" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=100 dispatched=3 written; ACTION|reconcile-budget|100/3 emitted"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control C (case 11): the HARD CAP. Reaching the cap is a
+  #     legitimate declared stop, so it exits 3 (stop dispatching) and asks
+  #     the conductor for run_status=STOPPED_CAP — never exit 4, which belongs
+  #     to the stall, and never a DRIFT-ALARM, which would call a policy stop
+  #     a defect. Claimed and dispatched AGREE here so the case can only be
+  #     firing on the cap.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c11"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c11/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c11" 1000 800 200
+  mk_dispatch_log "$T/c11" 200
+  runa "$T/c11" "U-02" --mode reconcile --tasks "$T/c11/CONTROL/task-graph-snapshot.json" --state "$T/c11/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| BUDGET-CAP \| executions=200 \| cap=200 \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|stop-dispatching|U-02|hard cap' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|STOPPED_CAP|' \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ ! -f "$T/c11/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok=1; fi
+  report 11 "budget-hard-cap" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-CAP line written through ledger.sh; ACTION|stop-dispatching and ACTION|set-run-status|STOPPED_CAP emitted; no budget-mismatch; no TERMINAL-DRIFT.flag"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control D (case 12): the budget fields are ABSENT. The audit
+  #     must say UNDETERMINED and name it. A fabricated zero here would report
+  #     "claimed 0, dispatched 0, all clear" on a state file that never
+  #     tracked a budget at all — a false all-clear, the one forbidden answer.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c12"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c12/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c12/CONTROL/project_state.json"
+  mk_dispatch_log "$T/c12" 7
+  runa "$T/c12" "U-02" --mode reconcile --tasks "$T/c12/CONTROL/task-graph-snapshot.json" --state "$T/c12/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined(no-budget-fields)' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-ok' \
+     && ! "$GREP" -qE 'DRIFT-ALARM' "$T/c12/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 12 "budget-fields-absent" "$ok" "rc=${RC} (want 0); classes carry budget-undetermined(no-budget-fields); no fabricated budget-ok; no DRIFT-ALARM"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control E (case 13): NEGATIVE claimed spend.
+  #     session_budget_remaining (1003) EXCEEDS budget_initial (1000), so
+  #     claimed = -3. This is an IMPOSSIBLE scoreboard: no run ends with more
+  #     budget than it began with.
+  #
+  #     This case exists because the magnitude test alone laundered it. The
+  #     comparison takes the ABSOLUTE difference, so -3 against a 0-row census
+  #     produced diff=3, slipped under ANCHOR_BUDGET_TOL (5), and reported
+  #     "budget-ok" — the audit issuing a clean bill of health on a state file
+  #     that cannot exist. The tolerance is the wrong instrument for a sign
+  #     error, which is why the guard runs before it.
+  #
+  #     The dispatch log is deliberately ABSENT here, proving the second half:
+  #     the verdict comes from the state file alone and is NOT downgraded to
+  #     "budget-undetermined(no-dispatch-log)" by the missing census.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c13"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c13/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c13" 1000 1003 10
+  rm -f "$T/c13/CONTROL/dispatch-log.md"
+  runa "$T/c13" "U-02" --mode reconcile --tasks "$T/c13/CONTROL/task-graph-snapshot.json" --state "$T/c13/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE 'DRIFT-ALARM \| budget-negative-spend \| unit=U-02 \| claimed=-3' "$T/c13/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-negative-spend(claimed=-3/initial=1000/remaining=1003)' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-ok' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined'; then ok=1; fi
+  report 13 "budget-negative-spend" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-negative-spend | claimed=-3 written; classes carry budget-negative-spend(claimed=-3/initial=1000/remaining=1003); NOT laundered into budget-ok by the tolerance, and NOT downgraded to budget-undetermined by the absent dispatch log"
+
+  printf 'SELFTEST COMPLETE | %s of 13 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

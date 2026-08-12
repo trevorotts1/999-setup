@@ -71,11 +71,18 @@ Measured on the same file, with the instrument proven first (`ledger` returns
 |---|---|---|
 | **BANNED — contentless tick:** `- heartbeat <ISO8601Z> (ledger auto-tick)`, a timestamp and nothing else | as above | drift |
 | **REQUIRED — the same marker, carrying state:** `- heartbeat <ts> (ledger auto-tick) — E2E driver solving standard-intake (GATE 0)…; transcript 981KB/238 lines, progressing` | 140 | **not drift** |
-| **REQUIRED — a stateful watchdog heartbeat:** `- WATCHDOG <ts> — **Heartbeat: 0 active / 0 stalled.** All 68 workflow records in terminal states… The earlier '44 active / 16 stalled' line was a stale count from pre-teardown transcripts — corrected here.` | 5 | **not drift** |
+| **REQUIRED — a stateful watchdog heartbeat:** `- WATCHDOG <ts> — **Heartbeat: 0 active / 0 stalled.** All 68 workflow records in terminal states… The earlier '44 active / 16 stalled' line was a stale count from pre-teardown transcripts — corrected here.` | 4 | **not drift** |
 
 (Loose counts on this file must always carry their case-sensitivity or be
 omitted: a case-insensitive `heartbeat` matches 895 lines, case-sensitive 890.
-The five-line gap is exactly the capitalized watchdog class in the last row.
+The five-line gap is FOUR capitalized watchdog lines (the last row) plus ONE
+line that is not a heartbeat at all — a slash-separated document-name list,
+`AGENTS/DREAMS/HEARTBEAT/MEMORY/USER`, at line 376. Re-measured 2026-08-12
+against the same file: `Heartbeat:` returns 4 (lines 1989, 2006, 2025, 2051);
+all-caps `HEARTBEAT` returns that single doc-list line. **The gap arithmetic
+and the class are not the same number** — an earlier reading of this exhibit
+assumed they were, which is the very substitution this file exists to forbid:
+a count that matches is not a class that matches until the lines are read.
 The strict anchored figures in the table above — the contentless count, 31.3%,
 and a 139-long run ending at the tail — are the unambiguous ones, confirmed by
 three independent measurements, and are the ones to quote.)
@@ -97,9 +104,10 @@ So the detector is TWO stages, and both are load-bearing:
    heartbeat that carries state, and it is NOT drift.**
 
 Run over the real file, the two stages together reproduce the strict anchored
-control's contentless count EXACTLY, to the line, while sparing all 145
-state-carrying lines. Neither stage alone can do both: stage 1 without stage 2
-condemns 145 good lines, and stage 2 without stage 1 has nothing to examine.
+control's contentless count EXACTLY, to the line, while sparing all 144
+state-carrying lines (140 + the 4 watchdog lines). Neither stage alone can do
+both: stage 1 without stage 2 condemns 144 good lines, and stage 2 without
+stage 1 has nothing to examine.
 
 ---
 
@@ -140,7 +148,10 @@ each other and with the artifacts on disk. The ten steps, verbatim:
 
 **WHEN it runs:** at every phase boundary; at the start of every loop or cron
 tick; as the FIRST action of a post-compaction turn; before every dispatch; and
-at least every 30 minutes of continuous conductor work.
+at least every 30 minutes of continuous conductor work; and the burn-table
+capacity check (`references/capacity.md` §6.1) runs at the same points — its
+`CAPACITY-EVENT` lines are excluded from the state-delta fingerprint, because
+observing the world is not progressing the work.
 
 This ritual is not hypothetical and not ours alone: task-status lag — an agent
 finishing work and failing to mark the task complete, so its dependents stay
@@ -193,17 +204,19 @@ word.
 |---|---|---|
 | 0 | clean — a RE-ANCHOR or RECONCILE line was written | proceed |
 | 2 | TOOLING FAILURE / BROKEN INSTRUMENT | stop; fix the instrument; **exit 2 is never an all-clear** |
-| 3 | drift found — DRIFT-ALARM written, ACTION lines on stdout | stop dispatching; execute the actions; re-run until clean |
+| 3 | drift found — DRIFT-ALARM written, ACTION lines on stdout. **Also the class-6 hard cap**, which writes `BUDGET-CAP` and no DRIFT-ALARM: a declared cap is a legitimate stop, not a defect | stop dispatching; execute the actions; re-run until clean. On `ACTION|set-run-status|STOPPED_CAP` the run stops at the cap instead: preserve the best stable build and write the blocker report |
 | 4 | TERMINAL-DRIFT — the flag was created and the escalation written | stop the run; `run_status=STOPPED_STALL`; write the blocker report |
 
 ---
 
-## 4. The five detection classes
+## 4. The six detection classes
 
 Each class states its exact comparison. Classes 1–4 require both `--tasks` and
 `--state`; without them the reconciler reports
 `classes=undetermined(no --tasks and/or --state given)` and does not pretend to
-have checked. **UNDETERMINED is a correct answer. A false all-clear is not.**
+have checked. Class 5 requires `--intents`. Class 6 requires `--state` only, so
+a run that cannot export a task snapshot can still be audited against its own
+spend. **UNDETERMINED is a correct answer. A false all-clear is not.**
 
 **Class 1 — completed-but-still-PENDING.** The task is PENDING or IN PROGRESS
 while its checklist box is `[x]` AND its artifact or verdict exists on disk (in
@@ -259,6 +272,58 @@ else. Real progress lines share only function words, so their core stays small
 even when they are the same length and from the same speaker — which is exactly
 the known-good negative control the tool runs against this class.
 
+**Class 6 — the budget audit.** `references/capacity.md` states twice — once in
+its AXIS 2 discussion and once in the agent-budget declaration — that "the
+reconciler audits the ledger's claimed spend against the actual executions."
+It is a class, not a sentence, and it is implemented here: a document must never
+promise what its tool does not do. Two independent comparisons, never merged
+into one word:
+
+- **Claimed spend vs the write-ahead log.** CLAIMED = `agents.budget_initial` −
+  `agents.session_budget_remaining`, from `CONTROL/project_state.json`.
+  DISPATCHED = the census of timestamped rows in `CONTROL/dispatch-log.md`
+  (document 12's shape, the same file class 2 already reads). A divergence
+  greater than `ANCHOR_BUDGET_TOL` (default 5) means the scoreboard and the log
+  disagree about how much was spent, which is drift in the AXIS 2 meter itself:
+  `DRIFT-ALARM | budget-mismatch | claimed=<n> dispatched=<m>` plus
+  `ACTION|reconcile-budget|<n>/<m>|<evidence>`, exit 3.
+- **The sign guard, tested BEFORE that comparison.** A NEGATIVE claimed spend —
+  `session_budget_remaining` greater than `budget_initial` — is not a small
+  divergence, it is an impossible scoreboard: no run ends with more budget than
+  it began with. The comparison above takes the ABSOLUTE difference, so a small
+  negative (claimed −3 against a 0-row census) produced a diff of 3, slipped
+  under the tolerance, and reported `budget-ok` — the audit issuing a clean bill
+  of health on a state file that cannot exist. **A tolerance is the wrong
+  instrument for a sign error.** The guard fires first and is never a PASS at
+  any tolerance: `DRIFT-ALARM | budget-negative-spend | claimed=<negative>` plus
+  `ACTION|reconcile-budget`, exit 3, verdict
+  `budget-negative-spend(claimed=…/initial=…/remaining=…)`. It is also tested
+  ahead of the dispatch census on purpose — the impossibility is provable from
+  the state file alone, so a missing or unparseable dispatch log must not be
+  able to downgrade a proven corruption into `budget-undetermined`.
+- **Executions vs the cap.** `agents.executions_total` against
+  `ANCHOR_HARD_CAP` (default 200, lowered automatically when the state file's
+  own `hard_stop_at` is smaller — the Capacity Ledger's arithmetic binds first).
+  At or past the cap the tool writes `BUDGET-CAP | executions=<n> | cap=<c> | …`
+  through `ledger.sh` and emits `ACTION|stop-dispatching|…` and
+  `ACTION|set-run-status|STOPPED_CAP|…`. **Reaching a declared cap is a
+  legitimate stop, not a defect**, so it exits **3**, not 4 — 4 belongs to the
+  stall — and it raises no DRIFT-ALARM. The conductor performs the status
+  change, preserving the detect/execute split. Crossing the review threshold
+  (`agents.warn_at`, default 150) emits `ACTION|review-budget|…` **once** per
+  run; the once-flag rides in `CONTROL/.anchor-fingerprint`, so no fourth
+  self-written file appears.
+
+**Class 6 fails closed everywhere.** A state file with none of the three budget
+fields reports `classes=…,budget-undetermined(no-budget-fields)` and names the
+file it read. An ABSENT dispatch log is `budget-undetermined(no-dispatch-log:
+<path>)` — an absent log is not a census of zero. A dispatch log with content
+but no parseable row is `budget-undetermined(dispatch-log-unparseable: <path>)`,
+the same parse-failure rule the task snapshot already obeys. Only a log that
+genuinely exists and is genuinely empty yields a PROVEN zero. A fabricated zero
+here would read "claimed 0, dispatched 0, all clear" on a project that never
+tracked a budget at all — a false all-clear, the one forbidden answer.
+
 ---
 
 ## 5. The RE-ANCHOR line
@@ -284,7 +349,7 @@ either `p:<n>/i:<n>/c:<n>` from the snapshot or the literal
 That is the negative-result contract applied to its own output.
 
 `--mode anchor` (the default) is the cheap call: hash, RE-ANCHOR line,
-unit-in-plan check, staleness check. `--mode reconcile` adds the five detection
+unit-in-plan check, staleness check. `--mode reconcile` adds the six detection
 classes and the terminal-drift counter. A staleness failure — no RE-ANCHOR or
 RECONCILE line inside `ANCHOR_MAX_AGE_MIN` (default 35 minutes) — writes
 `DRIFT-ALARM | stale-anchor` and exits 3, and then still writes the fresh line,
@@ -306,14 +371,29 @@ is: a run working on something nobody wrote down.
 - `CONTROL/LEDGER.md` **state-carrying lines only**, and
 - a filesystem census of `repos/` and `CONTROL/` mtimes.
 
-Two exclusions are load-bearing and are stated here so nobody "fixes" them
-later. The ledger's contentless tick lines are excluded, and so is every line
-this reconciler itself authors (RE-ANCHOR, RECONCILE, DRIFT-ALARM,
-TERMINAL-DRIFT, S-CHECK, OPERATOR-ESCALATION). **"No state delta" is measured
-against the three layers plus disk — never against "a line got appended,"
-because appending lines is precisely what the captured system kept doing.** A
-fingerprint that counted its own writes could never fire, which is the same
-class of self-defeating instrument as the brittle pattern in §1.
+Three exclusions are load-bearing and are stated here so nobody "fixes" them
+later. The ledger's contentless tick lines are excluded; so is every line this
+reconciler itself authors (RE-ANCHOR, RECONCILE, DRIFT-ALARM, TERMINAL-DRIFT,
+S-CHECK, OPERATOR-ESCALATION, BUDGET-CAP); and so is every `CAPACITY-EVENT`
+line. **"No state delta" is measured against the three layers plus disk — never
+against "a line got appended," because appending lines is precisely what the
+captured system kept doing.** A fingerprint that counted its own writes could
+never fire, which is the same class of self-defeating instrument as the brittle
+pattern in §1.
+
+The `CAPACITY-EVENT` exclusion earns its own sentence, because it is the one an
+optimizer would undo. Those lines are the burn governor's mid-run re-checks
+(`references/capacity.md` §6.1–§6.4: a 429 cluster, a low balance, a dead
+provider path, a tier tripwire) — the world moving under a ten-hour run.
+**Re-measuring the world is observation, not progress.** A run emitting nothing
+but capacity events while runnable work exists must still walk into
+TERMINAL-DRIFT; otherwise the freshness machinery becomes a new way to look
+alive while doing nothing, which is the exact disease §1 documents. Capacity
+collapse rides the machinery that already exists — the fallback table, the Loop
+8 throttle order, Loop 6 park-and-resume, and this counter — and invents nothing
+parallel. What it adds is that the blocker report now contains the capacity
+events, so the 7 a.m. diagnosis reads "capacity collapsed at 02:14, here is the
+ladder we descended" instead of a mystery stall.
 
 **The rule: N consecutive reconciles with an UNCHANGED fingerprint, while
 runnable work exists (an open TODO item or a PENDING task), is TERMINAL-DRIFT.**
@@ -392,13 +472,21 @@ case-insensitive, `heartbeat` and `auto-tick` in either order with anything
 between them, and tolerant of `auto tick` / `auto_tick`. Never re-narrow it to
 a literal.
 
-`anchor.sh --selftest` proves the tool still discriminates: seven cases in a
+`anchor.sh --selftest` proves the tool still discriminates: twelve cases in a
 temporary home — clean anchor (which also asserts NO alarm fires),
 unit-not-in-plan, missing file, sabotaged fixture, false-complete,
 terminal-drift with the counter primed to N−1, and the repeated-intent
-signature with its own known-negative control window. It prints one PASS line
-per case and exits nonzero if any case fails. Run it after any edit to the
-tool, and whenever a result surprises you.
+signature with its own known-negative control window; then the
+`CAPACITY-EVENT` exclusion (a ledger receiving ONLY capacity events between
+reconciles must still increment the no-delta counter, with the other-direction
+control that a real state-carrying line still resets it — an exclusion that
+blinded the fingerprint would pass the first half and fail the second); and
+finally the four class-6 budget controls: claimed == dispatched must NOT fire,
+a divergence past tolerance MUST fire, the hard cap MUST emit `BUDGET-CAP` plus
+both ACTIONs at exit 3 (never 4), and absent budget fields MUST report
+undetermined and MUST NOT alarm. It prints one PASS line per case and exits
+nonzero if any case fails. Run it after any edit to the tool, and whenever a
+result surprises you.
 
 The sabotage case also runs a **real-corpus check** when a real ledger is
 available (`ANCHOR_SELFTEST_REAL_LEDGER`, defaulting to the operator's
