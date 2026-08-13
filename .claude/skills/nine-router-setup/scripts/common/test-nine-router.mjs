@@ -117,11 +117,17 @@ async function main() {
   // the image — if the adapter were broken we'd get a 4xx modality error.
   check("Vision auto-switch smoke", vision.status === 200, `HTTP ${vision.status}`);
 
-  // 4. Fallback — DeepSeek -> Agnes. Non-destructive: we can't force an upstream
-  //    failure without corrupting the real key, so we verify the combo is configured
-  //    with the right order and that the combo routes.
-  const fbCombo = await client.chat("blackceo-fable-fallback", { maxTokens: 16, prompt: "ok" });
-  check("Fable fallback combo routes", fbCombo.status === 200, `HTTP ${fbCombo.status}`);
+  // 4. Fallback chains — DeepSeek -> Agnes, one per lane. Non-destructive: we can't
+  //    force an upstream failure without corrupting the real key, so we verify each
+  //    combo is configured with the right order and that the combo routes.
+  const sonnetCombo = await client.chat("sonnet-chain", { maxTokens: 16, prompt: "ok" });
+  check("Sonnet chain combo routes", sonnetCombo.status === 200, `HTTP ${sonnetCombo.status}`);
+
+  const opusCombo = await client.chat("opus-chain", { maxTokens: 16, prompt: "ok" });
+  check("Opus chain combo routes", opusCombo.status === 200, `HTTP ${opusCombo.status}`);
+
+  const haikuCombo = await client.chat("haiku-chain", { maxTokens: 16, prompt: "ok" });
+  check("Haiku chain combo routes", haikuCombo.status === 200, `HTTP ${haikuCombo.status}`);
 
   // 5. Fusion combo — one-shot through the judge.
   if (!skipFusion) {
