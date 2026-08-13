@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.10.1] — 2026-08-13
+
+### The Fable lane pointed at a fusion combo the router had never created
+
+- **The installer wired every fresh client's Fable lane to a combo that was
+  never created.** `configure-nine-router.mjs` created the fusion combo under
+  one name, pointed `RESOLVED_ROUTES.fable` at a second name, and the smoke
+  test checked a third. Only the first existed. On every fresh install, Fable
+  requests hit a combo the router had never heard of and 404'd — and the
+  routing state looked valid, because a real string pointing at nothing looks
+  exactly like a real string. A client hit this in the field.
+- **The smoke test could never have caught it**, because its own name was one
+  of the two that did not exist; a red fusion check on every box read as
+  known noise rather than a signal.
+
+### The combo is now `fusion-chain` everywhere, and a new assertion closes the class
+
+- **The combo is now `fusion-chain`**, created, referenced, and smoke-tested
+  under that single name. The operator renamed it from the previous
+  mixed-case name.
+- **A new assertion closes the class:** every `RESOLVED_ROUTES` lane must
+  resolve to either a raw provider model or a combo actually created in the
+  same run. The existing "defense in depth" guard validated provider MODEL
+  ids and never combo names — which is precisely how a lane pointing at
+  nothing passed a guard written to prevent it. The names are collected as
+  the combos are created, so the check cannot go stale.
+
+Two files changed, both in
+`.claude/skills/nine-router-setup/scripts/common/`: `configure-nine-router.mjs`
+and `test-nine-router.mjs`. Nothing else in the repository was touched.
+
 ## [1.10.0] — 2026-08-13
 
 ### The question count is now two numbers, because the count is genuinely dynamic
