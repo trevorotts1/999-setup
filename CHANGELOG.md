@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.9.1] — 2026-08-13
+
+### The question count is a CEILING, not an exact total
+
+The client now hears **"Question 3 of no more than 32"**, and the up-front
+statement promises **"at most <C> short questions — usually fewer"** rather than a
+figure presented as the truth. Every conditional question is priced at its
+MAXIMUM — the defaults-offer question, the per-service plan questions at their
+scripted maximum, both small-plan collapse confirmations, C6, and A1 where
+auto-detect was inconclusive. Whatever does not occur simply lands the run under
+the ceiling. **Coming in under has kept the promise**, so finishing early needs no
+announcement at all, and the good-news line becomes something said when the drop
+is worth saying rather than machinery that must fire correctly or the skill has
+lied.
+
+### This removes the known limitation [1.9.0] shipped with
+
+[1.9.0] closed with a known limitation: `A2` is asked once per paid service while
+the base arithmetic counted it once, so a stated total could be exceeded by one
+question per additional service with no upward announcement to cover it. **That
+paragraph is superseded by this release.** The [1.9.0] entry above is left exactly
+as written and is NOT retro-edited — a changelog that quietly rewrites its own
+history stops being evidence of anything.
+
+What changed is the diagnosis rather than the patch. **Six QC rounds found six
+distinct ways an exact total could be exceeded**: the maximum path; a wrong
+subtraction on regular Claude Code; an unbudgeted fast-path offer; `A2` asked once
+per paid service while counted once; a stale *"about eighteen"* / *"twenty-one-plus"*
+still spoken to the client; and an approximation-form up-front script. Six rounds
+finding six instances of one shape is the shape reporting itself. **An exact total
+required the run to know its own shape before it had one** — how many paid
+services, whether a fast path would be taken, whether the plan would turn out
+tiny, whether it would need artwork — and each new dependency was one more way to
+break a small promise to a non-technical person.
+
+**A ceiling cannot be exceeded by construction.** So the class is closed rather
+than the instances patched: there is no arithmetic left that can be wrong in the
+direction that matters, because every unknown is already paid for at its worst
+case before the first question is spoken.
+
+### The only sanctioned upward move, and the failsafe under it
+
+Artwork remains the one priced-at-zero exception: the ceiling rises by up to three
+the moment the plan calls for pictures, and **the rise is spoken BEFORE the next
+question**, in the correction voice — *"That is a few more than I said — the extra
+ones only apply because your plan needs artwork."* Under it sits a failsafe: if a
+run ever finds a question the ceiling missed, **the corrected ceiling is stated
+before that question is asked.** A question asked past a stated ceiling with no
+correction spoken first is a defect. `N` never resets, never repeats, never
+decreases; `C` may be lowered at any time and needs no machinery to do it.
+
+The per-target ceilings on Claude-Nine are **31 to 33** depending on the Build
+Target — 32 for a mobile app, a mobile-and-web build, or a website; 31 for a web
+app or desktop/CLI software; 33 for a sales funnel — each up to three higher only
+via artwork's announced rise. On regular Claude Code the same table has **23**
+subtracted rather than the 17 [1.9.0] stated, blocks A, B and C not being run
+there. A typical run finishes well under its ceiling; that is the design, not an
+error.
+
+The skill remains **32 files** — nothing added and **nothing removed** —
+`tools/ledger.sh` is byte-identical, and `VERSION` reads **1.9.1**. Three files
+changed: `VERSION`; `references/interview.md`, which owns the ceiling arithmetic,
+the per-question counter and the two fast paths; and `references/audience.md`,
+which cites the counter's spoken form and never computes.
+
 ## [1.9.0] — 2026-08-13
 
 ### The opening script was never fired by a numbered step — so skipping it broke no rule
