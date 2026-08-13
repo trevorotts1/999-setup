@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.9.2] — 2026-08-13
+
+### "A few plain questions" was a number, and it was the wrong one
+
+Two client-facing lines in `references/audience.md` — the set-and-forget promise
+and the tone example — offered **"a few plain questions"** while the ceiling runs
+as high as **33**. Neither line stated a figure, so neither broke the ceiling
+arithmetically. But **"a few" means three or four to an ordinary reader**, and a
+person told "a few" and then asked twenty-seven has been misled just as surely as
+by a wrong number. Both now describe the interview honestly without naming a
+count — a proper set of plain questions, a step at a time, with the limit given
+up front — leaving `references/interview.md` the sole owner of every figure. The
+counter's spoken example drops its hard-coded **"3 of no more than 12"** for
+`"Question <N> of no more than <C>"` for the same reason: this page cites the
+form, it never supplies the numbers.
+
+The skill remains **32 files** — nothing added and **nothing removed** —
+`tools/ledger.sh` is byte-identical, and `VERSION` reads **1.9.2**. Two files
+changed: `VERSION` and `references/audience.md`.
+
 ## [1.9.1] — 2026-08-13
 
 ### The question count is a CEILING, not an exact total
