@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.11.1] — 2026-08-13
+
+### The fusion smoke test named a combo that v1.11.0 had already renamed away
+
+- **The smoke test still probed `blackceo-fable-fallback`**, the combo
+  [1.11.0] renamed to `sonnet-chain`. The check asked for a name nothing
+  creates — the same class of defect this file was repaired for in
+  [1.10.1]: a test naming something that does not exist reads as known
+  noise on every box instead of a signal. It now probes the combo that
+  exists, under a label that says what it tests.
+- **Coverage added for the other two chains renamed in the same release:**
+  the smoke test now also probes `opus-chain` and `haiku-chain`, so all
+  three fallback combos the installer creates are checked, not just the
+  one this fix was chasing.
+
+One file changed: `.claude/skills/nine-router-setup/scripts/common/test-nine-router.mjs`.
+Nothing else in the repository was touched.
+
 ## [1.11.0] — 2026-08-13
 
 ### Three fallback combos carried the operator's own brand into every client's router database
