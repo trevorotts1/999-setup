@@ -1,5 +1,119 @@
 # Changelog
 
+## [1.8.2] — 2026-08-12
+
+### `teammateMode` has four documented values, and the skill still writes only one
+
+`references/platform.md` — the single owner of the value set — now enumerates all
+four, rather than leaving a reader to infer the set from the two values the rule
+happens to mention. Sources are the shipped docs, read 2026-08-12:
+`code.claude.com/docs/en/settings.md` and `code.claude.com/docs/en/agent-teams.md`.
+
+- **`in-process`** — every teammate in the one terminal; "works in any terminal, no
+  extra setup required".
+- **`auto`** — split panes ONLY if the session is already inside tmux, or inside
+  iTerm2 with `it2` on PATH, and **silently falls back to in-process otherwise**.
+- **`tmux`** — split-pane mode, which doc-verbatim **"auto-detects whether to use
+  tmux or iTerm2 based on your terminal"**. That is why the one value this skill
+  writes already serves iTerm2 users, and why there is no second value to pick.
+- **`iterm2`** — added v2.1.186; native iTerm2 panes in the CURRENT window via the
+  `it2` CLI.
+
+The key still selects **DISPLAY ONLY**, never function, and the skill still writes
+at most `"tmux"` and only under §5.5 step 4's two conditions. Naming the whole set
+is what makes the protection clause below expressible at all.
+
+### The 2.1.179 default flip is recorded — with the caveat that its changelog is silent
+
+The documented default became **`in-process` as of v2.1.179**; it was **`auto`**
+before. The caveat is stated in the file rather than buried, because the sourcing is
+thin: **the 2.1.179 changelog entry is SILENT on the flip**, so the two doc pages
+above are its SOLE source and there is no changelog corroboration to cite. It is
+carried as **DOC-VERIFIED ONLY**, beside floors that are verified by both.
+
+It matters here for one specific reason: this skill's own procedure floor is
+**2.1.178** — one version below the flip — so a box sitting exactly on the floor
+still has the OLD default. Neither default is ever assumed on a live box; §5.5
+step 6 makes that root's own pre-write value the authority instead. Said just as
+plainly, so this reads as the caveat it is and not an alarm: `auto` outside
+tmux/iTerm2 falls back to in-process anyway, so a plain-terminal client behaves
+identically under either default.
+
+### Presence is NECESSARY, never SUFFICIENT — the gate is LAUNCH CONTEXT, not box inventory
+
+v1.8.0 required a split-pane host to be **PROVEN present by RUNNING the probe**, and
+v1.8.1 hardened that proof. Both were right, and both are unchanged. The defect was
+that presence was also treated as the DECIDER — and it is not.
+
+A box can pass the presence probe while the client sees **nothing**. Where `tmux -V`
+returns 0 but the launch happens from a plain terminal, the binary selects
+**external session mode** — a SEPARATE tmux session that is **provably never
+auto-attached**. Dated observation, not a standing claim (2026-08-12, string
+extraction of the installed 2.1.227 binary): `attach-session` occurs **exactly twice
+in the entire binary, BOTH inside the unrelated `--worktree --tmux` feature**,
+against a passing control of **25** `new-session` occurrences. The same launch can
+additionally raise a consent dialog a non-technical client never asked for and
+cannot interpret — binary-verbatim, *"Opens teammates in a separate tmux session"*,
+with a Cancel/skip option.
+
+The witnessed outcome is the whole point: two live tmux sessions on the authoring
+box ran teammates for **over an hour at `session_attached=0`**. The teammates worked
+the entire time. Nobody could see them. A command that yields an invisible team and
+an unexplained dialog is a support call, not a launch.
+
+So split-pane display is now promised **only where the session will run INSIDE AN
+ATTACHED tmux session, or in iTerm2 with `it2` PROVEN present**. "Inside tmux" alone
+was an incomplete statement of the gate, because the iTerm2 + `it2` path puts native
+panes in the current window with no tmux involved at all. Where that launch context
+cannot be GUARANTEED, the key is **OMITTED** and the client is handed the plain
+launcher command **even where tmux exists**. The presence of a program is not the
+presence of a context, and an unguaranteed context is a "no" here.
+
+Two consequences follow, and neither is a downgrade:
+
+- **The parenthetical that told the client to start `tmux` first is REMOVED.**
+  Instructing the client to type `tmux` is a terminal chore, which THE HANDOVER RULE
+  forbids outright — the client's entire share of that section is ONE plain sentence
+  and ONE copy-paste command. A context the client would have to create with their
+  own hands is, by definition, not guaranteed; that case is the plain-launcher
+  branch, printed without comment. What is removed is the INSTRUCTION TO THE CLIENT,
+  not the operator's reasoning, which is retained and expanded.
+- **A no-pane box is still a DEGRADED-DISPLAY box, never a BLOCKED box.** That
+  verdict from v1.8.0 is untouched. What changed is which boxes reach it.
+
+### A client's own `teammateMode` is no longer destroyed by a validation that demanded absence
+
+The step 6 validation required `teammateMode` to be **ABSENT** wherever step 4's two
+conditions were unmet. On a client box where the client had hand-set `"iterm2"` or
+`"auto"` themselves — before this skill ever touched the file — that check failed
+against a value **the skill never wrote**, and fired the step-6 restore, **destroying
+the client's own configuration while reporting a successful safety action.** A
+validation that can only fail on someone else's correct work is not a validation; it
+is the bug.
+
+Validation now compares `teammateMode` against the **PRE-WRITE SNAPSHOT**, never
+against absence. The rule it enforces is *"this run wrote only what it intended to
+write"* — it is **NEVER** *"the file must not contain a value the client chose."* The
+check passes when the post-write value equals the pre-write value, or equals `"tmux"`
+where step 4's conditions were met and this run therefore wrote it. It fails only on
+a value this run put there without meeting those conditions.
+
+- A pre-existing client-set value of **any** documented kind is left exactly as
+  found — never overwritten, downgraded, normalised, or deleted — and its presence
+  is **never** a validation failure.
+- The skill still **NEVER WRITES** `auto` or `iterm2`, and still writes `"tmux"` only
+  under step 4's two conditions. It merely stops **destroying** the values it did not
+  write.
+- The snapshot is taken with the same JSON-aware reader BEFORE the merge, recording
+  `teammateMode` as either `<absent>` or its exact value. A snapshot that could not
+  be taken is a **BROKEN INSTRUMENT** — do not merge, do not validate against a
+  guess, and do not restore over a file you never successfully read. Report and
+  defer.
+- Every other check in that step stands exactly as written: the parse check, the
+  flag-equals-`"1"` check, the key-by-key leaf-preservation check, and the
+  restore-that-root's-backup-on-failure rule. The clause is ADDITIVE; it narrows
+  nothing except the one comparison that was destroying client state.
+
 ## [1.8.0] — 2026-08-12
 
 ### Agent Teams are gated PER CONFIG ROOT, and there are exactly two of them
