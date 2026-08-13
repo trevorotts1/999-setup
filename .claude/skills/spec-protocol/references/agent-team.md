@@ -459,6 +459,8 @@ headless invocation; verdict UNDETERMINED"* — never *"teams are off"*.
      (§5.5 step 2 enumerates the roots), and `{id8}` is the first 8 characters of the
      session id. **The file existing is the spawn.** A read error on the directory is
      an instrument failure (`ls` rc ≥ 2), never an absence.
+     **Dated amendment, 2026-08-12 — this PRIMARY is SUPERSEDED IN PLACE by §10; read
+     §10 before issuing any verdict from this step.**
    - **(b) The pane count — where split-pane display is in use.** Take an external
      `tmux list-panes` count BEFORE the spawn and AFTER it. **An increment is the
      evidence.** Counting is READ-ONLY: never attach, never kill, never send keys
@@ -603,6 +605,8 @@ Then:
   produced NO artifact under any enumerated root AND no pane-count movement did not
   happen; a read error on the directory (`ls` rc ≥ 2) is an instrument failure, never
   an absence.
+  **Dated amendment, 2026-08-12 — this confirmation is SUPERSEDED IN PLACE by §10;
+  read §10 before issuing any verdict from this step.**
 - **Record** each confirmed commander in `project_state.json` under
   `agents.commanders[]` — `{name, role, charter_source, spawned_at}`. This array is
   what §6's recovery re-spawns from.
@@ -974,6 +978,8 @@ The recovery is `resume.md` **step 8.5 — RE-HYDRATE THE COMMAND LAYER**:
    already exists. A commander `ListAgents` does not list, but whose inbox artifact is
    still on disk, is NOT dead on that omission. A read error on the directory
    (`ls` rc ≥ 2) is an instrument failure, never an empty census.
+   **Dated amendment, 2026-08-12 — this census is SUPERSEDED IN PLACE by §10; read §10
+   before declaring any commander DEAD.**
 2. **Re-run `AGENT-TEAM-PROBE`** (§3). Enablement can have changed since the crash. If
    the probe fails now, CONTINUE IN SINGLE-SESSION MODE, say so in the session log,
    and skip the re-spawn.
@@ -1214,3 +1220,28 @@ TEAM LEAD → COMMANDERS → TASK GRAPH → WORKFLOWS → SUBAGENTS → EVIDENCE
 actually land?" — and they are **never hand-edited, never deleted, and never cleaned
 up.** Modifying another session's live runtime state is forbidden by the safety
 envelope without exception.
+
+**Dated amendment, 2026-08-12 — this note is SUPERSEDED IN PLACE by §10; read §10
+before citing these paths in any verdict.**
+
+---
+
+## 10. THE TEAMMATE TRANSCRIPT — the primary liveness instrument (dated corrective, 2026-08-12)
+
+**This section supersedes the census PRIMARY named in §3 stage C step 2(a), §4's spawn confirmation, and §6 step 1 — by date, in place, without deleting a word of them.** The inbox artifact those passages name as PRIMARY is created **only by the split-pane backends**. In-process teammates never create it, and in-process has been the documented default display mode since v2.1.179. A doctrine that reads inbox absence as teammate absence therefore reads **every default-mode team as dead**. Proven on the authoring box, 2026-08-12: two real teams (`~/.claude/teams/session-1283dd9a`, `~/.claude-nine/teams/session-d97558f6`) held only `config.json`, `ls .../inboxes` returned "No such file or directory" — and an in-process teammate in a third team was demonstrably alive and answering the whole time.
+
+**The instrument.** Every teammate is a full Claude Code session writing its own transcript at `{active config root}/projects/{cwd-slug}/{uuid}.jsonl`, and every message line of that transcript carries `"teamName":"session-{id8}"` and `"agentName":"{name}"` — verified 2026-08-12 in BOTH display modes (split-pane teammate `scout`, team `session-01139a27`, `~/.claude`; in-process teammate `mo`, team `session-a1e73e8f`, `~/.claude-nine`; identical shape, first message line in each). **The transcript existing is the start. Its tail is what happened.** This instrument is display-mode-blind, which is exactly the property the inbox artifact lacks.
+
+**The procedure — reads only, never a grep.** The operator's rule stands: no grepping; a directory listing plus bounded reads of named files is the whole mechanism.
+
+1. **Resolve the active config root** — `$CLAUDE_CONFIG_DIR` if set, else `$HOME/.claude` (§5.5 step 2 enumerates the roots; the launcher decides which root a team lives in).
+2. **Read the roster** — `{root}/teams/session-{id8}/config.json`, with the Read tool, in full. Take `leadSessionId`, and for the teammate in question its `name`, `cwd`, and `joinedAt`. The roster is LIVE, not a history — members are removed on spawn-failure rollback and on leave, and **the whole team directory is deleted on disband** (proven 2026-08-12: a team directory cited hours earlier was gone while its transcripts persisted). A missing member or a missing team directory is therefore never, by itself, evidence about the past; step 8 covers both.
+3. **Compute the slug** — the teammate's `cwd` (falling back to the lead's `cwd`, which is the teammate default) with every character that is not a letter or digit replaced by `-`. The transcript directory is `{root}/projects/{slug}/`.
+4. **RUN THE CONTROL BEFORE ANY NEGATIVE.** Read the first 3 lines of `{root}/projects/{slug-of-lead-cwd}/{leadSessionId}.jsonl`. It must exist, be non-empty, and parse. **If this control fails, the instrument is broken** — wrong root, wrong slug, or permissions — and no verdict about any teammate may be issued until it passes. The discrimination control is a name never spawned: it must produce no match in step 6.
+5. **List the candidates** — `ls -t {root}/projects/{slug}/` (a listing is not a grep). Candidates are top-level `*.jsonl` files with mtime at or after the teammate's `joinedAt` (roster gone: the team's `createdAt`; that gone too: the spawn turn's timestamp from the lead transcript), excluding `{leadSessionId}.jsonl` and any uuid already claimed for another member.
+6. **Identify by reading, not matching** — for each candidate, Read the first 10 lines only. The first line bearing a `message` object also bears `teamName` and `agentName`. The teammate's transcript is the one where BOTH equal the team and the name in question. Found → **the teammate started**; record the uuid.
+7. **"What happened to it"** — Read the transcript's tail (Read with an offset near the end; whole file when small). The last assistant line carries the RESOLVED model actually used (`message.model` — the truth §9's model rows need, superior to any config stamp), the final output, and any failure text; SendMessage tool_results carry delivery receipts; the final timestamp is the moment of last life. Liveness NOW is corroborated — never established — by `isActive` in `config.json` and, in split-pane mode only, an observe-only `tmux list-panes -a` matched against `tmuxPaneId`.
+8. **The negative branch — closed only through the lead's transcript.** No candidate matched → do NOT conclude "never started." Read the lead transcript's spawn turn for that name: the Agent tool_use and its tool_result are recorded verbatim there (proven 2026-08-12, including `status`, `resolvedModel`, and reply or failure text), and they survive roster rollback and team-directory deletion. Three closures: **(a)** the tool_result carries an error — the spawn FAILED; record the failure text verbatim, it is the whole diagnosis. **(b)** the tool_result carries a hex `agentId` and the output landed under `{slug}/{leadSessionId}/subagents/agent-{hex}.jsonl` — the work ran as a **SUBAGENT, not a teammate**; the team never gained the member. This is the mechanical resolution of the docs' warning that the agent panel conflates the two: teammates write top-level `{uuid}.jsonl` with a `teamName` line, subagents write `agent-*.jsonl` under the lead's own uuid directory, and the namespaces never overlap. **(c)** no Agent call bearing that name exists — the spawn was never attempted. Only after this step may "this teammate never started" be issued, and the verdict names every source read: the roster, the slug directory listing, each candidate head, the control, and the lead transcript.
+9. **A spawn under a minute old is a race, not an absence** — the transcript file appears within seconds of spawn (observed: file mtimes equal to the spawn minute). Re-list once before entering step 8.
+
+**What the inbox artifact remains for.** `{root}/teams/session-{id8}/inboxes/{name}.json` is DEMOTED from census primary to a **split-pane-mode corroborator and message-delivery diagnostic** ("did the message land?" — §9's runtime-paths note, unchanged). It is never evidence of absence, in either display mode: in-process teammates never create it by design, and in split-pane mode it is consumed at delivery and cleared to `[]`, so absent-or-empty says nothing about whether a teammate lives. **No negative verdict may cite it.** Wherever §3 stage C step 2(a), §4, or §6 step 1 says the inbox artifact is PRIMARY, read this section's transcript instrument in its place; those passages' logic — census before verdict, `ListAgents` demoted, `ls` rc >= 2 is an instrument failure and never an absence — stands in full and binds this procedure identically.

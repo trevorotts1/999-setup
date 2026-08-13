@@ -159,7 +159,7 @@ launchers/                     platform-native claude-nine launchers
 .claude/skills/spec-protocol/
     SKILL.md                   the spec-protocol skill (build a finished app/site)
     references/                pipeline, interview, research, QC docs
-    tools/                     ledger.sh
+    tools/                     ledger, anchor, capacity, env-sweep, and update tools
     PROMPT-QC-INSTRUCTIONS.md  the ten QC categories
 templates/                     API docs.md template
 tests/                         smoke-test scaffolding
@@ -185,6 +185,10 @@ MIT — see `LICENSE`.
 ---
 
 ## Release notes
+
+The full release history — every version, including everything after v1.1.0 —
+lives in [`CHANGELOG.md`](CHANGELOG.md), which is the single owner of release
+notes for this repository. The v1.1.0 note below is kept as originally written.
 
 **v1.1.0 (2026-08-10)** — The fleet-fusion standard. DS Max is now DeepSeek v4 **Flash**
 + thinking MAX (was Pro) and routes to Opus; DS Light (Flash, thinking OFF) routes to

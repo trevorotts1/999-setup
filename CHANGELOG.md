@@ -1,5 +1,115 @@
 # Changelog
 
+## [1.8.3] — 2026-08-12
+
+### The inbox artifact is written by the SPLIT-PANE BACKENDS ONLY — so the census read every default-mode team as dead
+
+`references/agent-team.md` named `{root}/teams/session-{id8}/inboxes/{name}.json` as
+the PRIMARY liveness instrument in three places: §3 stage C step 2(a), §4's spawn
+confirmation, and §6 step 1's resume census. **The file existing is the spawn**, each
+of them said. That file is created **only by the split-pane backends**. An in-process
+teammate never writes one — not on spawn, not on delivery, not ever — and
+`in-process` has been the documented default display mode since **v2.1.179**,
+recorded in [1.8.2] and carried there as DOC-VERIFIED ONLY.
+
+Put those two facts together and the doctrine inverts. On any box running the
+default, the PRIMARY instrument is absent for **every teammate that ever lived**, and
+an agent following §6 step 1 to the letter declares a perfectly healthy team DEAD and
+re-spawns on top of it. Proven on the authoring box, 2026-08-12: two real teams held
+only `config.json`, and `ls .../inboxes` returned *"No such file or directory"* —
+while an in-process teammate in a third team was demonstrably alive and answering the
+whole time. This is the shape the NEGATIVE-RESULT CONTRACT exists to catch: a check
+that comes back negative for an entire CLASS is a class-specific TEST, never a
+class-specific FAULT.
+
+### The PRIMARY is now the teammate's OWN TRANSCRIPT, and it is display-mode-blind
+
+Every teammate is a full Claude Code session, and every full session writes a
+transcript at `{active config root}/projects/{cwd-slug}/{uuid}.jsonl`. Every message
+line of that transcript carries `teamName` and `agentName`. That is the instrument:
+**the transcript existing is the start, and its tail is what happened.**
+
+It was verified in **BOTH display modes and BOTH config roots** before it was written
+down — a split-pane teammate under `~/.claude` and an in-process teammate under
+`~/.claude-nine`, identical line shape in each. Display-mode blindness is precisely
+the property the inbox artifact lacks, and it is what lets this serve as a PRIMARY at
+all.
+
+- **The procedure is READS ONLY** — a directory listing plus bounded reads of named
+  files. **Never a grep.** The operator's rule is not decoration here: the passage
+  being replaced is the one that had agents pattern-matching their way to state
+  instead of reading it, and repeating that method inside the repair would reproduce
+  the defect it exists to remove.
+- The control runs **BEFORE any negative** — the lead's own transcript, read from a
+  known root and slug. **If the control fails, the instrument is broken** — wrong
+  root, wrong slug, permissions — and no verdict about any teammate may be issued
+  until it passes.
+- The last assistant line carries `message.model`, the **RESOLVED** model actually
+  used. That is a better answer than any config stamp, which records what was asked
+  for rather than what ran.
+
+### Team directories are DELETED on disband — which is why a roster-based instrument fails too
+
+The obvious repair — read `config.json` and trust its member list — was tried and
+rejected on evidence. A team directory cited by name hours earlier was **gone** when
+it was read back, while the transcripts of its teammates were still on disk and still
+complete. The roster is LIVE STATE, not history: members are removed on spawn-failure
+rollback and on leave, and the whole directory goes on disband.
+
+**Rosters vanish; transcripts persist.** A missing member — or a missing team
+directory entirely — is therefore never, by itself, evidence about what happened. The
+negative branch closes somewhere durable instead: the LEAD's transcript, where the
+spawn turn records the Agent call and its result verbatim, and which survives both
+the rollback and the deletion.
+
+### A named spawn can come back as a SUBAGENT, and the two namespaces never overlap
+
+Not every named spawn becomes a teammate. The same call can run as an ordinary
+subagent — the work runs, the reply arrives, and the team never gains the member. The
+shipped docs warn that the agent panel cannot distinguish the two. On disk they are
+not ambiguous at all:
+
+- A **teammate** writes a top-level `{uuid}.jsonl` in the project slug directory, and
+  its message lines carry `teamName` and `agentName`.
+- A **subagent** writes `{slug}/{lead-uuid}/subagents/agent-{hex}.jsonl` — under the
+  lead's OWN uuid directory, keyed by the hex `agentId` the tool_result returns.
+
+The namespaces never overlap, so the distinction the panel cannot draw is drawn
+**mechanically**, by which path the output landed under. That is now one of three
+named closures on the negative branch, beside a spawn that FAILED — where the
+tool_result's error text is the whole diagnosis — and a spawn never attempted, where
+no Agent call bearing that name exists at all.
+
+### `inboxes/` is DEMOTED, not deleted — and may never ground a negative
+
+The artifact keeps the job it is actually good at: **message-delivery diagnostic and
+split-pane corroborator** — *"did the message land?"* — and §9's runtime-paths note
+about it is unchanged. What it loses is standing to prove absence, in either display
+mode: in-process teammates never create it by design, and in split-pane mode it is
+consumed at delivery and cleared to `[]`, so absent-or-empty says nothing about
+whether a teammate lives. **No negative verdict may cite it.**
+
+Nothing was deleted to make room for any of this. The three superseded passages are
+**superseded IN PLACE, by date** — each now carries a dated amendment pointing at the
+new §10, and not a word of the original was removed. Their surrounding logic stands
+in full and binds the new procedure identically: census before verdict, `ListAgents`
+demoted to corroboration, and `ls` rc ≥ 2 an INSTRUMENT FAILURE rather than an
+absence.
+
+### What this supersedes in [1.8.1]
+
+[1.8.1] closed its `ListAgents` section by naming **the on-disk inbox artifact** as
+the PRIMARY that the spawn confirmation, the probe stage C wording, and the resume
+census should all cite — *"the artifact existing IS the spawn."* **That sentence is
+superseded by this release.** Demoting `ListAgents` was right and stands untouched;
+the replacement chosen for it was wrong for in-process teams, which are the default.
+The [1.8.1] entry above is left exactly as written and is NOT retro-edited — a
+changelog that quietly rewrites its own history stops being evidence of anything.
+
+The skill remains **31 files** — nothing was added or removed in this release, and
+the change is confined to `references/agent-team.md`, which GREW, plus `VERSION`,
+which reads **1.8.3**.
+
 ## [1.8.2] — 2026-08-12
 
 ### `teammateMode` has four documented values, and the skill still writes only one
@@ -113,6 +223,61 @@ a value this run put there without meeting those conditions.
   flag-equals-`"1"` check, the key-by-key leaf-preservation check, and the
   restore-that-root's-backup-on-failure rule. The clause is ADDITIVE; it narrows
   nothing except the one comparison that was destroying client state.
+
+## [1.8.1] — 2026-08-12
+
+### Presence is proved by RUNNING the program, never by resolving its name
+
+v1.8.0's P0 detected tmux with `command -v tmux`. That proves a NAME resolves on
+PATH — it never proves the program runs. A stale Homebrew shim, a broken symlink,
+or a wrong-architecture binary all resolve happily and then fail on first use,
+and v1.8.0 would hand such a host `teammateMode: "tmux"` — a display mode pointed
+at a binary that cannot start, which is exactly the dead end the release claimed
+to have removed.
+
+- **P0 now PROVES presence by INVOKING**: it runs `tmux -V` and reads the exit
+  code. P6 re-proves the same way after a `brew install`, so an install that
+  reports success but produces an unrunnable binary is still treated as absent.
+- The two failure shapes are **reported distinctly**, never collapsed into one
+  "not found": **rc 127** — the name resolved to nothing at all; **any other
+  non-zero rc** — the name resolved, and running it failed.
+- Absence remains a **DEGRADATION, never a blockage**: with no usable tmux the
+  key is not written at all and Claude Code's in-process display mode applies.
+  Agent Teams stay enabled either way.
+
+### The selftest grew from 8 cases to 9 — the 9th is the regression test
+
+The defect was invisible to a passing selftest because the fake tmux encoded the
+same mistake: a two-line no-op that merely resolved. It now ANSWERS `tmux -V`,
+because that is what the script actually asks. New case 9 pins the defect: a
+tmux NAME that resolves to a binary that cannot run must be treated as ABSENT —
+key omitted, degradation reported with the resolved-but-failed reason. It
+carries its own two-half control and refuses to render a verdict unless BOTH
+halves reproduce — the name must resolve AND running it must fail — so the case
+can never pass by failing to arm the trap it exists to spring. Case 7 keeps its
+own control requiring rc 127. 9/9 pass.
+
+### The Windows parenthetical is restored, with a single owner
+
+The note that on native Windows `teammateMode: "tmux"` is never written — the
+flag alone is set there and the display mode is left unclaimed — went missing
+from `references/agent-team.md` while the surrounding section was edited. It is
+back, and the two SendMessage rows now cite `references/platform.md` §5.2 as the
+SINGLE OWNER of the Windows peer-messaging gap rule instead of restating it, so
+the rule has one home and cannot drift again.
+
+### `ListAgents` is corroboration, never the census
+
+v1.8.0 demoted `ListAgents` from census authority but left three passages still
+treating it as the instrument of record. The spawn confirmation, the probe stage
+C wording, and the resume census now all name the PRIMARY instruments — the
+on-disk inbox artifact, plus a tmux list-panes count increment in split-pane
+mode. The artifact existing IS the spawn; `ListAgents` silence is never evidence
+of absence, and a read error on the inbox directory (`ls` rc >= 2) is an
+instrument failure, never an empty census.
+
+The skill remains **31 files** — nothing was added or removed in this release —
+and `VERSION` reads **1.8.1**.
 
 ## [1.8.0] — 2026-08-12
 
