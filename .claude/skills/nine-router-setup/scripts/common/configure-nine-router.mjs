@@ -498,9 +498,9 @@ async function main() {
   const fableLane = OVERRIDE_0731 ? overrideFlash : "fusion-chain";
 
   RESOLVED_ROUTES.fable = fableLane;  // the fusion combo
-  RESOLVED_ROUTES.opus = dsMaxFlash;  // Opus → DS Max (DeepSeek v4 FLASH, thinking MAX)
-  RESOLVED_ROUTES.sonnet = agFlash;  // Sonnet → Agnes 2.5 Flash (custom provider)
-  RESOLVED_ROUTES.haiku = dsLightFlash;  // Haiku → DS Light (DeepSeek v4 Flash, thinking OFF)
+  RESOLVED_ROUTES.opus = "opus-chain";  // Opus → opus-chain (primary: DS Max = DeepSeek v4 FLASH, thinking MAX; fallback: Agnes 2.5 Flash)
+  RESOLVED_ROUTES.sonnet = "sonnet-chain";  // Sonnet → sonnet-chain (primary: Agnes 2.5 Flash; fallback: DS Flash+max)
+  RESOLVED_ROUTES.haiku = "haiku-chain";  // Haiku → haiku-chain (primary: DS Light = DeepSeek v4 Flash, thinking OFF; fallback: Agnes 2.5 Flash)
   RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
   RESOLVED_ROUTES.vision = olKimi;  // keep
   RESOLVED_ROUTES.haikuFallback = agFlash;  // Haiku fallback lane (Agnes AI), carried through to routing state
@@ -538,9 +538,9 @@ async function main() {
     }
   };
 
-  await upsertCombo("blackceo-fable-fallback", [dsFlashMax, agFlash]);
-  await upsertCombo("blackceo-opus-fallback", [dsMaxFlash, agFlash]);
-  await upsertCombo("blackceo-haiku-fallback", [dsLightFlash, agFlash]);
+  await upsertCombo("sonnet-chain", [agFlash, dsFlashMax]);
+  await upsertCombo("opus-chain", [dsMaxFlash, agFlash]);
+  await upsertCombo("haiku-chain", [dsLightFlash, agFlash]);
   // The standard fleet fusion combo — panels: DS Max (Flash+max), GLM 5.2
   // (Ollama Cloud), NVIDIA-free (OpenRouter) — judge: DeepSeek v4 Pro max.
   // The NVIDIA panel member is only included when an OpenRouter key exists;
@@ -573,9 +573,9 @@ async function main() {
     comboStrategy: "fallback",
     comboStickyRoundRobinLimit: 1,
     comboStrategies: {
-      "blackceo-fable-fallback": { fallbackStrategy: "fallback" },
-      "blackceo-opus-fallback": { fallbackStrategy: "fallback" },
-      "blackceo-haiku-fallback": { fallbackStrategy: "fallback" },
+      "sonnet-chain": { fallbackStrategy: "fallback" },
+      "opus-chain": { fallbackStrategy: "fallback" },
+      "haiku-chain": { fallbackStrategy: "fallback" },
       "fusion-chain": {
         fallbackStrategy: "fusion",
         judgeModel: dsProMax,
@@ -727,7 +727,7 @@ async function main() {
     "PDF auto-switch disabled (not verified end-to-end).",
     "Audio auto-switch disabled (Gemma 4 31B has no audio input).",
     "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
-    "blackceo-haiku-fallback: ds-light/deepseek-v4-flash (thinking OFF) → agnes/agnes-2.5-flash.",
+    "haiku-chain: ds-light/deepseek-v4-flash (thinking OFF) → agnes/agnes-2.5-flash.",
   ];
   if (openrouterKey) {
     report.notes.push(

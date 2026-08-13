@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.11.0] — 2026-08-13
+
+### Three fallback combos carried the operator's own brand into every client's router database
+
+- **The operator's brand is off client boxes.** The installer created
+  `blackceo-fable-fallback`, `blackceo-opus-fallback`, and
+  `blackceo-haiku-fallback` — the operator's company name sitting in every
+  client's router database, on every fresh install. The three are renamed
+  for the lane each one feeds: `opus-chain`, `sonnet-chain`, `haiku-chain`,
+  joining the `fusion-chain` combo Fable already used.
+- **Three of the four lanes were bypassing their chains entirely.** Only
+  Fable routed to a combo; Opus, Sonnet, and Haiku pointed straight at raw
+  provider models while their three fallback combos were created and never
+  routed to. Every client got three unused combos sitting in the database
+  and three lanes with no failover — a provider hiccup took the lane down
+  cold instead of failing over to the next model in the chain. **Each lane
+  now routes to its own chain.**
+
+### No client's primary model changes
+
+- Each chain leads with the model that lane already resolved to; the
+  fallback follows behind it. `opus-chain` and `haiku-chain` keep the same
+  `[primary, fallback]` order they were created with. `sonnet-chain` —
+  renamed from the combo that used to lead with DeepSeek Flash+max — is
+  reordered so Agnes 2.5 Flash stays first, because the combo it was
+  renamed from led with a different model than Sonnet had always resolved
+  to.
+- This is what the operator's own box has always run; the installer now
+  builds it for every client too.
+
+One file changed: `.claude/skills/nine-router-setup/scripts/common/configure-nine-router.mjs`.
+Nothing else in the repository was touched.
+
 ## [1.10.1] — 2026-08-13
 
 ### The Fable lane pointed at a fusion combo the router had never created
