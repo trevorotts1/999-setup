@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.10.0] — 2026-08-13
+
+### The question count is now two numbers, because the count is genuinely dynamic
+
+The client now hears a ceiling and an expectation in the same breath:
+**"I will ask you at most 29 short questions — most people end up nearer 16,
+because they let me choose the routine settings when I offer to."** The
+ceiling remains the unbreakable promise; the second number is what the run
+actually lands on when the standing offers are accepted. **A number that is
+honest and discouraging is still the wrong number to say** — a simple build
+was being told "at most 32" and then asked eight. The interview no longer
+makes an honest person choose between a ceiling that scares them off and an
+expectation that undersells what the ceiling is protecting against; it says
+both.
+
+### The ceiling is now computed after mandatory pre-statement reads
+
+Disk only, seconds, never a network call. The earlier arithmetic said to use
+a measured service count "when the read has already been taken" — but the
+environment sweep runs at flow step 9, AFTER the interview, so that read had
+never been taken and the ceiling always priced three paid services whether or
+not the client had any. It now reads provider key NAMES, the saved-answers
+profile, and the machine fingerprint **before** speaking, and a failed read
+prices at maximum rather than blocking the statement on a retry.
+
+### A static/dynamic inventory names the four classes a counted question can belong to
+
+| Class | Meaning | How the ceiling and the expectation treat it |
+|---|---|---|
+| STATIC | Exists because the run exists | Full price in both numbers |
+| RESOLVED-DYNAMIC | Its trigger is already on disk | Measured value in both numbers |
+| CHOICE-DYNAMIC | Removed by the person's own yes | Maximum in the ceiling; replaced by the offer that removes it in the expectation |
+| CONDITION-DYNAMIC | Turns on a fact learned mid-run | Maximum in the ceiling; kept in the expectation |
+
+The ceiling prices every CHOICE-DYNAMIC and CONDITION-DYNAMIC question at its
+maximum, because neither has resolved at statement time. The expectation
+prices the same CONDITION-DYNAMIC questions in — a fact still not known — but
+replaces every CHOICE-DYNAMIC question with the offer or confirmation that
+removes it, because that is the path most people take.
+
+### The good-news line is now required, not optional
+
+At every fast-path yes, and at any single lowering of three or more, the
+smaller ceiling is spoken in the same breath as the offer — never held back
+for the end of the run. A person deciding whether to keep going is owed the
+smaller number the moment it exists.
+
+### The artwork rise is announced at its MEASURED size
+
+Not a blanket "up to three." The rise is three when both artwork keys are
+present at the moment it fires — the provider-choice question will be needed
+— and two otherwise, spoken before the next question in the same correction
+voice this skill has used since [1.9.1].
+
+The skill remains **32 files** — nothing added and **nothing removed** —
+`tools/ledger.sh` is byte-identical, and `VERSION` reads **1.10.0**. Four
+files changed: `VERSION`; `references/interview.md`, which owns the ceiling
+arithmetic, the new pre-statement reads, and the static/dynamic inventory;
+`references/audience.md`, which now cites the two-number up-front statement
+alongside the single-number form; and `references/openclaw-ingest.md`, whose
+ingestion result is now named as one of the mandatory pre-statement reads.
+
 ## [1.9.2] — 2026-08-13
 
 ### "A few plain questions" was a number, and it was the wrong one

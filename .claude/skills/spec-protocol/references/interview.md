@@ -12,17 +12,27 @@ questions, and they are hard to unpick later because they look like decisions.
 
 One question at a time. Plain, warm, jargon-free (see `audience.md`).
 
-**State the expected question count up front, plainly — and the number you say
-IS the counter's ceiling C** (the per-question counter section): compute C
-first, then say it — "I will ask you at most <C> short questions — usually
-fewer — one at a time, and then you can walk away." Fast paths taken, the
-saved-profile recall (`capacity.md` §13.4), the OpenClaw shrink
-(`references/openclaw-ingest.md` §5), fewer paid services than the scripted
-maximum, and an archetype that skips questions all mean one thing: the person
-finishes UNDER the ceiling. Say the good-news line when the drop is worth
-saying; finishing early needs no announcement at all. Never state a ceiling
-you will then exceed — the only sanctioned rise is artwork's, spoken before
-the next question, plus the counter's failsafe.
+**State the expected question count up front, plainly — and the larger number
+you say IS the counter's ceiling C** (the per-question counter section): run
+the pre-statement reads, compute C and the shortcut landing T (the arithmetic
+section below owns all three), then say them —
+
+> I will ask you at most <C> short questions — most people end up nearer <T>,
+> because they let me choose the routine settings when I offer to — one at a
+> time, and then you can walk away.
+
+When C and T are within two of each other (always true on regular Claude
+Code), say the single-number form instead: "I will ask you at most <C> short
+questions — usually fewer — one at a time, and then you can walk away." Fast
+paths taken, the saved-profile recall (`capacity.md` §13.4), the OpenClaw
+shrink (`references/openclaw-ingest.md` §5), fewer paid services than the
+scripted maximum, and an archetype that skips questions all mean one thing:
+the person finishes UNDER the ceiling. The good-news line is REQUIRED at
+every fast-path yes and at any single lowering of three or more (the
+per-question counter owns the rule); a drop of one or two may be absorbed by
+finishing early. Never state a ceiling you will then exceed — the only
+sanctioned rise is artwork's, spoken at its measured size before the next
+question, plus the counter's failsafe.
 
 **The small-plan collapse needs no raise machinery: both confirmations are
 already priced into the ceiling.** When a tiny plan triggers the collapse,
@@ -31,31 +41,77 @@ question; a yes replaces the block's remaining questions and the run lands
 further under C — say the good-news line. A no simply asks the block in full,
 still under C, because the ceiling assumed it.
 
-**The ceiling arithmetic, per target.** C = archetype (1) + the target's Step
-1d branch + [Claude-Nine only: the A-block ceiling of 11 — A2 (1) + the
-per-service plan questions at their scripted maximum (3; use the measured
-count instead when the provider-key reading has already been taken, which can
-only lower it) + A3–A8 (6) + the defaults-offer question (1) — plus 1 more
-only when A1 must be asked because auto-detect was inconclusive] + B1/B2/B4
-(3) + C0–C6 (7 — C6 is priced in whether or not the run turns out unattended)
-+ both small-plan collapse confirmations (2 — priced in whether or not a tiny
-plan triggers them) + D1–D4 (4). Artwork adds up to 3 ONLY via the announced
-rise. Whatever does not occur simply lands the run under C:
+**The pre-statement reads (mandatory, disk only, seconds).** Before the count
+statement fires, take every free measurement whose answer is already on this
+machine — never ask the person to wait on a network call, a research pass, or
+the step-9 sweep for it:
 
-| Target | Step 1d branch | Ceiling C (Claude-Nine, attended or not) | + artwork rise |
-|---|---|---|---|
-| Mobile app | 4 (Q1 confirm + delivery road + Q2 + Q3) | 32 | up to 35 |
-| Web app | 3 (Q1 confirm + Q2 + Q3) | 31 | up to 34 |
-| Mobile AND web | 4 (Q1 confirm + shape + Q2 + Q3) | 32 | up to 35 |
-| Desktop / CLI software | 3 (Q1 desktop-vs-CLI + Q2 + Q3) | 31 | up to 34 |
-| Website | 4 | 32 | up to 35 |
-| Sales funnel | 5 | 33 | up to 36 |
+1. the harness auto-detect result (already taken at the entry — it decides
+   whether A1 is priced at all);
+2. the provider-key and router-config read, NAMES ONLY (`capacity.md` §11 —
+   the same read A2's "measure first" step re-takes at use time, per the
+   decision-time rule): it turns the per-service plan questions from the
+   scripted maximum of three into the measured count;
+3. the saved-answers profile read plus the machine fingerprint (`capacity.md`
+   §13.3–§13.4): a matching profile prices the plan questions AND A7 as the
+   single recall-and-confirm question instead;
+4. the OpenClaw ingestion result (`references/openclaw-ingest.md` §5 —
+   already read at step 3; its shrink lands mostly in the brainstorm and in
+   finishing early, and moves C only where a row of its map removes a counted
+   question outright).
+
+A read may only ever LOWER the number below the table's worst case, never
+raise it, and a read that fails is treated as not taken: price that component
+at its scripted maximum and move on. Everything genuinely unknown at
+statement time stays priced at its maximum — that is what keeps C a wall.
+
+**The ceiling arithmetic, per target.** C = archetype (1) + the target's Step
+1d branch + [Claude-Nine only: A2 (1) + the per-service plan questions at the
+measured count from the pre-statement read (scripted maximum 3 when the read
+failed; 1 when a matching profile prices them as the recall question, which
+then also removes A7's 1) + A3–A8 (6) + the defaults-offer question (1) —
+plus 1 more only when A1 must be asked because auto-detect was inconclusive]
++ B1/B2/B4 (3) + C0–C6 (7 — C6 is priced in whether or not the run turns out
+unattended) + both small-plan collapse confirmations (2 — priced in whether
+or not a tiny plan triggers them) + D1–D4 (4). Artwork adds ONLY via the
+announced rise, at its measured size. Whatever does not occur simply lands
+the run under C.
+
+**The shortcut landing T** is the second number the up-front statement
+speaks: the count the run lands on when the person says yes to every standing
+offer. It is built by CONSTRUCTION, never by subtraction from C, so a changed
+component cannot silently break it: T = archetype (1) + the branch + A2 (1) +
+the same measured plan-question count C used (or the recall 1) + the
+defaults-offer question (1) + A3 and A6 (2 — the offer's yes records A4, A5,
+A7, and A8 as defaults, and only those) + both collapse confirmations (2) +
+C6 (1) + D1–D4 (4) — plus A1's 1 whenever it is priced in C. T never
+subtracts a condition-dynamic question (C6 stays in), so T errs high, never
+low. T is an EXPECTATION and C alone is the promise: the numbering every
+question carries ("Question <N> of no more than <C>") runs against C only,
+and T never appears in it. On regular Claude Code there are no offers and no
+collapses, so T = C and the single-number sentence is spoken.
+
+The table below is the WORST CASE — the value when every pre-statement read
+resolves at its maximum (three paid services, no saved profile, A1 measured).
+The C actually spoken is computed per run from the reads and is AT MOST the
+table's figure; the table's only job is to be the number no run can ever
+cross:
+
+| Target | Step 1d branch | Worst-case ceiling C (Claude-Nine, attended or not) | Worst-case shortcut landing T | + artwork rise |
+|---|---|---|---|---|
+| Mobile app | 4 (Q1 confirm + delivery road + Q2 + Q3) | 32 | 19 | up to 35 |
+| Web app | 3 (Q1 confirm + Q2 + Q3) | 31 | 18 | up to 34 |
+| Mobile AND web | 4 (Q1 confirm + shape + Q2 + Q3) | 32 | 19 | up to 35 |
+| Desktop / CLI software | 3 (Q1 desktop-vs-CLI + Q2 + Q3) | 31 | 18 | up to 34 |
+| Website | 4 | 32 | 19 | up to 35 |
+| Sales funnel | 5 | 33 | 20 | up to 36 |
 
 **On regular Claude Code, blocks A, B, and C do not run and no defaults offer
 is made:** C = 1 + the branch + 4 (Block D), plus artwork's announced rise —
-the same table with 23 subtracted. A typical run finishes well under its
-ceiling; that is the design, not an error. The ceiling's only job is to be a
-wall the count can never cross.
+the same table with 23 subtracted — and T = C, so the single-number form is
+spoken. A typical run finishes well under its ceiling; that is the design,
+not an error. The ceiling's only job is to be a wall the count can never
+cross.
 
 **Two fast paths keep the interview honest for a small plan** (details below,
 Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
@@ -80,10 +136,15 @@ promises deliver that, and only the second one is arithmetic:
    > **Question <N> of no more than <C> —** <the question, exactly as written
    > elsewhere in this file>
 
-2. **C is a CEILING, computed on the maximum reachable path — so the run can
-   only ever finish UNDER it, never over.** The up-front statement says it the
-   same way: "I will ask you at most <C> short questions — usually fewer — one
-   at a time, and then you can walk away."
+2. **C is a CEILING, computed on the maximum reachable path AFTER the
+   mandatory pre-statement reads — so the run can only ever finish UNDER it,
+   never over.** The up-front statement speaks C together with the shortcut
+   landing T, in the two-number form the arithmetic section owns — and in the
+   single-number form ("at most <C> — usually fewer") whenever C − T ≤ 2.
+   T is an expectation, never a promise: passing T breaks nothing, but the
+   moment it is KNOWN the run will land near C rather than T (the defaults
+   offer or a collapse was declined), say so in one plain sentence with the
+   remaining count — the declined offer's own wording already carries it.
 
 **What is counted.** Everything from the archetype (Step 1b) through Block D,
 inclusive: the archetype, the Step 1d target questions, the Media and Creative
@@ -94,32 +155,53 @@ THE OPENING SCRIPT, the Build Target question and the entry-mode question
 brainstorm is a conversation, not a questionnaire, and its open probes are
 the only uncounted exchange.
 
-**The ceiling C** is computed before the first counted question, from what is
-already known — the harness, the target, and any measurement already taken —
-with every conditional question priced at its MAXIMUM: the defaults-offer
-question, the per-service plan questions at their scripted maximum of three
-(or at the measured service count, when the provider-key reading has already
-been taken — a measurement may only ever LOWER the ceiling), both small-plan
-collapse confirmations, C6, and A1 (only when auto-detect was inconclusive,
-which is known at statement time). Artwork is the ONE priced-at-zero
-exception: the ceiling rises by up to three the moment the plan calls for
-pictures, and the rise is spoken BEFORE the next question, in the correction
-voice: "That is a few more than I said — the extra ones only apply because
-your plan needs artwork."
+**The ceiling C and the shortcut landing T** are computed before the first
+counted question, after the mandatory pre-statement reads — the arithmetic
+section above owns the reads, both derivations, and the worst-case table.
+Every conditional question whose trigger is still unknown at statement time
+is priced at its MAXIMUM; every trigger a read has already settled is priced
+at its measured value. Artwork is the ONE priced-at-zero exception: the
+ceiling rises the moment the plan calls for pictures, BY ITS MEASURED SIZE —
+three when both artwork keys are present at that moment (the provider-choice
+question will be needed), two otherwise — and the rise is spoken BEFORE the
+next question, in the correction voice: "That is a few more than I said — the
+extra ones only apply because your plan needs artwork." If the artwork path
+later needs a question the measured rise did not cover, the failsafe below
+already governs: the corrected ceiling is spoken before the question is
+asked.
 
 **The three rules:**
 
 - **N never resets, never repeats, never decreases.**
-- **C may be LOWERED at any time** — announced with the good-news line ("Good
-  news — it will be at most <C'> now, because <the reason: you took my
-  defaults / this is a small plan / I remembered your answers / your OpenClaw
-  notes already answered some>") or simply absorbed by finishing early. A
-  ceiling that comes in under has kept its promise; lowering needs no
-  machinery.
+- **C may be LOWERED at any time, and the big drops are ANNOUNCED, never
+  swallowed.** The good-news line ("Good news — it will be at most <C'> now,
+  because <the reason: you took my defaults / this is a small plan / I
+  remembered your answers / your OpenClaw notes already answered some>") is
+  REQUIRED at every fast-path yes (the defaults offer, each small-plan
+  collapse confirmation) and at any single lowering of three or more — a
+  person deciding whether to keep going is owed the smaller number the moment
+  it exists, not at the end. A lowering of one or two may still be absorbed
+  by finishing early. A ceiling that comes in under has kept its promise
+  either way.
 - **C may be RAISED only for the artwork case above — and, as a failsafe, if
   the run ever finds a question the ceiling missed, it states the corrected
   ceiling before asking it.** A question asked past a stated ceiling with no
   correction spoken first is a defect.
+
+**The static/dynamic inventory (the operator's distinction, 2026-08-13 —
+which questions exist because the run exists, and which exist because of what
+THIS person is building).** Every counted question carries exactly one class,
+and the two spoken numbers are built from the classes: C = STATIC +
+RESOLVED-DYNAMIC at measured value + CHOICE-DYNAMIC and CONDITION-DYNAMIC at
+maximum; T = the same, with every CHOICE-DYNAMIC question replaced by the
+offer or confirmation that removes it.
+
+| Class | Meaning | The questions | How C and T treat it |
+|---|---|---|---|
+| STATIC | Asked on every run of a given harness; nothing can remove it | The archetype; A2; the defaults-offer question; A3; A6; D1–D4 (both harnesses — never collapse) | Full price in C and in T |
+| RESOLVED-DYNAMIC | Dynamic, but its trigger is already on disk at statement time — the pre-statement reads settle it | A1 (auto-detect); the per-service plan questions (key/router read → the measured count, or the recall 1 on a matching profile, which also settles A7); the Step 1d branch (the target, asked at the entry) | Measured value in C and in T |
+| CHOICE-DYNAMIC | Removed only by the person's own mid-run yes | A4, A5, A7, A8 (the defaults offer); B1, B2, B4 (the B collapse); C0–C5 (the C collapse) | Maximum in C; removed from T, whose confirmations stay |
+| CONDITION-DYNAMIC | Turns on a fact about the build learned mid-run | C6 (only when C0 says unattended); both collapse confirmations (only when the plan looks tiny); the artwork block (only when the plan calls for pictures) | Maximum in C — artwork excepted, priced at zero and added by the announced MEASURED rise; kept in T |
 
 `audience.md` cites this section; this file remains the ONLY owner of every
 count claim in this skill: no other file states, restates, or invents a
@@ -1012,11 +1094,14 @@ for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahe
 > defaults?
 
 A yes records A4, A5, and A8 as their defaults (each marked "default, not their
-answer" — Law 44's reserve rule says the same for A7) and moves on. A yes means
-finishing further under the ceiling — say the good-news line if you lower it
-out loud. A no changes nothing: this offer question was already priced into
-the ceiling. A no means ask them, one at a time, as written. The offer
-is a genuine choice — never steer, never default them silently (Law 40).
+answer" — Law 44's reserve rule says the same for A7) and moves on. A yes is a
+fast-path yes, so the good-news line is REQUIRED: state the new, lower ceiling
+in the same breath (the per-question counter above owns the rule). A no
+changes nothing arithmetically — this offer question was already priced into
+the ceiling — but it is the moment the run stops tracking toward T and starts
+tracking toward C, so say that too, plainly, using the remaining count the
+offer itself just spoke. A no means ask them, one at a time, as written. The
+offer is a genuine choice — never steer, never default them silently (Law 40).
 
 **Fast path 2 — the small-plan collapse (after block A).** When the block-A answers
 reveal a TINY plan — the smallest paid tier, effort not turned up, one or two
@@ -1034,10 +1119,12 @@ C0→C5 collapse to: runs once while you
 watch (unless they said otherwise), the live ledger holds state, merges happen on
 their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
 live at its URL. A yes records the whole block as defaults (each marked
-"default — confirmed yes/no" rather than "their answer"). A no re-opens the block
-question by question. The collapse is the reason a tiny plan lands well under
-its ceiling — say the good-news line if you lower C out loud; finishing early
-needs no announcement at all.
+"default — confirmed yes/no" rather than "their answer"). A no re-opens the
+block question by question. The collapse is the reason a tiny plan lands well
+under its ceiling — and each collapse yes is a fast-path yes, so the
+good-news line is REQUIRED: state the new, lower ceiling the moment the block
+collapses (the per-question counter above owns the rule). Only drops of one
+or two may be absorbed by finishing early.
 
 ---
 
