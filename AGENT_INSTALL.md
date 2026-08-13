@@ -85,7 +85,21 @@ set it.
 
 - If a previous `nine-router-setup` or `spec-protocol` skill already exists at the
   target, **back it up** first (move it aside with a timestamp suffix) before copying
-  the new one.
+  the new one. **Move it OUTSIDE the config root** — not into another folder under
+  `skills/`, and not into `<Claude config root>/backups/` either. Observed directly on
+  a real machine: a full skill tree (`SKILL.md` and all) left anywhere beneath a config
+  root is picked up by the harness and registers as a **second, phantom skill** named
+  after the backup directory. That pollutes every future session with a duplicate entry
+  and invites an agent to load the stale copy by mistake. `spec-protocol`'s own
+  `tools/self-update.sh` defaults its backups to `$HOME/.spec-protocol-backups` for
+  exactly this reason. Use a home-level directory outside every config root:
+
+  ```text
+  macOS:    $HOME/.claude-skill-backups/<skill-name>.<timestamp>
+  Windows:  %USERPROFILE%\.claude-skill-backups\<skill-name>.<timestamp>
+  ```
+
+  Keep the timestamp suffix — it is what makes a repeat run non-destructive.
 - Copy each whole skill directory, including `references/`, `scripts/`, `tools/`, and
   `PROMPT-QC-INSTRUCTIONS.md`.
 

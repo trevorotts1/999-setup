@@ -87,7 +87,7 @@ always carries the test that would settle it (§8 lists them together).
 | **Home / config root** | `$HOME`, `~/.claude` — **AVAILABLE** | `$env:USERPROFILE`, `%USERPROFILE%\.claude` — **AVAILABLE** | Separator differs (`/` vs `\`). **Never hardcode `/Users/…`** or a drive letter. Resolve the config root from `CLAUDE_CONFIG_DIR` when set, else the platform default. |
 | **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box **AND** the session's LAUNCH CONTEXT is an attached tmux session or iTerm2 with `it2` — **presence is NECESSARY, never SUFFICIENT; the gate is launch context, not box inventory (§5.1)**; absent, or the launch context not guaranteed → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
 | **Agent Teams (in-process)** | **AVAILABLE — but probe first**; enablement is per-box, not per-OS | **UNDETERMINED** — the docs state no OS restriction for in-process teams, and nothing affirms native Windows either | The AGENT-TEAM-PROBE (`references/agent-team.md` §3) is the decider, per box, on BOTH platforms. Probe, never assume — same rule either way. |
-| **Cross-session messaging** (`ListAgents` / `SendMessage` between independent sessions) | **AVAILABLE** (v2.1.224+; documented macOS + Linux/WSL2) | **NOT AVAILABLE on native Windows (documented)** | A real Windows gap. A Windows run must **SURFACE** it whenever any design leans on peer messaging — never silently degrade. Without peer messaging there is no peer challenge: the disagreement protocol routes through the lead alone and single-session mode is the honest fallback (`references/agent-team.md`). |
+| **Cross-session messaging** (`ListAgents` / `SendMessage` between independent sessions) | **AVAILABLE** (v2.1.224+; documented macOS + Linux/WSL2) | **NOT AVAILABLE on native Windows (documented)** | A real Windows gap. A Windows run must **SURFACE** it whenever any design leans on peer messaging — never silently degrade. Without peer messaging there is no peer challenge: the disagreement protocol routes through the lead alone and single-session mode is the honest fallback (`references/agent-team.md`). **This cell is a TRANSPORT verdict only — it says whether the platform PROVIDES the mechanism, never who is alive.** Where the mechanism IS available, `ListAgents` is CORROBORATION and never the deciding census: its silence is not evidence of absence, and a commander or teammate it fails to list is not thereby dead or unspawned (`references/agent-team.md` §10 owns the liveness procedure). |
 | **Package manager** | Homebrew IF already present — **never install Homebrew as a side effect** (`999-setup` `CLAUDE.md` rule 11: Homebrew is not a macOS prerequisite) | winget / choco IF already present | An install step names the platform's manager, or reports **BLOCKED** with the exact manual step. Never bootstrap a package manager to satisfy a convenience. |
 | **Executable bit / POSIX file modes** (`chmod 700` on a dir, mode-600 state files) | **AVAILABLE** | **NOT AVAILABLE** — no POSIX modes; DPAPI / NTFS ACLs instead | A `chmod` step on Windows is a **PLATFORM-SKIP with the ACL equivalent named** (§4). `999-setup` already splits this correctly at the secret-storage layer: Keychain on macOS, DPAPI on Windows. |
 | **Line endings** | LF | **CRLF hazards** under Git Bash and any editor that rewrites on save | Scripts and state files this skill writes use **LF explicitly** on every platform. Do not assume repo-side normalization exists — see the §8 note; if a repo governs endings via `.gitattributes`, verify that file is actually present before relying on it. |
@@ -307,6 +307,12 @@ independent-session discovery — must say plainly that the platform does not
 provide it, write the PLATFORM-SKIP line, and fall back to single-session
 mode. Degrading quietly is the one thing forbidden.
 
+**Scope, stated so this rule is never stretched into a liveness rule:** §5.2
+owns the OS AVAILABILITY verdict for the transport, and nothing else. On no
+platform is the existence of a teammate or a commander read off `ListAgents`
+output — that is a liveness question, its silence is never evidence of
+absence, and `references/agent-team.md` §10 owns it.
+
 ### 5.3 The platform is a ledger fact, not a background assumption
 
 The detected platform appears in the Capacity Ledger header (§1.2), is
@@ -383,10 +389,27 @@ re-observe, exactly as §7's preamble requires of every value above.
 They are recorded here because all three bear on §5.1: they are the evidence
 that a missing tmux pane is a display fact, not a run fact.
 
+**INSTRUMENT CORRECTION, 2026-08-12 — read this before the rows below.** These
+rows were recorded while the on-disk inbox artifact was still treated as the
+primary proof that a teammate exists. It is not. The **PRIMARY liveness
+instrument is the teammate's OWN SESSION TRANSCRIPT**;
+`references/agent-team.md` §10 is the SINGLE OWNER of that procedure and is
+cited here, never restated. Three consequences bind every row below:
+`{config root}/teams/session-{id8}/inboxes/{name}.json` is a
+**SPLIT-PANE-ONLY corroborator and delivery diagnostic** — in-process
+teammates never create it, and it may **NEVER ground a negative verdict**; the
+team DIRECTORY is **deleted on disband**, so a missing directory is not a
+missing teammate and a roster-based check fails the same way; and a named
+spawn may have run as an ordinary **subagent** rather than a teammate, in a
+transcript namespace that never overlaps the teammate one. **None of this
+weakens §5.1 — it sharpens the same reading:** the pane count answers
+DISPLAY, the transcript answers RUN, and they are different questions with
+different instruments.
+
 | # | Dated observation (2026-08-12, one box) | EXTERNAL instrument that produced it | Standing |
 |---|---|---|---|
-| A | **Headless `claude -p` did not engage Agent Teams at all.** Same feature flag, same settings, same binary: a named agent spawned, but there was **no team directory, no tmux session, and no teammate protocol**. Reading: teams presented as an INTERACTIVE-session feature on that box that day. | Absence of `{config root}/teams/session-{id8}/` on disk, plus `tmux list-sessions` — both run OUTSIDE the session under test | Dated observation. One box, one day, one invocation mode. Not a documented product limit. |
-| B | **Team formation under the routed launcher (`claude-nine`) was proven IN-PROCESS, with NO tmux pane.** The team formed and the teammate's on-disk inbox existed while no split pane had been created. Reading: tmux was not required for a team to form on that box that day. | `{config root}/teams/session-{id8}/inboxes/{name}.json` present on disk, and `tmux list-panes` pane count showing no added pane | Dated observation. Consistent with the documented in-process default (§5.1), but the DOCS are the authority for the general rule; this row is only one box's confirmation. |
+| A | **Headless `claude -p` did not engage Agent Teams at all.** Same feature flag, same settings, same binary: a named agent spawned, but there was **no team directory, no tmux session, and no teammate protocol**. Reading: teams presented as an INTERACTIVE-session feature on that box that day. | Absence of `{config root}/teams/session-{id8}/` on disk, plus `tmux list-sessions` — both run OUTSIDE the session under test | Dated observation. One box, one day, one invocation mode. Not a documented product limit. **CORRECTED 2026-08-12 (instrument correction above): the NEGATIVE half — 'did not engage Agent Teams at all' — is UNDETERMINED, not proven.** Directory absence cannot carry it (team directories are deleted on disband), and the named agent that spawned may have run as an ordinary subagent; only the teammate's own session transcript settles it (`references/agent-team.md` §10). The DISPLAY half — no tmux session on that box that day — stands unchanged, and §5.1 is unaffected. |
+| B | **Team formation under the routed launcher (`claude-nine`) was proven IN-PROCESS, with NO tmux pane.** The team formed and the teammate's on-disk inbox existed while no split pane had been created. Reading: tmux was not required for a team to form on that box that day. | `{config root}/teams/session-{id8}/inboxes/{name}.json` present on disk, and `tmux list-panes` pane count showing no added pane | Dated observation. Consistent with the documented in-process default (§5.1), but the DOCS are the authority for the general rule; this row is only one box's confirmation. **CORRECTED 2026-08-12: the inbox artifact in the middle column is DEMOTED to a split-pane-only corroborator** (instrument correction above) — in-process teammates never create it, so it can neither prove nor disprove an IN-PROCESS team on its own, and it may never ground a negative. What settles that reading is the teammate's own session transcript (`references/agent-team.md` §10). The DISPLAY finding — a team present with no added pane, read from the `tmux list-panes` count — is a SEPARATE instrument and stands. |
 | C | **Two live tmux sessions ran teammates for over an hour at `session_attached=0`.** The teammates worked the whole time; nobody could see them. Reading: an UNATTACHED tmux session is a running team with NO display — precisely the outcome a presence-only gate produces, which is why §5.1's fourth clause gates on LAUNCH CONTEXT rather than on the box owning a tmux binary. | `tmux list-sessions` read from OUTSIDE the sessions under test, reporting `session_attached=0` on both — observation only, nothing attached, signalled, or sent into them | Dated observation. One box, one day, two sessions. Not a property of macOS, of tmux, or of the harness, and not recallable as an input to a later run. |
 
 **Why the instrument column says EXTERNAL.** A session cannot self-report
@@ -396,6 +419,18 @@ count — the `tmux list-panes` pane count and the on-disk artifact
 `{config root}/teams/session-{id8}/inboxes/{name}.json`. This is the §4.3
 control discipline applied to teams: prove a negative the way you would prove
 a positive, on an instrument you can also see a positive with.
+
+**The external instrument that ranks FIRST is the teammate's OWN SESSION
+TRANSCRIPT on disk** — read from outside the session under test, exactly like
+the pane count, and the primary answer to whether a teammate ran at all
+(`references/agent-team.md` §10 owns that procedure; it is cited here, never
+restated). The two instruments named above keep their jobs and lose their
+rank: the `tmux list-panes` count is the DISPLAY instrument this section
+exists to serve, and the inbox artifact is a split-pane-only corroborator and
+delivery diagnostic that may never ground a negative verdict. A session's own
+account of itself stays inadmissible either way — **and so does the SILENCE of
+`ListAgents`, which is corroboration and never a census** (§2's
+cross-session-messaging row).
 
 ### 7.2 Launcher / config-root exhibit, same box, 2026-08-12
 
