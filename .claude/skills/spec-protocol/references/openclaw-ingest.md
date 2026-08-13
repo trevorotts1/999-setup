@@ -181,10 +181,14 @@ the record shows both what was believed and what replaced it.
 
 ## §5 — The question-shrink map
 
-Ingestion earns its place by removing questions, and the removals must be known
-**BEFORE the count statement fires** — they feed the denominator M of the
-per-question counter, which `references/interview.md` owns. This file supplies the
-inputs; it states no number.
+Ingestion earns its place by removing questions, and the removals must be
+known **BEFORE the count statement fires** — the ingestion result is one of
+the mandatory pre-statement reads feeding the ceiling C and the shortcut
+landing T of the per-question counter, which `references/interview.md` owns.
+Most rows below land in the brainstorm (uncounted) or turn an ask into a
+confirmation that still spends its number, so they shorten the CONVERSATION
+rather than the count; C moves only where a row removes a counted question
+outright. This file supplies the inputs; it states no number.
 
 | Normally asked | What answers it | What happens instead |
 |---|---|---|

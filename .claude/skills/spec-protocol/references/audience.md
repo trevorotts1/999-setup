@@ -22,11 +22,18 @@ of information is the same as no information — keep every message to ONE scree
 
 The capacity interview is the long one, but the user sees the questions one at a
 time, in plain language, with the consequence of each answer stated before they
-answer. State the count up front ("I will ask you at most <the number
-`interview.md` tells you to say> short questions — usually fewer — one at a time,
-and then you can walk away"). **`interview.md` owns every count claim in this
-skill** — take the number from there, never invent one on this page, and never
-state a number you will then exceed.
+answer. State the count up front, in the two-number form when `interview.md` computes
+two ("I will ask you at most <the larger number `interview.md` tells you to
+say> short questions — most people end up nearer <the smaller number it tells
+you to say>, because they let me choose the routine settings when I offer to —
+one at a time, and then you can walk away"), and in the single-number form
+when it computes one ("I will ask you at most <the number> short questions —
+usually fewer — one at a time, and then you can walk away").
+**`interview.md` owns every count claim in this skill** — take both numbers
+from there, never invent one on this page, and never state a ceiling you will
+then exceed. When the ceiling comes down mid-run, say so the moment it does —
+for a person deciding whether to keep going, the smaller number is the
+reassurance, and `interview.md` owns when saying it is required.
 Every counted question is spoken with its number against a ceiling — "Question <N> of no more than <C>" — per the per-question counter interview.md owns.
 Use the fast paths (the defaults
 offer, the small-plan collapse — block D never collapses) so a small plan is never
