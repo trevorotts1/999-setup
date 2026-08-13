@@ -495,7 +495,7 @@ async function main() {
 
   // Standard wiring (the operator's standard spec): Fable = the fusion combo,
   // Opus = DS Max (Flash+max), Sonnet = Agnes 2.5 Flash, Haiku = DS Light (off).
-  const fableLane = OVERRIDE_0731 ? overrideFlash : "fleet-fusion";
+  const fableLane = OVERRIDE_0731 ? overrideFlash : "fusion-chain";
 
   RESOLVED_ROUTES.fable = fableLane;  // the fusion combo
   RESOLVED_ROUTES.opus = dsMaxFlash;  // Opus → DS Max (DeepSeek v4 FLASH, thinking MAX)
@@ -508,12 +508,19 @@ async function main() {
 
   // 6. Combos.
   const combos = await client.listCombos();
+  // Every name passed to upsertCombo this run — collected as we go, never
+  // hardcoded, so the RESOLVED_ROUTES guard below cannot go stale when a combo
+  // is added or renamed. This is what the model-id assertions above never
+  // tracked, which is exactly how a lane pointing at a nonexistent combo name
+  // sailed past them.
+  const comboNames = [];
   const sameModels = (a, b) => {
     const aa = Array.isArray(a) ? a : [];
     const bb = Array.isArray(b) ? b : [];
     return aa.length === bb.length && aa.every((m, i) => m === bb[i]);
   };
   const upsertCombo = async (name, models) => {
+    comboNames.push(name);
     const existing = combos.find((c) => c.name === name);
     if (existing) {
       // Real repair-on-rerun: PUT the current model list when it differs
@@ -541,7 +548,25 @@ async function main() {
   const fusionModels = openrouterKey
     ? [dsMaxFlash, olGlm, nvidiaFree]
     : [dsMaxFlash, olGlm];
-  await upsertCombo("FusioN-smartest-agent", fusionModels);
+  await upsertCombo("fusion-chain", fusionModels);
+
+  // Assert each ROUTE resolves to something real (defense in depth, the combo-name
+  // twin of the model-id assertions above, which never checked this): every value
+  // in RESOLVED_ROUTES must either (a) contain a "/" — a raw provider model,
+  // already covered by the catalog assertions above — or (b) exactly match a name
+  // passed to upsertCombo in this run. A lane wired to a combo name that was
+  // never actually created (a typo'd or stale string one edit away from the
+  // combo's real name) produces a route that is perfectly valid JSON and
+  // perfectly unresolvable — the model assertions above would never catch it,
+  // because they only ever look at provider model ids, never combo names. This
+  // is that missing check.
+  for (const [lane, route] of Object.entries(RESOLVED_ROUTES)) {
+    if (typeof route === "string" && route.includes("/")) continue; // raw provider model — covered above
+    if (comboNames.includes(route)) continue; // matches a combo created this run
+    err(
+      `route "${lane}" resolves to "${route}", which is neither a provider model nor a combo created this run (combos created: ${comboNames.join(", ") || "none"})`
+    );
+  }
 
   // 7. Combo strategies + capacity adapter + security defaults via PATCH /api/settings.
   const patch = {
@@ -551,7 +576,7 @@ async function main() {
       "blackceo-fable-fallback": { fallbackStrategy: "fallback" },
       "blackceo-opus-fallback": { fallbackStrategy: "fallback" },
       "blackceo-haiku-fallback": { fallbackStrategy: "fallback" },
-      "FusioN-smartest-agent": {
+      "fusion-chain": {
         fallbackStrategy: "fusion",
         judgeModel: dsProMax,
         fusionTuning: { minPanel: 2, stragglerGraceMs: 8000, panelHardTimeoutMs: 90000 },

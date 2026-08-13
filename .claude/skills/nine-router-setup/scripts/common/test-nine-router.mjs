@@ -125,7 +125,7 @@ async function main() {
 
   // 5. Fusion combo — one-shot through the judge.
   if (!skipFusion) {
-    const fusion = await client.chat("blackceo-fusion", { maxTokens: 32, prompt: "ok" });
+    const fusion = await client.chat("fusion-chain", { maxTokens: 32, prompt: "ok" });
     check("Fusion combo (judge responds)", fusion.status === 200, `HTTP ${fusion.status}`);
   } else {
     console.log("SKIP  Fusion (SKIP_FUSION=1)");
