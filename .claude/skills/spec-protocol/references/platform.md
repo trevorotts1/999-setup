@@ -85,7 +85,7 @@ always carries the test that would settle it (§8 lists them together).
 | **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash REQUIRED**; native PowerShell **CANNOT** run them | On native Windows without Git Bash, every bash-tool verdict is **UNDETERMINED** and the run says so. It never pretends the checks ran, and it never converts a missing interpreter into a clean result. |
 | **Core count** (feeds width `min(16, cores−2)`) | `/usr/sbin/sysctl -n hw.ncpu` — **AVAILABLE**. The `/usr/bin/sysctl` path returns **rc=127**, a shell abort, never an answer. Alternate: `getconf _NPROCESSORS_ONLN` | PowerShell `[Environment]::ProcessorCount`; or `%NUMBER_OF_PROCESSORS%`; or `nproc` under Git Bash — **AVAILABLE** | The FORMULA is identical everywhere; only the instrument changes. Cores are measured, never inherited (`tools/capacity-resolver.sh` enforces this itself). |
 | **Home / config root** | `$HOME`, `~/.claude` — **AVAILABLE** | `$env:USERPROFILE`, `%USERPROFILE%\.claude` — **AVAILABLE** | Separator differs (`/` vs `\`). **Never hardcode `/Users/…`** or a drive letter. Resolve the config root from `CLAUDE_CONFIG_DIR` when set, else the platform default. |
-| **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box; absent → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
+| **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box **AND** the session's LAUNCH CONTEXT is an attached tmux session or iTerm2 with `it2` — **presence is NECESSARY, never SUFFICIENT; the gate is launch context, not box inventory (§5.1)**; absent, or the launch context not guaranteed → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
 | **Agent Teams (in-process)** | **AVAILABLE — but probe first**; enablement is per-box, not per-OS | **UNDETERMINED** — the docs state no OS restriction for in-process teams, and nothing affirms native Windows either | The AGENT-TEAM-PROBE (`references/agent-team.md` §3) is the decider, per box, on BOTH platforms. Probe, never assume — same rule either way. |
 | **Cross-session messaging** (`ListAgents` / `SendMessage` between independent sessions) | **AVAILABLE** (v2.1.224+; documented macOS + Linux/WSL2) | **NOT AVAILABLE on native Windows (documented)** | A real Windows gap. A Windows run must **SURFACE** it whenever any design leans on peer messaging — never silently degrade. Without peer messaging there is no peer challenge: the disagreement protocol routes through the lead alone and single-session mode is the honest fallback (`references/agent-team.md`). |
 | **Package manager** | Homebrew IF already present — **never install Homebrew as a side effect** (`999-setup` `CLAUDE.md` rule 11: Homebrew is not a macOS prerequisite) | winget / choco IF already present | An install step names the platform's manager, or reports **BLOCKED** with the exact manual step. Never bootstrap a package manager to satisfy a convenience. |
@@ -206,6 +206,27 @@ not presence of the program. Absent tmux and absent Homebrew, the step
 reports `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` and keeps validating
 everything else; it never installs Homebrew to get there.
 
+**The four documented `teammateMode` values** (sources: the harness's own
+settings reference and Agent Teams doc pages —
+`code.claude.com/docs/en/settings.md`, `code.claude.com/docs/en/agent-teams.md`):
+`in-process` — every teammate in the one terminal, "works in any terminal, no
+extra setup required"; `auto` — split panes ONLY if already inside tmux, or
+inside iTerm2 with `it2` on PATH, and **silently falls back to in-process
+otherwise**; `tmux` — split-pane mode, which doc-verbatim **"auto-detects
+whether to use tmux or iTerm2 based on your terminal"**, so the value this
+rule already writes serves iTerm2 users too and there is no second value to
+pick; `iterm2` — added v2.1.186, native iTerm2 panes in the CURRENT window
+via the `it2` CLI.
+
+**The documented default is `in-process` as of v2.1.179; it was `auto`
+before.** Sourcing caveat, stated because it is thin: the 2.1.179 changelog
+entry is **SILENT** on the flip — the two doc pages named above are the sole
+source for it. Why it matters here: this skill's own procedure floor is
+**2.1.178**, so a box sitting exactly at the floor still defaults to `auto`,
+not `in-process`. Blast radius, said just as plainly so this reads as a
+caveat and not an alarm: `auto` outside tmux/iTerm2 falls back to in-process
+anyway, so a plain-terminal client behaves identically under either default.
+
 #### The per-box half of the same rule — the half that is NOT about the OS
 
 The clause above is a per-OS ban. This clause binds **every** platform,
@@ -218,7 +239,7 @@ tmux actually gets:
 > terminal with no extra setup. **A no-tmux, no-Homebrew Mac is a
 > DEGRADED-DISPLAY box, never a BLOCKED box.**
 
-The three clauses fail differently, so read them separately:
+The four clauses fail differently, so read them separately:
 
 - **PROVEN present means RUN, not resolved.** `tmux -V` with the exit code
   read, per §3: `command -v` proves only that a NAME resolves. For the
@@ -238,6 +259,32 @@ The three clauses fail differently, so read them separately:
   blocks team formation, never blocks the build, and is never grounds to stop
   and ask the client to install anything. It costs split panes and nothing
   else.
+- **PRESENCE IS NECESSARY, NEVER SUFFICIENT — the gate is LAUNCH CONTEXT,
+  not box inventory.** Presence proven by RUNNING the binary (first clause
+  above) remains a **necessary precondition — it is never the decider.**
+  That condition is satisfied while the client sees NOTHING: on a Mac where
+  `tmux -V` returns 0 but the client launches from a plain Terminal, the
+  binary selects **external session mode** — a SEPARATE tmux session that is
+  **provably never auto-attached** — and it can raise a consent dialog on a
+  non-technical client's screen ("Opens teammates in a separate tmux
+  session", with a Cancel/skip option). So split-pane display is promised
+  **only where the session will run INSIDE AN ATTACHED tmux session, OR in
+  iTerm2 with `it2` PROVEN present.** ("Inside tmux" alone is an incomplete
+  statement of the gate: the iTerm2 + `it2` path puts native panes in the
+  current window with no tmux involved at all.) **Where the launch context
+  cannot be guaranteed, the key is OMITTED and in-process is the answer** —
+  and that box is still a DEGRADED-DISPLAY box, never a BLOCKED box, exactly
+  as the clause above states. **Dated observation, not a standing claim
+  (2026-08-12, worktree-scoped string extraction of the installed binary):**
+  the backend decision tree read *inside tmux → "tmux (running inside tmux
+  session)"*; *iTerm2 + `it2` → "iterm2 (native iTerm2 with it2 CLI)"*; *not
+  in tmux or iTerm2 but tmux installed → **"tmux (external session mode)"***;
+  *no backend → error, then in-process fallback*; *non-interactive `-p` →
+  in-process, panes never*. In that same extraction `attach-session` occurred
+  **exactly 2 times in the entire binary, BOTH inside the `--worktree
+  --tmux` feature**, against a control of `new-session` at 25 occurrences —
+  i.e. nothing auto-attaches the external session. Re-extract before relying
+  on it; a later build may decide differently.
 
 **Scope of the `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` report
 above:** that string names the tmux **installation** — an optional
@@ -333,13 +380,14 @@ box did on one day. None of them is a property of macOS, of the harness, or
 of any other machine, and none may be recalled as an input to a later run —
 re-observe, exactly as §7's preamble requires of every value above.
 
-They are recorded here because both bear on §5.1: they are the evidence that
-a missing tmux pane is a display fact, not a run fact.
+They are recorded here because all three bear on §5.1: they are the evidence
+that a missing tmux pane is a display fact, not a run fact.
 
 | # | Dated observation (2026-08-12, one box) | EXTERNAL instrument that produced it | Standing |
 |---|---|---|---|
 | A | **Headless `claude -p` did not engage Agent Teams at all.** Same feature flag, same settings, same binary: a named agent spawned, but there was **no team directory, no tmux session, and no teammate protocol**. Reading: teams presented as an INTERACTIVE-session feature on that box that day. | Absence of `{config root}/teams/session-{id8}/` on disk, plus `tmux list-sessions` — both run OUTSIDE the session under test | Dated observation. One box, one day, one invocation mode. Not a documented product limit. |
 | B | **Team formation under the routed launcher (`claude-nine`) was proven IN-PROCESS, with NO tmux pane.** The team formed and the teammate's on-disk inbox existed while no split pane had been created. Reading: tmux was not required for a team to form on that box that day. | `{config root}/teams/session-{id8}/inboxes/{name}.json` present on disk, and `tmux list-panes` pane count showing no added pane | Dated observation. Consistent with the documented in-process default (§5.1), but the DOCS are the authority for the general rule; this row is only one box's confirmation. |
+| C | **Two live tmux sessions ran teammates for over an hour at `session_attached=0`.** The teammates worked the whole time; nobody could see them. Reading: an UNATTACHED tmux session is a running team with NO display — precisely the outcome a presence-only gate produces, which is why §5.1's fourth clause gates on LAUNCH CONTEXT rather than on the box owning a tmux binary. | `tmux list-sessions` read from OUTSIDE the sessions under test, reporting `session_attached=0` on both — observation only, nothing attached, signalled, or sent into them | Dated observation. One box, one day, two sessions. Not a property of macOS, of tmux, or of the harness, and not recallable as an input to a later run. |
 
 **Why the instrument column says EXTERNAL.** A session cannot self-report
 whether Agent Teams is active, so neither observation above may be sourced
@@ -395,7 +443,7 @@ Consequences that follow from the `exec` line, and only from it:
 | `SKILL.md` flow step 2 | "Auto-detect platform, then harness" — §1 runs FIRST, and its result selects the vocabulary the harness detection then uses |
 | `SKILL.md` flow step 6.5 / `references/capacity.md` §4 | The `Platform:` ledger header line (§1.2); the core-count instrument (§2); the capability verdicts the ledger cites |
 | `references/capacity.md` | The decision-time re-measurement rule applies to detection — it is free, so it is re-taken, not carried |
-| `references/agent-team.md` §3, §5.5 | The tmux / `teammateMode` rule (§5.1) and the peer-messaging gap (§5.2), by citation — this file is the owner. §5.1 has TWO halves and both live here: the per-OS ban (never on Windows) and the per-box rule (any OS — write only where tmux/iTerm2+`it2` is PROVEN present; absent → key OMITTED, in-process, DEGRADED-DISPLAY not BLOCKED). Also the launcher/config-root exhibit (§7.2), including `claude-codex` sharing `~/.claude-nine` |
+| `references/agent-team.md` §3, §5.5 | The tmux / `teammateMode` rule (§5.1) and the peer-messaging gap (§5.2), by citation — this file is the owner. §5.1 has TWO halves and both live here: the per-OS ban (never on Windows) and the per-box rule (any OS — write only where tmux/iTerm2+`it2` is PROVEN present **AND the launch context is an attached tmux session or iTerm2 + `it2`; presence is NECESSARY, never SUFFICIENT**; absent or launch context not guaranteed → key OMITTED, in-process, DEGRADED-DISPLAY not BLOCKED). Also the launcher/config-root exhibit (§7.2), including `claude-codex` sharing `~/.claude-nine` |
 | `references/resume.md` step 0.5 | Platform re-detect on every resume (free, `[MEASURED]`) |
 | `references/environment-sweep.md`, `tools/*.sh` | The bash-interpreter requirement (§2, row 1) and the UNDETERMINED-not-pass rule when it is absent |
 | `work-999-setup` (separate repo) | The two-branch consistency clause (§6) |
