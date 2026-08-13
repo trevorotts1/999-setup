@@ -25,7 +25,9 @@ time, in plain language, with the consequence of each answer stated before they
 answer. State the count up front ("about <the number `interview.md` tells you to
 say> short questions, then you can walk away"). **`interview.md` owns every count
 claim in this skill** — take the number from there, never invent one on this page,
-and never state a number you will then exceed. Use the fast paths (the defaults
+and never state a number you will then exceed.
+Every counted question is spoken with its number — "Question 3 of 12" — per the per-question counter interview.md owns.
+Use the fast paths (the defaults
 offer, the small-plan collapse — block D never collapses) so a small plan is never
 asked the whole list.
 

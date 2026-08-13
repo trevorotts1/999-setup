@@ -20,7 +20,7 @@ Two providers, one choice, asked in plain words during funnel discovery
 
 > "Your funnel will need images — page graphics, maybe Facebook ads, product
 > photos. And you might want a video sales letter or testimonial clips. I can
-> generate these for you. Two questions: do you want me to generate images and
+> generate these for you. The media questions (`references/interview.md` owns their count): do you want me to generate images and
 > videos for this funnel? And I can use Kie.ai, which costs you money per image
 > or video, or your Agnes-AI account, which comes with a generous daily
 > allowance on the paid plan. Which would you prefer?"

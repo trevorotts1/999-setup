@@ -1,5 +1,248 @@
 # Changelog
 
+## [1.9.0] — 2026-08-13
+
+### The opening script was never fired by a numbered step — so skipping it broke no rule
+
+The words the client hears first have been in this skill for releases, as prose
+under the set-and-forget promise. That section said to say it first. **No
+numbered flow step ever fired it.** An agent that skipped it broke no rule that
+could be shown to it, because the instruction lived nowhere in the sequence the
+agent was actually executing — and text with no step behind it does not hold its
+shape. It gets paraphrased on one run, halved on the next, and reduced to a
+sentence of throat-clearing on the one after. The first thing the person heard
+was different every time, and on some runs there was nothing to hear.
+
+Two changes were both required. The script is now **MANDATED VERBATIM** — word
+for word, not paraphrased, not shortened, not skipped on any run, any harness,
+any launcher — and it is **SCHEDULED**: flow step 3 speaks it before the Build
+Target question and before the entry-mode question. Mandated text that no step
+fires is still optional in practice; a scheduled step with no fixed words drifts
+anyway. Neither half is the fix on its own.
+
+It was also rewritten, because what it had to do was never only procedural. It
+opens on the thing they always dreamed about — an app, a website of their own, a
+thing people carry on their phone, a program on their own computer, a funnel that
+makes the offer and follows up — and then says plainly why it never happened:
+**they did not have the workers, or the assistants, or the money and the capital
+to hire them.** That is the sentence the rest of the script earns. The gauntlet
+loop is named as what it is rather than hidden behind it. The work is described
+as hours, days, weeks if that is what it takes, **without a break, so that they
+do not have to** — go to the beach, go to dinner, be with family, while the work
+runs around the clock. The finished work lands on GitHub, described as a website
+where code is kept safely, and goes live either on Vercel or **right inside their
+own Convert and Flow system**, wherever it belongs.
+
+And it makes **"I don't know" a right answer, out loud, before the first
+question**: *"I'd rather hear that than a guess. I'll take it from there and make
+the best decision for you. You can't get any of this wrong by not knowing
+something."* A person who does not know that is told is a person who guesses, and
+a guess recorded as an answer is worse than a default recorded as a default.
+
+The resume path is concrete rather than reassuring. If the machine restarts or the
+connection drops: type `claude-nine --resume`, **pick your project from the list**,
+paste in the one sentence the skill gives you. A promise that nothing is lost with
+no keystrokes under it is a promise the person cannot act on at the moment they
+need it.
+
+### The Build Target is asked at the ENTRY — and the client is never made to classify
+
+The target question used to fire after the archetype, which put it after the
+project folder was created. Every mandated sentence downstream interpolates the
+target word, and **a folder named before anyone was asked what was being built
+defaults to a lie.** It now fires at the entry: immediately after the opening
+script, before the folder exists, before the brainstorm starts.
+
+**The client describes their idea in their own words; the skill classifies it.**
+That is the ruling, and it is the substance of the change rather than a wording
+preference. The question asked is the easiest one in the interview — *tell me
+about it: what is it, and who is it for* — and the skill sorts the answer,
+confirms in one warm sentence built from their own words, and moves on.
+
+**The six-way taxonomy is this skill's filing system, never the client's quiz.**
+The six-item list is NEVER rendered to the client — not as a menu, not trimmed to
+three, not "to help them along." A person who cannot tell a web app from a website
+is missing nothing they need; the sorting is this skill's job. Being made to
+self-classify is not a neutral inconvenience, and the failure it produces is the
+reason this is binding: **a client who wanted a mobile app was pushed into a web
+app** by a menu that asked them to name a category they had no way to name. A
+person made to self-classify either stalls or guesses, and a wrong guess here
+routes the entire build wrongly — different gates, different pipeline, different
+bar.
+
+Where a description is genuinely ambiguous, exactly ONE either/or from a written
+bank settles it — never three options, never the list, never the same question
+twice in the same words. "I don't know" produces at most one question about their
+world and then a recommendation with one reason, and the target reached that way
+is recorded as **a DEFAULT they confirmed, never as their answer.**
+
+### Six targets replace three, and mobile stops being lumped in with web
+
+`MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`.
+The old table had three rows, and the first of them — *App / Software* — carried
+web apps, phone apps, desktop programs and CLI tools in a single cell with one set
+of gates and one pipeline. Those are not one thing. **Mobile versus web was the
+distinction the old row erased**, and it is the distinction the client was least
+equipped to repair by hand.
+
+Each of the six now carries its own credential gates, its own build pipeline and
+dependencies, its own Step 1d branch, and **its own Gate 3 viewports** — a
+`MOBILE_APP` is captured and judged at the mobile viewport, `WEB_APP` and
+`WEBSITE` at desktop and mobile, `MOBILE_AND_WEB` at both viewports per surface.
+A mobile build judged against desktop captures was passing a bar it was never
+built to clear. `MOBILE_AND_WEB` also carries a real consequence into B1: two
+builds may mean two repositories, and two repositories mean two merge trains.
+
+The sweep tool still takes three target values, and the six answers map onto it as
+three families — the tool's family sets the SEARCH, the routing table sets the
+GATES. No fourth target value was invented in the tool.
+
+### The folder is named from what was confirmed — `unnamed-app` is gone
+
+The slug is the kebab-case of the user's own name for the thing when one was
+spoken, and otherwise `<target-word>-YYYY-MM-DD`. **Never `unnamed-app`**, and
+never a target word that was not confirmed in the Build Target exchange. The old
+placeholder was the visible symptom of the ordering defect: a folder named before
+anyone had been asked what was being built. One rename is sanctioned — when the
+brainstorm produces the project's real name, and only while the folder holds
+nothing but `00-INPUT/`. A folder the operator PROVIDED is never renamed.
+
+### The funnel and website branches are reachable for the first time
+
+Both branches were already written, complete, and correct. Step 1d's funnel
+questions, the GoHighLevel hard gate, the website hosting questions — all of it
+**was gated on a question no flow step scheduled.** Doctrine that cannot be
+reached is not doctrine; it is a file. This is the same class of defect as the
+opening script, found in the same pass, and it is why both are in one release.
+
+The funnel classifier now fires on **"follow-up emails or texts" alone** — leads,
+offers, selling sequences, or pages that exist to get one thing done. FUNNEL
+outranks WEBSITE whenever both patterns appear. The consequence is the point:
+**the GoHighLevel hard gate now reaches people who have never heard the word
+"funnel."** Under menu self-sorting, a person describing exactly a funnel — pages
+plus automatic follow-up — would pick "website," and the three required GHL
+credentials would never be asked for. The gate speech fires the moment FUNNEL is
+confirmed, whether the person said the word or only described the thing.
+
+### The hosting gate could be missed entirely by a `WEB_APP` build
+
+The credential routing table went from three rows to six, and **Gate 2 was widened
+from websites to every hosted app target.** The defect it closes is plain: under
+the old table, App / Software ran *none of the three gates* — the general sweep
+was the whole credential check — so **a `WEB_APP` build could reach deployment
+without ever having been asked for a hosting credential.** A web app lives on a
+host. The missing token surfaced at the end, hours after the moment it could have
+been asked for painlessly.
+
+Gate 2 now has two halves. The HOSTING half — `VERCEL_TOKEN` + `GITHUB_TOKEN` —
+runs for `WEBSITE`, `WEB_APP`, `MOBILE_AND_WEB`, and `MOBILE_APP` on the
+home-screen road. The GHL half runs only when a site lands in GoHighLevel, and an
+app target never runs it. `DESKTOP_SOFTWARE` runs no hosting gate, and the
+`MOBILE_APP` store road runs none either — getting into a store is the user's own
+action, not a credential check, and it is written into the to-do list and the
+morning report rather than attempted overnight.
+
+### OpenClaw detection and ingestion — `references/openclaw-ingest.md` (new)
+
+Where the client already runs OpenClaw, the skill can stop asking for things that
+are already written down. The file that governs it is new, and its shape is
+mostly a set of refusals.
+
+- **Detection at step 2.8 is presence-only, from FILE EVIDENCE.** A root candidate
+  must exist AND at least one of: a readable `openclaw.json`, a workspace holding
+  the content files, or the secrets pointer resolving. **Never `command -v
+  openclaw`** — a name resolving proves nothing about what a system has — and
+  **never a bare directory-exists**, because an empty leftover folder is not an
+  install. One shortcut reports "installed" for a stale folder; the other reports
+  it for a name on the PATH. Read the artifact, or report nothing. Every negative
+  names every path checked and what was NOT checked, `find` is read by its OUTPUT
+  and never its exit code, and UNDETERMINED is a correct answer.
+- **The content read happens at step 3 — not at 2.8.** It runs after the client has
+  been TOLD, in the opening script's OpenClaw paragraph, and after the project
+  folder and `00-INPUT/` exist. Step 2.8 reads no content, writes nothing, and
+  announces nothing. Reading a person's business notes before telling them is the
+  thing this ordering exists to prevent, and the summary has a durable home before
+  it is written.
+- **Credential VALUES are never printed, logged, written, or copied — names and
+  presence booleans only.** `environment-sweep.md` remains the single owner of
+  every key check; `openclaw-ingest.md` adds no key machinery and repeats no alias
+  table. The one consequence for the sweep is a flip: on a box where detection
+  SUCCEEDED, the OpenClaw-backed stores stop being "harmless when absent" and
+  become EXPECTED, so a store that reads empty is a finding to name rather than a
+  shrug — with the known-positive control run first, because a detected OpenClaw
+  whose every store comes back empty is far likelier a broken reader than an empty
+  install.
+- **Absent is normal and silent.** Most machines have no OpenClaw. One plain line
+  in the record, nothing said to the user, no second look later in the run.
+
+### Every client-facing either/or now asks about the person's world, not the architecture
+
+The questions that offered a choice were written from the build's point of view,
+which asked a sixty-eight-year-old to hold a distinction the skill exists to hold
+for them. They are rewritten to ask about the person's world and let the skill do
+the sorting. The clearest case is the one that named a category outright:
+**"command-line tool" became "a program with a window — buttons and things you can
+see and click? Or more of a quiet helper that just runs and does its job when you
+ask it to?"** A window program is a desktop program; a quiet helper is a CLI tool;
+*not sure* records the window program as a default, marked as a default. The list
+form of that question survives in the file as the question's substance and is
+never spoken to a client on any branch.
+
+The same rewrite runs through the mobile delivery question (the store road
+described by what it costs the person in waiting and accounts, not by its name),
+the mobile-and-web shape question (*are they both doing the same things?*), and
+every entry in the either/or bank. Each one ends with the same sentence: **"And if
+you are not sure, that is a fine answer — say so, and I will pick the road that
+keeps every door open, and tell you which one I picked."**
+
+### The per-question counter — "Question 3 of 12"
+
+Every counted question is now spoken with its number, so **nobody has to wonder
+whether they are in an endless loop.** The opening script, the Build Target
+exchange, the entry-mode question and the brainstorm are NOT counted — a
+denominator cannot honestly exist before the target is known, and numbering the
+brainstorm's open probes would turn a conversation into a questionnaire.
+
+The arithmetic is where this was easy to get wrong, and the rule is stated so it
+cannot be. **M is computed on the UN-COLLAPSED base, and that base INCLUDES the
+defaults-offer question itself**, because the offer is put to the client on every
+Claude-Nine run and a spoken yes/no is a counted question wherever it stands. So a
+DECLINED defaults offer moves nothing — the offer was already in M and the blocks
+were never discounted. An ACCEPTED one moves M DOWN by the three questions the
+defaults cover.
+
+**Conditional collapses are NOT in the base**, and they enter the count only
+through a raise announced BEFORE the question that needs it: the small-plan
+collapse's confirmation is an extra counted question offered in the same breath as
+its own raise — *"One extra question first — it can save you several. Question N of
+M+1…"* — and a yes then moves M down by what the block's defaults replace. **A
+stated M is never exceeded without the upward announcement firing first. N never
+resets, never repeats, never decreases.** `interview.md` remains the only owner of
+every count claim in this skill; `audience.md` cites the section and never
+computes.
+
+### Known limitation in this release — the question count can run over on some paths
+
+**`A2` is asked once per paid service, and the base arithmetic counts it once.** On
+a Claude-Nine run where the environment sweep finds more than one paid service, the
+stated total can be exceeded by one question per additional service — for example a
+stated 25 followed by 26 or 27 asked — and the recompute triggers do not currently
+cover the service count, so no upward announcement fires. The count never runs
+UNDER, no build is routed wrongly by it, and every other stated-number path was
+verified across four QC rounds. A follow-up release resolves it.
+
+The skill is now **32 files** — one added, `references/openclaw-ingest.md`, and
+**nothing removed** — `tools/ledger.sh` is byte-identical, and `VERSION` reads
+**1.9.0**. Seven existing skill files changed: `VERSION`; `SKILL.md` (the opening
+script, the Build Target question, the folder-name rule, flow steps 2.8/3/3.5, and
+reference entry 21); `references/interview.md` (the six-target taxonomy and table,
+the per-question counter, the Step 1d branches, the un-collapsed arithmetic);
+`references/environment-sweep.md` (the six-row routing table, Gate 2's widening,
+the OpenClaw expectation flip); `references/gauntlet.md` (Gate 3 viewports follow
+the Build Target); `references/audience.md` (the counter's spoken form); and
+`references/media-pipeline.md` (the media question count defers to
+`interview.md`).
+
 ## [1.8.4] — 2026-08-12
 
 ### The recurring defect: a fix lands in ONE file while its siblings keep stating the superseded rule

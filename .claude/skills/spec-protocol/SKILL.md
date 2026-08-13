@@ -1,6 +1,6 @@
 ---
 name: spec-protocol
-description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub app or website — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (up to 22 questions, fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
+description: "Turn an idea into a fully-built, QC'd, staged, merged-to-GitHub mobile app, web app, mobile-and-web app, desktop software, website, or sales funnel — set-and-forget, overnight if needed. A non-technical user runs it, answers plain questions one at a time, walks away, and comes back to a finished deployed app. Auto-detects the harness (Claude-Nine with 9router vs regular Claude Code), including the claude-codex launcher (Codex-pinned claude-nine): runs the capacity interview on Claude-Nine (the question count is computed per run and owned by references/interview.md; fast paths for small plans), uses built-in defaults plus the four Gauntlet questions on regular Claude Code. Web-researches the app's domain and finds reference apps to study and mirror (empowering — never a stop gate). Builds the 17-document project apparatus, then runs a build→QC→fix→pen→batched-merge pipeline sized by a computed per-run Capacity Ledger, with loop engineering and self-managed orchestration (the skill spawns and drives its own sessions — Agent Teams when enabled and consented, single-session otherwise; the client never opens terminal windows). Ultracode gate applies to both modes (hard stop if off)."
 trigger: /spec-protocol
 ---
 
@@ -14,8 +14,9 @@ and merge pipeline runs from the documents you produce, in separate terminals,
 each driven by a loop. Subagents do the reading, building, judging, fixing, and
 merging (Law 41).
 
-This skill turns an idea into a fully-built, QC'd, staged, merged-to-GitHub app
-or website — set-and-forget, overnight if needed. A non-technical person around
+This skill turns an idea into a fully-built, QC'd, staged, merged-to-GitHub
+mobile app, web app, mobile-and-web app, desktop software, website, or sales
+funnel — set-and-forget, overnight if needed. A non-technical person around
 sixty-eight years old runs it, answers plain questions one at a time, walks away,
 and comes back to a finished deployed app.
 
@@ -49,6 +50,10 @@ this large enough to also benefit from an Agent Team?
 ---
 
 ## The set-and-forget promise (state this first, plainly)
+
+**Where "first" is:** this promise is spoken as part of THE OPENING SCRIPT
+(below) — the mandated verbatim opening that step 3 fires before any question.
+The script is the schedule; this section is the promise's full text and intent.
 
 Before anything else, say this to the user in their own register:
 
@@ -228,7 +233,7 @@ read of the session's own environment. Never guess.
 | Signal | Harness | Mode |
 |--------|---------|------|
 | Any ONE of: **(d)** the CURRENT SESSION's own environment carries a loopback `ANTHROPIC_BASE_URL` (test it BY NAME — report loopback yes/no, never print the value) or a provider-prefixed session model id; or `~/.claude-nine/` exists AND at least one of: (a) `ANTHROPIC_BASE_URL` in `~/.claude-nine/settings.json` is a loopback/local address (e.g. `http://127.0.0.1:<port>/v1` — any local port counts); (b) `~/.9router/db/data.sqlite` exists; (c) any `~/.claude-nine/9router*.yaml` or `9router*.yml` exists | **Claude-Nine** | Run the full capacity interview (`references/interview.md`) |
-| None of the four signals found — no loopback base URL in the session env, and `~/.claude-nine/` missing (or present with none of the three 9router signals) | **Regular Claude Code** | Skip the interview except Block D, use built-in defaults |
+| None of the four signals found — no loopback base URL in the session env, and `~/.claude-nine/` missing (or present with none of the three 9router signals) | **Regular Claude Code** | Skip the CAPACITY blocks (A, B, C) and use built-in defaults. The discovery half — brainstorm, archetype (Step 1b), Build Target (Step 1c, asked at the entry), Just-in-Time research (1c-bis), target branches (1d) — and Block D run on BOTH harnesses, always. |
 
 **Signal (d) is the one that works on a CLIENT box.** The shipped `claude-nine`
 launcher never creates a separate config root — it injects routing into the child
@@ -352,14 +357,15 @@ list), one at a time, in the same plain wording, right after announcing the
 defaults. Record each in the decision register. D1 seeds the bar-candidates
 step in `references/research.md`; D3 gates the step 9 capture download. Block
 D is the only part of the capacity interview that runs on BOTH harnesses.
+Number them per interview.md's per-question counter — it governs BOTH harnesses.
 
 ### Claude-Nine — run the capacity interview
 
-9router-routed models. **Run the full capacity interview** before building — the
-v4 section-4.5 interview (22 questions, four blocks), adapted for model
-intelligence. See `references/interview.md`. Measure what you can (repo count,
-branch, code state — go look); ask only what no command can reveal (subscription
-tier, effort setting, which models they want).
+9router-routed models. **Run the full capacity interview** before building —
+the v4 section-4.5 interview (four blocks; references/interview.md owns the count), adapted
+for model intelligence. See `references/interview.md`. Measure what you can
+(repo count, branch, code state — go look); ask only what no command can reveal
+(subscription tier, effort setting, which models they want).
 
 Key model SEATS for Claude-Nine. **This table states REQUIREMENTS, not model
 names.** Every seat is RESOLVED PER RUN — against the router's discovered model
@@ -495,17 +501,236 @@ VERIFIED matrix (never the example numbers) to the execution plan.
 
 ---
 
+## THE OPENING SCRIPT (verbatim — the first thing the user hears, every run)
+
+Step 3 SPEAKS THIS FIRST, word for word, before the Build Target question and
+before the entry-mode question. It is not paraphrased, not shortened, and not
+skipped on any run, any harness, any launcher. It renders identically every
+time for the same reason the entry-mode block does: mandated text cannot thin
+out. (The set-and-forget promise section above is folded into this script —
+this script is where that promise is actually spoken.)
+
+> Welcome, and I'm glad you're here. Let me tell you what this is.
+>
+> I'm going to build you the thing you always dreamed about. Maybe you dreamed
+> of an app. Maybe a website of your own. Maybe an app people carry with them
+> on their phone, on Android or on Apple. Maybe a tool people sign into and
+> use right in their web browser, or a program that lives on your own
+> computer. Maybe a funnel — pages that make your offer, one step after
+> another, with the follow-up emails and texts written for you. And maybe it
+> never happened, because you didn't have the workers, or the assistants, or
+> the money and the capital to hire them. That's why I'm here. Me and my team
+> of agents are going to do it. And you don't need to know which of those your
+> idea is — that's my job to work out, not yours.
+>
+> Here's how I do it. I use something called the gauntlet loop to build your
+> app. First, I interview you. Plain questions, one at a time, in your own
+> words, and I write down everything we decide.
+>
+> Here's the one thing to remember. Sometimes I'll ask you something you don't
+> know the answer to. "I don't know" is the right answer. I'd rather hear that
+> than a guess. I'll take it from there and make the best decision for you.
+> You can't get any of this wrong by not knowing something.
+>
+> Then my team and I go to work — hours, days, weeks if that's what it takes,
+> without a break, so that you don't have to. Nothing for you to open, nothing
+> to start, nothing to watch. Go to the beach. Go to dinner. Spend time with
+> your family, or do whatever it is you like to do, knowing that behind the
+> scenes I'm working around the clock for you.
+>
+> When it's done, your finished work is safe on GitHub — a website where code
+> is kept safely — and a report is waiting for you in plain words: what got
+> built, and how to see it. And when it's ready, I put it live where people
+> can actually use it — either on a service called Vercel, which puts your
+> work on the internet, or right inside your own Convert and Flow system, if
+> that's where it belongs. If something comes up that only you can decide, I
+> write it down for you and keep working. It never sits waiting up for you.
+>
+> And if your computer restarts, or we get disconnected, nothing is lost. Type
+> `claude-nine --resume` and press Return. You'll see a list of every project
+> you've been working on. Pick yours from the list, paste in the one sentence
+> I give you, and I'm straight back to work on exactly what we were doing.
+
+**When OpenClaw was detected at step 2.8** (`references/openclaw-ingest.md`),
+append this paragraph to the script, verbatim:
+
+> One more thing before we start: I can see you have OpenClaw set up on this
+> computer — the assistant system that already knows about your business. I am
+> going to read its notes — about your business, your brand, and how you like
+> things said — so I do not ask you things it already knows, and I will use the
+> keys it keeps by name only. I never read the keys themselves out loud, never
+> show them, and never copy them anywhere. If you would rather I not use those
+> notes, just say so and I will ask you everything fresh.
+
+Then, with no pause for an answer to the script itself, ask the Build Target
+question (below).
+
+---
+
+## THE BUILD TARGET QUESTION (verbatim — asked at the entry, before the folder
+## is created and before the brainstorm)
+
+The operator's ruling: the target is asked EARLY — before the project folder
+is named and before a single brainstorm word is spoken — because every mandated
+sentence after this point interpolates it, and a folder named before the target
+is known defaults to a lie. Ask this immediately after THE OPENING SCRIPT:
+
+> First question, and it is an easy one, because you already know the answer —
+> it is your idea. Tell me about it in your own words: what is it, and who is
+> it for? A sentence or two is plenty, and describing it the way you would
+> describe it to a friend is exactly right. There are no special words to
+> know. I will tell you what I heard, and you tell me if I got it right.
+
+**The person describes; the skill classifies (binding — the operator's
+ruling, 2026-08-13).** The six-way taxonomy is this skill's filing system,
+never the client's quiz. The six-item list is NEVER rendered to the client —
+not as a menu, not trimmed to three, not "to help them along." A person who
+cannot tell a web app from a website is missing nothing they need; the
+sorting is this skill's job, and a person made to self-classify either
+stalls or guesses, and a wrong guess here routes the whole build wrongly
+(`references/audience.md` §1 and §2 bind every word of this exchange).
+Classify their description into exactly one of
+`MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`
+by these signals:
+
+- **FUNNEL** — the pages exist to get ONE thing done (buy, book a call, join
+  a list), and/or they mention follow-up emails or texts, leads, offers, or
+  selling sequences — or they say "funnel." The verb is *convert*. FUNNEL
+  outranks WEBSITE whenever both patterns appear: pages plus automatic
+  follow-up aimed at an action is a funnel. This rule is what makes the GHL
+  hard gate fire early and reliably — the skill hears "follow-up emails"
+  even from a person who has never heard the word "funnel," which menu
+  self-sorting never guaranteed.
+- **WEBSITE** — pages people visit to read, learn, find them, or get in
+  touch. The verb is *visit*; nobody signs in to get work done.
+- **WEB_APP** — people sign in and USE it in a web browser to get something
+  done: book, track, manage, order, calculate. The verb is *use*.
+- **MOBILE_APP** — the phone is the place: "on their phone," out-and-about
+  use, the home screen, the app store.
+- **MOBILE_AND_WEB** — both surfaces named or clearly implied ("on their
+  phones and at their computers").
+- **DESKTOP_SOFTWARE** — it lives on the computer itself, works on their own
+  files, or must run without the web.
+
+Then CONFIRM in ONE warm sentence built from THEIR words — the confirmation
+should feel like being understood, not being sorted, so it repeats their
+thing back and never recites a category definition. The frames, verbatim,
+with their own words interpolated:
+
+- `MOBILE_APP` — "Got it. So this is an app people use on their phone —
+  <their thing, in their words>. Did I hear you right?"
+- `WEB_APP` — "Got it. So this is a tool people open in their web browser
+  and sign into, to <their goal, in their words>. Did I hear you right?"
+- `MOBILE_AND_WEB` — "Got it. So people will use this on their phones and
+  on their computers — the same <their thing, in their words> in both
+  places. Did I hear you right?"
+- `DESKTOP_SOFTWARE` — "Got it. So this is a program that lives on the
+  computer itself and <their job, in their words>. Did I hear you right?"
+- `WEBSITE` — "Got it. So this is a website — pages people visit to <what
+  they said: learn about you, see your work, get in touch>. Did I hear you
+  right?"
+- `FUNNEL` — "Got it. So the whole point of this is to turn visitors into
+  <their word: buyers, bookings, members>: pages that make the offer, and
+  then automatic emails and texts that follow up for you. Did I hear you
+  right?"
+
+On **yes**, say this, verbatim, and move on: "Wonderful — that is exactly
+what I will build. From here on I will call it your <mobile app / web app /
+mobile-and-web app / software / website / sales funnel>." (One plain naming,
+once — audience.md §2 — and it seeds every downstream interpolation of the
+target word.)
+
+On **no**: "Then I did not hear it right. Tell me a little more — what would
+someone actually be doing when they use it? — and I will get it this time."
+Re-classify from the new detail. If exactly two candidates remain live, ask
+ONE either/or from the bank below. Never three options, never the list, and
+never the same question twice in the same words.
+
+**The either/or bank** — the fallback for a genuinely ambiguous description.
+Each entry is ONE question between its own two candidates, in the client's
+own register. Verbatim:
+
+- An "app" with no surface named (`MOBILE_APP` vs `WEB_APP`): "When you
+  picture someone using it, are they holding their phone, or sitting at a
+  computer? If it is both, just say both."
+- `WEBSITE` vs `WEB_APP`: "Is it mostly a place people visit to read about
+  you and get in touch — or more like a tool they sign into and use to get
+  something done?"
+- `WEBSITE` vs `FUNNEL`: "When someone lands on these pages, is the main
+  hope that they go on to buy or book something — with friendly follow-up
+  messages if they wander off — or is it mainly there to tell people about
+  you?"
+- `DESKTOP_SOFTWARE` vs `WEB_APP`: "Should this live on your own computer
+  and work even when the internet is out — or is it fine for it to live on
+  the web, where you sign in from anywhere?"
+- `MOBILE_APP` vs `MOBILE_AND_WEB`: "Is the phone the whole story, or will
+  people want this on their computers too?"
+
+Every either/or ends with this sentence, verbatim: "And if you are not sure,
+that is a fine answer — say so, and I will pick the road that keeps every
+door open, and tell you which one I picked."
+
+**"I don't know" is guided, never quizzed (binding).** At ANY point in this
+exchange, "I don't know" — or a shrug, or "you pick" — NEVER produces the
+same question again and NEVER produces a list. It produces at most ONE
+question about their world, then a recommendation. The world question,
+verbatim:
+
+> That is completely fine — you do not need to know, because working that
+> out is my job, not yours. Tell me about the person you most want this to
+> help. Where are they when your idea helps them — out and about, or
+> sitting down somewhere?
+
+Then recommend — one sentence, one reason, and move on. Verbatim frame:
+
+> Then here is what I would build for you: <the plain phrase — "an app for
+> their phone" / "a tool they use in their web browser" / "an app that works
+> on phones and computers both" / "a program for their computer" / "a
+> website" / "a sales funnel — pages plus automatic follow-ups that do the
+> selling for you">, because <one reason drawn from what they just said>.
+> We will go with that — and if it ever feels wrong to you, say so and I
+> will change the plan. Nothing gets locked in today.
+
+A target reached this way is recorded as a DEFAULT they confirmed, never as
+their answer — the same "I don't know" doctrine the whole interview obeys
+(`references/interview.md`).
+
+Record the answer in the decision register, in their own words, as one of:
+`MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`.
+Record alongside it their description verbatim and how the target was
+reached — confirmed from their description, settled by one either/or, or
+recommended on "I don't know" (recorded as a DEFAULT). `MOBILE_APP`,
+`WEB_APP`, `MOBILE_AND_WEB`, and `DESKTOP_SOFTWARE` are the App/Software
+family (one build pipeline, different platform targets); `WEBSITE` and
+`FUNNEL` route their own gates. The taxonomy's downstream consequences —
+credential gates, pipeline, dependencies, branches — are OWNED by
+`references/interview.md` Step 1c; this section owns only the asking moment
+and the wording. The moment `FUNNEL` is confirmed — whether the person said
+the word "funnel" or only described an offer with automatic follow-ups —
+speak Step 1c's funnel gate statement (interview.md) HERE, before the
+entry-mode question.
+
+On the "Here is the info" path, the material may already answer this — read
+it, extract the target, and CONFIRM it in one line instead of re-asking. A
+provided folder is never renamed (RULE 1).
+
+---
+
 ## The entry — interview me, or here is the info (ask ONCE)
 
 On `/spec-protocol`, offer two entry modes with one plain question:
 
-> I will turn your idea into a fully-built, QC'd, merged app. You can walk away
-> once we start and come back to a finished deployment. I can work two ways —
-> pick the one that suits you:
+> I will turn your idea into a fully-built, quality-checked, finished <the
+> target, in the same plain words just confirmed in the Build Target exchange —
+> "mobile app", "web app",
+> "mobile and web app", "software", "website", or "sales funnel">. You can walk
+> away once we start and come back to a finished deployment. I can work two
+> ways — pick the one that suits you:
 >
-> 1. **Interview me.** Tell me about your app in your own words first. I will
->    think it through with you for about fifteen minutes, no structure, no
->    jargon. Then I will ask you some plain questions, one at a time.
+> 1. **Interview me.** Tell me about the <confirmed target word> you want to
+>    build, in your own words first. I will think it through with you for about
+>    fifteen minutes, no structure, no jargon. Then I will ask you some plain
+>    questions, one at a time.
 > 2. **Here is the info.** Point me at a folder, paste a document, or tell me
 >    where the notes are. I will read everything you give me.
 >
@@ -521,6 +746,14 @@ project — everything we talk about gets written down there as we go"). The
 brainstorm's verbatim capture needs a durable home the moment it is spoken, not
 two phases later (Law 23 — write-through; a spoken word with no home is a word
 already lost, Law 25).
+
+**The folder's NAME (binding — the unnamed-app defect):** the slug is the
+kebab-case of the user's own name for the thing if one was spoken; otherwise
+`<target-word>-YYYY-MM-DD` (e.g. `mobile-app-2026-08-13`). NEVER `unnamed-app`,
+and never a target word that was not confirmed in the Build Target exchange.
+ONE rename is sanctioned — when the brainstorm produces the project's real
+name, and only while the folder contains nothing but `00-INPUT/` — announced
+in one line. A folder the operator PROVIDED is never renamed (RULE 1).
 
 **"Interview me" path:** run the brainstorm pass first (`references/interview.md`,
 Step 1 — discovery). Let them describe what they want in their own words — fifteen
@@ -562,10 +795,16 @@ When the operator provides a folder, that folder IS the project. Its documents A
     current" from a check that could not reach its source. **No outcome blocks the
     run**, and the outcome is carried into the Capacity Ledger header at step 6.5.
     See "The version check" under the harness auto-detect.
-3. **Offer entry modes.** "Interview me" or "Here is the info." **Create the
-   project folder + `00-INPUT/` immediately after they choose** (Law 23 — the
-   brainstorm's verbatim capture gets a durable home before it is spoken, not two
-   phases later). Then:
+2.8. **OpenClaw detection (BOTH modes).** See references/openclaw-ingest.md —
+    silent file-evidence detection; the announcement happens inside THE OPENING
+    SCRIPT at step 3.
+    Detection only — no content is read and nothing is written until step 3, after the OpenClaw paragraph is spoken and the project folder exists (references/openclaw-ingest.md §2).
+3. **Offer entry modes.** Speak THE OPENING SCRIPT verbatim, then ask THE BUILD
+   TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
+   is the info." **Create the project folder + `00-INPUT/` immediately after they
+   choose** (Law 23 — the brainstorm's verbatim capture gets a durable home before
+   it is spoken, not two phases later). Then:
+3.5. **Just-in-Time research (Step 1c-bis, BOTH modes).** The moment the Build Target is answered at step 3, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background through the brainstorm.
 4. **Brainstorm (if interview mode).** Fifteen minutes, their own words, no
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
@@ -574,15 +813,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** Twenty-two lettered questions in
-   four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8,
-   B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4 — of which **at most twenty-one
-   are ever asked on an ATTENDED run**, because C6 is the twenty-second and fires
-   only when C0 says the
-   run is unattended. One at a time, with the expected count stated up front
-   ("about eighteen short questions, then you can walk away" — A1 is usually
-   measured rather than asked, and the two fast paths fold blocks B and C into
-   confirmations; `references/interview.md` owns the reconciliation). The two fast paths can shrink it: the archetype defaults offer and the
+   Then ask the target's Step 1d discovery branch (references/interview.md) — counted questions, numbered per the counter.
+6. **Capacity interview (Claude-Nine only).** The lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the archetype defaults offer and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
@@ -1281,7 +1513,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 
 ## References (read in this order when you reach the step)
 
-1. `references/interview.md` — the brainstorm + archetypes + fast paths + the lettered capacity interview: 22 questions, at most 21 ever asked on an attended run (B3 retired 2026-08-12). **This file OWNS the question count** — read it there, never restate it from memory (Steps 4–6)
+1. `references/interview.md` — the brainstorm + archetypes + fast paths + the lettered capacity interview (B3 retired 2026-08-12; the count is computed per run). **This file OWNS the question count** — read it there, never restate it from memory (Steps 4–6)
 2. `references/research.md` — the Domain research step + the Reference apps step (study and mirror), the REQUIRED bar selection, reader-agent dispatch, the empowering framing (Steps 7–8)
 3. `references/environment-sweep.md` — env-file checks, hosting, ask-the-user fallback (Step 9)
 4. `references/documents.md` — the 17-document closed list, each one's shape, the 9 refused artifacts, the census commands (Steps 10–13, 20)
@@ -1301,3 +1533,4 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
 19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
+21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)

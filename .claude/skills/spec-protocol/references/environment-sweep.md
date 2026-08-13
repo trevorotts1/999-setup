@@ -74,6 +74,26 @@ class member's own machine — report them as "not present" once, plainly, and
 move on. They are checked because they are harmless when absent, never because
 they are assumed present.
 
+**When OpenClaw was DETECTED, that expectation FLIPS.** Detection runs at
+SKILL.md flow step 2.8 and is owned entirely by `references/openclaw-ingest.md`
+§1 — proven there by READING real artifacts (a readable `openclaw.json` at a
+root candidate, a workspace holding the content files, or the secrets pointer
+resolving), never by `command -v openclaw` and never by a bare
+directory-exists. This file never re-derives that detection; it consumes the
+result. The one consequence for the sweep: on a box where detection SUCCEEDED,
+the OpenClaw-backed stores among the fleet-specific paths (5–11) above stop
+being "harmless when absent" and become EXPECTED, and this sweep's report SAYS
+SO — a store that is expected present and reads empty is a finding to name, not
+the one-line shrug the paragraph above sanctions. Report it with RULE 2's full
+evidence (the names searched, the paths read, what was not read and why) and
+run the known-positive control FIRST: a detected OpenClaw whose every store
+comes back empty is far likelier a broken reader than an empty install, and
+UNDETERMINED beats a confident zero. Where detection did NOT run, or ran and
+found nothing, the paragraph above stands exactly as written — absence is
+normal, reported once, plainly. Either way nothing about the stores, the alias
+lists, or the resolution order moves: `openclaw-ingest.md` adds no key
+machinery and repeats no alias table, and this file remains their single owner.
+
 ---
 
 ## What to look for (by NAME only)
@@ -343,9 +363,20 @@ answer, never from a guess:
 
 | Build target (Step 1c, `references/interview.md`) | Which gates run |
 |---|---|
-| App / software | None of the three. The general sweep above is the whole credential check. |
-| Website | Gate 2 (website credentials) — and its GHL half only when the site lands in GoHighLevel. |
-| Sales funnel | Gate 1 (GHL, always) and Gate 3 (media keys) only when the user asked for generated media in Step 1d. |
+| Mobile app (`MOBILE_APP`) | The general sweep above. PLUS Gate 2's hosting half (`VERCEL_TOKEN` + `GITHUB_TOKEN`) when `MOBILE_DELIVERY = home-screen-app` — that road is hosted. The store-app road needs no hosting gate; getting into a store is the user's own action, not a credential check. |
+| Web app (`WEB_APP`) | The general sweep above PLUS Gate 2's hosting half (`VERCEL_TOKEN` + `GITHUB_TOKEN`) — a web app lives on a host. Its GHL half never runs for an app target. |
+| Mobile AND web app (`MOBILE_AND_WEB`) | As Web app — the general sweep plus Gate 2's hosting half. One hosting gate covers both surfaces, and both repositories when the two-builds shape was chosen. |
+| Desktop / command-line software (`DESKTOP_SOFTWARE`) | None of the three gates. The general sweep above is the whole credential check. |
+| Website (`WEBSITE`) | Gate 2 (website credentials) — and its GHL half only when the site lands in GoHighLevel. |
+| Sales funnel (`FUNNEL`) | Gate 1 (GHL, always) and Gate 3 (media keys) only when the user asked for generated media in Step 1d. |
+
+The sweep TOOL takes three targets; the six recorded Step 1c answers map onto
+it as three families: `MOBILE_APP`, `WEB_APP`, `MOBILE_AND_WEB`, and
+`DESKTOP_SOFTWARE` run `tools/env-sweep.sh --target app`; `WEBSITE` runs
+`--target website`; `FUNNEL` runs `--target funnel`. No fourth target value
+exists in the sweep tool. The tool's family sets the SEARCH; the routing
+table above sets the GATES — a `WEB_APP` build runs the app-family search AND
+Gate 2's hosting half.
 
 Running a gate the build does not need is a defect: it stops a build for a
 credential the project will never touch. Skipping a gate the build DOES need is
@@ -539,7 +570,13 @@ user cannot tell it apart from a broken reader.
 
 ---
 
-### Gate 2 — Website credential gates (website builds only)
+### Gate 2 — Hosting and website credential gates (websites, and every hosted app target)
+
+Gate 2 has TWO halves. The HOSTING half — `VERCEL_TOKEN` + `GITHUB_TOKEN`,
+with the exact asks below — runs for `WEBSITE` builds AND for every hosted
+app target the routing table sends here (`WEB_APP`, `MOBILE_AND_WEB`, and
+`MOBILE_APP` on the home-screen road). The GHL half runs only when a site
+lands in GoHighLevel; an app target never runs it.
 
 After the site's shape (simple vs complex) and hosting path are settled in the
 interview, the required credential set follows from the permutation. All four
