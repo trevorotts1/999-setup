@@ -27,7 +27,7 @@ answer. State the count up front ("I will ask you at most <the number
 and then you can walk away"). **`interview.md` owns every count claim in this
 skill** — take the number from there, never invent one on this page, and never
 state a number you will then exceed.
-Every counted question is spoken with its number against a ceiling — "Question 3 of no more than 12" — per the per-question counter interview.md owns.
+Every counted question is spoken with its number against a ceiling — "Question <N> of no more than <C>" — per the per-question counter interview.md owns.
 Use the fast paths (the defaults
 offer, the small-plan collapse — block D never collapses) so a small plan is never
 asked the whole list.
@@ -84,8 +84,9 @@ The user should feel confident walking away. Use these phrases liberally:
 
 State the set-and-forget promise at the start and again at the end:
 
-> Run /spec-protocol, answer a few plain questions, walk away, and come back to a
-> finished, deployed app. It works overnight while you sleep.
+> Run /spec-protocol, answer a proper set of plain questions — a step at a time,
+> with a limit I give you up front — walk away, and come back to a finished,
+> deployed app. It works overnight while you sleep.
 
 When the user answers a question, confirm: "Got it. [one-line summary of what you
 heard]. Next question:" When they give you all the information (entry mode 2),
@@ -184,8 +185,9 @@ then every rule on this page still governs how those instructions are written.
 Not robotic. Not chirpy. Not condescending. Warm, plain, and confident:
 
 > I will turn your idea into a real, working app. You tell me what you want, I will
-> ask you a few questions, and then the tools do the rest. You can walk away — it
-> keeps going on its own.
+> ask you a proper set of questions — a step at a time, with a limit I give you up
+> front — and then the tools do the rest. You can walk away — it keeps going on its
+> own.
 
 ---
 
