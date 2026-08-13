@@ -783,8 +783,28 @@ When the operator provides a folder, that folder IS the project. Its documents A
     enablement key, announce the write, give the ONE restart sentence, and
     resume from project_state.json after the restart. Then SPAWN the four
     commanders by name (the lead calls the Agent tool with `name` — ASCII
-    names) with their charters, confirm via ListAgents, and record them in
-    project_state.json. If the probe fails or consent is refused: single-session
+    names) with their charters, VERIFY EACH SPAWN AGAINST THAT COMMANDER'S OWN
+    SESSION TRANSCRIPT — the primary liveness instrument, whose full procedure
+    is OWNED by `references/agent-team.md` §10 and is never restated here —
+    and record them in project_state.json. **`ListAgents` is CORROBORATION,
+    never the census of record, and its silence is NEVER evidence of absence**
+    (2026-08-12, proven on the operator's Mac: a live teammate held its own
+    tmux pane while the session reported "not active, no pane" and `ListAgents`
+    never listed it; `TaskOutput` answered "No task found" for that same
+    teammate while its artifacts sat on disk). A commander `ListAgents` fails to
+    list is NOT thereby dead or unspawned, and no negative verdict — not "it
+    never spawned," not "it died," not "re-spawn it" — may rest on that tool.
+    The `inboxes/{name}.json` artifact is DEMOTED to the same standing: it is
+    split-pane-only (in-process teammates never create one, and in-process has
+    been the documented default since Claude Code v2.1.179), which makes it a
+    split-pane corroborator and a delivery diagnostic — never the primary spawn
+    proof, and never the ground of a negative verdict. A roster check fails the
+    same way: team directories are DELETED on disband, so the roster vanishes
+    while the transcripts persist. And a named spawn may have run as an ordinary
+    SUBAGENT rather than a teammate, which writes into a different,
+    never-overlapping transcript namespace — §10 covers that case too. Go to §10
+    for the procedure: decide from the transcript, corroborate with the rest.
+    If the probe fails or consent is refused: single-session
     mode, same loop, commander stations collapse onto the lead — and the client
     is NEVER handed a terminal chore either way.
 17. **Determine GitHub.** New repo or pre-existing? Ask. Smoke-test the token.
@@ -1277,7 +1297,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 14. `references/worked-example.md` — the full end-to-end worked example: capacity ledger → manifest → task graph → team → six workflows → reconcile → merged app (read once before the first real run)
 15. `references/funnel-architecture.md` — funnel page types and email/SMS decision matrices (funnel builds only)
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
-17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover)
+17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover), and **§10 — the SINGLE OWNER of teammate-liveness verification**: the teammate's own session transcript is the primary instrument; `ListAgents` corroborates and never decides; the `inboxes/{name}.json` artifact is a split-pane-only corroborator that may never ground a negative verdict; and a disbanded team's directory is gone while its transcripts persist. Read the procedure THERE — it is never restated anywhere else (Step 16.9, and any moment a spawn's liveness is in question)
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
 19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.

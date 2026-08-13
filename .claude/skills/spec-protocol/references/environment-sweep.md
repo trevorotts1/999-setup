@@ -84,10 +84,43 @@ Ask what kind of app/site they are building, then check the relevant keys:
 |---|---|---|
 | GitHub (always) | `gh auth status` is the PRIMARY check (see "GitHub CLI — install, then prove" below); fall back to `GITHUB_TOKEN` / `GH_TOKEN` by name only if `gh` itself cannot be made to work | `gh auth status` (read-only), or a read-only `gh api user` |
 | Vercel | `VERCEL_TOKEN` | A read-only API call if a checker exists |
-| GoHighLevel / Convert-and-Flow | `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` / `CAF_FIREBASE_REFRESH_TOKEN` / `GHL_FIREBASE_REFRESH_TOKEN` | `~/openclaw-onboarding/44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh` if it exists |
+| GoHighLevel / Convert-and-Flow | `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` / `CAF_FIREBASE_REFRESH_TOKEN` / `GHL_FIREBASE_REFRESH_TOKEN` | the Convert-and-Flow token-liveness checker (`check-ghl-token-liveness.sh`), if an operator toolkit that ships one is installed on this machine — see "Finding the Convert-and-Flow liveness checker" below |
 | n8n | `N8N_API_URL`, `N8N_API_KEY` (in `~/.claude.json` MCP env) | n8n MCP server tools reachable |
 | Any other external API | The named token or key for that service | A read-only check where possible |
 | Hosting credentials | Depends on the host — ask the user | Read-only check where possible |
+
+**Finding the Convert-and-Flow liveness checker.** That checker does not ship
+with this skill, and WHERE it lives is site-specific — so never hardcode a path
+to it, and never assume any particular directory layout exists on this machine.
+Look for it by NAME, in the kind of location it lives in: a file named
+`check-ghl-token-liveness.sh` inside the `tools/` directory of a
+Convert-and-Flow operator toolkit checked out at home level (a sibling of the
+home-level stores above, never inside the project repo). Discovery is bounded
+and read-only:
+
+```sh
+# by name, depth-limited, read-only; prints paths only, never contents
+find "$HOME" -maxdepth 4 -type f -name 'check-ghl-token-liveness.sh' 2>/dev/null
+```
+
+If it is found, run it read-only and record the status it returns, naming the
+path that answered. Several copies may be found at once (a toolkit checkout plus
+its git worktrees); they are copies of the same checker, so run ONE and say
+which — never treat multiple hits as ambiguity worth stopping over.
+
+If it is not found — expected and normal on a machine with no operator toolkit
+installed — that is a NOT-CHECKED source, never an absence of the credential:
+record GHL token liveness as `FOUND_NOT_VERIFIED` (the NAME resolved; liveness
+was not tested, no checker present) and name the search that was actually run,
+per RULE 2.
+
+**Read `find` by its OUTPUT, never by its exit code.** Measured on this machine
+(2026-08-12): the command above returned **exit 1 while printing twenty-five
+real matches**, because it also crossed directories it was not permitted to
+read. A nonzero `find` means "something under the search root was unreadable",
+NEVER "not found" — believing that exit code would report a checker that is
+plainly installed as absent. Zero lines printed is the only "no match within the
+searched depth", and even that is a fact about the search, not about the token.
 
 One carve-out to the "any other external API" row: a model reached THROUGH a
 provider the project already holds a key for is NOT another external API.

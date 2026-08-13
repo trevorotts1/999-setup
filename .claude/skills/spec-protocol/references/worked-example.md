@@ -204,7 +204,31 @@ what changes…". Settings backed up to
 ONE restart sentence. After the restart the lead re-orients from
 `project_state.json` — never from zero — and spawns `build-commander`,
 `visual-qa-commander`, `technical-qa-commander`, `release-commander` (Agent tool,
-`name:`), confirmed via `ListAgents`.
+`name:`).
+
+Liveness is then PROVEN from each commander's own session TRANSCRIPT, per the
+procedure `references/agent-team.md` §10 owns — cited here, never restated. At 14:06
+the lead reads the four transcripts under `{active config root}/projects/{cwd-slug}/`,
+each carrying `"teamName":"session-a41f8c02"` with an `"agentName"` matching a name it
+spawned, and takes the TAIL of each as the evidence of what that commander is actually
+doing. The transcript existing is only the start:
+
+```
+14:06:02  build-commander       b455…-….jsonl   tail: "slices U1-U9 read, dispatching"
+14:06:02  visual-qa-commander   7c2e…-….jsonl   tail: "captured bar-mobile.png, 390x844"
+14:06:03  technical-qa-commander 1d90…-….jsonl  tail: "soak harness armed, 10 min"
+14:06:03  release-commander     0f31…-….jsonl   tail: "idle, waiting on T-04/T-05"
+```
+
+`ListAgents` runs in the same minute as CORROBORATION and lists three of the four:
+`release-commander` is missing from it, and `TaskOutput` on that name returns
+"No task found." Neither result changes the verdict. This run's `release-commander`
+holds its own transcript and its own tmux pane; the roster call agreed on three names
+and went silent on one, and **its silence is not a death certificate.** Nothing is
+re-spawned on it. `inboxes/release-commander.json` does not exist here either — these
+four run in-process, which never writes one — and its absence is not consulted as
+proof of anything. Had the lead treated the roster call as the census, it would have
+re-spawned a live commander on top of itself and put two writers on one domain.
 
 ---
 

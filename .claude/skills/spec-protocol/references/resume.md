@@ -114,6 +114,12 @@ verdicts, never trusted as state.
    with no heartbeat line at all = died at launch (see step 2). Kill
    lingering processes by run id with pgrep — never ps piped into a
    matcher. Note each in the session log.
+   In Agent-Team mode both of those readings are a HYPOTHESIS about a
+   teammate, not a verdict: the heartbeat is an application-level artifact,
+   and a commander can be alive and working while writing nothing to it.
+   Close it through `references/agent-team.md` §10 before recording DEAD or
+   died-at-launch, and before anything is killed, adopted or re-spawned on
+   the strength of it.
 
 5. SWEEP THE WORKSPACES. A dead builder's uncommitted work → stash it to a
    rescue location FIRST, then reset hard. Rescue before you reset: the
@@ -126,6 +132,11 @@ verdicts, never trusted as state.
    heartbeat stamp within the merge-writer's staleness window (20 minutes)
    means ALIVE — feed it, do NOT adopt. Stale → adopt, announce it in the
    session log, sweep, and continue.
+   In Agent-Team mode, STALE IS NOT PROOF OF DEATH. Adopting a lane whose
+   writer is still alive puts two writers on one trunk — a worse collision
+   than the re-spawn one, and unrecoverable once both have pushed. Confirm
+   the writer through `references/agent-team.md` §10 before adopting; if
+   §10 cannot close it, the lane is OWNED — escalate, do not adopt.
 
 7. RESUME ANY CRASHED MERGE — never restart it. An integration branch is a
    durable artifact. Adopt it and continue from the first unlanded item in
@@ -138,15 +149,53 @@ verdicts, never trusted as state.
 
 8.5. RE-HYDRATE THE COMMAND LAYER (Agent-Team mode only — teammates DO NOT
     survive a crash, a resume, or the lead's exit; assume NONE are alive).
-    (i)   ListAgents — census what actually answers. Treat every commander
-          named in project_state.json agents.commanders[] but absent from
-          the census as DEAD (the normal case).
+    (i)   CENSUS WITH THE PRIMARY INSTRUMENT — and still assume none are
+          alive. The primary liveness instrument is the commander's OWN
+          SESSION TRANSCRIPT under the active config root
+          (`{active config root}/projects/{cwd-slug}/{uuid}.jsonl`, whose
+          message lines carry "teamName" and "agentName"). The full
+          procedure — including the mandatory known-good control and the
+          negative branch — lives in `references/agent-team.md` §10, which
+          is its SINGLE OWNER. Run it there; never restate it here. Only
+          §10's negative branch may conclude that a commander named in
+          project_state.json agents.commanders[] is DEAD or never started.
+          Dead IS the normal case after a crash — but after the crash it is
+          still a VERDICT that gets its checks behind it, not a default.
+          **ListAgents is CORROBORATION, never the census** (demoted
+          2026-08-12, proven on the operator's box: a live teammate held its
+          own tmux pane while the session reported "not active, no pane",
+          ListAgents never listed it, and TaskOutput errored "No task found"
+          while that teammate's artifacts sat on disk). **Its silence is
+          NEVER evidence of absence.** That cuts both ways and the second
+          way is the dangerous one here: there is exactly one team per
+          session, so re-spawning a name on a false DEAD reading collides
+          with a commander that already exists — the hazard
+          `references/agent-team.md` §6 warns about.
+          Two more instruments cannot ground a negative either. The inbox
+          artifact is SPLIT-PANE-ONLY — in-process teammates never create
+          one, and in-process has been the documented default display mode
+          since v2.1.179 — so it is a corroborator and delivery diagnostic
+          that **may never ground a negative verdict**. A roster check fails
+          too: team directories are DELETED on disband, while transcripts
+          persist. And a named spawn may have run as an ordinary SUBAGENT
+          rather than a teammate — a namespace that never overlaps the
+          teammate one; §10's negative branch is what tells them apart.
+          A directory read that errors (`ls` rc >= 2) is an instrument
+          failure, never an empty census.
     (ii)  Re-run the Agent Teams probe (references/agent-team.md) —
           enablement can have changed. If the probe fails now, CONTINUE IN
           SINGLE-SESSION MODE, say so in the session log, and skip (iii).
     (iii) THE STALE-MAILBOX RULE — settle it BEFORE re-spawning. Mailboxes
           (`~/.claude/teams/{team}/inboxes/{agent}.json`) are FILES: they
-          persist on disk after the session they addressed is gone. A
+          persist on disk after the session they addressed is gone.
+          (SCOPE, 2026-08-12 — **where they exist at all.** That artifact is
+          written only by the split-pane backends; in-process teammates
+          never create one, and the team directory is deleted on disband.
+          So record the path and message count as evidence WHEN THE FILE IS
+          THERE, and when it is not, record exactly that — "no inbox
+          artifact in this display mode" — never "nothing was queued", and
+          never anything about whether that commander lived.
+          `references/agent-team.md` §10.) A
           commander re-spawned under its old name can therefore inherit
           messages queued to its dead predecessor and act on instructions
           from an epoch that no longer exists. So: every message queued
@@ -211,6 +260,21 @@ and 8.5 in its existing place; a commander re-spawned in 8.5 that reasons from
 a pre-0.5 capacity figure is reconciling against a ledger that no longer says
 that, which is exactly the mismatch 8.5(iv) and 8.5(v) require it to report.
 
+**8.5 and `references/agent-team.md` §6 are the same step, cited by number.**
+§6 states the recovery as *"resume.md step 8.5 — RE-HYDRATE THE COMMAND
+LAYER"* and condenses it to five numbered items; this file is the detailed
+owner and carries six, (i)–(vi). They map: §6's 1 = (i) census, 2 = (ii)
+probe, 3 = (iv) re-spawn, 4 = (v) confirm, 5 = (vi) update. The one item §6's
+condensation does not carry is **(iii), the stale-mailbox rule** — additional
+here, not contradictory; §6 says nothing (iii) denies. Where the two ever read
+differently ON THE CENSUS, **§6 and §10 govern and this file was corrected to
+them (2026-08-12)**: the transcript is the instrument, ListAgents is
+corroboration, and the inbox artifact may never ground a negative. The
+sub-item letters (i)–(vi) are load-bearing — 8.5(ii), 8.5(iv) and 8.5(v) are
+referenced by number in the paragraph above — so do NOT renumber them to
+match §6's 1–5; the numbers that must agree across the two files are the step
+number 8.5 and its title, and they do.
+
 ---
 
 ## What a resuming session should expect to find (v4 8.6)
@@ -250,8 +314,12 @@ and keep a run alive overnight:
    the roster's only owner) against the live `/workflows`
    view, the dispatch log, the heartbeat, and the ledger; runs
    `tools/anchor.sh --mode reconcile` (S10); in Agent-Team mode censuses
-   commanders via ListAgents and raises a missing one to the lead for
-   re-spawn.
+   commanders by the PRIMARY instrument — each commander's own session
+   transcript, by the procedure `references/agent-team.md` §10 owns — and
+   raises a §10-CONFIRMED missing one to the lead for re-spawn. ListAgents
+   may corroborate that census and may never be it: a commander it fails to
+   list is not thereby dead, and a re-spawn fired on its silence collides
+   with a name that already exists.
 
 A loop cannot rescue itself — the loop that hung is not going to notice
 that it hung. Each of the five watches something it is not part of.
@@ -277,6 +345,12 @@ client's crash story stays exactly one sentence:
 **paste the same command again.**
 The resumed lead re-spawns its commanders itself (step 8.5); the client is
 never asked to restore anything. The census that proves what is actually
-alive is `ListAgents`, run before anything is re-spawned — a commander is
-believed to exist only when it answers, never because a scoreboard line
-still names it.
+alive is each commander's OWN SESSION TRANSCRIPT, read before anything is
+re-spawned, by the procedure `references/agent-team.md` §10 owns — a
+commander is believed to exist only on that evidence, never because a
+scoreboard line still names it, and never on an instrument's silence.
+`ListAgents` corroborates and never decides: it has failed to list a
+teammate that was demonstrably alive and holding its own pane (2026-08-12),
+so its silence is not evidence of absence. Re-spawning a name on that
+silence is how an overnight run ends up with two commanders answering to
+one name.

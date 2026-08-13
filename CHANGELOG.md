@@ -1,5 +1,187 @@
 # Changelog
 
+## [1.8.4] — 2026-08-12
+
+### The recurring defect: a fix lands in ONE file while its siblings keep stating the superseded rule
+
+This release closes no new discovery. It closes the **same defect three releases in a
+row have shipped with**, and it is worth naming plainly because naming it is the only
+thing that stops it: a rule is corrected where it was found, in the file the
+investigation happened to be reading, and every OTHER file that states that rule keeps
+stating the old version of it. The corrected file and the stale files then disagree,
+and an agent obeys whichever one its step happened to cite.
+
+[1.8.0] demoted `ListAgents` from census authority. [1.8.1] found three passages still
+treating it as the instrument of record — **all three inside `references/agent-team.md`**
+— and fixed them there. [1.8.3] replaced that file's PRIMARY instrument again, with the
+teammate's own transcript, and added §10 as the owner of the procedure. Each of those
+was correct. Each of them corrected ONE file. Six other files went on telling agents to
+take the census with `ListAgents`, and the skill has been internally contradictory on
+its own liveness doctrine since 1.8.0.
+
+The sweep is what this release is. Nothing about Rules A and B changed — they were
+already right in `references/agent-team.md`. What changed is that the other six files
+now say what that file says.
+
+### `ListAgents` is CORROBORATION, never the census — now stated that way in every file that states it at all
+
+The rule, unchanged and now uniform: **its silence is NEVER evidence of absence.** A
+commander or teammate `ListAgents` fails to list is not thereby dead or unspawned.
+Proven on the operator's Mac, 2026-08-12 — a live teammate held its own tmux pane while
+the session reported *"not active, no pane"*, `ListAgents` never listed it, and
+`TaskOutput` answered *"No task found"* for that same teammate while its artifacts sat
+on disk.
+
+Six files carried the old wording and now cite the new rule:
+
+- **`SKILL.md`** step 16.9 — spawn confirmation went from *"confirm via `ListAgents`"* to
+  verification against each commander's own session transcript, with §10 cited for the
+  procedure and never restated.
+- **`references/anti-drift.md`** — the re-anchor pass censused the command layer with
+  `ListAgents`; it now censuses from the transcripts, and the demotion arrives there as
+  a second instance of that file's OWN §1 lesson: a call that could not have found
+  anything is not entitled to report nothing found.
+- **`references/loops.md`** — the S-check watch tick, both in the roster description and
+  in the trap row. The trap row gains the roster-shaped failure explicitly.
+- **`references/platform.md`** §2 and §5.2 — the cross-session-messaging row is now
+  scoped as a **TRANSPORT verdict only**: it says whether the platform PROVIDES the
+  mechanism, never who is alive. Nothing about an OS availability matrix was ever
+  entitled to answer a liveness question, and it no longer reads as though it might.
+- **`references/worked-example.md`** — the worked run now shows the failure instead of
+  describing it: `ListAgents` lists three of four commanders, `TaskOutput` returns "No
+  task found" on the fourth, and **nothing is re-spawned**, because that commander holds
+  its own transcript and its own pane.
+- **`references/resume.md`** — the largest of the six, and the one carrying the hazard.
+
+### The re-spawn collision in `resume.md` — the demotion's dangerous direction
+
+`resume.md` step 8.5 told a resuming lead to census with `ListAgents` and treat every
+commander named in `project_state.json` but absent from that census as DEAD. Every other
+file's version of this bug produces a false negative in a report. This one produces a
+**write**.
+
+There is exactly one team per session. A commander re-spawned on a false DEAD reading
+does not replace a dead predecessor — it **collides with one that already exists**, and
+the run ends with two writers on one domain, overnight, unattended. Dead is still the
+normal case after a crash, and 8.5 still says so; what changed is that it is now a
+VERDICT with §10's checks behind it rather than a default inferred from an instrument
+whose silence proves nothing.
+
+The same correction lands on two neighbouring steps that were quietly resting on the
+same class of evidence: **step 4** (a missing heartbeat line is a HYPOTHESIS about a
+teammate, not a death certificate — the heartbeat is an application-level artifact, and
+a commander can be alive and working while writing nothing to it) and **step 6**, where
+**STALE IS NOT PROOF OF DEATH**: adopting a lane whose writer is still alive puts two
+writers on one trunk, which is worse than the re-spawn collision and unrecoverable once
+both have pushed. If §10 cannot close it, the lane is OWNED — escalate, do not adopt.
+
+### The inbox artifact is swept out of the siblings too — §10 is the single owner of the instrument
+
+[1.8.3] demoted `{root}/teams/session-{id8}/inboxes/{name}.json` to a **split-pane-only
+corroborator and delivery diagnostic** that **may never ground a negative verdict** —
+in-process teammates never create one, and in-process has been the documented default
+since v2.1.179. That demotion, too, was written into one file. The sibling references
+still named the artifact as the PRIMARY, which is the [1.8.1] doctrine [1.8.3] retired.
+
+It is now gone from all of them, and `references/agent-team.md` §10 stands as the
+**SINGLE OWNER** of the transcript procedure. Every other file CITES §10 by number and
+none restates the nine steps — the restatement is how these files drifted apart in the
+first place, so the sweep deliberately does not create six new copies of the thing it
+just finished reconciling. `SKILL.md`'s reference index (entry 17) now says so
+explicitly, so a reader arriving at the index learns where the procedure lives before
+they go looking for it somewhere else.
+
+Two consequences ride along into `references/platform.md` §7.1, whose dated exhibit rows
+were recorded under the old instrument and are **corrected in place, by date, with not a
+word removed**. Row A's negative half — *"did not engage Agent Teams at all"* — is now
+**UNDETERMINED rather than proven**: directory absence cannot carry it, because team
+directories are deleted on disband, and the named agent that spawned may have run as an
+ordinary subagent in a namespace that never overlaps the teammate one. Row B's inbox
+artifact is demoted in its own instrument column. **Both rows' DISPLAY findings stand
+unchanged, and §5.1 is untouched** — the pane count answers DISPLAY, the transcript
+answers RUN, and the whole correction is the insistence that those are different
+questions with different instruments.
+
+### `teammateDefaultModel` was SET and NOT CONSULTED — the proven key is `modelOverrides`
+
+[1.8.0] recorded the teammate default-model failure under a routed profile and named
+`teammateDefaultModel` as the fix. That is what the shipped docs say. **It is not what
+worked on the box where this was measured.** Dated correction, 2026-08-12, same box:
+`teammateDefaultModel` was set and was **not consulted** for an unpinned teammate spawn
+under a router-backed profile.
+
+What worked is **`modelOverrides`** in that config root's own `settings.json`, mapping
+the literal tier ids onto that box's own router lanes. The proof is mechanical — the
+model stamped into `teams/session-*/config.json`: failing spawns stamped
+`"claude-opus-5"`, the fixed spawn stamped the router lane.
+
+- **DERIVED PER BOX, NEVER COPIED.** Every value comes from THAT box's own
+  `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` aliases, read on the box in
+  hand at the time of the report. A router lane id is local to the router that serves
+  it; a copied one is a fresh outage wearing the shape of a fix. The skill reports the
+  alias NAMES and the derivation procedure, never a lane id lifted from anywhere else.
+- **REPORTED, NEVER WRITTEN — and the rule is stated at the exact site where the
+  temptation lands.** `modelOverrides`, `teammateDefaultModel`, model aliases, routing,
+  providers and base URLs are the CLIENT'S own configuration, hand-tuned from their real
+  use. **Knowing the fix is not permission to apply it.** The skill hands the operator
+  the finding, the derivation and the key name; the operator decides and the operator
+  writes. §5.5's merge still touches ONE leaf —
+  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` — and conditionally `teammateMode`. It touches
+  no model key, ever, and neither does any other part of this skill.
+
+The superseded sentence is **kept in place** and labelled as what the shipped docs say,
+with the correction beside it as what the box did. §3 stage C step 4 is the single owner
+of the correction and its derivation rule; §9's two rows cite it.
+
+### Three corrections
+
+**The second config root requires an EXPORT, not a launcher that merely exists.**
+`references/agent-team.md` §5.5 step 2 enumerated `$HOME/.claude-nine` as applicable
+when that directory *or* a `claude-nine` launcher existed. The condition is that the
+launcher **exports `CLAUDE_CONFIG_DIR`** — a repo-shipped launcher that sets none shares
+`$HOME/.claude` with plain `claude`, and the looser reading would invent an orphan
+`~/.claude-nine/settings.json` that no launcher on that box ever reads, while the root
+actually in use goes unenabled. That is the same single-root darkness the step exists to
+remove, arrived at from the other direction. The test is a **READ** of the launcher file
+for an exported `CLAUDE_CONFIG_DIR`, or an already-existing directory — never executing
+a launcher to see what it exports, never `printenv` on a running session. An unreadable
+launcher is a **BROKEN INSTRUMENT** and defers the root; it is never "no second root".
+
+**`AGENT_INSTALL.md` now names a backup location outside `skills/`.** The install step
+said to back up an existing skill by moving it aside "with a timestamp suffix" and never
+said WHERE. Moved inside `skills/`, the backup is picked up by the harness and registers
+as a **phantom duplicate skill** named after the backup directory — which happened on a
+real machine, and which `tools/self-update.sh` has documented from direct observation
+since it started defaulting its own backups to `$HOME/.spec-protocol-backups`. The
+instruction now sends backups to a **home-level directory outside every config root**,
+naming the macOS and Windows forms, and keeps the timestamp convention that makes a
+repeat run non-destructive. Note that the observed failure was a backup under
+`~/.claude/backups/` — *beside* `skills/` is not far enough; anywhere beneath a config
+root reproduces it. This file is repo-root and not part of the skill, so the skill's
+file count is unaffected.
+
+**An internal infrastructure path is generalized out of a public file.**
+`references/environment-sweep.md` hardcoded an absolute path to the Convert-and-Flow
+token-liveness checker inside a named operator toolkit. That checker does not ship with
+this skill, its location is site-specific, and the path had no business in a public
+repository. The row now names the checker by **filename** and the sweep discovers it
+with a bounded, read-only, depth-limited `find` over `$HOME` — printing paths, never
+contents. Not found is recorded as `FOUND_NOT_VERIFIED` with the search named, never as
+an absent credential. And a warning measured that same day rides along: that `find`
+returned **exit 1 while printing twenty-five real matches**, because it crossed
+directories it could not read. **A nonzero `find` means something was unreadable, never
+"not found"** — believing the exit code would report a checker that is plainly installed
+as absent.
+
+The skill remains **31 files** — nothing was added or removed in this release —
+`tools/ledger.sh` is byte-identical, and `VERSION` reads **1.8.4**. Nine skill files
+changed: `VERSION`; `references/agent-team.md` (the model correction and the
+config-root nit); `references/environment-sweep.md` (the path generalization); and the
+six that carried the swept rules — `SKILL.md`, `references/anti-drift.md`,
+`references/loops.md`, `references/platform.md`, `references/resume.md`,
+`references/worked-example.md`. Repo-root `AGENT_INSTALL.md` carries the backup-path
+correction.
+
 ## [1.8.3] — 2026-08-12
 
 ### The inbox artifact is written by the SPLIT-PANE BACKENDS ONLY — so the census read every default-mode team as dead

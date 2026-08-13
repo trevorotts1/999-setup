@@ -607,7 +607,38 @@ call — is the full reconcile pass plus the three-file re-read** (`GOAL.md`,
 survived, and a fresh RE-ANCHOR line is what proves the session is oriented
 again.
 
-In Agent-Team mode the pass also censuses the command layer with `ListAgents`.
-**A resumed lead assumes NO commanders are alive until the census says
-otherwise** — teammates do not survive a resume. Re-spawning them from the
-three state layers is owned by `references/agent-team.md`.
+In Agent-Team mode the pass also censuses the command layer. **The PRIMARY
+liveness instrument is each commander's own session TRANSCRIPT**, at
+`{active config root}/projects/{cwd-slug}/{uuid}.jsonl`, whose message lines
+carry `"teamName":"session-{id8}"` and `"agentName":"{name}"`. The transcript
+existing is the start; its TAIL is what happened. The full procedure is owned by
+`references/agent-team.md` §10 and is cited here, never restated.
+
+**`ListAgents` is CORROBORATION, never the census.** Proven on the operator's
+Mac, 2026-08-12: a live teammate held its own tmux pane while the session
+reported "not active, no pane" and `ListAgents` never listed it; `TaskOutput`
+answered "No task found" for that same teammate while its artifacts sat on disk.
+A commander the roster call fails to list is NOT thereby dead or unspawned.
+**Its silence is never evidence of absence and may never ground a negative
+verdict** — which is this file's own §1 lesson about the brittle pattern,
+arriving in a second instrument: a call that could not have found anything is
+not entitled to report nothing found.
+
+Two more roster-shaped instruments are demoted with it. The
+`inboxes/{name}.json` artifact is **split-pane-only** — in-process teammates
+never create one, and in-process has been the documented default since Claude
+Code v2.1.179 — so it is a split-pane corroborator and a delivery diagnostic,
+never primary proof and never the ground of a negative. And team directories are
+DELETED on disband: the roster vanishes while the transcripts persist, so a
+roster-based check fails for a third, independent reason. A named spawn may also
+have run as an ordinary SUBAGENT rather than a teammate; subagents write to
+`{slug}/{lead-uuid}/subagents/agent-{hex}.jsonl`, a namespace that never overlaps
+the teammate one, so a search of the teammate namespace alone can miss a live
+agent entirely.
+
+**A resumed lead assumes NO commanders are alive until the TRANSCRIPTS say
+otherwise** — teammates do not survive a resume. But "assume dead" is a starting
+POSTURE, not a finding: before re-spawning, prove the absence in the transcript
+namespaces above, because re-spawning a commander that is in fact live puts two
+writers on one domain. Re-spawning them from the three state layers is owned by
+`references/agent-team.md`.
