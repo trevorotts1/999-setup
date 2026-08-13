@@ -259,6 +259,8 @@ Whatever the tooling, the capture must be reproducible by a cold session from th
 package alone — a snapshot no one can re-fetch is not a bar (Section 3,
 Fetchable).
 
+**Viewports follow the Build Target** (`references/interview.md` Step 1c): `MOBILE_APP` is captured and judged at the mobile viewport; `WEB_APP`, `WEBSITE`, and desktop `DESKTOP_SOFTWARE` at desktop AND mobile; `MOBILE_AND_WEB` at BOTH viewports per surface. The comparison-conditions table records the exact sizes per run.
+
 ---
 
 ## 5. THE BLIND A/B PROTOCOL
