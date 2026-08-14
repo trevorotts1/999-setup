@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.13.0] — 2026-08-14
+
+### The interview asked a normal person thirty questions; the operator ruled on every one of them
+
+The operator ran the full interview on his own canary box and ruled on all 25
+questions asked. `references/interview.md` now opens with THE OPERATOR RULINGS
+(2026-08-14) — a binding supersede-in-place section (the agent-team.md §10
+pattern), with pointer lines at every block it amends.
+
+- **The defaults offer moves from question eleven to question one** (or two,
+  when the archetype truly must be asked): default mode answers ~9 plain
+  questions about money, taste, and consent; advanced mode adds the granular
+  ones. Everything else is decided by the run and REPORTED — "here is what I
+  decided; say the word to change it."
+- **Deleted as questions, wired as rules:** archetype derived from the brief;
+  DeepSeek direct always wins when funded (hosted DeepSeek is the reported
+  fallback); backups read from the router's own wiring; brand-new project →
+  one new repo on `main`, tool pushes; continuous-until-done and auto-merge
+  are the product's promise, never questions; the loop-state file is the
+  skill's own artifact; usage windows are knowable or measured; the busy
+  ladder is wired (10s → 30s → 1m → 2m → 4m → 8m, cap 15m; keep working;
+  flag past one hour and keep climbing).
+- **Rewritten:** the done-condition is written by the run and shown for one
+  yes/no; the winning-bar question gets plain words and a default; the
+  helpers question (advanced only) carries a plain explainer of workflows
+  and sub-agents; the three seats are always planner, builder, AND checker —
+  the checker never omitted again.
+- **Detection before consent:** the 130 MB browser download is asked only
+  when no capture tool is already on the box (the canary had two and was
+  still asked), and the consent is remembered per box.
+- **Never re-ask:** answers persist to 00-INPUT as given; after a compaction
+  the run re-reads them — the canary was asked the same first question twice.
+  The question ceiling is stated once; the canary's 32 → 27 → 30 drift is
+  named a defect.
+- **Recorded doctrine (R4):** for every builder a paired checker — build and
+  QC capacity planned as equal halves; the gauntlet-loop mechanics remain
+  owned by references/gauntlet.md.
+
+Files changed: `.claude/skills/spec-protocol/references/interview.md`,
+`.claude/skills/spec-protocol/VERSION` (1.12.0 → 1.13.0), and this file.
+
 ## [1.12.1] — 2026-08-13
 
 ### The harness's advisory workflow-size guideline steered every session small, against the operator's width doctrine
