@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.12.1] — 2026-08-13
+
+### The harness's advisory workflow-size guideline steered every session small, against the operator's width doctrine
+
+- **`enable-agent-teams.sh` (macOS) and `Enable-AgentTeams.ps1` (Windows) now
+  merge one more key** in the same atomic write, same backup, same
+  validate-or-restore envelope: top-level `"workflowSizeGuideline":
+  "unrestricted"` in every configured root. Claude Code's default guideline
+  ("medium — keep workflows under 15 agents") is injected into every session
+  and pushes dynamic workflows toward timid fan-outs; spec-protocol's width
+  governance belongs to the Capacity Ledger, the operator wave cap, and
+  provider ceilings — never to an advisory default. A pre-existing different
+  value is overwritten, reported as a deferred note, and recoverable from
+  that root's backup. The leaves-diff validator's allowed-to-differ set and
+  the selftests (merge-into-existing, create-from-absent, multi-root) now
+  cover the key; the macOS battery passes 9/9. The Windows script's edits are
+  pattern-identical but were not machine-parsed in this release (no
+  PowerShell on the authoring box) — its own `-SelfTest` proves them on first
+  Windows use.
+
+Files changed:
+`.claude/skills/nine-router-setup/scripts/macos/enable-agent-teams.sh`,
+`.claude/skills/nine-router-setup/scripts/windows/Enable-AgentTeams.ps1`,
+and this file.
+
 ## [1.12.0] — 2026-08-13
 
 ### Teammates froze forever at the folder-trust dialog, and a routed session could be told to launch an Anthropic-billed worker

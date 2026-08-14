@@ -50,7 +50,12 @@
 #   P3  timestamped backup of EVERY targeted settings file, ONE PER ROOT; never
 #       overwrites a backup, and every backup path is printed in the report.
 #   P4  MERGE "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" into the existing
-#       "env" object of EVERY root — add/update ONLY that key.
+#       "env" object of EVERY root — add/update ONLY that key — and MERGE
+#       top-level "workflowSizeGuideline": "unrestricted" into every root
+#       (operator width policy, 2026-08-13: the harness's default "medium"
+#       guideline steers dynamic workflows small; width governance belongs to
+#       the Capacity Ledger, the wave cap, and provider ceilings, never to an
+#       advisory default).
 #   P5  MERGE top-level "teammateMode": "tmux" into every root — ONLY when P0
 #       PROVED tmux is present, and P0's proof is a real `tmux -V` run whose
 #       exit code was read, never a name that merely resolves. A display mode is
@@ -124,6 +129,13 @@ MAILBOX_MIN_VERSION="2.1.224"      # ListAgents / SendMessage floor
 FLAG_KEY="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 FLAG_VALUE="1"
 TEAMMATE_MODE="tmux"
+# Workflow width policy (operator's standing rule, 2026-08-13): the harness's
+# default "medium" workflow size guideline steers dynamic workflows small on
+# every session, which fights the skill doctrine's max-parallel dispatch.
+# "unrestricted" removes the advisory guideline; real width governance stays
+# with the Capacity Ledger, the operator wave cap, and provider ceilings.
+WFSIZE_KEY="workflowSizeGuideline"
+WFSIZE_VALUE="unrestricted"
 
 SETTINGS_PATH="${AGENT_TEAMS_SETTINGS:-$HOME/.claude/settings.json}"
 SETTINGS_OVERRIDE=0
@@ -384,7 +396,8 @@ build_root_set() {
 #         is written (an unreadable settings.json is never treated as empty).
 merge_settings() {
   SETTINGS_PATH="$1" WRITE_MODE="$2" FLAG_KEY="$FLAG_KEY" FLAG_VALUE="$FLAG_VALUE" \
-  TEAMMATE_MODE="$TEAMMATE_MODE" "$NODE" -e '
+  TEAMMATE_MODE="$TEAMMATE_MODE" WFSIZE_KEY="$WFSIZE_KEY" WFSIZE_VALUE="$WFSIZE_VALUE" \
+  "$NODE" -e '
     const fs = require("fs");
     const p = process.env.SETTINGS_PATH;
     const writeMode = process.env.WRITE_MODE === "1";
@@ -411,8 +424,12 @@ merge_settings() {
       console.error("ENV_NOT_A_JSON_OBJECT"); process.exit(3);
     }
     const prevFlag = hasOwn(env, process.env.FLAG_KEY) ? env[process.env.FLAG_KEY] : undefined;
+    const prevWfsize = hasOwn(obj, process.env.WFSIZE_KEY) ? obj[process.env.WFSIZE_KEY] : undefined;
     // MERGE: add/update ONLY these keys. Nothing else is touched.
     env[process.env.FLAG_KEY] = process.env.FLAG_VALUE;
+    // Workflow width policy: remove the advisory size guideline so dynamic
+    // workflows size to the work. Top-level key, same merge discipline.
+    obj[process.env.WFSIZE_KEY] = process.env.WFSIZE_VALUE;
     // teammateMode is DISPLAY ONLY and is written only when tmux was proven
     // present. With no tmux the key is left exactly as it was (usually absent),
     // so the mode never names a binary that is not there.
@@ -431,6 +448,7 @@ merge_settings() {
     console.log("EXISTED=" + (existed ? "1" : "0"));
     console.log("PREV_FLAG=" + (prevFlag === undefined ? "<absent>" : String(prevFlag)));
     console.log("PREV_MODE=" + (prevMode === undefined ? "<absent>" : String(prevMode)));
+    console.log("PREV_WFSIZE=" + (prevWfsize === undefined ? "<absent>" : String(prevWfsize)));
     console.log("HAS_TEAMMATE_DEFAULT_MODEL=" + (hadModelKey ? "1" : "0"));
   '
 }
@@ -443,7 +461,8 @@ merge_settings() {
 # exit 0 clean; exit 4 with a named reason on stderr.
 validate_settings() {
   SETTINGS_PATH="$1" BACKUP_PATH="${2:-}" WRITE_MODE="${3:-1}" FLAG_KEY="$FLAG_KEY" \
-  FLAG_VALUE="$FLAG_VALUE" TEAMMATE_MODE="$TEAMMATE_MODE" "$NODE" -e '
+  FLAG_VALUE="$FLAG_VALUE" TEAMMATE_MODE="$TEAMMATE_MODE" WFSIZE_KEY="$WFSIZE_KEY" \
+  WFSIZE_VALUE="$WFSIZE_VALUE" "$NODE" -e '
     const fs = require("fs");
     const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const readJson = (p) => JSON.parse(fs.readFileSync(p, "utf8").replace(/^\uFEFF/, ""));
@@ -457,6 +476,9 @@ validate_settings() {
     const flagKey = process.env.FLAG_KEY;
     if (!cur.env || typeof cur.env !== "object" || cur.env[flagKey] !== process.env.FLAG_VALUE) {
       console.error("FLAG_NOT_CONFIRMED"); process.exit(4);
+    }
+    if (cur[process.env.WFSIZE_KEY] !== process.env.WFSIZE_VALUE) {
+      console.error("WFSIZE_NOT_CONFIRMED"); process.exit(4);
     }
     if (writeMode) {
       if (cur.teammateMode !== process.env.TEAMMATE_MODE) {
@@ -496,7 +518,7 @@ validate_settings() {
       const newMap = new Map(newLeaves);
       // Only the keys this script is allowed to touch may differ. teammateMode
       // is allowed to differ ONLY when it was actually written this run.
-      const allowed = new Set(["env." + flagKey]);
+      const allowed = new Set(["env." + flagKey, process.env.WFSIZE_KEY]);
       if (writeMode) allowed.add("teammateMode");
       const lost = [];
       for (const [path, val] of oldLeaves) {
@@ -1080,7 +1102,17 @@ merge_all_roots() {
       esac
     fi
 
-    log "${ROOT_LABEL[$i]}: merged $FLAG_KEY=\"$FLAG_VALUE\" into env (${ROOT_MODE[$i]})"
+    # Workflow width reporting, per root: an overwritten different value is a
+    # deferred note with the backup as the recovery path, same as teammateMode.
+    case "$MERGE_OUT" in
+      *"PREV_WFSIZE=<absent>"*|*"PREV_WFSIZE=$WFSIZE_VALUE"*) : ;;
+      *) DEFERRED="$DEFERRED
+- ${ROOT_LABEL[$i]}: $WFSIZE_KEY already had a different value; it was set to
+  \"$WFSIZE_VALUE\" per the operator's width policy (2026-08-13). The previous
+  value is preserved in that root's backup above." ;;
+    esac
+
+    log "${ROOT_LABEL[$i]}: merged $FLAG_KEY=\"$FLAG_VALUE\" into env and $WFSIZE_KEY=\"$WFSIZE_VALUE\" at top level (${ROOT_MODE[$i]})"
     i=$((i + 1))
   done
 }
@@ -1324,6 +1356,7 @@ JSON
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
       const ok = s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
         && s.teammateMode === "tmux"
+        && s.workflowSizeGuideline === "unrestricted"
         && s.env.EXISTING_VAR === "keep-me"
         && s.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION === "1000"
         && s.model === "opus[1m]"
@@ -1342,7 +1375,7 @@ JSON
   rc=0; st_run "$h2" || rc=$?
   if [ "$rc" -eq 0 ] && [ -f "$h2/.claude/settings.json" ] && SETTINGS="$h2/.claude/settings.json" st_node '
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
-      process.exit(s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" && s.teammateMode === "tmux" ? 0 : 1);'; then
+      process.exit(s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" && s.teammateMode === "tmux" && s.workflowSizeGuideline === "unrestricted" ? 0 : 1);'; then
     printf 'PASS  2. create a valid settings.json when none exists\n'
   else
     printf 'FAIL  2. create a valid settings.json when none exists (exit %s) — see %s\n' "$rc" "$h2/log.txt"
@@ -1455,6 +1488,9 @@ JSON
         plain.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
         && nine.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
         && plain.teammateMode === "tmux" && nine.teammateMode === "tmux"
+        && plain.workflowSizeGuideline === "unrestricted"
+        && nine.workflowSizeGuideline === "unrestricted"
+        && !bpj.workflowSizeGuideline && !bnj.workflowSizeGuideline
         && plain.env.SENTINEL === "six-plain" && nine.env.SENTINEL === "six-routed"
         && plain.model === "plain-root-model" && nine.model === "routed-alias"
         && nine.teammateDefaultModel === null

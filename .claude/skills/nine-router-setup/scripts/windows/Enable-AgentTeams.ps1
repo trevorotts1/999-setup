@@ -9,8 +9,9 @@
 #   P2  read-only inspection of running Claude work. Observation only.
 #   P3  timestamped backup of %USERPROFILE%\.claude\settings.json; an existing
 #       backup is NEVER overwritten.
-#   P4  MERGE "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" into the existing
-#       "env" object - add or update ONLY that key.
+#   P4  MERGE "workflowSizeGuideline": "unrestricted" at top level (operator
+#       width policy, 2026-08-13) and "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" into the existing
+#       "env" object - add or update ONLY those keys.
 #   P5  teammateMode: NOT WRITTEN ON WINDOWS. Recorded as
 #       DEFERRED-UNDETERMINED. "tmux" is a Unix assumption; there is no tmux on
 #       native Windows and no display mode has been probed there. The skill's
@@ -68,6 +69,12 @@ $TeamsMinVersion = '2.1.178'      # Agent Teams floor (the procedure's requireme
 $MailboxMinVersion = '2.1.224'    # ListAgents / SendMessage floor (macOS/Linux only)
 $FlagKey = 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'
 $FlagValue = '1'
+# Workflow width policy (operator's standing rule, 2026-08-13): remove the
+# harness's advisory "medium" workflow size guideline so dynamic workflows
+# size to the work; width governance stays with the Capacity Ledger, the
+# operator wave cap, and provider ceilings.
+$WfsizeKey = 'workflowSizeGuideline'
+$WfsizeValue = 'unrestricted'
 $NineProfile = Join-Path $env:USERPROFILE '.claude-nine\settings.json'
 
 # Report fields (procedure Phase 13). NOT CHECKED, never a bare negative: a phase
@@ -325,6 +332,7 @@ function Invoke-SelfTest {
     $rc = Invoke-Case $s1 @{}
     $o1 = Get-Content -LiteralPath $s1 -Raw | ConvertFrom-Json
     if ($rc -eq 0 -and $o1.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS -eq '1' -and
+        $o1.workflowSizeGuideline -eq 'unrestricted' -and
         $o1.env.EXISTING_VAR -eq 'keep-me' -and $o1.model -eq 'opus[1m]' -and
         $o1.permissions.allow[0] -eq 'Bash(ls:*)' -and
         $o1.hooks.Stop[0].hooks[0].command -eq 'true') {
@@ -337,7 +345,7 @@ function Invoke-SelfTest {
     $rc = Invoke-Case $s2 @{}
     if ($rc -eq 0 -and (Test-Path -LiteralPath $s2)) {
         $o2 = Get-Content -LiteralPath $s2 -Raw | ConvertFrom-Json
-        if ($o2.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS -eq '1') {
+        if ($o2.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS -eq '1' -and $o2.workflowSizeGuideline -eq 'unrestricted') {
             Write-Output 'PASS  2. create a valid settings.json when none exists'
         } else { Write-Output 'FAIL  2. create a valid settings.json when none exists'; $fails++ }
     } else { Write-Output "FAIL  2. create a valid settings.json when none exists (exit $rc)"; $fails++ }
@@ -499,10 +507,17 @@ try {
         Write-EnablementReport
         exit 2
     }
-    # MERGE: add or update ONLY this key. Nothing else is touched.
+    # MERGE: add or update ONLY these keys. Nothing else is touched.
     $settings.env | Add-Member -NotePropertyName $FlagKey -NotePropertyValue $FlagValue -Force
+    # Workflow width policy: top-level key, same merge discipline. An
+    # overwritten different value is recoverable from the backup above.
+    $prevWfsize = if ($settings.PSObject.Properties.Name -contains $WfsizeKey) { $settings.$WfsizeKey } else { $null }
+    $settings | Add-Member -NotePropertyName $WfsizeKey -NotePropertyValue $WfsizeValue -Force
     Write-JsonAtomic $settings $SettingsPath
-    Write-Log "merged $FlagKey=`"$FlagValue`" into env"
+    Write-Log "merged $FlagKey=`"$FlagValue`" into env and $WfsizeKey=`"$WfsizeValue`" at top level"
+    if ($null -ne $prevWfsize -and $prevWfsize -ne $WfsizeValue) {
+        $Deferred += "WORKFLOW SIZE: $WfsizeKey already had a different value; it was set to `"$WfsizeValue`" per the operator's width policy (2026-08-13). The previous value is preserved in the backup above."
+    }
 
     # ---- P5. TEAMMATE MODE: DEFERRED-UNDETERMINED ------------------------
     # tmux is a Unix assumption. No teammateMode value is written on native
@@ -516,6 +531,7 @@ try {
     try {
         $cur = Read-SettingsObject $SettingsPath
         if ($cur.env.$FlagKey -ne $FlagValue) { $valid = $false; $reason = 'FLAG_NOT_CONFIRMED' }
+        if ($valid -and $cur.$WfsizeKey -ne $WfsizeValue) { $valid = $false; $reason = 'WFSIZE_NOT_CONFIRMED' }
         if ($valid -and $backup) {
             $old = Read-SettingsObject $backup
             $oldLeaves = New-Object System.Collections.ArrayList
@@ -524,7 +540,7 @@ try {
             Get-JsonLeaves -node $cur -prefix '' -acc $newLeaves
             $newMap = New-Object 'System.Collections.Generic.Dictionary[System.String,System.String]'
             foreach ($leaf in $newLeaves) { $newMap[$leaf.Path] = [string]$leaf.Value }
-            $allowed = @("env.$FlagKey")
+            $allowed = @("env.$FlagKey", $WfsizeKey)
             $lost = @()
             foreach ($leaf in $oldLeaves) {
                 if ($allowed -contains $leaf.Path) { continue }
