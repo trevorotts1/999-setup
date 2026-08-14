@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.14.0] — 2026-08-14
+
+### The paired tree and the width gate — the doctrine that produced thirty one-agent trees is retired
+
+The canary's measured gap (ledger authorized 20 trees × 10; dispatch produced
+30 trees of mostly 1 agent) traced to the doctrine's own "one item, one tree"
+reading. Replaced with the paired tree:
+
+- **The paired tree (SKILL.md parallelism block + workflows.md template +
+  gauntlet.md §13.5).** One tree = one stream of up to 8 units; every unit is
+  a builder+judge PAIR, both seat-pinned, staged as a pipeline so the judge
+  fires the instant its own unit's build lands. Tree width = units × 2, capped
+  at the operator's 16-ceiling (hence 8 units per tree). QC capacity is
+  planned as an equal half of every dispatch (operator ruling R4). The QC lane
+  is visible in the same tree it judges; independence rides the pin, not the
+  dispatch mechanism.
+- **The width gate (fail-closed).** Every tree's dispatch-log row states its
+  arithmetic (units, × 2, the ceiling, the ledger line cited) BEFORE launch; a
+  script planning below its arithmetic without a named reason is rejected and
+  re-authored (3 attempts, then fail-soft at best width with the shortfall
+  named — an overnight run never stalls on a gate). S4 is rewritten from
+  log-only to fail-closed enforcement of the same arithmetic.
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`,
+`references/workflows.md`, `references/gauntlet.md`, `VERSION`
+(1.13.4 → 1.14.0), and this file.
+
 ## [1.13.4] — 2026-08-14
 
 ### The canary's own postmortem: invisible workers, unreaped agents, stall-shaped status, and a media API doc bug
