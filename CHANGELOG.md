@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.14.2] — 2026-08-14
+
+### Nothing hidden: the tmux display is retired; workflows and subagents are the load-bearing path
+
+Operator ruling after the frozen-pane incident (teammates stuck for hours at
+prompts nobody could see, timers reading as work) and the Beanline proof that
+everything which shipped ran as visible workflows + subagents:
+
+- **Installer (enable-agent-teams, macOS): P5 retired** the way B3 was —
+  `teammateMode` is never written again, on any box, tmux present or not; the
+  harness's in-process display (teammates visible in the session's own agents
+  panel) rules everywhere. The tmux probe stays report-only; P6/P8 tmux
+  hygiene unchanged; selftests updated to assert the key stays ABSENT.
+  (Windows never wrote it — unchanged.)
+- **spec-protocol step 16.9: orchestration default is single-session lead +
+  paired-tree workflows.** An Agent Team forms ONLY on the operator's explicit
+  request, in their own words — "warranted by shape" no longer suffices. The
+  team doctrine (references/agent-team.md) is retained in full for those
+  opt-ins.
+- Operator boxes flipped the same day: both config roots now carry
+  `teammateMode: "in-process"` explicitly.
+
+Files changed:
+`.claude/skills/nine-router-setup/scripts/macos/enable-agent-teams.sh`,
+`.claude/skills/spec-protocol/SKILL.md`, `.claude/skills/spec-protocol/VERSION`
+(1.14.1 → 1.14.2), and this file.
+
 ## [1.14.1] — 2026-08-14
 
 ### Dispatch intelligence made explicit: size down, scale up, hold by not launching

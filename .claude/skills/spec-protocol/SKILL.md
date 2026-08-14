@@ -1057,7 +1057,12 @@ When the operator provides a folder, that folder IS the project. Its documents A
     tag scheme, and the best-stable-build pointer. State survives context
     windows on disk — never in conversation memory.
 16.9. **Decide the orchestration mode and, on consent, spawn the team
-    (references/agent-team.md).** Answer the three-question core rule IN
+    (references/agent-team.md).** **DEFAULT (operator ruling, 2026-08-14):
+    single-session lead + paired-tree workflows — teams are formed ONLY when
+    the operator explicitly asks for one in their own words; "warranted by
+    shape" is no longer sufficient on its own. Everything a team supervises,
+    the watch-loop and the gauntlet already enforce deterministically, and the
+    workflow lane is the visible, governed one.** Answer the three-question core rule IN
     WRITING in the execution plan: subagents only / dynamic workflows /
     Agent Team — from the project's shape (doctrine #2's use/not-use lists) AND
     the Capacity Ledger's arithmetic (lead + 4 commanders = 5 persistent slots;
