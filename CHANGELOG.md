@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.13.4] — 2026-08-14
+
+### The canary's own postmortem: invisible workers, unreaped agents, stall-shaped status, and a media API doc bug
+
+Sourced from the Beanline run's written analysis and the operator's screenshots.
+
+- **QC joins the trees (SKILL.md Rule 2).** With seat pinning proven, judges
+  run workflow-wrapped and judge-seat-pinned — visible in `/workflows` and to
+  the watch-loop like every build lane; independence comes from the pin, not
+  the dispatch mechanism. Raw Agent-tool QC is a named fallback only, always
+  dispatch-logged with a reap deadline. (The postmortem's proposal to document
+  judges as living OUTSIDE the trees was built on the refuted override claim
+  and is not adopted; the inverse is.)
+- **Two new watch-loop standards.** S12 — every worker visible: build/fix/QC
+  dispatches are workflow-wrapped; any raw Agent dispatch carries a
+  dispatch-log row and reap deadline. S13 — finished-but-alive reap: an agent
+  whose output is on disk and has no next instruction is stopped, never left
+  ticking (the research agent that burned 13h CPU after finishing).
+- **The status contract (postmortem proposals h+i, adopted and extended).**
+  Mid-flight status always states: running-now per lane as counts, what is
+  gated on what, what remains before a link, and PERCENT DONE as a number;
+  token counters are named as session totals, never per-agent. Handover fires
+  only on the four stop conditions; RUNNING is the default state to report.
+- **KIE createTask body corrected (media-pipeline.md, postmortem §5a).** The
+  body requires a top-level `model` field beside `input`; `{"input":{…}}`
+  alone returns HTTP 500 — verified live by two independent agents.
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`,
+`references/media-pipeline.md`, `VERSION` (1.13.3 → 1.13.4), and this file.
+
 ## [1.13.3] — 2026-08-14
 
 ### Bare agent() calls put the builder's brain in the judge's seat, and the fix cap rose to twenty
