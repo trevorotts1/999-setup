@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.13.1] — 2026-08-14
+
+### The run trimmed the operator's 16-per-workflow to the hardware clamp and presented it as a correction
+
+Operator ruling, verbatim intent: 16 subagents per workflow is the authorized
+DISPATCH size — the number is never changed. min(16, cores−2) is the harness
+EXECUTION clamp: it says how many of the 16 run in the same instant (10 on a
+12-core box) while the rest queue automatically the moment a slot frees. The
+clamp is scheduling, never sizing — dispatching 10-agent workflows because the
+clamp says 10, or telling the operator his 16 "really means" fewer, is the
+defect. Both numbers are stated wherever width is stated: dispatched width and
+executing-at-once. The false-320 lesson stands unchanged: never PROMISE
+workflows × 16 as simultaneous execution.
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md` (the width doctrine
+bullet), `.claude/skills/spec-protocol/references/interview.md` (the builder
+width axis), `VERSION` (1.13.0 → 1.13.1), and this file.
+
 ## [1.13.0] — 2026-08-14
 
 ### The interview asked a normal person thirty questions; the operator ruled on every one of them
