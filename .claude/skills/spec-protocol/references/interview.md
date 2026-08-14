@@ -1045,8 +1045,10 @@ number into this project's execution plan.
   "$20 tier = 3 concurrent, $100 tier = 10 — use 8." Every one of those is a
   PROVIDER ceiling (axis 3) and none of them is a width. Harness width is a
   separate axis with TWO numbers, both stated, never conflated (operator
-  ruling, 2026-08-14): workflows are DISPATCHED at 16 subagents each — the
-  operator's authorized number, never trimmed to the clamp — while
+  ruling, 2026-08-14): workflows carry UP TO 16 subagents — the operator's
+  ceiling, sized to the work with intelligence (a trivial check needs one
+  agent; sixteen independent units need sixteen), never trimmed to the clamp
+  and never padded to the cap — while
   min(16, cores−2), MEASURED on this machine at run time, is the EXECUTION
   clamp: how many of the 16 run in the same instant, the rest queueing
   automatically; hard ceiling 30 workflows. Never PROMISE a fixed

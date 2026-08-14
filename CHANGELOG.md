@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.13.2] — 2026-08-14
+
+### 16 is the ceiling, not a quota — the operator's clarification of 1.13.1
+
+1.13.1 overcorrected a trim into a quota. The ruling as the operator actually
+means it: every workflow carries UP TO 16 subagents, sized to the work with
+intelligence — a trivial check gets one agent, sixteen independent units get
+sixteen. Two defects, equally forbidden: TIMIDITY (sizing below what the work
+supports while independent work waits) and PADDING (inventing agents to hit a
+number). The execution-clamp language of 1.13.1 stands unchanged: the cores
+clamp is scheduling, never sizing, never a correction of the operator's
+ceiling.
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`,
+`.claude/skills/spec-protocol/references/interview.md`, `VERSION`
+(1.13.1 → 1.13.2), and this file.
+
 ## [1.13.1] — 2026-08-14
 
 ### The run trimmed the operator's 16-per-workflow to the hardware clamp and presented it as a correction
