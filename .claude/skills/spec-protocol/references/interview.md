@@ -1044,10 +1044,15 @@ number into this project's execution plan.
   Flash direct example "up to 2,500 subagents"; Ollama Cloud DeepSeek example
   "$20 tier = 3 concurrent, $100 tier = 10 — use 8." Every one of those is a
   PROVIDER ceiling (axis 3) and none of them is a width. Harness width is a
-  separate axis: min(16, cores−2) subagents per workflow, MEASURED on this
-  machine at run time, with a hard ceiling of 30 workflows — never write a fixed
-  "workflows × 16" product, which is the conflation that put a false 320 promise
-  into an earlier version of this skill. The Capacity Ledger reconciles the three
+  separate axis with TWO numbers, both stated, never conflated (operator
+  ruling, 2026-08-14): workflows are DISPATCHED at 16 subagents each — the
+  operator's authorized number, never trimmed to the clamp — while
+  min(16, cores−2), MEASURED on this machine at run time, is the EXECUTION
+  clamp: how many of the 16 run in the same instant, the rest queueing
+  automatically; hard ceiling 30 workflows. Never PROMISE a fixed
+  "workflows × 16" as simultaneous execution — that conflation put a false 320
+  promise into an earlier version of this skill; the honest statement is both
+  numbers, dispatched width and executing-at-once. The Capacity Ledger reconciles the three
   axes and names the governing number (`references/capacity.md` §3). Recommend
   DeepSeek direct ($20+) for the swarm, but confirm today's cap before relying on
   any of the numbers above.
