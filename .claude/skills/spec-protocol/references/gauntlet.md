@@ -1052,6 +1052,22 @@ council returns 4/4) — never an accidental while-loop.
 
 ---
 
+## 13.5 THE PAIRING DOCTRINE — builders and checkers are equal halves (operator ruling R4, 2026-08-14)
+
+For every builder there is a paired checker, and the pair lives INSIDE the
+same workflow tree: build is stage 1, the judge is stage 2 of the same
+pipeline, each pinned to its own seat (`references/workflows.md` §0.0 — the
+canonical paired tree). A wave of 8 builders IS 16 agents, and the Capacity
+Ledger's width arithmetic counts both halves — QC capacity is planned as an
+equal half of every dispatch, never bolted onto leftover capacity. The judge
+fires the instant its own unit's build lands (no barrier), which preserves
+Rule 2's instant-dispatch promise while keeping the whole lane visible in
+`/workflows` and to the watch-loop (S12). Independence is carried by the PIN
+(Law 7/30 — the judge's resolved base model differs from the builder's),
+never by the dispatch mechanism. A FAIL verdict spawns a fixer + re-judge
+pair under the fix cap (Rule 3.22 — 20 cycles). Raw Agent-tool judges are the
+named fallback only, dispatch-logged with a reap deadline.
+
 ## 14. THE CANONICAL OPERATING LOOP (one loop — the doctrine's 16 steps, the six workflows, and the Agent-Team control flow, fused)
 
 **READ THIS FIRST — a station is a STEP, not a window.** Each of the nineteen

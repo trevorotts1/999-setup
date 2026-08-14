@@ -34,6 +34,24 @@ observations and is REFUTED — the instrument was never given an override to
 ignore.) Consequence worth building on: builders and their paired checkers can
 run inside ONE workflow on different brains — pin each half to its seat.
 
+**The canonical paired tree (2026-08-14 — the dispatch template):** up to 8
+units per tree, every unit a builder+judge pair, judge firing the instant its
+own build lands (pipeline has no barrier between stages):
+
+```js
+export const meta = { name: 'pages-a', description: 'build+judge 8 pages',
+  phases: [{ title: 'Build' }, { title: 'Judge' }] }
+const results = await pipeline(units,
+  (u)        => agent(buildPrompt(u),        {model: 'opus',   phase: 'Build', label: `build:${u.name}`}),
+  (built, u) => agent(judgePrompt(u, built), {model: 'sonnet', phase: 'Judge', label: `judge:${u.name}`})
+)
+return results
+```
+
+Agent count = units × 2, capped at the operator's 16-ceiling (hence 8 units).
+The width gate (SKILL.md) rejects a script that plans below its arithmetic
+without a named reason.
+
 ---
 
 ## 0. TASK ≠ WORKFLOW ≠ TEAMMATE — the layer contract

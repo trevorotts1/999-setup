@@ -122,23 +122,39 @@ ONE work item, not the execution order of ALL work items. The orchestrator's
 job is to decompose work into the maximum number of INDEPENDENT STREAMS and
 launch each as its OWN workflow, all in the same turn.
 
-**Parallelism = multiple workflow TREES, not multiple agents inside one tree.**
-One workflow = one independent stream of work-items-through-lifecycle. N
-streams = N workflows launched simultaneously. Each appears as its own tree in
-`/workflows` with its own `[MODEL xN]` prefix. A single workflow containing all
-the work is a VIOLATION — logged and auto-corrected by the watch-loop.
+**Parallelism = multiple PAIRED TREES (revised 2026-08-14 — the old
+"one item, one tree" reading produced thirty single-agent trees on the canary
+run and is retired).** One workflow tree = one independent stream carrying UP
+TO 8 units, and every unit inside it is a PAIR: a builder agent and its paired
+judge agent, both seat-pinned (SEAT PINNING above), dispatched as pipeline
+stages so the judge fires the instant its own unit's build lands. A tree's
+agent count = its units × 2, capped at the operator's 16-ceiling — which is
+exactly why 8 units is the chunk size. Streams larger than 8 units chunk into
+multiple trees; N streams = N trees launched simultaneously, each visible in
+`/workflows` with its `[MODEL xN]` prefix. A single tree containing all the
+work is a VIOLATION; so is a flock of one-agent trees where units were
+independent — both are logged and corrected by the watch-loop.
 
 **The lifecycle is per-item, not per-stage.** When item 1 finishes building,
-its QC workflow launches IMMEDIATELY — it does not wait for items 2 through N
-to finish building. Items flow through the lifecycle independently, in
-parallel, at their own speed.
+its paired judge runs IMMEDIATELY — stage 2 of the same tree, no barrier — it
+does not wait for items 2 through N. Items flow through the lifecycle
+independently, in parallel, at their own speed, and the QC lane is visible in
+the same tree as the build it judges.
 
-**The dependency graph determines width.** Before every dispatch, ask: "How
-many independent streams does this work decompose into?" The answer comes from
-the dependency graph's topological sort — the largest set of items with zero
-incomplete dependencies. That number is N. Launch N workflows, each at
-min(16, cores−2) sub-agents (the harness runtime cap — 10 on a 12-core machine;
-the Capacity Ledger records the measured value), in the same turn.
+**The dependency graph determines the stream count; the pairing determines the
+width.** Before every dispatch: the topological sort's largest
+zero-incomplete-dependency set gives the streams; chunk each stream at ≤8
+units; each tree dispatches units × 2 agents (builder + judge, both pinned).
+min(16, cores−2) is the EXECUTION clamp (how many run in the same instant —
+the rest queue), never the sizing. Launch all N trees in the same turn.
+
+**THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
+dispatch-log row states the width arithmetic: units in this tree, × 2 for the
+pairing, the 16-ceiling, and the Capacity Ledger line it cites. A script whose
+agent plan falls below that arithmetic without a named reason is REJECTED and
+re-authored — up to 3 authoring attempts, then fail-soft: dispatch at the best
+achieved width with the shortfall named in the ledger, because an overnight
+run never stalls on a gate. S4 enforces the same arithmetic every 5 minutes.
 
 **The terminals are a MINIMUM, not a maximum.** One terminal can run multiple
 workflows simultaneously, each appearing as a separate tree. "One workflow per
@@ -182,7 +198,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S1 — Workflow count** | Number of running workflows ≥ number of independent streams with runnable work | Launch missing workflows immediately |
 | **S2 — Zero-workflow** | Runnable work exists AND zero workflows running | EMERGENCY — dispatch all runnable work in the same turn |
 | **S3 — Prefix visibility** | Every running workflow carries a visible [MODEL xN] prefix | Kill and re-launch without prefix |
-| **S4 — Sub-agent utilization** | Each workflow uses the maximum sub-agents its stream allows (up to min(16, cores−2) sub-agents — the harness runtime cap, 10 on a 12-core machine; the Capacity Ledger records the measured value) | Log under-utilization; correct on next dispatch |
+| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's 16-ceiling; min(16, cores−2) is the execution clamp, never the sizing | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
 | **S5 — Idle capacity** | No capacity sits idle while dispatchable work exists | Dispatch immediately |
 | **S6 — Heartbeat freshness** | Every running workflow's heartbeat is fresh (≤10 min for build/QC, ≤20 for merge) | Kill stale, re-dispatch from slice |
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
