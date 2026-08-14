@@ -82,6 +82,18 @@ Agent Teams is enabled with teammateMode "tmux", a NEW lead session is launched
 as `claude --teammate-mode tmux` (inside tmux where appropriate) — the flag only
 affects new sessions, never running ones.
 
+**HARNESS PURITY — binding, one direction (standing operator rule, 2026-08-13).**
+On a detected Claude-Nine or Claude-Codex harness, EVERY session this skill
+launches — every seat, loop, resume, and probe — is launched with the routed
+launcher, never plain `claude`. A plain-`claude` seat moves its tokens off the
+client's own router keys onto Anthropic billing, silently — and the leak hides
+in exactly the launch paths these templates use: a tmux-launched seat or a fresh
+terminal does NOT inherit the routed lead's environment, so "the env will carry
+it" is never a defense. The upgrade direction remains available: a plain `claude`
+session may launch `claude-nine` workers (probe first — agent-team.md §0.1).
+In-session spawns (subagents, workflows, teammates) inherit the harness
+automatically and need no substitution.
+
 ---
 
 ## The three SEATS (roles, not windows — in Agent-Team mode these are the commanders' domains; in single-session mode they are the lead's hats; only on the last-resort rung are they literal windows)
