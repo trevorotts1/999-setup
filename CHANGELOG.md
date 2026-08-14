@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.13.3] — 2026-08-14
+
+### Bare agent() calls put the builder's brain in the judge's seat, and the fix cap rose to twenty
+
+- **Seat pinning (SKILL.md swarm rules + workflows.md §0.0).** Every `agent()`
+  in every workflow script now carries an explicit `model:` pin for its seat —
+  never a bare call. Proven both directions on the operator's box
+  (2026-08-14): pins are honored (three lanes each resolved to their own
+  router chain inside workflow agents), and bare calls inherit the session
+  model (the canary's 19 build workflows and first 5 QC verdicts, all bare,
+  all landed on the session brain — the recorded claim that the Workflow tool
+  "ignores the model override" is refuted; it was never given one). With
+  pins, builders and their paired checkers run inside one workflow on
+  different brains.
+- **Fix cap: 3 → 20 cycles per finding (operator ruling, 2026-08-14).** Up to
+  twenty fix→re-judge rounds before a human sees it; after twenty,
+  `blocked-repeated-fail` as before. Updated in SKILL.md (rule text + limits
+  table), pipeline.md (streaming self-repair), and gauntlet.md §9 (the
+  reconciliation keeps its meaning: a cap-hit is NOT PASSED, never PASS).
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`,
+`references/workflows.md`, `references/pipeline.md`,
+`references/gauntlet.md`, `VERSION` (1.13.2 → 1.13.3), and this file.
+
 ## [1.13.2] — 2026-08-14
 
 ### 16 is the ceiling, not a quota — the operator's clarification of 1.13.1
