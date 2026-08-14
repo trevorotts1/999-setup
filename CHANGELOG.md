@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.12.0] — 2026-08-13
+
+### Teammates froze forever at the folder-trust dialog, and a routed session could be told to launch an Anthropic-billed worker
+
+- **The trust pre-flight** (`references/agent-team.md` §4.1, wired into
+  SKILL.md step 16.9). A teammate is a fresh interactive session; spawned in a
+  folder the active state file has not trusted, it stops at the folder-trust
+  dialog and waits forever at 0% CPU while the lead's panel timer ticks — the
+  timer is time-since-spawn, never work. Proven 2026-08-13 on the operator's
+  box: three teammates frozen 4h03m at the dialog; the same evening, with the
+  folder pre-trusted, a fresh teammate booted past it, worked, and reported.
+  This skill builds in a fresh project directory every run, and a fresh
+  directory is always untrusted — so the pre-flight now runs before the first
+  spawn of every run: read `projects[<cwd>].hasTrustDialogAccepted` in the
+  active state file (`$CLAUDE_CONFIG_DIR/.claude.json` when set, else
+  `$HOME/.claude.json`), merge the one key when absent (backup first, verify
+  after). §4.1 also carries the probe for an already-frozen teammate and the
+  two unstick moves; §10 gained the freeze as a named liveness state; the §0
+  fact table gained the row.
+- **Harness purity is now one-way** (§0.1, its fact-table row, and
+  `references/terminals.md`). A routed session (`claude-nine` /
+  `claude-codex`) may NEVER launch plain `claude` — a downgraded worker moves
+  its tokens off the client's own router keys onto Anthropic billing,
+  silently, and the leak hides in exactly the launch paths the seat templates
+  use (a tmux-launched seat or fresh terminal does not inherit the routed
+  lead's environment). The upgrade direction stays available and probed: a
+  plain `claude` session may launch `claude-nine` workers. In-session spawns
+  (subagents, workflows, teammates) inherit the harness automatically.
+- **Teammate work completion under 9Router: PROVEN, 2026-08-13.** The fact
+  table's open question closed on the operator's box: a teammate spawned from
+  a `claude-nine` lead ran its command, reported over `SendMessage`, sent the
+  idle notification, and its transcript's `message.model` named a router lane
+  on every request. Dated observation, one box; the §3 live probe remains the
+  only permitted claim about any session in hand.
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`,
+`.claude/skills/spec-protocol/references/agent-team.md`,
+`.claude/skills/spec-protocol/references/terminals.md`,
+`.claude/skills/spec-protocol/VERSION` (1.10.0 → 1.12.0), and this file.
+The skill VERSION jumps past 1.11.x — those numbers were consumed by
+installer-only releases — to stay monotonic and re-join the repository's tag
+line.
+
 ## [1.11.1] — 2026-08-13
 
 ### The fusion smoke test named a combo that v1.11.0 had already renamed away
