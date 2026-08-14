@@ -56,7 +56,13 @@
 #       guideline steers dynamic workflows small; width governance belongs to
 #       the Capacity Ledger, the wave cap, and provider ceilings, never to an
 #       advisory default).
-#   P5  MERGE top-level "teammateMode": "tmux" into every root — ONLY when P0
+#   P5  ⛔ RETIRED 2026-08-14 (operator ruling — the frozen-pane incident:
+#       hidden tmux panes froze teammates at prompts nobody could see while
+#       their timers read as work). teammateMode is NEVER WRITTEN any more;
+#       the harness's in-process display — visible in the session's own agents
+#       panel — rules on every box. The description below is the retired
+#       behavior, kept for the record. It used to
+#       MERGE top-level "teammateMode": "tmux" into every root — ONLY when P0
 #       PROVED tmux is present, and P0's proof is a real `tmux -V` run whose
 #       exit code was read, never a name that merely resolves. A display mode is
 #       never pointed at an absent binary: with no tmux the key is not written at
@@ -717,13 +723,19 @@ main() {
   local TMUX_PRESENT=0 TMUX_VERSION="" TMUX_PROBE_RC="" TMUX_ABSENT_REASON="" TMUX_BIN=""
   local WRITE_TEAMMATE_MODE=0
   probe_tmux || true
+  # ⛔ P5 RETIRED — operator ruling, 2026-08-14 (the frozen-pane incident):
+  # teammateMode "tmux" is NEVER written any more, on any box, tmux present or
+  # not. Hidden tmux panes froze teammates at interactive prompts nobody could
+  # see for hours while their timers read as work. The harness default display
+  # — in-process, visible in the session's own agents panel — is the ruling.
+  # The tmux probe stays as a REPORT-ONLY fact; the ids and the protection
+  # clause stay so no later pass re-adds the write.
+  WRITE_TEAMMATE_MODE=0
   if [ "$TMUX_PRESENT" -eq 1 ]; then
-    WRITE_TEAMMATE_MODE=1
-    log "P0 display-mode detection: tmux PROVED PRESENT BY RUNNING IT — \`tmux -V\` exited 0 and printed \"$TMUX_VERSION\" ($TMUX_BIN) — teammateMode will be set to \"$TEAMMATE_MODE\""
+    log "P0 display-mode detection: tmux present (\`tmux -V\` → \"$TMUX_VERSION\") — REPORT ONLY; teammateMode is NOT written (P5 retired 2026-08-14, in-process display rules)"
   else
-    WRITE_TEAMMATE_MODE=0
     log "P0 display-mode detection: tmux ABSENT — $TMUX_ABSENT_REASON"
-    log "P0 display-mode detection: teammateMode will NOT be written (in-process display mode applies)"
+    log "P0 display-mode detection: teammateMode is NOT written (in-process display mode applies)"
   fi
 
   # ---- P2. INSPECT CURRENTLY RUNNING WORK (READ-ONLY) ----------------------
@@ -820,14 +832,11 @@ main() {
     R_TMUX_MODE_LINE="tmux (split panes) — $TMUX_BIN — $TMUX_VERSION (proved by running \`tmux -V\`)"
   fi
 
-  # ---- P5 (reconciliation) -------------------------------------------------
-  # If P6 installed tmux just now, the display mode decided in P0 is stale. Redo
-  # the merge per root so the written mode matches reality, instead of making
-  # the operator run this step twice.
-  if [ "$TMUX_INSTALLED_HERE" -eq 1 ] && [ "$WRITE_TEAMMATE_MODE" -eq 0 ]; then
-    WRITE_TEAMMATE_MODE=1
-    log "tmux became available during P6 — re-merging teammateMode=\"$TEAMMATE_MODE\" per root"
-    merge_all_roots
+  # ---- P5 (reconciliation) — RETIRED 2026-08-14 with P5 itself --------------
+  # tmux becoming available no longer changes anything: teammateMode is never
+  # written (operator ruling above). The install is still reported.
+  if [ "$TMUX_INSTALLED_HERE" -eq 1 ]; then
+    log "tmux became available during P6 — noted; teammateMode still NOT written (P5 retired 2026-08-14)"
   fi
 
   if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
@@ -1355,7 +1364,7 @@ JSON
   if [ "$rc" -eq 0 ] && SETTINGS="$h1/.claude/settings.json" st_node '
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
       const ok = s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
-        && s.teammateMode === "tmux"
+        && s.teammateMode === undefined
         && s.workflowSizeGuideline === "unrestricted"
         && s.env.EXISTING_VAR === "keep-me"
         && s.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION === "1000"
@@ -1375,7 +1384,7 @@ JSON
   rc=0; st_run "$h2" || rc=$?
   if [ "$rc" -eq 0 ] && [ -f "$h2/.claude/settings.json" ] && SETTINGS="$h2/.claude/settings.json" st_node '
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
-      process.exit(s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" && s.teammateMode === "tmux" && s.workflowSizeGuideline === "unrestricted" ? 0 : 1);'; then
+      process.exit(s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" && s.teammateMode === undefined && s.workflowSizeGuideline === "unrestricted" ? 0 : 1);'; then
     printf 'PASS  2. create a valid settings.json when none exists\n'
   else
     printf 'FAIL  2. create a valid settings.json when none exists (exit %s) — see %s\n' "$rc" "$h2/log.txt"
@@ -1487,7 +1496,7 @@ JSON
       const ok =
         plain.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
         && nine.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
-        && plain.teammateMode === "tmux" && nine.teammateMode === "tmux"
+        && plain.teammateMode === undefined && nine.teammateMode === undefined
         && plain.workflowSizeGuideline === "unrestricted"
         && nine.workflowSizeGuideline === "unrestricted"
         && !bpj.workflowSizeGuideline && !bnj.workflowSizeGuideline
