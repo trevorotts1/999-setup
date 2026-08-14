@@ -478,7 +478,7 @@ goes at once.
 
 Reviews arrive as fixes land — not batched at the end. Up to 5×5 = 25 concurrent
 reviewers. Self-repair: if the reviewer rejects, a higher-reasoning model confirms
-(cap 3 cycles). A fix that clears review stages in the holding pen.
+(cap 20 cycles — operator ruling, 2026-08-14). A fix that clears review stages in the holding pen.
 
 ---
 

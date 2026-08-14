@@ -110,6 +110,7 @@ a violation of this rule. **Neither one buys the other any slack.**
 
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
 - Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 16 sub-agents per workflow — the operator's ceiling (ruling, 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 16 — a one-unit job gets one agent, sixteen independent units get sixteen. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 13 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 16 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2).
+- SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
 - Batch merging: time-triggered (every 15 minutes, whatever is ready merges as ONE batch with one atomic stamp: version + tag + changelog + README + update-script). NO count cap. Never piecemeal merges.
@@ -1121,8 +1122,9 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    OWN rubric (Law 29): the judge scores the ten categories PLUS the per-card QC
    section, an independent command that names the wrong outcome. Identifies
    gaps/defects/blockers + improvements; lists (1) what is wrong + how to fix,
-   (2) what to improve + how; then fixes. Self-repair capped at 3 cycles per
-   finding (Rule 3.22). Fixes run in parallel — one fixer per finding (Law 32).
+   (2) what to improve + how; then fixes. Self-repair capped at 20 cycles per
+   finding (Rule 3.22 — operator ruling 2026-08-14: up to twenty rounds before
+   a human sees it). Fixes run in parallel — one fixer per finding (Law 32).
 
 3. **Holding pen** — passing work stages in a pen (one per repo), not straight to
    main. The pen lives in the execution plan as a table, not as a file (Law 39).
@@ -1383,7 +1385,7 @@ See `references/audience.md` for the full audience UX rules.
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
-| Fix loop cap | 3 cycles per finding | Rule 3.22. After three, mark blocked-repeated-fail, move on. |
+| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, move on. |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |

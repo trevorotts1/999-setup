@@ -630,17 +630,18 @@ requirements hides a missing proof.
 
 ---
 
-## 9. NON-SUCCESS STATES & THE 3-CYCLE RECONCILIATION
+## 9. NON-SUCCESS STATES & THE FIX-CAP RECONCILIATION
 
 Two stop mechanics exist and must never be confused:
 
-- **The existing 3-cycle fix cap (Rule 3.22)** is an OPERATIONAL escalation
-  trigger. Three failed loops on one finding → `blocked-repeated-fail`, history
-  recorded, move on. It lives in the pipeline (`references/pipeline.md`).
+- **The fix cap (Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14;
+  formerly 3)** is an OPERATIONAL escalation trigger. Twenty failed loops on one
+  finding → `blocked-repeated-fail`, history recorded, move on. It lives in the
+  pipeline (`references/pipeline.md`).
 - **The B2H is the SUCCESS stop.** The successful stop rule in THE BAR TO HIT is
   the ONLY condition under which a work item reports PASS.
 
-**A limit-hit run reports NOT PASSED, never PASS.** Hitting the 3-cycle cap, a
+**A limit-hit run reports NOT PASSED, never PASS.** Hitting the fix cap, a
 timeout, a budget limit, or a rate limit is an operational limit — it ends the
 run for that item, and the item is reported in its blocked state, never as a
 pass (GL-007, Law 50). A run that stopped because the cap was hit is not a run
