@@ -156,6 +156,25 @@ re-authored — up to 3 authoring attempts, then fail-soft: dispatch at the best
 achieved width with the shortfall named in the ledger, because an overnight
 run never stalls on a gate. S4 enforces the same arithmetic every 5 minutes.
 
+**DISPATCH INTELLIGENCE (2026-08-14) — the three judgments, made at every
+dispatch and re-made by the watch-loop every 5 minutes:**
+
+1. **SIZE DOWN when the work is small.** The arithmetic is units × 2, never a
+   quota: 3 units dispatch 6 agents; one trivial check dispatches ONE agent in
+   one tree. Padding a dispatch to reach the ceiling is the same violation as
+   timidity — S4 checks the ARITHMETIC, not the ceiling.
+2. **SCALE UP the instant work unblocks.** The dispatchable set is recomputed
+   at every unit completion and every watch-loop tick; a stream that just
+   became runnable launches as a new paired tree IMMEDIATELY, in the same turn
+   it became runnable (S1, S2, S5 enforce this). Maximum productivity has one
+   definition: no runnable unit waiting while capacity exists.
+3. **HOLD what is blocked — by not launching it.** A tree whose units'
+   dependencies are not all complete is NOT dispatched. Holding is never done
+   by launching a tree that sits and waits — an idle tree burns context and
+   its timer reads as work. The blocked stream stays in the graph, named in
+   the status as "gated on <X>", and fires the moment its inputs land.
+   Sequential waves exist ONLY where the dependency graph requires them.
+
 **The terminals are a MINIMUM, not a maximum.** One terminal can run multiple
 workflows simultaneously, each appearing as a separate tree. "One workflow per
 terminal" is a floor, never a ceiling.

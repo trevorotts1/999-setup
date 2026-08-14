@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.14.1] — 2026-08-14
+
+### Dispatch intelligence made explicit: size down, scale up, hold by not launching
+
+The three judgments were implied across S1/S2/S4/S5 and the dispatch rules;
+they are now stated once, as one block beside the width gate (SKILL.md):
+(1) size DOWN — the arithmetic is units × 2, never a quota; padding to the
+ceiling equals timidity; (2) scale UP — the dispatchable set is recomputed at
+every unit completion and watch-loop tick, and newly unblocked streams launch
+immediately; maximum productivity = no runnable unit waiting while capacity
+exists; (3) HOLD blocked work by not launching it — never by launching a tree
+that idles; blocked streams are named in status as "gated on X" and fire the
+moment inputs land. (The per-run version check already exists — SKILL.md step
+2.5 runs check-update.sh on every run, every launcher — verified, unchanged.)
+
+Files changed: `.claude/skills/spec-protocol/SKILL.md`, `VERSION`
+(1.14.0 → 1.14.1), and this file.
+
 ## [1.14.0] — 2026-08-14
 
 ### The paired tree and the width gate — the doctrine that produced thirty one-agent trees is retired
