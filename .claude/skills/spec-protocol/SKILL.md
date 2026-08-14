@@ -114,7 +114,7 @@ The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge b
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
 - Batch merging: time-triggered (every 15 minutes, whatever is ready merges as ONE batch with one atomic stamp: version + tag + changelog + README + update-script). NO count cap. Never piecemeal merges.
-- QC runs as a parallel pool — one QC sub-agent per completed work item, dispatched the instant the item completes, NEVER a serial blocker.
+- QC runs as a parallel pool — one QC sub-agent per completed work item, dispatched the instant the item completes, NEVER a serial blocker. **QC dispatches are WORKFLOW-WRAPPED and judge-seat-PINNED (2026-08-14):** judges run inside workflow trees with an explicit `model:` pin on the judge seat (SEAT PINNING above), so the watch-loop and `/workflows` see the QC lane exactly as they see the build lane. Independence comes from the PIN, never from the dispatch mechanism — the old reading that judges must live outside the trees died with the seat-pinning proof. A raw Agent-tool QC dispatch is the NAMED FALLBACK only (when the Workflow tool is absent or broken), and every raw dispatch gets a dispatch-log row with a purpose and a reap deadline — invisible workers are the defect the 2026-08-14 canary exposed.
 
 ### RULE 3 — SWARM DOCTRINE (the "N independent streams" rule — binding, 2026-08-10)
 The pipeline stages (build → QC → fix → pen → merge) describe the LIFECYCLE of
@@ -190,6 +190,22 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S9 — Inline-work ban** | No build artifact was edited by the conductor itself: every landing commit has a prior dispatch-log row, and the conductor's own working tree is clean of build files. (Doctrine #2, Level 1: the Team Lead's primary job is ORCHESTRATION — it does NOT personally implement.) | VIOLATION — the unit is re-done by a dispatched agent; the violation is logged; the inline edit is quarantined |
 | **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS — see references/anti-drift.md |
 | **S11 — Terminal-chore ban** | No user-facing text produced this session instructs the client to open a terminal window (outside the labeled last-resort rung of references/terminals.md) | VIOLATION — the instruction is retracted and replaced with the skill doing the thing itself (references/agent-team.md) |
+| **S12 — Worker visibility** | Every build/fix/QC dispatch is workflow-wrapped (visible in `/workflows`); any raw Agent-tool dispatch (research, probe, named fallback) has a dispatch-log row with its purpose and a reap deadline | VIOLATION — log it now, wrap the next dispatch, reap anything running unlogged |
+| **S13 — Finished-but-alive reap** | No agent whose output is on disk and whose task has no next instruction is still running (the 2026-08-14 canary's research agent burned 13h of CPU spinning after it finished) | Reap it (TaskStop) and note it in the ledger — a done agent that keeps running reads as work, and a ticking timer is never progress |
+
+**THE STATUS CONTRACT (2026-08-14 — the canary's stall-impression fix, binding).**
+Any status message while the pipeline is mid-flight states, in this order:
+(1) WHAT IS RUNNING NOW — each lane with its own progress as counts (n/N units;
+a timer is never progress); (2) WHAT IS GATED ON WHAT; (3) WHAT REMAINS before a
+link can exist; (4) PERCENT DONE, a number computed from the task graph's
+completion conditions. A scoreboard of finished lanes with no still-running
+header reads as a halt, and that reading is the reporter's defect. Token
+counters are reported honestly: the session's bottom-bar token figure is the
+WHOLE session's total, never one agent's — never present it otherwise.
+**THE COMPLETION CONTRACT:** the handover fires only when all four stop
+conditions hold — every unit at HEAD, zero build errors, QC ≥ 8.5 by an
+independent judge, and the deployed URL answering 200. Until then, RUNNING is
+the default state to report.
 | **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
 | **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
 | **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |

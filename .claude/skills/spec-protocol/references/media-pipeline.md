@@ -215,7 +215,13 @@ against docs.kie.ai/market/quickstart):
 
 - **Two endpoints, one shape:** `gpt-image-2-text-to-image` and
   `gpt-image-2-image-to-image`, both `POST https://api.kie.ai/api/v1/jobs/createTask`
-  with Bearer auth. The call returns a `taskId`; poll
+  with Bearer auth. **The createTask body REQUIRES a top-level `model` field
+  naming the member, beside the `input` object:
+  `{"model": "gpt-image-2-text-to-image", "input": {…}}`. A body carrying only
+  `{"input": {…}}` returns HTTP 500 — VERIFIED LIVE 2026-08-14** (two
+  independent media agents on the operator's box hit the 500 and both confirmed
+  the fix; the same run's pool images all landed with the `model` field
+  present). The call returns a `taskId`; poll
   `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId={taskId}` for the result
   (re-verified 2026-08-12, docs.kie.ai/market/quickstart).
 - **POLLING IS THE DESIGN for this skill — not the fallback.** A spec-protocol
