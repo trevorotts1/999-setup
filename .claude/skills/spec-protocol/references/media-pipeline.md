@@ -1657,6 +1657,43 @@ after reserve **and** to the daily meter's remaining count; kie batches size to
 balance ÷ measured per-item cost, reserve applied. **The 25% reserve doctrine
 applies to media meters exactly as it does to request windows.**
 
+### 10.1 THE 1:1:1 RULE — generated = manifest = uploaded; references may be N
+
+**The accounting contract that makes token waste visible (Issue 10 FIX step 1).**
+Every generated asset has **exactly one manifest row** and **exactly one upload**
+(or an honestly marked gap). References may be N — a shared asset is one manifest
+row, one generation, one upload, and N references — and **every one of the N is
+counted**. Zero orphans in either direction:
+
+| Orphan class | Definition | Disposition |
+|---|---|---|
+| **UNTRACKED-GENERATION** | A generation with no manifest row — spend with no plan | Violation — the row is created retroactively with its taskId and `creditsConsumed`, or the spend is reported as a loss |
+| **UNGENERATED-MANIFEST-ROW** | A manifest row with no generation | **Marked gap** — the row carries its prepared prompt and estimated cost, and joins the MEDIA-GAPS manifest (9.3) as one resumable batch; never silently dropped |
+| **UNREFERENCED-UPLOAD** | An upload with no reference — a permanent asset nothing consumes | Violation — the row gains a reference or the upload is reported; a generated asset nothing consumes is a generated bill (section 7) |
+| **UNCOUNTED-REFERENCE** | A reference not traceable to a manifest row — the N that was never counted | Violation — the reference is traced to its row or the row is created |
+
+**The four counts are reconciled at every media batch boundary and by the boss
+cron's per-cycle orphan sweep (PART 4 check 7):** generations, manifest rows,
+uploads, references. Any mismatch is a `VIOLATION-STOP` on the media lane with
+each orphan named by class and file. **The ledger classes the sweep reads are
+fixed — the pipeline writes them, the sweep counts them, and the two never
+disagree:**
+
+```
+MANIFEST-ROW <id>: page=<page> slot=<slot> url=<tempUrl> expires=<ISO8601>
+MANIFEST-ROW <id>: page=<page> slot=<slot> status=gap
+IMAGE-GENERATED <id>: task=<taskId> url=<tempUrl>
+GHL-URL <id>: url=<ghlUrl>
+IMAGE-REF <id>: page=<page> slot=<slot>
+```
+
+A `MANIFEST-ROW` with `status=gap` is an intentional marked gap — it has no
+`IMAGE-GENERATED` by design and is excluded from the equality comparison. **The
+expiry class is part of the sweep:** a manifest row whose provider temp URL is
+older than its 24-hour deadline (kie) and carries no GHL URL is a token-waste
+orphan — the generation's spend is already gone — and is `VIOLATION-STOP` on the
+media lane (section 13.6, section 13.10).
+
 ---
 
 ## 11. FAILURE BEHAVIOR — every path, honestly
@@ -2001,6 +2038,19 @@ provider URL is NEVER written into a deliverable, a spec document, or generated
 code** — the permanent URL is what goes into the build. That prohibition is
 enforced fail-closed by the watch check S15.
 
+**⛔ THE PIPELINE STEP IS ONE UNIT, NEVER SPLIT — the time-bounded ordering
+contract (Issue 10 FIX step 2).** The step runs start to finish as a single
+unit: **generate → poll to `state=success` → parse `resultUrls` → download →
+upload to GHL (13.7's API contract) → read-back → ledger line.** The three
+expiry windows make the split the token-waste mechanism: result URLs expire in
+24 hours, generated files in 14 days, fresh download links in 20 minutes
+(section 2, the measured figures). **The GHL upload is the ONLY step that turns
+a temporary URL into a permanent asset.** **An item left at "generated, URL in
+ledger" with the GHL upload deferred is fail-closed STOPPED on that item** —
+the temp URL will expire overnight and the spend is already gone. A 24-hour
+clock sits between two stages of the same pipeline; only the ordering contract
+that forbids splitting the step watches it.
+
 ### 13.2 Two phases, because only ONE of them races a clock
 
 - **Phase A — CAPTURE (clock-critical).** **In the SAME poll iteration that
@@ -2018,6 +2068,15 @@ enforced fail-closed by the watch check S15.
   **Phase B races no expiry at all, because its source is the local file.** That
   is precisely what makes `PERSIST-PENDING` a safe overnight resting state: a
   warehouse outage delays distribution and can never lose an asset.
+  **⛔ BUT `PERSIST-PENDING` is a WAREHOUSE-OUTAGE state only — never a
+  scheduling choice.** The ordering contract (13.1) forbids deferring the GHL
+  upload as a matter of sequencing: Phase A and Phase B run in the SAME
+  pipeline step, back to back, with nothing scheduled between them beyond the
+  upload call itself. An item parked at GENERATED-CAPTURED with the upload
+  deferred "for later" — while GHL is up and reachable — is fail-closed
+  STOPPED on that item (Issue 10 FIX step 2). The only legitimate
+  `PERSIST-PENDING` is a GHL outage (5xx/timeout after 3 retries), and the
+  morning report names every such item.
 - **On the Agnes image path Phase A is designed away entirely** — `b64_json`
   puts the bytes in the response body (section 3), so there is no provider URL
   to race.
@@ -2026,6 +2085,14 @@ enforced fail-closed by the watch check S15.
 
 `SUBMITTED → (terminal success) → GENERATED-CAPTURED → PERSISTED
 (done-eligible)`.
+
+**⛔ The state machine is a SINGLE-STEP traversal, never a resting ladder.**
+`GENERATED-CAPTURED` is a waypoint inside the one pipeline step, not a
+completion state and not a place to park overnight: the step continues to
+`PERSISTED` in the same unit of work (13.1's ordering contract). A media item
+whose ledger line reads "generated, URL in ledger" with no `perm-url=` and no
+`persist-proof=` is **fail-closed STOPPED on that item** — the temp URL will
+expire overnight and the spend is already gone (Issue 10 FIX step 2).
 
 | Failure state | What it means |
 |---|---|
