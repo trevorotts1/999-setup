@@ -143,7 +143,11 @@ Plain wording:
 
 > **I can make every technical decision myself and just build it** — you'd
 > answer only the few questions about your accounts, your money, and what you
-> like. **Or you can make the detailed calls with me as we go.** Which do you
+> like. **Or you can make the detailed calls with me as we go.** This decides
+> how many questions I ask you: the first way means a few short ones, the
+> second way means a few more, about the technical details. An example answer:
+> "make the technical decisions for me." If you are not sure, I will choose
+> the first way — the easy one — and tell you which I picked. Which do you
 > want?
 
 Record DEFAULT MODE or ADVANCED MODE. In DEFAULT MODE the whole interview is
@@ -164,13 +168,18 @@ technical questions; that placement is the defect this rule removes.)
   mode may ask it, only with the plain explainer: "The work runs in workflows
   — teams of helpers. On this machine each workflow holds up to <measured>
   helpers at once, and up to <measured> workflows can run at the same time.
-  Use the maximum, or cap it?"
+  This decides how much work happens at once. An example answer: 'use the
+  maximum.' If you are not sure, I will use the maximum and tell you what I
+  set. Use the maximum, or cap it?"
 - **A5 (which model plans / builds) — replaced by the THREE-SEAT statement.**
   The seats are planner, builder, AND checker (the QC / verifier / critic).
   Never present a two-seat picture — the checker seat is named every time.
   Default mode: resolve all three from the live router per the role
   requirements below and state them. Advanced mode: state the resolved three
-  and ask ONE question — "keep, or change?"
+  and ask ONE question — "Here is who plans, who builds, and who checks.
+  This decides which helpers do which part. An example answer: 'keep them
+  as they are.' Keep, or change? If you are not sure, I will keep them as
+  they are and tell you what is set."
 - **A6 (usage window) — deleted.** Windows are knowable: DeepSeek direct is a
   topped-up balance with no window; Ollama Cloud and Agnes carry 5-hour
   windows (verify against the providers' current pages at run time); anything
@@ -218,8 +227,11 @@ technical questions; that placement is the defect this rule removes.)
   `~/Downloads/projects/`, stated in the recap, asked only in advanced mode.
 - **C5 (how do you know it is done) — rewritten, not deleted.** The run
   WRITES the done-condition from the brief and shows it: "Here is how I will
-  know it is finished: <the checkable list>. Does that match — yes, or tell
-  me what is missing?" One yes/no. Never an open essay question.
+  know it is finished: <the checkable list>. This decides what counts as
+  done for this project. An example answer: 'yes, that matches.' Does that
+  match — yes, or tell me what is missing? If you are not sure, I will use
+  the list as written and tell you what I recorded." One yes/no. Never an
+  open essay question.
 - **D3 (the 130 MB download) — detection first, consent once, remembered.**
   Before asking, CHECK the box for capture tooling already present (a
   Playwright install or MCP, agent-browser, a previously downloaded browser
@@ -230,8 +242,10 @@ technical questions; that placement is the defect this rule removes.)
   the defect this rule removes.
 - **D2 (the winning bar) — rewritten to plain words with a default:** "When
   your finished <thing> sits next to that example, what counts as winning?
-  (a) Mine is just as good — a tie counts. (b) Mine must check every box that
-  example checks. Most people pick (a); if you are not sure, (a) it is."
+  This decides how closely yours must match the example. (a) Mine is just as
+  good — a tie counts. (b) Mine must check every box that example checks.
+  An example answer: '(a) — a tie is fine.' Most people pick (a); if you are
+  not sure, (a) it is."
 
 ### R3. Kept questions (the operator's own rulings)
 
@@ -445,7 +459,11 @@ Between discovery and the blocks, ask ONE question that pre-tunes the whole
 apparatus (v4 4.2). Ask it plainly: "What kind of job is this — building
 something new from scratch, fixing and finishing something that already exists,
 checking and measuring things (read-only), rolling a proven change out to many
-places, rescuing something broken, or something else?"
+places, rescuing something broken, or something else? Your answer decides
+how I plan the work — a new build, a repair, a check-over, a wide change, or
+a rescue each get a different plan. An example answer: 'I want to build a
+small app from scratch.' If you are not sure, I will pick 'building something
+new' — it covers most projects — and tell you which I chose."
 
 | Archetype | What "done" means | Tiering | Fan out vs serialize |
 |---|---|---|---|
@@ -594,15 +612,19 @@ their words, waiting for each answer before the next. These are discovery questi
 When Step 1c already answered the platform (MOBILE_APP, WEB_APP,
 MOBILE_AND_WEB), question 1 collapses to a one-line confirmation, never a
 re-ask — spoken with its number, in these words: "Question <N> of no more than <C> — an
-easy one: we said this is <the confirmed target, in their own words>. Still
-right?" For DESKTOP_SOFTWARE, question 1 is spoken in these words instead of
+easy one: we said this is <the confirmed target, in their own words>. This
+decides how I start the work. An example answer: 'yes, still right.' Still
+right? If you are not sure, I will count it as a yes and move on — I will
+tell you what I recorded." For DESKTOP_SOFTWARE, question 1 is spoken in these words instead of
 the list below — the confirmed target already rules out browsers and phones,
 and "command-line tool" is nobody's kitchen-table phrase:
 
 > When you picture using it, is it a program with a window — buttons and
 > things you can see and click? Or more of a quiet helper that just runs
-> and does its job when you ask it to? If you are not sure, I will make it
-> the kind with a window — that is the friendlier kind.
+> and does its job when you ask it to? This decides the kind of program I
+> build. An example answer: "the kind with a window, like the apps I use
+> every day." If you are not sure, I will make it the kind with a window —
+> that is the friendlier kind.
 
 A window program is a desktop program; a quiet helper is a command-line
 tool; "not sure" records the window program as a default, marked as a
@@ -611,9 +633,17 @@ never spoken to the client on any branch; it remains here as the question's
 substance.
 
 1. "What kind of app — something that runs in a web browser, a phone app, a
-   desktop program, or a command-line tool?"
-2. "Does it need a database, or does it work with files and memory alone?"
-3. "Does it need user accounts and login, or is it open to anyone?"
+   desktop program, or a command-line tool? This decides where people use it.
+   An example answer: 'it should work on a phone.' If you are not sure, I
+   will choose the kind that fits what you described and tell you which."
+2. "Does it need a database, or does it work with files and memory alone?
+   This decides how I store the information behind the scenes. An example
+   answer: 'it should remember people's details.' If you are not sure, I
+   will make the safe choice and tell you what I chose."
+3. "Does it need user accounts and login, or is it open to anyone? This
+   decides whether people sign in before they use it. An example answer:
+   'only my customers should get in.' If you are not sure, I will decide
+   from what you described and tell you what I chose."
 
 **If MOBILE_APP — ask this before question 2:**
 
@@ -621,10 +651,12 @@ substance.
 > I will build your app so that anyone can open it on their phone right away
 > and keep it on their home screen like any other app — nothing to wait for.
 > My question: is it important to you that people can also find it in the
-> app store on their phone? That road exists too, but the store makes
-> everyone wait days and asks for an account with Apple or Google — so most
-> people start without it and add the store later, and nothing is lost by
-> starting that way. If you are not sure, we will start without it.
+> app store on their phone? This decides whether your app shows up in the
+> app store or not. An example answer: "no, opening it from the home screen
+> is enough." The store makes everyone wait days and asks for an account
+> with Apple or Google — so most people start without it and add the store
+> later, and nothing is lost by starting that way. If you are not sure, we
+> will start without it.
 
 Record `MOBILE_DELIVERY = home-screen-app | store-app` — "yes, the store
 matters to me" records store-app; "no," "not sure," and "I don't know"
@@ -637,10 +669,12 @@ store submission waits for the user — it is written down as a question in the 
 > One picture question about how people will use it. Think of someone on
 > their phone and someone at a computer: are they both doing the same things
 > in the same place? Or is the phone side for one kind of person and the
-> computer side for another — different jobs on each? If you are not sure,
-> or it is all the same people doing the same things, that is easy: I will
-> build one thing that fits itself to whichever screen it is on, and
-> everything stays in step by itself.
+> computer side for another — different jobs on each? This decides whether I
+> build one thing that works on both screens, or two separate pieces. An
+> example answer: "the same thing everywhere — one app for both." If you are
+> not sure, or it is all the same people doing the same things, that is
+> easy: I will build one thing that fits itself to whichever screen it is
+> on, and everything stays in step by itself.
 
 "Same things," "not sure," and "I don't know" record `COMBINED_SHAPE =
 one-responsive-build` (the unsure answers marked as a default). "Different
@@ -658,18 +692,30 @@ repositories — say B1's two-trains consequence out loud when it does.
 front-page pictures, icons, a short clip showing it off — run the "Media and
 Creative" block below. It is no longer funnel-only. Its opening question in this
 branch is: "Your app is going to need some artwork — pictures for the front page,
-maybe icons, maybe a short video showing it off. Do you want me to create those
-for you, or will you be supplying your own?" If the plan needs no artwork, skip
+maybe icons, maybe a short video showing it off. This decides whether I make
+the pictures or leave neat spaces for yours. An example answer: 'please make
+them for me.' Do you want me to create those for you, or will you be
+supplying your own? If you are not sure, I will make them — the usual
+choice — and tell you what I decided." If the plan needs no artwork, skip
 the block entirely and say nothing about it.
 
 ### If WEBSITE — ask these:
 
 1. "What pages do you picture? Walk me through them — home page, about page,
-   services, contact, maybe a blog or a portfolio?"
+   services, contact, maybe a blog or a portfolio? This decides the shape of
+   the whole site. An example answer: 'a home page, a services page, and a
+   contact page.' If you are not sure, I will plan the usual pages for your
+   kind of site and tell you what I chose."
 2. "Is this a simple site — mostly text, images, and a contact form, the kind that
    works as plain HTML and CSS? Or does it need anything interactive — a booking
-   system, a store, a membership area, or complex JavaScript?"
-3. "Do you already have a place to put it online, or should I set that up?"
+   system, a store, a membership area, or complex JavaScript? This decides
+   how I build it and where it can live. An example answer: 'simple — text,
+   pictures, and a contact form.' If you are not sure, I will build the
+   simple kind and tell you what I chose."
+3. "Do you already have a place to put it online, or should I set that up?
+   This decides where people find it on the internet. An example answer:
+   'I do not have one — please set it up.' If you are not sure, I will set
+   one up for you and tell you where it lives."
    - **If OpenClaw was ingested** (`references/openclaw-ingest.md` §5) and the
      environment sweep finds the hosting token by name, this one is OFFERED as
      a default instead of asked cold — an offer, never a silent application
@@ -680,8 +726,11 @@ the block entirely and say nothing about it.
 **Then, only if the pages they just described call for artwork of their own** —
 hero images, a banner, a short clip — run the "Media and Creative" block below,
 opening it in this build's own words ("Your site is going to need some artwork —
-pictures for the front page, maybe a short video showing it off. Do you want me to
-create those for you, or will you be supplying your own?"). A site whose pictures
+pictures for the front page, maybe a short video showing it off. This decides
+whether I make the pictures or leave neat spaces for yours. An example
+answer: 'please make them for me.' Do you want me to create those for you,
+or will you be supplying your own? If you are not sure, I will make them —
+the usual choice — and tell you what I decided."). A site whose pictures
 they are supplying, or that needs none, skips the block entirely.
 
 The second question decides the hosting path, so do not accept a shrug for it —
@@ -690,13 +739,18 @@ describe both pictures and let them point at one:
 - **If SIMPLE (plain HTML and CSS):** it can go straight into GHL's page builder
   (if they have GHL) or onto Vercel as a static site (if they do not). Ask the
   placement question plainly: "Do you want this site inside your Convert and Flow
-  account, or on its own web address?"
+  account, or on its own web address? This decides where people find the
+  finished site. An example answer: 'on its own web address.' If you are not
+  sure, I will put it on its own web address — the usual choice — and tell
+  you what I set."
 - **If COMPLEX (JavaScript, a framework, a backend):** it is hosted externally —
   Vercel is the default — and it can be EMBEDDED into GHL afterwards. Say it as a
   plan, not a menu: "I will build this as a standalone site and host it on Vercel
   — it will have its own address. If you want it inside your Convert and Flow
   account too, I can embed it there so it appears as part of your funnel or
-  website. Does that sound right?"
+  website. This decides how the site is placed. An example answer: 'yes,
+  that sounds right.' If you are not sure, I will build it as I described
+  and tell you what I set. Does that sound right?"
 
 Four permutations follow from those two answers — simple into GHL, simple onto
 Vercel, complex onto Vercel, and complex onto Vercel then embedded in GHL — and
@@ -708,11 +762,20 @@ and then it is asked in plain words, with where to find it.
 ### If SALES FUNNEL — ask these (the funnel discovery):
 
 1. "What is the one thing you want someone to do by the end of this funnel —
-   buy something, book a call, join a list, or something else?"
-2. "What are you offering, and at what price? Walk me through what happens after
-   someone says yes."
+   buy something, book a call, join a list, or something else? This decides
+   what the whole funnel is aimed at. An example answer: 'I want them to
+   book a call with me.' If you are not sure, I will build it around the
+   most natural next step for your offer and tell you what I chose."
+2. "What are you offering, and at what price? Walk me through what happens
+   after someone says yes. This decides what the pages show and what happens
+   at each step. An example answer: 'a $49 course — they get a welcome
+   email and a thank you page.' If you are not sure, tell me what the offer
+   is roughly and I will fill in the rest."
 3. "Do you already have any of these pieces — a lead magnet, an existing list,
-   a payment processor connected to Convert and Flow?"
+   a payment processor connected to Convert and Flow? This decides what I
+   need to build fresh and what is already there. An example answer: 'I have
+   a payment processor already.' If you are not sure, I will check what
+   exists and tell you what I found."
    - **If OpenClaw was ingested** (`references/openclaw-ingest.md` §5), this is
      a recall-and-confirm drawn from that file's TOOLS.md reading plus the
      sweep's Gate 1 presence check — one confirmation, not a cold ask. Cite it;
@@ -724,8 +787,10 @@ and then it is asked in plain words, with where to find it.
    come back with a recommended number of stages and the page types that tend to
    work best — things like a lead capture page, a sales page, an upsell page,
    a downsell page, a checkout page, a thank you page, and follow-up sequences
-   over email and text. Does that sound right, or do you already know exactly
-   what stages you want?"
+   over email and text. This decides whether I plan the steps for you or you
+   already have them in mind. An example answer: 'research it and plan it for
+   me.' If you are not sure, I will research it and come back with a plan.
+   Does that sound right, or do you already know exactly what stages you want?"
 
 Then the Just-in-Time reader's funnel findings (Step 1c-bis) shape the recommended
 architecture, which the conductor presents as a recommendation with a real choice
@@ -736,7 +801,10 @@ attached (Law 40 — recommend, never persuade):
 > - [X] email follow-ups: [describe the sequence and decision points]
 > - [Y] text message follow-ups: [describe the sequence and decision points]
 >
-> Does this look right to you, or would you like to adjust it?
+> This decides whether I build the recommended plan as it is or adjust it
+> first. An example answer: "that looks right, build it that way." If you
+> are not sure, I will build the recommended plan and tell you what I
+> chose. Does this look right to you, or would you like to adjust it?
 
 The page types and the email and text-message decision matrices this
 recommendation is built from live in `funnel-architecture.md`. Present the shape,
@@ -764,22 +832,32 @@ For an app or a website the block opens in that build's own words instead, and
 that opening IS question 1 — do not then ask question 1 again:
 
 > Your app is going to need some artwork — pictures for the front page, maybe
-> icons, maybe a short video showing it off. Do you want me to create those for
-> you, or will you be supplying your own?
+> icons, maybe a short video showing it off. This decides whether I make the
+> pictures or leave neat spaces for yours. An example answer: "please make
+> them for me." Do you want me to create those for you, or will you be
+> supplying your own? If you are not sure, I will make them — the usual
+> choice — and tell you what I decided.
 
 Then, in this order:
 
-> 1. Do you want me to generate images and videos for this build? (Funnel builds
+> 1. Do you want me to generate images and videos for this build? This decides
+>    whether I make the artwork or leave spaces for yours. An example answer:
+>    "yes, please make them for me." If you are not sure, I will make them —
+>    that is the usual choice — and tell you what I decided. (Funnel builds
 >    only — on an app or a website the opening question above already asked it.)
 > 2. You have two accounts I can use for artwork. I'd suggest Kie.ai — it has the
 >    strongest set of picture models — but it charges real money for each picture,
 >    a few cents apiece. Your Agnes account includes a big daily allowance
->    instead, at no extra charge today. Which would you like me to use?
+>    instead, at no extra charge today. This decides which account pays for the
+>    pictures. An example answer: "use the free allowance." If you are not sure,
+>    I will use the allowance that costs you nothing today and tell you which
+>    one I used. Which would you like me to use?
 > 3. For the pictures themselves I'd recommend the one called GPT Image 2 — it's
 >    the best I've found at getting words onto an image correctly, and it runs
->    about a nickel a picture. Want me to go with that, or is there a particular
->    model you'd like me to use instead? If you're not sure, I'll choose for you —
->    that's a fine answer.
+>    about a nickel a picture. This decides which picture engine makes your
+>    artwork. An example answer: "go with your recommendation." Want me to go
+>    with that, or is there a particular model you'd like me to use instead?
+>    If you're not sure, I'll choose for you — that's a fine answer.
 
 **Question 2 is asked only when BOTH keys are present** — otherwise it is a
 question with one possible answer, which is not a question. When only one key is
@@ -816,7 +894,10 @@ skill never pins a model id as doctrine).
   account.
   **Not found** → an honest miss and the nearest real thing, never a silent
   substitution: "I couldn't find one by that name on your account today. The
-  closest I do see is [x] — use that, or my recommendation?"
+  closest I do see is [x] — use that, or my recommendation? This decides
+  which engine makes the pictures. An example answer: 'use the closest one.'
+  If you are not sure, I will use my recommendation and tell you which I
+  chose."
 - **"I don't know" or "you choose"** → the recommendation, recorded as a DEFAULT
   they confirmed rather than as their answer.
 - **The video model is NOT asked.** Choosing the video engine and its backups is
@@ -870,7 +951,9 @@ The gate behaviour on the keys:
 - **One key found** → use that provider automatically, and SAY the detection out
   loud rather than quietly acting on it: "We're going to need pictures for this.
   I can see you already have a Kie.ai account set up on this machine — shall I use
-  that one?" Then go straight to question 3.
+  that one? This decides which account makes the pictures. An example answer:
+  'yes, use that one.' If you are not sure, I will use that one — it is
+  already set up — and tell you what I used." Then go straight to question 3.
 - **Both keys found** → ask question 2 and record the choice.
 - **Both keys missing AND they want media** → **ASK for one.** Say this, in these
   words:
@@ -878,9 +961,13 @@ The gate behaviour on the keys:
   > "To create your artwork I need a key for one of two services — Kie.ai, or your
   > Agnes account. I looked in the places this computer keeps its keys and didn't
   > find one for either. I only ever check the NAMES — I never read or need the
-  > keys themselves. Do you have one of these keys already, or an account with
-  > either service? One thing, whatever you do: please don't paste the key into
-  > our chat. I never need to see it — I just need to know where it lives."
+  > keys themselves. This decides whether I can make the pictures tonight or
+  > leave neat spaces for them. An example answer: 'I have a Kie.ai account.'
+  > Do you have one of these keys already, or an account with either service?
+  > If you are not sure, I will build with neat picture spaces and a list of
+  > what is needed, and tell you what I decided. One thing, whatever you do:
+  > please don't paste the key into our chat. I never need to see it — I just
+  > need to know where it lives."
 
   **⛔ There is NO "paste your key here" flow, ever, on any branch.** A key typed
   into this conversation lands in the transcript, in the session history, in every
@@ -995,9 +1082,9 @@ older reading.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11), read live from the machine this run is on — never recited. **Dated example, from one operator box, never a fact about a client machine — resolve it on the machine you are on:** there, `fable` resolved to that same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
-| **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. **Then ask it once per paid service, not once for the machine** — the tier is per account, and each one changes the arithmetic. Measure what you can first (read the router config and the environment for keys), say plainly what you found, and ask only the plan they pay for. The exact wording per service is below, under "Resolving which provider path this build will run on". | The allowance "A" in the budget derivation, and the per-service tier rows the Capacity Ledger reads (`capacity.md`) — which builder model, on which account, at which ceiling. |
-| **A3** | **Is the "effort" or "reasoning" setting turned up?** Both tools have one. If you do not know, that is a real answer — I will assume the safest setting. | The tier multiplier "T". A deeper effort setting multiplies the spend of every tick. |
+| **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. This decides how I plan the work — the two tools allow different things. An example answer: "Claude Code." If you are not sure, I will check the machine myself and tell you which one I found. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11), read live from the machine this run is on — never recited. **Dated example, from one operator box, never a fact about a client machine — resolve it on the machine you are on:** there, `fable` resolved to that same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
+| **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. This decides how much room I plan the work to fit in. An example answer: "the middle one." If you are not sure, I will plan as if it is the smallest one — the safe direction — and tell you what I assumed. **Then ask it once per paid service, not once for the machine** — the tier is per account, and each one changes the arithmetic. Measure what you can first (read the router config and the environment for keys), say plainly what you found, and ask only the plan they pay for. The exact wording per service is below, under "Resolving which provider path this build will run on". | The allowance "A" in the budget derivation, and the per-service tier rows the Capacity Ledger reads (`capacity.md`) — which builder model, on which account, at which ceiling. |
+| **A3** | **Is the "effort" or "reasoning" setting turned up?** Both tools have one. This decides how carefully and how expensively the work is done. An example answer: "I have not touched that setting." If you do not know, that is a real answer — I will assume the safest setting. | The tier multiplier "T". A deeper effort setting multiplies the spend of every tick. |
 | **A4** | **How many agents do you want running at the same time?** Not what the tool says it CAN do — what YOU want. | The starting value for the agent ceiling "N", which the derivation then confirms or reduces. |
 | **A5** | **Which model should plan and think, and which model should build and execute?** The planner thinks through the architecture; the builder does the hands-on work. | The model split. Nobody on a small plan can afford the strongest model end to end (Law 38). See the role defaults below. |
 | **A6** | **How long is your usage window, and when does it reset?** E.g. "it resets at midnight," or "I do not know." | The window "W". |
@@ -1174,7 +1261,10 @@ never asked about task graphs, commanders, or workflows. The ONE thing the
 client may be asked, in plain words at step 16.9, is the Agent-Team consent
 question when a team is warranted and the feature needs turning on
 (references/agent-team.md carries the exact wording and the settings-backup
-promise). One question, once, with a recommendation attached (Law 40 — never
+promise). This decides whether the work is done by one helper or a team of
+helpers working together. An example answer: "yes, a team is fine." If you
+are not sure, I will use one helper — the safe choice — and tell you what I
+decided. One question, once, with a recommendation attached (Law 40 — never
 persuasion).
 
 **Resolving which provider path this build will run on — the plain questions
@@ -1211,7 +1301,10 @@ recall below, and C does not move here on account of an ingestion.
      > the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one,
      > your DeepSeek account is the direct one you topped up, and you wanted a
      > quarter of everything left free. Nothing on this machine has changed since
-     > then. Is all of that still right?
+     > then. This decides whether I reuse what you told me or ask again.
+     > An example answer: "yes, all of that is still right." If you are not
+     > sure, I will use what you told me before and watch for changes while
+     > the work runs. Is all of that still right?
 
      **"Yes"** → record each value as *recalled and confirmed*, carrying the date
      they first said it. **"No"** → "Which part changed?" and re-ask ONLY the parts
@@ -1230,23 +1323,34 @@ recall below, and C does not move here on account of an ingestion.
    at the confirmation above — otherwise 1b's single question has already covered
    the three plan questions:*
    - "Is your DeepSeek account the direct one — the one you topped up with a
-     balance — or are you reaching DeepSeek through Ollama?" *(Direct v4 Flash
-     and direct v4 Pro have very different ceilings, and DeepSeek reached
-     through Ollama Cloud is a version behind, so it is never the builder.)*
+     balance — or are you reaching DeepSeek through Ollama? This decides how
+     I connect to that service. An example answer: 'the direct one I topped
+     up.' If you are not sure, I will check the machine and tell you what I
+     found." *(Direct v4 Flash and direct v4 Pro have very different ceilings,
+     and DeepSeek reached through Ollama Cloud is a version behind, so it is
+     never the builder.)*
    - "Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the
-     hundred-dollar-a-month one?" *(The twenty-dollar plan allows 3 at once and
-     this skill uses 2; the hundred-dollar plan allows 10 and this skill uses 8 —
-     headroom is always left free, Law 44. Ollama Cloud is billed MONTHLY, which is
-     why the question says "a month" — Agnes below is billed yearly, and mixing the
-     two up gets you the wrong plan.)*
+     hundred-dollar-a-month one? This decides how much room I plan the work
+     to fit in. An example answer: 'the hundred-dollar one.' If you are not
+     sure, I will plan as if it is the twenty-dollar one — the safe direction —
+     and tell you what I assumed." *(The twenty-dollar plan allows 3 at once
+     and this skill uses 2; the hundred-dollar plan allows 10 and this skill
+     uses 8 — headroom is always left free, Law 44. Ollama Cloud is billed
+     MONTHLY, which is why the question says "a month" — Agnes below is billed
+     yearly, and mixing the two up gets you the wrong plan.)*
    - "Your Agnes account — is it the free one, the forty-dollar-a-year plan, or
-     the hundred-dollar-a-year plan?" *(Free is 20 requests a minute; the
-     forty-dollar plan is 1,500 requests every 5 hours; the hundred-dollar plan is
-     7,500 every 5 hours. Agnes prices are ANNUAL.)*
+     the hundred-dollar-a-year plan? This decides how much room I plan the
+     work to fit in. An example answer: 'the hundred-dollar-a-year one.' If
+     you are not sure, I will plan as if it is the free one — the safe
+     direction — and tell you what I assumed." *(Free is 20 requests a minute;
+     the forty-dollar plan is 1,500 requests every 5 hours; the hundred-dollar
+     plan is 7,500 every 5 hours. Agnes prices are ANNUAL.)*
    - **OpenRouter is MEASURED, not asked** — the environment sweep reports whether
      a key is there, so there is no standing question here. Ask only when the
      environment cannot be read, and then in plain words: "Do you have an
-     OpenRouter key?"
+     OpenRouter key? This decides whether I can use that service. An example
+     answer: 'I do not know — please check.' If you are not sure, I will
+     check the machine and tell you what I found."
 3. **The Agnes figures are VERIFIED LIVE, never recited.** Before the ledger uses
    them, web-research agnes-ai.com's current rate rules; the figures above are
    the FALLBACK for when that research fails, and the Capacity Ledger records
@@ -1279,9 +1383,12 @@ for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahe
 > I can ask you the rest one at a time — at most <the ceiling minus the
 > questions asked so far, spoken as a number> more — or you can use my
 > recommended defaults for how hard the thinking is, how many
-> helpers run at once, and which helpers plan versus build. If the defaults
-> turn out wrong, we can change them later. Want to use my recommended
-> defaults?
+> helpers run at once, and which helpers plan versus build. This decides
+> how many more questions you answer — a few, or almost none. An example
+> answer: "use the defaults." If you are not sure, I will use my
+> recommended defaults — the usual choice — and tell you which ones I used.
+> If the defaults turn out wrong, we can change them later. Want to use my
+> recommended defaults?
 
 A yes records A4, A5, and A8 as their defaults (each marked "default, not their
 answer" — Law 44's reserve rule says the same for A7) and moves on. A yes is a
@@ -1300,7 +1407,10 @@ Collapse each to its default and ask for ONE yes/no confirmation per block:
 
 > Based on what you told me, this is a small project. Here is what I will assume
 > unless you say otherwise: [the block's defaults in one plain sentence each].
-> Is that all right?
+> This decides whether I ask you the rest in detail or skip ahead with the
+> usual choices. An example answer: "that is all right, use the usual
+> choices." If you are not sure, I will use the usual choices and tell you
+> what I assumed. Is that all right?
 
 B1, B2 and B4 collapse to: one repository, branch "main", no forbidden push
 targets. (The merge cadence is NOT among them — the standard drain timer is a
@@ -1333,7 +1443,7 @@ and do not ask.
 |---|---|---|
 | **B1** | **How many GitHub repositories will this project put code in?** One is most common. If you already have repos for this, I have already found them — I am asking about anything beyond those. | The number of merge trains — one per repository, because repositories merge independently. This is the answer with the largest structural consequence in the whole interview. |
 | **B2** | **What is each repository's main branch called, and who may push to it?** Usually "main" — I just want to confirm. And do YOU push to it, or does the tool? | The trunk each train fast-forwards, and whether the merge-writer is permitted to do it at all. |
-| **B4** | **Is there anywhere the loops must not push?** A branch, a repo, a server — anything that should never receive an automatic push. | Becomes a hard constraint and a fail-closed rule, not a preference. |
+| **B4** | **Is there anywhere the loops must not push?** A branch, a repo, a server — anything that should never receive an automatic push. This decides what stays off-limits to the automatic work. An example answer: "nothing — it can put work anywhere it is allowed." If you are not sure, I will leave everything open to the usual places and tell you what I set. | Becomes a hard constraint and a fail-closed rule, not a preference. |
 
 **⛔ B3 IS RETIRED — 2026-08-12. Do not restore it, and do not renumber B4 into
 its place.** It asked the client how much finished work should land per train run.
@@ -1370,8 +1480,8 @@ defaulted; C5 becomes the written done-condition shown for one yes/no.**
 | **C1** | **Which file holds the state that the loops read?** Usually the live ledger — I will point to it. | The one place every loop reads and writes. Exactly one thing is the tracker. |
 | **C2** | **Do you want to approve merges, or should the loop merge on its own?** If you want to approve, your approval will be a mark on the tracker, not a message — the loop watches for it just like it watches for anything else. | Where the autonomy line falls (Rule 3.23). Human approval is a state on the tracker, not a message (Law 36). |
 | **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
-| **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
-| **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
+| **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. This decides where the work lives on your machine. An example answer: "the usual place is fine." If you are not sure, I will use the usual place and tell you where I put it. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
+| **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." This decides what counts as finished. An example answer: "when I can open it on my phone and use it." If you are not sure, I will write the finished-check from what you described and show it to you. | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
 | **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **The SAME question grows one further clause — still no new question number — covering what happens when a finished asset is LOST before it can be saved:** **"…And the last piece: once in a while a finished picture or clip can get lost before I manage to save it — the service throws it away very fast. If that happens overnight and remaking it still fits the budget we already agreed, may I remake it once on my own and show you both charges in the morning — or would you rather I always leave it for you to decide?"** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. The loss clause additionally records `MEDIA_LOSS_POLICY` = remake-once-within-budget \| note-and-wait, defaulting to **remake-once-within-budget** marked as a default they confirmed — it delivers the finished build and **cannot exceed what was already consented**, while `note-and-wait` is the cautious override for a cost-sensitive client. **Binding floors regardless of which they pick:** the gated premium tier NEVER auto-remakes — it parks, because that gate is spend authority and a loss policy never grants spend authority; the four conditions on an automatic redo (inside the consented envelope, meter permitting, first redo only, and announced with both charges shown) bind even under remake-once-within-budget; and the run never stalls on a question nobody is awake to answer (`references/media-pipeline.md` section 11's loss ladder). |
 
 **C0 is numbered zero because it is asked before C1 and because nothing above it
@@ -1432,10 +1542,10 @@ it: the bar itself is still picked there, from real, validated candidates.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **D1** | **Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"?** Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick. | Seeds the bar-candidate list in `research.md`. A named answer is validated like every other candidate — Named, Fetchable, Comparable — and presented first among the researched ones. If it cannot actually be opened today, say so plainly and present the ones that can. It never skips the selection step. |
-| **D2** | **When your finished app stands next to that example, which is the goal?** (a) *Mine stands shoulder to shoulder with it* — as good as it, or better; a tie counts as done. (b) *The example is more like a rulebook* — mine has to meet every requirement it stands for. Pick one. It gets written down the moment we choose the example, and it does not quietly change later. | The comparison relationship — (a) is "wins or ties", (b) is "meet all requirements" (`gauntlet.md`, Section 3). Frozen into THE BAR TO HIT at bar selection, ratified in the decision register. |
-| **D3** | **To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay?** If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it. | Consent for the capture preflight (SKILL.md step 9 / `environment-sweep.md`). A "no" is recorded in the decision register; captures then use only a browser tool already PROVEN present, and if none exists, visual comparisons are reported BLOCKED — honestly, never silently skipped, never passed unproven. |
-| **D4** | **Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours?** Something that annoys you, slows you down, or gets in your way. "Nothing comes to mind" is a real answer. | The avoid-that delta. Merged with the survey's "what it got wrong — AVOID THAT" findings (`research.md`, Step 2) and frozen into the blind-comparison dimensions at bar selection: the app is judged for being LIKE the example where it is good and UNLIKE it where the user said to avoid it. |
+| **D1** | **Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"?** Name it if one comes to mind. This decides which example I measure your finished work against. An example answer: "the website my competitor uses." If nothing does, that is fine — later I will show you two or three excellent ones and you will pick. | Seeds the bar-candidate list in `research.md`. A named answer is validated like every other candidate — Named, Fetchable, Comparable — and presented first among the researched ones. If it cannot actually be opened today, say so plainly and present the ones that can. It never skips the selection step. |
+| **D2** | **When your finished app stands next to that example, which is the goal?** (a) *Mine stands shoulder to shoulder with it* — as good as it, or better; a tie counts as done. (b) *The example is more like a rulebook* — mine has to meet every requirement it stands for. This decides how closely yours must match the example. An example answer: "(a) — as good as it is enough." Pick one. If you are not sure, (a) it is — I will record my choice and tell you. It gets written down the moment we choose the example, and it does not quietly change later. | The comparison relationship — (a) is "wins or ties", (b) is "meet all requirements" (`gauntlet.md`, Section 3). Frozen into THE BAR TO HIT at bar selection, ratified in the decision register. |
+| **D3** | **To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay?** This decides whether I can show you the side-by-side proof. An example answer: "yes, that is fine." If you are not sure, I will skip the download and tell you plainly what I can and cannot prove without it. If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it. | Consent for the capture preflight (SKILL.md step 9 / `environment-sweep.md`). A "no" is recorded in the decision register; captures then use only a browser tool already PROVEN present, and if none exists, visual comparisons are reported BLOCKED — honestly, never silently skipped, never passed unproven. |
+| **D4** | **Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours?** Something that annoys you, slows you down, or gets in your way. This decides what I keep OUT of your build. An example answer: "no pop-up boxes that ask for my email." "Nothing comes to mind" is a real answer. If you are not sure, I will leave the usual annoyances out and tell you what I avoided. | The avoid-that delta. Merged with the survey's "what it got wrong — AVOID THAT" findings (`research.md`, Step 2) and frozen into the blind-comparison dimensions at bar selection: the app is judged for being LIKE the example where it is good and UNLIKE it where the user said to avoid it. |
 
 D1 to D4 keep every existing question's number — nothing above them was
 renumbered to make room (the same rule that placed A7, A8, and C0).
