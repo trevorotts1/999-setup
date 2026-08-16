@@ -129,6 +129,9 @@ SANCTIONED_CLASSES = {
     "CREATED", "BASELINE", "DISPATCH", "REDISPATCH", "REPAIR", "REPAIR-DONE",
     "BUILDER", "BUILDER-DONE", "BUILDER-FAIL", "CRITIC", "CRITIC-PASS", "CRITIC-FAIL",
     "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
+    # PART 3 batch merge: done means MERGED (spec line 526) — the serial merge
+    # records carry the MERGED class; scope must never flag the merge evidence.
+    "MERGED",
     "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
     "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     # Wave-boundary reconcile markers (drift check 6 mandate) — sanctioned:
@@ -254,7 +257,7 @@ TIMESTAMP_RE = re.compile(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z")
 # dispatch lines — matching on the word alone would let citation lines hijack
 # the width/wave tables.
 DISPATCH_LINE_RE = re.compile(
-    r"^(WAVE \d+ (REDISPATCH|DISPATCH)|DISPATCH|REDISPATCH|"
+    r"^(WAVE \d+ (REDISPATCH|DISPATCH|RESUME)|DISPATCH|REDISPATCH|"
     r"WF-\d[A-Z]? (REPAIR )?(REDISPATCH|DISPATCH))")
 
 
