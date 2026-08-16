@@ -771,7 +771,7 @@ No funnel page is built before this ledger line exists and the brief is written
 to the project's convention section (document 1, per Law 39's closed list).
 The brief is a named, fetchable section — never a vague "make it look good."
 The full seven-stage funnel process the brief feeds into is defined in
-`references/funnel-architecture.md` §15.
+`references/funnel-architecture.md` §16.
 
 ---
 
