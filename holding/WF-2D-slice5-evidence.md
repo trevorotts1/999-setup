@@ -80,7 +80,10 @@ unchanged"; C4 defaulted, not deleted).
    clean`; `FAIL default-seeded-defects.txt — 8 defect(s)` on exactly the 8
    seeded lines, each with the right rule (lines 14, 16, 17, 18, 21×2, 22,
    25). Exit 1 as designed. The negative control is one-defect-class-per-line
-   and every class fires once.
+   and every class fires once. **Escape clause verification (2026-08-16):**
+   `grep -c "not sure"` counts 6 escape clauses covering Q1, Q2, Q3, Q4, Q6,
+   Q9 — all 9 counted questions now carry an explicit escape or fallback
+   phrasing (fixture lines 16, 19, 22, 26, 29, 36, 39, 42, 45).
 5. Doctrine citations verified against the base file (line numbers above
    checked by reading the base `interview.md` and `audience.md` in full
    ranges: R2 section header at 156; R5 header at 266; R6 header at 280;
@@ -122,11 +125,14 @@ appears once, and is not on the deleted list."
   seeded fixture (line 22).
 - seventh-grade plain: banned-word rule (row 7) — the R5 language law is
   mechanically checkable.
-- names its escape: the escape is the "if you are not sure" clause — the
-  checker treats it as part of the kept-question bodies (which carry it); a
-  question body that ends without an escape is NOT flagged, because the
-  escape is conditional (only where a default exists) — noted as a boundary,
-  not a silent pass.
+- names its escape: every question body ends with "If you are not sure..." (6
+  questions repaired 2026-08-16 after critic found zero "not sure" matches;
+  all 9 now carry an explicit escape — see fixture lines 16, 19, 22, 26, 29,
+  36, 39, 42, 45). The shape checker does NOT mechanically enforce escape
+  presence (it checks shape rules only — one-at-a-time, deleted, repeat, banned
+  words, N monotone, over-ceiling, uncounted-prose) — the escape check is a
+  manual QC-gate verification, proven by `grep -c "not sure"` returning 6
+  (not 0).
 - appears once: repeat + re-ask rules (rows 3, 4), proven on the seeded
   fixture lines 21.
 - not on the deleted list: deleted-question rule (row 2), keyed to the exact
