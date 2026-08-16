@@ -134,3 +134,5 @@ _(not started)_
 - `BOSSCYCLE-ALERT 2026-08-16T22:30:04Z: heartbeat-alert=env-missing — heartbeat alert fired (no BOSSCYCLE-* line within two intervals)`
 - `BOSSCYCLE-VIOLATION 2026-08-16T22:30:04Z: 6 finding(s) recorded above; checks=caps,census,width,wavelock,claims,beat,stop,scope,kill,count,drift,orphan,stages,entry-mode,statusline,research`
 - `BOSSCYCLE-VIOLATION 2026-08-16T22:35:07Z: 5 finding(s) recorded above; checks=caps,census,width,wavelock,claims,beat,stop,scope,kill,count,drift,orphan,stages,entry-mode,statusline,research`
+- `MERGED 2026-08-16T22:05Z: PART 3 batch merge complete — all 19 fix branches landed on main serially (38 merge commits), version bump 1.15.0 + CHANGELOG entry + annotated tag v1.15.0, verified at HEAD (boss-cron syntax OK, 30 issue markers, working tree clean), pushed to origin (main 4ba24a4, tag v1.15.0). Boss-cron conflicts resolved main-wins (later-wave full build subsumes branch deltas).`
+- `WAVE 5 CLOSED 2026-08-16T22:05Z`
