@@ -422,12 +422,13 @@ green. Green under a real mutation is hollow and fails.
 6. A standing integrity alarm on the target repository.
 7. Any scaffolding inside a deliverable (Law 13).
 8. Any feature in the build that is not in the specification (Law 42).
-9. **Any QC record that fails the five mechanical checks (above) — a missing
+9. **Any QC record that fails the six mechanical checks (above) — a missing
    record, a judge seat identical to the builder seat (self-QC), an unnamed
-   bar, a bar with no fetch proof, a non-binary verdict, or a FAIL without its
-   LOOPED outcome.** The unit is blocked, the verdict does not stand, and the
-   broken record is returned to the builder as a finding.
-9. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
+   bar, a bar with no fetch proof, a non-binary verdict, a FAIL without its
+   LOOPED outcome, or provenance other than STRIPPED.** The unit is blocked,
+   the verdict does not stand, and the broken record is returned to the
+   builder as a finding.
+10. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
    unreachable, format mismatch, judge cannot render both sides) is BLOCKED,
    never passed. BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
    recorded as non-success states and never relabeled PASS — an operational
