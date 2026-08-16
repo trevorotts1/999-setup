@@ -18,6 +18,16 @@
 #   MODE=team|single                      (default single — Agent Teams off until probed + consented)
 #   COMMANDERS=<n>                        (default 4 when MODE=team: BUILD, VISUAL QA, TECHNICAL QA, RELEASE/INTEGRATION)
 #   CORES=<n>                             (default: MEASURED at run time — never inherited)
+#   SYSTEM_CONCURRENT_MAX=<n>             (the operator's DECLARED max concurrent
+#                                          workflow agents for THIS machine — 10 on
+#                                          the operator's machine. Issue 19 FIX step 6:
+#                                          authoritative for computing clientCap; an
+#                                          environment read (e.g.
+#                                          CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) is
+#                                          REPORTING ONLY, never for computing; if the
+#                                          probe cannot determine it the value is
+#                                          UNDETERMINED and the run refuses to plan —
+#                                          it never defaults to 16.)
 #   PROJECT=<name>                        (cosmetic — names the ledger)
 #   ROLE_BUILDER=<alias>→<resolved model>  (and ROLE_RESEARCHER / ROLE_VISUAL /
 #                                          ROLE_TECHNICAL / ROLE_SECURITY / ROLE_RELEASE —
@@ -52,8 +62,13 @@
 # interview; the skill presents the results in plain English.
 #
 # THE THREE AXES, NEVER CONFLATED:
-#   AXIS 1 WIDTH  — per-workflow concurrency = min(16, cores−2), cores MEASURED
-#                   at run time; hard ceiling of 30 workflows per session.
+#   AXIS 1 WIDTH  — clientCap = min(systemConcurrentMax, cores−2) (Issue 19 FIX
+#                   step 6); systemConcurrentMax = the operator's DECLARED max
+#                   (10 on the operator's machine), authoritative for computing,
+#                   never an env read (env reads are REPORTING ONLY); cores
+#                   MEASURED at run time; UNDETERMINED systemConcurrentMax = the
+#                   run refuses to plan, never defaults to 16; hard ceiling of
+#                   30 workflows per session.
 #   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
 #                   budget of 1,000 — a spend POLICY, NOT a platform limit (the
 #                   platform documents no total-per-session limit; its 20-concurrent
@@ -164,6 +179,7 @@ resolve() {
   CONFIG_FP=""; CORES_SOURCE=""; RESERVE_PCT_SOURCE=""
   OLLAMA_PLAN_SOURCE=""; AGNES_PLAN_SOURCE=""; DEEPSEEK_TIER_SOURCE=""
   BUILDER_PROVIDER_SOURCE=""
+  SYSTEM_CONCURRENT_MAX=""; SYSTEM_CONCURRENT_MAX_SOURCE=""
 
   while IFS='=' read -r k v; do
     [[ -z "${k}" ]] && continue
@@ -194,6 +210,8 @@ resolve() {
       AGNES_PLAN_SOURCE) AGNES_PLAN_SOURCE="${v}" ;;
       DEEPSEEK_TIER_SOURCE) DEEPSEEK_TIER_SOURCE="${v}" ;;
       BUILDER_PROVIDER_SOURCE) BUILDER_PROVIDER_SOURCE="${v}" ;;
+      SYSTEM_CONCURRENT_MAX) SYSTEM_CONCURRENT_MAX="${v}" ;;
+      SYSTEM_CONCURRENT_MAX_SOURCE) SYSTEM_CONCURRENT_MAX_SOURCE="${v}" ;;
     esac
   done < "${ANSWERS}"
 
@@ -232,8 +250,33 @@ resolve() {
   else
     cores_source="SUPPLIED"
   fi
+  # --- CLIENT CAP (Issue 19 FIX step 6 — clientCap = min(systemConcurrentMax,
+  # cores−2); systemConcurrentMax is the operator's DECLARED max — 10 on the
+  # operator's machine — authoritative for computing; an environment read is
+  # REPORTING ONLY, never for computing; UNDETERMINED → the run refuses to plan,
+  # it never defaults to 16. The product's own 16-concurrent workflow cap also
+  # shrinks with fewer CPUs — the cores−2 half encodes that.)
+  local CLIENT_CAP="" CLIENT_CAP_SOURCE=""
+  if [[ -z "${SYSTEM_CONCURRENT_MAX}" ]]; then
+    echo "ERROR: systemConcurrentMax UNDETERMINED — no declared SYSTEM_CONCURRENT_MAX" >&2
+    echo "       supplied. The run refuses to plan (it never defaults to 16)." >&2
+    echo "       Ask one plain question for the machine's declared max and rerun." >&2
+    return 3
+  fi
+  if [[ ! "${SYSTEM_CONCURRENT_MAX}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: SYSTEM_CONCURRENT_MAX must be a whole number (got: ${SYSTEM_CONCURRENT_MAX})" >&2
+    return 2
+  fi
+  # clientCap = min(systemConcurrentMax, cores−2). systemConcurrentMax is the
+  # DECLARED concurrency (10 on the operator's machine) — NOT cores-derived;
+  # only the cores−2 half encodes the machine's CPU reality.
+  local cores_minus_2=$(( CORES - 2 ))
+  (( cores_minus_2 < 1 )) && cores_minus_2=1
+  CLIENT_CAP="${SYSTEM_CONCURRENT_MAX}"
+  (( CLIENT_CAP > cores_minus_2 )) && CLIENT_CAP="${cores_minus_2}"
+  CLIENT_CAP_SOURCE="min(${SYSTEM_CONCURRENT_MAX} (declared), ${CORES}−2)"
   local PER_WORKFLOW HARNESS_MAX
-  PER_WORKFLOW="$(per_workflow_width "${CORES}")"
+  PER_WORKFLOW="${CLIENT_CAP}"
   HARNESS_MAX=$(( WORKFLOW_CEILING * PER_WORKFLOW ))
 
   # --- AXIS 3: POLICY — the provider ceiling minus its reserve ---------------
@@ -341,12 +384,13 @@ resolve() {
 
   # --- THE RECONCILIATION RULE ----------------------------------------------
   # The wave width is the SMALLEST of three numbers: (1) the harness delivery
-  # capacity — workflows-in-flight × min(16, cores−2), capped at 30 workflows;
-  # (2) the operator cap for the provider class — 20 concurrent agents per wave
-  # on Anthropic-billed Claude Code, no operator cap on the user's own 9Router
-  # provider keys beyond the reserve; (3) the provider ceiling minus the
-  # reserve (Law 44). The smallest number always governs, and the Capacity
-  # Ledger records all three with the winner marked.
+  # capacity — workflows-in-flight × clientCap (min(systemConcurrentMax,
+  # cores−2), Issue 19 FIX step 6), capped at 30 workflows; (2) the operator cap
+  # for the provider class — 20 concurrent agents per wave on Anthropic-billed
+  # Claude Code, no operator cap on the user's own 9Router provider keys beyond
+  # the reserve; (3) the provider ceiling minus the reserve (Law 44). The
+  # smallest number always governs, and the Capacity Ledger records all three
+  # with the winner marked.
   local GOVERNING="${HARNESS_MAX}" GOVERN_SRC="harness"
   if (( OPERATOR_APPLIES == 1 )) && (( OPERATOR_WAVE_CAP < GOVERNING )); then
     GOVERNING="${OPERATOR_WAVE_CAP}"; GOVERN_SRC="operator cap"
@@ -391,11 +435,21 @@ resolve() {
   # Cores are MEASURED by this instrument when this instrument measured them; a
   # SUPPLIED core count is only ever as good as the source the caller names for
   # it, and an unnamed source is ASSUMED.
-  local CORES_MARK RESERVE_MARK PLAN_MARK FP_LINE
+  local CORES_MARK RESERVE_MARK PLAN_MARK FP_LINE SCM_MARK
   if [[ "${cores_source}" == "MEASURED" ]]; then
     CORES_MARK="[MEASURED ${cores_instrument} $(date -u '+%Y-%m-%dT%H:%M:%SZ')]"
   else
     CORES_MARK="$(provenance_mark "${CORES_SOURCE}")"
+  fi
+  # systemConcurrentMax is a DECLARED doctrine constant per machine — the
+  # provenance mark names who declared it when a source is supplied; a missing
+  # source still prints the declared value (the value is the declaration), but
+  # the mark falls back to ASSUMED so a value nobody can trace is sized
+  # conservatively.
+  if [[ -n "${SYSTEM_CONCURRENT_MAX_SOURCE}" ]]; then
+    SCM_MARK="$(provenance_mark "${SYSTEM_CONCURRENT_MAX_SOURCE}")"
+  else
+    SCM_MARK="[ASSUMED no-source-given]"
   fi
   RESERVE_MARK="$(provenance_mark "${RESERVE_PCT_SOURCE}")"
   case "${BUILDER_PROVIDER}" in
@@ -415,8 +469,9 @@ resolve() {
 # CAPACITY LEDGER — ${PROJECT} — $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 Launcher: ${LAUNCHER}      Harness mode: ${HARNESS}
 ${FP_LINE}
-Cores: ${CORES} (${cores_source}) → per-workflow concurrency min(16, cores−2) = ${PER_WORKFLOW}
-  cores provenance: ${CORES_MARK}
+Cores: ${CORES} (${cores_source}) → clientCap = min(systemConcurrentMax, cores−2) = ${CLIENT_CAP}
+  clientCap provenance: systemConcurrentMax=${SYSTEM_CONCURRENT_MAX} (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [${SCM_MARK}]; cores ${CORES_MARK}
+  per-workflow concurrency = clientCap = ${CLIENT_CAP}
 Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on \`cx/\` = ~372K real, NOT the profile's 900K)
 ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
   orchestrator=lead seat
@@ -455,7 +510,10 @@ CARD
   fi
 
   cat <<CARD
-WAVE SIZE: ${WIDTH}$( [[ "${MODE}" == "team" && "${TEAM_REFUSED}" -eq 0 ]] && echo " (workflow width) + ${PERSISTENT} persistent = ${GOVERNING}" )    WORKFLOW COUNT: ${WORKFLOWS}    AGENTS PER WORKFLOW: ≤${AGENTS_PER_WF}
+WAVE SIZE: ${WIDTH}$( [[ "${MODE}" == "team" && "${TEAM_REFUSED}" -eq 0 ]] && echo " (workflow width) + ${PERSISTENT} persistent = ${GOVERNING}" )    WORKFLOW COUNT: ${WORKFLOWS}    AGENTS PER WORKFLOW: ≤${AGENTS_PER_WF} (= clientCap ${CLIENT_CAP})
+BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, `references/gauntlet.md` §13):
+  batch size = clientCap (${CLIENT_CAP}); batches = ceil(slice count / clientCap); wave count unchanged.
+  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batches ($( if (( 16 - CLIENT_CAP <= 0 )); then echo "${CLIENT_CAP} batch(es) of ${CLIENT_CAP}"; else echo "${CLIENT_CAP} + $(( 16 - CLIENT_CAP ))"; fi )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (all eight §17 quantities):
   1. number of workflows: ${WORKFLOWS}
   2. agents per workflow: ≤${AGENTS_PER_WF}
@@ -544,12 +602,15 @@ LAUNCHER=claude-nine
 BUILDER_PROVIDER=deepseek-direct
 DEEPSEEK_TIER=flash
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-b
 EOF
   resolve "${tmp}/b.answers" > "${tmp}/b.out" 2>"${tmp}/b.err"
   echo "SCENARIO (b) — deepseek-direct, 12 cores, single session"
-  _assert "per-workflow = 10" "min(16, cores−2) = 10" "${tmp}/b.out"
+  _assert "clientCap = min(10, 12−2) = 10" "clientCap = min(systemConcurrentMax, cores−2) = 10" "${tmp}/b.out"
+  _assert "clientCap provenance declares systemConcurrentMax" "systemConcurrentMax=10 (declared, authoritative" "${tmp}/b.out"
+  _assert "per-workflow = clientCap 10" "per-workflow concurrency = clientCap = 10" "${tmp}/b.out"
   _assert "harness 30×10=300" "harness 30×10=300" "${tmp}/b.out"
   _assert "provider usable 1875 of 2500" "provider usable 1875 of 2500" "${tmp}/b.out"
   _assert "GOVERNS: 300 (harness)" "GOVERNS: 300 (harness)" "${tmp}/b.out"
@@ -569,6 +630,7 @@ HARNESS=regular
 LAUNCHER=claude
 BUILDER_PROVIDER=anthropic
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=team
 COMMANDERS=4
 PROJECT=selftest-a
@@ -586,6 +648,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=20
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=team
 COMMANDERS=4
 PROJECT=selftest-c
@@ -602,6 +665,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=100
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-d
 EOF
@@ -615,6 +679,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=agnes
 AGNES_PLAN=40
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-d2
 EOF
@@ -635,6 +700,8 @@ RESERVE_PCT=25
 RESERVE_PCT_SOURCE=default-confirmed:2026-08-12T14:05:00Z
 CORES=12
 CORES_SOURCE=measured:sysctl-hw.ncpu 2026-08-12T14:02:11Z
+SYSTEM_CONCURRENT_MAX=10
+SYSTEM_CONCURRENT_MAX_SOURCE=recalled-confirmed:answered=2026-08-01 confirmed=2026-08-12T14:05:00Z
 CONFIG_FP=a1b2c3d4
 MODE=single
 PROJECT=selftest-p
@@ -657,6 +724,7 @@ EOF
 HARNESS=regular
 BUILDER_PROVIDER=not-a-real-provider
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 EOF
   if resolve "${tmp}/bad.answers" > "${tmp}/bad.out" 2>"${tmp}/bad.err"; then
     echo "  [FAIL] known-bad provider was ACCEPTED — this checker cannot be trusted"
@@ -687,6 +755,7 @@ BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=100
 OLLAMA_PLAN_SOURCE=wishful-thinking:2026-08-12
 CORES=12
+SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-badmark
 EOF
@@ -699,24 +768,56 @@ EOF
   cat > "${tmp}/live.answers" <<'EOF'
 HARNESS=regular
 BUILDER_PROVIDER=anthropic
+SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-live
 EOF
   if resolve "${tmp}/live.answers" > "${tmp}/live.out" 2>"${tmp}/live.err"; then
     local lc lw
     lc="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk '{print $2}')"
-    lw="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk -F'= ' '{print $2}')"
+    # "Cores: 12 (...) → clientCap = min(systemConcurrentMax, cores−2) = 10"
+    lw="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk -F'= ' '{print $NF}')"
     local expect
     expect="$(per_workflow_width "${lc}")"
-    if [[ "${lw}" == "${expect}" ]]; then
-      echo "  [PASS] measured cores=${lc} → per-workflow=${lw} = min(16, ${lc}−2)"
+    local cap_expected=$(( expect < 10 ? expect : 10 ))
+    if [[ "${lw}" == "${cap_expected}" ]]; then
+      echo "  [PASS] measured cores=${lc} → clientCap=${lw} = min(10, ${lc}−2)"
     else
-      echo "  [FAIL] measured cores=${lc} gave per-workflow=${lw}, formula says ${expect}"
+      echo "  [FAIL] measured cores=${lc} gave clientCap=${lw}, formula says ${cap_expected}"
       fails=$(( fails + 1 ))
     fi
     _assert "MEASURED, not inherited" "(MEASURED)" "${tmp}/live.out"
   else
     echo "  [FAIL] live run did not resolve (see ${tmp}/live.err)"
+    fails=$(( fails + 1 ))
+  fi
+
+  # --- FAIL-CLOSED: an UNDETERMINED systemConcurrentMax REFUSES to plan -------
+  echo "FAIL-CLOSED — no declared SYSTEM_CONCURRENT_MAX = refuse to plan, never 16"
+  cat > "${tmp}/undet.answers" <<'EOF'
+HARNESS=claude-nine
+BUILDER_PROVIDER=deepseek-direct
+DEEPSEEK_TIER=flash
+CORES=12
+MODE=single
+PROJECT=selftest-undet
+EOF
+  if resolve "${tmp}/undet.answers" > "${tmp}/undet.out" 2>"${tmp}/undet.err"; then
+    echo "  [FAIL] missing systemConcurrentMax was ACCEPTED — it must refuse to plan"
+    fails=$(( fails + 1 ))
+  else
+    echo "  [PASS] missing systemConcurrentMax refused to plan (exit $?)"
+  fi
+  if /usr/bin/grep -q "never defaults to 16" "${tmp}/undet.err"; then
+    echo "  [PASS] refusal names the never-16 rule"
+  else
+    echo "  [FAIL] refusal must name the never-16 rule"
+    fails=$(( fails + 1 ))
+  fi
+  if /usr/bin/grep -q "refuses to plan" "${tmp}/undet.err"; then
+    echo "  [PASS] refusal names refuse-to-plan"
+  else
+    echo "  [FAIL] refusal must name refuse-to-plan"
     fails=$(( fails + 1 ))
   fi
 

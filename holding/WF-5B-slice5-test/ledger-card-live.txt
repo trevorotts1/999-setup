@@ -1,0 +1,63 @@
+# CAPACITY LEDGER — slice5-test-build-live — 2026-08-16T21:43:15Z
+Launcher: claude-nine      Harness mode: claude-nine
+Config fingerprint: UNDETERMINED (not supplied — compute it per capacity.md section 13.4 step 3; a resume compares worlds against it, and a missing one fails toward ASKING)
+Cores: 12 (MEASURED) → clientCap = min(systemConcurrentMax, cores−2) = 10
+  clientCap provenance: systemConcurrentMax=10 (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [[RECALLED-CONFIRMED operator-declared-max 2026-08-16T22:00:00Z]]; cores [MEASURED sysctl-hw.ncpu 2026-08-16T21:43:15Z]
+  per-workflow concurrency = clientCap = 10
+Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on `cx/` = ~372K real, NOT the profile's 900K)
+ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
+  orchestrator=lead seat
+  builder=UNRESOLVED(resolve from live config)
+  researcher=UNRESOLVED(resolve from live config)
+  visual-verifier=UNRESOLVED(resolve from live config)
+  technical-judge=UNRESOLVED(resolve from live config)
+  security-judge=UNRESOLVED(resolve from live config)
+  release-judge=UNRESOLVED(resolve from live config)
+Ceilings: DeepSeek v4 Flash, direct (9Router) — 2,500 concurrent subagents | operator cap n/a (own provider keys)   [ASSUMED no-source-given]
+Reserve applied: 25% → provider usable 1875 of 2500   [ASSUMED no-source-given]
+Governing number: harness 30×10=300 | operator-cap n/a | provider 1875 → GOVERNS: 300 (harness)
+AGENT TEAM: mode=single — no persistent commanders; the commander stations collapse onto the lead.
+WAVE SIZE: 300    WORKFLOW COUNT: 30    AGENTS PER WORKFLOW: ≤10 (= clientCap 10)
+BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows,  §13):
+  batch size = clientCap (10); batches = ceil(slice count / clientCap); wave count unchanged.
+  Worked example: 16 builder slices at clientCap 10 → 2 batches (10 + 6). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+AGENT BUDGET DECLARATION (all eight §17 quantities):
+  1. number of workflows: 30
+  2. agents per workflow: ≤10
+  3. maximum concurrency: 300 (harness)
+  4. model role per workflow: from ROLE RESOLUTION above — by role and alias, resolved model cited
+  5. expected total agent executions: 52 for the initial gauntlet run (8+16+16+8+4), scaled to this task graph
+  6. selective-repair formula: N = failed workstreams, one repairer each, ≤12/wave
+  7. soft budget: 75–125 scaled to this project's task graph; at 150 analyze whether measurable progress is still occurring
+  8. hard safety cap: 200 executions → HARD STOP, preserve the best stable build, produce a blocker report (run_status=STOPPED_CAP)
+Session agent budget (AXIS 2 — the OPERATOR's policy, a LIFETIME COUNT, never a width
+  and never a platform fact): 1000 per session,
+  tracked as a DECREMENTING budget in project_state.json (agents.session_budget_remaining).
+  Every workflow's declared AGENT COUNT plus the repair formula must SUM against it BEFORE
+  dispatch. Commander sessions are separate processes — whether they draw from the same
+  1000 is UNDETERMINED; budget pessimistically as if they do until probed.
+Request budget per 5h window: not window-metered — governed by rate-limit responses; on 429/limit → park-and-resume (Loop 6), never retry-hammer
+Burn governor: pay-per-token — pre-run balance check + a rough estimate, stated plainly as a rough estimate, not a final number
+Throttle: full
+Fallback: builder/QC/merger/critic each fall back one tier — never onto the tier that produced the work being judged.
+SEAT lines: the conductor completes one SEAT line per seat in CAPACITY-LEDGER.md
+  (capacity.md section 4 template, procedure in section 11) — dispatched id, resolved
+  model, lane=<alias|direct|combo(members…)>, provider node, ceiling CLASS and figure,
+  which burn meter it feeds, headroom floor, independence proof. This script records
+  what it is handed; it never resolves a seat and never selects one.
+Provenance: every value-bearing line above carries a bracketed mark. Any line whose
+  mark reads ASSUMED with no source was handed to this script without its
+  `<KEY>_SOURCE` line and MUST be sized conservatively (capacity.md section 13.2).
+REVISIONS (append-only; the card above is never edited in place):
+  (none yet — a mid-run change appends: <ISO8601> | REVISION | field=<name> | old→new |
+   trigger=<measured|429-cluster|balance-check|tripwire|resume-remeasure> | source-mark=<new mark>)
+
+IMPORTANT CAPACITY RULE: "Provider capacity is NOT an instruction to maximize agent
+count. Do not spawn additional agents simply because DeepSeek or OpenRouter can
+support them. Every spawned agent must have: unique responsibility; evidence to
+inspect or work to perform; an explicit deliverable; an acceptance criterion. More
+agents are useful only when the work can actually be decomposed into independent
+valuable tasks. Quality per agent matters more than raw agent count."
+
+Waves narrower than the ceiling run at the width the dependency graph allows (Law 45)
+— the ceiling only ever lowers the dispatch, never widens a wave.
