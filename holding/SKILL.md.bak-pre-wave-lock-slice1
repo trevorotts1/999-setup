@@ -1111,19 +1111,6 @@ When the operator provides a folder, that folder IS the project. Its documents A
     tables (Rule 3.26), the loop register (Rule 3.24), the budget (the 9.4
     quantities + the spend-per-window inequality + one worked example — carried in
     `references/loops.md`).
-    **LOCK THE WAVE TABLE (binding, operator doctrine 2026-08-16 — the wave-lock
-    rule):** the execution plan's wave table is written ONCE with an immutable
-    count and never re-derived from memory. The table names every wave, the
-    issues or units it carries, its workflows, and its dependencies; nothing
-    after it may add, remove, or renumber a wave. A new wave exists ONLY when a
-    documented dependency requires it, opened by a `NEW-WAVE-N` ledger line
-    naming which wave's output it consumes; any other new wave is a violation.
-    Spec, to-do, checklist, and ledger all render from the SAME table — the
-    execution plan owns it, everything else cites it, never four drifting copies
-    (the wave-count-drift defect this kills: a plan written at 5 waves found at
-    15 hours later). The wave table is written into the ledger at wave 1; the
-    boss-cron wave check stops any wave in the ledger that is not in the locked
-    table without its `NEW-WAVE-N` line.
 16.2. **Write PROJECT-MANIFEST.md (document 17 — SPEC/PROJECT-MANIFEST.md).**
     The durable architectural source of truth: how THIS project is supposed to
     operate. Its eighteen contents (references/execution-architecture.md carries
