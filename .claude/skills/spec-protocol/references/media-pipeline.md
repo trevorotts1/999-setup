@@ -1993,12 +1993,39 @@ something already paid for.** A media work item reaches DONE only when ALL of:
   recorded **on the work item and on the MEDIA ledger line** (section 10); and
 - **(d)** the upload was **VERIFIED BY READING IT BACK** — the file appears in a
   fresh list or GET with a non-empty URL and a non-zero size — **never assumed
-  from a 200.**
+  from a 200.**; and
+- **(e)** the **SITE HTML references the GHL-hosted `url` returned by the
+  upload** — never the provider's temporary link (kie result URLs expire in
+  24 hours, section 13.6) and **never a local path in the deployed page.** The
+  deployed page's `src`/`href`/CSS `url()` values are the permanent GHL media
+  URL (or, on the repo-only path, the repo asset path). A local path is a
+  build-time convenience for the capture step only; it is never what the
+  deployed page references.
 
 **Upload is part of the generation step, not a later cleanup pass.** And **a
 provider URL is NEVER written into a deliverable, a spec document, or generated
 code** — the permanent URL is what goes into the build. That prohibition is
 enforced fail-closed by the watch check S15.
+
+**⛔ THE TIME-BOUNDED ORDERING (mandatory — Issue 9 step 4).** Generation and
+upload happen in the **SAME pipeline step, never split**:
+
+```
+generate → poll to state=success → parse resultUrls → download within the
+20-minute download-link window → upload to GHL → read-back → permanent URL
+into the HTML → ledger line
+```
+
+The temp URL **never survives past the step**, and it is **never written into
+the manifest as the final reference** — the manifest's `perm-url=` is the GHL
+URL (or repo path), and the provider URL appears only as `provider-url=`,
+audit-only. An item left at "generated, URL in ledger" with the GHL upload
+deferred is **fail-closed STOPPED on that item** — the temp URL expires
+overnight and the spend is already gone (section 13's money-protection
+rationale). The 20-minute download-link window is the clock that binds the
+step: `POST /api/v1/common/download-url` mints a fresh link valid 20 minutes
+(section 13.6), so the download happens in the same poll iteration as terminal
+success, and the upload follows immediately from the verified local file.
 
 ### 13.2 Two phases, because only ONE of them races a clock
 
@@ -2136,6 +2163,20 @@ standing freshness rule (section 8):
 | **List files and folders** | `GET /medias/files` — parameters include sortBy, sortOrder, type, query, offset, limit, altType, altId | the read-only SMOKE; the folder-exists check (13.5); **upload verification (Phase B read-back)** |
 | **Create folder** | `POST /medias/folder` — returns the created folder object | the per-project folder, once, at media-planning |
 | **Upload file** | `POST /medias/upload-file` — multipart; `file` (or `hosted:true` + `fileUrl`); `name`; `parentId`; **max 25 MB per file, 500 MB for video** | Phase B, one call per asset, `parentId` = the project `folderId` |
+
+**THE EXECUTABLE — `scripts/ghl-media-upload.sh`.** Phase B runs through this
+script, never hand-rolled curl. It resolves the PIT + Location ID from the live
+environment first and the home-level stores second (the same stores as
+`tools/env-sweep.sh`), lists the project folder by slug and reuses it or creates
+it, uploads the local file, and **verifies by read-back** before printing the
+permanent URL. Usage: `scripts/ghl-media-upload.sh <local-file> <project-slug>
+[item-id]` — stdout is JSON `{status, fileId, url, folderId, folderName,
+folderStatus}`; exit 0 = verified permanent URL, 1 = credential error, 2 = bad
+input file, 3 = folder failure, 4 = upload failure, 5 = read-back verification
+failure. The `Version: 2021-07-28` header value was **verified live 2026-08-16**
+against `services.leadconnectorhq.com` (folder create HTTP 201, upload HTTP 201,
+read-back HTTP 200) — the `v3`-vs-date conflict in the paragraph above is
+resolved in favor of the date version, and the script carries it.
 
 Sources: marketplace.gohighlevel.com/docs/ghl/medias/{medias, create-media-folder,
 upload-media-content} and …/2023-02-21/ghl/medias/fetch-media-content, all
