@@ -712,7 +712,7 @@ $AGENT_TEAMS_REPORT
 Ultracode/effort override (applies to NEW shells and NEW sessions only): $ULTRACODE_FIX_STATUS
 $ULTRACODE_FIX_REPORT
 
-Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models. The password is the default `123456`; change it yourself in the dashboard when you are ready.
+Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models. The password is the default \`123456\`; change it yourself in the dashboard when you are ready.
 
 Launch routed Claude Code with: claude-nine
 (claude-codex is the same session pinned to a Codex model — add a cx/ provider first.)
