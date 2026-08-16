@@ -340,6 +340,12 @@ green. Green under a real mutation is hollow and fails.
 6. A standing integrity alarm on the target repository.
 7. Any scaffolding inside a deliverable (Law 13).
 8. Any feature in the build that is not in the specification (Law 42).
+9. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
+   unreachable, format mismatch, judge cannot render both sides) is BLOCKED,
+   never passed. BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
+   recorded as non-success states and never relabeled PASS — an operational
+   limit (fix cap, timeout, budget, rate limit) ends the item NOT PASSED,
+   never PASS.
 
 ### The three-gate stack (Gate 1 hard correctness → Gate 2 on-brief fidelity → Gate 3 comparative excellence)
 
@@ -388,6 +394,13 @@ ADDITION TO the ten-category score, never as a replacement:
   the biggest, stated as a fixable defect.
 - It records evidence and any dissent into the verdict, in the same shape as every
   other Stage 2 finding.
+- **Law 50 — the bar wins by default.** A comparison the critic cannot run (bar
+  unreachable, format mismatch, critic cannot render both artifacts) is
+  BLOCKED, never passed — "could not compare" is a fail, not a pass. A
+  comparison that runs and loses is ITERATE (the fix loop). INDETERMINATE is
+  recorded as undetermined, never assumed to be a pass (below). BLOCKED /
+  INFEASIBLE / LIMIT REACHED / USER STOPPED are non-success states, never
+  relabeled PASS.
 - **Token headroom is a dispatch parameter, not an afterthought.** Every
   verdict-shaped call — judge score, blind A/B, release council, refuter — on any
   seat not proven reasoning-free is dispatched with `max_tokens ≥ max(4000, 4 ×
@@ -454,9 +467,12 @@ specific defect quoted with its path and line, (3) why it fails (the rule cited)
 (4) exactly what to change (a before-and-after for code), (5) how the fixer proves
 it is fixed (the command and expected result), (6) what a naive fix would break
 (Law 31). Re-dispatch a fixer (never the judge). A judge re-scores from scratch with
-fresh proof and a fresh break-it pass. Earlier scores never carry. Cap: after three
-failed loops on one finding, mark blocked-repeated-fail, record the history, move
-on.
+fresh proof and a fresh break-it pass. Earlier scores never carry. Cap: after twenty
+failed loops on one finding (operator ruling 2026-08-14), mark
+blocked-repeated-fail, record the history, and escalate with the full finding
+history — never a quiet give-up and never a relabeled pass. **Law 50 — the bar
+wins by default:** hitting the cap is LIMIT REACHED, a non-success state that
+ends the item NOT PASSED, never PASS.
 
 ### Rule 3.34 — a finding is proved by running
 

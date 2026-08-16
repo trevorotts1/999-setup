@@ -1269,6 +1269,9 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    (2) what to improve + how; then fixes. Self-repair capped at 20 cycles per
    finding (Rule 3.22 — operator ruling 2026-08-14: up to twenty rounds before
    a human sees it). Fixes run in parallel — one fixer per finding (Law 32).
+   **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
+   never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
+   non-success states, never relabeled PASS.
 
 3. **Holding pen** — passing work stages in a pen (one per repo), not straight to
    main. The pen lives in the execution plan as a table, not as a file (Law 39).
@@ -1493,6 +1496,9 @@ See `references/audience.md` for the full audience UX rules.
   a claim, not evidence (Law 1, Law 14).
 - Never assert a number that was not measured by a command actually run (Law 14).
 - Never lower the quality gate. 8.5 is fixed. Never suggest lowering it (Law 43).
+- Never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS.
+  The bar wins by default (Law 50): a comparison that cannot run is BLOCKED,
+  not passed; an operational limit ends the item NOT PASSED, never PASS.
 - Never grep for content or verdicts (Law 12).
 - Never print, echo, or log a secret value. Confirm by NAME only.
 - Never perform an irreversible action without explicit permission for that
@@ -1529,7 +1535,7 @@ See `references/audience.md` for the full audience UX rules.
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
-| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, move on. |
+| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, escalate with the full finding history. Hitting the cap is LIMIT REACHED — a non-success state, never relabeled PASS (Law 50). |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |
