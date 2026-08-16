@@ -502,8 +502,9 @@ mobile captures against the locked units.
 Evidence protocol: every claim carries a capture, a log line, or a diff.
 Context protocol: the frozen reference package and the Task travel; the build
 history does not (Law 5, Law 25).
-Operational stop / escalation: three failed cycles on one finding →
-blocked-repeated-fail; a missing source → BLOCKED (Section 9).
+Operational stop / escalation: twenty failed cycles on one finding (Rule
+3.22, operator ruling 2026-08-14) → blocked-repeated-fail, escalated with the
+full finding history; a missing source → BLOCKED (Section 9).
 Final system review: one full-page pass against the traceability table
 (Section 8) before the comparative verdict.
 
@@ -636,8 +637,11 @@ Two stop mechanics exist and must never be confused:
 
 - **The fix cap (Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14;
   formerly 3)** is an OPERATIONAL escalation trigger. Twenty failed loops on one
-  finding → `blocked-repeated-fail`, history recorded, move on. It lives in the
-  pipeline (`references/pipeline.md`).
+  finding → `blocked-repeated-fail`, history recorded, and the finding
+  ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every cycle's
+  finding, fix, and re-judge result — never a quiet give-up, never a relabeled
+  pass (the QC protocol's loop mechanics, `references/pipeline.md`). It lives in
+  the pipeline (`references/pipeline.md`).
 - **The B2H is the SUCCESS stop.** The successful stop rule in THE BAR TO HIT is
   the ONLY condition under which a work item reports PASS.
 
@@ -663,7 +667,7 @@ consistent:
 
 | Gauntlet state | Ledger state | Meaning |
 |---|---|---|
-| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop or the 3-cycle cap stopped this item (`references/pipeline.md`, Rule 3.22). |
+| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop or the fix cap (Rule 3.22 — 20 cycles per finding) stopped this item (`references/pipeline.md`). |
 | INFEASIBLE | `blocked-infeasible` | The bar cannot be met or compared — conditions, not effort, are the wall. |
 | LIMIT REACHED | `blocked-timeout` / `blocked-limit` | An operational limit (budget, rate, session) ended the run for this item. |
 | USER STOPPED | `blocked-human` (user-initiated) | The human stopped the run — Law 8's second ending. |
@@ -1015,7 +1019,7 @@ its own best known state.
 The two repair granularities compose rather than collide:
 
 - **FINDING-level repair** (`references/pipeline.md` Stage 3: one fixer per
-  finding, 3-cycle cap, Rule 3.22) runs INSIDE a workstream.
+  finding, 20-cycle cap, Rule 3.22) runs INSIDE a workstream.
 - **WORKSTREAM-level repair** (WF06: one repair agent per failed workstream,
   ≤12 per wave) is the repair TASK's workflow, and the repair agent OWNS its
   workstream — multiple findings inside it may still fan out per finding under

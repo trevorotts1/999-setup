@@ -1266,9 +1266,24 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    OWN rubric (Law 29): the judge scores the ten categories PLUS the per-card QC
    section, an independent command that names the wrong outcome. Identifies
    gaps/defects/blockers + improvements; lists (1) what is wrong + how to fix,
-   (2) what to improve + how; then fixes. Self-repair capped at 20 cycles per
-   finding (Rule 3.22 — operator ruling 2026-08-14: up to twenty rounds before
-   a human sees it). Fixes run in parallel — one fixer per finding (Law 32).
+   (2) what to improve + how; then fixes. **Every FAIL loops back to the
+   builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
+   stripped of its evidence — and the builder fixes exactly that finding. The
+   loop is bounded (max 20 cycles per finding, Rule 3.22 — operator ruling
+   2026-08-14) and recorded (every cycle appends the finding, the fix, and the
+   re-judge result to the finding's verdict block in the live ledger). After
+   the 20th failed loop: escalate to the operator WITH THE FULL FINDING
+   HISTORY — never a quiet give-up, never a relabeled pass.** Fixes run in
+   parallel — one fixer per finding (Law 32).
+   **Every judge pass writes ONE QC RECORD** — `QC-RECORD unit=… judge=… bar=…`
+   / `bar-fetch=…` / `verdict=…` / `outcome=…` plus `blind=yes
+   model-independence=… self-qc=no` — to the ledger's verdict blocks through
+   `tools/ledger.sh` the moment the verdict is reached. The record carries the
+   four things the QC bar checks: a blind critic (`judge=` differing from the
+   unit's builder seat — zero self-QC), a named bar with its fetch proof, a
+   binary verdict, and the loop-or-pass outcome (PASSED / LOOPED cycle n of 20
+   / ESCALATED after 20). The five mechanical checks and the fail-closed rule
+   for defective records live in `references/pipeline.md` Stage 2.
    **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
    never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
    non-success states, never relabeled PASS.

@@ -265,6 +265,58 @@ named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the bui
 (Law 7 — one model's blind spot cannot bless itself). Review streams as features
 land — not in a batch at the end (inherit warfix streaming review).
 
+### The QC record — the one format every item's verdict is written in
+
+**Every work item, at every judge pass (first verdict, every re-verdict after a
+fix loop, every council read), produces ONE QC RECORD, written to the ledger's
+verdict blocks (document 6) through `tools/ledger.sh` the moment the verdict is
+reached (Law 2 — write the verdict the instant it is judged). A judge that
+returns a verdict without writing the record has not produced a verdict.**
+
+A QC RECORD has EXACTLY four fields, one line each, in this order — the four
+things the Issue 17 bar checks (spec: every QC record shows a blind critic, a
+named bar, a binary verdict, and the loop-or-pass outcome; zero self-QC):
+
+```
+QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
+bar-fetch=<how the bar was obtained: URL | capture path | file path | the
+answer-key block reference — a bar with no fetch proof is not a bar>
+verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
+outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20>
+blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
+```
+
+Mechanical checkability — the five checks any cold agent or the boss cron can
+run against a QC RECORD without judging anything:
+
+1. **`judge=` must NOT equal the builder's seat label** for that unit (Law 7 —
+   no self-QC). Zero self-QC means the record's judge seat differs from the
+   builder seat of the unit it records. Where the platform records the resolved
+   model, compare the RESOLVED base ids (strip provider prefix and
+   thinking/version suffixes — same base id = same model = the record is
+   INVALID, per the family rule, `references/gauntlet.md` Section 5).
+2. **`bar=` must be a named bar** — a name, never a vibe; the bar text itself
+   lives in the build card's QC section or the B2H (Law 48).
+3. **`bar-fetch=` must name a fetchable source** (URL, capture path, file path,
+   or the answer-key block reference). A bar that cannot be fetched is BLOCKED,
+   never passed (Law 50).
+4. **`verdict=` must be exactly one of PASS, FAIL, BLOCKED, INFEASIBLE,
+   LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
+   else, and the non-success states are never relabeled PASS (Law 50).
+5. **`outcome=` must be PASSED or LOOPED `cycle n of 20`** (the fix loop's cap,
+   Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14; a 21st
+   pass carries ESCALATED with the full finding history) — a FAIL verdict with
+   no LOOPED outcome line, or an ESCALATED line with no finding history
+   attached, is a broken record.
+
+A QC RECORD failing any of the five checks is a defective record — the unit is
+not passed, the verdict does not stand, and the defect is itself a finding
+returned to the builder with the record. The records are how the "every record
+shows a blind critic, a named bar, a binary verdict, and the loop-or-pass
+outcome; zero self-QC" bar is mechanically checkable: check 1 proves the blind
+critic, checks 2-3 prove the named bar, check 4 proves the binary verdict,
+check 5 proves the loop-or-pass outcome.
+
 **Law 29 — the per-card rubric is judged here.** The judge scores the ten
 categories PLUS the unit's OWN QC section from its build card — the independent
 command the card's author wrote, which names the specific behaviour that should
@@ -340,6 +392,11 @@ green. Green under a real mutation is hollow and fails.
 6. A standing integrity alarm on the target repository.
 7. Any scaffolding inside a deliverable (Law 13).
 8. Any feature in the build that is not in the specification (Law 42).
+9. **Any QC record that fails the five mechanical checks (above) — a missing
+   record, a judge seat identical to the builder seat (self-QC), an unnamed
+   bar, a bar with no fetch proof, a non-binary verdict, or a FAIL without its
+   LOOPED outcome.** The unit is blocked, the verdict does not stand, and the
+   broken record is returned to the builder as a finding.
 9. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
    unreachable, format mismatch, judge cannot render both sides) is BLOCKED,
    never passed. BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
@@ -441,7 +498,7 @@ decides which drives:
    dispatches its own fixer, in parallel, exactly as this stage already runs.
 2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
    single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME per-finding 3-cycle cap (Rule 3.22). It is
+   same fix list, under the SAME per-finding 20-cycle cap (Rule 3.22). It is
    one more row in the fix list, never a second, competing cycle counter.
 3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
    correctness is the floor; re-judging a comparison against a build that has
@@ -449,7 +506,7 @@ decides which drives:
    always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
 
 Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their OWN 3-cycle counter (Rule 3.22),
+Gate-3 largest-gap finding each carry their OWN 20-cycle counter (Rule 3.22),
 because they are different findings, not because they are different gates.
 
 ---
@@ -460,19 +517,35 @@ because they are different findings, not because they are different gates.
 dispatched concurrently (Law 32). The attempt bound is per finding, not per work
 item.
 
-### The fix loop (Rule 3.22)
+### The fix loop (Rule 3.22 — bounded and recorded)
 
 Below 8.5: write the six-part finding — (1) which category and the score, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
 (4) exactly what to change (a before-and-after for code), (5) how the fixer proves
 it is fixed (the command and expected result), (6) what a naive fix would break
-(Law 31). Re-dispatch a fixer (never the judge). A judge re-scores from scratch with
-fresh proof and a fresh break-it pass. Earlier scores never carry. Cap: after twenty
-failed loops on one finding (operator ruling 2026-08-14), mark
-blocked-repeated-fail, record the history, and escalate with the full finding
-history — never a quiet give-up and never a relabeled pass. **Law 50 — the bar
-wins by default:** hitting the cap is LIMIT REACHED, a non-success state that
-ends the item NOT PASSED, never PASS.
+(Law 31). **The finding IS the loop-back payload:** the item returns to the
+builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
+summarized, never stripped of its evidence — and the builder fixes exactly that
+finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
+judge). A judge re-scores from scratch with fresh proof and a fresh break-it pass.
+Earlier scores never carry.
+
+**The loop is bounded and recorded (binding):**
+- **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).
+  The counter is per finding — never per work item, never per gate.
+- **Recorded:** every cycle appends to the finding's history — cycle number
+  (n of 20), the exact finding, the fix applied (commit/branch), the re-judge
+  result — written to the finding's verdict block in the live ledger (document
+  6) as it happens, so a session resuming cold reads which cycle a finding is
+  on and what has already been tried directly from the block (documents.md,
+  document 6).
+- **Escalation, never a quiet give-up:** after the 20th failed loop on one
+  finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
+  FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
+  relabeled pass, never a silent move-on. Escalation feeds the Named Stops
+  (stop 8) and the boss-cron restart from the last clean checkpoint.
+  **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
+  non-success state that ends the item NOT PASSED, never PASS.
 
 ### Rule 3.34 — a finding is proved by running
 

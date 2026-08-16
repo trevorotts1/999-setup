@@ -13,6 +13,31 @@ BLOCKED, not passed: "could not compare" is a fail, not a pass. An operational
 limit (fix cap hit, timeout, budget, rate limit) ends the item NOT PASSED,
 never PASS. Every verdict block names the bar it was judged against.
 
+**The QC RECORD — every verdict is written in this format** (full spec in
+`references/pipeline.md`, Stage 2). Every judge pass produces ONE record,
+written to the ledger's verdict blocks through `tools/ledger.sh` the moment the
+verdict is reached. Four fields, one line each, in this order:
+
+```
+QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
+bar-fetch=<how the bar was obtained: URL | capture path | file path | the
+answer-key block reference — a bar with no fetch proof is not a bar>
+verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
+outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20>
+blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
+```
+
+Mechanically checkable: (1) `judge=` differs from the unit's builder seat (Law 7
+— zero self-QC; compare RESOLVED base ids when recorded); (2) `bar=` is a named
+bar (Law 48); (3) `bar-fetch=` names a fetchable source (a bar that cannot be
+fetched is BLOCKED, Law 50); (4) `verdict=` is exactly one of the five values —
+binary for the loop, non-success states never relabeled PASS; (5) `outcome=`
+is PASSED or LOOPED `cycle n of 20` (Rule 3.22 — 20 cycles per finding; the
+21st pass is ESCALATED with the full finding history). A record failing any
+check is a defective record: the verdict does not stand, and the defect is a
+finding. This is how the "every record shows a blind critic, a named bar, a
+binary verdict, and the loop-or-pass outcome; zero self-QC" bar is checked.
+
 The categories:
 
 1. Does it actually work?

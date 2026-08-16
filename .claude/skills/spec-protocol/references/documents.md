@@ -212,13 +212,27 @@ FAIL if: <exact condition> → incomplete because <reason>
   proof, merge record — the judge writes these; this is where the refused verdict
   tickets and digest live); (c) the restart steps (the literal resume procedure,
   verbatim with real paths; this is where the refused resume playbook lives).
-  **Every verdict block records the per-finding cycle count** — which cycle this
-  finding is on, of the 3-cycle fix cap (Rule 3.22; `references/pipeline.md`), as
-  "cycle count: n of 3" — so a session resuming cold after a crash or a
-  compaction reads which cycle a finding is on directly from the block instead of
-  reconstructing it from ledger history. Recorded by whichever role writes that
-  verdict block (the judge on a Gate 1/2 finding; the critic on a Gauntlet Gate 3
-  finding, `references/gauntlet.md` Section 5).
+  **Every verdict block records the per-finding cycle count AND the finding's
+  full history** — which cycle this finding is on, of the 20-cycle fix cap
+  (Rule 3.22; `references/pipeline.md`), as "cycle count: n of 20", plus every
+  prior cycle's exact finding, fix applied (commit/branch), and re-judge
+  result, appended as the loop runs — so a session resuming cold after a crash
+  or a compaction reads which cycle a finding is on AND what has already been
+  tried directly from the block instead of reconstructing it from ledger
+  history. The history IS the payload of the escalation: after the 20th failed
+  loop, the item escalates to the operator with the full finding history, never
+  a relabeled pass (the QC protocol's loop mechanics). Recorded by whichever
+  role writes that verdict block (the judge on a Gate 1/2 finding; the critic
+  on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5).
+  **Every verdict block opens with the QC RECORD** — the four-field format
+  defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`:
+  `QC-RECORD unit=… judge=… bar=…` / `bar-fetch=…` / `verdict=…` / `outcome=…`
+  plus `blind=yes model-independence=… self-qc=no`, written through
+  `tools/ledger.sh` the moment the verdict is reached. The record is what makes
+  the QC bar mechanically checkable: judge-vs-builder seat difference (zero
+  self-QC), a named bar with fetch proof, a binary verdict, the loop-or-pass
+  outcome. A verdict block without its QC RECORD is a defective record — the
+  verdict does not stand.
 - **Batch merge records live here too** — as a section appended by the merge-writer
   inside the verdict/merge-record section (the merge-writer already owns appending
   merge records here). One entry per batch: batch id, repository, units landed,
@@ -234,8 +248,12 @@ FAIL if: <exact condition> → incomplete because <reason>
   verdict block with no cycle count, or a cycle count that disagrees with the
   number of prior verdict blocks for that same finding; a
   state that disagrees with the primary source; a batch with no merge record; a
-  reconciliation where a pen item is missing from all three outcomes. (Law 1: when
-  git disagrees, git wins and the prose is corrected.)
+  reconciliation where a pen item is missing from all three outcomes; a verdict
+  block with no QC RECORD, or a QC RECORD failing any of its five mechanical
+  checks (judge seat equals the builder seat; bar unnamed; bar with no fetch
+  proof; non-binary verdict; FAIL without a LOOPED outcome — see
+  `references/pipeline.md` Stage 2). (Law 1: when git disagrees, git wins and
+  the prose is corrected.)
 
 ### Document 7 — Quality-control document
 - **Path:** `QUALITY-CONTROL/QUALITY-CONTROL-RULEBOOK.md`

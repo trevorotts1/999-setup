@@ -205,7 +205,7 @@ not a new loop; only the register row's naming makes the B2H visible:
 
 | Loop | Trigger | Interval | Owns this transition | Stop condition |
 |---|---|---|---|---|
-| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else blocked-repeated-fail at the 3-cycle cap (Rule 3.22), reported NOT PASSED, never PASS |
+| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else blocked-repeated-fail at the 20-cycle cap (Rule 3.22), reported NOT PASSED, never PASS |
 
 ---
 
@@ -223,22 +223,24 @@ additional repository adds one. The middle term varies with the repository count
 nothing else. The last line is what stops the count being the same ten on every
 project regardless of what the project is.
 
-### Never a fixed round count — the B2H success exit vs the 3-cycle cap
+### Never a fixed round count — the B2H success exit vs the 20-cycle cap
 
 A loop's stop condition is a MEASURABLE SUCCESS, never a fixed number of rounds
 (Law 35, clause 4). The B2H is the success stop: the review/gate loop stops when the
 final comparative gate passes with evidence, however many rounds that takes. The
-3-cycle cap (Rule 3.22) is NOT a competing success exit — it is an OPERATIONAL
-escalation trigger. It fires on blocked-repeated-fail: three cycles on the same
-finding and the item is marked blocked, not passed, so the run can move rather than
-grind forever on a defect no fixer is converging.
+20-cycle cap (Rule 3.22) is NOT a competing success exit — it is an OPERATIONAL
+escalation trigger. It fires on blocked-repeated-fail: twenty cycles on the same
+finding (operator ruling 2026-08-14) and the item is marked blocked, NOT passed,
+and the finding ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every
+cycle's finding, fix, and re-judge result — never a quiet give-up, never a
+relabeled pass (the QC protocol's loop mechanics, `references/pipeline.md`).
 
 The two do not conflict:
 
-| | B2H success exit | 3-cycle cap (Rule 3.22) |
+| | B2H success exit | 20-cycle cap (Rule 3.22) |
 |---|---|---|
 | What it is | The SUCCESS stop — what PASS means | An OPERATIONAL escalation trigger — when to stop spending on a stuck finding |
-| When it fires | The final comparative gate passes with evidence | Three cycles on the same finding with no convergence |
+| When it fires | The final comparative gate passes with evidence | Twenty cycles on the same finding with no convergence; the item escalates with the full finding history |
 | What the run reports | PASS | NOT PASSED, never PASS |
 
 A limit-hit run reports NOT PASSED, never PASS. Blocked-repeated-fail, infeasible,
@@ -288,7 +290,7 @@ Each row is a loop. Each owns exactly one transition and nothing else (Law 36).
 | **1. Spec** | Interviews (4.5), runs the current-state pass, writes each work item as a section of the master specification in the build-card shape. Runs before the others and normally finishes. | *nothing → specified* | Every work item is written in the build-card shape and passes the structural check. |
 | **2. Build** | Claims the first dispatchable item, builds it, pushes, marks it *built*. Pipeline not barrier — each item judged when IT finishes. | *unbuilt → built* | No dispatchable unbuilt item remains and nothing is in a fixing state. |
 | **3. Review** | Takes a *built* item and actually runs it — the break-it pass, the mutation proof, the end-to-end run. Opens the change for approval on the remote (Law 37). Records a link a human can open and the exact steps to test it. | *built → reviewed* | No *built*-and-unreviewed item remains. |
-| **4. Gate** | Scores a *reviewed* item against the QC rulebook: ten categories, the item's own rubric, the fail-closed rules. Writes the durable verdict into the ledger. On a pass, puts it in the landing queue. On a fail, writes the six-part finding with run-evidence and fans out one fixer per finding, in parallel (Law 32), bounded at three per finding (Rule 3.22). | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
+| **4. Gate** | Scores a *reviewed* item against the QC rulebook: ten categories, the item's own rubric, the fail-closed rules. Writes the durable verdict into the ledger. On a pass, puts it in the landing queue. On a fail, writes the six-part finding with run-evidence and fans out one fixer per finding, in parallel (Law 32), bounded at twenty per finding (Rule 3.22). | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
 
 **The gate loop's verdict carries the three-gate B2H result — every work item
 carries a Bar to Hit (references/gauntlet.md, Section 12).** The durable verdict
