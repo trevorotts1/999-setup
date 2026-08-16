@@ -139,10 +139,8 @@ Never write "×16" as a promise, and **never write "10" as a constant either** �
 10 is THIS machine's measured value, not a new folklore number. A 24-core box
 gets 16; an 8-core box gets 6. Write the formula AND the measured value, always.
 
-**50 workflows** is the operator's machine doctrine per session (2026-08-16 —
-operator doctrine, NOT a product limit: no product cap exists on concurrent
-workflow runs; supersedes the 30-workflow figure) → maximum truly-concurrent
-agents = 50 × min(16, cores−2) = **500 on this machine**.
+**30 workflows** is the hard ceiling per session (the operator's explicit rule) →
+maximum truly-concurrent agents = 30 × min(16, cores−2) = **300 on this machine**.
 A single pipeline call accepts up to **4,096 items**.
 
 **Scaling past one workflow's cap means MORE WORKFLOWS, launched by the conductor
@@ -234,7 +232,7 @@ probe proves otherwise (section 12).
 ### The reconciliation rule (state this verbatim wherever wave width is computed)
 
 > *"The wave width is the SMALLEST of three numbers: (1) the harness delivery
-> capacity — workflows-in-flight × min(16, cores−2), capped at 50 workflows;
+> capacity — workflows-in-flight × min(16, cores−2), capped at 30 workflows;
 > (2) the operator cap for the provider class — 20 concurrent agents per wave on
 > Anthropic-billed Claude Code, no operator cap on the user's own 9Router
 > provider keys beyond the reserve; (3) the provider ceiling minus the reserve
@@ -243,7 +241,7 @@ probe proves otherwise (section 12).
 
 On Anthropic Claude Code the 20-agents-per-wave doctrine governs total
 concurrency (2 workflows × 10 = 20 on this machine hits it exactly). On
-9Router + DeepSeek direct, the harness (500) governs long before the provider
+9Router + DeepSeek direct, the harness (300) governs long before the provider
 (1,875).
 
 **Governing width and total spend are different questions.** The smallest of
@@ -331,7 +329,7 @@ AGENT TEAM: mode=<team|single-session|refused-by-arithmetic|declined|probe-faile
   commanders=<n> (recommended band 3–5; a Gauntlet software build uses 4)
   persistent slots consumed = lead + commanders = <n+1>, deducted BEFORE workflow width
   teammate rate-bucket: UNDETERMINED → burn governor assumes SHARED (pessimistic) unless probed
-WAVE SIZE: <w>    WORKFLOW COUNT: <w ÷ k, ≤50>    AGENTS PER WORKFLOW: <k>
+WAVE SIZE: <w>    WORKFLOW COUNT: <w ÷ k, ≤30>    AGENTS PER WORKFLOW: <k>
 AGENT BUDGET DECLARATION (§17 — computed FROM this ledger, before dispatch):
   workflows=<n>  agents-per-workflow=<per WF>  max-concurrency=<w>
   model-role-per-workflow=<map>  expected-total-executions=<n>
@@ -389,7 +387,7 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
 5. **Apply the reserve.** 25% by default, two free slots as the floor on small
    plans. Usable = ceiling − reserve.
 6. **Compute the governing number.** Write all three candidates —
-   harness = workflows × k (≤50 workflows), operator cap for the provider class,
+   harness = workflows × k (≤30 workflows), operator cap for the provider class,
    provider usable — and mark the winner. The smallest governs.
 7. **Deduct the persistent occupants.** Lead + N commanders = N+1 slots, taken
    off the governing number BEFORE any workflow width is allocated (section 12).
@@ -428,16 +426,16 @@ train at 1).
 
 ### Scenario (b) — 9Router + DeepSeek v4 Flash direct, 12-core machine
 
-Provider 2,500 − 25% reserve = 1,875 usable. Harness: 50 workflows × 10 = **500**.
+Provider 2,500 − 25% reserve = 1,875 usable. Harness: 30 workflows × 10 = **300**.
 Operator cap: none for the user's own keys.
 
-**Governing number: 500 (harness).** → wave size 500, **50 workflows × 10
+**Governing number: 300 (harness).** → wave size 300, **30 workflows × 10
 agents**; the provider never notices.
 
 Burn governor: pay-per-token — pre-run balance check plus a rough estimate,
 warned plainly ("a rough estimate, not a final number").
 
-**Agent Team line:** 5 persistent occupants are noise against 500 — the full
+**Agent Team line:** 5 persistent occupants are noise against 300 — the full
 shape is unchanged.
 
 ### Scenario (c) — Ollama Cloud $20
@@ -758,7 +756,7 @@ Before dispatch, the ledger DECLARES all eight quantities:
 
 | # | Quantity | How it is derived |
 |---|---|---|
-| 1 | Number of workflows | Wave size ÷ agents per workflow, capped at 50 (operator machine doctrine) |
+| 1 | Number of workflows | Wave size ÷ agents per workflow, capped at 30 |
 | 2 | Agents per workflow | `min(16, cores−2)` from the measured core count, or lower where the governing number binds |
 | 3 | Maximum concurrency | The governing number, after the N+1 persistent occupants are deducted |
 | 4 | Model role per workflow | From the resolved role map (section 11) — by ROLE AND ALIAS, with the resolved model cited |
@@ -1044,7 +1042,7 @@ allocated.**
 
 - **Scenario (a)** (Anthropic, cap 20): lead + 4 commanders = 5 → 15 slots remain
   for workflow width.
-- **Scenario (b)** (harness 500): 5 persistent occupants are noise — the full
+- **Scenario (b)** (harness 300): 5 persistent occupants are noise — the full
   shape is unchanged.
 - **Scenario (c)** (Ollama $20, 2 slots): the arithmetic **REFUSES** Agent-Team
   mode (5 > 2) — the when-to-use gate answers "single-session" and says so
