@@ -53,6 +53,16 @@ verdicts, never trusted as state.
        CONTROL/project_state.json FIRST among equals: it is the machine
        state that survived the crash (run_status, round, scores, locks,
        parked merges, commanders).
+   (d) RE-READ THE BRIEF AND THE ANSWERS — the never-re-ask law is
+       mechanically re-armed here, before ANY question is spoken (Issue 12
+       FIX step 2, interview.md R5.1): read the brief (the provided material
+       / the brainstorm capture) and the answers file (`00-INPUT/ANSWERS.md`)
+       in full, and read the session log's `ASKED` lines
+       (`CONTROL/SESSION-LOG.md`) so the run knows which questions have been
+       asked. A question whose key already has an answer on disk is ANSWERED
+       — the run states the recorded answer and never re-asks it, in this
+       session or any later one; a question key that already appears in an
+       `ASKED` line is never spoken again.
    Do NOT read the master spec, every verdict block, or the raw source
    material. They are large, they are not state, and reading them is how a
    resuming session burns its context before doing any work.
@@ -101,6 +111,16 @@ verdicts, never trusted as state.
    CONTROL/dispatch-log.md with no recorded outcome: does its work
    exist on disk? THE DIFFERENCE IS EXACTLY WHAT WAS LOST. An agent's death
    report is NOT a measurement of what it produced — census the disk.
+
+2.5. RE-READ THE BRIEF AND THE ANSWERS FILE. Step 0(d) armed the
+    never-re-ask law; this step re-proves it against the disk's final state:
+    read `00-INPUT/ANSWERS.md` and the brief in full, and confirm every
+    answer already given is treated as given — a question whose answer is on
+    disk is ANSWERED and never re-asked, and a question key already logged
+    as `ASKED` in `CONTROL/SESSION-LOG.md` is never spoken again (Issue 12
+    FIX step 2 / interview.md R5.1). The re-read costs seconds and it is the
+    whole mechanism: without it, a resumed session re-asks what the user
+    already answered — the canary defect a compaction makes likely.
 
 3. RECONCILE THE VERDICTS, WITH A DENOMINATOR. Count: work items in the
    master spec; artifacts on disk; verdicts present; passed-but-unlanded

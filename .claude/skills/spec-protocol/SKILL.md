@@ -950,6 +950,22 @@ When the operator provides a folder, that folder IS the project. Its documents A
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
    `references/interview.md`.
+4.5. **THE NEVER-RE-ASK MACHINERY (binding — Issue 12 FIX step 2).** Before
+    ANY question is spoken in this run, the conductor READS the brief (the
+    provided material / the brainstorm capture) and the answers file
+    (`00-INPUT/ANSWERS.md`) in full; after a compaction or a resume, it
+    RE-READS both before the next question (resume.md steps 0(d) and 2.5).
+    A question whose answer is on disk is ANSWERED — state it back in one
+    line ("you already told me <their words> — if anything changed, tell
+    me") and move on; it is never re-asked in the same run and never across
+    a session boundary. Every answer is written to `00-INPUT/ANSWERS.md`
+    the moment it is given (via `tools/ledger.sh`, one line per answer in
+    the shape `Q:<key> | <answer>`); every question actually asked is logged
+    in `CONTROL/SESSION-LOG.md` the moment it is spoken (one line per ask:
+    `ASKED Q:<key> | <question N of no more than C> | <ISO8601>`). The
+    question keys are the stable identifiers in `references/interview.md`
+    R5.1 — the same key for the same question every time. The boss cron
+    flags a question key asked twice in the session log as a violation.
 5. **Pick the job archetype.** Greenfield, repair, audit, rollout, recovery, or
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that

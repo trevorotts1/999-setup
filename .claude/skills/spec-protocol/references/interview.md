@@ -291,6 +291,70 @@ The ceiling is stated once, at the start; it may fall with good news, and it
 rises only by the artwork rule — the canary's 32 → 27 → 30 drift is the
 defect that sentence removes.
 
+### R5.1 The never-re-ask law, mechanically enforced (binding — Issue 12 FIX step 2)
+
+The paragraph above is the law; this section is the mechanism that makes it
+impossible to break by accident. Four mechanical rules, all mandatory:
+
+1. **THE NAMED ANSWERS FILE.** The project's answers file is
+   `00-INPUT/ANSWERS.md` (the project's raw-material folder per SKILL.md's
+   storage layout; the brainstorm's verbatim capture lives beside it as
+   `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`, Law 23). Every answer a person gives —
+   every counted question in this file, every Build Target answer, every
+   entry-mode choice, every "I do not know", every default recorded as a
+   default — is written here via `tools/ledger.sh` (`ledger.sh <project>
+   "00-INPUT/ANSWERS.md" "<line>"`) the moment it is given, before the next
+   question. One line per answer, in this exact shape:
+   `Q:<key> | <the question's recorded answer, in their own words>`.
+2. **STABLE QUESTION KEYS.** Every question that exists in this file carries
+   its key: the lettered questions (`Q:A1`, `Q:A2`, `Q:A3`, `Q:A4`, `Q:A5`,
+   `Q:A6`, `Q:A7`, `Q:A8`, `Q:B1`, `Q:B2`, `Q:B4`, `Q:C0`, `Q:C1`, `Q:C2`,
+   `Q:C3`, `Q:C4`, `Q:C5`, `Q:C6`, `Q:D1`, `Q:D2`, `Q:D3`, `Q:D4`), the
+   archetype (`Q:ARCHETYPE`), the Build Target (`Q:BUILD-TARGET`), the
+   entry-mode question (`Q:ENTRY-MODE`), the mode question (`Q:MODE` — R1,
+   which is also the defaults offer), the target branches (`Q:1D-APP-1`,
+   `Q:1D-APP-2`, `Q:1D-APP-3`, `Q:1D-MOBILE-DELIVERY`,
+   `Q:1D-SHAPE`, `Q:1D-WEB-1`, `Q:1D-WEB-2`, `Q:1D-WEB-3`,
+   `Q:1D-FUNNEL-1`, `Q:1D-FUNNEL-2`, `Q:1D-FUNNEL-3`,
+   `Q:1D-FUNNEL-RECO`, `Q:MEDIA-OPEN`, `Q:MEDIA-GENERATE`,
+   `Q:MEDIA-ACCOUNT`, `Q:MEDIA-MODEL`, `Q:MEDIA-KEY-ASK`), the collapse
+   confirmations (`Q:COLLAPSE-B`, `Q:COLLAPSE-C`), the Agent-Team consent
+   (`Q:TEAM`), and the done-condition (`Q:DONE-CONDITION`). A key is a key:
+   the SAME key is used every time the same question would be asked, so the
+   answers file is searchable by key, and the key is what the boss cron
+   counts. A question whose wording this skill ever rewrites keeps its key —
+   the key names the question's identity, not its phrasing.
+3. **THE PRE-QUESTION CHECK (a hard gate).** Before ANY question is spoken —
+   counted or uncounted, in the interview, in the brainstorm, in the pointed
+   path's confirmation, in the recap, anywhere — the conductor READS the
+   brief (the provided material / the brainstorm capture) and the answers
+   file in full, and checks: does this question's key already have a line in
+   `00-INPUT/ANSWERS.md`? Does the brief already answer it (the derive-first
+   rule, R2)? If either is true, the question is ANSWERED — the run uses the
+   recorded answer, states what it found in one line ("you already told me
+   <their words> — still right? if it changed, tell me"), and moves on. The
+   question is NEVER spoken again in the same run, and never after a
+   compaction or a resume without this check being run first. Asking a
+   question whose answer is on disk is the canary defect, mechanically
+   impossible after this rule.
+4. **THE SESSION-LOG ASK LINE.** Every question that is actually asked is
+   ALSO logged the moment it is spoken, in the session log
+   (`CONTROL/SESSION-LOG.md`, document 4 — written via `tools/ledger.sh`,
+   same atomic lock): one line per ask, in this exact shape:
+   `ASKED Q:<key> | <question N of no more than C, in the shape actually spoken> | <ISO8601>`.
+   The ask line is what the boss cron scans: a question key asked twice in
+   the session log is a repeated question — a VIOLATION the boss flags
+   (PART 4 / `tools/boss-cron` check), whatever the answers file holds.
+
+The two files together close the loop: `00-INPUT/ANSWERS.md` proves an
+answer exists (the question must not be asked), and the session log's
+`ASKED` lines prove a question was spoken once (a second `ASKED` with the
+same key is a violation). One of the two always fires when the law is
+broken, so the defect cannot be silent. After a compaction or a resume, the
+conductor re-reads both files BEFORE the next question — the re-read is
+step 0 of the resume path (`references/resume.md`), and it is what makes a
+question whose answer is on disk stay answered across a session boundary.
+
 ### R6. What DEFAULT MODE asks — the whole list
 
 (1) the mode question itself (R1); (2) artwork: create or supply; (3) which
