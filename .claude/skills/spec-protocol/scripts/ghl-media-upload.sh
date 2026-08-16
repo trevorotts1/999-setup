@@ -2,6 +2,25 @@
 # ghl-media-upload.sh — Upload a local file to GHL media storage in a
 # project-labeled folder. Part of the media persistence pipeline (Issue 9).
 #
+# API CONTRACT (sourced: OpenAPI spec mirror Bleupreneur/ghl-cli spec/medias.json
+# and mastanley13/GoHighLevel-MCP ghl-api-client.ts):
+#   POST /medias/upload-file — headers Authorization: Bearer <token>,
+#     Version: 2021-07-28 (required, enum single value),
+#     Content-Type: multipart/form-data. Form fields: file (binary),
+#     hosted (bool; true => fileUrl required instead of file), fileUrl, name,
+#     parentId (target folder). Direct upload cap 25 MB.
+#     Response: UploadFileResponseDTO {fileId (required), url (required)} —
+#     url is the Google Cloud Storage URL, directly referenceable in HTML.
+#     There is NO hostedUrl field — never code against one.
+#   POST /medias/folder — JSON {altId, altType: "location", name,
+#     parentId (optional)}. Response: FolderDTO (200 per spec).
+#   GET /medias/files — REQUIRED params: Version, sortBy, sortOrder, type,
+#     altType, altId. Optional: offset, limit, query, parentId, fetchAll.
+#   Scopes: upload = medias.write; list = medias.readonly; delete = medias.write;
+#     folder/rename carry an empty scope list in the spec. UNVERIFIED: whether
+#     medias.* exist as marketplace-app OAuth scopes outside private
+#     integrations — verify in the GHL dashboard Private Integrations screen.
+#
 # USAGE
 #   ghl-media-upload.sh <local-file> <project-slug> [item-id]
 #
@@ -131,7 +150,8 @@ FOLDER_ID=""
 FOLDER_STATUS="created"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Listing folders for slug: $PROJECT_SLUG" >&2
 
-LIST_RESP=$(ghl_get "$GHL_BASE/medias/files?type=folder&query=$PROJECT_SLUG&altType=location&altId=$LOCATION_ID")
+# sortBy and sortOrder are REQUIRED by the OpenAPI spec (medias.json GET /medias/files)
+LIST_RESP=$(ghl_get "$GHL_BASE/medias/files?sortBy=name&sortOrder=asc&type=folder&query=$PROJECT_SLUG&altType=location&altId=$LOCATION_ID")
 # Parse JSON — find folder with matching name; use grep|sed to avoid jq dependency.
 # POSIX ERE only (macOS BSD grep has no -P). Split the response into one line
 # per folder object, then find the object whose name matches the slug.
@@ -153,7 +173,9 @@ else
   HTTP_CODE=$(echo "$CREATE_RESP" | tail -1)
   BODY=$(echo "$CREATE_RESP" | sed '$d')
 
-  if [ "$HTTP_CODE" != "201" ]; then
+  # OpenAPI spec (medias.json POST /medias/folder) declares 200; tolerate 201
+  # (some GHL deployments return 201 for creates)
+  if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
     echo "{\"status\":\"fail\",\"message\":\"Folder creation failed (HTTP $HTTP_CODE): $BODY\"}"
     exit 3
   fi
@@ -207,7 +229,8 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Upload success: fileId=$FILE_ID url=$FILE
 
 # ---- 4. Verify upload by reading back (list files in folder) ---------------
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Verifying upload via read-back..." >&2
-VERIFY_RESP=$(ghl_get "$GHL_BASE/medias/files?type=file&parentId=$FOLDER_ID&altType=location&altId=$LOCATION_ID&limit=5")
+# sortBy and sortOrder are REQUIRED by the OpenAPI spec (medias.json GET /medias/files)
+VERIFY_RESP=$(ghl_get "$GHL_BASE/medias/files?sortBy=name&sortOrder=asc&type=file&parentId=$FOLDER_ID&altType=location&altId=$LOCATION_ID&limit=5")
 VERIFY_MATCH=$(echo "$VERIFY_RESP" | grep -c "$FILE_ID" 2>/dev/null || true)
 if [ "$VERIFY_MATCH" -eq 0 ]; then
   echo "{\"status\":\"fail\",\"message\":\"Upload verification failed — file $FILE_ID not found in read-back\",\"fileId\":\"$FILE_ID\",\"url\":\"$FILE_URL\",\"folderId\":\"$FOLDER_ID\",\"folderName\":\"$PROJECT_SLUG\",\"folderStatus\":\"$FOLDER_STATUS\"}"
