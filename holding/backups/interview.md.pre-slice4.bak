@@ -1149,19 +1149,19 @@ older reading.
 | **A1** | **Which AI tool are you running this in?** The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours. This decides how I plan the work — the two tools allow different things. An example answer: "Claude Code." If you are not sure, I will check the machine myself and tell you which one I found. **Only asked when auto-detect was inconclusive.** On the detected-harness path, A1 is MEASURED, never asked — SKILL.md's auto-detect already proved which harness this is with real filesystem checks, so asking it again is a redundant question (and a question the user can get wrong about their own machine). Record the detected harness as the A1 answer, note "measured by auto-detect" beside it, and move to A2. The LAUNCHER is recorded beside the harness: a session model starting with cx/ means the claude-codex launcher (context ceiling ~372K — the Capacity Ledger must budget against it, not the profile's 900K). The RESOLVED model per alias is recorded with it (capacity.md §11), read live from the machine this run is on — never recited. **Dated example, from one operator box, never a fact about a client machine — resolve it on the machine you are on:** there, `fable` resolved to that same 372K Codex model on ANY claude-nine session. | The concurrency model, whether the platform gives each agent an isolated working copy, and which steps the platform will not let an agent perform. |
 | **A2** | **Which paid tier are you on?** The smallest one, something in the middle, or the biggest one. This decides how much room I plan the work to fit in. An example answer: "the middle one." If you are not sure, I will plan as if it is the smallest one — the safe direction — and tell you what I assumed. **Then ask it once per paid service, not once for the machine** — the tier is per account, and each one changes the arithmetic. Measure what you can first (read the router config and the environment for keys), say plainly what you found, and ask only the plan they pay for. The exact wording per service is below, under "Resolving which provider path this build will run on". | The allowance "A" in the budget derivation, and the per-service tier rows the Capacity Ledger reads (`capacity.md`) — which builder model, on which account, at which ceiling. |
 | **A3** | **Is the "effort" or "reasoning" setting turned up?** Both tools have one. This decides how carefully and how expensively the work is done. An example answer: "I have not touched that setting." If you do not know, that is a real answer — I will assume the safest setting. | The tier multiplier "T". A deeper effort setting multiplies the spend of every tick. |
-| **A4** | **DELETED in DEFAULT mode (R2) — never asked.** The run takes the measured maximum the Capacity Ledger allows and says so. In ADVANCED mode only, it may be asked with the plain explainer: "The work runs in workflows — teams of helpers. On this machine each workflow holds up to <measured> helpers at once, and up to <measured> workflows can run at the same time. This decides how much work happens at once. An example answer: 'use the maximum.' If you are not sure, I will use the maximum and tell you what I set. Use the maximum, or cap it?" | The starting value for the agent ceiling "N", which the derivation then confirms or reduces. DECIDED by the run in default mode. |
+| **A4** | **How many agents do you want running at the same time?** Not what the tool says it CAN do — what YOU want. | The starting value for the agent ceiling "N", which the derivation then confirms or reduces. |
 | **A5** | **Which model should plan and think, and which model should build and execute?** The planner thinks through the architecture; the builder does the hands-on work. | The model split. Nobody on a small plan can afford the strongest model end to end (Law 38). See the role defaults below. |
-| **A6** | **DELETED (R2) — never asked.** Windows are knowable: DeepSeek direct is a topped-up balance with no window; Ollama Cloud and Agnes carry 5-hour windows (verify against the providers' current pages at run time); anything else the run's own watch measures. Never ask a person to explain a provider's reset clock — the run measures it and reports it. | The window "W" — MEASURED by the run, never asked. |
-| **A7** | **DELETED (R2) — never asked.** The run applies the standing default — a quarter of the cap or two free slots, whichever is larger — records it as a default, and states it in the recap. | The reserve (Law 44). Subtracted from the provider's cap before anything is derived. |
-| **A8** | **DELETED (R2) — never asked.** The run reads the router's own wiring and records the fallback table from what is actually there; it surfaces FINDINGS only ("your opus chain has no fallback behind it — a five-minute router change if you want one"), never questions. | The fallback table (Rule 3.35). |
+| **A6** | **How long is your usage window, and when does it reset?** E.g. "it resets at midnight," or "I do not know." | The window "W". |
+| **A7** | **What share of your usage cap should this project leave free, and for what?** I ask because whatever this project takes, everything else on your machine — including the session you would use to watch this run — has to fit in what is left. If you have no view, I will use a default and tell you what it is. | The reserve (Law 44). Subtracted from the provider's cap before anything is derived. Default: a quarter of the cap or two free slots, whichever is larger — record that it was the default, not their answer. |
+| **A8** | **For each model you just named, what takes over if it is not available?** I need a backup for every role. A backup on the same service can fail for the same reason as the primary — so if you have models on more than one service, that helps. Also: is there anything the backup cannot do that the primary can — a shorter memory, a missing facility, a setting that is only on or off? | The fallback table (Rule 3.35). A plan with one model named per role is incomplete; the gap only shows up on the night a provider refuses a request. |
 
-**A7 and A8 stay numbered inside block A so that A1 to A6 keep their numbers.**
-Both are DELETED questions (R2): A7 and A8 are never asked, never offered, never
-touched by any defaults offer — they are DECIDED by the run and REPORTED. A7's
-default is the Law 44 reserve: a quarter of the cap or two free slots, whichever
-is larger, recorded as a default and stated in the recap. A8's fallback table is
-READ from the router's own wiring, never collected by question; a gap the wiring
-shows is surfaced as a FINDING, never as a question.
+**A7 and A8 are numbered last in block A so that A1 to A6 keep their numbers.**
+A7 is asked after A4 because they are different questions: A4 asks how many agents
+they WANT running; A7 asks how much of the provider's ceiling this project may
+HAVE. A project can want fewer agents than the cap and still take all of it. Ask
+both. A8 follows A5 in substance (A5 names the models; A8 names what happens when
+one is not there) — which is why it cannot be folded into A5: a question that asks
+for two things gets an answer about one of them.
 
 **The model-intelligence half of A5 — the role REQUIREMENTS for this skill:**
 
@@ -1386,12 +1386,15 @@ recall below, and C does not move here on account of an ingestion.
    only on a first run, on a machine that changed, or when they said "that changed"
    at the confirmation above — otherwise 1b's single question has already covered
    the three plan questions:*
-   the two kept plan questions (the DeepSeek-direct-via-Ollama question is
-   DELETED per R2 — the provider-path rule: when a DeepSeek direct account
-   exists AND its balance is positive, DeepSeek direct is the builder path,
-   period. A hosted DeepSeek (Ollama) is the fallback ONLY when direct is
-   absent or unfunded — that state is REPORTED, never asked about):*
-   - "Your Ollama Cloud plan — is it the hundred-dollar-a-month one? This decides how much room I plan the work
+   - "Is your DeepSeek account the direct one — the one you topped up with a
+     balance — or are you reaching DeepSeek through Ollama? This decides how
+     I connect to that service. An example answer: 'the direct one I topped
+     up.' If you are not sure, I will check the machine and tell you what I
+     found." *(Direct v4 Flash and direct v4 Pro have very different ceilings,
+     and DeepSeek reached through Ollama Cloud is a version behind, so it is
+     never the builder.)*
+   - "Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the
+     hundred-dollar-a-month one? This decides how much room I plan the work
      to fit in. An example answer: 'the hundred-dollar one.' If you are not
      sure, I will plan as if it is the twenty-dollar one — the safe direction —
      and tell you what I assumed." *(The twenty-dollar plan allows 3 at once
@@ -1489,22 +1492,21 @@ or two may be absorbed by finishing early.
 
 ---
 
-### Block B — Repositories (B1/B2 deleted R2; B4 stands, advanced mode only)
+### Block B — Repositories (measure what you can; ask the rest)
 
 **⛔ THE OPERATOR RULINGS (top of this file, R2) supersede B1 and B2 in place:
-DELETED — a brand-new project gets one new repo on `main`, tool pushes — never
-asked; only an existing-project ambiguity earns one clarifying question. B4
-stands (advanced mode only).**
+a brand-new project gets one new repo on `main`, tool pushes — never asked;
+only an existing-project ambiguity earns one clarifying question. B4 stands
+(advanced mode).**
 
-Before asking B4, go and look: `ls -la repos/ 2>/dev/null`, `git remote -v` in any
+Before asking, go and look: `ls -la repos/ 2>/dev/null`, `git remote -v` in any
 existing project folder, check GitHub for repos. What you can measure, you measure
-and do not ask. (B1/B2 are deleted — the measure-and-go-look rule above covers the
-existing-project ambiguity case.)
+and do not ask.
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **B1** | **DELETED (R2) — never asked.** A brand-new project gets ONE brand-new repository, branch `main`, and the tool pushes. Period — normal people do not know what a repository is. An EXISTING project with real ambiguity (more than one candidate repo found on disk or GitHub) earns ONE plain clarifying question that names what was found. | The number of merge trains — one per repository. |
-| **B2** | **DELETED (R2) — never asked.** Same rule as B1: new project = `main`, tool pushes. Existing ambiguity → one clarifying question. | The trunk and who pushes. Always "main" + tool pushes on new projects. |
+| **B1** | **How many GitHub repositories will this project put code in?** One is most common. If you already have repos for this, I have already found them — I am asking about anything beyond those. | The number of merge trains — one per repository, because repositories merge independently. This is the answer with the largest structural consequence in the whole interview. |
+| **B2** | **What is each repository's main branch called, and who may push to it?** Usually "main" — I just want to confirm. And do YOU push to it, or does the tool? | The trunk each train fast-forwards, and whether the merge-writer is permitted to do it at all. |
 | **B4** | **Is there anywhere the loops must not push?** A branch, a repo, a server — anything that should never receive an automatic push. This decides what stays off-limits to the automatic work. An example answer: "nothing — it can put work anywhere it is allowed." If you are not sure, I will leave everything open to the usual places and tell you what I set. | Becomes a hard constraint and a fail-closed rule, not a preference. |
 
 **⛔ B3 IS RETIRED — 2026-08-12. Do not restore it, and do not renumber B4 into
@@ -1538,28 +1540,27 @@ defaulted; C5 becomes the written done-condition shown for one yes/no.**
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **C0** | **DELETED (R2) — never asked.** The promise of this skill IS "it runs by itself, continuously, until it is done." That is the standing answer; the shape test consumes it (zero loops or full derivation). (An archetype whose nature is one-shot — a read-only audit — still derives its own shape; that is derivation, not a question.) | Whether this project has loops at all. Always DECIDED by the run (continuous-until-done is the promise) and REPORTED in the recap; the shape test acts on the answer recorded there. |
-| **C1** | **DELETED (R2) — never asked.** The skill CREATES the ledger and points the loops at it. Asking the person about the skill's own artifact was the worst question of the canary run. | The one place every loop reads and writes. ALWAYS the live ledger — the skill creates it; never asked. |
-| **C2** | **DELETED (R2) — never asked.** The loop merges on its own, always — auto-merge is the product's promise. Asking a person to hold merges is stalling wearing a question's clothes. | Where the autonomy line falls. ALWAYS auto-merge — the skill's promise; never asked. |
-| **C3** | **DELETED (R2) — never asked.** This skill's promise is continuous-until-done; the five survival loops are sized by the Capacity Ledger at run time, never by a question about the person's availability. | Whether the five survival loops are sized for one window or many. Always MEASURED by the Capacity Ledger, never asked. |
-| **C4** | **DEFAULTED (not deleted — R2).** Defaulted to `~/Downloads/projects/`, stated in the recap, asked only in ADVANCED mode. In DEFAULT mode the run uses the default and says so; the recap states the location. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
-| **C5** | **REWRITTEN (R2) — not deleted.** The run WRITES the done-condition from the brief and shows it: "Here is how I will know it is finished: <the checkable list>. This decides what counts as done for this project. An example answer: 'yes, that matches.' Does that match — yes, or tell me what is missing? If you are not sure, I will use the list as written and tell you what I recorded." One yes/no. Never an open essay question. | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
-| **C6** | **DELETED as a question (R2) — WIRED as the backoff ladder, never asked.** On a busy signal: pause 10 seconds, then 30s, 1m, 2m, 4m, 8m, capping at 15-minute intervals, while every lane that still answers keeps working. If a provider stays down past ONE HOUR, queue a plain note for the person (morning report, plus any wired channel) and KEEP CLIMBING the ladder — never stop, never quit without a note. C6's artwork clauses are their recorded DEFAULT policies, stated in the recap: `MEDIA_UNATTENDED_POLICY = placeholders-and-manifest` (default), `MEDIA_LOSS_POLICY = remake-once-within-budget` (default), premium tier ALWAYS parked — never asked, never re-offered. The gated premium tier never auto-remakes; the four conditions on the non-gated redo (consented envelope, meter permitting, first redo only, announced with charges) bind even under the remake default. | What happens when capacity SHRINKS mid-run. WIRED by the backoff ladder — all policies defaulted and stated in the recap. (`references/media-pipeline.md` section 11's loss ladder). |
+| **C0** | **Does this project run once while you are watching, or does it keep running on its own until it is done?** Answer in your own words: "it runs once and I will be watching" — or "it runs by itself, overnight, while I am asleep." | Whether this project has loops at all. This is the question that decides between a scheduler and a payload. The shape test acts on the answer, not on anybody's judgement. |
+| **C1** | **Which file holds the state that the loops read?** Usually the live ledger — I will point to it. | The one place every loop reads and writes. Exactly one thing is the tracker. |
+| **C2** | **Do you want to approve merges, or should the loop merge on its own?** If you want to approve, your approval will be a mark on the tracker, not a message — the loop watches for it just like it watches for anything else. | Where the autonomy line falls (Rule 3.23). Human approval is a state on the tracker, not a message (Law 36). |
+| **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
+| **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. This decides where the work lives on your machine. An example answer: "the usual place is fine." If you are not sure, I will use the usual place and tell you where I put it. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
+| **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." This decides what counts as finished. An example answer: "when I can open it on my phone and use it." If you are not sure, I will write the finished-check from what you described and show it to you. | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
+| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **The SAME question grows one further clause — still no new question number — covering what happens when a finished asset is LOST before it can be saved:** **"…And the last piece: once in a while a finished picture or clip can get lost before I manage to save it — the service throws it away very fast. If that happens overnight and remaking it still fits the budget we already agreed, may I remake it once on my own and show you both charges in the morning — or would you rather I always leave it for you to decide?"** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. The loss clause additionally records `MEDIA_LOSS_POLICY` = remake-once-within-budget \| note-and-wait, defaulting to **remake-once-within-budget** marked as a default they confirmed — it delivers the finished build and **cannot exceed what was already consented**, while `note-and-wait` is the cautious override for a cost-sensitive client. **Binding floors regardless of which they pick:** the gated premium tier NEVER auto-remakes — it parks, because that gate is spend authority and a loss policy never grants spend authority; the four conditions on an automatic redo (inside the consented envelope, meter permitting, first redo only, and announced with both charges shown) bind even under remake-once-within-budget; and the run never stalls on a question nobody is awake to answer (`references/media-pipeline.md` section 11's loss ladder). |
 
-**C0, C1, C2, C3, C6 are all DELETED as questions (R2).** C0, C1, C2, and C3 are
-DECIDED by the run (continuous-until-done, the skill's own ledger, auto-merge) and
-REPORTED in the recap; the shape test reads the recorded answer. C6's busy-signal
-policy is WIRED as the backoff ladder (R2 lines 217-224); its artwork clauses
-became their recorded defaults (`MEDIA_UNATTENDED_POLICY = placeholders-and-manifest`,
-`MEDIA_LOSS_POLICY = remake-once-within-budget`, premium tier always parked) —
-stated in the recap, never asked. C4 is defaulted (~/Downloads/projects/) and asked
-only in ADVANCED mode; C5 is rewritten as the written done-condition shown for one
-yes/no (R2). The binding floor from the old C6 clauses is unchanged: the build
+**C0 is numbered zero because it is asked before C1 and because nothing above it
+was renumbered to make room.** Every question under it assumes an answer to it.
+**C6 is numbered last for the same reason** — it was added after C0 to C5 existed,
+and none of them moved to make room (the rule that placed A7, A8, and D1 to D4).
+**The artwork clause is a CLAUSE of C6, not a C7** — the answer is collected
+before they walk away precisely because a run that cannot ask must never stop to
+ask. Whichever of the three they choose, the binding floor is the same: the build
 NEVER stalls waiting for an answer nobody is awake to give; a key that DIES
 mid-run (a working key that starts refusing) is recorded as a capacity event and
 degrades to this same policy with a note queued for the morning; and **the premium
-video engines stay parked regardless** — default policy governs the missing-key
-case, never spend authority, which is asked one generation at a time or not at all.
+video engines stay parked regardless of the answer** — this clause governs the
+missing-key case, never spending authority, which is asked one generation at a
+time or not at all.
 
 **Say the consequence of C0 out loud, because both answers are allowed:**
 
@@ -1570,25 +1571,22 @@ case, never spend authority, which is asked one generation at a time or not at a
   verifications still batched (Law 20), and *merged* still means the ancestry check
   passed (Law 1). What is absent is only the scheduler. Adding loops to a project
   that runs once is precisely the bloat the protocol forbids (Law 39). Record the
-  answer (C0 is DELETED as a question R2 — the answer is DECIDED by the run:
-  continuous-until-done is the promise, and the shape test consumes it), then run
-  the shape test, which returns a loop count of zero and stops.
+  answer, then run the shape test, which returns a loop count of zero and stops.
 
 - **"It runs repeatedly, or unattended, or overnight."** → This project has loops.
   Run the full derivation in `loops.md`, and the launch command's content becomes
-  the loop definition's instructions rather than being thrown away. C0-C3 and C6
-  are DELETED as questions (R2 — the run decides: continuous-until-done, the
-  skill's own ledger, auto-merge, the backoff ladder); C4 is defaulted, asked only
-  in ADVANCED mode; C5 is the written done-condition shown for one yes/no.
+  the loop definition's instructions rather than being thrown away. C1 to C5 are
+  then live questions and every one of them must be answered.
 
 **"Some of both" is not a third answer.** It is the first answer for one phase and
 the second for another — answer it per phase, never by running both against one
 session.
 
-**C5 is rewritten (R2) — the run writes the done-condition from the brief and
-shows it as one yes/no.** Without it a loop runs forever — it wakes, finds nothing
-to do, sleeps, and repeats until the capacity is gone. Show the checkable list;
-never ask an open essay question.
+**C5 is the question people skip and the one that costs the most.** Without it a
+loop runs forever — it wakes, finds nothing to do, sleeps, and repeats until the
+capacity is gone. An answer of "when it works" is not an answer. Push until it is
+something a command can test, and write that command into the completion
+definition.
 
 ---
 
