@@ -518,7 +518,7 @@ half of "selecting a model is selecting a ceiling" (section 11).
 | Check | Cadence | Instrument |
 |---|---|---|
 | 429 / limit / 5xx per provider | Every dispatch result (continuous) | The dispatch outcome itself, tallied into the burn table |
-| Projected window spend vs budget | Every reconcile tick (5 min) and every wave boundary | Burn-table arithmetic (above) |
+| Projected window spend vs budget | Every reconcile tick (5 min) and every wave boundary | Burn-table arithmetic (above); the wave-boundary pass runs inside the same ritual as `tools/anchor.sh --mode reconcile` (`references/anti-drift.md` — every wave boundary reconciles) |
 | DeepSeek / OpenRouter balance | Every wave boundary, and at least every 30 minutes on token-metered paths | The provider's balance endpoint (section 9); the figure goes to the burn table, pass/fail to the transcript, and NEVER into the capacity profile |
 | 9Router / provider liveness probe | ONLY on an error cluster (≥3 failures from one provider inside one tick) — never constant polling | Loopback probe, or one cheap known-good request |
 | Requests per agent-task | First 5 tasks, then re-derive | Burn table |

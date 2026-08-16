@@ -189,7 +189,10 @@ and then re-runs `anchor.sh` to confirm clean.
 
 **(e) The result line is written through `tools/ledger.sh`.** A pass that finds
 nothing to do writes `RECONCILE | result=clean | counts=… | tasks=…`, which
-CARRIES STATE. It never writes a bare heartbeat.
+CARRIES STATE — and in reconcile mode it carries the class-7 ledger field
+(`ledger=ledger-ok(…)/unpaired-claim(…)/ledger-undetermined(…)`), the
+claim-before/result-after contract's own verdict, so the tick itself reports
+whether every RESULT unit has its CLAIM. It never writes a bare heartbeat.
 
 `anchor.sh` writes `result=clean`, `result=actions:<n>`, `result=alarm`, or
 `result=TERMINAL-DRIFT` — it reports what it PROVED. The conductor records
@@ -209,14 +212,16 @@ word.
 
 ---
 
-## 4. The six detection classes
+## 4. The seven detection classes
 
 Each class states its exact comparison. Classes 1–4 require both `--tasks` and
 `--state`; without them the reconciler reports
 `classes=undetermined(no --tasks and/or --state given)` and does not pretend to
 have checked. Class 5 requires `--intents`. Class 6 requires `--state` only, so
 a run that cannot export a task snapshot can still be audited against its own
-spend. **UNDETERMINED is a correct answer. A false all-clear is not.**
+spend. Class 7 (ledger provenance) requires the ledger itself — `CONTROL/
+LEDGER.md` — and its own gate: no `--tasks`/`--state` dependency, because the
+claim-before/result-after pairing is a property of the ledger alone. **UNDETERMINED is a correct answer. A false all-clear is not.**
 
 **Class 1 — completed-but-still-PENDING.** The task is PENDING or IN PROGRESS
 while its checklist box is `[x]` AND its artifact or verdict exists on disk (in
@@ -323,6 +328,39 @@ the same parse-failure rule the task snapshot already obeys. Only a log that
 genuinely exists and is genuinely empty yields a PROVEN zero. A fabricated zero
 here would read "claimed 0, dispatched 0, all clear" on a project that never
 tracked a budget at all — a false all-clear, the one forbidden answer.
+
+**Class 7 — the ledger-provenance check (the anti-drift contract, mechanically
+checked).** The contract's §8 line shapes are data to this class, not a
+promise: every unit that carries a `| RESULT |` line must also carry a `|
+CLAIM |` line for the SAME unit id — the result never exists without the
+before-write that claimed it. The check has no `--tasks`/`--state` dependency:
+it reads the ledger alone. Skips for an IDLE unit — an IDLE reconcile is a
+non-unit tick and claims nothing. The pairing is by exact unit id, so a
+cross-typod pair (RESULT for U-03, CLAIM for U-02) is caught rather than
+blessed. Comparisons:
+
+- **Unpaired RESULT units** — RESULT lines whose unit has no CLAIM line
+  anywhere in the ledger, past `ANCHOR_CLAIM_UNPAIRED_TOL` (default 3; 0 is
+  strict). Concretely: the unit sets from `ledger.cmd` (CLAIM units vs RESULT
+  units) are differenced with `comm -13` — a set difference, so a RESULT unit
+  with a CLAIM for a different unit still counts as unpaired. Result:
+  `DRIFT-ALARM | unpaired-claim | …` plus `ACTION|write-missing-claims`, exit
+  3. The tolerance is a wall, not a hair-trigger: one stray RESULT on a
+  300-unit ledger must not stop the run; a run whose results outnumber its
+  claims by more than the wall is claiming nothing and reporting everything —
+  the exact ledger failing as the single source of truth.
+- **A unit with neither line** — not yet dispatched: NOT drift. A CLAIM unit
+  with no RESULT yet — incomplete-but-claimed: in flight, NOT drift.
+- **An ABSENT ledger** — `ledger-undetermined(LEDGER.md absent)`, never clean.
+  An absent ledger cannot prove its own provenance; the reconciler says so and
+  checks nothing else.
+
+Every RECONCILE line carries the verdict in its own field —
+`ledger=ledger-ok(claimed=<n>/resulted=<n>/unpaired=<n>/tol=<t>)`,
+`ledger=unpaired-claim(<n> of <m> RESULT units / tol=<t>)`, or
+`ledger=ledger-undetermined(<reason>)` — so the contract's state is visible
+on every tick without a second read, and the boss cron (PART 4) can check the
+field mechanically.
 
 ---
 
@@ -477,8 +515,15 @@ runs in a temporary home — the tool's own `SELFTEST COMPLETE` line states the
 total, and that printed total is the only count to trust; never restate it here.
 The cases: clean anchor (which also asserts NO alarm fires),
 unit-not-in-plan, missing file, sabotaged fixture, false-complete,
-terminal-drift with the counter primed to N−1, and the repeated-intent
-signature with its own known-negative control window; then the
+terminal-drift with the counter primed to N−1, the repeated-intent
+signature with its own known-negative control window, and the class-7
+ledger-provenance case (baseline with an existing empty ledger must report
+`ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)`; one unpaired RESULT unit
+under the default tolerance must stay clean while reporting `unpaired=1`;
+the same unit at `ANCHOR_CLAIM_UNPAIRED_TOL=0` MUST alarm
+`DRIFT-ALARM | unpaired-claim` at exit 3 with `ACTION|write-missing-claims`;
+and a CLAIM added for that unit MUST clear the alarm with
+`ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/…)`); then the
 `CAPACITY-EVENT` exclusion (a ledger receiving ONLY capacity events between
 reconciles must still increment the no-delta counter, with the other-direction
 control that a real state-carrying line still resets it — an exclusion that
@@ -526,7 +571,14 @@ graph. Exit-code failure is not an empty result.
 
 Both go through `tools/ledger.sh`, append-only, never only at the end of a run.
 A run that ledgers only on completion has no state to resume from at the moment
-it most needs one.
+it most needs one. **The pairing is mechanically checked on every reconcile:
+`tools/anchor.sh --mode reconcile` CLASS 7 reads the ledger and alarms when a
+RESULT unit has no CLAIM for the same unit id (past
+`ANCHOR_CLAIM_UNPAIRED_TOL`, default 3) — the ledger failing as the single
+source of truth is a detection class, not a sentiment (§4). The check is
+ORDER-INDEPENDENT by design: a claim repaired after its result restores
+provenance without rewriting history — the write order is a rule of conduct
+for the conductor, while the pairing check guards the record.**
 
 **A contentless heartbeat is a BANNED WRITE. A stateful one is REQUIRED.** The
 line between them is the whole point, so it is written out here as a rule, not

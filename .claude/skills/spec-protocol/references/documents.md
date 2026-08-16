@@ -234,7 +234,12 @@ FAIL if: <exact condition> → incomplete because <reason>
   verdict block with no cycle count, or a cycle count that disagrees with the
   number of prior verdict blocks for that same finding; a
   state that disagrees with the primary source; a batch with no merge record; a
-  reconciliation where a pen item is missing from all three outcomes. (Law 1: when
+  reconciliation where a pen item is missing from all three outcomes; a RESULT
+  unit whose CLAIM line was never written BEFORE the unit — the anti-drift
+  contract (`SKILL.md` "Atomic ledger writes", `references/anti-drift.md`
+  sections 4 and 8), mechanically checked by `tools/anchor.sh --mode reconcile`
+  CLASS 7, which alarms `unpaired-claim` on RESULT units with no prior CLAIM.
+  (Law 1: when
   git disagrees, git wins and the prose is corrected.)
 
 ### Document 7 — Quality-control document

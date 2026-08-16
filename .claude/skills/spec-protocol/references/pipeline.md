@@ -143,6 +143,12 @@ disk to make one. If a slice is missing something, fix the slice.
   number that does not exist, the specification is DEFECTIVE. Fix the graph before
   dispatching anything. One line in the execution plan records the proof: "sort
   returned N of N units, no cycles."
+- **Reconcile at every wave boundary.** When a wave closes and the next wave is
+  drawn, run `tools/anchor.sh --mode reconcile` (`references/anti-drift.md`) —
+  the three-way reconciler against the native task graph, project_state.json, and
+  the artifacts on disk — execute its RECONCILE-ACTIONS and re-run until clean
+  BEFORE any unit of the next wave dispatches. A wave transition that skips the
+  reconcile pass, or dispatches on top of an unreconciled alarm, is a violation.
 - Two brakes, never confused (Law 19): a dependency creates waves; a shared file
   creates merge order only. A shared artifact stops parallel LANDING, never
   parallel BUILDING.
