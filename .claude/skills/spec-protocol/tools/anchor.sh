@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #==============================================================================
-# anchor.sh — spec-protocol's THREE-WAY RECONCILER and capture-proof drift stop
+# anchor.sh — spec-protocol's THREE-WAY RECONCILER, capture-proof drift stop,
+# and the anti-drift contract's CLAIM-before/RESULT-after ledger-provenance
+# check (class 7)
 #==============================================================================
 #
 # PURPOSE
@@ -67,6 +69,7 @@
 #   ANCHOR_CENSUS_DEPTH=6          filesystem census depth under repos/
 #   ANCHOR_HARD_CAP=200            class 6 hard agent-execution cap (STOPPED_CAP)
 #   ANCHOR_BUDGET_TOL=5            class 6 claimed-vs-dispatched tolerance
+#   ANCHOR_CLAIM_UNPAIRED_TOL=3    class 7 unpaired-claim tolerance (0 = strict)
 #   ANCHOR_SELFTEST_BREAK_PATTERN=1  sabotage the tick pattern (selftest only)
 #==============================================================================
 
@@ -107,6 +110,7 @@ INTENT_PCT="${ANCHOR_INTENT_OVERLAP_PCT:-60}"
 CENSUS_DEPTH="${ANCHOR_CENSUS_DEPTH:-6}"
 HARD_CAP="${ANCHOR_HARD_CAP:-200}"
 BUDGET_TOL="${ANCHOR_BUDGET_TOL:-5}"
+CLAIM_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 
 WORKDIR=""
 SELFTEST_TMP=""
@@ -223,6 +227,20 @@ TICK_M1='heartbeat'
 TICK_M2='auto[ _-]?tick'
 BRITTLE_LIT='heartbeat (ledger auto-tick)'
 STATE_RE='(counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|MERGED)'
+# CLASS 7 (ledger provenance) — the anti-drift contract, mechanically checked
+# (SKILL.md "Atomic ledger writes"; references/anti-drift.md section 8): every
+# ledger line that REFERENCES a unit as a CLAIM (the before-write) must be
+# matched by a RESULT line for the SAME unit (the after-write). A RESULT line
+# alone — a unit whose claim was never written before it — is the run working
+# on something nobody wrote down, the ledger failing as the single source of
+# truth. The marker is deliberately the pipe-separated `| CLAIM |` form so a
+# prose word "claim" in a narrative line never matches. No RESULT marker for
+# IDLE lines: an IDLE reconcile is a non-unit tick and claims nothing. The
+# [|] form is BSD-awk-safe (a backslash-pipe is an illegal regex there).
+LEDGER_CLAIM_RE='[|][[:space:]]*CLAIM[[:space:]]*[|]'
+LEDGER_RESULT_RE='[|][[:space:]]*RESULT[[:space:]]*[|]'
+LEDGER_UNIT_RE='(^|[[:space:]|])unit=([^[:space:]|]+)'
+CLAIM_UNPAIRED_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 # Lines this reconciler itself authors, plus the OBSERVATIONAL lines the
 # freshness machinery emits. All are excluded from the state-delta fingerprint:
 # appending a line is exactly what the captured system kept doing.
@@ -284,6 +302,24 @@ classify_file() {  # classify_file <file> -> "<contentless> <contentful> <state>
 state_lines() {  # state_lines <file> -> every line that is not a contentless tick
   [[ -f "$1" ]] || return 0
   "$AWK" -v M1="$TICK_M1" -v M2="$TICK_M2" -v MODE=state "$AWK_CLASSIFY" "$1"
+}
+
+# ledger.cmd <file> <marker-re> <unit-re> -> the unit tokens of every line
+# carrying <marker-re>, in file order, deduplicated. CLASS 7 (ledger
+# provenance) uses it twice: units with a `| CLAIM |` line and units with a
+# `| RESULT |` line. A missing or unreadable ledger prints NOTHING and returns
+# 0 — but callers classify an ABSENT ledger as undetermined BEFORE reaching
+# this, so a negative here is only ever read against a ledger that was proven
+# to exist.
+ledger.cmd() {
+  [[ -f "$1" ]] || return 0
+  "$AWK" -v MR="$2" -v UR="$3" '
+    $0 ~ MR {
+      u = ""
+      if (match($0, UR)) { u = substr($0, RSTART, RLENGTH) }
+      sub(/^[^=]*=/, "", u)
+      if (u != "") { if (!seen[u]++) { print u } }
+    }' "$1"
 }
 
 # --- the fixtures. Two positives (the banned write), THREE negatives taken
@@ -411,6 +447,7 @@ esac
 # instrument, so it is rejected loudly instead.
 [[ "$HARD_CAP"   =~ ^[0-9]+$ ]] || die_tool "ANCHOR_HARD_CAP must be a non-negative integer (got: ${HARD_CAP})"
 [[ "$BUDGET_TOL" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_BUDGET_TOL must be a non-negative integer (got: ${BUDGET_TOL})"
+[[ "$CLAIM_TOL"  =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CLAIM_UNPAIRED_TOL must be a non-negative integer (got: ${CLAIM_TOL})"
 
 #==============================================================================
 # THE MAIN RUN
@@ -690,6 +727,45 @@ run_anchor() {
     return 0
   }
 
+  #--------------------------------------------------------------------------
+  # CLASS 7 — LEDGER PROVENANCE (the anti-drift contract, mechanically
+  #     checked). Skips for IDLE units: an IDLE reconcile is a non-unit tick
+  #     and claims nothing. Otherwise, the contract (SKILL.md "Atomic ledger
+  #     writes"; references/anti-drift.md section 8): every unit carries a
+  #     CLAIM line written BEFORE it (the claim) and a RESULT line written
+  #     AFTER it (the result) — never only at the end. A CLAIM unit with no
+  #     RESULT is incomplete-but-claimed; a RESULT unit with no CLAIM is the
+  #     run working on something nobody wrote down, which is the ledger
+  #     failing as the single source of truth. A unit that never got either
+  #     line is not yet dispatched and is not drift. An ABSENT ledger is
+  #     undetermined, never clean — an absent ledger cannot prove its own
+  #     provenance. Pairing is by exact unit id, so a cross-typod pair is
+  #     caught rather than blessed.
+  #--------------------------------------------------------------------------
+  if [[ "$MODE" == "reconcile" && "$UNIT" != "IDLE" ]]; then
+    if [[ ! -f "$LED" ]]; then
+      CLAIM_NOTE="ledger-undetermined(LEDGER.md absent)"
+      note "anchor.sh: CLASS 7 UNDETERMINED — ${LED} does not exist. No ledger provenance claim is made."
+    else
+      local claim_units result_units unclaimed n_claim
+      n_claim=0
+      claim_units="$(ledger.cmd "$LED" "$LEDGER_CLAIM_RE" "$LEDGER_UNIT_RE")"
+      result_units="$(ledger.cmd "$LED" "$LEDGER_RESULT_RE" "$LEDGER_UNIT_RE")"
+      unclaimed="$(comm -13 <(printf '%s\n' "$claim_units" | LC_ALL=C sort -u) \
+                            <(printf '%s\n' "$result_units" | LC_ALL=C sort -u))"
+      if [[ -n "$unclaimed" ]]; then
+        n_claim="$(printf '%s\n' "$unclaimed" | "$GREP" -c '[^[:space:]]' || true)"
+      fi
+      if (( n_claim > CLAIM_TOL )); then
+        alarm "unpaired-claim" "RESULT without a prior CLAIM for ${n_claim} unit(s): $(printf '%s\n' "$unclaimed" | head -c 240) — every action must reference a ledger line written BEFORE the unit (the claim) and AFTER it (the result), never only at the end (the anti-drift contract)"
+        action "write-missing-claims" "${UNIT}" "RESULT lines exist without their BEFORE-the-unit CLAIM lines (tolerance ${CLAIM_TOL}); write each missing claim into CONTROL/LEDGER.md and re-run anchor.sh"
+        CLAIM_NOTE="unpaired-claim(${n_claim} of $(printf '%s\n' "$result_units" | "$GREP" -c '[^[:space:]]' || true) RESULT units / tol=${CLAIM_TOL})"
+      else
+        CLAIM_NOTE="ledger-ok(claimed=$(printf '%s\n' "$claim_units" | "$GREP" -c '[^[:space:]]' || true)/resulted=$(printf '%s\n' "$result_units" | "$GREP" -c '[^[:space:]]' || true)/unpaired=${n_claim}/tol=${CLAIM_TOL})"
+      fi
+    fi
+  fi
+
   if [[ "$UNIT" != "IDLE" ]]; then
     local UESC; UESC="$(re_escape "$UNIT")"
     if ! g_has "$UESC" "$TODO" && ! g_has "$UESC" "$CHK"; then
@@ -730,11 +806,14 @@ run_anchor() {
   fi
 
   #--------------------------------------------------------------------------
-  # (7) THE SIX DETECTION CLASSES (reconcile mode)
+  # (7) THE SEVEN DETECTION CLASSES (reconcile mode)
   #     Classes 1-4 need --tasks AND --state. Class 5 needs --intents (below,
   #     with the fingerprint). CLASS 6 (budget) needs --state only, so it runs
   #     on its own gate — a run that cannot supply a task snapshot can still be
-  #     audited against its own spend.
+  #     audited against its own spend. CLASS 7 (ledger provenance — the
+  #     anti-drift contract's claim-before/result-after pairing) needs the
+  #     ledger only, so it runs on its own gate below even when --tasks and
+  #     --state are absent; it skips for IDLE units.
   #--------------------------------------------------------------------------
   local CLASSES="skipped(mode=anchor)"
   if [[ "$MODE" == "reconcile" ]]; then
@@ -849,6 +928,11 @@ run_anchor() {
     # CLASS 6 — THE BUDGET AUDIT. Its own gate: --state is enough.
     budget_audit
     CLASSES="${CLASSES},${BUDGET_NOTE}"
+
+    # CLASS 7 — the ledger provenance check. Its own gate: the ledger itself.
+    if [[ -n "${CLAIM_NOTE:-}" ]]; then
+      CLASSES="${CLASSES},${CLAIM_NOTE}"
+    fi
   fi
 
   #--------------------------------------------------------------------------
@@ -985,7 +1069,7 @@ run_anchor() {
     elif (( ACTIONS > 0 ));   then result="actions:${ACTIONS}"
     elif (( SEVERITY == 3 )); then result="alarm"
     else result="clean"; fi
-    LINE="${ts} | RECONCILE | anchor=${ANCHOR} | unit=${UNIT} | result=${result} | tasks=${TASKSTR} | counts=${COUNTS} | classes=${CLASSES} | intents=${INTENT_VERDICT:-n/a} | ticks=${TICKS} | stateful-heartbeats=${TICKS_FULL} | fp=${FP} | nodelta=${NODELTA} | age=${STALENESS} | next=${NEXT}"
+    LINE="${ts} | RECONCILE | anchor=${ANCHOR} | unit=${UNIT} | result=${result} | tasks=${TASKSTR} | counts=${COUNTS} | classes=${CLASSES} | ledger=${CLAIM_NOTE:-skipped(unit=IDLE)} | intents=${INTENT_VERDICT:-n/a} | ticks=${TICKS} | stateful-heartbeats=${TICKS_FULL} | fp=${FP} | nodelta=${NODELTA} | age=${STALENESS} | next=${NEXT}"
   fi
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
@@ -1067,6 +1151,9 @@ intent_stall() {
 #         budget-negative-spend — never laundered into budget-ok by the
 #         tolerance, never downgraded to budget-undetermined by an absent
 #         dispatch log)
+#   14    CLASS 7 LEDGER PROVENANCE — RESULT without a prior CLAIM MUST alarm
+#         (unpaired-claim, exit 3), a CLAIM+RESULT pair MUST NOT, and the
+#         pair's RECONCILE line carries ledger=ledger-ok(...)
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -1353,7 +1440,67 @@ EOF
      && ! printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined'; then ok=1; fi
   report 13 "budget-negative-spend" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-negative-spend | claimed=-3 written; classes carry budget-negative-spend(claimed=-3/initial=1000/remaining=1003); NOT laundered into budget-ok by the tolerance, and NOT downgraded to budget-undetermined by the absent dispatch log"
 
-  printf 'SELFTEST COMPLETE | %s of 13 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- CLASS 7 (case 14): LEDGER PROVENANCE — the anti-drift contract,
+  #     mechanically checked (SKILL.md "Atomic ledger writes";
+  #     references/anti-drift.md section 8). Three controls:
+  #       (i)   a RESULT line with NO prior CLAIM for that unit MUST alarm
+  #             (unpaired-claim, exit 3, ACTION|write-missing-claims)
+  #       (ii)  a CLAIM+RESULT pair MUST NOT alarm — the contract held; the
+  #             RECONCILE line carries ledger=ledger-ok(...)
+  #       (iii) a unit with neither line is not yet dispatched: NOT drift
+  #     The same-unit control is exact: a RESULT for U-03 with a CLAIM for a
+  #     different unit (U-02) is a cross-typod pair and MUST alarm.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c14"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c14/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c14/CONTROL/project_state.json"
+  # An established project's ledger EXISTS before any unit runs (it holds the
+  # baseline/creation lines). Without it the first reconcile would correctly
+  # report ledger-undetermined — the absent-ledger case — which is a different
+  # fixture. This fixture is the empty-ledger case: zero units claimed.
+  : > "$T/c14/CONTROL/LEDGER.md"
+  # (iii) baseline run — no CLAIM, no RESULT: not drift (rc 0)
+  runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol='; then ok=1; fi
+  report 14 "ledger-provenance" "$ok" "baseline: rc=${RC} (want 0); RECONCILE line carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)"
+
+  # (i) the violation: RESULT for U-03 with no prior CLAIM (default tolerance 3
+  #     > 1 unpaired unit -> clean, proving the tolerance is a wall, not a
+  #     hair-trigger); then ANCHOR_CLAIM_UNPAIRED_TOL=0 -> MUST alarm.
+  "$SCRIPT_DIR/ledger.sh" "$T/c14" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:30:00Z | RESULT | unit=U-03 | PASS | evidence=repos/app/src/parser.ts" >/dev/null 2>&1
+  runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(.*unpaired=1/tol=3)'; then ok=1; fi
+  report 14 "ledger-provenance" "$ok" "tolerated: rc=${RC} (want 0); unpaired=1 reported but under tol=3"
+
+  set +e
+  OUT="$(ANCHOR_CLAIM_UNPAIRED_TOL=0 "$SELF" "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE 'DRIFT-ALARM \| unpaired-claim \| unit=U-02' "$T/c14/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|write-missing-claims' \
+     && printf '%s' "$OUT" | "$GREP" -q 'unpaired-claim(1 of 1 RESULT units'; then ok=1; fi
+  report 14 "ledger-provenance" "$ok" "strict: rc=${RC} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0); DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted"
+
+  # (ii) the negative control: a CLAIM for U-03 written BEFORE its RESULT must
+  #      clear the alarm. The claim line is appended AFTER the result in file
+  #      order (an end-ledger claim, which the contract already forbids as a
+  #      writing rule) — the pair check is ORDER-INDEPENDENT on purpose, so a
+  #      repaired claim restores provenance without rewriting history.
+  "$SCRIPT_DIR/ledger.sh" "$T/c14" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:31:00Z | CLAIM | unit=U-03 | agent=builder | model=Opus | plan=land the parser" >/dev/null 2>&1
+  runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM \| unpaired-claim' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/'; then ok=1; fi
+  report 14 "ledger-provenance" "$ok" "paired: rc=${RC} (want 0); claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm (the negative control)"
+
+  printf 'SELFTEST COMPLETE | %s of 14 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

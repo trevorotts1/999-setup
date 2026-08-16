@@ -233,7 +233,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
 | **S8 — Item flow** | Items are moving through the lifecycle independently (not all items blocked at the same stage) | Log bottleneck stage; investigate dependency graph |
 | **S9 — Inline-work ban** | No build artifact was edited by the conductor itself: every landing commit has a prior dispatch-log row, and the conductor's own working tree is clean of build files. (Doctrine #2, Level 1: the Team Lead's primary job is ORCHESTRATION — it does NOT personally implement.) | VIOLATION — the unit is re-done by a dispatched agent; the violation is logged; the inline edit is quarantined |
-| **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS — see references/anti-drift.md |
+| **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected; CLASS 7 (ledger provenance) paired every RESULT unit against a prior CLAIM for the same unit id — a RESULT without its claim is a violation | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS; an unpaired-claim alarm means missing BEFORE-the-unit CLAIM lines — write them and re-run — see references/anti-drift.md |
 | **S11 — Terminal-chore ban** | No user-facing text produced this session instructs the client to open a terminal window (outside the labeled last-resort rung of references/terminals.md) | VIOLATION — the instruction is retracted and replaced with the skill doing the thing itself (references/agent-team.md) |
 | **S12 — Worker visibility** | Every build/fix/QC dispatch is workflow-wrapped (visible in `/workflows`); any raw Agent-tool dispatch (research, probe, named fallback) has a dispatch-log row with its purpose and a reap deadline | VIOLATION — log it now, wrap the next dispatch, reap anything running unlogged |
 | **S13 — Finished-but-alive reap** | No agent whose output is on disk and whose task has no next instruction is still running (the 2026-08-14 canary's research agent burned 13h of CPU spinning after it finished) | Reap it (TaskStop) and note it in the ledger — a done agent that keeps running reads as work, and a ticking timer is never progress |
@@ -1616,7 +1616,19 @@ heartbeat line must CARRY STATE (counts by status, current unit, next item); a
 contentless "auto-tick" heartbeat is a banned write — on the operator's real
 ledger, 740 of 2,366 lines (31%) were contentless ticks and the longest run of
 them (139 lines, ~7 hours) was the TAIL of the file: the run drifted and never
-came back. At every wave boundary, at every cron/loop tick start, after every
+came back. **The contract is mechanically checked on every reconcile: the
+ledger line shapes are `<ISO8601Z> | CLAIM | unit=<id> | agent=<label> |
+model=<role> | plan=<one line>` (BEFORE the unit) and `<ISO8601Z> | RESULT |
+unit=<id> | PASS|FAIL|BLOCKED | evidence=<path or anchor>` (AFTER it); the
+conductor writes both through `tools/ledger.sh`, append-only, never only at
+the end of a run. `tools/anchor.sh --mode reconcile` CLASS 7 pairs every
+RESULT unit against a prior CLAIM for the SAME unit id and alarms
+`unpaired-claim` (exit 3, `ACTION|write-missing-claims`) when RESULT units
+exceed `ANCHOR_CLAIM_UNPAIRED_TOL` (default 3) with no CLAIM — the ledger
+failing as the single source of truth; an absent ledger is UNDETERMINED, and
+an IDLE reconcile claims nothing. A run that ledgers only on completion has
+no state to resume from at the moment it most needs one.** At every wave
+boundary, at every cron/loop tick start, after every
 compaction, and before every dispatch, the conductor runs `tools/anchor.sh
 --mode reconcile` — the three-way reconciler (manifest ↔ native task graph ↔
 project_state.json ↔ the artifacts on disk, RECONCILE TASKS NOW, addendum §12).
