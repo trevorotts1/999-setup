@@ -939,12 +939,25 @@ When the operator provides a folder, that folder IS the project. Its documents A
     - The installer ends with the 15-item final report
       (references/progress-visibility.md §11). Never report the capability
       complete until it has been tested.
-3. **Offer entry modes.** Speak THE OPENING SCRIPT verbatim, then ask THE BUILD
-   TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
-   is the info." **Create the project folder + `00-INPUT/` immediately after they
-   choose** (Law 23 — the brainstorm's verbatim capture gets a durable home before
-   it is spoken, not two phases later). Then:
-3.5. **Just-in-Time research (Step 1c-bis, BOTH modes).** The moment the Build Target is answered at step 3, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background through the brainstorm.
+3. **Entry gate (hard — nothing runs past it unanswered).** Speak THE OPENING
+   SCRIPT verbatim, then ask THE BUILD TARGET QUESTION (both above). Then —
+   before anything else runs: before the research dispatch, before the
+   brainstorm, before the project folder is created — speak the two-option entry
+   question verbatim (the entry block above, lines 773-789) and wait for the
+   answer. Exactly two options, asked ONCE:
+   (1) "Interview me."
+   (2) "Here is the info — point at a folder / paste a document / give a link."
+   The entry question is the first counted interaction after the opening script
+   and the build-target confirmation; no other question, no other work, no other
+   text runs between them. On the "Here is the info" path the one-line target
+   confirmation is still the Build Target exchange — the entry question follows
+   it, verbatim, asked once. **Create the project folder + `00-INPUT/`
+   immediately after they choose** (Law 23 — the brainstorm's verbatim capture
+   gets a durable home before it is spoken, not two phases later). Then:
+3.5. **Just-in-Time research (Step 1c-bis, BOTH modes).** Only AFTER the
+     entry-mode question has been asked and answered, dispatch the reader
+     (references/interview.md Step 1c-bis) — it runs in the background through
+     the brainstorm.
 4. **Brainstorm (if interview mode).** Fifteen minutes, their own words, no
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
@@ -1657,7 +1670,9 @@ is a pool member, not a fence around it.
 /spec-protocol
 ```
 
-No arguments. The skill asks the one entry-mode question, then proceeds.
+No arguments. The skill speaks THE OPENING SCRIPT, asks THE BUILD TARGET
+QUESTION, then the one entry-mode question (asked once — step 3's hard gate) —
+then proceeds.
 
 ---
 
