@@ -1630,11 +1630,12 @@ states only what media adds to them.
 | Agnes text (existing) | requests per 5-hour window **+ weekly cap** | section 3's table | the existing burn machinery, weekly axis added |
 
 **One MEDIA line per planned batch, provenance marks mandatory:**
+The mapping from local path to GHL URL to usage is written at upload time, per image. Every generated asset has exactly one manifest row, one upload (or a marked gap), and all its page/slot references counted.
 
 ```
 MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from smoke> | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units> | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day> | gate=<none|consent-required> | proof=<smoke ISO8601>
   | clips=<n> | clip-seconds=<per-clip or list> | total-seconds=<Σ> | billed-unit=<per-second|per-clip|30s-block> | billed-cost=<the figure consent saw>
-  | stored=<ghl|repo|ghl+repo|local-pending|lost-paid> | perm-url=<GHL URL and/or repo path|—>
+  | stored=<ghl|repo|ghl+repo|local-pending|lost-paid|upload-failed> | local-path=<repo-relative path> | usage=<page+slot> | perm-url=<GHL URL and/or repo path|—>
   | persist-proof=<read-back ISO8601|—>
 ```
 
@@ -1680,7 +1681,7 @@ applies to media meters exactly as it does to request windows.**
 | **The loss ladder, rung 2 — RE-SPEND on a NON-GATED family** | **ONE automatic resubmit is authorized if and only if ALL FOUR hold:** **(a)** the re-spend fits inside the batch estimate the client already consented to, reserve included — the original consent covered a TOTAL, and a redo inside that total is the consented arithmetic, not new spending authority; **(b)** the meter allows it (on Agnes: remaining budgeted video-seconds ≥ the clip's seconds); **(c)** it is the FIRST resubmit for this item — never a loop; **(d)** it is ANNOUNCED — attended in the moment, unattended in the morning report, **both charges shown side by side** with their taskIds and timestamps. This is governed by `MEDIA_LOSS_POLICY` (interview C6): `remake-once-within-budget` (default) or `note-and-wait`. **Any condition failing → no automatic resubmit:** attended, one plain question naming both charges and the alternative; unattended, rung 3 plus the note. **The same reasoning already ships one row below as the Agnes SUBMITTED-NO-RESPONSE rule — check the meter before deciding a retry is free** | Never a second automatic redo; never a redo that exceeds the consented envelope; never a silent charge — **a redo the client never hears about is indistinguishable from a double-spend** |
 | **The loss ladder, rung 2 — CROSS-PROVIDER re-make** (e.g. a lost Agnes clip re-made on kie) | **Legitimate and sometimes right** — kie's recoverability means the REDO cannot suffer the same loss, which is worth real money on a twice-burned item. But it is a fallback-family swap AND a re-spend: it re-runs the FULL selection (duration fit first — a lost 15s Agnes clip does **not** fit non-gated kie in one clip, so it lands on decomposition or a gated ask), it re-validates stitch consistency where the clip has already-generated siblings (**a kie redo among Agnes siblings makes MIXED audio the expected case** — section 6d), and it obeys the same conditions (a)–(d), with the gate firing if selection lands gated. **Recorded as a swap** | Never silent; never assumed to fit the same duration; never allowed to skip the gate because "it is only a replacement" |
 | **The loss ladder, rung 3 — MEDIA-GAP** (always available, never a stall) | The slot enters the manifest with its prepared prompt, its parameters, and the **BILLED** cost of the redo; the build continues; filling it later is one resumable batch. **The completion report still carries the ASSET-LOST-PAID line in credits and dollars** | Never a stall; **never a neatly parked slot reported as if nothing was lost** — a loss is reported as a loss even when the slot is tidy |
-| **Phase B upload fails** (GHL 5xx/timeout), local copy safe | Retry 3× with backoff; still failing → **PERSIST-PENDING**: the item enters the MEDIA-GAPS manifest's PERSIST-PENDING section and **the build continues** — the asset is captured and safe | Never stall generation on a warehouse outage; **never mark the item DONE while the push is pending** |
+| **Phase B upload fails** (GHL 5xx/timeout), local copy safe | Retry 3× with backoff; still failing → **UPLOAD-FAILED**: the item enters the MEDIA-GAPS manifest's PERSIST-PENDING section, its `stored` value is `upload-failed`, and **the build continues** — the asset is captured and safe locally. **No temporary provider URL is used in the deliverable:** the page slot receives the honest marked-space treatment (section 9.3 item 2). The morning report names each UPLOAD-FAILED row. When GHL answers again, the manifest carries it for one resumable push batch. | Never stall generation on a warehouse outage; **never mark the item DONE while the push is pending**; never reference a dead temp URL from a page; never substitute a provider URL for the permanent one |
 | **Upload verification fails** (200 on upload, but the read-back finds no file or zero size) | **The upload DID NOT HAPPEN regardless of the 200** — retry it as an upload failure; **the read-back is the proof, not the status code** | **Never record a permanent URL that was not read back** |
 | **The GHL media smoke fails at media-planning** (401/403) | The scope fix in plain words **BEFORE the first paid generation**; unattended → generation proceeds and everything queues PERSIST-PENDING with a morning note | **Never discover a scope gap after the batch is paid for**; never a value in the error report |
 | **GHL credentials absent** (non-funnel builds only) | Section 13's branch: repo persistence, one plain sentence to the client, RULE-2 evidence (the names and stores searched) | Never a crash, never a silent skip, **never a hardcoded fallback account** |
@@ -2057,6 +2058,7 @@ success, and the upload follows immediately from the verified local file.
 |---|---|
 | `FAILED-TIMEOUT` | The existing state (section 11), recorded **with its taskId**; `creditsConsumed` reconciles it later |
 | `FAILED-CAPTURE` | Terminal success observed, but the download failed — section 11's rungs apply **while the URL lives** |
+| `UPLOAD-FAILED` | Download succeeded, GHL upload failed after all retries exhausted. The asset is captured and safe locally. **No temporary provider URL is used in the deliverable** — the page slot gets the honest marked-space treatment (section 9.3 item 2), and the morning report names it. The row's `stored` value is `upload-failed`. The MEDIA-GAPS manifest's PERSIST-PENDING section carries it for one resumable push batch when GHL answers again. |
 | `PERSIST-PENDING` | Captured and safe locally; the GHL push is queued. **A legitimate overnight resting state, never a final one** |
 | `ASSET-LOST-PAID` | No capture and no recovery — **the honest loss state.** Recorded with the taskId, `creditsConsumed`, and everything that was tried; surfaced in the completion report **as a real loss, in credits and dollars** |
 | `SUBMITTED-NO-RESPONSE` | **The Agnes synchronous image path only.** The request went out and **nothing came back** — no status, no body, and **no task id, because a synchronous call issues none.** Whether it ran or billed is UNDETERMINED (section 12, item 18); it is reconciled against the images-per-day meter, and **a retry is a spend decision, never automatic** (section 3) |
@@ -2262,3 +2264,52 @@ GENERATED-CAPTURED or PERSIST-PENDING and is **not merge-eligible**; a provider
 URL found in a deliverable is a defect, replaced with the ledger's permanent URL
 before the pen; **an ASSET-LOST-PAID line missing from the completion report is
 a defect of the highest class.**
+
+### 13.11 Manifest mapping — local path to GHL URL to usage
+
+Every generated asset carries a three-component mapping written at the moment
+its GHL upload succeeds or its repo persistence is confirmed:
+
+1. **Local path** — the `<project>/media/<work-item-id>__<short-desc>.<ext>` path
+   from Phase A capture (section 13.2). This is the file on disk that was captured,
+   checksummed, and uploaded.
+2. **GHL URL** — the `url` returned by `POST /medias/upload-file` (section 13.7),
+   verified by read-back. On the repo-only path (no GHL), the repo asset path
+   serves as the permanent URL.
+3. **Usage (page + slot)** — which page and which slot on that page this asset
+   fills, recorded as `usage=<page-id>:<slot-name>` on the MEDIA ledger line
+   (section 10). A generated asset with no usage entry is an orphan and is caught
+   by the 1:1:1 sweep (Issue 10).
+
+The mapping is written as fields on the MEDIA ledger line at upload time, per
+image. Every asset has exactly one local path, one permanent URL (or a marked
+gap), and all its usage sites counted. When an asset serves multiple pages the
+usage field lists them all. `local-path` and `usage` join `perm-url` on the
+MEDIA line, never in a separate file.
+
+The mapping data model:
+
+| Field | Source | Written when |
+|---|---|---|
+| `local-path` | Phase A capture path | At capture completion |
+| `perm-url` | GHL upload response URL, or repo path | At persist completion |
+| `usage` | The work item's target page+slot declaration | At spec time, confirmed at upload |
+| `stored` | Phase B outcome: `ghl`, `repo`, `ghl+repo`, `local-pending`, `upload-failed`, `lost-paid` | At persist completion or failure |
+
+**⛔ An upload that fails after all retries is `stored=upload-failed`.** The page
+slot is not filled with the provider's temporary URL. Instead the slot gets the
+honest marked-space treatment (section 9.3 item 2), exactly as if media had been
+declined. The mapping remains but with `perm-url=—` and `stored=upload-failed`,
+and the MEDIA-GAPS PERSIST-PENDING section carries the row for one resumable push
+batch when GHL answers again. The morning report names every UPLOAD-FAILED row.
+
+**⛔ No-GHL case (website/app without GHL):** The asset's `perm-url` is the repo
+asset path; `stored=repo`. The MEDIA ledger line records `stored=repo-only` with
+the evidence of what was searched (names and stores, never values). The image
+persists inside the project per the existing media-pipeline contract (interview.md
+lines 933-940, media-pipeline.md section 13.7), and the mapping still carries
+`local-path`, `perm-url`, and `usage`. Said plainly, never a silent skip.
+
+**Verification:** every MEDIA line in the ledger has a populated `local-path`,
+`perm-url` (or `stored=upload-failed|lost-paid`), and `usage`. The S15 watch
+check enforces this.
