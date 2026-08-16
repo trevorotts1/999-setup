@@ -252,11 +252,12 @@ FAIL if: <exact condition> → incomplete because <reason>
   number of prior verdict blocks for that same finding; a
   state that disagrees with the primary source; a batch with no merge record; a
   reconciliation where a pen item is missing from all three outcomes; a verdict
-  block with no QC RECORD, or a QC RECORD failing any of its five mechanical
+  block with no QC RECORD, or a QC RECORD failing any of its six mechanical
   checks (judge seat equals the builder seat; bar unnamed; bar with no fetch
-  proof; non-binary verdict; FAIL without a LOOPED outcome — see
-  `references/pipeline.md` Stage 2). (Law 1: when git disagrees, git wins and
-  the prose is corrected.)
+  proof; non-binary verdict — not one of PASS, FAIL, BLOCKED, INFEASIBLE,
+  LIMIT-REACHED, Law 50; FAIL without a LOOPED outcome; provenance other than
+  STRIPPED — see `references/pipeline.md` Stage 2). (Law 1: when git disagrees,
+  git wins and the prose is corrected.)
 
 ### Document 7 — Quality-control document
 - **Path:** `QUALITY-CONTROL/QUALITY-CONTROL-RULEBOOK.md`

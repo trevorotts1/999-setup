@@ -1291,10 +1291,12 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    blocks through `tools/ledger.sh` the moment the verdict is reached. The
    record carries the four things the QC bar checks: a blind critic (`judge=`
    differing from the unit's builder seat and `provenance=STRIPPED` — zero
-   self-QC), a named bar with its fetch proof, a binary verdict, and the
-   loop-or-pass outcome (PASSED / LOOPED cycle n of 20 / ESCALATED after 20).
-   The six mechanical checks and the fail-closed rule for defective records
-   live in `references/pipeline.md` Stage 2.
+   self-QC), a named bar with its fetch proof, a binary verdict (PASS vs
+   everything else — FAIL, BLOCKED, INFEASIBLE, LIMIT-REACHED, Law 50), and
+   the loop-or-pass outcome (PASSED / LOOPED cycle n of 20 / ESCALATED after
+   20 / ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED
+   with reason=). The six mechanical checks and the fail-closed rule for
+   defective records live in `references/pipeline.md` Stage 2.
    **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
    never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
    non-success states, never relabeled PASS.

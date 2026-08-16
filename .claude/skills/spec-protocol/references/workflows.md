@@ -564,14 +564,18 @@ You did not build this and you may not fix it. Judge the ACTUAL OUTPUT against t
 written bar in the project's acceptance criteria - never against the builder's account
 of it. "The builder says it is fixed" is not evidence and is BANNED as a basis for a
 pass. Produce the evidence you relied on: commands run, output, screenshots, or test
-results. Return PASS or FAIL with the one largest gap named.
+results. Return PASS or FAIL with the one largest gap named - or BLOCKED / INFEASIBLE /
+LIMIT-REACHED when the bar comparison cannot run or an operational limit ends
+the item (Law 50: never relabeled PASS).
 
 Write the QC-RECORD (the one format every verdict is written in,
 references/pipeline.md Stage 2): your judge seat label in judge=, the bar you
 judged against - NAMED - in bar=, how you obtained the bar (URL / capture path /
 file path / answer-key reference) in bar_fetch, the verdict in verdict=, the
 outcome in outcome= (PASSED on PASS; LOOPED cycle n of 20 on FAIL - the loop cap
-is 20 cycles per finding, Rule 3.22), and provenance in provenance= (STRIPPED -
+is 20 cycles per finding, Rule 3.22; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
+ESCALATED-LIMIT-REACHED with reason= on the three Law-50 non-success verdicts),
+and provenance in provenance= (STRIPPED -
 the package you received carried no timestamps, authorship, history, builder
 identity, builder reasoning, or effort narrative; if it did, VIOLATION and the
 verdict does not stand). The record's judge seat must differ from the builder's
@@ -598,16 +602,18 @@ seat: zero self-QC.`,
 )
 
 const seen = verdicts.filter(Boolean)
+const VERDICTS = ['PASS', 'FAIL', 'BLOCKED', 'INFEASIBLE', 'LIMIT-REACHED']
 const recordShapeOk = (v) => v && v.judge && v.bar && v.bar_fetch &&
-  ['PASS', 'FAIL'].includes(v.verdict) && v.outcome && v.self_qc === 'no' &&
+  VERDICTS.includes(v.verdict) && v.outcome && v.self_qc === 'no' &&
   v.provenance === 'STRIPPED'
 return {
   judged: seen.length,
   dropped: LANDED.length - seen.length,
   pass: seen.filter((v) => v.verdict === 'PASS').map((v) => v.unit),
-  fail: seen.filter((v) => v.verdict !== 'PASS').map((v) => v.unit),
-  records_complete: seen.filter(recordShapeOk).map((v) => v.unit),
-  records_broken: seen.filter((v) => !recordShapeOk).map((v) => v.unit),
+  fail: seen.filter((v) => v.verdict === 'FAIL').map((v) => v.unit),
+  non_success: seen.filter((v) => VERDICTS.includes(v.verdict) && v.verdict !== 'PASS' && v.verdict !== 'FAIL').map((v) => v.unit),
+  records_complete: seen.filter((v) => recordShapeOk(v)).map((v) => v.unit),
+  records_broken: seen.filter((v) => !recordShapeOk(v)).map((v) => v.unit),
 }
 ```
 
@@ -617,10 +623,17 @@ returns `records_broken` — the units whose verdicts lack a mechanically
 checkable record. A verdict without its record does not stand (the QC protocol,
 `references/pipeline.md` Stage 2 — the record is how "every record shows a
 blind critic, a named bar, a binary verdict, and the loop-or-pass outcome;
-zero self-QC" is checked). `self_qc === 'no'` and `provenance === 'STRIPPED'`
-are the zero-self-QC and blind-critic proofs; the `judge` seat label is
-cross-checked against the unit's builder seat by the conductor when the
-results land.
+zero self-QC" is checked). The five legal verdicts are PASS, FAIL, BLOCKED,
+INFEASIBLE, LIMIT-REACHED — binary for the purpose of the loop (PASS vs
+everything else, `references/pipeline.md` Stage 2 check 4), and the Law-50
+non-success states land in `non_success`, never in `fail`. `pass` / `fail` /
+`non_success` are RAW verdict lists; only `records_complete` carries verdicts
+that stand — a unit in `records_broken` does not pass even when its raw
+verdict says PASS (the conductor gates on the shape lists, never on the raw
+lists). `self_qc === 'no'`
+and `provenance === 'STRIPPED'` are the zero-self-QC and blind-critic proofs;
+the `judge` seat label is cross-checked against the unit's builder seat by the
+conductor when the results land.
 
 Two runs, both `pipeline`, no barrier anywhere. Unit 9 can be under judgment while
 unit 3 is still being written. That is the per-item lifecycle: the stages describe

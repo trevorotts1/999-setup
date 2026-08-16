@@ -303,7 +303,7 @@ QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
 bar-fetch=<how the bar was obtained: URL | capture path | file path | the
 answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
-outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20>
+outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
@@ -325,11 +325,14 @@ run against a QC RECORD without judging anything:
 4. **`verdict=` must be exactly one of PASS, FAIL, BLOCKED, INFEASIBLE,
    LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
    else, and the non-success states are never relabeled PASS (Law 50).
-5. **`outcome=` must be PASSED or LOOPED `cycle n of 20`** (the fix loop's cap,
-   Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14; a 21st
-   pass carries ESCALATED with the full finding history) — a FAIL verdict with
-   no LOOPED outcome line, or an ESCALATED line with no finding history
-   attached, is a broken record.
+5. **`outcome=` must be PASSED, LOOPED `cycle n of 20`, ESCALATED, or one of
+   ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a
+   reason=** (the fix loop's cap, Rule 3.22 — 20 cycles per finding, operator
+   ruling 2026-08-14; a 21st pass carries ESCALATED with the full finding
+   history) — a FAIL verdict with no LOOPED outcome line, an ESCALATED line
+   with no finding history attached, or a Law-50 verdict (BLOCKED /
+   INFEASIBLE / LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a
+   broken record.
 6. **`provenance=` must be STRIPPED** (Law 49 — the critic sees the work,
    never the effort). The critic's received package is stripped of timestamps,
    authorship, history, builder identity, builder reasoning, and effort
@@ -425,9 +428,10 @@ green. Green under a real mutation is hollow and fails.
 9. **Any QC record that fails the six mechanical checks (above) — a missing
    record, a judge seat identical to the builder seat (self-QC), an unnamed
    bar, a bar with no fetch proof, a non-binary verdict, a FAIL without its
-   LOOPED outcome, or provenance other than STRIPPED.** The unit is blocked,
-   the verdict does not stand, and the broken record is returned to the
-   builder as a finding.
+   LOOPED outcome, a Law-50 verdict (BLOCKED / INFEASIBLE / LIMIT-REACHED)
+   without its ESCALATED-<STATE> reason=, or provenance other than STRIPPED.**
+   The unit is blocked, the verdict does not stand, and the broken record is
+   returned to the builder as a finding.
 10. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
    unreachable, format mismatch, judge cannot render both sides) is BLOCKED,
    never passed. BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are

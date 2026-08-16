@@ -23,7 +23,7 @@ QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
 bar-fetch=<how the bar was obtained: URL | capture path | file path | the
 answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
-outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20>
+outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
@@ -33,15 +33,18 @@ Mechanically checkable: (1) `judge=` differs from the unit's builder seat (Law 7
 bar (Law 48); (3) `bar-fetch=` names a fetchable source (a bar that cannot be
 fetched is BLOCKED, Law 50); (4) `verdict=` is exactly one of the five values —
 binary for the loop, non-success states never relabeled PASS; (5) `outcome=`
-is PASSED or LOOPED `cycle n of 20` (Rule 3.22 — 20 cycles per finding; the
-21st pass is ESCALATED with the full finding history); (6) `provenance=` is
-STRIPPED (Law 49 — the critic sees the work, never the effort: no timestamps,
-authorship, history, builder identity, builder reasoning, or effort narrative
-in the critic's package; a VIOLATION, or evidence naming a builder or timeline,
-voids the verdict). A record failing any check is a defective record: the
-verdict does not stand, and the defect is a finding. This is how the "every
-record shows a blind critic, a named bar, a binary verdict, and the loop-or-pass
-outcome; zero self-QC" bar is checked — checks 1 and 6 prove the blind critic.
+is PASSED, LOOPED `cycle n of 20`, ESCALATED, or ESCALATED-BLOCKED /
+ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason= (Rule 3.22 — 20
+cycles per finding; the 21st pass is ESCALATED with the full finding history;
+a Law-50 verdict with no ESCALATED-<STATE> reason= is a broken record); (6)
+`provenance=` is STRIPPED (Law 49 — the critic sees the work, never the
+effort: no timestamps, authorship, history, builder identity, builder
+reasoning, or effort narrative in the critic's package; a VIOLATION, or
+evidence naming a builder or timeline, voids the verdict). A record failing
+any check is a defective record: the verdict does not stand, and the defect
+is a finding. This is how the "every record shows a blind critic, a named
+bar, a binary verdict, and the loop-or-pass outcome; zero self-QC" bar is
+checked — checks 1 and 6 prove the blind critic.
 
 The categories:
 
