@@ -1,0 +1,10 @@
+HARNESS=claude-nine
+LAUNCHER=claude-nine
+BUILDER_PROVIDER=deepseek-direct
+DEEPSEEK_TIER=flash
+CORES=12
+CORES_SOURCE=measured:sysctl-hw.ncpu 2026-08-16T22:00:00Z
+SYSTEM_CONCURRENT_MAX=10
+SYSTEM_CONCURRENT_MAX_SOURCE=recalled-confirmed:operator-declared-max 2026-08-16T22:00:00Z
+MODE=single
+PROJECT=slice5-test-build

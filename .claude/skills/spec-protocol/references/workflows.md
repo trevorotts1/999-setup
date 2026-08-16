@@ -131,7 +131,13 @@ integers come from the Capacity Ledger (`references/capacity.md`), never from ta
 ### AGENT OWNERSHIP expands into ten fields per subagent class (§6)
 
 Do not add agents merely because Claude Code can run many agents. Every subagent must
-have a distinct reason to exist. For every important subagent or subagent class,
+have a distinct reason to exist. **The four properties of the CAPACITY RULE
+(`references/gauntlet.md` §13.3) are the minimum bar: every spawned agent must have a
+unique responsibility, evidence to inspect or work to perform, an explicit deliverable,
+and an acceptance criterion. Provider capacity is permission, never instruction — more
+agents only when the work decomposes into independent valuable tasks; quality per agent
+matters more than raw agent count. An agent that cannot be given the four is not
+spawned.** For every important subagent or subagent class,
 define: AGENT NAME / NUMBER · MODEL ROLE · RESPONSIBILITY · SCOPE OF OWNERSHIP ·
 INPUTS · DELIVERABLE · ACCEPTANCE CRITERIA · FILES OR COMPONENTS OWNED · CAN MODIFY
 CODE: YES / NO · CAN VERIFY ITS OWN WORK: YES / NO.
