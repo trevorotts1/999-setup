@@ -246,6 +246,7 @@ the default state to report.
 | **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
 | **S15 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class |
 | **S16 — Video duration fit** | Every video work item's requested duration is validated against the seated model's duration×RESOLUTION table at SPEC time — as a pair, never on either axis alone — and every video estimate prices the BILLED unit, not a pro-rata second (references/media-pipeline.md 6d, references/capacity.md 13.8) | An item dispatched past its ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip parent without a stitch-or-gap answer (ffmpeg detected by execution, or NEEDS-JOINING declared) is not dispatchable |
+| **S17 — One question at a time** | Every user-facing message carries at most ONE question — no batched questions, no walls (references/audience.md §1, the binding one-question rule) | VIOLATION — the message is retracted and re-issued with the single question; the one-question rule is re-read; two-question messages are logged |
 
 ---
 
@@ -1208,7 +1209,12 @@ When the operator provides a folder, that folder IS the project. Its documents A
     beneath it; two counts of the same set); (b) a rubric that never fails
     anything is a formality, not a gate — if the grading has never produced a
     failure, distrust the grading; (c) a finding proved by running beats one
-    proved by reading — run the cheap checks, do not just read. **Then the
+    proved by reading — run the cheap checks, do not just read; (d) a
+    user-facing message with TWO questions in it — the wall-of-questions
+    defect (references/audience.md §1, the binding one-question rule); the
+    audit reads the session transcript's user-facing messages and flags any
+    that carry more than one question or a batched "1. … 2. … 3. …" list.
+    **Then the
     by-command census (v4 5.7 step 10):** enumerate every numbered series, check
     for gaps and duplicates, prove every stated count equals its enumeration, and
     prove the instrument on a known-positive before trusting any zero — the v4's

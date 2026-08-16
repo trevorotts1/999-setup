@@ -20,6 +20,18 @@ if it is still genuinely unanswerable.
 A wall of text gets skimmed or skipped. One thing at a time gets done. A screen full
 of information is the same as no information — keep every message to ONE screen.
 
+**BINDING — the one-question rule (Issue 12 fix).** A user-facing message that
+contains two questions is a defect. A two-option choice presented once — THE
+ENTRY's "interview me / here is the info", the Build Target's either/or bank, a
+yes/no — is ONE question, not two. Everything else is a wall: a question plus a
+follow-up in the same message, a question plus a confirmation ask, two yes/no
+asks, a numbered batch ("1. … 2. … 3. …") ending in one pick-everything prompt.
+When more than one thing genuinely needs asking, ask the first, wait for the
+answer, then ask the next — and only if it is still genuinely unanswerable
+without the second. The self-audit (step 20) and the swarm watch (standard S17)
+both hunt two-question messages; a user-facing message with two questions is a
+failable violation.
+
 The capacity interview is the long one, but the user sees the questions one at a
 time, in plain language, with the consequence of each answer stated before they
 answer. State the count up front, in the two-number form when `interview.md` computes
