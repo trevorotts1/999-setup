@@ -74,10 +74,24 @@ Scope discipline: only SKILL.md step 16 edited. No other file touched. Backup: `
 - Wave-lock terms now present in the skill: `NEW-WAVE` (3 occurrences in the new block), `wave table` (2), `immutable` (1), all inside step 16.
 - FIX-LEDGER.md untouched by this unit (git diff shows no ledger change).
 
-## 5. QC bar mapping (Issue 15 QC, spec line 329)
+## 5. BLIND CRITIC INDEPENDENT RE-VERIFICATION (2026-08-16)
+
+Every load-bearing claim re-proven from raw sources, not the builder's text.
+
+- Locked table three-way byte compare: `git show 15a92d9:FIX-LEDGER.md` vs `git show dc688c7:FIX-LEDGER.md` vs disk (`sed -n '9,25p' /Users/blackceomacmini/work-999-setup/FIX-LEDGER.md`) — LOCKED WAVE TABLE section identical in all three, lines 10-21, 6 rows. VERIFIED.
+- Ledger wave headings: `grep -nE '^## WAVE'` → WAVE 1..6 only (lines 30, 51, 57, 68, 72, 76). No WAVE 7+, no WAVE 0 heading. Count = 6 = locked count. VERIFIED.
+- Extra-wave path: `grep -c "NEW-WAVE-[0-9]" FIX-LEDGER.md` → 0 lines (the only `NEW-WAVE-N` occurrence is the lock-rule text at line 21). Zero undocumented waves, zero dependency-opened waves — count identical with no exception needed. VERIFIED.
+- Fix commit: HEAD of fix/15-wave-lock = 8f04e35 (commit message cites the WAVE 4 DISPATCH line). Diff vs base dc688c7 = SKILL.md +13/-0 only, insertion at line 1112 in step 16, before 16.2. VERIFIED.
+- Backup integrity: sha256 of `holding/SKILL.md.bak-pre-wave-lock-slice1` == sha256 of `git show dc688c7:.claude/skills/spec-protocol/SKILL.md` == 5f465247a3ff023492cdfe57e092ff87167222cc4464b7f433f6624a47dc01d4. Working tree + HEAD skill both 79aa28aa… (the edited state). VERIFIED.
+- Ledger line 70 exists and is the cited dispatch line: `WAVE 4 DISPATCH 2026-08-16T20:12Z: full PART 2 scripted width — 5 parallel workflows WF-4A..WF-4E …`. VERIFIED.
+- Boss-cron live: `tools/boss-cron` carries `LOCKED_WAVES` (waves 1-6) + `check_wave_lock` (no WAVE N+1 before WAVE N CLOSED) + `check_width` ("dispatch for wave {wave} not in the locked table" = violation). Live log `CONTROL/boss-cron.log` tail: cycles 20:20Z..20:40Z all "0 violation(s), 0 kill(s)". VERIFIED.
+- Spec PART 2 table vs ledger table: issues-per-wave sets identical (W2: 3,4,5,11,12; W3: 6-10; W4: 13,14,15,17,18; W5: 16,19,batch; W6: 20). Spec's WAVE 0 row is bootstrap-only, deliberately outside the immutable-6 count (PART 2.1: "written to the ledger at wave 1 with immutable count 6"). Count claim consistent. VERIFIED.
+- To-do/checklist documents: no standalone to-do or checklist files exist in the canonical tree (searched `/Users/blackceomacmini/work-999-setup` maxdepth 2 for *todo*, *checklist*, *wave* — only ledger backups). The task tracker and `CONTROL/project_state.json` are the live to-do; neither carries a wave table to drift. The skill block (step 16) now names all four and their owner, which is the FIX step 3 teaching. Noted, not a defect against slice 1.
+
+## 6. QC bar mapping (Issue 15 QC, spec line 329)
 
 Bar: "wave count identical to the locked table except waves with valid NEW-WAVE-N dependency lines; all four documents render the same table."
-- Locked table exists and is immutable: verified, 6 rows, never rewritten since 15a92d9 (section 2).
+- Locked table exists and is immutable: verified, 6 rows, never rewritten since 15a92d9 (section 2, independent re-check section 5).
 - NEW-WAVE-N as the only growth path: taught in the skill's step 16 block (section 3).
 - One source render: taught (spec/to-do/checklist/ledger from the same table) — the table's OWNER is the execution plan, matching spec line 324.
-- Boss-cron wave check: taught (the block names the boss-cron wave check and VIOLATION-STOP semantics per spec line 326).
+- Boss-cron wave check: taught (the block names the boss-cron wave check and VIOLATION-STOP semantics per spec line 326); live boss carries the LOCKED_WAVES structure and fires 0 violations on live cycles.

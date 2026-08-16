@@ -1124,6 +1124,14 @@ When the operator provides a folder, that folder IS the project. Its documents A
     15 hours later). The wave table is written into the ledger at wave 1; the
     boss-cron wave check stops any wave in the ledger that is not in the locked
     table without its `NEW-WAVE-N` line.
+    **The opening line must NAME the dependency (binding — a gate that names
+    nothing gates nothing).** A bare `NEW-WAVE-N: wave N opened` line is NOT a
+    valid opening: the line must name which wave's output the new wave consumes
+    ("NEW-WAVE-7: consumes wave 6's output — <what the new wave needs>"), and
+    the named wave must be a LOWER wave than the one being opened — a new wave
+    consumes output that already exists, never output that has not been
+    produced. The boss-cron growth check (PART 4 check 2) flags any
+    `NEW-WAVE-N` line that names no dependency or names its own/later wave.
 16.2. **Write PROJECT-MANIFEST.md (document 17 — SPEC/PROJECT-MANIFEST.md).**
     The durable architectural source of truth: how THIS project is supposed to
     operate. Its eighteen contents (references/execution-architecture.md carries
