@@ -480,3 +480,120 @@ figure with its date, or a live check. An unsourced number is a rumour, exactly
 like an unmeasured one (Law 14), and a number quoted from memory is worse than
 no number at all. Research empowers the build; it never gates it (see
 `references/research.md`).
+
+---
+
+## 15. The seven-stage funnel process — the build order, ledger discipline, and defaults
+
+**When this section runs:** after the DESIGN-BRIEF gate (interview.md, Step 1d
+funnel branch) has written its ledger line and the copy bar is named. Every
+stage below writes a ledger line BEFORE its unit and AFTER its result — a
+claim without its ledger line is a violation, and a ledger line without its
+claim never happens. The ledger is the run's single source of truth for what
+was decided, built, and where it lives.
+
+### Stage 1 — FUNNEL-PAGES (the page inventory)
+
+Input: design brief + funnel type. Output: ledger line
+`FUNNEL-PAGES: <page list>`.
+
+Default page set per funnel type (overridable ONLY by an explicit client
+decision recorded as a ledger line):
+
+| Funnel type | Default page set |
+|---|---|
+| lead-magnet | opt-in, thank-you, deliverable |
+| VSL | VSL page, checkout, thank-you, upsell |
+| webinar | registration, thank-you, replay, checkout, upsell |
+| tripwire | opt-in, tripwire offer, checkout, thank-you, upsell |
+| launch | landing, waitlist, cart, checkout, thank-you, order bump |
+
+Acceptance: every named page appears as a ledger line; no unnamed page is
+built; a set other than the type's default exists only when a client-decision
+ledger line names it.
+
+### Stage 2 — PER-PAGE STRUCTURE
+
+Input: `FUNNEL-PAGES` list + copy bar. Output: per page, ledger line
+`FUNNEL-PAGE-<name>: hero + copy + CTA + form fields (<fields> post to <dest>)`.
+
+Acceptance: every page has hero, copy against the copy bar, CTA, and form
+fields with a named post destination.
+
+### Stage 3 — EMAIL-SEQUENCE
+
+Input: funnel type. Output: named count per funnel type and one ledger line
+per email `FUNNEL-EMAIL-N: purpose=<…>; subject=<pattern>; body=<purpose>;
+timing=<immediate|delay>`.
+
+Default per type (overridable ONLY by an explicit client decision recorded
+as a ledger line):
+
+| Funnel type | Email count | Purposes (one ledger line each; each line names subject-pattern, body-purpose, timing) |
+|---|---|---|
+| lead-magnet | 5 | confirmation, value, pitch, close, follow-up |
+| VSL | 5 | confirmation, value, pitch, close, follow-up |
+| webinar | 5 | confirmation, value, pitch, close, follow-up |
+| tripwire | 5 | confirmation, value, pitch, close, follow-up |
+| launch | 5 | confirmation, value, pitch, close, follow-up |
+
+Acceptance: every email listed in the ledger as a line; count matches the
+type's named count; every purpose line names subject-pattern, body-purpose,
+and timing.
+
+### Stage 4 — INTEGRATION
+
+Input: the GHL credentials (location PIT — the authoritative alias lists and
+env-store resolution order live in `references/environment-sweep.md`). Output:
+one ledger line per integration point
+`FUNNEL-INTEGRATION-<name>: <GHL|n8n> <what posts where>`.
+
+- Form submissions post to GHL.
+- The email sequence runs in GHL automations.
+- n8n is used ONLY where an external trigger exists — never as a default
+  middleman.
+
+**PAYMENT-CONTRACT.** The checkout page's payment processor is named in the
+brief BEFORE any checkout page is built: GHL payments or a named gateway —
+which API, where the charge fires, webhook confirmation. An unnamed processor
+means the checkout page is built as GATED (no live charge) — never an invented
+gateway.
+
+Acceptance: every integration point is a ledger line; no n8n without a named
+external trigger; every checkout page cites the PAYMENT-CONTRACT ledger line.
+
+### Stage 5 — TRACKING
+
+Input: `FUNNEL-PAGES` list. Output: a named list in the execution plan; ledger
+line `FUNNEL-TRACKING: <events>`.
+
+Named events per page: pageview, submit, purchase, email-open, email-click.
+
+Acceptance: the tracking plan is a named list in the execution plan, not
+invented at build time.
+
+### Stage 6 — PIPELINE + IMAGE LANE
+
+Input: the staged-pipeline, image-lane, GHL-media, and credential contracts
+(`references/pipeline.md`, `references/media-pipeline.md`, and the GHL media
+rules). Output: each page's images as GHL media URLs.
+
+- The funnel uses the SAME staged pipeline and the SAME image lane as every
+  other build — no per-page exceptions.
+- ALL six stages (`STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, `STAGE-HERO`,
+  `STAGE-IMAGES`, `STAGE-BUILD`, `STAGE-LOGO`) apply to every funnel page.
+- Build order when a project ships funnel + website together: funnel pages
+  first (the conversion path is the revenue path), then the site's remaining
+  pages; the manifest is shared; each page's ledger lines name which page each
+  asset serves.
+
+Acceptance: GHL media URLs per page; every funnel page passes all six stages;
+the shared manifest names the page each asset serves.
+
+### Stage 7 — FUNNEL-HOSTING
+
+Input: design brief. Output: ledger line
+`FUNNEL-HOSTING: <GHL landing page|named host> <path>`.
+
+Acceptance: every page has a named live destination; unnamed = gated (built,
+not live).

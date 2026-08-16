@@ -705,6 +705,11 @@ check live in `environment-sweep.md`: name the path here, check the keys there.
 Nothing about a token is ever asked of the user until a check has actually failed,
 and then it is asked in plain words, with where to find it.
 
+**After the shape is confirmed, the DESIGN-BRIEF step runs first before any page
+build (see `funnel-architecture.md` §Design Brief and Mobbin Check) — the
+MOBBIN-CHECK is its first action, checking for Mobbin MCP configuration on the
+client's box.**
+
 ### If SALES FUNNEL — ask these (the funnel discovery):
 
 1. "What is the one thing you want someone to do by the end of this funnel —
@@ -741,6 +746,34 @@ attached (Law 40 — recommend, never persuade):
 The page types and the email and text-message decision matrices this
 recommendation is built from live in `funnel-architecture.md`. Present the shape,
 not the matrices — the person is choosing a funnel, not reading a specification.
+
+**After the shape is confirmed, the DESIGN-BRIEF step runs first before any page
+build (see `funnel-architecture.md` §Design Brief and Mobbin Check) — the
+MOBBIN-CHECK is its first action, checking for Mobbin MCP configuration on the
+client's box.**
+
+---
+**DESIGN-BRIEF gate (mandatory step with its own ledger line).** After the user
+confirms the recommended architecture — and BEFORE any funnel page is dispatched
+for building — the conductor commissions the design brief and writes its ledger
+line:
+
+`DESIGN-BRIEF: <sources>`
+
+The brief collects:
+1. The funnel-type-specific researched conversion patterns from the
+   Just-in-Time reader.
+2. A named example page (the copy bar, Law 48) — a real, fetchable reference
+   page that sets the quality bar for copy and layout.
+3. The selected reference sites the brief's design decisions trace to.
+
+No funnel page is built before this ledger line exists and the brief is written
+to the project's convention section (document 1, per Law 39's closed list).
+The brief is a named, fetchable section — never a vague "make it look good."
+The full seven-stage funnel process the brief feeds into is defined in
+`references/funnel-architecture.md` §15.
+
+---
 
 ### Media and Creative (any build that needs artwork — after the shape is confirmed)
 
