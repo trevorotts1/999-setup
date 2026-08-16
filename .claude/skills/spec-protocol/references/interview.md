@@ -40,7 +40,9 @@ every fast-path yes and at any single lowering of three or more (the
 per-question counter owns the rule); a drop of one or two may be absorbed by
 finishing early. Never state a ceiling you will then exceed — the only
 sanctioned rise is artwork's, spoken at its measured size before the next
-question, plus the counter's failsafe.
+question, plus the counter's failsafe — and the mode answer's drop to nine is
+the one sanctioned LOWERING spoken against the stated total, never a silent
+second number.
 
 **The small-plan collapse needs no raise machinery: both confirmations are
 already priced into the ceiling.** When a tiny plan triggers the collapse,
@@ -187,12 +189,15 @@ T at its full 1). Plain wording:
 > want?
 
 It is spoken with its number, like every counted question: "Question <N> of
-no more than <C> —" with N = 1 (2 only when the archetype genuinely had to be
+no more than <C> —" with N = 1 (2 when the archetype genuinely had to be
 asked first) and C = the target's ceiling-table wall — the one total, computed
 once before question 1, covering BOTH modes (the per-question counter owns the
 rule). The answer is the first announced change to C: DEFAULT MODE lowers it
 to the R6 wall — nine — with the good-news line before question 2; ADVANCED
-MODE leaves it at the wall.
+MODE leaves it at the wall. The ceiling NEVER moves silently: any C change,
+lowering or rise, is spoken before the next question — DEFAULT MODE's drop to
+nine right after the mode answer, each fast-path lowering in the good-news
+line, and the artwork rise at its measured size.
 
 Record DEFAULT MODE or ADVANCED MODE. In DEFAULT MODE the whole interview is
 the R6 list — about nine questions, usually fewer — and the R6 list's length
@@ -212,7 +217,12 @@ mode never inherits an advanced-mode count and no run crosses its own mode's
 wall: DEFAULT MODE's spoken C is the R6 list length; ADVANCED MODE's spoken C
 is the computed ceiling capped by the target's table row; the announced
 artwork rise is the only sanctioned increase over the base ceiling, spoken at
-its measured size before the next question. Everything else is DECIDED by the
+its measured size before the next question. In DEFAULT MODE the R6 items that
+follow the mode question are asked against the SAME lowered ceiling — nine —
+with their own numbers (2 through 9); ADVANCED MODE asks the R7 items in the
+same positions under the target's row (the arithmetic section's "per target"
+paragraph remains the single owner of both mode compositions; this section
+states the walls only). Everything else is DECIDED by the
 run and REPORTED as statements in the recap — "here is what I decided; say the
 word to change any of it" — never asked. (The canary run offered this skip at
 question eleven, after ten technical questions; that placement is the defect
@@ -340,7 +350,10 @@ after a compaction or a resume, RE-READ them — a question whose answer is on
 disk is ANSWERED, and asking it again is the defect the canary caught twice.
 The ceiling is stated once, at the start; it may fall with good news, and it
 rises only by the artwork rule — the canary's 32 → 27 → 30 drift is the
-defect that sentence removes.
+defect that sentence removes. Every question carries its number — "Question
+<N> of no more than <C>" — and the ceiling never moves silently: DEFAULT
+MODE's drop to the R6 wall (nine) is spoken right after the mode answer,
+before question 2.
 
 ### R6. What DEFAULT MODE asks — the whole list
 
@@ -361,7 +374,15 @@ grows a question beyond the nine.
 
 The helpers cap (with the R2 explainer), the three-seat keep-or-change, the
 media model pick (three live options), C4's folder location, and B4's
-never-push list. Everything else stays decided-and-reported in both modes.
+never-push list — five items, all condition-dependent (each fires only when
+its trigger is live: a plan that needs no media, a run whose B4 applies to
+nothing, a folder already known to be the default). Each is numbered and
+counted under the same ceiling C as the rest of the run (the per-question
+counter owns the numbering; C4's basic form, like C4's R2 defaulting, is
+never a separate question). Everything else stays decided-and-reported in
+both modes. The R7 count is part of the advanced-mode arithmetic the "ceiling
+arithmetic, per target" paragraph owns; this section names the items, never
+a second count.
 
 ---
 
@@ -378,13 +399,17 @@ promises deliver that, and only the second one is arithmetic:
 
 2. **C is a CEILING, computed on the maximum reachable path AFTER the
    mandatory pre-statement reads — so the run can only ever finish UNDER it,
-   never over.** C is computed ONCE, before question 1, and never recomputed:
-   the number spoken up front is the run's only total, and it prices the R1
+   never over.** The ONE total is computed ONCE, before question 1, and never
+   recomputed silently: the number spoken up front prices the R1
    mode question at the target's ceiling-table wall — both modes live under
    that one wall. The mode answer is the first announced change to C: DEFAULT
    MODE lowers it to the R6 wall — nine — with the good-news line before
-   question 2; ADVANCED MODE keeps the wall. After that, C moves only by the
-   three rules below. The up-front statement speaks C together with the shortcut
+   question 2; ADVANCED MODE keeps the wall. Every later change to C is an
+   ANNOUNCED change, never silent — the three rules below are the only ways C
+   moves (lowerings with the good-news line; rises only for artwork at its
+   measured size, or the counter's failsafe correction) — and a question asked
+   past a stated ceiling with no prior correction is a defect. The up-front
+   statement speaks C together with the shortcut
    landing T, in the two-number form the arithmetic section owns — and in the
    single-number form ("at most <C> — usually fewer") whenever C − T ≤ 2.
    T is an expectation, never a promise: passing T breaks nothing, but the
@@ -1368,7 +1393,10 @@ above owns the rule). In ADVANCED MODE the no changes nothing arithmetically
 — the question was already priced into the ceiling — but it is the moment the
 run stops tracking toward T and starts tracking toward C, so say that too,
 plainly, using the remaining count the question itself just spoke. A no
-means ask them, one at a time, as written, at the advanced wall. The offer is
+means ask them, one at a time, as written, at the advanced wall. A yes
+(choosing DEFAULT MODE, or declining the defaults offer in a run where the
+offer must stand alone) means the run proceeds under the R6 wall — nine —
+exactly as R1 describes. The offer is
 a genuine choice — never steer, never default them silently (Law 40).
 
 **Fast path 2 — the small-plan collapse (after block A).** When the block-A answers

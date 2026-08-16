@@ -976,8 +976,10 @@ When the operator provides a folder, that folder IS the project. Its documents A
    ADVANCED MODE adds the R7 list. Everything else is DECIDED by the run and
    REPORTED as statements in the recap — never asked. The mode question is
    question 1 of the count: DEFAULT MODE asks R6's remaining items (2)-(9)
-   after it; the mode question itself is NEVER re-asked once answered.
-   Then the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
+   after it; the mode question itself is NEVER re-asked once answered. In
+   DEFAULT MODE the whole interview is R6 alone — never the lettered
+   A–D blocks; in ADVANCED MODE the lettered blocks (and the R7 items) run
+   under the target's ceiling-table wall. Then, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
