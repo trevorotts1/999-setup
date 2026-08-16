@@ -19,11 +19,12 @@ Enforces the locked 6-wave plan + operator rules for workflows and agents, every
      CONTROL/workflow-pids.json remains for out-of-process runs only.
   9. ENTRY-MODE (Issue 3 enforcement, spec-protocol skill): every project folder
      under ~/Downloads/projects/ whose CONTROL/project_state.json records a run
-     (run_status present and not "RUNNING") must carry an `ENTRY-MODE:
-     interview|pointed` line in its CONTROL/LEDGER.md. A folder with no
-     ENTRY-MODE line = the run bypassed the entry gate = violation. Folders
-     never created by a spec-protocol run (no project_state.json, or a
-     run_status explicitly not a run) are untouched.
+     (any truthy run_status — RUNNING included: the ENTRY-MODE line is written
+     at the entry gate BEFORE the project folder exists, so no legitimate run
+     state can lack it) must carry an `ENTRY-MODE: interview|pointed` line in
+     its CONTROL/LEDGER.md. A folder with no ENTRY-MODE line = the run bypassed
+     the entry gate = violation. Folders never created by a spec-protocol run
+     (no project_state.json, or no run_status field) are untouched.
 
 On violation: append VIOLATION-STOP lines to the ledger, write/update the stop file,
 exit 2 (governance-exit contract per PART 4). On clean: append one BOSSCYCLE-CLEAN line.
