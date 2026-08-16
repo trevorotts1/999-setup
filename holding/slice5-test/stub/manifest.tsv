@@ -1,0 +1,2 @@
+slot=hero:main	page=index	size=1K	aspect=1:1	prompt=band-passing-1K-smoke	provider=kie	model=gpt-image-2-text-to-image	cost=est-6-credits	temp-url=	expiry=	status=GENERATED-CAPTURED
+slot=body:feature	page=index	size=1K	aspect=1:1	prompt=band-passing-1K-smoke	provider=kie	model=gpt-image-2-text-to-image	cost=est-6-credits	temp-url=	expiry=	status=GENERATED-CAPTURED
