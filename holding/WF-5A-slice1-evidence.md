@@ -45,6 +45,27 @@ checks on the no-go keys returned 0 with rc=1 (zero matches, not a broken instru
 | 19 | CLAUDE_CODE_DISABLE_WORKFLOWS | DO NOT SET | ABSENT | ABSENT | CONFIRMED ABSENT |
 | 20 | Settings precedence | known order recorded | N/A (doctrine row) | N/A | N/A |
 
+## Extra keys — justified (outside unleash table)
+
+The ~/.claude-nine/settings.json env block carries 9 keys not in the Issue 16 unleash
+table (lines 340-363). Each justified below. No extra key sits unaccounted.
+
+| Key | Line | Justification |
+|---|---|---|
+| ANTHROPIC_BASE_URL | env L5 | 9Router gateway routing — claude-nine sends all traffic through the local 9Router at 127.0.0.1:20128; plain `claude` untouched (repo rule 9). |
+| ANTHROPIC_DEFAULT_FABLE_MODEL | env L6 | Router-chain resolution — Fable resolves to `fusion-coding`, mirroring modelOverrides row (table row 11, L29). |
+| ANTHROPIC_DEFAULT_OPUS_MODEL | env L7 | Router-chain resolution — Opus resolves to `opus-chain`, mirroring modelOverrides row (L25). |
+| ANTHROPIC_DEFAULT_SONNET_MODEL | env L8 | Router-chain resolution — Sonnet resolves to `sonnet-chain`, mirroring modelOverrides row (L26). |
+| ANTHROPIC_DEFAULT_HAIKU_MODEL | env L9 | Router-chain resolution — Haiku resolves to `haiku-chain`, mirroring modelOverrides row (L27). |
+| CLAUDE_CODE_SUBAGENT_MODEL | env L10 | Subagent model routing through the router — `inherit` keeps subagents on the same routed chain as the parent. |
+| CLAUDE_CODE_API_KEY_HELPER_TTL_MS | env L13 | API key helper cache TTL (3600000 ms) — security posture: bounds how long a router-issued key is cached before the helper (apiKeyHelper L3) re-issues. |
+| DISABLE_LOGIN_COMMAND | env L14 | Operator box posture — no interactive login flow for the routed launcher; auth comes from the key helper. |
+| DISABLE_LOGOUT_COMMAND | env L15 | Operator box posture — no interactive logout flow; logout would not clear the helper-issued router key cleanly. |
+
+All 9 keys verified present on disk at the cited lines in /Users/blackceomacmini/.claude-nine/settings.json.
+None of the 9 conflicts with any spec row; the modelOverrides table row (row 11) and the
+DEFAULT_*_MODEL env keys are two mechanisms pointing at the same four router chains.
+
 ## Summary
 
 - 14 of 20 rows PRESENT CORRECT on disk (rows 1-4, 8-14, 16) — all cite exact spec line numbers.
