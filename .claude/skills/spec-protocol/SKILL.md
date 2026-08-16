@@ -953,7 +953,6 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-   Then ask the target's Step 1d discovery branch (references/interview.md) — counted questions, numbered per the counter.
 6. **Capacity interview (Claude-Nine only).** THE MODE OFFER FIRST — the
    operator ruling R1 in `references/interview.md` (section "R1. The two
    modes — offered FIRST, not at question eleven") is a hard gate. After the
@@ -979,7 +978,14 @@ When the operator provides a folder, that folder IS the project. Its documents A
    after it; the mode question itself is NEVER re-asked once answered. In
    DEFAULT MODE the whole interview is R6 alone — never the lettered
    A–D blocks; in ADVANCED MODE the lettered blocks (and the R7 items) run
-   under the target's ceiling-table wall. Then, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
+   under the target's ceiling-table wall.
+   Then ask the target's Step 1d discovery branch (references/interview.md) —
+   counted questions, numbered per the counter. Step 1d is asked only in
+   ADVANCED MODE: the R6 nine-item wall governs DEFAULT MODE, and Step 1d is
+   not in the R6 list. The Step 1d branch runs BEFORE the lettered blocks
+   (archetype → mode question → Step 1d branch, THEN the lettered A–D blocks
+   and R7 items).
+   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
