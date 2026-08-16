@@ -818,6 +818,13 @@ probed callable; resolution RECORDS, it never reroutes).
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
 are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
 
+**Counts are SLICES, never concurrency.** Every workflow's agents execute in
+sequential batches of at most clientCap (Section 13.4) — never all at once. The
+slice counts are the declared full-capacity totals; the batch shape derives from
+the machine: batch size = clientCap, batches = ceil(slice count / clientCap),
+wave count unchanged. **No model name appears in any declaration in this
+section.**
+
 ### 13.1 The six workflows
 
 **Each workflow below declares its seat by REQUIREMENT — never by a model name.**
@@ -1115,7 +1122,7 @@ order, one loop in both modes.
 | 16 | RECONCILE NATIVE TASKS | lead runs tools/anchor.sh --mode reconcile; executes its ACTIONS | RECONCILE TASKS NOW (references/anti-drift.md) |
 | 17 | MARK TASK COMPLETE ONLY IF PASSED — then LOCK | lead (TaskUpdate) — gated by the six-condition completion law; passing components locked | execution-architecture.md; pipeline.md locks |
 | 18 | UNBLOCK DEPENDENCIES | the graph's edges release dependents | never a merge gate (D11 cut) |
-| 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; ≥200 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
+| 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; at ≥150 executions the lead ANALYZES whether measurable progress is still occurring (compare the state-delta fingerprint, the workstream pass/fail counts, and the last checkpoint against the spend — `references/anti-drift.md` class 6) and RECORDS the analysis in the ledger before any further dispatch; ≥200 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
 
 **The five phases — the human's handle on nineteen rows.** The table above is the
 MACHINE's checklist: nineteen discrete stations, each with an owner and a carrier,

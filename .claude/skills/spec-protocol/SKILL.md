@@ -1091,7 +1091,35 @@ When the operator provides a folder, that folder IS the project. Its documents A
     an agent that cannot be given all four is NOT planned, and a plan row that
     names only a count is padding, not a plan.** The gauntlet workflow
     topology (`references/gauntlet.md`, Section 13) is the default shape, scaled
-    by the Capacity Ledger. **No Parallelism Plan, no dispatch** — the self-audit
+    by the Capacity Ledger. **The Parallelism Plan carries the six gauntlet
+    workflows BY NAME with their EXACT agent counts (SLICES, never concurrency —
+    `references/gauntlet.md` §13.1): WORKFLOW 01 BLUEPRINT LOCK = 8 planner-seat
+    agents (no production coding — outputs synthesized into locked architecture,
+    MVP spec, workstream boundaries, acceptance matrix, evidence + regression
+    requirements; single batch, 8 ≤ clientCap); WORKFLOW 02 PRIMARY BUILD = 16
+    builder-seat agents (one slice each, explicit ownership, no uncontrolled
+    overlapping edits; sequential batches of at most clientCap — 2 batches
+    (10 + 6) at clientCap 10); WORKFLOW 03 BLIND VISUAL GAUNTLET = 16
+    blind-visual-judge seats (rendered evidence only, never builder reasoning;
+    same batching as WORKFLOW 02 — 2 batches (10 + 6) at clientCap 10);
+    WORKFLOW 04 TECHNICAL GAUNTLET = 8 technical-judge seats (single batch,
+    8 ≤ clientCap); WORKFLOW 05 FINAL RELEASE COUNCIL = 4 council-judge seats,
+    independent, RELEASE REQUIRES 4/4 = PASS, a FAIL or UNVERIFIED from any
+    judge prevents release (single batch, 4 ≤ clientCap); WORKFLOW 06 SELECTIVE
+    REPAIR LOOP = 1 repair seat per failed workstream, MAX 12 per repair wave
+    (repair seats capped at clientCap per wave, remainder batched sequentially;
+    one NEW blind visual verifier per repaired visual workstream — never reuse
+    the previous verifier's judgment; only affected technical judges re-run;
+    ALWAYS rerun the 4-seat release council after all failures clear).
+    clientCap = min(systemConcurrentMax, cores−2) where systemConcurrentMax is
+    the operator's DECLARED max (10 on the operator's machine) — authoritative
+    for computing the cap; an environment read is permitted for REPORTING only,
+    never for computing. Counts are slices, never concurrency — every workflow's
+    agents execute in sequential batches of at most clientCap, never all at
+    once; scaling formula: batch size = clientCap, batches = ceil(slice count /
+    clientCap), wave count unchanged. THE BAR NEVER SHRINKS WITH THE MACHINE —
+    only the width does; a weak machine runs narrower and longer, never to a
+    lower standard.** **No Parallelism Plan, no dispatch** — the self-audit
     (step 20) and the swarm watch (RULE 5) both check for it; a dispatch that is
     not in the plan, or a plan section that names no capacity derivation, FAILS.
 13. **Write the specification.** Decompose the mission into numbered, atomic,
@@ -1147,8 +1175,25 @@ When the operator provides a folder, that folder IS the project. Its documents A
     questions from round zero, with run_status=RUNNING, the agent-budget
     declaration copied from the Capacity Ledger, and the checkpoint rules
     (references/execution-architecture.md): the seven checkpoint moments, the
-    tag scheme, and the best-stable-build pointer. State survives context
-    windows on disk — never in conversation memory.
+    tag scheme, and the best-stable-build pointer. The agent-budget
+    declaration carries the gauntlet stations (`references/capacity.md` §10,
+    `references/gauntlet.md` §13.2): expected initial run **52** agent
+    executions (8+16+16+8+4); normal complete project **75–125**; at **150**
+    the orchestrator analyzes whether measurable progress is still occurring
+    and records the analysis; at **200** the run STOPS — spawn nothing
+    further, preserve the best stable build, produce a blocker report
+    explaining why the bar was not reached, and exit
+    `run_status=STOPPED_CAP` (a LIMIT REACHED non-success, never relabeled
+    PASS). The counter is `agents.executions_total` in the state file; the
+    reconciler audits it against the hard cap and the warning threshold every
+    pass (`references/anti-drift.md` class 6). The state file also carries the
+    SIX-WORKFLOW declaration from the Parallelism Plan (each of the six gauntlet
+    workflows by name with its exact slice count: WORKFLOW 01 BLUEPRINT LOCK 8,
+    WORKFLOW 02 PRIMARY BUILD 16, WORKFLOW 03 BLIND VISUAL GAUNTLET 16,
+    WORKFLOW 04 TECHNICAL GAUNTLET 8, WORKFLOW 05 FINAL RELEASE COUNCIL 4,
+    WORKFLOW 06 SELECTIVE REPAIR LOOP 1 per failed workstream max 12 per wave —
+    counts are SLICES, never concurrency; `references/gauntlet.md` §13.1). State
+    survives context windows on disk — never in conversation memory.
 16.9. **Decide the orchestration mode and, on consent, spawn the team
     (references/agent-team.md).** **DEFAULT (operator ruling, 2026-08-14):
     single-session lead + paired-tree workflows — teams are formed ONLY when
@@ -1535,6 +1580,7 @@ See `references/audience.md` for the full audience UX rules.
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
 | Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, move on. |
+| Agent budget (gauntlet stations) | Expected initial run 52; normal complete project 75–125; warning 150 (orchestrator analyzes whether measurable progress continues — `references/gauntlet.md` §13.2, `references/capacity.md` §10); hard cap 200 — at 200 STOP, preserve the best stable build, produce a blocker report, exit `run_status=STOPPED_CAP` (LIMIT REACHED, never relabeled PASS) | The declared baseline from the Capacity Ledger's AGENT BUDGET DECLARATION; enforced every reconcile pass by the class-6 budget audit (`references/anti-drift.md`). Counts workflow agent executions only — a different meter from the 1,000-per-session budget. |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |
