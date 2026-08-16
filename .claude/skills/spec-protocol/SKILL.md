@@ -1110,7 +1110,16 @@ When the operator provides a folder, that folder IS the project. Its documents A
     chosen — Law 18), lanes (one per repository), the holding pen + landing queue
     tables (Rule 3.26), the loop register (Rule 3.24), the budget (the 9.4
     quantities + the spend-per-window inequality + one worked example — carried in
-    `references/loops.md`).
+    `references/loops.md`). **When the build generates images, the execution
+    plan ALSO carries the IMAGE-MANIFEST section** (documents.md, document 16):
+    an enumerated list written BEFORE the first build dispatch, one row per
+    planned image (slot, page, size, aspect, generation prompt, provider, model,
+    cost, and the temp URL + 24h expiry recorded at generation time — the full
+    row contract is `references/media-pipeline.md` section 14.1). **The manifest
+    is the authoritative image list — no image is generated outside it.** Rows
+    are written only after the provider-reachability gate passes (step 6's
+    media-block close); on a gate fail the run takes the without-media path and
+    writes no generation-eligible rows.
 16.2. **Write PROJECT-MANIFEST.md (document 17 — SPEC/PROJECT-MANIFEST.md).**
     The durable architectural source of truth: how THIS project is supposed to
     operate. Its eighteen contents (references/execution-architecture.md carries
@@ -1681,7 +1690,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
 17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, **§4.1 — the trust pre-flight** (REQUIRED before the first spawn of every run; a fresh build directory is always untrusted), the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover), and **§10 — the SINGLE OWNER of teammate-liveness verification**: the teammate's own session transcript is the primary instrument; `ListAgents` corroborates and never decides; the `inboxes/{name}.json` artifact is a split-pane-only corroborator that may never ground a negative verdict; and a disbanded team's directory is gone while its transcripts persist. Read the procedure THERE — it is never restated anywhere else (Step 16.9, and any moment a spawn's liveness is in question)
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
-19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
+19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.** Its image-manifest section is the row contract for the execution plan's IMAGE-MANIFEST section (step 16, document 16) — one row per planned image, written before the first build dispatch, no image generated outside the manifest.
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)

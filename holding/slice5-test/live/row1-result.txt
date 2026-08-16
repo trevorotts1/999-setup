@@ -1,0 +1,1 @@
+status=GENERATED-CAPTURED file=live//row1-hero:main.png bytes=  945874 magic=89504e470d0a1a0a sha256=2e79fad48684ba1d824108cf7d5a863fe9c08ec3be5503127e850112f93c2668

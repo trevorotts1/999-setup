@@ -1,0 +1,1 @@
+status=GENERATED-CAPTURED file=live//row2-body:feature.png bytes=  900030 magic=89504e470d0a1a0a sha256=d4d644698e5a329c63d3e5479438807e3e9d05b0c765fdbfce2f345e995dc98c

@@ -406,11 +406,33 @@ FAIL if: <exact condition> → incomplete because <reason>
   dimensions; the binary decision rule; the evidence requirements; the integrated
   final gate; the regression gate; the success stop rule; and the non-success
   states. This is the single bar the whole run is judged against.
+- **THE IMAGE-MANIFEST section (media fold — folds into document 16; never a new
+  file; the row contract lives in references/media-pipeline.md section 14.1,
+  "The image manifest — the lane's single source of truth")** — when the build
+  generates images, the execution plan gains an IMAGE-MANIFEST section: an
+  ENUMERATED list, one row per planned image, written BEFORE the first build
+  dispatch. Each row is one generation and carries the row contract from
+  media-pipeline.md section 14.1: slot (page + section), page, size,
+  aspect, generation prompt (band-passing), provider, model, cost, and — because
+  provider URLs are temporary (Kie.ai 24h expiry, media-pipeline.md section
+  13.6) — the generated temp URL and its 24h expiry deadline, recorded at
+  generation time in the same pipeline step as the capture, plus the row's
+  status from the exhaustive state list (13.3). **The manifest is the
+  AUTHORITATIVE image list: no image is generated outside it; every generation
+  has exactly one manifest row.** A row
+  is written only after the provider-reachability gate passes
+  (interview.md, PROVIDER-READY); on a gate fail the run takes the
+  without-media path (media-pipeline.md section 9.3) and no manifest rows are
+  written as generation-eligible. The boss cron's per-cycle orphan sweep
+  (Issue 10) reads THIS section: generated = manifest = uploaded = referenced,
+  zero orphans.
 - **What makes it wrong:** a number with no derivation behind it; a loop in the
   register that was never written as a definition file; a wave count that was chosen
   rather than derived; a queue with no batch size; a pen with no failure path or
   freshness rule; the budget missing any of the seven quantities or the inequality
-  (Rules 3.21, 3.26, 3.32).
+  (Rules 3.21, 3.26, 3.32); a media build whose execution plan lacks the
+  IMAGE-MANIFEST section, or a generation that exists without a manifest row, or
+  a manifest row written before the provider-reachability gate passed.
 
 ### Document 17 — Project manifest
 - **Path:** `SPEC/PROJECT-MANIFEST.md`
