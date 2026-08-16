@@ -26,7 +26,7 @@ RECAP: recorded as a default — Kie.ai, because both keys were found and the re
 Question 4 of no more than 9 — Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the hundred-dollar-a-month one? If you are not sure, I will assume the twenty-dollar one — that is a fine answer.
 ANSWER: the hundred-dollar-a-month one.
 
-Question 5 of no more than 9 — Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"? Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick.
+Question 5 of no more than 9 — Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"? Name it if one comes to mind. If nothing does, or if you are not sure, that is fine — later I will show you two or three excellent ones and you will pick from them, and I will tell you which I recommend.
 ANSWER: nothing comes to mind.
 RECAP: decided — two or three excellent examples will be picked from the research and shown to you.
 
@@ -36,10 +36,10 @@ RECAP: decided — two or three excellent examples will be picked from the resea
 Question 6 of no more than 9 — When your finished app stands next to that example, which is the goal? (a) Mine stands shoulder to shoulder with it — as good as it, or better; a tie counts as done. (b) The example is more like a rulebook — mine has to meet every requirement it stands for. Pick one. If you are not sure, I will choose (a) — that is a fine answer.
 ANSWER: (a).
 
-Question 7 of no more than 9 — Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours? Something that annoys you, slows you down, or gets in your way. "Nothing comes to mind" is a real answer.
+Question 7 of no more than 9 — Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours? Something that annoys you, slows you down, or gets in your way. "Nothing comes to mind" is a real answer. If you are not sure, I will consider that and move on — that is a fine answer.
 ANSWER: nothing comes to mind.
 
-Question 8 of no more than 9 — To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay? If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it.
+Question 8 of no more than 9 — To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay? If you would rather not, or if you are not sure, that is a real answer — I will tell you plainly what I can and cannot prove without it.
 ANSWER: yes, the download is okay.
 
 Question 9 of no more than 9 — Here is how I will know it is finished: the site is live at its own web address, and the pictures are in place. Does that match — yes, or tell me what is missing? If you are not sure, I will take that as a yes — that is a fine answer.
