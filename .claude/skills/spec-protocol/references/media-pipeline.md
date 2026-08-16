@@ -1657,6 +1657,43 @@ after reserve **and** to the daily meter's remaining count; kie batches size to
 balance ÷ measured per-item cost, reserve applied. **The 25% reserve doctrine
 applies to media meters exactly as it does to request windows.**
 
+### 10.1 THE 1:1:1 RULE — generated = manifest = uploaded; references may be N
+
+**The accounting contract that makes token waste visible (Issue 10 FIX step 1).**
+Every generated asset has **exactly one manifest row** and **exactly one upload**
+(or an honestly marked gap). References may be N — a shared asset is one manifest
+row, one generation, one upload, and N references — and **every one of the N is
+counted**. Zero orphans in either direction:
+
+| Orphan class | Definition | Disposition |
+|---|---|---|
+| **UNTRACKED-GENERATION** | A generation with no manifest row — spend with no plan | Violation — the row is created retroactively with its taskId and `creditsConsumed`, or the spend is reported as a loss |
+| **UNGENERATED-MANIFEST-ROW** | A manifest row with no generation | **Marked gap** — the row carries its prepared prompt and estimated cost, and joins the MEDIA-GAPS manifest (9.3) as one resumable batch; never silently dropped |
+| **UNREFERENCED-UPLOAD** | An upload with no reference — a permanent asset nothing consumes | Violation — the row gains a reference or the upload is reported; a generated asset nothing consumes is a generated bill (section 7) |
+| **UNCOUNTED-REFERENCE** | A reference not traceable to a manifest row — the N that was never counted | Violation — the reference is traced to its row or the row is created |
+
+**The four counts are reconciled at every media batch boundary and by the boss
+cron's per-cycle orphan sweep (PART 4 check 7):** generations, manifest rows,
+uploads, references. Any mismatch is a `VIOLATION-STOP` on the media lane with
+each orphan named by class and file. **The ledger classes the sweep reads are
+fixed — the pipeline writes them, the sweep counts them, and the two never
+disagree:**
+
+```
+MANIFEST-ROW <id>: page=<page> slot=<slot> url=<tempUrl> expires=<ISO8601>
+MANIFEST-ROW <id>: page=<page> slot=<slot> status=gap
+IMAGE-GENERATED <id>: task=<taskId> url=<tempUrl>
+GHL-URL <id>: url=<ghlUrl>
+IMAGE-REF <id>: page=<page> slot=<slot>
+```
+
+A `MANIFEST-ROW` with `status=gap` is an intentional marked gap — it has no
+`IMAGE-GENERATED` by design and is excluded from the equality comparison. **The
+expiry class is part of the sweep:** a manifest row whose provider temp URL is
+older than its 24-hour deadline (kie) and carries no GHL URL is a token-waste
+orphan — the generation's spend is already gone — and is `VIOLATION-STOP` on the
+media lane (section 13.6, section 13.10).
+
 ---
 
 ## 11. FAILURE BEHAVIOR — every path, honestly
