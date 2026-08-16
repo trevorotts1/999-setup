@@ -18,6 +18,11 @@ fork picking, no "find a similar skill" fallback.
 4. **Visual generation** — Kie.ai (PRIMARY, preserve the existing
    implementation) and Agnes AI (APPROVED ALTERNATIVE). Never both required.
    Higgsfield is NOT a mandatory dependency and is never auto-installed.
+5. **The MCP trio** — three live hosted MCP servers the build pipeline leans
+   on: **Supabase MCP** (`https://mcp.supabase.com/mcp`, OAuth, no PAT),
+   **GitHub MCP** (`https://api.githubcopilot.com/mcp/`, OAuth default, PAT
+   optional), **Vercel MCP** (`https://mcp.vercel.com`, via
+   `vercel mcp --clients "Claude Code"` or the `vercel/vercel-plugin`).
 
 ## Detection (ALWAYS BEFORE INSTALL)
 
@@ -30,9 +35,11 @@ The bootstrap runs detection first, for every dependency, in this order:
 4. `claude /plugin` help output (or the installed version's plugin command) —
    installed plugins and marketplaces.
 5. `jq '.mcpServers' ~/.claude.json` — user-scope MCP servers (look for
-   `supabase`).
+   `supabase`, `github`, `vercel`).
 6. `jq '.mcpServers' ~/.claude-nine/.claude.json` — claude-nine config store
    (see claude-nine compatibility below).
+7. Project `.mcp.json` — project-scoped servers (Supabase MCP is registered
+   project-scope by its official command).
 
 A capability is "Already Installed" ONLY when discovery succeeds — a
 directory alone is not proof. Do not claim installed merely because a path
@@ -86,6 +93,15 @@ fresh session starts.
   `npx skills add supabase/agent-skills --skill supabase-postgres-best-practices`).
 - Supabase plugin: `npx plugins add supabase-community/supabase-plugin`
   (skills + Supabase MCP + vendor integration in one).
+- Supabase MCP (the live server):
+  `claude mcp add --scope project --transport http supabase "https://mcp.supabase.com/mcp"`.
+- GitHub MCP (the live server): hosted endpoint
+  `https://api.githubcopilot.com/mcp/` (OAuth default; PAT optional and
+  takes precedence — a PAT lives in an env file or secret store, never in
+  the repository).
+- Vercel MCP: `vercel mcp --clients "Claude Code"` — `--clients` is
+  REQUIRED in non-interactive environments (without it the command fails
+  with `missing_clients`); `--project` scopes access to the linked project.
 - Visual generation: NEVER auto-create paid subscriptions. Kie.ai stays the
   primary; configure Agnes only when the project chooses it.
 
@@ -95,6 +111,11 @@ fresh session starts.
 - Function: actual discovery from the AI coding environment — the skill shows
   in the skill list, the plugin shows in the plugin list, the MCP server shows
   in `/mcp`, the CLI executable runs (`uipro --version` or equivalent).
+- MCP trio: the server entry is registered in the store the launching CLI
+  reads (both stores when claude-nine is separate) AND, for Supabase/GitHub,
+  the auth flow is the browser OAuth (`claude /mcp` → server → Authenticate).
+  A registered-but-unauthenticated server reports "Authentication Required",
+  never "Failed" and never "Skipped".
 
 ## Report format (end of every bootstrap)
 

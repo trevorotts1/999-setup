@@ -90,6 +90,34 @@ mcp_registered_cc9() {
         "$CC9_CONFIG_DIR/.claude.json" >/dev/null 2>&1
 }
 
+mcp_registered_project() {
+  local server="$1"
+  [ -f "$PWD/.mcp.json" ] \
+    && jq -e --arg s "$server" '.mcpServers[$s] != null' \
+        "$PWD/.mcp.json" >/dev/null 2>&1
+}
+
+# Project-scoped store: entries nested under .projects/<path>/mcpServers in
+# the main .claude.json files (claude mcp add --scope project writes there).
+mcp_in_projects_store() {
+  local file="$1" server="$2"
+  [ -f "$file" ] \
+    && jq -e --arg s "$server" '.projects | to_entries[] | ((.value.mcpServers // {})[$s]) != null' \
+        "$file" >/dev/null 2>&1
+}
+
+# Any store entry whose URL contains the fragment (for servers whose config
+# key may vary, e.g. the Vercel CLI's).
+mcp_url_in_any_store() {
+  local frag="$1"
+  for f in "$HOME/.claude.json" "$CC9_CONFIG_DIR/.claude.json" "$PWD/.mcp.json"; do
+    [ -f "$f" ] || continue
+    jq -e --arg f "$frag" '.mcpServers | to_entries[] | select((.value.url // "") | contains($f))' \
+        "$f" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
 # --- report -----------------------------------------------------------
 
 report() {
@@ -103,6 +131,8 @@ report() {
   say "6. Claude Code discovery status: $( [ -x "$(command -v claude 2>/dev/null || true)" ] && echo "checked (see sections)" || echo "UNDETERMINED — claude binary not found on PATH" )"
   say "7. Claude-nine discovery status: $( if [ -d "$CC9_CONFIG_DIR" ]; then echo "checked (see sections)"; else echo "UNDETERMINED — $CC9_CONFIG_DIR not present on this box"; fi )"
   say "8. Supabase MCP status: see Supabase section."
+  say "8b. GitHub MCP status: see GitHub MCP section (OAuth default; PAT optional)."
+  say "8c. Vercel MCP status: see Vercel MCP section (vercel CLI auth)."
   say "9. Supabase authentication status: see Supabase section."
   say "10. Kie.ai configuration status: Kie.ai is PRIMARY and already implemented inside Spec Protocol — preserved, not reinstalled (see references/dependency-sources.md section 4)."
   say "11. Agnes AI configuration status: Agnes is the APPROVED ALTERNATIVE — configured only when the project chooses it; never required, never auto-subscribed."
@@ -231,21 +261,93 @@ else
   fi
 fi
 
-if mcp_registered supabase; then
-  ok "MCP available (plain claude store: \$HOME/.claude.json)"
+if mcp_registered supabase || mcp_registered_cc9 supabase || mcp_registered_project supabase \
+   || mcp_in_projects_store "$HOME/.claude.json" supabase || mcp_in_projects_store "$CC9_CONFIG_DIR/.claude.json" supabase; then
+  ok "MCP available"
 else
-  warn "Supabase MCP not registered in \$HOME/.claude.json — install it via Claude Code (check https://supabase.com/docs/guides/ai-tools/plugins for the current official flow) or hand the client the dashboard onboarding below."
-fi
-
-if [ "$CC9_IS_SEPARATE" -eq 1 ]; then
-  if mcp_registered_cc9 supabase; then
-    ok "MCP available (claude-nine config store)"
+  say "MCP not detected — installing from the locked source..."
+  if command -v claude >/dev/null 2>&1; then
+    claude mcp add --scope project --transport http supabase "https://mcp.supabase.com/mcp" 2>&1 | sed 's/^/  /' \
+      && { mcp_registered_project supabase && ok "MCP available (project scope)" || warn "add ran; project .mcp.json entry not detected yet — restart Claude Code and re-run this script."; } \
+      || bad "Supabase MCP add failed. Source: https://supabase.com/docs/guides/getting-started/mcp — report this failure; do not substitute another endpoint."
   else
-    warn "Supabase MCP not registered in $CC9_CONFIG_DIR/.claude.json — a claude-nine session with a separate CLAUDE_CONFIG_DIR will NOT see it. Register it there too, or rely on the shared-config install-once rule."
+    warn "claude binary not on PATH — manual step: claude mcp add --scope project --transport http supabase \"https://mcp.supabase.com/mcp\""
   fi
 fi
 
-say "Authentication status: Undetermined until /mcp shows the server — Supabase MCP uses browser OAuth; never ask the client to paste secret keys into AI chat."
+if [ "$CC9_IS_SEPARATE" -eq 1 ] && ! mcp_registered_cc9 supabase; then
+  warn "Supabase MCP not registered in $CC9_CONFIG_DIR/.claude.json — a claude-nine session with a separate CLAUDE_CONFIG_DIR will NOT see it. Register it there too, or rely on the shared-config install-once rule."
+fi
+
+say "Authentication status: browser OAuth (claude /mcp -> supabase -> Authenticate) — never ask the client to paste secret keys into AI chat. Undetermined until /mcp shows the server."
+
+# =====================================================================
+# 3c. GITHUB MCP — https://api.githubcopilot.com/mcp/
+# =====================================================================
+say ""
+say "Checking GitHub MCP..."
+say "Source: https://github.com/github/github-mcp-server (hosted endpoint: https://api.githubcopilot.com/mcp/)"
+
+if mcp_registered github || mcp_registered_cc9 github || mcp_registered_project github \
+   || mcp_in_projects_store "$HOME/.claude.json" github || mcp_in_projects_store "$CC9_CONFIG_DIR/.claude.json" github; then
+  ok "MCP available"
+else
+  say "MCP not detected — installing from the locked source..."
+  if command -v claude >/dev/null 2>&1; then
+    claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" 2>&1 | sed 's/^/  /'
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      { mcp_registered github || mcp_in_projects_store "$HOME/.claude.json" github; } && ok "MCP available" \
+        || warn "add ran; entry not detected yet — restart Claude Code and re-run this script."
+    elif [ $rc -eq 1 ] && { mcp_registered github || mcp_in_projects_store "$HOME/.claude.json" github; }; then
+      # rc=1 with an existing entry = "already exists in local config" —
+      # Already Installed, not Failed.
+      ok "MCP available (already registered)"
+    else
+      bad "GitHub MCP add failed. Source: https://github.com/github/github-mcp-server — report this failure; do not substitute another endpoint."
+    fi
+  else
+    warn "claude binary not on PATH — manual step: claude mcp add --transport http github \"https://api.githubcopilot.com/mcp/\""
+  fi
+fi
+
+if [ "$CC9_IS_SEPARATE" -eq 1 ] && ! mcp_registered_cc9 github; then
+  warn "GitHub MCP not registered in $CC9_CONFIG_DIR/.claude.json — a claude-nine session with a separate CLAUDE_CONFIG_DIR will NOT see it. Register it there too, or rely on the shared-config install-once rule."
+fi
+
+say "Authentication status: OAuth by default (browser login on first use). A GitHub PAT is optional and takes precedence when set — it must live in an env file or secret store, never in the repository."
+
+# =====================================================================
+# 3d. VERCEL MCP — https://mcp.vercel.com
+# =====================================================================
+say ""
+say "Checking Vercel MCP..."
+say "Source: https://vercel.com/docs/cli/mcp (hosted endpoint: https://mcp.vercel.com)"
+
+if mcp_registered vercel || mcp_url_in_any_store "mcp.vercel.com"; then
+  ok "MCP available"
+else
+  say "MCP not detected — installing from the locked source..."
+  if command -v vercel >/dev/null 2>&1; then
+    say "vercel CLI present; configuring Claude Code..."
+    vercel mcp --clients "Claude Code" 2>&1 | sed 's/^/  /' \
+      && { mcp_url_in_any_store "mcp.vercel.com" && ok "MCP available" || warn "vercel mcp ran; entry not detected yet — restart Claude Code and re-run this script."; } \
+      || bad "Vercel MCP setup failed. Source: https://vercel.com/docs/cli/mcp — report this failure; do not substitute another endpoint."
+  elif command -v npx >/dev/null 2>&1; then
+    say "vercel CLI absent; running via npx (--clients is REQUIRED non-interactively; without it the command fails with missing_clients)..."
+    npx --yes vercel mcp --clients "Claude Code" 2>&1 | sed 's/^/  /' \
+      && { mcp_url_in_any_store "mcp.vercel.com" && ok "MCP available" || warn "vercel mcp ran; entry not detected yet — restart Claude Code and re-run this script."; } \
+      || bad "Vercel MCP setup failed. Source: https://vercel.com/docs/cli/mcp — report this failure; do not substitute another endpoint."
+  else
+    warn "Neither vercel CLI nor npx available — manual step: vercel mcp --clients \"Claude Code\" (or npx plugins add vercel/vercel-plugin)"
+  fi
+fi
+
+if [ "$CC9_IS_SEPARATE" -eq 1 ] && ! mcp_registered_cc9 vercel && ! mcp_url_in_any_store "mcp.vercel.com"; then
+  warn "Vercel MCP not registered in $CC9_CONFIG_DIR/.claude.json — a claude-nine session with a separate CLAUDE_CONFIG_DIR will NOT see it. Register it there too, or rely on the shared-config install-once rule."
+fi
+
+say "Authentication status: the Vercel CLI handles auth (vercel login); the MCP session scopes to the linked Vercel project. Never ask the client to paste a token into AI chat."
 
 # =====================================================================
 # 4. KIE.AI — PRIMARY image/video. https://kie.ai / https://docs.kie.ai

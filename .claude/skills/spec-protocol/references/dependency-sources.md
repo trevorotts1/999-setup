@@ -70,6 +70,61 @@ Claude Code version and the official Supabase documentation before choosing
 between methods; prefer the method that installs the complete current integration
 without creating duplicate installations.
 
+## 3b. Supabase MCP (the live server)
+
+- Hosted endpoint: `https://mcp.supabase.com/mcp` (local dev:
+  `http://localhost:54321/mcp`)
+- Docs: https://supabase.com/docs/guides/getting-started/mcp
+
+Claude Code add command (project scope):
+
+```bash
+claude mcp add --scope project --transport http supabase "https://mcp.supabase.com/mcp"
+```
+
+Auth: dynamic client registration OAuth — a browser window opens, the client
+logs into Supabase and grants access. No personal access token required.
+
+## 3c. GitHub MCP
+
+- Official repository: https://github.com/github/github-mcp-server
+- Hosted endpoint: `https://api.githubcopilot.com/mcp/`
+  (insiders: `https://api.githubcopilot.com/mcp/insiders` or header
+  `"X-MCP-Insiders": "true"`)
+- Docs: https://docs.github.com/en/copilot/concepts/agents/model-context-protocol
+
+Auth (default, github.com): OAuth — the official image ships app credentials;
+the browser login happens on first use. A GitHub personal access token may be
+used instead (it takes precedence over OAuth); a PAT must live in an env file
+or secret store, never in the repository.
+
+Docker local form (when a local server is wanted instead of the hosted
+endpoint):
+
+```bash
+claude mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=$GITHUB_PAT -- docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server
+```
+
+## 3d. Vercel MCP
+
+- Hosted endpoint: `https://mcp.vercel.com` (project-scoped:
+  `https://mcp.vercel.com/<org>/<project>`)
+- CLI docs: https://vercel.com/docs/cli/mcp
+- Server docs: https://vercel.com/docs/agent-resources/vercel-mcp
+- Official plugin: `npx plugins add vercel/vercel-plugin`
+
+Claude Code setup (the Vercel CLI configures the client directly):
+
+```bash
+vercel mcp --clients "Claude Code"
+```
+
+The command is interactive by default; `--clients` is REQUIRED in
+non-interactive environments (CI) — without it the command fails with
+`missing_clients`. `--project` scopes MCP access to the linked Vercel
+project. The command never deploys an MCP server of its own; it only
+adjusts client-side configuration.
+
 ## 4. KIE.AI
 
 - Website: https://kie.ai/
