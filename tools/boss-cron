@@ -133,6 +133,8 @@ SANCTIONED_CLASSES = {
     # records carry the MERGED class; scope must never flag the merge evidence.
     "MERGED",
     "REVIEW", "WAVE-REVIEW", "REVIEW-FINDING",
+    # Wave-1A verification completion lines (Issue 1 functional-relaunch transcript).
+    "WF-1A-VERIFIED",
     "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
     "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     # Wave-boundary reconcile markers (drift check 6 mandate) — sanctioned:
