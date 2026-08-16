@@ -131,6 +131,9 @@ SANCTIONED_CLASSES = {
     "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
     "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
     "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
+    # Wave-boundary reconcile markers (drift check 6 mandate) — sanctioned:
+    # the scope check must never flag the very lines the drift check requires.
+    "RECONCILE", "RE-ANCHOR",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
     "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
     "PAYMENT-CONTRACT", "INTERVIEW-MODE",
@@ -534,10 +537,13 @@ def check_drift(lines):
             if dispatched_at is not None and dispatched_at < epoch:
                 continue  # pre-enforcement dispatch — exempt, no retroactive judgement
         # Window: after WAVE (wave-1) CLOSED, before this wave's dispatch line.
+        # The CLOSED match must be anchored to the class token — prose like
+        # "after WAVE 4 CLOSED" inside RECONCILE/VIOLATION-STOP bodies re-arms
+        # the window mid-line and swallows the reconcile evidence.
         window = []
         in_window = False
         for other in lines:
-            c = re.search(r"WAVE (\d+) CLOSED", other)
+            c = re.match(r"^- `WAVE (\d+) CLOSED\b", other)
             if c and int(c.group(1)) == wave - 1:
                 in_window = True
                 continue
