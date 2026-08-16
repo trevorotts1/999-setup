@@ -436,7 +436,7 @@ main() {
         process.stdout.write(JSON.stringify({
           statePath: process.env.STATE_FILE,
           routes,
-          concurrency: Number(process.env.CONCURRENCY || 2),
+          concurrency: Number(process.env.CONCURRENCY || 10),
           maxOutputTokens: 32000,
           effortLevel: "xhigh",
           lastEffortSelection: null,
