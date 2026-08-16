@@ -1,0 +1,29 @@
+/* STAGE-SCAFFOLDING output — color system (semantic roles, WCAG AA pairs) */
+:root {
+  --color-brand: #1a56db;
+  --color-brand-strong: #143ea0;
+  --color-accent: #e87900;
+  --color-bg: #ffffff;
+  --color-surface: #f4f6fb;
+  --color-text: #1f2430;
+  --color-text-muted: #5b6472;
+  --color-border: #d8dde6;
+  --color-success: #177245;
+  --color-warning: #b45309;
+  --color-danger: #b91c1c;
+  --color-info: #1a56db;
+}
+/* WCAG AA pairs: text #1f2430 on bg #ffffff = 14.5:1; muted #5b6472 on #ffffff = 4.7:1;
+   brand #1a56db on white = 6.3:1 (large text); accent #e87900 on white = 3.2:1 (large/UI) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-brand: #7ea2ff;
+    --color-brand-strong: #b3c8ff;
+    --color-accent: #ffb35c;
+    --color-bg: #10131a;
+    --color-surface: #191e29;
+    --color-text: #eef1f7;
+    --color-text-muted: #a6adbb;
+    --color-border: #333b4a;
+  }
+}

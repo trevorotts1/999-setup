@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+"""boss-cron — interim PART 4 enforcement (built early on Trevor's direct order 2026-08-16).
+
+Enforces the locked 6-wave plan + operator rules for workflows and agents, every cycle:
+  1. CAPS   — live workflow agents never exceed 500 total (10 per workflow x 50 workflows,
+              operator doctrine per spec Issue 14; no per-model cap exists).
+  2. CENSUS — every DISPATCH ledger line carries a census.
+  3. WIDTH  — a wave's workflows may not dispatch below the locked table's scripted width
+              without a recorded justification line on the same dispatch.
+  4. WAVE   — no wave N+1 dispatch before `WAVE N CLOSED` (locked dependencies).
+  5. CLAIM  — every DONE/FAIL line names evidence files that exist on disk.
+  6. BEAT   — a BOSSCYCLE-CLEAN line must exist within the last 2 cycles (10 min).
+  7. STOP   — a CONTROL/stop-workstream file holds its workstream stopped (documented).
+  8. STOP-AND-RERUN (Trevor's order 2026-08-16): on violation the boss writes the
+     stop file naming the workstream + the exact finding and appends VIOLATION-STOP
+     lines. Workflows run INSIDE the Claude session (no separate PID — verified
+     2026-08-16), so the kill authority is the CONDUCTOR's TaskStop: the conductor
+     reads the stop file at every dispatch point and MUST TaskStop the named
+     workstream, then re-dispatch it from its last clean checkpoint the RIGHT way.
+     CONTROL/workflow-pids.json remains for out-of-process runs only.
+  9. STAGES (Issue 8 FIX step 2 enforcement): the boss cron rejects a STAGE-BUILD
+     ledger line lacking the prior stage lines, and every stage line opened
+     before its predecessor's line exists is a violation (stage N must pass
+     before stage N+1 opens). Sequence per spec Issue 8:
+     STAGE-WIREFRAMES (any per-page STAGE-WIREFRAMES-<page> line counts) ->
+     STAGE-SCAFFOLDING -> STAGE-HERO -> STAGE-IMAGES -> STAGE-LOGO ->
+     STAGE-BUILD. STAGE-LOGO is required when the run has a logo in play — any
+     STAGE-*/DESIGN-BRIEF/INPUT-CAPTURED/BUILD-TARGET line mentioning 'logo'
+     case-insensitive; a 'STAGE-LOGO: none (no client logo supplied)' line
+     satisfies it honestly. STAGE-LOGO's acceptance bar is checked
+     mechanically: every named output file must exist and be a transparent
+     PNG/WebP with no background pixels (border-region alpha < 8; PIL when
+     importable, stdlib PNG alpha-channel check otherwise).
+
+On violation: append VIOLATION-STOP lines to the ledger, write/update the stop file,
+exit 2 (governance-exit contract per PART 4). On clean: append one BOSSCYCLE-CLEAN line.
+`--check` runs exactly one cycle read-only and prints the verdict (never writes, never kills).
+
+WF-4E (Wave 4) upgrades this to the full 8-check boss + Telegram heartbeat alert.
+Hook-protection clause (PART 4) intact: this script never touches settings.json hooks.
+No grep, no sed — python named-field parsing only.
+"""
+import datetime
+import json
+import os
+import re
+import signal
+import sys
+
+LEDGER = "/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md"
+STOP = "/Users/blackceomacmini/work-999-setup/CONTROL/stop-workstream"
+PIDS = "/Users/blackceomacmini/work-999-setup/CONTROL/workflow-pids.json"
+WF_ROOT = "/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/c1d7d9a2-1c2c-4c37-b59f-118579f7ef78/subagents/workflows"
+# Operator doctrine (spec 2026-08-15, Issue 14 — supersedes the old 2/3/10 per-model
+# caps): max 10 agents per workflow (5 builders + 5 blind critics), up to 50 workflows,
+# up to 500 agents in parallel. No per-model concurrency cap exists. The harness
+# hard-caps concurrent agent() calls per workflow run at min(16, cores-2) — product
+# structure, not a settable limit; total agents per run capped at 1000 by the engine.
+CAPS = {"total": 500}
+
+# Locked wave table (PART 2) — scripted width per wave: workflow -> builder count.
+LOCKED_WAVES = {
+    1: {"WF-1A": 5, "WF-1B": 5},
+    2: {"WF-2A": 5, "WF-2B": 5, "WF-2C": 5, "WF-2D": 5, "WF-2E": 5},
+    3: {"WF-3A": 5, "WF-3B": 5, "WF-3C": 5, "WF-3D": 5, "WF-3E": 5},
+    4: {"WF-4A": 5, "WF-4B": 5, "WF-4C": 5, "WF-4D": 5, "WF-4E": 5},
+    5: {"WF-5A": 5, "WF-5B": 5, "WF-5C": 1},
+    6: {"WF-6A": 5},
+}
+
+# Ledger line classes sanctioned by PART 4 scope check + the 20-issue list + conductor
+# mechanics. Anything else = scope violation.
+SANCTIONED_CLASSES = {
+    "CREATED", "BASELINE", "DISPATCH", "REDISPATCH", "REPAIR", "REPAIR-DONE",
+    "BUILDER", "BUILDER-DONE", "BUILDER-FAIL", "CRITIC", "CRITIC-PASS", "CRITIC-FAIL",
+    "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
+    "BOSSCYCLE-CLEAN", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
+    "DOC", "WORKFLOW", "STOP-AND-RERUN",
+}
+# STAGE-* ledger classes sanctioned by PART 4 scope check (Issue 8 staged pipeline).
+# Trailing colon tolerated — ledger lines carry the 'STAGE-X:' shape with a colon;
+# per-page wireframe lines carry lowercase page suffixes ('STAGE-WIREFRAMES-home').
+STAGE_CLASS_RE = re.compile(r"^STAGE-[A-Za-z0-9-]+:?$")
+WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
+
+
+def now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_ledger():
+    if not os.path.exists(LEDGER):
+        return None
+    with open(LEDGER, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def ledger_lines(text):
+    return [ln for ln in text.splitlines() if ln.startswith("- `")]
+
+
+def ledger_class(line):
+    body = line[3:]
+    toks = body.split()
+    if not toks:
+        return ""
+    # Finding-prefixed lines ("F-2 FAIL ...") take the token after the finding id.
+    if re.match(r"^F-\d+$", toks[0]) and len(toks) > 1:
+        return toks[1]
+    return toks[0]
+
+
+def line_timestamp(line):
+    m = re.search(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}Z", line)
+    return m.group(0) if m else None
+
+
+def check_caps():
+    live = {}
+    unknown = []
+    if not os.path.isdir(WF_ROOT):
+        return live, unknown
+    for run_dir in os.listdir(WF_ROOT):
+        path = os.path.join(WF_ROOT, run_dir)
+        journal = os.path.join(path, "journal.jsonl")
+        if not os.path.isfile(journal):
+            continue
+        finished = set()
+        started = {}
+        with open(journal, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    ev = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("type") == "started":
+                    started[ev.get("agentId")] = ev
+                elif ev.get("type") in ("finished", "result"):
+                    finished.add(ev.get("agentId"))
+        for aid in started:
+            if aid in finished:
+                continue
+            meta_path = os.path.join(path, f"agent-{aid}.meta.json")
+            if not os.path.isfile(meta_path):
+                unknown.append(f"{run_dir}/{aid}")
+                continue
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            model = meta.get("model", "unknown")
+            live[model] = live.get(model, 0) + 1
+    return live, unknown
+
+
+def check_dispatch_census(lines):
+    missing = []
+    for ln in lines:
+        cls = ledger_class(ln)
+        if "DISPATCH" in cls and "Census before dispatch" not in ln:
+            missing.append(ln)
+    return missing
+
+
+def check_wave_lock(lines):
+    closed = set()
+    max_dispatched = 0
+    for ln in lines:
+        if ln.startswith("- `WAVE ") and "CLOSED" in ln:
+            m = re.search(r"WAVE (\d+) CLOSED", ln)
+            if m:
+                closed.add(int(m.group(1)))
+        m = re.match(r"- `(WF-(\d)[A-Z])", ln)
+        if m and "DISPATCH" in ln:
+            max_dispatched = max(max_dispatched, int(m.group(2)))
+    violations = []
+    for w in range(2, max_dispatched + 1):
+        if w - 1 not in closed:
+            violations.append(f"wave {w} dispatched but no WAVE {w-1} CLOSED line")
+    return violations
+
+
+def check_width(lines):
+    """PART 4 check 4: the LATEST dispatch line per wave must carry either the full
+    scripted width (all locked workflows named + 'Width justification' or 'full PART 2
+    scripted width') or a recorded dependency line. Historical under-width lines already
+    superseded by a later redispatch are resolved, not re-fired."""
+    latest = {}
+    for ln in lines:
+        m = re.search(r"WAVE (\d+)", ln)
+        cls = ledger_class(ln)
+        if m and ("DISPATCH" in cls or "REDISPATCH" in cls):
+            latest[int(m.group(1))] = ln
+    violations = []
+    for wave, ln in latest.items():
+        wfs = LOCKED_WAVES.get(wave)
+        if wfs is None:
+            violations.append(f"dispatch for wave {wave} not in the locked table")
+            continue
+        named = all(f"WF-{wave}{wf[3:]}" in ln for wf in wfs)
+        justified = "Width justification" in ln or "full PART 2 scripted width" in ln
+        if not named or not justified:
+            violations.append(
+                f"width: wave {wave} dispatch below scripted width or missing justification: {ln[:110]}")
+    return violations
+
+
+def check_claims(lines):
+    broken = []
+    for ln in lines:
+        if "DONE" not in ledger_class(ln) and "FAIL" not in ledger_class(ln):
+            continue
+        for path in re.findall(r"/Users/blackceomacmini/[^\s`]+", ln):
+            if not os.path.exists(path):
+                broken.append(f"line cites missing path {path}: {ln[:100]}")
+    return broken
+
+
+def check_heartbeat(lines):
+    ts = None
+    for ln in lines:
+        if ledger_class(ln) == "BOSSCYCLE-CLEAN":
+            ts = line_timestamp(ln)
+    if ts is None:
+        return "no BOSSCYCLE-CLEAN line yet (first cycle baseline)"
+    try:
+        last = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return f"unparseable BOSSCYCLE-CLEAN timestamp {ts}"
+    age = (datetime.datetime.now(datetime.timezone.utc) - last).total_seconds()
+    if age > 600:
+        return f"last BOSSCYCLE-CLEAN {age/60:.0f} min ago (> 2 cycles)"
+    return None
+
+
+def check_scope(lines):
+    bad = []
+    for ln in lines:
+        cls = ledger_class(ln)
+        if cls in SANCTIONED_CLASSES or WF_PREFIX.match(cls):
+            continue
+        if re.match(r"^WF-\d[A-Z]$", cls) or re.match(r"^WAVE$", cls):
+            continue
+        if STAGE_CLASS_RE.match(cls):
+            continue
+        if cls.endswith(":") and len(cls) < 60:
+            continue
+        bad.append(ln[:120])
+    return bad
+
+
+STAGE_ORDER = ["STAGE-WIREFRAMES", "STAGE-SCAFFOLDING", "STAGE-HERO",
+               "STAGE-IMAGES", "STAGE-LOGO", "STAGE-BUILD"]
+
+
+def _png_has_alpha(path):
+    """Stdlib PNG alpha-channel check (no PIL): parse IHDR color type.
+    Color types 4 (gray+alpha) and 6 (RGBA) carry an alpha channel."""
+    try:
+        with open(path, "rb") as fh:
+            sig = fh.read(8)
+            if sig != b"\x89PNG\r\n\x1a\n":
+                return False
+            while True:
+                raw = fh.read(8)
+                if len(raw) < 8:
+                    return False
+                length = int.from_bytes(raw[:4], "big")
+                ctype = raw[4:8]
+                if ctype == b"IHDR":
+                    ihdr = fh.read(length)
+                    if len(ihdr) < 10:
+                        return False
+                    return ihdr[9] in (4, 6)
+                fh.seek(length + 4, 1)
+    except OSError:
+        return False
+
+
+def _logo_output_transparent(path):
+    """STAGE-LOGO acceptance: the named output file exists and is a transparent
+    PNG/WebP with no background pixels (border-region alpha < 8). PIL when
+    importable; stdlib PNG alpha-channel check otherwise (WebP without PIL is
+    UNDETERMINED, never a pass)."""
+    if not os.path.exists(path):
+        return False, "output file missing"
+    try:
+        from PIL import Image
+    except ImportError:
+        if path.lower().endswith(".png") and _png_has_alpha(path):
+            return True, "PNG alpha channel present (stdlib check; border alpha not sampled)"
+        return False, "no PIL to verify transparency"
+    try:
+        im = Image.open(path).convert("RGBA")
+    except Exception:
+        return False, "unreadable image"
+    w, h = im.size
+    px = im.load()
+    samples = []
+    for x in range(0, w, max(1, w // 20)):
+        samples.append(px[x, 0])
+        samples.append(px[x, h - 1])
+    for y in range(0, h, max(1, h // 20)):
+        samples.append(px[0, y])
+        samples.append(px[w - 1, y])
+    if any(s[3] >= 8 for s in samples):
+        return False, "background pixels present (border alpha >= 8)"
+    return True, "transparent PNG/WebP, no background pixels"
+
+
+def check_stages(lines):
+    """Issue 8 FIX step 2: reject a STAGE-BUILD line lacking the prior stage
+    lines, and reject any stage line opened before its predecessor's line
+    exists (stage N must pass before stage N+1 opens). STAGE-LOGO's acceptance
+    bar is checked mechanically: every named output file must exist and be a
+    transparent PNG/WebP with no background pixels."""
+    violations = []
+    have = set()
+    logo_in_play = False
+    stage_lines = []
+    for ln in lines:
+        cls = ledger_class(ln).rstrip(":")
+        if STAGE_CLASS_RE.match(cls):
+            # Per-page wireframe lines ('STAGE-WIREFRAMES-home') count as the
+            # STAGE-WIREFRAMES stage (spec: 'wireframes per page').
+            if cls.startswith("STAGE-WIREFRAMES-"):
+                have.add("STAGE-WIREFRAMES")
+            else:
+                have.add(cls)
+            if "logo" in ln.lower():
+                logo_in_play = True
+            stage_lines.append((cls, ln))
+        elif cls == "DESIGN-BRIEF" or cls == "INPUT-CAPTURED" or cls == "BUILD-TARGET":
+            if "logo" in ln.lower():
+                logo_in_play = True
+    # Predecessor gate: every stage line (except STAGE-BUILD, which has its own
+    # gate below) must have its predecessor's line already present — stage N
+    # must pass before stage N+1 opens.
+    for cls, ln in stage_lines:
+        if cls not in STAGE_ORDER or cls == "STAGE-BUILD":
+            continue
+        idx = STAGE_ORDER.index(cls)
+        if idx == 0:
+            continue
+        missing = [s for s in STAGE_ORDER[:idx] if s not in have]
+        if missing:
+            violations.append(
+                f"stage-order: {cls} opened before its predecessor stage lines "
+                f"{','.join(missing)}: {ln[:110]}")
+    # STAGE-BUILD gate: all prior stages present, plus STAGE-LOGO when a logo
+    # is in play.
+    for cls, ln in stage_lines:
+        if cls != "STAGE-BUILD":
+            continue
+        missing = [s for s in STAGE_ORDER[:-1]
+                   if s not in have and s != "STAGE-LOGO"]
+        if logo_in_play and "STAGE-LOGO" not in have:
+            missing.append("STAGE-LOGO")
+        if missing:
+            violations.append(
+                f"stage-order: STAGE-BUILD opened without prior stage lines "
+                f"{','.join(missing)}: {ln[:110]}")
+    # STAGE-LOGO acceptance: every named output file must exist and be a
+    # transparent PNG/WebP with no background pixels. 'none' lines are honest
+    # absences, never checked. Line shape: '<source>=<output>[, <source>=<output>…]'
+    # — the OUTPUT (right of '=') is what the transparency check runs on.
+    for cls, ln in stage_lines:
+        if cls != "STAGE-LOGO":
+            continue
+        body = ln[3:].split(":", 1)[1] if ":" in ln[3:] else ""
+        if "none" in body.lower():
+            continue
+        for pair in body.split(","):
+            # The ledger line's closing backtick and timestamp trail the last
+            # pair — the path ends at the backtick.
+            output = pair.split("=", 1)[-1].strip().split("`")[0].strip()
+            if not output:
+                continue
+            ok, why = _logo_output_transparent(output)
+            if not ok:
+                violations.append(
+                    f"stage-logo: output not transparent ({why}): {output} "
+                    f"({ln[:80]})")
+    return violations
+
+
+def stop_file_state():
+    if os.path.exists(STOP):
+        with open(STOP, "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    return None
+
+
+def kill_pids(workstream):
+    """SIGTERM the workflow process(es) pinned for workstream in the pids file.
+    Returns a list of (pid, outcome) for the ledger. Never kills anything not pinned."""
+    if not os.path.exists(PIDS):
+        return []
+    with open(PIDS, "r", encoding="utf-8") as fh:
+        reg = json.load(fh)
+    targets = reg.get(workstream, [])
+    outcomes = []
+    for pid in targets:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            outcomes.append((pid, "SIGTERM-sent"))
+        except ProcessLookupError:
+            outcomes.append((pid, "already-gone"))
+        except PermissionError:
+            outcomes.append((pid, "permission-denied"))
+    return outcomes
+
+
+def main():
+    dry = "--check" in sys.argv
+    violations = []
+    text = read_ledger()
+    if text is None:
+        violations.append(f"ledger missing at {LEDGER}")
+        lines = []
+    else:
+        lines = ledger_lines(text)
+
+    live, unknown = check_caps()
+    total = sum(live.values())
+    if total > CAPS["total"]:
+        violations.append(f"cap violation: {total} live agents > cap {CAPS['total']} (operator doctrine: 10 per workflow x 50 workflows)")
+    for model, n in live.items():
+        if model not in ("opus", "sonnet", "haiku", "deepseek", "fable", "claude"):
+            violations.append(f"live agent with unknown model {model} x{n}")
+    for aid in unknown:
+        violations.append(f"live agent without model meta (unverifiable): {aid}")
+
+    for ln in check_dispatch_census(lines):
+        violations.append(f"dispatch without census: {ln[:120]}")
+    violations.extend(f"width: {v}" for v in check_width(lines))
+    violations.extend(f"wave-lock: {v}" for v in check_wave_lock(lines))
+    for c in check_claims(lines):
+        violations.append(f"claim: {c}")
+    beat = check_heartbeat(lines)
+    if beat and "first cycle baseline" not in beat:
+        violations.append(f"heartbeat: {beat}")
+    for b in check_scope(lines):
+        violations.append(f"scope: {b}")
+    for s in check_stages(lines):
+        violations.append(f"stages: {s}")
+
+    stopped = stop_file_state()
+    if stopped:
+        violations.append(f"stop file active on workstream: {stopped}")
+
+    # Stop-and-rerun: the workstream named in a violation gets its pinned PID killed
+    # (out-of-process runs only); the in-session kill is the conductor's TaskStop,
+    # gated on reading this stop file at every dispatch point.
+    kills = []
+    if violations:
+        streams = {v.split()[0] for v in violations if v.startswith("cap violation") or v.startswith("scope")}
+        streams.update({v.split(":")[0] for v in violations if v.startswith("wave-lock")})
+        for ws in sorted(streams):
+            kills.extend(kill_pids(ws))
+
+    checks = "caps,census,width,wavelock,claims,beat,stop,scope,stages,kill"
+    if dry:
+        print(f"boss-cron --check: {len(violations)} violation(s)")
+        for v in violations:
+            print(f"  - {v}")
+        print(f"checks run: {checks}")
+        sys.exit(2 if violations else 0)
+
+    with open(LEDGER, "a", encoding="utf-8") as fh:
+        for v in violations:
+            fh.write(f"- `VIOLATION-STOP {now_iso()}: {v} — conductor MUST TaskStop the named workstream and re-dispatch from its last clean checkpoint`\n")
+        for pid, outcome in kills:
+            fh.write(f"- `VIOLATION-STOP {now_iso()}: kill pid {pid}: {outcome} — conductor re-dispatches from last clean checkpoint`\n")
+        if not violations and beat is None:
+            fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`\n")
+        elif not violations:
+            fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks} (baseline)`\n")
+    if violations and not os.path.exists(STOP):
+        with open(STOP, "w", encoding="utf-8") as fh:
+            fh.write("boss-cron-20260816: " + "; ".join(violations)[:400])
+    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended")
+    sys.exit(2 if violations else 0)
+
+
+if __name__ == "__main__":
+    main()
