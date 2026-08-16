@@ -142,11 +142,17 @@ independently, in parallel, at their own speed, and the QC lane is visible in
 the same tree as the build it judges.
 
 **The dependency graph determines the stream count; the pairing determines the
-width.** Before every dispatch: the topological sort's largest
+width.** Before every dispatch: run `tools/anchor.sh <home> <unit-or-IDLE>
+--mode reconcile` first (with `--tasks CONTROL/task-graph-snapshot.json
+--state CONTROL/project_state.json`), execute any RECONCILE-ACTIONS it emits
+and re-run until clean, then the topological sort's largest
 zero-incomplete-dependency set gives the streams; chunk each stream at ≤8
 units; each tree dispatches units × 2 agents (builder + judge, both pinned).
 min(16, cores−2) is the EXECUTION clamp (how many run in the same instant —
-the rest queue), never the sizing. Launch all N trees in the same turn.
+the rest queue), never the sizing. Launch all N trees in the same turn. A
+dispatch on top of an unreconciled alarm, or while
+`CONTROL/TERMINAL-DRIFT.flag` exists, is a violation (S10 —
+`references/anti-drift.md`).
 
 **THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
 dispatch-log row states the width arithmetic: units in this tree, × 2 for the
@@ -181,6 +187,10 @@ terminal" is a floor, never a ceiling.
 
 ### RULE 4 — DISPATCH RULES (binding)
 - **DISPATCH RULE — decompose then launch, same turn.** Before every dispatch:
+  0. Reconcile first: run `tools/anchor.sh --mode reconcile` (with `--tasks` +
+     `--state`), execute any RECONCILE-ACTIONS it emits, and re-run until clean
+     (S10; `references/anti-drift.md`). Precondition #0: `CONTROL/TERMINAL-DRIFT.flag`
+     is absent — while it exists, nothing dispatches.
   1. Read the dependency graph and the checklist.
   2. Compute the dispatchable set: items whose dependencies are all ancestors of
      the integration branch.
@@ -1617,7 +1627,20 @@ keyword does NOT start workflows from scheduled-task prompts (Claude Code ≥
 2.1.210) — the saved-command form is the only reliable spell from a cron. Every
 loop's precondition #0 checks `CONTROL/TERMINAL-DRIFT.flag`: while it exists,
 nothing dispatches — the flag is the capture-proof stop a drifted conductor
-cannot tick through.
+cannot tick through. The boss cron (PART 4) compares the live ledger against
+the script on every cycle. A violation stops the violating workstream the same
+cycle: the ledger gains a `VIOLATION-STOP` line carrying the exact finding, and
+the workstream restarts from its last clean checkpoint — the checkpoint rules
+in `CONTROL/project_state.json` (the seven moments, the
+`checkpoint/<slug>-<NNN>` tag scheme, and the `best_stable_build` pointer;
+`references/pipeline.md` Checkpoints, `references/execution-architecture.md`
+§11). One cycle, one outcome: `VIOLATION-STOP` plus checkpoint restart, or
+`BOSSCYCLE-CLEAN`. The conductor reads the stop file at every dispatch point
+and TaskStops the named workstream, then re-dispatches it from the checkpoint
+the right way — never a silent re-plan. `CONTROL/TERMINAL-DRIFT.flag` remains
+the capture-proof stop: while the flag exists, nothing dispatches, and no
+restart happens — a stop is lifted only by naming the blocker and removing the
+flag (references/anti-drift.md §6).
 
 ---
 

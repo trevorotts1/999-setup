@@ -478,6 +478,12 @@ OWNS       <state A>  ->  <state B>     — this loop, and no other loop
 ## THE TICK — one item, one transition
 0. TERMINAL-DRIFT GATE: if CONTROL/TERMINAL-DRIFT.flag exists, STOP — write one
    line naming the flag and do nothing else this tick (references/anti-drift.md).
+   The flag is the capture-proof stop: while it exists, nothing dispatches and
+   no restart happens; a stop is lifted only by naming the blocker and removing
+   the flag. On a boss-cycle stop (VIOLATION-STOP ledger line), the workstream
+   restarts from its last clean checkpoint per CONTROL/project_state.json —
+   never from memory (references/pipeline.md Checkpoints,
+   references/execution-architecture.md §11).
 1. RECONCILE: run tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile; execute
    any RECONCILE-ACTIONS it emits; on a DRIFT-ALARM stop and reconcile per
    references/anti-drift.md before any work. Then read the tracker fresh. Assume

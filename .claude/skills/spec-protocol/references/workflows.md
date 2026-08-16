@@ -307,6 +307,16 @@ the Agent tool for builders.
   Code ≥ 2.1.210). Never rely on it from a cron.
 - **Precondition #0 of every tick:** `CONTROL/TERMINAL-DRIFT.flag` is absent. If the
   flag exists, the tick stops and surfaces — nothing dispatches while it is there.
+- **The boss compares every cycle:** the boss cron (spec PART 4) reads the live
+  ledger against the script every 5 minutes. A violation stops the violating
+  workstream the same cycle — `VIOLATION-STOP` ledger line with the exact finding,
+  restart from the last clean checkpoint in `CONTROL/project_state.json`
+  (`references/pipeline.md` Checkpoints; `references/execution-architecture.md`
+  §11). The conductor reads the stop file at every dispatch point and TaskStops
+  the named workstream before re-dispatching it from that checkpoint the required
+  way. While `CONTROL/TERMINAL-DRIFT.flag` exists, no restart and no dispatch —
+  the flag is lifted only by naming the blocker and removing it
+  (`references/anti-drift.md` §6).
 - A tick that re-derives the plan from a decayed context is the disease itself. The
   tick fires a saved script; it does not think about what the script should be.
 
