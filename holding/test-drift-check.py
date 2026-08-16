@@ -6,12 +6,22 @@ Proves on the REAL corpus (the anti-drift.md §1 exhibit) before the check is
 trusted with a verdict, per anti-drift.md §1: "a detector must prove itself on
 a known-positive before it is permitted to say 'clean', and a detector that
 matches nothing reports BROKEN INSTRUMENT, never ALL CLEAR."
+
+F0 — the fixture-provenance proof: every drift fixture in boss-cron must be
+VERBATIM in its named source (corpus lines 55/56/413/1989; worked-example.md
+line 325). A fixture that is not verbatim in its source is a fabricated proof
+and fails the suite. This closes the defect the blind critic found in the
+prior evidence: DRIFT_FIXTURE_POS2 was a bracket-format line that appears
+NOWHERE in the corpus, and DRIFT_FIXTURE_NEG3 carried an invented anchor hash
+(1a2b3c4d) instead of a real RECONCILE line.
 """
 import re
 import sys
 from importlib.machinery import SourceFileLoader
 
 CORPUS = "/Users/blackceomacmini/Downloads/GAUNTLET-LOOP-WORK/LEDGER.md"
+WORKED_EXAMPLE = ("/Users/blackceomacmini/work-999-setup-fix/WF-4A/"
+                  ".claude/skills/spec-protocol/references/worked-example.md")
 BASE = "/Users/blackceomacmini/work-999-setup-fix/WF-4A/tools/boss-cron"
 
 mod = SourceFileLoader("boss", BASE).load_module()
@@ -35,25 +45,45 @@ def tick_lines(path):
         return [ln.rstrip("\n") for ln in fh if ln.startswith("- `")]
 
 
+# --- F0: fixture provenance — every fixture is VERBATIM in its source ------
+corpus = open(CORPUS, "r", encoding="utf-8", errors="replace").read().splitlines()
+we = open(WORKED_EXAMPLE, "r", encoding="utf-8", errors="replace").read()
+sources = {
+    "POS":  (corpus[54].strip(),  "corpus line 55"),
+    "POS2": (corpus[55].strip(),  "corpus line 56"),
+    "NEG1": (corpus[412].strip(), "corpus line 413"),
+    "NEG2": (corpus[1988].strip(), "corpus line 1989"),
+}
+for fx, (source, where) in sources.items():
+    actual = getattr(mod, f"DRIFT_FIXTURE_{fx}").strip()
+    run(f"F0 {fx} fixture verbatim in {where}",
+        actual == source, f"fixture != source: {actual[:80]}... != {source[:80]}...")
+run("F0 NEG3 fixture verbatim in worked-example.md line 325",
+    mod.DRIFT_FIXTURE_NEG3.strip() in we, mod.DRIFT_FIXTURE_NEG3)
+run("F0 POS/POS2 are DISTINCT real lines (not a duplicated fixture)",
+    mod.DRIFT_FIXTURE_POS != mod.DRIFT_FIXTURE_POS2,
+    f"both fixtures are {mod.DRIFT_FIXTURE_POS!r}")
+
 # --- Unit tests on the classifier -----------------------------------------
 run("U1 contentless format classified TICK",
     mod.drift_classify("- heartbeat 2026-08-06T20:10:38Z (ledger auto-tick)") == "TICK",
     mod.drift_classify("- heartbeat 2026-08-06T20:10:38Z (ledger auto-tick)"))
-run("U2 format-drifted positive classified TICK",
-    mod.drift_classify("[2026-08-06 20:13:38] HEARTBEAT — auto tick") == "TICK",
-    mod.drift_classify("[2026-08-06 20:13:38] HEARTBEAT — auto tick"))
+run("U2 verbatim second contentless tick classified TICK",
+    mod.drift_classify(mod.DRIFT_FIXTURE_POS2) == "TICK",
+    mod.drift_classify(mod.DRIFT_FIXTURE_POS2))
 run("U3 state-carrying auto-tick spared (TICK-CONTENTFUL)",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG1) == "TICK-CONTENTFUL",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG1))
-run("U4 watchdog heartbeat is STATE (anchor.sh fixture NEG2 expects STATE)",
+run("U4 watchdog heartbeat is STATE (anchor.sh fixture NEG2 contract)",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG2) == "STATE",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG2))
 run("U5 RECONCILE line is STATE",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG3) == "STATE",
     mod.drift_classify(mod.DRIFT_FIXTURE_NEG3))
-run("U6 brittle literal does NOT match (marker stage must see both words)",
-    mod.drift_classify("heartbeat (ledger auto-tick)") != "TICK" or True,  # both words absent -> STATE or TICK-CONTENTFUL; never TICK
-    mod.drift_classify("heartbeat (ledger auto-tick)"))
+run("U6 the brittle literal MISSES a real tick (why the marker tolerates anything between)",
+    (re.search(r"heartbeat \(ledger auto-tick\)", mod.DRIFT_FIXTURE_POS) is None
+     and mod.drift_classify(mod.DRIFT_FIXTURE_POS) == "TICK"),
+    "brittle literal matched a real tick, or the classifier missed it")
 run("U7 auto_tick underscore tolerance",
     mod.drift_classify("- heartbeat 2026-08-06T20:10:38Z (ledger auto_tick)") == "TICK",
     mod.drift_classify("- heartbeat 2026-08-06T20:10:38Z (ledger auto_tick)"))
@@ -91,28 +121,23 @@ run("B1 fixture self-prove passes inside check_drift (clean ledger)",
     mod.check_drift([]) == [], "self-prove runs on every invocation")
 
 # --- REAL-CORPUS discrimination (the anti-drift.md §1 exhibit) -------------
-try:
-    with open(CORPUS, "r", encoding="utf-8", errors="replace") as fh:
-        corpus = fh.readlines()
-    strict = 0
-    for ln in corpus:
-        if re.search(r"^- heartbeat .*\(ledger auto-tick\)$", ln.rstrip("\n")):
-            strict += 1
-    cls = [mod.drift_classify(ln.rstrip("\n")) for ln in corpus]
-    contentless = cls.count("TICK")
-    contentful = cls.count("TICK-CONTENTFUL")
-    run("C1 corpus contentless count == strict anchored control (740)",
-        contentless == strict, f"classifier={contentless} strict={strict}")
-    run("C2 corpus stateful heartbeats spared (>0, >=140 expected)",
-        contentful >= 140, f"stateful={contentful}")
-    # the 139-line drift tail must be a >10 run
-    run("C3 corpus fires the drift check (139-line tail)",
-        len(mod.check_drift([ln.rstrip("\n") for ln in corpus])) == 1,
-        mod.check_drift([ln.rstrip("\n") for ln in corpus]))
-    print(f"CORPUS {CORPUS}: {len(corpus)} lines, contentless={contentless}, "
-          f"stateful={contentful}, strict-control={strict}")
-except FileNotFoundError:
-    print(f"SKIP corpus (absent): {CORPUS}")
+strict = 0
+for ln in corpus:
+    if re.search(r"^- heartbeat .*\(ledger auto-tick\)$", ln.rstrip("\n")):
+        strict += 1
+cls = [mod.drift_classify(ln.rstrip("\n")) for ln in corpus]
+contentless = cls.count("TICK")
+contentful = cls.count("TICK-CONTENTFUL")
+run("C1 corpus contentless count == strict anchored control (740)",
+    contentless == strict, f"classifier={contentless} strict={strict}")
+run("C2 corpus stateful heartbeats spared (>0, >=140 expected)",
+    contentful >= 140, f"stateful={contentful}")
+# the 139-line drift tail must be a >10 run
+run("C3 corpus fires the drift check (139-line tail)",
+    len(mod.check_drift([ln.rstrip("\n") for ln in corpus])) == 1,
+    mod.check_drift([ln.rstrip("\n") for ln in corpus]))
+print(f"CORPUS {CORPUS}: {len(corpus)} lines, contentless={contentless}, "
+      f"stateful={contentful}, strict-control={strict}")
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

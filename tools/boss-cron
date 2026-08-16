@@ -85,9 +85,13 @@ def now_iso():
 
 
 def read_ledger():
-    if not os.path.exists(LEDGER):
+    # BOSS_LEDGER env override — e2e tests and sandboxed runs point the boss at
+    # a temp ledger without touching the live one. Applies to reads and the
+    # write-cycle append (main()); STOP/PIDS stay live-file constants.
+    path = os.environ.get("BOSS_LEDGER", LEDGER)
+    if not os.path.exists(path):
         return None
-    with open(LEDGER, "r", encoding="utf-8") as fh:
+    with open(path, "r", encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -278,11 +282,18 @@ def stop_file_state():
 # detector must prove itself on a known-positive before it may say "clean").
 # ============================================================================
 DRIFT_THRESHOLD = 10  # > 10 CONSECUTIVE contentless ticks = violation
+# The fixtures are REAL lines, verbatim from their named sources — nothing
+# invented. POS/POS2/NEG1/NEG2 are from the measured exhibit
+# (Downloads/GAUNTLET-LOOP-WORK/LEDGER.md — POS line 55, POS2 line 56,
+# NEG1 line 413, NEG2 line 1989); NEG3 is the worked-example RECONCILE line
+# (references/worked-example.md line 325). Provenance is mechanical: the
+# test suite (holding/test-drift-check.py, F1) re-verifies each fixture is
+# verbatim in its source on every run.
 DRIFT_FIXTURE_POS = "- heartbeat 2026-08-06T20:10:38Z (ledger auto-tick)"
-DRIFT_FIXTURE_POS2 = "[2026-08-06 20:13:38] HEARTBEAT - auto tick"
-DRIFT_FIXTURE_NEG1 = "- heartbeat 2026-08-06T20:30:38Z (ledger auto-tick) - E2E driver solving standard-intake (GATE 0) via derive_legacy_fields; transcript 981KB/238 lines, progressing"
-DRIFT_FIXTURE_NEG2 = "- WATCHDOG 2026-08-07T19:00:51Z - Heartbeat: 0 active / 0 stalled. All 68 workflow records in terminal states (55 completed, 9 killed, 4 failed). The earlier 44 active / 16 stalled line was a stale count - corrected here. Nothing to restart."
-DRIFT_FIXTURE_NEG3 = "2026-08-06T20:16:38Z | RECONCILE | anchor=1a2b3c4d | unit=U-07 | result=clean | counts=done:12/open:3/blocked:0"
+DRIFT_FIXTURE_POS2 = "- heartbeat 2026-08-06T20:13:38Z (ledger auto-tick)"
+DRIFT_FIXTURE_NEG1 = "- heartbeat 2026-08-06T20:30:38Z (ledger auto-tick) — E2E driver solving standard-intake (GATE 0) via derive_legacy_fields; transcript 981KB/238 lines, progressing"
+DRIFT_FIXTURE_NEG2 = "- WATCHDOG 2026-08-07T19:00:51Z — **Heartbeat: 0 active / 0 stalled.** All 68 workflow records in terminal states (55 completed, 9 killed, 4 failed); newest transcript mtime 14:18 local (36min). The earlier '44 active / 16 stalled' line was a stale count from pre-teardown transcripts — corrected here. Nothing to restart."
+DRIFT_FIXTURE_NEG3 = "2026-08-12T14:35:00Z | RECONCILE | clean | anchor=9f31c2ab | unit=U5 | next=U7 card grid mobile | counts=4/2/0/1/0/0 | tasks=3/3/1"
 
 # Stage 1: the marker. Both words on one line, either order, anything between,
 # case-insensitive, tolerant of `auto tick` / `auto_tick`.
@@ -415,7 +426,7 @@ def main():
         print(f"checks run: {checks}")
         sys.exit(2 if violations else 0)
 
-    with open(LEDGER, "a", encoding="utf-8") as fh:
+    with open(os.environ.get("BOSS_LEDGER", LEDGER), "a", encoding="utf-8") as fh:
         for v in violations:
             fh.write(f"- `VIOLATION-STOP {now_iso()}: {v} — conductor MUST TaskStop the named workstream and re-dispatch from its last clean checkpoint`\n")
         for pid, outcome in kills:
