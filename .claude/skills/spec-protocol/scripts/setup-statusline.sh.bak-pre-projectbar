@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+# setup-statusline.sh — detect-first installer for the Spec Protocol status
+# line. Idempotent: safe to run repeatedly; never creates duplicate
+# configuration, never destroys an existing status line.
+#
+# Contract: references/progress-visibility.md. The status line shows model,
+# context bar + percentage, session cost (derived), git branch/status, and
+# 5h/7d usage when available. Session cost is REQUIRED on the bar (operator
+# order 2026-08-16) and is DERIVED: real token counts from the stdin JSON
+# multiplied by published per-model pricing, displayed with a ~ marker.
+# A model absent from the pricing table -> the cost segment is omitted,
+# never guessed.
+#
+# Never prints API keys or any secret value. Name-only output.
+set -uo pipefail
+
+STATUSLINE_SCRIPT="$HOME/.claude/statusline-command.sh"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CC9_SETTINGS="$HOME/.claude-nine/settings.json"
+STAMP_DIR="$HOME/.claude"
+STAMP_FILE="$STAMP_DIR/.spec-protocol-statusline-stamp"
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '✓ %s\n' "$*"; }
+bad()  { printf '✗ %s\n' "$*"; }
+warn() { printf '! %s\n' "$*"; }
+
+# --- store helpers ------------------------------------------------------
+
+has_statusline() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  jq -e 'has("statusLine")' "$f" >/dev/null 2>&1
+}
+
+settings_symlink_target() {
+  local f="$1"
+  [ -L "$f" ] && readlink "$f"
+}
+
+backup_settings() {
+  local f="$1"
+  local ts
+  ts="$(date +%Y%m%d-%H%M%S)"
+  cp "$f" "$f.bak-statusline-$ts"
+  say "Backup: $f.bak-statusline-$ts"
+}
+
+set_statusline_key() {
+  local f="$1"
+  jq --arg cmd "$STATUSLINE_SCRIPT" \
+    '.statusLine = {"type": "command", "command": $cmd}' \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# --- main ----------------------------------------------------------------
+
+# --check: detection-only dry run. Reports what WOULD happen, writes nothing.
+# Testing MUST use this mode — a bare invocation mutates the settings stores.
+if [ "${1:-}" = "--check" ]; then
+  say "DRY RUN (--check) — nothing will be written."
+  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+    if has_statusline "$f"; then
+      say "Already configured in $f — healthy, no action."
+    elif [ -f "$f" ]; then
+      say "Would configure statusLine in $f."
+    else
+      say "Store absent: $f — skipped."
+    fi
+  done
+  if [ -f "$STATUSLINE_SCRIPT" ]; then
+    grep -q "SPEC-PROTOCOL-STATUSLINE" "$STATUSLINE_SCRIPT" 2>/dev/null \
+      && say "Shared script already installed (ours) — would keep." \
+      || say "Shared script present but NOT ours — would leave untouched."
+  else
+    say "Would install shared script: $STATUSLINE_SCRIPT"
+  fi
+  [ -f "$STAMP_FILE" ] && say "Stamp present — a real run would report already-installed."
+  exit 0
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  bad "jq is required and not on PATH"
+  exit 2
+fi
+
+# 1. Detect-first. An existing statusLine in EITHER store is reported, never
+#    replaced. Equal-or-better is the healthy outcome; enhanceable lines are
+#    preserved and only extended by hand — this script never rewrites them.
+EXISTING=0
+for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+  if has_statusline "$f"; then
+    say "Claude Code Status Line (name-only check):"
+    say "Already configured in $(basename "$f")."
+    say "No replacement required."
+    EXISTING=1
+  fi
+done
+if [ "$EXISTING" = 1 ]; then
+  exit 0
+fi
+
+# 2. Idempotency stamp. Same launch paths + same script + already stamped ->
+#    nothing to do.
+if [ -f "$STAMP_FILE" ]; then
+  say "Spec Protocol status line: already installed (stamp present)."
+  say "No replacement required."
+  exit 0
+fi
+
+# 3. Install the shared statusline command script (idempotent overwrite of
+#    our own file only — the file is OURS, not the user's).
+if [ -f "$STATUSLINE_SCRIPT" ] && ! grep -q "SPEC-PROTOCOL-STATUSLINE" "$STATUSLINE_SCRIPT" 2>/dev/null; then
+  warn "Existing $STATUSLINE_SCRIPT is not ours — left untouched."
+  say "Status line left UNCONFIGURED. Point a statusLine key at it by hand."
+  exit 0
+fi
+cat > "$STATUSLINE_SCRIPT" <<'STATUSLINE_EOF'
+#!/usr/bin/env bash
+# SPEC-PROTOCOL-STATUSLINE — Spec Protocol session-health status line.
+# Reads the Claude Code statusLine stdin JSON; renders model, context bar +
+# percentage, derived session cost, git branch/status, and 5h/7d usage when
+# available. Never invents a number; never prints secrets.
+set -uo pipefail
+
+json="$(cat)"
+if [ -z "$json" ]; then exit 0; fi
+
+jqget() { printf '%s' "$json" | jq -r "$1" 2>/dev/null || true; }
+
+model="$(jqget '.model.display_name // empty')"
+used_pct="$(jqget '.context_window.used_percentage // empty')"
+total_in="$(jqget '.context_window.total_input_tokens // empty')"
+total_out="$(jqget '.context_window.total_output_tokens // empty')"
+rate5h="$(jqget '.rate_limits.five_hour.used_percentage // empty')"
+rate7d="$(jqget '.rate_limits.seven_day.used_percentage // empty')"
+cwd_path="$(jqget '.cwd // empty')"
+
+# --- context bar ---------------------------------------------------------
+bar=""
+if [ -n "$used_pct" ] && [ "$used_pct" != "null" ]; then
+  filled=$(( used_pct / 10 ))
+  bar="$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' $((10 - filled)) '' | tr ' ' '░')"
+fi
+
+# --- session cost: derived, ~-labeled. REAL token counts from stdin
+#     multiplied by published per-model pricing (USD per million tokens).
+#     A model absent from the table -> cost segment omitted, never guessed.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/spec-protocol-statusline"
+STATE_FILE="$STATE_DIR/$(printf '%s' "$(jqget '.session_id // "unknown"')" | tr -cd 'A-Za-z0-9_-')"
+mkdir -p "$STATE_DIR"
+
+declare -A PRICE_IN
+declare -A PRICE_OUT
+# Published pricing, USD per 1M tokens (input / output). Update on price
+# changes; a new model without an entry is omitted, not estimated.
+PRICE_IN[opus]=15.00;      PRICE_OUT[opus]=75.00
+PRICE_IN[sonnet]=3.00;     PRICE_OUT[sonnet]=15.00
+PRICE_IN[haiku]=0.80;      PRICE_OUT[haiku]=4.00
+
+price_for() {
+  local display="$1" lower
+  lower="$(printf '%s' "$display" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    *opus*)   printf '15.00 75.00' ;;
+    *sonnet*) printf '3.00 15.00' ;;
+    *haiku*)  printf '0.80 4.00' ;;
+    *)        printf '' ;;
+  esac
+}
+
+cost=""
+if [ -n "$total_in" ] && [ -n "$total_out" ] \
+   && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
+  if [ -f "$STATE_FILE" ]; then
+    prev="$(cat "$STATE_FILE")"
+    prev_in="${prev%% *}"; prev_out="${prev##* }"
+    delta_in=$(( total_in - prev_in )); delta_out=$(( total_out - prev_out ))
+  else
+    delta_in=$total_in; delta_out=$total_out
+  fi
+  prices="$(price_for "$model")"
+  if [ -n "$prices" ]; then
+    pin="${prices%% *}"; pout="${prices##* }"
+    cost="$(awk -v di="$delta_in" -v do="$delta_out" -v pi="$pin" -v po="$pout" \
+      'BEGIN { printf "~$%.2f", (di*pi + do*po)/1000000 }')"
+  fi
+  printf '%s %s\n' "$total_in" "$total_out" > "$STATE_FILE"
+fi
+
+# --- git ------------------------------------------------------------------
+gitseg=""
+if [ -n "$cwd_path" ] && [ -d "$cwd_path" ]; then
+  branch="$(git -C "$cwd_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ -n "$branch" ]; then
+    dirty="$(git -C "$cwd_path" status --porcelain 2>/dev/null | head -c 1)"
+    mark="✓"
+    [ -n "$dirty" ] && mark="✗"
+    gitseg="$branch $mark"
+  fi
+fi
+
+# --- assemble --------------------------------------------------------------
+out=""
+[ -n "$model" ] && out="$out$model"
+{ [ -n "$bar" ] && [ -n "$used_pct" ] && [ "$used_pct" != "null" ]; } \
+  && out="$out | $bar ${used_pct}% Context"
+[ -n "$cost" ] && out="$out | $cost"
+[ -n "$gitseg" ] && out="$out | $gitseg"
+rates=""
+[ -n "$rate5h" ] && [ "$rate5h" != "null" ] && rates="5h: ${rate5h}%"
+[ -n "$rate7d" ] && [ "$rate7d" != "null" ] && rates="$rates | 7d: ${rate7d}%"
+[ -n "$rates" ] && out="$out | $rates"
+
+[ -n "$out" ] && printf '%s\n' "$out"
+exit 0
+STATUSLINE_EOF
+chmod +x "$STATUSLINE_SCRIPT"
+ok "Shared statusline command: $STATUSLINE_SCRIPT"
+
+# 4. Register the key in BOTH settings stores (both-stores rule — the stores
+#    are separate; the skills symlink farm does not cover settings.json).
+WROTE=0
+for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+  if [ ! -f "$f" ]; then
+    say "Settings store absent (name-only): $(basename "$f") — skipped."
+    continue
+  fi
+  # Symlink rule: update the target file, not the link.
+  if [ -L "$f" ]; then
+    f="$(readlink "$f")"
+    case "$f" in /*) ;; *) f="$HOME/$(basename "$f")" ;; esac
+  fi
+  backup_settings "$f"
+  set_statusline_key "$f"
+  ok "statusLine registered in $(basename "$f")"
+  WROTE=$((WROTE+1))
+done
+if [ "$WROTE" = 0 ]; then
+  warn "No settings store written. Status line NOT configured."
+  exit 0
+fi
+
+# 5. Stamp, so a re-run reports already-installed instead of reconfiguring.
+mkdir -p "$STAMP_DIR"
+printf '%s\n' "$(date +%Y-%m-%d)" > "$STAMP_FILE"
+
+say ""
+say "Progress Visibility"
+say ""
+say "Spec Protocol configured Claude Code to show a persistent session-health display at the bottom of your terminal."
+say ""
+say "It shows your active model, context-window usage, session cost (derived estimate, ~-marked), Git branch, and available usage information."
+say ""
+say "During larger builds, Spec Protocol will also maintain a live task list so you can see which stages are complete, currently running, pending, or blocked."
+say ""
+say "Press Ctrl+T inside Claude Code to view or hide task progress."
+say ""
+say "Metric report (supported metrics were configured; unsupported ones omitted — never faked):"
+say "  Model: Supported"
+say "  Context bar: Supported"
+say "  Session cost: Derived (real token counts × published pricing, ~-labeled)"
+say "  Session duration: Not exposed by this Claude Code version"
+say "  Git branch/status: Supported inside Git repositories"
+say "  5-hour usage: Supported when exposed (absent under 9Router is expected — omitted)"
+say "  7-day usage: Supported when exposed (absent under 9Router is expected — omitted)"
+say ""
+say "Verification still REQUIRED: launch BOTH plain claude and claude-nine and"
+say "confirm the status line appears in each — a configured key is not a proven"
+say "line. Never report the capability complete until it has been tested."
+exit 0

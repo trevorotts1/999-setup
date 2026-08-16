@@ -1,0 +1,50 @@
+/* colors.css — color system template (STAGE-SCAFFOLDING)
+   Fill the marked slots from the design brief. Semantic roles ONLY — the build
+   never hard-codes a hex. Every text color carries its WCAG AA contrast pair
+   (>= 4.5:1 normal text, >= 3:1 large text and UI components); STAGE-BUILD's
+   accessibility check verifies the pairs. */
+
+:root {
+  /* ---- BRAND + ACCENT — from the brief ---- */
+  --color-brand: #FILL-FROM-BRIEF;          /* primary brand color */
+  --color-brand-strong: #FILL-FROM-BRIEF;   /* darker/hover variant */
+  --color-accent: #FILL-FROM-BRIEF;         /* accent / CTA color */
+
+  /* ---- SURFACES ---- */
+  --color-bg: #FILL-FROM-BRIEF;             /* page background */
+  --color-surface: #FILL-FROM-BRIEF;        /* cards, raised panels */
+
+  /* ---- TEXT ---- */
+  --color-text: #FILL-FROM-BRIEF;           /* AA pair: on --color-bg >= 4.5:1 */
+  --color-text-muted: #FILL-FROM-BRIEF;     /* AA pair: on --color-bg >= 4.5:1 */
+  --color-text-on-brand: #FILL-FROM-BRIEF;  /* AA pair: on --color-brand >= 4.5:1 */
+
+  /* ---- BORDERS ---- */
+  --color-border: #FILL-FROM-BRIEF;
+
+  /* ---- STATUS ---- */
+  --color-success: #FILL-FROM-BRIEF;
+  --color-warning: #FILL-FROM-BRIEF;
+  --color-danger: #FILL-FROM-BRIEF;
+  --color-info: #FILL-FROM-BRIEF;
+}
+
+/* ---- DARK MODE — same roles re-declared; the build never hard-codes a
+   light-only palette ---- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-brand: #FILL-FROM-BRIEF;
+    --color-brand-strong: #FILL-FROM-BRIEF;
+    --color-accent: #FILL-FROM-BRIEF;
+    --color-bg: #FILL-FROM-BRIEF;
+    --color-surface: #FILL-FROM-BRIEF;
+    --color-text: #FILL-FROM-BRIEF;
+    --color-text-muted: #FILL-FROM-BRIEF;
+    --color-text-on-brand: #FILL-FROM-BRIEF;
+    --color-border: #FILL-FROM-BRIEF;
+    --color-success: #FILL-FROM-BRIEF;
+    --color-warning: #FILL-FROM-BRIEF;
+    --color-danger: #FILL-FROM-BRIEF;
+    --color-info: #FILL-FROM-BRIEF;
+  }
+}

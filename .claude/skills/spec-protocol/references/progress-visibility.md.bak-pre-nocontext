@@ -1,0 +1,347 @@
+# Progress Visibility + Session Health
+
+The persistent status line, the context bar, and the live task list. This reference is the
+full capability contract; SKILL.md carries only the operational requirement (step 2.10 and
+the compact threshold table). Spec: operator capability spec 2026-08-16 (17 sections,
+captured verbatim at `/tmp/progress-visibility-spec-20260816.md`).
+
+The swarm must be watchable. This is the watchability layer.
+
+## 1. What the status line is, and why Spec Protocol installs it
+
+Claude Code supports a configurable persistent status line — one line rendered beneath the
+input box, refreshed on events (and optionally on an interval). Spec Protocol installs it
+so the user can glance at the terminal and answer twelve questions without reading the
+conversation:
+
+1. What model am I using?
+2. How much context have I used?
+3. How close am I to the context limit?
+4. How long has this session been running?
+5. What has this session cost?
+6. What git branch am I on?
+7. How much of my Claude usage have I consumed?
+8. What part of the project is currently being built?
+9. What has already been completed?
+10. What is still left?
+11. Is anything blocked?
+12. Is the work clean in git?
+
+Preferred display, adapted to what the installed version actually exposes (priority order
+per spec §1):
+
+```text
+Claude Opus | ███████░░░ 72% Context | ~$1.38 | main ✓ | Project ████░░░░░░ 40%
+5h: 34% | 7d: 18%
+```
+
+The Project segment is THE MAIN METRIC (operator order 2026-08-16): how close the project
+is to being done. Session-health metrics support it; they do not replace it. Full
+derivation and guardrails in §6.
+
+Do not fake unavailable information. Only display data Claude Code actually exposes — or
+data derived from what it exposes (the cost rule, §4).
+
+## 2. Version facts (verified 2026-08-16, operator Mac Mini)
+
+- Claude Code **2.1.227** on BOTH launch methods. `claude-nine` runs the SAME native
+  binary as plain `claude` (`~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`);
+  only the config dir differs.
+- `/statusline` is a runtime slash command in 2.1.227 — but it is NOT listed in
+  `claude --help`. Detect support at runtime, never assume.
+- The settings key (native schema):
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "<script-path-or-command>",
+  "padding": <number, optional>,
+  "refreshInterval": <seconds ≥ 1, optional>,
+  "hideVimModeIndicator": <bool, optional>
+}
+```
+
+- Convention: one shared script at `~/.claude/statusline-command.sh` referenced from both
+  stores. If `~/.claude/settings.json` is a symlink, update the target file instead.
+- The statusLine command is **silently skipped** when workspace trust is not accepted, and
+  **disabled by `disableAllHooks`** (never set on the operator box — the boss cron lives in
+  hooks). Safe mode shows only the managed/policy status line.
+
+## 3. Detection-first — never destroy an existing status line
+
+Before changing anything:
+
+1. Inspect BOTH settings stores (`~/.claude/settings.json` and `~/.claude-nine/settings.json`).
+2. Detect whether a statusLine already exists.
+3. Back up any settings file that will be modified (state the backup path in the same message).
+4. Preserve existing useful customizations.
+
+Existing status line equal or better → DO NOT replace it. Report:
+
+```text
+Claude Code Status Line:
+Already configured and healthy.
+No replacement required.
+```
+
+Enhanceable → preserve its behavior, add only the missing Spec Protocol information.
+
+**Idempotency.** Running setup twice must not create duplicate configuration. The installer
+detects first, always; a re-run reports already-configured and writes nothing.
+
+**Testing the installer.** `scripts/setup-statusline.sh --check` is a detection-only dry run —
+it reports what WOULD happen and writes nothing. Always test with `--check` first; a bare
+invocation mutates the settings stores.
+
+Never replace an entire settings file to add one key. Modify only the required key.
+
+## 4. The metric support matrix (verified against the statusLine stdin JSON schema)
+
+The statusLine command receives JSON on stdin. Fields that matter here:
+
+```json
+{
+  "model": { "id": "string", "display_name": "string" },
+  "cwd": "string",
+  "context_window": {
+    "total_input_tokens": "number", "total_output_tokens": "number",
+    "context_window_size": "number",
+    "used_percentage": "number|null (0-100, pre-calculated)",
+    "remaining_percentage": "number|null (0-100, pre-calculated)"
+  },
+  "rate_limits": {                          // subscribers only, after first API response
+    "five_hour": { "used_percentage": "number", "resets_at": "epoch" },
+    "seven_day": { "used_percentage": "number", "resets_at": "epoch" }
+  }
+}
+```
+
+| Metric | Verdict | How |
+|---|---|---|
+| Active model | SUPPORTED | stdin `model.display_name` |
+| Context % | SUPPORTED | stdin `context_window.used_percentage` / `remaining_percentage` — pre-calculated 0-100, null if no messages yet |
+| Context bar | SUPPORTED | rendered by the script from the % numbers; no native bar renderer exists |
+| **Session cost** | **REQUIRED — derived, never read from stdin** | see the cost rule below |
+| Session duration | UNDETERMINED | not in stdin; script-side start-time file is the permitted DIY extension |
+| Git branch/status | SUPPORTED | via shell from `cwd` (stdin workspace has no branch field): `git rev-parse --abbrev-ref HEAD`, `git status --porcelain`; skip optional locks |
+| 5-hour usage | SUPPORTED (subscribers only) | stdin `rate_limits.five_hour.used_percentage` |
+| 7-day usage | SUPPORTED (subscribers only) | stdin `rate_limits.seven_day.used_percentage` |
+| Rate limits under 9Router | expected ABSENT | claude-nine sessions route through 9Router — no claude.ai subscription context; omit, never fail |
+
+**The cost rule (operator order 2026-08-16 — cost goes ON the bar).** Cost is NOT exposed
+in the stdin schema — verified: the 2.1.227 binary's internal `costUSD` accumulator, the
+`totalCostUSD` session field, and the `/api/oauth/usage` subscriber endpoint all exist, but
+none are wired into the statusLine stdin. Derivation, binding:
+
+- The script accumulates the REAL per-invocation token counts stdin exposes
+  (`context_window.total_input_tokens` / `total_output_tokens` — deltas per refresh, kept
+  in a session state file).
+- Multiply by PUBLISHED per-model pricing, matched from `model.display_name`.
+- Display with a `~` marker: computed estimate from real data. Never an invented number.
+- A model with no published pricing in the table → the cost segment is OMITTED, not guessed.
+- Wave 6 acceptance: the derivation must be proven live in BOTH launch paths before cost is
+  reported as displayed.
+
+**Fallback law.** Version-detect at install time. Never hard-code an implementation that
+assumes `/statusline`, specific JSON fields, or rate-limit properties stay identical across
+versions. Use the native supported mechanism or the closest equivalent. A metric that is
+unavailable is OMITTED — the status line still installs with the supported metrics, and the
+installation never fails over a missing metric. Report per metric:
+
+```text
+Model: Supported
+Context bar: Supported
+Session cost: Derived (real token counts × published pricing, ~-labeled)
+Session duration: Not exposed by this Claude Code version
+5-hour usage: Not exposed by this Claude Code version
+```
+
+## 5. Context health thresholds
+
+The bar makes context visible; the agent changes behavior as it climbs. The statusline
+script maps `used_percentage` to a level marker; the agent acts per level:
+
+| Level | Range | Agent behavior |
+|---|---|---|
+| Normal | 0-69% | Continue normally. |
+| Elevated | 70-84% | Verify the active task list. Persist important architectural decisions to project files. Never keep critical project information only in conversation context. |
+| High | 85-94% | Persist current implementation state. Update project documentation. Update task state. Record unresolved issues. Preserve important decisions. Prepare for context compaction or continuation. |
+| Critical | 95%+ | Do not start a large new phase without first persisting the current project state. Preserve enough state so work continues accurately after compaction or a new session. |
+
+The objective is continuity, not premature stopping. High context never licenses abandoning
+active work; it licenses persisting state first.
+
+## 6. Task tracking (spec §4-9)
+
+- **When:** task list is created after the specification/plan is established — never before,
+  never fake busywork tasks to lengthen the list. Track meaningful milestones only.
+- **Symbols:** `✓` Complete, `●` In Progress, `○` Pending, `!` Blocked — with the specific
+  reason shown (`! Blocked - Supabase authentication required`).
+- **Truthfulness law:** a task is Complete ONLY when its required validation is complete —
+  never because code was generated. `✓ Backend complete` without validated backend is a
+  lie; `✓ Deployment complete` without a tested deployment is a lie. The user must be able
+  to understand what is happening from the progress interface without reading the whole
+  conversation.
+- **Phases** (only applicable ones; subtasks underneath): 01 Discovery, 02 Specification,
+  03 Architecture, 04 Design System, 05 Frontend, 06 Backend, 07 Integrations, 08 Testing,
+  09 QA, 10 Deployment.
+- **Companion skills reflected:** when Frontend Design / UI/UX Pro Max / Supabase /
+  Kie.ai / Agnes AI are used, they appear in the task display. Never display providers that
+  are not being used in the project.
+- **Ctrl+T** toggles the task display (`app:toggleTodos`, Global binding, 2.1.227). Explain
+  it to the client in plain English during setup:
+
+```text
+Spec Protocol has enabled Claude Code's progress-tracking workflow.
+
+Your persistent status line shows session health such as model, context usage, session time, cost, and Git information.
+
+For larger builds, Claude will also maintain a task list.
+
+Press Ctrl+T inside Claude Code to view or hide task progress when supported by your installed version.
+```
+
+### The project completion bar (THE MAIN METRIC — operator order 2026-08-16)
+
+The status line carries a project segment: how close the project is to being DONE. This is
+the main thing the bar exists to show — not just session health.
+
+```text
+Claude Opus | ███████░░░ 72% Context | ~$1.38 | main ✓ | Project ████░░░░░░ 40%
+```
+
+**Derivation — disk truth only, never conversation memory.** The statusline script reads
+`$cwd/CONTROL/project_state.json` (schema `spec-protocol/project-state@1`,
+references/documents.md). Percent = `tasks.counts.completed / (pending + in_progress +
+completed)`, the SAME counts the reconciler audits. The script is a reader; it never
+invents numbers and never trusts a stale memory of progress.
+
+**Guardrails (binding):**
+
+- No `project_state.json` in the project → the segment is OMITTED (the plan does not exist
+  yet; showing 0% before the plan exists is fake progress). Appears from the moment step
+  16.6 initializes the state file.
+- Blocked tasks count in the total. A blocked task is unfinished work; hiding it inflates
+  the percent.
+- `✓` only after validation, so the bar moves on VALIDATION, never on code generation —
+  the counts only advance when tasks complete under the completion law, and a task is
+  complete only when its required validation is complete. Generated-but-unverified code
+  does not move the bar.
+- `run_status` is shown when it is not RUNNING (`[PASS]`, `[STOPPED_CAP]`, …). 100% counts
+  with `run_status` still RUNNING render the counts as they are — the merge state is the
+  task system's business; the bar never claims delivery.
+- Repair loops reopen tasks → completed goes DOWN → the bar goes DOWN. That is correct,
+  never a bug. The bar tells the truth even when the truth is backwards movement.
+- 100% does not mean shipped. Shipped = merged at HEAD and verified there (the completion
+  law). The bar is a progress instrument, not the delivery claim.
+
+### The wave bar (fix executions and wave-shaped runs)
+
+When a wave-shaped run is in progress — the fix execution of the master spec, or any run
+whose ledger carries wave lines — the status line adds a wave segment:
+
+```text
+... | Wave 3 ██░░░░░░░░ 20%
+```
+
+**Derivation.** The script looks for `FIX-LEDGER.md` at `$cwd/FIX-LEDGER.md` first, then at
+`$HOME/work-999-setup/FIX-LEDGER.md` (the master spec's named absolute ledger path,
+PART 2.1). Current wave = the highest `WAVE <n>` line; total = the `WF-<n>` workflow lines
+belonging to that wave; done = those carrying a PASS or DONE marker. No wave or workflow
+lines → the segment is OMITTED, never guessed.
+
+**Guardrails:** the bar counts ledger lines, and ledger lines are written only after
+verification (the boss enforces claim-vs-ledger). A workflow line without a PASS/DONE
+marker counts as not done. A `VIOLATION-STOP` or re-opened workflow drops the percent —
+again, correct.
+
+The wave bar and the project bar coexist: the wave bar answers "how long until THIS wave
+is done", the project bar answers "how long until THE PROJECT is done".
+
+## 7. Claude-nine compatibility
+
+- Plain `~/.claude/` and `~/.claude-nine/` are SEPARATE config stores (verified). The
+  skills symlink farm (`sync-nine-skills.sh`) shares skills — it does NOT cover
+  settings.json.
+- Therefore: configure the statusLine in BOTH stores — or, preferred, register the SAME
+  shared script (`~/.claude/statusline-command.sh`) from both stores.
+- **Acceptance requires live proof in a claude-nine session** — same script, same bar,
+  same metrics — not just a configured key. A metric observed only under plain claude is
+  not claimed for claude-nine.
+- 9Router sessions are expected to lack `rate_limits` — omit the 5h/7d segments, never fail.
+- DO NOT alter 9Router model-routing rules merely to enable progress visibility. Routing is
+  sovereignty; visibility never justifies touching it.
+
+Expected validation outcome (spec §10):
+
+```text
+Standard Claude Code
+✓ Status line visible
+✓ Context bar visible
+✓ Task tracking available
+
+Claude-nine
+✓ Status line visible
+✓ Context bar visible
+✓ Task tracking available
+```
+
+## 8. Installation checklist (spec §15)
+
+```text
+[ ] Claude Code launches successfully
+[ ] Existing Claude settings remain intact
+[ ] Status line appears
+[ ] Active model is displayed
+[ ] Context percentage is displayed
+[ ] Context progress bar works
+[ ] Session cost displayed and computed from real token counts in BOTH launch paths (labeled estimate)
+[ ] Session duration works when supported
+[ ] Git branch/status works inside Git repositories
+[ ] Usage/rate-limit data works when supported
+[ ] Task tracking is available
+[ ] Standard Claude Code works
+[ ] Claude-nine works
+[ ] 9Router configuration remains unchanged
+[ ] Re-running setup does not create duplicate configuration
+```
+
+Do not claim a metric works unless it was actually observed.
+
+## 9. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Status line missing in a trusted workspace | workspace trust not accepted | accept trust (`/trust` or the prompt); statusLine is skipped silently otherwise |
+| Status line missing everywhere | `disableAllHooks` set | remove it — it also kills the boss cron and every governance hook (PART 4 hook-protection clause) |
+| Only the managed line shows in safe mode | safe mode displays policy statusLine only | exit safe mode |
+| 5h/7d segments absent | not a subscriber / first API response not yet seen / 9Router session | omit is correct behavior, not a fault |
+| Cost segment absent | model not in the pricing table | omit is correct — never guess a price |
+| `git` segments blank | not inside a git repository | omit branch/status outside repos |
+
+## 10. How to disable / restore
+
+- **Disable:** remove the `statusLine` key from the store(s) that carry it (keep everything
+  else in the file). The shared script can stay — it runs only when referenced.
+- **Restore previous configuration:** every settings file modified by the installer has a
+  dated backup sibling (`.bak-*`). Copy it back.
+
+## 11. Final report format (spec §17 — 15 items)
+
+1. Claude Code version detected.
+2. Claude-nine environment detected.
+3. Configuration file modified.
+4. Backup created.
+5. Status-line implementation used.
+6. Metrics successfully displayed.
+7. Unsupported metrics.
+8. Task-progress functionality.
+9. Ctrl+T support.
+10. Standard Claude Code validation.
+11. Claude-nine validation.
+12. Whether both environments share configuration.
+13. Any existing user configuration preserved.
+14. Idempotency test.
+15. Any remaining manual action.
+
+Never report the capability complete until it has been tested.

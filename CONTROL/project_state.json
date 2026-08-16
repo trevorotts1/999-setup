@@ -1,0 +1,34 @@
+{
+  "schema": "spec-protocol/project-state@1",
+  "project": "999-master-fix",
+  "updated": "2026-08-16T09:05:48Z",
+  "updated_by": "conductor",
+  "run_status": "RUNNING",
+  "round": 0,
+  "phase": "wave-2",
+  "scores": { "current": 0.0, "best": 0.0, "gate": 8.5, "history": [] },
+  "best_stable_build": { "checkpoint": "", "commit": "", "score": 0.0, "ts": "" },
+  "agents": {
+    "executions_total": 0,
+    "budget_initial": 52,
+    "session_budget_remaining": 52,
+    "warn_at": 150,
+    "hard_stop_at": 200,
+    "by_workflow": {},
+    "commanders": []
+  },
+  "workstreams": { "passed": ["wf-1a", "wf-1b"], "failed": [], "in_repair": [] },
+  "locked": [],
+  "defects_open": [],
+  "tests": { "last_suite": { "ts": "", "result": "", "failed": [] } },
+  "tasks": {
+    "snapshot_ts": "2026-08-16T14:02:00Z",
+    "counts": { "pending": 5, "in_progress": 1, "completed": 1 },
+    "last_reconcile": { "ts": "", "result": "", "actions": 0 }
+  },
+  "merge": { "pen_depth": 0, "last_batch": { "id": "", "ts": "", "result": "" }, "parked_failures": [] },
+  "checkpoints": [],
+  "disagreements": [],
+  "release": { "ready": false, "council": { "last": "", "ts": "" }, "condition": "council 4/4 AND B2H success rule" },
+  "stall": { "last_state_delta_ts": "2026-08-16T09:05:48Z", "no_delta_reconciles": 0, "terminal_after": 6 }
+}

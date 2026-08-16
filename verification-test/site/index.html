@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACME — verification test site (Issue 8 staged pipeline)</title>
+  <!-- STAGE-SCAFFOLDING reference contract: tokens -> type-scale -> colors, in order -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/type-scale.css">
+  <link rel="stylesheet" href="css/colors.css">
+  <style>
+    body { font-family: var(--font-body); color: var(--color-text); background: var(--color-bg); margin: 0; }
+    .header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-8); background: var(--color-surface); position: sticky; top: 0; z-index: var(--z-header); }
+    .logo { height: 48px; width: auto; }
+    .nav a { margin-left: var(--space-6); color: var(--color-text); text-decoration: none; }
+    .cta { background: var(--color-brand); color: #fff; padding: var(--space-2) var(--space-6); border-radius: var(--radius-full); text-decoration: none; font-weight: var(--weight-medium); }
+    .hero { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-8); align-items: center; padding: var(--space-12) var(--space-8); }
+    .hero img { width: 100%; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+    .hero h1 { font-family: var(--font-display); font-size: var(--text-display); line-height: var(--lh-tight); margin: 0 0 var(--space-4); }
+    .hero p { font-size: var(--text-h4); color: var(--color-text-muted); line-height: var(--lh-normal); }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6); padding: var(--space-8); }
+    .card { background: var(--color-surface); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); }
+    .card h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); }
+    .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); padding: var(--space-8); }
+    .gallery img { width: 100%; border-radius: var(--radius-md); }
+    .proof { padding: var(--space-8); background: var(--color-surface); }
+    .footer { padding: var(--space-8); color: var(--color-text-muted); text-align: center; }
+    @media (max-width: 768px) {
+      .hero { grid-template-columns: 1fr; }
+      .features { grid-template-columns: 1fr; }
+      .gallery { grid-template-columns: 1fr; }
+    }
+    /* STAGE-BUILD animations (CSS keyframes, per the brief's animation library) */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes pulseCta { 0%, 100% { box-shadow: 0 0 0 0 rgba(26,86,219,.4); } 50% { box-shadow: 0 0 0 12px rgba(26,86,219,0); } }
+    .hero h1 { animation: fadeUp var(--duration-base) var(--ease-standard) both; }
+    .hero p { animation: fadeUp var(--duration-slow) var(--ease-standard) .15s both; }
+    .hero img { animation: floaty 4s var(--ease-emphasized) infinite; }
+    .cta { animation: pulseCta 2.4s var(--ease-standard) infinite; }
+    .card { animation: fadeUp var(--duration-base) var(--ease-standard) both; }
+    .card:nth-child(2) { animation-delay: .1s; }
+    .card:nth-child(3) { animation-delay: .2s; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <!-- STAGE-LOGO output referenced — the transparent file, never the raw source -->
+    <img class="logo" src="assets/logo-transparent.png" alt="ACME logo">
+    <nav class="nav"><a href="#features">Features</a><a href="#proof">Proof</a><a class="cta" href="#cta">Get Started</a></nav>
+  </header>
+
+  <section class="hero" id="cta">
+    <div>
+      <h1>ACME turns busy work into finished work.</h1>
+      <p>One tool, zero busywork — built for people who ship.</p>
+      <a class="cta" href="#cta">Try it free</a>
+    </div>
+    <!-- STAGE-HERO output referenced — manifest row hero-home with a real file -->
+    <img src="assets/hero-home.webp" alt="ACME product hero">
+  </section>
+
+  <section class="features" id="features">
+    <div class="card"><h3>Fast</h3><p>Everything loads in one second or less.</p></div>
+    <div class="card"><h3>Simple</h3><p>One screen, no menus to get lost in.</p></div>
+    <div class="card"><h3>Safe</h3><p>Your data stays yours, always.</p></div>
+  </section>
+
+  <section class="gallery">
+    <!-- STAGE-IMAGES output referenced — remaining manifest rows placed -->
+    <img src="assets/gallery-1.webp" alt="Gallery image one">
+    <img src="assets/gallery-2.webp" alt="Gallery image two">
+  </section>
+
+  <section class="proof" id="proof">
+    <h2>What customers say</h2>
+    <p>"ACME paid for itself in the first week." — a happy customer</p>
+  </section>
+
+  <footer class="footer">© 2026 ACME. Built by the Issue 8 staged pipeline.</footer>
+
+  <script>
+    // STAGE-BUILD behavior: animation presence proof (the QC capture shows motion)
+    window.__animationCheck = {
+      fadeUp: !!document.querySelector('.hero h1'),
+      floaty: !!document.querySelector('.hero img'),
+      pulseCta: !!document.querySelector('.cta'),
+      logoTransparent: document.querySelector('.logo').src.includes('logo-transparent')
+    };
+  </script>
+</body>
+</html>

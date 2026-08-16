@@ -1,0 +1,72 @@
+# FIX-LEDGER — 999 master fix execution
+
+Absolute path per PART 2.1: `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md`.
+Spec: `/Users/blackceomacmini/Downloads/999-master-fix-spec-20260815.md`.
+One line per claim/result. The boss cron (PART 4) reads this ledger every 5 minutes.
+A claim without its ledger line is a violation; a ledger line without its claim never happens.
+
+CREATED: 2026-08-16 (wave 1, per PART 2.1 item 1)
+
+## LOCKED WAVE TABLE (PART 2 — immutable count 6)
+
+| Wave | Issues | Workflows | Dependencies |
+|---|---|---|---|
+| WAVE 1 | 1, 2 | WF-1A Issue 1 verification; WF-1B Issue 2 verification | None — verify-only, landed in 8fac6ce |
+| WAVE 2 | 3, 4, 5, 11, 12 | WF-2A entry gate; WF-2B mode offer; WF-2C counter enforcement; WF-2D wording; WF-2E RESEARCH-READY gate | Wave 1 |
+| WAVE 3 | 6, 7, 8, 9, 10 | WF-3A design brief; WF-3B image lane; WF-3C staged pipeline; WF-3D GHL media; WF-3E orphan accounting | Wave 2 |
+| WAVE 4 | 13, 14, 15, 17, 18 | WF-4A anti-drift; WF-4B fan-out; WF-4C wave lock; WF-4D QC protocol; WF-4E boss cron | Waves 1-3 |
+| WAVE 5 | 16, 19, batch merge | WF-5A unleash table; WF-5B gauntlet weave; WF-5C batch merge (PART 3, single serial workflow) | Waves 1-4 |
+| WAVE 6 | 20 | WF-6A status-line both stores + shared script + task-progress wiring + validation | Wave 5 |
+
+Additional waves only via a documented `NEW-WAVE-N` ledger line naming the dependency (PART 2).
+
+## BASELINE (verified before Wave 1)
+
+- `BASELINE: commit 6bf371c on main` — spec-protocol progress visibility capability (Issue 20) committed 2026-08-16.
+- `BASELINE: commit 590eb41 on main` — transcript-alive rule + native task-graph rebuild committed 2026-08-16.
+- `BASELINE: commit 8fac6ce on main` — Issues 1+2 fixes landed (wave 1 is verify-only).
+- `BASELINE: live skill ~/.claude/skills/spec-protocol/ synced byte-identical to repo` — diff verified 2026-08-16.
+
+## WAVE 1 — verify-only (Issues 1, 2)
+
+- `ISSUE-18-EARLY 2026-08-16T13:42Z: boss cron armed early on Trevor's direct order — script /Users/blackceomacmini/work-999-setup/tools/boss-cron (interim checks: caps 2 Opus / 3 Sonnet / 10 Haiku, dispatch census, PART 4 width, wave lock, claim evidence, heartbeat, stop file, stop-and-rerun kill via CONTROL/workflow-pids.json), crontab entry */5 * * * * with log CONTROL/boss-cron.log, first live cycle 13:42Z. WF-4E (Wave 4) upgrades this to the full 8-check boss + Telegram alert. First cycle's heartbeat finding was a first-baseline false positive — boss fixed, false line removed.`
+
+- `DISPATCH 2026-08-16T09:05Z: WF-1A + WF-1B opened. Census before dispatch: 0 live agents (main-loop only). Plan: 2 Opus builders (1 per workflow, cap 2 concurrent), 2 Sonnet blind critics (cap 3). Working copies: /Users/blackceomacmini/work-999-setup-fix/WF-1A + WF-1B (clones of main@15a92d9), branches fix/1-verification + fix/2-verification, holding pens at <clone>/holding/. Ledger discipline: every claim below cites the builder's evidence file in its holding pen; no claim without evidence.`
+- `WF-1B BUILDER DONE 2026-08-16T09:07Z: Opus verdict PASS. Evidence: holding/WF-1B-evidence.md (configure-nine-router.mjs read in full: pw used only for login line 141, no rotation code, mustChangePassword advisory at 690-693; setup-macos.sh default 123456 line 352, completion text verbatim line 715; setup-windows.ps1 default 123456 line 243, completion text 577; item 3 mechanics PASS, fresh-provision fingerprint UNDETERMINED — live gateway must not be stopped). Conductor independently re-read configure-nine-router.mjs 130-149 + 686-693 and setup-macos.sh 348-359 + 712-720 — evidence confirmed. Blind critic (Sonnet) pending.`
+- `WF-1A BUILDER DONE 2026-08-16T09:15Z: Opus verdict FAIL. Finding F-1: launchers/macos/claude-nine line 7 sets -euo pipefail; line 169 reads $LASTEFFORT, which the node block (146-153) emits ONLY when lastEffortSelection === ultracode. Seeded null (setup-macos.sh 442) or any persistable level or CLAUDE_NINE_FORCE_EFFORT leaves it unset -> abort "LASTEFFORT: unbound variable" exit 1 before exec. Evidence: holding/WF-1A-evidence.md (3 independent controls incl. faithful simulation; items 1-3 PASS, item 4 FAIL). Conductor independently CONFIRMED: read launcher lines 1-20 + 130-194; reproduced the abort (bash -c 'set -euo pipefail; EFFORT_ARGS=(); if [ "$LASTEFFORT" = "ultracode" ]; then ...' -> EXIT=1).`
+- `WF-1A OBSERVATION (out of bar scope, recorded only): CLAUDE_EFFORT=max present in fresh shell env; live launcher at /Users/blackceomacmini/bin/claude-nine is an older generation (no lastEffortSelection logic, set -uo only); router-session.json does not exist at the launcher's state path — the 8fac6ce launcher has never been installed on this box. Live relaunch behavior: UNDETERMINED.`
+- `WF-1A REPAIR DISPATCH 2026-08-16T09:16Z: F-1 repair cycle 1 of 20. Census before dispatch: 0 live agents (both builders completed). Seat: [Sonnet] fixer (operator assignment: critics and fixers = Sonnet) via workflow "wave-1a-launcher-repair" on branch fix/1-verification in clone WF-1A. One unit, one commit, cites this line. Blind critic + conductor verification after the fix lands.`
+- `WF-1A REPAIR DONE 2026-08-16T09:25Z: [Sonnet] fixer landed the F-1 guard in commit 63bb66c on fix/1-verification — exactly 1 line changed (line 169: if [ "${LASTEFFORT:-}" = "ultracode" ]). Conductor re-verified independently: bash -n exit 0; guarded construct prints ALIVE exit 0; unguarded control aborts "LASTEFFORT: unbound variable" exit 1; sim set/unset both correct. Evidence: holding/WF-1A-repair-evidence.md. First completion dispatch (2 agents + 1 conditional critic) was KILLED on Trevor's order — under scripted width with no recorded justification line (PART 4 check 4 violation); the conditional spawn hid the third agent from the tree.`
+- `WAVE 1 REDISPATCH 2026-08-16T09:45Z: full PART 2 scripted width — WF-1A + WF-1B, 5 Opus builders + 5 Sonnet blind critics each = 20 agents in one workflow tree "wave-1-verification" with per-workflow phases. Census before dispatch: 0 live agents. Width justification: verify-only wave, slice map = each issue's numbered FIX steps + named extra slices (WF-1A: 4 FIX steps + repair verification; WF-1B: 3 FIX steps + negative re-verification + completion-text verbatim). Phasing (operator caps 2 Opus / 3 Sonnet concurrent): builders in chunks of 2, critics in chunks of ≤3, interleaved — 2 Opus + ≤3 Sonnet live at every instant, zero cap violations, zero idle seats the dependency chain allows. All 20 agents visible from launch — no conditional spawns.`
+- `WAVE 1 WORKFLOW DONE 2026-08-16T13:40Z: 20/20 agents complete, 0 errors, 0 empty results (workflow journal: 20 started + 20 result lines). Verdicts: WF-1A repo-state PASS; WF-1A live-skill-diff PASS; WF-1A env-sweep PASS; WF-1A functional-relaunch UNDETERMINED (state file absent on this box — fresh provision only; the launcher's own design gate, exit 1 at its state check; no authorized way to complete here); WF-1A f1-repair PASS (conductor re-confirmed separately). WF-1B code PASS; WF-1B orchestrators PASS; WF-1B fingerprint UNDETERMINED (live gateway stop not authorized — spec line 42 itself names this); WF-1B negative PASS; WF-1B completion-text FAIL (F-3). Cross-slice: WF-1B slice3 also surfaced F-2. Both FAILs conductor-verified by direct file reads + own control. Full verdicts in the workflow journal wf_4e3a9930-789.`
+- `DOC CHANGE 2026-08-16T13:50Z: Trevor GO — spec now opens with the boss armed. Issue 18 gains WAVE 0 BOOTSTRAP (interim boss detect-first install + cron entry + one live cycle + --check green + ISSUE-18-EARLY line BEFORE any Wave 1 dispatch); PART 2 locked table gains WAVE 0 row (Wave 1 dependency = Wave 0); PART 4 scope allowlist gains ISSUE-18-EARLY + the executor line classes in use. Backup: /Users/blackceomacmini/Downloads/999-master-fix-spec-20260815.md.bak-boss-wave0. The running boss (ISSUE-18-EARLY 13:42Z) already satisfies the Wave 0 bar as written.`
+- `F-2 FAIL 2026-08-16T13:50Z: SKILL.md Step 5 lines 107-116 (repo AND byte-identical live ~/.claude/skills/nine-router-setup/SKILL.md) still teach full password rotation — "generate a strong random password… PATCH /api/settings with currentPassword + newPassword… fingerprints must DIFFER" — contradicting the removed rotation (configure-nine-router.mjs advisory-only, setup comments, security.md lines 22-24). Conductor CONFIRMED by direct read of the clone copy lines 102-119.`
+- `F-3 FAIL 2026-08-16T13:50Z: setup-macos.sh line 715 raw backticks around 123456 inside the unquoted cat <<REPORT heredoc (line 672) — command substitution drops the value; rendered line reads "the password is the default ; change it yourself…" plus stderr "123456: command not found". Conductor CONFIRMED by own control (raw heredoc sim prints the blank + stderr; escaped sim prints 123456). Line 670 already escaped — 715 missed.`
+- `WF-1B REPAIR DISPATCH 2026-08-16T13:52Z: F-2 + F-3 repair, cycle 1 of 20, [Sonnet] fixer (operator assignment: critics and fixers = Sonnet), workflow "wave-1b-repair", clone WF-1B branch fix/2-verification, one commit per finding citing this line. Census before dispatch: 0 live agents. Census 2026-08-16T13:55Z (computed before this workflow launched): live Sonnet 1, live Opus 0, live Haiku 0 — within caps 3/2/10.`
+- `WF-1B REPAIR DONE 2026-08-16T13:56Z: 4/4 agents complete. F-2 fixer FIXED (commit 61bcb42: Step 5 replaced with no-rotation advisory doctrine); F-3 fixer FIXED (commit 2d26bcb: line 715 backticks escaped, 715c715 exactly one line). Both blind critics PASS with independent reproductions. Conductor verified by own reads: SKILL.md lines 102-119 now carry the corrected doctrine, zero rotation language; setup-macos.sh line 715 now \`123456\` escaped, identical pattern to line 670.`
+- `WAVE 1 CLOSED 2026-08-16T14:00Z: verification + repairs complete. WF-1A: repo-state PASS, live-skill-diff PASS, env-sweep PASS, f1-repair PASS (F-1 guard commit 63bb66c); functional-relaunch UNDETERMINED — environment-bound (router-session.json absent on this box; fresh provision only; no authorized way to complete here). WF-1B: code PASS, orchestrators PASS, negative PASS, completion-text PASS after F-3; F-2 PASS after repair; fingerprint UNDETERMINED — spec line 42's own gateway-stop precondition (launchctl bootout) is not authorized on the operator box; the check runs on the next real client-box provision. Both UNDETERMINEDs are recorded, not defects of the landed fixes. Wave 2 dependency satisfied.`
+- `WAVE 2 DISPATCH 2026-08-16T14:02Z: 5 workflows WF-2A WF-2B WF-2C WF-2D WF-2E (Issues 3, 4, 11, 12, 5), 5 Opus builders + 5 Sonnet blind critics each = 50 agents in workflow "wave-2-fixes" with per-workflow phases. Census before dispatch: 0 live agents (wave-1-verification and wave-1b-repair both completed). Width justification: full PART 2 scripted width — pairs of five per locked table; slices = each issue's numbered FIX steps plus named cross-check slices (WF-2A slice 5 = boss-cron ENTRY-MODE allowlist wiring; WF-2B slice 5 = collapse/sanctioned-removal consistency vs Issue 11; WF-2C slice 5 = utterance-parse verification; WF-2D slice 5 = test-interview R5-shape verification; WF-2E slices 4-5 = dispatch-citation format + SKILL.md flow-ordering cross-check). Concurrency: global gates inside the run — 2 Opus live max, 3 Sonnet live max, zero cap violations, zero idle seats the dependency chain allows; 50 agents all registered from launch, no conditional spawns. Working copies: /Users/blackceomacmini/work-999-setup-fix/WF-2A..WF-2E (clones re-pointed to local main@15a92d9), branches fix/3-entry, fix/4-mode, fix/11-counter, fix/12-wording, fix/5-research, holding pens at <clone>/holding/. One unit = one commit citing this line.`
+
+
+## WAVE 2
+
+_(in progress — rerun after stop-and-rerun 15:11Z)_
+
+## WAVE 3
+
+_(not started)_
+
+## WAVE 4
+
+_(not started)_
+
+## WAVE 5
+
+_(not started)_
+
+## WAVE 6
+
+_(not started)_
+- `BOSSCYCLE-CLEAN 2026-08-16T13:43:12Z: checks=caps,census,width,wavelock,claims,beat,stop,scope,kill (baseline)`
+- `BOSSCYCLE-CLEAN 2026-08-16T15:11:55Z: checks=caps,census,width,wavelock,claims,beat,stop,scope,kill (baseline)`
+- `BOSSCYCLE-CLEAN 2026-08-16T15:21:51Z: checks=caps,census,width,wavelock,claims,beat,stop,scope,kill (baseline)`
