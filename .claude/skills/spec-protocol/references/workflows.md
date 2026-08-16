@@ -566,7 +566,7 @@ of it. "The builder says it is fixed" is not evidence and is BANNED as a basis f
 pass. Produce the evidence you relied on: commands run, output, screenshots, or test
 results. Return PASS or FAIL with the one largest gap named.
 
-Write the QC RECORD (the one format every verdict is written in,
+Write the QC-RECORD (the one format every verdict is written in,
 references/pipeline.md Stage 2): your judge seat label in judge=, the bar you
 judged against - NAMED - in bar=, how you obtained the bar (URL / capture path /
 file path / answer-key reference) in bar_fetch, the verdict in verdict=, the

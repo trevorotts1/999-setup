@@ -1215,13 +1215,14 @@ When the operator provides a folder, that folder IS the project. Its documents A
     own QC report failed on exactly this (stale counts), so a self-audit with no
     command output is not a self-audit. The commands live in
     `references/documents.md`. **Then the QC-RECORD audit:** every verdict block
-    in the ledger opens with a QC RECORD that passes its five mechanical checks
+    in the ledger opens with a QC RECORD that passes its six mechanical checks
     (`references/pipeline.md` Stage 2) — a judge seat differing from the unit's
-    builder seat (zero self-QC), a named bar, a bar-fetch proof, a binary
-    verdict, and a PASSED / LOOPED n-of-20 / ESCALATED outcome; enumerate the
-    records with the census commands, prove the instrument on a known-positive
-    first, and report each count — a verdict block with no record, or a record
-    failing a check, is a defect. **Then the GL-001…GL-008 separation audit:** the
+    builder seat and provenance=STRIPPED (blind critic, zero self-QC), a named
+    bar, a bar-fetch proof, a binary verdict, and a PASSED / LOOPED n-of-20 /
+    ESCALATED outcome; enumerate the records with the census commands, prove the
+    instrument on a known-positive first, and report each count — a verdict
+    block with no record, or a record failing a check, is a defect. **Then the
+    GL-001…GL-008 separation audit:** the
     three-part Gauntlet Loop block (Step 12.5) must show: exactly three labeled
     top-level parts exist, in order (THE TASK / THE BUILD METHOD / THE BAR TO
     HIT); no critic/loop/stop language in THE TASK; decomposition/roles/
