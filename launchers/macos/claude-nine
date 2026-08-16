@@ -166,7 +166,7 @@ NODE
   #     exec line (session-only by product design; the flag is the only way to
   #     re-enter it across a session boundary).
   EFFORT_ARGS=()
-  if [ "$LASTEFFORT" = "ultracode" ]; then
+  if [ "${LASTEFFORT:-}" = "ultracode" ]; then
     EFFORT_ARGS=(--effort ultracode)
   fi
 
