@@ -354,3 +354,39 @@ teammate that was demonstrably alive and holding its own pane (2026-08-12),
 so its silence is not evidence of absence. Re-spawning a name on that
 silence is how an overnight run ends up with two commanders answering to
 one name.
+
+---
+
+## REBUILD THE NATIVE TASK GRAPH (post-crash restore of layer 2)
+
+**The problem.** The native task graph — TaskCreate/TaskUpdate tasks with
+`blocks`/`blockedBy` edges — is SESSION-ONLY. A crash, a restart, or the
+lead's exit destroys it. The resume path above re-derives state from disk,
+but it has NO step that re-instantiates the graph. A resumed run without the
+graph loses the operational layer and silently degrades to a markdown
+checklist — the exact one-layer failure the architecture was built to
+prevent.
+
+**The fix — run after step 8 (regenerate ledger state) and before step 9
+(re-fire):**
+
+1. Run the SAME round-trip probe as step 16.4: TaskCreate a task named
+   `TASKGRAPH-PROBE`, confirm via TaskList, complete via TaskUpdate, confirm
+   via TaskGet. The probe proves the instrument before the rebuild trusts it.
+2. On PASS:
+   - TaskCreate one task per manifest task. Read task titles, statuses, and
+     edges from `CONTROL/task-graph-snapshot.json` when present, and from
+     `SPEC/PROJECT-MANIFEST.md`'s task graph otherwise.
+   - Re-set every dependency edge with TaskUpdate `blocks`/`blockedBy` so
+     future tasks are BLOCKED until dependencies PASS.
+   - Statuses come from DISK truth — the ledger state table, the checklist
+     boxes, and the step 1–3 findings — never from the pre-crash snapshot's
+     statuses alone. A task the disk proves completed is created as
+     completed (or its completion is applied immediately via TaskUpdate). A
+     task the disk proves in-progress is created, then marked in progress.
+3. On FAIL of the probe: record `degraded-to-checklist-taskgraph` in the
+   Capacity Ledger and run the reconciler in two-layer mode — the same
+   degradation contract as step 16.4. Never degrade silently.
+
+**The conductor remains the ONE writer of task state.** This step is the
+conductor's, never a subagent's.

@@ -613,3 +613,55 @@ that finishes does not make its parent task COMPLETE; the completion law does.
 
 `references/agent-team.md` owns the team layer: when it is warranted, how it is
 probed, and how the four commander stations collapse onto the lead when it is not.
+
+---
+
+## 8. The transcript-alive rule — why the counter must always move
+
+**The proven fact.** The progress counter (N/M done) and the token figure are
+TRANSCRIPT indicators, never liveness meters. They render from the workflow's
+transcript stream: while no transcript line can grow, the UI has nothing new to
+show — the counter freezes at 0/N and the token figure goes static. A frozen
+counter means a frozen transcript, not a dead run. And a frozen transcript on a
+live run is exactly what reads as "stalled" to whoever is watching the tree.
+
+**The trap, proven 2026-08-14 on the fleet rollout.** An agent runs ONE long
+foreground Bash call. The harness's 120-second default timeout expires, the
+harness auto-moves the command to background, and then tells the agent "you
+will be notified when it completes — do not poll." The agent obeys and waits
+forever. Transcript frozen. Counter frozen. The run LOOKS dead while it is
+working. Six confirmed hangs in one session from exactly this sequence.
+
+**The rule for every workflow agent brief.** No agent may block on one long
+foreground call. For anything that could outlast 120 seconds, exactly two
+patterns are permitted, and BOTH are offered in every brief:
+
+1. **Foreground bounded poll.** The sleep lives INSIDE the same foreground
+   command, and the command returns on its own with real partial state. One
+   call, bounded, self-terminating — the transcript grows, the counter moves.
+2. **Background-and-poll.** Launch the long operation with `nohup` in the
+   background, capture the PID, then poll with SHORT foreground calls:
+
+```bash
+nohup ./long-op.sh > /tmp/op.log 2>&1 & echo $! > /tmp/op.pid
+while kill -0 "$(cat /tmp/op.pid)" 2>/dev/null; do sleep 10; done
+tail /tmp/op.log
+```
+
+Each poll returns fast. A short poll transcript keeps growing, and the
+counter keeps moving.
+
+**The harness guard.** Every Bash call that could outlast 120 seconds MUST
+carry `timeout: 600000` (the maximum). This alone prevents the harness
+auto-background trap from ever firing — the call finishes inside the window
+instead of being moved to background and orphaned.
+
+**The log() obligation.** Every workflow script must call `log()` at every
+milestone — batch started, per-item completion, batch done — so the tree
+narrates progress even between agent completions. A silent tree is the same
+defect as a frozen counter.
+
+**The honesty clause.** When an agent genuinely must wait longer than its poll
+budget, it reports real partial state: "N of M complete, 0 failures at last
+look." An honest partial beats a hang. Blocked-timeout + move on + report
+partial state is a PASSING answer.
