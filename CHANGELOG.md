@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.15.0] — 2026-08-16
+
+### The 999 master fix: all 20 issues closed — the skill is now enforced, not suggested
+
+The full 20-issue master fix landed in six locked waves (spec: `999-master-fix-spec-20260815.md`), merged branch-by-branch to main with serial landing and per-unit QC.
+
+- **Entry gate (Issue 3):** `/spec-protocol` now opens with a hard two-option entry question (Interview me / Here is the info) asked ONCE before anything else runs; the choice is a required ledger line (`ENTRY-MODE`) enforced by the self-audit and the boss cron.
+- **Mode offer (Issue 4):** the capacity interview surfaces DEFAULT MODE vs ADVANCED MODE first (R1 wording); Simple = the R6 nine-item wall, Advanced = the ceiling-table row; the mode question is question 1 of the count, never re-asked.
+- **Counter enforcement (Issue 11):** the total is computed ONCE and spoken ("at most C questions"); every counted question is "Question N of no more than C"; every change announced before the next question (good-news lowerings; artwork the only sanctioned rise); the boss cron's COUNT check enforces promised-vs-asked mechanically.
+- **Wording (Issue 12):** every question re-grounded in R5 (seventh-grade plain, says what it decides, example answer, named escape); the never-re-ask law is mechanically enforced (answers file + ASKED lines + boss RE-ASK sweep); deleted questions stay deleted; one question at a time.
+- **Research gate (Issue 5):** research cannot dispatch before BOTH the Build Target taxonomy and the captured input exist (RESEARCH-READY gate, ledger-precondition, boss-enforced).
+- **Design brief (Issue 6):** DESIGN-BRIEF step with the MOBBIN-CHECK (configured/offered/declined, never installed without GO), per-site-type researched best practice (hero/layout/typography/color/conversion/mobile/accessibility), the copy bar (a named fetchable example page, never "make it punchy"), and the 7-stage funnel process (pages, per-page structure, email sequence, integration, tracking, pipeline+image lane, hosting).
+- **Image lane (Issue 7):** enumerated image manifest before any generation; provider reachability verified BEFORE the promise; fail-closed on provider failure (MEDIA-GAPS, never blank squares).
+- **Staged pipeline (Issue 8):** wireframes → scaffolding → hero → images → build (with animations + 3D sub-process 1.8.1-1.8.8) → logo (background removal MANDATORY); the boss rejects a stage opened before its predecessors.
+- **GHL media (Issue 9):** every generated image uploads to GHL media storage in a project-labeled folder; the site references permanent GHL URLs only (never 24h-expiring provider links); time-bounded ordering is one unit (generate → poll → download → upload → read-back → ledger); the served-HTML URL-fetch check proves every image live at HTTP 200.
+- **Orphan accounting (Issue 10):** 1:1:1:1 — generated = manifest = uploaded, references counted; the boss's ORPHAN sweep catches every orphan class by enumeration, including the EXPIRY class (temp URL past 24h with no GHL upload = token waste, VIOLATION-STOP).
+- **Anti-drift (Issue 13):** the live ledger is the single source of truth (claim before, result after); heartbeats must carry state (>10 consecutive contentless ticks = stopped lane); anchor.sh reconcile at every wave boundary/tick/dispatch; the boss compares ledger vs script every cycle and stops/restarts from the named checkpoint; TERMINAL-DRIFT.flag stays the capture-proof stop.
+- **Forced fan-out (Issue 14):** operator doctrine 10 agents per workflow (5 builders + 5 blind critics), up to 50 workflows, up to 500 in parallel — NO per-model cap; TIMIDITY and PADDING are forbidden defects; the boss's WIDTH check enforces scripted width per cycle.
+- **Wave lock (Issue 15):** the 6-wave table is immutable, written once; new waves only via a NEW-WAVE-N dependency line; the boss's wave-growth check flags undocumented waves and the wave lock blocks wave N+1 before wave N closes.
+- **QC protocol (Issue 17):** ONE way — a blind critic, PASS = completely exceeds expectation, FAIL = looped with the exact finding (max 20 cycles, then escalation); Law 49 (critic sees the work, never the effort), Law 7 (no self-QC), Law 50 (the bar wins by default); every record carries the nine QC-RECORD fields, mechanically checkable.
+- **Boss cron (Issue 18):** the full PART 4 boss — 16 checks per 5-minute cycle (scope, wave, count, width, claim, drift, orphan, statusline, caps, census, beat, stop, stages, entry-mode, kill) with stop-and-rerun authority, timestamp-blind dedupe, and a governed-boss heartbeat alert through the operator's OpenClaw gateway. WAVE 0 BOOTSTRAP: the boss is armed before any wave dispatches.
+- **Unleash (Issue 16):** the researched, sourced unleash table applied to both settings stores (bypassPermissions, MAX_CONCURRENT_SUBAGENTS=500, SPAWN_DEPTH=8, CONTEXT/OUTPUT tokens, workflowSizeGuideline unrestricted, effortLevel=xhigh, DISABLE_AUTOUPDATER, MAX_SUBAGENTS_PER_SESSION deleted); CLAUDE_CODE_EFFORT_LEVEL never set by provisioning; 9Router routing keys justified.
+- **Gauntlet weave (Issue 19):** the six workflow types at exact counts (blueprint lock 8, primary build 16, blind visual gauntlet 16, technical gauntlet 8, release council 4/4, selective repair loop 1-per-workstream max 12); agent budget (52 expected / 150 warning / 200 hard stop with blocker report); client-machine adaptation (clientCap = min(systemConcurrentMax, cores−2); the bar never shrinks with the machine — only the width does).
+- **Status line (Issue 20):** both settings stores carry the statusLine; the shared script renders task progress (CLIENT bar = model | cost | git | Project% | Wave%).
+
+All 19 fix branches merged serially; the boss cron enforces the whole run against the live ledger.
+
 ## [1.14.2] — 2026-08-14
 
 ### Nothing hidden: the tmux display is retired; workflows and subagents are the load-bearing path
