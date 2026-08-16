@@ -104,16 +104,13 @@ Homebrew-managed environment that satisfies the requirements.
 - Install `9router@latest` only when 9Router is absent or broken (proven by a real `--version` run); an existing working install is kept as-is — no reinstall, no upgrade. (npm global on Windows; user-local npm prefix on macOS.)
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
-- No dashboard password rotation is performed only when the dashboard starts clean. Full
-  rotation, matching the live skill's Stage 3 step 7:
-  1. Login with the default `123456` and read the login response — it carries a
-     `mustChangePassword` flag.
-  2. If `mustChangePassword: true`, generate a strong random password, then call
-     `PATCH /api/settings` with `currentPassword` + `newPassword` (via
-     `scripts/common/configure-nine-router.mjs`, which never prints it).
-  3. Re-login with the new password for all subsequent API calls.
-  4. Prove the password changed: SHA256 fingerprint before/after — the two must DIFFER.
-  5. Never print or store the new password — keep it in memory during setup only.
+- No dashboard password rotation is performed, ever. The user owns the dashboard
+  password and manages it themselves:
+  1. Login with the default `123456` only to configure.
+  2. The `mustChangePassword` flag is ADVISORY only — the completion message tells
+     the user the password stays the default and they change it themselves in the
+     dashboard.
+  3. Never print or store any password.
 - Create/reuse a local 9Router API key named `BlackCEO Claude Code` via `POST /api/keys`.
 - Keep `requireLogin=true` and `requireApiKey=true`.
 
