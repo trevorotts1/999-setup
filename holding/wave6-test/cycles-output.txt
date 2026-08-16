@@ -1,0 +1,7 @@
+=== S1-clean: exit=0 VIOLATION-STOP=0 BOSSCYCLE-CLEAN=2 stopfile=False
+   out: boss-cron cycle 2026-08-16T20:54:18Z: 0 violation(s), 0 kill(s), ledger appended
+=== S2-undoc-wave6: exit=2 VIOLATION-STOP=1 BOSSCYCLE-CLEAN=1 stopfile=True
+   VIO: - `VIOLATION-STOP 2026-08-16T20:54:18Z: lock-table: wave 6 in ledger not in locked table and no NEW-WAVE-6 dependency line: - `WAVE 6 DISPATCH 2026-08-16T21:40Z: undocumented wave 6 attempt. Census be
+   out: boss-cron cycle 2026-08-16T20:54:18Z: 1 violation(s), 0 kill(s), ledger appended
+=== S3-doc-wave6: exit=0 VIOLATION-STOP=0 BOSSCYCLE-CLEAN=2 stopfile=False
+   out: boss-cron cycle 2026-08-16T20:54:18Z: 0 violation(s), 0 kill(s), ledger appended

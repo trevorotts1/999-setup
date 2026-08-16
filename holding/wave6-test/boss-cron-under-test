@@ -68,13 +68,7 @@ SANCTIONED_CLASSES = {
     "BOSSCYCLE-CLEAN", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
 }
-# Issue 15: the growth path opens a wave with a concrete NEW-WAVE-<n> class line
-# (spec line 323 names the placeholder "NEW-WAVE-N"; the class token carries the
-# wave number, e.g. NEW-WAVE-6). Scope check must sanction both forms — the
-# literal placeholder AND the concrete opening line — otherwise a documented
-# dependency line trips the scope check and the growth path can never run.
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
-NEW_WAVE_CLASS_RE = re.compile(r"^NEW-WAVE-\d+$")
 
 
 def now_iso():
@@ -277,8 +271,6 @@ def check_scope(lines):
     for ln in lines:
         cls = ledger_class(ln)
         if cls in SANCTIONED_CLASSES or WF_PREFIX.match(cls):
-            continue
-        if NEW_WAVE_CLASS_RE.match(cls):
             continue
         if re.match(r"^WF-\d[A-Z]$", cls) or re.match(r"^WAVE$", cls):
             continue

@@ -68,13 +68,7 @@ SANCTIONED_CLASSES = {
     "BOSSCYCLE-CLEAN", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
 }
-# Issue 15: the growth path opens a wave with a concrete NEW-WAVE-<n> class line
-# (spec line 323 names the placeholder "NEW-WAVE-N"; the class token carries the
-# wave number, e.g. NEW-WAVE-6). Scope check must sanction both forms — the
-# literal placeholder AND the concrete opening line — otherwise a documented
-# dependency line trips the scope check and the growth path can never run.
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
-NEW_WAVE_CLASS_RE = re.compile(r"^NEW-WAVE-\d+$")
 
 
 def now_iso():
@@ -219,6 +213,63 @@ def check_locked_table(lines):
     return violations
 
 
+# Issue 15 FIX step 2: a NEW-WAVE-N ledger line is valid ONLY when it names the
+# dependency — which wave's output the new wave consumes. The bare class name
+# alone ("NEW-WAVE-7: opening wave 7") is NOT a valid opening. Complements
+# check_locked_table (PART 4 check 2, Issue 15 FIX step 5): that check catches
+# an undocumented wave; this check catches a documented-but-unnamed one.
+NEW_WAVE_RE = re.compile(r"NEW-WAVE-(\d+)")
+# A dependency may be named as "NEW-WAVE-6" or as plain "wave 6" / "waves 5
+# and 6" in the line body — both name which wave's output the new wave
+# consumes.
+WAVE_REF_RE = re.compile(r"(?:^|[^N-])wave[s]? (\d+)", re.IGNORECASE)
+NEW_WAVE_DEP_HINTS = ("consume", "depend", "dependency", "requires", "after",
+                      "output of", "output from", "feeds", "built on",
+                      "on top of", "post-", "outputs")
+
+
+def check_wave_growth(lines):
+    """Issue 15 FIX step 2: growth only via dependency lines.
+
+    A new wave exists ONLY when a documented dependency requires it, opened by a
+    NEW-WAVE-N ledger line naming the dependency (which wave's output the new
+    wave consumes). Any other new wave is a violation. This check verifies the
+    NAMING requirement on every NEW-WAVE-N line in the ledger; a line whose body
+    names no dependency is a violation (the ledger line is the gate, and a gate
+    that names nothing gates nothing).
+    """
+    violations = []
+    for ln in lines:
+        m = NEW_WAVE_RE.search(ln)
+        if not m:
+            continue
+        w = m.group(1)
+        # NEW-WAVE-<n> referenced inside a VIOLATION-STOP finding or a spec
+        # citation is evidence, not an opening — openings are ledger lines whose
+        # class is the wave name itself.
+        body = ln[3:]
+        toks = body.split()
+        if toks and toks[0].rstrip(":") not in ("NEW-WAVE-N", "NEW-WAVE-" + w):
+            continue
+        if not any(h in body.lower() for h in NEW_WAVE_DEP_HINTS):
+            violations.append(
+                f"NEW-WAVE-{w} line names no dependency — which wave's output it consumes is undocumented (Issue 15 FIX step 2): {ln[:140]}")
+            continue
+        # The named dependency must be a wave that can actually have produced
+        # output: a lower-numbered wave (the opening wave's own number, which
+        # the class token itself carries, is excluded). Naming a later wave,
+        # the wave itself, or no wave at all is not a dependency, it is a lie.
+        consumed = [int(x) for x in NEW_WAVE_RE.findall(body) if int(x) != int(w)]
+        consumed += [int(x) for x in WAVE_REF_RE.findall(body) if int(x) != int(w)]
+        if not consumed or all(c >= int(w) for c in consumed):
+            violations.append(
+                f"NEW-WAVE-{w} line names no prior wave as its dependency — a new wave consumes a LOWER wave's output (Issue 15 FIX step 2): {ln[:140]}")
+    return violations
+
+
+
+
+
 def check_width(lines):
     """PART 4 check 4: the LATEST dispatch line per wave must carry either the full
     scripted width (all locked workflows named + 'Width justification' or 'full PART 2
@@ -277,8 +328,6 @@ def check_scope(lines):
     for ln in lines:
         cls = ledger_class(ln)
         if cls in SANCTIONED_CLASSES or WF_PREFIX.match(cls):
-            continue
-        if NEW_WAVE_CLASS_RE.match(cls):
             continue
         if re.match(r"^WF-\d[A-Z]$", cls) or re.match(r"^WAVE$", cls):
             continue
@@ -340,6 +389,7 @@ def main():
     violations.extend(f"width: {v}" for v in check_width(lines))
     violations.extend(f"wave-lock: {v}" for v in check_wave_lock(lines))
     violations.extend(f"lock-table: {v}" for v in check_locked_table(lines))
+    violations.extend(f"wave-growth: {v}" for v in check_wave_growth(lines))
     for c in check_claims(lines):
         violations.append(f"claim: {c}")
     beat = check_heartbeat(lines)
@@ -362,7 +412,7 @@ def main():
         for ws in sorted(streams):
             kills.extend(kill_pids(ws))
 
-    checks = "caps,census,width,wavelock,locktable,claims,beat,stop,scope,kill"
+    checks = "caps,census,width,wavelock,locktable,wavegrowth,claims,beat,stop,scope,kill"
     if dry:
         print(f"boss-cron --check: {len(violations)} violation(s)")
         for v in violations:
