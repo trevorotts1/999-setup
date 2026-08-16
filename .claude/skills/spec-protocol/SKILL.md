@@ -851,6 +851,27 @@ When the operator provides a folder, that folder IS the project. Its documents A
     silent file-evidence detection; the announcement happens inside THE OPENING
     SCRIPT at step 3.
     Detection only — no content is read and nothing is written until step 3, after the OpenClaw paragraph is spoken and the project folder exists (references/openclaw-ingest.md §2).
+2.9. **Companion skills (BOTH modes).** Run `scripts/bootstrap-companions.sh`
+    once, in the background, the moment the harness is known — it detects
+    first and installs only what is missing, from the locked sources in
+    `references/dependency-sources.md` (never a GitHub search, never a fork).
+    Contract: `references/companion-skills.md`. The four companions —
+    Frontend Design (anthropics/claude-plugins-official), UI/UX Pro Max
+    (nextlevelbuilder/ui-ux-pro-max-skill), Supabase (supabase/agent-skills +
+    supabase-community/supabase-plugin), and visual generation (Kie.ai
+    PRIMARY — preserve the existing implementation; Agnes AI APPROVED
+    ALTERNATIVE — never require both, never auto-subscribe; Higgsfield NOT
+    mandatory, never auto-installed). Idempotent — a re-run installs nothing
+    already installed and reports Installed / Already Installed / Failed per
+    dependency plus the 12-item installation report (every third-party
+    dependency carries its exact source URL). claude-nine install-once rule:
+    shared config root → install once and validate BOTH launch paths;
+    separate claude-nine config dir → MCP servers must be registered in BOTH
+    config stores (a server in only `~/.claude.json` is invisible to a
+    claude-nine session). Never modify 9Router model-routing rules merely to
+    make a skill available. A bootstrap outcome never blocks the run — a
+    Failed dependency is reported with its exact source URL and handed to the
+    operator.
 3. **Offer entry modes.** Speak THE OPENING SCRIPT verbatim, then ask THE BUILD
    TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
    is the info." **Create the project folder + `00-INPUT/` immediately after they
