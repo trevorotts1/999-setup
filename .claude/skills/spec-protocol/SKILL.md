@@ -951,9 +951,19 @@ When the operator provides a folder, that folder IS the project. Its documents A
    and the build-target confirmation; no other question, no other work, no other
    text runs between them. On the "Here is the info" path the one-line target
    confirmation is still the Build Target exchange — the entry question follows
-   it, verbatim, asked once. **Create the project folder + `00-INPUT/`
-   immediately after they choose** (Law 23 — the brainstorm's verbatim capture
-   gets a durable home before it is spoken, not two phases later). Then:
+   it, verbatim, asked once.
+   **THE ENTRY CHOICE IS A REQUIRED LEDGER LINE.** The instant the answer is
+   spoken, write `ENTRY-MODE: interview` (for option 1) or `ENTRY-MODE:
+   pointed` (for option 2) to `<project>/CONTROL/LEDGER.md` via
+   `tools/ledger.sh <project> CONTROL/LEDGER.md "ENTRY-MODE: interview"` (or
+   `pointed`) — BEFORE the project folder is created, before anything else
+   runs. A run whose ledger lacks the `ENTRY-MODE: interview|pointed` line is
+   REJECTED by the self-audit (step 20) and by the boss cron — both treat a
+   project folder with no `ENTRY-MODE` ledger line as a failed run: stop,
+   record the rejection, restart from the gate and ask the question. **Create
+   the project folder + `00-INPUT/` immediately after they choose** (Law 23 —
+   the brainstorm's verbatim capture gets a durable home before it is spoken,
+   not two phases later). Then:
 3.5. **Just-in-Time research (Step 1c-bis, BOTH modes).** Only AFTER the
      entry-mode question has been asked and answered, dispatch the reader
      (references/interview.md Step 1c-bis) — it runs in the background through
@@ -1241,6 +1251,13 @@ When the operator provides a folder, that folder IS the project. Its documents A
     `/usr/bin/grep` explicitly — some machines shadow `grep` with a broken shim;
     prove the instrument on a known-positive first (see the by-command census,
     `references/documents.md`).
+    **Then the ENTRY-MODE gate:** the project's `<project>/CONTROL/LEDGER.md`
+    must carry the `ENTRY-MODE: interview|pointed` ledger line written at the
+    entry gate (step 3). A project folder with no `ENTRY-MODE` line — or with
+    any other value — is a FAILED run: reject it, record the rejection (with
+    the missing-line finding), and restart from the entry gate to ask the
+    two-option question. The self-audit never grades or ships a run whose
+    ledger lacks the line.
     Anything below 8.5 → fix, re-grade, repeat. Hand over only at 8.5+.
 21. **Hand over and start.** Tell the user, plainly, that the build now runs
     itself and they can walk away. The only paste-in command they ever receive is
