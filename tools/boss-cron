@@ -115,7 +115,7 @@ LOCKED_WAVE_COUNT = 6
 # conductor mechanics + the Wave 0 bootstrap line. Anything else = violation.
 # PART 4 check 1 allowlist (spec line 538): FUNNEL-*, 3JS-*, STAGE-*,
 # MOBBIN-CHECK, DESIGN-BRIEF, ENTRY-MODE, BUILD-TARGET, INPUT-CAPTURED,
-# STATUSLINE-*, NEW-WAVE-N, VIOLATION-STOP, BOSSCYCLE-CLEAN, AK-*,
+# STATUSLINE-*, NEW-WAVE-N, VIOLATION-STOP, BOSSCYCLE-CLEAN, BOSSCYCLE-ALERT, AK-*,
 # PAYMENT-CONTRACT, INTERVIEW-MODE, ISSUE-18-EARLY, REPAIR, REPAIR-DONE,
 # DONE, FAIL, PASS, UNDETERMINED, OBSERVATION, REDISPATCH, BUILDER,
 # BUILDER-DONE, BUILDER-FAIL, CRITIC, CRITIC-PASS, CRITIC-FAIL, DISPATCH,
@@ -124,7 +124,7 @@ SANCTIONED_CLASSES = {
     "CREATED", "BASELINE", "DISPATCH", "REDISPATCH", "REPAIR", "REPAIR-DONE",
     "BUILDER", "BUILDER-DONE", "BUILDER-FAIL", "CRITIC", "CRITIC-PASS", "CRITIC-FAIL",
     "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
-    "BOSSCYCLE-CLEAN", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
+    "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
     "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
     "PAYMENT-CONTRACT", "INTERVIEW-MODE",
@@ -230,6 +230,11 @@ def line_timestamp(line):
     # (with seconds), so the regex accepts seconds as optional.
     m = re.search(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z", line)
     return m.group(0) if m else None
+
+
+# Any ISO timestamp shape the writer can emit (used to strip timestamps
+# before the append dedupe — see main()).
+TIMESTAMP_RE = re.compile(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z")
 
 
 # Dispatch-line shapes (the ledger's actual forms, verified on the live ledger
@@ -972,19 +977,23 @@ def main():
     record_enforcement_epoch()
 
     text2 = read_ledger() or ""
-    old_lines = set(ledger_lines(text2))
+    # Dedupe compares the finding WITHOUT the timestamp: now_iso() differs on
+    # every cycle, so a full-line comparison would re-append the same finding
+    # every 5 minutes. The ISO timestamp is the ONLY per-cycle field — strip
+    # it from both the candidate and the ledger lines before comparing.
+    old_lines = {TIMESTAMP_RE.sub("", ln) for ln in ledger_lines(text2)}
     with open(LEDGER, "a", encoding="utf-8") as fh:
         for v in violations:
             line = f"- `VIOLATION-STOP {now_iso()}: {v} — conductor MUST TaskStop the named workstream, {ck_note}; {bound}`"
-            if line not in old_lines:
+            if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
         for pid, outcome in kills:
             line = f"- `VIOLATION-STOP {now_iso()}: kill pid {pid}: {outcome} — conductor re-dispatches, {ck_note}; {bound}`"
-            if line not in old_lines:
+            if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
         if alert_note:
             line = f"- `BOSSCYCLE-ALERT {now_iso()}:{alert_note} — heartbeat alert fired (no BOSSCYCLE-* line within two intervals)`"
-            if line not in old_lines:
+            if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
         if not violations and beat is None:
             fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`\n")
