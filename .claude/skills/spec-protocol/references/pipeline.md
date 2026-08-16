@@ -265,11 +265,96 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
+**PASS = completely exceeds expectation — the ONE pass standard (Issue 17,
+PART 1 item 5; binding on every verdict in this pipeline).** The single pass
+standard is "completely exceeds expectation" — never "acceptable", never
+"meets spec", never "good enough". The judge compares the work against the
+item's bar (Law 48 — the named, fetchable bar on the build card's QC section
+or the B2H) the way a customer would, and the work must clearly and
+demonstrably exceed what the bar demands, with the exceeding evidence quoted
+in the verdict. Where the bar is an answer-key (no existing product serves as
+the bar — PART 1 item 4), the pass standard is the answer-key's binary PASS,
+which is what "completely exceeds expectation" means when the comparison
+surface is a checkable line, and the objectivity guard stands: an answer-key
+line the judge cannot run to pass/fail is BLOCKED (Law 50) and rewritten by
+the lead before the build. A verdict of "meets the bar exactly" is NOT a
+pass — it is ITERATE, and the gap returned to the builder is "the bar is
+matched, not exceeded — exceed it". The client's own D1/D2 answers
+(`references/interview.md` Block D — the example the client would be happy
+matching, and the relationship "shoulder to shoulder" vs "rulebook") seed the
+bar; the judge's standard is set by the bar, never lowered by any client
+answer (Law 43 — only the client lowers their own standard, and "shoulder to
+shoulder" IS the bar, not a pass below it).
+
 **Model:** the QC model from the capacity interview. The default LANE on
 Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
 named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
 (Law 7 — one model's blind spot cannot bless itself). Review streams as features
 land — not in a batch at the end (inherit warfix streaming review).
+
+### The QC record — the one format every item's verdict is written in
+
+**Every work item, at every judge pass (first verdict, every re-verdict after a
+fix loop, every council read), produces ONE QC RECORD, written to the ledger's
+verdict blocks (document 6) through `tools/ledger.sh` the moment the verdict is
+reached (Law 2 — write the verdict the instant it is judged). A judge that
+returns a verdict without writing the record has not produced a verdict.**
+
+A QC RECORD has EXACTLY six fields, one line each, in this order — the six
+things the Issue 17 bar checks (spec: every QC record shows a blind critic, a
+named bar, a binary verdict, and the loop-or-pass outcome; zero self-QC):
+
+```
+QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
+bar-fetch=<how the bar was obtained: URL | capture path | file path | the
+answer-key block reference — a bar with no fetch proof is not a bar>
+verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
+outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
+blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
+provenance=<STRIPPED|VIOLATION>
+```
+
+Mechanical checkability — the six checks any cold agent or the boss cron can
+run against a QC RECORD without judging anything:
+
+1. **`judge=` must NOT equal the builder's seat label** for that unit (Law 7 —
+   no self-QC). Zero self-QC means the record's judge seat differs from the
+   builder seat of the unit it records. Where the platform records the resolved
+   model, compare the RESOLVED base ids (strip provider prefix and
+   thinking/version suffixes — same base id = same model = the record is
+   INVALID, per the family rule, `references/gauntlet.md` Section 5).
+2. **`bar=` must be a named bar** — a name, never a vibe; the bar text itself
+   lives in the build card's QC section or the B2H (Law 48).
+3. **`bar-fetch=` must name a fetchable source** (URL, capture path, file path,
+   or the answer-key block reference). A bar that cannot be fetched is BLOCKED,
+   never passed (Law 50).
+4. **`verdict=` must be exactly one of PASS, FAIL, BLOCKED, INFEASIBLE,
+   LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
+   else, and the non-success states are never relabeled PASS (Law 50).
+5. **`outcome=` must be PASSED, LOOPED `cycle n of 20`, ESCALATED, or one of
+   ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a
+   reason=** (the fix loop's cap, Rule 3.22 — 20 cycles per finding, operator
+   ruling 2026-08-14; a 21st pass carries ESCALATED with the full finding
+   history) — a FAIL verdict with no LOOPED outcome line, an ESCALATED line
+   with no finding history attached, or a Law-50 verdict (BLOCKED /
+   INFEASIBLE / LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a
+   broken record.
+6. **`provenance=` must be STRIPPED** (Law 49 — the critic sees the work,
+   never the effort). The critic's received package is stripped of timestamps,
+   authorship, history, builder identity, builder reasoning, and effort
+   narrative; the record's `provenance=STRIPPED` attests the stripping ran and
+   the verdict was made blind. A `provenance=VIOLATION`, or a record whose
+   attached evidence names a builder or a timeline, is defective — the verdict
+   does not stand and the item is re-judged blind.
+
+A QC RECORD failing any of the six checks is a defective record — the unit is
+not passed, the verdict does not stand, and the defect is itself a finding
+returned to the builder with the record. The records are how the "every record
+shows a blind critic, a named bar, a binary verdict, and the loop-or-pass
+outcome; zero self-QC" bar is mechanically checkable: checks 1 and 6 prove the
+blind critic (different seat, stripped provenance), checks 2-3 prove the named
+bar, check 4 proves the binary verdict, check 5 proves the loop-or-pass
+outcome.
 
 **Law 29 — the per-card rubric is judged here.** The judge scores the ten
 categories PLUS the unit's OWN QC section from its build card — the independent
@@ -279,11 +364,21 @@ has checked nothing (a QC section that merely repeats VERIFY has not been
 written). If a card arrives with no usable rubric, that is itself a finding —
 send it back; do not invent a generic check and call it the card's rubric.
 
-### The 8.5 gate
+### The ONE way — a blind critic, a binary verdict
 
-Ten categories, each scored 1 to 10, with quoted proof beside every score. The gate
-is 8.5 — arithmetic, not judgement. Below 8.5 → the fix loop. At or above 8.5 →
-pass, into the landing queue. The categories (from PROMPT-QC-INSTRUCTIONS.md):
+QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS =
+completely exceeds expectation; FAIL = looped to the builder with the exact
+finding, max 20 fix-loop cycles per finding, then escalation to the operator
+with the full finding history (Rule 3.22, operator ruling 2026-08-14). **The
+verdict is binary — there is no numeric pass lane, no "at or above a score"
+pass.** The non-success states BLOCKED / INFEASIBLE / LIMIT REACHED are never
+relabeled PASS (Law 50).
+
+The ten categories below are the critic's rubric surface — quoted proof
+beside every judgement. Each category's judgement maps to the binary verdict:
+any category that does not completely exceed its bar is a FAIL, and its exact
+finding loops the item to the builder. The categories (from
+PROMPT-QC-INSTRUCTIONS.md):
 
 1. Does it actually work?
 2. Is it correct in the hard cases?
@@ -296,8 +391,8 @@ pass, into the landing queue. The categories (from PROMPT-QC-INSTRUCTIONS.md):
 9. Is it honest and fully verified?
 10. Is it actually done, front to back?
 
-Passing the 8.5 gate feeds the landing queue — but no task and no checklist box
-flips to COMPLETE on a gate score alone. A TASK IS COMPLETE ONLY WHEN ALL SIX
+A PASS feeds the landing queue — but no task and no checklist box flips to
+COMPLETE on a verdict alone. A TASK IS COMPLETE ONLY WHEN ALL SIX
 CONDITIONS HOLD (references/execution-architecture.md): the workflow finished;
 the deliverable exists; required tests passed; required verification passed;
 acceptance criteria are satisfied; AND project state was updated. "Agent returned
@@ -346,16 +441,29 @@ green. Green under a real mutation is hollow and fails.
 6. A standing integrity alarm on the target repository.
 7. Any scaffolding inside a deliverable (Law 13).
 8. Any feature in the build that is not in the specification (Law 42).
+9. **Any QC record that fails the six mechanical checks (above) — a missing
+   record, a judge seat identical to the builder seat (self-QC), an unnamed
+   bar, a bar with no fetch proof, a non-binary verdict, a FAIL without its
+   LOOPED outcome, a Law-50 verdict (BLOCKED / INFEASIBLE / LIMIT-REACHED)
+   without its ESCALATED-<STATE> reason=, or provenance other than STRIPPED.**
+   The unit is blocked, the verdict does not stand, and the broken record is
+   returned to the builder as a finding.
+10. **Law 50 — the bar wins by default.** Any comparison that cannot run (bar
+   unreachable, format mismatch, judge cannot render both sides) is BLOCKED,
+   never passed. BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
+   recorded as non-success states and never relabeled PASS — an operational
+   limit (fix cap, timeout, budget, rate limit) ends the item NOT PASSED,
+   never PASS.
 
 ### The three-gate stack (Gate 1 hard correctness → Gate 2 on-brief fidelity → Gate 3 comparative excellence)
 
 Every work item passes through three stacked gates, in order. A later gate never
 rescues a failed earlier one:
 
-- **Gate 1 — hard correctness.** The 8.5 gate above, the whole of it: the
-  ten-category score at or above 8.5 (arithmetic, not judgement), the fail-closed
-  rules, mutation proof, and the per-card rubric. Below 8.5 → the fix loop. No
-  other gate can flip this.
+- **Gate 1 — hard correctness.** The ONE way above, the whole of it: the
+  ten-category rubric (blind critic, binary verdict, completely-exceeds bar),
+  the fail-closed rules, mutation proof, and the per-card rubric. FAIL → the
+  fix loop. No other gate can flip this.
 - **Gate 2 — on-brief fidelity.** The build matches the brief verbatim: GOAL.md
   (document 8, seeded verbatim from the brainstorm — the scope is what the user
   asked, never what a builder wanted to add), the scope fence, and Law 42
@@ -364,7 +472,7 @@ rescues a failed earlier one:
 - **Gate 3 — comparative excellence.** A blind A/B against a frozen, named external
   bar (references/gauntlet.md). The pass rule is absolute: **comparative
   excellence NEVER overrides a failed Gate 1 or Gate 2.** A unit can win its A/B
-  and still be blocked by an 8.4 score or an off-brief feature. The comparative
+  and still be blocked by a Gate 1 FAIL or an off-brief feature. The comparative
   layer raises the ceiling; the hard and on-brief gates hold the floor.
 
 ### The comparative sub-stage (runs for EVERY work item — every item has a bar)
@@ -394,6 +502,13 @@ ADDITION TO the ten-category score, never as a replacement:
   the biggest, stated as a fixable defect.
 - It records evidence and any dissent into the verdict, in the same shape as every
   other Stage 2 finding.
+- **Law 50 — the bar wins by default.** A comparison the critic cannot run (bar
+  unreachable, format mismatch, critic cannot render both artifacts) is
+  BLOCKED, never passed — "could not compare" is a fail, not a pass. A
+  comparison that runs and loses is ITERATE (the fix loop). INDETERMINATE is
+  recorded as undetermined, never assumed to be a pass (below). BLOCKED /
+  INFEASIBLE / LIMIT REACHED / USER STOPPED are non-success states, never
+  relabeled PASS.
 - **Token headroom is a dispatch parameter, not an afterthought.** Every
   verdict-shaped call — judge score, blind A/B, release council, refuter — on any
   seat not proven reasoning-free is dispatched with `max_tokens ≥ max(4000, 4 ×
@@ -409,10 +524,10 @@ ADDITION TO the ten-category score, never as a replacement:
   is a NON-VERDICT: never PASS, never FAIL, never INDETERMINATE — it is
   reissued**, never recorded as a verdict.
 
-The comparative sub-stage is additive: it cannot lower an 8.5 pass, and an
-INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The 8.5
-gate remains the per-unit floor** — the comparative layer sits on top of it and
-never lowers or replaces it.
+The comparative sub-stage is additive: it cannot overturn a PASS, and an
+INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The
+binary Gate 1 verdict remains the per-unit floor** — the comparative layer
+sits on top of it and never lowers or replaces it.
 
 ### The review identifies two categories of findings
 
@@ -434,7 +549,7 @@ decides which drives:
    dispatches its own fixer, in parallel, exactly as this stage already runs.
 2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
    single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME per-finding 3-cycle cap (Rule 3.22). It is
+   same fix list, under the SAME per-finding 20-cycle cap (Rule 3.22). It is
    one more row in the fix list, never a second, competing cycle counter.
 3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
    correctness is the floor; re-judging a comparison against a build that has
@@ -442,7 +557,7 @@ decides which drives:
    always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
 
 Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their OWN 3-cycle counter (Rule 3.22),
+Gate-3 largest-gap finding each carry their OWN 20-cycle counter (Rule 3.22),
 because they are different findings, not because they are different gates.
 
 ---
@@ -453,16 +568,35 @@ because they are different findings, not because they are different gates.
 dispatched concurrently (Law 32). The attempt bound is per finding, not per work
 item.
 
-### The fix loop (Rule 3.22)
+### The fix loop (Rule 3.22 — bounded and recorded)
 
-Below 8.5: write the six-part finding — (1) which category and the score, (2) the
+On FAIL: write the six-part finding — (1) which category and the finding, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
 (4) exactly what to change (a before-and-after for code), (5) how the fixer proves
 it is fixed (the command and expected result), (6) what a naive fix would break
-(Law 31). Re-dispatch a fixer (never the judge). A judge re-scores from scratch with
-fresh proof and a fresh break-it pass. Earlier scores never carry. Cap: after three
-failed loops on one finding, mark blocked-repeated-fail, record the history, move
-on.
+(Law 31). **The finding IS the loop-back payload:** the item returns to the
+builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
+summarized, never stripped of its evidence — and the builder fixes exactly that
+finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
+judge). The judge re-judges from scratch with fresh proof and a fresh break-it
+pass. Earlier verdicts never carry.
+
+**The loop is bounded and recorded (binding):**
+- **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).
+  The counter is per finding — never per work item, never per gate.
+- **Recorded:** every cycle appends to the finding's history — cycle number
+  (n of 20), the exact finding, the fix applied (commit/branch), the re-judge
+  result — written to the finding's verdict block in the live ledger (document
+  6) as it happens, so a session resuming cold reads which cycle a finding is
+  on and what has already been tried directly from the block (documents.md,
+  document 6).
+- **Escalation, never a quiet give-up:** after the 20th failed loop on one
+  finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
+  FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
+  relabeled pass, never a silent move-on. Escalation feeds the Named Stops
+  (stop 8) and the boss-cron restart from the last clean checkpoint.
+  **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
+  non-success state that ends the item NOT PASSED, never PASS.
 
 ### Rule 3.34 — a finding is proved by running
 
@@ -840,9 +974,12 @@ autonomously and recorded.
    writing to the store is the moment it matters.
 7. **A missing credential or access the agent does not hold.** It cannot be derived.
    Asking is the only path, and guessing here is worse than waiting.
-8. **Three failed fix attempts on the same finding** (Rule 3.22). Not because the
-   agent gave up — because three independent attempts failing is information the
-   human needs.
+8. **Twenty failed fix loops on the same finding** (Rule 3.22 — 20 cycles per
+   finding, operator ruling 2026-08-14). Not because the agent gave up — because
+   twenty independent attempts failing is information the human needs. The stop
+   escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and
+   re-judge result, never a quiet give-up and never a relabeled pass (the QC
+   protocol's loop mechanics, Stage 3 of this file).
 
 The list matters in both directions: nothing outside it may excuse a stall, and
 nothing on it may be decided by an agent at three in the morning.

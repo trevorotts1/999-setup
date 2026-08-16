@@ -502,8 +502,9 @@ mobile captures against the locked units.
 Evidence protocol: every claim carries a capture, a log line, or a diff.
 Context protocol: the frozen reference package and the Task travel; the build
 history does not (Law 5, Law 25).
-Operational stop / escalation: three failed cycles on one finding →
-blocked-repeated-fail; a missing source → BLOCKED (Section 9).
+Operational stop / escalation: twenty failed cycles on one finding (Rule
+3.22, operator ruling 2026-08-14) → blocked-repeated-fail, escalated with the
+full finding history; a missing source → BLOCKED (Section 9).
 Final system review: one full-page pass against the traceability table
 (Section 8) before the comparative verdict.
 
@@ -636,8 +637,11 @@ Two stop mechanics exist and must never be confused:
 
 - **The fix cap (Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14;
   formerly 3)** is an OPERATIONAL escalation trigger. Twenty failed loops on one
-  finding → `blocked-repeated-fail`, history recorded, move on. It lives in the
-  pipeline (`references/pipeline.md`).
+  finding → `blocked-repeated-fail`, history recorded, and the finding
+  ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every cycle's
+  finding, fix, and re-judge result — never a quiet give-up, never a relabeled
+  pass (the QC protocol's loop mechanics, `references/pipeline.md`). It lives in
+  the pipeline (`references/pipeline.md`).
 - **The B2H is the SUCCESS stop.** The successful stop rule in THE BAR TO HIT is
   the ONLY condition under which a work item reports PASS.
 
@@ -663,7 +667,7 @@ consistent:
 
 | Gauntlet state | Ledger state | Meaning |
 |---|---|---|
-| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop or the 3-cycle cap stopped this item (`references/pipeline.md`, Rule 3.22). |
+| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop or the fix cap (Rule 3.22 — 20 cycles per finding) stopped this item (`references/pipeline.md`). |
 | INFEASIBLE | `blocked-infeasible` | The bar cannot be met or compared — conditions, not effort, are the wall. |
 | LIMIT REACHED | `blocked-timeout` / `blocked-limit` | An operational limit (budget, rate, session) ended the run for this item. |
 | USER STOPPED | `blocked-human` (user-initiated) | The human stopped the run — Law 8's second ending. |
@@ -1015,7 +1019,7 @@ its own best known state.
 The two repair granularities compose rather than collide:
 
 - **FINDING-level repair** (`references/pipeline.md` Stage 3: one fixer per
-  finding, 3-cycle cap, Rule 3.22) runs INSIDE a workstream.
+  finding, 20-cycle cap, Rule 3.22) runs INSIDE a workstream.
 - **WORKSTREAM-level repair** (WF06: one repair agent per failed workstream,
   ≤12 per wave) is the repair TASK's workflow, and the repair agent OWNS its
   workstream — multiple findings inside it may still fan out per finding under
@@ -1107,9 +1111,9 @@ order, one loop in both modes.
 | 8 | COLLECT RESULTS | workflow returns; commander reads / lead | .filter(Boolean); results on disk |
 | 9 | EXECUTE / TEST | per the task's VERIFY | foreground gates with timeout (Law 6) |
 | 10 | EVIDENCE CREATED | builders/judges | the §8 evidence types, named per task IN ADVANCE |
-| 11 | VERIFY (quality workflow; technical workflow when required) | blind/technical judges; commanders interpret / lead | WF03/WF04 + the three-gate stack; REQUIREMENT + ACTUAL OUTPUT + OBJECTIVE BAR → INDEPENDENT VERIFIER — "the builder says it's fixed" is BANNED |
+| 11 | VERIFY (quality workflow; technical workflow when required) | blind/technical judges; commanders interpret / lead | WF03/WF04 + the three-gate stack; REQUIREMENT + ACTUAL OUTPUT + OBJECTIVE BAR → INDEPENDENT VERIFIER — "the builder says it's fixed" is BANNED. **The QC protocol binds this station (Issue 17, PART 1; `references/pipeline.md` Stage 2):** the judge is blind — the work with all provenance stripped, never the effort (Law 49); the judge never built the item (Law 7 — zero self-QC); PASS = completely exceeds expectation, never "meets spec" (PART 1 item 5); every verdict is written as a QC RECORD (blind, bar, binary verdict, loop-or-pass outcome, provenance=STRIPPED — mechanically checkable; a verdict without its record does not stand); a comparison that cannot run is BLOCKED, never passed (Law 50) |
 | 12 | COMMANDERS COMMUNICATE FINDINGS (the challenge station) | peer SendMessage + project_state record; lead adjudicates by requirements/evidence/tests/bar/state — never by siding with the builder / lead runs the same adjudication across its hats | references/agent-team.md (the disagreement protocol) |
-| 13 | REPAIR IF NECESSARY | failures>0 activates the repair task → WF06 | selective repair (Section 13) — targeted, never a rebuild |
+| 13 | REPAIR IF NECESSARY | failures>0 activates the repair task → WF06 | selective repair (Section 13) — targeted, never a rebuild. The repair loop follows the QC protocol: FAIL returns to the builder WITH THE CRITIC'S EXACT FINDING, max 20 cycles per finding, then escalation to the operator with the full finding history — never a quiet give-up, never a relabeled pass (Rule 3.22; `references/pipeline.md` Stage 3) |
 | 14 | REGRESSION TEST | fresh blind re-verifiers; affected technical judges; batch suite | WF06 rules + the B2H regression gate |
 | 15 | UPDATE PROJECT STATE | lead / lead | project_state.json (§11's twelve questions current) |
 | 16 | RECONCILE NATIVE TASKS | lead runs tools/anchor.sh --mode reconcile; executes its ACTIONS | RECONCILE TASKS NOW (references/anti-drift.md) |

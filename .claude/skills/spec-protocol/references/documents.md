@@ -212,13 +212,30 @@ FAIL if: <exact condition> → incomplete because <reason>
   proof, merge record — the judge writes these; this is where the refused verdict
   tickets and digest live); (c) the restart steps (the literal resume procedure,
   verbatim with real paths; this is where the refused resume playbook lives).
-  **Every verdict block records the per-finding cycle count** — which cycle this
-  finding is on, of the 3-cycle fix cap (Rule 3.22; `references/pipeline.md`), as
-  "cycle count: n of 3" — so a session resuming cold after a crash or a
-  compaction reads which cycle a finding is on directly from the block instead of
-  reconstructing it from ledger history. Recorded by whichever role writes that
-  verdict block (the judge on a Gate 1/2 finding; the critic on a Gauntlet Gate 3
-  finding, `references/gauntlet.md` Section 5).
+  **Every verdict block records the per-finding cycle count AND the finding's
+  full history** — which cycle this finding is on, of the 20-cycle fix cap
+  (Rule 3.22; `references/pipeline.md`), as "cycle count: n of 20", plus every
+  prior cycle's exact finding, fix applied (commit/branch), and re-judge
+  result, appended as the loop runs — so a session resuming cold after a crash
+  or a compaction reads which cycle a finding is on AND what has already been
+  tried directly from the block instead of reconstructing it from ledger
+  history. The history IS the payload of the escalation: after the 20th failed
+  loop, the item escalates to the operator with the full finding history, never
+  a relabeled pass (the QC protocol's loop mechanics). Recorded by whichever
+  role writes that verdict block (the judge on a Gate 1/2 finding; the critic
+  on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5).
+  **Every verdict block opens with the QC RECORD** — the six-field format
+  defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`:
+  `QC-RECORD unit=… judge=… bar=…` / `bar-fetch=…` / `verdict=…` / `outcome=…`
+  plus `blind=yes model-independence=… self-qc=no` and `provenance=STRIPPED`
+  (Law 49 — the critic's package carries no timestamps, authorship, history,
+  builder identity, builder reasoning, or effort narrative; `provenance=VIOLATION`
+  voids the verdict), written through `tools/ledger.sh` the moment the verdict
+  is reached. The record is what makes the QC bar mechanically checkable:
+  judge-vs-builder seat difference and stripped provenance (blind critic, zero
+  self-QC), a named bar with fetch proof, a binary verdict, the loop-or-pass
+  outcome. A verdict block without its QC RECORD is a defective record — the
+  verdict does not stand.
 - **Batch merge records live here too** — as a section appended by the merge-writer
   inside the verdict/merge-record section (the merge-writer already owns appending
   merge records here). One entry per batch: batch id, repository, units landed,
@@ -238,8 +255,12 @@ FAIL if: <exact condition> → incomplete because <reason>
   unit whose CLAIM line was never written BEFORE the unit — the anti-drift
   contract (`SKILL.md` "Atomic ledger writes", `references/anti-drift.md`
   sections 4 and 8), mechanically checked by `tools/anchor.sh --mode reconcile`
-  CLASS 7, which alarms `unpaired-claim` on RESULT units with no prior CLAIM.
-  (Law 1: when
+  CLASS 7, which alarms `unpaired-claim` on RESULT units with no prior CLAIM;
+  a verdict block with no QC RECORD, or a QC RECORD failing any of its six
+  mechanical checks (judge seat equals the builder seat; bar unnamed; bar with
+  no fetch proof; non-binary verdict — not one of PASS, FAIL, BLOCKED,
+  INFEASIBLE, LIMIT-REACHED, Law 50; FAIL without a LOOPED outcome; provenance
+  other than STRIPPED — see `references/pipeline.md` Stage 2). (Law 1: when
   git disagrees, git wins and the prose is corrected.)
 
 ### Document 7 — Quality-control document
@@ -431,11 +452,28 @@ FAIL if: <exact condition> → incomplete because <reason>
   written as generation-eligible. The boss cron's per-cycle orphan sweep
   (Issue 10) reads THIS section: generated = manifest = uploaded = referenced,
   zero orphans.
+- **THE ANSWER KEY (the QC protocol's bar-when-no-product-exists — Issue 17,
+  PART 1 item 4; folds into document 16; never a new file).** When no existing
+  product can serve as the bar, the bar = the locked spec's acceptance matrix
+  rendered as BINARY pass/fail answer-key lines. WHO/WHEN: the lead agent
+  writes the answer key at spec-lock, BEFORE any build dispatch, and it locks
+  with the wave table. WHERE: a named section of the execution plan —
+  "THE ANSWER KEY" — carrying the binary lines, each in the runnable form
+  `AK-<NN>: <checkable requirement> -> PASS if <observable condition>, else
+  FAIL` (example: `AK-01: hero section has headline + subhead + CTA -> PASS if
+  all three present, else FAIL`). OBJECTIVITY GUARD (binding): every line must
+  be runnable to pass/fail — a line the judge cannot run (e.g. "compelling")
+  is BLOCKED per Law 50 and must be rewritten by the lead before the build;
+  the judge grades against the answer key exactly as it would against a real
+  product, and a line that fails is FAIL, never prose. The answer-key
+  reference is what a QC RECORD's `bar-fetch=` cites when the bar is an
+  answer key (the QC record, `references/pipeline.md` Stage 2).
 - **What makes it wrong:** a number with no derivation behind it; a loop in the
   register that was never written as a definition file; a wave count that was chosen
   rather than derived; a queue with no batch size; a pen with no failure path or
   freshness rule; the budget missing any of the seven quantities or the inequality
-  (Rules 3.21, 3.26, 3.32); a media build whose execution plan lacks the
+  (Rules 3.21, 3.26, 3.32); an answer-key line the judge cannot run to pass/fail
+  (Law 50 — BLOCKED, never passed); a media build whose execution plan lacks the
   IMAGE-MANIFEST section, or a generation that exists without a manifest row, or
   a manifest row written before the provider-reachability gate passed.
 
