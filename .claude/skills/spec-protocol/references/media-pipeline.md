@@ -2313,3 +2313,59 @@ lines 933-940, media-pipeline.md section 13.7), and the mapping still carries
 **Verification:** every MEDIA line in the ledger has a populated `local-path`,
 `perm-url` (or `stored=upload-failed|lost-paid`), and `usage`. The S15 watch
 check enforces this.
+
+### 13.12 The served-HTML URL-fetch check — the build is not complete until the served page proves its images
+
+The manifest mapping (13.11) records what SHOULD be referenced. This check
+proves what IS referenced, from the page the client actually receives. It runs
+at build completion — the moment the site's pages are served (deployed or
+locally served) and before the unit is declared done — and it is the
+verification named by Issue 9 FIX step 8: **every manifest row shows a live
+GHL URL (HTTP 200 on the URL) referenced in the served HTML.**
+
+The check, in order:
+
+1. **Extract every image reference from the served HTML.** Fetch each built
+   page's HTML over HTTP (the deployed URL, or the local serve URL for a
+   not-yet-deployed build) and extract every image reference: `src` and
+   `srcset` attributes of `<img>` elements, `content` URLs of `<meta
+   property="og:image">` and `<link rel="icon">`/`<link rel="apple-touch-icon">`
+   tags, and `url(...)` references in inline `<style>` blocks and `style=`
+   attributes. Relative references are resolved against the page URL before
+   checking. The extraction is mechanical — a script or a documented command
+   sequence, never a human skim.
+2. **Fetch each extracted URL.** Every extracted image URL is fetched over
+   HTTP. The fetch is the proof, not the manifest row: a URL that is in the
+   manifest but not in the served HTML is a defect (the row's `usage` is
+   unfulfilled), and a URL in the served HTML that is not in the manifest is a
+   defect (an uncounted reference — Issue 10's orphan sweep owns the
+   accounting; this check owns the liveness).
+3. **Assert HTTP 200.** Each fetch must return HTTP 200. A non-200 (404, 403,
+   redirect-to-login, 5xx) is a defect: the served page references an image
+   the client cannot load. Retry once on a transient 5xx; a second failure is
+   a defect, not a retry loop.
+4. **Assert the URL is a permanent GHL media URL.** Each URL must be a GHL
+   media URL — the `url` returned by `POST /medias/upload-file` (section 13.7),
+   a Google Cloud Storage URL under GHL's media storage, inside the
+   project-labeled folder (13.5). On the no-GHL path (13.11), the repo asset
+   URL served by the project's own hosting is the permanent URL and satisfies
+   this assertion. **Any temporary/provider URL (KI.ai `resultUrls`, any
+   provider result host this run observed) or local path (`file://`,
+   `./media/...`, `/Users/...`) found in the served HTML is a defect of the
+   highest class** — the deny-set is the run's OWN ledger (S15), and the
+   served-HTML scan is where it is applied to the shipped page itself.
+5. **Fail on any temp/provider/local URL.** One such URL fails the check, the
+   unit is not done, and the defect is replaced with the ledger's permanent
+   URL (S15's remedy) before the pen. The check is fail-closed: a page whose
+   HTML cannot be fetched, or whose extraction finds zero image references
+   while the manifest has rows with `usage` on that page, is a defect, never a
+   pass.
+
+**Where it runs:** at build completion, wired into the pipeline as the
+media-lane completion gate — the served-HTML URL-fetch check runs on every
+built page before the unit is declared done, and its result is recorded on the
+MEDIA ledger line as `served-check=<pass|fail>` with the fetched URL count and
+the HTTP status of each. A unit with `served-check=fail` is not merge-eligible
+(S15). The check is re-run by the blind critic (Issue 9 QC: "The critic
+fetches each URL") — the builder's pass is a claim, the critic's fetch is the
+proof.
