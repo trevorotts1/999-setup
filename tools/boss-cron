@@ -977,7 +977,10 @@ def main():
 
     stopped = stop_file_state()
     if stopped:
-        violations.append(f"stop file active on workstream: {stopped}")
+        # Short excerpt only: the stop file's own text already ends with the
+        # checkpoint + loop bound, and the writer below appends them once —
+        # embedding the full text would double them in the ledger line.
+        violations.append(f"stop file active on workstream: {stopped[:80]}")
 
     # Stop-and-rerun: on violation the boss names the stop, the checkpoint to
     # restart from, and the loop bound, then kills the pinned PID
