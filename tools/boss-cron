@@ -1,50 +1,101 @@
 #!/usr/bin/env python3
-"""boss-cron — interim PART 4 enforcement (built early on Trevor's direct order 2026-08-16).
+"""boss-cron — full 8-check PART 4 enforcement (WF-4E slice 1 upgrade, 2026-08-16).
 
-Enforces the locked 6-wave plan + operator rules for workflows and agents, every cycle:
-  1. CAPS   — live workflow agents never exceed 500 total (10 per workflow x 50 workflows,
-              operator doctrine per spec Issue 14; no per-model cap exists).
-  2. CENSUS — every DISPATCH ledger line carries a census.
-  3. WIDTH  — a wave's workflows may not dispatch below the locked table's scripted width
-              without a recorded justification line on the same dispatch.
-  4. WAVE   — no wave N+1 dispatch before `WAVE N CLOSED` (locked dependencies).
-  5. CLAIM  — every DONE/FAIL line names evidence files that exist on disk.
-  6. BEAT   — a BOSSCYCLE-CLEAN line must exist within the last 600 seconds
-             (10 min = 2 cycles at */5; the age check is in check_heartbeat).
-  7. STOP   — a CONTROL/stop-workstream file holds its workstream stopped (documented).
-  8. STOP-AND-RERUN (Trevor's order 2026-08-16): on violation the boss writes the
-     stop file naming the workstream + the exact finding and appends VIOLATION-STOP
-     lines. Workflows run INSIDE the Claude session (no separate PID — verified
-     2026-08-16), so the kill authority is the CONDUCTOR's TaskStop: the conductor
-     reads the stop file at every dispatch point and MUST TaskStop the named
-     workstream, then re-dispatch it from its last clean checkpoint the RIGHT way.
-     CONTROL/workflow-pids.json remains for out-of-process runs only.
+Enforces the locked 6-wave plan + operator rules for workflows and agents, every cycle.
+PART 4 (999-master-fix-spec-20260815.md) mandates EIGHT checks; this build runs all 8:
 
-On violation: append VIOLATION-STOP lines to the ledger, write/update the stop file,
-exit 2 (governance-exit contract per PART 4). On clean: append one BOSSCYCLE-CLEAN line.
-`--check` runs exactly one cycle read-only and prints the verdict (never writes, never kills).
+  1. SCOPE   — any ledger item not in the 20-list AND not matching a sanctioned
+               line-class = violation (PART 4 check 1; allowlist below).
+  2. WAVE    — any wave in the ledger not in the locked table without a
+               `NEW-WAVE-N` dependency line = violation (PART 4 check 2); plus
+               no wave N+1 dispatch before `WAVE N CLOSED`.
+  3. COUNT   — promised vs asked question counts: any "Question N of … C" with
+               N > stated C and no prior correction line = violation (PART 4
+               check 3; Issue 11 counter enforcement).
+  4. WIDTH   — fan-out below scripted width (10 per workflow, pairs of five;
+               up to 50 workflows) without a recorded dependency line =
+               violation; padding past the work = violation (PART 4 check 4).
+  5. CLAIM   — any final-report claim (DONE/FAIL) naming evidence files that
+               do not exist on disk = violation (PART 4 check 5).
+  6. DRIFT   — > 10 consecutive contentless heartbeat ticks = violation; a
+               missing `anchor.sh --mode reconcile` at a wave boundary /
+               tick / compaction = violation (PART 4 check 6; Issue 13).
+  7. ORPHAN  — media lane 1:1:1:1 accounting read from the ledger:
+               MANIFEST-ROW / IMAGE-GENERATED / GHL-URL / IMAGE-REF — any
+               mismatch = violation; expired KI.ai temp URL with no GHL
+               upload = token-waste orphan (PART 4 check 7; Issue 10).
+  8. STATUSLINE — statusLine key present in BOTH settings stores (name-only
+               check, never reading values) after Wave 6 = clean; missing
+               after Wave 6 without a `STATUSLINE-REMOVED-<reason>` ledger
+               line = violation (PART 4 check 8; Issue 20).
 
-WF-4E (Wave 4) upgrades this to the full 8-check boss + Telegram heartbeat alert.
-Hook-protection clause (PART 4) intact: this script never touches settings.json hooks.
-No grep, no sed — python named-field parsing only.
+Carried forward from the interim boss (Trevor's direct order 2026-08-16):
+  CAPS   — live workflow agents never exceed 500 total (10 per workflow x 50
+           workflows, operator doctrine per Issue 14; no per-model cap exists).
+  CENSUS — every DISPATCH ledger line carries a census.
+  BEAT   — a BOSSCYCLE-CLEAN line must exist within the last 2 cycles (10 min).
+  STOP   — a CONTROL/stop-workstream file holds its workstream stopped.
+  STOP-AND-RERUN (Trevor's order 2026-08-16): on violation the boss writes the
+           stop file naming the workstream + the exact finding + the restart
+           checkpoint and appends VIOLATION-STOP lines. Workflows run INSIDE
+           the Claude session (no separate PID — verified 2026-08-16), so the
+           kill authority is the CONDUCTOR's TaskStop: the conductor reads the
+           stop file at every dispatch point and MUST TaskStop the named
+           workstream, then re-dispatch it from its last clean checkpoint the
+           RIGHT way. CONTROL/workflow-pids.json remains for out-of-process
+           runs only.
+  ENTRY-MODE (Issue 3): every project folder under ~/Downloads/projects whose
+           CONTROL/project_state.json records a run (any truthy run_status)
+           must carry an `ENTRY-MODE: interview|pointed` line in its
+           CONTROL/LEDGER.md.
+  STAGES (Issue 8): reject a STAGE-BUILD line lacking the prior stage lines;
+           STAGE-LOGO acceptance checked mechanically when a logo is in play.
+  ORPHAN (Issue 10): media 1:1:1:1 accounting (this is also PART 4 check 7).
+
+THE BOSS IS GOVERNED TOO (PART 4): a heartbeat alert fires if the cron fails —
+no BOSSCYCLE-* line within two intervals (10 min) -> alert through the
+operator's Telegram bot (TELEGRAM_ALERTS_BOT_TOKEN -> OWNER_CHAT_ID, names
+only; absent env keys skip the alert, never crash the cycle). The alert is
+sent by the NEXT cycle that runs, never by the dead one.
+
+On violation: append VIOLATION-STOP lines to the ledger, write/update the stop
+file, exit 2 (governance-exit contract per PART 4). On clean: append one
+BOSSCYCLE-CLEAN line. `--check` runs exactly one cycle read-only and prints the
+verdict (never writes, never kills).
+
+Hook-protection clause (PART 4) intact: this script never touches settings.json
+hooks. No grep, no sed — python named-field parsing only.
 """
 import datetime
 import json
 import os
 import re
 import signal
+import subprocess
 import sys
+import urllib.request
 
 LEDGER = "/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md"
 STOP = "/Users/blackceomacmini/work-999-setup/CONTROL/stop-workstream"
 PIDS = "/Users/blackceomacmini/work-999-setup/CONTROL/workflow-pids.json"
 PROJECT_STATE = "/Users/blackceomacmini/work-999-setup/CONTROL/project_state.json"
+BOSS_EPOCH = "/Users/blackceomacmini/work-999-setup/CONTROL/boss-cron-enforcement-epoch"
 WF_ROOT = "/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/c1d7d9a2-1c2c-4c37-b59f-118579f7ef78/subagents/workflows"
-# Operator doctrine (spec 2026-08-15, Issue 14 — supersedes the old 2/3/10 per-model
-# caps): max 10 agents per workflow (5 builders + 5 blind critics), up to 50 workflows,
-# up to 500 agents in parallel. No per-model concurrency cap exists. The harness
-# hard-caps concurrent agent() calls per workflow run at min(16, cores-2) — product
-# structure, not a settable limit; total agents per run capped at 1000 by the engine.
+PROJECTS = os.path.expanduser("~/Downloads/projects")
+SETTINGS_STORES = [
+    os.path.expanduser("~/.claude/settings.json"),
+    os.path.expanduser("~/.claude-nine/settings.json"),
+]
+# Telegram heartbeat alert (operator env, names only — values stay in the env).
+ALERT_BOT_TOKEN_ENV = "TELEGRAM_ALERTS_BOT_TOKEN"
+ALERT_CHAT_ID_ENV = "OWNER_CHAT_ID"
+
+# Operator doctrine (spec 2026-08-15, Issue 14 — supersedes the old 2/3/10
+# per-model caps): max 10 agents per workflow (5 builders + 5 blind critics),
+# up to 50 workflows, up to 500 agents in parallel. No per-model concurrency
+# cap exists. The harness hard-caps concurrent agent() calls per workflow run
+# at min(16, cores-2) — product structure, not a settable limit; total agents
+# per run capped at 1000 by the engine.
 CAPS = {"total": 500}
 
 # Locked wave table (PART 2) — scripted width per wave: workflow -> builder count.
@@ -56,21 +107,94 @@ LOCKED_WAVES = {
     5: {"WF-5A": 5, "WF-5B": 5, "WF-5C": 1},
     6: {"WF-6A": 5},
 }
+# PART 2.1 item 1: the wave table is written to the ledger at wave 1 with
+# immutable count 6; additional waves ONLY via a NEW-WAVE-N dependency line.
+LOCKED_WAVE_COUNT = 6
 
-# Ledger line classes sanctioned by PART 4 scope check + the 20-issue list + conductor
-# mechanics. Anything else = scope violation.
+# Ledger line classes sanctioned by PART 4 scope check + the 20-issue list +
+# conductor mechanics + the Wave 0 bootstrap line. Anything else = violation.
+# PART 4 check 1 allowlist (spec line 538): FUNNEL-*, 3JS-*, STAGE-*,
+# MOBBIN-CHECK, DESIGN-BRIEF, ENTRY-MODE, BUILD-TARGET, INPUT-CAPTURED,
+# STATUSLINE-*, NEW-WAVE-N, VIOLATION-STOP, BOSSCYCLE-CLEAN, AK-*,
+# PAYMENT-CONTRACT, INTERVIEW-MODE, ISSUE-18-EARLY, REPAIR, REPAIR-DONE,
+# DONE, FAIL, PASS, UNDETERMINED, OBSERVATION, REDISPATCH, BUILDER,
+# BUILDER-DONE, BUILDER-FAIL, CRITIC, CRITIC-PASS, CRITIC-FAIL, DISPATCH,
+# BASELINE, CREATED.
 SANCTIONED_CLASSES = {
     "CREATED", "BASELINE", "DISPATCH", "REDISPATCH", "REPAIR", "REPAIR-DONE",
     "BUILDER", "BUILDER-DONE", "BUILDER-FAIL", "CRITIC", "CRITIC-PASS", "CRITIC-FAIL",
     "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
     "BOSSCYCLE-CLEAN", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
+    "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
+    "PAYMENT-CONTRACT", "INTERVIEW-MODE",
+    # Issue 10 media accounting ledger classes (orphan check / PART 4 check 7)
+    "MANIFEST-ROW", "IMAGE-GENERATED", "GHL-URL", "IMAGE-REF",
+    "MEDIA-GAP", "MEDIA-UPLOADED", "MEDIA",
 }
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
+
+# PART 4 check 1 prefix classes: FUNNEL-*, 3JS-*, STAGE-*, STATUSLINE-*, AK-*.
+SCOPE_PREFIX_RE = re.compile(r"^(FUNNEL|3JS|STAGE|STATUSLINE|AK)-[A-Za-z0-9-]+:?$")
+# STAGE-* lines may carry lowercase per-page suffixes ('STAGE-WIREFRAMES-home').
+STAGE_CLASS_RE = re.compile(r"^STAGE-[A-Za-z0-9-]+:?$")
+# Statusline removal lines: 'STATUSLINE-REMOVED-<reason>' (PART 4 check 8).
+STATUSLINE_REMOVED_RE = re.compile(r"^STATUSLINE-REMOVED-")
+
+# Media ledger line regexes (Issue 10 / PART 4 check 7)
+MANIFEST_GAP_RE = re.compile(r"\bstatus=gap\b")
+MANIFEST_URL_EXPIRES_RE = re.compile(r"url=(\S+)\s+expires=(\S+)")
+
+# Drift (PART 4 check 6 / Issue 13): contentless heartbeat tick markers —
+# the same shapes anchor.sh classifies as TICK (anchor.sh lines 197-268):
+# a "heartbeat" line whose body, with the word stripped, holds only whitespace,
+# punctuation, or a bare count. The literal auto-tick line is the canonical
+# contentless tick. A tick that carries state (counts=, tasks=, verdicts, …)
+# is a REAL heartbeat and is not drift.
+TICK_LIT_RE = re.compile(r"heartbeat\s*\(\s*ledger\s+auto-tick\s*\)", re.IGNORECASE)
+TICK_MARK_RE = re.compile(r"heartbeat", re.IGNORECASE)
+TICK_STATE_RE = re.compile(
+    r"counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|MERGED",
+    re.IGNORECASE)
+DRIFT_RUN_LIMIT = 10  # > 10 consecutive contentless ticks = violation (Issue 13 FIX 2)
+RECONCILE_RE = re.compile(r"RECONCILE|RE-ANCHOR|anchor\.sh")
+
+# Count check (PART 4 check 3 / Issue 11): "Question N of … C" ledger shape.
+QUESTION_RE = re.compile(r"\bQuestion\s+(\d+)\s+of\s+[^\d]{0,30}?(\d+)\b", re.IGNORECASE)
+# Sanctioned question-count correction lines (Issue 11 — the honest path is a
+# recorded correction, never a silent edit).
+CORRECTION_RE = re.compile(r"^(CORRECTION|COUNT-CORRECTION|CORRECTED)", re.IGNORECASE)
+
+# ENTRY-MODE gate epoch: WAVE 2 DISPATCH 2026-08-16T14:02Z — the wave that
+# wrote the entry gate (Issue 3). Runs that started BEFORE the gate existed
+# cannot carry an ENTRY-MODE line retroactively; flagging them is a
+# false positive. Runs starting at or after the epoch must carry the line.
+ENTRY_GATE_EPOCH = datetime.datetime(2026, 8, 16, 14, 2, 0, tzinfo=datetime.timezone.utc)
 
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def enforcement_epoch():
+    """The moment the full 8-check boss first ran a live cycle. Written by the
+    first live cycle; --check never writes. Waves dispatched BEFORE the epoch
+    cannot be retroactively judged by checks that did not exist when they
+    dispatched — pre-epoch waves are exempt, post-epoch waves are enforced.
+    Returns the epoch datetime (or None when never recorded)."""
+    if os.path.exists(BOSS_EPOCH):
+        try:
+            with open(BOSS_EPOCH, "r", encoding="utf-8") as fh:
+                return datetime.datetime.strptime(fh.read().strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def record_enforcement_epoch():
+    if not os.path.exists(BOSS_EPOCH):
+        with open(BOSS_EPOCH, "w", encoding="utf-8") as fh:
+            fh.write(now_iso())
 
 
 def read_ledger():
@@ -92,7 +216,13 @@ def ledger_class(line):
     # Finding-prefixed lines ("F-2 FAIL ...") take the token after the finding id.
     if re.match(r"^F-\d+$", toks[0]) and len(toks) > 1:
         return toks[1]
-    return toks[0]
+    cls = toks[0]
+    # Ledger lines carry the class in either 'CLASS' or 'CLASS:' shape
+    # (e.g. 'DESIGN-BRIEF:' with a trailing colon) — strip the colon so both
+    # shapes match the same allowlist entry.
+    if cls.endswith(":"):
+        cls = cls[:-1]
+    return cls
 
 
 def line_timestamp(line):
@@ -100,6 +230,22 @@ def line_timestamp(line):
     # (with seconds), so the regex accepts seconds as optional.
     m = re.search(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z", line)
     return m.group(0) if m else None
+
+
+# Dispatch-line shapes (the ledger's actual forms, verified on the live ledger
+# 2026-08-16): '- `WAVE 3 DISPATCH 2026-08-16T17:07Z: ...' (wave dispatches),
+# '- `DISPATCH 2026-08-16T09:05Z: ...' (bare dispatches),
+# '- `WF-1A REPAIR DISPATCH 2026-08-16T09:16Z: ...' (repair dispatches).
+# Lines that merely CITE a dispatch ('... Cites WAVE 3 REDISPATCH.') are NOT
+# dispatch lines — matching on the word alone would let citation lines hijack
+# the width/wave tables.
+DISPATCH_LINE_RE = re.compile(
+    r"^(WAVE \d+ (REDISPATCH|DISPATCH)|DISPATCH|REDISPATCH|"
+    r"WF-\d[A-Z]? (REPAIR )?(REDISPATCH|DISPATCH))")
+
+
+def is_dispatch_line(ln):
+    return bool(DISPATCH_LINE_RE.match(ln[3:]))
 
 
 def check_caps():
@@ -144,52 +290,82 @@ def check_caps():
 def check_dispatch_census(lines):
     missing = []
     for ln in lines:
-        cls = ledger_class(ln)
-        if "DISPATCH" in cls and "Census before dispatch" not in ln:
+        if is_dispatch_line(ln) and "Census before dispatch" not in ln:
             missing.append(ln)
     return missing
 
 
 def check_wave_lock(lines):
+    """PART 4 check 2: any wave in the ledger not in the locked table without
+    a NEW-WAVE-N dependency line = violation; plus the locked-dependency rule
+    (no wave N+1 dispatch before WAVE N CLOSED)."""
     closed = set()
+    new_wave_deps = set()
     max_dispatched = 0
     for ln in lines:
         if ln.startswith("- `WAVE ") and "CLOSED" in ln:
             m = re.search(r"WAVE (\d+) CLOSED", ln)
             if m:
                 closed.add(int(m.group(1)))
-        m = re.match(r"- `(WF-(\d)[A-Z])", ln)
-        if m and "DISPATCH" in ln:
-            max_dispatched = max(max_dispatched, int(m.group(2)))
+        if "NEW-WAVE-N" in ln or re.search(r"NEW-WAVE-\d+", ln):
+            for m in re.finditer(r"NEW-WAVE-(\d+)", ln):
+                new_wave_deps.add(int(m.group(1)))
+        if is_dispatch_line(ln):
+            m = re.search(r"WAVE (\d+)", ln)
+            if m:
+                max_dispatched = max(max_dispatched, int(m.group(1)))
     violations = []
+    # Dependency rule: wave N+1 dispatch requires WAVE N CLOSED.
     for w in range(2, max_dispatched + 1):
         if w - 1 not in closed:
             violations.append(f"wave {w} dispatched but no WAVE {w-1} CLOSED line")
+    # Locked-table rule: waves beyond the immutable count need a NEW-WAVE-N line.
+    for w in range(LOCKED_WAVE_COUNT + 1, max_dispatched + 1):
+        if w not in new_wave_deps:
+            violations.append(
+                f"wave {w} dispatched, not in the locked table (count {LOCKED_WAVE_COUNT}), "
+                f"no NEW-WAVE-{w} dependency line")
     return violations
 
 
 def check_width(lines):
-    """PART 4 check 4: the LATEST dispatch line per wave must carry either the full
-    scripted width (all locked workflows named + 'Width justification' or 'full PART 2
-    scripted width') or a recorded dependency line. Historical under-width lines already
-    superseded by a later redispatch are resolved, not re-fired."""
+    """PART 4 check 4: the LATEST dispatch line per wave must carry either the
+    full scripted width (all locked workflows named + 'Width justification' or
+    'full PART 2 scripted width') or a recorded dependency line. Historical
+    under-width lines already superseded by a later redispatch are resolved,
+    not re-fired. Padding past the work is ALSO a violation — a dispatch that
+    pads seats beyond what the work allows never satisfies the width bar."""
     latest = {}
     for ln in lines:
+        if not is_dispatch_line(ln):
+            continue
         m = re.search(r"WAVE (\d+)", ln)
-        cls = ledger_class(ln)
-        if m and ("DISPATCH" in cls or "REDISPATCH" in cls):
+        if m:
             latest[int(m.group(1))] = ln
     violations = []
     for wave, ln in latest.items():
         wfs = LOCKED_WAVES.get(wave)
         if wfs is None:
-            violations.append(f"dispatch for wave {wave} not in the locked table")
+            # Locked-table escape only via NEW-WAVE-N dependency line.
+            if not re.search(rf"NEW-WAVE-{wave}\b", ln):
+                violations.append(f"width: dispatch for wave {wave} not in the locked table: {ln[:110]}")
             continue
-        named = all(f"WF-{wave}{wf[3:]}" in ln for wf in wfs)
+        named = all(re.search(rf"\b{wf}\b", ln) for wf in wfs)
         justified = "Width justification" in ln or "full PART 2 scripted width" in ln
         if not named or not justified:
             violations.append(
                 f"width: wave {wave} dispatch below scripted width or missing justification: {ln[:110]}")
+        # Padding: the dispatch names the locked workflows with their locked
+        # seat counts (e.g. '5 Opus builders + 5 Sonnet blind critics each');
+        # a count above the locked per-workflow width is padding past the work.
+        pad = re.search(r"(\d+)\s+(?:Opus\s+)?builders?\s*[+-]\s*(\d+)\s+(?:Sonnet\s+)?(?:blind\s+)?critics?\s+each", ln)
+        if pad:
+            builders, critics = int(pad.group(1)), int(pad.group(2))
+            per_wf = next(iter(wfs.values())) if wfs else 5
+            if builders > per_wf or critics > per_wf:
+                violations.append(
+                    f"width: wave {wave} dispatch padded past the work "
+                    f"({builders}+{critics} > locked {per_wf} per workflow): {ln[:110]}")
     return violations
 
 
@@ -229,10 +405,416 @@ def check_scope(lines):
             continue
         if re.match(r"^WF-\d[A-Z]$", cls) or re.match(r"^WAVE$", cls):
             continue
-        if cls.endswith(":") and len(cls) < 60:
+        if SCOPE_PREFIX_RE.match(cls) or STAGE_CLASS_RE.match(cls):
+            continue
+        if STATUSLINE_REMOVED_RE.match(cls):
             continue
         bad.append(ln[:120])
     return bad
+
+
+def check_questions(lines):
+    """PART 4 check 3: promised vs asked question counts. Any 'Question N of …
+    C' with N > stated C and no prior correction line = violation."""
+    violations = []
+    for ln in lines:
+        for m in QUESTION_RE.finditer(ln):
+            n, stated = int(m.group(1)), int(m.group(2))
+            if n > stated:
+                violations.append(
+                    f"count: 'Question {n} of … {stated}' — asked past the promised count "
+                    f"({n} > {stated}) with no prior correction line: {ln[:110]}")
+    return violations
+
+
+def _contentless_tick(line):
+    """anchor.sh TICK classifier (lines 197-268): a heartbeat line whose body
+    carries no state is a contentless tick."""
+    body = line[3:]
+    if TICK_LIT_RE.search(body):
+        return True
+    if not TICK_MARK_RE.search(body):
+        return False
+    stripped = TICK_MARK_RE.sub("", body)
+    stripped = re.sub(r"[^\w]", "", stripped)
+    if stripped == "" or re.match(r"^\d{1,4}$", stripped):
+        return True
+    return False
+
+
+def check_drift(lines):
+    """PART 4 check 6 (Issue 13): > 10 consecutive contentless heartbeat ticks
+    = violation; a missing anchor.sh --mode reconcile at a wave boundary /
+    tick / compaction = violation.
+
+    Wave-boundary reconcile is checked PER WAVE: each wave N (N >= 2) must
+    carry a RECONCILE/RE-ANCHOR line between the previous wave's CLOSED line
+    and its own DISPATCH line. Wave 1 opens the run from a fresh-start
+    baseline (no prior wave to reconcile) and is exempt by design. The window
+    is bounded, so a reconcile written for wave N never satisfies wave N+1.
+    """
+    violations = []
+    run = 0
+    for ln in lines:
+        cls = ledger_class(ln)
+        if TICK_MARK_RE.search(ln):
+            if TICK_STATE_RE.search(ln):
+                run = 0
+            elif _contentless_tick(ln):
+                run += 1
+            else:
+                run += 1
+            if run > DRIFT_RUN_LIMIT:
+                violations.append(
+                    f"drift: {run} consecutive contentless heartbeat ticks "
+                    f"(limit {DRIFT_RUN_LIMIT}) — lane stopped, checkpoint restart required")
+                break
+        elif cls == "BOSSCYCLE-CLEAN":
+            run = 0
+    # Per-wave boundary reconcile (waves 2+, dispatched after the boss's own
+    # enforcement epoch — pre-epoch waves cannot be retroactively judged).
+    epoch = enforcement_epoch()
+    if epoch is None:
+        # No enforcement epoch yet — the full 8-check boss has not run a live
+        # cycle, so nothing can be judged retroactively. The epoch is written
+        # by the first live cycle; from that moment on, post-epoch dispatches
+        # are enforced. (--check never writes the epoch.)
+        return violations
+    for ln in lines:
+        if not is_dispatch_line(ln):
+            continue
+        m = re.search(r"WAVE (\d+) (DISPATCH|REDISPATCH)", ln)
+        if not m:
+            continue
+        wave = int(m.group(1))
+        if wave < 2:
+            continue
+        ts = line_timestamp(ln)
+        if ts is not None:
+            dispatched_at = None
+            for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%MZ"):
+                try:
+                    dispatched_at = datetime.datetime.strptime(ts, fmt).replace(tzinfo=datetime.timezone.utc)
+                    break
+                except ValueError:
+                    continue
+            if dispatched_at is not None and dispatched_at < epoch:
+                continue  # pre-enforcement dispatch — exempt, no retroactive judgement
+        # Window: after WAVE (wave-1) CLOSED, before this wave's dispatch line.
+        window = []
+        in_window = False
+        for other in lines:
+            c = re.search(r"WAVE (\d+) CLOSED", other)
+            if c and int(c.group(1)) == wave - 1:
+                in_window = True
+                continue
+            if other is ln:
+                in_window = False
+                break
+            if in_window:
+                window.append(other)
+        if not any(RECONCILE_RE.search(w) for w in window):
+            violations.append(
+                f"drift: wave {wave} dispatched with no anchor.sh --mode reconcile "
+                f"(RECONCILE/RE-ANCHOR) line after WAVE {wave-1} CLOSED — wave "
+                f"boundary reconcile never recorded")
+    return violations
+
+
+def check_orphans(lines):
+    """PART 4 check 7 (Issue 10 FIX step 3): media lane 1:1:1:1 accounting.
+    generated == manifest == uploaded; references may be N but every reference
+    must point at an uploaded asset. Expired temp URLs (KI.ai 24h deadline)
+    with no GHL upload are token-waste orphans. status=gap rows are the only
+    sanctioned manifest row without a generation."""
+    manifest_ids = set()
+    generated_ids = set()
+    uploaded_ids = set()
+    referenced_ids = set()
+    temp_url_expiry = {}
+
+    for ln in lines:
+        body = ln[3:]
+        toks = body.split()
+        if not toks:
+            continue
+        cls = toks[0]
+        if cls == "MANIFEST-ROW" and len(toks) > 1:
+            row_id = toks[1].rstrip(":")
+            if MANIFEST_GAP_RE.search(body):
+                continue  # marked gap — sanctioned absence, no generation expected
+            manifest_ids.add(row_id)
+            m = MANIFEST_URL_EXPIRES_RE.search(body)
+            if m:
+                url_raw = m.group(1)
+                exp_raw = m.group(2).rstrip("`")
+                temp_url_expiry[row_id] = (exp_raw, url_raw[:60])
+        elif cls == "IMAGE-GENERATED" and len(toks) > 1:
+            generated_ids.add(toks[1].rstrip(":"))
+        elif cls == "GHL-URL" and len(toks) > 1:
+            uploaded_ids.add(toks[1].rstrip(":"))
+        elif cls == "IMAGE-REF" and len(toks) > 1:
+            referenced_ids.add(toks[1].rstrip(":"))
+
+    violations = []
+    for g in generated_ids - manifest_ids:
+        violations.append(f"orphan: IMAGE-GENERATED {g} has no corresponding MANIFEST-ROW — generation without a plan is token waste")
+    for m in manifest_ids - generated_ids:
+        violations.append(f"orphan: MANIFEST-ROW {m} has no IMAGE-GENERATED and is not marked status=gap — planned image never generated")
+    for g in generated_ids - uploaded_ids:
+        violations.append(f"orphan: IMAGE-GENERATED {g} has no GHL-URL upload — temp URL will expire in 24h")
+    for u in uploaded_ids - generated_ids:
+        violations.append(f"orphan: GHL-URL {u} has no IMAGE-GENERATED — upload record without a source generation")
+    for u in uploaded_ids - referenced_ids:
+        violations.append(f"orphan: GHL-URL {u} has no IMAGE-REF in any page — uploaded image never used is wasted")
+    for r in referenced_ids - uploaded_ids:
+        violations.append(f"orphan: IMAGE-REF {r} has no GHL-URL upload — page references an image that was never persisted")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for row_id, (exp_raw, url_preview) in temp_url_expiry.items():
+        if row_id in uploaded_ids:
+            continue
+        try:
+            expires = datetime.datetime.strptime(exp_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        except (ValueError, TypeError):
+            violations.append(f"orphan: MANIFEST-ROW {row_id} has unparseable expiry timestamp '{exp_raw}' — cannot verify freshness")
+            continue
+        if now > expires:
+            violations.append(
+                f"orphan: MANIFEST-ROW {row_id} temp URL expired at {exp_raw} and never uploaded to GHL "
+                f"— generation spend is lost (token waste): {url_preview}...")
+    return violations
+
+
+STAGE_ORDER = ["STAGE-WIREFRAMES", "STAGE-SCAFFOLDING", "STAGE-HERO",
+               "STAGE-IMAGES", "STAGE-LOGO", "STAGE-BUILD"]
+
+
+def _stage_lines(lines):
+    """Return (stage_classes_seen, logo_in_play, stage_lines, logo_outputs)."""
+    have = set()
+    logo_in_play = False
+    stage_lines = []
+    logo_outputs = []
+    for ln in lines:
+        cls = ledger_class(ln).rstrip(":")
+        if STAGE_CLASS_RE.match(cls):
+            if cls.startswith("STAGE-WIREFRAMES-"):
+                have.add("STAGE-WIREFRAMES")
+            else:
+                have.add(cls)
+            if "logo" in ln.lower():
+                logo_in_play = True
+            stage_lines.append((cls, ln))
+            if cls == "STAGE-LOGO":
+                body = ln[3:].split(":", 1)[1] if ":" in ln[3:] else ""
+                if "none" in body.lower():
+                    continue
+                for pair in body.split(","):
+                    output = pair.split("=", 1)[-1].strip().split("`")[0].strip()
+                    if output:
+                        logo_outputs.append(output)
+        elif cls in ("DESIGN-BRIEF", "INPUT-CAPTURED", "BUILD-TARGET"):
+            if "logo" in ln.lower():
+                logo_in_play = True
+    return have, logo_in_play, stage_lines, logo_outputs
+
+
+def _png_has_alpha(path):
+    """Stdlib PNG alpha-channel check (no PIL): parse IHDR color type.
+    Color types 4 (gray+alpha) and 6 (RGBA) carry an alpha channel."""
+    try:
+        with open(path, "rb") as fh:
+            sig = fh.read(8)
+            if sig != b"\x89PNG\r\n\x1a\n":
+                return False
+            while True:
+                raw = fh.read(8)
+                if len(raw) < 8:
+                    return False
+                length = int.from_bytes(raw[:4], "big")
+                ctype = raw[4:8]
+                if ctype == b"IHDR":
+                    ihdr = fh.read(length)
+                    if len(ihdr) < 10:
+                        return False
+                    return ihdr[9] in (4, 6)
+                fh.seek(length + 4, 1)
+    except OSError:
+        return False
+
+
+def _logo_output_transparent(path):
+    """STAGE-LOGO acceptance: the named output file exists and is a transparent
+    PNG/WebP with no background pixels. PIL when importable; stdlib PNG check
+    otherwise (WebP without PIL is UNDETERMINED, never a pass)."""
+    if not os.path.exists(path):
+        return False, "output file missing"
+    try:
+        from PIL import Image
+    except ImportError:
+        if path.lower().endswith(".png") and _png_has_alpha(path):
+            return True, "PNG alpha channel present (stdlib check; border alpha not sampled)"
+        return False, "no PIL to verify transparency"
+    try:
+        im = Image.open(path).convert("RGBA")
+    except Exception:
+        return False, "unreadable image"
+    w, h = im.size
+    px = im.load()
+    samples = []
+    for x in range(0, w, max(1, w // 20)):
+        samples.append(px[x, 0])
+        samples.append(px[x, h - 1])
+    for y in range(0, h, max(1, h // 20)):
+        samples.append(px[0, y])
+        samples.append(px[w - 1, y])
+    if any(s[3] >= 8 for s in samples):
+        return False, "background pixels present (border alpha >= 8)"
+    return True, "transparent PNG/WebP, no background pixels"
+
+
+def check_stages(lines):
+    """Issue 8 FIX step 2 enforcement: reject a STAGE-BUILD line lacking the
+    prior stage lines, and reject any stage line opened before its
+    predecessor's line exists. STAGE-LOGO's acceptance bar is checked
+    mechanically: every named output file must exist and be a transparent
+    PNG/WebP with no background pixels."""
+    violations = []
+    have, logo_in_play, stage_lines, logo_outputs = _stage_lines(lines)
+    for cls, ln in stage_lines:
+        if cls not in STAGE_ORDER or cls == "STAGE-BUILD":
+            continue
+        idx = STAGE_ORDER.index(cls)
+        if idx == 0:
+            continue
+        missing = [s for s in STAGE_ORDER[:idx] if s not in have]
+        if missing:
+            violations.append(
+                f"stage-order: {cls} opened before its predecessor stage lines "
+                f"{','.join(missing)}: {ln[:110]}")
+    for cls, ln in stage_lines:
+        if cls != "STAGE-BUILD":
+            continue
+        missing = [s for s in STAGE_ORDER[:-1]
+                   if s not in have and s != "STAGE-LOGO"]
+        if logo_in_play and "STAGE-LOGO" not in have:
+            missing.append("STAGE-LOGO")
+        if missing:
+            violations.append(
+                f"stage-order: STAGE-BUILD opened without prior stage lines "
+                f"{','.join(missing)}: {ln[:110]}")
+    for output in logo_outputs:
+        ok, why = _logo_output_transparent(output)
+        if not ok:
+            violations.append(
+                f"stage-logo: output not transparent ({why}): {output}")
+    return violations
+
+
+def check_entry_mode():
+    """Issue 3 enforcement: any project folder under ~/Downloads/projects whose
+    CONTROL/project_state.json records a run (any truthy run_status) must carry
+    an ENTRY-MODE: interview|pointed line in its CONTROL/LEDGER.md. Folders
+    never created by a spec-protocol run (no project_state.json, or no
+    run_status field) are untouched."""
+    missing = []
+    if not os.path.isdir(PROJECTS):
+        return missing
+    entry_re = re.compile(r"^ENTRY-MODE:\s*(interview|pointed)\s*$")
+    for name in sorted(os.listdir(PROJECTS)):
+        pdir = os.path.join(PROJECTS, name)
+        if not os.path.isdir(pdir):
+            continue
+        state = os.path.join(pdir, "CONTROL", "project_state.json")
+        if not os.path.isfile(state):
+            continue
+        try:
+            with open(state, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not data.get("run_status"):
+            continue
+        ledger_path = os.path.join(pdir, "CONTROL", "LEDGER.md")
+        if not os.path.isfile(ledger_path):
+            # No ledger at all: cannot date the run — the epoch exemption needs
+            # a start date, so a missing ledger stays a violation (a run with
+            # state but no ledger is broken regardless of the gate).
+            missing.append(f"{name}: run_state present, no CONTROL/LEDGER.md (entry gate never recorded)")
+            continue
+        # Epoch exemption: a run that started before the entry gate existed
+        # (WAVE 2 DISPATCH 2026-08-16T14:02Z, Issue 3) cannot be flagged —
+        # the gate was not in force during its run. First ledger timestamp =
+        # run start. No timestamp -> cannot date -> NOT exempt (checked).
+        first_ts = None
+        with open(ledger_path, "r", encoding="utf-8") as fh:
+            for ln in fh:
+                m = re.search(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z", ln)
+                if m:
+                    first_ts = m.group(0)
+                    break
+        if first_ts is not None:
+            try:
+                start = datetime.datetime.strptime(first_ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+            except ValueError:
+                # Seconds-less timestamps ('2026-08-15T18:30Z') are the older
+                # ledger shape — parse with seconds defaulting to 00.
+                start = None
+                try:
+                    start = datetime.datetime.strptime(first_ts, "%Y-%m-%dT%H:%MZ").replace(tzinfo=datetime.timezone.utc)
+                except ValueError:
+                    start = None
+            if start is not None and start < ENTRY_GATE_EPOCH:
+                continue  # pre-gate run — exempt, no retroactive gate
+        with open(ledger_path, "r", encoding="utf-8") as fh:
+            found = False
+            for ln in fh:
+                stripped = ln.strip()
+                if stripped.startswith("- `") and stripped.endswith("`"):
+                    stripped = stripped[3:-1]
+                if entry_re.match(stripped):
+                    found = True
+                    break
+            if not found:
+                missing.append(f"{name}: CONTROL/LEDGER.md lacks ENTRY-MODE: interview|pointed (entry gate bypassed)")
+    return missing
+
+
+def _settings_have_statusline():
+    """PART 4 check 8 (name-only): statusLine key present in BOTH settings
+    stores. Never reads values."""
+    present = []
+    for path in SETTINGS_STORES:
+        if not os.path.isfile(path):
+            present.append(False)
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            present.append(False)
+            continue
+        present.append("statusLine" in data)
+    return all(present), present
+
+
+def check_statusline(lines):
+    """PART 4 check 8: after Wave 6, statusLine key must be present in BOTH
+    settings stores (name-only). Missing after Wave 6 without a
+    STATUSLINE-REMOVED-<reason> ledger line = violation."""
+    wave6_entered = any(re.search(r"WAVE 6 (DISPATCH|REDISPATCH)", ln) for ln in lines)
+    if not wave6_entered:
+        return []
+    removed = any(STATUSLINE_REMOVED_RE.search(ledger_class(ln)) for ln in lines)
+    if removed:
+        return []
+    ok, present = _settings_have_statusline()
+    if not ok:
+        stores = ", ".join(os.path.basename(p) for p, pr in zip(SETTINGS_STORES, present) if not pr)
+        return [f"statusline: statusLine key missing after Wave 6 in {stores} "
+                f"(no STATUSLINE-REMOVED-<reason> ledger line)"]
+    return []
 
 
 def last_clean_checkpoint():
@@ -288,6 +870,24 @@ def kill_pids(workstream):
     return outcomes
 
 
+def send_heartbeat_alert(msg):
+    """PART 4: the boss is governed too — a heartbeat alert fires if the cron
+    fails (no BOSSCYCLE-* line within two intervals). Sent by the NEXT live
+    cycle. Env keys absent -> skip silently (the ledger still records)."""
+    token = os.environ.get(ALERT_BOT_TOKEN_ENV)
+    chat_id = os.environ.get(ALERT_CHAT_ID_ENV)
+    if not token or not chat_id:
+        return "env-missing"
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = json.dumps({"chat_id": chat_id, "text": msg}).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return f"http-{resp.status}" if resp.status == 200 else f"http-{resp.status}"
+    except Exception as exc:
+        return f"error-{type(exc).__name__}"
+
+
 def main():
     dry = "--check" in sys.argv
     violations = []
@@ -319,14 +919,25 @@ def main():
         violations.append(f"heartbeat: {beat}")
     for b in check_scope(lines):
         violations.append(f"scope: {b}")
+    for q in check_questions(lines):
+        violations.append(f"count: {q}")
+    for d in check_drift(lines):
+        violations.append(f"drift: {d}")
+    for o in check_orphans(lines):
+        violations.append(f"orphan: {o}")
+    for s in check_stages(lines):
+        violations.append(f"stages: {s}")
+    for em in check_entry_mode():
+        violations.append(f"entry-mode: {em}")
+    violations.extend(f"statusline: {v}" for v in check_statusline(lines))
 
     stopped = stop_file_state()
     if stopped:
         violations.append(f"stop file active on workstream: {stopped}")
 
-    # Stop-and-rerun (slice 2 — WF-4E): on violation the boss names the stop,
-    # the checkpoint to restart from, and the loop bound, then kills the pinned
-    # PID (out-of-process runs only). The in-session kill is the conductor's
+    # Stop-and-rerun: on violation the boss names the stop, the checkpoint to
+    # restart from, and the loop bound, then kills the pinned PID
+    # (out-of-process runs only). The in-session kill is the conductor's
     # TaskStop, gated on reading this stop file at every dispatch point.
     kills = []
     checkpoint = last_clean_checkpoint() if violations else None
@@ -339,13 +950,26 @@ def main():
         for ws in sorted(streams):
             kills.extend(kill_pids(ws))
 
-    checks = "caps,census,width,wavelock,claims,beat,stop,scope,kill"
+    # PART 4: the boss is governed too. If the cron itself failed (no
+    # BOSSCYCLE-* line within two intervals = 10 min), THIS cycle alerts.
+    alert_note = ""
+    if not dry and beat is not None and "first cycle baseline" not in beat:
+        outcome = send_heartbeat_alert(
+            f"[boss-cron] heartbeat alert: no BOSSCYCLE-* ledger line within two "
+            f"intervals — last BOSSCYCLE-CLEAN {beat}. Conductor: check the cron "
+            f"entry and boss-cron.log.")
+        alert_note = f" heartbeat-alert={outcome}"
+
+    checks = ("caps,census,width,wavelock,claims,beat,stop,scope,kill,"
+              "count,drift,orphan,stages,entry-mode,statusline")
     if dry:
         print(f"boss-cron --check: {len(violations)} violation(s)")
         for v in violations:
             print(f"  - {v}")
         print(f"checks run: {checks}")
         sys.exit(2 if violations else 0)
+
+    record_enforcement_epoch()
 
     text2 = read_ledger() or ""
     old_lines = set(ledger_lines(text2))
@@ -358,6 +982,10 @@ def main():
             line = f"- `VIOLATION-STOP {now_iso()}: kill pid {pid}: {outcome} — conductor re-dispatches, {ck_note}; {bound}`"
             if line not in old_lines:
                 fh.write(line + "\n")
+        if alert_note:
+            line = f"- `BOSSCYCLE-ALERT {now_iso()}:{alert_note} — heartbeat alert fired (no BOSSCYCLE-* line within two intervals)`"
+            if line not in old_lines:
+                fh.write(line + "\n")
         if not violations and beat is None:
             fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`\n")
         elif not violations:
@@ -366,7 +994,7 @@ def main():
         with open(STOP, "w", encoding="utf-8") as fh:
             fh.write(f"boss-cron-20260816: " + "; ".join(violations)[:340]
                      + f" | {ck_note}; {bound}")
-    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended")
+    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended{alert_note}")
     sys.exit(2 if violations else 0)
 
 
