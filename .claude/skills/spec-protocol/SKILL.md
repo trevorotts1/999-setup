@@ -1214,7 +1214,14 @@ When the operator provides a folder, that folder IS the project. Its documents A
     prove the instrument on a known-positive before trusting any zero — the v4's
     own QC report failed on exactly this (stale counts), so a self-audit with no
     command output is not a self-audit. The commands live in
-    `references/documents.md`. **Then the GL-001…GL-008 separation audit:** the
+    `references/documents.md`. **Then the QC-RECORD audit:** every verdict block
+    in the ledger opens with a QC RECORD that passes its five mechanical checks
+    (`references/pipeline.md` Stage 2) — a judge seat differing from the unit's
+    builder seat (zero self-QC), a named bar, a bar-fetch proof, a binary
+    verdict, and a PASSED / LOOPED n-of-20 / ESCALATED outcome; enumerate the
+    records with the census commands, prove the instrument on a known-positive
+    first, and report each count — a verdict block with no record, or a record
+    failing a check, is a defect. **Then the GL-001…GL-008 separation audit:** the
     three-part Gauntlet Loop block (Step 12.5) must show: exactly three labeled
     top-level parts exist, in order (THE TASK / THE BUILD METHOD / THE BAR TO
     HIT); no critic/loop/stop language in THE TASK; decomposition/roles/
@@ -1277,13 +1284,16 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    parallel — one fixer per finding (Law 32).
    **Every judge pass writes ONE QC RECORD** — `QC-RECORD unit=… judge=… bar=…`
    / `bar-fetch=…` / `verdict=…` / `outcome=…` plus `blind=yes
-   model-independence=… self-qc=no` — to the ledger's verdict blocks through
-   `tools/ledger.sh` the moment the verdict is reached. The record carries the
-   four things the QC bar checks: a blind critic (`judge=` differing from the
-   unit's builder seat — zero self-QC), a named bar with its fetch proof, a
-   binary verdict, and the loop-or-pass outcome (PASSED / LOOPED cycle n of 20
-   / ESCALATED after 20). The five mechanical checks and the fail-closed rule
-   for defective records live in `references/pipeline.md` Stage 2.
+   model-independence=… self-qc=no` and `provenance=STRIPPED` (Law 49 — the
+   critic's package carries no timestamps, authorship, history, builder
+   identity, builder reasoning, or effort narrative) — to the ledger's verdict
+   blocks through `tools/ledger.sh` the moment the verdict is reached. The
+   record carries the four things the QC bar checks: a blind critic (`judge=`
+   differing from the unit's builder seat and `provenance=STRIPPED` — zero
+   self-QC), a named bar with its fetch proof, a binary verdict, and the
+   loop-or-pass outcome (PASSED / LOOPED cycle n of 20 / ESCALATED after 20).
+   The six mechanical checks and the fail-closed rule for defective records
+   live in `references/pipeline.md` Stage 2.
    **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
    never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
    non-success states, never relabeled PASS.
@@ -1410,7 +1420,7 @@ lives in `references/pipeline.md`.
 | 4 — Pipeline, not barrier | Each unit is judged when IT finishes, lands when IT passes. Waves cap how many run at once; they never synchronize completion. |
 | 5 — Slice the specification | Builders read spec-common + their own slice only, never the master spec (~91% token cut). Caching will not rescue a fan-out. |
 | 6 — Foreground gates with timeout | All tests/builds/checks run foreground with an explicit timeout. Never background a gate. On timeout: mark blocked-timeout, move on. |
-| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. 8.5 gate. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. |
+| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. 8.5 gate. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. Every verdict is written as a QC RECORD (`QC-RECORD unit judge bar bar-fetch verdict outcome blind model-independence self-qc provenance` — the format in `references/pipeline.md` Stage 2), and the record's `judge=` seat must differ from the unit's builder seat with `provenance=STRIPPED`: zero self-QC. |
 | 8 — Never quit | On any death, crash, rate limit, session limit: re-derive state from the primary source, re-fire, resume at the first unfinished item. The run ends two ways only: finished, or the human stops it. |
 | 9 — Decide autonomously; Named Stops only | Only the Named Stops ask a human. A stop blocks ONLY its own unit. Everything else is decided and recorded. |
 | 10 — Batch the ripple | One version bump + one changelog entry + one annotated tag per batch, and every other downstream artifact the batch touched. Never per unit. |

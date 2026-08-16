@@ -259,6 +259,27 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
+**PASS = completely exceeds expectation — the ONE pass standard (Issue 17,
+PART 1 item 5; binding on every verdict in this pipeline).** The single pass
+standard is "completely exceeds expectation" — never "acceptable", never
+"meets spec", never "good enough". The judge compares the work against the
+item's bar (Law 48 — the named, fetchable bar on the build card's QC section
+or the B2H) the way a customer would, and the work must clearly and
+demonstrably exceed what the bar demands, with the exceeding evidence quoted
+in the verdict. Where the bar is an answer-key (no existing product serves as
+the bar — PART 1 item 4), the pass standard is the answer-key's binary PASS,
+which is what "completely exceeds expectation" means when the comparison
+surface is a checkable line, and the objectivity guard stands: an answer-key
+line the judge cannot run to pass/fail is BLOCKED (Law 50) and rewritten by
+the lead before the build. A verdict of "meets the bar exactly" is NOT a
+pass — it is ITERATE, and the gap returned to the builder is "the bar is
+matched, not exceeded — exceed it". The client's own D1/D2 answers
+(`references/interview.md` Block D — the example the client would be happy
+matching, and the relationship "shoulder to shoulder" vs "rulebook") seed the
+bar; the judge's standard is set by the bar, never lowered by any client
+answer (Law 43 — only the client lowers their own standard, and "shoulder to
+shoulder" IS the bar, not a pass below it).
+
 **Model:** the QC model from the capacity interview. The default LANE on
 Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
 named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
@@ -273,7 +294,7 @@ verdict blocks (document 6) through `tools/ledger.sh` the moment the verdict is
 reached (Law 2 — write the verdict the instant it is judged). A judge that
 returns a verdict without writing the record has not produced a verdict.**
 
-A QC RECORD has EXACTLY four fields, one line each, in this order — the four
+A QC RECORD has EXACTLY six fields, one line each, in this order — the six
 things the Issue 17 bar checks (spec: every QC record shows a blind critic, a
 named bar, a binary verdict, and the loop-or-pass outcome; zero self-QC):
 
@@ -284,9 +305,10 @@ answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
 outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
+provenance=<STRIPPED|VIOLATION>
 ```
 
-Mechanical checkability — the five checks any cold agent or the boss cron can
+Mechanical checkability — the six checks any cold agent or the boss cron can
 run against a QC RECORD without judging anything:
 
 1. **`judge=` must NOT equal the builder's seat label** for that unit (Law 7 —
@@ -308,14 +330,22 @@ run against a QC RECORD without judging anything:
    pass carries ESCALATED with the full finding history) — a FAIL verdict with
    no LOOPED outcome line, or an ESCALATED line with no finding history
    attached, is a broken record.
+6. **`provenance=` must be STRIPPED** (Law 49 — the critic sees the work,
+   never the effort). The critic's received package is stripped of timestamps,
+   authorship, history, builder identity, builder reasoning, and effort
+   narrative; the record's `provenance=STRIPPED` attests the stripping ran and
+   the verdict was made blind. A `provenance=VIOLATION`, or a record whose
+   attached evidence names a builder or a timeline, is defective — the verdict
+   does not stand and the item is re-judged blind.
 
-A QC RECORD failing any of the five checks is a defective record — the unit is
+A QC RECORD failing any of the six checks is a defective record — the unit is
 not passed, the verdict does not stand, and the defect is itself a finding
 returned to the builder with the record. The records are how the "every record
 shows a blind critic, a named bar, a binary verdict, and the loop-or-pass
-outcome; zero self-QC" bar is mechanically checkable: check 1 proves the blind
-critic, checks 2-3 prove the named bar, check 4 proves the binary verdict,
-check 5 proves the loop-or-pass outcome.
+outcome; zero self-QC" bar is mechanically checkable: checks 1 and 6 prove the
+blind critic (different seat, stripped provenance), checks 2-3 prove the named
+bar, check 4 proves the binary verdict, check 5 proves the loop-or-pass
+outcome.
 
 **Law 29 — the per-card rubric is judged here.** The judge scores the ten
 categories PLUS the unit's OWN QC section from its build card — the independent
@@ -923,9 +953,12 @@ autonomously and recorded.
    writing to the store is the moment it matters.
 7. **A missing credential or access the agent does not hold.** It cannot be derived.
    Asking is the only path, and guessing here is worse than waiting.
-8. **Three failed fix attempts on the same finding** (Rule 3.22). Not because the
-   agent gave up — because three independent attempts failing is information the
-   human needs.
+8. **Twenty failed fix loops on the same finding** (Rule 3.22 — 20 cycles per
+   finding, operator ruling 2026-08-14). Not because the agent gave up — because
+   twenty independent attempts failing is information the human needs. The stop
+   escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and
+   re-judge result, never a quiet give-up and never a relabeled pass (the QC
+   protocol's loop mechanics, Stage 3 of this file).
 
 The list matters in both directions: nothing outside it may excuse a stall, and
 nothing on it may be decided by an agent at three in the morning.

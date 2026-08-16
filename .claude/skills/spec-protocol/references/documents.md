@@ -224,12 +224,15 @@ FAIL if: <exact condition> → incomplete because <reason>
   a relabeled pass (the QC protocol's loop mechanics). Recorded by whichever
   role writes that verdict block (the judge on a Gate 1/2 finding; the critic
   on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5).
-  **Every verdict block opens with the QC RECORD** — the four-field format
+  **Every verdict block opens with the QC RECORD** — the six-field format
   defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`:
   `QC-RECORD unit=… judge=… bar=…` / `bar-fetch=…` / `verdict=…` / `outcome=…`
-  plus `blind=yes model-independence=… self-qc=no`, written through
-  `tools/ledger.sh` the moment the verdict is reached. The record is what makes
-  the QC bar mechanically checkable: judge-vs-builder seat difference (zero
+  plus `blind=yes model-independence=… self-qc=no` and `provenance=STRIPPED`
+  (Law 49 — the critic's package carries no timestamps, authorship, history,
+  builder identity, builder reasoning, or effort narrative; `provenance=VIOLATION`
+  voids the verdict), written through `tools/ledger.sh` the moment the verdict
+  is reached. The record is what makes the QC bar mechanically checkable:
+  judge-vs-builder seat difference and stripped provenance (blind critic, zero
   self-QC), a named bar with fetch proof, a binary verdict, the loop-or-pass
   outcome. A verdict block without its QC RECORD is a defective record — the
   verdict does not stand.
@@ -424,6 +427,28 @@ FAIL if: <exact condition> → incomplete because <reason>
   dimensions; the binary decision rule; the evidence requirements; the integrated
   final gate; the regression gate; the success stop rule; and the non-success
   states. This is the single bar the whole run is judged against.
+- **THE ANSWER KEY (the QC protocol's bar-when-no-product-exists — Issue 17,
+  PART 1 item 4; folds into document 16; never a new file).** When no existing
+  product can serve as the bar, the bar = the locked spec's acceptance matrix
+  rendered as BINARY pass/fail answer-key lines. WHO/WHEN: the lead agent
+  writes the answer key at spec-lock, BEFORE any build dispatch, and it locks
+  with the wave table. WHERE: a named section of the execution plan —
+  "THE ANSWER KEY" — carrying the binary lines, each in the runnable form
+  `AK-<NN>: <checkable requirement> -> PASS if <observable condition>, else
+  FAIL` (example: `AK-01: hero section has headline + subhead + CTA -> PASS if
+  all three present, else FAIL`). OBJECTIVITY GUARD (binding): every line must
+  be runnable to pass/fail — a line the judge cannot run (e.g. "compelling")
+  is BLOCKED per Law 50 and must be rewritten by the lead before the build;
+  the judge grades against the answer key exactly as it would against a real
+  product, and a line that fails is FAIL, never prose. The answer-key
+  reference is what a QC RECORD's `bar-fetch=` cites when the bar is an
+  answer key (the QC record, `references/pipeline.md` Stage 2).
+- **What makes it wrong:** a number with no derivation behind it; a loop in the
+  register that was never written as a definition file; a wave count that was chosen
+  rather than derived; a queue with no batch size; a pen with no failure path or
+  freshness rule; the budget missing any of the seven quantities or the inequality
+  (Rules 3.21, 3.26, 3.32); an answer-key line the judge cannot run to pass/fail
+  (Law 50 — BLOCKED, never passed).
 - **What makes it wrong:** a number with no derivation behind it; a loop in the
   register that was never written as a definition file; a wave count that was chosen
   rather than derived; a queue with no batch size; a pen with no failure path or
