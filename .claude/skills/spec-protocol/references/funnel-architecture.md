@@ -720,6 +720,63 @@ Every written brief is a named section of the master spec's conventions
 
 ---
 
+### The COPY BAR — every headline, subhead, and CTA is written against it
+
+**The rule (Issue 6 FIX step 2, binding):** every headline, subhead, and
+call-to-action on every page is written against the researched conversion
+patterns for that site type, and the bar is a NAMED, FETCHABLE example page
+(Law 48) picked at bar selection — never "make it punchy". A page's copy is
+judged against the bar exactly like its layout: the bar's own headline,
+subhead, and CTA construction is the measurable comparison.
+
+**How the bar is picked.** The copy bar is the user's bar pick from SKILL.md
+step 8's reference-app candidates (seeded by interview.md D1): for a
+website/funnel build, the user's pick IS the copy bar. It is recorded in the
+decision register, named in the brief's item 2, and carried by the
+`DESIGN-BRIEF: <sources>` ledger line. At pick time the URL is opened — a
+page that cannot be fetched today is BLOCKED (Law 50) and the selection
+re-does with the remaining candidates; a broken bar is never silently
+exchanged for a phrase. The picked page stays the bar for the whole build;
+changing it mid-build re-opens bar selection and is announced.
+
+**What the bar must show — the four copy elements.** If the picked page
+lacks one of these, the missing element is recorded as a gap and that
+element's copy follows the site-type pattern block (A/B/C above) instead:
+
+1. **Headline construction** — how the bar's headline is built: the exact
+   benefit it names, whose problem it states, whether it names the product
+   and audience, and its length (words). E.g. "the bar's headline is 7 words,
+   names the audience and the outcome, no product name".
+2. **Subhead construction** — what the subhead adds: the who-it-is-for
+   clarification, the mechanism, or the proof; its length; how it
+   complements rather than repeats the headline.
+3. **CTA construction** — the exact button text, whether it is
+   benefit-labeled (action + outcome, e.g. "Start my free trial" rather
+   than "Sign up"), its length (words), and the microcopy directly under it
+   (click-triggers: "No credit card required", "Free download").
+4. **Tone and register** — first/second person, formal or conversational,
+   sentence length, and how social proof is worded (numbers, named
+   customers, ratings).
+
+**The per-element copy mechanism — one sentence per element.** For every
+headline, subhead, and CTA on every page, the brief (or the page's own
+ledger line) states ONE sentence of the form: "This headline follows the
+bar's headline pattern — <the pattern in plain words> — plus the
+site-type rule <named rule from the A/B/C block, with its source>."
+Example: "This headline follows the bar's headline pattern — 7 words,
+audience + outcome, no product name — plus the site-type rule: pain-point
+headlines beat generic statements (HubSpot)." A copy line that cannot be
+traced to the bar's construction or to a named, sourced site-type rule is a
+defect — same as a layout that ignores the brief.
+
+**Where the copy bar is consumed.** Stage 2 of the funnel process (§16)
+writes per-page structure against this bar; STAGE-WIREFRAMES and
+STAGE-BUILD (pipeline stages) read the bar for hero and CTA placement; the
+blind critic judging the built pages receives the bar's URL alongside the
+pages and compares copy the same way it compares layout.
+
+---
+
 ### The brief is written into the project
 
 The brief is written to the project as a named section of the master spec's
@@ -762,8 +819,17 @@ ledger line names it.
 Input: `FUNNEL-PAGES` list + copy bar. Output: per page, ledger line
 `FUNNEL-PAGE-<name>: hero + copy + CTA + form fields (<fields> post to <dest>)`.
 
+**Per-page copy rule (Issue 6 FIX step 2):** each page's copy is written
+AGAINST the copy bar — the page's headline, subhead, and CTA each carry one
+trace sentence back to the bar's construction or to a named, sourced
+site-type rule (the mechanism in §15, The COPY BAR). The trace sentences
+are recorded in the execution plan beside the page's ledger line. A copy
+line that cannot be traced is a defect, and the page is not dispatched to
+STAGE-BUILD until the trace exists.
+
 Acceptance: every page has hero, copy against the copy bar, CTA, and form
-fields with a named post destination.
+fields with a named post destination; every page's headline/subhead/CTA
+trace sentences exist before the page is built.
 
 ### Stage 3 — EMAIL-SEQUENCE
 

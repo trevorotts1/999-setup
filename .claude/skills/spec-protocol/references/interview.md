@@ -768,11 +768,19 @@ The brief collects:
    patterns, mobile behavior, WCAG accessibility) — every claim cited with its
    source.
 2. A named example page (the copy bar, Law 48) — a real, fetchable reference
-   page that sets the quality bar for copy and layout.
+   page that sets the quality bar for copy and layout. **The copy bar is
+   picked at bar selection** (SKILL.md step 8 — the reference-app candidates,
+   seeded by D1): for a website/funnel build, the user's bar pick IS the copy
+   bar. The picked URL is recorded in the decision register, named in this
+   item, and carried by the `DESIGN-BRIEF: <sources>` ledger line. The page
+   must be OPENABLE at pick time — a page that cannot be fetched is BLOCKED
+   (Law 50) and never replaced by a vague "make it punchy" instruction (the
+   full mechanism: `funnel-architecture.md` §15, The COPY BAR).
 3. The selected reference sites the brief's design decisions trace to.
 
-No funnel page is built before this ledger line exists and the brief is written
-to the project's convention section (document 1, per Law 39's closed list).
+No funnel page is built before this ledger line exists, the copy-bar URL is
+named, and the brief is written to the project's convention section (document
+1, per Law 39's closed list).
 The brief is a named, fetchable section — never a vague "make it look good."
 The full seven-stage funnel process the brief feeds into is defined in
 `references/funnel-architecture.md` §16.
