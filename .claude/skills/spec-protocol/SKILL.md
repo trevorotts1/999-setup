@@ -217,7 +217,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S1 — Workflow count** | Number of running workflows ≥ number of independent streams with runnable work | Launch missing workflows immediately |
 | **S2 — Zero-workflow** | Runnable work exists AND zero workflows running | EMERGENCY — dispatch all runnable work in the same turn |
 | **S3 — Prefix visibility** | Every running workflow carries a visible [MODEL xN] prefix | Kill and re-launch without prefix |
-| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's 16-ceiling; min(16, cores−2) is the execution clamp, never the sizing | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
+| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's 16-ceiling; min(16, cores−2) is the execution clamp, never the sizing. **Each tree's agents must also carry the CAPACITY RULE's four properties (`references/gauntlet.md` §13.3): unique responsibility, evidence to inspect or work to perform, an explicit deliverable, an acceptance criterion — an agent that cannot be given all four is padding and is not dispatched, regardless of how much capacity exists.** | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
 | **S5 — Idle capacity** | No capacity sits idle while dispatchable work exists | Dispatch immediately |
 | **S6 — Heartbeat freshness** | Every running workflow's heartbeat is fresh (≤10 min for build/QC, ≤20 for merge) | Kill stale, re-dispatch from slice |
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
@@ -1084,7 +1084,12 @@ When the operator provides a folder, that folder IS the project. Its documents A
     barrier, each barrier justified in writing), the full 14 declared workflow
     fields and each subagent class's 10 ownership fields (references/workflows.md
     — or a citation into PROJECT-MANIFEST.md where the full field blocks live),
-    and the Capacity Ledger line each number derives from. The gauntlet workflow
+    and the Capacity Ledger line each number derives from. **Every agent row in
+    the plan must demonstrate the four properties of the CAPACITY RULE
+    (`references/gauntlet.md` §13.3): unique responsibility, evidence to inspect
+    or work to perform, an explicit deliverable, and an acceptance criterion —
+    an agent that cannot be given all four is NOT planned, and a plan row that
+    names only a count is padding, not a plan.** The gauntlet workflow
     topology (`references/gauntlet.md`, Section 13) is the default shape, scaled
     by the Capacity Ledger. **No Parallelism Plan, no dispatch** — the self-audit
     (step 20) and the swarm watch (RULE 5) both check for it; a dispatch that is
