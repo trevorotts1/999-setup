@@ -2,7 +2,7 @@
 
 **Branch:** fix/9-ghl-media
 **Spec:** `/Users/blackceomacmini/Downloads/999-master-fix-spec-20260815.md`, Issue 9 FIX steps 5-7
-**Ledger line cited:** WAVE 3 REDISPATCH 2026-08-16T17:07Z (sibling-slice convention; live ledger line 59 = WAVE 3 DISPATCH 2026-08-16T17:07Z)
+**Ledger line cited:** WAVE 3 DISPATCH 2026-08-16T17:07Z — live ledger `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` line 59 (the clone's `FIX-LEDGER.md` is the pre-dispatch snapshot; the live ledger is the citation source)
 **Backup:** `.claude/skills/spec-protocol/references/media-pipeline.md.backup-issue9-slice4`
 
 ## Scope of this slice (Issue 9 FIX steps 5-7)
@@ -39,7 +39,7 @@ Full new subsection after 13.10 covering:
 ## Verification performed
 
 - `grep` confirmed all new content present at expected locations (lines 1638, 1684, 2034, 2239-2273).
-- `diff -u backup media-pipeline.md` shows exactly 4 hunks, all in scope of steps 5-7.
+- `git diff 6b3fa1a e96884f -- .claude/skills/spec-protocol/references/media-pipeline.md` shows exactly 4 hunks, all in scope of steps 5-7. (The backup file is pre-slice1, not pre-slice4: `diff -u media-pipeline.md.backup-issue9-slice4 media-pipeline.md` yields 6 hunks — slices 1-4 combined. The slice-4-only diff is the commit diff above.)
 - No other file touched. No temp/provider URL prohibition regressed (S15 text untouched).
 
 ## Claim

@@ -1635,7 +1635,7 @@ The mapping from local path to GHL URL to usage is written at upload time, per i
 ```
 MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from smoke> | mode=<t2i|i2i|t2v|i2v> | items=<n> | est-cost=<credits|$|meter-units> | meter=<kie-credits|agnes-images-day|agnes-video-seconds-day> | gate=<none|consent-required> | proof=<smoke ISO8601>
   | clips=<n> | clip-seconds=<per-clip or list> | total-seconds=<Σ> | billed-unit=<per-second|per-clip|30s-block> | billed-cost=<the figure consent saw>
-  | stored=<ghl|repo|ghl+repo|local-pending|lost-paid|upload-failed> | local-path=<repo-relative path> | usage=<page+slot> | perm-url=<GHL URL and/or repo path|—>
+  | stored=<ghl|repo-only|ghl+repo|local-pending|lost-paid|upload-failed> | local-path=<repo-relative path> | usage=<page+slot> | perm-url=<GHL URL and/or repo path|—>
   | persist-proof=<read-back ISO8601|—>
 ```
 
@@ -2294,7 +2294,7 @@ The mapping data model:
 | `local-path` | Phase A capture path | At capture completion |
 | `perm-url` | GHL upload response URL, or repo path | At persist completion |
 | `usage` | The work item's target page+slot declaration | At spec time, confirmed at upload |
-| `stored` | Phase B outcome: `ghl`, `repo`, `ghl+repo`, `local-pending`, `upload-failed`, `lost-paid` | At persist completion or failure |
+| `stored` | Phase B outcome: `ghl`, `repo-only`, `ghl+repo`, `local-pending`, `upload-failed`, `lost-paid` | At persist completion or failure |
 
 **⛔ An upload that fails after all retries is `stored=upload-failed`.** The page
 slot is not filled with the provider's temporary URL. Instead the slot gets the
@@ -2304,7 +2304,7 @@ and the MEDIA-GAPS PERSIST-PENDING section carries the row for one resumable pus
 batch when GHL answers again. The morning report names every UPLOAD-FAILED row.
 
 **⛔ No-GHL case (website/app without GHL):** The asset's `perm-url` is the repo
-asset path; `stored=repo`. The MEDIA ledger line records `stored=repo-only` with
+asset path; `stored=repo-only`. The MEDIA ledger line records `stored=repo-only` with
 the evidence of what was searched (names and stores, never values). The image
 persists inside the project per the existing media-pipeline contract (interview.md
 lines 933-940, media-pipeline.md section 13.7), and the mapping still carries
