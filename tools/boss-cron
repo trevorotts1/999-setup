@@ -386,8 +386,14 @@ def check_research_ready():
             bad.append(f"{name}: research dispatch-log row exists but the INPUT-CAPTURED: <path> ledger line is missing (RESEARCH-READY gate, Issue 5)")
             continue
         for row in rows:
-            cites_bt = ("BUILD-TARGET:" in row and bt.split(":", 1)[1].strip() in row)
-            cites_ic = ("INPUT-CAPTURED:" in row and ic.split(":", 1)[1].strip() in row)
+            m_bt = re.search(r"BUILD-TARGET:\s*([A-Z_]+)", row)
+            m_ic = re.search(r"INPUT-CAPTURED:\s*(\S+)", row)
+            row_bt = m_bt.group(1) if m_bt else None
+            row_ic = m_ic.group(1) if m_ic else None
+            want_bt = bt.split(":", 1)[1].strip()
+            want_ic = ic.split(":", 1)[1].strip()
+            cites_bt = row_bt is not None and row_bt == want_bt
+            cites_ic = row_ic is not None and row_ic == want_ic
             if not cites_bt or not cites_ic:
                 bad.append(f"{name}: research dispatch-log row lacks both verbatim citations or they drift from the ledger: {row[:110]} (RESEARCH-READY gate, Issue 5)")
     return bad
