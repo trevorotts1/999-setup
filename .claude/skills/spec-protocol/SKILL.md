@@ -989,8 +989,39 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-   Then ask the target's Step 1d discovery branch (references/interview.md) — counted questions, numbered per the counter.
-6. **Capacity interview (Claude-Nine only).** The lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the archetype defaults offer and the
+6. **Capacity interview (Claude-Nine only).** THE MODE OFFER FIRST — the
+   operator ruling R1 in `references/interview.md` (section "R1. The two
+   modes — offered FIRST, not at question eleven") is a hard gate. After the
+   up-front count
+   statement (the pre-statement reads are done, C and T are computed and
+   spoken), the FIRST counted question is the mode question, spoken VERBATIM
+   in R1's wording (interview.md, the R1 section):
+   "I can make every technical decision myself and just build it — you'd
+   answer only the few questions about your accounts, your money, and what you
+   like. **Or you can make the detailed calls with me as we go.** Which do you
+   want?" The mode question IS the defaults offer: a yes records DEFAULT MODE
+   (Simple) and the fast-path-1 defaults (A4, A5, A7, A8); a no records
+   ADVANCED MODE and the defaults offer is never re-asked. Record the
+   choice as DEFAULT MODE (Simple) or ADVANCED MODE, and record the
+   choice as the ledger line `INTERVIEW-MODE: simple|advanced` BEFORE the
+   next question is asked (the live ledger via `tools/ledger.sh`, write-before
+   the anti-drift contract — the boss cron's allowlist in the master fix
+   spec carries `INTERVIEW-MODE` as a sanctioned line class). In DEFAULT MODE
+   the whole interview is the R6 list — about nine questions, usually fewer.
+   ADVANCED MODE adds the R7 list. Everything else is DECIDED by the run and
+   REPORTED as statements in the recap — never asked. The mode question is
+   question 1 of the count: DEFAULT MODE asks R6's remaining items (2)-(9)
+   after it; the mode question itself is NEVER re-asked once answered. In
+   DEFAULT MODE the whole interview is R6 alone — never the lettered
+   A–D blocks; in ADVANCED MODE the lettered blocks (and the R7 items) run
+   under the target's ceiling-table wall.
+   Then ask the target's Step 1d discovery branch (references/interview.md) —
+   counted questions, numbered per the counter. Step 1d is asked only in
+   ADVANCED MODE: the R6 nine-item wall governs DEFAULT MODE, and Step 1d is
+   not in the R6 list. The Step 1d branch runs BEFORE the lettered blocks
+   (archetype → mode question → Step 1d branch, THEN the lettered A–D blocks
+   and R7 items).
+   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the

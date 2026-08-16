@@ -27,12 +27,22 @@ questions — usually fewer — one at a time, and then you can walk away." Fast
 paths taken, the saved-profile recall (`capacity.md` §13.4), the OpenClaw
 shrink (`references/openclaw-ingest.md` §5), fewer paid services than the
 scripted maximum, and an archetype that skips questions all mean one thing:
-the person finishes UNDER the ceiling. The good-news line is REQUIRED at
+the person finishes UNDER the ceiling. **The total is computed ONCE, at the
+start, and never moves silently:** C is fixed before question 1 by the
+pre-statement reads and the target's ceiling-table wall, every counted
+question is spoken "Question <N> of no more than <C>", and any change to C —
+lowerings and the artwork rise alike — is announced BEFORE the next question
+(the per-question counter owns the rule). The R1 mode answer is a fast-path
+yes — the defaults offer — so the good-news line is REQUIRED the moment
+DEFAULT MODE is chosen: C drops to the R6 wall of nine, spoken before
+question 2. The good-news line is REQUIRED at
 every fast-path yes and at any single lowering of three or more (the
 per-question counter owns the rule); a drop of one or two may be absorbed by
 finishing early. Never state a ceiling you will then exceed — the only
 sanctioned rise is artwork's, spoken at its measured size before the next
-question, plus the counter's failsafe.
+question, plus the counter's failsafe — and the mode answer's drop to nine is
+the one sanctioned LOWERING spoken against the stated total, never a silent
+second number.
 
 **The small-plan collapse needs no raise machinery: both confirmations are
 already priced into the ceiling.** When a tiny plan triggers the collapse,
@@ -66,10 +76,15 @@ at its scripted maximum and move on. Everything genuinely unknown at
 statement time stays priced at its maximum — that is what keeps C a wall.
 
 **The ceiling arithmetic, per target.** C = archetype (1) + the target's Step
-1d branch + [Claude-Nine only: A2 (1) + the per-service plan questions at the
+1d branch + [Claude-Nine only: the mode question (1 — R1, the defaults
+offer, the first counted question, asked in both modes, priced in whether or
+not the person is sure, and never priced out by any read or offer: its yes
+IS the defaults acceptance, so the fast-path-1 offer after A2 is never a
+second question — never re-ask) + A2 (1) + the per-service plan questions at
+the
 measured count from the pre-statement read (scripted maximum 3 when the read
 failed; 1 when a matching profile prices them as the recall question, which
-then also removes A7's 1) + A3–A8 (6) + the defaults-offer question (1) —
+then also removes A7's 1) + A3–A8 (6) —
 plus 1 more only when A1 must be asked because auto-detect was inconclusive]
 + B1/B2/B4 (3) + C0–C6 (7 — C6 is priced in whether or not the run turns out
 unattended) + both small-plan collapse confirmations (2 — priced in whether
@@ -80,10 +95,12 @@ the run under C.
 **The shortcut landing T** is the second number the up-front statement
 speaks: the count the run lands on when the person says yes to every standing
 offer. It is built by CONSTRUCTION, never by subtraction from C, so a changed
-component cannot silently break it: T = archetype (1) + the branch + A2 (1) +
-the same measured plan-question count C used (or the recall 1) + the
-defaults-offer question (1) + A3 and A6 (2 — the offer's yes records A4, A5,
-A7, and A8 as defaults, and only those) + both collapse confirmations (2) +
+component cannot silently break it: T = archetype (1) + the branch + the mode
+question (1 — STATIC, R1, the defaults offer, the first counted question,
+never removed by any offer, never re-asked) + A2 (1) +
+the same measured plan-question count C used (or the recall 1) +
+A3 and A6 (2 — the mode question's yes records A4, A5, A7, and A8 as
+defaults, and only those) + both collapse confirmations (2) +
 C6 (1) + D1–D4 (4) — plus A1's 1 whenever it is priced in C. T never
 subtracts a condition-dynamic question (C6 stays in), so T errs high, never
 low. T is an EXPECTATION and C alone is the promise: the numbering every
@@ -95,7 +112,18 @@ The table below is the WORST CASE — the value when every pre-statement read
 resolves at its maximum (three paid services, no saved profile, A1 measured).
 The C actually spoken is computed per run from the reads and is AT MOST the
 table's figure; the table's only job is to be the number no run can ever
-cross:
+cross. **The table rows are the ADVANCED MODE wall — in DEFAULT MODE the wall
+is the R6 list's length (nine, usually fewer), never the table.** C in
+advanced mode is the computed per-run value capped by the confirmed target's
+table row: no run states or crosses a C above its target's row (plus the
+announced artwork rise at its measured size — three when both artwork keys
+are present at that moment, two otherwise, per the per-question counter's
+artwork rule), so the rows are the absolute ceiling and every run lands at or
+under its target's row. Simple mode never inherits the table; it states the
+R6 list's length and lands further under it with every fast path. A run that
+finds its computed C above its target's row has priced a component that does
+not belong in that mode — re-check the composition against this section's
+arithmetic; the table row still wins.
 
 | Target | Step 1d branch | Worst-case ceiling C (Claude-Nine, attended or not) | Worst-case shortcut landing T | + artwork rise |
 |---|---|---|---|---|
@@ -114,10 +142,11 @@ not an error. The ceiling's only job is to be a wall the count can never
 cross.
 
 **Two fast paths keep the interview honest for a small plan** (details below,
-Step 2): the archetype defaults offer (after block A, one yes/no to skip A4, A5,
-A8 with the recommended defaults) and the small-plan collapse (if the block-A
-answers reveal a tiny plan, blocks B and C collapse to defaults with yes/no
-confirmations). Block D never collapses.
+Step 2): the defaults offer — the R1 mode question, the FIRST counted
+question, whose yes skips A4, A5, A7, A8 with the recommended defaults (R1
+owns the wording and the numbering; it is never re-asked) — and the
+small-plan collapse (if the block-A answers reveal a tiny plan, blocks B and
+C collapse to defaults with yes/no confirmations). Block D never collapses.
 
 **The project folder + `00-INPUT/` exist BEFORE the brainstorm starts** (Law 23).
 The entry-mode choice in SKILL.md creates them immediately, so the verbatim
@@ -139,19 +168,65 @@ block disagree, this section wins by date.**
 
 The defaults offer is the FIRST counted question (second only when the
 archetype genuinely could not be derived from the brief and had to be asked).
-Plain wording:
+The MODE question is question 1 of the count — before any block, before any
+lettered question, and before any other counted question (the defects this
+removes: offering the skip at question eleven, and never offering the mode
+at all). It is the defaults offer itself: a yes records DEFAULT MODE
+(simple) and A4, A5, A7, and A8 as their defaults (each marked "default, not
+their answer"); a no records ADVANCED MODE (advanced) and the fast-path-1
+offer is never re-asked. It is asked in BOTH modes and its answer is
+recorded as the ledger
+line `INTERVIEW-MODE: simple|advanced` (DEFAULT MODE = simple; ADVANCED
+MODE = advanced) before the next question is spoken, in the project's live
+ledger (CONTROL/LEDGER.md — written atomically via `tools/ledger.sh`).
+The question is NEVER re-asked once answered, and no read or fast path
+removes it (STATIC — the counter's class table below prices it in C and in
+T at its full 1). Plain wording:
 
 > **I can make every technical decision myself and just build it** — you'd
 > answer only the few questions about your accounts, your money, and what you
 > like. **Or you can make the detailed calls with me as we go.** Which do you
 > want?
 
+It is spoken with its number, like every counted question: "Question <N> of
+no more than <C> —" with N = 1 (2 when the archetype genuinely had to be
+asked first) and C = the target's ceiling-table wall — the one total, computed
+once before question 1, covering BOTH modes (the per-question counter owns the
+rule). The answer is the first announced change to C: DEFAULT MODE lowers it
+to the R6 wall — nine — with the good-news line before question 2; ADVANCED
+MODE leaves it at the wall. The ceiling NEVER moves silently: any C change,
+lowering or rise, is spoken before the next question — DEFAULT MODE's drop to
+nine right after the mode answer, each fast-path lowering in the good-news
+line, and the artwork rise at its measured size.
+
 Record DEFAULT MODE or ADVANCED MODE. In DEFAULT MODE the whole interview is
-the R6 list — about nine questions, usually fewer. ADVANCED MODE adds the R7
-list. Everything else is DECIDED by the run and REPORTED as statements in the
-recap — "here is what I decided; say the word to change any of it" — never
-asked. (The canary run offered this skip at question eleven, after ten
-technical questions; that placement is the defect this rule removes.)
+the R6 list — about nine questions, usually fewer — and the R6 list's length
+IS the wall: the mode's ceiling C never exceeds it, and the spoken C for the
+run is the mode's list length (about nine, never more, usually fewer), not the
+worst-case table row. ADVANCED MODE adds the R7 list; its ceiling C is the
+worst-case table row (the ceiling arithmetic section below — the table that
+follows the "ceiling arithmetic, per target" paragraph) for the confirmed
+target — Mobile app 32, Web app 31, Mobile AND web 32, Desktop / CLI 31,
+Website 32, Sales funnel 33, each up to the announced artwork rise (three
+more, spoken at its measured size) — and the ceiling table is the wall no run
+crosses: C in advanced mode is AT MOST the target's row, and the per-run C
+computed from the pre-statement reads only ever lands at or under it (the
+reads may only lower it — never raise it; the ceiling arithmetic section
+above). Simple
+mode never inherits an advanced-mode count and no run crosses its own mode's
+wall: DEFAULT MODE's spoken C is the R6 list length; ADVANCED MODE's spoken C
+is the computed ceiling capped by the target's table row; the announced
+artwork rise is the only sanctioned increase over the base ceiling, spoken at
+its measured size before the next question. In DEFAULT MODE the R6 items that
+follow the mode question are asked against the SAME lowered ceiling — nine —
+with their own numbers (2 through 9); ADVANCED MODE asks the R7 items in the
+same positions under the target's row (the arithmetic section's "per target"
+paragraph remains the single owner of both mode compositions; this section
+states the walls only). Everything else is DECIDED by the
+run and REPORTED as statements in the recap — "here is what I decided; say the
+word to change any of it" — never asked. (The canary run offered this skip at
+question eleven, after ten technical questions; that placement is the defect
+this rule removes.)
 
 ### R2. Deleted questions, and the rules that replace them
 
@@ -275,22 +350,39 @@ after a compaction or a resume, RE-READ them — a question whose answer is on
 disk is ANSWERED, and asking it again is the defect the canary caught twice.
 The ceiling is stated once, at the start; it may fall with good news, and it
 rises only by the artwork rule — the canary's 32 → 27 → 30 drift is the
-defect that sentence removes.
+defect that sentence removes. Every question carries its number — "Question
+<N> of no more than <C>" — and the ceiling never moves silently: DEFAULT
+MODE's drop to the R6 wall (nine) is spoken right after the mode answer,
+before question 2.
 
 ### R6. What DEFAULT MODE asks — the whole list
 
-(1) the mode question itself (R1); (2) artwork: create or supply; (3) which
+(1) the mode question itself (R1 — asked FIRST, recorded as the ledger line
+`INTERVIEW-MODE: simple`); (2) artwork: create or supply; (3) which
 artwork account, with the overflow clause; (4) the plan tier per wired,
 unrecorded provider; (5) D1, the example; (6) D2, the winning bar (plain
 form); (7) D4, the don't-wants; (8) D3's download consent ONLY when no
-capture tool was found; (9) the done-condition yes/no. Ceiling about nine;
-most people land fewer.
+capture tool was found; (9) the done-condition yes/no. Nine items — the R6
+list's length IS the mode's ceiling C (about nine, usually fewer): no
+default-mode run may state or cross a C above nine, and a lowering (a
+condition that does not fire, a fast-path yes, a supplied profile) only
+brings the run further under it — never raises it. The wall is the list
+itself: whatever does not occur simply lands the run under C; the mode never
+grows a question beyond the nine.
 
 ### R7. What ADVANCED MODE adds
 
 The helpers cap (with the R2 explainer), the three-seat keep-or-change, the
 media model pick (three live options), C4's folder location, and B4's
-never-push list. Everything else stays decided-and-reported in both modes.
+never-push list — five items, all condition-dependent (each fires only when
+its trigger is live: a plan that needs no media, a run whose B4 applies to
+nothing, a folder already known to be the default). Each is numbered and
+counted under the same ceiling C as the rest of the run (the per-question
+counter owns the numbering; C4's basic form, like C4's R2 defaulting, is
+never a separate question). Everything else stays decided-and-reported in
+both modes. The R7 count is part of the advanced-mode arithmetic the "ceiling
+arithmetic, per target" paragraph owns; this section names the items, never
+a second count.
 
 ---
 
@@ -307,7 +399,17 @@ promises deliver that, and only the second one is arithmetic:
 
 2. **C is a CEILING, computed on the maximum reachable path AFTER the
    mandatory pre-statement reads — so the run can only ever finish UNDER it,
-   never over.** The up-front statement speaks C together with the shortcut
+   never over.** The ONE total is computed ONCE, before question 1, and never
+   recomputed silently: the number spoken up front prices the R1
+   mode question at the target's ceiling-table wall — both modes live under
+   that one wall. The mode answer is the first announced change to C: DEFAULT
+   MODE lowers it to the R6 wall — nine — with the good-news line before
+   question 2; ADVANCED MODE keeps the wall. Every later change to C is an
+   ANNOUNCED change, never silent — the three rules below are the only ways C
+   moves (lowerings with the good-news line; rises only for artwork at its
+   measured size, or the counter's failsafe correction) — and a question asked
+   past a stated ceiling with no prior correction is a defect. The up-front
+   statement speaks C together with the shortcut
    landing T, in the two-number form the arithmetic section owns — and in the
    single-number form ("at most <C> — usually fewer") whenever C − T ≤ 2.
    T is an expectation, never a promise: passing T breaks nothing, but the
@@ -315,8 +417,10 @@ promises deliver that, and only the second one is arithmetic:
    offer or a collapse was declined), say so in one plain sentence with the
    remaining count — the declined offer's own wording already carries it.
 
-**What is counted.** Everything from the archetype (Step 1b) through Block D,
-inclusive: the archetype, the Step 1d target questions, the Media and Creative
+**What is counted.** Everything from the mode question (R1, the first
+counted question) through Block D,
+inclusive: the mode question, the archetype (Step 1b), the Step 1d target
+questions, the Media and Creative
 block, the fast-path offers and their confirmations (a spoken yes/no is a
 counted question wherever it stands), and blocks A–D. What is NOT counted:
 THE OPENING SCRIPT, the Build Target question and the entry-mode question
@@ -367,7 +471,7 @@ offer or confirmation that removes it.
 
 | Class | Meaning | The questions | How C and T treat it |
 |---|---|---|---|
-| STATIC | Asked on every run of a given harness; nothing can remove it | The archetype; A2; the defaults-offer question; A3; A6; D1–D4 (both harnesses — never collapse) | Full price in C and in T |
+| STATIC | Asked on every run of a given harness; nothing can remove it | The mode question (R1 — the defaults offer, the first counted question); the archetype; A2; A3; A6; D1–D4 (both harnesses — never collapse) | Full price in C and in T |
 | RESOLVED-DYNAMIC | Dynamic, but its trigger is already on disk at statement time — the pre-statement reads settle it | A1 (auto-detect); the per-service plan questions (key/router read → the measured count, or the recall 1 on a matching profile, which also settles A7); the Step 1d branch (the target, asked at the entry) | Measured value in C and in T |
 | CHOICE-DYNAMIC | Removed only by the person's own mid-run yes | A4, A5, A7, A8 (the defaults offer); B1, B2, B4 (the B collapse); C0–C5 (the C collapse) | Maximum in C; removed from T, whose confirmations stay |
 | CONDITION-DYNAMIC | Turns on a fact about the build learned mid-run | C6 (only when C0 says unattended); both collapse confirmations (only when the plan looks tiny); the artwork block (only when the plan calls for pictures) | Maximum in C — artwork excepted, priced at zero and added by the announced MEASURED rise; kept in T |
@@ -1351,25 +1455,27 @@ None of these questions asks the person to know what a terminal, an API, or a
 router is. Every one is answerable from a billing page, a receipt, or a memory of
 what they signed up for — and "I do not know" is a real answer to all of them.
 
-**Fast path 1 — the defaults offer (right after A2).** A long interview is a lot
-for a sixty-eight-year-old. The moment A2 names the plan tier, offer to skip ahead:
-
-> I can ask you the rest one at a time — at most <the ceiling minus the
-> questions asked so far, spoken as a number> more — or you can use my
-> recommended defaults for how hard the thinking is, how many
-> helpers run at once, and which helpers plan versus build. If the defaults
-> turn out wrong, we can change them later. Want to use my recommended
-> defaults?
-
-A yes records A4, A5, and A8 as their defaults (each marked "default, not their
-answer" — Law 44's reserve rule says the same for A7) and moves on. A yes is a
-fast-path yes, so the good-news line is REQUIRED: state the new, lower ceiling
-in the same breath (the per-question counter above owns the rule). A no
-changes nothing arithmetically — this offer question was already priced into
-the ceiling — but it is the moment the run stops tracking toward T and starts
-tracking toward C, so say that too, plainly, using the remaining count the
-offer itself just spoke. A no means ask them, one at a time, as written. The
-offer is a genuine choice — never steer, never default them silently (Law 40).
+**Fast path 1 — the defaults offer IS the R1 mode question (R1, first
+counted question).** A long interview is a lot for a sixty-eight-year-old;
+the mode question asked FIRST carries the skip. Its plain wording and its
+numbering live in R1 above; the offer is never re-asked and never spoken
+again at any later point — the ceiling arithmetic prices it once, as the
+first counted question (question 1), in both C and T, and A2's plan-tier
+answers never trigger a second defaults question. In DEFAULT MODE the
+question's yes IS the defaults acceptance: it records A4, A5, A7, and A8 as
+their defaults (each marked "default, not their answer" — Law 44's reserve
+rule says the same for A7), moves on, and because the yes is a fast-path
+yes, the good-news line is REQUIRED: state the new, lower ceiling (the R6
+wall — nine) in the same breath, before question 2 (the per-question counter
+above owns the rule). In ADVANCED MODE the no changes nothing arithmetically
+— the question was already priced into the ceiling — but it is the moment the
+run stops tracking toward T and starts tracking toward C, so say that too,
+plainly, using the remaining count the question itself just spoke. A no
+means ask them, one at a time, as written, at the advanced wall. A yes
+(choosing DEFAULT MODE, or declining the defaults offer in a run where the
+offer must stand alone) means the run proceeds under the R6 wall — nine —
+exactly as R1 describes. The offer is
+a genuine choice — never steer, never default them silently (Law 40).
 
 **Fast path 2 — the small-plan collapse (after block A).** When the block-A answers
 reveal a TINY plan — the smallest paid tier, effort not turned up, one or two
