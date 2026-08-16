@@ -14,7 +14,7 @@ stop — while it exists, nothing dispatches). Spec: `/Users/blackceomacmini/Dow
 
 - `tools/anchor.sh` (1366 lines) — the reconciler. Line 433: `FLAG="$HOME_DIR/CONTROL/TERMINAL-DRIFT.flag"`. Lines 436-441: precondition-0 gate — `if [[ -f "$FLAG" ]]; then printf 'TERMINAL-DRIFT | nothing dispatches while this file exists...'; exit 4`. Flag is created on fire (exit 4 path, lines 415-424 of references/anti-drift.md §6).
 - `references/anti-drift.md` §6 (lines 364-441) — TERMINAL-DRIFT stop doctrine: precondition #0 (line 430-431), recovery is a human act (lines 437-440), nothing in the skill removes it automatically.
-- `references/anti-drift.md` §9 (lines 619-637) — cron-tick contract: precondition #0 (624-625), RECONCILE-not-re-plan (626-628), ultracode never from cron (629-630).
+- `references/anti-drift.md` §9 (lines 619-646 at HEAD) — cron-tick contract: precondition #0 (lines 637-638), RECONCILE-not-re-plan (lines 639-641), ultracode never from cron (lines 642-644). (Re-check critic: earlier cite used a chimera range — corrected to the actual HEAD line numbers.)
 - `references/workflows.md` §7 (lines 290-320) — same contract, precondition #0 (308-309).
 - `references/loops.md` THE TICK step 0 (lines 479-481) — TERMINAL-DRIFT GATE.
 - `references/agent-team.md` (line 1147) — flag gate on resume.
