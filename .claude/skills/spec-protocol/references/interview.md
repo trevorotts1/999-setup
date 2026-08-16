@@ -540,8 +540,11 @@ jargon test, and they did not sign up for one.
 
 ## Step 1c-bis — Just-in-Time Research (runs during the interview)
 
-After the build target is chosen, BEFORE asking the target-specific questions,
-dispatch a READER agent to web-research the domain. The research takes 30–90
+After the build target is chosen AND the RESEARCH-READY gate is satisfied
+(SKILL.md step 3.5 — the target is named and the interview/pointed material is
+captured, recorded as the `BUILD-TARGET: <taxonomy>` and `INPUT-CAPTURED: <path>`
+ledger lines), and BEFORE asking the target-specific questions, dispatch a READER
+agent to web-research the domain. The research takes 30–90
 seconds and runs in the background while the conductor carries on with the
 questions that do not need it. The user is never asked to wait for it, and never
 told to watch it.
