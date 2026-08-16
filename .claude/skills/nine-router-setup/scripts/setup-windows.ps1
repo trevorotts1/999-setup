@@ -295,18 +295,9 @@ try {
     }
     $report = $cfgArr[$sentinelIdx + 1] | ConvertFrom-Json
 
-    # Rotated dashboard password. When the configure helper rotated the dashboard
-    # away from the default this run, the report carries the ACTUAL new password
-    # (report.dashboardPassword — the single sanctioned exception to never printing
-    # keys). Use exactly that value for the token fetch and every later API call;
-    # never regenerate a password here — a locally regenerated one would differ
-    # from what the router has and every subsequent API call would fail auth.
-    # When the field is absent no rotation happened this run, so the original
-    # password is kept. The value flows through an env var and is never printed.
-    if ($report.dashboardPassword) {
-        $dashPw = [string]$report.dashboardPassword
-        Write-Log 'Dashboard password rotated from the default (new password used for API calls; not printed)'
-    }
+    # No dashboard password rotation: the configure helper never changes the
+    # password, so $dashPw stays whatever was passed in (default 123456).
+    # The report's mustChangePassword flag is advisory messaging only.
 
     # Obtain the local router token (create/reuse) and DPAPI-protect it.
     $env:NINEROUTER_DASHBOARD_PW = $dashPw
@@ -372,6 +363,7 @@ else {
         concurrency = $concurrency
         maxOutputTokens = 32000
         effortLevel = 'xhigh'
+        lastEffortSelection = $null
         claudeBinary = $claudeBin
         nineRouterBinary = $nineBin
         port = $Port
@@ -536,9 +528,9 @@ else {
         else                                { $thinkingLines += "WARNING: $($labelMap[$key]) could not be verified ($status)" }
     }
 
-    $rotatedNote = ''
-    if ($report.dashboardPasswordRotated -eq $true) {
-        $rotatedNote = "Dashboard password: ROTATED from the default on first login (value never printed).`n"
+    $passwordNote = ''
+    if ($report.mustChangePassword -eq $true) {
+        $passwordNote = "Dashboard: the password is the default ``123456``; change it yourself in the dashboard when you are ready.`n"
     }
     @"
 
@@ -568,7 +560,7 @@ Vision -> $rVision
 Fallback:
 Haiku -> $rHaiku, then agnes/agnes-2.5-flash: configured
 $(if ($thinkingLines.Count) { $thinkingLines -join "`n" })
-$rotatedNote
+$passwordNote
 Ollama plan: $($creds['OLLAMA_PLAN'])
 Ollama Claude/9Router concurrency budget: $concurrency
 Reserved for OpenClaw: $reserved
@@ -582,7 +574,7 @@ $agentTeamsReport
 Ultracode/effort override (applies to NEW shells and NEW sessions only): $ultracodeStatus
 $ultracodeReport
 
-Dashboard: $dashUrl - open this in your browser to manage providers and models.
+Dashboard: $dashUrl - open this in your browser to manage providers and models. The password is the default ``123456``; change it yourself in the dashboard when you are ready.
 
 Launch routed Claude Code with: claude-nine
 

@@ -214,6 +214,16 @@ The routing matrix this skill wires:
   export overrode every in-session `/effort` selection; the profile's
   `settings.json` `effortLevel` (seeded `xhigh` — the highest persistable level)
   is the recorded default instead.
+  **Effort persistence (Issue 1):** the state file carries `lastEffortSelection`
+  (the user's last `/effort` pick; seeded `null` on first write, carried forward
+  on every setup re-run — a re-provision never wipes it). At launch the launcher
+  re-applies it: `ultracode` becomes the `--effort ultracode` CLI flag on the
+  exec line (the only mechanism that survives a session boundary for ultracode —
+  no settings key or env var accepts it); `low|medium|high|xhigh|max` become a
+  per-launch `CLAUDE_CODE_EFFORT_LEVEL` export. `CLAUDE_NINE_FORCE_EFFORT` wins
+  over `lastEffortSelection`. The ONLY sanctioned writer is
+  `scripts/common/record-effort-selection.mjs` (temp-file + rename, mode 600,
+  refuses unknown values).
   The launcher must fail closed (refuse to exec `claude` unrouted) when any of the four
   alias pins is missing from the routed-session state.
 - Protect session state: Windows DPAPI/current-user; macOS Keychain for the token + mode-600
@@ -257,6 +267,35 @@ Run it standalone on an already-installed box:
 ```bash
 bash ~/.claude/skills/nine-router-setup/scripts/macos/fix-ultracode-override.sh
 ```
+
+## Step 9.7 — Record the user's `/effort` selection (both platforms)
+
+`lastEffortSelection` is written ONLY by the record helper — nothing else may
+edit the field, so a setup re-run carries the value forward instead of wiping
+it. The launcher reads it at exec time (Step 9).
+
+- Valid values: `low|medium|high|xhigh|max|ultracode`. Anything else is
+  refused with a non-zero exit.
+- `ultracode` lives ONLY in the state file — it is not accepted by any
+  settings key or env var; the launcher translates it into the
+  `--effort ultracode` CLI flag.
+- State file path: macOS `$HOME/Library/Application Support/BlackCEO/999/router-session.json`;
+  Windows `%LOCALAPPDATA%\BlackCEO\999\router-session.json`.
+
+```bash
+# macOS / Linux / Git-Bash
+node ~/.claude/skills/nine-router-setup/scripts/common/record-effort-selection.mjs \
+  "$HOME/Library/Application Support/BlackCEO/999/router-session.json" ultracode
+```
+
+```powershell
+# Windows
+node "$env:USERPROFILE\.claude\skills\nine-router-setup\scripts\common\record-effort-selection.mjs" `
+  "$env:LOCALAPPDATA\BlackCEO\999\router-session.json" ultracode
+```
+
+The write is atomic (temp file + rename) and mode 600; it never prints secrets
+(the state file contains none by construction).
 
 ## Step 10 — Verify skill visibility and isolation
 

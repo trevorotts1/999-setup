@@ -383,18 +383,9 @@ main() {
     fail "configure-nine-router.mjs did not emit a config report (check 9Router health)"
   fi
 
-  # Rotated dashboard password. When the configure helper rotated the dashboard
-  # away from the default this run, the report carries the ACTUAL new password
-  # (report.dashboardPassword — the single sanctioned exception to never printing
-  # keys). Use exactly that value for the token fetch and every later API call;
-  # never regenerate a password here — a locally regenerated one would differ
-  # from what the router has and every subsequent API call would fail auth.
-  # When the field is absent no rotation happened this run, so the original
-  # password is kept. The value flows through an env var and is never printed.
-  if [ -n "$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(typeof r.dashboardPassword==="string"?r.dashboardPassword:"")}catch{process.stdout.write("")}})' 2>/dev/null || true)" ]; then
-    DASHBOARD_PW="$(printf '%s' "$CONFIG_REPORT" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.dashboardPassword||"")}catch{process.stdout.write("")}})' 2>/dev/null || true)"
-    log "Dashboard password rotated from the default (new password used for API calls; not printed)"
-  fi
+  # No dashboard password rotation: the configure helper never changes the
+  # password, so DASHBOARD_PW stays whatever was passed in (default 123456).
+  # The report's mustChangePassword flag is advisory messaging only.
 
   # Store the local router token in Keychain. GET /api/keys returns the raw key
   # value (verified 0.5.45; re-verified 0.5.50), so list then create-if-absent
@@ -448,6 +439,7 @@ main() {
           concurrency: Number(process.env.CONCURRENCY || 2),
           maxOutputTokens: 32000,
           effortLevel: "xhigh",
+          lastEffortSelection: null,
           claudeBinary: process.env.CLAUDE_BIN,
           nineRouterBinary: process.env.NINE_BIN,
           port: Number(process.env.PORT || 20128),
@@ -672,10 +664,10 @@ main() {
       if (lines.length) process.stdout.write(lines.join("\n") + "\n");
     });
   ' 2>/dev/null || true)"
-  ROTATED_NOTE=""
-  if [ "$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.dashboardPasswordRotated?"true":"false")}catch{process.stdout.write("false")}})' 2>/dev/null || echo false)" = "true" ]; then
-    ROTATED_NOTE="
-Dashboard password: ROTATED from the default on first login (value never printed)."
+  PASSWORD_NOTE=""
+  if [ "$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.mustChangePassword?"true":"false")}catch{process.stdout.write("false")}})' 2>/dev/null || echo false)" = "true" ]; then
+    PASSWORD_NOTE="
+Dashboard: the password is the default \`123456\`; change it yourself in the dashboard when you are ready."
   fi
   cat <<REPORT
 
@@ -705,7 +697,7 @@ Vision -> $R_VISION
 
 Fallback:
 Haiku -> $R_HAIKU, then agnes/agnes-2.5-flash: configured
-$THINKING_LINES${ROTATED_NOTE}
+$THINKING_LINES${PASSWORD_NOTE}
 Ollama plan: $OLLAMA_PLAN
 Ollama Claude/9Router concurrency budget: $CONCURRENCY
 Reserved for OpenClaw: $([ "$OLLAMA_PLAN" = "pro" ] && echo 1 || echo 0)
@@ -720,12 +712,12 @@ $AGENT_TEAMS_REPORT
 Ultracode/effort override (applies to NEW shells and NEW sessions only): $ULTRACODE_FIX_STATUS
 $ULTRACODE_FIX_REPORT
 
-Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models.
+Dashboard: $DASHBOARD_URL - open this in your browser to manage providers and models. The password is the default `123456`; change it yourself in the dashboard when you are ready.
 
 Launch routed Claude Code with: claude-nine
 (claude-codex is the same session pinned to a Codex model — add a cx/ provider first.)
 
-No API keys or passwords were printed.
+No API keys were printed (the dashboard password is the documented default above).
 REPORT
 }
 
