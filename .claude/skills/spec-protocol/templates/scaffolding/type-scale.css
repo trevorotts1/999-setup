@@ -1,0 +1,48 @@
+/* type-scale.css — type scale template (STAGE-SCAFFOLDING)
+   Fill the marked slots from the design brief. Default scale is a 1.25 major
+   third; override with the brief's named scale. Sizes are fluid clamp() values
+   so the scale survives the three breakpoints (--bp-sm/md/lg in tokens.css). */
+
+:root {
+  /* ---- FONT FAMILIES — from the brief, with real fallback stacks ---- */
+  --font-display: "FILL-FROM-BRIEF", "Georgia", serif;   /* display/headings */
+  --font-body: "FILL-FROM-BRIEF", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* ---- MODULAR SCALE — 1.25 major third by default ---- */
+  /* base 1rem; each step multiplies by 1.25 */
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.8rem);
+  --text-sm: clamp(0.875rem, 0.82rem + 0.28vw, 0.9375rem);
+  --text-base: clamp(1rem, 0.94rem + 0.3vw, 1.0625rem);
+  --text-md: clamp(1.125rem, 1.05rem + 0.38vw, 1.25rem);
+  --text-lg: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.35rem + 0.75vw, 1.875rem);
+  --text-2xl: clamp(1.875rem, 1.6rem + 1.38vw, 2.5rem);
+  --text-3xl: clamp(2.25rem, 1.8rem + 2.25vw, 3.125rem);
+  --text-4xl: clamp(2.75rem, 2rem + 3.75vw, 4rem);
+
+  /* ---- WEIGHTS ---- */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- LINE HEIGHTS ---- */
+  --leading-tight: 1.1;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  /* ---- LETTER SPACING ---- */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.05em;
+
+  /* ---- NAMED TEXT STYLES — the build uses these, never ad-hoc fonts ---- */
+  --text-display: var(--weight-bold) var(--text-4xl) / var(--leading-tight) var(--font-display);
+  --text-h1: var(--weight-bold) var(--text-3xl) / var(--leading-tight) var(--font-display);
+  --text-h2: var(--weight-semibold) var(--text-2xl) / var(--leading-tight) var(--font-display);
+  --text-h3: var(--weight-semibold) var(--text-xl) / var(--leading-tight) var(--font-display);
+  --text-h4: var(--weight-semibold) var(--text-lg) / var(--leading-tight) var(--font-display);
+  --text-body: var(--weight-regular) var(--text-base) / var(--leading-normal) var(--font-body);
+  --text-caption: var(--weight-regular) var(--text-sm) / var(--leading-normal) var(--font-body);
+  --text-label: var(--weight-medium) var(--text-xs) / var(--leading-normal) var(--font-body);
+}
