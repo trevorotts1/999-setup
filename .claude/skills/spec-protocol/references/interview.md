@@ -708,6 +708,11 @@ check live in `environment-sweep.md`: name the path here, check the keys there.
 Nothing about a token is ever asked of the user until a check has actually failed,
 and then it is asked in plain words, with where to find it.
 
+**After the shape is confirmed, the DESIGN-BRIEF step runs first before any page
+build (see `funnel-architecture.md` §Design Brief and Mobbin Check) — the
+MOBBIN-CHECK is its first action, checking for Mobbin MCP configuration on the
+client's box.**
+
 ### If SALES FUNNEL — ask these (the funnel discovery):
 
 1. "What is the one thing you want someone to do by the end of this funnel —
@@ -744,6 +749,46 @@ attached (Law 40 — recommend, never persuade):
 The page types and the email and text-message decision matrices this
 recommendation is built from live in `funnel-architecture.md`. Present the shape,
 not the matrices — the person is choosing a funnel, not reading a specification.
+
+**After the shape is confirmed, the DESIGN-BRIEF step runs first before any page
+build (see `funnel-architecture.md` §Design Brief and Mobbin Check) — the
+MOBBIN-CHECK is its first action, checking for Mobbin MCP configuration on the
+client's box.**
+
+---
+**DESIGN-BRIEF gate (mandatory step with its own ledger line).** After the user
+confirms the recommended architecture — and BEFORE any funnel page is dispatched
+for building — the conductor commissions the design brief and writes its ledger
+line:
+
+`DESIGN-BRIEF: <sources>`
+
+The brief collects:
+1. The site-type-specific researched conversion patterns — from the Just-in-Time
+   reader AND the per-site-type researched defaults in `funnel-architecture.md`
+   §15 (dentist brochure / coaching funnel / SaaS landing each have their own
+   block: hero structure, layout, typography scale, color systems, conversion
+   patterns, mobile behavior, WCAG accessibility) — every claim cited with its
+   source.
+2. A named example page (the copy bar, Law 48) — a real, fetchable reference
+   page that sets the quality bar for copy and layout. **The copy bar is
+   picked at bar selection** (SKILL.md step 8 — the reference-app candidates,
+   seeded by D1): for a website/funnel build, the user's bar pick IS the copy
+   bar. The picked URL is recorded in the decision register, named in this
+   item, and carried by the `DESIGN-BRIEF: <sources>` ledger line. The page
+   must be OPENABLE at pick time — a page that cannot be fetched is BLOCKED
+   (Law 50) and never replaced by a vague "make it punchy" instruction (the
+   full mechanism: `funnel-architecture.md` §15, The COPY BAR).
+3. The selected reference sites the brief's design decisions trace to.
+
+No funnel page is built before this ledger line exists, the copy-bar URL is
+named, and the brief is written to the project's convention section (document
+1, per Law 39's closed list).
+The brief is a named, fetchable section — never a vague "make it look good."
+The full seven-stage funnel process the brief feeds into is defined in
+`references/funnel-architecture.md` §16.
+
+---
 
 ### Media and Creative (any build that needs artwork — after the shape is confirmed)
 
