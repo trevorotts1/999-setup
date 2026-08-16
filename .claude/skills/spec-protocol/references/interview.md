@@ -95,7 +95,18 @@ The table below is the WORST CASE — the value when every pre-statement read
 resolves at its maximum (three paid services, no saved profile, A1 measured).
 The C actually spoken is computed per run from the reads and is AT MOST the
 table's figure; the table's only job is to be the number no run can ever
-cross:
+cross. **The table rows are the ADVANCED MODE wall — in DEFAULT MODE the wall
+is the R6 list's length (nine, usually fewer), never the table.** C in
+advanced mode is the computed per-run value capped by the confirmed target's
+table row: no run states or crosses a C above its target's row (plus the
+announced artwork rise at its measured size — three when both artwork keys
+are present at that moment, two otherwise, per the per-question counter's
+artwork rule), so the rows are the absolute ceiling and every run lands at or
+under its target's row. Simple mode never inherits the table; it states the
+R6 list's length and lands further under it with every fast path. A run that
+finds its computed C above its target's row has priced a component that does
+not belong in that mode — re-check the composition against this section's
+arithmetic; the table row still wins.
 
 | Target | Step 1d branch | Worst-case ceiling C (Claude-Nine, attended or not) | Worst-case shortcut landing T | + artwork rise |
 |---|---|---|---|---|
@@ -147,11 +158,27 @@ Plain wording:
 > want?
 
 Record DEFAULT MODE or ADVANCED MODE. In DEFAULT MODE the whole interview is
-the R6 list — about nine questions, usually fewer. ADVANCED MODE adds the R7
-list. Everything else is DECIDED by the run and REPORTED as statements in the
-recap — "here is what I decided; say the word to change any of it" — never
-asked. (The canary run offered this skip at question eleven, after ten
-technical questions; that placement is the defect this rule removes.)
+the R6 list — about nine questions, usually fewer — and the R6 list's length
+IS the wall: the mode's ceiling C never exceeds it, and the spoken C for the
+run is the mode's list length (about nine, never more, usually fewer), not the
+worst-case table row. ADVANCED MODE adds the R7 list; its ceiling C is the
+worst-case table row (the ceiling arithmetic section below — the table that
+follows the "ceiling arithmetic, per target" paragraph) for the confirmed
+target — Mobile app 32, Web app 31, Mobile AND web 32, Desktop / CLI 31,
+Website 32, Sales funnel 33, each up to the announced artwork rise (three
+more, spoken at its measured size) — and the ceiling table is the wall no run
+crosses: C in advanced mode is AT MOST the target's row, and the per-run C
+computed from the pre-statement reads only ever lands at or under it (the
+reads may only lower it — never raise it; the ceiling arithmetic section
+above). Simple mode never inherits an advanced-mode count and no run crosses
+its own mode's wall: DEFAULT MODE's spoken C is the R6 list length; ADVANCED
+MODE's spoken C is the computed ceiling capped by the target's table row; the
+announced artwork rise is the only sanctioned increase over the base ceiling,
+spoken at its measured size before the next question. Everything else is
+DECIDED by the run and REPORTED as statements in the recap — "here is what I
+decided; say the word to change any of it" — never asked. (The canary run
+offered this skip at question eleven, after ten technical questions; that
+placement is the defect this rule removes.)
 
 ### R2. Deleted questions, and the rules that replace them
 
@@ -283,8 +310,13 @@ defect that sentence removes.
 artwork account, with the overflow clause; (4) the plan tier per wired,
 unrecorded provider; (5) D1, the example; (6) D2, the winning bar (plain
 form); (7) D4, the don't-wants; (8) D3's download consent ONLY when no
-capture tool was found; (9) the done-condition yes/no. Ceiling about nine;
-most people land fewer.
+capture tool was found; (9) the done-condition yes/no. Nine items — the R6
+list's length IS the mode's ceiling C (about nine, usually fewer): no
+default-mode run may state or cross a C above nine, and a lowering (a
+condition that does not fire, a fast-path yes, a supplied profile) only
+brings the run further under it — never raises it. The wall is the list
+itself: whatever does not occur simply lands the run under C; the mode never
+grows a question beyond the nine.
 
 ### R7. What ADVANCED MODE adds
 
