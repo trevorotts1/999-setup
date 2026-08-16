@@ -129,7 +129,8 @@ SANCTIONED_CLASSES = {
     "CREATED", "BASELINE", "DISPATCH", "REDISPATCH", "REPAIR", "REPAIR-DONE",
     "BUILDER", "BUILDER-DONE", "BUILDER-FAIL", "CRITIC", "CRITIC-PASS", "CRITIC-FAIL",
     "DONE", "FAIL", "PASS", "OBSERVATION", "UNDETERMINED", "NEW-WAVE-N", "VIOLATION-STOP",
-    "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
+    "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
+    "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
     "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
     "PAYMENT-CONTRACT", "INTERVIEW-MODE",
@@ -409,11 +410,13 @@ def check_claims(lines):
 def check_heartbeat(lines):
     ts = None
     for ln in lines:
-        # Any BOSSCYCLE-* line (CLEAN or ALERT) is a cycle line — the ALERT
-        # line the boss writes after a recovery is itself proof the cycle ran,
-        # so a recovered boss stops flagging its own prior death.
+        # Any BOSSCYCLE-* line (CLEAN, ALERT, VIOLATION) is a cycle line — a
+        # violating cycle writes VIOLATION as its liveness line (the finding
+        # stands above it; it never masks), and the ALERT line a recovered
+        # boss writes is itself proof the cycle ran, so the boss stops
+        # flagging its own prior death.
         cls = ledger_class(ln)
-        if cls in ("BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT"):
+        if cls in ("BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION"):
             ts = line_timestamp(ln)
     if ts is None:
         return "no BOSSCYCLE-* line yet (first cycle baseline)"
@@ -499,7 +502,7 @@ def check_drift(lines):
                     f"drift: {run} consecutive contentless heartbeat ticks "
                     f"(limit {DRIFT_RUN_LIMIT}) — lane stopped, checkpoint restart required")
                 break
-        elif cls == "BOSSCYCLE-CLEAN" or cls == "BOSSCYCLE-ALERT":
+        elif cls in ("BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION"):
             run = 0
     # Per-wave boundary reconcile (waves 2+, dispatched after the boss's own
     # enforcement epoch — pre-epoch waves cannot be retroactively judged).
@@ -1045,6 +1048,13 @@ def main():
             fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`\n")
         elif not violations:
             fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks} (baseline)`\n")
+        else:
+            # Liveness line for a violating cycle: the watchdog's staleness
+            # check reads the newest BOSSCYCLE-* line, and a long violation
+            # streak must not read as a dead cron (that would fire a false
+            # heartbeat alert at the operator). The findings stand above it —
+            # this line names no class, masks nothing.
+            fh.write(f"- `BOSSCYCLE-VIOLATION {now_iso()}: {len(violations)} finding(s) recorded above; checks={checks}`\n")
     if violations and not os.path.exists(STOP):
         with open(STOP, "w", encoding="utf-8") as fh:
             fh.write(f"boss-cron-20260816: " + "; ".join(violations)[:340]
