@@ -1670,6 +1670,7 @@ applies to media meters exactly as it does to request windows.**
 | Key present but the smoke test fails (auth/credit) | That provider is NOT USABLE NOW — say which check failed, pass/fail with no values; try the other rung; else the honest stop | Never batch against an unproven key |
 | Catalog research fails (kie 403/timeout, `llms.txt` unreachable) | Fall back to the dated exhibit id **only if its live smoke test passes** — a passing smoke is a measurement; else UNDETERMINED, then ask or park | Never recite an exhibit as if it had been researched |
 | Primary family generation fails (error / legitimate-prompt refusal after one rewrite / repeated timeout) | One retry on the fallback family, aspect and resolution re-validated against ITS table, **the swap recorded in the work item** | Never a silent model swap; never a placeholder substituted for a failure |
+| **Provider fails MID-RUN** (the provider itself — a 5xx cluster, an auth failure after the key worked, a transport outage, a persistent non-429/402 error across submissions — distinct from a single item's generation failure above) | **The image lane STOPS (never the build).** Affected manifest rows are marked **FAILED with the error** (the failing status/`failCode`/`failMsg`, or the transport error class, or 401/5xx — named, never a bare "failed"). **Falls to the MEDIA-GAPS path for those rows** (9.3): each failed slot's manifest entry stays with its fully-prepared prompt and the recorded error; the build continues at full quality around the declared gaps. **Every failed slot gets the 9.3 DECLARED-placeholder treatment — the honest "image generation failed" marked space**: a neutral, clearly-labeled block ("Image failed to generate — see list, item N"), correct dimensions and aspect reserved, alt text written, never a blank slotted square and never an unmarked fallback. **The failure is noted in the morning report (document 14)**: the affected rows by slot, the error, and the one-line resumable-batch answer. The loss ladder (rung 1 re-fetch; rung 2 re-spend only per `MEDIA_LOSS_POLICY`) applies to any row already billed before the provider died | **Never a silent skip; never a stock stand-in or generated fallback passed off as final art; never a blank square left where a marked gap belongs; never the image lane's failure reported as a build failure, and never the build stalled for it** |
 | `moderation_blocked` (kie) | User-level error: rewrite once; still blocked → the item is BLOCKED with its reason, surfaced | Never retried as transient; never re-billed blindly |
 | Poll timeout | ONE final status check; FAILED-TIMEOUT recorded **with the taskId**; `creditsConsumed` reconciled later | Never a blind resubmit (double spend); never silently dropped |
 | **Phase A download fails, provider URL still alive** (section 13) | Retry **NOW** — 3 attempts, short backoff, **while the URL lives**; then, on kie, the recovery endpoint (`POST /api/v1/common/download-url` → fresh 20-minute link → download); every attempt logged | **Never defer a capture retry to "later"** — later is when the URL is dead |
@@ -2028,6 +2029,7 @@ enforced fail-closed by the watch check S15.
 
 | Failure state | What it means |
 |---|---|
+| `FAILED` | **The mid-run provider-failure state (section 11).** The provider died mid-run; the manifest row is marked **FAILED with the error** (status/`failCode`/`failMsg` or transport class, named), the slot falls to the MEDIA-GAPS path with the 9.3 marked-space treatment, and the morning report notes it. **Never a blank square, never an unmarked fallback, never a silent skip** |
 | `FAILED-TIMEOUT` | The existing state (section 11), recorded **with its taskId**; `creditsConsumed` reconciles it later |
 | `FAILED-CAPTURE` | Terminal success observed, but the download failed — section 11's rungs apply **while the URL lives** |
 | `PERSIST-PENDING` | Captured and safe locally; the GHL push is queued. **A legitimate overnight resting state, never a final one** |
@@ -2221,3 +2223,104 @@ GENERATED-CAPTURED or PERSIST-PENDING and is **not merge-eligible**; a provider
 URL found in a deliverable is a defect, replaced with the ledger's permanent URL
 before the pen; **an ASSET-LOST-PAID line missing from the completion report is
 a defect of the highest class.**
+
+---
+
+## 14. THE IMAGE LANE IN THE STAGED PIPELINE — the sub-pipeline, gated by PROVIDER-READY
+
+**When this section applies:** any build whose pages consume generated images —
+funnel pages, website pages, or both (funnel-architecture.md section 15 wires
+the six stages onto every funnel page; this section is the image lane those
+stages draw from). **The image lane is NOT a standalone step** — it is the
+image sub-pipeline INSIDE the staged pipeline: the manifest it produces is the
+`STAGE-HERO` and `STAGE-IMAGES` input (pipeline.md, stage definitions), and
+each of its ledger lines is a stage ledger line. The lane runs when and only
+when the provider gate below passes; when the gate fails, the run takes the
+declared without-media path (section 9.3) and the affected stage slots carry
+their MEDIA-GAPS entries — the stage still completes, honestly marked.
+
+**⛔ THE PROVIDER-READY GATE — reachability is PROVEN BEFORE the promise, never
+after.** No image is promised to the client, and no manifest row is written as
+generation-eligible, until a live smoke test has passed against the chosen
+provider (section 9.1's ladder decides the provider; the smoke is
+`media-pipeline.md` section 2's submit-and-poll for kie, or the section 3
+`/v1/models` liveness call plus a synchronous 1K generation for Agnes). The
+gate answers one of three, recorded as the ledger line:
+
+```
+PROVIDER-READY: <kie|agnes> | <PASS|FAIL|UNDETERMINED> | smoke=<ISO8601> | fail=<which check> | path=<media|without-media>
+```
+
+- **PASS** → the image lane opens; the run may promise images and write
+  generation-eligible manifest rows.
+- **FAIL** → the run says so plainly and takes the without-media path
+  (section 9.3): marked spaces + the MEDIA-GAPS manifest, **never a promise
+  made on an unproven key.** "A key present but failing its smoke test means
+  that provider is NOT USABLE NOW" (section 9.1) — the gate makes that
+  fail-closed ordering mechanical: no PROVIDER-READY PASS, no image promise.
+- **UNDETERMINED** (instrument broken, section 9.2 Branch 5) → treated as
+  FAIL for promising purposes; recorded honestly.
+
+**Re-taken at every decision it gates** (section 9.5): at media planning, at
+each media batch, and immediately when the client asserts placement. The gate
+is re-run before `STAGE-IMAGES` opens even when `STAGE-HERO` passed — a key
+that died mid-run (a 402/401 cluster) is caught at the batch boundary, not at
+3am.
+
+### 14.1 The image manifest — the lane's single source of truth
+
+**Every planned image is a manifest row** — one row per generation, written
+BEFORE the first build dispatch, as a section of the execution plan (document
+16, `references/documents.md`), never a new file. Each row carries, minimally:
+
+| Field | Content |
+|---|---|
+| slot | where the image lands: `<page>:<section>` |
+| page | the page it serves (funnel page name or site page) |
+| size | resolution tier (1K/2K/4K, per the resolved member's table) |
+| aspect | aspect ratio, legal per the resolved member's table |
+| prompt | the band-passing generation prompt (section 4), mode chosen (t2i or i2i), style directive where references attach |
+| provider | kie or agnes |
+| model | the resolved model id this run's smoke proved callable |
+| cost | estimated credits or meter-units against the run's burn budget (section 10) |
+| temp-url | the provider's result URL, recorded AUDIT-ONLY as `provider-url=` (13.1), never a deliverable reference |
+| expiry | the temp URL's 24h deadline (section 13.6) — the expiry-class input to the orphan sweep (Issue 10) |
+| status | one of the exhaustively defined states (13.3): `PLANNED → SUBMITTED → GENERATED-CAPTURED → PERSISTED` (done-eligible), or the failure states `FAILED-TIMEOUT`, `FAILED-CAPTURE`, `PERSIST-PENDING`, `ASSET-LOST-PAID`, `SUBMITTED-NO-RESPONSE` |
+
+**The manifest is written before the first build dispatch** (Issue 7 FIX step
+3): `STAGE-HERO` and `STAGE-IMAGES` read their work from the manifest; the
+build never improvises an image at build time. A row's `temp-url` and `expiry`
+are written at generation time, in the SAME pipeline step as the capture
+(13.2 Phase A) — never deferred.
+
+### 14.2 The lane's fail-closed behavior
+
+**A provider failure mid-run stops the IMAGE LANE, never the build.** The
+mechanics:
+
+1. A failure that is provider-wide (401/402/403 cluster, balance exhausted,
+   sustained 429) fails the affected manifest rows **FAILED** with the error
+   recorded — a 402 is an account condition: report it and wait, or spill per
+   the consented overflow clause (section 10's capacity events; `capacity.md`'s
+   response ladder).
+2. The MEDIA-GAPS manifest gains one entry per failed row — the slot, the
+   prepared prompt, and the cost — and the row's page slot takes the declared
+   placeholder treatment (section 9.3), never a stock image and never a
+   generated stand-in passed off as final art.
+3. The BUILD continues: a failed image lane parks its own rows and the stage
+   ledger lines name the gaps; nothing else in the pipeline stalls.
+4. **Never a silent skip.** A failed row is either an honestly marked
+   MEDIA-GAPS entry or a reported loss (ASSET-LOST-PAID in the completion
+   report) — there is no third, quiet state.
+
+### 14.3 The lane's verification
+
+Issue 7 FIX step 6, mechanically:
+
+- **Working key:** a test run produces every manifest row as a real file —
+  each row's `GENERATED-CAPTURED` state has a local file, verified non-empty
+  with magic bytes and sha256 (13.2), and the row's `PERSISTED` state has its
+  permanent URL read back (13.7).
+- **Dead key:** the PROVIDER-READY gate fails closed, the run produces zero
+  fake images, and the without-media path (9.3) delivers the marked spaces and
+  the MEDIA-GAPS manifest.
