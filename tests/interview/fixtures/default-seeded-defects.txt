@@ -1,0 +1,25 @@
+# default-seeded-defects.txt — deliberately defective DEFAULT-mode interview,
+# Issue 12 FIX step 5 negative control.
+#
+# Every Issue 12 defect class is seeded, one per line; the checker must catch
+# all eight. The first two lines are the legal pre-count exchanges (uncounted
+# by design, interview.md lines 318-325) so they seed nothing. Exit
+# expectation: FAIL with exactly 8 defects, 8 distinct lines.
+
+What kind of thing are we building — an app, a website, or a funnel?
+Which works better for you — I ask you questions one at a time, or you hand me the material?
+
+I will ask you at most 9 short questions — usually fewer — one at a time, and then you can walk away.
+
+Question 1 of no more than 9 — How many agents do you want running at the same time? The work runs in workflows — teams of helpers. On this machine each workflow holds up to 8 helpers at once. Use the maximum, or cap it?
+Question 2 of no more than 9 — Do you want me to create those pictures for you, or will you be supplying your own?
+Question 2 of no more than 9 — Which account is it on?
+Question 3 of no more than 9 — Does this project run once while you are watching, or does it keep running on its own until it is done?
+Question 4 of no more than 9 — Is your DeepSeek account the direct one — the one you topped up with a balance — or are you reaching DeepSeek through Ollama?
+Question 5 of no more than 9 — Which would you like me to use?
+ANSWER: Which would you like me to use?
+Question 6 of no more than 9 — Which would you like me to use?
+Question 7 of no more than 9 — Do you already have a place to put it online? And do you want me to add a contact form?
+Question 8 of no more than 9 — Is there an app or website you already look at and think, "if mine is as good as that, I would be happy"?
+Question 9 of no more than 9 — What pages do you picture?
+Question 10 of no more than 3 — Which model do you prefer?

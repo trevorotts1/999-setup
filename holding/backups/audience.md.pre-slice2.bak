@@ -113,19 +113,6 @@ confirm: "I have read everything. Here is what I understood: [one-paragraph
 summary]. If that is right, I will start. If I got something wrong, tell me and I
 will fix it."
 
-**BINDING — never ask a question the user already answered (Issue 12 fix).** An
-answer the user has given lives in the project's answers file
-(`00-INPUT/ANSWERS.md`) and in the brief; a question whose answer is on disk is
-ANSWERED, and asking it again — in the same run, or after a compaction or a
-resume — is the canary defect. Before ANY question, the conductor re-reads the
-brief and the answers file; after a compaction or a resume, it re-reads them
-again (the mechanical mechanism is `interview.md` R5.1, the four rules: the
-named answers file, stable question keys, the pre-question check, and the
-session-log ask line). When the check finds the answer, the conductor states it
-back in one line — "you already told me <their words>; if anything changed, tell
-me" — and never re-asks. The boss cron flags a question key asked twice in the
-session log as a violation (PART 4 / `tools/boss-cron`).
-
 ---
 
 ## 4. Spell it out.

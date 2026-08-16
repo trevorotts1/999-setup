@@ -20,18 +20,6 @@ if it is still genuinely unanswerable.
 A wall of text gets skimmed or skipped. One thing at a time gets done. A screen full
 of information is the same as no information — keep every message to ONE screen.
 
-**BINDING — the one-question rule (Issue 12 fix).** A user-facing message that
-contains two questions is a defect. A two-option choice presented once — THE
-ENTRY's "interview me / here is the info", the Build Target's either/or bank, a
-yes/no — is ONE question, not two. Everything else is a wall: a question plus a
-follow-up in the same message, a question plus a confirmation ask, two yes/no
-asks, a numbered batch ("1. … 2. … 3. …") ending in one pick-everything prompt.
-When more than one thing genuinely needs asking, ask the first, wait for the
-answer, then ask the next — and only if it is still genuinely unanswerable
-without the second. The self-audit (step 20) and the swarm watch (standard S17)
-both hunt two-question messages; a user-facing message with two questions is a
-failable violation.
-
 The capacity interview is the long one, but the user sees the questions one at a
 time, in plain language, with the consequence of each answer stated before they
 answer. State the count up front, in the two-number form when `interview.md` computes
@@ -112,19 +100,6 @@ heard]. Next question:" When they give you all the information (entry mode 2),
 confirm: "I have read everything. Here is what I understood: [one-paragraph
 summary]. If that is right, I will start. If I got something wrong, tell me and I
 will fix it."
-
-**BINDING — never ask a question the user already answered (Issue 12 fix).** An
-answer the user has given lives in the project's answers file
-(`00-INPUT/ANSWERS.md`) and in the brief; a question whose answer is on disk is
-ANSWERED, and asking it again — in the same run, or after a compaction or a
-resume — is the canary defect. Before ANY question, the conductor re-reads the
-brief and the answers file; after a compaction or a resume, it re-reads them
-again (the mechanical mechanism is `interview.md` R5.1, the four rules: the
-named answers file, stable question keys, the pre-question check, and the
-session-log ask line). When the check finds the answer, the conductor states it
-back in one line — "you already told me <their words>; if anything changed, tell
-me" — and never re-asks. The boss cron flags a question key asked twice in the
-session log as a violation (PART 4 / `tools/boss-cron`).
 
 ---
 

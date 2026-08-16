@@ -1565,18 +1565,24 @@ When the client declines, has no key, or Branch 5 rests at UNDETERMINED:
 
 ### 9.4 THE UNATTENDED CASE — pre-declared, never asked at 3am
 
-A set-and-forget run cannot ask. The policy is already DEFAULTED and stated in
-the recap, because C6 (overnight-policy question) is DELETED as a question (R2,
-Issue 12 FIX step 4). Its artwork clauses became their recorded defaults on the
-deletion:
+A set-and-forget run cannot ask. The answer is collected **before** the client
+walks away, as a clause on the existing overnight-policy question in
+`references/interview.md` (one question grows; no competing question is added).
+When the run is unattended **and** the build generates media, the question gains:
 
-> **Default `MEDIA_UNATTENDED_POLICY = placeholders-and-manifest`** — delivers
-> the most finished value overnight; the MEDIA-GAPS manifest IS the parked work
-> with scaffolding already in place.
+> *"…And one more piece of the same question: if this build needs artwork but the
+> key for it turns out to be missing — or stops working partway through — what
+> should it do on its own? I can build everything with neatly marked picture
+> spaces plus a shopping list of every image needed, so we fill them in together
+> later; or skip the artwork entirely and note it; or set just the picture work
+> aside and finish everything else. If you're not sure, I'll do the
+> marked-spaces-and-list one and leave you a note."*
 
-Recorded as `MEDIA_UNATTENDED_POLICY = placeholders-and-manifest` —
-**default, stated in recap, never asked**. The same default the earlier question
-would have recorded.
+Recorded as `MEDIA_UNATTENDED_POLICY = placeholders-and-manifest |
+skip-and-note | park-media-lane`, **default `placeholders-and-manifest`**, marked
+`[DEFAULT-CONFIRMED]` — it delivers the most finished value overnight and
+subsumes parking, because the manifest IS the parked work with scaffolding
+already in place.
 
 **Binding floor, under all three options:**
 
@@ -1651,43 +1657,6 @@ after reserve **and** to the daily meter's remaining count; kie batches size to
 balance ÷ measured per-item cost, reserve applied. **The 25% reserve doctrine
 applies to media meters exactly as it does to request windows.**
 
-### 10.1 THE 1:1:1 RULE — generated = manifest = uploaded; references may be N
-
-**The accounting contract that makes token waste visible (Issue 10 FIX step 1).**
-Every generated asset has **exactly one manifest row** and **exactly one upload**
-(or an honestly marked gap). References may be N — a shared asset is one manifest
-row, one generation, one upload, and N references — and **every one of the N is
-counted**. Zero orphans in either direction:
-
-| Orphan class | Definition | Disposition |
-|---|---|---|
-| **UNTRACKED-GENERATION** | A generation with no manifest row — spend with no plan | Violation — the row is created retroactively with its taskId and `creditsConsumed`, or the spend is reported as a loss |
-| **UNGENERATED-MANIFEST-ROW** | A manifest row with no generation | **Marked gap** — the row carries its prepared prompt and estimated cost, and joins the MEDIA-GAPS manifest (9.3) as one resumable batch; never silently dropped |
-| **UNREFERENCED-UPLOAD** | An upload with no reference — a permanent asset nothing consumes | Violation — the row gains a reference or the upload is reported; a generated asset nothing consumes is a generated bill (section 7) |
-| **UNCOUNTED-REFERENCE** | A reference not traceable to a manifest row — the N that was never counted | Violation — the reference is traced to its row or the row is created |
-
-**The four counts are reconciled at every media batch boundary and by the boss
-cron's per-cycle orphan sweep (PART 4 check 7):** generations, manifest rows,
-uploads, references. Any mismatch is a `VIOLATION-STOP` on the media lane with
-each orphan named by class and file. **The ledger classes the sweep reads are
-fixed — the pipeline writes them, the sweep counts them, and the two never
-disagree:**
-
-```
-MANIFEST-ROW <id>: page=<page> slot=<slot> url=<tempUrl> expires=<ISO8601>
-MANIFEST-ROW <id>: page=<page> slot=<slot> status=gap
-IMAGE-GENERATED <id>: task=<taskId> url=<tempUrl>
-GHL-URL <id>: url=<ghlUrl>
-IMAGE-REF <id>: page=<page> slot=<slot>
-```
-
-A `MANIFEST-ROW` with `status=gap` is an intentional marked gap — it has no
-`IMAGE-GENERATED` by design and is excluded from the equality comparison. **The
-expiry class is part of the sweep:** a manifest row whose provider temp URL is
-older than its 24-hour deadline (kie) and carries no GHL URL is a token-waste
-orphan — the generation's spend is already gone — and is `VIOLATION-STOP` on the
-media lane (section 13.6, section 13.10).
-
 ---
 
 ## 11. FAILURE BEHAVIOR — every path, honestly
@@ -1701,7 +1670,6 @@ media lane (section 13.6, section 13.10).
 | Key present but the smoke test fails (auth/credit) | That provider is NOT USABLE NOW — say which check failed, pass/fail with no values; try the other rung; else the honest stop | Never batch against an unproven key |
 | Catalog research fails (kie 403/timeout, `llms.txt` unreachable) | Fall back to the dated exhibit id **only if its live smoke test passes** — a passing smoke is a measurement; else UNDETERMINED, then ask or park | Never recite an exhibit as if it had been researched |
 | Primary family generation fails (error / legitimate-prompt refusal after one rewrite / repeated timeout) | One retry on the fallback family, aspect and resolution re-validated against ITS table, **the swap recorded in the work item** | Never a silent model swap; never a placeholder substituted for a failure |
-| **Provider fails MID-RUN** (the provider itself — a 5xx cluster, an auth failure after the key worked, a transport outage, a persistent non-429/402 error across submissions — distinct from a single item's generation failure above) | **The image lane STOPS (never the build).** Affected manifest rows are marked **FAILED with the error** (the failing status/`failCode`/`failMsg`, or the transport error class, or 401/5xx — named, never a bare "failed"). **Falls to the MEDIA-GAPS path for those rows** (9.3): each failed slot's manifest entry stays with its fully-prepared prompt and the recorded error; the build continues at full quality around the declared gaps. **Every failed slot gets the 9.3 DECLARED-placeholder treatment — the honest "image generation failed" marked space**: a neutral, clearly-labeled block ("Image failed to generate — see list, item N"), correct dimensions and aspect reserved, alt text written, never a blank slotted square and never an unmarked fallback. **The failure is noted in the morning report (document 14)**: the affected rows by slot, the error, and the one-line resumable-batch answer. The loss ladder (rung 1 re-fetch; rung 2 re-spend only per `MEDIA_LOSS_POLICY`) applies to any row already billed before the provider died | **Never a silent skip; never a stock stand-in or generated fallback passed off as final art; never a blank square left where a marked gap belongs; never the image lane's failure reported as a build failure, and never the build stalled for it** |
 | `moderation_blocked` (kie) | User-level error: rewrite once; still blocked → the item is BLOCKED with its reason, surfaced | Never retried as transient; never re-billed blindly |
 | Poll timeout | ONE final status check; FAILED-TIMEOUT recorded **with the taskId**; `creditsConsumed` reconciled later | Never a blind resubmit (double spend); never silently dropped |
 | **Phase A download fails, provider URL still alive** (section 13) | Retry **NOW** — 3 attempts, short backoff, **while the URL lives**; then, on kie, the recovery endpoint (`POST /api/v1/common/download-url` → fresh 20-minute link → download); every attempt logged | **Never defer a capture retry to "later"** — later is when the URL is dead |
@@ -1709,7 +1677,7 @@ media lane (section 13.6, section 13.10).
 | **Provider URL expired AND no local copy AND recovery failed or absent** | **ASSET-LOST-PAID**: recorded with the taskId, `creditsConsumed`, and every attempt made; surfaced in the completion report as **a real loss in credits and dollars**; regeneration ONLY on the client's word (attended) or parked with the morning note (unattended) | **Never silently regenerate — that is a second real charge.** Never bury the loss in a log nobody reads |
 | **The loss ladder, rung 1 — RE-FETCH** (any lost asset, any cause, kie paths) | **Automatic, always, no consent needed — it spends NOTHING.** `recordInfo` (the taskId is durable) → `POST /api/v1/common/download-url` → **fetch and VERIFY the bytes.** Bounded at 3 attempts per recovery pass, each proven by magic bytes and plausible size, every attempt logged. On kie this runs on ANY loss — including a crash recovered days later — **before anything else is even considered.** **⛔ The mint step does NOT discriminate** (section 2): a successful mint proves nothing, and **only fetched, verified bytes prove recovery** | Never treat a 200 from the mint endpoint as a recovered asset; never skip rung 1 to go straight to a re-spend; **never run rung 1 on Agnes video and report it as attempted — that path has no rung 1 at all** |
 | **The loss ladder, rung 2 — RE-SPEND on a GATED family** | **A fresh explicit yes, every time, no exceptions.** The original yes bought the original generation and nothing more. Unattended → the item PARKS with the morning note, exactly as the gate already demands | **NEVER auto-remade, under any loss policy** — the gate is spend authority, and a loss policy never grants spend authority |
-| **The loss ladder, rung 2 — RE-SPEND on a NON-GATED family** | **ONE automatic resubmit is authorized if and only if ALL FOUR hold:** **(a)** the re-spend fits inside the batch estimate the client already consented to, reserve included — the original consent covered a TOTAL, and a redo inside that total is the consented arithmetic, not new spending authority; **(b)** the meter allows it (on Agnes: remaining budgeted video-seconds ≥ the clip's seconds); **(c)** it is the FIRST resubmit for this item — never a loop; **(d)** it is ANNOUNCED — attended in the moment, unattended in the morning report, **both charges shown side by side** with their taskIds and timestamps. This is governed by `MEDIA_LOSS_POLICY` (R2 — C6 DELETED as question, policy defaulted: `remake-once-within-budget`): `remake-once-within-budget` (default) or `note-and-wait`. **Any condition failing → no automatic resubmit:** attended, one plain question naming both charges and the alternative; unattended, rung 3 plus the note. **The same reasoning already ships one row below as the Agnes SUBMITTED-NO-RESPONSE rule — check the meter before deciding a retry is free** | Never a second automatic redo; never a redo that exceeds the consented envelope; never a silent charge — **a redo the client never hears about is indistinguishable from a double-spend** |
+| **The loss ladder, rung 2 — RE-SPEND on a NON-GATED family** | **ONE automatic resubmit is authorized if and only if ALL FOUR hold:** **(a)** the re-spend fits inside the batch estimate the client already consented to, reserve included — the original consent covered a TOTAL, and a redo inside that total is the consented arithmetic, not new spending authority; **(b)** the meter allows it (on Agnes: remaining budgeted video-seconds ≥ the clip's seconds); **(c)** it is the FIRST resubmit for this item — never a loop; **(d)** it is ANNOUNCED — attended in the moment, unattended in the morning report, **both charges shown side by side** with their taskIds and timestamps. This is governed by `MEDIA_LOSS_POLICY` (interview C6): `remake-once-within-budget` (default) or `note-and-wait`. **Any condition failing → no automatic resubmit:** attended, one plain question naming both charges and the alternative; unattended, rung 3 plus the note. **The same reasoning already ships one row below as the Agnes SUBMITTED-NO-RESPONSE rule — check the meter before deciding a retry is free** | Never a second automatic redo; never a redo that exceeds the consented envelope; never a silent charge — **a redo the client never hears about is indistinguishable from a double-spend** |
 | **The loss ladder, rung 2 — CROSS-PROVIDER re-make** (e.g. a lost Agnes clip re-made on kie) | **Legitimate and sometimes right** — kie's recoverability means the REDO cannot suffer the same loss, which is worth real money on a twice-burned item. But it is a fallback-family swap AND a re-spend: it re-runs the FULL selection (duration fit first — a lost 15s Agnes clip does **not** fit non-gated kie in one clip, so it lands on decomposition or a gated ask), it re-validates stitch consistency where the clip has already-generated siblings (**a kie redo among Agnes siblings makes MIXED audio the expected case** — section 6d), and it obeys the same conditions (a)–(d), with the gate firing if selection lands gated. **Recorded as a swap** | Never silent; never assumed to fit the same duration; never allowed to skip the gate because "it is only a replacement" |
 | **The loss ladder, rung 3 — MEDIA-GAP** (always available, never a stall) | The slot enters the manifest with its prepared prompt, its parameters, and the **BILLED** cost of the redo; the build continues; filling it later is one resumable batch. **The completion report still carries the ASSET-LOST-PAID line in credits and dollars** | Never a stall; **never a neatly parked slot reported as if nothing was lost** — a loss is reported as a loss even when the slot is tidy |
 | **Phase B upload fails** (GHL 5xx/timeout), local copy safe | Retry 3× with backoff; still failing → **PERSIST-PENDING**: the item enters the MEDIA-GAPS manifest's PERSIST-PENDING section and **the build continues** — the asset is captured and safe | Never stall generation on a warehouse outage; **never mark the item DONE while the push is pending** |
@@ -2032,19 +2000,6 @@ provider URL is NEVER written into a deliverable, a spec document, or generated
 code** — the permanent URL is what goes into the build. That prohibition is
 enforced fail-closed by the watch check S15.
 
-**⛔ THE PIPELINE STEP IS ONE UNIT, NEVER SPLIT — the time-bounded ordering
-contract (Issue 10 FIX step 2).** The step runs start to finish as a single
-unit: **generate → poll to `state=success` → parse `resultUrls` → download →
-upload to GHL (13.7's API contract) → read-back → ledger line.** The three
-expiry windows make the split the token-waste mechanism: result URLs expire in
-24 hours, generated files in 14 days, fresh download links in 20 minutes
-(section 2, the measured figures). **The GHL upload is the ONLY step that turns
-a temporary URL into a permanent asset.** **An item left at "generated, URL in
-ledger" with the GHL upload deferred is fail-closed STOPPED on that item** —
-the temp URL will expire overnight and the spend is already gone. A 24-hour
-clock sits between two stages of the same pipeline; only the ordering contract
-that forbids splitting the step watches it.
-
 ### 13.2 Two phases, because only ONE of them races a clock
 
 - **Phase A — CAPTURE (clock-critical).** **In the SAME poll iteration that
@@ -2062,15 +2017,6 @@ that forbids splitting the step watches it.
   **Phase B races no expiry at all, because its source is the local file.** That
   is precisely what makes `PERSIST-PENDING` a safe overnight resting state: a
   warehouse outage delays distribution and can never lose an asset.
-  **⛔ BUT `PERSIST-PENDING` is a WAREHOUSE-OUTAGE state only — never a
-  scheduling choice.** The ordering contract (13.1) forbids deferring the GHL
-  upload as a matter of sequencing: Phase A and Phase B run in the SAME
-  pipeline step, back to back, with nothing scheduled between them beyond the
-  upload call itself. An item parked at GENERATED-CAPTURED with the upload
-  deferred "for later" — while GHL is up and reachable — is fail-closed
-  STOPPED on that item (Issue 10 FIX step 2). The only legitimate
-  `PERSIST-PENDING` is a GHL outage (5xx/timeout after 3 retries), and the
-  morning report names every such item.
 - **On the Agnes image path Phase A is designed away entirely** — `b64_json`
   puts the bytes in the response body (section 3), so there is no provider URL
   to race.
@@ -2080,17 +2026,8 @@ that forbids splitting the step watches it.
 `SUBMITTED → (terminal success) → GENERATED-CAPTURED → PERSISTED
 (done-eligible)`.
 
-**⛔ The state machine is a SINGLE-STEP traversal, never a resting ladder.**
-`GENERATED-CAPTURED` is a waypoint inside the one pipeline step, not a
-completion state and not a place to park overnight: the step continues to
-`PERSISTED` in the same unit of work (13.1's ordering contract). A media item
-whose ledger line reads "generated, URL in ledger" with no `perm-url=` and no
-`persist-proof=` is **fail-closed STOPPED on that item** — the temp URL will
-expire overnight and the spend is already gone (Issue 10 FIX step 2).
-
 | Failure state | What it means |
 |---|---|
-| `FAILED` | **The mid-run provider-failure state (section 11).** The provider died mid-run; the manifest row is marked **FAILED with the error** (status/`failCode`/`failMsg` or transport class, named), the slot falls to the MEDIA-GAPS path with the 9.3 marked-space treatment, and the morning report notes it. **Never a blank square, never an unmarked fallback, never a silent skip** |
 | `FAILED-TIMEOUT` | The existing state (section 11), recorded **with its taskId**; `creditsConsumed` reconciles it later |
 | `FAILED-CAPTURE` | Terminal success observed, but the download failed — section 11's rungs apply **while the URL lives** |
 | `PERSIST-PENDING` | Captured and safe locally; the GHL push is queued. **A legitimate overnight resting state, never a final one** |
@@ -2284,104 +2221,3 @@ GENERATED-CAPTURED or PERSIST-PENDING and is **not merge-eligible**; a provider
 URL found in a deliverable is a defect, replaced with the ledger's permanent URL
 before the pen; **an ASSET-LOST-PAID line missing from the completion report is
 a defect of the highest class.**
-
----
-
-## 14. THE IMAGE LANE IN THE STAGED PIPELINE — the sub-pipeline, gated by PROVIDER-READY
-
-**When this section applies:** any build whose pages consume generated images —
-funnel pages, website pages, or both (funnel-architecture.md section 15 wires
-the six stages onto every funnel page; this section is the image lane those
-stages draw from). **The image lane is NOT a standalone step** — it is the
-image sub-pipeline INSIDE the staged pipeline: the manifest it produces is the
-`STAGE-HERO` and `STAGE-IMAGES` input (pipeline.md, stage definitions), and
-each of its ledger lines is a stage ledger line. The lane runs when and only
-when the provider gate below passes; when the gate fails, the run takes the
-declared without-media path (section 9.3) and the affected stage slots carry
-their MEDIA-GAPS entries — the stage still completes, honestly marked.
-
-**⛔ THE PROVIDER-READY GATE — reachability is PROVEN BEFORE the promise, never
-after.** No image is promised to the client, and no manifest row is written as
-generation-eligible, until a live smoke test has passed against the chosen
-provider (section 9.1's ladder decides the provider; the smoke is
-`media-pipeline.md` section 2's submit-and-poll for kie, or the section 3
-`/v1/models` liveness call plus a synchronous 1K generation for Agnes). The
-gate answers one of three, recorded as the ledger line:
-
-```
-PROVIDER-READY: <kie|agnes> | <PASS|FAIL|UNDETERMINED> | smoke=<ISO8601> | fail=<which check> | path=<media|without-media>
-```
-
-- **PASS** → the image lane opens; the run may promise images and write
-  generation-eligible manifest rows.
-- **FAIL** → the run says so plainly and takes the without-media path
-  (section 9.3): marked spaces + the MEDIA-GAPS manifest, **never a promise
-  made on an unproven key.** "A key present but failing its smoke test means
-  that provider is NOT USABLE NOW" (section 9.1) — the gate makes that
-  fail-closed ordering mechanical: no PROVIDER-READY PASS, no image promise.
-- **UNDETERMINED** (instrument broken, section 9.2 Branch 5) → treated as
-  FAIL for promising purposes; recorded honestly.
-
-**Re-taken at every decision it gates** (section 9.5): at media planning, at
-each media batch, and immediately when the client asserts placement. The gate
-is re-run before `STAGE-IMAGES` opens even when `STAGE-HERO` passed — a key
-that died mid-run (a 402/401 cluster) is caught at the batch boundary, not at
-3am.
-
-### 14.1 The image manifest — the lane's single source of truth
-
-**Every planned image is a manifest row** — one row per generation, written
-BEFORE the first build dispatch, as a section of the execution plan (document
-16, `references/documents.md`), never a new file. Each row carries, minimally:
-
-| Field | Content |
-|---|---|
-| slot | where the image lands: `<page>:<section>` |
-| page | the page it serves (funnel page name or site page) |
-| size | resolution tier (1K/2K/4K, per the resolved member's table) |
-| aspect | aspect ratio, legal per the resolved member's table |
-| prompt | the band-passing generation prompt (section 4), mode chosen (t2i or i2i), style directive where references attach |
-| provider | kie or agnes |
-| model | the resolved model id this run's smoke proved callable |
-| cost | estimated credits or meter-units against the run's burn budget (section 10) |
-| temp-url | the provider's result URL, recorded AUDIT-ONLY as `provider-url=` (13.1), never a deliverable reference |
-| expiry | the temp URL's 24h deadline (section 13.6) — the expiry-class input to the orphan sweep (Issue 10) |
-| status | one of the exhaustively defined states (13.3): `PLANNED → SUBMITTED → GENERATED-CAPTURED → PERSISTED` (done-eligible), or the failure states `FAILED-TIMEOUT`, `FAILED-CAPTURE`, `PERSIST-PENDING`, `ASSET-LOST-PAID`, `SUBMITTED-NO-RESPONSE` |
-
-**The manifest is written before the first build dispatch** (Issue 7 FIX step
-3): `STAGE-HERO` and `STAGE-IMAGES` read their work from the manifest; the
-build never improvises an image at build time. A row's `temp-url` and `expiry`
-are written at generation time, in the SAME pipeline step as the capture
-(13.2 Phase A) — never deferred.
-
-### 14.2 The lane's fail-closed behavior
-
-**A provider failure mid-run stops the IMAGE LANE, never the build.** The
-mechanics:
-
-1. A failure that is provider-wide (401/402/403 cluster, balance exhausted,
-   sustained 429) fails the affected manifest rows **FAILED** with the error
-   recorded — a 402 is an account condition: report it and wait, or spill per
-   the consented overflow clause (section 10's capacity events; `capacity.md`'s
-   response ladder).
-2. The MEDIA-GAPS manifest gains one entry per failed row — the slot, the
-   prepared prompt, and the cost — and the row's page slot takes the declared
-   placeholder treatment (section 9.3), never a stock image and never a
-   generated stand-in passed off as final art.
-3. The BUILD continues: a failed image lane parks its own rows and the stage
-   ledger lines name the gaps; nothing else in the pipeline stalls.
-4. **Never a silent skip.** A failed row is either an honestly marked
-   MEDIA-GAPS entry or a reported loss (ASSET-LOST-PAID in the completion
-   report) — there is no third, quiet state.
-
-### 14.3 The lane's verification
-
-Issue 7 FIX step 6, mechanically:
-
-- **Working key:** a test run produces every manifest row as a real file —
-  each row's `GENERATED-CAPTURED` state has a local file, verified non-empty
-  with magic bytes and sha256 (13.2), and the row's `PERSISTED` state has its
-  permanent URL read back (13.7).
-- **Dead key:** the PROVIDER-READY gate fails closed, the run produces zero
-  fake images, and the without-media path (9.3) delivers the marked spaces and
-  the MEDIA-GAPS manifest.
