@@ -917,8 +917,38 @@ The key checks themselves belong to `environment-sweep.md`; the model rules, the
 prompt band, and the image and video pipelines belong to `media-pipeline.md`. The
 interview's whole job here is the choice, and the consent to spend money.
 
+**⛔ THE PROVIDER-REACHABILITY GATE — a promise of images is never spoken
+before the chosen provider answers a live smoke test.** This is the media-block
+close. Before ANY sentence that promises pictures or video — the "where the
+pictures end up" line below included — the run proves the provider it just
+seated. For Kie.ai that is a REAL submit-and-poll: the API is async task-based
+(no sync endpoint, no base64 responses — always hosted URLs; `media-pipeline.md`
+§2 owns the smoke-test contract), so the gate submits one 1K, lowest-cost
+generation through the real endpoint (`createTask`) and polls it to terminal
+(`state` = `success | fail`, or timeout). For Agnes it is the authenticated
+liveness probe plus one synchronous generation requesting `b64_json`
+(`media-pipeline.md` §3). The smoke test proves four things at once: the model
+id resolves, the auth works, the account has credit, and the real per-image
+cost (`creditsConsumed`). Record the outcome in the decision register / ledger:
+
+- **PASS** → line `PROVIDER-REACHABLE: yes (<provider>, <model>,
+  <creditsConsumed>)`. Only then may the run speak the promise below.
+- **FAIL — key, reachability, or transport** (401, 5xx, DNS failure, poll
+  timeout) → line `PROVIDER-REACHABLE: no (<provider>, <error>)`. Say so
+  plainly and take the without-media path (lines 902-912 above: marked spaces +
+  MEDIA-GAPS manifest) instead of promising images. Never a silent skip, never
+  a promise made on an unproven key, never a stock stand-in passed off as art.
+- **FAIL — no credits** (402) → line `PROVIDER-REACHABLE: no-credits
+  (<provider>)`. This is an account condition, reported honestly, in these
+  words: **"I can generate images with your <Kie.ai|Agnes> account but it needs
+  credits — want to proceed knowing the cost?"** Consent to spend is the ONLY
+  way past this gate; without it the run takes the without-media path. Never
+  promise free images on a dead account.
+
 **Where the pictures END UP is told, never asked — it is not a choice, it is what
-"finished" means.** No question is added for it and none may be invented here:
+"finished" means.** Say it only after the gate above has PASSED; on any fail
+branch the without-media message above is the whole of what is said. No question
+is added for it and none may be invented here:
 every picture and video this build generates is saved into the client's own
 Convert and Flow media library, in a folder named for their project, and the
 saved copy's permanent link is what the pages point at. The link the picture
