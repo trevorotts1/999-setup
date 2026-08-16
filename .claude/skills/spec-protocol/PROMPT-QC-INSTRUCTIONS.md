@@ -1,8 +1,19 @@
 # QC Rulebook — the ten categories
 
-Every built unit is scored on ten categories, each 1 to 10, with quoted proof
-beside every score. The gate is **8.5 — arithmetic, not judgement**. Below 8.5
-the fix loop runs; at or above 8.5 the unit passes into the landing queue.
+Every built unit is judged by a blind critic (Law 49 — the critic sees the
+work, never the effort) against the item's named, fetchable bar (Law 48).
+**The verdict is binary: PASS or FAIL. There is no numeric pass lane.**
+PASS = completely exceeds expectation (Issue 17, PART 1 item 5) — the single
+pass standard, never "acceptable", never "meets spec", never "good enough".
+FAIL = looped to the builder with the critic's exact finding, max 20 fix-loop
+cycles per finding, then escalation to the operator with the full finding
+history (Rule 3.22, operator ruling 2026-08-14). The non-success states
+BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
+
+The ten categories below are the critic's rubric surface — quoted proof
+beside every judgement. Each category's judgement maps to the binary
+verdict: any category that does not completely exceed its bar is a FAIL,
+and its exact finding loops the item to the builder.
 
 **Law 50 — the bar wins by default (binding on every verdict).** A judge
 verdict is one of: PASS, FAIL (looped to the builder with the exact finding,

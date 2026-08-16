@@ -358,11 +358,21 @@ has checked nothing (a QC section that merely repeats VERIFY has not been
 written). If a card arrives with no usable rubric, that is itself a finding —
 send it back; do not invent a generic check and call it the card's rubric.
 
-### The 8.5 gate
+### The ONE way — a blind critic, a binary verdict
 
-Ten categories, each scored 1 to 10, with quoted proof beside every score. The gate
-is 8.5 — arithmetic, not judgement. Below 8.5 → the fix loop. At or above 8.5 →
-pass, into the landing queue. The categories (from PROMPT-QC-INSTRUCTIONS.md):
+QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS =
+completely exceeds expectation; FAIL = looped to the builder with the exact
+finding, max 20 fix-loop cycles per finding, then escalation to the operator
+with the full finding history (Rule 3.22, operator ruling 2026-08-14). **The
+verdict is binary — there is no numeric pass lane, no "at or above a score"
+pass.** The non-success states BLOCKED / INFEASIBLE / LIMIT REACHED are never
+relabeled PASS (Law 50).
+
+The ten categories below are the critic's rubric surface — quoted proof
+beside every judgement. Each category's judgement maps to the binary verdict:
+any category that does not completely exceed its bar is a FAIL, and its exact
+finding loops the item to the builder. The categories (from
+PROMPT-QC-INSTRUCTIONS.md):
 
 1. Does it actually work?
 2. Is it correct in the hard cases?
@@ -375,8 +385,8 @@ pass, into the landing queue. The categories (from PROMPT-QC-INSTRUCTIONS.md):
 9. Is it honest and fully verified?
 10. Is it actually done, front to back?
 
-Passing the 8.5 gate feeds the landing queue — but no task and no checklist box
-flips to COMPLETE on a gate score alone. A TASK IS COMPLETE ONLY WHEN ALL SIX
+A PASS feeds the landing queue — but no task and no checklist box flips to
+COMPLETE on a verdict alone. A TASK IS COMPLETE ONLY WHEN ALL SIX
 CONDITIONS HOLD (references/execution-architecture.md): the workflow finished;
 the deliverable exists; required tests passed; required verification passed;
 acceptance criteria are satisfied; AND project state was updated. "Agent returned
@@ -444,10 +454,10 @@ green. Green under a real mutation is hollow and fails.
 Every work item passes through three stacked gates, in order. A later gate never
 rescues a failed earlier one:
 
-- **Gate 1 — hard correctness.** The 8.5 gate above, the whole of it: the
-  ten-category score at or above 8.5 (arithmetic, not judgement), the fail-closed
-  rules, mutation proof, and the per-card rubric. Below 8.5 → the fix loop. No
-  other gate can flip this.
+- **Gate 1 — hard correctness.** The ONE way above, the whole of it: the
+  ten-category rubric (blind critic, binary verdict, completely-exceeds bar),
+  the fail-closed rules, mutation proof, and the per-card rubric. FAIL → the
+  fix loop. No other gate can flip this.
 - **Gate 2 — on-brief fidelity.** The build matches the brief verbatim: GOAL.md
   (document 8, seeded verbatim from the brainstorm — the scope is what the user
   asked, never what a builder wanted to add), the scope fence, and Law 42
@@ -456,7 +466,7 @@ rescues a failed earlier one:
 - **Gate 3 — comparative excellence.** A blind A/B against a frozen, named external
   bar (references/gauntlet.md). The pass rule is absolute: **comparative
   excellence NEVER overrides a failed Gate 1 or Gate 2.** A unit can win its A/B
-  and still be blocked by an 8.4 score or an off-brief feature. The comparative
+  and still be blocked by a Gate 1 FAIL or an off-brief feature. The comparative
   layer raises the ceiling; the hard and on-brief gates hold the floor.
 
 ### The comparative sub-stage (runs for EVERY work item — every item has a bar)
@@ -508,10 +518,10 @@ ADDITION TO the ten-category score, never as a replacement:
   is a NON-VERDICT: never PASS, never FAIL, never INDETERMINATE — it is
   reissued**, never recorded as a verdict.
 
-The comparative sub-stage is additive: it cannot lower an 8.5 pass, and an
-INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The 8.5
-gate remains the per-unit floor** — the comparative layer sits on top of it and
-never lowers or replaces it.
+The comparative sub-stage is additive: it cannot overturn a PASS, and an
+INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The
+binary Gate 1 verdict remains the per-unit floor** — the comparative layer
+sits on top of it and never lowers or replaces it.
 
 ### The review identifies two categories of findings
 
@@ -554,7 +564,7 @@ item.
 
 ### The fix loop (Rule 3.22 — bounded and recorded)
 
-Below 8.5: write the six-part finding — (1) which category and the score, (2) the
+On FAIL: write the six-part finding — (1) which category and the finding, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
 (4) exactly what to change (a before-and-after for code), (5) how the fixer proves
 it is fixed (the command and expected result), (6) what a naive fix would break
@@ -562,8 +572,8 @@ it is fixed (the command and expected result), (6) what a naive fix would break
 builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
 summarized, never stripped of its evidence — and the builder fixes exactly that
 finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
-judge). A judge re-scores from scratch with fresh proof and a fresh break-it pass.
-Earlier scores never carry.
+judge). The judge re-judges from scratch with fresh proof and a fresh break-it
+pass. Earlier verdicts never carry.
 
 **The loop is bounded and recorded (binding):**
 - **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).

@@ -1,6 +1,6 @@
 # WF-4D Slice 1 Evidence — Issue 17 QC Protocol Wiring (FIX)
 
-Commit: `4db5951` on `fix/17-qc-protocol` (clone /Users/blackceomacmini/work-999-setup-fix/WF-4D)
+Commit: `4db5951` on `fix/17-qc-protocol` (clone /Users/blackceomacmini/work-999-setup-fix/WF-4D), with the slice-1 FIX commit following it
 Cites: WAVE 4 DISPATCH 2026-08-16T20:12Z — /Users/blackceomacmini/work-999-setup/FIX-LEDGER.md line 70
 Branch base: dc688c7 (FIX-LEDGER: WF-3A slice 2, WAVE 3 REDISPATCH)
 Backups: holding/*.bak-wf4d-s1 (7 files, pre-commit state)
@@ -28,7 +28,8 @@ this into the spec-protocol skill so every item QC follows the protocol."
 
 ### D1. "PASS = completely exceeds expectation" — the pass standard — absent from the skill
 Census: `grep -rn "exceeds expectation"` across .claude/skills/spec-protocol → zero hits (only my insertion later). The skill taught "at or above 8.5 the unit passes" (PROMPT-QC-INSTRUCTIONS.md lines 4-5, pre-edit) — an "acceptable/meets-spec" pass standard, the exact defect Issue 17's PROBLEM names ("'good enough' passes", spec line 382).
-FIX: references/pipeline.md Stage 2 opening anchor — "PASS = completely exceeds expectation — the ONE pass standard (Issue 17, PART 1 item 5; binding on every verdict)". Defines exceed-expectation against the bar; "meets the bar exactly" is ITERATE with the returned gap "the bar is matched, not exceeded — exceed it"; answer-key case (PART 1 item 4) — binary PASS IS the exceed standard when the surface is a checkable line; D1/D2 client answers (interview.md Block D) seed the bar, never lower the judge's standard (Law 43).
+FIX (initial, this slice's commit): references/pipeline.md Stage 2 opening anchor — "PASS = completely exceeds expectation — the ONE pass standard (Issue 17, PART 1 item 5; binding on every verdict)". Defines exceed-expectation against the bar; "meets the bar exactly" is ITERATE with the returned gap "the bar is matched, not exceeded — exceed it"; answer-key case (PART 1 item 4) — binary PASS IS the exceed standard when the surface is a checkable line; D1/D2 client answers (interview.md Block D) seed the bar, never lower the judge's standard (Law 43).
+FIX (completion, after blind-critic FAIL): the initial fix left the conflicting 8.5 pass lane VERBATIM in PROMPT-QC-INSTRUCTIONS.md lines 4-5 and pipeline.md's "The 8.5 gate" section — the dual-standard defect the critic named. Both sites now teach ONLY the binary blind-critic protocol: "The 8.5 gate" section is "The ONE way — a blind critic, a binary verdict" (verdict binary, no numeric pass lane; PASS = completely exceeds expectation; FAIL = looped with the exact finding, max 20 cycles, full-history escalation; Law-50 states never relabeled PASS; the ten categories are the critic's rubric surface mapping to the binary verdict); PROMPT-QC-INSTRUCTIONS.md opening rewritten to the same ONE-way language; the remaining numeric-pass residue in pipeline.md removed ("Passing the 8.5 gate" → "A PASS", Gate 1 and Gate 3 comparative text, Stage 3 "Below 8.5" → "On FAIL", "re-scores" → "re-judges"). Post-fix: zero "8.5" hits in both files.
 
 ### D2. Fix loop cap drift: "3-cycle cap" vs the mandated 20
 Census (pre-fix): "3-cycle cap (Rule 3.22)" in references/loops.md lines 208/226/231/238/291; references/gauntlet.md lines 505/666/1018; references/documents.md lines 216-217 ("cycle count: n of 3"); pipeline.md "three failed loops" (Stage 3, pre-sibling) + Named Stop 8 "Three failed fix attempts on the same finding" (pipeline.md line 926). The spec mandates max 20 cycles (line 386, 469 — operator ruling 2026-08-14).
@@ -57,7 +58,8 @@ FIX (mine): gauntlet.md §14 station 11 gains the protocol binder (blind, Law 49
 ## Verification performed (all commands run, outputs above)
 1. `git status` before edits: concurrent-slice uncommitted work detected in 5 shared files — read the full diff before touching; no sibling edit clobbered.
 2. Full-file reads (never grep-for-judgment): spec lines 380-390 + PART 1 lines 460-474; SKILL.md (1687 lines); pipeline.md (947); gauntlet.md (1244); PROMPT-QC-INSTRUCTIONS.md; documents.md; loops.md; execution-architecture.md; interview.md Block D region; workflows.md diff.
-3. Post-fix census: `grep -rn "3-cycle|n of 3|three failed|bounded at three"` → rc=1 (zero residue). `grep -c "provenance=STRIPPED"` → pipeline.md 1, PROMPT-QC-INSTRUCTIONS.md 1, documents.md 1. `grep -c "completely exceeds expectation"` → pipeline.md 3.
+3. Post-fix census: `grep -rn "3-cycle|n of 3|three failed|bounded at three"` → rc=1 (zero residue). `grep -c "provenance=STRIPPED"` → pipeline.md 1, PROMPT-QC-INSTRUCTIONS.md 0, documents.md 1. `grep -c "completely exceeds expectation"` → pipeline.md 3.
+   Census correction (blind critic found the non-reproducing claim): PROMPT-QC-INSTRUCTIONS.md carries the `provenance=<STRIPPED|VIOLATION>` FIELD (line 39, one hit for the field pattern) but no `provenance=STRIPPED` LITERAL — its mechanical-check text writes "provenance=` is STRIPPED". Reported here as 1 for the literal was wrong; actual literal count is 0. The claim's substance — provenance attests the blind critic in all three files — stands via the field (PROMPT) and the literal (pipeline.md 1, documents.md 1).
 4. `bash -n tools/ledger.sh` and `bash -n tools/anchor.sh` → syntax OK (record-write path and reconcile path intact).
 5. `git show --stat HEAD` — commit 4db5951: 6 files, 140 insertions, 32 deletions; branch fix/17-qc-protocol.
 
@@ -65,6 +67,7 @@ FIX (mine): gauntlet.md §14 station 11 gains the protocol binder (blind, Law 49
 - O1: workflows.md judge-brief/schema (sibling slice 2) does not yet carry the `provenance` field in its mechanical `recordShapeOk` — the schema requires judge/bar/bar_fetch/outcome/self_qc. With the record's field 6 landed in pipeline.md/PROMPT-QC-INSTRUCTIONS.md/documents.md, workflows.md is the next seam; not edited here (one unit = one commit per slice; parallel-writer discipline).
 - O2: post-commit SKILL.md shows a further sibling edit (self-audit census text "six mechanical checks") — uncommitted, not mine, left untouched.
 - O3: the spec's QC-bar verification (blind critic judging a sample of item QC records) is exercised by sibling slice 5's evidence; no duplicate run here.
+- O4 (FIX): the dual-standard defect named above lived in BOTH files the initial fix touched (PROMPT-QC-INSTRUCTIONS.md lines 4-5, pipeline.md "The 8.5 gate" section) — the critic's blind FAIL was exact. The completion commit removes the 8.5 pass lane from both; zero "8.5" residue in the two files post-fix.
 
 ## Verdict
 VERDICT: DONE
