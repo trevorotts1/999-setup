@@ -54,9 +54,14 @@ Carried forward from the interim boss (Trevor's direct order 2026-08-16):
 
 THE BOSS IS GOVERNED TOO (PART 4): a heartbeat alert fires if the cron fails —
 no BOSSCYCLE-* line within two intervals (10 min) -> alert through the
-operator's Telegram bot (TELEGRAM_ALERTS_BOT_TOKEN -> OWNER_CHAT_ID, names
-only; absent env keys skip the alert, never crash the cycle). The alert is
-sent by the NEXT cycle that runs, never by the dead one.
+operator's OpenClaw gateway (fleet-heartbeat doctrine — NEVER a raw
+api.telegram.org call; rescue-rangers-bridge history: the raw path broke with
+a malformed bot URL): account rescue-rangers -> OWNER_CHAT_ID (operator DM,
+names only; absent env keys skip the alert, never crash the cycle;
+BOSS_ALERT_DRY_RUN=1 records the intent without sending). The alert is sent
+by the NEXT cycle that runs, never by the dead one. Both BOSSCYCLE-CLEAN and
+BOSSCYCLE-ALERT are cycle lines — the boss's own ALERT line proves the cycle
+ran, so a recovered boss stops flagging its own prior death.
 
 On violation: append VIOLATION-STOP lines to the ledger, write/update the stop
 file, exit 2 (governance-exit contract per PART 4). On clean: append one
@@ -73,7 +78,6 @@ import re
 import signal
 import subprocess
 import sys
-import urllib.request
 
 LEDGER = "/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md"
 STOP = "/Users/blackceomacmini/work-999-setup/CONTROL/stop-workstream"
@@ -87,7 +91,8 @@ SETTINGS_STORES = [
     os.path.expanduser("~/.claude-nine/settings.json"),
 ]
 # Telegram heartbeat alert (operator env, names only — values stay in the env).
-ALERT_BOT_TOKEN_ENV = "TELEGRAM_ALERTS_BOT_TOKEN"
+# Transport = the OpenClaw gateway (account name is the bot identity; the raw
+# bot token path was removed — fleet-heartbeat doctrine).
 ALERT_CHAT_ID_ENV = "OWNER_CHAT_ID"
 
 # Operator doctrine (spec 2026-08-15, Issue 14 — supersedes the old 2/3/10
@@ -306,7 +311,7 @@ def check_wave_lock(lines):
     (no wave N+1 dispatch before WAVE N CLOSED)."""
     closed = set()
     new_wave_deps = set()
-    max_dispatched = 0
+    dispatched = set()
     for ln in lines:
         if ln.startswith("- `WAVE ") and "CLOSED" in ln:
             m = re.search(r"WAVE (\d+) CLOSED", ln)
@@ -318,15 +323,22 @@ def check_wave_lock(lines):
         if is_dispatch_line(ln):
             m = re.search(r"WAVE (\d+)", ln)
             if m:
-                max_dispatched = max(max_dispatched, int(m.group(1)))
+                dispatched.add(int(m.group(1)))
     violations = []
-    # Dependency rule: wave N+1 dispatch requires WAVE N CLOSED.
-    for w in range(2, max_dispatched + 1):
+    # Dependency rule: wave N+1 dispatch requires WAVE N CLOSED. Only waves
+    # ACTUALLY dispatched are judged — a ledger that never dispatched wave N
+    # cannot be charged for it (absence is not evidence; PART 4 negative
+    # contract: flag what is present, never what is missing from a range).
+    # Wave 1 opens the run from a fresh-start baseline (no prior wave to
+    # close) and is exempt by design.
+    for w in sorted(dispatched):
+        if w == 1:
+            continue
         if w - 1 not in closed:
             violations.append(f"wave {w} dispatched but no WAVE {w-1} CLOSED line")
     # Locked-table rule: waves beyond the immutable count need a NEW-WAVE-N line.
-    for w in range(LOCKED_WAVE_COUNT + 1, max_dispatched + 1):
-        if w not in new_wave_deps:
+    for w in sorted(dispatched):
+        if w > LOCKED_WAVE_COUNT and w not in new_wave_deps:
             violations.append(
                 f"wave {w} dispatched, not in the locked table (count {LOCKED_WAVE_COUNT}), "
                 f"no NEW-WAVE-{w} dependency line")
@@ -375,12 +387,21 @@ def check_width(lines):
 
 
 def check_claims(lines):
+    """PART 4 check 5: any final-report claim (DONE/FAIL) naming evidence
+    files that do not exist on disk = violation. The verdict may be the line's
+    own class or carried in the body ('WF-1A BUILDER DONE', 'WAVE 1 WORKFLOW
+    DONE', 'F-2 FAIL ...') — the gate is a token scan, never the first token
+    alone (first-token gating left 97 of 99 live lines unexamined)."""
     broken = []
     for ln in lines:
-        if "DONE" not in ledger_class(ln) and "FAIL" not in ledger_class(ln):
+        verdicts = [t for t in ln[3:].split() if t in ("DONE", "FAIL")]
+        if not verdicts:
             continue
-        for path in re.findall(r"/Users/blackceomacmini/[^\s`]+", ln):
-            if not os.path.exists(path):
+        # Path regex: stop before whitespace or backtick; strip trailing
+        # sentence punctuation from the match (never mid-path chars like '-').
+        for raw in re.findall(r"/Users/blackceomacmini/[^\s`]+", ln):
+            path = raw.rstrip(".,;:!?")
+            if not path or not os.path.exists(path):
                 broken.append(f"line cites missing path {path}: {ln[:100]}")
     return broken
 
@@ -388,17 +409,21 @@ def check_claims(lines):
 def check_heartbeat(lines):
     ts = None
     for ln in lines:
-        if ledger_class(ln) == "BOSSCYCLE-CLEAN":
+        # Any BOSSCYCLE-* line (CLEAN or ALERT) is a cycle line — the ALERT
+        # line the boss writes after a recovery is itself proof the cycle ran,
+        # so a recovered boss stops flagging its own prior death.
+        cls = ledger_class(ln)
+        if cls in ("BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT"):
             ts = line_timestamp(ln)
     if ts is None:
-        return "no BOSSCYCLE-CLEAN line yet (first cycle baseline)"
+        return "no BOSSCYCLE-* line yet (first cycle baseline)"
     try:
         last = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
     except ValueError:
-        return f"unparseable BOSSCYCLE-CLEAN timestamp {ts}"
+        return f"unparseable BOSSCYCLE-* timestamp {ts}"
     age = (datetime.datetime.now(datetime.timezone.utc) - last).total_seconds()
     if age > 600:
-        return f"last BOSSCYCLE-CLEAN {age/60:.0f} min ago (> 2 cycles)"
+        return f"last BOSSCYCLE-* line {age/60:.0f} min ago (> 2 cycles)"
     return None
 
 
@@ -474,7 +499,7 @@ def check_drift(lines):
                     f"drift: {run} consecutive contentless heartbeat ticks "
                     f"(limit {DRIFT_RUN_LIMIT}) — lane stopped, checkpoint restart required")
                 break
-        elif cls == "BOSSCYCLE-CLEAN":
+        elif cls == "BOSSCYCLE-CLEAN" or cls == "BOSSCYCLE-ALERT":
             run = 0
     # Per-wave boundary reconcile (waves 2+, dispatched after the boss's own
     # enforcement epoch — pre-epoch waves cannot be retroactively judged).
@@ -878,17 +903,28 @@ def kill_pids(workstream):
 def send_heartbeat_alert(msg):
     """PART 4: the boss is governed too — a heartbeat alert fires if the cron
     fails (no BOSSCYCLE-* line within two intervals). Sent by the NEXT live
-    cycle. Env keys absent -> skip silently (the ledger still records)."""
-    token = os.environ.get(ALERT_BOT_TOKEN_ENV)
+    cycle through the operator's OpenClaw gateway (fleet-heartbeat doctrine —
+    NEVER a raw api.telegram.org call; the raw path broke historically). Dry
+    run records the intent without sending (test mode: never fire the live
+    alert path from a test). Env keys absent -> skip silently (the ledger
+    still records)."""
+    if os.environ.get("BOSS_ALERT_DRY_RUN") == "1":
+        return "dry-run"
     chat_id = os.environ.get(ALERT_CHAT_ID_ENV)
-    if not token or not chat_id:
+    if not chat_id:
         return "env-missing"
+    openclaw = os.environ.get("OPENCLAW_BIN", os.path.expanduser("~/.local/bin/openclaw"))
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = json.dumps({"chat_id": chat_id, "text": msg}).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return f"http-{resp.status}" if resp.status == 200 else f"http-{resp.status}"
+        proc = subprocess.run(
+            [openclaw, "message", "send", "--channel", "telegram",
+             "--account", os.environ.get("BOSS_ALERT_TG_ACCOUNT", "rescue-rangers"),
+             "-t", chat_id, "-m", msg],
+            capture_output=True, text=True, timeout=45)
+        if proc.returncode == 0:
+            return "openclaw-ok"
+        return f"openclaw-rc{proc.returncode}"
+    except FileNotFoundError:
+        return "openclaw-missing"
     except Exception as exc:
         return f"error-{type(exc).__name__}"
 
@@ -927,7 +963,7 @@ def main():
     for q in check_questions(lines):
         violations.append(f"count: {q}")
     for d in check_drift(lines):
-        violations.append(f"drift: {d}")
+        violations.append(d)
     for o in check_orphans(lines):
         violations.append(f"orphan: {o}")
     for s in check_stages(lines):
@@ -950,8 +986,18 @@ def main():
         else "restart from last clean checkpoint: none recorded in project_state.json (conductor names it)"
     bound = "loop bound: QC protocol 20 cycles per finding, then escalation with full history"
     if violations:
-        streams = {v.split()[0] for v in violations if v.startswith("cap violation") or v.startswith("scope")}
-        streams.update({v.split(":")[0] for v in violations if v.startswith("wave-lock")})
+        # Kill authority (out-of-process runs only): pin the pids file key to
+        # the WORKSTREAM the violation names — WF-\d[A-Z] / wave-N tokens in
+        # the finding text — never to the check's own name ("scope:" was the
+        # old bug: the check name was derived as the stream and the pinned
+        # pid never killed). A violation that names no workstream kills
+        # nothing; the stop file below still routes the conductor's TaskStop.
+        streams = set()
+        for v in violations:
+            for m in re.finditer(r"\bWF-\d[A-Z]\b", v):
+                streams.add(m.group(0))
+            for m in re.finditer(r"\bwave[-\s]?(\d+)\b", v, re.IGNORECASE):
+                streams.add(f"wave-{m.group(1)}")
         for ws in sorted(streams):
             kills.extend(kill_pids(ws))
 
