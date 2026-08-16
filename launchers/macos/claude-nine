@@ -128,15 +128,28 @@ const pairs = [
   ["HK", "ANTHROPIC_DEFAULT_HAIKU_MODEL", r.haiku],
   ["SUB", "CLAUDE_CODE_SUBAGENT_MODEL", r.subagent],
   ["MO", "CLAUDE_CODE_MAX_OUTPUT_TOKENS", String(st.maxOutputTokens || 32000)],
-  ["CON", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY", String(st.concurrency || 2)],
+  ["CON", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY", String(st.concurrency || 10)],
 ];
-// CLAUDE_CODE_EFFORT_LEVEL is deliberately NOT exported from the state file.
-// /effort selections persist via the profile's settings.json effortLevel; a
-// forced env export overrides the picker (the 2026-08-11 ultracode-revert bug).
-// Router thinking hints live in the route suffixes ((max)), not here.
+// CLAUDE_CODE_EFFORT_LEVEL is deliberately NOT exported from the state file's
+// effortLevel. A forced env export overrides the picker (the 2026-08-11
+// ultracode-revert bug). Router thinking hints live in the route suffixes
+// ((max)), not here.
 // Opt back in per launch with CLAUDE_NINE_FORCE_EFFORT=<level>.
 if (process.env.CLAUDE_NINE_FORCE_EFFORT) {
   pairs.push(["EFF", "CLAUDE_CODE_EFFORT_LEVEL", process.env.CLAUDE_NINE_FORCE_EFFORT]);
+}
+// lastEffortSelection (Issue 1 persistence): the user's last /effort selection
+// is re-applied at exec time. ultracode becomes the --effort ultracode CLI
+// flag on the exec line (the ONLY mechanism that survives a session boundary
+// for ultracode); a persistable level becomes a per-launch env export here.
+// CLAUDE_NINE_FORCE_EFFORT wins over lastEffortSelection (checked above).
+const last = st.lastEffortSelection;
+if (typeof last === "string" && !process.env.CLAUDE_NINE_FORCE_EFFORT) {
+  if (last === "ultracode") {
+    process.stdout.write("LASTEFFORT=ultracode\n");
+  } else if (["low", "medium", "high", "xhigh", "max"].includes(last)) {
+    pairs.push(["EFF", "CLAUDE_CODE_EFFORT_LEVEL", last]);
+  }
 }
 for (const [, envName, val] of pairs) {
   if (val) out.push(`export ${envName}=${JSON.stringify(String(val))}`);
@@ -148,6 +161,14 @@ NODE
     exit 1
   fi
   eval "$exports"
+
+  # 6b. lastEffortSelection = ultracode -> --effort ultracode CLI flag on the
+  #     exec line (session-only by product design; the flag is the only way to
+  #     re-enter it across a session boundary).
+  EFFORT_ARGS=()
+  if [ "$LASTEFFORT" = "ultracode" ]; then
+    EFFORT_ARGS=(--effort ultracode)
+  fi
 
   # 7. Assert the routing boundary is actually armed before exec — never launch
   #    claude unrouted. If a required var is missing, the state is corrupt.
@@ -164,8 +185,10 @@ NODE
   echo "   haiku:          $ANTHROPIC_DEFAULT_HAIKU_MODEL" >&2
   echo "   haiku fallback: ${ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK:-none}" >&2
 
-  # 9. Exec the same claude binary, forwarding all args.
-  exec "$claude" "$@"
+  # 9. Exec the same claude binary, forwarding all args. The ultracode flag
+  #    (when lastEffortSelection says so) rides first; a user-passed --effort
+  #    still wins (claude's CLI takes the last flag).
+  exec "$claude" "${EFFORT_ARGS[@]}" "$@"
 }
 
 main "$@"

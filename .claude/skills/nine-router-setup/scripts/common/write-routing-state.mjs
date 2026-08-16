@@ -20,6 +20,14 @@
 //     "maxOutputTokens": 32000,
 //     "effortLevel": "xhigh",       // highest PERSISTABLE effort ("max" is
 //                                   // session-scoped and cannot be saved)
+//     "lastEffortSelection": null, // the user's last /effort selection
+//                                   // (low|medium|high|xhigh|max|ultracode),
+//                                   // re-applied by the launcher at exec time.
+//                                   // Seeded null on first write; on re-provision
+//                                   // the existing value is carried forward (never
+//                                   // wiped by a setup re-run). ultracode is the
+//                                   // ONLY value that must never reach a settings
+//                                   // file — it lives here alone.
 //     "claudeBinary": "/abs/path/to/claude",       // resolved by caller
 //     "nineRouterBinary": "/abs/path/to/9router",   // resolved by caller
 //     "port": 20128
@@ -53,6 +61,9 @@ function readStdin() {
 const KNOWN_ROUTE_KEYS = new Set([
   "fable", "opus", "sonnet", "haiku", "subagent", "vision", "haikuFallback",
 ]);
+// The only effort values the launcher may re-apply. ultracode is session-only
+// by product design and persists ONLY here (never in a settings file).
+const EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh", "max", "ultracode"]);
 // Allowed route prefixes, split by thinking capability:
 //   ds/        DeepSeek Direct, thinking at default level (parsed from "(max)")
 //   ds-light/  DeepSeek Direct light — no "(max)" thinking (cheap lane, e.g. Haiku)
@@ -113,6 +124,25 @@ async function main() {
     console.error(`write-routing-state: WARNING: ${w}`);
   }
 
+  // Preserve the user's last effort selection across setup re-runs. The
+  // platform scripts re-provision on every run; wiping lastEffortSelection
+  // would silently un-persist a /effort ultracode the user picked. A re-run
+  // only seeds it when the file is brand new (first write).
+  let lastEffortSelection = input.lastEffortSelection ?? null;
+  if (lastEffortSelection === null) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(statePath, "utf8"));
+      if (typeof prev.lastEffortSelection === "string") lastEffortSelection = prev.lastEffortSelection;
+    } catch {
+      // First write or unreadable state — seed null.
+    }
+  }
+  if (lastEffortSelection !== null && !EFFORT_VALUES.has(lastEffortSelection)) {
+    console.error(
+      `write-routing-state: WARNING: unrecognized lastEffortSelection "${lastEffortSelection}" — kept as-is (verify the writer)`
+    );
+  }
+
   const state = {
     version: 1,
     updatedAt: new Date().toISOString(),
@@ -127,6 +157,10 @@ async function main() {
     // /effort picker (the 2026-08-11 ultracode-revert bug) — so this value is
     // the recorded default, honoured only under CLAUDE_NINE_FORCE_EFFORT.
     effortLevel: input.effortLevel || "xhigh",
+    // The user's last /effort selection (low|medium|high|xhigh|max|ultracode),
+    // re-applied by the launcher at exec time. ultracode lives ONLY here —
+    // never in a settings file (no settings key accepts it).
+    lastEffortSelection,
     claudeBinary: input.claudeBinary || "",
     nineRouterBinary: input.nineRouterBinary || "",
     // tokenRef only: the launcher resolves the actual token from platform storage.
@@ -147,7 +181,7 @@ async function main() {
   // Never print secrets (there are none in this file by construction).
   console.log(`state written: ${statePath}`);
   console.log(`routes: ${Object.keys(state.routes).join(", ")}`);
-  console.log(`concurrency: ${state.concurrency}, maxOutputTokens: ${state.maxOutputTokens}`);
+  console.log(`concurrency: ${state.concurrency}, maxOutputTokens: ${state.maxOutputTokens}, lastEffortSelection: ${state.lastEffortSelection ?? "null"}`);
 }
 
 main().catch((e) => {

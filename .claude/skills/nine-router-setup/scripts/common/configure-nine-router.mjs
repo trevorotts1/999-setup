@@ -17,12 +17,8 @@
 //   AGNES_PLAN                 starter|plus|pro
 //   DEEPSEEK_FLASH_VARIANT     (optional) ollama-0731 override
 //
-// Outputs a JSON report on stdout with NO secrets — the ONE exception is
-// report.dashboardPassword, set only when this run rotated the dashboard
-// password, which the orchestrators must receive or their subsequent API calls
-// cannot authenticate. It is never printed anywhere else.
+// Outputs a JSON report on stdout with NO secrets.
 
-import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { NineRouterClient } from "./nine-router-api.mjs";
 
@@ -147,30 +143,10 @@ async function main() {
   );
   if (!login.success) err("dashboard login rejected");
 
-  // Password rotation: when the dashboard still uses the default (fresh install),
-  // rotate to a strong random password so the router never runs on the default.
-  // The new password is stored in process.env.NINEROUTER_DASHBOARD_PW for the
-  // subsequent API calls in THIS process, and it reaches the caller exactly once
-  // via report.dashboardPassword — the single sanctioned exception to "never
-  // print keys". Without it the orchestrators cannot authenticate after a
-  // rotation. It is never printed anywhere else, and the field is absent
-  // entirely when no rotation happened this run.
-  let dashboardPw = pw;
-  let rotated = false;
-  if (login.mustChangePassword) {
-    const newPassword = crypto.randomBytes(24).toString("base64");
-    await client.patchSettings({ currentPassword: pw, newPassword }).catch((e) =>
-      err(`dashboard password rotation failed: ${e.message}`)
-    );
-    // The session cookie survives the rotation (PATCH returns 200), but re-login
-    // with the new password keeps the client consistent for every later call.
-    const relogin = await client.login(newPassword).catch((e) => err(`re-login after rotation failed: ${e.message}`));
-    if (!relogin.success) err("re-login after password rotation rejected");
-    process.env.NINEROUTER_DASHBOARD_PW = newPassword;
-    dashboardPw = newPassword;
-    rotated = true;
-    console.error("configure-nine-router: dashboard password rotated (new password stored in NINEROUTER_DASHBOARD_PW)");
-  }
+  // No password rotation: the user owns the dashboard password and manages it
+  // themselves. mustChangePassword stays an ADVISORY flag only — the completion
+  // message tells the user the default stays and they change it themselves in
+  // the dashboard.
 
   const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN } };
   const settings = await client.getSettings();
@@ -711,15 +687,10 @@ async function main() {
   })();
   report.dashboardUrl = `http://127.0.0.1:${PORT}`;  // or extract from BASE
   report.dashboardMessage = `Your 9Router dashboard: http://127.0.0.1:${PORT} — open this in your browser to manage providers and models.`;
-  // dashboardPasswordRotated means "THIS run rotated the password", not "it was
-  // rotated at some point" — the orchestrators key off report.dashboardPassword
-  // for the actual password and off this flag for messaging. The rotated
-  // password is delivered to the caller ONLY through report.dashboardPassword,
-  // the single sanctioned exception to "never print keys": without it the
-  // orchestrators' subsequent API calls would use a password the router does
-  // not have. The field is absent when no rotation happened this run.
-  report.dashboardPasswordRotated = rotated;
-  if (rotated) report.dashboardPassword = dashboardPw;
+  // mustChangePassword is advisory only: the orchestrators use it for the
+  // completion message telling the user the default password stays and they
+  // change it themselves in the dashboard. No rotation happens, ever.
+  report.mustChangePassword = !!login.mustChangePassword;
   report.notes = [
     OVERRIDE_0731
       ? "DEEPSEEK_FLASH_VARIANT=ollama-0731 enabled: Flash routed to Ollama Cloud deepseek-v4-flash:0731; concurrency recalculated."

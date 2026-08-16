@@ -16,6 +16,7 @@ Add-Type -AssemblyName System.Security
 
 # Forwarded arguments, verbatim (automatic $args under powershell -File).
 $ForwardedArgs = $args
+$EffortFlag = $null
 
 $Port = 20128
 $Base = "http://127.0.0.1:$Port"
@@ -95,6 +96,18 @@ try {
     # bug). Router thinking hints live in the route suffixes ((max)), not here.
     # Opt back in per launch with CLAUDE_NINE_FORCE_EFFORT=<level>.
     if ($env:CLAUDE_NINE_FORCE_EFFORT) { $childEnv['CLAUDE_CODE_EFFORT_LEVEL']  = $env:CLAUDE_NINE_FORCE_EFFORT }
+    # lastEffortSelection (Issue 1 persistence): the user's last /effort
+    # selection is re-applied at exec time. ultracode becomes the --effort
+    # ultracode CLI flag (the ONLY mechanism that survives a session boundary
+    # for ultracode); a persistable level becomes a per-launch env export.
+    # CLAUDE_NINE_FORCE_EFFORT wins over lastEffortSelection (checked above).
+    $lastEffort = $null
+    if ($state.lastEffortSelection) { $lastEffort = [string]$state.lastEffortSelection }
+    if (-not $env:CLAUDE_NINE_FORCE_EFFORT -and $lastEffort -eq 'ultracode') {
+        $EffortFlag = '--effort ultracode'
+    } elseif (-not $env:CLAUDE_NINE_FORCE_EFFORT -and $lastEffort -in @('low','medium','high','xhigh','max')) {
+        $childEnv['CLAUDE_CODE_EFFORT_LEVEL'] = $lastEffort
+    }
     if ($state.maxOutputTokens) { $childEnv['CLAUDE_CODE_MAX_OUTPUT_TOKENS']   = [string]$state.maxOutputTokens }
     if ($state.concurrency)     { $childEnv['CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY'] = [string]$state.concurrency }
 
@@ -117,6 +130,9 @@ try {
         $psi.EnvironmentVariables[$kv.Key] = $kv.Value
     }
     $escaped = @()
+    # Ultracode flag (when lastEffortSelection says so) rides first; a
+    # user-passed --effort still wins (claude's CLI takes the last flag).
+    if ($EffortFlag) { $escaped += $EffortFlag }
     foreach ($arg in $ForwardedArgs) {
         $escaped += Escape-Argument $arg
     }
