@@ -330,10 +330,6 @@ AGENT TEAM: mode=<team|single-session|refused-by-arithmetic|declined|probe-faile
   persistent slots consumed = lead + commanders = <n+1>, deducted BEFORE workflow width
   teammate rate-bucket: UNDETERMINED → burn governor assumes SHARED (pessimistic) unless probed
 WAVE SIZE: <w>    WORKFLOW COUNT: <w ÷ k, ≤30>    AGENTS PER WORKFLOW: <k>
-  (The wave count <w> RENDERS FROM the execution plan's locked wave table
-  (document 16) — the single source, immutable count (Issue 15 items 1 and 3).
-  This ledger computes width FROM the table; it never re-states the wave plan
-  as its own copy — a second copy drifts.)
 AGENT BUDGET DECLARATION (§17 — computed FROM this ledger, before dispatch):
   workflows=<n>  agents-per-workflow=<per WF>  max-concurrency=<w>
   model-role-per-workflow=<map>  expected-total-executions=<n>

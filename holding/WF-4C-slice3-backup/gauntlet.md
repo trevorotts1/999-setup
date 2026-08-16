@@ -1204,28 +1204,6 @@ of 2,366 lines were contentless ticks, and the longest run of them — 139 lines
 about seven hours — was the TAIL of the file. The run drifted and never came
 back, and every one of those ticks looked like activity.
 
-**The scheduled prompt is COMMAND-SHAPED, never free-form (Issue 15 item 4,
-operator doctrine 2026-08-16).** A cron or loop prompt is one line:
-
-```
-run /<saved-workflow-name>
-```
-
-plus at most the anti-drift trailer (`tools/anchor.sh --mode reconcile
-<home> <unit-or-IDLE>`); it never re-plans, never free-form-thinks, and never
-relies on the `ultracode` keyword — scheduled prompts do not fire workflows from
-the keyword (Claude Code ≥ 2.1.210; `references/anti-drift.md` §9 and
-`references/workflows.md` §7 carry the same contract). A free-form tick
-re-derives the plan from decayed memory — the mechanism the 139-tick tail
-documents.
-
-**The wave plan is read from the locked table, never re-derived (Issue 15 items
-1 and 3).** A tick that reads "waves" reads the execution plan's wave table
-(document 16) — the single source, written once with an immutable count. The
-revolution never reconstructs the wave plan from memory, and never renders a
-copy of it into the ledger, checklist, or to-do; all four render from the one
-table.
-
 ---
 
 ## 15. VERIFICATION IS DESIGNED IN, NEVER IMPROVISED

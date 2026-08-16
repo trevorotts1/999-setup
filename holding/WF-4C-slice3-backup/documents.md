@@ -163,29 +163,21 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Writer:** the planner
 - **Readers:** every loop; the human; the morning report
 - **Shape:** the binary boxes that define done. Each box is either true or it is not
-  — never "mostly." Boxes flip only on primary-source-proven facts. Where a box
-  tracks a wave, it renders from the execution plan's wave table (document 16) —
-  the table is the single source; the box cites it and never re-states its own copy
-  of the wave plan.
+  — never "mostly." Boxes flip only on primary-source-proven facts.
 - **What makes it wrong:** a box that says "working" rather than something checkable;
-  a box flipped on a builder's word rather than a primary source; a wave-shaped box
-  that disagrees with the execution plan's wave table.
+  a box flipped on a builder's word rather than a primary source.
 
 ### Document 3 — To-do list
 - **Path:** `CONTROL/TODO.md`
 - **Writer:** the orchestrator
 - **Readers:** every loop; the build loop claims from it
 - **Shape:** the ordered queue of what to do next, and the questions waiting on a
-  human with your recommendation. Updated as items move. Items that belong to a
-  wave are labeled by wave number from the execution plan's wave table (document
-  16) — the table is the single source; the to-do renders from it and never keeps
-  its own copy of the wave plan.
+  human with your recommendation. Updated as items move.
 - **What makes it wrong:** an item removed before it is both MERGED (trunk
   ancestry) and verified; treating "not yet MERGED" as a reason to hold up a
   DEPENDENT item (completion unblocks dependents; merge is delivery —
   `references/pipeline.md`); a
-  question for a human that sits unasked; a wave label that disagrees with the
-  execution plan's wave table.
+  question for a human that sits unasked.
 
 ### Document 4 — Session log
 - **Path:** `CONTROL/SESSION-LOG.md`
@@ -227,13 +219,6 @@ FAIL if: <exact condition> → incomplete because <reason>
   reconstructing it from ledger history. Recorded by whichever role writes that
   verdict block (the judge on a Gate 1/2 finding; the critic on a Gauntlet Gate 3
   finding, `references/gauntlet.md` Section 5).
-  **The ledger RENDERS the wave plan; it never owns a copy of it.** The locked
-  wave table lives in the execution plan (document 16), written once with an
-  immutable count (the wave-lock rule, operator doctrine 2026-08-16); the
-  ledger's wave lines cite it — the `WAVE <n>` heading and the dispatch/result
-  lines under it render from the table and never re-state the plan. A new wave
-  exists ONLY via a `NEW-WAVE-N` ledger line naming the dependency (which wave's
-  output the new wave consumes); any other new wave is a violation.
 - **Batch merge records live here too** — as a section appended by the merge-writer
   inside the verdict/merge-record section (the merge-writer already owns appending
   merge records here). One entry per batch: batch id, repository, units landed,
@@ -249,9 +234,7 @@ FAIL if: <exact condition> → incomplete because <reason>
   verdict block with no cycle count, or a cycle count that disagrees with the
   number of prior verdict blocks for that same finding; a
   state that disagrees with the primary source; a batch with no merge record; a
-  reconciliation where a pen item is missing from all three outcomes; a wave in
-  the ledger that is not in the execution plan's locked table and carries no
-  `NEW-WAVE-N` dependency line. (Law 1: when
+  reconciliation where a pen item is missing from all three outcomes. (Law 1: when
   git disagrees, git wins and the prose is corrected.)
 
 ### Document 7 — Quality-control document
@@ -400,10 +383,7 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Path:** `CONTROL/EXECUTION-PLAN.md`
 - **Writer:** the planner (waves, pen, register, budget); the merge-writer (queue)
 - **Readers:** every loop; any resuming session
-- **Shape:** the waves (derived from the dependency graph — Law 18; **the wave table
-  is THE single source of the wave plan — written ONCE with an immutable count at
-  step 16 and never re-derived from memory; the wave-lock rule, operator doctrine
-  2026-08-16**); the lanes (one
+- **Shape:** the waves (derived from the dependency graph — Law 18); the lanes (one
   per repository); the holding pen table (units waiting for a human — Law 21); the
   landing queue (passing units waiting for a batch, with the batch size — Rule
   3.26); the loop register (every loop with its trigger, interval, owned transition,
@@ -428,10 +408,7 @@ FAIL if: <exact condition> → incomplete because <reason>
   states. This is the single bar the whole run is judged against.
 - **What makes it wrong:** a number with no derivation behind it; a loop in the
   register that was never written as a definition file; a wave count that was chosen
-  rather than derived; a wave count in any other document that disagrees with this
-  file's table (the one-source-render rule: spec, to-do, checklist, and ledger all
-  render from the wave table HERE — a second copy anywhere is drift); a queue with
-  no batch size; a pen with no failure path or
+  rather than derived; a queue with no batch size; a pen with no failure path or
   freshness rule; the budget missing any of the seven quantities or the inequality
   (Rules 3.21, 3.26, 3.32).
 

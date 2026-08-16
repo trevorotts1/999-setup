@@ -182,15 +182,6 @@ plan (document 16). Each row carries five required columns:
 | **Owns this transition** | The ONE move from state to state that only this loop may make (Law 36) |
 | **Stop condition** | The measurable fact that ends it (Law 35, clause 4) |
 
-Every row's trigger fires the loop's own SAVED WORKFLOW by command —
-`run /<saved-workflow-name>` — never a free-form prompt (Issue 15 item 4,
-operator doctrine 2026-08-16). A scheduled tick that re-derives the plan from
-decayed context is the disease itself; the tick fires the saved script and does
-not think about what the script should be. For a wave-shaped run, the register
-row's loop reads the wave table from the execution plan (document 16) — the
-single source with the immutable count — and never carries its own copy of the
-wave plan (Issue 15 item 3; the one-source-render rule).
-
 **Two checks, run before any loop starts, and publish both results:**
 
 1. **Every transition in the project's state vocabulary appears exactly once in the
@@ -487,13 +478,6 @@ OWNS       <state A>  ->  <state B>     — this loop, and no other loop
 ## THE TICK — one item, one transition
 0. TERMINAL-DRIFT GATE: if CONTROL/TERMINAL-DRIFT.flag exists, STOP — write one
    line naming the flag and do nothing else this tick (references/anti-drift.md).
-0.5. THE SCHEDULER FIRES THIS TICK AS A COMMAND, never a free-form prompt:
-   `run /<saved-workflow-name>` plus at most the anti-drift trailer — the
-   scheduler's prompt is the payload's invocation, not a planning session
-   (Issue 15 item 4; `references/anti-drift.md` §9 and
-   `references/workflows.md` §7 state the same contract). A wave-shaped loop
-   reads the wave table from the execution plan (document 16) — the single
-   source — and never re-derives or re-copies the wave plan.
 1. RECONCILE: run tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile; execute
    any RECONCILE-ACTIONS it emits; on a DRIFT-ALARM stop and reconcile per
    references/anti-drift.md before any work. Then read the tracker fresh. Assume
@@ -517,10 +501,6 @@ When it is true: record on the tracker that this loop has stopped, then stop.
 - touches a transition it does not own                              (Law 36)
 - changes its own interval — the budget owns it, and the budget-watch
   loop is the only thing that moves it                              (8.7)
-- fires as a free-form prompt — its scheduled prompt is always
-  `run /<saved-workflow-name>` (+ at most the anti-drift trailer)   (Issue 15 item 4)
-- carries its own copy of the wave plan — a wave-shaped loop reads the
-  execution plan's wave table, the single source                    (Issue 15 item 3)
 ```
 
 ### What makes it right
@@ -532,12 +512,6 @@ When it is true: record on the tracker that this loop has stopped, then stop.
    it without reading the procedure.
 4. **THIS LOOP NEVER.** These four are the things a helpful agent does by instinct,
    and each one converts a stateless loop back into a conversation.
-5. **The tick fires a saved workflow by command, never a free-form prompt.**
-   The scheduler's prompt is `run /<saved-workflow-name>` plus at most the
-   anti-drift trailer (Issue 15 item 4) — a free-form tick re-plans from decayed
-   memory, which is how runs drift. A wave-shaped loop reads the wave table from
-   the execution plan (document 16), the single source (Issue 15 item 3), and
-   never carries a copy of it.
 
 **A loop definition CITES, it does not COPY.** The dispatch tests live in their
 section; the landing steps live in theirs. A definition that reproduces them has
