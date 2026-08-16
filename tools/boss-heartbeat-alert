@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# boss-heartbeat-alert — the boss's own watchdog (Issue 18 / PART 4 "The boss is governed too").
+#
+# The boss-cron cycle appends BOSSCYCLE-CLEAN to the ledger every 5 minutes (cron
+# entry */5 * * * *). If the boss cron itself dies — crontab line removed, script
+# deleted, gateway stuck, clock stopped — the ledger stops gaining BOSSCYCLE-*
+# lines. This watchdog runs on an INDEPENDENT cadence (every 2 minutes, separate
+# crontab line) and fires a heartbeat alert through the operator's Telegram
+# channel the moment two boss intervals pass without a cycle line (PART 4:
+# "no BOSSCYCLE-* line within two intervals -> alert through the operator's
+# Telegram bot chat id (wired channel)").
+#
+# Alert transport = the operator's established alert doctrine (fleet-heartbeat):
+#   - ALWAYS through the OpenClaw gateway: `openclaw message send` — never a raw
+#     api.telegram.org call (never bypass the gateway; rescue-rangers-bridge
+#     history: the raw-curl path broke with a malformed bot URL and 404s).
+#   - Default channel = Rescue Rangers group (RESCUE_RANGERS_HELP_CHAT_ID from
+#     the operator secret store), account rescue-rangers (the operator's own bot
+#     identity for this box's alerts).
+#   - TEST MODE = pinned to the operator DM / explicit test sink, NEVER the live
+#     group (operator doctrine: test only on the operator account).
+#
+# Invariants:
+#   * The watchdog itself writes NOTHING to the ledger (it is the boss's alarm,
+#     not a ledger writer; the ledger belongs to boss-cron). Its own log is
+#     CONTROL/boss-heartbeat-alert.log.
+#   * Source of the secret store: `set +u` across the source calls and stderr
+#     to /dev/null — a malformed .env line must never echo a secret into the log
+#     (the rescue-receiver pattern; a secret value may contain an unescaped `$`
+#     which under `set -u` aborts the whole shell mid-source).
+#   * Alert spam guard: once alerted, stay silent for ALERT_COOLDOWN_MINUTES
+#     unless the ledger line STILL goes stale. Never re-fire per interval.
+#   * First-run baseline: no BOSSCYCLE line at all yet = a fresh install, not a
+#     dead boss. The first BOSSCYCLE-CLEAN line arms the watchdog.
+#   * exit 0 on healthy/cooldown/armed; exit 2 only when the alert POST itself
+#     fails (so the outer cron can see it and the log records it).
+
+set -u
+set -o pipefail
+
+# Env-overridable paths: the tests use a frozen ledger copy and a scratch state
+# dir; production uses the defaults (TEST MODE doctrine — never fire the live
+# alert path from a test).
+LEDGER="${BOSS_ALERT_LEDGER:-/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md}"
+STATE_DIR="${BOSS_ALERT_STATE_DIR:-/Users/blackceomacmini/work-999-setup/CONTROL}"
+LOG="${STATE_DIR}/boss-heartbeat-alert.log"
+STATE="${STATE_DIR}/boss-heartbeat-alert.state"
+mkdir -p "${STATE_DIR}" 2>/dev/null || true
+
+# Two boss intervals (PART 4: boss cycle = 5 min) = 10 minutes of silence.
+MAX_AGE_MIN="${BOSS_ALERT_MAX_AGE_MIN:-10}"
+# Spam guard: never alert more than once per cooldown window.
+ALERT_COOLDOWN_MIN="${BOSS_ALERT_COOLDOWN_MIN:-60}"
+# Hard per-attempt cap on the send, so a hung gateway cannot wedge the watchdog.
+SEND_TIMEOUT_SEC="${BOSS_ALERT_SEND_TIMEOUT_SEC:-45}"
+OPENCLAW_BIN="${OPENCLAW_BIN:-$HOME/.local/bin/openclaw}"
+
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+say() { printf '%s %s\n' "$(now_iso)" "$*" >>"${LOG}"; }
+
+# --- Load the operator secret store (names only ever used; values never printed).
+set +u
+[ -f "$HOME/.openclaw/secrets/.env" ] && source "$HOME/.openclaw/secrets/.env" 2>/dev/null
+[ -f "$HOME/clawd/secrets/.env" ] && source "$HOME/clawd/secrets/.env" 2>/dev/null
+set -u
+
+# --- Test-mode isolation: pinned to the operator DM / an explicit test sink,
+#     NEVER the live Rescue Rangers group (fleet-heartbeat smoke-test pattern).
+if [ "${BOSS_ALERT_TEST_MODE:-0}" = "1" ]; then
+  TARGET_CHAT="${BOSS_ALERT_TEST_SINK_CHAT_ID:-${OWNER_CHAT_ID:-5252140759}}"
+  say "test mode: target pinned to operator DM/test sink (${TARGET_CHAT}); live group suppressed"
+else
+  TARGET_CHAT="${RESCUE_RANGERS_HELP_CHAT_ID:-${RESCUE_RANGERS_CHAT_ID:-}}"
+  if [ -z "${TARGET_CHAT}" ]; then
+    say "FATAL: no rescue channel chat id (RESCUE_RANGERS_HELP_CHAT_ID/RESCUE_RANGERS_CHAT_ID unset); alert cannot route"
+    exit 2
+  fi
+fi
+
+# --- Read the newest BOSSCYCLE-* line timestamp off the ledger.
+last_cycle=""
+if [ -f "${LEDGER}" ]; then
+  last_cycle="$(grep -E '^\- `BOSSCYCLE-' "${LEDGER}" | tail -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' || true)"
+fi
+if [ -z "${last_cycle}" ]; then
+  say "armed: no BOSSCYCLE-* line yet (fresh install baseline); not an alarm"
+  exit 0
+fi
+
+# Age of the newest cycle line, in minutes.
+if command -v date >/dev/null 2>&1 && date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${last_cycle}" "+%s" >/dev/null 2>&1; then
+  last_epoch="$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${last_cycle}" "+%s" 2>/dev/null)"
+else
+  say "FATAL: unparseable BOSSCYCLE timestamp '${last_cycle}'; cannot compute staleness"
+  exit 2
+fi
+now_epoch="$(date -u +%s)"
+age_min=$(( (now_epoch - last_epoch) / 60 ))
+
+# --- Cooldown state: last alert fire time (ISO) persisted between runs.
+last_alert=""
+if [ -f "${STATE}" ]; then
+  last_alert="$(head -1 "${STATE}" 2>/dev/null || true)"
+fi
+
+if [ "${age_min}" -lt "${MAX_AGE_MIN}" ]; then
+  say "ok: last BOSSCYCLE ${age_min}m ago (< ${MAX_AGE_MIN}m)"
+  exit 0
+fi
+
+# --- Stale: the boss has missed at least two intervals. Alert (subject to
+#     cooldown), then persist the fire time.
+if [ -n "${last_alert}" ] && [ "${last_alert}" != "none" ]; then
+  alert_epoch="$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${last_alert}" "+%s" 2>/dev/null || echo 0)"
+  since_min=$(( (now_epoch - alert_epoch) / 60 ))
+  if [ "${since_min}" -lt "${ALERT_COOLDOWN_MIN}" ]; then
+    say "stale ${age_min}m but in cooldown (last alert ${since_min}m ago); silent"
+    exit 0
+  fi
+fi
+
+MSG="[BOSS HEARTBEAT ALERT] boss-cron went silent — no BOSSCYCLE-* line for ${age_min} min (max ${MAX_AGE_MIN}). The enforcer is down; check crontab entry, /Users/blackceomacmini/work-999-setup/tools/boss-cron, and ${LEDGER}."
+
+if [ "${BOSS_ALERT_DRY_RUN:-0}" = "1" ]; then
+  say "DRY-RUN: would send to ${TARGET_CHAT}: ${MSG}"
+  echo "$(now_iso)" >"${STATE}"
+  exit 0
+fi
+
+# Resilient send (fleet-heartbeat pattern): bounded attempts, per-attempt hard
+# timeout via the shell, growing backoff. Never bypasses the OpenClaw gateway.
+attempt=1
+send_rc=1
+while [ "${attempt}" -le 3 ]; do
+  say "sending attempt ${attempt}/3 to ${TARGET_CHAT} (age ${age_min}m)"
+  timeout "${SEND_TIMEOUT_SEC}" "${OPENCLAW_BIN}" message send \
+    --channel telegram \
+    --account "${BOSS_ALERT_TG_ACCOUNT:-rescue-rangers}" \
+    -t "${TARGET_CHAT}" \
+    -m "${MSG}" >>"${LOG}" 2>&1
+  send_rc=$?
+  if [ "${send_rc}" -eq 0 ]; then
+    break
+  fi
+  sleep "$(( attempt * 3 ))"
+  attempt=$(( attempt + 1 ))
+done
+
+if [ "${send_rc}" -ne 0 ]; then
+  say "ALERT SEND FAILED after ${attempt} attempts, last rc=${send_rc} — payload NOT delivered to ${TARGET_CHAT}"
+  exit 2
+fi
+
+echo "$(now_iso)" >"${STATE}"
+say "ALERT SENT to ${TARGET_CHAT} (age ${age_min}m); cooldown ${ALERT_COOLDOWN_MIN}m armed"
+exit 0
