@@ -872,6 +872,73 @@ When the operator provides a folder, that folder IS the project. Its documents A
     make a skill available. A bootstrap outcome never blocks the run — a
     Failed dependency is reported with its exact source URL and handed to the
     operator.
+2.10. **Progress Visibility (BOTH modes).** Run `scripts/setup-statusline.sh`
+    once — detect-first, never destroy: inspect BOTH settings stores for an
+    existing `statusLine`; an existing line equal or better is reported
+    "Already configured and healthy. No replacement required." and never
+    replaced; enhanceable lines are preserved and only extended. Configure
+    via ONE shared script `~/.claude/statusline-command.sh` referenced from
+    BOTH `~/.claude/settings.json` and `~/.claude-nine/settings.json`
+    (separate stores — the skills symlink farm does NOT cover settings.json);
+    back up every settings file before modifying it; idempotent — a re-run
+    writes nothing. Acceptance REQUIRES the status line verified LIVE in a
+    claude-nine session — same script, same bar, same metrics — not just
+    configured. The full capability contract is `references/progress-visibility.md`.
+    Operational requirements in force for the whole run:
+    - **Session cost goes ON the bar (operator order 2026-08-16).** Cost is
+      not in the statusLine stdin — derive it: accumulate the REAL token
+      counts stdin exposes (`context_window.total_input_tokens` /
+      `total_output_tokens`) × published per-model pricing, displayed with a
+      `~` marker; a model absent from the pricing table → omit the segment,
+      never guess. Prove the derivation live in BOTH launch paths before
+      cost is reported as displayed.
+    - **The CLIENT-facing display is only what truly matters (operator order
+      2026-08-16): model, cost, git, Project progress, Wave progress.**
+      Context usage and 5h/7d usage rates are INTERNAL doctrine — tracked
+      and acted on by the agent, NEVER shown to the client. The script still
+      reads the token counts (they feed the cost derivation); it renders
+      none of it.
+    - **Context health thresholds (INTERNAL — agent behavior, never client
+      display):** Normal 0-69% — continue normally. Elevated 70-84% — verify
+      the active task list; persist important architectural decisions to
+      project files; never keep critical information only in context. High
+      85-94% — persist implementation state, update docs, update task state,
+      record unresolved issues, preserve decisions, prepare for compaction.
+      Critical 95%+ — persist state BEFORE any new large phase; continuity,
+      not premature stopping.
+    - **Task tracking for large builds** (websites, SaaS, mobile apps,
+      dashboards, full-stack systems, API integrations, database work,
+      migrations, complex debugging, deployment): create the task list after
+      the plan exists, never fake busywork tasks; ✓ only after validation,
+      ● in progress, ○ pending, ! blocked with the reason; phases
+      01 Discovery–10 Deployment (applicable ones only); companion skills
+      reflected when used, never displayed when not. Ctrl+T toggles the task
+      display — explain it in plain English (the scripted line is in
+      references/progress-visibility.md §6).
+    - **The Project bar is THE MAIN METRIC (operator order 2026-08-16).** The
+      status line shows how close the project is to being DONE: percent =
+      `tasks.counts.completed / (pending + in_progress + completed)` read from
+      `$cwd/CONTROL/project_state.json` — disk truth only, never conversation
+      memory. Omitted until the state file exists (0% before the plan exists
+      is fake progress). Blocked tasks count in the total. The bar moves on
+      VALIDATION, never on code generation; repair loops can move it DOWN —
+      that is truth, not a bug. `run_status` ≠ RUNNING is shown. 100% does
+      not mean shipped — merged at HEAD and verified is the delivery claim.
+    - **The Wave bar (wave-shaped runs, operator order 2026-08-16).** When
+      wave work is running, the status line shows how close the CURRENT wave
+      is to being done: reads `FIX-LEDGER.md` at `$cwd` first, then
+      `$HOME/work-999-setup/FIX-LEDGER.md`; current wave = highest
+      `WAVE <n>` line; percent = that wave's `WF-<n>` lines carrying PASS or
+      DONE divided by its total `WF-<n>` lines. No wave lines → omitted,
+      never guessed. Ledger lines exist only after verification, so the bar
+      inherits the ledger's truthfulness.
+    - **Unavailable metric = omitted metric, never a failure.** 9Router
+      sessions are expected to lack `rate_limits` — omit the 5h/7d segments.
+      Never alter 9Router model-routing rules merely to enable progress
+      visibility.
+    - The installer ends with the 15-item final report
+      (references/progress-visibility.md §11). Never report the capability
+      complete until it has been tested.
 3. **Offer entry modes.** Speak THE OPENING SCRIPT verbatim, then ask THE BUILD
    TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
    is the info." **Create the project folder + `00-INPUT/` immediately after they
@@ -1617,3 +1684,4 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
+22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)
