@@ -558,7 +558,165 @@ Dispatch reader agents to research current best practice FOR THE SPECIFIC SITE
 TYPE (a dentist's brochure site, a coaching funnel, a SaaS landing — each its
 own research), with sources cited. Cover: hero structure, layout systems,
 typography scale, color systems, conversion patterns, mobile behavior,
-accessibility (WCAG contrast, focus order, alt text).
+accessibility (WCAG contrast, focus order, alt text). One reader per site
+type, cheap-tier, self-contained brief, "return findings with the source URL
+beside every claim" (references/research.md Step 1). When Mobbin is
+configured (MOBBIN-CHECK: configured), the brief MAY pull named, credited
+inspiration screens from it; the referral-link website is the browser
+reference when it is not.
+
+**The researched defaults below are the starting points the reader agents
+confirm or correct at run time** — they are the named, cited baseline the
+brief is written against, never a substitute for the live pass. Every claim
+in a written brief carries its source; an unsourced claim in a brief is a
+rumour (Law 14, references/research.md).
+
+---
+
+#### A. Dentist / medical-practice brochure site (each its own research when the site type differs)
+
+**Hero structure.** Practice name plus a one-line promise (the patient's
+outcome, not the service), the appointment CTA above the fold, a warm real
+photo of the team, the office, or a patient smile (never stock-y), and a
+trust strip directly under — insurance accepted, years in practice, rating.
+Mobbin reference screens in this family: Fresha, Heidi, Care.com (web).
+
+**Layout systems.** Single column with a fixed section rhythm: hero →
+services → about/team → testimonials → contact/map → footer. One primary
+action per page. Sticky phone/appointment bar on mobile so the booking action
+never scrolls out of reach.
+
+**Typography scale.** Warm humanist serif or large humanist sans for display
+headings; body 16-18px at 1.5-1.6 line-height; 1.25 ratio type ladder
+(16/20/25/31/39/49) so hierarchy survives mobile.
+
+**Color systems.** Clean medical neutrals (whites, soft blues, teals) with
+ONE accent color reserved for the appointment CTA — a single contrasting
+action color concentrates the eye (goodui: "More Contrast", "Attention
+Grabs"). Never more than one saturated CTA color.
+
+**Conversion patterns.** One action per page — book / call / request
+callback. Form fields minimized (name + phone/email + preferred time);
+every extra field is a conversion tax (goodui: "Fewer Form Fields"; HubSpot
+landing-page practice). Trust signals next to the CTA: credentials,
+insurance list, reviews. Benefit-labeled button ("Book my appointment")
+beats a bare verb (goodui: "Benefit Buttons").
+
+**Mobile behavior.** Tap targets ≥ 44px; no horizontal scroll; thumb-reach
+forms; sticky booking CTA (goodui Test #665: sticky bottom CTA pattern);
+test on a real device, never a preview tool.
+
+**Accessibility.** WCAG AA: 4.5:1 body text, 3:1 large text (24px/18.5pt+)
+and UI components — re-verify ratios against the current WCAG understanding
+documents at run time (the standing freshness rule, §14 of this file).
+Keyboard-only focus order with a visible focus ring and a skip-to-content
+link; alt text on every image including before/after pairs; form labels
+attached to fields, never placeholders.
+
+---
+
+#### B. Coaching / service funnel landing page
+
+**Hero structure.** Benefit-first headline naming a specific outcome
+("generic = death" — HubSpot), sub-headline stating who it is for and what
+they get, an outcome-focused hero image (lifestyle if tangible, mockup if
+abstract), CTA visible above the fold, no nav menu, no footer links, one
+path only (HubSpot landing-page best practices).
+
+**Layout systems.** headline → image → bullets → CTA/form → social proof
+(HubSpot's proven structure). One CTA, repeated where natural, never
+competing. White space around the CTA is the spotlight — burying it
+bounces visitors. 5-second skim test: the value is understood instantly.
+
+**Typography scale.** Bold headers, scannable bullets, short paragraphs
+(HubSpot). No awkward breaks on mobile — real-device test mandatory.
+
+**Color systems.** ONE accent color for CTAs; contrast is what commands
+attention; too many colors dilute focus and cost conversions (HubSpot
+color psychology). Low contrast = lost conversions.
+
+**Conversion patterns.** Name + email only at the top of the funnel; phone
+is friction (HubSpot). "Get the guide" beats "Learn more"; pain-point
+headlines ("Tired of [specific struggle]?") beat generic statements
+(HubSpot headline patterns). Click-trigger microcopy under the CTA: "Free
+download", "Only takes 30 sec", "No credit card required". The thank-you
+page is a second conversion opportunity, never a dead end. Personalized
+CTAs convert 202% better than default (HubSpot). One CTA per page converts
+13.5% vs 10.5% at five or more (funnel-architecture.md §2, Unbounce
+2026-08-10 pass). No autoplay video above the fold (HubSpot/GameBoost:
+autoplay hurts engagement).
+
+**Mobile behavior.** Mobile is >50% of traffic — optimize there first;
+CTA tappable and visible without scroll; cut heavy images and endless
+stacked sections; test on real phone, laptop, tablet (HubSpot).
+
+**Accessibility.** Same WCAG AA bar as A: 4.5:1 body / 3:1 large text and
+UI components (re-verified at run time per §14); keyboard-only focus
+order; alt text on every image; form labels, not placeholders.
+
+---
+
+#### C. SaaS / software landing page
+
+**Hero structure.** One-line value proposition naming the product, the
+audience, and the differentiator; a product screenshot or mockup (the
+product IS the hero image — never abstract art); a primary CTA with a
+benefit-labeled button and a secondary "see how it works" link; social
+proof (customer logos, rating) beside or below the hero. Mobbin reference
+screens in this family: StackAI, Langdock, Laravel Cloud, Airtable,
+Customer.io (web).
+
+**Layout systems.** One-column narrative: hero → customer logos →
+problem/benefit sections → how it works → feature grid → testimonials →
+pricing → FAQ → final CTA. Visual hierarchy by size, contrast, and
+proximity; few borders — spacing and alignment do the grouping (goodui:
+"One Column Layout", "Fewer Borders", "Visual Hierarchy"). Limit links
+above the primary CTA (goodui: "Keeping Focus").
+
+**Typography scale.** 1.25 (major third) type ladder from 16px body:
+16/20/25/31/39/49. Max measure ~65-75 characters; body line-height 1.5.
+Display sizes only for the hero headline — never for body content.
+
+**Color systems.** Neutral base (white/light gray) plus ONE brand accent
+for CTAs; a distinct style for clickable elements so interactivity is
+unmistakable (goodui: "Distinct Clickable/Selected Styles"). Contrast:
+4.5:1 body, 3:1 large text and UI components (WCAG AA, re-verified per
+§14).
+
+**Conversion patterns.** Benefit-labeled buttons ("Start free trial — no
+card required" rather than "Sign up"); fewer form fields (goodui: each
+field risks drop-off); social proof next to the CTA; a highlighted
+"recommended" plan in the pricing table (goodui: "Recommending" defeats
+analysis paralysis); friendly comparison table with one attribute per
+column (goodui: "Friendly Comparisons"). Free-tier transparency — never a
+hidden paywall.
+
+**Mobile behavior.** Sticky bottom CTA (goodui Test #665); tap targets ≥
+44px; no horizontal scroll; the hero headline and CTA must both fit above
+the fold at 375px width; icons carry labels (goodui: "Icon Labels").
+
+**Accessibility.** Same WCAG AA bar as A and B (4.5:1 / 3:1, re-verified
+per §14); keyboard-only focus order with visible focus; alt text on the
+product screenshot and every image; form labels not placeholders.
+
+---
+
+#### The brief itself — what the written section must carry
+
+Every written brief is a named section of the master spec's conventions
+(document 1, Law 39) and carries, at minimum:
+
+1. **The site type and its researched patterns** — the confirmed/corrected
+   version of the relevant default block above, every claim with its source
+   URL.
+2. **The named example page** — the copy bar (Law 48), picked at bar
+   selection, real and fetchable: the bar the copy and the layout are
+   judged against, never "make it punchy".
+3. **The design tokens** — the type scale, color system, and spacing rhythm
+   the build stages consume (STAGE-SCAFFOLDING reads them from the brief).
+4. **The DESIGN-BRIEF ledger line citing the sources** — written when the
+   brief lands: `DESIGN-BRIEF: <sources>`. The ledger line names what was
+   actually read, with URLs, so a critic can re-check.
 
 ---
 

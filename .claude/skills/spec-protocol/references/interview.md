@@ -761,8 +761,12 @@ line:
 `DESIGN-BRIEF: <sources>`
 
 The brief collects:
-1. The funnel-type-specific researched conversion patterns from the
-   Just-in-Time reader.
+1. The site-type-specific researched conversion patterns — from the Just-in-Time
+   reader AND the per-site-type researched defaults in `funnel-architecture.md`
+   §15 (dentist brochure / coaching funnel / SaaS landing each have their own
+   block: hero structure, layout, typography scale, color systems, conversion
+   patterns, mobile behavior, WCAG accessibility) — every claim cited with its
+   source.
 2. A named example page (the copy bar, Law 48) — a real, fetchable reference
    page that sets the quality bar for copy and layout.
 3. The selected reference sites the brief's design decisions trace to.
