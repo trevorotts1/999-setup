@@ -818,6 +818,19 @@ probed callable; resolution RECORDS, it never reroutes).
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
 are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
 
+**clientCap (Issue 19 FIX step 6 — the operator's 2026-08-15 master spec line
+426).** clientCap = min(systemConcurrentMax, cores−2), computed by the
+CLIENT-MACHINE PROBE at Capacity-Ledger time (`references/capacity.md` §3 AXIS 1,
+§4). **systemConcurrentMax is the operator's declared max (10 on the operator's
+machine) — authoritative for computing the cap; an environment read (e.g.
+`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) is permitted for REPORTING only, never
+for computing** (that variable caps session subagents only; workflow agents and
+agent-team teammates follow their own limits). **If the probe CANNOT determine
+systemConcurrentMax, the value is UNDETERMINED and the run refuses to plan — it
+never defaults to 16.** **The BAR never shrinks with the machine — only the
+width does: a weak machine runs narrower and longer; it never ships to a lower
+standard.**
+
 **Counts are SLICES, never concurrency.** Every workflow's agents execute in
 sequential batches of at most clientCap (Section 13.4) — never all at once. The
 slice counts are the declared full-capacity totals; the batch shape derives from
@@ -983,24 +996,38 @@ can be given the four things above.
 
 The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
 9Router + DeepSeek direct, where the harness governs at 30 workflows ×
-min(16, cores−2). **The topology survives at any capacity; only the widths
-shrink**, per the Capacity Ledger:
+clientCap = 30 × min(systemConcurrentMax, cores−2). **The topology survives at
+any capacity; only the widths shrink**, per the Capacity Ledger:
 
-- At wave size W, WF02 runs `min(16, W_builder)` builders and stages the rest
-  through `pipeline()` — the phase still completes, it simply takes more passes.
+- At wave size W, WF02 runs `min(clientCap, W_builder)` builders and stages the
+  rest through `pipeline()` — the phase still completes, it simply takes more
+  passes.
+- **BATCH SCALING (Issue 19 FIX step 6).** Counts are SLICES, never concurrency:
+  batch size = clientCap; batches = ceil(slice count / clientCap); wave count
+  unchanged. Worked example on the operator's machine (clientCap 10): 16
+  builder slices → 2 batches (10 + 6); WF03's 16 judges batch identically;
+  WF01 (8), WF04 (8) and WF05 (4) each fit one batch (8 ≤ 10, 4 ≤ 10); WF06
+  repair seats are capped at clientCap per wave with the remainder batched
+  sequentially.
 - On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
   reserve), the same six phases run at width 1–2, and the run says so plainly up
   front: this will take longer.
-- Per-workflow concurrency is **min(16, cores−2)** — measured at run time
-  (`sysctl -n hw.ncpu` on macOS, `nproc` on Linux), which is **10** on the
-  operator's 12-core Mac Mini. Never inherit that 10 as a constant and never
-  write "×16" as a promise.
+- Per-workflow concurrency is **clientCap = min(systemConcurrentMax, cores−2)** —
+  measured at run time by the CLIENT-MACHINE PROBE (`sysctl -n hw.ncpu` on
+  macOS, `nproc` on Linux; RAM, free disk, and network probed with it —
+  `references/capacity.md` §3 AXIS 1), which is **10** on the operator's
+  12-core Mac Mini (systemConcurrentMax 10, declared). Never inherit that 10 as
+  a constant and never write "×16" as a promise. systemConcurrentMax is the
+  operator's declared max — authoritative for computing; an environment read is
+  REPORTING ONLY, never for computing; an UNDETERMINED systemConcurrentMax =
+  the run refuses to plan, it never defaults to 16.
 - On Anthropic-billed Claude Code the operator's standing **20-agents-per-wave**
   cap governs total width, and when an Agent Team is active the lead plus each
   commander occupy persistent slots INSIDE that cap before any workflow width is
   allocated (lead + 4 commanders = 5 occupants; 15 slots remain).
 
-**The six-phase ORDER is the invariant; the widths are derived.**
+**The six-phase ORDER is the invariant; the widths are derived. THE BAR never
+shrinks with the machine — only the width does.**
 
 ### 13.5 The tasks that carry these workflows are DERIVED per project
 

@@ -431,7 +431,7 @@ actually resolved to.
 
 | Role | Requirement — resolved per run (default lane) | Why / caps |
 |------|---------------|------------|
-| App builder | **REQUIREMENT: the strongest available lane** — the operator's decided law, stated verbatim: "strongest available lane; on [the operator's] wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = min(16, cores−2) per workflow, MEASURED at run time; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| App builder | **REQUIREMENT: the strongest available lane** — the operator's decided law, stated verbatim: "strongest available lane; on [the operator's] wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = clientCap = min(systemConcurrentMax, cores−2) per workflow, MEASURED at run time by the CLIENT-MACHINE PROBE; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
 | Technical + release judge | **REQUIREMENT:** rubric-depth verdict capability, and it MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder — by the FAMILY RULE: strip the provider prefix and the thinking/pricing/version suffixes, then compare base ids; same-base lanes differing only in thinking level are ONE model. Default lane: `Sonnet`. | Enough concurrency for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1), less the 25% reserve. **Read the CEILING CLASS off the RESOLVED model, never off the lane** — a DeepSeek node bills a concurrency ceiling, an Agnes node bills a requests-per-5-hours window, an OpenRouter node bills token balance. Wrong model ⇒ wrong ceiling CLASS ⇒ wrong burn budget. Different alias names prove nothing. |
 | QC + fixer | **REQUIREMENT:** strong enough to find gaps, defects, blockers and improvements AND to fix them; where this seat also serves as a review seat, it inherits that seat's independence constraint. Default lane: `Fable`. | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | **REQUIREMENT:** reliable at low concurrency on mechanical work; no independence constraint. Default lane: `Haiku`. | Low load, fine at 8–10 concurrent. |
@@ -962,16 +962,31 @@ When the operator provides a folder, that folder IS the project. Its documents A
    read fails toward asking, never toward assuming. See
    `references/interview.md`.
 6.5. **Compute the Capacity Ledger (BOTH modes, every launcher — before anything
-    dispatches).** From the detected launcher, the measured core count, the
+    dispatches).** From the detected launcher, the CLIENT-MACHINE PROBE, the
     detected/asked provider path, and the interview answers, COMPUTE the Capacity
     Ledger and write it to `<project>/CAPACITY-LEDGER.md` (infrastructure, like
-    SCOPE.md — not one of the seventeen documents). It records: detected harness
+    SCOPE.md — not one of the seventeen documents). **THE CLIENT-MACHINE PROBE
+    (Issue 19 FIX step 6) runs HERE, at Capacity-Ledger time — never before,
+    never later:** probe cores, RAM, free disk, and network (instruments and
+    their gated things in references/capacity.md §3 AXIS 1: cores → clientCap;
+    RAM → browser-agent count; free disk → the MEDIA-GAPS threshold — below it
+    the media lane takes the without-media path; network → provider-reachability
+    gating). Compute `clientCap = min(systemConcurrentMax, cores−2)` —
+    systemConcurrentMax is the operator's DECLARED max (10 on the operator's
+    machine), authoritative for computing; an environment read (e.g.
+    `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) is REPORTING ONLY, never for
+    computing. **If the probe cannot determine systemConcurrentMax, the value is
+    UNDETERMINED and the run refuses to plan — it never defaults to 16.** The
+    scaling consequence (references/gauntlet.md §13, §13.4): batch size =
+    clientCap; batches = ceil(slice count / clientCap); wave count unchanged.
+    **The BAR never shrinks with the machine — only the width does.** It records:
+    detected harness
     and launcher; the RESOLVED role→alias→model map (references/capacity.md §11 —
     three hops, resolved from the live config, with each resolved model's provider
     ceiling AND real context ceiling per role); per-provider ceiling; the
     reserve applied; the governing number (harness vs operator cap vs provider,
     with the reconciliation shown); the resulting WAVE SIZE, WORKFLOW COUNT, and
-    AGENTS-PER-WORKFLOW; the AGENT BUDGET DECLARATION (all eight §17 quantities —
+    AGENTS-PER-WORKFLOW (clientCap); the AGENT BUDGET DECLARATION (all eight §17 quantities —
     references/capacity.md §10); the Agent Team line (enabled/disabled/probed,
     commander count, and the N+1 persistent slots they occupy); and the REQUEST
     BUDGET per 5-hour window with the burn-rate governor's thresholds (pessimistic
