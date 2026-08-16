@@ -633,6 +633,21 @@ queue, published in the execution plan as two tables (Rule 3.26):
 - **The landing queue** — passing work items waiting for a batch worth landing. They
   wait for a batch. The merge-writer owns them. The row states the batch size.
 
+**The media-lane completion gate — the served-HTML URL-fetch check.** A media
+build is not complete when its pages are built; it is complete when the served
+pages prove their images. At build completion — the moment the site's pages are
+served (deployed or locally served) and before the unit is declared done — the
+served-HTML URL-fetch check runs on every built page
+(`references/media-pipeline.md` 13.12): extract every image reference from the
+served HTML, fetch each URL, assert HTTP 200, and assert each URL is a
+permanent GHL media URL in the project-labeled folder. Any temp/provider/local
+URL in the served HTML is a fail-closed defect of the highest class — replaced
+with the ledger's permanent URL before the pen (S15). The result is recorded on
+the MEDIA ledger line as `served-check=<pass|fail>`; a unit with
+`served-check=fail` is not merge-eligible and does not enter the landing queue.
+The blind critic re-runs the check by fetching each URL (Issue 9 QC) — the
+builder's pass is a claim, the critic's fetch is the proof.
+
 The pen lives in the execution plan as a table, not as a file (Law 39 — the
 17-document list is closed).
 
