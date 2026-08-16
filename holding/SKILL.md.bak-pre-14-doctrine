@@ -108,30 +108,8 @@ Read them in that order and there is only ever one width. Consuming 100% of a pr
 is a Law 44 violation; leaving dispatchable work undispatched inside the usable number is
 a violation of this rule. **Neither one buys the other any slack.**
 
-**THE FORCED-WIDTH RULE (binding, 2026-08-15 — Issue 14, FIX step 2).** Inside the usable
-number, dispatch width is FORCED to the work: never dispatch fewer streams than the work
-allows, and never pad either. The rule's two forbidden defects are TIMIDITY (sizing below
-what the work supports — 3 agents while 13 more had independent work waiting) and PADDING
-(inventing agents to hit a number) — the same two defects the 2026-08-14 ruling names below.
-A dispatch is under-width when any dispatchable unit waits while capacity sits idle; a
-dispatch is padded when an agent cannot be given the four properties below. Both are
-violations of this rule, and the boss cron's width check (PART 4 check 4) stops both:
-fan-out below scripted width without a recorded dependency line, and padding past the work.
-
-**THE FOUR PROPERTIES — every spawned agent (binding, the CAPACITY RULE from
-`references/gauntlet.md` §13.3).** Provider capacity is permission, never instruction.
-Every spawned agent MUST carry all four: **(1) unique responsibility** — the agent owns a
-named unit or slice, never a duplicate of another agent's; **(2) evidence to inspect or
-work to perform** — the agent receives its input artifact or a citation to it, never a
-vague brief; **(3) an explicit deliverable** — a named output artifact; **(4) an
-acceptance criterion** — a binary pass/fail bar the output is judged against. An agent
-that cannot be given all four is NOT spawned: a workflow that cannot name what each of its
-agents owns is over-wide by definition and is cut to the agents that can be given the
-four (gauntlet.md §13.3, lines 971-973). Width arithmetic that counts agents beyond the
-four-property test is padding, regardless of how much capacity exists.
-
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
-- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 16 sub-agents per workflow — the operator's ceiling (ruling, 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 16 — a one-unit job gets one agent, sixteen independent units get sixteen. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 13 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 16 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2).
 - SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
@@ -164,17 +142,11 @@ independently, in parallel, at their own speed, and the QC lane is visible in
 the same tree as the build it judges.
 
 **The dependency graph determines the stream count; the pairing determines the
-width.** Before every dispatch: run `tools/anchor.sh <home> <unit-or-IDLE>
---mode reconcile` first (with `--tasks CONTROL/task-graph-snapshot.json
---state CONTROL/project_state.json`), execute any RECONCILE-ACTIONS it emits
-and re-run until clean, then the topological sort's largest
+width.** Before every dispatch: the topological sort's largest
 zero-incomplete-dependency set gives the streams; chunk each stream at ≤8
 units; each tree dispatches units × 2 agents (builder + judge, both pinned).
 min(16, cores−2) is the EXECUTION clamp (how many run in the same instant —
-the rest queue), never the sizing. Launch all N trees in the same turn. A
-dispatch on top of an unreconciled alarm, or while
-`CONTROL/TERMINAL-DRIFT.flag` exists, is a violation (S10 —
-`references/anti-drift.md`).
+the rest queue), never the sizing. Launch all N trees in the same turn.
 
 **THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
 dispatch-log row states the width arithmetic: units in this tree, × 2 for the
@@ -209,10 +181,6 @@ terminal" is a floor, never a ceiling.
 
 ### RULE 4 — DISPATCH RULES (binding)
 - **DISPATCH RULE — decompose then launch, same turn.** Before every dispatch:
-  0. Reconcile first: run `tools/anchor.sh --mode reconcile` (with `--tasks` +
-     `--state`), execute any RECONCILE-ACTIONS it emits, and re-run until clean
-     (S10; `references/anti-drift.md`). Precondition #0: `CONTROL/TERMINAL-DRIFT.flag`
-     is absent — while it exists, nothing dispatches.
   1. Read the dependency graph and the checklist.
   2. Compute the dispatchable set: items whose dependencies are all ancestors of
      the integration branch.
@@ -233,8 +201,7 @@ terminal" is a floor, never a ceiling.
   Never defer to the next tick. Runnable work with zero workflows is an
   emergency.
 - **MAXIMUM-WORKFLOW RULE — never under-dispatch.** Run the MAXIMUM number of
-  workflows the work allows — up to the 50-workflow machine doctrine — never
-  fewer.
+  workflows the work allows — up to the 30-workflow ceiling — never fewer.
 - **VISUAL CONTRACT.** The operator sees MULTIPLE workflow trees simultaneously
   in `/workflows`. One tree at a time is the defect, regardless of how many
   agents are inside it. The acceptance test for parallelism is: N separate trees
@@ -256,7 +223,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
 | **S8 — Item flow** | Items are moving through the lifecycle independently (not all items blocked at the same stage) | Log bottleneck stage; investigate dependency graph |
 | **S9 — Inline-work ban** | No build artifact was edited by the conductor itself: every landing commit has a prior dispatch-log row, and the conductor's own working tree is clean of build files. (Doctrine #2, Level 1: the Team Lead's primary job is ORCHESTRATION — it does NOT personally implement.) | VIOLATION — the unit is re-done by a dispatched agent; the violation is logged; the inline edit is quarantined |
-| **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected; CLASS 7 (ledger provenance) paired every RESULT unit against a prior CLAIM for the same unit id — a RESULT without its claim is a violation | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS; an unpaired-claim alarm means missing BEFORE-the-unit CLAIM lines — write them and re-run — see references/anti-drift.md |
+| **S10 — Drift anchor / reconcile** | The conductor's last ledger entry carries a fresh RE-ANCHOR stamp AND the last reconcile pass (tools/anchor.sh --mode reconcile) is no older than the reconcile interval and returned clean or corrected | Run tools/anchor.sh now; if it alarms, stop dispatching and reconcile before anything else; on TERMINAL-DRIFT (exit 4) the run STOPS — see references/anti-drift.md |
 | **S11 — Terminal-chore ban** | No user-facing text produced this session instructs the client to open a terminal window (outside the labeled last-resort rung of references/terminals.md) | VIOLATION — the instruction is retracted and replaced with the skill doing the thing itself (references/agent-team.md) |
 | **S12 — Worker visibility** | Every build/fix/QC dispatch is workflow-wrapped (visible in `/workflows`); any raw Agent-tool dispatch (research, probe, named fallback) has a dispatch-log row with its purpose and a reap deadline | VIOLATION — log it now, wrap the next dispatch, reap anything running unlogged |
 | **S13 — Finished-but-alive reap** | No agent whose output is on disk and whose task has no next instruction is still running (the 2026-08-14 canary's research agent burned 13h of CPU spinning after it finished) | Reap it (TaskStop) and note it in the ledger — a done agent that keeps running reads as work, and a ticking timer is never progress |
@@ -277,33 +244,12 @@ the default state to report.
 | **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
 | **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
 | **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
-| **S15 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot. **The pipeline step is ONE unit, never split (Issue 10 FIX step 2 — the time-bounded ordering contract, references/media-pipeline.md 13.1): generate → poll to `state=success` → parse `resultUrls` → download → upload to GHL → read-back → ledger line, in the same step; the GHL upload is the ONLY step that turns a temporary URL into a permanent asset (result URLs expire in 24h, files in 14d, download links in 20 min)** | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class; **an item left at "generated, URL in ledger" with the GHL upload deferred is fail-closed STOPPED on that item — the temp URL will expire overnight and the spend is already gone** |
+| **S15 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class |
 | **S16 — Video duration fit** | Every video work item's requested duration is validated against the seated model's duration×RESOLUTION table at SPEC time — as a pair, never on either axis alone — and every video estimate prices the BILLED unit, not a pro-rata second (references/media-pipeline.md 6d, references/capacity.md 13.8) | An item dispatched past its ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip parent without a stitch-or-gap answer (ffmpeg detected by execution, or NEEDS-JOINING declared) is not dispatchable |
-| **S17 — Orphan accounting (1:1:1)** | Generated = manifest = uploaded; references may be N, each counted. Every generated image has exactly one manifest row and exactly one upload (or an honestly marked gap). Shared-asset rule: one manifest row, one generation, one upload, N references — all N counted, zero uncounted. Zero orphans in either direction: no generation without a manifest row (UNTRACKED-GENERATION), no manifest row without a generation (UNGENERATED-MANIFEST-ROW — a marked gap, never a silent drop), no upload without a reference (UNREFERENCED-UPLOAD), no reference without a counted row (UNCOUNTED-REFERENCE). Ledger classes the sweep reads: `MANIFEST-ROW`, `IMAGE-GENERATED`, `GHL-URL`, `IMAGE-REF` (references/media-pipeline.md §10.1) | VIOLATION-STOP on the media lane — each orphan named by class and file; the lane resumes only when every orphan is reconciled or honestly gapped |
 
 ---
 
 ## GATE 0 — Ultracode hard stop (RUN FIRST)
-
-**GATE 0b — THE BOSS IS ARMED (WAVE 0 BOOTSTRAP, operator order 2026-08-16).**
-Every run opens with the enforcer already in place: the boss cron
-(`tools/boss-cron`, install path `/Users/blackceomacmini/work-999-setup/tools/boss-cron`)
-runs every 5 minutes via crontab (`*/5 * * * *`), reads the live ledger at
-`/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md`, and enforces from minute
-one: concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence,
-heartbeat (a `BOSSCYCLE-CLEAN` line within the last 2 cycles), the stop file
-(`CONTROL/stop-workstream`), and stop-and-rerun kill via `CONTROL/workflow-pids.json`.
-On violation it writes `VIOLATION-STOP` lines with the exact finding and exits 2
-(governance-exit contract). On clean it appends one `BOSSCYCLE-CLEAN` line with
-the checks run. `boss-cron --check` runs exactly one cycle read-only and prints
-the verdict. Its log is `CONTROL/boss-cron.log`. The ledger line that records the
-armed state is `ISSUE-18-EARLY`. WF-4E upgrades this interim boss to the full
-8-check boss + Telegram heartbeat alert — the interim checks exist from minute one
-and are never removed while the upgrade is pending. The hook-protection clause
-(PART 4) binds: `disableAllHooks` is never set on the operator box — it kills the
-boss cron and every governance hook. This skill's runs are governed by the same
-boss; a run that violates the ledger classes, the wave lock, or the width doctrine
-is stopped and re-dispatched from its last clean checkpoint.
 
 This skill runs on workflows and subagents — it cannot run inline. Before
 anything else, check whether ultracode is ON. A system-reminder in this turn
@@ -446,9 +392,8 @@ model defaults — Opus plans, Sonnet builds, Fable reviews, Haiku merges and lo
 things up. You do not need to answer any setup questions." Concurrency: the harness
 delivers min(16, cores−2) truly-concurrent subagents PER WORKFLOW (measure cores:
 `sysctl -n hw.ncpu` — on a 12-core machine that is 10; re-measure on every machine,
-never inherit a number), more workflows in flight to scale past it, and a
-machine-doctrine ceiling of 50 workflows (operator doctrine, not a product
-limit). On Anthropic Claude Code the operator cap of 20 concurrent
+never inherit a number), more workflows in flight to scale past it, and a hard
+ceiling of 30 workflows. On Anthropic Claude Code the operator cap of 20 concurrent
 agents per wave governs total width — and when an Agent Team is active, the lead
 plus each commander occupy persistent slots inside that cap before any workflow
 width is allocated. The Capacity Ledger (step 6.5, `references/capacity.md`)
@@ -998,13 +943,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
    is the info." **Create the project folder + `00-INPUT/` immediately after they
    choose** (Law 23 — the brainstorm's verbatim capture gets a durable home before
-   it is spoken, not two phases later). **The moment the Build Target is
-   confirmed, write the `BUILD-TARGET: <taxonomy>` ledger line to
-   `<project>/CONTROL/LEDGER.md` through `tools/ledger.sh`** — the value is
-   exactly one of `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE |
-   WEBSITE | FUNNEL`, matching the confirmation; this line is the RESEARCH-READY
-   gate's first precondition (step 3.5) and the boss cron's check. Then:
-3.5. **Just-in-Time research (Step 1c-bis, BOTH modes) — the RESEARCH-READY gate.** Research may not run until BOTH are true: (a) the build target is NAMED — exactly one of the six-way taxonomy `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`, confirmed in prose through the Build Target exchange above, never rendered as a menu; and (b) the material is CAPTURED — the brainstorm written verbatim into `00-INPUT/` on the interview path (step 4), or the provided material copied into `00-INPUT/` untouched and the one-paragraph understanding confirmed on the pointed path (a provided folder is never copied — RULE 1; its documents ARE the apparatus, so the confirmation alone satisfies capture). The conditions are recorded as ledger lines `BUILD-TARGET: <taxonomy>` (written at the Build Target confirmation, step 3) and `INPUT-CAPTURED: <path>` (written the moment capture completes: after the brainstorm's verbatim capture lands in `00-INPUT/` with the reflection confirmed on the interview path, or after the provided material is in `00-INPUT/` with the one-paragraph understanding confirmed on the pointed path — the `<path>` value is the relative path under the project, e.g. `00-INPUT/` or `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`), both through `tools/ledger.sh`. While either line is missing, NO research dispatch — a refused dispatch names the missing condition(s). The gate blocks the DISPATCH only, never the flow: on the interview path the run continues into the brainstorm (step 4) and the dispatch fires the moment the capture lands in `00-INPUT/` (Step 1c-bis — before the target-specific questions); on the pointed path the capture completes at step 3, so both lines already exist here and the dispatch fires immediately. Once both exist, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background while the interview continues. Every research dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing (Rule 3.14, document 12), in the exact format `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>` — the trailing two citation fields ARE those ledger lines copied verbatim, byte-for-byte. A research row without both citations, or whose citations do not match the ledger's current `BUILD-TARGET:` and `INPUT-CAPTURED:` lines, is a violation the boss cron stops.
+   it is spoken, not two phases later). Then:
+3.5. **Just-in-Time research (Step 1c-bis, BOTH modes).** The moment the Build Target is answered at step 3, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background through the brainstorm.
 4. **Brainstorm (if interview mode).** Fifteen minutes, their own words, no
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
@@ -1013,39 +953,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    custom — one plain question. It pre-sets the defaults ("done" definition,
    model split, where work fans out vs serializes) and skips the questions that
    do not apply. See `references/interview.md`.
-6. **Capacity interview (Claude-Nine only).** THE MODE OFFER FIRST — the
-   operator ruling R1 in `references/interview.md` (section "R1. The two
-   modes — offered FIRST, not at question eleven") is a hard gate. After the
-   up-front count
-   statement (the pre-statement reads are done, C and T are computed and
-   spoken), the FIRST counted question is the mode question, spoken VERBATIM
-   in R1's wording (interview.md, the R1 section):
-   "I can make every technical decision myself and just build it — you'd
-   answer only the few questions about your accounts, your money, and what you
-   like. **Or you can make the detailed calls with me as we go.** Which do you
-   want?" The mode question IS the defaults offer: a yes records DEFAULT MODE
-   (Simple) and the fast-path-1 defaults (A4, A5, A7, A8); a no records
-   ADVANCED MODE and the defaults offer is never re-asked. Record the
-   choice as DEFAULT MODE (Simple) or ADVANCED MODE, and record the
-   choice as the ledger line `INTERVIEW-MODE: simple|advanced` BEFORE the
-   next question is asked (the live ledger via `tools/ledger.sh`, write-before
-   the anti-drift contract — the boss cron's allowlist in the master fix
-   spec carries `INTERVIEW-MODE` as a sanctioned line class). In DEFAULT MODE
-   the whole interview is the R6 list — about nine questions, usually fewer.
-   ADVANCED MODE adds the R7 list. Everything else is DECIDED by the run and
-   REPORTED as statements in the recap — never asked. The mode question is
-   question 1 of the count: DEFAULT MODE asks R6's remaining items (2)-(9)
-   after it; the mode question itself is NEVER re-asked once answered. In
-   DEFAULT MODE the whole interview is R6 alone — never the lettered
-   A–D blocks; in ADVANCED MODE the lettered blocks (and the R7 items) run
-   under the target's ceiling-table wall.
-   Then ask the target's Step 1d discovery branch (references/interview.md) —
-   counted questions, numbered per the counter. Step 1d is asked only in
-   ADVANCED MODE: the R6 nine-item wall governs DEFAULT MODE, and Step 1d is
-   not in the R6 list. The Step 1d branch runs BEFORE the lettered blocks
-   (archetype → mode question → Step 1d branch, THEN the lettered A–D blocks
-   and R7 items).
-   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
+   Then ask the target's Step 1d discovery branch (references/interview.md) — counted questions, numbered per the counter.
+6. **Capacity interview (Claude-Nine only).** The lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the archetype defaults offer and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
@@ -1201,16 +1110,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     chosen — Law 18), lanes (one per repository), the holding pen + landing queue
     tables (Rule 3.26), the loop register (Rule 3.24), the budget (the 9.4
     quantities + the spend-per-window inequality + one worked example — carried in
-    `references/loops.md`). **When the build generates images, the execution
-    plan ALSO carries the IMAGE-MANIFEST section** (documents.md, document 16):
-    an enumerated list written BEFORE the first build dispatch, one row per
-    planned image (slot, page, size, aspect, generation prompt, provider, model,
-    cost, and the temp URL + 24h expiry recorded at generation time — the full
-    row contract is `references/media-pipeline.md` section 14.1). **The manifest
-    is the authoritative image list — no image is generated outside it.** Rows
-    are written only after the provider-reachability gate passes (step 6's
-    media-block close); on a gate fail the run takes the without-media path and
-    writes no generation-eligible rows.
+    `references/loops.md`).
 16.2. **Write PROJECT-MANIFEST.md (document 17 — SPEC/PROJECT-MANIFEST.md).**
     The durable architectural source of truth: how THIS project is supposed to
     operate. Its eighteen contents (references/execution-architecture.md carries
@@ -1314,15 +1214,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     prove the instrument on a known-positive before trusting any zero — the v4's
     own QC report failed on exactly this (stale counts), so a self-audit with no
     command output is not a self-audit. The commands live in
-    `references/documents.md`. **Then the QC-RECORD audit:** every verdict block
-    in the ledger opens with a QC RECORD that passes its six mechanical checks
-    (`references/pipeline.md` Stage 2) — a judge seat differing from the unit's
-    builder seat and provenance=STRIPPED (blind critic, zero self-QC), a named
-    bar, a bar-fetch proof, a binary verdict, and a PASSED / LOOPED n-of-20 /
-    ESCALATED outcome; enumerate the records with the census commands, prove the
-    instrument on a known-positive first, and report each count — a verdict
-    block with no record, or a record failing a check, is a defect. **Then the
-    GL-001…GL-008 separation audit:** the
+    `references/documents.md`. **Then the GL-001…GL-008 separation audit:** the
     three-part Gauntlet Loop block (Step 12.5) must show: exactly three labeled
     top-level parts exist, in order (THE TASK / THE BUILD METHOD / THE BAR TO
     HIT); no critic/loop/stop language in THE TASK; decomposition/roles/
@@ -1374,32 +1266,9 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    OWN rubric (Law 29): the judge scores the ten categories PLUS the per-card QC
    section, an independent command that names the wrong outcome. Identifies
    gaps/defects/blockers + improvements; lists (1) what is wrong + how to fix,
-   (2) what to improve + how; then fixes. **Every FAIL loops back to the
-   builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
-   stripped of its evidence — and the builder fixes exactly that finding. The
-   loop is bounded (max 20 cycles per finding, Rule 3.22 — operator ruling
-   2026-08-14) and recorded (every cycle appends the finding, the fix, and the
-   re-judge result to the finding's verdict block in the live ledger). After
-   the 20th failed loop: escalate to the operator WITH THE FULL FINDING
-   HISTORY — never a quiet give-up, never a relabeled pass.** Fixes run in
-   parallel — one fixer per finding (Law 32).
-   **Every judge pass writes ONE QC RECORD** — `QC-RECORD unit=… judge=… bar=…`
-   / `bar-fetch=…` / `verdict=…` / `outcome=…` plus `blind=yes
-   model-independence=… self-qc=no` and `provenance=STRIPPED` (Law 49 — the
-   critic's package carries no timestamps, authorship, history, builder
-   identity, builder reasoning, or effort narrative) — to the ledger's verdict
-   blocks through `tools/ledger.sh` the moment the verdict is reached. The
-   record carries the four things the QC bar checks: a blind critic (`judge=`
-   differing from the unit's builder seat and `provenance=STRIPPED` — zero
-   self-QC), a named bar with its fetch proof, a binary verdict (PASS vs
-   everything else — FAIL, BLOCKED, INFEASIBLE, LIMIT-REACHED, Law 50), and
-   the loop-or-pass outcome (PASSED / LOOPED cycle n of 20 / ESCALATED after
-   20 / ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED
-   with reason=). The six mechanical checks and the fail-closed rule for
-   defective records live in `references/pipeline.md` Stage 2.
-   **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
-   never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
-   non-success states, never relabeled PASS.
+   (2) what to improve + how; then fixes. Self-repair capped at 20 cycles per
+   finding (Rule 3.22 — operator ruling 2026-08-14: up to twenty rounds before
+   a human sees it). Fixes run in parallel — one fixer per finding (Law 32).
 
 3. **Holding pen** — passing work stages in a pen (one per repo), not straight to
    main. The pen lives in the execution plan as a table, not as a file (Law 39).
@@ -1523,7 +1392,7 @@ lives in `references/pipeline.md`.
 | 4 — Pipeline, not barrier | Each unit is judged when IT finishes, lands when IT passes. Waves cap how many run at once; they never synchronize completion. |
 | 5 — Slice the specification | Builders read spec-common + their own slice only, never the master spec (~91% token cut). Caching will not rescue a fan-out. |
 | 6 — Foreground gates with timeout | All tests/builds/checks run foreground with an explicit timeout. Never background a gate. On timeout: mark blocked-timeout, move on. |
-| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. 8.5 gate. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. Every verdict is written as a QC RECORD (`QC-RECORD unit judge bar bar-fetch verdict outcome blind model-independence self-qc provenance` — the format in `references/pipeline.md` Stage 2), and the record's `judge=` seat must differ from the unit's builder seat with `provenance=STRIPPED`: zero self-QC. |
+| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. 8.5 gate. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. |
 | 8 — Never quit | On any death, crash, rate limit, session limit: re-derive state from the primary source, re-fire, resume at the first unfinished item. The run ends two ways only: finished, or the human stops it. |
 | 9 — Decide autonomously; Named Stops only | Only the Named Stops ask a human. A stop blocks ONLY its own unit. Everything else is decided and recorded. |
 | 10 — Batch the ripple | One version bump + one changelog entry + one annotated tag per batch, and every other downstream artifact the batch touched. Never per unit. |
@@ -1624,9 +1493,6 @@ See `references/audience.md` for the full audience UX rules.
   a claim, not evidence (Law 1, Law 14).
 - Never assert a number that was not measured by a command actually run (Law 14).
 - Never lower the quality gate. 8.5 is fixed. Never suggest lowering it (Law 43).
-- Never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS.
-  The bar wins by default (Law 50): a comparison that cannot run is BLOCKED,
-  not passed; an operational limit ends the item NOT PASSED, never PASS.
 - Never grep for content or verdicts (Law 12).
 - Never print, echo, or log a secret value. Confirm by NAME only.
 - Never perform an irreversible action without explicit permission for that
@@ -1663,7 +1529,7 @@ See `references/audience.md` for the full audience UX rules.
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
-| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, escalate with the full finding history. Hitting the cap is LIMIT REACHED — a non-success state, never relabeled PASS (Law 50). |
+| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, move on. |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |
@@ -1740,19 +1606,7 @@ heartbeat line must CARRY STATE (counts by status, current unit, next item); a
 contentless "auto-tick" heartbeat is a banned write — on the operator's real
 ledger, 740 of 2,366 lines (31%) were contentless ticks and the longest run of
 them (139 lines, ~7 hours) was the TAIL of the file: the run drifted and never
-came back. **The contract is mechanically checked on every reconcile: the
-ledger line shapes are `<ISO8601Z> | CLAIM | unit=<id> | agent=<label> |
-model=<role> | plan=<one line>` (BEFORE the unit) and `<ISO8601Z> | RESULT |
-unit=<id> | PASS|FAIL|BLOCKED | evidence=<path or anchor>` (AFTER it); the
-conductor writes both through `tools/ledger.sh`, append-only, never only at
-the end of a run. `tools/anchor.sh --mode reconcile` CLASS 7 pairs every
-RESULT unit against a prior CLAIM for the SAME unit id and alarms
-`unpaired-claim` (exit 3, `ACTION|write-missing-claims`) when RESULT units
-exceed `ANCHOR_CLAIM_UNPAIRED_TOL` (default 3) with no CLAIM — the ledger
-failing as the single source of truth; an absent ledger is UNDETERMINED, and
-an IDLE reconcile claims nothing. A run that ledgers only on completion has
-no state to resume from at the moment it most needs one.** At every wave
-boundary, at every cron/loop tick start, after every
+came back. At every wave boundary, at every cron/loop tick start, after every
 compaction, and before every dispatch, the conductor runs `tools/anchor.sh
 --mode reconcile` — the three-way reconciler (manifest ↔ native task graph ↔
 project_state.json ↔ the artifacts on disk, RECONCILE TASKS NOW, addendum §12).
@@ -1763,37 +1617,7 @@ keyword does NOT start workflows from scheduled-task prompts (Claude Code ≥
 2.1.210) — the saved-command form is the only reliable spell from a cron. Every
 loop's precondition #0 checks `CONTROL/TERMINAL-DRIFT.flag`: while it exists,
 nothing dispatches — the flag is the capture-proof stop a drifted conductor
-cannot tick through. The boss cron (PART 4) compares the live ledger against
-the script on every cycle. A violation stops the violating workstream the same
-cycle: the ledger gains a `VIOLATION-STOP` line carrying the exact finding, and
-the workstream restarts from its last clean checkpoint — the checkpoint rules
-in `CONTROL/project_state.json` (the seven moments, the
-`checkpoint/<slug>-<NNN>` tag scheme, and the `best_stable_build` pointer;
-`references/pipeline.md` Checkpoints, `references/execution-architecture.md`
-§11). One cycle, one outcome: `VIOLATION-STOP` plus checkpoint restart, or
-`BOSSCYCLE-CLEAN`. The conductor reads the stop file at every dispatch point
-and TaskStops the named workstream, then re-dispatches it from the checkpoint
-the right way — never a silent re-plan. `CONTROL/TERMINAL-DRIFT.flag` remains
-the capture-proof stop: while the flag exists, nothing dispatches, and no
-restart happens — a stop is lifted only by naming the blocker and removing the
-flag (references/anti-drift.md §6).
-
-**The boss cron enforces all of it (WAVE 0 BOOTSTRAP, operator order 2026-08-16).**
-The interim boss (`tools/boss-cron`, installed at
-`/Users/blackceomacmini/work-999-setup/tools/boss-cron`, crontab `*/5 * * * *`,
-log `CONTROL/boss-cron.log`) compares the live ledger against the script every
-cycle and holds stop/restart authority: on violation it writes `VIOLATION-STOP`
-lines naming the workstream and the exact finding, writes/updates the stop file
-`CONTROL/stop-workstream`, and exits 2; the conductor reads the stop file at every
-dispatch point and MUST stop the named workstream, then re-dispatch it from its
-last clean checkpoint the right way. `CONTROL/workflow-pids.json` remains for
-out-of-process runs. On clean it appends one `BOSSCYCLE-CLEAN` line with the
-checks run and the timestamp. A missing `BOSSCYCLE-CLEAN` within two intervals
-(10 minutes) fires the heartbeat alert — the boss is itself governed. The ledger
-line recording the armed state is `ISSUE-18-EARLY`. `boss-cron --check` runs one
-cycle on demand. The hook-protection clause (PART 4) binds: this skill never
-removes, disables, or weakens the boss cron entry or any governance hook, and
-`disableAllHooks` is never set on the operator box.
+cannot tick through.
 
 ---
 
@@ -1857,8 +1681,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
 17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, **§4.1 — the trust pre-flight** (REQUIRED before the first spawn of every run; a fresh build directory is always untrusted), the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover), and **§10 — the SINGLE OWNER of teammate-liveness verification**: the teammate's own session transcript is the primary instrument; `ListAgents` corroborates and never decides; the `inboxes/{name}.json` artifact is a split-pane-only corroborator that may never ground a negative verdict; and a disbanded team's directory is gone while its transcripts persist. Read the procedure THERE — it is never restated anywhere else (Step 16.9, and any moment a spawn's liveness is in question)
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
-19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.** Its image-manifest section is the row contract for the execution plan's IMAGE-MANIFEST section (step 16, document 16) — one row per planned image, written before the first build dispatch, no image generated outside the manifest.
+19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.**
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)
-23. `tools/boss-cron` — the boss cron (PART 4 enforcement, WAVE 0 BOOTSTRAP, operator order 2026-08-16): the 5-minute cycle that compares the live ledger at `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` against the script (concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence, heartbeat, stop file, stop-and-rerun kill via `CONTROL/workflow-pids.json`), writes `VIOLATION-STOP` on violation with the exact finding and `BOSSCYCLE-CLEAN` on clean, exits 2 on violation (governance-exit contract), `--check` runs one cycle read-only, log `CONTROL/boss-cron.log`, cron entry `*/5 * * * *`, armed-state ledger line `ISSUE-18-EARLY`, heartbeat alert if no `BOSSCYCLE-CLEAN` within two intervals (the boss is governed too), hook-protection clause intact (GATE 0b and the anti-drift contract above)
