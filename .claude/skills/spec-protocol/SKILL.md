@@ -108,6 +108,28 @@ Read them in that order and there is only ever one width. Consuming 100% of a pr
 is a Law 44 violation; leaving dispatchable work undispatched inside the usable number is
 a violation of this rule. **Neither one buys the other any slack.**
 
+**THE FORCED-WIDTH RULE (binding, 2026-08-15 — Issue 14, FIX step 2).** Inside the usable
+number, dispatch width is FORCED to the work: never dispatch fewer streams than the work
+allows, and never pad either. The rule's two forbidden defects are TIMIDITY (sizing below
+what the work supports — 3 agents while 13 more had independent work waiting) and PADDING
+(inventing agents to hit a number) — the same two defects the 2026-08-14 ruling names below.
+A dispatch is under-width when any dispatchable unit waits while capacity sits idle; a
+dispatch is padded when an agent cannot be given the four properties below. Both are
+violations of this rule, and the boss cron's width check (PART 4 check 4) stops both:
+fan-out below scripted width without a recorded dependency line, and padding past the work.
+
+**THE FOUR PROPERTIES — every spawned agent (binding, the CAPACITY RULE from
+`references/gauntlet.md` §13.3).** Provider capacity is permission, never instruction.
+Every spawned agent MUST carry all four: **(1) unique responsibility** — the agent owns a
+named unit or slice, never a duplicate of another agent's; **(2) evidence to inspect or
+work to perform** — the agent receives its input artifact or a citation to it, never a
+vague brief; **(3) an explicit deliverable** — a named output artifact; **(4) an
+acceptance criterion** — a binary pass/fail bar the output is judged against. An agent
+that cannot be given all four is NOT spawned: a workflow that cannot name what each of its
+agents owns is over-wide by definition and is cut to the agents that can be given the
+four (gauntlet.md §13.3, lines 971-973). Width arithmetic that counts agents beyond the
+four-property test is padding, regardless of how much capacity exists.
+
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
 - Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 16 sub-agents per workflow — the operator's ceiling (ruling, 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 16 — a one-unit job gets one agent, sixteen independent units get sixteen. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 13 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 16 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 30 workflows in parallel when the work allows, up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2).
 - SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
