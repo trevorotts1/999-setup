@@ -132,6 +132,7 @@ SANCTIONED_CLASSES = {
     # PART 3 batch merge: done means MERGED (spec line 526) — the serial merge
     # records carry the MERGED class; scope must never flag the merge evidence.
     "MERGED",
+    "REVIEW", "WAVE-REVIEW", "REVIEW-FINDING",
     "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
     "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
     # Wave-boundary reconcile markers (drift check 6 mandate) — sanctioned:
