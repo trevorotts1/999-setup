@@ -526,6 +526,26 @@ has it). The brief MAY use Mobbin for reference research (named, credited
 inspiration). Output: ledger `MOBBIN-CHECK: configured`. Acceptance: no
 purchase offer is spoken.
 
+**MOBBIN IS PART OF THE BAR.** On a configured run, the reference research
+MUST find **the top 3 candidate screens matched to the TYPE of site being
+built** (the site type named in the brief — a dentist's brochure site, a
+coaching funnel, a SaaS landing, each its own search), then **SELECT THE BEST
+of the 3** as the reference the brief is written against. Selection is a
+judged choice, not the first hit: score the 3 candidates against the site
+type's researched conversion patterns (hero structure, headline construction,
+CTA hierarchy, social-proof placement) and name the winner and why. Output:
+ledger `MOBBIN-CHECK: top3=<mobbin_url of each candidate, comma-separated>,
+best=<mobbin_url of the winner>`. Acceptance: the design brief cites the
+winner's URL and states the reason it beat the other two. The winner is
+admissible as the copy bar itself or as a named input to it (see The COPY
+BAR); a configured run that produces no top-3 selection is a defect — the
+bar is incomplete without it.
+
+**When NOT configured** (no MCP): the referral-link website is the browser
+reference (the client's account) — never MCP tools; the same top-3 / best-of-3
+selection applies to the researched reference pages found by the reader
+agents.
+
 **3. IF NOT CONFIGURED — HIGHLY RECOMMEND as an OPTIONAL purchase** (paid
 product; the client buys a plan). Recommend it strongly: it is the reference
 library that gets clients the best visually stunning apps and sites. Use THIS
@@ -755,6 +775,16 @@ re-does with the remaining candidates; a broken bar is never silently
 exchanged for a phrase. The picked page stays the bar for the whole build;
 changing it mid-build re-opens bar selection and is announced.
 
+**When Mobbin is configured, the Mobbin top-3 winner is an INPUT to the
+bar.** The bar is never picked blind to it: the MOBBIN-CHECK top-3 / best-of-3
+selection (above) feeds the copy-bar pick — the winner's headline, subhead,
+and CTA construction is compared against the user's bar candidate, and the
+stronger construction wins that element. The bar's four copy elements (below)
+are judged against BOTH the user's bar page AND the Mobbin winner where they
+differ; the ledger records which source won each element
+(`COPY-BAR-SOURCE: user=<url>, mobbin=<url>`). A build that skips the Mobbin
+comparison on a configured run is a defect.
+
 **What the bar must show — the four copy elements.** If the picked page
 lacks one of these, the missing element is recorded as a gap and that
 element's copy follows the site-type pattern block (A/B/C above) instead:
@@ -790,6 +820,39 @@ writes per-page structure against this bar; STAGE-WIREFRAMES and
 STAGE-BUILD (pipeline stages) read the bar for hero and CTA placement; the
 blind critic judging the built pages receives the bar's URL alongside the
 pages and compares copy the same way it compares layout.
+
+### THE COPY QUALITY FLOOR — pages, funnels, emails (binding, no exceptions)
+
+The copy bar is the ceiling; this floor is the minimum every deliverable
+clears. Sparse or invented copy is a defect at every stage — the same class
+of defect as a layout that ignores the brief. The floor applies to **pages,
+funnels, and emails** alike:
+
+1. **Every headline, subhead, and CTA traces to a named source** — the
+   bar's construction, the Mobbin winner's construction, or a named,
+   sourced site-type rule (A/B/C pattern blocks above, with its citation).
+   A copy line that cannot be traced is a defect (re-stated from the bar
+   mechanism — it is the floor, not the ceiling).
+2. **No bare briefs.** Copy is never written from a bare idea ("make it
+   punchy", "about us") — it is written against the bar or a sourced
+   pattern. A page, funnel, or email whose copy has no named reference is
+   rejected at the gate, not fixed post-hoc.
+3. **Minimum element coverage.** Every deliverable carries the four copy
+   elements the bar must show (headline construction, subhead
+   construction, CTA construction, tone/register) — recorded per element
+   with its source. A deliverable missing an element records the gap and
+   follows the site-type pattern block, exactly as the bar's own gaps are
+   handled.
+4. **Emails are copy, not skeletons.** An email-sequence stage (Stage 3,
+   §16) ships complete copy for every message — subject line, preview
+   text, body, CTA — each traced to the bar's CTA/tone construction or a
+   named, sourced pattern. A placeholder body ("[insert value prop]") is a
+   defect; the 14-day follow-up template (§8) is the proven default
+   structure, not a permission to ship placeholders.
+5. **The blind critic checks the floor too.** The critic that judges the
+   built pages against the bar also checks floor compliance: any headline,
+   subhead, CTA, or email line without a traceable source fails the page
+   regardless of layout quality.
 
 ---
 
