@@ -504,6 +504,22 @@ file(s) it read (`~/.claude-nine/.claude.json`, `~/.claude.json`, project
 Streamable HTTP https://api.mobbin.com/mcp, OAuth-authenticated by the client)
 for design reference search; when not configured, usage is the referral-link
 website as browser reference (the client's account), never MCP tools.
+Reference search MUST cover BOTH channels:
+- **VISUAL patterns** — layout, hero, carousel, palette, type scale (search
+  screens / sections for the target product class, cite `mobbin_url` per
+  reference).
+- **COPY / MESSAGING patterns** — headline + subhead structures, section
+  intros, pricing framing, CTA phrasing (search screens for the target class,
+  extract copy skeletons, cite `mobbin_url` per reference). Never write site
+  copy from a bare brief when Mobbin messaging references are available —
+  sparse, invented copy is a defect.
+
+**MOBBIN-COPY-REF.** Output: ledger `MOBBIN-COPY-REF: <n>` where `<n>` is the
+count of cited copy-pattern references feeding the copy brief; acceptance: the
+design brief names each copy reference (mobbin_url + the copy element it
+informed: hero headline, section intro, pricing line, CTA). Zero copy refs on
+a configured run is a flag — the run must explain why (e.g. product class has
+no copy-messaging screens on Mobbin).
 
 **2. IF CONFIGURED — skip the offer entirely** (do not ask someone who already
 has it). The brief MAY use Mobbin for reference research (named, credited
