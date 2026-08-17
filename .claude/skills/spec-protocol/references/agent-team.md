@@ -1286,7 +1286,7 @@ workflow width** (for example WF02 at 10 + WF03 streaming at 4 + the merge train
 1). Team mode is affordable; the shape is written into the ledger.
 
 **(b) 9Router + DeepSeek v4 Flash direct, 12-core machine.** Harness governs:
-30 workflows × 10 = 300. Five persistent occupants are noise → 295 remain; the
+50 workflows × 10 = 500. Five persistent occupants are noise → 495 remain; the
 workflow shape is unchanged. (Team mode still requires the §3 probe to pass on that
 launcher — capability is UNDETERMINED there and the arithmetic does not substitute
 for it.)

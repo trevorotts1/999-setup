@@ -188,7 +188,7 @@ NODE
   # 9. Exec the same claude binary, forwarding all args. The ultracode flag
   #    (when lastEffortSelection says so) rides first; a user-passed --effort
   #    still wins (claude's CLI takes the last flag).
-  exec "$claude" "${EFFORT_ARGS[@]}" "$@"
+  exec "$claude" "${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"}" "$@"
 }
 
 main "$@"

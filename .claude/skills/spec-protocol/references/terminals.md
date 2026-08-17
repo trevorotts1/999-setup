@@ -100,7 +100,7 @@ automatically and need no substitution.
 
 | Seat | What it does | Model | Starts |
 |---|---|---|---|
-| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 30 workflows, min(16, cores−2) sub-agents each. Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
+| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 50 workflows, clientCap = min(systemConcurrentMax, cores−2) sub-agents each. Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
 | Seat 2 | **Merge** — drains the pen in batches, ripples, pushes to GitHub. One merge train per repository. | Merger model | The merge-train loop |
 | Seat 3 | **SWARM WATCH** — the secondary loop (Loop 9) that enforces SWARM DOCTRINE. Checks utilization every 5 minutes, flags violations, auto-corrects. Also runs the survival loops (stall detection, budget watch). | Haiku (cheapest tier) | SWARM WATCH (Loop 9) + the survival loops |
 

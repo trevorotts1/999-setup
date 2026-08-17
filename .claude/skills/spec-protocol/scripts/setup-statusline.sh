@@ -102,11 +102,21 @@ if [ "$EXISTING" = 1 ]; then
 fi
 
 # 2. Idempotency stamp. Same launch paths + same script + already stamped ->
-#    nothing to do.
+#    nothing to do. Stamp and key presence can drift (documented disable
+#    removes only the key), so a stamp is honored only while a store still
+#    carries the line; otherwise the stamp is cleared and install proceeds.
 if [ -f "$STAMP_FILE" ]; then
-  say "Spec Protocol status line: already installed (stamp present)."
-  say "No replacement required."
-  exit 0
+  STAMP_VALID=0
+  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+    if has_statusline "$f"; then STAMP_VALID=1; break; fi
+  done
+  if [ "$STAMP_VALID" = 1 ]; then
+    say "Spec Protocol status line: already installed (stamp present)."
+    say "No replacement required."
+    exit 0
+  fi
+  warn "Stamp present but no statusLine key in either store — removing stamp."
+  rm -f "$STAMP_FILE"
 fi
 
 # 3. Install the shared statusline command script (idempotent overwrite of
@@ -142,6 +152,9 @@ cwd_path="$(jqget '.cwd // empty')"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/spec-protocol-statusline"
 STATE_FILE="$STATE_DIR/$(printf '%s' "$(jqget '.session_id // "unknown"')" | tr -cd 'A-Za-z0-9_-')"
 mkdir -p "$STATE_DIR"
+# Prune state files untouched for 7 days — sessions never return, and one
+# file per session_id otherwise accumulates unbounded.
+find "$STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 
 declare -A PRICE_IN
 declare -A PRICE_OUT
@@ -155,9 +168,9 @@ price_for() {
   local display="$1" lower
   lower="$(printf '%s' "$display" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
-    *opus*)   printf '15.00 75.00' ;;
-    *sonnet*) printf '3.00 15.00' ;;
-    *haiku*)  printf '0.80 4.00' ;;
+    *opus*)   printf '%s %s' "${PRICE_IN[opus]}" "${PRICE_OUT[opus]}" ;;
+    *sonnet*) printf '%s %s' "${PRICE_IN[sonnet]}" "${PRICE_OUT[sonnet]}" ;;
+    *haiku*)  printf '%s %s' "${PRICE_IN[haiku]}" "${PRICE_OUT[haiku]}" ;;
     *)        printf '' ;;
   esac
 }
@@ -169,6 +182,11 @@ if [ -n "$total_in" ] && [ -n "$total_out" ] \
     prev="$(cat "$STATE_FILE")"
     prev_in="${prev%% *}"; prev_out="${prev##* }"
     delta_in=$(( total_in - prev_in )); delta_out=$(( total_out - prev_out ))
+    # Clamp: a smaller total is a context reset (compaction) or a small
+    # output-only turn — never a negative cost. The state file is rewritten
+    # below, so the next refresh rebases on the current totals.
+    [ "$delta_in" -lt 0 ] && delta_in=0
+    [ "$delta_out" -lt 0 ] && delta_out=0
   else
     delta_in=$total_in; delta_out=$total_out
   fi
@@ -207,8 +225,12 @@ fi
 
 # --- wave bar (wave-shaped runs) -------------------------------------------
 # Looks for FIX-LEDGER.md at $cwd first, then $HOME/work-999-setup/FIX-LEDGER.md.
-# Current wave = highest "WAVE <n>" line; total = its WF-<n> lines; done = those
-# with a PASS or DONE marker. No wave/workflow lines -> segment omitted.
+# Current wave = highest "WAVE <n>" line; total = its workflow-completion
+# lines ("- `WF-<n>x" class); done = those with a PASS or DONE marker.
+# Denominator and numerator share the same class: the locked-wave table row
+# and log lines (DISPATCH / VIOLATION-STOP / CLOSED / REVIEW-FINDING) that
+# merely mention a wave id are never counted. No workflow lines for the
+# current wave -> segment omitted.
 wavseg=""
 ledger_file=""
 if [ -n "$cwd_path" ] && [ -f "$cwd_path/FIX-LEDGER.md" ]; then
@@ -219,8 +241,8 @@ fi
 if [ -n "$ledger_file" ]; then
   cur_wave="$(grep -o 'WAVE [0-9][0-9]*' "$ledger_file" 2>/dev/null | grep -o '[0-9][0-9]*' | sort -n | tail -1)"
   if [ -n "$cur_wave" ]; then
-    wftotal="$(grep -c "WF-${cur_wave}" "$ledger_file" 2>/dev/null || true)"
-    wfdone="$(grep "WF-${cur_wave}" "$ledger_file" 2>/dev/null | grep -c 'PASS\|DONE' || true)"
+    wftotal="$(grep -c "^- \`WF-${cur_wave}[A-Z]" "$ledger_file" 2>/dev/null || true)"
+    wfdone="$(grep "^- \`WF-${cur_wave}[A-Z]" "$ledger_file" 2>/dev/null | grep -c 'PASS\|DONE' || true)"
     if [ "$wftotal" -gt 0 ]; then
       wpct=$(( wfdone * 100 / wftotal ))
       wfill=$(( wpct / 10 ))
@@ -269,10 +291,13 @@ for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
     say "Settings store absent (name-only): $(basename "$f") — skipped."
     continue
   fi
-  # Symlink rule: update the target file, not the link.
+  # Symlink rule: update the target file, not the link. A relative link
+  # target resolves against the link's own directory, never $HOME.
   if [ -L "$f" ]; then
+    orig="$f"
     f="$(readlink "$f")"
-    case "$f" in /*) ;; *) f="$HOME/$(basename "$f")" ;; esac
+    case "$f" in /*) ;; *) f="$(dirname "$orig")/$f" ;; esac
+    [ -f "$f" ] || { bad "Symlink target missing: $f — skipped."; continue; }
   fi
   backup_settings "$f"
   set_statusline_key "$f"

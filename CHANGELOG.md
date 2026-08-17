@@ -24,6 +24,7 @@ The full 20-issue master fix landed in six locked waves (spec: `999-master-fix-s
 - **Unleash (Issue 16):** the researched, sourced unleash table applied to both settings stores (bypassPermissions, MAX_CONCURRENT_SUBAGENTS=500, SPAWN_DEPTH=8, CONTEXT/OUTPUT tokens, workflowSizeGuideline unrestricted, effortLevel=xhigh, DISABLE_AUTOUPDATER, MAX_SUBAGENTS_PER_SESSION deleted); CLAUDE_CODE_EFFORT_LEVEL never set by provisioning; 9Router routing keys justified.
 - **Gauntlet weave (Issue 19):** the six workflow types at exact counts (blueprint lock 8, primary build 16, blind visual gauntlet 16, technical gauntlet 8, release council 4/4, selective repair loop 1-per-workstream max 12); agent budget (52 expected / 150 warning / 200 hard stop with blocker report); client-machine adaptation (clientCap = min(systemConcurrentMax, cores−2); the bar never shrinks with the machine — only the width does).
 - **Status line (Issue 20):** both settings stores carry the statusLine; the shared script renders task progress (CLIENT bar = model | cost | git | Project% | Wave%).
+- **Skill VERSION catch-up (stack review 2026-08-16):** the skill-level `VERSION` (the `tools/check-update.sh` freshness contract) stayed 1.14.2 while the stack changed three skill files (SKILL.md, references/capacity.md, tools/capacity-resolver.sh — Issue 19 clientCap wire-in, resolver defects, six-workflow step 12.7); bumped once to 1.15.0 so boxes polling the published VERSION see the fixes. The v1.15.0 tag was cut before the bump and is not re-created; the bump lands with the next merge.
 
 All 19 fix branches merged serially; the boss cron enforces the whole run against the live ledger.
 
@@ -81,7 +82,7 @@ The canary's measured gap (ledger authorized 20 trees × 10; dispatch produced
 reading. Replaced with the paired tree:
 
 - **The paired tree (SKILL.md parallelism block + workflows.md template +
-  gauntlet.md §13.5).** One tree = one stream of up to 8 units; every unit is
+  gauntlet.md §13.8).** One tree = one stream of up to 8 units; every unit is
   a builder+judge PAIR, both seat-pinned, staged as a pipeline so the judge
   fires the instant its own unit's build lands. Tree width = units × 2, capped
   at the operator's 16-ceiling (hence 8 units per tree). QC capacity is

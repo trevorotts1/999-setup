@@ -4,7 +4,7 @@
 **Slice:** 5 (FIX verification: boss --check statusline check CLEAN, both stores carry the key)
 **Date:** 2026-08-16
 **Branch:** fix/20-statusline @ 797bcff (FIX-LEDGER: WAVE 5 CLOSED + PART 3 merge record)
-**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 139)
+**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 140)
 
 ---
 
@@ -47,10 +47,12 @@ EXIT=2
   stages,entry-mode,statusline,research).
 - ALL 8 violations are width (1), scope (5), drift (1), stop (1) — pre-existing
   classes carried from the WAVE 6 DISPATCH and the PART 3 merge record
-  (FIX-LEDGER.md lines 135-139: the 22:04Z/22:07Z VIOLATION cycles). None is a
+  (FIX-LEDGER.md lines 135-136: the 22:30:04Z/22:35:07Z BOSSCYCLE-VIOLATION
+  cycles; lines 141-144: the 22:40:01Z VIOLATION-STOP findings — width, scope,
+  drift at lines 141-143, 8-finding BOSSCYCLE-VIOLATION at line 144). None is a
   statusline finding.
 - Per the check implementation (`/Users/blackceomacmini/work-999-setup/tools/boss-cron`
-  lines 940-955): `check_statusline` returns a violation ONLY when
+  lines 946-961): `check_statusline` returns a violation ONLY when
   `_settings_have_statusline()` is false — i.e. when "statusLine" is missing
   from either store. No such finding appears in the 8; the statusline check is
   CLEAN.
@@ -92,12 +94,12 @@ install path — /Users/blackceomacmini/work-999-setup/tools/boss-cron):
   Wave 6 = clean; missing after Wave 6 without a STATUSLINE-REMOVED-<reason>
   ledger line = violation".
 - Lines 89-92: SETTINGS_STORES = ~/.claude/settings.json, ~/.claude-nine/settings.json.
-- Lines 922-938: `_settings_have_statusline()` — name-only `"statusLine" in data`
+- Lines 928-943: `_settings_have_statusline()` — name-only `"statusLine" in data`
   per store; all() gates the verdict.
-- Lines 940-955: `check_statusline()` — gated on a `WAVE 6 (DISPATCH|REDISPATCH)`
-  ledger line (present: FIX-LEDGER.md line 139); `STATUSLINE-REMOVED-<reason>`
+- Lines 946-961: `check_statusline()` — gated on a `WAVE 6 (DISPATCH|REDISPATCH)`
+  ledger line (present: FIX-LEDGER.md line 140); `STATUSLINE-REMOVED-<reason>`
   exemption (none in the ledger); violation only on a missing key.
-- Line 1083: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))`
+- Line 1089: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))`
   — the check runs every cycle, including --check.
 
 ## 5. Known-good control (the check is live, not a dead path)
@@ -106,16 +108,18 @@ install path — /Users/blackceomacmini/work-999-setup/tools/boss-cron):
   line names `statusline` (printed by the same dry-run block that ran all 16
   checks).
 - The check is NOT vacuous on the missing-key side: `_settings_have_statusline`
-  returns False for a missing file or missing key (lines 926-938), and the
-  violation branch (lines 950-954) names the offending store(s). A
+  returns False for a missing file or missing key (lines 932-943), and the
+  violation branch (lines 956-960) names the offending store(s). A
   control-by-construction: with either store stripped of the key, check_statusline
   would emit `statusline: statusLine key missing after Wave 6 in <store>`.
 - The ledger carries the wave-6 gate line the check requires (FIX-LEDGER.md
-  line 139, WAVE 6 DISPATCH 2026-08-16T22:06Z) — the check is armed, not skipped.
+  line 140, WAVE 6 DISPATCH 2026-08-16T22:06Z) — the check is armed, not skipped.
 - No `STATUSLINE-REMOVED-<reason>` line exists in the ledger (checked via
-  grep for STATUSLINE over /Users/blackceomacmini/work-999-setup/FIX-LEDGER.md:
-  only the wave-table row line 19 and the dispatch line 139 match; neither is a
-  removal line), so the exemption path did not silently clear the check.
+  grep for `STATUSLINE` over /Users/blackceomacmini/work-999-setup/FIX-LEDGER.md:
+  zero matches. The ledger spells it `status-line`; those matches — wave-table
+  row line 19, WAVE 6 DISPATCH line 140, its VIOLATION-STOP quote line 141,
+  WAVE 6 CLOSED line 157 — are not removal lines), so the exemption path did
+  not silently clear the check.
 
 ## 6. Scope discipline
 
@@ -133,7 +137,7 @@ VERDICT: DONE — boss --check ran one full cycle; the statusline check is CLEAN
 (zero statusline findings among the 8 non-statusline violations); both settings
 stores carry the statusLine key referencing the shared
 ~/.claude/statusline-command.sh script; the check wiring is live in the boss
-(lines 27, 89-92, 922-955, 1083); the check is armed by the WAVE 6 DISPATCH
+(lines 27, 89-92, 928-943, 946-961, 1089); the check is armed by the WAVE 6 DISPATCH
 ledger line. The 8 violations (width, scope x5, drift, stop) are pre-existing
 classes recorded in the ledger before this slice and are NOT in this slice's
 scope. Wave 6 close may now proceed.

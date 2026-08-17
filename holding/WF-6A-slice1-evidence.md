@@ -4,7 +4,7 @@
 **Slice:** 1 (FIX + QC: statusLine key in both settings stores — name-only check per PART 4 check 8)
 **Date:** 2026-08-16
 **Branch:** fix/20-statusline @ 797bcff (FIX-LEDGER: WAVE 5 CLOSED + PART 3 merge record)
-**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 139)
+**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 140)
 **Instrument:** the two LIVE settings stores on the operator box — `/Users/blackceomacmini/.claude/settings.json` and `/Users/blackceomacmini/.claude-nine/settings.json` (Issue 20 FIX item 3: separate stores, spec lines 442-443; verified — the skills symlink farm does NOT cover settings.json).
 
 ---
@@ -77,18 +77,18 @@ install path):
   Wave 6 = clean; missing after Wave 6 without a STATUSLINE-REMOVED-<reason>
   ledger line = violation".
 - Lines 89-92: SETTINGS_STORES = ~/.claude/settings.json, ~/.claude-nine/settings.json.
-- Lines 922-938: `_settings_have_statusline()` — name-only `"statusLine" in data`
+- Lines 928-943: `_settings_have_statusline()` — name-only `"statusLine" in data`
   per store; all() gates the verdict.
-- Lines 940-955: `check_statusline()` — gated on a `WAVE 6 (DISPATCH|REDISPATCH)`
-  ledger line (present: FIX-LEDGER.md line 139); `STATUSLINE-REMOVED-<reason>`
+- Lines 946-961: `check_statusline()` — gated on a `WAVE 6 (DISPATCH|REDISPATCH)`
+  ledger line (present: FIX-LEDGER.md line 140); `STATUSLINE-REMOVED-<reason>`
   exemption (absent); violation only on a missing key.
-- Line 1083: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))`.
+- Line 1089: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))`.
 
 Known-good control: the check executed this cycle — the slice-5 run's `checks
 run:` line names `statusline` among the 16 checks; the violation branch
-(lines 950-954) names the offending store(s), so the missing-key side is not
+(lines 956-960) names the offending store(s), so the missing-key side is not
 vacuous. The gate line the check requires (WAVE 6 DISPATCH, FIX-LEDGER.md line
-139) exists — the check is armed, not skipped.
+140) exists — the check is armed, not skipped.
 
 ## 6. Scope discipline
 
@@ -97,8 +97,11 @@ vacuous. The gate line the check requires (WAVE 6 DISPATCH, FIX-LEDGER.md line
   untouched — no backup needed, nothing written.
 - No ledger, no boss script, no repo code modified.
 - Clean tree before and after: `git status --porcelain` empty (rc=0).
-- Commit message cites the WAVE 6 DISPATCH ledger line (FIX-LEDGER.md line 139),
-  per the one-unit-one-commit rule.
+- Commit message cites the WAVE 6 DISPATCH ledger line (FIX-LEDGER.md line 140
+  on main; branch state had only 138 lines), per the one-unit-one-commit rule.
+  Drift note (2026-08-17 review): the citation is one line off — the dispatch
+  line sat uncommitted at 139 in the working tree at dispatch time, and
+  c103295 committed it with RECONCILE inserted above, shifting it to 140.
 
 ## 7. Sources
 
@@ -106,10 +109,10 @@ vacuous. The gate line the check requires (WAVE 6 DISPATCH, FIX-LEDGER.md line
   lines 434-456 (Issue 20), 545 (PART 4 check 8), 601-614 (PART 6.6).
 - Stores: `/Users/blackceomacmini/.claude/settings.json` line 118;
   `/Users/blackceomacmini/.claude-nine/settings.json` line 32.
-- Ledger: `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` line 139
+- Ledger: `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` line 140
   (WAVE 6 DISPATCH 2026-08-16T22:06Z); zero STATUSLINE matches.
 - Boss: `/Users/blackceomacmini/work-999-setup/tools/boss-cron` lines 27,
-  89-92, 922-955, 1083.
+  89-92, 928-943, 946-961, 1089.
 
 ## 8. Verdict
 

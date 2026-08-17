@@ -4,7 +4,7 @@
 **Slice:** 3 (FIX: task-progress wiring — Project completion bar + Wave bar computation wired into the shared statusline script)
 **Date:** 2026-08-16
 **Branch:** fix/20-statusline
-**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 139)
+**Ledger line:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 140)
 **Slice scope:** the Project% + Wave% computation in the shared statusline script, per Issue 20 FIX items 13 and 14 (spec lines 453-454) and operator order 2026-08-16 (client bar = model | cost | git | Project% | Wave% — context and 5h/7d INTERNAL doctrine; PROJECT bar = THE MAIN METRIC).
 
 ---
@@ -17,7 +17,7 @@
 - `/Users/blackceomacmini/work-999-setup-fix/WF-6A/.claude/skills/spec-protocol/references/progress-visibility.md` (derivation + guardrails, §6 lines 215-262 full read).
 - `/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/memory/session-cost-status-bar-operator-order.md` (operator order doctrine).
 - `/Users/blackceomacmini/work-999-setup-fix/WF-6A/CONTROL/project_state.json` (live state file).
-- `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` (live ledger; wave table + WAVE 6 DISPATCH line 139) and the clone's `FIX-LEDGER.md`.
+- `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` (live ledger; wave table + WAVE 6 DISPATCH line 140) and the clone's `FIX-LEDGER.md`.
 - `/Users/blackceomacmini/.claude/settings.json` + `/Users/blackceomacmini/.claude-nine/settings.json` (name-only statusLine check, JSON parse — READ only, both stores).
 - Live skill store `/Users/blackceomacmini/.claude/skills/spec-protocol/scripts/setup-statusline.sh` (byte-diff vs repo).
 
@@ -82,7 +82,7 @@ EXIT=0
 - Touched ONLY: this evidence file (`holding/WF-6A-slice3-evidence.md`).
 - No settings files, no ledger, no script, no repo code modified. Working tree clean before and after (git status empty).
 - Test artifacts (/tmp/slice3-test-*) removed after the runs.
-- This is the slice-3 evidence commit on branch fix/20-statusline — one unit, one commit, message cites the WAVE 6 DISPATCH ledger line (FIX-LEDGER.md line 139), per PART 2.1.
+- This is the slice-3 evidence commit on branch fix/20-statusline — one unit, one commit, message cites the WAVE 6 DISPATCH ledger line (FIX-LEDGER.md line 140), per PART 2.1.
 
 ## 6. Verdict
 

@@ -50,7 +50,7 @@ ROLE RESOLUTION: orchestrator=lead  builder=sonnet→sonnet  researcher=haiku→
   release-judge=opus→opus   (no alias overrides in this profile — resolved = alias;
   builder/judge/critic are three different tiers — verified different)
 Ceilings: Anthropic subscription (window-metered, opaque) | operator cap 20/wave
-Governing number: harness 30×10=300 | operator-cap 20 | provider n/a → GOVERNS: 20 (operator cap)
+Governing number: harness 50×10=500 | operator-cap 20 | provider n/a → GOVERNS: 20 (operator cap)
 AGENT TEAM: mode=team (probe PASS after consent; enablement written 14:02, backup
   ~/.claude/settings.json.backup.20260812-140201)
   commanders=4 → persistent slots = lead+4 = 5 → 15 remain for workflow width
@@ -64,13 +64,13 @@ Burn governor: subscription; commanders counted at full session rate (pessimisti
 Fallback: builder sonnet→opus | qc fable→opus | merger haiku→sonnet | critic opus→fable
 ```
 
-*(Scenario-b variant: GOVERNS: 300 (harness); WAVE 300; WORKFLOWS 30×10 — the 5
+*(Scenario-b variant: GOVERNS: 500 (harness); WAVE 500; WORKFLOWS 50×10 — the 5
 persistent slots are noise, and the same six phases below simply run wider.)*
 
 The three axes are visibly separate on this page and never collapse into each other:
 
 - **WIDTH** — `min(16, cores−2)` = `min(16, 10)` = **10 agents at once per workflow**,
-  30 workflows maximum in a session, so the harness could deliver 30 × 10 = **300
+  50 workflows maximum in a session, so the harness could deliver 50 × 10 = **500
   concurrently**.
 - **BUDGET** — **1,000 subagent executions for the whole session**, a lifetime count,
   not a simultaneity limit. This run declares ≈34 against it and spends 36.
@@ -643,10 +643,10 @@ either cites a doctrine constant or shows the operation on one.
 |---|---|---|
 | Cores | 12 | `sysctl -n hw.ncpu`, measured at run time |
 | Per-workflow width | 10 | `min(16, cores−2)` = `min(16, 10)` = 10 |
-| Harness delivery ceiling | 300 | 30 workflows (hard session ceiling) × 10 |
+| Harness delivery ceiling | 500 | 50 workflows (hard session ceiling) × 10 |
 | Operator wave cap | 20 | standing operator doctrine, Anthropic-billed Claude Code |
 | Provider ceiling | n/a | Anthropic subscription is window-metered and opaque; the rate-limit response is the meter |
-| GOVERNING number | **20** | smallest of {300 harness, 20 policy, n/a provider} |
+| GOVERNING number | **20** | smallest of {500 harness, 20 policy, n/a provider} |
 | Commanders | 4 | Gauntlet software build; inside the documented 3–5 band |
 | Persistent slots | 5 | lead + N commanders = N + 1 = 4 + 1, deducted BEFORE workflow width |
 | Workflow slots left | 15 | 20 − 5 |
@@ -665,9 +665,9 @@ either cites a doctrine constant or shows the operation on one.
 | TERMINAL-DRIFT N | 6 | `max(3, ceil(30 min ÷ cadence))` at the 5-minute reconcile cadence |
 
 Scenario-(b) recheck, for the same project on 9Router + DeepSeek v4 Flash direct:
-provider 2,500 − 25% reserve = 1,875 usable; harness 30 × 10 = 300; no operator cap
-on the user's own keys. Smallest = **300**, so the harness governs and the provider
-never notices. The 5 persistent slots are noise against 300, the six phases are
+provider 2,500 − 25% reserve = 1,875 usable; harness 50 × 10 = 500; no operator cap
+on the user's own keys. Smallest = **500**, so the harness governs and the provider
+never notices. The 5 persistent slots are noise against 500, the six phases are
 unchanged, and only the widths move.
 
 ---

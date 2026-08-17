@@ -14,7 +14,14 @@ Thumbs.db
 # Node
 node_modules/
 
+# Python build artifacts
+__pycache__/
+*.pyc
+
 # Local state / logs written during setup runs on any machine
 router-session.json
 route-state.json
 *.log
+
+# Pre-merge backups live on pushed snapshot branches, not as in-tree .bak files
+*.bak-*

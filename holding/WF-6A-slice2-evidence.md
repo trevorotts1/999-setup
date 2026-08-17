@@ -3,7 +3,7 @@
 **Slice:** 2 (FIX: the shared status-line script — one script both stores reference (the statusline command))
 **Workstream:** WF-6A (Issue 20 — Progress Visibility + Session Health)
 **Branch:** fix/20-statusline @ 47f5ce1 (working copy /Users/blackceomacmini/work-999-setup-fix/WF-6A)
-**Dispatch:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 139)
+**Dispatch:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 140)
 **Date:** 2026-08-16
 **Builder:** Opus builder (this agent)
 
@@ -43,12 +43,17 @@ present, correct, and live — plus evidence + commit.
   `diff <(sed -n '119,260p' setup-statusline.sh) ~/.claude/statusline-command.sh` shows only the
   two heredoc framing lines (`cat > ... <<'STATUSLINE_EOF'` and `STATUSLINE_EOF`) — script body
   zero differences.
-- Live script content verified (read in full): marker `SPEC-PROTOCOL-STATUSLINE` present
-  (line 2), client-facing segments — model (line 134), derived session cost from real token
-  counts × published per-model pricing with `~` label (lines 139-182), git branch/status
-  (lines 233-243), Project completion bar from `$cwd/CONTROL/project_state.json` disk truth
-  (lines 184-206), Wave bar from FIX-LEDGER.md (lines 208-231). Context usage and 5h/7d
-  rates are NOT rendered (INTERNAL doctrine only) — assembly lines 245-258.
+- Live script content verified (read in full, 140 lines): marker `SPEC-PROTOCOL-STATUSLINE`
+  present (live line 2), client-facing segments — model extraction (embedded copy line 134
+  = live line 15), derived session cost from real token counts × published per-model pricing
+  with `~` label (embedded lines 139-182 = live lines 20-63), git branch/status (embedded
+  lines 233-243 = live lines 114-124), Project completion bar from
+  `$cwd/CONTROL/project_state.json` disk truth (embedded lines 184-206 = live lines 65-87),
+  Wave bar from FIX-LEDGER.md (embedded lines 208-231 = live lines 89-112). Context usage
+  and 5h/7d rates are NOT rendered (INTERNAL doctrine only) — assembly (embedded lines
+  245-258 = live lines 126-139). Citation scheme: "embedded" = body inside
+  `setup-statusline.sh` (heredoc opens at installer line 119; body line N = installer line
+  119+N); "live" = `~/.claude/statusline-command.sh`.
 - No second copy exists: `~/.claude-nine/statusline-command.sh` does NOT exist
   (verified via `ls`); one shared script is the only statusline script on the box.
 
@@ -106,7 +111,8 @@ claude-opus-5 | ~$0.05 | fix/20-statusline ✓ | Project █░░░░░░�
 Every segment live-verified against real disk truth:
 - model: `claude-opus-5` (from stdin display_name)
 - cost: `~$0.05` — derived from real token counts (1000 in × $15 + 500 out × $75 per 1M, from the
-  published-price table in the script, lines 150-152) — ~-labeled, never invented
+  published-price table in the script, embedded lines 150-152 = live lines 31-33) — ~-labeled,
+  never invented
 - git: `fix/20-statusline ✓` — branch of the working-copy cwd (clean; ✓ mark from
   `git status --porcelain` empty)
 - Project bar: 14% — reads `/Users/blackceomacmini/work-999-setup-fix/WF-6A/CONTROL/project_state.json`

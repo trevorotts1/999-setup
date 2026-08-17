@@ -45,7 +45,7 @@ OPENCLAW_ENV="${HOME}/.openclaw/.env"
 # topology signal). Sourced in Phase 1, and proven read by the selftest's
 # ~/.env store control.
 USER_ENV="${HOME}/.env"
-NINE_ROUTER_DIR="${HOME}/.config/9router"
+NINE_ROUTER_DIR="${HOME}/.9router"
 # Project-local .env is deliberately NOT a store (operator ruling 2026-08-12):
 # it lives inside the project's git repo, and one careless commit publishes
 # every secret in it. Home-level stores only; the report's "Not searched" line
@@ -672,7 +672,7 @@ done
 # Phase 10: Check 9Router presence (for Claude-Nine detection)
 NINE_ROUTER_FOUND="MISSING"
 if [[ -d "${HOME}/.claude-nine" ]]; then
-  if [[ -f "${HOME}/.9router/db/data.sqlite" ]]; then
+  if [[ -f "${NINE_ROUTER_DIR}/db/data.sqlite" ]]; then
     NINE_ROUTER_FOUND="FOUND"
   elif /usr/bin/grep -q "ANTHROPIC_BASE_URL" "${HOME}/.claude-nine/settings.json" 2>/dev/null; then
     # Check if it's a loopback URL (don't print the value)

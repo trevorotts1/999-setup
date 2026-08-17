@@ -38,10 +38,16 @@ function main() {
     process.exit(1);
   }
   state.lastEffortSelection = value;
-  const tmp = `${statePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  if (process.platform !== "win32") fs.chmodSync(tmp, 0o600);
-  fs.renameSync(tmp, statePath);
+  const tmp = `${statePath}.tmp.${process.pid}.${Date.now()}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+    if (process.platform !== "win32") fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, statePath);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* temp may already be gone */ }
+    console.error(`record-effort-selection: cannot write state file ${statePath}: ${e.message}`);
+    process.exit(1);
+  }
   console.log(`lastEffortSelection recorded: ${value} -> ${statePath}`);
 }
 

@@ -1233,7 +1233,7 @@ number into this project's execution plan.
   and never padded to the cap — while
   min(16, cores−2), MEASURED on this machine at run time, is the EXECUTION
   clamp: how many of the 16 run in the same instant, the rest queueing
-  automatically; hard ceiling 30 workflows. Never PROMISE a fixed
+  automatically; hard ceiling 50 workflows. Never PROMISE a fixed
   "workflows × 16" as simultaneous execution — that conflation put a false 320
   promise into an earlier version of this skill; the honest statement is both
   numbers, dispatched width and executing-at-once. The Capacity Ledger reconciles the three

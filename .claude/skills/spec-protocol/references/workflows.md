@@ -48,7 +48,7 @@ const results = await pipeline(units,
 return results
 ```
 
-Agent count = units × 2, capped at the operator's 16-ceiling (hence 8 units).
+Agent count = units × 2, capped at clientCap = min(systemConcurrentMax, cores−2) — 10 on the operator's machine (hence 5 units); the six gauntlet workflows (step 12.7) carry SLICE counts batched at clientCap instead.
 The width gate (SKILL.md) rejects a script that plans below its arithmetic
 without a named reason.
 
@@ -210,8 +210,10 @@ costs the whole set the tail of its slowest member.
   per-workflow-run executions and per-session spawns.
 - **4,096 items maximum per `pipeline()` or `parallel()` call.** Above that, split
   the roster across runs.
-- **30 workflow runs in flight is the hard session ceiling.** On this 12-core
-  machine that is 30 × 10 = 300 truly-concurrent agents — before the operator cap and
+- **50 workflow runs in flight is the hard session ceiling** (operator doctrine,
+  2026-08-16, superseding the 30-workflow figure — not a product limit; no
+  product cap exists on concurrent workflow runs). On this 12-core
+  machine that is 50 × 10 = 500 truly-concurrent agents — before the operator cap and
   the provider ceiling are applied. The smallest of the three always governs.
 
 ---

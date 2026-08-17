@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""boss-cron — full 8-check PART 4 enforcement (WF-4E slice 1 upgrade, 2026-08-16).
+"""boss-cron — full 16-check PART 4 enforcement (WF-4E slice 1 upgrade, 2026-08-16).
 
 Enforces the locked 6-wave plan + operator rules for workflows and agents, every cycle.
-PART 4 (999-master-fix-spec-20260815.md) mandates EIGHT checks; this build runs all 8:
+PART 4 (999-master-fix-spec-20260815.md) mandates EIGHT checks; this build runs all 8
+plus 8 carried forward from the interim boss (16 total):
 
   1. SCOPE   — any ledger item not in the 20-list AND not matching a sanctioned
                line-class = violation (PART 4 check 1; allowlist below).
@@ -51,6 +52,9 @@ Carried forward from the interim boss (Trevor's direct order 2026-08-16):
   STAGES (Issue 8): reject a STAGE-BUILD line lacking the prior stage lines;
            STAGE-LOGO acceptance checked mechanically when a logo is in play.
   ORPHAN (Issue 10): media 1:1:1:1 accounting (this is also PART 4 check 7).
+  RESEARCH (Issue 5): no research dispatch-log row before BOTH the
+           BUILD-TARGET: <taxonomy> and INPUT-CAPTURED: <path> ledger lines,
+           and every research row must cite both lines verbatim.
 
 THE BOSS IS GOVERNED TOO (PART 4): a heartbeat alert fires if the cron fails —
 no BOSSCYCLE-* line within two intervals (10 min) -> alert through the
@@ -64,9 +68,10 @@ BOSSCYCLE-ALERT are cycle lines — the boss's own ALERT line proves the cycle
 ran, so a recovered boss stops flagging its own prior death.
 
 On violation: append VIOLATION-STOP lines to the ledger, write/update the stop
-file, exit 2 (governance-exit contract per PART 4). On clean: append one
-BOSSCYCLE-CLEAN line. `--check` runs exactly one cycle read-only and prints the
-verdict (never writes, never kills).
+file (fresh findings each cycle — stale findings never latch), exit 2
+(governance-exit contract per PART 4). On clean: append one BOSSCYCLE-CLEAN
+line and clear a stale stop file. `--check` runs exactly one cycle read-only
+and prints the verdict (never writes, never kills).
 
 Hook-protection clause (PART 4) intact: this script never touches settings.json
 hooks. No grep, no sed — python named-field parsing only.
@@ -140,17 +145,34 @@ SANCTIONED_CLASSES = {
     # Wave-boundary reconcile markers (drift check 6 mandate) — sanctioned:
     # the scope check must never flag the very lines the drift check requires.
     "RECONCILE", "RE-ANCHOR",
+    # Executor-mechanic line classes in live use (FIX-LEDGER.md line 42 'DOC
+    # CHANGE ...' — the Wave 0 spec-change line; WORKFLOW DONE / WORKFLOW FAIL
+    # workflow-result lines; STOP-AND-RERUN — the interim-boss order this
+    # docstring carries). Sanctioned: the scope check must never flag the
+    # ledger lines the spec's own bootstrap records.
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
     "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
     "PAYMENT-CONTRACT", "INTERVIEW-MODE",
     # Issue 10 media accounting ledger classes (orphan check / PART 4 check 7)
     "MANIFEST-ROW", "IMAGE-GENERATED", "GHL-URL", "IMAGE-REF",
     "MEDIA-GAP", "MEDIA-UPLOADED", "MEDIA",
+    # PART 3 item 5 pre-merge backup evidence lines (BACKUP-REF FIX ...) — the
+    # backup-ref correction records the pre-merge snapshot state the check
+    # demands; the scope check must never flag the line PART 3 item 5 requires.
+    "BACKUP-REF",
+    # Review-resolution lines: RECONCILE-ADDED records when a flagged
+    # violation's premise was superseded by a later line — the scope check
+    # must never flag the resolution of the very drift it flagged.
+    "RECONCILE-ADDED",
 }
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
 
 # PART 4 check 1 prefix classes: FUNNEL-*, 3JS-*, STAGE-*, STATUSLINE-*, AK-*.
 SCOPE_PREFIX_RE = re.compile(r"^(FUNNEL|3JS|STAGE|STATUSLINE|AK)-[A-Za-z0-9-]+:?$")
+# Standalone NEW-WAVE-N dependency lines (PART 4 check 2 / PART 2.1 item 1):
+# the wave-lock check REQUIRES this exact shape for any wave beyond the locked
+# count, so the scope check must never flag the line it demands.
+NEW_WAVE_RE = re.compile(r"^NEW-WAVE-\d+$")
 # STAGE-* lines may carry lowercase per-page suffixes ('STAGE-WIREFRAMES-home').
 STAGE_CLASS_RE = re.compile(r"^STAGE-[A-Za-z0-9-]+:?$")
 # Statusline removal lines: 'STATUSLINE-REMOVED-<reason>' (PART 4 check 8).
@@ -166,7 +188,12 @@ MANIFEST_URL_EXPIRES_RE = re.compile(r"url=(\S+)\s+expires=(\S+)")
 # punctuation, or a bare count. The literal auto-tick line is the canonical
 # contentless tick. A tick that carries state (counts=, tasks=, verdicts, …)
 # is a REAL heartbeat and is not drift.
-TICK_LIT_RE = re.compile(r"heartbeat\s*\(\s*ledger\s+auto-tick\s*\)", re.IGNORECASE)
+# Both plain ('heartbeat (ledger auto-tick)') and timestamped ('heartbeat
+# 2026-08-16T20:30:38Z (ledger auto-tick)') literal auto-tick shapes —
+# anchor.sh classifies both as contentless TICKs; the boss must match.
+TICK_LIT_RE = re.compile(
+    r"heartbeat(?:\s+20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z)?\s*\(\s*ledger\s+auto-tick\s*\)",
+    re.IGNORECASE)
 TICK_MARK_RE = re.compile(r"heartbeat", re.IGNORECASE)
 TICK_STATE_RE = re.compile(
     r"counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|MERGED",
@@ -323,10 +350,12 @@ def check_wave_lock(lines):
     new_wave_deps = set()
     dispatched = set()
     for ln in lines:
-        if ln.startswith("- `WAVE ") and "CLOSED" in ln:
-            m = re.search(r"WAVE (\d+) CLOSED", ln)
-            if m:
-                closed.add(int(m.group(1)))
+        # CLOSED match anchored to the class token — prose like "after WAVE N
+        # CLOSED" inside dispatch/VIOLATION-STOP bodies must never join the
+        # closed set (same bug class the drift window match guards against).
+        m = re.match(r"^- `WAVE (\d+) CLOSED\b", ln)
+        if m:
+            closed.add(int(m.group(1)))
         if "NEW-WAVE-N" in ln or re.search(r"NEW-WAVE-\d+", ln):
             for m in re.finditer(r"NEW-WAVE-(\d+)", ln):
                 new_wave_deps.add(int(m.group(1)))
@@ -451,18 +480,29 @@ def check_scope(lines):
             continue
         if STATUSLINE_REMOVED_RE.match(cls):
             continue
+        if NEW_WAVE_RE.match(cls):
+            continue
         bad.append(ln[:120])
     return bad
 
 
 def check_questions(lines):
     """PART 4 check 3: promised vs asked question counts. Any 'Question N of …
-    C' with N > stated C and no prior correction line = violation."""
+    C' with N > stated C and no prior correction line = violation (Issue 11:
+    the honest path is a recorded correction, never a silent edit — a prior
+    correction line mentioning the over-asked count exempts the later
+    Question line)."""
+    corrections = []
     violations = []
     for ln in lines:
+        # Correction lines (class token at body start) are recorded first; the
+        # exempt match runs on PRIOR corrections only, never a later one.
+        if CORRECTION_RE.search(ln[3:]):
+            corrections.append(ln)
+            continue
         for m in QUESTION_RE.finditer(ln):
             n, stated = int(m.group(1)), int(m.group(2))
-            if n > stated:
+            if n > stated and not any(re.search(rf"\b{n}\b", c) for c in corrections):
                 violations.append(
                     f"count: 'Question {n} of … {stated}' — asked past the promised count "
                     f"({n} > {stated}) with no prior correction line: {ln[:110]}")
@@ -473,8 +513,15 @@ def _contentless_tick(line):
     """anchor.sh TICK classifier (lines 197-268): a heartbeat line whose body
     carries no state is a contentless tick."""
     body = line[3:]
-    if TICK_LIT_RE.search(body):
-        return True
+    m = TICK_LIT_RE.search(body)
+    if m:
+        # Literal auto-tick marker: contentless only when nothing but
+        # whitespace/punctuation/a bare count follows the marker — a stateful
+        # auto-tick ('(ledger auto-tick) — unit U-02 building...') is content.
+        remainder = re.sub(r"[^\w]", "", body[m.end():])
+        if remainder == "" or re.match(r"^\d{1,4}$", remainder):
+            return True
+        return False
     if not TICK_MARK_RE.search(body):
         return False
     stripped = TICK_MARK_RE.sub("", body)
@@ -505,7 +552,9 @@ def check_drift(lines):
             elif _contentless_tick(ln):
                 run += 1
             else:
-                run += 1
+                # A heartbeat carrying any content is state, not drift —
+                # only contentless ticks increment the run.
+                run = 0
             if run > DRIFT_RUN_LIMIT:
                 violations.append(
                     f"drift: {run} consecutive contentless heartbeat ticks "
@@ -947,7 +996,9 @@ def check_statusline(lines):
     """PART 4 check 8: after Wave 6, statusLine key must be present in BOTH
     settings stores (name-only). Missing after Wave 6 without a
     STATUSLINE-REMOVED-<reason> ledger line = violation."""
-    wave6_entered = any(re.search(r"WAVE 6 (DISPATCH|REDISPATCH)", ln) for ln in lines)
+    # Class-token-anchored: prose citing "WAVE 6 DISPATCH" inside
+    # VIOLATION-STOP/RECONCILE bodies must not arm the post-wave-6 gate.
+    wave6_entered = any(re.match(r"^- `WAVE 6 (DISPATCH|REDISPATCH)\b", ln) for ln in lines)
     if not wave6_entered:
         return []
     removed = any(STATUSLINE_REMOVED_RE.search(ledger_class(ln)) for ln in lines)
@@ -1089,10 +1140,13 @@ def main():
     violations.extend(f"statusline: {v}" for v in check_statusline(lines))
 
     stopped = stop_file_state()
-    if stopped:
+    if stopped and violations:
         # Short excerpt only: the stop file's own text already ends with the
         # checkpoint + loop bound, and the writer below appends them once —
         # embedding the full text would double them in the ledger line.
+        # Gated on other violations: when the underlying findings no longer
+        # appear, the stop is lifted at the end of this clean cycle instead
+        # of latching the workstream forever.
         violations.append(f"stop file active on workstream: {stopped[:80]}")
 
     # Stop-and-rerun: on violation the boss names the stop, the checkpoint to
@@ -1104,7 +1158,9 @@ def main():
     ck_note = f"restart from last clean checkpoint: {checkpoint}" if checkpoint \
         else "restart from last clean checkpoint: none recorded in project_state.json (conductor names it)"
     bound = "loop bound: QC protocol 20 cycles per finding, then escalation with full history"
-    if violations:
+    if violations and not dry:
+        # --check must never kill (read-only contract: "never writes, never
+        # kills"); the kill authority runs in live cycles only.
         # Kill authority (out-of-process runs only): pin the pids file key to
         # the WORKSTREAM the violation names — WF-\d[A-Z] / wave-N tokens in
         # the finding text — never to the check's own name ("scope:" was the
@@ -1171,10 +1227,15 @@ def main():
             # heartbeat alert at the operator). The findings stand above it —
             # this line names no class, masks nothing.
             fh.write(f"- `BOSSCYCLE-VIOLATION {now_iso()}: {len(violations)} finding(s) recorded above; checks={checks}`\n")
-    if violations and not os.path.exists(STOP):
+    # Write/update the stop file on violation (never latch stale findings from
+    # an earlier cycle); clear it on a clean cycle so a resolved stop does not
+    # re-fire the 'stop file active' violation every cycle.
+    if violations:
         with open(STOP, "w", encoding="utf-8") as fh:
             fh.write(f"boss-cron-20260816: " + "; ".join(violations)[:340]
                      + f" | {ck_note}; {bound}")
+    elif os.path.exists(STOP):
+        os.remove(STOP)
     print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended{alert_note}")
     sys.exit(2 if violations else 0)
 

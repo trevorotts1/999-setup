@@ -267,6 +267,12 @@ bash ~/.claude/skills/nine-router-setup/scripts/macos/fix-ultracode-override.sh
 
 ## Step 9.7 — Record the user's `/effort` selection (both platforms)
 
+This step is MANUAL BY DESIGN: nothing in the repo runs the record helper
+automatically — no SessionStart hook, no skill wrapper, no setup script
+invokes it. The field stays `null` until one of the commands below is run by
+hand (or re-run whenever the `/effort` selection changes); the launcher
+tolerates a missing/stale value and falls through to its default effort.
+
 `lastEffortSelection` is written ONLY by the record helper — nothing else may
 edit the field, so a setup re-run carries the value forward instead of wiping
 it. The launcher reads it at exec time (Step 9).

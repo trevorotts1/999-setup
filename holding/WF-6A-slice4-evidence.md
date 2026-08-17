@@ -4,7 +4,7 @@
 **Slice:** 4 (validation: both settings stores load without error after the wiring; status line renders in a live session showing the CLIENT bar fields; PART 4 check 8 passes)
 **Date:** 2026-08-16
 **Branch:** fix/20-statusline
-**Ledger lines:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 139) + width-justified redispatch (line 140). One unit = one commit citing these lines.
+**Ledger lines:** WAVE 6 DISPATCH 2026-08-16T22:06Z (FIX-LEDGER.md line 140 on main; branch state had only 138 lines through WAVE 5 CLOSED). One unit = one commit citing this line.
 
 ---
 
@@ -56,13 +56,13 @@ boss-cron --check: 0 violation(s)
 checks run: caps,census,width,wavelock,claims,beat,stop,scope,kill,count,drift,orphan,stages,entry-mode,statusline,research
 ```
 
-- The cycle ran all 16 checks; the `checks run:` line names `statusline`; zero violations — the statusline check is CLEAN in the full live cycle (the 8 violations seen in slice 5 — width/scope/drift/stop — are resolved by the width-justified redispatch line 140 and later ledger state).
+- The cycle ran all 16 checks; the `checks run:` line names `statusline`; zero violations — the statusline check is CLEAN in the full live cycle (the 8 violations seen in slice 5 — width/scope/drift/stop — are resolved by the WAVE 6 DISPATCH width justification at line 140 and later ledger state).
 - Check wiring, read from the live boss at `/Users/blackceomacmini/work-999-setup/tools/boss-cron`:
   - Line 27: check 8 documented in header — "statusLine key present in BOTH settings stores (name-only…)".
   - Lines 89-92: `SETTINGS_STORES = [~/.claude/settings.json, ~/.claude-nine/settings.json]`.
-  - Lines 925-941: `_settings_have_statusline()` — name-only `"statusLine" in data` per store; `all()` gate; missing file/parse error → False.
-  - Lines 943-957: `check_statusline()` — armed only by a `WAVE 6 (DISPATCH|REDISPATCH)` ledger line (present: lines 139-140); `STATUSLINE-REMOVED-<reason>` exemption (none exists in the ledger — grep over FIX-LEDGER.md returned rc=1, zero matches); violation only on a missing key, naming the store.
-  - Line 1086: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))` — runs every cycle, including --check.
+  - Lines 922-937: `_settings_have_statusline()` — name-only `"statusLine" in data` per store; `all()` gate; missing file/parse error → False.
+  - Lines 940-955: `check_statusline()` — armed only by a `WAVE 6 (DISPATCH|REDISPATCH)` ledger line (present: line 140 on main); `STATUSLINE-REMOVED-<reason>` exemption (none exists in the ledger — grep over FIX-LEDGER.md returned rc=1, zero matches); violation only on a missing key, naming the store.
+  - Line 1083: `violations.extend(f"statusline: {v}" for v in check_statusline(lines))` — runs every cycle, including --check.
 - Independent name-only re-verification (never trusting the boss's word alone):
 
 ```
@@ -82,8 +82,8 @@ both stores carry statusLine key (name-only): [True, True] -> True
 - Touched ONLY: this evidence file (holding/WF-6A-slice4-evidence.md).
 - Both settings stores READ (json.load) and left untouched — no write to either store.
 - The statusline script's own per-session state file (~/.local/state/spec-protocol-statusline/c1d7d9a2-…) was advanced by running the script — its designed behavior (line 62), not a config mutation.
-- One throwaway control file /tmp/wf6a-slice4-live.json + one control state file, both removed.
-- No ledger edits, no boss edits, no repo code edits. Commit = this one evidence file, message cites WAVE 6 DISPATCH (FIX-LEDGER.md lines 139-140).
+- One throwaway control file /tmp/wf6a-slice4-live.json + one control state file, both removed. Correction (2026-08-16 review): the throwaway control file was left on disk after the claim (mtime 19:31 predating this file's 20:48) — deleted now; no secrets in it (model name, token counts, cwd, session id only).
+- No ledger edits, no boss edits, no repo code edits. Commit = this one evidence file, message cites WAVE 6 DISPATCH (FIX-LEDGER.md line 140 on main; branch state had only 138 lines). Boss-cron line citations above are against the commit-time blob (f32c3f4:tools/boss-cron).
 
 ## 7. Verdict
 

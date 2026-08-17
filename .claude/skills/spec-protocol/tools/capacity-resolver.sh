@@ -68,7 +68,8 @@
 #                   never an env read (env reads are REPORTING ONLY); cores
 #                   MEASURED at run time; UNDETERMINED systemConcurrentMax = the
 #                   run refuses to plan, never defaults to 16; hard ceiling of
-#                   30 workflows per session.
+#                   50 workflows per session (2026-08-16 operator doctrine,
+#                   supersedes the 30-workflow figure).
 #   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
 #                   budget of 1,000 — a spend POLICY, NOT a platform limit (the
 #                   platform documents no total-per-session limit; its 20-concurrent
@@ -88,7 +89,9 @@
 
 set -u
 
-WORKFLOW_CEILING=30          # the operator's explicit rule: 30 workflows per session, hard
+WORKFLOW_CEILING=50          # the operator's explicit rule: 50 workflows per session, hard
+                             # (2026-08-16 operator doctrine, supersedes the
+                             # 30-workflow figure)
 OPERATOR_WAVE_CAP=20         # standing operator doctrine, Anthropic-billed Claude Code
 SESSION_AGENT_BUDGET=1000    # the OPERATOR's session budget — a POLICY, a LIFETIME
                              # COUNT. The settings key CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
@@ -236,6 +239,14 @@ resolve() {
   [[ -z "${BUILDER_PROVIDER}" ]] && BUILDER_PROVIDER="anthropic"
   [[ -z "${LAUNCHER}" ]] && { if [[ "${HARNESS}" == "regular" ]]; then LAUNCHER="claude"; else LAUNCHER="claude-nine"; fi; }
   [[ -z "${RESERVE_PCT}" ]] && RESERVE_PCT=25
+  if [[ ! "${RESERVE_PCT}" =~ ^[0-9]+$ ]] || (( RESERVE_PCT > 100 )); then
+    echo "ERROR: RESERVE_PCT must be a whole number 0–100 (got: ${RESERVE_PCT})" >&2
+    return 2
+  fi
+  if [[ ! "${COMMANDERS}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: COMMANDERS must be a whole number (got: ${COMMANDERS})" >&2
+    return 2
+  fi
 
   # --- AXIS 1: WIDTH ---------------------------------------------------------
   local cores_source="MEASURED" cores_instrument="" measured=""
@@ -250,6 +261,10 @@ resolve() {
       return 3
     fi
   else
+    if [[ ! "${CORES}" =~ ^[0-9]+$ ]] || (( CORES < 1 )); then
+      echo "ERROR: CORES must be a positive whole number (got: ${CORES}) — cores UNDETERMINED, ask the operator and rerun" >&2
+      return 3
+    fi
     cores_source="SUPPLIED"
   fi
   # --- CLIENT CAP (Issue 19 FIX step 6 — clientCap = min(systemConcurrentMax,
@@ -258,7 +273,7 @@ resolve() {
   # REPORTING ONLY, never for computing; UNDETERMINED → the run refuses to plan,
   # it never defaults to 16. The product's own 16-concurrent workflow cap also
   # shrinks with fewer CPUs — the cores−2 half encodes that.)
-  local CLIENT_CAP="" CLIENT_CAP_SOURCE=""
+  local CLIENT_CAP=""
   if [[ -z "${SYSTEM_CONCURRENT_MAX}" ]]; then
     echo "ERROR: systemConcurrentMax UNDETERMINED — no declared SYSTEM_CONCURRENT_MAX" >&2
     echo "       supplied. The run refuses to plan (it never defaults to 16)." >&2
@@ -269,6 +284,10 @@ resolve() {
     echo "ERROR: SYSTEM_CONCURRENT_MAX must be a whole number (got: ${SYSTEM_CONCURRENT_MAX})" >&2
     return 2
   fi
+  if (( SYSTEM_CONCURRENT_MAX < 1 )); then
+    echo "ERROR: SYSTEM_CONCURRENT_MAX must be a positive whole number (got: ${SYSTEM_CONCURRENT_MAX}) — refusing to plan" >&2
+    return 3
+  fi
   # clientCap = min(systemConcurrentMax, cores−2). systemConcurrentMax is the
   # DECLARED concurrency (10 on the operator's machine) — NOT cores-derived;
   # only the cores−2 half encodes the machine's CPU reality.
@@ -276,7 +295,6 @@ resolve() {
   (( cores_minus_2 < 1 )) && cores_minus_2=1
   CLIENT_CAP="${SYSTEM_CONCURRENT_MAX}"
   (( CLIENT_CAP > cores_minus_2 )) && CLIENT_CAP="${cores_minus_2}"
-  CLIENT_CAP_SOURCE="min(${SYSTEM_CONCURRENT_MAX} (declared), ${CORES}−2)"
   local PER_WORKFLOW HARNESS_MAX
   PER_WORKFLOW="${CLIENT_CAP}"
   HARNESS_MAX=$(( WORKFLOW_CEILING * PER_WORKFLOW ))
@@ -387,7 +405,7 @@ resolve() {
   # --- THE RECONCILIATION RULE ----------------------------------------------
   # The wave width is the SMALLEST of three numbers: (1) the harness delivery
   # capacity — workflows-in-flight × clientCap (min(systemConcurrentMax,
-  # cores−2), Issue 19 FIX step 6), capped at 30 workflows; (2) the operator cap
+  # cores−2), Issue 19 FIX step 6), capped at 50 workflows; (2) the operator cap
   # for the provider class — 20 concurrent agents per wave on Anthropic-billed
   # Claude Code, no operator cap on the user's own 9Router provider keys beyond
   # the reserve; (3) the provider ceiling minus the reserve (Law 44). The
@@ -513,9 +531,9 @@ CARD
 
   cat <<CARD
 WAVE SIZE: ${WIDTH}$( [[ "${MODE}" == "team" && "${TEAM_REFUSED}" -eq 0 ]] && echo " (workflow width) + ${PERSISTENT} persistent = ${GOVERNING}" )    WORKFLOW COUNT: ${WORKFLOWS}    AGENTS PER WORKFLOW: ≤${AGENTS_PER_WF} (= clientCap ${CLIENT_CAP})
-BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, `references/gauntlet.md` §13):
+BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, \`references/gauntlet.md\` §13):
   batch size = clientCap (${CLIENT_CAP}); batches = ceil(slice count / clientCap); wave count unchanged.
-  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batches ($( n=16; cap=${CLIENT_CAP}; parts=""; while (( n > 0 )); do take=$(( n < cap ? n : cap )); [[ -n "${parts}" ]] && parts="${parts} + "; parts="${parts}${take}"; n=$(( n - take )); done; if [[ "${parts}" == *" + "* ]]; then echo "${parts}"; else echo "1 batch of ${parts}"; fi )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batch$( n=$(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )); [[ "${n}" -gt 1 ]] && echo "es" ) ($( n=16; cap=${CLIENT_CAP}; parts=""; while (( n > 0 )); do take=$(( n < cap ? n : cap )); [[ -n "${parts}" ]] && parts="${parts} + "; parts="${parts}${take}"; n=$(( n - take )); done; echo "${parts}" )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (all eight §17 quantities):
   1. number of workflows: ${WORKFLOWS}
   2. agents per workflow: ≤${AGENTS_PER_WF}
@@ -613,10 +631,14 @@ EOF
   _assert "clientCap = min(10, 12−2) = 10" "clientCap = min(systemConcurrentMax, cores−2) = 10" "${tmp}/b.out"
   _assert "clientCap provenance declares systemConcurrentMax" "systemConcurrentMax=10 (declared, authoritative" "${tmp}/b.out"
   _assert "per-workflow = clientCap 10" "per-workflow concurrency = clientCap = 10" "${tmp}/b.out"
-  _assert "harness 30×10=300" "harness 30×10=300" "${tmp}/b.out"
+  _assert "harness 50×10=500" "harness 50×10=500" "${tmp}/b.out"
   _assert "provider usable 1875 of 2500" "provider usable 1875 of 2500" "${tmp}/b.out"
-  _assert "GOVERNS: 300 (harness)" "GOVERNS: 300 (harness)" "${tmp}/b.out"
-  _assert "WAVE SIZE 300 / WORKFLOW COUNT 30 / ≤10" "WAVE SIZE: 300    WORKFLOW COUNT: 30    AGENTS PER WORKFLOW: ≤10" "${tmp}/b.out"
+  _assert "GOVERNS: 500 (harness)" "GOVERNS: 500 (harness)" "${tmp}/b.out"
+  _assert "WAVE SIZE 500 / WORKFLOW COUNT 50 / ≤10" "WAVE SIZE: 500    WORKFLOW COUNT: 50    AGENTS PER WORKFLOW: ≤10" "${tmp}/b.out"
+  # The batch-scaling line must survive intact — a heredoc that eats its own
+  # backticks corrupts exactly this line (BATCH SCALING header + gauntlet ref).
+  _assert "batch decomposition 2 batches (10 + 6)" "16 builder slices at clientCap 10 → 2 batches (10 + 6)" "${tmp}/b.out"
+  _assert "gauntlet citation survives heredoc" "references/gauntlet.md" "${tmp}/b.out"
   # The needle is BUILT, never written literally: the dead "20 x 16" promise
   # must not survive anywhere in this file either.
   _refute "no dead 320 promise" "$(printf '= %d' $(( 20 * 16 )) )" "${tmp}/b.out"
@@ -749,6 +771,21 @@ EOF
     fails=$(( fails + 1 ))
   else
     echo "  [PASS] missing answers file rejected (a read failure is never an empty answer)"
+  fi
+  cat > "${tmp}/badcores.answers" <<'EOF'
+HARNESS=claude-nine
+BUILDER_PROVIDER=deepseek-direct
+CORES=abc
+SYSTEM_CONCURRENT_MAX=10
+EOF
+  if resolve "${tmp}/badcores.answers" > "${tmp}/badcores.out" 2>"${tmp}/badcores.err"; then
+    echo "  [FAIL] non-numeric CORES was ACCEPTED — arithmetic on it is a shell crash"
+    fails=$(( fails + 1 ))
+  elif /usr/bin/grep -q "CORES must be a positive whole number" "${tmp}/badcores.err"; then
+    echo "  [PASS] non-numeric CORES rejected fail-closed with a plain ERROR"
+  else
+    echo "  [FAIL] non-numeric CORES rejected but without the plain ERROR (got: $(head -1 "${tmp}/badcores.err"))"
+    fails=$(( fails + 1 ))
   fi
   # A mark that cannot be classified must never be printed as if it were one.
   cat > "${tmp}/badmark.answers" <<'EOF'

@@ -921,7 +921,8 @@ every previous agent.** Let **N = the number of FAILED workstreams**:
 - **VISUAL RE-VERIFICATION.** For each repaired workstream requiring visual
   verification, spawn exactly ONE NEW blind verifier. **Never reuse the previous
   verifier's judgment.** `REVERIFY_COUNT = the number of repaired visual
-  workstreams`; maximum concurrent verifiers 16 (scaled by the Capacity Ledger).
+  workstreams` (slice count, at most the WF03 total); execution is batched at
+  clientCap per Section 13.4.
 - **TECHNICAL RE-VERIFICATION.** Spawn only the technical judges whose domains
   could have been affected by the repairs. **Do not rerun unrelated technical
   judges.**
@@ -999,8 +1000,8 @@ can be given the four things above.
 ### 13.4 Scaling rule (the counts are derived, the order is not)
 
 The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
-9Router + DeepSeek direct, where the harness governs at 30 workflows ×
-clientCap = 30 × min(systemConcurrentMax, cores−2). **The topology survives at
+9Router + DeepSeek direct, where the harness governs at 50 workflows ×
+clientCap = 50 × min(systemConcurrentMax, cores−2). **The topology survives at
 any capacity; only the widths shrink**, per the Capacity Ledger:
 
 - At wave size W, WF02 runs `min(clientCap, W_builder)` builders and stages the
@@ -1011,16 +1012,21 @@ any capacity; only the widths shrink**, per the Capacity Ledger:
   unchanged. Worked example on the operator's machine (clientCap 10): 16
   builder slices → 2 batches (10 + 6); WF03's 16 judges batch identically;
   WF01 (8), WF04 (8) and WF05 (4) each fit one batch (8 ≤ 10, 4 ≤ 10); WF06
-  repair seats are capped at clientCap per wave with the remainder batched
-  sequentially.
+  repair seats are capped at 12 per wave (13.1); within a wave they execute in
+  batches of clientCap.
 - On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
   reserve), the same six phases run at width 1–2, and the run says so plainly up
   front: this will take longer.
-- Per-workflow concurrency is **clientCap = min(systemConcurrentMax, cores−2)** —
-  measured at run time by the CLIENT-MACHINE PROBE (`sysctl -n hw.ncpu` on
-  macOS, `nproc` on Linux; RAM, free disk, and network probed with it —
-  `references/capacity.md` §3 AXIS 1), which is **10** on the operator's
-  12-core Mac Mini (systemConcurrentMax 10, declared). Never inherit that 10 as
+- Per-workflow batch width is **clientCap = min(systemConcurrentMax, cores−2)** —
+  the SIZING number, measured at run time by the CLIENT-MACHINE PROBE (`sysctl
+  -n hw.ncpu` on macOS, `nproc` on Linux; RAM, free disk, and network probed
+  with it — `references/capacity.md` §3 AXIS 1), which is **10** on the
+  operator's 12-core Mac Mini (systemConcurrentMax 10, declared). Same-instant
+  execution is additionally clamped by **min(16, cores−2)** (the harness
+  EXECUTION clamp — `SKILL.md`, `references/pipeline.md`) — how many of the
+  batch run in the same instant while the rest queue. The two formulas
+  coincide on the operator machine (both 10) but are SEPARATE numbers on wider
+  machines. Never inherit that 10 as
   a constant and never write "×16" as a promise. systemConcurrentMax is the
   operator's declared max — authoritative for computing; an environment read is
   REPORTING ONLY, never for computing; an UNDETERMINED systemConcurrentMax =
@@ -1090,7 +1096,7 @@ council returns 4/4) — never an accidental while-loop.
 
 ---
 
-## 13.5 THE PAIRING DOCTRINE — builders and checkers are equal halves (operator ruling R4, 2026-08-14)
+## 13.8 THE PAIRING DOCTRINE — builders and checkers are equal halves (operator ruling R4, 2026-08-14)
 
 For every builder there is a paired checker, and the pair lives INSIDE the
 same workflow tree: build is stage 1, the judge is stage 2 of the same

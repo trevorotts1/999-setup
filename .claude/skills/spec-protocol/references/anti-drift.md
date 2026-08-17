@@ -268,7 +268,7 @@ new named artifact and no finding in any of them, AND an unchanged state
 fingerprint. K = 5 is justified by the exhibit itself: ten near-identical
 intents in one minute while nothing changed. Result:
 `DRIFT-ALARM | REPEATED-INTENT`, exit 3, and the same escalation path as a
-terminal stall. The swarm watch carries this as **S12** (`SKILL.md` RULE 5).
+terminal stall. The swarm watch carries this as **S14** (`SKILL.md` RULE 5).
 
 The measure is the CORE SHARE, not a naive similarity score: tokenize each of
 the K lines, keep the tokens that appear in at least 60% of them, and divide by

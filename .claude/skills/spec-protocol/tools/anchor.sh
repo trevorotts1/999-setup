@@ -1462,9 +1462,8 @@ EOF
   : > "$T/c14/CONTROL/LEDGER.md"
   # (iii) baseline run — no CLAIM, no RESULT: not drift (rc 0)
   runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
-  ok=0
-  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol='; then ok=1; fi
-  report 14 "ledger-provenance" "$ok" "baseline: rc=${RC} (want 0); RECONCILE line carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)"
+  local rc_base="$RC" ok_base=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol='; then ok_base=1; fi
 
   # (i) the violation: RESULT for U-03 with no prior CLAIM (default tolerance 3
   #     > 1 unpaired unit -> clean, proving the tolerance is a wall, not a
@@ -1472,19 +1471,17 @@ EOF
   "$SCRIPT_DIR/ledger.sh" "$T/c14" "CONTROL/LEDGER.md" \
     "2026-08-12T02:30:00Z | RESULT | unit=U-03 | PASS | evidence=repos/app/src/parser.ts" >/dev/null 2>&1
   runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
-  ok=0
-  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(.*unpaired=1/tol=3)'; then ok=1; fi
-  report 14 "ledger-provenance" "$ok" "tolerated: rc=${RC} (want 0); unpaired=1 reported but under tol=3"
+  local rc_tol="$RC" ok_tol=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(.*unpaired=1/tol=3)'; then ok_tol=1; fi
 
   set +e
   OUT="$(ANCHOR_CLAIM_UNPAIRED_TOL=0 "$SELF" "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json" 2>&1)"; RC=$?
   set -e
-  ok=0
+  local rc_strict="$RC" ok_strict=0
   if (( RC == 3 )) \
      && "$GREP" -qE 'DRIFT-ALARM \| unpaired-claim \| unit=U-02' "$T/c14/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|write-missing-claims' \
-     && printf '%s' "$OUT" | "$GREP" -q 'unpaired-claim(1 of 1 RESULT units'; then ok=1; fi
-  report 14 "ledger-provenance" "$ok" "strict: rc=${RC} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0); DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted"
+     && printf '%s' "$OUT" | "$GREP" -q 'unpaired-claim(1 of 1 RESULT units'; then ok_strict=1; fi
 
   # (ii) the negative control: a CLAIM for U-03 written BEFORE its RESULT must
   #      clear the alarm. The claim line is appended AFTER the result in file
@@ -1494,11 +1491,16 @@ EOF
   "$SCRIPT_DIR/ledger.sh" "$T/c14" "CONTROL/LEDGER.md" \
     "2026-08-12T02:31:00Z | CLAIM | unit=U-03 | agent=builder | model=Opus | plan=land the parser" >/dev/null 2>&1
   runa "$T/c14" "U-02" --mode reconcile --tasks "$T/c14/CONTROL/task-graph-snapshot.json" --state "$T/c14/CONTROL/project_state.json"
-  ok=0
+  local rc_pair="$RC" ok_pair=0
   if (( RC == 0 )) \
      && ! printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM \| unpaired-claim' \
-     && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/'; then ok=1; fi
-  report 14 "ledger-provenance" "$ok" "paired: rc=${RC} (want 0); claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm (the negative control)"
+     && printf '%s' "$OUT" | "$GREP" -q 'ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/'; then ok_pair=1; fi
+
+  # One aggregated report for the whole case so the case count in the
+  # SELFTEST COMPLETE line stays truthful (PASSES counts report() calls).
+  ok=0
+  if (( ok_base == 1 && ok_tol == 1 && ok_strict == 1 && ok_pair == 1 )); then ok=1; fi
+  report 14 "ledger-provenance" "$ok" "baseline rc=${rc_base} (want 0; RECONCILE carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)); tolerated rc=${rc_tol} (want 0; unpaired=1 reported but under tol=3); strict rc=${rc_strict} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0; DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted); paired rc=${rc_pair} (want 0; claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm — the negative control)"
 
   printf 'SELFTEST COMPLETE | %s of 14 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi

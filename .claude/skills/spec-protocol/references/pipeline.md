@@ -97,7 +97,7 @@ supplied by this page.
 | Layer | The number | Source |
 |---|---|---|
 | Per workflow | min(16, cores−2) truly concurrent (10 on a 12-core machine — measured, re-measure per machine) | Measured — the harness runtime cap |
-| Per session | ≤ 30 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
+| Per session | ≤ 50 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
 | Anthropic Claude Code | ≤ 20 concurrent agents per wave (operator cap); in Agent-Team mode the lead + commanders occupy persistent slots inside it first | Operator doctrine |
 | Provider (9Router paths) | ceiling − reserve, per `references/capacity.md` (DeepSeek v4 Flash 2,500 / Pro 500 / Ollama $20 use 2 / $100 use 8 / Agnes verify-live) | Capacity Ledger |
 
@@ -170,7 +170,7 @@ for fixes. Four trees, strictly sequential. Wall-clock: the sum of all stages.
 **RIGHT (swarm) — scenario (b), 9Router + DeepSeek v4 Flash direct:**
 The topological sort returns all 24 items with zero incomplete dependencies, so
 N = 24 streams are available. The governing number comes from the Capacity Ledger,
-never from ambition: harness delivery is 30 workflows × 10 = 300, and the provider
+never from ambition: harness delivery is 50 workflows × 10 = 500, and the provider
 ceiling minus its reserve sits far above that, so the harness governs and all 24
 items fit in one wave, grouped to the measured per-workflow width:
 

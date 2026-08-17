@@ -127,11 +127,11 @@ vague brief; **(3) an explicit deliverable** — a named output artifact; **(4) 
 acceptance criterion** — a binary pass/fail bar the output is judged against. An agent
 that cannot be given all four is NOT spawned: a workflow that cannot name what each of its
 agents owns is over-wide by definition and is cut to the agents that can be given the
-four (gauntlet.md §13.3, lines 971-973). Width arithmetic that counts agents beyond the
+four (gauntlet.md §13.3). Width arithmetic that counts agents beyond the
 four-property test is padding, regardless of how much capacity exists.
 
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
-- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — the live-at-once dispatch width (clientCap on the operator's machine), never the slice count: the six gauntlet workflows (step 12.7, references/gauntlet.md §13.1) carry SLICE counts above 10 (16-seat PRIMARY BUILD, 16-seat BLIND VISUAL GAUNTLET) executed in sequential batches of at most clientCap — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
 - SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
@@ -147,12 +147,15 @@ launch each as its OWN workflow, all in the same turn.
 **Parallelism = multiple PAIRED TREES (revised 2026-08-14 — the old
 "one item, one tree" reading produced thirty single-agent trees on the canary
 run and is retired).** One workflow tree = one independent stream carrying UP
-TO 8 units, and every unit inside it is a PAIR: a builder agent and its paired
+TO 5 units, and every unit inside it is a PAIR: a builder agent and its paired
 judge agent, both seat-pinned (SEAT PINNING above), dispatched as pipeline
 stages so the judge fires the instant its own unit's build lands. A tree's
-agent count = its units × 2, capped at the operator's 16-ceiling — which is
-exactly why 8 units is the chunk size. Streams larger than 8 units chunk into
-multiple trees; N streams = N trees launched simultaneously, each visible in
+agent count = its units × 2, capped at clientCap = min(systemConcurrentMax,
+cores−2) (10 on the operator's machine) — which is exactly why 5 units is the
+chunk size (5 × 2 = 10). The six gauntlet workflows of step 12.7 carry SLICE
+counts instead — 8/16/16/8/4/1-max12 seats batched at clientCap
+(references/gauntlet.md §13.1), never pair arithmetic. Streams larger than 5
+units chunk into multiple trees; N streams = N trees launched simultaneously, each visible in
 `/workflows` with its `[MODEL xN]` prefix. A single tree containing all the
 work is a VIOLATION; so is a flock of one-agent trees where units were
 independent — both are logged and corrected by the watch-loop.
@@ -168,8 +171,10 @@ width.** Before every dispatch: run `tools/anchor.sh <home> <unit-or-IDLE>
 --mode reconcile` first (with `--tasks CONTROL/task-graph-snapshot.json
 --state CONTROL/project_state.json`), execute any RECONCILE-ACTIONS it emits
 and re-run until clean, then the topological sort's largest
-zero-incomplete-dependency set gives the streams; chunk each stream at ≤8
-units; each tree dispatches units × 2 agents (builder + judge, both pinned).
+zero-incomplete-dependency set gives the streams; chunk each stream at ≤5
+units (units × 2 ≤ 10 = clientCap on the operator's machine); each tree
+dispatches units × 2 agents (builder + judge, both pinned) — except the six
+gauntlet workflows (step 12.7), whose SLICE counts batch at clientCap.
 min(16, cores−2) is the EXECUTION clamp (how many run in the same instant —
 the rest queue), never the sizing. Launch all N trees in the same turn. A
 dispatch on top of an unreconciled alarm, or while
@@ -178,7 +183,8 @@ dispatch on top of an unreconciled alarm, or while
 
 **THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
 dispatch-log row states the width arithmetic: units in this tree, × 2 for the
-pairing, the 16-ceiling, and the Capacity Ledger line it cites. A script whose
+pairing, clientCap = min(systemConcurrentMax, cores−2) as the cap (10 on the
+operator's machine), and the Capacity Ledger line it cites. A script whose
 agent plan falls below that arithmetic without a named reason is REJECTED and
 re-authored — up to 3 authoring attempts, then fail-soft: dispatch at the best
 achieved width with the shortfall named in the ledger, because an overnight
@@ -223,8 +229,11 @@ terminal" is a floor, never a ceiling.
      than streams. Never one workflow for all streams.
   5. Each workflow carries the [MODEL xN] prefix, owns its items through the
      full lifecycle (build → QC → fix → stage for merge), and runs at
-     min(16, cores−2) sub-agents (the harness runtime cap — 10 on a 12-core
-     machine; the Capacity Ledger records the measured value) for its work.
+     clientCap = min(systemConcurrentMax, cores−2) sub-agents (10 on the
+     operator's machine — the DECLARED max; an environment read is reporting-only,
+     never for computing) for its work; min(16, cores−2) is the EXECUTION clamp
+     only — how many of those run in the same instant, the rest queue
+     automatically the moment a slot frees.
   6. Every dispatch decision CITES the Capacity Ledger and the Parallelism Plan
      by name (see `references/capacity.md` and step 12.7). A dispatch with no
      cited ledger is a defect.
@@ -250,7 +259,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S1 — Workflow count** | Number of running workflows ≥ number of independent streams with runnable work | Launch missing workflows immediately |
 | **S2 — Zero-workflow** | Runnable work exists AND zero workflows running | EMERGENCY — dispatch all runnable work in the same turn |
 | **S3 — Prefix visibility** | Every running workflow carries a visible [MODEL xN] prefix | Kill and re-launch without prefix |
-| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's 16-ceiling; min(16, cores−2) is the execution clamp, never the sizing | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
+| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's declared systemConcurrentMax per workflow (10 on the operator's machine — clientCap = min(systemConcurrentMax, cores−2), computed by the CLIENT-MACHINE PROBE at step 6.5); min(16, cores−2) is the execution clamp, never the sizing | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
 | **S5 — Idle capacity** | No capacity sits idle while dispatchable work exists | Dispatch immediately |
 | **S6 — Heartbeat freshness** | Every running workflow's heartbeat is fresh (≤10 min for build/QC, ≤20 for merge) | Kill stale, re-dispatch from slice |
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
@@ -274,12 +283,12 @@ WHOLE session's total, never one agent's — never present it otherwise.
 conditions hold — every unit at HEAD, zero build errors, QC ≥ 8.5 by an
 independent judge, and the deployed URL answering 200. Until then, RUNNING is
 the default state to report.
-| **S12 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
-| **S13 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
-| **S14 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
-| **S15 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot. **The pipeline step is ONE unit, never split (Issue 10 FIX step 2 — the time-bounded ordering contract, references/media-pipeline.md 13.1): generate → poll to `state=success` → parse `resultUrls` → download → upload to GHL → read-back → ledger line, in the same step; the GHL upload is the ONLY step that turns a temporary URL into a permanent asset (result URLs expire in 24h, files in 14d, download links in 20 min)** | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class; **an item left at "generated, URL in ledger" with the GHL upload deferred is fail-closed STOPPED on that item — the temp URL will expire overnight and the spend is already gone** |
-| **S16 — Video duration fit** | Every video work item's requested duration is validated against the seated model's duration×RESOLUTION table at SPEC time — as a pair, never on either axis alone — and every video estimate prices the BILLED unit, not a pro-rata second (references/media-pipeline.md 6d, references/capacity.md 13.8) | An item dispatched past its ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip parent without a stitch-or-gap answer (ffmpeg detected by execution, or NEEDS-JOINING declared) is not dispatchable |
-| **S17 — Orphan accounting (1:1:1)** | Generated = manifest = uploaded; references may be N, each counted. Every generated image has exactly one manifest row and exactly one upload (or an honestly marked gap). Shared-asset rule: one manifest row, one generation, one upload, N references — all N counted, zero uncounted. Zero orphans in either direction: no generation without a manifest row (UNTRACKED-GENERATION), no manifest row without a generation (UNGENERATED-MANIFEST-ROW — a marked gap, never a silent drop), no upload without a reference (UNREFERENCED-UPLOAD), no reference without a counted row (UNCOUNTED-REFERENCE). Ledger classes the sweep reads: `MANIFEST-ROW`, `IMAGE-GENERATED`, `GHL-URL`, `IMAGE-REF` (references/media-pipeline.md §10.1) | VIOLATION-STOP on the media lane — each orphan named by class and file; the lane resumes only when every orphan is reconciled or honestly gapped |
+| **S14 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
+| **S15 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
+| **S16 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
+| **S17 — Media persistence** | Every media work item marked done carries `stored=` and a `perm-url=` whose read-back proof exists (`persist-proof=`), and NO provider-host URL appears in any deliverable, spec document, generated code, or the shipped app. The deny-set is built mechanically and fail-closed from the run's OWN ledger — every URL recorded in a `provider-url=` field, plus the provider result hosts this run actually observed — so it needs no maintained host list and cannot silently rot. **The pipeline step is ONE unit, never split (Issue 10 FIX step 2 — the time-bounded ordering contract, references/media-pipeline.md 13.1): generate → poll to `state=success` → parse `resultUrls` → download → upload to GHL → read-back → ledger line, in the same step; the GHL upload is the ONLY step that turns a temporary URL into a permanent asset (result URLs expire in 24h, files in 14d, download links in 20 min)** | A done item without a verified permanent URL reverts to GENERATED-CAPTURED/PERSIST-PENDING and is not merge-eligible; a provider URL found in a deliverable is a defect — replace it with the ledger's permanent URL before the pen; an ASSET-LOST-PAID line missing from the completion report is a defect of the highest class; **an item left at "generated, URL in ledger" with the GHL upload deferred is fail-closed STOPPED on that item — the temp URL will expire overnight and the spend is already gone** |
+| **S18 — Video duration fit** | Every video work item's requested duration is validated against the seated model's duration×RESOLUTION table at SPEC time — as a pair, never on either axis alone — and every video estimate prices the BILLED unit, not a pro-rata second (references/media-pipeline.md 6d, references/capacity.md 13.8) | An item dispatched past its ceiling, or estimated on pro-rata seconds where the unit is a block, is a defect; a multi-clip parent without a stitch-or-gap answer (ffmpeg detected by execution, or NEEDS-JOINING declared) is not dispatchable |
+| **S19 — Orphan accounting (1:1:1)** | Generated = manifest = uploaded; references may be N, each counted. Every generated image has exactly one manifest row and exactly one upload (or an honestly marked gap). Shared-asset rule: one manifest row, one generation, one upload, N references — all N counted, zero uncounted. Zero orphans in either direction: no generation without a manifest row (UNTRACKED-GENERATION), no manifest row without a generation (UNGENERATED-MANIFEST-ROW — a marked gap, never a silent drop), no upload without a reference (UNREFERENCED-UPLOAD), no reference without a counted row (UNCOUNTED-REFERENCE). Ledger classes the sweep reads: `MANIFEST-ROW`, `IMAGE-GENERATED`, `GHL-URL`, `IMAGE-REF` (references/media-pipeline.md §10.1) | VIOLATION-STOP on the media lane — each orphan named by class and file; the lane resumes only when every orphan is reconciled or honestly gapped |
 
 ---
 
@@ -292,14 +301,18 @@ runs every 5 minutes via crontab (`*/5 * * * *`), reads the live ledger at
 `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md`, and enforces from minute
 one: concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence,
 heartbeat (a `BOSSCYCLE-CLEAN` line within the last 2 cycles), the stop file
-(`CONTROL/stop-workstream`), and stop-and-rerun kill via `CONTROL/workflow-pids.json`.
+(`CONTROL/stop-workstream`), and stop-and-rerun kill: the boss writes the stop
+file naming workstream + checkpoint + loop bound, and the conductor reads it at
+every dispatch point and MUST TaskStop the named workstream —
+`CONTROL/workflow-pids.json` applies to out-of-process runs only.
 On violation it writes `VIOLATION-STOP` lines with the exact finding and exits 2
 (governance-exit contract). On clean it appends one `BOSSCYCLE-CLEAN` line with
 the checks run. `boss-cron --check` runs exactly one cycle read-only and prints
 the verdict. Its log is `CONTROL/boss-cron.log`. The ledger line that records the
-armed state is `ISSUE-18-EARLY`. WF-4E upgrades this interim boss to the full
-8-check boss + Telegram heartbeat alert — the interim checks exist from minute one
-and are never removed while the upgrade is pending. The hook-protection clause
+armed state is `ISSUE-18-EARLY`. The full 16-check build is LIVE (WF-4E merged,
+WAVE 4 CLOSED): caps, census, width, wavelock, claims, beat, stop, scope, kill,
+count, drift, orphan, stages, entry-mode, statusline, research — plus the
+Telegram heartbeat alert on its own 2-minute cycle. The hook-protection clause
 (PART 4) binds: `disableAllHooks` is never set on the operator box — it kills the
 boss cron and every governance hook. This skill's runs are governed by the same
 boss; a run that violates the ledger classes, the wave lock, or the width doctrine
@@ -1055,7 +1068,10 @@ When the operator provides a folder, that folder IS the project. Its documents A
 6.5. **Compute the Capacity Ledger (BOTH modes, every launcher — before anything
     dispatches).** From the detected launcher, the CLIENT-MACHINE PROBE, the
     detected/asked provider path, and the interview answers, COMPUTE the Capacity
-    Ledger and write it to `<project>/CAPACITY-LEDGER.md` (infrastructure, like
+    Ledger — profile first with `tools/capacity-profile.sh` (recall-and-confirm
+    on a repeat project) and resolve disputed values with
+    `tools/capacity-resolver.sh`; see references/capacity.md §13 — and write it
+    to `<project>/CAPACITY-LEDGER.md` (infrastructure, like
     SCOPE.md — not one of the seventeen documents). **THE CLIENT-MACHINE PROBE
     (Issue 19 FIX step 6) runs HERE, at Capacity-Ledger time — never before,
     never later:** probe cores, RAM, free disk, and network (instruments and
@@ -1105,7 +1121,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     the media PERSISTENCE fields (`stored=`, `perm-url=`, `persist-proof=`) on
     every MEDIA line, because a media item is not done until its asset is durable
     and its permanent URL is recorded (`references/media-pipeline.md` section 13;
-    enforced as S15). A
+    enforced as S17). A
     seat then resolves one of
     two ways, and the ledger records which: **LANE** — role → alias → resolved
     model, the three hops; or **DIRECT** — role → a capability-selected model
@@ -1144,7 +1160,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    in the decision register (Law 46) before the spec is written. See
    `references/research.md`.
 9. **Environment sweep (BOTH modes).** Check ALL env files for the keys the project
-   needs. Ask where they will host and stage. Also run the capture-tooling
+   needs. Ask where they will host and stage. Run the sweep with
+   `tools/env-sweep.sh`, never by hand (references/environment-sweep.md). Also run the capture-tooling
    preflight for any visual Gate 3 bar: detect a working capture tool by
    actually running it; if none answers, install one (`npx playwright install
    chromium`) and prove the install with a real probe screenshot, never a
@@ -1905,7 +1922,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 16. `references/execution-architecture.md` — the execution-architecture doctrine: the manifest, the 11-field task definitions, the completion law, checkpoints, locks, stop conditions, the startup order (Steps 12.7–16.9, and whenever a spec is written)
 17. `references/agent-team.md` — the five-level architecture, the four commanders, the Agent Teams probe/enablement/consent/resume flow, **§4.1 — the trust pre-flight** (REQUIRED before the first spawn of every run; a fresh build directory is always untrusted), the disagreement protocol, the team-size gate (Steps 16.9 and 21 — the handover), and **§10 — the SINGLE OWNER of teammate-liveness verification**: the teammate's own session transcript is the primary instrument; `ListAgents` corroborates and never decides; the `inboxes/{name}.json` artifact is a split-pane-only corroborator that may never ground a negative verdict; and a disbanded team's directory is gone while its transcripts persist. Read the procedure THERE — it is never restated anywhere else (Step 16.9, and any moment a spawn's liveness is in question)
 18. `references/platform.md` — the platform contract: detection before anything platform-shaped runs, the macOS/Windows capability matrix, the PLATFORM-SKIP ledger line, the skip-with-a-named-reason rule, and the single owner of the "never write `teammateMode: tmux` on Windows" rule (Step 2, and every step that shells out)
-19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S14, S15 and S16. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.** Its image-manifest section is the row contract for the execution plan's IMAGE-MANIFEST section (step 16, document 16) — one row per planned image, written before the first build dispatch, no image generated outside the manifest.
+19. `references/media-pipeline.md` — **CONDITIONAL: media builds only.** The media catalog research and smoke test, the aggregator rule, the per-provider polling contracts, the persistence contract (section 13), duration×resolution, and ffmpeg-by-execution (section 6d). Load it at step 6.5's MEDIA DISCOVERY and again whenever a media item is specced, dispatched, or checked; it is enforced by S16, S17 and S18. **It is the largest reference in the set — read the SECTION a step cites, never the whole file.** Its image-manifest section is the row contract for the execution plan's IMAGE-MANIFEST section (step 16, document 16) — one row per planned image, written before the first build dispatch, no image generated outside the manifest.
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)

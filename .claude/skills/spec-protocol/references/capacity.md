@@ -166,9 +166,11 @@ Claude Code product's **hard-coded per-workflow concurrent-agent cap of 16 — n
 setting raises it** (Issue 14 FIX step 4; the
 `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` env var changes the SESSION-subagent
 limiter, which ultracode exempts anyway — it never moves the workflow-run cap)
-is the ceiling the declared max sits under. (The product's own 16-concurrent
-workflow cap also shrinks with fewer CPUs — the `cores−2` half of clientCap
-encodes that.) **An environment read (e.g.
+is the ceiling the declared max sits under. (The product's 16-concurrent
+workflow cap — the EXECUTION clamp, `min(16, cores−2)`, distinct from
+clientCap sizing — shrinks with fewer CPUs; clientCap's `cores−2` is the
+machine half of the declared-max formula, not an encoding of that clamp.)
+**An environment read (e.g.
 `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) is permitted for REPORTING only, never
 for computing.** If the probe CANNOT determine systemConcurrentMax, the value
 is UNDETERMINED and the run refuses to plan — it never defaults to 16. The
@@ -177,8 +179,9 @@ resumes only when the declared max is obtained (ask one plain question —
 section 8) or the run is handed a machine whose declared max it can read.
 
 **THE BAR NEVER SHRINKS WITH THE MACHINE — only the width does.** A weak
-machine runs narrower and longer; it never ships to a lower standard. The
-`min()` keeps the measured machine from being the binding constraint below it.
+machine runs narrower and longer; it never ships to a lower standard.
+The `min()` narrows only the width; the bar (slice counts, quality standard)
+never shrinks with the machine.
 
 **Measure cores at run time. Every run. Every machine.**
 
@@ -429,7 +432,7 @@ REVISIONS (append-only; the card above is never edited in place):
 `[ASSUMED <why> <ISO8601>]`, or `[UNDETERMINED <what was checked>]`. **A value
 with no mark is treated as ASSUMED and sized conservatively** — that is the
 enforcement, not a style rule, and the swarm watch logs the bare value as a
-defect (S13). The card itself is never edited in place: mid-run changes append to
+defect (S15). The card itself is never edited in place: mid-run changes append to
 REVISIONS, one line each. Section 13 is the full contract.
 
 The ledger also carries the task-graph probe's outcome. When the round-trip probe
@@ -1232,7 +1235,7 @@ Every value line in `CAPACITY-LEDGER.md` carries a bracketed mark:
 Three binding rules:
 
 1. **A value with no mark is treated as ASSUMED** — sized conservatively — and
-   the swarm watch logs it (S13).
+   the swarm watch logs it (S15).
 2. **The ledger's original card is never edited in place.** Mid-run changes
    append to the REVISIONS section, one line each: `<ISO8601> | REVISION |
    field=<name> | old→new | trigger=<measured|429-cluster|balance-check|tripwire|
@@ -1365,7 +1368,7 @@ Concretely: the Agent-Team enablement probe is re-taken at the interview's A
 block, at ledger computation (flow step 6.5), at the consent question, at every
 resume, and **immediately whenever the user asserts something that contradicts the
 cached reading** ("it's on now") — re-measure, never argue from a stale reading.
-S13 additionally flags any `[MEASURED …]` value whose timestamp predates the flow
+S15 additionally flags any `[MEASURED …]` value whose timestamp predates the flow
 step consuming it when re-measurement is trivially cheap. Expensive measurements
 (web research, network smoke tests) keep their section 6.1 cadences: the rule
 ranks re-measurement by COST, it does not demand constant polling.
@@ -1498,7 +1501,7 @@ caps as well as the 5-hour window, so the free/$40/$100 mapping is remembered
 plan MEMBERSHIP (row 12), not doctrine.
 
 **The ledger line.** Every planned batch is written BEFORE it dispatches, in the
-section 4 template's MEDIA block (the swarm watch enforces this as **S14** —
+section 4 template's MEDIA block (the swarm watch enforces this as **S16** —
 SKILL.md, RULE 5):
 
 ```
