@@ -123,9 +123,11 @@ measure_cores() {
 }
 
 per_workflow_width() {
+  # cores−2 raw. NO hard 16 clamp: per-workflow concurrency = clientCap =
+  # min(systemConcurrentMax, cores−2) — the width is whatever the machine
+  # yields under that rule. THE BAR NEVER SHRINKS; only the width does.
   local cores="$1" w
   w=$(( cores - 2 ))
-  if (( w > 16 )); then w=16; fi
   if (( w < 1 )); then w=1; fi
   echo "${w}"
 }
@@ -513,7 +515,7 @@ CARD
 WAVE SIZE: ${WIDTH}$( [[ "${MODE}" == "team" && "${TEAM_REFUSED}" -eq 0 ]] && echo " (workflow width) + ${PERSISTENT} persistent = ${GOVERNING}" )    WORKFLOW COUNT: ${WORKFLOWS}    AGENTS PER WORKFLOW: ≤${AGENTS_PER_WF} (= clientCap ${CLIENT_CAP})
 BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, `references/gauntlet.md` §13):
   batch size = clientCap (${CLIENT_CAP}); batches = ceil(slice count / clientCap); wave count unchanged.
-  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batches ($( if (( 16 - CLIENT_CAP <= 0 )); then echo "${CLIENT_CAP} batch(es) of ${CLIENT_CAP}"; else echo "${CLIENT_CAP} + $(( 16 - CLIENT_CAP ))"; fi )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batches ($( n=16; cap=${CLIENT_CAP}; parts=""; while (( n > 0 )); do take=$(( n < cap ? n : cap )); [[ -n "${parts}" ]] && parts="${parts} + "; parts="${parts}${take}"; n=$(( n - take )); done; if [[ "${parts}" == *" + "* ]]; then echo "${parts}"; else echo "1 batch of ${parts}"; fi )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (all eight §17 quantities):
   1. number of workflows: ${WORKFLOWS}
   2. agents per workflow: ≤${AGENTS_PER_WF}
@@ -777,9 +779,9 @@ EOF
     lc="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk '{print $2}')"
     # "Cores: 12 (...) → clientCap = min(systemConcurrentMax, cores−2) = 10"
     lw="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk -F'= ' '{print $NF}')"
-    local expect
-    expect="$(per_workflow_width "${lc}")"
-    local cap_expected=$(( expect < 10 ? expect : 10 ))
+    local width_raw cap_expected
+    width_raw="$(per_workflow_width "${lc}")"
+    cap_expected=$(( width_raw < 10 ? width_raw : 10 ))
     if [[ "${lw}" == "${cap_expected}" ]]; then
       echo "  [PASS] measured cores=${lc} → clientCap=${lw} = min(10, ${lc}−2)"
     else

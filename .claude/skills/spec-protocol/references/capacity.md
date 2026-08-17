@@ -144,14 +144,41 @@ achievable. Three different numbers, three different meanings. Keep them apart.
 
 ### AXIS 1 — WIDTH (how many run AT ONCE)
 
-Per-workflow concurrency = **min(16, cores−2)**.
+**THE CLIENT-MACHINE PROBE (binding — Issue 19 FIX step 6, the 2026-08-15 master
+spec line 426: "probe the client's machine (cores, RAM, free disk, network) at
+Capacity-Ledger time").** Every run probes the machine the build runs on and
+writes every probe value into the Capacity Ledger, each with its provenance
+mark. Each probe value gates a named thing:
 
-The 16 is the Claude Code product's **hard-coded per-workflow concurrent-agent
-cap — no setting raises it** (Issue 14 FIX step 4; the
+| Probe | Instrument (per-platform) | Gates |
+|---|---|---|
+| Cores | `sysctl -n hw.ncpu` (macOS — the binary lives at /usr/sbin/sysctl; `/usr/bin/sysctl` returns rc=127, a shell abort, never an answer) or `nproc` (Linux) | **clientCap** (below) |
+| RAM | macOS: `sysctl -n hw.memsize`; Linux: `/proc/meminfo` `MemTotal` | **browser-agent count** — each browser agent reserves its share of RAM; low RAM narrows the browser-agent lane |
+| Free disk | macOS: `df -k /` (or `df -k <project-root>`); Linux: `df -k /` | **MEDIA-GAPS threshold** — below the threshold the media lane takes the without-media path |
+| Network | one cheap known-good request to the provider path in play (or the router's own health endpoint — §6.1's control rule) | **provider reachability gating** — an unreachable provider turns that lane off |
+
+**The clientCap.** clientCap = **min(systemConcurrentMax, cores−2)**.
+
+**systemConcurrentMax = the operator's declared max (10 on the operator's
+machine) — authoritative for COMPUTING the cap.** The declared max is a
+doctrine constant per machine, never derived from an environment read. The
+Claude Code product's **hard-coded per-workflow concurrent-agent cap of 16 — no
+setting raises it** (Issue 14 FIX step 4; the
 `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` env var changes the SESSION-subagent
-limiter, which ultracode exempts anyway — it never moves the workflow-run cap).
-The `min()` keeps the measured machine from being the binding constraint below
-it.
+limiter, which ultracode exempts anyway — it never moves the workflow-run cap)
+is the ceiling the declared max sits under. (The product's own 16-concurrent
+workflow cap also shrinks with fewer CPUs — the `cores−2` half of clientCap
+encodes that.) **An environment read (e.g.
+`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) is permitted for REPORTING only, never
+for computing.** If the probe CANNOT determine systemConcurrentMax, the value
+is UNDETERMINED and the run refuses to plan — it never defaults to 16. The
+ledger line records the UNDETERMINED value and what was checked; planning
+resumes only when the declared max is obtained (ask one plain question —
+section 8) or the run is handed a machine whose declared max it can read.
+
+**THE BAR NEVER SHRINKS WITH THE MACHINE — only the width does.** A weak
+machine runs narrower and longer; it never ships to a lower standard. The
+`min()` keeps the measured machine from being the binding constraint below it.
 
 **Measure cores at run time. Every run. Every machine.**
 
@@ -161,23 +188,26 @@ nproc                 # Linux
 ```
 
 On the operator's Mac Mini, measured 2026-08-12: `hw.ncpu` = `hw.physicalcpu` =
-`hw.logicalcpu` = **12** → per-workflow = **10**.
+`hw.logicalcpu` = **12** → systemConcurrentMax 10 (the operator's declared max)
+→ clientCap = min(10, 12−2) = **10**.
 
 Never write "×16" as a promise, and **never write "10" as a constant either** —
 10 is THIS machine's measured value, not a new folklore number. A 24-core box
-gets 16; an 8-core box gets 6. Write the formula AND the measured value, always.
+gets min(systemConcurrentMax, 22); an 8-core box gets min(systemConcurrentMax,
+6). Write the formula AND the measured value, always.
 
 **50 workflows** is the operator's machine doctrine per session (2026-08-16 —
 operator doctrine, NOT a product limit: no product cap exists on concurrent
 workflow runs; supersedes the 30-workflow figure) → maximum truly-concurrent
-agents = 50 × min(16, cores−2) = **500 on this machine**.
-A single pipeline call accepts up to **4,096 items**.
+agents = 50 × clientCap (min(systemConcurrentMax, cores−2)) = **500 on this
+machine**. Per-workflow concurrency = clientCap = **min(systemConcurrentMax,
+cores−2)**. A single pipeline call accepts up to **4,096 items**.
 
 **Scaling past one workflow's cap means MORE WORKFLOWS, launched by the conductor
 in the same turn.** A workflow script cannot launch a sibling workflow — there is
-no filesystem or shell access inside a workflow. Width above `min(16, cores−2)`
-is bought by the conductor dispatching several workflows together, never by a
-script spawning more of itself. See `references/workflows.md`.
+no filesystem or shell access inside a workflow. Width above
+`clientCap` is bought by the conductor dispatching several workflows together,
+never by a script spawning more of itself. See `references/workflows.md`.
 
 ### AXIS 2 — BUDGET (how many run EVER, per session)
 
@@ -262,7 +292,12 @@ probe proves otherwise (section 12).
 ### The reconciliation rule (state this verbatim wherever wave width is computed)
 
 > *"The wave width is the SMALLEST of three numbers: (1) the harness delivery
-> capacity — workflows-in-flight × min(16, cores−2), capped at 50 workflows;
+> capacity — workflows-in-flight × clientCap, capped at 50 workflows, where
+> clientCap = min(systemConcurrentMax, cores−2) (Issue 19 FIX step 6 —
+> systemConcurrentMax is the operator's declared max, 10 on the operator's
+> machine; an environment read is REPORTING ONLY, never for computing; an
+> UNDETERMINED systemConcurrentMax = the run refuses to plan, it never defaults
+> to 16);
 > (2) the operator cap for the provider class — 20 concurrent agents per wave on
 > Anthropic-billed Claude Code, no operator cap on the user's own 9Router
 > provider keys beyond the reserve; (3) the provider ceiling minus the reserve
@@ -270,9 +305,9 @@ probe proves otherwise (section 12).
 > all three with the winner marked."*
 
 On Anthropic Claude Code the 20-agents-per-wave doctrine governs total
-concurrency (2 workflows × 10 = 20 on this machine hits it exactly). On
-9Router + DeepSeek direct, the harness (500) governs long before the provider
-(1,875).
+concurrency (2 workflows × clientCap 10 = 20 on this machine hits it exactly).
+On 9Router + DeepSeek direct, the harness (50 × clientCap 10 = 500) governs
+long before the provider (1,875).
 
 **Governing width and total spend are different questions.** The smallest of
 {harness width, operator wave cap, provider ceiling − reserve} governs WIDTH.
@@ -314,7 +349,9 @@ Launcher: claude | claude-nine | claude-codex        (how detected)
 Harness mode: regular | claude-nine                  (signals that fired)
 Config fingerprint: <8-hex> (inputs: launcher, resolved role→model map,
   provider-key presence set — names and model ids only, never values; section 13)
-Cores: <n>  →  per-workflow concurrency min(16, n−2) = <k>   [MEASURED <instrument> <ISO8601>]
+Cores: <n>  →  clientCap = min(systemConcurrentMax, n−2) = <k>   [MEASURED <instrument> <ISO8601>; systemConcurrentMax DECLARED — never from an env read; UNDETERMINED = refuse to plan, never 16]
+  systemConcurrentMax: <n|UNDETERMINED>  [DECLARED operator doctrine — never from an
+    env read; UNDETERMINED = the run refuses to plan, it never defaults to 16]
 Context ceiling (session): <tokens> (claude-codex: 372K — autocompact 350K)   [RESEARCHED <url> <date>]
 Model pool: <count> models across <provider prefixes>  |  pool=anthropic-builtin (no router)
   [MEASURED gateway-/v1/models <ISO8601>] | [UNDETERMINED <what was checked>]
@@ -359,7 +396,11 @@ AGENT TEAM: mode=<team|single-session|refused-by-arithmetic|declined|probe-faile
   commanders=<n> (recommended band 3–5; a Gauntlet software build uses 4)
   persistent slots consumed = lead + commanders = <n+1>, deducted BEFORE workflow width
   teammate rate-bucket: UNDETERMINED → burn governor assumes SHARED (pessimistic) unless probed
-WAVE SIZE: <w>    WORKFLOW COUNT: <w ÷ k, ≤50>    AGENTS PER WORKFLOW: <k>
+WAVE SIZE: <w>    WORKFLOW COUNT: <w ÷ k, ≤50>    AGENTS PER WORKFLOW: <k = clientCap>
+BATCH SCALING (Issue 19 step 6 — the six gauntlet workflows): batch size = clientCap;
+  batches = ceil(slice count / clientCap); wave count unchanged. Worked example
+  (operator's machine): 16 builder slices, clientCap 10 → 2 batches (10 + 6), wave
+  count stays 5. THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (§17 — computed FROM this ledger, before dispatch):
   workflows=<n>  agents-per-workflow=<per WF>  max-concurrency=<w>
   model-role-per-workflow=<map>  expected-total-executions=<n>
@@ -402,8 +443,20 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
    `claude-codex` — the detection table is in SKILL.md's harness auto-detect
    section. Record HOW it was detected, not just the answer. If it cannot be
    determined, ask one plain question (section 8).
-2. **Measure the cores.** `sysctl -n hw.ncpu` (macOS) or `nproc` (Linux).
-   Compute `min(16, cores−2)` = k. Write both the formula and the measurement.
+2. **Run the CLIENT-MACHINE PROBE (Issue 19 FIX step 6 — at Capacity-Ledger
+   time, i.e. HERE).** Measure cores (`sysctl -n hw.ncpu` on macOS, `nproc` on
+   Linux), RAM (`sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`), free disk
+   (`df -k /`), and network (one cheap known-good request to the provider path
+   in play, or the router's own health endpoint — section 6.1's control rule).
+   Read the machine's DECLARED systemConcurrentMax (the operator's declared
+   max — 10 on the operator's machine; a doctrine constant, never an
+   environment read). Compute `clientCap = min(systemConcurrentMax, cores−2)`.
+   Write every probe value with its provenance mark. **An UNDETERMINED
+   systemConcurrentMax = the run refuses to plan — it never defaults to 16.**
+   Each probe value gates its named thing (AXIS 1): cores → clientCap; RAM →
+   browser-agent count; free disk → the MEDIA-GAPS threshold (below it the
+   media lane takes the without-media path); network → provider reachability
+   gating.
 3. **Seat every role, and record the resolution.** Two paths, both ending at a
    RESOLVED model id: LANE (role → alias → actual model, read from the live
    config) or DIRECT (role → a model selected from the discovered pool). Under a
@@ -443,8 +496,10 @@ Copy the arithmetic; never copy the answers into a different machine's plan.
 
 ### Scenario (a) — Plain Claude Code / Anthropic, 12-core machine
 
-Per-workflow = min(16, 12−2) = 10. Operator cap 20/wave. Provider ceiling:
-subscription-metered and opaque — the runtime rate-limit response is the meter.
+Client probe: cores 12 [MEASURED]; systemConcurrentMax 10 (declared — the
+operator's doctrine); clientCap = min(10, 12−2) = 10. Per-workflow = clientCap
+= 10. Operator cap 20/wave. Provider ceiling: subscription-metered and opaque —
+the runtime rate-limit response is the meter.
 
 **Governing number: 20 (operator cap).** → wave size 20, **2 workflows × 10
 agents**; extra workflows queue.
@@ -473,7 +528,9 @@ shape is unchanged.
 ### Scenario (c) — Ollama Cloud $20
 
 Ceiling 3, **USE 2** (the operator's reserve). **Governing number: 2.** → wave size 2,
-**1 workflow × 2 agents** (one tree, two concurrent — more trees add nothing).
+**1 workflow × 2 agents** (one tree, two concurrent — more trees add nothing; the
+clientCap = min(systemConcurrentMax, cores−2) half never binds here — the
+provider ceiling binds first, and the run says so).
 
 Builder and critic SHARE the 2 slots: allocate 1+1 or time-slice, and the
 Capacity Ledger must show which. A 24-unit build is ≥12 sequential rounds per
@@ -488,7 +545,9 @@ runs single-session (`references/agent-team.md`).
 
 ### Scenario (d) — Ollama Cloud $100 + Agnes $40/year
 
-Ollama: 10, **USE 8** → builder lanes 8 concurrent (1 workflow × 8).
+Client probe: systemConcurrentMax 10 (declared), cores 12 → clientCap 10; the
+provider lane binds first. Ollama: 10, **USE 8** → builder lanes 8 concurrent
+(1 workflow × 8).
 
 Agnes $40/year: 1,500 requests / 5 hours − 25% = 1,125 per 5h = 3.75 requests/minute
 sustained. Assume **~25 API requests per agent-task** — state the assumption,
@@ -789,7 +848,7 @@ Before dispatch, the ledger DECLARES all eight quantities:
 | # | Quantity | How it is derived |
 |---|---|---|
 | 1 | Number of workflows | Wave size ÷ agents per workflow, capped at 50 (operator machine doctrine) |
-| 2 | Agents per workflow | `min(16, cores−2)` from the measured core count, or lower where the governing number binds |
+| 2 | Agents per workflow | `clientCap = min(systemConcurrentMax, cores−2)` from the measured core count and the DECLARED systemConcurrentMax (never an env read; never defaulted to 16), or lower where the governing number binds |
 | 3 | Maximum concurrency | The governing number, after the N+1 persistent occupants are deducted |
 | 4 | Model role per workflow | From the resolved role map (section 11) — by ROLE AND ALIAS, with the resolved model cited |
 | 5 | Expected total agent executions | Summed across the declared workflows and the repair reserve |
@@ -1128,7 +1187,7 @@ defaulted.
 | # | Capacity input | Class | Why |
 |---|---|---|---|
 | 1 | Harness + launcher (claude / claude-nine / claude-codex) | M-RUN | Filesystem and session-env checks, milliseconds. Wrong ⇒ the whole interview branch and the budget math are wrong. |
-| 2 | Cores → per-workflow width min(16, cores−2) | M-RUN | `/usr/sbin/sysctl -n hw.ncpu` (note: `/usr/bin/sysctl` returns rc=127 — a shell abort, never an answer) or `nproc`. Never inherited, never remembered. |
+| 2 | Cores → clientCap = min(systemConcurrentMax, cores−2) | M-RUN | `/usr/sbin/sysctl -n hw.ncpu` (note: `/usr/bin/sysctl` returns rc=127 — a shell abort, never an answer) or `nproc`; RAM: `sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`; free disk: `df -k /`; network: one cheap known-good request to the provider path in play (capacity.md §6.1's control rule). Never inherited, never remembered. systemConcurrentMax is the DECLARED operator max (10 on the operator's machine) — authoritative for computing; an env read is REPORTING ONLY; UNDETERMINED = refuse to plan, never 16. |
 | 3 | Role→alias→model resolution | M-RUN | Read from the live session env / config (section 11). **This is exactly what the operator rewires between projects** — a cached copy is lying within one rewire. The profile may NEVER be a source for it. The alias map is one of TWO pool inputs, not the pool (row 21). |
 | 4 | Which providers are wired (key PRESENCE, by name) — **including the two media keys** (`KIE_API_KEY`/`KIE_AI_API_KEY`, `AGNES_AI_API_KEY`/`AGNES_API_KEY`) | M-RUN | `tools/env-sweep.sh`. Wrong ⇒ the interview asks about accounts that do not exist, or misses ones that do. **Media-key presence is this row's class and is FORBIDDEN in the profile**: it is re-taken at every decision it gates (13.5) — media planning, each media batch, and immediately when a user says they have just placed one. A key added mid-run to a store the sweep sources is found by re-running the sweep; a stale reading is never argued from. |
 | 5 | Key LIVENESS (GitHub, DeepSeek, Vercel, GHL) | M-RUN | Smoke tests, pass/fail only, never values. An expired key found at hour 6 costs a night; found at minute 1 costs a sentence. |
