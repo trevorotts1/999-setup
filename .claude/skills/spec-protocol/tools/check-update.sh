@@ -1,81 +1,91 @@
 #!/usr/bin/env bash
-# check-update.sh — does this box have the latest spec-protocol?
+# check-update.sh — are the five bundled skills current?
 #
-# WHY THIS EXISTS. Before this file, a box had no way to answer that question.
-# The skill carried no version marker of any kind, so "am I current?" could only
-# be settled by hashing every file against the repo from the outside. A client
-# machine running a stale skill had no way to know, and no way to say so. That
-# blind spot is what let old copies of this skill sit undetected on client
-# machines for days.
+# WHY THIS EXISTS. Before this file, spec-protocol could only check ITSELF.
+# The repo bundles five skills — nine-router-setup, spec-protocol, kaizen,
+# eli5, bro — and a box with a stale kaizen or a two-week-old eli5 had no way
+# to know. This script checks every bundled skill against the published repo in
+# one pass, so a stale companion cannot sit undetected beside a current
+# spec-protocol.
 #
-# WHY A HASH IS NOT ENOUGH. Hashing an individual tool does not discriminate:
-# tools/ledger.sh is byte-identical across versions of this skill. A file that
-# did not change between two releases proves nothing about which release you
-# have. Version identity has to be stated explicitly, in its own file, or it is
-# not knowable.
+# WHAT IT CHECKS. Each skill carries a VERSION file at its root. The published
+# copy lives in the 999-setup repo. This script reads the local one and the
+# published one for every skill, compares them field-by-field, and reports the
+# worst aggregate outcome.
 #
-# THE CONTRACT. VERSION at the skill root holds one line: the semver of this
-# tree. The same file exists in the repo. Newer version in the repo => update
-# available. That is the whole mechanism. Every change to the skill bumps
-# VERSION; nothing else is required for a box to notice.
+# EXIT CODES (aggregate across all five skills)
+#   0  every installed skill is current (or ahead of published)
+#   1  at least one skill has an update available — even if others are
+#      undetermined. The report names every stale skill and both versions.
+#   2  no update available, but at least one skill could not be read. NEVER
+#      exit 0 when any skill is undetermined — a check that could not reach its
+#      source has proven nothing, and reporting "current" out of a failed
+#      instrument is precisely the defect this file exists to stop.
 #
-# EXIT CODES
-#   0  current (or newer than the repo — a local dev tree)
-#   1  update available; the report names both versions and the command to take it
-#   2  UNDETERMINED — could not read one side. NOT the same as "current".
-#      A network failure is not evidence of being up to date.
-#
-# THE UNDETERMINED RULE IS THE POINT OF THIS SCRIPT. It would be trivial to
-# collapse "I could not reach GitHub" into "you look current" and exit 0. That
-# is the exact lie this file exists to refuse. A negative result — "no update
-# for you" — is a claim, and it carries the same burden of proof as a positive
-# one. If either side could not be read, this script says UNDETERMINED and
-# names which side failed and why.
-#
-# Reads only. Writes nothing — no temp files, no config, no state. Safe to run
+# READS ONLY. Writes nothing — no temp files, no config, no state. Safe to run
 # on a client box at any time, including mid-workflow.
+#
+# SELF-UPDATE. This script checks versions. The companion tools/self-update.sh
+# installs the update for spec-protocol itself. The other four bundled skills
+# refresh by re-running the nine-router-setup installer, which links them from
+# the repo checkout.
+#
+# OVERRIDES (for testing and for self-update.sh's re-exec path)
+#   SPEC_PROTOCOL_LOCAL_SKILLS_ROOT   local skills dir (default ~/.claude/skills)
+#   SPEC_PROTOCOL_SKILLS_URL_BASE     published VERSION base URL
+#   SPEC_PROTOCOL_VERSION_URL         full URL for spec-protocol's VERSION only
+#                                     (backward compat — self-update.sh re-execs
+#                                     with this set)
+#   SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP  set to 1 to allow http://127.0.0.1 /
+#                                      localhost (test harness only)
 
 set -uo pipefail
 
-# Honour an explicit override so the script can be exercised from anywhere
-# (self-update.sh re-execs from a temp copy and passes this).
-SKILL_DIR="${SPEC_PROTOCOL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
-LOCAL_VERSION_FILE="$SKILL_DIR/VERSION"
-SELF_UPDATE="$SKILL_DIR/tools/self-update.sh"
+# -------------------------------------------------------------- skill list
+# Hardcoded. CONTROL/bundled-skills.txt may not exist on a client box, and the
+# list changes only when a skill is added to or removed from the repo — which
+# is a release-level event that updates this script anyway.
+SKILLS=(nine-router-setup spec-protocol kaizen eli5 bro)
 
-# The published VERSION, served as a raw file. Kept on the same branch the
-# tarball in self-update.sh is cut from, so the two can never disagree.
-REMOTE_URL="${SPEC_PROTOCOL_VERSION_URL:-https://raw.githubusercontent.com/trevorotts1/999-setup/main/.claude/skills/spec-protocol/VERSION}"
+# ------------------------------------------------------- paths and overrides
+LOCAL_SKILLS_ROOT="${SPEC_PROTOCOL_LOCAL_SKILLS_ROOT:-$HOME/.claude/skills}"
+SKILLS_URL_BASE="${SPEC_PROTOCOL_SKILLS_URL_BASE:-https://raw.githubusercontent.com/trevorotts1/999-setup/main/.claude/skills}"
+
+# Backward compat: SPEC_PROTOCOL_VERSION_URL is the full URL for spec-protocol's
+# VERSION. self-update.sh re-execs with this and SPEC_PROTOCOL_DIR set. When
+# present it overrides the constructed URL for spec-protocol only.
+SPEC_PROTOCOL_URL="${SPEC_PROTOCOL_VERSION_URL:-}"
+
+# Second config root. self-update.sh handles the dual-root case on install;
+# this script mirrors it on the read side. When .claude-nine has its own
+# .claude.json it is a genuinely separate config root, and its skills may be
+# at a different version.
+NINE_SKILLS_ROOT="$HOME/.claude-nine/skills"
+HAS_NINE_ROOT=0
+[ -f "$HOME/.claude-nine/.claude.json" ] && HAS_NINE_ROOT=1
+
+SELF_UPDATE=""
 
 say() { printf '%s\n' "$*"; }
 
-# --------------------------------------------------------------- validation
-# A version string is digits and dots, nothing else, with no empty field and no
-# leading or trailing dot. Anything else is not an answer — it is an error page,
-# a redirect body, a login wall, or a corrupted file. Written with `case` rather
-# than `[[ =~ ]]` so it behaves identically on the bash 3.2 that ships with
-# macOS and on modern bash elsewhere.
+# ---------------------------------------------------------- version helpers
+# These two functions are carried forward VERBATIM from the original
+# single-skill check-update.sh. They are bash-3.2-safe and the 10# base-10
+# handling in newer_than prevents octal interpretation of zero-padded fields
+# like 08.
+
 is_version() {
   local v="${1:-}"
   case "$v" in
     '')      return 1 ;;
-    *[!0-9.]*) return 1 ;;   # any character that is not a digit or a dot
-    .*|*.)   return 1 ;;     # leading or trailing dot
-    *..*)    return 1 ;;     # empty field, e.g. 1..0
+    *[!0-9.]*) return 1 ;;
+    .*|*.)   return 1 ;;
+    *..*)    return 1 ;;
   esac
-  # A real version is short. A body this long is a document, not a version.
   [ "${#v}" -le 32 ] || return 1
   return 0
 }
 
-# ----------------------------------------------------------------- comparison
-# Numeric field-by-field compare. Sorting lexically would rank 1.10.0 BELOW
-# 1.9.0 — which is precisely the silent-staleness bug this whole mechanism
-# exists to prevent, so it is worth the extra lines to get right.
-#
-# Compares across the longer of the two field counts, defaulting a missing
-# field to 0, so 1.8 and 1.8.0 compare equal and 1.8.1 beats 1.8.
-# `10#` forces base-10 so a zero-padded field like 08 is not read as octal.
 newer_than() {
   local a="${1:-0}" b="${2:-0}" i n ai bi
   local -a A B
@@ -94,155 +104,171 @@ newer_than() {
   return 1
 }
 
-# ------------------------------------------------------------ instrument check
-# If curl is missing, we have no instrument. That is UNDETERMINED — it is not a
-# fact about whether an update exists. A broken instrument must never be
-# reported as a clean reading.
+# --------------------------------------------------------- instrument check
 if ! command -v curl >/dev/null 2>&1; then
   say "UNDETERMINED — curl is not available on this box"
   say ""
-  say "  Without an HTTP client this script cannot read the published VERSION."
+  say "  Without an HTTP client this script cannot read the published VERSIONs."
   say "  This says nothing about whether an update exists."
   exit 2
 fi
 
-# ---------------------------------------------------------------- local side
-if [ ! -f "$LOCAL_VERSION_FILE" ]; then
-  say "UNDETERMINED (leaning STALE) — no VERSION file at $LOCAL_VERSION_FILE"
-  say ""
-  say "  A skill tree with no VERSION predates this mechanism, which means it is"
-  say "  almost certainly stale. It is NOT proof of being current — this script"
-  say "  cannot name the installed version, so it cannot compare anything."
-  say "  Resolve by installing the current skill, which carries a VERSION."
-  exit 2
-fi
+# -------------------------------------------------- remote URL for one skill
+remote_url() {
+  local skill="$1"
+  if [ "$skill" = "spec-protocol" ] && [ -n "$SPEC_PROTOCOL_URL" ]; then
+    printf '%s' "$SPEC_PROTOCOL_URL"
+    return
+  fi
+  printf '%s/%s/VERSION' "$SKILLS_URL_BASE" "$skill"
+}
 
-LOCAL_VERSION="$(tr -d ' \t\r\n' < "$LOCAL_VERSION_FILE" 2>/dev/null)"
-if [ -z "$LOCAL_VERSION" ]; then
-  say "UNDETERMINED — VERSION file is present but empty at $LOCAL_VERSION_FILE"
-  say "  A truncated or half-written install. Reinstall the skill."
-  exit 2
-fi
+# ---------------------------------------------------- check one skill+root pair
+# Returns via globals: CHK_STATUS and CHK_MSG.
+# CHK_STATUS is one of: current, ahead, update, undetermined.
+check_one_skill() {
+  local skill="$1"
+  local local_file="$LOCAL_SKILLS_ROOT/$skill/VERSION"
+  local local_ver="" nine_ver="" remote_ver=""
+  local nine_file="$NINE_SKILLS_ROOT/$skill/VERSION"
+  local nine_note=""
 
-if ! is_version "$LOCAL_VERSION"; then
-  say "UNDETERMINED — installed VERSION is not a version string"
-  say "  file:     $LOCAL_VERSION_FILE"
-  say "  contains: $(printf '%s' "$LOCAL_VERSION" | cut -c1-40)"
-  say ""
-  say "  Refusing to compare against a value this script cannot parse."
-  exit 2
-fi
+  # --- local side: primary root ---
+  if [ ! -f "$local_file" ]; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — no VERSION at $local_file"
+    return
+  fi
+  local_ver="$(tr -d ' \t\r\n' < "$local_file" 2>/dev/null)"
+  if [ -z "$local_ver" ]; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — VERSION file empty at $local_file"
+    return
+  fi
+  if ! is_version "$local_ver"; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — installed VERSION is not a version string at $local_file: $(printf '%s' "$local_ver" | cut -c1-40)"
+    return
+  fi
 
-# --------------------------------------------------------------- remote side
-# Deliberately NOT using curl -f. With -f an HTTP error collapses into a single
-# generic exit code and the status is lost, so a 404 (the file genuinely is not
-# published at that path) reads identically to a dead network. Those are
-# different facts and the operator needs to be told which one happened. So:
-# take the body and the final status code together, and judge them separately.
-#
-# --max-filesize caps a hostile or wrong response so a large error document
-# cannot be slurped into memory. -L follows redirects; the status captured is
-# the FINAL one after following.
-HTTP_BODY=""
-HTTP_CODE=""
-RESPONSE="$(curl -sS -L \
-              --proto '=https' \
-              --max-time 15 \
-              --max-filesize 65536 \
-              -w '\n%{http_code}' \
-              "$REMOTE_URL" 2>/dev/null)"
-CURL_RC=$?
+  # --- local side: second root, when separate and differs ---
+  nine_note=""
+  if [ "$HAS_NINE_ROOT" -eq 1 ] && [ -f "$nine_file" ]; then
+    nine_ver="$(tr -d ' \t\r\n' < "$nine_file" 2>/dev/null)"
+    if [ -n "$nine_ver" ] && is_version "$nine_ver" && [ "$nine_ver" != "$local_ver" ]; then
+      nine_note="  (also in ~/.claude-nine/skills: $nine_ver)"
+    fi
+  fi
 
-if [ $CURL_RC -eq 0 ]; then
-  # Last line is the status code; everything before it is the body.
-  HTTP_CODE="$(printf '%s' "$RESPONSE" | tail -n 1)"
-  HTTP_BODY="$(printf '%s' "$RESPONSE" | sed '$d')"
-fi
+  # --- remote side ---
+  local url
+  url="$(remote_url "$skill")"
 
-# Transport failure: DNS, TLS, timeout, refused, no route. We never reached a
-# verdict, so we do not report one.
-if [ $CURL_RC -ne 0 ]; then
-  say "UNDETERMINED — could not reach the published VERSION (curl rc=$CURL_RC)"
-  say "  installed: $LOCAL_VERSION"
-  say "  source:    $REMOTE_URL"
-  say ""
-  say "  This is a TRANSPORT failure — offline, DNS, TLS, proxy, or timeout."
-  say "  It is NOT evidence that you are current. Re-run when the network is back."
-  exit 2
-fi
-
-# Reached the server, but it did not hand us the file.
-if [ "$HTTP_CODE" != "200" ]; then
-  say "UNDETERMINED — the published VERSION could not be read (HTTP $HTTP_CODE)"
-  say "  installed: $LOCAL_VERSION"
-  say "  source:    $REMOTE_URL"
-  say ""
-  case "$HTTP_CODE" in
-    404)
-      say "  404 means the server answered but no VERSION exists at that path."
-      say "  Either this release has not been pushed to the repo yet, or the"
-      say "  branch/path moved. The network is fine; the file is not there."
-      say "  Until it is published, staleness here is UNKNOWABLE, not absent."
+  # Loopback guard: http:// is only permitted when explicitly opted in AND the
+  # host is 127.0.0.1 or localhost. Any other http:// URL gets the proto guard
+  # and curl will refuse it — which is the correct behaviour for a production
+  # run where someone fat-fingered the override.
+  local curl_opts=(-sS -L --max-time 15 --max-filesize 65536 -w '\n%{http_code}')
+  case "$url" in
+    https://*)
+      curl_opts+=(--proto '=https')
       ;;
-    401|403)
-      say "  The server refused the request. A private repo, a rate limit, or a"
-      say "  proxy sitting in front of it. Not a statement about versions."
+    http://127.0.0.1[:/]*|http://localhost[:/]*)
+      if [ "${SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP:-0}" != "1" ]; then
+        CHK_STATUS="undetermined"
+        CHK_MSG="UNDETERMINED $skill — http:// loopback without SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP=1 (installed: $local_ver)$nine_note"
+        return
+      fi
       ;;
-    5*)
-      say "  The server failed. Transient on GitHub's side; re-run shortly."
-      ;;
-    000)
-      say "  No status was returned at all — the connection did not complete."
-      ;;
-    *)
-      say "  Unexpected status. Treating as unreadable rather than guessing."
+    http://*)
+      curl_opts+=(--proto '=https')
       ;;
   esac
-  exit 2
-fi
 
-REMOTE_VERSION="$(printf '%s' "$HTTP_BODY" | tr -d ' \t\r\n')"
+  local http_body="" http_code="" response="" curl_rc
+  response="$(curl "${curl_opts[@]}" "$url" 2>/dev/null)"
+  curl_rc=$?
 
-# HTTP 200 is not proof the body is a version. A captive portal, a corporate
-# proxy interstitial, and a repo's HTML 404 page all return 200 with a document
-# in the body. Anything that is not digits-and-dots is not an answer.
-if ! is_version "$REMOTE_VERSION"; then
-  say "UNDETERMINED — the published VERSION is not a version string (HTTP 200)"
-  say "  installed: $LOCAL_VERSION"
-  say "  source:    $REMOTE_URL"
-  say "  received:  $(printf '%s' "$REMOTE_VERSION" | cut -c1-40)"
-  say ""
-  say "  A 200 carrying a document rather than a version means something is"
-  say "  answering for GitHub — a proxy, a captive portal, or an HTML error"
-  say "  page. Refusing to compare against it."
-  exit 2
-fi
+  if [ $curl_rc -ne 0 ]; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — could not reach published VERSION (curl rc=$curl_rc)  installed: $local_ver$nine_note"
+    return
+  fi
 
-# ------------------------------------------------------------------- verdicts
-if newer_than "$REMOTE_VERSION" "$LOCAL_VERSION"; then
-  say "UPDATE AVAILABLE  $LOCAL_VERSION -> $REMOTE_VERSION"
+  http_code="$(printf '%s' "$response" | tail -n 1)"
+  http_body="$(printf '%s' "$response" | sed '$d')"
+
+  if [ "$http_code" != "200" ]; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — published VERSION unreadable (HTTP $http_code)  installed: $local_ver$nine_note"
+    return
+  fi
+
+  remote_ver="$(printf '%s' "$http_body" | tr -d ' \t\r\n')"
+  if ! is_version "$remote_ver"; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — published VERSION is not a version string (HTTP 200)  installed: $local_ver  received: $(printf '%s' "$remote_ver" | cut -c1-40)$nine_note"
+    return
+  fi
+
+  # --- verdict ---
+  if newer_than "$remote_ver" "$local_ver"; then
+    CHK_STATUS="update"
+    CHK_MSG="UPDATE AVAILABLE $skill  $local_ver -> $remote_ver$nine_note"
+    return
+  fi
+
+  if newer_than "$local_ver" "$remote_ver"; then
+    CHK_STATUS="ahead"
+    CHK_MSG="current — $skill $local_ver (ahead of published $remote_ver)$nine_note"
+    return
+  fi
+
+  CHK_STATUS="current"
+  CHK_MSG="current — $skill $local_ver$nine_note"
+}
+
+# --------------------------------------------------------------------- main
+UPDATE_COUNT=0
+UNDETERMINED_COUNT=0
+CURRENT_COUNT=0
+SPEC_UPDATE=0
+
+for skill in "${SKILLS[@]}"; do
+  check_one_skill "$skill"
+  say "$CHK_MSG"
+  case "$CHK_STATUS" in
+    current|ahead) CURRENT_COUNT=$((CURRENT_COUNT + 1)) ;;
+    update)
+      UPDATE_COUNT=$((UPDATE_COUNT + 1))
+      [ "$skill" = "spec-protocol" ] && SPEC_UPDATE=1
+      ;;
+    undetermined) UNDETERMINED_COUNT=$((UNDETERMINED_COUNT + 1)) ;;
+  esac
+done
+
+# --- self-update pointer (spec-protocol only) ---
+if [ "$SPEC_UPDATE" -eq 1 ]; then
+  SKILL_DIR="${SPEC_PROTOCOL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
+  SELF_UPDATE="$SKILL_DIR/tools/self-update.sh"
   say ""
   if [ -r "$SELF_UPDATE" ]; then
-    say "  Take it with:"
-    say "    bash \"$SELF_UPDATE\""
+    say "To update spec-protocol itself:"
+    say "  bash \"$SELF_UPDATE\""
     say ""
-    say "  That script backs the whole skill tree up first, prints the backup"
-    say "  path, verifies the fetched copy is genuinely newer before replacing"
-    say "  anything, and restores the backup if any step fails."
+    say "The other bundled skills refresh by re-running the nine-router-setup"
+    say "installer from the repo checkout."
   else
-    say "  The companion installer is missing at:"
-    say "    $SELF_UPDATE"
-    say "  Reinstall the skill from the repo, or report this version to whoever"
-    say "  maintains this machine."
+    say "The companion installer is missing at: $SELF_UPDATE"
+    say "Reinstall spec-protocol from the repo."
   fi
+fi
+
+# --- aggregate exit code ---
+if [ "$UPDATE_COUNT" -gt 0 ]; then
   exit 1
 fi
-
-if newer_than "$LOCAL_VERSION" "$REMOTE_VERSION"; then
-  say "current — installed $LOCAL_VERSION is AHEAD of published $REMOTE_VERSION"
-  say "  (a local development tree, or a release that has not been pushed yet)"
-  exit 0
+if [ "$UNDETERMINED_COUNT" -gt 0 ]; then
+  exit 2
 fi
-
-say "current — $LOCAL_VERSION"
 exit 0

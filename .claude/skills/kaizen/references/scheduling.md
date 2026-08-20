@@ -1,11 +1,113 @@
-# Kaizen scheduling engine — choose the scheduler that will actually work
+# Kaizen scheduling — the decision engine and the launchd path
 
-Do NOT oversimplify to "short = /loop, long = /schedule".
+Scheduling has two pieces:
+
+1. **Decision engine** — `scripts/common/kaizen-schedule.mjs`. Parses a
+   requested cadence, classifies it, and prints a structured recommendation
+   (mechanism, clarification question when needed, cloud eligibility,
+   machine/session requirements).
+2. **macOS launchd machinery** — the scripts under `scripts/macos/` that
+   actually install, run, control, and remove a durable local schedule.
+
+Do NOT oversimplify to "short = /loop, long = /schedule". Run the engine and
+report its output.
+
+## The decision engine
+
+```text
+node scripts/common/kaizen-schedule.mjs '<interval-input>' [--json-context '<json>']
+```
+
+Inputs it parses (case-insensitive): `5m`, `20m`, `1h`, `3d`, `every week`,
+`weekly`, `every 30 days`, `monthly`, `every 90 days`, `quarterly`,
+`first day of every month`, `every Monday at 9 AM`, plus generic `<n><unit>`
+forms (`30m`, `2h`, `12d`, `90s`, `every 6 hours`, ...).
+
+Output: structured JSON with `requested_cadence`, `normalized_interval`,
+`cadence` (`exact_elapsed` or `calendar`), `clarification_required`,
+`clarification_question`, `recommended_mechanism`
+(`/loop` | `desktop-task` | `cloud-schedule` | `launchd` | `manual`),
+`reason`, `machine_on_required`, `open_session_required`, `local_file_support`,
+`cloud_eligible`, `cloud_ineligible_reason`, `preserves_9router`,
+`skill_availability_required`, `expires_after_seven_days`, `expiry_days`,
+`actual_cadence`, and a plain `explain` sentence. Unparseable input: exit 2
+with an error JSON.
+
+Context JSON keys (`--json-context`): `user_accepts_cloud`,
+`target_available_from_cloud_clone`, `no_local_only_files`,
+`kaizen_available_in_cloud`, `requires_local_9router`, `uses_claude_nine`,
+`session_will_stay_open`, `durable`, `requested_mechanism`,
+`desktop_task_available`. When `--json-context` is absent every cloud
+condition defaults to false, so `cloud_eligible` is false.
+
+### Decision rules (implemented in code, not just prose)
+
+1. `/loop` only for session-based work: intervals under ~1 hour AND
+   `session_will_stay_open=true` in the context. `machine_on_required=true`.
+   Recognized short-interval inputs include `/loop 5m`, `/loop 20m`, and
+   `/loop 1h`, run as:
+
+   ```text
+   /loop 5m /kaizen run <loop-id>
+   /loop 20m /kaizen run <loop-id>
+   /loop 1h /kaizen run <loop-id>
+   ```
+
+   Every 3 days (72h exact) is a durable multi-day cadence and is never
+   routed to `/loop`.
+2. `/loop` recurring tasks expire after seven days. `expiry_days=7` is
+   reported whenever `/loop` is recommended, and `/loop` is NEVER recommended
+   as a permanent schedule for multi-day cadences (`3d`, weekly, monthly,
+   quarterly → never `/loop`).
+3. Cloud `/schedule` is eligible only when ALL of the context flags hold:
+   `user_accepts_cloud=true`, `target_available_from_cloud_clone=true`,
+   `no_local_only_files=true`, `kaizen_available_in_cloud=true`,
+   `requires_local_9router=false`. ANY false → `cloud_eligible=false` and
+   `cloud_ineligible_reason` names the failing condition.
+4. If the user asked for a cloud Routine but cloud is ineligible, the
+   recommended mechanism is NOT `cloud-schedule` and
+   `clarification_required` is set with the reason.
+5. NEVER recommend a cloud Routine when `kaizen_available_in_cloud=false` —
+   it would later report "skill not found". The reason says so. Never create a Routine that will later say the skill is not found.
+6. `preserves_9router`: true for launchd, `/loop`, desktop-task, and manual;
+   for `cloud-schedule` only when `requires_local_9router=false` AND the user
+   explicitly accepted. A 9Router user is never silently moved to cloud: if
+   `uses_claude_nine=true` and cloud is eligible, clarification asks
+   "local 9Router or cloud?".
+7. "monthly" / "every 30 days" is ambiguous: clarification asks
+   "Exactly every 30 days, or once each calendar month?" (plain-language
+   variant: "Exactly every 30 days, or about once a month?"). Either way
+   the durable mechanism is launchd; the cadence class (exact_elapsed vs
+   calendar) follows the answer.
+8. "every 90 days" / "quarterly": same treatment —
+   "Exactly every 90 days, or once each calendar quarter?".
+9. "first day of every month" → calendar monthly, Day=1, WITHOUT
+   clarification.
+10. "every Monday at 9 AM" → calendar weekly (Weekday=1, Hour=9, Minute=0),
+    `machine_on_required=true`.
+11. When a request is mapped to something slightly different (30 days →
+    calendar month, 90 days → calendar quarter), `actual_cadence` states the
+    real schedule and `reason` discloses the mapping.
+
+## Interval mapping
+
+- **Every 5 minutes / 20 minutes / hour (short active session):** `/loop 5m`,
+  `/loop 20m`, `/loop 1h` — but only when the session will stay open.
+  Explain: "This is a fast check, so I can use a temporary loop while Claude
+  stays open."
+- **Every hour forever:** do NOT automatically choose `/loop`. Decide from
+  cloud vs local, 9Router, machine availability, local files.
+- **Every 3 days exact (72h):** durable scheduling; do not fake with a
+  calendar expression that resets at month boundaries. Never `/loop`.
+- **Every week:** calendar scheduling is natural.
+- **Every 30 days:** ask "exactly every 30 days, or about once a month?"
+  Recommend monthly for a normal business cadence.
+- **Every 90 days:** ask "exactly every 90 days, or once each quarter?"
+  Recommend quarterly when that matches intent.
 
 ## Current Claude Code constraints (verify against live docs when in doubt)
 
-- `/loop` is session-scoped.
-- `/loop` has one-minute granularity.
+- `/loop` is session-scoped and has one-minute granularity.
 - Recurring `/loop` tasks expire after seven days.
 - Resuming an unexpired session can restore its scheduled task.
 - Cloud Routines created with `/schedule` persist independently and run
@@ -14,124 +116,97 @@ Do NOT oversimplify to "short = /loop, long = /schedule".
   in the local `~/.claude/skills/`.
 - Desktop scheduled tasks run locally and see local personal skills.
 - Cloud execution does not automatically inherit local 9Router routing from
-  `claude-nine`.
+  `claude-nine`: a cloud Routine will not automatically use the local 9Router model.
 
-## Decision inputs
-
-1. requested interval;
-2. how long the Loop should live;
-3. whether an open session is acceptable;
-4. whether local files are required;
-5. whether the 9Router/`claude-nine` model route must be preserved;
-6. whether Kaizen is available in the remote cloud session;
-7. whether Claude Desktop local scheduling is available;
-8. whether the target is accessible from a cloud clone;
-9. whether the user wants exact elapsed intervals vs calendar cadence.
-
-## Path A — `/loop`
-
-Use when: work is intentionally session-based; the user expects Claude Code
-to remain open; the Loop duration is under the seven-day expiry window (or
-the user understands it must be rearmed); local files/current session
-context matter; the interval is one minute or greater.
-
-Examples:
-
-```text
-/loop 5m /kaizen run <loop-id>
-/loop 20m /kaizen run <loop-id>
-/loop 1h /kaizen run <loop-id>
-```
-
-Kaizen must remain model-invocable (never `disable-model-invocation: true`)
-for `/loop` iterations to invoke it.
-
-Interval rounding: Claude may round intervals that do not map cleanly to
-cron-like scheduling. If the actual schedule differs from the request, tell
-the user exactly what was selected.
-
-## Path B — Claude Desktop local scheduled task
-
-Prefer when: scheduling must survive restarts; local files are required; the
-machine can remain on at run time; the same local personal Kaizen skill
-should load; the user wants local 9Router/`claude-nine` behavior where
-supported by the task environment.
-
-If the CLI skill cannot create the Desktop task programmatically, give
-precise one-time instructions, or use Path D if the user authorizes
-automated local scheduling.
-
-## Path C — cloud `/schedule` Routine
-
-Use ONLY when ALL of these hold:
-
-- durable cloud execution is desired;
-- the target repository is accessible to the Routine;
-- no required local-only files/tools;
-- the user accepts remote/cloud execution;
-- Kaizen will be available in the cloud run by one of: skill synced to the
-  claude.ai account, Kaizen committed to the target repo's
-  `.claude/skills/`, or a repo-declared plugin that supplies it;
-- the user does NOT require the local 9Router route for the recurring run.
-
-Never create a Routine that will later say "skill not found".
-
-### Cloud warning for 9Router users (plain language)
-
-> "A cloud schedule keeps working when your Mac is off, but it runs in
-> Claude's cloud. It will not automatically use the local 9Router model
-> behind `claude-nine`. If you want to keep using that local route, I should
-> use a local schedule instead."
-
-## Path D — macOS launchd fallback (tested)
+## The macOS launchd path (tested)
 
 For Macs needing durable `claude-nine` automation without Claude Desktop:
 
 - `launchd` LaunchAgent, one job per Kaizen Loop;
 - deterministic label `com.blackceo.kaizen.<short-loop-id>`;
-- wrapper script stored under the Loop's local Memory folder (or a stable
-  999-managed helper directory);
-- job invokes the correct launcher;
+- exact elapsed schedules use `StartInterval` (seconds);
+- calendar schedules use `StartCalendarInterval` with these defaults
+  (overridable via `--hour/--minute/--weekday/--day`):
+  - weekly → `{ Weekday: 1, Hour: 9, Minute: 0 }` (Monday 9:00)
+  - monthly → `{ Day: 1, Hour: 9, Minute: 0 }`
+  - quarterly → `{ Month: [1,4,7,10], Day: 1, Hour: 9, Minute: 0 }`
+- job invokes the correct launcher (`--launcher`, default `claude-nine`);
 - job loads the Loop by Loop ID;
 - job contains no secrets.
 
-Use `scripts/macos/install-kaizen-launchagent.sh`. Conceptual invocation:
+### Install
 
 ```text
-claude-nine -p "Use the kaizen skill. Run one approved Kaizen cycle for loop <loop-id>. Read its Kaizen Memory first. Follow its Contract exactly."
+scripts/macos/install-kaizen-launchagent.sh <loop-id> <interval> \
+  [--calendar weekly|monthly|quarterly] [--launcher claude-nine] \
+  [--hour H] [--minute M] [--weekday W] [--day D]
 ```
 
-Do not assume an interactive slash command executes correctly inside `-p`.
-Test the actual invocation shape at install time (`scripts/macos/run-kaizen-cycle.sh`
-does a dry-run validation) and use the trigger description so the skill is
-auto-selected reliably.
+`interval` is `daily | weekly | monthly | quarterly | 90days | <seconds>`.
+The generated plist is validated with `plutil -lint` (install fails if lint
+fails; skipped only when `plutil` is missing AND dry-run). All inserted
+values are XML-escaped. The scheduler state (mechanism, label, plist path,
+cadence, interval, calendar flag) is stored atomically in the loop's
+`LOCAL_STATE.json` under `scheduler`. Re-installing unloads the old job and
+rewrites the plist (idempotent).
 
-Restart behavior: a properly installed LaunchAgent persists across
-user-session restarts and is reloaded according to macOS behavior. Test
-installation, listing, disable, re-enable, and removal with
-`scripts/macos/remove-kaizen-launchagent.sh` (the install/remove
-scripts are idempotent).
+Dry-run: `KAIZEN_LAUNCHD_DRY_RUN=1` writes the plist into the (fake) HOME
+LaunchAgents directory, skips `launchctl`, prints `dry-run`, and does NOT
+touch `LOCAL_STATE.json` (it prints what would be written).
+
+### Run
+
+`scripts/macos/run-kaizen-cycle.sh <loop-id> [--launcher X]` resolves the
+loop dir via `kaizen-state.mjs locate-loop`, falling back to the registry
+root and then `resolve-kaizen-root.sh`; fails only when no path has a
+`STATE.json`. It runs the launcher with a natural-language prompt (NOT a
+slash command):
+
+```text
+Use the kaizen skill. Run one approved Kaizen cycle for Loop ID <loop-id>.
+Read its Kaizen Contract and Kaizen Memory first. Follow the approved
+Contract exactly. Do not merge or deploy. Update Memory and record fresh
+proof.
+```
+
+Working directory is `local_target_path` from `LOCAL_STATE.json` when set
+and present, else the loop dir. The skill path is exported as
+`KAIZEN_SKILL_DIR` (explicit env, then `~/.claude/skills/kaizen`, then the
+script's own repo location). Each run records `cycles/launchd-run-<ts>.json`
+(started_at, ended_at, launcher, exit_code, result ok/failed, log path)
+next to the raw `cycles/launchd-run-<ts>.log`. Exit code mirrors the
+launcher — exit 0 only when the launcher exited 0. On failure a
+`scheduler_failure` entry `{at, exit_code, log}` is appended to
+`LOCAL_STATE.json`; only the log path is printed, never the log contents.
+A held cycle lock (via `kaizen-state.mjs is-locked`) → skipped JSON, exit 0.
+
+Logs live under `cycles/`; keep them out of version control via the memory
+`.gitignore` (the memory initializer owns that file — add
+`**/cycles/*.log` and `**/cycles/*.json` there).
+
+### Control and removal
+
+```text
+scripts/macos/kaizen-launchagent-ctl.sh <loop-id> <status|disable|enable|reinstall>
+```
+
+- `status` → JSON `{installed, label, plist_path, loaded, last_run_from_local_state, enabled}`;
+- `disable` → `launchctl unload -w`, `LOCAL_STATE.json scheduler.enabled=false`;
+- `enable` → `launchctl load -w`, `scheduler.enabled=true`;
+- `reinstall` → re-runs the install script with the stored interval and
+  calendar flag.
+
+`scripts/macos/remove-kaizen-launchagent.sh <loop-id>` is idempotent:
+unloads, deletes the plist, and clears the `scheduler` field from
+`LOCAL_STATE.json` only when the plist was actually removed. Both scripts
+respect `KAIZEN_LAUNCHD_DRY_RUN=1` (print-only, no launchctl, no state
+changes).
 
 ## Windows fallback
 
 Do not regress Windows. Parity via Task Scheduler / `schtasks` with the same
 state contract (`LOCAL_STATE.json` holds the task identifier). Mac is the
 required primary path.
-
-## Interval mapping
-
-- **Every 5 minutes / 20 minutes / hour (short active session):** `/loop 5m`,
-  `/loop 20m`. Explain: "This is a fast check, so I can use a temporary loop
-  while Claude stays open."
-- **Every hour forever:** do NOT automatically choose `/loop`. Decide from
-  cloud vs local, 9Router, machine availability, local files.
-- **Every 3 days exact (72h):** durable scheduling; do not fake with a
-  calendar expression that resets at month boundaries.
-- **Every week:** calendar scheduling is natural.
-- **Every 30 days:** ask "exactly every 30 days, or about once a month?"
-  Recommend monthly for a normal business cadence.
-- **Every 90 days:** ask "exactly every 90 days, or once each quarter?"
-  Recommend quarterly when that matches intent.
 
 ## Activation language
 
@@ -149,4 +224,5 @@ Example:
 > `/loop 20m /kaizen run <loop-id>`."
 
 Only show a command that has been validated for the actual scheduler and
-skill availability.
+skill availability. If the engine says clarification is required, ask the
+question before installing anything.

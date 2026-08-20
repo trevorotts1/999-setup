@@ -1,5 +1,41 @@
 # Kaizen testing playbooks — per target type
 
+## The automated test suite
+
+The skill ships deterministic, fixture-only tests (`.claude/skills/kaizen/tests/`).
+They never touch real Downloads, the real `~/.claude`, launchd, or Task Scheduler.
+
+Run everything:
+
+```bash
+bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh
+```
+
+Suites:
+
+| Suite | Covers |
+|---|---|
+| `run-kaizen-tests.sh` | core sections 7.1–7.13 (root resolution, registry, contract, PDCA, scheduler, launchd, plain language, companions, secrets, frontmatter, memory rules) |
+| `walkthroughs.sh` | six end-to-end scenarios A–F |
+| `fix01-resolver-tests.sh` | memory-root resolution on all three platforms |
+| `fix02-init-tests.sh` | deterministic initializer |
+| `fix03-registry-tests.sh` | REGISTRY.json schema, migration, lookup |
+| `fix04-lock-tests.sh` | atomic token-based cycle lock |
+| `fix05-validator-tests.sh` | strict memory validation |
+| `fix06-secret-tests.sh` | secret scanner across credential families |
+| `fix07-schedule-tests.sh` | scheduler decision engine |
+| `fix08-launchd-tests.sh` | launchd install/run/ctl with fake launchers |
+| `fix09-windows-notes.sh` | Windows Task Scheduler scripts (structural where pwsh is absent) |
+| `fix10-installer-tests.sh` | bundled-skill installer idempotency |
+| `fix11-pdca-behavioral.sh` | two-cycle PDCA + fingerprint behavior |
+| `fix12-contract-tests.sh` | contract + activation behavior |
+| `fix13-provenance-tests.sh` | companion-skill provenance |
+| `fix14-static-tests.sh` | static and cross-platform checks |
+
+The runner fails if any suite file is missing — a skipped suite is a gap, not a pass.
+CI runs the same suites on macOS and Ubuntu plus the PowerShell self-test on a
+Windows runner (`.github/workflows/kaizen-tests.yml`).
+
 ## Web app / SaaS
 
 Look at: correctness; auth; permissions; error states; loading states;

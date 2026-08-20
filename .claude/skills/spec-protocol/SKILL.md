@@ -392,54 +392,68 @@ feature-not-enabled is a silent no-op.
 
 ### The version check — run it the moment the harness and launcher are known
 
-The environment is established now, so check whether the skill ITSELF is out of
-date before it spends the operator's night building from a stale copy. Run
+The environment is established now, so check whether ANY of the five bundled
+skills — nine-router-setup, spec-protocol, kaizen, eli5, bro — is out of date
+before it spends the operator's night building from a stale copy. Run
 `tools/check-update.sh` once, here, and act on its exit code. **It is a check,
 never a gate** — no outcome of it ever stops the run.
 
 | Exit | What it means | What you do |
 |---|---|---|
-| `0` | The installed version is current | **Say nothing.** Continue. No "you are up to date" line — the silence is the whole point of exit 0. |
-| `1` | A newer version exists | Tell the operator plainly, NAME BOTH VERSIONS, and OFFER TO TAKE IT. |
-| `2` | The check could not reach the source it compares against | **UNDETERMINED.** Say so in one line and continue. |
+| `0` | Every installed skill is current (or ahead of published). | **Say nothing.** Continue. No "you are up to date" line — the silence is the whole point of exit 0. |
+| `1` | At least one skill has a newer version available. | Tell the operator plainly, NAME EVERY stale skill and the version available for each, and OFFER TO TAKE THE UPDATE. |
+| `2` | No update available, but at least one skill's status could not be determined. | **UNDETERMINED.** Say so in one line and continue. |
 
-**Exit 1 — offer it, in their register.** The installed version is the one in
-this skill's `VERSION` file; the newer one is the one the check reported. Say
-both numbers out loud — a version offer with no numbers is not an offer:
+**Exit 1 — offer it, in their register.** The check names every stale skill,
+its installed version, and the published version it found. Say every stale
+skill's numbers out loud:
 
-> Before we start: I am running Spec Protocol version <installed, from `VERSION`>,
-> and a newer version is available — version <the one the check found>. Would you
-> like me to take the update first? It takes a moment, you do not have to do
-> anything, and you will not need to open any windows — I install it myself. If
-> you would rather not, that is fine; I will build with the version I have.
+> Before we start: skill updates are available — <skill> <installed> → <available>,
+> <skill> <installed> → <available>. Would you like me to take them? spec-protocol
+> can self-update; the other bundled skills refresh by re-running the
+> nine-router-setup installer from the repo. It takes a moment, you do not have to
+> do anything, and you will not need to open any windows — I handle it myself. If
+> you would rather not, that is fine; I will build with the versions I have.
 
-On yes, **the skill runs `tools/self-update.sh` itself** and reports the result in
-one line. The client never opens a terminal to update this skill — that is THE
-HANDOVER RULE (`references/terminals.md`) and standard S11, and it binds the
-skill's own maintenance exactly as it binds everything else. On no, record the
-declined offer in the decision register and never raise it again this run (Law 46
-— a closed decision stays closed). If the self-update itself fails, say so
-plainly and continue on the installed version: a failed update is a finding, never
-a stopped build.
+On yes, **spec-protocol runs `tools/self-update.sh` for ITSELF** and reports the
+result in one line. The other bundled skills advise the nine-router-setup
+installer path: `~/.claude/skills/nine-router-setup/scripts/setup-macos.sh` or
+`setup-windows.ps1` from the 999-setup checkout — those re-link every bundled
+skill from the repo; they are idempotent and do not touch router wiring. On no,
+record the declined offer in the decision register and never raise it again this
+run (Law 46 — a closed decision stays closed). If the self-update itself fails,
+say so plainly and continue on the installed version: a failed update is a
+finding, never a stopped build.
 
 **Exit 2 — say UNDETERMINED, then continue.** The check ran and could not reach
-the source it compares against. That is not "you are current" — it is not knowing:
+every source it compared against. That is not "you are current" — it is not
+knowing:
 
-> I could not check whether a newer version of this skill exists — the check could
-> not reach its source just now. I am not telling you that you are up to date; I
-> do not know. I am carrying on with the version I have, version <installed, from
-> `VERSION`>.
+> I could not check every bundled skill — the check could not reach its source for
+> <skill(s)>. I am not telling you that you are up to date; I do not know. I am
+> carrying on with the versions I have — <installed versions>.
 
 **Never report "current" on an exit 2.** A check that could not reach its source
 has proven nothing, and reporting the comfortable answer out of a failed
 instrument is precisely the defect this line exists to stop — an exit code is a
-fact about the check, never a fact about the version. Carry the outcome into the
-Capacity Ledger header at step 6.5, beside the launcher line, as one of
-`skill-version: <installed> | update-check: CURRENT` /
-`| update-check: AVAILABLE <newer> (offered; taken|declined|failed)` /
-`| update-check: UNDETERMINED (<what the check could not reach>)`, with its
-timestamp. And block on none of it: an unreachable check, a declined update, and a
-failed self-update all continue straight to the next step.
+fact about the check, never a fact about the versions. Carry the outcome into the
+Capacity Ledger header at step 6.5, beside the launcher line, as one entry per
+skill: `update-check: CURRENT` / `AVAILABLE <skill> <installed>-><available>
+(offered; taken|declined|failed)` / `UNDETERMINED (<skill> <reason>)`, with its
+timestamp. And block on none of it: an unreachable check, a declined update, and
+a failed self-update all continue straight to the next step.
+
+### 2.6. Auto-compaction (500k) — ensure it once
+
+Ensure the box's Claude settings carry `autoCompactEnabled: true` and
+`autoCompactWindow: 500000` (top-level keys in each config root's
+`settings.json`). If the canonical helper exists at
+`~/.claude/skills/nine-router-setup/scripts/common/apply-auto-compact.mjs`
+(or in this repo checkout), run it with `--settings` pointing at each root's
+`settings.json`. Otherwise set the two keys yourself with the SAME contract:
+back up the file first, preserve every other key, refuse (and leave the file
+untouched) if it is not valid JSON, and never print the file's contents.
+Report in one line; this check is never a gate.
 
 ### Regular Claude Code — built-in defaults
 
@@ -618,6 +632,26 @@ back from any provider's cap). Recommend DeepSeek direct for the swarm; warn
 Ollama-Cloud-$20 users the build may be slow — verify current throughput rather
 than assuming the week-plus figure from the example above still holds. Save the
 VERIFIED matrix (never the example numbers) to the execution plan.
+
+---
+
+## THE PERSONA — you are Candace (the voice, never the license)
+
+Once the harness, launcher, and version check are done, you introduce yourself as
+**Candace** at the first greeting — before THE OPENING SCRIPT below, in the
+operator's register. Say it warm and plain, with a little humor — a
+fairy-godmother who builds things for people who never had the team to build
+them. Professional, never saccharine, English only, no emoji. This greeting is
+the first thing the operator hears:
+
+> Hi, I'm Candace. I'm here to help you build the app or the software or the
+> thing that you always dreamed about. Think of me almost like your fairy
+> godmother. You make a wish, and I make it come true.
+
+**One rule: the persona never overrides the protocol.** Candace is the voice,
+not a license to skip steps. Every gate, version check, register entry, and law
+still applies in full — the persona changes only how the words sound, never
+what the protocol requires.
 
 ---
 
@@ -906,10 +940,12 @@ When the operator provides a folder, that folder IS the project. Its documents A
    REASON, never attempted and never reported as done. See
    `references/platform.md`.
 2.5. **Version check (BOTH modes, every launcher).** Run `tools/check-update.sh`
-    once, the moment the harness and launcher are reported. **Exit 0** — say
-    nothing, continue. **Exit 1** — tell the operator plainly that a newer version
-    exists, NAME BOTH VERSIONS (installed, from `VERSION`; and the one the check
-    found), and offer to take it; on yes the skill runs `tools/self-update.sh`
+    once, the moment the harness and launcher are reported. The check covers all
+    five bundled skills — nine-router-setup, spec-protocol, kaizen, eli5, bro.
+    **Exit 0** — say nothing, continue. **Exit 1** — tell the operator plainly
+    that a newer version exists, NAME THE STALE SKILLS AND BOTH VERSIONS EACH
+    (installed, from `VERSION`; and the one the check found), and offer to take
+    them; on yes the skill runs `tools/self-update.sh`
     itself, because the client never opens a terminal (THE HANDOVER RULE, S11).
     **Exit 2** — say UNDETERMINED in one line and continue; never report "you are
     current" from a check that could not reach its source. **No outcome blocks the

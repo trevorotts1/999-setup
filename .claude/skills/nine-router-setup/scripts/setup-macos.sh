@@ -184,10 +184,17 @@ probe_python3() {
   fi
 }
 
-# Link the bundled skills into one Claude config root. Idempotent: `ln -sfn`
-# re-points an existing symlink instead of nesting a new one inside it, so
-# re-runs converge rather than accumulate. Never creates a config root it was
-# not handed — callers decide which roots are real.
+# Link the bundled skills into one Claude config root. Idempotent: re-runs
+# converge to exactly one current link per manifest skill — an existing link
+# to the SAME source is left alone ("up to date"), a stale link is removed
+# (the link only, never its target) and recreated, and an existing REAL
+# directory is moved to an EXTERNAL timestamped backup
+# ($HOME/.claude-skill-backups/<skill>.<timestamp>, never inside any Claude
+# config root) that is verified to exist BEFORE the fresh link is created.
+# Missing sources fail per-skill with a clear error; other skills continue
+# and the function returns the failure count (nonzero = at least one failed).
+# Never creates a config root it was not handed — callers decide which roots
+# are real.
 #
 # The skill list comes from CONTROL/bundled-skills.txt (one skill per line,
 # # and blank lines ignored) when running from a repo checkout; standalone
@@ -204,29 +211,90 @@ bundled_skills() {
   fi
 }
 
+# resolve_skill_source <name> — absolute physical path of the repo skill dir
+# (or the already-installed ~/.claude copy as a standalone fallback); empty
+# when the manifest skill has no source on this box.
+resolve_skill_source() {
+  local s="$1"
+  if [ -d "$REPO_SKILL_DIR/../$s/SKILL.md" ] || [ -f "$REPO_SKILL_DIR/../$s/SKILL.md" ]; then
+    (cd "$REPO_SKILL_DIR/../$s" 2>/dev/null && pwd -P) || true
+  elif [ -f "$HOME/.claude/skills/$s/SKILL.md" ]; then
+    (cd "$HOME/.claude/skills/$s" 2>/dev/null && pwd -P) || true
+  fi
+}
+
+# link_one_skill <src> <dst> <name> — converge ONE skill to a link at <dst>
+# pointing at physical <src>. Order of operations is load-bearing:
+#   up-to-date check -> backup real dir EXTERNALLY -> VERIFY backup ->
+#   replace. An existing destination is never deleted before its backup is
+#   proven to exist. A symlink is removed as a link only (never rm -rf, never
+#   its target). Prints one status line per skill; returns 1 on failure.
+# Sourced by the fixture tests and called directly with fixture paths.
+link_one_skill() {
+  local src="$1" dst="$2" name="$3"
+  local dst_real ts backup
+  [ -n "$src" ] && [ -n "$dst" ] && [ -n "$name" ] || {
+    echo "skill ERROR: $name: internal missing src/dst/name" >&2; return 1; }
+  dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
+  if [ -n "$dst_real" ] && [ "$dst_real" = "$src" ]; then
+    echo "skill up to date: $name -> $dst"
+    return 0
+  fi
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ -L "$dst" ]; then
+      rm -f "$dst" || { echo "skill ERROR: $name: could not remove stale link at $dst" >&2; return 1; }
+    else
+      ts="$(date +%Y%m%dT%H%M%S)"
+      backup="$HOME/.claude-skill-backups/$name.$ts"
+      mkdir -p "$HOME/.claude-skill-backups" || { echo "skill ERROR: $name: could not create backup parent $HOME/.claude-skill-backups" >&2; return 1; }
+      mv "$dst" "$backup" || { echo "skill ERROR: $name: could not move $dst to $backup" >&2; return 1; }
+      if [ ! -d "$backup" ]; then
+        echo "skill ERROR: $name: backup verification failed for $backup; leaving everything intact" >&2
+        return 1
+      fi
+      echo "skill backed up: $name: $dst -> $backup"
+    fi
+  fi
+  mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+  if ! ln -sfn "$src" "$dst"; then
+    echo "skill ERROR: $name: link creation failed for $dst -> $src" >&2
+    return 1
+  fi
+  if [ ! -f "$dst/SKILL.md" ]; then
+    echo "skill ERROR: $name: linked but SKILL.md missing at $dst" >&2
+    return 1
+  fi
+  # Never create a nested skills/<name>/<name>: the link must resolve straight
+  # to the source, with no same-named child directory at the destination.
+  dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
+  if [ "$dst_real" != "$src" ] || [ -d "$dst/$name" ]; then
+    echo "skill ERROR: $name: post-link assertion failed (dest resolves to '$dst_real', expected '$src'; nested '$dst/$name' present: $([ -d "$dst/$name" ] && echo yes || echo no))" >&2
+    return 1
+  fi
+  echo "skill linked: $name -> $dst"
+  return 0
+}
+
 link_skills_into_root() {
   local root="$1"
-  local s src dst_real
+  local s src dst failures=0
   [ -n "$root" ] || return 0
   mkdir -p "$root/skills" 2>/dev/null || return 0
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    src=""
-    if [ -d "$REPO_SKILL_DIR/../$s" ]; then
-      src="$(cd "$REPO_SKILL_DIR/../$s" && pwd -P)" || src=""
-    elif [ -d "$HOME/.claude/skills/$s" ]; then
-      src="$(cd "$HOME/.claude/skills/$s" && pwd -P)" || src=""
+    src="$(resolve_skill_source "$s")"
+    if [ -z "$src" ]; then
+      echo "skill ERROR: $s: no source found (manifest skill absent from repo and ~/.claude/skills)" >&2
+      failures=$((failures + 1))
+      continue
     fi
-    [ -n "$src" ] || continue
+    dst="$root/skills/$s"
     # Never point a path at itself — the shared-root case, where the source of
     # the link and its destination are the same directory.
-    dst_real="$(cd "$root/skills/$s" 2>/dev/null && pwd -P)" || dst_real=""
-    [ "$src" != "$dst_real" ] || continue
-    if ln -sfn "$src" "$root/skills/$s" 2>/dev/null; then
-      echo "skill linked: $s -> $root/skills/$s"
-    fi
+    [ "$src" != "$dst" ] || { echo "skill up to date: $s -> $dst"; continue; }
+    link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1))
   done < <(bundled_skills)
-  return 0
+  return "$failures"
 }
 
 main() {
@@ -631,10 +699,18 @@ main() {
   fi
 
   # Always link (idempotent): a re-run on an already-provisioned box must still
-  # pick up bundled skills added after the first install.
-  link_skills_into_root "$CLAUDE_SKILLS_ROOT"
+  # pick up bundled skills added after the first install. The linker reports
+  # per-skill failures itself and returns the failure count; never fatal here
+  # (a missing manifest source must not block the rest of setup).
+  SKILL_LINK_FAILURES=0
+  link_skills_into_root "$CLAUDE_SKILLS_ROOT" || SKILL_LINK_FAILURES=$?
   if [ -n "$CLAUDE_SKILLS_ROOT_ALT" ]; then
-    link_skills_into_root "$CLAUDE_SKILLS_ROOT_ALT"
+    link_skills_into_root "$CLAUDE_SKILLS_ROOT_ALT" || SKILL_LINK_FAILURES=$((SKILL_LINK_FAILURES + $?))
+  fi
+  if [ "$SKILL_LINK_FAILURES" -gt 0 ]; then
+    SKILL_LINK_STATUS="WARNING: $SKILL_LINK_FAILURES skill link failure(s) - see 'skill ERROR' lines above"
+  else
+    SKILL_LINK_STATUS="OK"
   fi
   SKILL_MISSING=""
   while IFS= read -r s; do
@@ -648,6 +724,51 @@ main() {
   else
     SKILL_VISIBLE="MISSING: $SKILL_MISSING"
   fi
+  # Per-skill visibility from the actual filesystem (OK/MISSING per manifest
+  # entry), and the linker's own failure summary (Fix 10 idempotency report).
+  SKILL_VISIBLE_DETAIL=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    if [ -f "$CLAUDE_SKILLS_ROOT/skills/$s/SKILL.md" ]; then
+      SKILL_VISIBLE_DETAIL="${SKILL_VISIBLE_DETAIL}  $s: OK
+"
+    else
+      SKILL_VISIBLE_DETAIL="${SKILL_VISIBLE_DETAIL}  $s: MISSING
+"
+    fi
+  done < <(bundled_skills)
+
+  # 9.8 Auto-compaction at 500k tokens (both platforms). The shared helper
+  #     merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
+  #     each config root's settings.json: it creates the file when missing,
+  #     backs it up before changing it, preserves every other key, and REFUSES
+  #     a file it cannot parse (reported honestly, never fatal). Applies to
+  #     NEW sessions only; nothing running is signalled or restarted.
+  AUTO_COMPACT_HELPER="$COMMON/apply-auto-compact.mjs"
+  AUTO_COMPACT_FAILURES=0
+  AUTO_COMPACT_DETAIL=""
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    set +e
+    AUTO_COMPACT_OUT="$("$NODE_BIN" "$AUTO_COMPACT_HELPER" --settings "$root/settings.json" 2>&1)"
+    AUTO_COMPACT_RC=$?
+    set -e
+    case "$AUTO_COMPACT_OUT" in
+      "already set: "*) AUTO_COMPACT_RESULT="already set" ;;
+      "set: "*) AUTO_COMPACT_RESULT="set" ;;
+      "refusing: "*) AUTO_COMPACT_RESULT="refused" ;;
+      *) AUTO_COMPACT_RESULT="failed" ;;
+    esac
+    [ "$AUTO_COMPACT_RC" -eq 0 ] || AUTO_COMPACT_FAILURES=$((AUTO_COMPACT_FAILURES + 1))
+    AUTO_COMPACT_DETAIL="${AUTO_COMPACT_DETAIL}  settings.json ($root): $AUTO_COMPACT_RESULT
+"
+  done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" ${CLAUDE_SKILLS_ROOT_ALT:+"$CLAUDE_SKILLS_ROOT_ALT"})
+  if [ "$AUTO_COMPACT_FAILURES" -gt 0 ]; then
+    AUTO_COMPACT_STATUS="WARNING: $AUTO_COMPACT_FAILURES root(s) not set — see below"
+  else
+    AUTO_COMPACT_STATUS="OK"
+  fi
+  log "Auto-compaction: $AUTO_COMPACT_STATUS"
 
   # claude-codex launcher: a real filesystem check, never a hardcoded OK. It is
   # installed alongside claude-nine, but it pins a `cx/` Codex route and this
@@ -700,6 +821,12 @@ Operating system: macOS (arm64)
 Claude Code: OK
 Personal skill in normal claude: $SKILL_VISIBLE
 Personal skill in claude-nine: $SKILL_VISIBLE
+Bundled skill links: $SKILL_LINK_STATUS
+Auto-compaction: 500k tokens — $AUTO_COMPACT_STATUS
+Auto-compaction per root:
+$AUTO_COMPACT_DETAIL
+Per-skill visibility:
+$SKILL_VISIBLE_DETAIL
 claude-nine launcher: OK
 claude-codex launcher: $CODEX_LINE
 Normal claude routing: UNCHANGED

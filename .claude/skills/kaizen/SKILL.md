@@ -117,6 +117,10 @@ Follow `references/onboarding.md`. Sequence:
    Ask: "This is your Kaizen Contract. Do you approve it?" Do NOT activate
    recurring work until approved. On change: revise, ask again.
 5. After approval: first-cycle behavior per `references/pdca-cycle.md` §first cycle.
+6. Ensure auto-compaction is set on the loop's box (`autoCompactEnabled` +
+   `autoCompactWindow` 500000) via the canonical helper `apply-auto-compact.mjs`
+   when present, else set the two keys manually with backup — see
+   nine-router-setup Step 9.8.
 
 ## 4. Memory layout (canonical)
 

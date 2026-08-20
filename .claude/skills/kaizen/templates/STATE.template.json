@@ -17,11 +17,11 @@
   "scope": {
     "max_items_per_cycle": 5
   },
-  "permission_mode": "improve-safe",
+  "permission_mode": "B",
   "proof_strategy": ["tests", "build", "playwright"],
   "schedule": {
-    "human": "every 7 days",
-    "mechanism": "desktop-local",
+    "human": "manual until approved",
+    "mechanism": "manual",
     "mechanism_id": null
   },
   "model": {

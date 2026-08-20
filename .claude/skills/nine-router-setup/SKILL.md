@@ -300,6 +300,38 @@ node "$env:USERPROFILE\.claude\skills\nine-router-setup\scripts\common\record-ef
 The write is atomic (temp file + rename) and mode 600; it never prints secrets
 (the state file contains none by construction).
 
+## Step 9.8 — Auto-compaction at 500k tokens (both platforms)
+
+Claude Code auto-compacts its context automatically at a 500,000-token window
+when two TOP-LEVEL keys exist in the box's `~/.claude/settings.json`:
+`autoCompactEnabled: true` and `autoCompactWindow: 500000`. The installer sets
+them on every box it provisions, for every Claude config root it uses (both
+roots when a separate `~/.claude-nine` root exists).
+
+The shared helper `scripts/common/apply-auto-compact.mjs` enforces this
+contract: it creates the settings file when missing; when the file exists it
+backs it up first (`settings.json.bak-pre-autocompact-<timestamp>`, never
+clobbering an existing backup), merges the two keys, and preserves every other
+key untouched; it **REFUSES** a file that is not valid JSON (non-fatal
+WARNING in the completion report, nothing changed, never overwritten or
+deleted); and it is a byte-identical no-op when both keys are already correct.
+It takes effect in **NEW sessions** only — nothing running is signalled,
+restarted, or interrupted.
+
+Re-run it standalone on an already-installed box:
+
+macOS:
+
+```bash
+node ~/.claude/skills/nine-router-setup/scripts/common/apply-auto-compact.mjs --settings ~/.claude/settings.json
+```
+
+Windows:
+
+```powershell
+node "$env:USERPROFILE\.claude\skills\nine-router-setup\scripts\common\apply-auto-compact.mjs" --settings "$env:USERPROFILE\.claude\settings.json"
+```
+
 ## Step 10 — Verify skill visibility and isolation
 
 - The `nine-router-setup` personal skill is visible from both `claude` and `claude-nine`.

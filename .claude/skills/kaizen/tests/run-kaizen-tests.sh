@@ -36,6 +36,35 @@ INSTALL_LA_SH="$SKILL_DIR/scripts/macos/install-kaizen-launchagent.sh"
 REMOVE_LA_SH="$SKILL_DIR/scripts/macos/remove-kaizen-launchagent.sh"
 REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
 
+# mk_loop <downloads-fixture> <loop-id>: build a loop that passes the strict
+# validator (Fix 5 contract): real loop_id everywhere, approved contract,
+# manual schedule, complete memory structure.
+mk_loop() {
+  local base="$1" id="$2" dir
+  dir="$base/OpenClaw Master Files/Kaizen/$id"
+  mkdir -p "$dir/cycles" "$dir/evidence"
+  printf '{"schema_version":1,"entries":[]}\n' > "$dir/evidence/manifest.json"
+  "$NODE_BIN" -e "
+    const fs = require('fs');
+    const dir = process.argv[1], id = process.argv[2];
+    const t = JSON.parse(fs.readFileSync('$SKILL_DIR/templates/STATE.template.json', 'utf8'));
+    t.loop_id = id; t.name = id; t.status = 'active'; t.permission_mode = 'B';
+    t.schedule = { human: 'manual', mechanism: 'manual', mechanism_id: null };
+    t.approval = { timestamp: '2026-08-20T00:00:00Z', approved_by: 'owner' };
+    fs.writeFileSync(dir + '/STATE.json', JSON.stringify(t, null, 2) + '\n');
+    const l = JSON.parse(fs.readFileSync('$SKILL_DIR/templates/LOCAL_STATE.template.json', 'utf8'));
+    l.loop_id = id; l.local_target_path = dir; l.kaizen_root_path = dir;
+    l.scheduler = { mechanism: 'none' };
+    fs.writeFileSync(dir + '/LOCAL_STATE.json', JSON.stringify(l, null, 2) + '\n');
+  " "$dir" "$id"
+  printf '# Kaizen Contract — %s\n\nContract version: 1\n\nLoop ID: %s\n\nDate created: 2026-08-20\n\n## Where I will look\n\nCode: %s\n\n## Where I stop\n\nMerge and deploy need explicit approval.\n' \
+    "$id" "$id" "$dir" > "$dir/KAIZEN_CONTRACT.md"
+  printf '# Kaizen Memory\n' > "$dir/KAIZEN_MEMORY.md"
+  printf '# RESUME\n' > "$dir/RESUME.md"
+  printf '# Backlog\n' > "$dir/BACKLOG.md"
+  printf '# Decisions\n' > "$dir/DECISIONS.md"
+}
+
 # ---------------------------------------------------------------------------
 say "== 7.1 memory-root fixtures (five cases) =="
 FIX_A="$(mktemp -d)"
@@ -112,12 +141,13 @@ check "7.3F cycle template has CHECK before/after evidence" \
   grep -qE "Before:|After:" "$CYCLE_TMPL"
 # STATE template must validate clean out of the box
 FIX_S="$(mktemp -d)"
-mkdir -p "$FIX_S/OpenClaw Master Files/Kaizen/demo"
-cp "$SKILL_DIR/templates/STATE.template.json" "$FIX_S/OpenClaw Master Files/Kaizen/demo/STATE.json"
-cp "$SKILL_DIR/templates/LOCAL_STATE.template.json" "$FIX_S/OpenClaw Master Files/Kaizen/demo/LOCAL_STATE.json"
+mkdir -p "$FIX_S/OpenClaw Master Files/Kaizen"
+# the shipped template carries placeholder fields (<uuid>), so a
+# filled-in loop built from it is what must validate clean
+mk_loop "$FIX_S" demo
 KAIZEN_DOWNLOADS="$FIX_S" "$NODE_BIN" "$STATE_MJS" validate demo >/dev/null
-check "7.3G shipped STATE template validates clean" [ $? -eq 0 ]
-# scope out of range must fail
+check "7.3G loop built from STATE template validates clean" [ $? -eq 0 ]
+# scope out of range must fail (the node-side validate command)
 "$NODE_BIN" -e "const f=process.argv[1],fs=require('fs');const s=JSON.parse(fs.readFileSync(f,'utf8'));s.scope={max_items_per_cycle:2};fs.writeFileSync(f,JSON.stringify(s))" \
   "$FIX_S/OpenClaw Master Files/Kaizen/demo/STATE.json"
 KAIZEN_DOWNLOADS="$FIX_S" "$NODE_BIN" "$STATE_MJS" validate demo >/dev/null 2>&1
@@ -136,20 +166,30 @@ check "7.3J empty direction rejected" [ $? -ne 0 ]
 # ---------------------------------------------------------------------------
 say "== 7.4 PDCA fixture simulation =="
 FIX_P="$(mktemp -d)"
-mkdir -p "$FIX_P/OpenClaw Master Files/Kaizen/cycle-loop"
+mkdir -p "$FIX_P/OpenClaw Master Files/Kaizen"
+mk_loop "$FIX_P" cycle-loop
 LOOP="$FIX_P/OpenClaw Master Files/Kaizen/cycle-loop"
-cp "$SKILL_DIR/templates/STATE.template.json" "$LOOP/STATE.json"
-cp "$SKILL_DIR/templates/LOCAL_STATE.template.json" "$LOOP/LOCAL_STATE.json"
-# lock -> simulate work -> bump-cycle -> unlock
-KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" lock cycle-loop >/dev/null
+# lock -> simulate work -> bump-cycle -> token unlock (Fix 4 contract:
+# the normal path never uses --force)
+LOCK_OUT="$(KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" lock cycle-loop)"
 check "7.4A lock acquired" test -f "$LOOP/.cycle-lock.json"
+check_contains "7.4A2 lock prints a token" '"token":' "$LOCK_OUT"
 KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" lock cycle-loop >/dev/null 2>&1
 check "7.4B second lock rejected" [ $? -ne 0 ]
 KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" bump-cycle cycle-loop >/dev/null
 out_bc="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).cycle_counter)" "$LOOP/STATE.json")"
 check_eq "7.4C cycle_counter incremented" "1" "$out_bc"
-KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" unlock cycle-loop --force >/dev/null
-check "7.4D forced unlock works" [ ! -f "$LOOP/.cycle-lock.json" ]
+LOCK_TOKEN="$(printf '%s' "$LOCK_OUT" | "$NODE_BIN" -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).token||''))")"
+KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" unlock cycle-loop --token "$LOCK_TOKEN" >/dev/null
+check "7.4D token unlock releases lock" [ ! -f "$LOOP/.cycle-lock.json" ]
+# --force without --stale/--broken is rejected (no force on the normal path)
+LOCK_OUT2="$(KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" lock cycle-loop)"
+KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" unlock cycle-loop --force >/dev/null 2>&1
+check "7.4E bare --force rejected" [ $? -ne 0 ]
+check "7.4F bare --force leaves lock held" test -f "$LOOP/.cycle-lock.json"
+LOCK_TOKEN2="$(printf '%s' "$LOCK_OUT2" | "$NODE_BIN" -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).token||''))")"
+KAIZEN_DOWNLOADS="$FIX_P" "$NODE_BIN" "$STATE_MJS" unlock cycle-loop --token "$LOCK_TOKEN2" >/dev/null
+check "7.4G fresh lock token releases" [ ! -f "$LOOP/.cycle-lock.json" ]
 
 # ---------------------------------------------------------------------------
 say "== 7.5 repeat memory (no rediscovery) =="
@@ -165,18 +205,21 @@ check "7.5C backlog template tracks stable IDs" grep -qE "ID.*Discovered cycle|L
 # ---------------------------------------------------------------------------
 say "== 7.6 scheduler parser =="
 SCHED_DOC="$SKILL_DIR/references/scheduling.md"
+# The doc wraps phrases across newlines, so compare against
+# whitespace-normalized text (same pattern as walkthroughs D2).
+SCHED_FLAT="$(tr '\n' ' ' < "$SCHED_DOC")"
 for needle in "/loop 5m" "/loop 20m" "/loop 1h" "Every 3 days" "Every week" "Every 30 days" "Every 90 days"; do
-  check "7.6 interval [$needle]" grep -qiF "$needle" "$SCHED_DOC"
+  check_contains "7.6 interval [$needle]" "$needle" "$SCHED_FLAT"
 done
-check_contains "7.6 monthly-vs-30-days ambiguity handled" "exactly every 30 days" "$(cat "$SCHED_DOC")"
-check_contains "7.6 quarterly-vs-90-days ambiguity handled" "exactly every 90 days" "$(cat "$SCHED_DOC")"
+check_contains "7.6 monthly-vs-30-days ambiguity handled" "exactly every 30 days" "$SCHED_FLAT"
+check_contains "7.6 quarterly-vs-90-days ambiguity handled" "exactly every 90 days" "$SCHED_FLAT"
 
 # ---------------------------------------------------------------------------
 say "== 7.7 /loop + cloud /schedule + 9Router guard =="
-check_contains "7.7A /loop pattern documented" "/loop 20m /kaizen run" "$(cat "$SCHED_DOC")"
-check_contains "7.7B cloud Routine warning present" "will not automatically use the local 9Router model" "$(cat "$SCHED_DOC")"
-check_contains "7.7C Path C never creates skill-not-found Routine" "Never create a Routine that will later say" "$(cat "$SCHED_DOC")"
-check_contains "7.7D seven-day expiry named" "expire after seven days" "$(cat "$SCHED_DOC")"
+check_contains "7.7A /loop pattern documented" "/loop 20m /kaizen run" "$SCHED_FLAT"
+check_contains "7.7B cloud Routine warning present" "will not automatically use the local 9Router model" "$SCHED_FLAT"
+check_contains "7.7C Path C never creates skill-not-found Routine" "Never create a Routine that will later say" "$SCHED_FLAT"
+check_contains "7.7D seven-day expiry named" "expire after seven days" "$SCHED_FLAT"
 
 # ---------------------------------------------------------------------------
 say "== 7.8 launchd fixtures =="
@@ -192,14 +235,22 @@ check_not_contains "7.8D no secrets inside plist" "token" "$(cat "$PLIST")"
 check_not_contains "7.8E no key material inside plist" "sk-" "$(cat "$PLIST")"
 # re-install with a different interval converges (idempotent-ish: same path, new value)
 HOME="$HOME_FIX" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$INSTALL_LA_SH" my-big-loop weekly >/dev/null
-check_contains "7.8F re-install converges at one plist, new interval" "<integer>604800</integer>" "$(cat "$PLIST")"
+check_contains "7.8F re-install converges at one plist, calendar weekly" \
+  "<key>StartCalendarInterval</key>" "$(cat "$PLIST")"
+check_contains "7.8Fb weekday key present for weekly" "<key>Weekday</key>" "$(cat "$PLIST")"
+check_not_contains "7.8Fc no elapsed seconds for calendar weekly" "<integer>604800</integer>" "$(cat "$PLIST")"
 # bad loop id rejected
 HOME="$HOME_FIX" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$INSTALL_LA_SH" 'BAD LOOP!' daily >/dev/null 2>&1
 check "7.8G invalid loop-id rejected" [ $? -ne 0 ]
-# remove
-HOME="$HOME_FIX" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$REMOVE_LA_SH" my-big-loop >/dev/null
-check "7.8H removal deletes plist" [ ! -f "$PLIST" ]
-HOME="$HOME_FIX" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$REMOVE_LA_SH" my-big-loop >/dev/null
+# remove: dry-run prints intent and touches nothing; real run deletes the plist.
+# KAIZEN_DOWNLOADS pins the memory lookup to the fixture so LOCAL_STATE clearing
+# never probes the real machine.
+REM_OUT="$(HOME="$HOME_FIX" KAIZEN_DOWNLOADS="$FIX_L" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$REMOVE_LA_SH" my-big-loop)"
+check_contains "7.8H dry-run removal prints would-remove" "would-remove: $PLIST" "$REM_OUT"
+check "7.8H2 dry-run removal leaves plist untouched" test -f "$PLIST"
+HOME="$HOME_FIX" KAIZEN_DOWNLOADS="$FIX_L" bash "$REMOVE_LA_SH" my-big-loop >/dev/null
+check "7.8H3 non-dry-run removal deletes plist" [ ! -f "$PLIST" ]
+HOME="$HOME_FIX" KAIZEN_DOWNLOADS="$FIX_L" KAIZEN_LAUNCHD_DRY_RUN=1 bash "$REMOVE_LA_SH" my-big-loop >/dev/null
 check "7.8I removal of absent loop exits 0 (idempotent)" [ $? -eq 0 ]
 
 # ---------------------------------------------------------------------------
@@ -231,16 +282,15 @@ check_eq "7.10K manifest has exactly five entries" "5" "$cnt_m"
 # ---------------------------------------------------------------------------
 say "== 7.11 secret scan =="
 FIX_T="$(mktemp -d)"
-mkdir -p "$FIX_T/OpenClaw Master Files/Kaizen/scan-loop"
+mkdir -p "$FIX_T/OpenClaw Master Files/Kaizen"
+mk_loop "$FIX_T" scan-loop
 SCAN_DIR="$FIX_T/OpenClaw Master Files/Kaizen/scan-loop"
-cp "$SKILL_DIR/templates/STATE.template.json" "$SCAN_DIR/STATE.json"
-cp "$SKILL_DIR/templates/LOCAL_STATE.template.json" "$SCAN_DIR/LOCAL_STATE.json"
 "$NODE_BIN" "$VALIDATE_MJS" "$SCAN_DIR" --scan-secrets >/dev/null
 check "7.11A clean memory passes secret scan" [ $? -eq 0 ]
-echo '{"k":"sk-proj-abcdefghijklmnopqrstuvwxyz123456"}' > "$SCAN_DIR/notes.json"
+printf '{"k":"%s"}' "sk-proj-$(printf '%s' 'abcdefghijklmnopqrstuvwxyz123456')" > "$SCAN_DIR/notes.json"
 "$NODE_BIN" "$VALIDATE_MJS" "$SCAN_DIR" --scan-secrets >/dev/null 2>&1
 check "7.11B planted OpenAI key detected" [ $? -ne 0 ]
-echo '{"k":"ghp_abcdefghijklmnopqrstuvwxyz123456"}' > "$SCAN_DIR/notes.json"
+printf '{"k":"%s"}' "ghp_$(printf '%s' 'abcdefghijklmnopqrstuvwxyz123456')" > "$SCAN_DIR/notes.json"
 "$NODE_BIN" "$VALIDATE_MJS" "$SCAN_DIR" --scan-secrets >/dev/null 2>&1
 check "7.11C planted GitHub token detected" [ $? -ne 0 ]
 # planted keys built at runtime: GitHub push protection flags the literal
