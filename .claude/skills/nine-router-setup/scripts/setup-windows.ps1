@@ -630,6 +630,47 @@ else {
     }
     $skillVisible = if ($skillMissing.Count -eq 0) { 'OK' } else { "MISSING: $($skillMissing -join ', ')" }
 
+    # 11c. Auto-compaction at 500k tokens (both platforms). The shared helper
+    #      merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
+    #      each config root's settings.json: it creates the file when missing,
+    #      backs it up before changing it, preserves every other key, and
+    #      REFUSES a file it cannot parse (reported honestly, never fatal).
+    #      Applies to NEW sessions only; nothing running is signalled or
+    #      restarted.
+    $autoCompactHelper = Join-Path $Common 'apply-auto-compact.mjs'
+    $autoCompactFailures = 0
+    $autoCompactDetail = @()
+    $autoCompactRoots = @($skillRoot)
+    # Secondary root, mirrored from the macOS installer: only when
+    # $env:USERPROFILE\.claude-nine is a REAL config root (proved by its own
+    # settings.json) and is not the primary root. Never created here.
+    if ($env:CLAUDE_CONFIG_DIR) { $autoCompactRoots = @($skillRoot) }
+    else {
+        $altRoot = Join-Path $env:USERPROFILE '.claude-nine'
+        if ((Test-Path (Join-Path $altRoot 'settings.json')) -and ($altRoot -ne $skillRoot)) {
+            $autoCompactRoots = @($skillRoot, $altRoot)
+        }
+    }
+    foreach ($root in $autoCompactRoots) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $autoCompactOut = (& $NodeBin $autoCompactHelper --settings (Join-Path $root 'settings.json') 2>&1 | Out-String).Trim()
+        $autoCompactRc = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($autoCompactOut -like 'already set:*') {
+            $autoCompactDetail += "  settings.json ($root): already set"
+        } elseif ($autoCompactOut -like 'set:*') {
+            $autoCompactDetail += "  settings.json ($root): set"
+        } elseif ($autoCompactOut -like 'refusing:*') {
+            $autoCompactDetail += "  settings.json ($root): refused"
+        } else {
+            $autoCompactDetail += "  settings.json ($root): failed"
+        }
+        if ($autoCompactRc -ne 0) { $autoCompactFailures++ }
+    }
+    $autoCompactStatus = if ($autoCompactFailures -gt 0) { "WARNING: $autoCompactFailures root(s) not set - see below" } else { 'OK' }
+    Write-Log "Auto-compaction: $autoCompactStatus"
+
     # 12. Completion report. Provider lines derive from the live post-config probes
     #     (report.verified) - never hardcoded "OK". The dashboard link is surfaced
     #     so the client can favorite it.
@@ -676,6 +717,9 @@ Operating system: Windows
 Claude Code: OK
 Personal skills (normal claude and claude-nine share one config root): $skillVisible
 Bundled skill links: $skillLinkStatus
+Auto-compaction: 500k tokens - $autoCompactStatus
+Auto-compaction per root:
+$($autoCompactDetail -join "`n")
 Per-skill visibility:
 $($skillVisibleDetail -join "`n")
 claude-nine launcher: OK

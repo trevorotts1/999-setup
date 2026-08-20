@@ -6,8 +6,8 @@ on:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
       - '.claude/skills/bro/**'
-      - '.claude/skills/nine-router-setup/scripts/setup-macos.sh'
-      - '.claude/skills/nine-router-setup/scripts/setup-windows.ps1'
+      - '.claude/skills/nine-router-setup/**'
+      - '.claude/skills/spec-protocol/**'
       - 'CONTROL/bundled-skills.txt'
       - 'THIRD_PARTY_NOTICES.md'
   pull_request:
@@ -15,8 +15,8 @@ on:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
       - '.claude/skills/bro/**'
-      - '.claude/skills/nine-router-setup/scripts/setup-macos.sh'
-      - '.claude/skills/nine-router-setup/scripts/setup-windows.ps1'
+      - '.claude/skills/nine-router-setup/**'
+      - '.claude/skills/spec-protocol/**'
       - 'CONTROL/bundled-skills.txt'
       - 'THIRD_PARTY_NOTICES.md'
 

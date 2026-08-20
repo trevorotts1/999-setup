@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.16.1] — 2026-08-20
+
+### Kaizen qualification (15 fixes) + auto-compaction
+
+- **Kaizen qualification (15 fixes)**: memory-root resolution, deterministic init,
+  REGISTRY.json standardization, atomic token lock, strict validation, secret
+  scanning, schedule decision engine, launchd repair, Windows Task Scheduler
+  support, installer idempotency, behavioral PDCA/fingerprint, contract/activation,
+  provenance, and static + cross-platform tests with CI
+  (`.github/workflows/kaizen-tests.yml`: macos-14 + ubuntu-latest unix suites,
+  windows pwsh self-test).
+- **Windows Kaizen runners**: dry-run seams (`KAIZEN_TASK_DRY_RUN=1` / `-DryRun`)
+  on the status, install, cycle, and remove scripts — no real tasks, no real
+  cycles, no `schtasks.exe`.
+- **Per-skill VERSION files** for all five bundled skills (spec-protocol 1.16.1,
+  nine-router-setup 1.16.1, kaizen 1.0.0, eli5 1.0.0, bro 1.0.0).
+- **spec-protocol `tools/check-update.sh`** now checks all five bundled skills at
+  every spec-protocol launch (exit 0 = current, 1 = update available,
+  2 = undetermined); `tools/self-update.sh` still updates spec-protocol itself;
+  the other bundled skills refresh via the nine-router-setup installer.
+- **Auto-compaction at 500k tokens**: canonical helper
+  `.claude/skills/nine-router-setup/scripts/common/apply-auto-compact.mjs` sets
+  `autoCompactEnabled: true` + `autoCompactWindow: 500000` top-level in the target
+  box's `~/.claude/settings.json`; backs up before overwriting, preserves all other
+  keys, refuses non-fatally on invalid JSON, never prints settings contents, and
+  takes effect in NEW sessions. Wired into nine-router-setup's `setup-macos.sh` +
+  `setup-windows.ps1` installers, plus first-run steps in spec-protocol SKILL.md
+  (step 2.6) and kaizen SKILL.md onboarding.
+- **Two new test suites**: `fix15` (spec-protocol check-update, offline fixtures)
+  and `fix16` (auto-compact helper), wired into
+  `.claude/skills/kaizen/tests/run-all-kaizen-tests.sh` (now 17 suites: core,
+  walkthroughs, fix01–fix16).
+- **README**: kaizen helper-script table and updated test-suite docs.
+- **Candace persona**: warm, humorous fairy-godmother launch greeting in the
+  spec-protocol first-run launcher ("You make a wish, I make it come true");
+  voice-only — protocol gates and laws unchanged.
+- **Version detection against main** activates once this release merges: before
+  merge, `main` lacks the new VERSION files and the check reports UNDETERMINED for
+  those skills — by design, never a false "current".
+
 ## [1.16.0] — 2026-08-20
 
 ### Kaizen Loop skill + five-skill bundle

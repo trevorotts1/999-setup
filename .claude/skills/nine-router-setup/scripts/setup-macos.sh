@@ -738,6 +738,38 @@ main() {
     fi
   done < <(bundled_skills)
 
+  # 9.8 Auto-compaction at 500k tokens (both platforms). The shared helper
+  #     merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
+  #     each config root's settings.json: it creates the file when missing,
+  #     backs it up before changing it, preserves every other key, and REFUSES
+  #     a file it cannot parse (reported honestly, never fatal). Applies to
+  #     NEW sessions only; nothing running is signalled or restarted.
+  AUTO_COMPACT_HELPER="$COMMON/apply-auto-compact.mjs"
+  AUTO_COMPACT_FAILURES=0
+  AUTO_COMPACT_DETAIL=""
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    set +e
+    AUTO_COMPACT_OUT="$("$NODE_BIN" "$AUTO_COMPACT_HELPER" --settings "$root/settings.json" 2>&1)"
+    AUTO_COMPACT_RC=$?
+    set -e
+    case "$AUTO_COMPACT_OUT" in
+      "already set: "*) AUTO_COMPACT_RESULT="already set" ;;
+      "set: "*) AUTO_COMPACT_RESULT="set" ;;
+      "refusing: "*) AUTO_COMPACT_RESULT="refused" ;;
+      *) AUTO_COMPACT_RESULT="failed" ;;
+    esac
+    [ "$AUTO_COMPACT_RC" -eq 0 ] || AUTO_COMPACT_FAILURES=$((AUTO_COMPACT_FAILURES + 1))
+    AUTO_COMPACT_DETAIL="${AUTO_COMPACT_DETAIL}  settings.json ($root): $AUTO_COMPACT_RESULT
+"
+  done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" ${CLAUDE_SKILLS_ROOT_ALT:+"$CLAUDE_SKILLS_ROOT_ALT"})
+  if [ "$AUTO_COMPACT_FAILURES" -gt 0 ]; then
+    AUTO_COMPACT_STATUS="WARNING: $AUTO_COMPACT_FAILURES root(s) not set — see below"
+  else
+    AUTO_COMPACT_STATUS="OK"
+  fi
+  log "Auto-compaction: $AUTO_COMPACT_STATUS"
+
   # claude-codex launcher: a real filesystem check, never a hardcoded OK. It is
   # installed alongside claude-nine, but it pins a `cx/` Codex route and this
   # setup wires DeepSeek/Ollama/Agnes/OpenRouter only — so INSTALLED is the
@@ -790,6 +822,9 @@ Claude Code: OK
 Personal skill in normal claude: $SKILL_VISIBLE
 Personal skill in claude-nine: $SKILL_VISIBLE
 Bundled skill links: $SKILL_LINK_STATUS
+Auto-compaction: 500k tokens — $AUTO_COMPACT_STATUS
+Auto-compaction per root:
+$AUTO_COMPACT_DETAIL
 Per-skill visibility:
 $SKILL_VISIBLE_DETAIL
 claude-nine launcher: OK

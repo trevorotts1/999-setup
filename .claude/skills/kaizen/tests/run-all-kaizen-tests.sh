@@ -46,6 +46,8 @@ run_suite "fix11 pdca-behavioral" "$TESTS_DIR/fix11-pdca-behavioral.sh"
 run_suite "fix12 contract" "$TESTS_DIR/fix12-contract-tests.sh"
 run_suite "fix13 provenance" "$TESTS_DIR/fix13-provenance-tests.sh"
 run_suite "fix14 static" "$TESTS_DIR/fix14-static-tests.sh"
+run_suite "fix15 check-update" "$SKILL_DIR/../spec-protocol/tools/check-update-tests.sh"
+run_suite "fix16 auto-compact" "$SKILL_DIR/../nine-router-setup/tests/test-apply-auto-compact.sh"
 
 say ""
 say "SUITES: $PASS_SUITES passed${FAILED_SUITES:+, failed:$FAILED_SUITES}${SKIPPED_SUITES:+, skipped:$SKIPPED_SUITES}"
