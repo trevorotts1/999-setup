@@ -188,12 +188,29 @@ probe_python3() {
 # re-points an existing symlink instead of nesting a new one inside it, so
 # re-runs converge rather than accumulate. Never creates a config root it was
 # not handed — callers decide which roots are real.
+#
+# The skill list comes from CONTROL/bundled-skills.txt (one skill per line,
+# # and blank lines ignored) when running from a repo checkout; standalone
+# installs (no repo above the skill) fall back to the hard-coded baseline.
+bundled_skills() {
+  local manifest=""
+  [ -n "${REPO_ROOT:-}" ] && [ -f "$REPO_ROOT/CONTROL/bundled-skills.txt" ] \
+    && manifest="$REPO_ROOT/CONTROL/bundled-skills.txt"
+  if [ -n "$manifest" ]; then
+    sed -e 's/[[:space:]]*#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+      -e '/^$/d' "$manifest"
+  else
+    printf '%s\n' nine-router-setup spec-protocol kaizen eli5 bro
+  fi
+}
+
 link_skills_into_root() {
   local root="$1"
   local s src dst_real
   [ -n "$root" ] || return 0
   mkdir -p "$root/skills" 2>/dev/null || return 0
-  for s in nine-router-setup spec-protocol; do
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
     src=""
     if [ -d "$REPO_SKILL_DIR/../$s" ]; then
       src="$(cd "$REPO_SKILL_DIR/../$s" && pwd -P)" || src=""
@@ -208,7 +225,7 @@ link_skills_into_root() {
     if ln -sfn "$src" "$root/skills/$s" 2>/dev/null; then
       echo "skill linked: $s -> $root/skills/$s"
     fi
-  done
+  done < <(bundled_skills)
   return 0
 }
 
@@ -599,7 +616,6 @@ main() {
   # exports CLAUDE_CONFIG_DIR is honored automatically by resolving from the
   # live environment, so no topology is assumed in either direction.
   CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  SKILL_CHECK_PATH="$CLAUDE_SKILLS_ROOT/skills/nine-router-setup/SKILL.md"
   REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
   # Secondary root, linked ONLY when $HOME/.claude-nine already exists as a real
@@ -614,16 +630,23 @@ main() {
     CLAUDE_SKILLS_ROOT_ALT="$HOME/.claude-nine"
   fi
 
-  if [ ! -f "$SKILL_CHECK_PATH" ]; then
-    link_skills_into_root "$CLAUDE_SKILLS_ROOT"
-  fi
+  # Always link (idempotent): a re-run on an already-provisioned box must still
+  # pick up bundled skills added after the first install.
+  link_skills_into_root "$CLAUDE_SKILLS_ROOT"
   if [ -n "$CLAUDE_SKILLS_ROOT_ALT" ]; then
     link_skills_into_root "$CLAUDE_SKILLS_ROOT_ALT"
   fi
-  if [ -f "$SKILL_CHECK_PATH" ]; then
+  SKILL_MISSING=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    if [ ! -f "$CLAUDE_SKILLS_ROOT/skills/$s/SKILL.md" ]; then
+      SKILL_MISSING="${SKILL_MISSING:+$SKILL_MISSING, }$s"
+    fi
+  done < <(bundled_skills)
+  if [ -z "$SKILL_MISSING" ]; then
     SKILL_VISIBLE="OK"
   else
-    SKILL_VISIBLE="MISSING at $SKILL_CHECK_PATH"
+    SKILL_VISIBLE="MISSING: $SKILL_MISSING"
   fi
 
   # claude-codex launcher: a real filesystem check, never a hardcoded OK. It is

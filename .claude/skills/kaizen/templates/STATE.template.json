@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "loop_id": "<uuid>",
+  "name": "My Website",
+  "status": "active",
+  "contract_version": 1,
+  "target": {
+    "type": "website",
+    "repo_remote": "https://github.com/example/repo",
+    "staging_url": "https://staging.example.com",
+    "production_url": "https://example.com"
+  },
+  "direction": {
+    "user_goal": "Make it easier to use",
+    "open_discovery": true
+  },
+  "scope": {
+    "max_items_per_cycle": 5
+  },
+  "permission_mode": "improve-safe",
+  "proof_strategy": ["tests", "build", "playwright"],
+  "schedule": {
+    "human": "every 7 days",
+    "mechanism": "desktop-local",
+    "mechanism_id": null
+  },
+  "model": {
+    "launcher": "claude-nine",
+    "logical_lane": "opus",
+    "resolved_route_snapshot": null
+  },
+  "last_cycle": {
+    "id": "cycle-001",
+    "completed_at": null,
+    "result": null
+  },
+  "backup": {
+    "repo": null,
+    "status": "none"
+  },
+  "resume": {
+    "friendly_session_name": "kaizen-my-website"
+  }
+}

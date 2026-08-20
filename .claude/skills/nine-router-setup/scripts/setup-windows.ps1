@@ -105,6 +105,68 @@ function Get-Concurrency([string]$plan) {
     switch ($plan) { 'free' { 1 } 'max' { 8 } default { 2 } }
 }
 
+# Bundled personal skills — the same list the macOS installer links. Source of
+# truth: CONTROL/bundled-skills.txt when running from a repo checkout;
+# standalone installs fall back to the hard-coded baseline. Junction links
+# (New-Item -ItemType Junction) work without admin rights or Developer Mode,
+# unlike real symlinks on Windows.
+function Get-BundledSkills {
+    $list = @()
+    if ($RepoRoot -and (Test-Path (Join-Path $RepoRoot 'CONTROL\bundled-skills.txt'))) {
+        Get-Content (Join-Path $RepoRoot 'CONTROL\bundled-skills.txt') | ForEach-Object {
+            $line = $_ -replace '\s*#.*$', ''
+            $line = $line.Trim()
+            if ($line) { $list += $line }
+        }
+    } else {
+        $list = @('nine-router-setup', 'spec-protocol', 'kaizen', 'eli5', 'bro')
+    }
+    return $list
+}
+
+function Link-BundledSkills([string]$Root) {
+    if (-not $Root) { return }
+    $skillsDir = Join-Path $Root 'skills'
+    if (-not (Test-Path $skillsDir)) {
+        try { New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null }
+        catch { return }
+    }
+    foreach ($s in (Get-BundledSkills)) {
+        $src = $null
+        if ($RepoRoot) {
+            $repoCandidate = Join-Path $RepoRoot ".claude\skills\$s"
+            if (Test-Path (Join-Path $repoCandidate 'SKILL.md')) { $src = (Resolve-Path $repoCandidate).Path }
+        }
+        if (-not $src) {
+            $homeCandidate = Join-Path $env:USERPROFILE ".claude\skills\$s"
+            if (Test-Path (Join-Path $homeCandidate 'SKILL.md')) { $src = (Resolve-Path $homeCandidate).Path }
+        }
+        if (-not $src) { continue }
+        $dst = Join-Path $skillsDir $s
+        if (Test-Path $dst) {
+            # Idempotent: if it already resolves to the same source, skip; a
+            # junction pointing elsewhere is re-pointed, a real directory is
+            # left alone (it is the shared-root case: link target is the source).
+            try {
+                $dstResolved = (Resolve-Path $dst).Path
+                if ($dstResolved -eq $src) { continue }
+                $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
+                if ($dstItem.LinkType -eq 'Junction') {
+                    Remove-Item $dst -Force -ErrorAction SilentlyContinue
+                } else {
+                    continue
+                }
+            } catch { }
+        }
+        try {
+            New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
+            Write-Log "skill linked: $s -> $dst"
+        } catch {
+            Write-Log "skill link failed for $s: $($_.Exception.Message)"
+        }
+    }
+}
+
 # Dependency-preflight summary lines. Populated only by real-execution
 # probes below; never hand-set to a status the probe did not produce.
 $DepSummary = @()
@@ -494,6 +556,17 @@ else {
     }
     Write-Log 'claude-nine end-to-end: OK'
 
+    # 11b. Bundled personal skills: link every manifest skill into the real
+    #      Claude config root (idempotent; re-runs pick up skills added after
+    #      the first install), then verify each one by an actual SKILL.md check.
+    $skillRoot = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
+    Link-BundledSkills $skillRoot
+    $skillMissing = @()
+    foreach ($s in (Get-BundledSkills)) {
+        if (-not (Test-Path (Join-Path $skillRoot "skills\$s\SKILL.md"))) { $skillMissing += $s }
+    }
+    $skillVisible = if ($skillMissing.Count -eq 0) { 'OK' } else { "MISSING: $($skillMissing -join ', ')" }
+
     # 12. Completion report. Provider lines derive from the live post-config probes
     #     (report.verified) - never hardcoded "OK". The dashboard link is surfaced
     #     so the client can favorite it.
@@ -538,8 +611,7 @@ else {
 
 Operating system: Windows
 Claude Code: OK
-Personal skill in normal claude: OK
-Personal skill in claude-nine: OK
+Personal skills (normal claude and claude-nine share one config root): $skillVisible
 claude-nine launcher: OK
 Normal claude routing: UNCHANGED
 Node.js: OK

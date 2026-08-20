@@ -68,29 +68,36 @@ If the repository is already present, REFRESH it before proceeding: a git clone 
 
 ## 5. Install the personal skills
 
-Install BOTH bundled personal Claude Code skills into the user's **existing** Claude
+Install the bundled personal Claude Code skills into the user's **existing** Claude
 config root so they are visible to both `claude` and `claude-nine`. Do not create a
 second config root for `claude-nine`; do not set a separate `CLAUDE_CONFIG_DIR`.
 
-```text
-Source:  <repo>/.claude/skills/nine-router-setup
-Target:  <Claude config root>/skills/nine-router-setup
+The authoritative list is `CONTROL/bundled-skills.txt` — one skill per line; `#`
+comments and blank lines are ignored. Install **every** skill it names, not a
+hand-picked subset. The manifest currently bundles:
 
-Source:  <repo>/.claude/skills/spec-protocol
-Target:  <Claude config root>/skills/spec-protocol
+- `nine-router-setup` — required for the 999 bootstrap and repair runs
+- `spec-protocol` — build a fully-built, QC'd, staged, merged-to-GitHub app or website
+- `kaizen` — Plan-Do-Check-Act improvement loop for things already built
+- `eli5` — plain-language explanation of complex topics
+- `bro` — direct, blunt developer talk
+
+```text
+Source:  <repo>/.claude/skills/<skill-name>
+Target:  <Claude config root>/skills/<skill-name>
 ```
 
 `<Claude config root>` is `~/.claude` by default, or `$CLAUDE_CONFIG_DIR` if the user has
 set it.
 
-- If a previous `nine-router-setup` or `spec-protocol` skill already exists at the
-  target, **back it up** first (move it aside with a timestamp suffix) before copying
-  the new one. **Move it OUTSIDE the config root** — not into another folder under
-  `skills/`, and not into `<Claude config root>/backups/` either. Observed directly on
-  a real machine: a full skill tree (`SKILL.md` and all) left anywhere beneath a config
-  root is picked up by the harness and registers as a **second, phantom skill** named
-  after the backup directory. That pollutes every future session with a duplicate entry
-  and invites an agent to load the stale copy by mistake. `spec-protocol`'s own
+- If a previous copy of any bundled skill already exists at the target, **back it up**
+  first (move it aside with a timestamp suffix) before copying the new one. **Move it
+  OUTSIDE the config root** — not into another folder under `skills/`, and not into
+  `<Claude config root>/backups/` either. Observed directly on a real machine: a full
+  skill tree (`SKILL.md` and all) left anywhere beneath a config root is picked up by
+  the harness and registers as a **second, phantom skill** named after the backup
+  directory. That pollutes every future session with a duplicate entry and invites an
+  agent to load the stale copy by mistake. `spec-protocol`'s own
   `tools/self-update.sh` defaults its backups to `$HOME/.spec-protocol-backups` for
   exactly this reason. Use a home-level directory outside every config root:
 
@@ -110,8 +117,10 @@ anything. It defines the skill's behavior, ordering, and safety rules for this r
 future `/nine-router-setup` repair runs.
 
 The bundled `spec-protocol` skill is also installed for the user's future use (build a
-fully-built, QC'd, staged, merged-to-GitHub app or website). It is not required for the
-999-setup bootstrap itself, but it ships with this repository so the client gets both.
+fully-built, QC'd, staged, merged-to-GitHub app or website), alongside `kaizen`
+(Plan-Do-Check-Act improvement loop), `eli5` (plain-language explanations), and `bro`
+(direct developer talk). None of the four is required for the 999-setup bootstrap
+itself, but they ship with this repository so the client gets the full bundle.
 
 ## 7. Run exactly one orchestrator
 
@@ -144,12 +153,12 @@ The orchestrator installs the `claude-nine` launcher. Verify afterwards:
 
 ## 9. Verify shared skill visibility
 
-Verify the `nine-router-setup` personal skill is visible from **both**:
+Verify **every skill in `CONTROL/bundled-skills.txt`** is visible from **both**:
 
 - normal `claude`
 - `claude-nine`
 
-They must resolve the **same** skill (same config root, no duplicate install).
+They must resolve the **same** skills (same config root, no duplicate install).
 
 ## 10. Verify plain `claude` is not routed and `claude-nine` activates the router
 

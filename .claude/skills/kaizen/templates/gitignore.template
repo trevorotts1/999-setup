@@ -1,0 +1,13 @@
+# Kaizen Memory — .gitignore baseline
+
+**/LOCAL_STATE.json
+**/.env
+**/.env.*
+**/*token*
+**/*secret*
+**/*credential*
+**/browser-profile/
+**/raw-logs/
+**/video/
+**/*.har
+.DS_Store

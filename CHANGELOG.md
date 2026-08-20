@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.16.0] — 2026-08-20
+
+### Kaizen Loop skill + five-skill bundle
+
+- **New `/kaizen` skill**: a Plan-Do-Check-Act continuous-improvement loop for things
+  already built (apps, websites, funnels, processes, automations, documents). Bounded
+  scope (3–7 items per cycle, default 5), "guide do not cage" (user goals steer but
+  never blind discovery), no success claim without fresh evidence, approval boundaries
+  for merge/deploy/high-consequence actions, and durable Kaizen Memory in Downloads
+  ("OpenClaw Master Files"/Kaizen — never `.kaizen/` in the target). Ships with
+  onboarding, contract, memory, PDCA, scheduling, recovery, testing, plain-language,
+  and licensing reference docs; contract/memory/state/cycle/resume templates; and
+  deterministic state, validation, and launchd-scheduler helper scripts.
+- **Bundled-skill manifest**: new `CONTROL/bundled-skills.txt` is the authoritative
+  list of skills the installers link (`nine-router-setup`, `spec-protocol`, `kaizen`,
+  `eli5`, `bro`). `setup-macos.sh` now reads the manifest (standalone installs fall
+  back to the hard-coded baseline), always links on re-run so skills added after a
+  first install get picked up, and reports per-skill visibility instead of a single
+  path check. `setup-windows.ps1` gains real skill-link parity (junction-based,
+  no admin rights or Developer Mode needed) replacing two hardcoded "OK" report lines.
+- **Vendored companion skills**: `eli5` (plain-language explanations) and `bro`
+  (direct developer talk) bundled under MIT, each with a pinned upstream commit and
+  its own `THIRD_PARTY_LICENSE.md`; repo-root `THIRD_PARTY_NOTICES.md` records the
+  sources. No GPL or non-commercial code copied.
+- **Docs**: README bundled-skills section covers all five skills and the manifest;
+  AGENT_INSTALL.md installs the full manifest and verifies every skill in both
+  `claude` and `claude-nine`.
+
 ## [1.15.0] — 2026-08-16
 
 ### The 999 master fix: all 20 issues closed — the skill is now enforced, not suggested
