@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "loop_id": "<uuid>",
+  "local_target_path": "/absolute/path/to/target",
+  "kaizen_root_path": "/absolute/path/to/Kaizen/root",
+  "scheduler": {
+    "mechanism": "launchd",
+    "label": "com.blackceo.kaizen.<short-loop-id>",
+    "wrapper_path": "/absolute/path/to/wrapper.sh"
+  },
+  "claude_session_id": null,
+  "worktree_path": null,
+  "test_artifact_paths": []
+}

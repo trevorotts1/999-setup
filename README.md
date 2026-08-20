@@ -161,6 +161,18 @@ launchers/                     platform-native claude-nine launchers
     references/                pipeline, interview, research, QC docs
     tools/                     ledger, anchor, capacity, env-sweep, and update tools
     PROMPT-QC-INSTRUCTIONS.md  the ten QC categories
+.claude/skills/kaizen/
+    SKILL.md                   the kaizen skill (Plan-Do-Check-Act improvement loop)
+    references/                onboarding, contract, memory, PDCA, scheduling docs
+    templates/                 contract, memory, state, cycle, resume templates
+    scripts/                   deterministic state/validation/scheduler helpers
+.claude/skills/eli5/
+    SKILL.md                   the eli5 skill (plain-language explanations)
+    THIRD_PARTY_LICENSE.md     upstream MIT notice
+.claude/skills/bro/
+    SKILL.md                   the bro skill (direct developer talk)
+    THIRD_PARTY_LICENSE.md     upstream MIT notice
+CONTROL/bundled-skills.txt     the authoritative bundled-skills manifest
 templates/                     API docs.md template
 tests/                         smoke-test scaffolding
 ```
@@ -170,13 +182,22 @@ than duplicating providers, combos, PATH entries, or keys.
 
 ## Bundled skills
 
-This repository installs **two** personal Claude Code skills, both visible to `claude`
+This repository installs **five** personal Claude Code skills, all visible to `claude`
 and `claude-nine`:
 
 - **`nine-router-setup`** — provisions and repairs the 9Router / `claude-nine`
   environment (the subject of this README).
 - **`spec-protocol`** — turns any idea into a fully-built, QC'd, staged, merged-to-GitHub
   app or website. Invoke it later with `/spec-protocol`.
+- **`kaizen`** — a Plan-Do-Check-Act continuous-improvement loop for anything already
+  built (app, website, funnel, process, automation, document). Invoke it with `/kaizen`.
+- **`eli5`** — explains complex topics in plain language. Invoke it with `/eli5`.
+- **`bro`** — direct, blunt developer talk. Invoke it with `/bro`.
+
+The authoritative list lives in [`CONTROL/bundled-skills.txt`](CONTROL/bundled-skills.txt);
+the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) carry
+their own MIT notices in their skill folders and in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## License
 

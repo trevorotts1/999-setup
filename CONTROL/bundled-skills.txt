@@ -1,0 +1,8 @@
+# Bundled personal Claude Code skills — one skill per line.
+# The installers link every skill listed here into the Claude config root(s).
+# Blank lines and lines starting with # are ignored.
+nine-router-setup
+spec-protocol
+kaizen
+eli5
+bro
