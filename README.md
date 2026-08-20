@@ -199,6 +199,27 @@ the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) 
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
+### Kaizen tests
+
+The Kaizen skill ships a fixture-only test suite (it never touches real Downloads,
+`~/.claude`, or launchd). Run everything with:
+
+```bash
+bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh
+```
+
+That one command runs all sixteen suites: the core suite (sections 7.1–7.13),
+the six-scenario walkthroughs, and the per-fix suites `fix01`–`fix14` (memory-root
+resolution, deterministic init, registry, atomic locking, strict validation, secret
+scanning, scheduling decision engine, launchd, Windows Task Scheduler structure,
+installer idempotency, PDCA behavior, contract/activation behavior, companion-skill
+provenance, and static/cross-platform checks). Individual suites live in
+`.claude/skills/kaizen/tests/`. The suite **fails if any suite file is missing** —
+a skipped suite is a gap, not a pass.
+
+CI runs the same suites on macOS and Ubuntu, plus the PowerShell self-test on a
+Windows runner (`.github/workflows/kaizen-tests.yml`).
+
 ## License
 
 MIT — see `LICENSE`.

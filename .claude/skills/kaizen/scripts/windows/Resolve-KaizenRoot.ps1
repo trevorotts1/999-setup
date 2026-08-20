@@ -1,24 +1,42 @@
 # Print the Kaizen memory root using the OpenClaw Master Files decision rule.
 #
-# Rule: search the Downloads folder only, depth <= 3, case-insensitive.
-#   Exactly one "OpenClaw Master Files" folder containing "Kaizen" -> print it.
-#   Zero or more than one -> "$Downloads\Kaizen".
+# Rule: search the real Downloads folder only, depth <= 3, case-insensitive.
+#   Count every folder whose name is "OpenClaw Master Files" (a Kaizen
+#   subfolder is NOT required for the folder to count).
+#   Exactly one match  -> "<match>\Kaizen"
+#   Zero or more than one -> "$Downloads\Kaizen"
 #
-# Read-only. Does not create folders.
+# KAIZEN_DOWNLOADS overrides the real Downloads location (checked first;
+# used by the test fixtures). Read-only. Does not create folders.
 
 param()
 
 $ErrorActionPreference = "Stop"
 
-$downloads = if ($env:KAIZEN_DOWNLOADS) { $env:KAIZEN_DOWNLOADS }
-             else { Join-Path ([Environment]::GetFolderPath("UserProfile")) "Downloads" }
+if ($env:KAIZEN_DOWNLOADS) {
+  $downloads = $env:KAIZEN_DOWNLOADS
+} else {
+  # Real Downloads via the shell namespace (respects moved folders and
+  # OneDrive redirection). Fall back to the known-folder profile path only
+  # when the COM object fails or returns nothing.
+  $downloads = $null
+  try {
+    $downloads = (New-Object -ComObject Shell.Application).Namespace('shell:Downloads').Self.Path
+  } catch {
+    $downloads = $null
+  }
+  if (-not $downloads) {
+    $downloads = Join-Path ([Environment]::GetFolderPath("UserProfile")) "Downloads"
+  }
+  $downloads = $downloads.TrimEnd('\')
+}
 
 if (-not (Test-Path -PathType Container $downloads)) {
   Write-Output (Join-Path $downloads "Kaizen")
   exit 0
 }
 
-$candidates = New-Object System.Collections.Generic.List[string]
+$matches = New-Object System.Collections.Generic.List[string]
 
 function Walk-Dirs {
   param([string]$Dir, [int]$Depth)
@@ -26,11 +44,9 @@ function Walk-Dirs {
   $entries = @(Get-ChildItem -LiteralPath $Dir -Directory -ErrorAction SilentlyContinue)
   foreach ($e in $entries) {
     if ($e.Name.ToLowerInvariant() -eq "openclaw master files") {
-      $kaizenInside = Join-Path $e.FullName "Kaizen"
-      if (Test-Path -PathType Container $kaizenInside) {
-        if (-not $candidates.Contains($kaizenInside)) {
-          $candidates.Add($kaizenInside) | Out-Null
-        }
+      # Count regardless of whether a Kaizen subfolder exists inside.
+      if (-not $matches.Contains($e.FullName)) {
+        $matches.Add($e.FullName) | Out-Null
       }
       continue
     }
@@ -40,8 +56,8 @@ function Walk-Dirs {
 
 Walk-Dirs $downloads 1
 
-if ($candidates.Count -eq 1) {
-  Write-Output $candidates[0]
+if ($matches.Count -eq 1) {
+  Write-Output (Join-Path $matches[0] "Kaizen")
 } else {
   Write-Output (Join-Path $downloads "Kaizen")
 }

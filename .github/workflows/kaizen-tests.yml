@@ -1,0 +1,50 @@
+name: kaizen-tests
+
+on:
+  push:
+    paths:
+      - '.claude/skills/kaizen/**'
+      - '.claude/skills/eli5/**'
+      - '.claude/skills/bro/**'
+      - '.claude/skills/nine-router-setup/scripts/setup-macos.sh'
+      - '.claude/skills/nine-router-setup/scripts/setup-windows.ps1'
+      - 'CONTROL/bundled-skills.txt'
+      - 'THIRD_PARTY_NOTICES.md'
+  pull_request:
+    paths:
+      - '.claude/skills/kaizen/**'
+      - '.claude/skills/eli5/**'
+      - '.claude/skills/bro/**'
+      - '.claude/skills/nine-router-setup/scripts/setup-macos.sh'
+      - '.claude/skills/nine-router-setup/scripts/setup-windows.ps1'
+      - 'CONTROL/bundled-skills.txt'
+      - 'THIRD_PARTY_NOTICES.md'
+
+jobs:
+  unix-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run all Kaizen test suites
+        run: bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh
+
+  windows-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run PowerShell self-test (fixtures only)
+        shell: pwsh
+        run: ./.claude/skills/kaizen/scripts/windows/kaizen-task-self-test.ps1
+      - name: Run static + structural checks
+        shell: bash
+        run: bash .claude/skills/kaizen/tests/fix09-windows-notes.sh

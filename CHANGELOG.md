@@ -24,6 +24,14 @@
   (direct developer talk) bundled under MIT, each with a pinned upstream commit and
   its own `THIRD_PARTY_LICENSE.md`; repo-root `THIRD_PARTY_NOTICES.md` records the
   sources. No GPL or non-commercial code copied.
+- **Provenance correction (2026-08-20)**: `THIRD_PARTY_NOTICES.md` misattributed the
+  vendored skills to `K-Paxian/eli5` and `K-Paxian/bro` — repositories that do not
+  exist on GitHub (API 404). The vendored files are byte-identical (sha256) to the
+  owner-selected upstreams at the recorded pins: `nathanksou/eli5` at
+  `549364af799a4a0556c5359a0ac3e36d4da5719d` and `luchasarie/bro-skill` at
+  `01e51f8092973be58eff3b7271282bd8488a02ae`, both MIT. Notices rewritten with the
+  correct attribution; a provenance test suite
+  (`.claude/skills/kaizen/tests/fix13-provenance-tests.sh`) now pins it.
 - **Docs**: README bundled-skills section covers all five skills and the manifest;
   AGENT_INSTALL.md installs the full manifest and verifies every skill in both
   `claude` and `claude-nine`.

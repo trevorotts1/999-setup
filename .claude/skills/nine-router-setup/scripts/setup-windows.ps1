@@ -131,6 +131,7 @@ function Link-BundledSkills([string]$Root) {
         try { New-Item -ItemType Directory -Path $skillsDir -Force | Out-Null }
         catch { return }
     }
+    $failures = 0
     foreach ($s in (Get-BundledSkills)) {
         $src = $null
         if ($RepoRoot) {
@@ -141,30 +142,81 @@ function Link-BundledSkills([string]$Root) {
             $homeCandidate = Join-Path $env:USERPROFILE ".claude\skills\$s"
             if (Test-Path (Join-Path $homeCandidate 'SKILL.md')) { $src = (Resolve-Path $homeCandidate).Path }
         }
-        if (-not $src) { continue }
+        if (-not $src) {
+            Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
+            $failures++
+            continue
+        }
         $dst = Join-Path $skillsDir $s
-        if (Test-Path $dst) {
-            # Idempotent: if it already resolves to the same source, skip; a
-            # junction pointing elsewhere is re-pointed, a real directory is
-            # left alone (it is the shared-root case: link target is the source).
-            try {
-                $dstResolved = (Resolve-Path $dst).Path
-                if ($dstResolved -eq $src) { continue }
-                $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
-                if ($dstItem.LinkType -eq 'Junction') {
-                    Remove-Item $dst -Force -ErrorAction SilentlyContinue
+        try {
+            # Up-to-date check: a junction already pointing at the same source
+            # is left alone (idempotent re-run).
+            $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
+            if ($dstItem) {
+                $isJunction = ($dstItem.LinkType -eq 'Junction')
+                $dstResolved = $null
+                if ($isJunction) {
+                    $dstResolved = $dstItem.Target
+                    if ($dstResolved) {
+                        if (-not [System.IO.Path]::IsPathRooted($dstResolved)) {
+                            $dstResolved = Join-Path (Split-Path $dst -Parent) $dstResolved
+                        }
+                        $dstResolved = (Resolve-Path -LiteralPath $dstResolved -ErrorAction SilentlyContinue).Path
+                    }
                 } else {
+                    $dstResolved = (Resolve-Path -LiteralPath $dst -ErrorAction SilentlyContinue).Path
+                }
+                if ($dstResolved -and ($dstResolved.TrimEnd('\') -ieq $src.TrimEnd('\'))) {
+                    Write-Log "skill up to date: $s -> $dst"
                     continue
                 }
-            } catch { }
-        }
-        try {
+                if ($isJunction) {
+                    # Re-point: remove the JUNCTION only (Remove-Item on a
+                    # junction removes the link, never the target's contents).
+                    Remove-Item -LiteralPath $dst -Force -ErrorAction Stop
+                } else {
+                    # Real directory (possibly stale content): move it to an
+                    # EXTERNAL timestamped backup (never inside any Claude
+                    # config root), then VERIFY the backup exists before any
+                    # replacement.
+                    $ts = Get-Date -Format 'yyyyMMddTHHmmss'
+                    $backupParent = Join-Path $env:USERPROFILE '.claude-skill-backups'
+                    $backup = Join-Path $backupParent "$s.$ts"
+                    if (-not (Test-Path $backupParent)) {
+                        New-Item -ItemType Directory -Path $backupParent -Force -ErrorAction Stop | Out-Null
+                    }
+                    Move-Item -LiteralPath $dst -Destination $backup -ErrorAction Stop
+                    if (-not (Test-Path -LiteralPath $backup)) {
+                        throw "backup verification failed for $backup; leaving everything intact"
+                    }
+                    Write-Log "skill backed up: $s : $dst -> $backup"
+                }
+            }
             New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
+            if (-not (Test-Path (Join-Path $dst 'SKILL.md'))) {
+                throw "linked but SKILL.md missing at $dst"
+            }
+            # Never create a nested skills\<name>\<name>: the junction must
+            # resolve straight to the source, with no same-named child.
+            $linkedItem = Get-Item $dst -ErrorAction Stop
+            $linkedTarget = $linkedItem.Target
+            if ($linkedTarget -and (-not [System.IO.Path]::IsPathRooted($linkedTarget))) {
+                $linkedTarget = Join-Path (Split-Path $dst -Parent) $linkedTarget
+            }
+            $linkedResolved = (Resolve-Path -LiteralPath $linkedTarget -ErrorAction SilentlyContinue).Path
+            if (-not $linkedResolved -or ($linkedResolved.TrimEnd('\') -ine $src.TrimEnd('\'))) {
+                throw "post-link assertion failed (dest resolves to '$linkedResolved', expected '$src')"
+            }
+            if (Test-Path (Join-Path $dst $s)) {
+                throw "post-link assertion failed (nested '$s' subdirectory present at destination)"
+            }
             Write-Log "skill linked: $s -> $dst"
         } catch {
-            Write-Log "skill link failed for $s: $($_.Exception.Message)"
+            Write-Log "skill ERROR: $s : $($_.Exception.Message)"
+            $failures++
         }
     }
+    return $failures
 }
 
 # Dependency-preflight summary lines. Populated only by real-execution
@@ -560,10 +612,21 @@ else {
     #      Claude config root (idempotent; re-runs pick up skills added after
     #      the first install), then verify each one by an actual SKILL.md check.
     $skillRoot = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
-    Link-BundledSkills $skillRoot
+    # The linker reports per-skill failures itself and returns the failure
+    # count; never fatal here (a missing manifest source must not block the
+    # rest of setup).
+    $skillLinkFailures = Link-BundledSkills $skillRoot
+    if (-not $skillLinkFailures) { $skillLinkFailures = 0 }
+    $skillLinkStatus = if ($skillLinkFailures -gt 0) { "WARNING: $skillLinkFailures skill link failure(s) - see 'skill ERROR' lines above" } else { 'OK' }
     $skillMissing = @()
+    $skillVisibleDetail = @()
     foreach ($s in (Get-BundledSkills)) {
-        if (-not (Test-Path (Join-Path $skillRoot "skills\$s\SKILL.md"))) { $skillMissing += $s }
+        if (-not (Test-Path (Join-Path $skillRoot "skills\$s\SKILL.md"))) {
+            $skillMissing += $s
+            $skillVisibleDetail += "  ${s}: MISSING"
+        } else {
+            $skillVisibleDetail += "  ${s}: OK"
+        }
     }
     $skillVisible = if ($skillMissing.Count -eq 0) { 'OK' } else { "MISSING: $($skillMissing -join ', ')" }
 
@@ -612,6 +675,9 @@ else {
 Operating system: Windows
 Claude Code: OK
 Personal skills (normal claude and claude-nine share one config root): $skillVisible
+Bundled skill links: $skillLinkStatus
+Per-skill visibility:
+$($skillVisibleDetail -join "`n")
 claude-nine launcher: OK
 Normal claude routing: UNCHANGED
 Node.js: OK
