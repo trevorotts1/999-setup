@@ -170,6 +170,11 @@ function parseInput() {
     if (v !== null && typeof v !== "string") usageError(`${k} must be a string or null`);
   }
 
+  out.purpose = raw.purpose ?? null;
+  if (out.purpose !== null && typeof out.purpose !== "string") {
+    usageError("purpose must be a string or null");
+  }
+
   out.direction = raw.direction ?? "open_discovery";
   if (!["user_goal", "open_discovery"].includes(out.direction)) {
     usageError('direction must be "user_goal" or "open_discovery"');
@@ -460,6 +465,7 @@ function main() {
     vars["repo or local path"] = input.target_remote ?? input.target_local_path ?? "none";
     vars["url, if any"] = input.target_url ?? "none";
     vars["other locators"] = "none";
+    vars["Purpose, who it serves, what it must keep doing"] = input.purpose ?? "To be confirmed during the first PLAN phase, then confirmed with the owner.";
     vars["User's stated improvement direction"] = input.direction === "user_goal"
       ? input.name
       : "open discovery — no fixed goal; the Contract governs what matters";

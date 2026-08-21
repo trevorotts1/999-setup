@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.16.2] — 2026-08-21
+
+### Kaizen interview order + intention capture
+
+- **Interview order fixed**: the Kaizen Recipe now asks Target first and
+  Interval last (Target, Location, Better, Scope, Permission, Proof, Interval).
+  Asking "how often should I check on it" before knowing what "it" is read as
+  a script, not a conversation, and the answer could not be judged — the
+  interval depends on target type and location, which are only known after
+  the earlier questions. The order is stated in kaizen SKILL.md §3 and
+  `references/onboarding.md`, and regression-pinned by fix14 checks 14.9E/14.9F.
+- **Product-intention capture**: the Target question now also asks what the
+  thing is supposed to do and who it is for — the invariant golden rule 1
+  ("do not change the product intention") protects. Recorded in the Contract
+  as "What the target is supposed to do"; `init-kaizen-memory.mjs` fills the
+  new placeholder, and unknown intentions get confirmed during the first PLAN.
+- **Access question**: for remote targets, the Location question now asks
+  whether the user has logins or deploy access — no access makes Mode A
+  (recommend-only) the only honest choice and changes how proof works.
+- **kaizen VERSION 1.0.0 → 1.0.1**; fix14 suite now 100 checks (was 96).
+
 ## [1.16.1] — 2026-08-20
 
 ### Kaizen qualification (15 fixes) + auto-compaction

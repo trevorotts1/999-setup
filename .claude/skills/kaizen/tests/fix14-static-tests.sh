@@ -160,6 +160,13 @@ done < <(find "$SKILL_DIR/references" -name '*.md' -type f 2>/dev/null | sort)
 [ "$REF_COUNT" -gt 0 ] && ok "14.9Z found reference docs ($REF_COUNT)" || bad "14.9Z no reference docs found"
 check "14.9C CHANGELOG present" test -f "$REPO_ROOT/CHANGELOG.md"
 check "14.9D THIRD_PARTY_NOTICES present" test -f "$REPO_ROOT/THIRD_PARTY_NOTICES.md"
+# Interview order is a contract: Target first (know what the work IS before
+# scheduling it), Interval last (cadence depends on target/location). These
+# checks pin the numbered sections, not just the words, so a reorder fails.
+check "14.9E onboarding recipe order (Target first ... Interval last)" \
+  sh -c "got=\$(awk '/^### [0-9]+\\. / {printf \"%s%s \", \$2, \$3}' '$SKILL_DIR/references/onboarding.md'); [ \"\$got\" = '1.Target 2.Location 3.Better 4.Scope 5.Permission 6.Proof 7.Interval ' ]"
+check "14.9F SKILL.md recipe order (Target first ... Interval last)" \
+  sh -c "got=\$(awk '/^   [0-9]+\\. \\*\\*/ {gsub(/\\*\\*/,\"\",\$2); printf \"%s%s \", \$1, \$2}' '$SKILL_DIR/SKILL.md'); [ \"\$got\" = '1.Target 2.Location 3.Better 4.Scope 5.Permission 6.Proof 7.Interval ' ]"
 
 say ""
 say "RESULT: $PASS passed, $FAIL failed"

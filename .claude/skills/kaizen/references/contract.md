@@ -10,12 +10,15 @@
 - Target name
 - Target locators
 - User's stated improvement direction
+- What the target is supposed to do (purpose, who it serves, the invariant
+  golden rule 1 protects — captured in the interview's Target question)
 - Open-discovery clause (always present — see onboarding.md §Better)
 - Scope per cycle
 - Permission/action mode
 - Explicit approval boundaries
 - Proof strategy
-- Requested interval
+- Requested interval (asked last in the interview — after target, location,
+  direction, scope, permission, and proof are known)
 - Chosen scheduling mechanism
 - Model/logical lane preference
 - Memory location

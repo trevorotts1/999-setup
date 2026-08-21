@@ -205,7 +205,7 @@ their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.16.1,
-`nine-router-setup` 1.16.1, `kaizen` 1.0.0, `eli5` 1.0.0, `bro` 1.0.0). At every
+`nine-router-setup` 1.16.1, `kaizen` 1.0.1, `eli5` 1.0.0, `bro` 1.0.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all five skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
 spec-protocol itself; the other four skills refresh by re-running the
@@ -222,7 +222,7 @@ The Kaizen skill ships a fixture-only test suite (it never touches real Download
 bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh
 ```
 
-That one command runs all seventeen suites: the core suite (sections 7.1–7.13),
+That one command runs all eighteen suites: the core suite (sections 7.1–7.13),
 the six-scenario walkthroughs, and the per-fix suites `fix01`–`fix16`:
 
 | Suite | What it covers |

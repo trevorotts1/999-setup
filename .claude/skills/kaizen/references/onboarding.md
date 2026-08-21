@@ -56,26 +56,36 @@ Never use a rigid percentage like "70% conversion / 30% security".
 
 ## The Kaizen Recipe — seven pieces, asked one at a time
 
-### 1. Interval — "How often?"
+Order matters. The first five questions build understanding of the work; only
+then is scheduling meaningful. **Never ask the interval before the target,
+location, and improvement direction are known** — asking "how often should I
+check on it" before knowing what "it" is reads as a script, not a conversation,
+and the answer cannot be judged (cloud target vs local repo changes the whole
+scheduling decision). If the user asks why it is asked last, say plainly:
+"How often depends on what we are improving and where it lives — so I ask
+those first."
 
-> "How often should I come back and check this again?"
-
-Examples to offer: every 20 minutes, every hour, every week, every 30 days,
-once a quarter. If ambiguous, ask a follow-up ONLY when it materially changes
-scheduling:
-
-> "When you say every 30 days, do you mean exactly every 30 days, or about
-> once a month? Once a month is usually easier to keep on the same calendar
-> day."
-
-### 2. Target — "What are we making better?"
+### 1. Target — "What are we making better?"
 
 > "What are we trying to make better? It can be an app, website, funnel,
 > process, document, automation, or something else."
 
 If the user does not know the technical category, infer it.
 
-### 3. Location — "Where can I find it?"
+Also ask what the thing **is supposed to do** — its purpose, who it serves,
+what it must keep doing. Golden rule 1 is "Do not change the product
+intention", and the interview is the only chance to learn what that intention
+is. Record it in the Contract ("What the target is supposed to do"). Without
+it, a PDCA cycle has no invariant to respect. Ask it as part of the same
+question, not as a separate numbered step:
+
+> "What is it supposed to do, and who is it for? This is the part I will
+> never change — I need to know what makes it what it is."
+
+If the user cannot describe it, inspect the target during the first PLAN
+phase and confirm the inferred intention with the user before doing work.
+
+### 2. Location — "Where can I find it?"
 
 > "Where can I find it so I know where to work?"
 
@@ -100,7 +110,18 @@ Example:
 
 Do not force the person to know what a repository is.
 
-### 4. Better — "What would you especially like improved?"
+Ask about **access**: for remote targets (website, cloud server, hosted
+platform), does the user have logins, deploy access, or nothing beyond
+reading? This decides later questions: no write access makes Mode A
+(recommend-only) the only honest choice for that locator, and it changes
+how Kaizen can prove improvements there.
+
+> "Do you have a login or any way for me to reach it, or should I just look
+> at it from the outside?"
+
+"None" is a fine answer — record it and adapt.
+
+### 3. Better — "What would you especially like improved?"
 
 > "What would you especially like me to make better? This helps me aim, but it
 > does not limit what I can notice."
@@ -118,7 +139,7 @@ clause to every Contract:
 > usability, maintainability, discoverability, integrations, payments, or
 > success of the target.
 
-### 5. Scope — "How much each time?"
+### 4. Scope — "How much each time?"
 
 > "How much should I work on each time? I usually recommend about 3 to 7
 > useful things. Five is a good starting point."
@@ -130,7 +151,7 @@ a 5-item Contract into a 100-change cycle. If there are more critical issues
 than the scope allows, prioritize the highest risks and surface the rest
 clearly as a critical backlog instead of silently exceeding the Contract.
 
-### 6. Permission — "What may I do?"
+### 5. Permission — "What may I do?"
 
 > "Would you like me to only tell you what I recommend, or may I safely make
 > and test improvements for you too?"
@@ -146,7 +167,7 @@ clearly as a critical backlog instead of silently exceeding the Contract.
   destructive or high-consequence operations unless current authorization is
   unmistakably specific.
 
-### 7. Proof — "How will we know it helped?"
+### 6. Proof — "How will we know it helped?"
 
 > "How can we check that the change really helped instead of just looking
 > different?"
@@ -160,6 +181,26 @@ Do not expect the user to know. Recommend proof based on target type:
 - funnel → form/CTA path + tracking + mobile + conversion-related checks;
 - process → fewer steps, fewer errors, less time, clearer ownership;
 - document → completeness, clarity, fewer contradictions, review checklist.
+
+### 7. Interval — "How often?"
+
+> "How often should I come back and check this again?"
+
+**Asked LAST on purpose.** The answer depends on target type, location, and
+scheduling options, so it is only meaningful once those are known. Adapt the
+recommendation to what was learned: a fast-moving local repo can take short
+intervals; a cloud document or slow business process suits longer ones.
+
+Examples to offer: every 20 minutes, every hour, every day, every week,
+every 30 days, once a quarter. Recommend one based on the target. "I don't
+know" is valid — then infer from target type and location, say what was
+chosen and why, and let the user correct it.
+
+If ambiguous, ask a follow-up ONLY when it materially changes scheduling:
+
+> "When you say every 30 days, do you mean exactly every 30 days, or about
+> once a month? Once a month is usually easier to keep on the same calendar
+> day."
 
 ## Model preference (not an eighth Recipe item)
 

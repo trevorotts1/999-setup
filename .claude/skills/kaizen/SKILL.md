@@ -92,19 +92,23 @@ Follow `references/onboarding.md`. Sequence:
 
 1. Short welcome (see `references/onboarding.md` §welcome and §PDCA).
 2. Ask the **Kaizen Recipe** — exactly seven pieces, ONE question at a time,
-   adapting later questions to earlier answers:
-   1. **Interval** — "How often should I come back and check?"
-   2. **Target** — "What are we making better?"
-   3. **Location** — "Where can I find it?" (If "I don't know": inspect the
+   adapting later questions to earlier answers. **Order matters: understand the
+   work before scheduling it.**
+   1. **Target** — "What are we making better?"
+   2. **Location** — "Where can I find it?" (If "I don't know": inspect the
       current directory, detect Git repo, `git remote -v`, package files,
       README, deployment config; explain what you found in simple language.)
-   4. **Better** — "What would you especially like improved?" — guidance, NOT
+   3. **Better** — "What would you especially like improved?" — guidance, NOT
       an exclusion filter. See `references/onboarding.md` §better.
-   5. **Scope** — "How much each time?" Recommend 5, range 3–7.
-   6. **Permission** — Mode A (recommend only) / Mode B (improve safely —
+   4. **Scope** — "How much each time?" Recommend 5, range 3–7.
+   5. **Permission** — Mode A (recommend only) / Mode B (improve safely —
       recommended default) / Mode C (custom). See `references/onboarding.md` §permission.
-   7. **Proof** — "How will we know it helped?" Recommend based on target
+   6. **Proof** — "How will we know it helped?" Recommend based on target
       type; the user does not have to know the answer.
+   7. **Interval** — "How often should I come back and check?" Asked LAST:
+      the answer depends on target type, location (local vs cloud reachability),
+      and scheduling options, so it is only meaningful once those are known.
+      "I don't know" is valid — then infer from target type and location.
 3. Model preference (NOT an eighth Recipe item): detect the launcher.
    - If `claude-nine`/`claude-9`/`claude-codex` (routed): recommend the Opus
      logical lane for deep reviews, Sonnet logical lane for frequent light

@@ -16,6 +16,10 @@
 
 <User's stated improvement direction>
 
+## What the target is supposed to do
+
+<Purpose, who it serves, what it must keep doing>
+
 ## Important — your goal helps me aim, but it does not limit what I can notice
 
 Kaizen may surface important issues outside the owner's stated improvement
@@ -45,7 +49,8 @@ Up to <scope> active improvements (recommended range 3–7).
 
 ## Schedule
 
-- Requested interval: <human interval>
+- Requested interval: <human interval> (asked LAST in the interview, after the
+  target, location, direction, scope, permission, and proof are known)
 - Selected scheduler: <mechanism>
 - Why: <one plain sentence>
 
