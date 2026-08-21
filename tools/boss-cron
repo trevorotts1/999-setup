@@ -164,6 +164,12 @@ SANCTIONED_CLASSES = {
     # violation's premise was superseded by a later line — the scope check
     # must never flag the resolution of the very drift it flagged.
     "RECONCILE-ADDED",
+    # Post-campaign record lines (2026-08-20): KAIZEN-QUALIFICATION records the
+    # merged fix/kaizen-qualification release (PR #14, tag v1.16.1) and the
+    # operator-box skill sync — the campaign's own evidence lines, same class
+    # as the RECONCILE-ADDED / BACKUP-REF precedent. The scope check must
+    # never flag the very evidence the ledger must carry.
+    "KAIZEN-QUALIFICATION",
 }
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
 
