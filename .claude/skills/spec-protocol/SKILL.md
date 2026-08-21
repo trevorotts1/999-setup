@@ -294,11 +294,11 @@ the default state to report.
 
 ## GATE 0 — Ultracode hard stop (RUN FIRST)
 
-**GATE 0b — THE BOSS IS ARMED (WAVE 0 BOOTSTRAP, operator order 2026-08-16).**
+**GATE 0b — THE BOSS IS ARMED (WAVE 0 BOOTSTRAP).**
 Every run opens with the enforcer already in place: the boss cron
-(`tools/boss-cron`, install path `/Users/blackceomacmini/work-999-setup/tools/boss-cron`)
-runs every 5 minutes via crontab (`*/5 * * * *`), reads the live ledger at
-`/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md`, and enforces from minute
+(`tools/boss-cron` in this repo's checkout)
+runs every 5 minutes via crontab (`*/5 * * * *`), reads the live ledger at the
+repo root (`FIX-LEDGER.md`), and enforces from minute
 one: concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence,
 heartbeat (a `BOSSCYCLE-CLEAN` line within the last 2 cycles), the stop file
 (`CONTROL/stop-workstream`), and stop-and-rerun kill: the boss writes the stop
@@ -308,9 +308,8 @@ every dispatch point and MUST TaskStop the named workstream —
 On violation it writes `VIOLATION-STOP` lines with the exact finding and exits 2
 (governance-exit contract). On clean it appends one `BOSSCYCLE-CLEAN` line with
 the checks run. `boss-cron --check` runs exactly one cycle read-only and prints
-the verdict. Its log is `CONTROL/boss-cron.log`. The ledger line that records the
-armed state is `ISSUE-18-EARLY`. The full 16-check build is LIVE (WF-4E merged,
-WAVE 4 CLOSED): caps, census, width, wavelock, claims, beat, stop, scope, kill,
+the verdict. Its log is `CONTROL/boss-cron.log`. The full 16-check build is
+LIVE: caps, census, width, wavelock, claims, beat, stop, scope, kill,
 count, drift, orphan, stages, entry-mode, statusline, research — plus the
 Telegram heartbeat alert on its own 2-minute cycle. The hook-protection clause
 (PART 4) binds: `disableAllHooks` is never set on the operator box — it kills the
@@ -989,7 +988,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     claude-nine session — same script, same bar, same metrics — not just
     configured. The full capability contract is `references/progress-visibility.md`.
     Operational requirements in force for the whole run:
-    - **Session cost goes ON the bar (operator order 2026-08-16).** Cost is
+    - **Session cost goes ON the bar.** Cost is
       not in the statusLine stdin — derive it: accumulate the REAL token
       counts stdin exposes (`context_window.total_input_tokens` /
       `total_output_tokens`) × published per-model pricing, displayed with a
@@ -1019,7 +1018,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
       reflected when used, never displayed when not. Ctrl+T toggles the task
       display — explain it in plain English (the scripted line is in
       references/progress-visibility.md §6).
-    - **The Project bar is THE MAIN METRIC (operator order 2026-08-16).** The
+    - **The Project bar is THE MAIN METRIC.** The
       status line shows how close the project is to being DONE: percent =
       `tasks.counts.completed / (pending + in_progress + completed)` read from
       `$cwd/CONTROL/project_state.json` — disk truth only, never conversation
@@ -1028,10 +1027,11 @@ When the operator provides a folder, that folder IS the project. Its documents A
       VALIDATION, never on code generation; repair loops can move it DOWN —
       that is truth, not a bug. `run_status` ≠ RUNNING is shown. 100% does
       not mean shipped — merged at HEAD and verified is the delivery claim.
-    - **The Wave bar (wave-shaped runs, operator order 2026-08-16).** When
+    - **The Wave bar (wave-shaped runs).** When
       wave work is running, the status line shows how close the CURRENT wave
-      is to being done: reads `FIX-LEDGER.md` at `$cwd` first, then
-      `$HOME/work-999-setup/FIX-LEDGER.md`; current wave = highest
+      is to being done: reads `FIX-LEDGER.md` at `$cwd` first, then the repo
+      checkout's `FIX-LEDGER.md` (the checkout the boss cron runs from);
+      current wave = highest
       `WAVE <n>` line; percent = that wave's `WF-<n>` lines carrying PASS or
       DONE divided by its total `WF-<n>` lines. No wave lines → omitted,
       never guessed. Ledger lines exist only after verification, so the bar
@@ -1879,9 +1879,8 @@ the capture-proof stop: while the flag exists, nothing dispatches, and no
 restart happens — a stop is lifted only by naming the blocker and removing the
 flag (references/anti-drift.md §6).
 
-**The boss cron enforces all of it (WAVE 0 BOOTSTRAP, operator order 2026-08-16).**
-The interim boss (`tools/boss-cron`, installed at
-`/Users/blackceomacmini/work-999-setup/tools/boss-cron`, crontab `*/5 * * * *`,
+**The boss cron enforces all of it (WAVE 0 BOOTSTRAP).**
+The interim boss (`tools/boss-cron` in this repo's checkout, crontab `*/5 * * * *`,
 log `CONTROL/boss-cron.log`) compares the live ledger against the script every
 cycle and holds stop/restart authority: on violation it writes `VIOLATION-STOP`
 lines naming the workstream and the exact finding, writes/updates the stop file
@@ -1890,9 +1889,8 @@ dispatch point and MUST stop the named workstream, then re-dispatch it from its
 last clean checkpoint the right way. `CONTROL/workflow-pids.json` remains for
 out-of-process runs. On clean it appends one `BOSSCYCLE-CLEAN` line with the
 checks run and the timestamp. A missing `BOSSCYCLE-CLEAN` within two intervals
-(10 minutes) fires the heartbeat alert — the boss is itself governed. The ledger
-line recording the armed state is `ISSUE-18-EARLY`. `boss-cron --check` runs one
-cycle on demand. The hook-protection clause (PART 4) binds: this skill never
+(10 minutes) fires the heartbeat alert — the boss is itself governed.
+`boss-cron --check` runs one cycle on demand. The hook-protection clause (PART 4) binds: this skill never
 removes, disables, or weakens the boss cron entry or any governance hook, and
 `disableAllHooks` is never set on the operator box.
 
@@ -1962,4 +1960,4 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)
-23. `tools/boss-cron` — the boss cron (PART 4 enforcement, WAVE 0 BOOTSTRAP, operator order 2026-08-16): the 5-minute cycle that compares the live ledger at `/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md` against the script (concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence, heartbeat, stop file, stop-and-rerun kill via `CONTROL/workflow-pids.json`), writes `VIOLATION-STOP` on violation with the exact finding and `BOSSCYCLE-CLEAN` on clean, exits 2 on violation (governance-exit contract), `--check` runs one cycle read-only, log `CONTROL/boss-cron.log`, cron entry `*/5 * * * *`, armed-state ledger line `ISSUE-18-EARLY`, heartbeat alert if no `BOSSCYCLE-CLEAN` within two intervals (the boss is governed too), hook-protection clause intact (GATE 0b and the anti-drift contract above)
+23. `tools/boss-cron` — the boss cron (PART 4 enforcement): the 5-minute cycle that compares the live ledger (`FIX-LEDGER.md` at the repo root) against the script (concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence, heartbeat, stop file, stop-and-rerun kill via `CONTROL/workflow-pids.json`), writes `VIOLATION-STOP` on violation with the exact finding and `BOSSCYCLE-CLEAN` on clean, exits 2 on violation (governance-exit contract), `--check` runs one cycle read-only, log `CONTROL/boss-cron.log`, cron entry `*/5 * * * *`, heartbeat alert if no `BOSSCYCLE-CLEAN` within two intervals (the boss is governed too), hook-protection clause intact (GATE 0b and the anti-drift contract above)

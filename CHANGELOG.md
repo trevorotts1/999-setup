@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.16.3] — 2026-08-21
+
+### Boss tools portability — no hardcoded paths or campaign data
+
+- **Script-relative repo root**: `tools/boss-cron`, `tools/anti-stall-watchdog.sh`,
+  and `tools/boss-heartbeat-alert` now derive the repo root from their own
+  file location instead of a hardcoded machine path, so the boss tools work
+  from any checkout on any box.
+- **Env-overridable paths**: `BOSS_REPO_ROOT`, `BOSS_STATE_DIR`, `BOSS_LEDGER`,
+  `BOSS_WF_ROOT`, and the watchdog/alert equivalents override the derived
+  defaults (fixtures and tests use these).
+- **Config-driven campaign data**: locked wave table, wave count, entry-gate
+  epoch, caps, and sanctioned classes now load from `CONTROL/boss-config.json`
+  (box-local, gitignored). A neutral `CONTROL/boss-config.example.json` is
+  committed; the first live cycle copies it into place. No config = the
+  campaign-specific checks (wave lock, width, statusline) skip cleanly.
+- **Neutralized docs**: the spec-protocol SKILL.md boss sections no longer
+  reference the operator box, install paths, or any campaign's wave/issue
+  history; `boss-cron` violation messages and comments carry the same
+  neutralization (functional class names like `ISSUE-18-EARLY` stay sanctioned
+  in the allowlist — ledger evidence classes are doctrine, not campaign trivia).
+- **spec-protocol and nine-router-setup VERSION 1.16.1 → 1.16.3**.
+
 ## [1.16.2] — 2026-08-21
 
 ### Kaizen interview order + intention capture

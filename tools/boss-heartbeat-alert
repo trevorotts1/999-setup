@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# boss-heartbeat-alert — the boss's own watchdog (Issue 18 / PART 4 "The boss is governed too").
+# boss-heartbeat-alert — the boss's own watchdog (PART 4 "The boss is governed too").
 #
 # The boss-cron cycle appends BOSSCYCLE-CLEAN to the ledger every 5 minutes (cron
 # entry */5 * * * *). If the boss cron itself dies — crontab line removed, script
@@ -41,8 +41,10 @@ set -o pipefail
 # Env-overridable paths: the tests use a frozen ledger copy and a scratch state
 # dir; production uses the defaults (TEST MODE doctrine — never fire the live
 # alert path from a test).
-LEDGER="${BOSS_ALERT_LEDGER:-/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md}"
-STATE_DIR="${BOSS_ALERT_STATE_DIR:-/Users/blackceomacmini/work-999-setup/CONTROL}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${BOSS_REPO_ROOT:-$(dirname "$SCRIPT_DIR")}"
+LEDGER="${BOSS_ALERT_LEDGER:-$REPO_ROOT/FIX-LEDGER.md}"
+STATE_DIR="${BOSS_ALERT_STATE_DIR:-$REPO_ROOT/CONTROL}"
 LOG="${STATE_DIR}/boss-heartbeat-alert.log"
 STATE="${STATE_DIR}/boss-heartbeat-alert.state"
 mkdir -p "${STATE_DIR}" 2>/dev/null || true
@@ -119,7 +121,7 @@ if [ -n "${last_alert}" ] && [ "${last_alert}" != "none" ]; then
   fi
 fi
 
-MSG="[BOSS HEARTBEAT ALERT] boss-cron went silent — no BOSSCYCLE-* line for ${age_min} min (max ${MAX_AGE_MIN}). The enforcer is down; check crontab entry, /Users/blackceomacmini/work-999-setup/tools/boss-cron, and ${LEDGER}."
+MSG="[BOSS HEARTBEAT ALERT] boss-cron went silent — no BOSSCYCLE-* line for ${age_min} min (max ${MAX_AGE_MIN}). The enforcer is down; check the crontab entry, tools/boss-cron, and ${LEDGER}."
 
 if [ "${BOSS_ALERT_DRY_RUN:-0}" = "1" ]; then
   say "DRY-RUN: would send to ${TARGET_CHAT}: ${MSG}"

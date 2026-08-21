@@ -1,0 +1,7 @@
+{
+  "caps": {"total": 500},
+  "locked_waves": {"1": {"WF-1A": 5, "WF-1B": 5}},
+  "locked_wave_count": 1,
+  "entry_gate_epoch": null,
+  "sanctioned_classes": []
+}

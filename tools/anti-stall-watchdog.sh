@@ -2,7 +2,9 @@
 # Anti-stall watchdog — runs every 3 min, forces conductor to verify directly
 # when re-check critics stall beyond 5 min. Prevents the "waiting for verdict that
 # never arrives" pattern.
-LEDGER=/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${BOSS_REPO_ROOT:-$(dirname "$SCRIPT_DIR")}"
+LEDGER="${BOSS_LEDGER:-$REPO_ROOT/FIX-LEDGER.md}"
 LOCK=/tmp/anti-stall-watchdog.lock
 exec 8>"$LOCK"
 flock -n 8 || exit 0

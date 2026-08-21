@@ -25,3 +25,8 @@ route-state.json
 
 # Pre-merge backups live on pushed snapshot branches, not as in-tree .bak files
 *.bak-*
+
+# Boss governance: the live campaign config (locked waves, wave count,
+# entry-gate epoch, caps, sanctioned classes) is box-local — only the neutral
+# example is committed.
+CONTROL/boss-config.json

@@ -1,71 +1,72 @@
 #!/usr/bin/env python3
-"""boss-cron — full 16-check PART 4 enforcement (WF-4E slice 1 upgrade, 2026-08-16).
+"""boss-cron — the 16-check governance enforcer for spec-protocol workstreams.
 
-Enforces the locked 6-wave plan + operator rules for workflows and agents, every cycle.
-PART 4 (999-master-fix-spec-20260815.md) mandates EIGHT checks; this build runs all 8
-plus 8 carried forward from the interim boss (16 total):
+Runs every cron cycle (default every 5 minutes) and enforces the locked wave
+plan plus operator rules for workflows and agents. The enforcement spec
+(PART 4) mandates EIGHT checks; this build runs all 8 plus 8 carried forward
+from the interim boss (16 total):
 
-  1. SCOPE   — any ledger item not in the 20-list AND not matching a sanctioned
+  1. SCOPE   — any ledger item not in the allowed list AND not matching a sanctioned
                line-class = violation (PART 4 check 1; allowlist below).
   2. WAVE    — any wave in the ledger not in the locked table without a
                `NEW-WAVE-N` dependency line = violation (PART 4 check 2); plus
                no wave N+1 dispatch before `WAVE N CLOSED`.
   3. COUNT   — promised vs asked question counts: any "Question N of … C" with
                N > stated C and no prior correction line = violation (PART 4
-               check 3; Issue 11 counter enforcement).
-  4. WIDTH   — fan-out below scripted width (10 per workflow, pairs of five;
-               up to 50 workflows) without a recorded dependency line =
-               violation; padding past the work = violation (PART 4 check 4).
+               check 3; counter enforcement).
+  4. WIDTH   — fan-out below the scripted width (per the locked wave table)
+               without a recorded dependency line = violation; padding past
+               the work = violation (PART 4 check 4).
   5. CLAIM   — any final-report claim (DONE/FAIL) naming evidence files that
                do not exist on disk = violation (PART 4 check 5).
   6. DRIFT   — > 10 consecutive contentless heartbeat ticks = violation; a
                missing `anchor.sh --mode reconcile` at a wave boundary /
-               tick / compaction = violation (PART 4 check 6; Issue 13).
+               tick / compaction = violation (PART 4 check 6).
   7. ORPHAN  — media lane 1:1:1:1 accounting read from the ledger:
                MANIFEST-ROW / IMAGE-GENERATED / GHL-URL / IMAGE-REF — any
-               mismatch = violation; expired KI.ai temp URL with no GHL
-               upload = token-waste orphan (PART 4 check 7; Issue 10).
+               mismatch = violation; an expired temp URL with no GHL
+               upload = token-waste orphan (PART 4 check 7).
   8. STATUSLINE — statusLine key present in BOTH settings stores (name-only
-               check, never reading values) after Wave 6 = clean; missing
-               after Wave 6 without a `STATUSLINE-REMOVED-<reason>` ledger
-               line = violation (PART 4 check 8; Issue 20).
+               check, never reading values) after the final locked wave =
+               clean; missing without a `STATUSLINE-REMOVED-<reason>` ledger
+               line = violation (PART 4 check 8).
 
-Carried forward from the interim boss (Trevor's direct order 2026-08-16):
-  CAPS   — live workflow agents never exceed 500 total (10 per workflow x 50
-           workflows, operator doctrine per Issue 14; no per-model cap exists).
+Carried forward from the interim boss:
+  CAPS   — live workflow agents never exceed the configured total (locked wave
+           table; no per-model cap exists).
   CENSUS — every DISPATCH ledger line carries a census.
   BEAT   — a BOSSCYCLE-CLEAN line must exist within the last 2 cycles (10 min).
   STOP   — a CONTROL/stop-workstream file holds its workstream stopped.
-  STOP-AND-RERUN (Trevor's order 2026-08-16): on violation the boss writes the
+  STOP-AND-RERUN: on violation the boss writes the
            stop file naming the workstream + the exact finding + the restart
            checkpoint and appends VIOLATION-STOP lines. Workflows run INSIDE
-           the Claude session (no separate PID — verified 2026-08-16), so the
+           the Claude session (no separate PID), so the
            kill authority is the CONDUCTOR's TaskStop: the conductor reads the
            stop file at every dispatch point and MUST TaskStop the named
            workstream, then re-dispatch it from its last clean checkpoint the
            RIGHT way. CONTROL/workflow-pids.json remains for out-of-process
            runs only.
-  ENTRY-MODE (Issue 3): every project folder under ~/Downloads/projects whose
+  ENTRY-MODE: every project folder under ~/Downloads/projects whose
            CONTROL/project_state.json records a run (any truthy run_status)
            must carry an `ENTRY-MODE: interview|pointed` line in its
            CONTROL/LEDGER.md.
-  STAGES (Issue 8): reject a STAGE-BUILD line lacking the prior stage lines;
+  STAGES: reject a STAGE-BUILD line lacking the prior stage lines;
            STAGE-LOGO acceptance checked mechanically when a logo is in play.
-  ORPHAN (Issue 10): media 1:1:1:1 accounting (this is also PART 4 check 7).
-  RESEARCH (Issue 5): no research dispatch-log row before BOTH the
+  ORPHAN: media 1:1:1:1 accounting (this is also PART 4 check 7).
+  RESEARCH: no research dispatch-log row before BOTH the
            BUILD-TARGET: <taxonomy> and INPUT-CAPTURED: <path> ledger lines,
            and every research row must cite both lines verbatim.
 
 THE BOSS IS GOVERNED TOO (PART 4): a heartbeat alert fires if the cron fails —
 no BOSSCYCLE-* line within two intervals (10 min) -> alert through the
 operator's OpenClaw gateway (fleet-heartbeat doctrine — NEVER a raw
-api.telegram.org call; rescue-rangers-bridge history: the raw path broke with
-a malformed bot URL): account rescue-rangers -> OWNER_CHAT_ID (operator DM,
-names only; absent env keys skip the alert, never crash the cycle;
-BOSS_ALERT_DRY_RUN=1 records the intent without sending). The alert is sent
-by the NEXT cycle that runs, never by the dead one. Both BOSSCYCLE-CLEAN and
-BOSSCYCLE-ALERT are cycle lines — the boss's own ALERT line proves the cycle
-ran, so a recovered boss stops flagging its own prior death.
+api.telegram.org call; the raw path broke historically with a malformed bot
+URL): the configured alert account -> OWNER_CHAT_ID (operator DM, names only;
+absent env keys skip the alert, never crash the cycle; BOSS_ALERT_DRY_RUN=1
+records the intent without sending). The alert is sent by the NEXT cycle that
+runs, never by the dead one. Both BOSSCYCLE-CLEAN and BOSSCYCLE-ALERT are
+cycle lines — the boss's own ALERT line proves the cycle ran, so a recovered
+boss stops flagging its own prior death.
 
 On violation: append VIOLATION-STOP lines to the ledger, write/update the stop
 file (fresh findings each cycle — stale findings never latch), exit 2
@@ -75,53 +76,141 @@ and prints the verdict (never writes, never kills).
 
 Hook-protection clause (PART 4) intact: this script never touches settings.json
 hooks. No grep, no sed — python named-field parsing only.
+
+PORTABILITY. The repo root is derived from this file's location (tools/ ->
+parent), so the script works from any checkout path; every path constant can
+be overridden by an env var (BOSS_REPO_ROOT, BOSS_STATE_DIR, BOSS_LEDGER,
+BOSS_WF_ROOT, BOSS_CONFIG). Campaign data is config-driven:
+CONTROL/boss-config.json holds the locked wave table, the locked wave count,
+the entry-gate epoch, and extra sanctioned classes; the committed
+CONTROL/boss-config.example.json is a neutral starting point, and the first
+live cycle copies it into place when no config exists yet.
 """
 import datetime
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
 
-LEDGER = "/Users/blackceomacmini/work-999-setup/FIX-LEDGER.md"
-STOP = "/Users/blackceomacmini/work-999-setup/CONTROL/stop-workstream"
-PIDS = "/Users/blackceomacmini/work-999-setup/CONTROL/workflow-pids.json"
-PROJECT_STATE = "/Users/blackceomacmini/work-999-setup/CONTROL/project_state.json"
-BOSS_EPOCH = "/Users/blackceomacmini/work-999-setup/CONTROL/boss-cron-enforcement-epoch"
-WF_ROOT = "/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/c1d7d9a2-1c2c-4c37-b59f-118579f7ef78/subagents/workflows"
+# PORTABILITY: the repo root is derived from this file's location (tools/ ->
+# parent), so the script works from any checkout path. Every path constant can
+# be overridden by an env var; campaign data (locked waves, wave count,
+# entry-gate epoch, caps, extra sanctioned classes) comes from
+# CONTROL/boss-config.json (see load_boss_config below).
+REPO_ROOT = os.environ.get("BOSS_REPO_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATE_DIR = os.environ.get("BOSS_STATE_DIR") or os.path.join(REPO_ROOT, "CONTROL")
+LEDGER = os.environ.get("BOSS_LEDGER") or os.path.join(REPO_ROOT, "FIX-LEDGER.md")
+STOP = os.path.join(STATE_DIR, "stop-workstream")
+PIDS = os.path.join(STATE_DIR, "workflow-pids.json")
+PROJECT_STATE = os.path.join(STATE_DIR, "project_state.json")
+BOSS_EPOCH = os.path.join(STATE_DIR, "boss-cron-enforcement-epoch")
 PROJECTS = os.path.expanduser("~/Downloads/projects")
 SETTINGS_STORES = [
     os.path.expanduser("~/.claude/settings.json"),
     os.path.expanduser("~/.claude-nine/settings.json"),
 ]
+
+
+def _default_wf_roots():
+    """Workflow-journal roots without a hardcoded session path: the session
+    store's per-user project dir holds one <session>/subagents/workflows dir
+    per session; the boss watches all of them so the caps check counts live
+    agents box-wide. ~/.claude is the shared transcript store and
+    ~/.claude-nine the routed variant (a symlink to the same store on some
+    boxes — realpath dedupes)."""
+    encoded = "-" + os.path.expanduser("~").lstrip("/").replace("/", "-")
+    seen, roots = set(), []
+    for cfg_dir in ("~/.claude-nine", "~/.claude"):
+        base = os.path.join(os.path.expanduser(cfg_dir), "projects", encoded)
+        if not os.path.isdir(base):
+            continue
+        for session_dir in sorted(os.listdir(base)):
+            wf = os.path.join(base, session_dir, "subagents", "workflows")
+            rp = os.path.realpath(wf)
+            if os.path.isdir(wf) and rp not in seen:
+                seen.add(rp)
+                roots.append(wf)
+    return roots
+
+
+# Workflow-journal roots. BOSS_WF_ROOT pins a specific dir (colon-separated
+# list allowed); unset, the boss watches every session store above.
+WF_ROOTS = [p for p in os.environ.get("BOSS_WF_ROOT", "").split(":") if p] or _default_wf_roots()
+
+
+def load_boss_config(write_allowed=False):
+    """Campaign data lives in CONTROL/boss-config.json (never committed — the
+    committed CONTROL/boss-config.example.json is the neutral starting point).
+    The first LIVE cycle copies the example into place when no config exists;
+    --check never writes. Returns the config dict, or {} when no config can be
+    produced (checks that need a table then skip rather than guess)."""
+    path = os.environ.get("BOSS_CONFIG") or os.path.join(STATE_DIR, "boss-config.json")
+    if not os.path.isfile(path):
+        example = os.path.join(REPO_ROOT, "CONTROL", "boss-config.example.json")
+        if write_allowed and os.path.isfile(example):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            shutil.copyfile(example, path)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _parse_epoch(value):
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%MZ"):
+        try:
+            return datetime.datetime.strptime(value, fmt).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_locked_waves(raw):
+    table = {}
+    for k, v in (raw or {}).items():
+        try:
+            table[int(k)] = v
+        except (TypeError, ValueError):
+            continue
+    return table
 # Telegram heartbeat alert (operator env, names only — values stay in the env).
 # Transport = the OpenClaw gateway (account name is the bot identity; the raw
 # bot token path was removed — fleet-heartbeat doctrine).
 ALERT_CHAT_ID_ENV = "OWNER_CHAT_ID"
 
-# Operator doctrine (spec 2026-08-15, Issue 14 — supersedes the old 2/3/10
-# per-model caps): max 10 agents per workflow (5 builders + 5 blind critics),
+# Caps doctrine: max 10 agents per workflow (5 builders + 5 blind critics),
 # up to 50 workflows, up to 500 agents in parallel. No per-model concurrency
 # cap exists. The harness hard-caps concurrent agent() calls per workflow run
 # at min(16, cores-2) — product structure, not a settable limit; total agents
 # per run capped at 1000 by the engine.
-CAPS = {"total": 500}
+CONFIG = load_boss_config(write_allowed="--check" not in sys.argv)
+CAPS = CONFIG.get("caps") or {"total": 500}
 
-# Locked wave table (PART 2) — scripted width per wave: workflow -> builder count.
-LOCKED_WAVES = {
-    1: {"WF-1A": 5, "WF-1B": 5},
-    2: {"WF-2A": 5, "WF-2B": 5, "WF-2C": 5, "WF-2D": 5, "WF-2E": 5},
-    3: {"WF-3A": 5, "WF-3B": 5, "WF-3C": 5, "WF-3D": 5, "WF-3E": 5},
-    4: {"WF-4A": 5, "WF-4B": 5, "WF-4C": 5, "WF-4D": 5, "WF-4E": 5},
-    5: {"WF-5A": 5, "WF-5B": 5, "WF-5C": 1},
-    6: {"WF-6A": 5},
-}
+# Locked wave table (PART 2) — scripted width per wave: workflow -> builder
+# count. Campaign-specific: lives in CONTROL/boss-config.json, not here. An
+# empty table means no campaign is defined yet — the wave-lock and width
+# checks skip rather than flag everything (no table = no scripted width to
+# compare against).
+LOCKED_WAVES = _parse_locked_waves(CONFIG.get("locked_waves"))
 # PART 2.1 item 1: the wave table is written to the ledger at wave 1 with
-# immutable count 6; additional waves ONLY via a NEW-WAVE-N dependency line.
-LOCKED_WAVE_COUNT = 6
+# immutable count; additional waves ONLY via a NEW-WAVE-N dependency line.
+LOCKED_WAVE_COUNT = int(CONFIG.get("locked_wave_count") or 0)
+# ENTRY-MODE gate epoch (config "entry_gate_epoch", ISO string or null): runs
+# that started BEFORE the gate existed cannot carry an ENTRY-MODE line
+# retroactively; flagging them is a false positive. Null = the gate is in
+# force for every run (a fresh campaign has no pre-gate history).
+ENTRY_GATE_EPOCH = _parse_epoch(CONFIG.get("entry_gate_epoch"))
 
-# Ledger line classes sanctioned by PART 4 scope check + the 20-issue list +
+# Ledger line classes sanctioned by PART 4 scope check + the issue list +
 # conductor mechanics + the Wave 0 bootstrap line. Anything else = violation.
 # PART 4 check 1 allowlist (spec line 538): FUNNEL-*, 3JS-*, STAGE-*,
 # MOBBIN-CHECK, DESIGN-BRIEF, ENTRY-MODE, BUILD-TARGET, INPUT-CAPTURED,
@@ -138,7 +227,7 @@ SANCTIONED_CLASSES = {
     # records carry the MERGED class; scope must never flag the merge evidence.
     "MERGED",
     "REVIEW", "WAVE-REVIEW", "REVIEW-FINDING",
-    # Wave-1A verification completion lines (Issue 1 functional-relaunch transcript).
+    # Wave-1A verification completion lines.
     "WF-1A-VERIFIED",
     "BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT", "BOSSCYCLE-VIOLATION",
     "WAVE", "LOCKED", "ISSUE-18-EARLY", "REPAIR-DISPATCH",
@@ -153,7 +242,7 @@ SANCTIONED_CLASSES = {
     "DOC", "WORKFLOW", "STOP-AND-RERUN",
     "MOBBIN-CHECK", "DESIGN-BRIEF", "ENTRY-MODE", "BUILD-TARGET", "INPUT-CAPTURED",
     "PAYMENT-CONTRACT", "INTERVIEW-MODE",
-    # Issue 10 media accounting ledger classes (orphan check / PART 4 check 7)
+    # Media accounting ledger classes (orphan check / PART 4 check 7)
     "MANIFEST-ROW", "IMAGE-GENERATED", "GHL-URL", "IMAGE-REF",
     "MEDIA-GAP", "MEDIA-UPLOADED", "MEDIA",
     # PART 3 item 5 pre-merge backup evidence lines (BACKUP-REF FIX ...) — the
@@ -164,13 +253,17 @@ SANCTIONED_CLASSES = {
     # violation's premise was superseded by a later line — the scope check
     # must never flag the resolution of the very drift it flagged.
     "RECONCILE-ADDED",
-    # Post-campaign record lines (2026-08-20): KAIZEN-QUALIFICATION records the
-    # merged fix/kaizen-qualification release (PR #14, tag v1.16.1) and the
-    # operator-box skill sync — the campaign's own evidence lines, same class
-    # as the RECONCILE-ADDED / BACKUP-REF precedent. The scope check must
-    # never flag the very evidence the ledger must carry.
+    # Post-campaign record lines: KAIZEN-QUALIFICATION records a merged
+    # fix/qualification release and the operator-box skill sync — the
+    # campaign's own evidence lines, same class as the RECONCILE-ADDED /
+    # BACKUP-REF precedent. The scope check must never flag the very evidence
+    # the ledger must carry.
     "KAIZEN-QUALIFICATION",
 }
+# Campaign-specific line classes come from CONTROL/boss-config.json
+# ("sanctioned_classes" — never hardcoded here; each campaign's ledger carries
+# its own evidence classes).
+SANCTIONED_CLASSES.update(set(CONFIG.get("sanctioned_classes") or []))
 WF_PREFIX = re.compile(r"^WF-\d[A-Z]? ")
 
 # PART 4 check 1 prefix classes: FUNNEL-*, 3JS-*, STAGE-*, STATUSLINE-*, AK-*.
@@ -184,11 +277,11 @@ STAGE_CLASS_RE = re.compile(r"^STAGE-[A-Za-z0-9-]+:?$")
 # Statusline removal lines: 'STATUSLINE-REMOVED-<reason>' (PART 4 check 8).
 STATUSLINE_REMOVED_RE = re.compile(r"^STATUSLINE-REMOVED-")
 
-# Media ledger line regexes (Issue 10 / PART 4 check 7)
+# Media ledger line regexes (PART 4 check 7)
 MANIFEST_GAP_RE = re.compile(r"\bstatus=gap\b")
 MANIFEST_URL_EXPIRES_RE = re.compile(r"url=(\S+)\s+expires=(\S+)")
 
-# Drift (PART 4 check 6 / Issue 13): contentless heartbeat tick markers —
+# Drift (PART 4 check 6): contentless heartbeat tick markers —
 # the same shapes anchor.sh classifies as TICK (anchor.sh lines 197-268):
 # a "heartbeat" line whose body, with the word stripped, holds only whitespace,
 # punctuation, or a bare count. The literal auto-tick line is the canonical
@@ -204,21 +297,14 @@ TICK_MARK_RE = re.compile(r"heartbeat", re.IGNORECASE)
 TICK_STATE_RE = re.compile(
     r"counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|MERGED",
     re.IGNORECASE)
-DRIFT_RUN_LIMIT = 10  # > 10 consecutive contentless ticks = violation (Issue 13 FIX 2)
+DRIFT_RUN_LIMIT = 10  # > 10 consecutive contentless ticks = violation (PART 4 check 6)
 RECONCILE_RE = re.compile(r"RECONCILE|RE-ANCHOR|anchor\.sh")
 
-# Count check (PART 4 check 3 / Issue 11): "Question N of … C" ledger shape.
+# Count check (PART 4 check 3): "Question N of … C" ledger shape.
 QUESTION_RE = re.compile(r"\bQuestion\s+(\d+)\s+of\s+[^\d]{0,30}?(\d+)\b", re.IGNORECASE)
-# Sanctioned question-count correction lines (Issue 11 — the honest path is a
+# Sanctioned question-count correction lines (the honest path is a
 # recorded correction, never a silent edit).
 CORRECTION_RE = re.compile(r"^(CORRECTION|COUNT-CORRECTION|CORRECTED)", re.IGNORECASE)
-
-# ENTRY-MODE gate epoch: WAVE 2 DISPATCH 2026-08-16T14:02Z — the wave that
-# wrote the entry gate (Issue 3). Runs that started BEFORE the gate existed
-# cannot carry an ENTRY-MODE line retroactively; flagging them is a
-# false positive. Runs starting at or after the epoch must carry the line.
-ENTRY_GATE_EPOCH = datetime.datetime(2026, 8, 16, 14, 2, 0, tzinfo=datetime.timezone.utc)
-
 
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -285,8 +371,8 @@ def line_timestamp(line):
 TIMESTAMP_RE = re.compile(r"20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z")
 
 
-# Dispatch-line shapes (the ledger's actual forms, verified on the live ledger
-# 2026-08-16): '- `WAVE 3 DISPATCH 2026-08-16T17:07Z: ...' (wave dispatches),
+# Dispatch-line shapes (the ledger's actual forms): '- `WAVE 3 DISPATCH
+# 2026-08-16T17:07Z: ...' (wave dispatches),
 # '- `DISPATCH 2026-08-16T09:05Z: ...' (bare dispatches),
 # '- `WF-1A REPAIR DISPATCH 2026-08-16T09:16Z: ...' (repair dispatches).
 # Lines that merely CITE a dispatch ('... Cites WAVE 3 REDISPATCH.') are NOT
@@ -304,39 +390,46 @@ def is_dispatch_line(ln):
 def check_caps():
     live = {}
     unknown = []
-    if not os.path.isdir(WF_ROOT):
-        return live, unknown
-    for run_dir in os.listdir(WF_ROOT):
-        path = os.path.join(WF_ROOT, run_dir)
-        journal = os.path.join(path, "journal.jsonl")
-        if not os.path.isfile(journal):
+    seen = set()
+    for wf_root in WF_ROOTS:
+        if not os.path.isdir(wf_root):
             continue
-        finished = set()
-        started = {}
-        with open(journal, "r", encoding="utf-8") as fh:
-            for raw in fh:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    ev = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if ev.get("type") == "started":
-                    started[ev.get("agentId")] = ev
-                elif ev.get("type") in ("finished", "result"):
-                    finished.add(ev.get("agentId"))
-        for aid in started:
-            if aid in finished:
+        for run_dir in os.listdir(wf_root):
+            path = os.path.join(wf_root, run_dir)
+            journal = os.path.join(path, "journal.jsonl")
+            if not os.path.isfile(journal):
                 continue
-            meta_path = os.path.join(path, f"agent-{aid}.meta.json")
-            if not os.path.isfile(meta_path):
-                unknown.append(f"{run_dir}/{aid}")
+            # One run watched once, even when the session stores overlap.
+            key = os.path.realpath(journal)
+            if key in seen:
                 continue
-            with open(meta_path, "r", encoding="utf-8") as fh:
-                meta = json.load(fh)
-            model = meta.get("model", "unknown")
-            live[model] = live.get(model, 0) + 1
+            seen.add(key)
+            finished = set()
+            started = {}
+            with open(journal, "r", encoding="utf-8") as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        ev = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if ev.get("type") == "started":
+                        started[ev.get("agentId")] = ev
+                    elif ev.get("type") in ("finished", "result"):
+                        finished.add(ev.get("agentId"))
+            for aid in started:
+                if aid in finished:
+                    continue
+                meta_path = os.path.join(path, f"agent-{aid}.meta.json")
+                if not os.path.isfile(meta_path):
+                    unknown.append(f"{run_dir}/{aid}")
+                    continue
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                model = meta.get("model", "unknown")
+                live[model] = live.get(model, 0) + 1
     return live, unknown
 
 
@@ -382,6 +475,10 @@ def check_wave_lock(lines):
         if w - 1 not in closed:
             violations.append(f"wave {w} dispatched but no WAVE {w-1} CLOSED line")
     # Locked-table rule: waves beyond the immutable count need a NEW-WAVE-N line.
+    # No locked count in the config = no campaign defined yet — skip rather
+    # than flag every wave of a fresh campaign.
+    if not LOCKED_WAVE_COUNT:
+        return violations
     for w in sorted(dispatched):
         if w > LOCKED_WAVE_COUNT and w not in new_wave_deps:
             violations.append(
@@ -405,6 +502,10 @@ def check_width(lines):
         if m:
             latest[int(m.group(1))] = ln
     violations = []
+    # No locked table in the config = no campaign defined yet — skip rather
+    # than flag every dispatch of a fresh campaign.
+    if not LOCKED_WAVES:
+        return violations
     for wave, ln in latest.items():
         wfs = LOCKED_WAVES.get(wave)
         if wfs is None:
@@ -444,7 +545,7 @@ def check_claims(lines):
             continue
         # Path regex: stop before whitespace or backtick; strip trailing
         # sentence punctuation from the match (never mid-path chars like '-').
-        for raw in re.findall(r"/Users/blackceomacmini/[^\s`]+", ln):
+        for raw in re.findall(re.escape(os.path.expanduser("~")) + r"/[^\s`]+", ln):
             path = raw.rstrip(".,;:!?")
             if not path or not os.path.exists(path):
                 broken.append(f"line cites missing path {path}: {ln[:100]}")
@@ -494,8 +595,8 @@ def check_scope(lines):
 
 def check_questions(lines):
     """PART 4 check 3: promised vs asked question counts. Any 'Question N of …
-    C' with N > stated C and no prior correction line = violation (Issue 11:
-    the honest path is a recorded correction, never a silent edit — a prior
+    C' with N > stated C and no prior correction line = violation (the
+    honest path is a recorded correction, never a silent edit — a prior
     correction line mentioning the over-asked count exempts the later
     Question line)."""
     corrections = []
@@ -538,7 +639,7 @@ def _contentless_tick(line):
 
 
 def check_drift(lines):
-    """PART 4 check 6 (Issue 13): > 10 consecutive contentless heartbeat ticks
+    """PART 4 check 6: > 10 consecutive contentless heartbeat ticks
     = violation; a missing anchor.sh --mode reconcile at a wave boundary /
     tick / compaction = violation.
 
@@ -622,7 +723,7 @@ def check_drift(lines):
 
 
 def check_orphans(lines):
-    """PART 4 check 7 (Issue 10 FIX step 3): media lane 1:1:1:1 accounting.
+    """PART 4 check 7: media lane 1:1:1:1 accounting.
     generated == manifest == uploaded; references may be N but every reference
     must point at an uploaded asset. Expired temp URLs (KI.ai 24h deadline)
     with no GHL upload are token-waste orphans. status=gap rows are the only
@@ -775,7 +876,7 @@ def _logo_output_transparent(path):
 
 
 def check_stages(lines):
-    """Issue 8 FIX step 2 enforcement: reject a STAGE-BUILD line lacking the
+    """Stage gate enforcement: reject a STAGE-BUILD line lacking the
     prior stage lines, and reject any stage line opened before its
     predecessor's line exists. STAGE-LOGO's acceptance bar is checked
     mechanically: every named output file must exist and be a transparent
@@ -813,7 +914,7 @@ def check_stages(lines):
 
 
 def check_entry_mode():
-    """Issue 3 enforcement: any project folder under ~/Downloads/projects whose
+    """Entry-mode gate enforcement: any project folder under ~/Downloads/projects whose
     CONTROL/project_state.json records a run (any truthy run_status) must carry
     an ENTRY-MODE: interview|pointed line in its CONTROL/LEDGER.md. Folders
     never created by a spec-protocol run (no project_state.json, or no
@@ -844,7 +945,7 @@ def check_entry_mode():
             missing.append(f"{name}: run_state present, no CONTROL/LEDGER.md (entry gate never recorded)")
             continue
         # Epoch exemption: a run that started before the entry gate existed
-        # (WAVE 2 DISPATCH 2026-08-16T14:02Z, Issue 3) cannot be flagged —
+        # (config entry_gate_epoch) cannot be flagged —
         # the gate was not in force during its run. First ledger timestamp =
         # run start. No timestamp -> cannot date -> NOT exempt (checked).
         first_ts = None
@@ -865,7 +966,7 @@ def check_entry_mode():
                     start = datetime.datetime.strptime(first_ts, "%Y-%m-%dT%H:%MZ").replace(tzinfo=datetime.timezone.utc)
                 except ValueError:
                     start = None
-            if start is not None and start < ENTRY_GATE_EPOCH:
+            if ENTRY_GATE_EPOCH is not None and start is not None and start < ENTRY_GATE_EPOCH:
                 continue  # pre-gate run — exempt, no retroactive gate
         with open(ledger_path, "r", encoding="utf-8") as fh:
             found = False
@@ -881,7 +982,7 @@ def check_entry_mode():
     return missing
 
 
-# The two ledger lines the RESEARCH-READY gate records (Issue 5, SKILL.md step 3.5).
+# The two ledger lines the RESEARCH-READY gate records (SKILL.md step 3.5).
 # BUILD-TARGET takes exactly one of the six-way taxonomy; INPUT-CAPTURED takes a path.
 BUILD_TARGET_RE = re.compile(r"^BUILD-TARGET:\s*(MOBILE_APP|WEB_APP|MOBILE_AND_WEB|DESKTOP_SOFTWARE|WEBSITE|FUNNEL)\s*$")
 INPUT_CAPTURED_RE = re.compile(r"^INPUT-CAPTURED:\s*\S+\s*$")
@@ -915,7 +1016,7 @@ def ledger_line_value(ledger_text, line_re):
     return None
 
 def check_research_ready():
-    """Issue 5 enforcement: the RESEARCH-READY gate is a ledger precondition — no
+    """RESEARCH-READY gate enforcement: the ledger precondition — no
     research dispatch may exist before BOTH the BUILD-TARGET: <taxonomy> and
     INPUT-CAPTURED: <path> ledger lines are in the project's CONTROL/LEDGER.md,
     and every research dispatch-log row in CONTROL/dispatch-log.md must cite
@@ -959,13 +1060,13 @@ def check_research_ready():
         if not rows:
             continue
         if bt is None and ic is None:
-            bad.append(f"{name}: research dispatch-log row exists but NEITHER ledger line is present — BUILD-TARGET: <taxonomy> and INPUT-CAPTURED: <path> are the gate (RESEARCH-READY, Issue 5)")
+            bad.append(f"{name}: research dispatch-log row exists but NEITHER ledger line is present — BUILD-TARGET: <taxonomy> and INPUT-CAPTURED: <path> are the gate (RESEARCH-READY)")
             continue
         if bt is None:
-            bad.append(f"{name}: research dispatch-log row exists but the BUILD-TARGET: <taxonomy> ledger line is missing (RESEARCH-READY gate, Issue 5)")
+            bad.append(f"{name}: research dispatch-log row exists but the BUILD-TARGET: <taxonomy> ledger line is missing (RESEARCH-READY gate)")
             continue
         if ic is None:
-            bad.append(f"{name}: research dispatch-log row exists but the INPUT-CAPTURED: <path> ledger line is missing (RESEARCH-READY gate, Issue 5)")
+            bad.append(f"{name}: research dispatch-log row exists but the INPUT-CAPTURED: <path> ledger line is missing (RESEARCH-READY gate)")
             continue
         for row in rows:
             m_bt = re.search(r"BUILD-TARGET:\s*([A-Z_]+)", row)
@@ -977,7 +1078,7 @@ def check_research_ready():
             cites_bt = row_bt is not None and row_bt == want_bt
             cites_ic = row_ic is not None and row_ic == want_ic
             if not cites_bt or not cites_ic:
-                bad.append(f"{name}: research dispatch-log row lacks both verbatim citations or they drift from the ledger: {row[:110]} (RESEARCH-READY gate, Issue 5)")
+                bad.append(f"{name}: research dispatch-log row lacks both verbatim citations or they drift from the ledger: {row[:110]} (RESEARCH-READY gate)")
     return bad
 
 def _settings_have_statusline():
@@ -999,13 +1100,18 @@ def _settings_have_statusline():
 
 
 def check_statusline(lines):
-    """PART 4 check 8: after Wave 6, statusLine key must be present in BOTH
-    settings stores (name-only). Missing after Wave 6 without a
-    STATUSLINE-REMOVED-<reason> ledger line = violation."""
-    # Class-token-anchored: prose citing "WAVE 6 DISPATCH" inside
-    # VIOLATION-STOP/RECONCILE bodies must not arm the post-wave-6 gate.
-    wave6_entered = any(re.match(r"^- `WAVE 6 (DISPATCH|REDISPATCH)\b", ln) for ln in lines)
-    if not wave6_entered:
+    """PART 4 check 8: after the final locked wave, statusLine key must be
+    present in BOTH settings stores (name-only). Missing after the final wave
+    without a STATUSLINE-REMOVED-<reason> ledger line = violation."""
+    # No locked count in the config = no campaign defined yet — skip.
+    if not LOCKED_WAVE_COUNT:
+        return []
+    final_wave = LOCKED_WAVE_COUNT
+    # Class-token-anchored: prose citing "WAVE <final> DISPATCH" inside
+    # VIOLATION-STOP/RECONCILE bodies must not arm the post-final-wave gate.
+    wave_final_entered = any(
+        re.match(rf"^- `WAVE {final_wave} (DISPATCH|REDISPATCH)\b", ln) for ln in lines)
+    if not wave_final_entered:
         return []
     removed = any(STATUSLINE_REMOVED_RE.search(ledger_class(ln)) for ln in lines)
     if removed:
@@ -1013,7 +1119,7 @@ def check_statusline(lines):
     ok, present = _settings_have_statusline()
     if not ok:
         stores = ", ".join(os.path.basename(p) for p, pr in zip(SETTINGS_STORES, present) if not pr)
-        return [f"statusline: statusLine key missing after Wave 6 in {stores} "
+        return [f"statusline: statusLine key missing after Wave {final_wave} in {stores} "
                 f"(no STATUSLINE-REMOVED-<reason> ledger line)"]
     return []
 
@@ -1113,7 +1219,7 @@ def main():
     live, unknown = check_caps()
     total = sum(live.values())
     if total > CAPS["total"]:
-        violations.append(f"cap violation: {total} live agents > cap {CAPS['total']} (operator doctrine: 10 per workflow x 50 workflows)")
+        violations.append(f"cap violation: {total} live agents > cap {CAPS['total']} (doctrine: 10 per workflow x 50 workflows)")
     for model, n in live.items():
         if model not in ("opus", "sonnet", "haiku", "deepseek", "fable", "claude"):
             violations.append(f"live agent with unknown model {model} x{n}")
@@ -1238,7 +1344,7 @@ def main():
     # re-fire the 'stop file active' violation every cycle.
     if violations:
         with open(STOP, "w", encoding="utf-8") as fh:
-            fh.write(f"boss-cron-20260816: " + "; ".join(violations)[:340]
+            fh.write("boss-cron: " + "; ".join(violations)[:340]
                      + f" | {ck_note}; {bound}")
     elif os.path.exists(STOP):
         os.remove(STOP)
