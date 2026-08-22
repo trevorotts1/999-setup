@@ -213,16 +213,14 @@ check('wake dispatcher launches the companion UI, never a model conversation', (
   assert.ok(!dispatcher.includes("spawn('claude"), 'the dispatcher never launches a Claude process')
 })
 
-check('wake script truthfully limits itself to wake-only until FIX-011', () => {
+check('legacy wake wrapper remains an unbound visual-wake boundary', () => {
   const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
-  assert.ok(wake.includes('Current bounded contract (FIX-009): make a detached visual wake request'),
-    'the header must identify the current bounded wake-only contract')
-  assert.ok(wake.includes('does not receive or forward a session identifier'),
-    'the header must deny Claude-session transport')
-  assert.ok(wake.includes('bind to\n# a terminal host, or raise an existing app instance'),
-    'the header must deny host binding and existing-instance routing')
-  assert.ok(wake.includes('FIX-011 must provide an\n# authenticated session/host boundary'),
-    'the header must name the owner required to add these capabilities')
+  assert.ok(wake.includes('legacy positional slash-command is translated'),
+    'the header must identify the compatibility-only wrapper contract')
+  assert.ok(wake.includes('never accepts or\n# forwards a session or host identity'),
+    'the wrapper must deny unverified Claude-session and host transport')
+  assert.ok(wake.includes('authenticated session activation belongs\n# to the MCP bridge'),
+    'the wrapper must keep authenticated routing in the bridge boundary')
   assert.ok(!wake.includes('--session-id'), 'wake-only launch must not pass an unverified session id')
   assert.ok(!wake.includes('--host-window'), 'wake-only launch must not pass host-window identity')
 })

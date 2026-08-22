@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   buildWakeRequest,
@@ -114,4 +117,26 @@ test('FIX-010: shipped routed launchers remain independent of Candice wake dispa
 test('FIX-010: legacy POSIX wrapper delegates without being required by native Windows registration', () => {
   const wrapper = readFileSync(new URL('../wake-candice.sh', import.meta.url), 'utf8');
   assert.match(wrapper, /exec node .*wake-candice\.mjs/);
+  assert.match(wrapper, /--command "\$1"/);
+});
+
+test('FIX-010: legacy positional wrapper translates the command before dispatch', { skip: process.platform === 'win32' }, async () => {
+  const temp = mkdtempSync(join(tmpdir(), 'candice-wrapper-'));
+  const log = join(temp, 'args.log');
+  const companion = join(temp, 'fake-companion');
+  writeFileSync(companion, `#!/usr/bin/env sh\nprintf '%s\\n' "$@" > '${log}'\n`);
+  chmodSync(companion, 0o700);
+  try {
+    const wrapper = new URL('../wake-candice.sh', import.meta.url).pathname;
+    const result = spawnSync('bash', [wrapper, '/bro'], {
+      input: '', encoding: 'utf8', env: { ...process.env, CANDICE_COMPANION_CMD: companion },
+    });
+    assert.equal(result.status, 0);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try { readFileSync(log, 'utf8'); break } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+    }
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['--wake', '/bro']);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });

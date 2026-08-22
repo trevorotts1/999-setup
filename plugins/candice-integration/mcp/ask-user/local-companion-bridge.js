@@ -16,6 +16,8 @@ const { spawn } = require('child_process')
 
 const BRIDGE_PROTOCOL_VERSION = '1.0'
 const MAX_FRAME_BYTES = 64 * 1024
+const ACTIVATION_TTL_MS = 30 * 1000
+const OPAQUE_ID = /^[A-Za-z0-9._:-]{1,128}$/
 
 function bridgeFailure(code) {
   return { ok: false, code }
@@ -26,7 +28,14 @@ class LocalCompanionBridge {
     this.token = options.token || crypto.randomBytes(32).toString('hex')
     this.launchCommand = options.launchCommand || process.env.CANDICE_COMPANION_CMD || null
     this.socketDir = options.socketDir || fs.mkdtempSync(path.join(os.tmpdir(), 'candice-mcp-'))
-    this.endpoint = options.endpoint || path.join(this.socketDir, 'companion.sock')
+    // Loopback TCP is deliberately used instead of a Unix socket so the
+    // exact authenticated protocol works in native Windows builds too. The
+    // endpoint is not authority; the owner-only token plus activation claim
+    // are both required before any request is accepted.
+    this.endpoint = options.endpoint || null
+    this.tokenFile = options.tokenFile || path.join(this.socketDir, 'bridge-token')
+    this.activationTtlMs = options.activationTtlMs || ACTIVATION_TTL_MS
+    this.now = typeof options.now === 'function' ? options.now : Date.now
     this.server = null
     this.socket = null
     this.ready = false
@@ -34,6 +43,8 @@ class LocalCompanionBridge {
     this.pendingAcks = new Map()
     this.active = new Map()
     this.launchSessionId = null
+    this.activation = null
+    this.binding = null
     this.onAnswer = typeof options.onAnswer === 'function' ? options.onAnswer : () => bridgeFailure('answer-handler-unavailable')
     this.onCancel = typeof options.onCancel === 'function' ? options.onCancel : () => ({ ok: true })
   }
@@ -43,24 +54,49 @@ class LocalCompanionBridge {
   async start() {
     if (this.started) return this
     this.started = true
+    // The directory is created by mkdtemp with owner-only permissions. Set it
+    // explicitly as well: the token file is an authentication secret and
+    // must never be available to another local account.
+    try { fs.chmodSync(this.socketDir, 0o700) } catch (_) { /* best effort on Windows */ }
+    try { fs.writeFileSync(this.tokenFile, this.token, { mode: 0o600, flag: 'wx' }) } catch (error) {
+      if (error && error.code !== 'EEXIST') throw error
+    }
+    try { fs.chmodSync(this.tokenFile, 0o600) } catch (_) { /* best effort on Windows */ }
     await new Promise((resolve, reject) => {
       this.server = net.createServer((socket) => this._accept(socket))
       this.server.once('error', reject)
-      this.server.listen(this.endpoint, () => {
+      const onListening = () => {
         this.server.removeListener('error', reject)
-        try { fs.chmodSync(this.endpoint, 0o600) } catch (_) { /* best effort */ }
+        const address = this.server.address()
+        if (!this.endpoint && address && typeof address === 'object') {
+          this.endpoint = `tcp://127.0.0.1:${address.port}`
+        }
         resolve()
-      })
+      }
+      if (this.endpoint) {
+        const match = /^tcp:\/\/127\.0\.0\.1:(\d{1,5})$/.exec(this.endpoint)
+        if (!match) { reject(new Error('invalid local bridge endpoint')); return }
+        this.server.listen(Number(match[1]), '127.0.0.1', onListening)
+      } else {
+        this.server.listen(0, '127.0.0.1', onListening)
+      }
     })
     return this
   }
 
   async ensureSession(sessionId) {
+    if (typeof sessionId !== 'string' || !OPAQUE_ID.test(sessionId)) return bridgeFailure('invalid-session-id')
     if (this.launchSessionId && this.launchSessionId !== sessionId) return bridgeFailure('session-binding-in-use')
     if (!this.launchSessionId) {
       this.launchSessionId = sessionId
+      this.activation = {
+        sessionId,
+        activationId: crypto.randomUUID(),
+        issuedAt: this.now(),
+        claimed: false,
+      }
       if (!this.launchCommand && !this.isReady()) return bridgeFailure('companion-not-configured')
-      this._launchCompanion(sessionId)
+      this._launchCompanion(this.activation)
     }
     if (this.isReady()) return { ok: true }
     return new Promise((resolve) => {
@@ -74,7 +110,7 @@ class LocalCompanionBridge {
     })
   }
 
-  _launchCompanion(sessionId) {
+  _launchCompanion(activation) {
     // The user may start the app separately with these launch arguments; a
     // configured executable simply removes that manual step. Never shell out
     // through an interpolated command string.
@@ -82,9 +118,11 @@ class LocalCompanionBridge {
     try {
       const child = spawn(this.launchCommand, [
         '--bridge-endpoint', this.endpoint,
-        '--bridge-token', this.token,
+        '--bridge-token-file', this.tokenFile,
         '--bridge-version', BRIDGE_PROTOCOL_VERSION,
-        '--session-id', sessionId,
+        '--session-id', activation.sessionId,
+        '--activation-id', activation.activationId,
+        '--activation-issued-at', String(activation.issuedAt),
       ], { detached: true, stdio: 'ignore' })
       child.unref()
     } catch (_) {
@@ -111,13 +149,43 @@ class LocalCompanionBridge {
         if (!authenticated) {
           const candidate = Buffer.from(String(message.token || ''))
           const expected = Buffer.from(this.token)
-          if (message.type !== 'hello' || message.version !== BRIDGE_PROTOCOL_VERSION || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
+          const activation = this.activation
+          const age = activation ? this.now() - activation.issuedAt : Infinity
+          const fresh = activation && age >= 0 && age <= this.activationTtlMs
+          const matchingActivation = activation
+            && message.sessionId === activation.sessionId
+            && message.activationId === activation.activationId
+            && message.activationIssuedAt === String(activation.issuedAt)
+            && typeof message.instanceId === 'string' && OPAQUE_ID.test(message.instanceId)
+          // A launch capability is single-use.  A reconnect from the same
+          // authenticated process is not a second activation; any other
+          // claimed activation is a replay/takeover and is rejected.
+          const sameBinding = this.binding
+            && this.binding.sessionId === message.sessionId
+            && this.binding.activationId === message.activationId
+            && this.binding.instanceId === message.instanceId
+          if (message.type !== 'hello' || message.version !== BRIDGE_PROTOCOL_VERSION
+            || !fresh || !matchingActivation || (activation.claimed && !sameBinding)
+            || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
             socket.destroy(); return
           }
           authenticated = true
           this.socket = socket
           this.ready = true
-          this._write({ type: 'ready', version: BRIDGE_PROTOCOL_VERSION })
+          activation.claimed = true
+          this.binding = this.binding || {
+            bindingId: crypto.randomUUID(),
+            sessionId: activation.sessionId,
+            activationId: activation.activationId,
+            instanceId: message.instanceId,
+          }
+          this._write({
+            type: 'ready', version: BRIDGE_PROTOCOL_VERSION,
+            sessionId: this.binding.sessionId,
+            activationId: this.binding.activationId,
+            bindingId: this.binding.bindingId,
+            instanceId: this.binding.instanceId,
+          })
           continue
         }
         this._receive(message)
@@ -131,6 +199,9 @@ class LocalCompanionBridge {
     if (this.socket !== socket) return
     this.socket = null
     this.ready = false
+    // The activation was consumed by a specific instance. It is never reused
+    // after a disconnect; callers fail soft rather than accidentally route a
+    // later session to a stale or replacement process.
     for (const ack of this.pendingAcks.values()) ack.resolve(bridgeFailure('companion-disconnected'))
     this.pendingAcks.clear()
     for (const [key, pending] of this.active.entries()) {
@@ -172,7 +243,7 @@ class LocalCompanionBridge {
   isReady() { return this.ready && this.socket !== null && !this.socket.destroyed }
 
   async deliverQuestion(question) {
-    if (!this.isReady() || this.launchSessionId !== question.sessionId) return bridgeFailure('companion-not-ready')
+    if (!this.isReady() || !this.binding || this.binding.sessionId !== question.sessionId) return bridgeFailure('companion-not-ready')
     const key = this._key(question.sessionId, question.questionKey)
     if (this.active.has(key)) return bridgeFailure('question-already-delivered')
     const ack = new Promise((resolve) => {
@@ -204,7 +275,7 @@ class LocalCompanionBridge {
     this.ready = false
     if (this.socket) this.socket.destroy()
     if (this.server) await new Promise((resolve) => this.server.close(resolve))
-    try { fs.unlinkSync(this.endpoint) } catch (_) { /* already removed */ }
+    try { fs.unlinkSync(this.tokenFile) } catch (_) { /* already removed */ }
     try { fs.rmdirSync(this.socketDir) } catch (_) { /* only our empty dir */ }
   }
 }

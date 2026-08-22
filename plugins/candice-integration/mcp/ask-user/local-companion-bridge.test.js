@@ -1,6 +1,7 @@
 'use strict'
 
 const assert = require('assert')
+const fs = require('fs')
 const net = require('net')
 const test = require('node:test')
 const { AskUserServer } = require('./server')
@@ -15,13 +16,20 @@ function question(sessionId = 'session-a', questionKey = 'PROJECT_NAME') {
   }
 }
 
-async function connect(endpoint, token, handler) {
+async function connect(endpoint, token, activation, handler) {
   const socket = await new Promise((resolve, reject) => {
-    const client = net.createConnection(endpoint, () => resolve(client))
+    const port = Number(new URL(endpoint).port)
+    const client = net.createConnection({ host: '127.0.0.1', port }, () => resolve(client))
     client.once('error', reject)
   })
   socket.setEncoding('utf8')
-  socket.write(JSON.stringify({ type: 'hello', version: '1.0', token }) + '\n')
+  socket.write(JSON.stringify({
+    type: 'hello', version: '1.0', token,
+    sessionId: activation.sessionId,
+    activationId: activation.activationId,
+    activationIssuedAt: String(activation.issuedAt),
+    instanceId: activation.instanceId || 'candice-test-instance',
+  }) + '\n')
   let buffer = ''
   socket.on('data', (chunk) => {
     buffer += chunk
@@ -37,10 +45,22 @@ async function connect(endpoint, token, handler) {
 test('authenticated local bridge completes deliver → confirmed answer → same MCP call', async () => {
   const bridge = new LocalCompanionBridge()
   await bridge.start()
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(bridge.tokenFile).mode & 0o077, 0,
+      'the bridge capability file is owner-only')
+  }
+  assert.equal((await bridge.ensureSession('session-a')).ok, false, 'unconfigured companion only issues the bounded activation')
+  const activation = { ...bridge.activation, instanceId: 'candice-session-a' }
   let readyResolve
   const ready = new Promise((resolve) => { readyResolve = resolve })
-  const companion = await connect(bridge.endpoint, bridge.token, (message, socket) => {
-    if (message.type === 'ready') readyResolve()
+  const companion = await connect(bridge.endpoint, bridge.token, activation, (message, socket) => {
+    if (message.type === 'ready') {
+      assert.equal(message.sessionId, 'session-a')
+      assert.equal(message.activationId, activation.activationId)
+      assert.equal(message.instanceId, activation.instanceId)
+      assert.match(message.bindingId, /^[A-Za-z0-9._:-]+$/)
+      readyResolve()
+    }
     if (message.type === 'question') {
       const q = message.question
       socket.write(JSON.stringify({ type: 'delivered', sessionId: q.sessionId, questionKey: q.questionKey }) + '\n')
@@ -64,13 +84,15 @@ test('authenticated local bridge completes deliver → confirmed answer → same
 test('wrong token, session, or question key cannot answer an authenticated slot', async () => {
   const bridge = new LocalCompanionBridge()
   await bridge.start()
-  const intruder = await connect(bridge.endpoint, '0'.repeat(64), () => {})
+  await bridge.ensureSession('session-a')
+  const activation = { ...bridge.activation, instanceId: 'candice-authenticated' }
+  const intruder = await connect(bridge.endpoint, '0'.repeat(64), activation, () => {})
   await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(bridge.isReady(), false)
   intruder.destroy()
   let readyResolve
   const ready = new Promise((resolve) => { readyResolve = resolve })
-  const companion = await connect(bridge.endpoint, bridge.token, (message, socket) => {
+  const companion = await connect(bridge.endpoint, bridge.token, activation, (message, socket) => {
     if (message.type === 'ready') readyResolve()
     if (message.type === 'question') {
       const q = message.question
@@ -87,5 +109,38 @@ test('wrong token, session, or question key cannot answer an authenticated slot'
   assert.match(result.result.content[0].text, /cancelled/i)
   assert.equal(server.registry.openCount(), 0)
   companion.destroy()
+  await bridge.close()
+})
+
+test('activation acknowledgement is exact, expires, and cannot be replayed by another instance', async () => {
+  let clock = 1_000
+  const bridge = new LocalCompanionBridge({ now: () => clock, activationTtlMs: 50 })
+  await bridge.start()
+  await bridge.ensureSession('session-a')
+  const activation = { ...bridge.activation, instanceId: 'candice-owner' }
+  let readyResolve
+  const ready = new Promise((resolve) => { readyResolve = resolve })
+  const companion = await connect(bridge.endpoint, bridge.token, activation, (message) => {
+    if (message.type === 'ready') readyResolve(message)
+  })
+  const acknowledgement = await ready
+  assert.equal(acknowledgement.sessionId, 'session-a')
+  assert.equal(bridge.binding.instanceId, 'candice-owner')
+  assert.equal((await bridge.ensureSession('session-b')).code, 'session-binding-in-use')
+
+  companion.destroy()
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  let replayReady = false
+  const replay = await connect(bridge.endpoint, bridge.token,
+    { ...activation, instanceId: 'candice-replay' }, (message) => { if (message.type === 'ready') replayReady = true })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(replayReady, false, 'a consumed activation cannot select a replacement instance')
+  replay.destroy()
+  clock += 100
+  let staleReady = false
+  const stale = await connect(bridge.endpoint, bridge.token, activation, (message) => { if (message.type === 'ready') staleReady = true })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(staleReady, false, 'expired activation cannot reconnect even from the original instance')
+  stale.destroy()
   await bridge.close()
 })

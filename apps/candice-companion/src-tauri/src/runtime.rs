@@ -7,7 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
+use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
@@ -28,8 +31,10 @@ pub struct RuntimeLaunch {
     pub session_id: Option<String>,
     pub rejected_reason: Option<String>,
     pub bridge_endpoint: Option<String>,
-    pub bridge_token: Option<String>,
+    pub bridge_token_file: Option<String>,
     pub bridge_version: Option<String>,
+    pub activation_id: Option<String>,
+    pub activation_issued_at: Option<String>,
 }
 
 impl RuntimeLaunch {
@@ -79,10 +84,10 @@ where
             }
             "--bridge-endpoint" => {
                 let Some(endpoint) = args.get(index + 1) else {
-                    launch.rejected_reason = Some("--bridge-endpoint requires an absolute local socket path".into());
+                    launch.rejected_reason = Some("--bridge-endpoint requires a loopback TCP endpoint".into());
                     break;
                 };
-                if endpoint.starts_with('/') && endpoint.len() <= 240 && !endpoint.contains('\0') {
+                if valid_bridge_endpoint(endpoint) {
                     launch.bridge_endpoint = Some(endpoint.clone());
                     index += 2;
                 } else {
@@ -90,16 +95,16 @@ where
                     break;
                 }
             }
-            "--bridge-token" => {
-                let Some(token) = args.get(index + 1) else {
-                    launch.rejected_reason = Some("--bridge-token requires a capability token".into());
+            "--bridge-token-file" => {
+                let Some(token_file) = args.get(index + 1) else {
+                    launch.rejected_reason = Some("--bridge-token-file requires an absolute owner-only file path".into());
                     break;
                 };
-                if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                    launch.bridge_token = Some(token.clone());
+                if Path::new(token_file).is_absolute() && token_file.len() <= 240 && !token_file.contains('\0') {
+                    launch.bridge_token_file = Some(token_file.clone());
                     index += 2;
                 } else {
-                    launch.rejected_reason = Some("invalid bridge token".into());
+                    launch.rejected_reason = Some("invalid bridge token file".into());
                     break;
                 }
             }
@@ -116,6 +121,32 @@ where
                     break;
                 }
             }
+            "--activation-id" => {
+                let Some(activation_id) = args.get(index + 1) else {
+                    launch.rejected_reason = Some("--activation-id requires an opaque activation value".into());
+                    break;
+                };
+                if valid_opaque_id(activation_id) {
+                    launch.activation_id = Some(activation_id.clone());
+                    index += 2;
+                } else {
+                    launch.rejected_reason = Some("invalid activation id".into());
+                    break;
+                }
+            }
+            "--activation-issued-at" => {
+                let Some(issued_at) = args.get(index + 1) else {
+                    launch.rejected_reason = Some("--activation-issued-at requires an epoch-milliseconds value".into());
+                    break;
+                };
+                if issued_at.len() <= 16 && issued_at.bytes().all(|byte| byte.is_ascii_digit()) {
+                    launch.activation_issued_at = Some(issued_at.clone());
+                    index += 2;
+                } else {
+                    launch.rejected_reason = Some("invalid activation issue time".into());
+                    break;
+                }
+            }
             _ => index += 1,
         }
     }
@@ -124,6 +155,15 @@ where
 }
 
 fn valid_session_id(value: &str) -> bool {
+    valid_opaque_id(value)
+}
+
+fn valid_bridge_endpoint(value: &str) -> bool {
+    let Some(port) = value.strip_prefix("tcp://127.0.0.1:") else { return false };
+    port.parse::<u16>().map(|port| port != 0).unwrap_or(false)
+}
+
+fn valid_opaque_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value
@@ -167,8 +207,7 @@ pub struct RuntimeState {
     capabilities: Mutex<RuntimeCapabilities>,
     pending_question: Mutex<Option<Value>>,
     bridge_session_id: Option<String>,
-    #[cfg(unix)]
-    bridge_writer: Mutex<Option<std::os::unix::net::UnixStream>>,
+    bridge_writer: Mutex<Option<TcpStream>>,
 }
 
 impl RuntimeState {
@@ -203,33 +242,60 @@ pub fn initialize_runtime<R: Runtime>(
         capabilities: Mutex::new(capabilities.clone()),
         pending_question: Mutex::new(None),
         bridge_session_id: launch.session_id.clone(),
-        #[cfg(unix)]
         bridge_writer: Mutex::new(None),
     });
     app.emit(RUNTIME_CAPABILITIES_EVENT, capabilities)
         .map_err(|error| tauri::Error::Anyhow(error.into()))
 }
 
-/// Start the authenticated per-launch client. The bridge is a Unix-domain
-/// socket, so it is local to the current user account; the random capability
-/// token and protocol handshake are still required before it becomes ready.
-#[cfg(unix)]
+/// Start the authenticated per-launch client. The server is IPv4 loopback
+/// only, so the exact protocol is available to both macOS and Windows builds.
+/// The token and exact activation acknowledgement are the authorization
+/// boundary; an endpoint alone is never authority.
 pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) {
-    let (Some(endpoint), Some(token), Some(version)) = (
+    let (Some(endpoint), Some(token_file), Some(version), Some(session_id), Some(activation_id), Some(activation_issued_at)) = (
         launch.bridge_endpoint,
-        launch.bridge_token,
+        launch.bridge_token_file,
         launch.bridge_version,
+        launch.session_id,
+        launch.activation_id,
+        launch.activation_issued_at,
     ) else { return };
     std::thread::spawn(move || {
-        let Ok(mut stream) = std::os::unix::net::UnixStream::connect(endpoint) else { return };
-        let hello = json!({ "type": "hello", "version": version, "token": token });
+        // A launch argument is visible to local process inspection. The
+        // capability itself therefore lives in the owner-only token file;
+        // refuse the bridge rather than weakening the authentication boundary.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let Ok(metadata) = fs::metadata(&token_file) else { return };
+            if metadata.permissions().mode() & 0o077 != 0 { return }
+        }
+        let Ok(token) = fs::read_to_string(&token_file) else { return };
+        if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) { return }
+        let Some(port) = endpoint.strip_prefix("tcp://127.0.0.1:") else { return };
+        let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{port}")) else { return };
+        // The PID is not authorization. It is only an instance identity that
+        // the authenticated broker echoes in its binding acknowledgement.
+        let instance_id = format!("candice-{}", std::process::id());
+        let hello = json!({
+            "type": "hello", "version": version, "token": token,
+            "sessionId": session_id, "activationId": activation_id,
+            "activationIssuedAt": activation_issued_at, "instanceId": instance_id,
+        });
         if writeln!(stream, "{}", hello).is_err() { return }
         let Ok(read_stream) = stream.try_clone() else { return };
         let mut reader = BufReader::new(read_stream);
         let mut line = String::new();
         if reader.read_line(&mut line).ok().filter(|count| *count > 0).is_none() { return }
         let Ok(ready) = serde_json::from_str::<Value>(&line) else { return };
-        if ready.get("type").and_then(Value::as_str) != Some("ready") || ready.get("version").and_then(Value::as_str) != Some("1.0") { return }
+        if ready.get("type").and_then(Value::as_str) != Some("ready")
+            || ready.get("version").and_then(Value::as_str) != Some("1.0")
+            || ready.get("sessionId").and_then(Value::as_str) != Some(session_id.as_str())
+            || ready.get("activationId").and_then(Value::as_str) != Some(activation_id.as_str())
+            || ready.get("instanceId").and_then(Value::as_str) != Some(instance_id.as_str())
+            || ready.get("bindingId").and_then(Value::as_str).filter(|value| valid_opaque_id(value)).is_none()
+        { return }
         {
             let state = app.state::<RuntimeState>();
             if let Ok(writer) = stream.try_clone() { *state.bridge_writer.lock().expect("bridge writer mutex poisoned") = Some(writer); }
@@ -273,9 +339,6 @@ pub fn cmd_take_pending_bridge_question(state: State<'_, RuntimeState>) -> Resul
     state.pending_question.lock().map(|mut pending| pending.take()).map_err(|_| "bridge state unavailable".into())
 }
 
-#[cfg(not(unix))]
-pub fn start_local_bridge<R: Runtime>(_app: AppHandle<R>, _launch: RuntimeLaunch) {}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BridgeAnswerRequest {
@@ -291,17 +354,13 @@ pub fn cmd_submit_bridge_answer(
     state: State<'_, RuntimeState>,
     request: BridgeAnswerRequest,
 ) -> Result<(), String> {
-    #[cfg(unix)] {
-        let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
-        let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
-        serde_json::to_writer(&mut *stream, &json!({
-            "type": "answer", "sessionId": request.session_id, "questionKey": request.question_key, "answer": request.answer,
-        })).map_err(|_| "bridge write failed")?;
-        stream.write_all(b"\n").map_err(|_| "bridge unavailable")?;
-        return Ok(());
-    }
-    #[cfg(not(unix))]
-    { let _ = (state, request); Err("local bridge unsupported on this platform".into()) }
+    let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
+    let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
+    serde_json::to_writer(&mut *stream, &json!({
+        "type": "answer", "sessionId": request.session_id, "questionKey": request.question_key, "answer": request.answer,
+    })).map_err(|_| "bridge write failed")?;
+    stream.write_all(b"\n").map_err(|_| "bridge unavailable")?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -310,16 +369,12 @@ pub fn cmd_cancel_bridge_question(
     session_id: String,
     question_key: String,
 ) -> Result<(), String> {
-    #[cfg(unix)] {
-        let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
-        let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
-        serde_json::to_writer(&mut *stream, &json!({ "type": "cancel", "sessionId": session_id, "questionKey": question_key }))
-            .map_err(|_| "bridge write failed")?;
-        stream.write_all(b"\n").map_err(|_| "bridge unavailable")?;
-        return Ok(());
-    }
-    #[cfg(not(unix))]
-    { let _ = (state, session_id, question_key); Err("local bridge unsupported on this platform".into()) }
+    let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
+    let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
+    serde_json::to_writer(&mut *stream, &json!({ "type": "cancel", "sessionId": session_id, "questionKey": question_key }))
+        .map_err(|_| "bridge write failed")?;
+    stream.write_all(b"\n").map_err(|_| "bridge unavailable")?;
+    Ok(())
 }
 
 /// The transparent companion is click-through unless a delivered question
@@ -365,6 +420,9 @@ mod tests {
         assert!(parse_runtime_launch(["--wake", "/unknown"])
             .rejected_reason
             .is_some());
+        let ordinary_session = parse_runtime_launch(["--wake", "session-start"]);
+        assert_eq!(ordinary_session.wake_command, None);
+        assert_eq!(ordinary_session.rejected_reason.as_deref(), Some("unsupported wake command: session-start"));
     }
 
     #[test]
@@ -384,13 +442,19 @@ mod tests {
     #[test]
     fn accepts_only_a_complete_authenticated_bridge_launch() {
         let launch = parse_runtime_launch([
-            "--bridge-endpoint", "/tmp/candice.sock",
-            "--bridge-token", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "--bridge-endpoint", "tcp://127.0.0.1:34123",
+            "--bridge-token-file", "/tmp/candice-token",
             "--bridge-version", "1.0",
+            "--session-id", "session-42",
+            "--activation-id", "activation-42",
+            "--activation-issued-at", "1760000000000",
         ]);
         assert!(launch.rejected_reason.is_none());
         assert_eq!(launch.bridge_version.as_deref(), Some("1.0"));
-        assert_eq!(parse_runtime_launch(["--bridge-token", "nope"]).rejected_reason.as_deref(), Some("invalid bridge token"));
+        assert_eq!(launch.bridge_token_file.as_deref(), Some("/tmp/candice-token"));
+        assert_eq!(launch.activation_id.as_deref(), Some("activation-42"));
+        assert_eq!(parse_runtime_launch(["--bridge-endpoint", "http://127.0.0.1:34123"]).rejected_reason.as_deref(), Some("invalid bridge endpoint"));
+        assert_eq!(parse_runtime_launch(["--bridge-token-file", "relative-token"]).rejected_reason.as_deref(), Some("invalid bridge token file"));
     }
 
     #[test]
