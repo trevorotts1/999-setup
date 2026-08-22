@@ -1,0 +1,131 @@
+{
+  "schema": "candice/derivative-spec@1",
+  "contract": "candice-derivatives-v1",
+  "parentContract": "candice-operator-originals-v1",
+  "sourceManifest": "asset-manifest.json",
+  "sourceDirectory": "source/operator-approved/",
+  "status": "MEASURED-BEFORE-CHOSEN",
+  "approvalGate": "FIX-003 operator approval pending; hashes below pin the deterministic build so approval binds instantly when granted",
+  "measurement": {
+    "measuredAt": "2026-08-22T14:15:00Z",
+    "appWindow": "420x640 (tauri.conf.json app.windows[0], resizable)",
+    "stageConstraint": ".candice-character-image max-width min(100%, 520px)",
+    "sourceTiers": {
+      "fullbody": { "width": 941, "height": 1672, "aspect": "941:1672" },
+      "face": { "width": 1254, "height": 1254, "aspect": "1:1" },
+      "portrait": { "width": 1024, "height": 1536, "aspect": "2:3" }
+    },
+    "alphaMeasurements": {
+      "note": "All 16 sources measured; alpha content touches the frame edge in every file, so uniform-fit resize preserves all content (no crop). Only 13-multipose-sheet has two bounded row bands.",
+      "multiposeSheet": {
+        "rowBandA": { "x0": 4, "y0": 10, "x1": 1009, "y1": 786, "width": 1005, "height": 776 },
+        "rowBandB": { "x0": 4, "y0": 792, "x1": 1009, "y1": 1518, "width": 1005, "height": 726 }
+      }
+    }
+  },
+  "tiers": {
+    "compact": {
+      "fit": "fit-inside",
+      "target": { "width": 420, "height": 746 },
+      "aspect": "preserved",
+      "why": "Fits 420px app window at native 941:1672 aspect; preserves every source pixel of a fullbody original with no cropping or background filling",
+      "resample": "LANCZOS",
+      "inputs": ["01-fullbody-idle", "02-gesture-welcome"],
+      "note": "741px rendering is CSS min-height in the 640px shell; 746 is the honest 420px-aspect number and never stretches"
+    },
+    "fullbody": {
+      "fit": "fit-inside",
+      "target": { "width": 941, "height": 1672 },
+      "aspect": "preserved",
+      "why": "Native resolution for on-demand full-quality inspection",
+      "resample": "LANCZOS",
+      "inputs": ["01-fullbody-idle", "02-gesture-welcome"],
+      "note": "Native-size re-encode of non-cropped sources; pixels are identical to the source, container bytes differ (PNG IHDR/metadata), which the two-build hash comparison still pins deterministically"
+    },
+    "face": {
+      "fit": "fit-inside",
+      "target": { "width": 376, "height": 376 },
+      "aspect": "preserved",
+      "why": "Half-height 0.3 scale of the 1254px face tier (spec face state scale); keeps the whole 1254x1254 square, no crop",
+      "resample": "LANCZOS",
+      "inputs": [
+        "03-mouth-neutral-closed",
+        "04-mouth-slight-open",
+        "05-mouth-medium-open",
+        "06-mouth-wide-open",
+        "07-mouth-smile-closed",
+        "08-mouth-smile-open",
+        "09-eye-open"
+      ],
+      "note": "Face overlays never flatten onto light/black; alpha preserved"
+    },
+    "portrait": {
+      "fit": "fit-inside",
+      "target": { "width": 307, "height": 461 },
+      "aspect": "preserved",
+      "why": "0.3 scale of the 1024x1536 portrait tier, measured against the 420px stage so a portrait never exceeds the shell",
+      "resample": "LANCZOS",
+      "inputs": [
+        "10-presenting-portrait-a",
+        "11-eye-half-blink",
+        "12-presenting-fullbody-a",
+        "14-presenting-twohands",
+        "15-presenting-standing-a",
+        "16-presenting-standing-b"
+      ],
+      "note": "On-demand poses only; FIX-003/QC owns semantic assignment"
+    },
+    "sheet-pose-a": {
+      "fit": "crop-then-fit",
+      "crop": { "x0": 4, "y0": 10, "x1": 1009, "y1": 786 },
+      "target": { "width": 307, "height": 237 },
+      "aspect": "preserved",
+      "why": "Alpha-band crop of 13-multipose-sheet row A (measured, source pixels only), fit to 0.3 scale of its own band",
+      "resample": "LANCZOS",
+      "inputs": ["13-multipose-sheet"],
+      "note": "Crop rectangle pinned in this spec; extraction reproduces byte-identical outputs"
+    },
+    "sheet-pose-b": {
+      "fit": "crop-then-fit",
+      "crop": { "x0": 4, "y0": 792, "x1": 1009, "y1": 1518 },
+      "target": { "width": 307, "height": 222 },
+      "aspect": "preserved",
+      "why": "Alpha-band crop of 13-multipose-sheet row B (measured, source pixels only), fit to 0.3 scale of its own band",
+      "resample": "LANCZOS",
+      "inputs": ["13-multipose-sheet"],
+      "note": "Crop rectangle pinned in this spec; extraction reproduces byte-identical outputs"
+    }
+  },
+  "formats": ["PNG", "WEBP"],
+  "encoders": {
+    "PNG": {
+      "compressLevel": 6,
+      "optimize": false,
+      "colorProfile": "preserve-only-if-source-has-one (measured: none of the 16 sources carry an ICC profile)"
+    },
+    "WEBP": {
+      "method": 6,
+      "lossless": false,
+      "quality": 95,
+      "alpha": "preserved",
+      "note": "Measured before choosing: Pillow 11.3 'lossless' WebP is still lossy in RGB (measured max channel diff 255 on fullbody re-encode), so the spec declares WebP honestly as lossy quality=95. Alpha stays exact; RGB is a 95-quality approximation of the source pixels. PNG is the lossless derivative."
+    }
+  },
+  "determinism": {
+    "tool": "python3 + Pillow (pinned version recorded in DERIVATIVE-MANIFEST.json tool field)",
+    "rules": [
+      "Read sources in sorted filename order",
+      "Iterate tiers and inputs in spec order (JSON arrays)",
+      "Fixed encoder parameters (PNG compress_level=6, optimize=False; WEBP lossless=True, quality=90, method=6)",
+      "Fixed file mtime 2026-01-01T00:00:00Z on every output (sources keep their own mtimes; never rewritten)",
+      "No randomness, no timestamps, no hostname, no absolute paths embedded in any output",
+      "PIL LANCZOS resize is deterministic for these fixed inputs and parameters (verified by two-build hash comparison)"
+    ]
+  },
+  "prohibited": [
+    "No generated, synthesized, or AI-produced art may enter derived/",
+    "No background fill, flattening, or color manipulation — sources pass through encode unchanged except resize/crop",
+    "No upscale beyond native dimensions",
+    "No reading source bytes into model context (DOC-ASSET-HANDLING-NOTE.md rules apply to every asset lane)"
+  ]
+}
