@@ -11,7 +11,7 @@ for (const entry of registry.activeEntries()) {
     assert.strictEqual(built.ok, true)
     assert.strictEqual(registry.verifyQuestion(built.question).ok, true)
     for (const [field, value] of Object.entries({
-      text: 'altered wording', answerKind: 'yes_no', allowedInputModes: ['typed'],
+      text: 'altered wording', answerKind: built.question.answerKind === 'yes_no' ? 'free_text' : 'yes_no', allowedInputModes: ['typed'],
       readAloud: !built.question.readAloud, sensitivity: 'secret',
       counted: !built.question.counted, helpText: 'altered help', canGoBack: !built.question.canGoBack,
     })) {

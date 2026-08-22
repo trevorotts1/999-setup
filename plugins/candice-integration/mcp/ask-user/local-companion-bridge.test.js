@@ -10,7 +10,7 @@ const { LocalCompanionBridge } = require('./local-companion-bridge')
 function question(sessionId = 'session-a', questionKey = 'BUILD_TARGET') {
   return {
     schemaVersion: '1.0', sessionId, skill: 'spec-protocol', event: 'question', questionKey,
-    text: 'Tell me about your idea in your own words: what is it, and who is it for?', answerKind: 'free_text', allowedInputModes: ['voice', 'typed', 'terminal'],
+    text: 'First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.', answerKind: 'free_text', allowedInputModes: ['voice', 'typed', 'terminal'],
     readAloud: true, sensitivity: 'normal', counted: false, progress: null,
     helpText: 'A sentence or two is plenty.', canGoBack: true,
   }

@@ -45,7 +45,7 @@ function question(overrides) {
       skill: 'spec-protocol',
       event: 'question',
       questionKey: 'BUILD_TARGET',
-      text: 'Tell me about your idea in your own words: what is it, and who is it for?',
+      text: 'First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.',
       answerKind: 'free_text',
       allowedInputModes: ['voice', 'typed', 'terminal'],
       readAloud: true,
@@ -258,7 +258,7 @@ check('ask_user delivers the question and returns exactly one answer to the owni
     isCompanionReady: () => true,
     deliverQuestion: async (q) => {
       assert.strictEqual(q.questionKey, 'BUILD_TARGET')
-      assert.strictEqual(q.text, 'Tell me about your idea in your own words: what is it, and who is it for?')
+      assert.strictEqual(q.text, 'First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.')
       registry.put({ sessionId: q.sessionId, questionKey: q.questionKey, answer: answer() })
       return { ok: true }
     },
@@ -733,7 +733,7 @@ check('ask_user normal shutdown ends the lifecycle exactly once and removes prot
     lifecycle.setPendingQuestion({
       sessionId: 'opaque-session-id',
       questionKey: 'BUILD_TARGET',
-      text: 'Tell me about your idea in your own words: what is it, and who is it for?',
+      text: 'First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.',
       answerKind: 'free_text',
       counted: false,
     })
