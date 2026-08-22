@@ -13,6 +13,7 @@ const net = require('net')
 const os = require('os')
 const path = require('path')
 const { spawn } = require('child_process')
+const { deriveOperationId, isValidOperationId } = require('../../session/lifecycle-protocol')
 
 const BRIDGE_PROTOCOL_VERSION = '1.0'
 const MAX_FRAME_BYTES = 64 * 1024
@@ -234,8 +235,14 @@ class LocalCompanionBridge {
     if (!pending) return
     if (message.type === 'answer') {
       // The registry performs schema/session/key/duplicate validation. This
-      // bridge only accepts answers for a currently delivered exact slot.
-      const result = this.onAnswer({ sessionId: message.sessionId, questionKey: message.questionKey, answer: message.answer })
+      // bridge only accepts answers for a currently delivered exact slot and
+      // carries the slot's operation identity as metadata (FIX-013 S1).
+      const result = this.onAnswer({
+        sessionId: message.sessionId,
+        questionKey: message.questionKey,
+        answer: message.answer,
+        operationId: pending.operationId,
+      })
       if (result && result.ok) this.active.delete(key)
       this._write({ type: 'answer-result', sessionId: message.sessionId, questionKey: message.questionKey, ok: !!(result && result.ok), code: result && result.code })
       return
@@ -258,6 +265,15 @@ class LocalCompanionBridge {
     if (!this.isReady() || !this.binding || this.binding.sessionId !== question.sessionId) return bridgeFailure('companion-not-ready')
     const key = this._key(question.sessionId, question.questionKey)
     if (this.active.has(key)) return bridgeFailure('question-already-delivered')
+    // FIX-013 S1: the frame carries the operation identity so a replay/retry
+    // of the same (sessionId, questionKey) is one operation end to end. The
+    // bridge never derives authority: the operation id is metadata on an
+    // already-authenticated FIX-011 frame.
+    const operationId = question.operationId || deriveOperationId({
+      sessionId: question.sessionId,
+      questionKey: question.questionKey,
+    })
+    if (!isValidOperationId(operationId)) return bridgeFailure('invalid-operation-id')
     const ack = new Promise((resolve) => {
       const timeout = setTimeout(() => {
         this.pendingAcks.delete(key)
@@ -265,8 +281,13 @@ class LocalCompanionBridge {
       }, 2000)
       this.pendingAcks.set(key, { resolve: (value) => { clearTimeout(timeout); resolve(value) } })
     })
-    this.active.set(key, { sessionId: question.sessionId, questionKey: question.questionKey })
-    if (!this._write({ type: 'question', version: BRIDGE_PROTOCOL_VERSION, question })) {
+    this.active.set(key, {
+      sessionId: question.sessionId,
+      questionKey: question.questionKey,
+      operationId,
+      deliveredAt: new Date().toISOString(),
+    })
+    if (!this._write({ type: 'question', version: BRIDGE_PROTOCOL_VERSION, question, operationId })) {
       this.active.delete(key)
       return bridgeFailure('companion-disconnected')
     }
@@ -275,12 +296,18 @@ class LocalCompanionBridge {
     return result
   }
 
-  cancel({ sessionId, questionKey }) {
+  cancel({ sessionId, questionKey, operationId }) {
     const key = this._key(sessionId, questionKey)
+    const pending = this.active.get(key)
     this.active.delete(key)
     const pendingAck = this.pendingAcks.get(key)
     if (pendingAck) { this.pendingAcks.delete(key); pendingAck.resolve(bridgeFailure('question-cancelled')) }
-    this._write({ type: 'cancel', sessionId, questionKey })
+    this._write({
+      type: 'cancel',
+      sessionId,
+      questionKey,
+      operationId: operationId || (pending && pending.operationId) || null,
+    })
   }
 
   async close() {

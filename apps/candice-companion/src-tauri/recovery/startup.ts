@@ -35,6 +35,10 @@ import type {
   StartupSweepResult,
   SweepFn,
 } from "./types.ts";
+// NOTE (FIX-013 S1): startup no longer calls resumeSession immediately after
+// constructing a recovery event — the recovered record stays `recovering`
+// until the exact handoff is acknowledged (stage 5 wires the acknowledged
+// completion path through Lifecycle.acknowledgeRecoveryHandoff).
 
 /** Wall-clock facade — injectable for deterministic tests. */
 export interface Clock {
@@ -88,12 +92,18 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
   onEvent({ type: "startup:begin" });
 
   // ---- Leg 1: exact pending question recovery (spec 20). ----
+  // FIX-013 S1: the recovery call is an OBJECT (never positional), and it
+  // CLAIMS a lease on the pending record without deleting it. `recovering`
+  // is raised durably by the manager. Startup NEVER resumes the session
+  // immediately after constructing a recovery event: the record stays
+  // `recovering` until the app or terminal fallback acknowledges the exact
+  // handoff (stage 5 wires the acknowledged sequence).
   if (sessionId == null) {
     failures.push("recovery:no-session-id");
   } else {
-    let result: { ok: boolean; recovered?: PendingQuestion | null; code?: string; error?: string };
+    let result: { ok: boolean; recovered?: PendingQuestion | null; lease?: { leaseId: string; heldUntil: string } | null; code?: string; error?: string };
     try {
-      result = lifecycle.recoverPendingQuestion(sessionId);
+      result = lifecycle.recoverPendingQuestion({ sessionId });
     } catch (err) {
       failures.push("recovery:lifecycle-threw");
       result = { ok: false, code: "lifecycle-threw", error: err instanceof Error ? err.message : String(err) };
@@ -103,19 +113,11 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
       recoveredSessionId = sessionId;
       counted = pending.counted === true;
       onEvent({ type: "question:found" });
-      // Raise `recovering` so the WS-08 machine enters the recovering
-      // state before the front-end re-raises the question (spec 20).
-      try {
-        const resume = lifecycle.resumeSession(sessionId);
-        markedRecovering = resume.ok;
-        if (!resume.ok) {
-          failures.push(`recovery:resume-${resume.code ?? "failed"}`);
-        }
-        onEvent({ type: "recovering:entered" });
-      } catch {
-        markedRecovering = false;
-        failures.push("recovery:resume-threw");
-      }
+      // Recover raised `recovering` durably and claimed the lease (FIX-013
+      // S1). The pending record is NOT deleted: only an acknowledged
+      // handoff may complete/release it.
+      markedRecovering = true;
+      onEvent({ type: "recovering:entered" });
       onEvent({ type: "question:handoff" });
     } else {
       onEvent({ type: "question:none" });

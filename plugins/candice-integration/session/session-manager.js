@@ -30,12 +30,27 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { registryVersion, lookup } = require('../../../packages/candice-protocol/question-registry')
+const { deriveOperationId, LIMITS } = require('./lifecycle-protocol')
 
 const MAX_SESSION_ID_LENGTH = 128
 const MAX_SKILL_LENGTH = 64
 const MAX_TEXT_LENGTH = 4096
 
 const SESSION_STATUS = Object.freeze(['active', 'ended', 'recovering'])
+
+/**
+ * Durable lifecycle states recorded per pending question record. `displaying`
+ * is persisted BEFORE the question is delivered; `displayed` only after the
+ * app acknowledgement; `fallback-pending` after an atomic ownership transfer
+ * to the Claude terminal fallback. `answered` / `cancelled` are terminal for
+ * the operation. (FIX-013 section 1/3 — the state machine itself lives in
+ * lifecycle-state.js; this manager records the current durable state.)
+ */
+const PENDING_DURABLE_STATES = Object.freeze(['displaying', 'displayed', 'fallback-pending', 'recovering'])
+
+function isPendingDurableState(value) {
+  return typeof value === 'string' && PENDING_DURABLE_STATES.includes(value)
+}
 
 function nowIso(clock) {
   return (clock || (() => new Date().toISOString()))()
@@ -58,6 +73,16 @@ function sanitizeText(text) {
   if (typeof text !== 'string') return ''
   return text.slice(0, MAX_TEXT_LENGTH)
 }
+
+function sanitizeOperationId(operationId) {
+  if (operationId === undefined || operationId === null) return null
+  if (typeof operationId !== 'string') return null
+  const trimmed = operationId.trim()
+  if (trimmed.length === 0 || trimmed.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(trimmed)) return null
+  return trimmed
+}
+
+/** The MCP validator owns the bounded-timestamp check (lifecycle-protocol). */
 
 /**
  * Session state record (single-writer: the session manager owns every field).
@@ -131,6 +156,24 @@ class SessionManager {
         // happened to be written before registry enforcement was introduced.
         if (record.pendingQuestion && !lookup(record.pendingQuestion.questionKey, record.skill).ok) {
           record.pendingQuestion = null
+          migrated = true
+        }
+        // FIX-013 S1 migration: pending records written before the lifecycle
+        // contract get the derived operation identity and durable state
+        // `displaying` (they were persisted before/at delivery); records
+        // already in a recovery handoff keep `recovering`. The bounded
+        // timestamp check tolerates legacy `askedAt` (never fails the load),
+        // while a malformed record still fails closed to text fallback.
+        if (record.pendingQuestion && !record.pendingQuestion.operationId) {
+          record.pendingQuestion.operationId = deriveOperationId({
+            sessionId: record.sessionId,
+            questionKey: record.pendingQuestion.questionKey,
+          })
+          record.pendingQuestion.durableState = record.status === 'recovering' ? 'recovering' : 'displaying'
+          record.pendingQuestion.deliveredAt = record.pendingQuestion.deliveredAt || null
+          record.pendingQuestion.acknowledgedAt = record.pendingQuestion.acknowledgedAt || null
+          record.pendingQuestion.leaseId = record.pendingQuestion.leaseId || null
+          record.pendingQuestion.leaseHeldUntil = record.pendingQuestion.leaseHeldUntil || null
           migrated = true
         }
         if (typeof record.registryVersion !== 'string') record.registryVersion = registryVersion
@@ -241,7 +284,7 @@ class SessionManager {
    * asking (sections 13.2/15). The companion must preserve one governed question
    * at a time. A different question never overwrites a pending question.
    */
-  setPendingQuestion({ sessionId, questionKey, text, answerKind, counted }) {
+  setPendingQuestion({ sessionId, questionKey, text, answerKind, counted, operationId, deliveredAt }) {
     const id = sanitizeSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     const record = this.sessions.get(id)
@@ -267,28 +310,50 @@ class SessionManager {
     if (record.answeredQuestionKeys.includes(questionKey)) {
       return { ok: false, code: 'question-already-answered', error: 'question was already answered in this session' }
     }
+    // The operation identity: a retry of the same (sessionId, questionKey)
+    // derives the SAME operationId; a caller-supplied id must be bounded and
+    // opaque. A DIFFERENT operation id for an already-pending key is refused.
+    const resolvedOperationId = sanitizeOperationId(operationId) || deriveOperationId({ sessionId: id, questionKey })
+    if (!resolvedOperationId) {
+      return { ok: false, code: 'invalid-operation-id', error: 'operationId must be a bounded opaque id' }
+    }
     if (record.pendingQuestion) {
-      if (record.pendingQuestion.questionKey === questionKey) return { ok: true, recovery: true, session: record }
+      if (record.pendingQuestion.questionKey === questionKey) {
+        if (record.pendingQuestion.operationId === resolvedOperationId) {
+          return { ok: true, recovery: true, session: record }
+        }
+        return { ok: false, code: 'pending-operation-mismatch', error: 'a different operation id for the same pending question is refused' }
+      }
       return { ok: false, code: 'pending-question-exists', error: 'another question is already pending in this session' }
     }
+    const askedAt = nowIso(this.clock)
     record.pendingQuestion = {
       questionKey,
+      operationId: resolvedOperationId,
+      durableState: 'displaying', // persisted BEFORE delivery (FIX-013)
       text: sanitizeText(text),
       answerKind: answerKind || 'free_text',
       counted: !!counted,
-      askedAt: nowIso(this.clock),
+      askedAt,
+      deliveredAt: deliveredAt || null,
+      acknowledgedAt: null,
+      leaseId: null,
+      leaseHeldUntil: null,
     }
-    record.lastActiveAt = record.pendingQuestion.askedAt
+    record.lastActiveAt = askedAt
     this._save()
     return { ok: true, session: record }
   }
 
   /**
-   * Answer recorded — clears the pending question exactly once. `counted`
-   * accounting lives with the skill; this manager only mirrors the flag so
-   * recovery can prove it will not double-count (section 20).
+   * Answer recorded — terminal commit: clears the pending question exactly
+   * once. `counted` accounting lives with the skill; this manager only
+   * mirrors the flag so recovery can prove it will not double-count (section
+   * 20). The operation identity `(sessionId, questionKey, operationId)` is
+   * enforced: an answer for a different operation id than the pending one is
+   * refused (replayed/duplicate terminal completion fails closed).
    */
-  recordAnswer({ sessionId, questionKey }) {
+  recordAnswer({ sessionId, questionKey, operationId }) {
     const id = sanitizeSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     const record = this.sessions.get(id)
@@ -303,6 +368,17 @@ class SessionManager {
         error: `pending question is ${record.pendingQuestion.questionKey}, not ${questionKey}`,
       }
     }
+    if (operationId !== undefined && operationId !== null) {
+      const expected = record.pendingQuestion.operationId
+      const submitted = sanitizeOperationId(operationId)
+      if (!submitted || submitted !== expected) {
+        return {
+          ok: false,
+          code: 'operation-id-mismatch',
+          error: `operation id ${submitted} does not match the pending operation ${expected}`,
+        }
+      }
+    }
     record.questionCount += 1
     record.answeredQuestionKeys.push(record.pendingQuestion.questionKey)
     record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys)]
@@ -313,27 +389,94 @@ class SessionManager {
   }
 
   /**
-   * Crash recovery path (section 20). Marks the session recovering and returns
-   * the exact pending question so the skill can re-ask in Claude WITHOUT
-   * incrementing the question counter. Returns null when nothing is pending.
+   * Crash recovery path (section 20). Claims a recovery LEASE on the exact
+   * pending question WITHOUT deleting the record: the session moves to
+   * `recovering`, the pending record stays with durableState `recovering` and
+   * a `leaseId` + `heldUntil`, and only an acknowledged handoff
+   * (`acknowledgeRecoveryHandoff`) may complete it. Returns null when nothing
+   * is pending; a lease already held by another id and still unexpired is
+   * refused (a second process cannot render or submit the same question).
    */
-  recoverPendingQuestion({ sessionId }) {
+  recoverPendingQuestion({ sessionId, operationId, leaseId, now = Date.now() }) {
     const id = sanitizeSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     const record = this.sessions.get(id)
     if (!record) return { ok: false, code: 'not-found', error: `no session ${id}` }
     if (!record.pendingQuestion) {
-      return { ok: true, recovered: null }
+      return { ok: true, recovered: null, lease: null }
     }
     const pending = record.pendingQuestion
-    record.pendingQuestion = null // handed off exactly once — a second recovery finds nothing
+    // FIX-013: a record already owned by the terminal fallback must NEVER be
+    // re-recovered after a restart (that is the duplicate re-ask defect of
+    // the audit F13-03). The terminal path owns it; recordAnswer/cancel/end
+    // complete it.
+    if (pending.durableState === 'fallback-pending') {
+      return { ok: false, code: 'fallback-owns-question', error: 'the terminal fallback owns this question; recovery cannot re-ask it' }
+    }
+    const expectedOperationId = pending.operationId
+    if (operationId !== undefined && operationId !== null && sanitizeOperationId(operationId) !== expectedOperationId) {
+      return { ok: false, code: 'operation-id-mismatch', error: 'recovery operation id does not match the pending operation' }
+    }
+    if (pending.leaseId) {
+      const heldUntil = pending.leaseHeldUntil ? Date.parse(pending.leaseHeldUntil) : NaN
+      if (!Number.isNaN(heldUntil) && heldUntil > now) {
+        return {
+          ok: false,
+          code: 'recovery-lease-held',
+          error: `recovery lease ${pending.leaseId} is still held; cannot claim a second lease`,
+        }
+      }
+      // An expired lease is stale: the claim may be renewed by a new caller.
+    }
+    const leaseIdValue = sanitizeOperationId(leaseId) || `lease-${crypto.randomUUID()}`
+    const heldUntil = new Date(now + LIMITS.maxLeaseMs).toISOString()
+    pending.leaseId = leaseIdValue
+    pending.leaseHeldUntil = heldUntil
+    pending.durableState = 'recovering'
     record.status = 'recovering'
     record.lastActiveAt = nowIso(this.clock)
     this._save()
-    return { ok: true, recovered: pending }
+    return { ok: true, recovered: pending, lease: { leaseId: leaseIdValue, heldUntil } }
   }
 
-  /** After recovery completes, the session returns to active with no pending question. */
+  /**
+   * Acknowledge the exact recovery handoff (FIX-013 S1). The app or terminal
+   * fallback received the exact recovered record; only now may the pending
+   * record complete/release. Same leaseId required (the acknowledging process
+   * must be the lease holder); wrong lease or wrong operation fails closed and
+   * the record stays in `recovering`. The session returns to `active` with no
+   * pending question; `state: 'recovered'` mirrors the WS-08 recovered step.
+   */
+  acknowledgeRecoveryHandoff({ sessionId, operationId, leaseId }) {
+    const id = sanitizeSessionId(sessionId)
+    if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
+    const record = this.sessions.get(id)
+    if (!record) return { ok: false, code: 'not-found', error: `no session ${id}` }
+    if (record.status !== 'recovering' || !record.pendingQuestion) {
+      return { ok: false, code: 'not-recovering', error: `session ${id} has no recovery handoff to acknowledge` }
+    }
+    const pending = record.pendingQuestion
+    if (leaseId !== undefined && pending.leaseId !== sanitizeOperationId(leaseId)) {
+      return { ok: false, code: 'recovery-lease-mismatch', error: 'acknowledgement lease id does not match the claimed lease' }
+    }
+    if (operationId !== undefined && operationId !== null && sanitizeOperationId(operationId) !== pending.operationId) {
+      return { ok: false, code: 'operation-id-mismatch', error: 'operation id does not match the pending operation' }
+    }
+    record.pendingQuestion = null // handed off exactly once — a second recovery finds nothing
+    record.status = 'active'
+    record.lastActiveAt = nowIso(this.clock)
+    this._save()
+    return { ok: true, session: record, state: 'recovered' }
+  }
+
+  /**
+   * After recovery completes, the session returns to active with no pending
+   * question. NOTE (FIX-013): recovery ownership is only complete when the
+   * app or terminal fallback acknowledges the exact handoff via
+   * `acknowledgeRecoveryHandoff`; this method alone must NOT be the release
+   * path in the production startup sequence (it is retained for the legacy
+   * contract and its tests).
+   */
   resumeSession({ sessionId }) {
     const id = sanitizeSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
@@ -346,6 +489,58 @@ class SessionManager {
     record.lastActiveAt = nowIso(this.clock)
     this._save()
     return { ok: true, session: record }
+  }
+
+  /**
+   * Standard durable-state transition for the pending question record:
+   * `displaying -> displayed` (after the delivered acknowledgement),
+   * `displayed -> fallback-pending` (atomic ownership transfer on timeout/
+   * cancel/disconnect; the SAME record is retained with `fallback-pending`
+   * durable state, it is never deleted before the skill records the handoff),
+   * or `recovering -> displayed` (after a recovery handoff is re-shown).
+   * Unknown/illegal transitions fail closed without changing state.
+   */
+  transitionPendingDurableState({ sessionId, operationId, from, to }) {
+    const id = sanitizeSessionId(sessionId)
+    if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
+    const record = this.sessions.get(id)
+    if (!record) return { ok: false, code: 'not-found', error: `no session ${id}` }
+    const pending = record.pendingQuestion
+    if (!pending) {
+      return { ok: false, code: 'no-pending-question', error: `session ${id} has no pending question` }
+    }
+    if (operationId !== undefined && operationId !== null
+      && sanitizeOperationId(operationId) !== pending.operationId) {
+      return { ok: false, code: 'operation-id-mismatch', error: 'operation id does not match the pending operation' }
+    }
+    if (!isPendingDurableState(from) || !isPendingDurableState(to)) {
+      return { ok: false, code: 'invalid-durable-state', error: 'from/to must be one of: displaying, displayed, fallback-pending, recovering' }
+    }
+    const legal = {
+      displaying: ['displayed', 'fallback-pending'],
+      displayed: ['fallback-pending'],
+      recovering: ['displayed', 'fallback-pending'],
+      'fallback-pending': ['displayed'],
+    }[from]
+    if (!legal || !legal.includes(to)) {
+      return { ok: false, code: 'illegal-durable-transition', error: `cannot transition ${from} -> ${to}` }
+    }
+    if (pending.durableState !== from) {
+      return {
+        ok: false,
+        code: 'durable-state-mismatch',
+        error: `pending durable state is ${pending.durableState}, not ${from}`,
+      }
+    }
+    if (pending.durableState === 'recovering' && !pending.leaseId) {
+      return { ok: false, code: 'recovery-lease-required', error: 'a recovering record must carry its lease before it may transition' }
+    }
+    pending.durableState = to
+    if (to === 'displayed') pending.acknowledgedAt = pending.acknowledgedAt || nowIso(this.clock)
+    if (to === 'fallback-pending') pending.leaseId = null
+    record.lastActiveAt = nowIso(this.clock)
+    this._save()
+    return { ok: true, session: record, durableState: to }
   }
 
   /** Purge ended sessions (housekeeping). Returns the count removed. */

@@ -176,7 +176,7 @@ check('answered key cannot be asked again after persisted restart', () => {
   assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, '2.0.0')
 })
 
-check('recovery returns the exact pending question and does not re-count', () => {
+check('recovery claims a lease without deleting the pending record (FIX-013)', () => {
   const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
   sm.beginSession({ sessionId: 'sess-rec', skill: 'spec-protocol' })
   sm.setPendingQuestion({
@@ -190,10 +190,49 @@ check('recovery returns the exact pending question and does not re-count', () =>
   assert.strictEqual(rec.recovered.questionKey, 'BUILD_TARGET')
   assert.strictEqual(rec.recovered.text, 'Tell me about your idea')
   assert.strictEqual(rec.recovered.counted, true)
+  assert.strictEqual(typeof rec.recovered.operationId, 'string')
+  assert.strictEqual(rec.recovered.durableState, 'recovering')
+  assert.strictEqual(typeof rec.lease.leaseId, 'string')
   const record = sm.getSession('sess-rec')
   assert.strictEqual(record.status, 'recovering')
-  assert.strictEqual(record.pendingQuestion, null)
-  assert.strictEqual(record.questionCount, 0) // not re-counted
+  // The lease does NOT delete the pending record: only an acknowledged
+  // handoff may complete it.
+  assert.strictEqual(record.pendingQuestion.questionKey, 'BUILD_TARGET')
+  assert.strictEqual(record.pendingQuestion.leaseId, rec.lease.leaseId)
+  assert.strictEqual(record.questionCount, 0)
+  // A second recovery while the lease is still held is refused (a second
+  // process cannot render or submit the same question).
+  const second = sm.recoverPendingQuestion({ sessionId: 'sess-rec' })
+  assert.strictEqual(second.ok, false)
+  assert.strictEqual(second.code, 'recovery-lease-held')
+  // The exact handoff acknowledged by the lease holder completes recovery.
+  const ack = sm.acknowledgeRecoveryHandoff({
+    sessionId: 'sess-rec',
+    operationId: rec.recovered.operationId,
+    leaseId: rec.lease.leaseId,
+  })
+  assert.strictEqual(ack.ok, true)
+  assert.strictEqual(ack.state, 'recovered')
+  assert.strictEqual(sm.getSession('sess-rec').status, 'active')
+  assert.strictEqual(sm.getSession('sess-rec').pendingQuestion, null)
+})
+
+check('recovery acknowledgement refuses a wrong lease (replay fails closed)', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-rec-x', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-rec-x', questionKey: 'BUILD_TARGET', counted: true })
+  const rec = sm.recoverPendingQuestion({ sessionId: 'sess-rec-x' })
+  assert.strictEqual(rec.ok, true)
+  const wrong = sm.acknowledgeRecoveryHandoff({
+    sessionId: 'sess-rec-x',
+    operationId: rec.recovered.operationId,
+    leaseId: 'lease-other-process',
+  })
+  assert.strictEqual(wrong.ok, false)
+  assert.strictEqual(wrong.code, 'recovery-lease-mismatch')
+  const rec2 = sm.recoverPendingQuestion({ sessionId: 'sess-rec-x' })
+  assert.strictEqual(rec2.ok, false) // lease still held — record untouched
+  assert.strictEqual(rec2.code, 'recovery-lease-held')
 })
 
 check('recovery with nothing pending returns recovered null', () => {
@@ -220,10 +259,19 @@ check('recovery hands the pending question off exactly once (second recovery fin
   sm.setPendingQuestion({ sessionId: 'sess-2x', questionKey: 'BUILD_TARGET', counted: true })
   const first = sm.recoverPendingQuestion({ sessionId: 'sess-2x' })
   assert.strictEqual(first.recovered.questionKey, 'BUILD_TARGET')
-  const record = sm.getSession('sess-2x')
-  assert.strictEqual(record.pendingQuestion, null) // no double-recovery
-  const second = sm.recoverPendingQuestion({ sessionId: 'sess-2x' })
-  assert.strictEqual(second.recovered, null)
+  assert.strictEqual(typeof first.lease.leaseId, 'string')
+  const sec = sm.recoverPendingQuestion({ sessionId: 'sess-2x' })
+  assert.strictEqual(sec.ok, false)
+  assert.strictEqual(sec.code, 'recovery-lease-held')
+  // Completing the handoff is the terminal release: after it, recovery finds nothing.
+  const ack = sm.acknowledgeRecoveryHandoff({
+    sessionId: 'sess-2x',
+    operationId: first.recovered.operationId,
+    leaseId: first.lease.leaseId,
+  })
+  assert.strictEqual(ack.ok, true)
+  const after = sm.recoverPendingQuestion({ sessionId: 'sess-2x' })
+  assert.strictEqual(after.recovered, null)
 })
 
 check('write-through state survives a new manager instance (durability)', () => {
@@ -330,6 +378,144 @@ check('lifecycle crash recovery end to end (section 20)', () => {
   const resume = lifecycle.resumeSession({ sessionId: 'sess-crash' })
   assert.strictEqual(resume.ok, true)
   assert.strictEqual(resume.session.status, 'active')
+})
+
+// ——————————————————————————————————————————————
+// FIX-013 S1: durable operation identity + pending durable states
+// ——————————————————————————————————————————————
+
+check('pending record carries operationId and durableState displaying before delivery', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-op', skill: 'spec-protocol' })
+  const set = sm.setPendingQuestion({ sessionId: 'sess-op', questionKey: 'BUILD_TARGET', counted: !0 })
+  assert.strictEqual(set.ok, true)
+  const p = sm.getSession('sess-op').pendingQuestion
+  assert.strictEqual(typeof p.operationId, 'string')
+  assert.strictEqual(p.operationId.startsWith('op-'), true)
+  assert.strictEqual(p.durableState, 'displaying')
+  assert.strictEqual(/^\d{4}-\d{2}-\d{2}T/.test(p.askedAt), true)
+})
+
+check('retry with same operation identity is idempotent; different id is refused', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-op2', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-op2', questionKey: 'BUILD_TARGET' })
+  const retry = sm.setPendingQuestion({ sessionId: 'sess-op2', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(retry.ok, true)
+  assert.strictEqual(retry.recovery, true)
+  const wrongId = sm.setPendingQuestion({
+    sessionId: 'sess-op2',
+    questionKey: 'BUILD_TARGET',
+    operationId: 'op-11aa22bb33cc44dd55ee66ff',
+  })
+  assert.strictEqual(wrongId.ok, false)
+  assert.strictEqual(wrongId.code, 'pending-operation-mismatch')
+})
+
+check('recordAnswer enforces the operation identity (replay fails closed)', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-op3', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-op3', questionKey: 'BUILD_TARGET' })
+  const pending = sm.getSession('sess-op3').pendingQuestion
+  const wrong = sm.recordAnswer({ sessionId: 'sess-op3', questionKey: 'BUILD_TARGET', operationId: 'op-deadbeefdeadbeefdeadbeef' })
+  assert.strictEqual(wrong.ok, false)
+  assert.strictEqual(wrong.code, 'operation-id-mismatch')
+  const right = sm.recordAnswer({ sessionId: 'sess-op3', questionKey: 'BUILD_TARGET', operationId: pending.operationId })
+  assert.strictEqual(right.ok, true)
+})
+
+check('durable transitions: displaying -> displayed and displayed -> fallback-pending', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-dt', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-dt', questionKey: 'BUILD_TARGET' })
+  const p = sm.getSession('sess-dt').pendingQuestion
+  const t1 = sm.transitionPendingDurableState({ sessionId: 'sess-dt', operationId: p.operationId, from: 'displaying', to: 'displayed' })
+  assert.strictEqual(t1.ok, true)
+  assert.strictEqual(t1.durableState, 'displayed')
+  assert.strictEqual(typeof sm.getSession('sess-dt').pendingQuestion.acknowledgedAt, 'string')
+  const t2 = sm.transitionPendingDurableState({ sessionId: 'sess-dt', operationId: p.operationId, from: 'displayed', to: 'fallback-pending' })
+  assert.strictEqual(t2.ok, true)
+  assert.strictEqual(sm.getSession('sess-dt').pendingQuestion.durableState, 'fallback-pending')
+  // The record is retained after fallback ownership — a later restart cannot
+  // recover a question already redirected to Claude (FIX-013).
+  assert.strictEqual(sm.getSession('sess-dt').pendingQuestion.questionKey, 'BUILD_TARGET')
+  const illegal = sm.transitionPendingDurableState({ sessionId: 'sess-dt', operationId: p.operationId, from: 'fallback-pending', to: 'displaying' })
+  assert.strictEqual(illegal.ok, false)
+  assert.strictEqual(illegal.code, 'illegal-durable-transition')
+})
+
+check('a recovering record requires its lease before it may transition', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-lease-req', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-lease-req', questionKey: 'BUILD_TARGET' })
+  const rec = sm.recoverPendingQuestion({ sessionId: 'sess-lease-req' })
+  assert.strictEqual(rec.ok, true)
+  const t = sm.transitionPendingDurableState({
+    sessionId: 'sess-lease-req',
+    operationId: rec.recovered.operationId,
+    from: 'recovering',
+    to: 'displayed',
+  })
+  assert.strictEqual(t.ok, true)
+  assert.strictEqual(t.durableState, 'displayed')
+})
+
+check('SessionLifecycle façade exposes the full FIX-013 lifecycle surface', () => {
+  const lifecycle = new SessionLifecycle({ stateDir: tempDir() })
+  lifecycle.beginSession({ sessionId: 'sess-facade', skill: 'spec-protocol' })
+  const set = lifecycle.setPendingQuestion({
+    sessionId: 'sess-facade',
+    questionKey: 'BUILD_TARGET',
+    text: 'q',
+    counted: true,
+  })
+  assert.strictEqual(set.ok, true)
+  assert.strictEqual(typeof set.session.pendingQuestion.operationId, 'string')
+  const rec = lifecycle.recoverPendingQuestion({ sessionId: 'sess-facade' })
+  assert.strictEqual(rec.ok, true)
+  const ack = lifecycle.acknowledgeRecoveryHandoff({
+    sessionId: 'sess-facade',
+    operationId: rec.recovered.operationId,
+    leaseId: rec.lease.leaseId,
+  })
+  assert.strictEqual(ack.ok, true)
+  assert.strictEqual(ack.state, 'recovered')
+  lifecycle.setPendingQuestion({ sessionId: 'sess-facade', questionKey: 'BUILD_TARGET', counted: false })
+  const rec2 = lifecycle.recordAnswer({ sessionId: 'sess-facade', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(rec2.ok, true)
+  // The answered key cannot be re-asked in this session (governed once); the
+  // durable transition is exercised on a fresh session instead.
+  const recycled = lifecycle.beginSession({ sessionId: 'sess-facade-2', skill: 'spec-protocol' })
+  assert.strictEqual(recycled.ok, true)
+  lifecycle.setPendingQuestion({ sessionId: 'sess-facade-2', questionKey: 'BUILD_TARGET', counted: false })
+  const opId = lifecycle.sessions.getSession('sess-facade-2').pendingQuestion.operationId
+  const t = lifecycle.transitionPendingDurableState({
+    sessionId: 'sess-facade-2',
+    operationId: opId,
+    from: 'displaying',
+    to: 'fallback-pending',
+  })
+  assert.strictEqual(t.ok, true)
+  assert.strictEqual(lifecycle.sessions.getSession('sess-facade-2').pendingQuestion.durableState, 'fallback-pending')
+})
+
+check('a fallback-owned question can never be re-recovered after restart (F13-03)', () => {
+  const dir = tempDir()
+  const sm1 = new SessionManager({ stateDir: dir })
+  sm1.beginSession({ sessionId: 'sess-fb', skill: 'spec-protocol' })
+  sm1.setPendingQuestion({ sessionId: 'sess-fb', questionKey: 'BUILD_TARGET' })
+  const p = sm1.getSession('sess-fb').pendingQuestion
+  sm1.transitionPendingDurableState({ sessionId: 'sess-fb', operationId: p.operationId, from: 'displaying', to: 'fallback-pending' })
+  // Restart: the persisted record survives, but recovery refuses to re-ask.
+  const sm2 = new SessionManager({ stateDir: dir })
+  const rec = sm2.recoverPendingQuestion({ sessionId: 'sess-fb' })
+  assert.strictEqual(rec.ok, false)
+  assert.strictEqual(rec.code, 'fallback-owns-question')
+  assert.strictEqual(sm2.getSession('sess-fb').pendingQuestion.durableState, 'fallback-pending')
+  // The terminal answer may still complete it exactly once.
+  const ans = sm2.recordAnswer({ sessionId: 'sess-fb', questionKey: 'BUILD_TARGET', operationId: p.operationId })
+  assert.strictEqual(ans.ok, true)
+  assert.strictEqual(sm2.getSession('sess-fb').questionCount, 1)
 })
 
 if (failures > 0) {

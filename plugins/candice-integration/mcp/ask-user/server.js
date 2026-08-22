@@ -34,6 +34,7 @@
 const { validateQuestionEvent } = require('./validate')
 const { AnswerSlotRegistry } = require('./answer-registry')
 const { LocalCompanionBridge } = require('./local-companion-bridge')
+const { deriveOperationId } = require('../../session/lifecycle-protocol')
 
 const SERVER_NAME = 'candice'
 const SERVER_VERSION = '1.0.0'
@@ -181,6 +182,12 @@ class AskUserServer {
       )
     }
 
+    // One operation identity for this question: the SAME operationId is used
+    // for the durable pending record, the answer slot, and the bridge frame,
+    // so a retry of the same valid question produces one transition and one
+    // terminal result (FIX-013 S1).
+    const operationId = deriveOperationId({ sessionId: q.sessionId, questionKey: q.questionKey })
+
     // Persist the governed slot before opening or delivering it. A lifecycle
     // refusal is authoritative: do not let a second pending/answered key reach
     // the companion and do not disturb FIX-011's authenticated bridge.
@@ -192,6 +199,7 @@ class AskUserServer {
         text: q.text,
         answerKind: q.answerKind,
         counted: q.counted,
+        operationId,
       }))
       if (!m || !m.ok) {
         const reason = (m && (m.code || m.error)) || 'pending-question-refused'
@@ -200,10 +208,11 @@ class AskUserServer {
       marked = true
     }
 
-    const slotOpen = this.registry.open({ sessionId: q.sessionId, questionKey: q.questionKey })
+    const slotOpen = this.registry.open({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
     if (!slotOpen.ok) {
       return this._toolResult(this._composeTextResult(`candice.ask_user: ${slotOpen.error}`, true))
     }
+    q.operationId = operationId
 
     let delivered
     try {
@@ -252,9 +261,16 @@ class AskUserServer {
 
     const recorded = answer.userConfirmedTranscript === true
     if (recorded && this.lifecycle && typeof this.lifecycle.recordAnswer === 'function') {
-      // Duplicate answer protection: the WS-03 manager is authoritative.
+      // Duplicate answer protection: the WS-03 manager is authoritative and
+      // enforces the operation identity (FIX-013 S1). A record failure after
+      // the skill saw the answer must still not double-return; the durable
+      // record stays and recovery resolves it by operation id.
       try {
-        await Promise.resolve(this.lifecycle.recordAnswer({ sessionId: q.sessionId, questionKey: q.questionKey }))
+        await Promise.resolve(this.lifecycle.recordAnswer({
+          sessionId: q.sessionId,
+          questionKey: q.questionKey,
+          operationId,
+        }))
       } catch (err) {
         // The answer was already delivered to the skill; a record failure must
         // not destroy the answer (spec 20).

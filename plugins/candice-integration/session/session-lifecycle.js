@@ -107,14 +107,36 @@ class SessionLifecycle {
     return this.bridge.resolveRoute({ sessionId, windowId })
   }
 
-  /** recoverPendingQuestion — crash recovery (section 20). */
-  recoverPendingQuestion({ sessionId }) {
-    return this.sessions.recoverPendingQuestion({ sessionId })
+  /** recoverPendingQuestion — crash recovery (section 20); claims a lease. */
+  recoverPendingQuestion({ sessionId, operationId, leaseId, now }) {
+    return this.sessions.recoverPendingQuestion({ sessionId, operationId, leaseId, now })
   }
 
-  /** resumeSession — leave recovering status back to active. */
+  /** acknowledgeRecoveryHandoff — only the acknowledged handoff completes the
+   * recovered record (FIX-013 S1). */
+  acknowledgeRecoveryHandoff({ sessionId, operationId, leaseId }) {
+    return this.sessions.acknowledgeRecoveryHandoff({ sessionId, operationId, leaseId })
+  }
+
+  /** resumeSession — leave recovering status back to active (legacy path). */
   resumeSession({ sessionId }) {
     return this.sessions.resumeSession({ sessionId })
+  }
+
+  /** setPendingQuestion — persist the governed pending question before delivery
+   * (FIX-013: durableState 'displaying' + one derived operationId). */
+  setPendingQuestion(args) {
+    return this.sessions.setPendingQuestion(args)
+  }
+
+  /** recordAnswer — one terminal commit; the manager enforces the operation id. */
+  recordAnswer(args) {
+    return this.sessions.recordAnswer(args)
+  }
+
+  /** transitionPendingDurableState — displaying/displayed/fallback-pending arcs. */
+  transitionPendingDurableState(args) {
+    return this.sessions.transitionPendingDurableState(args)
   }
 }
 

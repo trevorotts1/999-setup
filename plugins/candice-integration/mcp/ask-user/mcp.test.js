@@ -348,7 +348,9 @@ check('ask_user records the pending question in the WS-03 lifecycle for crash re
   assert.strictEqual(recorded.length, 2)
   assert.strictEqual(recorded[0].questionKey, 'BUILD_TARGET')
   assert.strictEqual(recorded[0].counted, false)
-  assert.deepStrictEqual(recorded[1], { sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET' })
+  // FIX-013 S1: both lifecycle calls carry the same derived operation identity.
+  assert.strictEqual(recorded[0].operationId, recorded[1].operationId)
+  assert.deepStrictEqual(recorded[1], { sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET', operationId: recorded[1].operationId })
 })
 
 check('ask_user refuses lifecycle-rejected question before it opens or delivers a slot', async () => {

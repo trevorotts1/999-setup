@@ -7,12 +7,12 @@ const test = require('node:test')
 const { AskUserServer } = require('./server')
 const { LocalCompanionBridge } = require('./local-companion-bridge')
 
-function question(sessionId = 'session-a', questionKey = 'PROJECT_NAME') {
+function question(sessionId = 'session-a', questionKey = 'BUILD_TARGET') {
   return {
     schemaVersion: '1.0', sessionId, skill: 'spec-protocol', event: 'question', questionKey,
-    text: 'What is the project name?', answerKind: 'free_text', allowedInputModes: ['typed', 'voice'],
-    readAloud: true, sensitivity: 'normal', counted: true, progress: null,
-    helpText: null, canGoBack: false,
+    text: 'Tell me about your idea in your own words: what is it, and who is it for?', answerKind: 'free_text', allowedInputModes: ['voice', 'typed', 'terminal'],
+    readAloud: true, sensitivity: 'normal', counted: false, progress: null,
+    helpText: 'A sentence or two is plenty.', canGoBack: true,
   }
 }
 

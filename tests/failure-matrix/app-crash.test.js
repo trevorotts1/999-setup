@@ -42,12 +42,27 @@ const PENDING = {
 }
 
 function lifecycleWithPending(sessionId, pending) {
+  let leaseClaimed = false
   return {
-    recoverPendingQuestion(id) {
+    recoverPendingQuestion({ sessionId: id }) {
       if (id !== sessionId) return { ok: false, code: 'no-pending-question' }
-      return pending ? { ok: true, recovered: { ...pending } } : { ok: true, recovered: null }
+      if (leaseClaimed) return { ok: false, code: 'recovery-lease-held' }
+      if (!pending) return { ok: true, recovered: null }
+      leaseClaimed = true
+      // FIX-013: recovery claims a lease; the record survives until the
+      // acknowledged handoff.
+      return {
+        ok: true,
+        recovered: { ...pending, operationId: pending.operationId || 'op-crash-1', durableState: 'recovering' },
+        lease: { leaseId: 'lease-crash-1', heldUntil: new Date(Date.now() + 60_000).toISOString() },
+      }
     },
-    resumeSession(id) {
+    acknowledgeRecoveryHandoff({ sessionId: id, leaseId }) {
+      if (id !== sessionId || leaseId !== 'lease-crash-1') return { ok: false, code: 'recovery-lease-mismatch' }
+      leaseClaimed = false
+      return { ok: true, state: 'recovered' }
+    },
+    resumeSession({ sessionId: id }) {
       return { ok: id === sessionId }
     },
   }
@@ -168,6 +183,9 @@ async function main() {
     const outcome = await runStartupRecovery({
       lifecycle: {
         recoverPendingQuestion() {
+          throw new Error('crash')
+        },
+        acknowledgeRecoveryHandoff() {
           throw new Error('crash')
         },
         resumeSession() {

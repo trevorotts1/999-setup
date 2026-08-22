@@ -36,18 +36,28 @@ const PENDING: PendingQuestion = {
   askedAt: "2026-08-21T12:00:00.000Z",
 };
 
-/** WS-03-compatible lifecycle that hands the question off exactly once. */
+/** WS-03-compatible lifecycle that claims a lease and hands the question off
+ * exactly once (FIX-013 object-args contract; a lease is claimed, never a
+ * positional id, and the record is kept until the acknowledged handoff). */
 function fakeLifecycle(sessionId: string): Lifecycle {
   let calls = 0;
+  let lease: { leaseId: string; heldUntil: string } | null = null;
   return {
-    recoverPendingQuestion(id: string) {
+    recoverPendingQuestion(args: { sessionId: string }) {
       calls += 1;
-      if (calls > 1) return { ok: true, recovered: null }; // WS-03: second recovery finds nothing
-      if (id !== sessionId) return { ok: false, code: "not-found", error: `no session ${id}` };
-      return { ok: true, recovered: { ...PENDING } };
+      if (calls > 1) return { ok: false, code: "recovery-lease-held" };
+      if (args.sessionId !== sessionId) return { ok: false, code: "not-found", error: `no session ${args.sessionId}` };
+      lease = { leaseId: "lease-test-1", heldUntil: "2026-08-21T13:00:00.000Z" };
+      return { ok: true, recovered: { ...PENDING }, lease };
     },
-    resumeSession(id: string) {
-      return { ok: id === sessionId };
+    acknowledgeRecoveryHandoff(args: { sessionId: string; leaseId?: string }) {
+      if (args.sessionId !== sessionId) return { ok: false, code: "not-found" };
+      if (!lease || args.leaseId !== lease.leaseId) return { ok: false, code: "recovery-lease-mismatch" };
+      lease = null;
+      return { ok: true, state: "recovered" };
+    },
+    resumeSession(args: { sessionId: string }) {
+      return { ok: args.sessionId === sessionId };
     },
     setPendingQuestion() {
       return { ok: true };
@@ -79,15 +89,15 @@ describe("WS-35 exact pending-question recovery (spec 20)", () => {
 
   it("recovery can never double-count: the counted flag is read, never mutated", async () => {
     const lifecycle = fakeLifecycle("sess-1");
-    const outcome = await runStartupRecovery({
+    await runStartupRecovery({
       lifecycle,
       sweep: noopSweep,
       tempRoot: "/tmp",
       sessionId: "sess-1",
     });
-    // The durable record's counted flag is unchanged by the recovery pass.
-    assert.equal(lifecycle.recoverPendingQuestion("sess-1").ok, true);
-    assert.equal(lifecycle.recoverPendingQuestion("sess-1").recovered, null, "second handoff finds nothing");
+    // The durable record's counted flag is unchanged by the recovery pass:
+    // a second handoff is refused while the lease is held (exactly once).
+    assert.equal(lifecycle.recoverPendingQuestion({ sessionId: "sess-1" }).ok, false, "second handoff refused (lease held)");
     // And the event built for the state machine carries the mirrored flag.
     const event = buildRecoveredQuestionEvent(PENDING, "sess-1");
     assert.equal(event?.counted, true);
@@ -112,6 +122,9 @@ describe("WS-35 exact pending-question recovery (spec 20)", () => {
       recoverPendingQuestion() {
         throw new Error("store corrupted");
       },
+      acknowledgeRecoveryHandoff() {
+        return { ok: true };
+      },
       resumeSession() {
         return { ok: true };
       },
@@ -127,6 +140,39 @@ describe("WS-35 exact pending-question recovery (spec 20)", () => {
     });
     assert.equal(outcome.recovery.recovered, false);
     assert.ok(outcome.recovery.failures.includes("recovery:lifecycle-threw"));
+  });
+
+  it("startup never resumes immediately: recovering is kept until the exact handoff is acknowledged", async () => {
+    let resumeCalls = 0;
+    let ackCalls = 0;
+    const lifecycle: Lifecycle = {
+      recoverPendingQuestion(args: { sessionId: string }) {
+        if (args.sessionId !== "sess-1") return { ok: false, code: "not-found" };
+        return { ok: true, recovered: { ...PENDING, operationId: "op-recover-1", durableState: "recovering" }, lease: { leaseId: "lease-1", heldUntil: "2026-08-21T13:00:00.000Z" } };
+      },
+      resumeSession(args: { sessionId: string }) {
+        resumeCalls += 1;
+        return { ok: args.sessionId === "sess-1" };
+      },
+      acknowledgeRecoveryHandoff(args: { sessionId: string; leaseId?: string }) {
+        ackCalls += 1;
+        return { ok: args.sessionId === "sess-1" && args.leaseId === "lease-1", state: "recovered" };
+      },
+      setPendingQuestion() {
+        return { ok: true };
+      },
+    };
+    const outcome = await runStartupRecovery({
+      lifecycle,
+      sweep: noopSweep,
+      tempRoot: "/tmp",
+      sessionId: "sess-1",
+    });
+    assert.equal(outcome.recovery.recovered, true);
+    assert.equal(outcome.recovery.markedRecovering, true); // durability, not a transient resume
+    assert.equal(resumeCalls, 0, "startup must NOT resume the session immediately (FIX-013)");
+    assert.equal(ackCalls, 0, "acknowledgement is a separate, later step");
+    assert.equal(outcome.ok, true);
   });
 
   it("malformed pending record never becomes an invented question", () => {
