@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Candice fresh-install bootstrap — install engine (WS-31).
+ * Candice fresh-install bootstrap — install engine (WS-31, FIX-018).
  *
  * Owned glob: `scripts/candice-bootstrap/**` (PROJECT-MANIFEST 9.2 WR-017;
  * task-graph snapshot WS-31 owned_paths).
@@ -13,30 +13,49 @@
  *   5. launch/bridge command,
  *   6. version/checksum metadata.
  *
- * "No source compile on the customer machine": skills/plugin are copied from
- * the repo checkout (spec-21 first hop). Speech assets use the checksum-verified WS-33
- * gate (download.mjs -> verify.mjs -> atomic-install.mjs). App installation
- * is unavailable until a future candidate is independently release-authorized
- * — never accept a caller-selected bundle (fail closed, WS-33 doctrine).
+ * FIX-018 mode enum (modes.mjs) gates every invocation BEFORE the first
+ * filesystem write:
+ *   - `test-fixture` — hermetic tests only; explicit temporary root
+ *     required; always prints `NOT_RELEASE_INSTALL`,
+ *   - `developer` — repo-checkout install under an explicit test root; the
+ *     app leg is allowed only from an internally signed fixture; always
+ *     prints `NOT_RELEASE_INSTALL`,
+ *   - `release` — production path; a missing/unknown mode or any missing
+ *     required leg is a hard failure that rolls back the transaction,
+ *     never a `skipped` leg with `ok: true`.
+ *
+ * In release mode the app record comes ONLY from release-authority output
+ * (`scripts/candice-release/status.mjs` + `CONTROL/bundled-components.json`
+ * via release-resolver.mjs). A caller-supplied path or custom manifest is
+ * rejected. Asset legs resolve by exact (platform, arch) record — never a
+ * hardcoded platform — and hashes are re-verified after install, not only
+ * on download.
  *
  * Plain `claude` is never touched: no settings.json / .claude.json edits
- * (spec 22 "keep plain claude untouched"). Visibility into the shared Claude
- * config root is the 9.4 integration owner's AGENT_INSTALL/orchestrator
- * write; this lane proposes only.
+ * (spec 22 "keep plain claude untouched"). Plugin registration writes only
+ * the plugin registry record via register-plugin.mjs.
  *
  * No commit, no push (builder contract).
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { bootstrapRoot, readState, writeState } from "./state.mjs";
 import {
-  skillsDir,
-  pluginDir,
-  appBundlePath,
-  assetsDir,
-} from "./paths.mjs";
+  cpSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  appendFileSync,
+  createReadStream,
+} from "node:fs";
+import { createHash } from "node:crypto";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { bootstrapRoot, readState, writeState, STATE_SCHEMA } from "./state.mjs";
+import { skillsDir, pluginDir, appBundlePath, assetsDir } from "./paths.mjs";
+import { parseMode, isNonRelease, INTERNAL_SIGNED_FIXTURE } from "./modes.mjs";
+import { resolveAppRecord } from "./release-resolver.mjs";
+import { registerAll, verifyAll, deregisterAll } from "./register-plugin.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +82,9 @@ export const DOWNLOAD_GATE = join(ROLLBACK_DIR, "download.mjs");
 export const VERIFY = join(CHECKSUMS_DIR, "verify.mjs");
 export const REGISTRY = join(CHECKSUMS_DIR, "components.mjs");
 
+/** Transaction journal (seeded from the WS-32 upgrade journal). */
+export const STATE_JOURNAL = "upgrade-journal.jsonl";
+
 export function repoPaths() {
   const repo = join(__dirname, "..", "..");
   return {
@@ -78,6 +100,50 @@ function result(ok, message, extra = {}) {
 
 function runNode(args, timeoutMs) {
   return spawnSync("node", args, { encoding: "utf8", timeout: timeoutMs });
+}
+
+function sha256File(path) {
+  return new Promise((res, rej) => {
+    const h = createHash("sha256");
+    const s = createReadStream(path);
+    s.on("data", (d) => h.update(d));
+    s.on("end", () => res(h.digest("hex")));
+    s.on("error", rej);
+  });
+}
+
+/** Append one journal line; a journal write failure is itself a transaction failure in release mode. */
+export function journal(root, entry) {
+  const file = join(root, "state", STATE_JOURNAL);
+  try {
+    mkdirSync(join(root, "state"), { recursive: true });
+    appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Snapshot a target tree before mutation so a failing transaction can
+ * restore the prior known-good state. Returns a restore function.
+ */
+export function snapshotTarget(root, target, label) {
+  const pre = join(root, "state", "staging", "pre", `${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+  if (existsSync(target)) {
+    mkdirSync(dirname(pre), { recursive: true });
+    cpSync(target, pre, { recursive: true });
+    return () => {
+      rmSync(target, { recursive: true, force: true });
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(pre, target, { recursive: true });
+      rmSync(pre, { recursive: true, force: true });
+    };
+  }
+  return () => {
+    rmSync(target, { recursive: true, force: true });
+    if (existsSync(pre)) rmSync(pre, { recursive: true, force: true });
+  };
 }
 
 /** Run the WS-33 atomic install engine (stage -> backup old -> atomic rename -> marker verify). */
@@ -166,15 +232,126 @@ export function installPlugin(root, pins = PLUGIN_PINS, opts = {}) {
 }
 
 /**
- * Refuse app installation until an independently release-authorized payload
- * path exists.  In particular, this function must never trust a local
- * caller-supplied `.app`; it has no immutable manifest, hash/signature, or
- * release-authority proof.
+ * App installation (FIX-018 mode-aware).
+ *
+ *   - missing/unknown mode            -> hard failure before any write,
+ *   - `release`                       -> record comes ONLY from
+ *     release-authority output (release-resolver.mjs); missing/forged/
+ *     placeholder records fail closed and roll the transaction back,
+ *   - `developer`                     -> app install allowed ONLY from an
+ *     internally signed fixture record (opts.appFixture, sha256 verified);
+ *     a caller-selected path is never trusted,
+ *   - `test-fixture`                  -> always blocked: no app candidate
+ *     is ever invented for a fixture run.
+ *
+ * Never trusts a local caller-supplied `.app` without an immutable
+ * manifest, hash/signature, or release-authority proof.
  */
-export function installApp(root, platform, opts = {}) {
-  void root;
-  void platform;
-  void opts;
+export async function installApp(root, platform, opts = {}) {
+  const parsed = parseMode(opts.mode);
+  if (!parsed.ok) return result(false, `app install refused: ${parsed.message}`, { modeRequired: true });
+  const mode = parsed.mode;
+
+  if (mode === "release") {
+    const resolved = resolveAppRecord({ platform, arch: opts.arch, ...(opts.authority ? { authority: opts.authority } : {}) });
+    if (!resolved.ok) return result(false, `app install refused: ${resolved.message}`);
+    const rec = resolved.record;
+    // Expected executable path is root-relative; never allow escapes.
+    const exeTarget = resolve(root, rec.executablePath);
+    if (!exeTarget.startsWith(resolve(root) + "/") && exeTarget !== resolve(root)) {
+      return result(false, `app record executablePath escapes the install root: ${rec.executablePath}`);
+    }
+    let artifactPath = opts.artifactPath;
+    if (!artifactPath) {
+      // Release payloads arrive through the operator-controlled channel.
+      try {
+        const res = await fetch(rec.sourceUrl, { redirect: "follow" });
+        if (!res.ok) return result(false, `app artifact download failed: HTTP ${res.status} from ${rec.sourceUrl}`);
+        const buf = Buffer.from(await res.arrayBuffer());
+        artifactPath = join(root, "state", "staging", "app-artifact");
+        mkdirSync(dirname(artifactPath), { recursive: true });
+        writeFileSync(artifactPath, buf);
+      } catch (e) {
+        return result(false, `app artifact download failed: ${e.message}`);
+      }
+    }
+    if (!existsSync(artifactPath)) return result(false, "app artifact missing after staging");
+    const actual = await sha256File(artifactPath);
+    if (actual !== rec.sha256) {
+      return result(false, `app artifact sha256 mismatch: got ${actual}, expected ${rec.sha256}`);
+    }
+    const size = statSync(artifactPath).size;
+    if (size !== rec.sizeBytes) {
+      return result(false, `app artifact size mismatch: got ${size}, expected ${rec.sizeBytes}`);
+    }
+    // Signing/notarization posture is recorded from the authority, never
+    // re-verified locally: codesign/notarization evidence is FIX-022-owned.
+    mkdirSync(dirname(exeTarget), { recursive: true });
+    cpSync(artifactPath, exeTarget);
+    return result(true, `app installed from release-authorized record ${rec.version}`, {
+      installed: { "candice-companion": { id: "candice-companion", version: rec.version, kind: "app", status: "installed" } },
+      provenance: {
+        record: {
+          id: "candice-companion",
+          version: rec.version,
+          sourceUrl: rec.sourceUrl,
+          sha256: rec.sha256,
+          sizeBytes: rec.sizeBytes,
+          signature: rec.signature,
+          notarization: rec.notarization,
+          executablePath: rec.executablePath,
+          platform: rec.platform,
+          arch: rec.arch,
+        },
+      },
+    });
+  }
+
+  if (mode === "developer") {
+    const fixture = opts.appFixture;
+    if (!fixture) {
+      return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
+    }
+    if (fixture.signedBy !== INTERNAL_SIGNED_FIXTURE) {
+      return result(false, "developer app fixture is not internally signed (signedBy must be scripts/candice-release/status.mjs)", { blocked: true });
+    }
+    if (!fixture.artifactPath || !fixture.sha256 || !fixture.executablePath) {
+      return result(false, "developer app fixture record incomplete (artifactPath/sha256/executablePath required)", { blocked: true });
+    }
+    if (!existsSync(fixture.artifactPath)) {
+      return result(false, `developer app fixture artifact missing: ${fixture.artifactPath}`);
+    }
+    const actual = await sha256File(fixture.artifactPath);
+    if (actual !== fixture.sha256) {
+      return result(false, `developer app fixture sha256 mismatch: got ${actual}, expected ${fixture.sha256}`);
+    }
+    const exeTarget = resolve(root, fixture.executablePath);
+    if (!exeTarget.startsWith(resolve(root) + "/")) {
+      return result(false, `developer app fixture executablePath escapes the install root: ${fixture.executablePath}`);
+    }
+    mkdirSync(dirname(exeTarget), { recursive: true });
+    cpSync(fixture.artifactPath, exeTarget);
+    return result(true, `app installed from internally signed fixture (NOT_RELEASE_INSTALL)`, {
+      installed: { "candice-companion": { id: "candice-companion", version: fixture.version || "fixture", kind: "app", status: "installed" } },
+      provenance: {
+        record: {
+          id: "candice-companion",
+          version: fixture.version || "fixture",
+          sourceUrl: "internal-fixture",
+          sha256: fixture.sha256,
+          sizeBytes: fixture.sizeBytes || null,
+          signature: "internal-fixture",
+          notarization: "none",
+          executablePath: fixture.executablePath,
+          platform,
+          arch: opts.arch || "fixture",
+        },
+      },
+    });
+  }
+
+  // test-fixture (or any other validated future non-release mode):
+  // never invent an app candidate.
   return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
 }
 
@@ -189,16 +366,25 @@ export async function loadRegistry() {
 }
 
 /**
- * Install pinned STT/TTS assets.
+ * Install pinned STT/TTS assets, resolved by EXACT (platform, arch) record —
+ * never a hardcoded platform (FIX-018: the old darwin-on-win32 bug).
+ *
  * mode "download": each payload goes through the WS-33 download gate
- *   (sha256 + size verified against the registry before the file lands).
+ *   (sha256 + size verified against the registry before the file lands)
+ *   AND is re-hashed after install (hash-after-install, not only on
+ *   download).
  * mode "record":   no download; writes the registry's verified sha256 as a
  *   record marker (offline/CI mode — the registry hashes were live-verified
  *   2026-08-21 by the WS-33 lane).
- * A leg with no registry record is SKIPPED (fail closed).
+ *
+ * A leg with no registry record:
+ *   - release mode: hard failure (the whole transaction rolls back),
+ *   - non-release modes: SKIPPED (fail closed, reported, never ok:true in
+ *     the release report).
  */
 export async function installAssets(root, platform, opts = {}) {
   const mode = opts.mode || (opts.offline ? "record" : "download");
+  const release = opts.release === true;
   const registry = await loadRegistry();
   if (!registry || !registry.resolveComponent) {
     return result(false, "WS-33 registry unreadable — refusing asset install (fail closed)");
@@ -210,17 +396,21 @@ export async function installAssets(root, platform, opts = {}) {
   mkdirSync(sttDir, { recursive: true });
   mkdirSync(ttsDir, { recursive: true });
 
+  // Exact (platform, arch) legs — the manifest key is the platform string.
   const legs = [];
   if (platform === "win32") {
     legs.push(["stt-runtime", "stt-assets", "whisper-1.9.2", "win32", sttDir]);
   }
-  legs.push(["stt-model", "stt-assets", "whisper-1.9.2", "darwin", sttDir]);
+  legs.push(["stt-model", "stt-assets", "whisper-1.9.2", platform, sttDir]);
   legs.push(["tts-model", "tts-assets", "kokoro-model-files-v1.1", "any", ttsDir]);
   legs.push(["tts-voice", "tts-assets", "kokoro-model-files-v1.1", "voicepack", ttsDir]);
 
   for (const [key, id, version, plat, dir] of legs) {
     const rec = registry.resolveComponent(id, version, plat);
     if (!rec || !rec.payload || !rec.payload.sha256) {
+      if (release) {
+        return result(false, `asset leg ${key}: no verified registry record for ${id}@${version}@${plat} — release mode hard failure (fail closed)`);
+      }
       skipped.push(`${key} (no verified registry record for ${id}@${version}@${plat})`);
       continue;
     }
@@ -230,13 +420,33 @@ export async function installAssets(root, platform, opts = {}) {
       try {
         writeFileSync(join(dir, `.record-${file}`), `sha256=${rec.payload.sha256}\nsizeBytes=${rec.payload.sizeBytes}\n`);
       } catch (e) {
+        if (release) return result(false, `asset leg ${key}: record write failed: ${e.message} — release mode hard failure`);
         skipped.push(`${key} (record write failed: ${e.message})`);
         continue;
       }
     } else {
       const dl = await runDownloadGate(id, version, plat, target);
       if (!dl.ok) {
+        if (release) return result(false, `asset leg ${key}: ${dl.message} — release mode hard failure`);
         skipped.push(`${key} (${dl.message})`);
+        continue;
+      }
+      // Re-verify after install (hash-after-install, not only on download).
+      try {
+        const actual = await sha256File(target);
+        if (actual !== rec.payload.sha256) {
+          if (release) return result(false, `asset leg ${key}: post-install sha256 mismatch — release mode hard failure`);
+          skipped.push(`${key} (post-install sha256 mismatch)`);
+          continue;
+        }
+        if (rec.payload.sizeBytes > 0 && statSync(target).size !== rec.payload.sizeBytes) {
+          if (release) return result(false, `asset leg ${key}: post-install size mismatch — release mode hard failure`);
+          skipped.push(`${key} (post-install size mismatch)`);
+          continue;
+        }
+      } catch (e) {
+        if (release) return result(false, `asset leg ${key}: post-install verify failed: ${e.message} — release mode hard failure`);
+        skipped.push(`${key} (post-install verify failed: ${e.message})`);
         continue;
       }
     }
@@ -267,55 +477,154 @@ export function launchCommand(root, platform) {
 }
 
 /**
- * Run the full fresh-install bootstrap.
- * @param {object} opts root, platform, env, offline/mode, noAtomic
- * @returns {Promise<{ok:boolean,message:string,root:string,platform:string,skipped:string[],results:object,state?:object}>}
+ * Run the full fresh-install bootstrap (mode-gated, journaled, rollback-capable).
+ * @param {object} opts root, platform, env, offline/mode, noAtomic, release, arch,
+ *                   authority, appFixture, artifactPath
+ * @returns {Promise<{ok:boolean,message:string,root:string,platform:string,mode:string,notReleaseInstall:boolean,skipped:string[],results:object,state?:object,rollback?:object}>}
  */
 export async function installAll(opts = {}) {
   const env = opts.env || process.env;
   const platform = opts.platform || process.platform;
   const root = opts.root || bootstrapRoot(env, platform);
   const results = {};
+  const restores = [];
+  const rollback = (reason) => {
+    const errors = [];
+    for (const restore of restores.slice().reverse()) {
+      try {
+        restore();
+      } catch (e) {
+        errors.push(e.message);
+      }
+    }
+    if (errors.length) journal(root, { step: "rollback", reason, errors });
+    return { ok: false, restored: errors.length === 0, errors };
+  };
 
-  // Stop before creating any installed tree or bootstrap-state record.  A
-  // successful bootstrap without an authorized app would falsely imply a
-  // releasable installation.
-  const appR = installApp(root, platform, opts);
+  // Mode gate BEFORE any filesystem write (plan gate 2 / acceptance 1).
+  const parsed = parseMode(opts.mode);
+  if (!parsed.ok) {
+    if (opts.mode === undefined) {
+      // Legacy programmatic callers (cross-lane regression suites) omit
+      // `mode`. They receive the legacy blocked-app result — the same shape
+      // the pre-FIX-018 engines returned — plus the mode contract named in
+      // the message. Nothing is written.
+      const msg =
+        "no release-authorized Candice app candidate is available; refusing app installation " +
+        `(mode gate: install requires an explicit --mode ${["test-fixture", "developer", "release"].join("|")})`;
+      results.app = result(false, msg, { blocked: true, modeRequired: true });
+      return finish(root, platform, results, false, msg, [], { mode: parsed.mode, notReleaseInstall: false });
+    }
+    // Explicit invalid mode string: fail closed through the app leg so the
+    // failure names the mode contract; nothing is written (installApp
+    // validates before writing).
+    const appR = await installApp(root, platform, { ...opts, mode: opts.mode });
+    results.app = appR;
+    return finish(root, platform, results, false, `install blocked: ${appR.message}`, [], { mode: parsed.mode, notReleaseInstall: false });
+  }
+  const mode = parsed.mode;
+  const release = mode === "release";
+  if (mode === "test-fixture" && !opts.root) {
+    return finish(root, platform, results, false, "test-fixture mode requires an explicit --root (temporary root)", [], { mode, notReleaseInstall: true });
+  }
+  journal(root, { step: "installAll.begin", mode, platform, release });
+
+  // App first (plan: keep the existing ordering; mode validation precedes it).
+  const appR = await installApp(root, platform, { ...opts, mode });
   results.app = appR;
-  if (!appR.ok) return finish(root, platform, results, false, `app install blocked: ${appR.message}`);
+  if (!appR.ok) {
+    journal(root, { step: "installAll.fail", leg: "app", reason: appR.message });
+    return finish(root, platform, results, false, `app install failed: ${appR.message}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}`, [], { mode, notReleaseInstall: isNonRelease(mode) });
+  }
+  if (appR.provenance) journal(root, { step: "app.installed", provenance: appR.provenance.record });
 
+  restores.push(snapshotTarget(root, skillsDir(root), "skills"));
   const skillsR = installSkills(root, SKILL_PINS, opts);
   results.skills = skillsR;
-  if (!skillsR.ok) return finish(root, platform, results, false, `skills failed: ${skillsR.message}`);
+  if (!skillsR.ok) {
+    const rb = rollback(`skills failed: ${skillsR.message}`);
+    return finish(root, platform, results, false, `skills failed: ${skillsR.message}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
+  journal(root, { step: "skills.installed", count: Object.keys(skillsR.installed || {}).length });
 
+  restores.push(snapshotTarget(root, pluginDir(root), "plugin"));
   const pluginR = installPlugin(root, PLUGIN_PINS, opts);
   results.plugin = pluginR;
-  if (!pluginR.ok) return finish(root, platform, results, false, `plugin failed: ${pluginR.message}`);
+  if (!pluginR.ok) {
+    const rb = rollback(`plugin failed: ${pluginR.message}`);
+    return finish(root, platform, results, false, `plugin failed: ${pluginR.message}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
+  journal(root, { step: "plugin.installed" });
 
-  const assetsR = await installAssets(root, platform, opts);
+  // Plugin registration in the real shared config root(s) + verification
+  // (plan layer 3: registration after atomic install, idempotent, verify
+  // exactly one effective registration). Non-release modes must not touch
+  // the live config root: an explicit config root is required there and is
+  // passed through as the registration target.
+  const regOpts = {};
+  if (!release && opts.configRoot) regOpts.configRoot = opts.configRoot;
+  const regR = registerAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+  results.pluginRegistration = regR;
+  if (!regR.ok) {
+    await deregisterAll(env, pluginDir(root), regOpts);
+    const rb = rollback(`plugin registration failed: ${regR.message}`);
+    return finish(root, platform, results, false, `plugin registration failed: ${regR.message}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
+  const verR = verifyAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+  results.pluginVerify = verR;
+  if (!verR.ok) {
+    await deregisterAll(env, pluginDir(root), regOpts);
+    const rb = rollback(`plugin verification failed: ${verR.message}`);
+    return finish(root, platform, results, false, `plugin verification failed: ${verR.message}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
+  journal(root, { step: "plugin.registered", roots: (regR.done || []).map((d) => d.root) });
+
+  const assetsR = await installAssets(root, platform, { ...opts, release });
   results.assets = assetsR;
-  if (!assetsR.ok) return finish(root, platform, results, false, `assets failed: ${assetsR.message}`);
+  if (!assetsR.ok) {
+    await deregisterAll(env, pluginDir(root), regOpts);
+    const rb = rollback(`assets failed: ${assetsR.message}`);
+    return finish(root, platform, results, false, `assets failed: ${assetsR.message}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
+  journal(root, { step: "assets.installed", count: Object.keys(assetsR.installed || {}).length, skipped: assetsR.skipped || [] });
 
   // E.1 leg 6 — version/checksum metadata persisted as the installed-tree state.
   const state = readState(root, platform);
   state.components = Object.assign({}, state.components, skillsR.installed || {}, pluginR.installed || {}, appR.installed || {});
   state.assets = Object.assign({}, state.assets, assetsR.installed || {});
+  if (appR.provenance) state.appProvenance = appR.provenance;
   const cmd = launchCommand(root, platform);
   state.launch = { command: cmd.path, ok: cmd.ok };
   const wrote = writeState(root, state);
+  if (!wrote && release) {
+    await deregisterAll(env, pluginDir(root), regOpts);
+    const rb = rollback("state write failed");
+    return finish(root, platform, results, false, "state write failed; rollback " + (rb.restored ? "restored" : "INCOMPLETE"), [], { mode, notReleaseInstall: false, rollback: rb });
+  }
+  journal(root, { step: "installAll.commit", stateWrote: wrote });
 
   const skipped = [];
   if (appR.skipped) skipped.push("app");
   if (assetsR.skipped && assetsR.skipped.length) skipped.push(`assets: ${assetsR.skipped.join("; ")}`);
-  const message = skipped.length
-    ? `bootstrap completed${wrote ? "" : " (state write failed)"}; unverifiable legs skipped: ${skipped.join(" | ")}`
-    : `bootstrap completed${wrote ? "" : " (state write failed)"}: skills, plugin, app, assets, launch metadata`;
 
-  return finish(root, platform, results, true, message, skipped, { state });
+  if (release) {
+    // Every required leg is mandatory and fails closed: probe BEFORE success.
+    const { healthCheck } = await import("./health.mjs");
+    const health = await healthCheck({ root, platform, env, mode: "release", release: true, configRoot: opts.configRoot });
+    results.health = health;
+    if (!health.ok) {
+      await deregisterAll(env, pluginDir(root), regOpts);
+      const rb = rollback(`release health probes failed: ${health.missing.join(", ")}`);
+      return finish(root, platform, results, false, `release install failed health probes: ${health.missing.join(", ")}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, skipped, { mode, notReleaseInstall: false, rollback: rb, state });
+    }
+  }
+
+  const message = `bootstrap completed${wrote ? "" : " (state write failed)"}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}${skipped.length ? `; unverifiable legs skipped: ${skipped.join(" | ")}` : ""}`;
+  return finish(root, platform, results, true, message, skipped, { mode, notReleaseInstall: isNonRelease(mode), state });
 }
 
 function finish(root, platform, results, ok, message, skipped = [], extra = {}) {
   return { ok, message, level: ok ? "info" : "error", root, platform, skipped, results, ...extra };
 }
 
-export { bootstrapRoot };
+export { bootstrapRoot, STATE_SCHEMA };

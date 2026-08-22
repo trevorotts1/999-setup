@@ -136,12 +136,12 @@ test("installPlugin: plugin tree lands with manifest + hooks + wake handler", ()
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp refuses a caller-staged .app bundle until release authority exists", () => {
+test("installApp refuses a caller-staged .app bundle until release authority exists", async () => {
   const root = freshRoot();
   const app = join(root, "fixture.app");
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
   writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
-  const r = installApp(root, "darwin", { appSource: app, noAtomic: true });
+  const r = await installApp(root, "darwin", { mode: "test-fixture", appSource: app, noAtomic: true });
   assert.equal(r.ok, false);
   assert.equal(r.blocked, true);
   assert.match(r.message, /release-authorized/);
@@ -149,17 +149,26 @@ test("installApp refuses a caller-staged .app bundle until release authority exi
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp darwin refuses when no release-authorized candidate exists (fail closed)", () => {
+test("installApp refuses when no mode is given (mode gate before any write)", async () => {
   const root = freshRoot();
-  const r = installApp(root, "darwin", { noAtomic: true });
+  const r = await installApp(root, "darwin", { noAtomic: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.modeRequired, true);
+  assert.match(r.message, /mode/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("installApp darwin refuses when no release-authorized candidate exists (fail closed)", async () => {
+  const root = freshRoot();
+  const r = await installApp(root, "darwin", { mode: "test-fixture", noAtomic: true });
   assert.equal(r.ok, false);
   assert.equal(r.blocked, true);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp win32 refuses until a release-authorized candidate exists", () => {
+test("installApp win32 refuses until a release-authorized candidate exists", async () => {
   const root = freshRoot();
-  const r = installApp(root, "win32", { noAtomic: true });
+  const r = await installApp(root, "win32", { mode: "test-fixture", noAtomic: true });
   assert.equal(r.ok, false);
   assert.equal(r.blocked, true);
   assert.match(r.message, /release-authorized/);
@@ -206,7 +215,7 @@ test("installAll blocks before writing skills, plugin, app, assets, or state wit
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
   writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
 
-  const r = await installAll({ root, platform: "darwin", offline: true, noAtomic: true, appSource: app });
+  const r = await installAll({ root, platform: "darwin", mode: "test-fixture", offline: true, noAtomic: true, appSource: app });
   assert.equal(r.ok, false);
   assert.equal(r.results.app.blocked, true);
   assert.equal(r.results.skills, undefined);
@@ -220,9 +229,19 @@ test("installAll blocks before writing skills, plugin, app, assets, or state wit
   rmSync(root, { recursive: true, force: true });
 });
 
+test("installAll requires a mode before the first write", async () => {
+  const root = freshRoot();
+  const r = await installAll({ root, platform: "darwin", offline: true, noAtomic: true });
+  assert.equal(r.ok, false);
+  assert.match(r.message, /mode/);
+  assert.equal(existsSync(stateFilePath(root)), false);
+  assert.equal(existsSync(join(root, "state")), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("installAll remains blocked on repeat invocations and leaves no bootstrap state", async () => {
   const root = freshRoot();
-  const opts = { root, platform: "darwin", offline: true, noAtomic: true };
+  const opts = { root, platform: "darwin", mode: "test-fixture", offline: true, noAtomic: true };
   const r1 = await installAll(opts);
   const r2 = await installAll(opts);
   assert.equal(r1.ok, false);
@@ -233,7 +252,7 @@ test("installAll remains blocked on repeat invocations and leaves no bootstrap s
 
 test("installAll win32 blocks before writing an incomplete bootstrap state", async () => {
   const root = freshRoot();
-  const r = await installAll({ root, platform: "win32", offline: true, noAtomic: true });
+  const r = await installAll({ root, platform: "win32", mode: "test-fixture", offline: true, noAtomic: true });
   assert.equal(r.ok, false, r.message);
   assert.equal(r.results.app.blocked, true);
   assert.equal(r.results.app.ok, false);
@@ -241,26 +260,22 @@ test("installAll win32 blocks before writing an incomplete bootstrap state", asy
   rmSync(root, { recursive: true, force: true });
 });
 
-test("healthCheck reports the app unavailable before release authority exists", () => {
+test("healthCheck reports the app unavailable before release authority exists", async () => {
   const root = freshRoot();
-  const health = healthCheck({ root, platform: "darwin" });
+  const health = await healthCheck({ root, platform: "darwin", mode: "test-fixture" });
   assert.equal(health.ok, false);
-  const app = health.components.find((c) => c.name === "candice-companion");
-  assert.equal(app.ok, false);
-  assert.match(app.detail, /release-authorized/);
+  assert.equal(health.legs["app-provenance"].status, "FAIL");
   rmSync(root, { recursive: true, force: true });
 });
 
-test("healthCheck catches stale skill versions independently of the blocked app", () => {
+test("healthCheck catches stale skill versions independently of the blocked app", async () => {
   const root = freshRoot();
   assert.equal(installSkills(root, SKILL_PINS, { noAtomic: true }).ok, true);
   assert.equal(installPlugin(root, PLUGIN_PINS, { noAtomic: true }).ok, true);
   // Corrupt one skill's VERSION to simulate staleness.
   writeFileSync(join(skillsDir(root), "bro", "VERSION"), "0.0.1\n");
-  const h = healthCheck({ root, platform: "darwin" });
+  const h = await healthCheck({ root, platform: "darwin", mode: "test-fixture" });
   assert.equal(h.ok, false);
-  const bro = h.components.find((c) => c.name === "bro");
-  assert.equal(bro.ok, false);
-  assert.match(bro.detail, /stale/);
+  assert.match(h.legs["skill-tree"].detail, /bro/);
   rmSync(root, { recursive: true, force: true });
 });

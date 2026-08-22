@@ -49,7 +49,10 @@ import {
   installApp,
   installAssets,
   launchCommand,
+  snapshotTarget,
 } from "../candice-bootstrap/install.mjs";
+import { registerAll, verifyAll, deregisterAll } from "../candice-bootstrap/register-plugin.mjs";
+import { parseMode } from "../candice-bootstrap/modes.mjs";
 import { healthCheck } from "../candice-bootstrap/health.mjs";
 import { detect, compareVersions, PUBLISHED_VERSION_URL } from "./detect.mjs";
 
@@ -197,12 +200,59 @@ function journal(root, entry) {
  * through the WS-33 atomic engine; assets go through the WS-33 download gate
  * with SHA-256 verification. App repair is blocked until a future candidate
  * has release authority — never invented (fail closed).
+ *
+ * FIX-018 mode semantics:
+ *   - no mode (legacy callers)          -> best-effort, legacy shapes;
+ *     plugin registration is NOT touched (the live config root is never
+ *     a silent repair target for mode-less callers),
+ *   - release mode                      -> transactional: every target is
+ *     snapshotted before mutation, any failure rolls every leg back and
+ *     deregisters a half-registered plugin; asset skips are hard failures,
+ *   - non-release modes with an explicit configRoot -> hermetic registration
+ *     repair against that root only (never the live ~/.claude).
  */
 export async function applyRepairs(root, platform, repairs, opts = {}) {
   const done = [];
   const skipped = [];
   const failed = [];
   const blocked = [];
+  const parsed = parseMode(opts.mode);
+  const release = parsed.ok && parsed.mode === "release";
+  // Registration target policy: release uses live discovery (or the injected
+  // configRoot for hermetic release tests); other modes require an explicit
+  // configRoot; mode-less legacy callers never register.
+  const registrationAllowed = parsed.ok && (release || (opts.configRoot && opts.configRoot.length > 0));
+  const env = opts.env || process.env;
+  const regOpts = opts.configRoot && opts.configRoot.length > 0 ? { configRoot: opts.configRoot } : {};
+  const restores = [];
+  const registered = { active: false };
+
+  const rollbackAll = (reason) => {
+    const errors = [];
+    if (registered.active) {
+      const dr = deregisterAll(env, pluginDir(root), regOpts);
+      if (!dr.ok) errors.push(`deregister: ${dr.message}`);
+      registered.active = false;
+    }
+    for (const restore of restores.slice().reverse()) {
+      try {
+        restore();
+      } catch (e) {
+        errors.push(e.message);
+      }
+    }
+    return errors;
+  };
+
+  const hard = (kind, ids, message) => {
+    if (release) {
+      const errors = rollbackAll(message);
+      failed.push({ kind, ids, message: errors.length ? `${message}; rollback errors: ${errors.join("; ")}` : `${message}; transaction rolled back` });
+      return true;
+    }
+    failed.push({ kind, ids, message });
+    return false;
+  };
 
   const skillRepairs = repairs.filter((r) => r.kind === "skill");
   const pluginRepairs = repairs.filter((r) => r.kind === "plugin");
@@ -213,9 +263,10 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
   if (skillRepairs.length > 0) {
     const pin = {};
     for (const r of skillRepairs) pin[r.id] = SKILL_PINS[r.id];
+    restores.push(snapshotTarget(root, skillsDir(root), "skills-repair"));
     const r = installSkills(root, pin, opts);
     if (!r.ok) {
-      failed.push({ kind: "skill", ids: Object.keys(pin), message: r.message });
+      hard("skill", Object.keys(pin), r.message);
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
         done.push({ kind: "skill", id, version: rec.version, action: "repaired" });
@@ -229,10 +280,11 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
     // missing integration inside a present plugin is repaired by re-installing
     // the plugin tree from the repo checkout — the deterministic bundle path
     // (spec 21 step 5).
+    restores.push(snapshotTarget(root, pluginDir(root), "plugin-repair"));
     const r = installPlugin(root, PLUGIN_PINS, opts);
     if (!r.ok) {
       const ids = [...pluginRepairs.map((x) => x.id), ...integrationRepairs.map((x) => x.id)];
-      failed.push({ kind: "plugin", ids, message: r.message });
+      hard("plugin", ids, r.message);
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
         done.push({ kind: "plugin", id, version: rec.version, action: "repaired" });
@@ -242,18 +294,38 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
         done.push({ kind: "integration", id: ir.id, version: INTEGRATION_PINS[ir.id], action: "repaired" });
         journal(root, { id: ir.id, kind: "integration", version: INTEGRATION_PINS[ir.id], action: "repaired" });
       }
+      // FIX-018: a removed plugin registration is repaired here — detect
+      // (verifyAll) then fix (registerAll), never a silent skip in release.
+      if (registrationAllowed) {
+        const v = verifyAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+        if (!v.ok) {
+          const reg = registerAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+          if (!reg.ok) {
+            hard("plugin-registration", ["candice-integration"], `registration repair failed: ${reg.message}`);
+          } else {
+            registered.active = true;
+            done.push({ kind: "plugin-registration", id: "candice-integration", action: "repaired" });
+            journal(root, { id: "candice-integration", kind: "plugin-registration", action: "repaired" });
+          }
+        }
+      }
     }
   }
 
   if (appRepairs.length > 0) {
-    const r = await installApp(root, platform, opts);
+    // installApp is mode-gated (FIX-018): a missing mode is itself a refusal.
+    // Repair never invents a candidate, so absent a caller mode the app leg
+    // runs in test-fixture semantics — always blocked, never copied.
+    const r = await installApp(root, platform, { ...opts, mode: opts.mode || "test-fixture" });
     if (!r.ok) {
-      if (r.blocked) {
+      if (r.blocked || r.modeRequired) {
         blocked.push({ kind: "app", id: "candice-companion", reason: r.message });
       } else if (r.skipped) {
         skipped.push({ kind: "app", id: "candice-companion", reason: r.message });
       } else {
-        failed.push({ kind: "app", ids: ["candice-companion"], message: r.message });
+        const rolled = release;
+        hard("app", ["candice-companion"], r.message);
+        if (rolled) blocked.push({ kind: "app", id: "candice-companion", reason: `release transaction rolled back: ${r.message}` });
       }
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
@@ -264,21 +336,28 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
   }
 
   if (assetRepairs.length > 0) {
-    const r = await installAssets(root, platform, opts);
+    restores.push(snapshotTarget(root, assetsDir(root, ""), "assets-repair"));
+    const r = await installAssets(root, platform, { ...opts, release });
     if (!r.ok) {
-      failed.push({ kind: "assets", ids: [], message: r.message });
+      hard("assets", [], r.message);
     } else {
-      for (const [key, rec] of Object.entries(r.installed || {})) {
-        done.push({ kind: "asset", id: key, version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
-        journal(root, { id: key, kind: "asset", version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
-      }
-      for (const sk of r.skipped || []) {
-        skipped.push({ kind: "asset", id: "assets", reason: String(sk) });
+      // Release mode: an asset skip (no verifiable record) is a hard
+      // failure, never a partial success.
+      if (release && r.skipped && r.skipped.length > 0) {
+        hard("assets", [], `unverifiable asset legs in release mode: ${r.skipped.join("; ")}`);
+      } else {
+        for (const [key, rec] of Object.entries(r.installed || {})) {
+          done.push({ kind: "asset", id: key, version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
+          journal(root, { id: key, kind: "asset", version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
+        }
+        for (const sk of r.skipped || []) {
+          skipped.push({ kind: "asset", id: "assets", reason: String(sk) });
+        }
       }
     }
   }
 
-  return { done, skipped, failed, blocked };
+  return { done, skipped, failed, blocked, release };
 }
 
 /**
