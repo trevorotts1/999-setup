@@ -1,5 +1,12 @@
 # CONTROL / LEDGER — Live State, Verdicts, Restart Truth
 
+<!-- CANDICE_RELEASE_REPAIR_STATUS: lifecycle=REPAIR_IN_PROGRESS open=24 complete=0 -->
+
+> **FIX-001 release-truth override (2026-08-22):** The historical workflow
+> ledger below does not authorize a release. Current Candice repair state is
+> 24 open fixes and zero completed fixes. The enforced release authority is
+> `CONTROL/release-gate.json` evaluated by `scripts/candice-release/status.mjs`.
+
 Project: Candice Companion AI (spec-protocol build, 999-setup repo)
 Canonical Master Spec: `/Users/blackceomacmini/Downloads/CANDICE_COMPANION_AI_IMPLEMENTATION_SPEC_V6_FINAL_LOCKED.md` (canonicalized as `SPEC/MASTER-SPEC-2026-08-21.md` — see SESSION-LOG)
 Last updated: 2026-08-21 (TRUTH CONTRADICTION RESOLUTION — section 1 refreshed per enumeration; 1-run/15-agent contradiction resolved, option A)

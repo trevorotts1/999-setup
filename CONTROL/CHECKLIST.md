@@ -1,5 +1,12 @@
 # CONTROL / CHECKLIST — Binary Proven-Done Boxes
 
+<!-- CANDICE_RELEASE_REPAIR_STATUS: lifecycle=REPAIR_IN_PROGRESS open=24 complete=0 -->
+
+> **FIX-001 release-truth override (2026-08-22):** The historical WS boxes
+> below are not release authorization. Current Candice repair state is 24 open
+> fixes and zero completed fixes. Only `CONTROL/release-gate.json` plus a zero
+> exit from `scripts/candice-release/status.mjs` can authorize distribution.
+
 Project: Candice Companion AI (spec-protocol build, 999-setup repo)
 Canonical Master Spec: /Users/blackceomacmini/Downloads/CANDICE_COMPANION_AI_IMPLEMENTATION_SPEC_V6_FINAL_LOCKED.md (canonicalized as SPEC/MASTER-SPEC-2026-08-21.md)
 Created: 2026-08-21 (pre-dispatch baseline). Refreshed 2026-08-21 (planning recheck): gates A and B (all five B gates) flipped from primary-source evidence; prebuild truth gate fresh independent sonnet/max recheck PASSED (SESSION-LOG 2026-08-21). Refreshed 2026-08-21 (acceptance-criteria QC-FIX — post TRUTH CONTRADICTION RESOLUTION): gate counts re-derived from the reconciled machine truth (23 intended handles, max agents per workflow 10) and the run-ID rekeying to snapshot slice IDs (WR-008/WR-009/WR-012 launch IDs; next free WR-033+). Refreshed 2026-08-21 (acceptance-criteria FRESH FIXER — post fresh-recheck FAIL on record-staleness, 0.1 override 2): run-liveness counts re-derived from live machine truth — 24 run dirs, 23 terminal records (21 completed, 2 killed), 0 active, 0 live. Nothing is implemented yet — every E box remains UNCHECKED.

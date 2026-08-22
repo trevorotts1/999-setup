@@ -224,3 +224,22 @@ jobs:
     if: false
     steps:
       - run: echo "GATED — interactive Windows desktop smoke requires a real host; run manually"
+
+  # A release tag must not become a publishable Candice release unless the
+  # repository's fail-closed authority accepts the exact tagged checkout.
+  # The companion release workflow calls the same command before it creates
+  # a GitHub Release or uploads any artifact.
+  release-authority:
+    name: Candice release authority
+    if: startsWith(github.ref, 'refs/tags/candice-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Refuse unverified release candidate
+        run: node scripts/candice-release/status.mjs

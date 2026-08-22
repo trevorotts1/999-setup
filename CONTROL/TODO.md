@@ -1,5 +1,14 @@
 # CONTROL / TODO — Live Work Inventory
 
+<!-- CANDICE_RELEASE_REPAIR_STATUS: lifecycle=REPAIR_IN_PROGRESS open=24 complete=0 -->
+
+> **FIX-001 release-truth override (2026-08-22):** This historical workstream
+> inventory is not a release authority. The current repair inventory is 24
+> open fixes and zero completed fixes. Release state is governed only by
+> `CONTROL/release-gate.json` and `scripts/candice-release/status.mjs`.
+> Legacy WS entries remain as implementation history and must not be read as
+> present release evidence.
+
 Project: Candice Companion AI (spec-protocol build, 999-setup repo)
 Canonical Master Spec: /Users/blackceomacmini/Downloads/CANDICE_COMPANION_AI_IMPLEMENTATION_SPEC_V6_FINAL_LOCKED.md (canonicalized as SPEC/MASTER-SPEC-2026-08-21.md)
 Source of this inventory: Master Spec Section 0E — CANDICE WORKSTREAM MAP (50 workstreams, maximum decomposition envelope).

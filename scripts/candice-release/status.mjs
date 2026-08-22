@@ -10,12 +10,31 @@
  * Usage:
  *   node scripts/candice-release/status.mjs [--root <repository-root>]
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const REQUIRED_GATES = Object.freeze([
+  "independentQc",
+  "packagedEndToEnd",
+  "privacy",
+  "visualParity",
+  "cleanMachine",
+  "macosSigningAndNotarization",
+  "windowsSigningAndInteractiveSmoke",
+  "ciRequiredChecks",
+  "supplyChain",
+]);
+
+// This pin is deliberately unconfigured until FIX-024. It is code, not a
+// user-controlled JSON field or environment variable, so no edited control
+// document can make a release pass. FIX-024 may replace it with the SHA-256
+// of an operator-owned Ed25519 public key after its independent clean-machine
+// review; that change itself requires review and a release-gate recheck.
+const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
 
 function argValue(args, name) {
   const index = args.indexOf(name);
@@ -35,8 +54,27 @@ function readJson(path, errors, label) {
   }
 }
 
+function repairMarker(path, errors, label) {
+  if (!existsSync(path)) {
+    errors.push(`missing ${label}: ${path}`);
+    return null;
+  }
+  const match = readFileSync(path, "utf8").match(
+    /<!-- CANDICE_RELEASE_REPAIR_STATUS: lifecycle=([A-Z_]+) open=(\d+) complete=(\d+) -->/,
+  );
+  if (!match) {
+    errors.push(`missing release-repair marker in ${label}`);
+    return null;
+  }
+  return { lifecycle: match[1], open: Number(match[2]), complete: Number(match[3]) };
+}
+
 function isSha256(value) {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) && !/^0{64}$/.test(value);
+}
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function git(root, args) {
@@ -51,6 +89,11 @@ export function evaluateRelease(root) {
   const errors = [];
   const project = readJson(resolve(root, "CONTROL/project_state.json"), errors, "project state");
   const gate = readJson(resolve(root, "CONTROL/release-gate.json"), errors, "release gate");
+  const markers = [
+    repairMarker(resolve(root, "CONTROL/TODO.md"), errors, "CONTROL/TODO.md"),
+    repairMarker(resolve(root, "CONTROL/CHECKLIST.md"), errors, "CONTROL/CHECKLIST.md"),
+    repairMarker(resolve(root, "CONTROL/LEDGER.md"), errors, "CONTROL/LEDGER.md"),
+  ];
   if (!project || !gate) return { ok: false, errors };
 
   const candice = project.candice || {};
@@ -67,11 +110,25 @@ export function evaluateRelease(root) {
   if (!Number.isInteger(gate.checklist?.requiredUnchecked) || gate.checklist.requiredUnchecked !== 0) {
     errors.push("required checklist items remain unchecked or uncounted");
   }
-  const gates = gate.requiredGates || {};
-  for (const [name, result] of Object.entries(gates)) {
-    if (result !== "PASS") errors.push(`required gate ${name} is ${result}, not PASS`);
+  const gates = gate.requiredGates;
+  if (!gates || typeof gates !== "object" || Array.isArray(gates)) {
+    errors.push("required gates are missing or malformed");
+  } else {
+    const actual = Object.keys(gates).sort();
+    const expected = [...REQUIRED_GATES].sort();
+    if (actual.join("|") !== expected.join("|")) {
+      errors.push("required gate names do not exactly match the fixed release schema");
+    }
+    for (const name of REQUIRED_GATES) {
+      if (gates[name] !== "PASS") errors.push(`required gate ${name} is ${gates[name] ?? "MISSING"}, not PASS`);
+    }
   }
-  if (Object.keys(gates).length === 0) errors.push("required gates are missing");
+  for (const marker of markers) {
+    if (!marker) continue;
+    if (marker.lifecycle !== gate.lifecycle || marker.open !== gate.openFixIds.length || marker.complete + marker.open !== 24) {
+      errors.push("repair status marker disagrees with release-gate inventory");
+    }
+  }
 
   const candidate = gate.candidate;
   if (!candidate || !/^[0-9a-f]{40}$/i.test(candidate.commit) || !/^v?\d+\.\d+\.\d+/.test(candidate.tag || "")) {
@@ -88,10 +145,19 @@ export function evaluateRelease(root) {
     errors.push("no signed release artifacts recorded");
   } else {
     for (const artifact of gate.artifacts) {
-      if (!artifact?.name || !/^https:\/\//.test(artifact.url || "") || !isSha256(artifact.sha256) || !artifact.signature) {
+      const localPath = typeof artifact?.localPath === "string" ? resolve(root, artifact.localPath) : null;
+      if (
+        !artifact?.name || !/^https:\/\//.test(artifact.url || "") || !isSha256(artifact.sha256)
+        || !artifact.signature || !localPath || !existsSync(localPath)
+      ) {
         errors.push(`invalid artifact record: ${artifact?.name || "unnamed"}`);
+      } else if (sha256File(localPath) !== artifact.sha256) {
+        errors.push(`artifact hash mismatch: ${artifact.name}`);
       }
     }
+  }
+  if (OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 === "UNCONFIGURED") {
+    errors.push("operator release authority is not configured; FIX-024 independent approval is required");
   }
   return { ok: errors.length === 0, errors };
 }
@@ -108,4 +174,13 @@ function main() {
   return 1;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit(main());
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) process.exit(main());
