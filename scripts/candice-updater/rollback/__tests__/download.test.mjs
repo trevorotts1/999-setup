@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const download = join(here, "..", "download.mjs");
+const controlManifest = join(here, "..", "..", "..", "..", "CONTROL", "bundled-components.json");
 
 function run(args) {
   try {
@@ -40,4 +41,16 @@ test("repo-tree components are refused for download (no release checksum exists)
   const r = run(["--id", "kaizen", "--version", "1.1.0", "--out", "/tmp/k.bin"]);
   assert.equal(r.code, 1);
   assert.match(r.out, /no checksum record/);
+});
+
+test("candice-companion is refused before network even when a legacy manifest is supplied", () => {
+  const r = run([
+    "--id", "candice-companion",
+    "--version", "0.2.0",
+    "--platform", "darwin",
+    "--manifest", controlManifest,
+    "--out", "/tmp/candice-quarantine-test.bin",
+  ]);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /custom manifests cannot authorize candice-companion downloads/);
 });
