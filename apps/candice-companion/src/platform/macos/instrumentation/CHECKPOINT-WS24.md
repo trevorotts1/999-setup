@@ -11,7 +11,7 @@
 | File | Purpose |
 |---|---|
 | `sampler.ts` | CPU/RSS sampling core: `cpuPercentBetween` (exact % of one core from cpuUsage deltas over wall hrtime), `bytesToMiB`, `summarize`, `sampleWindow` (windowed, injectable process reader + clock, total — instrument failure degrades to an `error` field) |
-| `thresholds.ts` | `MEASURED_BASELINE_MACOS_AS_2026_08_21` (2026-08-21 Apple Silicon EMULATED re-measure via `baseline-capture.mjs`: idle cpu 3.04%/RSS 69.3MiB, speaking 10.18%/73.7MiB, listening 14.54%/73.6MiB; `emulated: true`, provisional until WS-45 real-app harness), `REGRESSION_THRESHOLDS` (idle ≤10% mean/≤25% max/≤180MiB, speaking ≤25/60/220, listening ≤35/80/220), `checkThresholds` + `verifyReport` (pure; missing phase window FAILS — a failed measurement is never a silent pass) |
+| `thresholds.ts` | `MEASURED_BASELINE_MACOS_AS_2026_08_21` (2026-08-21 Apple Silicon REAL engine windows via WS-45 phase-enforcing harness, release 0.2.0 binary: idle cpu 0.0%/RSS 98.0MiB, speaking 14.1%/36.8MiB, listening 70.9% mean of 7 runs (range 52.8-85.0)/163.5MiB; `emulated: true` = phase-emulated, provisional until the app emits real phase titles), `REGRESSION_THRESHOLDS` (idle ≤10% mean/≤25% max/≤180MiB, speaking ≤25/60/220, listening ≤180/200/250), `checkThresholds` + `verifyReport` (pure; missing phase window FAILS — a failed measurement is never a silent pass) |
 | `thresholds-registry.ts` | `MACHINE_READABLE_THRESHOLDS_JSON` — schema-versioned JSON twin of the in-code thresholds, for CI/dashboards |
 | `window-probe.ts` | Phase probe contract: stable title prefix `Candice — ` + `Idle/Speaking/Listening` suffix classification (`classifyTitle`, `probeCandiceWindowTitle` — total, permission-free default; unknown suffix classifies idle), `nearestPhase` mapping WS-08 statuses onto the three measured phases |
 | `measure.mjs` | Live measurement CLI (operator/CI instrument): `node measure.mjs --duration-ms 5000 --interval-ms 500`; prints one-line summary + JSON; `--phase=` optional threshold gate with non-zero exit on violation |
@@ -83,6 +83,40 @@ reproduction:
 
 **FRESH RECHECK REQUIRED** per box-flip rule — this QC fix must be
 independently re-verified before the WS-24 E.1 box may flip.
+
+## Real-engine recalibration (perf-smoke fix, 2026-08-21)
+
+WS-45's phase-enforcing harness landed and the perf smoke
+(`tests/performance/run.mjs --quick`) measured the REAL engine windows
+against the release 0.2.0 binary on this operator Apple Silicon box.
+The old EMULATED listening threshold (35) was provably unrepresentative:
+real whisper-cli (pinned WS-16 model, canonical jfk.wav fixture) runs
+52.8-85.0% of one core (mean 70.9% over 7 runs, peak RSS 163.5 MiB) —
+the gate failed loudly on the stale constant, exactly as
+CROSS-LANE-FINDING-WS45-REAL-MEASUREMENTS.md predicted.
+
+**Fix applied (this lane, its constants):**
+- `REGRESSION_THRESHOLDS.listening` recalibrated to the REAL measured
+  footprint with regression-class margin: cpuMeanMax 35 → 180 (real
+  mean 70.9% x2.5), cpuMaxMax 80 → 200 (real max 85.0% x2.4), rssMiBMax
+  220 → 250 (real 163.5 MiB x1.5).
+- `MEASURED_BASELINE_MACOS_AS_2026_08_21` updated to the real engine
+  windows: idle 0.0%/98.0 MiB, speaking 14.1%/36.8 MiB, listening
+  70.9%/163.5 MiB. `emulated: true` retained and re-scoped to
+  PHASE-EMULATED: the harness drives the phases, but the app's own
+  webview does not yet emit the `Candice — <phase>` title carrier.
+  Provisional until the app emits real phase titles.
+- `THRESHOLDS_SCHEMA_VERSION` 1 → 2 (explicit, diffable threshold bump).
+- CI fragment table + checkpoint updated; unit tests updated to the
+  real-baseline windows (baseline-must-clear-own-thresholds still
+  enforced).
+- Pre-fix files backed up at
+  `CONTROL/backup-ws24-perf-recal-20260821/`.
+
+**Re-verification:** WS-24 unit tests 25/25 PASS; perf smoke
+`tests/performance/run.mjs --quick` GATE PASS with the release binary
+present (listening 59.4% ≤ 180, first-visible 1200 ms ≤ 3000, idle
+0.0% ≤ 10).
 
 ## Cross-lane findings
 
