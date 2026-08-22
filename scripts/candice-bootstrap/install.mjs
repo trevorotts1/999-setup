@@ -14,8 +14,7 @@
  *   6. version/checksum metadata.
  *
  * "No source compile on the customer machine": skills/plugin are copied from
- * the repo checkout (spec-21 first hop); app and speech assets are installed
- * from the repo checkout. Speech assets use the checksum-verified WS-33
+ * the repo checkout (spec-21 first hop). Speech assets use the checksum-verified WS-33
  * gate (download.mjs -> verify.mjs -> atomic-install.mjs). App installation
  * is unavailable until a future candidate is independently release-authorized
  * — never accept a caller-selected bundle (fail closed, WS-33 doctrine).

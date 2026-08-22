@@ -9,9 +9,10 @@
  *   check     update detection (spec 21 step 1): installed spec-protocol
  *             vs published VERSION. Exit 0 current; 1 update available;
  *             2 undetermined (never "current" out of a failed instrument).
- *   repair    install/repair missing or stale Candice components on the
- *             next supported invocation (spec 21 steps 3-6): skills,
- *             plugin + integrations, app, speech assets, state metadata.
+ *   repair    repair missing or stale release-authorized components on the
+ *             next supported invocation (skills, plugin + integrations,
+ *             speech assets, state metadata). It fails closed while the
+ *             Candice app has no release-authorized candidate.
  *             Options:
  *               --offline     record-only asset metadata (no downloads;
  *                             registry hashes were live-verified by WS-33)
