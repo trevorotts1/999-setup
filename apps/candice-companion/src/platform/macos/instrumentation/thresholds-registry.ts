@@ -11,7 +11,7 @@ import { MEASURED_BASELINE_MACOS_AS_2026_08_21, REGRESSION_THRESHOLDS } from './
 
 export const MACHINE_READABLE_THRESHOLDS_JSON = JSON.stringify(
   {
-    schemaVersion: 1,
+    schemaVersion: 3,
     platform: MEASURED_BASELINE_MACOS_AS_2026_08_21.platform,
     measuredAt: MEASURED_BASELINE_MACOS_AS_2026_08_21.measuredAt,
     machine: MEASURED_BASELINE_MACOS_AS_2026_08_21.machine,
