@@ -12,6 +12,13 @@
 # existing app instance. It runs async (hooks.json "async": true), and a
 # nonzero exit or slow start must never block or delay Claude Code. FIX-011
 # must implement authenticated session/host binding and instance routing.
+# FIX-009-CAPABILITIES-BEGIN
+# session-binding=false
+# terminal-host-binding=false
+# bridge-delivery=false
+# answer-routing=false
+# existing-instance-routing=false
+# FIX-009-CAPABILITIES-END
 #
 # The companion binary is intentionally not a hard dependency of this
 # workstream. The launch command is resolved from the plugin environment;

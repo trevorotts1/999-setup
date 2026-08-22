@@ -224,6 +224,70 @@ check('wake script truthfully limits itself to wake-only until FIX-011', () => {
   assert.ok(!wake.includes('--host-window'), 'wake-only launch must not pass host-window identity')
 })
 
+function assertWakeOnlyCapabilityContract(wake) {
+  const match = wake.match(/# FIX-009-CAPABILITIES-BEGIN\n([\s\S]*?)# FIX-009-CAPABILITIES-END/)
+  assert.ok(match, 'wake header must contain the bounded FIX-009 capability contract')
+  const expectedBlock = [
+    '# session-binding=false',
+    '# terminal-host-binding=false',
+    '# bridge-delivery=false',
+    '# answer-routing=false',
+    '# existing-instance-routing=false',
+    '',
+  ].join('\n')
+  assert.strictEqual(match[1], expectedBlock,
+    'the authoritative contract block must contain only the five explicit false capabilities')
+  const entries = match[1]
+    .split('\n')
+    .filter((line) => line.startsWith('# ') && line.includes('='))
+    .map((line) => line.slice(2).split('='))
+  const capabilities = Object.fromEntries(entries)
+  assert.deepStrictEqual(capabilities, {
+    'session-binding': 'false',
+    'terminal-host-binding': 'false',
+    'bridge-delivery': 'false',
+    'answer-routing': 'false',
+    'existing-instance-routing': 'false',
+  }, 'each pre-FIX-011 capability must be explicitly and exclusively false')
+}
+
+check('wake header rejects every positive pre-FIX-011 capability claim', () => {
+  const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
+  assertWakeOnlyCapabilityContract(wake)
+
+  // Mutation proof: each prohibited positive claim turns the authoritative
+  // header contract invalid even if its natural-language denial remains.
+  for (const capability of [
+    'session-binding',
+    'terminal-host-binding',
+    'bridge-delivery',
+    'answer-routing',
+    'existing-instance-routing',
+  ]) {
+    const positiveClaim = wake.replace(`${capability}=false`, `${capability}=true`)
+    assert.throws(() => assertWakeOnlyCapabilityContract(positiveClaim),
+      `${capability}=true must fail before FIX-011 implements it`)
+  }
+
+  // These are the concrete false promises identified by independent QC. An
+  // added positive sentence inside the authoritative header contract must
+  // fail even if every existing `=false` line is retained.
+  for (const claim of [
+    'the hook binds the Claude session',
+    'the hook binds the terminal host',
+    'the bridge/MCP is available',
+    'questions and answers are routed',
+    'the hook raises the existing instance',
+  ]) {
+    const positiveClaim = wake.replace(
+      '# FIX-009-CAPABILITIES-END',
+      `# ${claim}\n# FIX-009-CAPABILITIES-END`,
+    )
+    assert.throws(() => assertWakeOnlyCapabilityContract(positiveClaim),
+      `positive claim must fail before FIX-011: ${claim}`)
+  }
+})
+
 if (failures > 0) {
   console.log(`\n${failures} CHECK(S) FAILED`)
   process.exit(1)
