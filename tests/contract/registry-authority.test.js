@@ -12,7 +12,10 @@ for (const entry of registry.activeEntries()) {
     assert.strictEqual(registry.verifyQuestion(built.question).ok, true)
     for (const [field, value] of Object.entries({
       text: 'altered wording', answerKind: 'yes_no', allowedInputModes: ['typed'],
-      readAloud: !built.question.readAloud, sensitivity: 'secret',
+      readAloud: !built.question.readAloud,
+      // FIX-017: flip away from the canonical value — secret keys now exist in
+      // the registry, so a hardcoded 'secret' would be an identity mutation.
+      sensitivity: built.question.sensitivity === 'secret' ? 'normal' : 'secret',
       counted: !built.question.counted, helpText: 'altered help', canGoBack: !built.question.canGoBack,
     })) {
       const changed = { ...built.question, [field]: value }

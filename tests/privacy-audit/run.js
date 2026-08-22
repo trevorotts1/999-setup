@@ -15,7 +15,17 @@
 const { execFileSync } = require('child_process')
 const path = require('path')
 
-const SUITES = ['audit-a-audio.js', 'audit-b-secrets.js', 'audit-c-profile.js']
+const SUITES = [
+  'audit-a-audio.js',
+  'audit-b-secrets.js',
+  'audit-c-profile.js',
+  // FIX-017 prohibited-speech corpus suites (builder lane, worktree
+  // candice/wt-tests-harness; base b54aec0).
+  'fix-017/secret-boundary.test.js',
+  'fix-017/artifact-scan.test.js',
+  'fix-017/replay-and-faults.test.js',
+  'fix-017/guardfix-negatives.test.js',
+]
 
 let failed = 0
 let exitCode = 0
