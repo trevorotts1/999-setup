@@ -711,3 +711,62 @@ Carrier changes by this record (all announced): SESSION-LOG.md (this append). Ba
 ---
 *End of appended record 2026-08-21 (DISPATCH-DISCIPLINE fixer-recheck ordering race, recorder seat). File remains append-only.*
 
+## W2-W5 RECONCILIATION — phase records W2/W3/W4/W5 (2026-08-22, reconciliation agent, sonnet/max, audit follow-up of `wf_8c25647a-ec8`)
+
+Audit `wf_8c25647a-ec8` (candice-final-audit-smoke-merge) found W2-W5 runs had no control-plane records: SESSION-LOG ended at W1, EXECUTION-PLAN board ended at W1 FULLY CLOSED, project_state `wave_label="wave-1-closed"`. This record appends the W2-W5 phase records from live-store truth (`~/.claude/projects/-Users-blackceomacmini/e795d99d-a774-457a-81f9-a116e882fdd7/workflows/*.json` terminal records + `subagents/workflows/wf_*/` run journals). **No E.1 box flips claimed** — CHECKLIST.md E.1 boxes for W2-W5 units remain unchecked; what the live store proves is recorded: builds + QC verdicts exist in run journals.
+
+### W2 phase (wave-2) — 23 workstreams, slices WR-013..WR-020
+
+Wave map (task-graph-snapshot.json): W2 = WS-04, WS-05, WS-09, WS-10, WS-12, WS-13, WS-14, WS-15, WS-18, WS-20, WS-21, WS-22, WS-25, WS-26, WS-27, WS-31, WS-33, WS-34, WS-35, WS-36, WS-41, WS-44, WS-45 across slices WR-013..WR-020.
+
+Runs (live-store terminal records):
+
+- `wf_bdba633b-08b` candice-w2-wr013-build, 6 agents, 2026-08-21T22:18:17Z: WS-04 FAIL critical (MCP params framing `msg.params.params` vs canonical `params.arguments` — fixed by QC, fresh recheck owed), WS-05 OK, WS-34 OK
+- `wf_752b210a-dc1` candice-w2-wr014-build, 6 agents: WS-09 WARN medium (FAIL→FIXED, 3 integration defects), WS-10 FAIL medium (3 defects fixed), WS-15 OK low
+- `wf_1ae6568b-901` candice-w2-wave2-build, **15 agents** (PV-002 — exceeds MAX_AGENTS_PER_WORKFLOW=10), 23:13:59Z: WS-14 OK, WS-20 OK, WS-21 OK, WS-26 OK low, WS-33 OK, WS-45 WARN low (fresh recheck owed per 0J), WS-18 WARN low
+- `wf_97d3c911-98b` candice-w2-chained-a, 8 agents, 23:51:57Z: WS-22 OK, WS-25 OK low, WS-27 OK, WS-31 OK
+- `wf_c7ef7f1f-641` candice-w2-chained-b, 6 agents: WS-35 OK, WS-36 OK, WS-44 OK
+- `wf_31fd4aed-ca7` candice-wr020-build, 4 agents, 00:17:34Z: WS-32 OK, WS-47 OK
+- `wf_2d637985-320` candice-ws41-ws18-fix, 3 agents: WS-41 OK low (37/37), WS-18 OK
+- `wf_36057ab1-3b0` candice-ws04-recheck, 1 agent, 22:58:06Z: WS-04 fresh blind recheck OK
+- `wf_c53345c8-8d3` candice-ws09-ws10-recheck, 2 agents: WS-09 OK, WS-10 WARN medium (new edge defect in F3 fix)
+- `wf_8023a324-a7b` candice-ws10-dup-guard, 2 agents: WS-10 dup fix OK + recheck OK
+
+Closure: W2 builds + QC verdicts exist in run journals for all 23 W2 workstreams except WS-12/WS-13 (W1 KEEP-adjudicated; W2 per-slice blind QC-evaluate binding stands — no W2 per-slice QC-evaluate run found in live store, E.1 boxes unchecked) and WS-45 (WARN low, fresh recheck owed per 0J, not accepted). No E.1 flips.
+
+### W3 phase (wave-3) — slices WR-020 (tail), WR-021, WR-022
+
+Wave map: W3 = WS-32, WS-37, WS-38, WS-42, WS-43, WS-46, WS-47, WS-49 (WR-020, WR-021, WR-022).
+
+Runs:
+
+- `wf_3187f5bb-55e` candice-w3-wr021-build, 8 agents, 00:17:34Z: WS-37 OK, WS-38 OK, WS-39 OK low, WS-42 OK
+- `wf_876f61a0-eed` candice-w3-wr022-build, 6 agents: WS-43 OK, WS-46 OK (E.1 unchecked, no deliverable at QC time), WS-49 OK
+- `wf_614def51-ccd` candice-ws46-ci-matrix, 1 agent: WS-46 OK — candice-ci.yml built (untracked in worktree)
+
+Closure: W3 builds + QC verdicts exist in run journals. No E.1 flips.
+
+### W4 phase (wave-4) — WS-39
+
+Wave map: W4 = WS-39 (WR-021). No dedicated W4 run — WS-39 built + QC'd inside `wf_3187f5bb-55e` (W3 WR-021 run, OK low). Closure: build + QC verdict exists in run journal. No E.1 flip.
+
+### W5 phase (wave-5) — WS-50 + release
+
+Wave map: W5 = WS-50 (WR-023).
+
+Runs:
+
+- `wf_e348b899-792` candice-ws50-release-gate, 2 agents, 00:40:38Z: WS-50 OK low (6/6 legs)
+- `wf_8b6e9255-8bc` candice-w5-release, 2 agents, 00:54:53Z: release-captain OK, stamp proposals OK medium (proposal-only)
+- `wf_b930b6c1-b32` candice-w5-merge-execute, 2 agents, 00:58:34Z: FAIL (stopped before any write — concurrent duplicate), post-merge-verify FAIL high
+- `wf_cd456cd9-dc7` candice-w5-merge-execute-2, 1 agent, 01:04:48Z: OK — stamp commit 996cc0e, one merge 3a04f57 (--no-ff), annotated tag candice-v0.2.0 → 3a04f57, pushed
+- `wf_8c25647a-ec8` candice-final-audit-smoke-merge, 3 agents, 02:37:35Z: compliance audit FAIL high (the missing W2-W5 records — fixed by this reconciliation), smoke-test FAIL high (perf gates red: time-to-first-visible not measured, listening cpuPercentMean 52.8/70.8 > 35 WS-24 threshold), batch-merge FAIL medium (BLOCKED — smoke gate unmet)
+- `wf_67b25c43-e28` candice-hash-fix-lane, 1 agent: OK — real DMG sha256 f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf
+
+Closure: **one-merge PROVEN** — main first-parent has exactly ONE candice merge (3a04f57, parents 6bb00ec + 996cc0e); annotated tag candice-v0.2.0 derefs 3a04f57. Audit smoke FAILED (perf gates red) → `release_ready` stays false (note in project_state.json). No E.1 flips.
+
+Carrier changes by this record (all announced): SESSION-LOG.md (this append), EXECUTION-PLAN.md (board rows WR-013..WR-023 + W5 release rows + board-update note), project_state.json (candice.wave=5, wave_label="wave-5-closed", accepted_units +30 entries, release_ready note, PV-002). Backup before edits: `CONTROL/backup-control-reconcile-w2w5-20260821/` (SESSION-LOG.md md5 861e1f3948d253bfd8e2034b90f42144, EXECUTION-PLAN.md md5 25425a045bc44be2222fc40730f9f866, project_state.json md5 d8d7a9ea758aa31e9d06e290bb3303b3 — all byte-identical pre-edit). No commits made.
+
+---
+*End of appended record 2026-08-22 (W2-W5 RECONCILIATION, sonnet/max reconciliation agent). File remains append-only.*
+

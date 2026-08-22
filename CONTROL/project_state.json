@@ -1,11 +1,11 @@
 {
  "schema": "spec-protocol/project-state@1",
  "project": "999-master-fix",
- "updated": "2026-08-21T22:56:02Z",
- "updated_by": "record seat (wf_c3b3ed8b-978, W1 FULLY CLOSED)",
+ "updated": "2026-08-22T02:57:57Z",
+ "updated_by": "reconciliation agent (W2-W5 RECONCILIATION, audit follow-up of wf_8c25647a-ec8)",
  "run_status": "RUNNING",
  "round": 0,
- "phase": "wave-2",
+ "phase": "wave-5",
  "scores": {
   "current": 0.0,
   "best": 0.0,
@@ -86,8 +86,8 @@
   "project": "Candice Companion",
   "run": 0,
   "epoch": 0,
-  "wave": 1,
-  "wave_label": "wave-1-closed",
+  "wave": 5,
+  "wave_label": "wave-5-closed",
   "workflow_runs": {
    "intended": [
     "wf_bb855713-af9",
@@ -204,7 +204,7 @@
     "wf_66e51e17-7cc": "WR-007 planning COMPLETED (5 opus builders + 5 sonnet QC, all resulted; truth-update 2026-08-21 moved to completed)",
     "wf_bef69fc1-fd8": "planning-rolling-recheck (5 opus builders re-validating WR-007 planning deliverables; child of wf_66e51e17-7cc)",
     "wf_d6dd0a72-000": "truth-enumeration/truth-update lane (1 opus)",
-    "wf_b54a3ed2-d83": "W1 shape reconcile (2 opus seats; this lane \u2014 per-slice re-key writes in flight)"
+    "wf_b54a3ed2-d83": "W1 shape reconcile (2 opus seats; this lane — per-slice re-key writes in flight)"
    },
    "completed": {
     "wf_bb855713-af9": "WR-001 bootstrap",
@@ -228,9 +228,9 @@
     "wf_8222a8fa-215": "compliance audit (5 opus)",
     "wf_9f089d63-c0e": "state reconcile (project_state regen, session-log corrections, board handle corrections)",
     "wf_fe50c14e-42c": "WR-008 W1-A per-slice QC (WS-01 PASS; WS-02 WARN -> ownership cell fixed via manifest 9.2 WR-011 bin/** claim; WS-06 FAIL -> FIXED -> fresh recheck queued)",
-    "wf_0124be94-ce4": "SHAPE-NON-COMPLIANT-SUPERSEDED \u2014 candice-build-wave1 mega-run 33 seats > MAX 10 (spec 0A/0B); PV-001; artifacts retained, superseded by per-slice lanes",
+    "wf_0124be94-ce4": "SHAPE-NON-COMPLIANT-SUPERSEDED — candice-build-wave1 mega-run 33 seats > MAX 10 (spec 0A/0B); PV-001; artifacts retained, superseded by per-slice lanes",
     "wf_1faca85a-a25": "W1 completion conductor KILLED (terminal record killed, agentCount 11; 5 verdicts landed: WS-16 OK, WS-17 OK, WS-01 OK, WS-02 OK, WS-29 FAIL); retry tree orphaned",
-    "wf_b113f3f8-24d": "W1-retry WS-11 rebuild \u2014 builder seat errored (Prompt is too long), empty result; superseded by wf_a0e7f3f3-f85",
+    "wf_b113f3f8-24d": "W1-retry WS-11 rebuild — builder seat errored (Prompt is too long), empty result; superseded by wf_a0e7f3f3-f85",
     "wf_a0e7f3f3-f85": "WS-11 follow-up rebuild (WR-010 slice): 16+1 asset manifest + loader, B+QC PASS (terminal record completed)",
     "wf_34182d8e-604": "WR-010 (W1-C) per-slice QC gate: WS-08 PASS, WS-03 FAIL->FIXED->recheck PASS, WS-40 FAIL->FIXED->recheck FAIL, WS-11 FAIL->BUILT-BY-QC->follow-up PASS (wf_cee37201-e2c)",
     "wf_cee37201-e2c": "WR-010 fresh-recheck wave (5 seats): WS-03 recheck PASS, WS-40 recheck FAIL (mergeProfile v99 destruction persists), WS-11 recheck FAIL-low (stale orphan)",
@@ -238,7 +238,7 @@
     "wf_c3b3ed8b-978": "WR-011 (W1-D) per-slice QC gate: WS-07 PASS 17/17, WS-24 FAIL->FIXED->recheck, WS-28 WARN->recheck, WS-30 WARN->recheck",
     "wf_09f801d8-1ce": "W1 retry QC wave (10 seats at cap): WS-01 PASS, WS-02 PASS, WS-06 PASS, WS-12/WS-13 BUILT-EARLY->W2-eval, WS-24/28/29/30/48 FAIL->FIXED->recheck",
     "wf_8a3bd640-474": "WR-012 (W1-E) + WR-024 (W1-F) QC gates: WS-48 OK, WS-23 gate (verdict pending at 17:45Z), WS-29 verdict via wf_09f801d8-1ce",
-    "wf_b54a3ed2-d83": "W1 shape reconcile (rec:violation + rec:shape) \u2014 violation record + per-slice re-key landed"
+    "wf_b54a3ed2-d83": "W1 shape reconcile (rec:violation + rec:shape) — violation record + per-slice re-key landed"
    }
   },
   "safe_width": {
@@ -267,7 +267,7 @@
     {
      "run": "wf_fe50c14e-42c",
      "unit": "WS-06",
-     "reason": "QC modified package.json (tauri:build script) \u2014 0J box-flip rule; fresh independent sonnet/max recheck required before E.1 WS-06 box flips",
+     "reason": "QC modified package.json (tauri:build script) — 0J box-flip rule; fresh independent sonnet/max recheck required before E.1 WS-06 box flips",
      "status": "discharged",
      "date": "2026-08-21",
      "discharged_by": "wf_fcc69bf4-ba6",
@@ -319,7 +319,7 @@
      "run": "wf_9766daa9-66b",
      "slice": "WS-28 two-chain arbitration + winner recheck",
      "unit": "WS-28",
-     "verdict": "FAIL (low) \u2014 winner-recheck, doc-only",
+     "verdict": "FAIL (low) — winner-recheck, doc-only",
      "seat": "agent-ad800a1a2cc04de89",
      "evidence": "arbitration seat agent-a8fc65be4882bb0f2: WINNER = B-Rust (authority line 277 + snapshot owned_paths; B live at owned glob; A superseded backup-only). Winner recheck 4/5 checks green (fresh cargo 5/0 + wasapi 8/0 + sibling 25/25; zero ENGINE_WINDOW_MS in live crate; ownership clean; 60s valve pinned to WS-17); check 4 fails: CHECKPOINT-WS-28.md lacks QC1 4-defect + QC2 6-defect chain enumeration; remediation = defect-chain section + fresh recheck before E.1 flip (0J)"
     },
@@ -437,7 +437,7 @@
     {
      "run": "wf_e121baf0-14a",
      "slice": "W1 WS-28 checkpoint remediation + fresh recheck",
-     "unit": "WS-28 checkpoint-chain fix \u2014 fresh blind recheck",
+     "unit": "WS-28 checkpoint-chain fix — fresh blind recheck",
      "verdict": "PASS 6/6",
      "seat": "agent-a10c07f677268ee4d",
      "evidence": "chain section present lines 142-185 w/ source independently confirmed vs SESSION-LOG line 355; 4 backup dirs each audio/** 9 files; fresh cargo test 5/0 + wasapi 8/0; zero ENGINE_WINDOW_MS in live crate; ownership clean per manifest 9.2 row 277 + snapshot node 27; E.1 flip-eligible; severity none",
@@ -491,7 +491,7 @@
    {
     "unit": "WS-28",
     "run": "wf_ccb74bff-9eb",
-    "verdict": "PASS \u2014 winner-only (B-Rust, arbitration wf_9766daa9-66b; chain A TS round-3 superseded backup-only; stale A claims corrected: manifest row 240 = version table, not glob; both root+worktree manifests pin src-tauri/audio/capture-windows/** line 277)",
+    "verdict": "PASS — winner-only (B-Rust, arbitration wf_9766daa9-66b; chain A TS round-3 superseded backup-only; stale A claims corrected: manifest row 240 = version table, not glob; both root+worktree manifests pin src-tauri/audio/capture-windows/** line 277)",
     "accepted": "2026-08-21"
    },
    {
@@ -577,6 +577,186 @@
     "run": "wf_e364c020-184",
     "verdict": "PASS (post-relocation fresh recheck 7/7; relocation to scripts/package-macos/**; provenance 8/8; self-test 11/11; cargo 2/2)",
     "accepted": "2026-08-21"
+   },
+   {
+    "unit": "WS-04",
+    "run": "wf_36057ab1-3b0",
+    "verdict": "OK fresh blind recheck (build FAIL critical fixed: MCP params framing msg.params.params -> canonical params.arguments)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-05",
+    "run": "wf_bdba633b-08b",
+    "verdict": "OK (W2 WR-013 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-09",
+    "run": "wf_c53345c8-8d3",
+    "verdict": "OK recheck (build WARN medium FAIL->FIXED, 3 integration defects fixed)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-10",
+    "run": "wf_8023a324-a7b",
+    "verdict": "OK dup fix + recheck (build FAIL medium, 3 defects fixed; recheck WARN medium new edge defect -> dup-guard fix)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-14",
+    "run": "wf_1ae6568b-901",
+    "verdict": "OK (W2 wave2 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-15",
+    "run": "wf_752b210a-dc1",
+    "verdict": "OK low (W2 WR-014 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-18",
+    "run": "wf_2d637985-320",
+    "verdict": "OK (build WARN low -> fix run)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-20",
+    "run": "wf_1ae6568b-901",
+    "verdict": "OK (W2 wave2 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-21",
+    "run": "wf_1ae6568b-901",
+    "verdict": "OK (W2 wave2 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-22",
+    "run": "wf_97d3c911-98b",
+    "verdict": "OK (W2 chained-a)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-25",
+    "run": "wf_97d3c911-98b",
+    "verdict": "OK low (W2 chained-a)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-26",
+    "run": "wf_1ae6568b-901",
+    "verdict": "OK low (W2 wave2 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-27",
+    "run": "wf_97d3c911-98b",
+    "verdict": "OK (W2 chained-a)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-31",
+    "run": "wf_97d3c911-98b",
+    "verdict": "OK (W2 chained-a)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-32",
+    "run": "wf_31fd4aed-ca7",
+    "verdict": "OK (W2 WR-020 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-33",
+    "run": "wf_1ae6568b-901",
+    "verdict": "OK (W2 wave2 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-34",
+    "run": "wf_bdba633b-08b",
+    "verdict": "OK (W2 WR-013 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-35",
+    "run": "wf_c7ef7f1f-641",
+    "verdict": "OK (W2 chained-b)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-36",
+    "run": "wf_c7ef7f1f-641",
+    "verdict": "OK (W2 chained-b)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-37",
+    "run": "wf_3187f5bb-55e",
+    "verdict": "OK (W3 WR-021 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-38",
+    "run": "wf_3187f5bb-55e",
+    "verdict": "OK (W3 WR-021 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-39",
+    "run": "wf_3187f5bb-55e",
+    "verdict": "OK low (W3 WR-021 build; W4 unit)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-41",
+    "run": "wf_2d637985-320",
+    "verdict": "OK low 37/37 (W2 fix run)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-42",
+    "run": "wf_3187f5bb-55e",
+    "verdict": "OK (W3 WR-021 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-43",
+    "run": "wf_876f61a0-eed",
+    "verdict": "OK (W3 WR-022 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-44",
+    "run": "wf_c7ef7f1f-641",
+    "verdict": "OK (W2 chained-b)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-46",
+    "run": "wf_876f61a0-eed",
+    "verdict": "OK (W3 WR-022 build; E.1 unchecked, no deliverable at QC time) + wf_614def51-ccd OK (candice-ci.yml CI matrix, untracked in worktree)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-47",
+    "run": "wf_31fd4aed-ca7",
+    "verdict": "OK (W2 WR-020 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-49",
+    "run": "wf_876f61a0-eed",
+    "verdict": "OK (W3 WR-022 build)",
+    "accepted": "2026-08-22"
+   },
+   {
+    "unit": "WS-50",
+    "run": "wf_e348b899-792",
+    "verdict": "OK low 6/6 legs (W5 release gate)",
+    "accepted": "2026-08-22"
    }
   ],
   "integration": {
@@ -587,12 +767,12 @@
    "result": "5/5 suites PASS",
    "recorded": "2026-08-21"
   },
-  "last_reconciliation": "2026-08-21",
+  "last_reconciliation": "2026-08-22",
   "release_ready": false,
-  "updated": "2026-08-21T22:56:02Z",
+  "updated": "2026-08-22T02:57:57Z",
   "max_agents_per_workflow": {
    "value": 10,
-   "definition": "MAX_AGENTS_IN_ANY_ONE_WORKFLOW \u2014 5 builders + 5 QC seats (spec 0A/0B; EXECUTION-PLAN.md section 3.1)",
+   "definition": "MAX_AGENTS_IN_ANY_ONE_WORKFLOW — 5 builders + 5 QC seats (spec 0A/0B; EXECUTION-PLAN.md section 3.1)",
    "evidence": "WR-007 wf_66e51e17-7cc peak: 5 opus builders + 5 sonnet QC concurrently, all 10 resulted; no run ever exceeded 10 (truth enumeration 2026-08-21, option A resolution)",
    "resolved": "2026-08-21"
   },
@@ -608,10 +788,26 @@
     "seats": 33,
     "expected": "6 sibling runs (WR-008 3, WR-009 3, WR-010 4, WR-011 4, WR-012 1, WR-024 2 = 17 build seats + rolling QC), each <=10 seats per spec 0B per-slice dispatch",
     "evidence": "terminal record .../workflows/wf_0124be94-ce4.json agentCount=33 status=completed; journal 33 started/25 resulted; live store dir 33 agent meta (17 opus builders + 16 sonnet QC)",
-    "correction": "W1 units re-keyed per-slice; compliant retry runs wf_09f801d8-1ce (10 seats, at cap) + wf_b113f3f8-24d (1 seat \u2014 B-WR-010-WS-11 resume) + per-slice QC runs wf_fe50c14e-42c (WR-008 3), wf_c3b3ed8b-978 (WR-011 4), wf_34182d8e-604 (WR-010 4), wf_6337099c-1db (WR-009 3), wf_8a3bd640-474 (WR-012 1 + WR-024 1); all <=10 (live store: 36 dirs, only wf_0124be94-ce4/33 exceeds; wf_1faca85a-a25 + wf_66e51e17-7cc carry 11 files each but peak 10 concurrent, documented)",
+    "correction": "W1 units re-keyed per-slice; compliant retry runs wf_09f801d8-1ce (10 seats, at cap) + wf_b113f3f8-24d (1 seat — B-WR-010-WS-11 resume) + per-slice QC runs wf_fe50c14e-42c (WR-008 3), wf_c3b3ed8b-978 (WR-011 4), wf_34182d8e-604 (WR-010 4), wf_6337099c-1db (WR-009 3), wf_8a3bd640-474 (WR-012 1 + WR-024 1); all <=10 (live store: 36 dirs, only wf_0124be94-ce4/33 exceeds; wf_1faca85a-a25 + wf_66e51e17-7cc carry 11 files each but peak 10 concurrent, documented)",
     "binding": "W2+ dispatch per-slice only; one workflow run per slice; no fan-out script folding slices into one run",
     "recorded_by": "reconciliation agent (opus/max)"
+   },
+   {
+    "id": "PV-002",
+    "type": "WORKFLOW-POLICY-VIOLATION",
+    "date": "2026-08-21",
+    "rule": "MAX_AGENTS_PER_WORKFLOW=10 (spec 0A/0B; EXECUTION-PLAN.md section 3.1)",
+    "run": "wf_1ae6568b-901",
+    "workflow": "candice-w2-wave2-build",
+    "task_id": "unrecorded",
+    "seats": 15,
+    "expected": "per-slice dispatch, one workflow per slice, <=10 seats/run (0A/0B; PV-001 binding)",
+    "evidence": "terminal record .../workflows/wf_1ae6568b-901.json agentCount=15 status=completed (2026-08-21T23:13:59Z); undispersed violation — no board row existed before the W2-W5 reconciliation (2026-08-22)",
+    "correction": "recorded post-hoc by reconciliation agent; no corrective re-dispatch possible (run completed); W2-W5 board rows now carry the run with PV-002 flagged",
+    "binding": "W2+ dispatch per-slice only; one workflow run per slice; no fan-out script folding slices into one run",
+    "recorded_by": "reconciliation agent (sonnet/max, W2-W5 RECONCILIATION 2026-08-22)"
    }
-  ]
+  ],
+  "release_ready_note": "one-merge PROVEN (main first-parent has exactly ONE candice merge 3a04f57, parents 6bb00ec + 996cc0e; annotated tag candice-v0.2.0 derefs 3a04f57) but audit smoke FAILED (wf_8c25647a-ec8 smoke-test FAIL high: perf gates red — time-to-first-visible not measured, listening cpuPercentMean 52.8/70.8 > 35 WS-24 threshold). release_ready stays false until smoke gates pass."
  }
 }
