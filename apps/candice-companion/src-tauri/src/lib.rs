@@ -12,6 +12,7 @@
 //! presentation infrastructure: a failure here must never stop Claude
 //! (spec 20).
 
+mod runtime;
 mod shell;
 
 use tauri::{Emitter, Manager};
@@ -42,18 +43,24 @@ pub fn initialize_shell(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// plugins, creates the window, and hands over to the runtime.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The plugin's non-blocking hook can launch `candice-companion --wake
+    // <command>`. Parse it once before the app is built; runtime.rs exposes
+    // the truth to the webview and never calls it a session binding.
+    let launch = runtime::parse_runtime_launch(std::env::args().skip(1));
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             shell::cmd_get_shell_info,
             shell::cmd_show_window,
             shell::cmd_hide_window,
+            runtime::cmd_get_runtime_capabilities,
         ])
         .setup(|app| {
             initialize_shell(app.handle())?;
-            // Window starts hidden (tauri.conf.json); the session bridge
-            // raises it on the first candice event. Until the bridge lane
-            // lands, show on setup so the shell is visible and provable.
+            runtime::initialize_runtime(app.handle(), launch)?;
+            // Window starts hidden (tauri.conf.json). FIX-009 has only a
+            // launch-argument wake capability, not a session bridge, so show
+            // the visual shell on setup rather than claim event-driven bind.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
             }

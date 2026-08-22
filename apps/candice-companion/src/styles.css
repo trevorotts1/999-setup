@@ -74,6 +74,14 @@ body {
   animation: candice-breathe 3.2s ease-in-out infinite;
 }
 
+.candice-runtime-status {
+  margin: 0;
+  padding: 8px 12px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--candice-muted);
+}
+
 @keyframes candice-breathe {
   0%,
   100% {

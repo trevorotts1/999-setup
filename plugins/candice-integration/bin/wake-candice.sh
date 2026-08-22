@@ -44,8 +44,10 @@ fi
 
 # Launch detached. Output is discarded: nothing from Candice wake-up is ever
 # attached to Claude's context, so a chatty companion cannot pollute the
-# session. Session/window binding is handled by the companion itself on
-# --wake (WS-03 bridge owns the binding contract).
+# session. `--wake` is currently only a validated native wake request; it is
+# NOT a session binding and does not make the MCP bridge available. FIX-011
+# must add authenticated same-session bridge delivery before this hook may
+# claim anything stronger.
 "$LAUNCH_CMD" --wake "$COMMAND" >/dev/null 2>&1 &
 
 exit 0

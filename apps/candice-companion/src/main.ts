@@ -21,6 +21,7 @@ import {
 } from './shell/boot-health';
 import { showTextFallback } from './shell/text-fallback';
 import { mountVisualStage } from './shell/visual-stage';
+import { initializeRuntimeComposition } from './runtime/composition';
 import {
   registerShellCommands,
   type ShellCommandRegistry,
@@ -78,6 +79,7 @@ export async function bootCandice(): Promise<void> {
     // sole proof of readiness.
     const shellInfo = await probeNativeShell();
     registry = registerShellCommands(machine, shellInfo);
+    await initializeRuntimeComposition(root, machine);
     setStatus('shell-ready');
 
   } catch (err) {
