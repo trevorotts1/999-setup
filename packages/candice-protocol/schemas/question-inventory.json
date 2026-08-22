@@ -3,6 +3,8 @@
   "doctrineDigest":"d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87",
   "records":[
     {"key":"BUILD_TARGET","skill":"spec-protocol","status":"active","source":".claude/skills/spec-protocol/references/interview.md#entry-and-discovery"},
+    {"key":"SECRET_INPUT","skill":"spec-protocol","status":"active","source":"plugins/candice-integration/privacy/final-boundary-guard.js#fix-017-secret-boundary"},
+    {"key":"PERSONAL_INPUT","skill":"spec-protocol","status":"active","source":"plugins/candice-integration/privacy/final-boundary-guard.js#fix-017-personal-boundary"},
     {"key":"KAZEN_TARGET","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#1-target"},
     {"key":"KAZEN_LOCATION","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#2-location"},
     {"key":"KAZEN_BETTER","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#3-better"},
