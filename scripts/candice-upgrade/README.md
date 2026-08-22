@@ -100,3 +100,20 @@ node --test "scripts/candice-upgrade/__tests__/*.test.mjs"
 - Detection contacts ONLY the operator-controlled published VERSION
   (`raw.githubusercontent.com/trevorotts1/999-setup/main/...`); downloads
   only operator-controlled payloads with SHA-256 verification.
+
+## Hermetic vs live (FIX-021)
+
+The **release-blocking suite** is hermetic: `__tests__/*.test.mjs` and
+`tests/upgrade-fixtures/*.test.mjs` run against temp install roots and a
+pinned local channel fixture (`tests/upgrade-fixtures/fixtures/channel/VERSION`),
+never the runner's real HOME and never `raw.githubusercontent.com`.
+
+The **live channel** is an operations concern only:
+
+```
+node scripts/candice-ci/channel-monitor.mjs [--root <dir>] [--fail-on-stale]
+```
+
+Exit codes: 0 current / 1 stale / 2 undetermined. The monitor is not a step
+in any required CI job and its verdict never participates in a release
+decision.

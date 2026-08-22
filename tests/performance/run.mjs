@@ -17,10 +17,18 @@
  * run unless it is explicitly in the honest-skip table of this lane
  * (only for platform-native probes that need a host this box is not,
  * e.g. Windows native probes on macOS — WS-30's own declared rule).
+ *
+ * FIX-021 additions:
+ *   --require-bundle <path>  the exact release artifact the perf gate
+ *     measures. Asserts the path exists, records its SHA-256 in the report
+ *     before any measurement, and fails the run when absent. Required
+ *     Windows phases record BLOCKED reasons (verdict.blockedReasons), not
+ *     skips — a blocked required phase can never look like a pass.
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createReport } from './lib/schema.mjs';
 import { measureStt, measureTts, measureAppIdle } from './lib/engines.mjs';
@@ -34,16 +42,70 @@ import {
 import { hostPlatform } from './lib/platform.mjs';
 
 const has = (name) => process.argv.includes(`--${name}`);
+const argValue = (name) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
 const QUICK = has('quick');
 const IDLE_MS = Number(process.env.CANDICE_PERF_IDLE_MS || (QUICK ? 3000 : 8000));
 const ENGINE_MS = Number(process.env.CANDICE_PERF_ENGINE_MS || (QUICK ? 3000 : 5000));
 const INTERVAL_MS = Number(process.env.CANDICE_PERF_INTERVAL_MS || (QUICK ? 300 : 500));
 const REPORTS_DIR = path.resolve('tests/performance/reports');
 
+// FIX-021: bundle presence gate (build-before-measure, F21-02). The exact
+// release artifact is asserted and recorded before any measurement runs.
+function requireBundle(report) {
+  const bundlePath = argValue('require-bundle');
+  if (!bundlePath) return { ok: true };
+  if (!existsSync(bundlePath)) {
+    return {
+      ok: false,
+      note: `--require-bundle ${bundlePath}: release artifact not found (build the bundle before the perf gate)`,
+    };
+  }
+  const st = statSync(bundlePath);
+  if (!st.isDirectory()) {
+    return {
+      ok: false,
+      note: `--require-bundle ${bundlePath}: not an application bundle directory`,
+    };
+  }
+  const binary = path.join(bundlePath, 'Contents', 'MacOS', 'candice-companion');
+  if (!existsSync(binary)) {
+    return {
+      ok: false,
+      note: `--require-bundle ${bundlePath}: bundle binary missing at ${binary}`,
+    };
+  }
+  const sha = createHash('sha256').update(readFileOrDir(binary)).digest('hex');
+  report.bundle = { path: bundlePath, sha256: sha };
+  console.log(`[ws45] measured bundle: ${bundlePath} (binary sha256 ${sha})`);
+  return { ok: true };
+}
+
+// Hash the bundle's executable payload — the load-bearing identity of the
+// measured artifact. FIX-022 owns final release-artifact hashing; this
+// records the binary SHA-256 for determinism comparison only.
+function readFileOrDir(p) {
+  const st = statSync(p);
+  if (st.isFile()) return readFileSync(p);
+  return Buffer.from('directory');
+}
+
 async function main() {
   const report = createReport(['macos', 'windows']);
   const failures = [];
   const skips = [];
+  const blocked = [];
+
+  // ---- 0. FIX-021 bundle gate (build before measure) ---------------------
+  const bundleGate = requireBundle(report);
+  if (!bundleGate.ok) {
+    failures.push(bundleGate.note);
+    report.verdict.failures.push(...failures);
+    finalize(report, 1);
+    return;
+  }
 
   // ---- 1. unit tests (contract) -----------------------------------------
   if (!has('live-only')) {
@@ -216,11 +278,14 @@ async function main() {
   for (const r of macGate.results) {
     if (!r.gateOk) failures.push(`${r.phase}: ${r.violations.join('; ')}`);
   }
+  // FIX-021: Windows phases are BLOCKED on a macOS host, not skipped — a
+  // blocked required phase is recorded with a reason and the release gate
+  // refuses Windows production without the WS-46 interactive smoke.
   const windowsGate = gateReport({ platform: 'windows', windows: {}, registry: regWindows });
   report.phases.push(...windowsGate.results);
   for (const r of windowsGate.results) {
     if (!r.gateOk) {
-      skips.push(
+      blocked.push(
         `windows/${r.phase}: ${r.note} — requires a real Windows x64 host ` +
           '(WS-30 native probe; release-blocking at WS-46 smoke)',
       );
@@ -231,6 +296,7 @@ async function main() {
   report.verdict.ok = failures.length === 0;
   report.verdict.failures = failures;
   report.verdict.skippedReasons = skips;
+  report.verdict.blockedReasons = blocked;
   finalize(report, failures.length === 0 ? 0 : 1);
 }
 

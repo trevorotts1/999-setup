@@ -209,7 +209,6 @@ export function evaluateRelease(root) {
   } else if (/^\s*continue-on-error:\s*true/m.test(readFileSync(ciWorkflowPath, "utf8"))) {
     errors.push("candice-ci.yml contains continue-on-error: true (required verifiers must block)");
   }
-
   if (!Array.isArray(gate.artifacts) || gate.artifacts.length === 0) {
     errors.push("no signed release artifacts recorded");
   } else {
