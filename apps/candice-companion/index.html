@@ -13,6 +13,18 @@
         <span class="boot-glow" aria-hidden="true"></span>
         <p id="candice-boot-status" class="candice-status-surface" data-status="starting">Starting Candice…</p>
       </div>
+      <!--
+        Gesture stage host (FIX-016). Empty until mountGestureStage fills
+        it with canonical manifest layers; it is invisible on first paint,
+        so it can never render placeholder or generated art.
+      -->
+      <div
+        id="candice-gesture-stage"
+        class="candice-character"
+        data-candice-gesture-stage
+        data-candice-state="starting"
+        aria-hidden="true"
+      ></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

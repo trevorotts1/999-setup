@@ -93,6 +93,57 @@ body {
   animation: candice-breathe 3.2s ease-in-out infinite;
 }
 
+/*
+ * Gesture stage host (FIX-016, src/shell/gesture-stage.ts).
+ * The container is empty on first paint (index.html) and turns visible
+ * only when mountGestureStage has mounted canonical manifest layers.
+ * Only one gesture layer is ever visible (WS-13 layer-swap contract).
+ */
+.candice-character {
+  position: relative;
+  display: none; /* no placeholder art: visible only with mounted layers */
+}
+
+.candice-character:has(.candice-gesture-layer) {
+  display: block;
+  flex: 1;
+  min-height: 0;
+}
+
+.candice-gesture-layer {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: min(100%, 520px);
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 22px rgba(124, 92, 255, 0.42));
+}
+
+.candice-gesture-active {
+  opacity: 1;
+}
+
+.candice-gesture-inactive {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.candice-state-caption {
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--candice-ui-border);
+  border-radius: 8px;
+  background: var(--candice-ui-surface);
+  color: var(--candice-text);
+  font-size: calc(12px * var(--candice-text-scale));
+}
+
+.candice-state-caption[hidden] {
+  display: none;
+}
+
 .candice-runtime-status {
   margin: 0;
   padding: 8px 12px 12px;

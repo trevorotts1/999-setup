@@ -13,6 +13,15 @@ import {
   type RuntimeInvokeAdapter,
 } from './capabilities.ts';
 import { initializeAuthenticatedBridge } from './bridge.ts';
+import { AssetRegistry } from '../../assets/candice/loader.ts';
+import {
+  GESTURE_CHARACTER_CLASS,
+  mountGestureStage,
+} from '../shell/gesture-stage.ts';
+import {
+  bindStatusFlow,
+  type GestureStageHost,
+} from '../shell/candice-composition.ts';
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;
@@ -36,6 +45,40 @@ export async function initializeRuntimeComposition(
   status.setAttribute('aria-live', 'polite');
   status.textContent = runtimeStatusText(capabilities);
   root.append(status);
+
+  // Animation host (FIX-016): bind the gesture stage to the machine only
+  // after the backend handshake, per the audit repair plan. Shell errors
+  // while the host is attached return the machine to its original
+  // transition surface so the text fallback cannot drive stale layers.
+  // Reduced motion is owned by the WS-14 runtime in main.ts, which
+  // applies the class to `<html>` before this root runs; the driver
+  // reads it through the stage's ownerDocument root.
+  const character = document.querySelector<HTMLElement>(`.${GESTURE_CHARACTER_CLASS}`);
+  let host: GestureStageHost | null = null;
+  let unbind: (() => void) | null = null;
+  const detachHost = (): void => {
+    unbind?.();
+    unbind = null;
+    host?.detach();
+    host = null;
+  };
+  window.addEventListener('candice:shell-error', detachHost, { once: true });
+  if (character) {
+    try {
+      host = mountGestureStage({
+        document,
+        character,
+        registry: AssetRegistry.create(),
+        reportShellError: () => {
+          window.dispatchEvent(new Event('candice:shell-error'));
+        },
+      });
+      unbind = bindStatusFlow(machine, host);
+    } catch {
+      host = null;
+      unbind = null;
+    }
+  }
 
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.
