@@ -13,6 +13,7 @@
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts",
     "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts src/shell/__tests__/boot-health.test.ts src/runtime/__tests__/capabilities.test.ts",
+    "test:speech-timing": "node --test --experimental-strip-types src/runtime/__tests__/speech-timing.test.ts",
     "verify:visual-bundle": "npm run build && node scripts/assert-visual-bundle.mjs",
     "verify:accessibility-bundle": "npm run build && node scripts/assert-accessibility-bundle.mjs"
   },

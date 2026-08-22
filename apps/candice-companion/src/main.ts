@@ -15,6 +15,8 @@
  */
 
 import { createCandiceStateMachine } from './state/machine';
+import { VisemeScheduler } from './animation/viseme/scheduler';
+import { attachSpeechTimingChannel, type SpeechTimingChannel } from './runtime/speech-timing';
 import {
   probeNativeShell,
   type BootPresentationStatus,
@@ -45,6 +47,7 @@ export async function bootCandice(): Promise<void> {
 
   let registry: ShellCommandRegistry | undefined;
   let accessibility: AccessibilityRuntime | undefined;
+  let speechTiming: SpeechTimingChannel | undefined;
   let fellBack = false;
   const setStatus = (status: BootPresentationStatus): void => {
     const surface = document.getElementById('candice-boot-status');
@@ -62,6 +65,7 @@ export async function bootCandice(): Promise<void> {
     window.removeEventListener('candice:shell-error', onShellError);
     if (registry) teardown(registry);
     accessibility?.dispose();
+    speechTiming?.dispose();
     setStatus('text-fallback');
     showTextFallback(root);
   };
@@ -81,6 +85,12 @@ export async function bootCandice(): Promise<void> {
     // hosts one instance and keeps a reference for the boot latch. It has no
     // dispose lifecycle of its own (nothing to tear down).
     const machine = createCandiceStateMachine();
+    // The viseme scheduler owns the TTS timing clock (WS-12). The
+    // FIX-016 channel feeds it native speech-start/boundary/drain
+    // events; the render lane consumes its steps later. Absent the
+    // native event API the channel stays inert and never throws.
+    const visemeScheduler = new VisemeScheduler();
+    speechTiming = await attachSpeechTimingChannel(visemeScheduler);
     // Invoke is the durable initial shell latch. A native ready event can be
     // emitted before the WebView starts; it is therefore not accepted as the
     // sole proof of readiness.
