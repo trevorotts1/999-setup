@@ -12,6 +12,7 @@ import {
   type RuntimeCapabilities,
   type RuntimeInvokeAdapter,
 } from './capabilities.ts';
+import { initializeAuthenticatedBridge } from './bridge.ts';
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;
@@ -19,7 +20,7 @@ export interface RuntimeCompositionOptions {
 
 export async function initializeRuntimeComposition(
   root: HTMLElement,
-  _machine: CandiceStateMachine,
+  machine: CandiceStateMachine,
   options: RuntimeCompositionOptions = {},
 ): Promise<RuntimeCapabilities> {
   const capabilities = await probeRuntimeCapabilities(options.invokeAdapter);
@@ -35,6 +36,12 @@ export async function initializeRuntimeComposition(
   status.setAttribute('aria-live', 'polite');
   status.textContent = runtimeStatusText(capabilities);
   root.append(status);
+
+  // The event listener itself is inert until native has authenticated the
+  // local launch token and the MCP server delivers a validated question.
+  // A connected transport does not by itself display controls or invent a
+  // session; those conditions are met only by the delivered event.
+  await initializeAuthenticatedBridge(root, machine);
 
   return capabilities;
 }

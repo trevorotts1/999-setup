@@ -43,9 +43,9 @@ pub fn initialize_shell(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// plugins, creates the window, and hands over to the runtime.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // The plugin's non-blocking hook can launch `candice-companion --wake
-    // <command>`. Parse it once before the app is built; runtime.rs exposes
-    // the truth to the webview and never calls it a session binding.
+    // The MCP bridge launches the companion with an exact opaque session id,
+    // endpoint and single-use capability token. `--wake` remains a separate
+    // non-binding visual wake request.
     let launch = runtime::parse_runtime_launch(std::env::args().skip(1));
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -54,13 +54,17 @@ pub fn run() {
             shell::cmd_show_window,
             shell::cmd_hide_window,
             runtime::cmd_get_runtime_capabilities,
+            runtime::cmd_submit_bridge_answer,
+            runtime::cmd_cancel_bridge_question,
+            runtime::cmd_set_answer_input_enabled,
+            runtime::cmd_take_pending_bridge_question,
         ])
         .setup(|app| {
             initialize_shell(app.handle())?;
-            runtime::initialize_runtime(app.handle(), launch)?;
-            // Window starts hidden (tauri.conf.json). FIX-009 has only a
-            // launch-argument wake capability, not a session bridge, so show
-            // the visual shell on setup rather than claim event-driven bind.
+            runtime::initialize_runtime(app.handle(), launch.clone())?;
+            runtime::start_local_bridge(app.handle().clone(), launch);
+            // Window starts hidden (tauri.conf.json); show the visual shell
+            // while the authenticated bridge may later deliver a question.
             if let Some(win) = app.get_webview_window("main") {
                 // A transparent webview still has rectangular native hit
                 // bounds. Start click-through before front-end composition;

@@ -33,6 +33,7 @@
 
 const { validateQuestionEvent } = require('./validate')
 const { AnswerSlotRegistry } = require('./answer-registry')
+const { LocalCompanionBridge } = require('./local-companion-bridge')
 
 const SERVER_NAME = 'candice'
 const SERVER_VERSION = '1.0.0'
@@ -78,19 +79,35 @@ class AskUserServer {
   constructor(opts) {
     const options = opts || {}
     this.registry = options.registry || new AnswerSlotRegistry()
-    this.deliverQuestion = typeof options.deliverQuestion === 'function' ? options.deliverQuestion : null
-    // Fail-safe readiness probe: the tool only delivers a question when the
-    // companion is KNOWN to be running. Absent opt-in => not ready => the tool
-    // fails soft and the skill asks the question in Claude (spec 13.2/20).
-    // The install/bootstrap lanes flip CANDICE_COMPANION_READY=1 in the
-    // plugin's .mcp.json env when the companion binary is provisioned.
+    this.bridge = options.bridge || null
+    this.deliverQuestion = typeof options.deliverQuestion === 'function'
+      ? options.deliverQuestion
+      : this.bridge
+        ? (question) => this.bridge.deliverQuestion(question)
+        : null
+    // Fail-safe readiness probe: the tool delivers only after the companion
+    // has completed the authenticated local bridge handshake. Without it the
+    // tool fails soft and the skill asks in Claude (spec 13.2/20).
     this.isCompanionReady = typeof options.isCompanionReady === 'function'
       ? options.isCompanionReady
-      : () => process.env.CANDICE_COMPANION_READY === '1'
+      : () => this.bridge ? this.bridge.isReady() : false
     this.lifecycle = options.lifecycle || null
     this.sleep = typeof options.sleep === 'function' ? options.sleep : (ms) => new Promise((r) => setTimeout(r, ms))
     this.waitWindowMs = options.waitWindowMs || 10 * 60 * 1000 // injectable for tests
     this.skipped = options.skipped || false // test instrumentation
+    this.cancelledSlots = new Set()
+    if (this.bridge) {
+      this.bridge.onAnswer = (input) => this.registry.put(input)
+      this.bridge.onCancel = (input) => {
+        this.cancelledSlots.add(`${input.sessionId}::${input.questionKey}`)
+        return this.registry.cancel(input)
+      }
+    }
+  }
+
+  _cancelSlot(input) {
+    this.registry.cancel(input)
+    this.bridge?.cancel(input)
   }
 
   /**
@@ -144,11 +161,18 @@ class AskUserServer {
       )
     }
     const q = check.event
+    this.cancelledSlots.delete(`${q.sessionId}::${q.questionKey}`)
     if (sessionId !== q.sessionId) {
       return this._toolResult(
         this._composeTextResult(
           `candice.ask_user: sessionId mismatch between params (${sessionId}) and question (${q.sessionId}); refused (spec 17)`, true)
       )
+    }
+    if (this.bridge) {
+      const bound = await this.bridge.ensureSession(q.sessionId)
+      if (!bound.ok) {
+        return this._toolResult(this._composeTextResult(`candice.ask_user: companion is unavailable (${bound.code}); ask the same question in Claude normally`, true))
+      }
     }
     if (!this.isCompanionReady()) {
       return this._toolResult(
@@ -175,7 +199,7 @@ class AskUserServer {
       // fail soft — the skill asks the same question in Claude normally.
       // The deliverer's stable code (e.g. `app-missing`) surfaces in the
       // message so the skill can branch on the exact mode of unavailability.
-      this.registry.cancel({ sessionId: q.sessionId, questionKey: q.questionKey })
+      this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey })
       const reason = (delivered && (delivered.error || delivered.code)) || 'companion delivery failed'
       return this._toolResult(
         this._composeTextResult(`candice.ask_user: ${reason}; ask the same question in Claude normally`, true)
@@ -201,6 +225,9 @@ class AskUserServer {
     const deadline = Date.now() + this.waitWindowMs
     let answer
     for (;;) {
+      if (this.cancelledSlots.delete(`${q.sessionId}::${q.questionKey}`)) {
+        return this._toolResult(this._composeTextResult('candice.ask_user: question cancelled by the companion; ask the same question in Claude normally', true))
+      }
       const t = this.registry.take({ sessionId: q.sessionId, questionKey: q.questionKey })
       if (t.ok) {
         answer = t.answer
@@ -208,7 +235,7 @@ class AskUserServer {
       }
       if (t.code === 'not-answered') {
         if (Date.now() > deadline) {
-          this.registry.cancel({ sessionId: q.sessionId, questionKey: q.questionKey })
+          this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey })
           return this._toolResult(
             this._composeTextResult('candice.ask_user: no approved answer within the wait window; ask the same question in Claude normally', true)
           )
@@ -388,5 +415,13 @@ class AskUserServer {
 module.exports = { AskUserServer, SERVER_NAME, SERVER_VERSION, SUPPORTED_PROTOCOL_VERSIONS }
 
 if (require.main === module) {
-  new AskUserServer().run()
+  // One MCP process creates one fresh per-launch capability token and local
+  // Unix endpoint. `ready` is true only after the separately running Tauri
+  // companion authenticates that exact launch; it is never an environment
+  // string or a foreground-window guess.
+  ;(async () => {
+    const bridge = new LocalCompanionBridge()
+    await bridge.start()
+    new AskUserServer({ bridge }).run()
+  })().catch(() => process.exit(0))
 }
