@@ -61,8 +61,9 @@ const REDACTED_SECRET_LABEL = '[redacted — secret answer]'
  * @param {boolean} [input.consent.captionOptIn]
  * @returns {object} always { ok, decision, reason } — `decision` is one of
  *   'speak' | 'refuse-secret' | 'refuse-personal-no-consent' |
- *   'refuse-unknown' | 'refuse-missing' | 'refuse-cross-skill'; `ok` is true
- *   only for 'speak'. Never contains question/answer text.
+ *   'refuse-read-aloud-disabled' | 'refuse-unknown' | 'refuse-missing' |
+ *   'refuse-cross-skill'; `ok` is true only for 'speak'. Never contains
+ *   question/answer text.
  */
 function decideSpeech(input) {
   const i = input || {}
@@ -95,8 +96,12 @@ function decideSpeech(input) {
  *   2. secret                         -> refuse-secret (always, even with an
  *                                        erroneous upstream readAloud:true)
  *   3. personal without opt-in        -> refuse-personal-no-consent
- *   4. caller echo contradicting the registry -> refuse-replayed-metadata
- *   5. otherwise                      -> speak
+ *   4. normal with registry readAloud:false -> refuse-read-aloud-disabled
+ *                                        (the registry is the authority; a
+ *                                        caller echo of readAloud:true never
+ *                                        overrides it)
+ *   5. caller echo contradicting the registry -> refuse-replayed-metadata
+ *   6. otherwise                      -> speak
  *
  * @param {object} entry registry entry (question-keys.json row)
  * @param {object} [echoes] { callerSensitivity, callerReadAloud, consent }
@@ -123,11 +128,16 @@ function _decideFromEntry(entry, echoes) {
     }
   }
 
+  // The registry readAloud flag is the authority for normal keys: a normal
+  // question registered readAloud:false must never be spoken, and a caller
+  // echo of readAloud:true cannot override it. (For secret the secret-first
+  // precedence already refused; for personal the opt-in gate above governs.)
+  if (sensitivity === 'normal' && privacy.readAloud === false) {
+    return { ok: false, decision: 'refuse-read-aloud-disabled', reason: 'registry readAloud:false forbids speech' }
+  }
+
   // A caller SENSITIVITY echo that contradicts the registry is a replay/override
   // defect: refuse speech and name the defect by code, never by payload text.
-  // (readAloud is deliberately NOT echo-checked here: for normal questions it
-  // is a runtime voice preference — "voice output disabled" is legitimate, not
-  // replay; for secret it is already refused by secret-first precedence.)
   if (echoes && echoes.callerSensitivity !== undefined && echoes.callerSensitivity !== sensitivity) {
     return { ok: false, decision: 'refuse-replayed-metadata', reason: 'caller sensitivity contradicts the registry' }
   }
@@ -138,7 +148,9 @@ function _decideFromEntry(entry, echoes) {
 /**
  * captionPolicy — what the caption surface may show for the pending question.
  * Secret captions are ALWAYS the fixed redacted label; personal captions
- * require explicit caption opt-in; normal captions are allowed. Never returns
+ * require explicit caption opt-in; normal captions are allowed. Missing or
+ * unknown sensitivity metadata fails closed (deny) — the same entry that
+ * decideSpeech refuses must never be shown as a caption. Never returns
  * question text (the caller's caption renderer already holds it; this policy
  * only gates whether it may be shown).
  *
@@ -156,13 +168,33 @@ function captionPolicy(input) {
   if (!governed.ok) {
     return { ok: false, policy: 'deny', reason: governed.code }
   }
-  const privacy = governed.entry.privacy || {}
-  const sensitivity = privacy.sensitivity || 'normal'
+  return _captionFromEntry(governed.entry, i.consent)
+}
+
+/**
+ * _captionFromEntry — the pure caption decision core. Exposed for unit legs
+ * that feed a corrupted/stale registry entry (missing or unknown sensitivity
+ * metadata) to prove the caption surface fails closed exactly like
+ * decideSpeech; production callers always use captionPolicy().
+ *
+ * @param {object} entry registry entry (question-keys.json row)
+ * @param {object} [consent] { captionOptIn }
+ * @returns {object} { ok, policy, reason } — policy 'show' | 'redact' | 'deny'
+ */
+function _captionFromEntry(entry, consent) {
+  const e = entry || {}
+  const privacy = e.privacy || {}
+  const sensitivity = privacy.sensitivity
+  if (!SENSITIVITIES.includes(sensitivity)) {
+    // Missing/unknown sensitivity metadata fails closed on the caption
+    // surface too — never defaults to 'show'.
+    return { ok: false, policy: 'deny', reason: 'registry sensitivity missing' }
+  }
   if (sensitivity === 'secret') {
     return { ok: true, policy: 'redact', reason: 'fixed redacted label only', label: REDACTED_SECRET_LABEL }
   }
   if (sensitivity === 'personal') {
-    const optIn = !!(i.consent && i.consent.captionOptIn === true)
+    const optIn = !!(consent && consent.captionOptIn === true)
     return optIn
       ? { ok: true, policy: 'show', reason: 'personal caption opted in' }
       : { ok: false, policy: 'deny', reason: 'personal caption requires explicit user opt-in' }
@@ -206,6 +238,7 @@ module.exports = {
   decideSpeech,
   _decideFromEntry,
   captionPolicy,
+  _captionFromEntry,
   logPolicy,
   REDACTED_SECRET_LABEL,
   SECRET_CAPTION,

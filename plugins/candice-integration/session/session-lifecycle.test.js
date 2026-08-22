@@ -173,7 +173,7 @@ check('answered key cannot be asked again after persisted restart', () => {
   const refused = sm2.setPendingQuestion({ sessionId: 'sess-never-reask', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(refused.ok, false)
   assert.strictEqual(refused.code, 'question-already-answered')
-  assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, '2.0.0')
+  assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, '2.1.0')
 })
 
 check('recovery returns the exact pending question and does not re-count', () => {

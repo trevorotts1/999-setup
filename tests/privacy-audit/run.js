@@ -24,6 +24,7 @@ const SUITES = [
   'fix-017/secret-boundary.test.js',
   'fix-017/artifact-scan.test.js',
   'fix-017/replay-and-faults.test.js',
+  'fix-017/guardfix-negatives.test.js',
 ]
 
 let failed = 0

@@ -21,7 +21,7 @@
  * and must not produce a secret-containing fallback message.
  */
 
-const { decideSpeech, _decideFromEntry, captionPolicy, logPolicy, REDACTED_SECRET_LABEL } = require('../../../plugins/candice-integration/privacy/final-boundary-guard')
+const { decideSpeech, _decideFromEntry, captionPolicy, _captionFromEntry, logPolicy, REDACTED_SECRET_LABEL } = require('../../../plugins/candice-integration/privacy/final-boundary-guard')
 
 /**
  * runOne — deliver one corpus item through the pipeline.
@@ -50,13 +50,14 @@ function runOne(item, sinks) {
   // A `staleEntry` item models a corrupted registry row (sensitivity metadata
   // missing on the trusted entry itself): the guard must fail closed on it.
   let speech
+  let corrupted = null
   if (item.staleEntry) {
     const { lookup } = require('../../../packages/candice-protocol/question-registry')
     const found = lookup(questionKey, skill)
     if (!found.ok) {
       speech = { ok: false, decision: 'refuse-unknown', reason: found.code }
     } else {
-      const corrupted = JSON.parse(JSON.stringify(found.entry))
+      corrupted = JSON.parse(JSON.stringify(found.entry))
       delete corrupted.privacy.sensitivity
       speech = _decideFromEntry(corrupted, {
         callerSensitivity: item.callerSensitivity,
@@ -73,8 +74,13 @@ function runOne(item, sinks) {
       consent: item.consent,
     })
   }
-  const caption = item.staleEntry
-    ? { ok: false, policy: 'deny', reason: 'stale registry entry' }
+  // The caption policy is ALWAYS derived through the real guard function —
+  // never hardcoded — so a corrupted registry entry exercises the guard's
+  // own fail-closed branch (H01 D1: the staleEntry leg must not bypass
+  // captionPolicy). The log leg for a stale entry stays conservative
+  // key-code-only (logPolicy was not a named defect).
+  const caption = item.staleEntry && corrupted
+    ? _captionFromEntry(corrupted, item.consent)
     : captionPolicy({ questionKey, skill, consent: item.consent })
   const log = item.staleEntry
     ? { ok: false, policy: 'key-code-only', reason: 'stale registry entry', allowed: [] }
@@ -101,7 +107,7 @@ function runOne(item, sinks) {
     // Refusal: no TTS, no audio file, no playback enqueue. The refusal status
     // is named and non-sensitive.
     sinks.logs.info({ code: speech.decision, questionKey })
-    sessionHealthy = sessionHealthy && ['refuse-secret', 'refuse-personal-no-consent', 'refuse-unknown', 'refuse-missing', 'refuse-cross-skill', 'refuse-replayed-metadata'].includes(speech.decision)
+    sessionHealthy = sessionHealthy && ['refuse-secret', 'refuse-personal-no-consent', 'refuse-read-aloud-disabled', 'refuse-unknown', 'refuse-missing', 'refuse-cross-skill', 'refuse-replayed-metadata'].includes(speech.decision)
   }
 
   // 4b. Caption surface.
