@@ -95,10 +95,10 @@ test("whisper win32 runtime archives carry verified per-platform hashes", () => 
   );
 });
 
-test("candice-companion 0.2.0 payloads carry placeholder hashes (recompute owed from integrated build)", () => {
+test("candice-companion 0.2.0 darwin carries the real integrated-build hash; win32 stays fail-closed placeholder", () => {
   const mac = PUBLISHED_PAYLOADS["candice-companion@0.2.0@darwin"];
-  assert.equal(mac.payload.sha256, "0".repeat(64));
-  assert.equal(mac.payload.sizeBytes, 0);
+  assert.equal(mac.payload.sha256, "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf");
+  assert.equal(mac.payload.sizeBytes, 2686932);
   assert.equal(mac.payload.file, "Candice Companion_0.2.0_aarch64.dmg");
   const win = PUBLISHED_PAYLOADS["candice-companion@0.2.0@win32"];
   assert.equal(win.payload.sha256, "0".repeat(64));

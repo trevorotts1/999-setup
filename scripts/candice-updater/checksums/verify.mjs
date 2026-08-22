@@ -19,7 +19,7 @@
  */
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { resolveComponent } from "./components.mjs";
+import { resolveComponent, PLACEHOLDER_SHA256 } from "./components.mjs";
 
 const args = process.argv.slice(2);
 const readArg = (name) => {
@@ -71,6 +71,13 @@ if (!entry) {
 const expected = entry.payload.sha256;
 if (!expected) {
   console.error(`FAIL no SHA-256 recorded for ${id}@${version}@${entry.platform} — refusing`);
+  process.exit(1);
+}
+
+if (expected === PLACEHOLDER_SHA256) {
+  console.error(
+    `FAIL placeholder checksum for ${id}@${version}@${entry.platform} — real hash owed (NSIS: Windows build) — refusing unverified payload`,
+  );
   process.exit(1);
 }
 
