@@ -22,10 +22,14 @@ function Assert-True {
 }
 
 function Run-ExpectOk {
-  param([string[]]$ArgsList)
+  # Scriptblock, not an arg array: array splatting cannot bind named
+  # parameters (-Launcher, -DryRun) — they bind positionally and break
+  # [string]$LoopId / [string]$Launcher with "A positional parameter cannot
+  # be found that accepts argument".
+  param([scriptblock]$Command)
   $oldPref = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
-  $out = & $ArgsList[0] @($ArgsList[1..($ArgsList.Length - 1)]) 2>&1
+  $out = & $Command 2>&1
   $code = $LASTEXITCODE
   $ErrorActionPreference = $oldPref
   return [PSCustomObject]@{ Code = $code; Output = @($out) }
@@ -96,34 +100,34 @@ try {
   Assert-True (Test-Path -PathType Leaf $status) "Get-KaizenTaskStatus.ps1 exists"
   Assert-True (Test-Path -PathType Leaf $cycle) "Invoke-KaizenCycle.ps1 exists"
 
-  $r = Run-ExpectOk @($install, $loopId, "daily", "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $install $loopId "daily" -Launcher "claude-nine" }
   Assert-True ($r.Code -eq 0) "install dry-run exits 0"
   $installText = ($r.Output | Out-String)
   Assert-True ($installText -match 'schtasks\.exe /Create') "install dry-run prints schtasks command"
-  Assert-True ($installText -match '"/SC" DAILY') "install dry-run uses DAILY schedule"
+  Assert-True ($installText -match '/SC DAILY') "install dry-run uses DAILY schedule"
   Assert-True ($installText -match 'dry-run: LOCAL_STATE\.json not modified') "install dry-run states LOCAL_STATE untouched"
 
   $localAfter = Get-Content -Raw (Join-Path $loopDir "LOCAL_STATE.json") | ConvertFrom-Json
   Assert-True ($null -eq $localAfter.scheduler.task_name) "install dry-run does not write scheduler.task_name"
 
-  $r = Run-ExpectOk @($install, $loopId, "weekly", "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $install $loopId "weekly" -Launcher "claude-nine" }
   $installText = ($r.Output | Out-String)
-  Assert-True ($installText -match '"/SC" WEEKLY') "install weekly maps to /SC WEEKLY"
+  Assert-True ($installText -match '/SC WEEKLY') "install weekly maps to /SC WEEKLY"
 
-  $r = Run-ExpectOk @($install, $loopId, "quarterly", "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $install $loopId "quarterly" -Launcher "claude-nine" }
   $installText = ($r.Output | Out-String)
   Assert-True ($installText -match 'JAN,APR,JUL,OCT') "install quarterly maps to JAN,APR,JUL,OCT"
 
-  $r = Run-ExpectOk @($install, $loopId, "1440", "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $install $loopId "1440" -Launcher "claude-nine" }
   $installText = ($r.Output | Out-String)
-  Assert-True ($installText -match '"/SC" MINUTE') "install minutes maps to /SC MINUTE"
+  Assert-True ($installText -match '/SC MINUTE') "install minutes maps to /SC MINUTE"
 
-  $r = Run-ExpectOk @($remove, $loopId)
+  $r = Run-ExpectOk { & $remove $loopId }
   Assert-True ($r.Code -eq 0) "remove dry-run exits 0"
   $removeText = ($r.Output | Out-String)
   Assert-True ($removeText -match 'schtasks\.exe /Delete') "remove dry-run prints schtasks command"
 
-  $r = Run-ExpectOk @($status, $loopId)
+  $r = Run-ExpectOk { & $status $loopId }
   $statusLine = ($r.Output | Out-String).Trim()
   $statusObj = $null
   try { $statusObj = $statusLine | ConvertFrom-Json } catch { $statusObj = $null }
@@ -142,21 +146,23 @@ try {
   # clear it, then exercise -DryRun, the real flow, and the lock-skip path.
   Remove-Item Env:\KAIZEN_TASK_DRY_RUN -ErrorAction SilentlyContinue
 
-  $r = Run-ExpectOk @($cycle, $loopId, "-Launcher", "claude-nine", "-DryRun")
+  $r = Run-ExpectOk { & $cycle $loopId -Launcher "claude-nine" -DryRun }
   Assert-True ($r.Code -eq 0) "cycle dry-run exits 0"
   $cycleText = ($r.Output | Out-String)
   Assert-True ($cycleText -match 'dry-run') "cycle dry-run announces dry-run"
   Assert-True (-not (Test-Path -PathType Leaf $argsFile)) "cycle dry-run does not invoke launcher"
 
-  $r = Run-ExpectOk @($cycle, $loopId, "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $cycle $loopId -Launcher "claude-nine" }
   Assert-True ($r.Code -eq 0) "cycle run exits 0"
   $cycleText = ($r.Output | Out-String)
-  Assert-True ($cycleText -match 'Use the kaizen skill') "cycle prompt is natural-language"
-  Assert-True (-not ($cycleText -match '/kaizen run')) "cycle prompt has no slash command"
   Assert-True (Test-Path -PathType Leaf $argsFile) "fake launcher received arguments"
   if (Test-Path -PathType Leaf $argsFile) {
+    # The prompt is delivered to the launcher, not echoed to the cycle's
+    # stdout (launcher output is redirected to the cycle log), so the
+    # prompt-shape assertions must read the launcher's captured args.
     $argsText = Get-Content -Raw $argsFile
-    Assert-True ($argsText -match 'Use the kaizen skill') "launcher got NL prompt"
+    Assert-True ($argsText -match 'Use the kaizen skill') "cycle prompt is natural-language"
+    Assert-True (-not ($argsText -match '/kaizen run')) "cycle prompt has no slash command"
     Assert-True ($argsText -match 'Loop ID loop-tst-01') "launcher got loop id"
   }
 
@@ -171,7 +177,7 @@ try {
   $lockRecord | ConvertTo-Json -Compress |
     Set-Content -Path (Join-Path $loopDir ".cycle-lock.json") -Encoding UTF8
 
-  $r = Run-ExpectOk @($cycle, $loopId, "-Launcher", "claude-nine")
+  $r = Run-ExpectOk { & $cycle $loopId -Launcher "claude-nine" }
   Assert-True ($r.Code -eq 0) "second cycle run exits 0"
   $cycleText = ($r.Output | Out-String)
   Assert-True ($cycleText -match 'skipped') "second run reports skipped"
