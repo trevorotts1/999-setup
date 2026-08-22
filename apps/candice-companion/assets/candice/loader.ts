@@ -26,14 +26,24 @@ export interface AssetEntry {
   id: string;
   file: string;
   role: string;
-  batch: string;
+  batch?: string;
   format: string;
+  colorType: "RGBA";
+  semanticPose: string;
   width: number;
   height: number;
-  alpha: { min: number; max: number; mean: number };
+  alpha: { present: true };
   sha256: string;
   bytes: number;
   readOnly: true;
+  approval: "operator-approved";
+  provenance: {
+    originalFilename: string;
+    sourceBatch: string;
+    sourceSha256: string;
+    sourceBytes: number;
+    copiedByteForByte: true;
+  };
 }
 
 export interface DerivedAssetEntry {
@@ -52,6 +62,7 @@ export interface ManifestShape {
   generatedAt: string;
   assetCount: number;
   sourceDirectory: string;
+  canonicalAuthority: string;
   assets: AssetEntry[];
   stateMap: Record<string, Record<string, string>>;
   derivedAssets: DerivedAssetEntry[];
@@ -79,10 +90,10 @@ export class AssetManifestError extends Error {
 /** Validate the manifest shape; throws AssetManifestError on contract break. */
 export function validateManifest(m: ManifestShape): string[] {
   const problems: string[] = [];
-  if (m.manifestVersion !== 1) {
-    problems.push(`manifestVersion must be 1, got ${m.manifestVersion}`);
+  if (m.manifestVersion !== 2) {
+    problems.push(`manifestVersion must be 2, got ${m.manifestVersion}`);
   }
-  if (m.contract !== 'candice-final-art-v1') {
+  if (m.contract !== 'candice-operator-originals-v1') {
     problems.push(`unknown contract: ${m.contract}`);
   }
   if (!Array.isArray(m.assets) || m.assets.length !== m.assetCount) {
@@ -98,7 +109,11 @@ export function validateManifest(m: ManifestShape): string[] {
     if (a.file !== `${a.id}.png`) problems.push(`file/name mismatch for ${a.id}: ${a.file}`);
     if (/chatgpt|download|\([0-9]+\)/i.test(a.file)) problems.push(`raw download filename leaked: ${a.file}`);
   }
-  if (m.assets.length < 16) problems.push(`need 16 supplied assets, have ${m.assets.length}`);
+  if (m.assets.length !== 16) problems.push(`need exactly 16 operator originals, have ${m.assets.length}`);
+  if (m.sourceDirectory !== 'source/operator-approved/') {
+    problems.push(`canonical sourceDirectory must be source/operator-approved/, got ${m.sourceDirectory}`);
+  }
+  if (m.canonicalAuthority !== 'operator-originals') problems.push('canonical authority must be operator-originals');
   for (const [group, map] of Object.entries(m.stateMap ?? {})) {
     for (const [key, file] of Object.entries(map)) {
       const id = file.replace(/\.png$/, '');
