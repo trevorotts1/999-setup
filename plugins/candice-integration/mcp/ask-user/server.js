@@ -165,6 +165,7 @@ class AskUserServer {
     this.reconnectWindowMs = options.reconnectWindowMs || 3000 // bounded reconnect wait after a transport disconnect
     this.disconnectedSince = null
     this.disconnectDeadline = 0
+    this._recovered = false // FIX-013 S4 QC D2: recovery acknowledged for the in-flight operation
     this.skipped = options.skipped || false // test instrumentation
     this.cancelledSlots = new Set()
     if (this.bridge) {
@@ -201,9 +202,17 @@ class AskUserServer {
     const deadline = Date.now() + this.reconnectWindowMs
     if (this.disconnectedSince === null) this.disconnectedSince = Date.now()
     if (deadline > this.disconnectDeadline) this.disconnectDeadline = deadline
+    // FIX-013 S4 QC D2: a new disconnect invalidates any prior recovery —
+    // the in-flight operation is no longer recovered.
+    this._recovered = false
   }
 
   _onBridgeRecovered(event) {
+    // FIX-013 S4 QC D2: the recovered handoff was acknowledged for the
+    // in-flight operation. The bridge flips to 'connected' in the same
+    // breath, so the transport-loss decision below must not require
+    // 'reconnecting' once a recovery is on record.
+    this._recovered = true
     if (this.lifecycle && typeof this.lifecycle.acknowledgeRecoveryHandoff === 'function' && event.sessionId) {
       try {
         this.lifecycle.acknowledgeRecoveryHandoff({
@@ -221,6 +230,7 @@ class AskUserServer {
     this._ended = true
     this.disconnectedSince = null
     this.disconnectDeadline = null
+    this._recovered = false
   }
 
   /** True while the app may still re-establish the same authenticated
@@ -390,6 +400,9 @@ class AskUserServer {
     }
     const q = check.event
     this.cancelledSlots.delete(`${q.sessionId}::${q.questionKey}`)
+    // FIX-013 S4 QC D2: a recovery acknowledged for a PREVIOUS operation must
+    // not leak into this ask's transport-loss decision.
+    this._recovered = false
     if (sessionId !== q.sessionId) {
       return this._toolResult(
         this._composeTextResult(
@@ -492,7 +505,13 @@ class AskUserServer {
           }
         }
       }
-      if (this.bridge && this.bridge.lifecycle && this.bridge.lifecycle.phase === 'reconnecting') {
+      const phase = this.bridge && this.bridge.lifecycle ? this.bridge.lifecycle.phase : null
+      // FIX-013 S4 QC D2: the recovered ack flips the bridge to 'connected'
+      // in the same breath it emits 'recovered'. A recovery acknowledged for
+      // THIS operation (this._recovered, cleared on disconnect/end and at
+      // askUser start) is the same fall-through as 'reconnecting' — the
+      // answer for the replayed operation is still in flight.
+      if (phase === 'reconnecting' || (this._recovered && phase === 'connected')) {
         // The SAME authenticated process reconnected and the replayed frame
         // is in flight: fall through to the wait loop with the original
         // operation (the replay carries the identical operation id). The

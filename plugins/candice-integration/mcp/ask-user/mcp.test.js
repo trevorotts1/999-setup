@@ -598,12 +598,26 @@ check('ask_user waits out a bounded reconnect window on a transport disconnect, 
     lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
     const coordinator = new FallbackCoordinator({ lifecycle })
     const registry = new AnswerSlotRegistry()
+    // FIX-013 S4 QC D1: the reconnect window arms ONLY via the bridge
+    // lifecycle event. The fake bridge emits the disconnected event from
+    // inside deliverQuestion (the server has already wired its handler by
+    // then), so the window actually arms and the bounded wait is exercised.
+    const bridge = {
+      lifecycle: { phase: 'disconnected' },
+      isReady: () => false,
+      ensureSession: async () => ({ ok: true }),
+      cancel: () => ({ ok: true }),
+      deliverQuestion: async () => {
+        bridge.onLifecycleEvent({ lifecycle: 'disconnected' })
+        return { ok: false, code: 'companion-disconnected' }
+      },
+    }
     const server = new AskUserServer({
       registry,
       lifecycle,
       fallback: coordinator,
+      bridge,
       isCompanionReady: () => true,
-      deliverQuestion: async () => ({ ok: false, code: 'companion-disconnected' }),
       sleep: async (ms) => new Promise((r) => setTimeout(r, ms)),
       waitWindowMs: 1000,
       reconnectWindowMs: 200,
@@ -653,6 +667,55 @@ check('ask_user recovers the SAME operation when the app reconnects and replays 
     }, 30)
     const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
     assert.strictEqual(result.result.ok, true, 'the replayed operation completes with its one answer')
+    assert.strictEqual(result.result.answer.answerText, 'I want a booking tool for local barbers.')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).questionCount, 1, 'one terminal commit for the one operation')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('ask_user completes the SAME operation when the recovered ack flips the bridge to connected', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s4-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const registry = new AnswerSlotRegistry()
+    // FIX-013 S4 QC D2 regression: the real bridge flips to 'connected' in
+    // the same breath it emits 'recovered' (the recovered ack). The server
+    // must still fall through to the wait loop — the answer for the replayed
+    // operation is in flight. Pre-repair, the phase check required
+    // 'reconnecting' and the ask fell back, discarding the answer.
+    const bridge = {
+      lifecycle: { phase: 'reconnecting' },
+      isReady: () => true,
+      ensureSession: async () => ({ ok: true }),
+      cancel: () => ({ ok: true }),
+      deliverQuestion: async () => {
+        bridge.onLifecycleEvent({ lifecycle: 'disconnected' })
+        bridge.onLifecycleEvent({ lifecycle: 'recovered', sessionId: 'opaque-session-id' })
+        bridge.lifecycle.phase = 'connected'
+        return { ok: false, code: 'companion-disconnected' }
+      },
+    }
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: coordinator,
+      bridge,
+      isCompanionReady: () => true,
+      sleep: async (ms) => new Promise((r) => setTimeout(r, ms)),
+      waitWindowMs: 500,
+      reconnectWindowMs: 4000,
+    })
+    // The user's answer arrives moments after the recovered handoff.
+    setTimeout(() => {
+      registry.put({ sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET', answer: answer(), operationId: server.registry.peek({ sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET' }).operationId })
+    }, 30)
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    assert.strictEqual(result.result.ok, true, 'the recovered operation completes with its one answer')
     assert.strictEqual(result.result.answer.answerText, 'I want a booking tool for local barbers.')
     assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).questionCount, 1, 'one terminal commit for the one operation')
   } finally {
