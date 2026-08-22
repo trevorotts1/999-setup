@@ -10,10 +10,10 @@
     "eye"
   ],
   "mouthRect": [
-    549,
-    518,
-    751,
-    628
+    539,
+    606,
+    741,
+    718
   ],
   "eyeRect": [
     441,
@@ -121,6 +121,176 @@
       94
     ]
   ],
+  "mouthLandmarks": [
+    {
+      "code": "03",
+      "sourceRect": [
+        569,
+        632,
+        148,
+        63
+      ],
+      "sourceArea": 1835,
+      "sourceCenter": [
+        656.17,
+        657.7
+      ],
+      "baseRect": [
+        569.0,
+        632.0,
+        717.0,
+        695.0
+      ],
+      "baseCenter": [
+        656.17,
+        657.7
+      ]
+    },
+    {
+      "code": "04",
+      "sourceRect": [
+        572,
+        618,
+        141,
+        67
+      ],
+      "sourceArea": 2338,
+      "sourceCenter": [
+        651.67,
+        638.67
+      ],
+      "baseRect": [
+        572.2,
+        633.47,
+        715.35,
+        699.37
+      ],
+      "baseCenter": [
+        652.87,
+        653.36
+      ]
+    },
+    {
+      "code": "05",
+      "sourceRect": [
+        579,
+        648,
+        145,
+        39
+      ],
+      "sourceArea": 2606,
+      "sourceCenter": [
+        657.85,
+        667.92
+      ],
+      "baseRect": [
+        572.48,
+        634.63,
+        715.66,
+        668.6
+      ],
+      "baseCenter": [
+        650.3,
+        651.84
+      ]
+    },
+    {
+      "code": "06",
+      "sourceRect": [
+        563,
+        624,
+        150,
+        53
+      ],
+      "sourceArea": 3171,
+      "sourceCenter": [
+        640.48,
+        646.41
+      ],
+      "baseRect": [
+        566.31,
+        629.26,
+        713.2,
+        680.71
+      ],
+      "baseCenter": [
+        642.16,
+        650.97
+      ]
+    },
+    {
+      "code": "07",
+      "sourceRect": [
+        573,
+        638,
+        154,
+        36
+      ],
+      "sourceArea": 885,
+      "sourceCenter": [
+        669.56,
+        652.98
+      ],
+      "baseRect": [
+        564.75,
+        631.46,
+        719.46,
+        664.52
+      ],
+      "baseCenter": [
+        661.61,
+        644.6
+      ]
+    },
+    {
+      "code": "08",
+      "sourceRect": [
+        558,
+        610,
+        161,
+        42
+      ],
+      "sourceArea": 1223,
+      "sourceCenter": [
+        651.74,
+        632.18
+      ],
+      "baseRect": [
+        556.86,
+        624.02,
+        722.43,
+        662.36
+      ],
+      "baseCenter": [
+        653.19,
+        644.02
+      ]
+    },
+    {
+      "code": "09",
+      "sourceRect": [
+        582,
+        639,
+        157,
+        49
+      ],
+      "sourceArea": 1687,
+      "sourceCenter": [
+        674.9,
+        654.89
+      ],
+      "baseRect": [
+        567.08,
+        633.07,
+        719.8,
+        676.17
+      ],
+      "baseCenter": [
+        657.1,
+        645.93
+      ]
+    }
+  ],
   "mouthStates": {
     "closed": {
       "source": "03",
@@ -154,6 +324,7 @@
   },
   "notes": [
     "Placement tolerance zero: fixed rects, images swapped in place.",
+    "Mouth rect measured from mouth-interior dark blobs per canonical frame, transformed via eye-pair affines to base space, unioned with 0.10*ied margin.",
     "eye-half/eye-closed synthesized from 09; operator approval required.",
     "Frame 11 excluded from pixel authority (different batch/lighting)."
   ]

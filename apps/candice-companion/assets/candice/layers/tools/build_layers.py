@@ -14,9 +14,12 @@ Registration model (runtime contract):
   canvas 1254x1254 base space == canonical frame 03.
   Z-order: base layer at BASE_ORIGIN, then mouth layer at MOUTH_RECT origin,
   then eye layer at EYE_RECT origin. State change swaps the image inside a
-  fixed rect; the rect never moves. All rects derive from the base-03
-  registered eye pair, so placement is deterministic — not measured per
-  render.
+  fixed rect; the rect never moves. Eye rect derives from the base-03
+  registered eye boxes + margin. Mouth rect derives from MEASURED
+  mouth-interior dark blobs in every canonical frame (axis-constrained
+  below the eye pair), transformed to base space through each frame's
+  eye-pair affine and unioned + margin. Placement is deterministic — fixed
+  at build time, never measured per render.
 
 Bake method: per source, affine (translate+scale+rotate) mapping source
 space -> base space, from the source eye pair vs the base-03 eye pair,
@@ -87,10 +90,13 @@ ROLES = {
 }
 
 # Facial geometry constants (fractions of inter-eye distance, base space).
-MOUTH_CENTER_DY = 0.55
-MOUTH_HALF_W = 0.55
-MOUTH_HALF_H = 0.30
-MOUTH_MARGIN = 0.10
+# Mouth rect is NOT derived from these: it is measured from mouth-interior
+# dark blobs per frame (see mouth_interior_blob) and unioned in base space.
+# These constants survive only as the blob-search envelope:
+MOUTH_SEARCH_DY_MIN = 0.45   # mouth interior starts this far below eye mid
+MOUTH_SEARCH_DY_MAX = 1.35   # mouth interior ends this far below eye mid
+MOUTH_SEARCH_AXIS_TOL = 0.35  # |blob center x - eye mid x| must stay inside this * ied
+MOUTH_MARGIN = 0.10          # margin around the unioned mouth region, * ied
 EYE_MARGIN = 0.35
 
 LID_RATIO_HALF = 0.5
@@ -183,6 +189,53 @@ def pick_eye_pair(cands, base_dist=None):
             return None
         return tuple(sorted(cands, key=lambda c: c["cx"]))
     return best[1]
+
+
+def dark_mask(im):
+    """Dark interior pixels (mouth, lashes): gray<70 or low-sat dark value, opaque."""
+    g = cv2.cvtColor(im[:, :, :3], cv2.COLOR_BGR2GRAY).astype(np.float32)
+    hsv = cv2.cvtColor(im[:, :, :3], cv2.COLOR_BGR2HSV)
+    v = hsv[:, :, 2].astype(np.float32)
+    s = hsv[:, :, 1].astype(np.float32) / 255.0
+    return ((g < 70) | ((v < 120) & (s < 0.7))) & (im[:, :, 3] > 128)
+
+
+def mouth_interior_blob(im, eye_mid, ied, min_area=20):
+    """Largest connected dark blob in the mouth search envelope.
+
+    Envelope: x within +-1.0*ied of eye mid, y between eye_mid+0.45*ied and
+    eye_mid+1.35*ied. Candidate blobs must also sit within
+    MOUTH_SEARCH_AXIS_TOL*ied of the eye-mid x-axis (kills cheek/hair noise
+    in smile frames 07/08). Returns (rect(x,y,w,h), area, center(x,y)) in
+    source-frame pixels, or None.
+
+    Measured: clean interior blobs on all 7 canonical frames, dy/ied
+    0.94-1.00 (mouth sits ~1 inter-eye below the eye mid — not 0.55).
+    """
+    h, w = im.shape[:2]
+    cx0 = max(0, int(eye_mid[0] - 1.0 * ied))
+    cx1 = min(w, int(eye_mid[0] + 1.0 * ied))
+    cy0 = max(0, int(eye_mid[1] + MOUTH_SEARCH_DY_MIN * ied))
+    cy1 = min(h, int(eye_mid[1] + MOUTH_SEARCH_DY_MAX * ied))
+    if cx1 <= cx0 or cy1 <= cy0:
+        return None
+    win = dark_mask(im)[cy0:cy1, cx0:cx1].astype(np.uint8)
+    n, _, stats, cents = cv2.connectedComponentsWithStats(win, 8)
+    best = None
+    for i in range(1, n):
+        x, y, ww, hh, area = stats[i]
+        if area < min_area:
+            continue
+        cxa = cx0 + cents[i][0]
+        cya = cy0 + cents[i][1]
+        if abs(cxa - eye_mid[0]) > MOUTH_SEARCH_AXIS_TOL * ied:
+            continue
+        if best is None or area > best[0]:
+            best = (area, (int(cx0 + x), int(cy0 + y), int(ww), int(hh)),
+                    (float(cxa), float(cya)))
+    if best is None:
+        return None
+    return best[1], best[0], best[2]
 
 
 def affine_from_pair(pair, base_pair):
@@ -310,15 +363,49 @@ def main():
     ey1 = max(bp[0]["box"][1] + bp[0]["box"][3], bp[1]["box"][1] + bp[1]["box"][3]) + EYE_MARGIN * ied
     EYE_RECT = rect_round(ex0, ey0, ex1, ey1, bw, bh)
 
-    # mouth rect: geometric from eye mid
-    mcx = eye_mid[0]
-    mcy = eye_mid[1] + MOUTH_CENTER_DY * ied
-    mx0 = mcx - MOUTH_HALF_W * ied
-    my0 = mcy - MOUTH_HALF_H * ied
-    mx1 = mcx + MOUTH_HALF_W * ied
-    my1 = mcy + MOUTH_HALF_H * ied
-    MOUTH_RECT = rect_round(mx0, my0, mx1, my1, bw, bh)
-    say(f"EYE_RECT {EYE_RECT} MOUTH_RECT {MOUTH_RECT} interEye {ied:.2f}")
+    # mouth rect: measured mouth-interior blobs per frame -> base space ->
+    # union + margin. Never a fixed fraction of inter-eye distance.
+    mouth_landmarks = []
+    ux0 = uy0 = ux1 = uy1 = None
+    for code in NAMES:
+        fr = info[code]
+        im = fr["im"]
+        em = np.array([(fr["pair"][0]["cx"] + fr["pair"][1]["cx"]) / 2.0,
+                       (fr["pair"][0]["cy"] + fr["pair"][1]["cy"]) / 2.0])
+        fr_ied = fr["pair"][1]["cx"] - fr["pair"][0]["cx"]
+        got = mouth_interior_blob(im, em, fr_ied)
+        if got is None:
+            say(f"{code}: NO mouth interior blob (axis-constrained search)")
+            continue
+        (bx, by, bwid, bht), area, (bcx, bcy) = got
+        M = transforms[code]
+        corners = np.array([[bx, by], [bx + bwid, by + bht]], dtype=np.float64)
+        base_corners = (M[:, :2] @ corners.T).T + M[:, 2]
+        (c0x, c0y), (c1x, c1y) = base_corners
+        bbx0, bby0 = min(c0x, c1x), min(c0y, c1y)
+        bbx1, bby1 = max(c0x, c1x), max(c0y, c1y)
+        bc_base = M[:, :2] @ np.array([bcx, bcy]) + M[:, 2]
+        mouth_landmarks.append({
+            "code": code,
+            "sourceRect": [int(bx), int(by), int(bwid), int(bht)],
+            "sourceArea": int(area),
+            "sourceCenter": [round(bcx, 2), round(bcy, 2)],
+            "baseRect": [round(float(bbx0), 2), round(float(bby0), 2),
+                         round(float(bbx1), 2), round(float(bby1), 2)],
+            "baseCenter": [round(float(bc_base[0]), 2), round(float(bc_base[1]), 2)],
+        })
+        ux0 = bbx0 if ux0 is None else min(ux0, bbx0)
+        uy0 = bby0 if uy0 is None else min(uy0, bby0)
+        ux1 = bbx1 if ux1 is None else max(ux1, bbx1)
+        uy1 = bby1 if uy1 is None else max(uy1, bby1)
+        say(f"{code}: mouth blob src {got[0]} area {area} -> base "
+            f"[{bbx0:.1f},{bby0:.1f},{bbx1:.1f},{bby1:.1f}]")
+    if ux0 is None:
+        raise SystemExit("no mouth interior blobs measured — cannot register mouth rect")
+    m = MOUTH_MARGIN * ied
+    MOUTH_RECT = rect_round(ux0 - m, uy0 - m, ux1 + m, uy1 + m, bw, bh)
+    say(f"EYE_RECT {EYE_RECT} MOUTH_RECT {MOUTH_RECT} interEye {ied:.2f} "
+        f"mouthLandmarks {len(mouth_landmarks)}")
 
     # eye boxes (base space) for lid wipe
     eye_boxes_base = [
@@ -389,10 +476,12 @@ def main():
         "eyeRect": list(EYE_RECT),
         "transforms": {code: [[round(float(v), 6) for v in row] for row in transforms[code]] for code in NAMES},
         "eyeBoxesBase": eye_boxes_base,
+        "mouthLandmarks": mouth_landmarks,
         "mouthStates": {vis: {"source": src_code, "file": f"assets/{OUT[src_code]}"} for vis, src_code in STATE_SOURCE.items()},
         "eyeStates": {"open": "assets/eye-open.png", "half": "assets/eye-half.png", "closed": "assets/eye-closed.png"},
         "notes": [
             "Placement tolerance zero: fixed rects, images swapped in place.",
+            "Mouth rect measured from mouth-interior dark blobs per canonical frame, transformed via eye-pair affines to base space, unioned with 0.10*ied margin.",
             "eye-half/eye-closed synthesized from 09; operator approval required.",
             "Frame 11 excluded from pixel authority (different batch/lighting).",
         ],
