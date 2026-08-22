@@ -119,6 +119,9 @@ body {
   object-fit: contain;
   transform-origin: 50% 100%;
   filter: drop-shadow(0 0 22px rgba(124, 92, 255, 0.42));
+  /* Smooth state transitions: one discrete 180ms opacity cross-fade
+     (spec 10: opacity is the only transition primitive used). */
+  transition: opacity 180ms ease-out;
 }
 
 .candice-gesture-active {
@@ -213,4 +216,22 @@ body {
   .candice-character-image {
     animation: none;
   }
+
+  .candice-gesture-layer {
+    transition: none;
+  }
+}
+
+/*
+ * WS-14 applied class (FIX-016/F16-05): the reduced-motion authority is
+ * the class on <html>, not only the OS media query. Continuous CSS loops
+ * stop under both signals.
+ */
+html.candice-reduced-motion .boot-glow,
+html.candice-reduced-motion .candice-character-image {
+  animation: none;
+}
+
+html.candice-reduced-motion .candice-gesture-layer {
+  transition: none;
 }
