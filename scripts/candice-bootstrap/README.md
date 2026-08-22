@@ -27,7 +27,7 @@ never re-implements checksumming, atomicity, or the payload registry.
 | `state.mjs` | Persistent `bootstrap-state.json` (schema `candice.bootstrap.state/v1`) — the installed-tree state: component versions, asset checksums, launch record. |
 | `paths.mjs` | Platform install paths, all derived from `HOME`/`LOCALAPPDATA` (spec 24: no operator-specific absolute path). |
 | `health.mjs` | Fast health/version check: present / stale / missing per component; never downloads, never writes. |
-| `__tests__/` | 23 tests green: state round-trip, path resolution, skill/plugin/app install, WS-33 subprocess integration (real `atomic-install.mjs`, real `download.mjs` fail-closed), registry record resolution, CLI health. |
+| `__tests__/` | 24 tests green: state round-trip, path resolution, skill/plugin/app quarantine, WS-33 subprocess integration (real `atomic-install.mjs`, real `download.mjs` fail-closed), registry record resolution, CLI health. |
 
 ## Layout installed by the bootstrap
 
