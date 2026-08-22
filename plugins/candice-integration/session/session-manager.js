@@ -29,7 +29,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
-const { registryVersion } = require('../../../packages/candice-protocol/question-registry')
+const { registryVersion, lookup } = require('../../../packages/candice-protocol/question-registry')
 
 const MAX_SESSION_ID_LENGTH = 128
 const MAX_SKILL_LENGTH = 64
@@ -119,16 +119,25 @@ class SessionManager {
       throw new Error(`session-manager: state file ${file} is corrupt JSON: ${err.message}`)
     }
     const list = Array.isArray(parsed.sessions) ? parsed.sessions : []
+    let migrated = false
     for (const record of list) {
       if (record && typeof record.sessionId === 'string' && record.sessionId.length > 0) {
         // Safe migration for pre-registry state: absent history stays empty;
         // it never becomes an unvalidated arbitrary object.
         if (!Array.isArray(record.answeredQuestionKeys)) record.answeredQuestionKeys = []
         record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys.filter((k) => typeof k === 'string' && k.length > 0))]
+        // A persisted pending record is an authority boundary too.  Do not
+        // revive legacy/arbitrary keys after a restart merely because they
+        // happened to be written before registry enforcement was introduced.
+        if (record.pendingQuestion && !lookup(record.pendingQuestion.questionKey, record.skill).ok) {
+          record.pendingQuestion = null
+          migrated = true
+        }
         if (typeof record.registryVersion !== 'string') record.registryVersion = registryVersion
         this.sessions.set(record.sessionId, record)
       }
     }
+    if (migrated) this._save()
   }
 
   _save() {
@@ -242,6 +251,18 @@ class SessionManager {
     }
     if (typeof questionKey !== 'string' || questionKey.length === 0) {
       return { ok: false, code: 'invalid-question-key', error: 'questionKey is required' }
+    }
+    // The session's declared owning skill is the authority for direct
+    // lifecycle callers.  MCP validates the complete event, while this seam
+    // independently refuses unknown, retired, and cross-skill keys so no
+    // caller can persist an ungoverned pending question by bypassing MCP.
+    const governed = lookup(questionKey, record.skill)
+    if (!governed.ok) {
+      return {
+        ok: false,
+        code: governed.code,
+        error: `questionKey ${questionKey} is not governed for skill ${record.skill}`,
+      }
     }
     if (record.answeredQuestionKeys.includes(questionKey)) {
       return { ok: false, code: 'question-already-answered', error: 'question was already answered in this session' }

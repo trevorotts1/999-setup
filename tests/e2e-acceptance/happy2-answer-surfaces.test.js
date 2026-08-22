@@ -64,6 +64,7 @@ function skip(name, reason) {
   const controls = await import(path.join(harness.APP_SRC, 'ui', 'answer-controls', 'config.ts'))
   const ptt = await import(path.join(harness.APP_SRC, 'ui', 'ptt', 'config.ts'))
   const { FallbackCoordinator } = require(path.join(harness.PLUGIN_ROOT, 'fallback', 'fallback-coordinator.js'))
+  const { canonicalQuestion } = require(path.join(harness.REPO_ROOT, 'packages', 'candice-protocol', 'question-registry.js'))
   const { questionEvent } = require(path.join(harness.PLUGIN_ROOT, 'integrations', 'kaizen', 'question-map.js'))
   const { KAIZEN_ORDER } = require(path.join(harness.PLUGIN_ROOT, 'integrations', 'kaizen', 'question-map.js'))
   const prefsProfile = await import(path.join(harness.APP_SRC, 'prefs', 'profile.ts'))
@@ -113,12 +114,11 @@ function skip(name, reason) {
     const coord = new FallbackCoordinator({
       adapterOpts: { route: { resolveRoute: () => ({ ok: true, routeTo: 'sess-1' }) } },
     })
-    const question = {
+    const question = canonicalQuestion({
       sessionId: 'sess-1',
-      questionKey: 'K1',
-      text: 'What is your name?',
-      counted: true,
-    }
+      questionKey: 'BUILD_TARGET',
+      skill: 'spec-protocol',
+    }).question
     const fb = coord.fallbackQuestion(question)
     assert.strictEqual(fb.ok, true)
     assert.strictEqual(fb.prompt.text, question.text, 'the fallback asks the SAME question text')
@@ -135,12 +135,16 @@ function skip(name, reason) {
       handlers: { submit: (text) => fakeClaude.submit({ sessionId: 'sess-1', text }) },
     }
     const coord = new FallbackCoordinator({ adapterOpts })
-    const q = { sessionId: 'sess-1', questionKey: 'K1', text: 'Same question text', counted: true }
+    const q = canonicalQuestion({
+      sessionId: 'sess-1',
+      questionKey: 'BUILD_TARGET',
+      skill: 'spec-protocol',
+    }).question
     const fb = coord.fallbackQuestion(q)
     assert.strictEqual(fb.ok, true)
     const ans = coord.answerFromTerminal({
       sessionId: 'sess-1',
-      questionKey: 'K1',
+      questionKey: 'BUILD_TARGET',
       answerText: 'My app name',
     })
     assert.strictEqual(ans.ok, true, `terminal answer accepted: ${ans.error || ''}`)
@@ -148,7 +152,7 @@ function skip(name, reason) {
     assert.strictEqual(ans.answer.sessionId, 'sess-1', 'answer is bound to the SAME session id')
     const second = coord.answerFromTerminal({
       sessionId: 'sess-1',
-      questionKey: 'K1',
+      questionKey: 'BUILD_TARGET',
       answerText: 'Second try',
     })
     assert.strictEqual(second.ok, false, 'a second answer must be refused (exactly once)')

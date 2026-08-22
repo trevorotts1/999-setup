@@ -168,7 +168,7 @@ function skip(name, reason) {
   // 3. Secret-bearing questions are never read aloud (live proof)
   // -----------------------------------------------------------------------
 
-  pending.push(check('a secret question is shown as caption but never spoken', () => {
+  pending.push(check('an unregistered secret question is rejected before companion delivery', () => {
     const front = new harness.FakeCompanionFront()
     const secretEvent = {
       schemaVersion: '1.0',
@@ -187,11 +187,14 @@ function skip(name, reason) {
       canGoBack: false,
     }
     const v = validateQuestionEvent(secretEvent)
-    assert.strictEqual(v.ok, true, `secret event must validate: ${v.error || ''}`)
-    const delivered = front.deliverQuestion(secretEvent)
-    assert.strictEqual(delivered.ok, true)
-    assert.strictEqual(front.displayed.length, 1, 'caption surface always receives the question')
-    assert.strictEqual(front.spoken.length, 0, 'the speech path stays silent for a secret')
+    // No canonical secret prompt has protocol-owner provenance yet.  This
+    // proves the runtime fails closed instead of treating a hand-written
+    // safe-looking event as deliverable.
+    assert.strictEqual(v.ok, false, `unregistered secret must be refused: ${v.error || ''}`)
+    assert.strictEqual(v.code, 'invalid-question')
+    assert.strictEqual(v.rule, 'unregistered-governed-question')
+    assert.strictEqual(front.displayed.length, 0, 'rejected events never reach the display surface')
+    assert.strictEqual(front.spoken.length, 0, 'rejected events never reach speech')
   }))
 
   // -----------------------------------------------------------------------

@@ -40,13 +40,26 @@
 const assert = require('assert')
 const fs = require('fs')
 const harness = require('./harness')
+const { canonicalQuestion } = require('../../packages/candice-protocol/question-registry')
 
 let failures = 0
+const pending = []
 
 function check(name, fn) {
   try {
-    fn()
-    console.log(`ok - ${name}`)
+    const result = fn()
+    if (result && typeof result.then === 'function') {
+      pending.push(result.then(
+        () => console.log(`ok - ${name}`),
+        (err) => {
+          failures += 1
+          console.log(`FAIL - ${name}`)
+          console.log(`  ${err && err.message ? err.message : err}`)
+        },
+      ))
+    } else {
+      console.log(`ok - ${name}`)
+    }
   } catch (err) {
     failures += 1
     console.log(`FAIL - ${name}`)
@@ -128,29 +141,23 @@ check('fallback path carries no provider keys and no LLM call either', () => {
 
 check('fallbackQuestion redelivers the SAME text — no reword, no renumber', () => {
   const coordinator = new deps.FallbackCoordinator()
-  const deferred = coordinator.fallbackQuestion({
+  const question = canonicalQuestion({
     sessionId: 'session-x-1',
-    questionKey: 'A7',
-    text: 'Question number seven, exactly as governed.',
-    helpText: 'help',
-    allowedInputModes: ['voice', 'typed', 'terminal'],
-  })
+    questionKey: 'BUILD_TARGET',
+    skill: 'spec-protocol',
+  }).question
+  const deferred = coordinator.fallbackQuestion(question)
   assert.strictEqual(deferred.ok, true)
-  assert.strictEqual(deferred.prompt.text, 'Question number seven, exactly as governed.', 'the exact same question text')
-  assert.strictEqual(deferred.prompt.helpText, 'help', 'help text passes through untouched')
+  assert.strictEqual(deferred.prompt.text, question.text, 'the exact same question text')
+  assert.strictEqual(deferred.prompt.helpText, question.helpText, 'help text passes through untouched')
   assert.deepStrictEqual(deferred.prompt.allowedInputModes, ['voice', 'typed', 'terminal'], 'answer modes pass through untouched')
   assert.strictEqual(deferred.redelivered, false)
   // A repeat fallback of the same question is a redelivery, never a renumber
   // or a second slot (no double-count).
-  const again = coordinator.fallbackQuestion({
-    sessionId: 'session-x-1',
-    questionKey: 'A7',
-    text: 'Question number seven, exactly as governed.',
-    helpText: 'help',
-  })
+  const again = coordinator.fallbackQuestion(question)
   assert.strictEqual(again.ok, true)
   assert.strictEqual(again.redelivered, true, 'second display is a redelivery')
-  assert.strictEqual(again.prompt.text, 'Question number seven, exactly as governed.', 'the text is unchanged across redelivery')
+  assert.strictEqual(again.prompt.text, question.text, 'the text is unchanged across redelivery')
 })
 
 check('fallback routes to the owning session input, never its own conversation', () => {
@@ -174,22 +181,11 @@ check('MCP unavailable: the same question is asked in Claude normally, not a sec
   const server = new deps.AskUserServer({ isCompanionReady: () => false })
   const result = await server.askUser({
     sessionId: 'session-z-1',
-    question: {
-      schemaVersion: '1.0',
+    question: canonicalQuestion({
       sessionId: 'session-z-1',
-      skill: 'spec-protocol',
-      event: 'question',
       questionKey: 'BUILD_TARGET',
-      text: 'the governed question',
-      answerKind: 'free_text',
-      allowedInputModes: ['voice', 'typed', 'terminal'],
-      readAloud: true,
-      sensitivity: 'normal',
-      counted: true,
-      progress: null,
-      helpText: 'help',
-      canGoBack: true,
-    },
+      skill: 'spec-protocol',
+    }).question,
   })
   assert.strictEqual(result.result.isError, true)
   const text = result.result.content[0].text
@@ -289,8 +285,12 @@ check('wake header rejects every positive pre-FIX-011 capability claim', () => {
   }
 })
 
-if (failures > 0) {
-  console.log(`\n${failures} CHECK(S) FAILED`)
-  process.exit(1)
+function finish() {
+  if (failures > 0) {
+    console.log(`\n${failures} CHECK(S) FAILED`)
+    process.exit(1)
+  }
+  console.log('\nALL TESTS PASSED')
 }
-console.log('\nALL TESTS PASSED')
+
+Promise.all(pending).then(finish)

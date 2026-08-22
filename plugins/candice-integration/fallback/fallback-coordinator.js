@@ -38,6 +38,7 @@
 
 const { DoubleCountGuard } = require('./double-count-guard')
 const { TerminalInputAdapter } = require('./terminal-input-adapter')
+const { validateQuestionEvent } = require('../mcp/ask-user/validate')
 
 class FallbackCoordinator {
   /**
@@ -65,6 +66,19 @@ class FallbackCoordinator {
         ok: false,
         code: 'invalid-question',
         error: 'fallbackQuestion requires { sessionId, questionKey, text }',
+      }
+    }
+    // Fallback is a delivery surface, never a second prompt-authoring path.
+    // Require the shared canonical event before it can create terminal state;
+    // this closes the direct-call bypass around the MCP validation boundary.
+    const governed = validateQuestionEvent(q)
+    if (!governed.ok) {
+      return {
+        ok: false,
+        // Preserve the named registry authority reason when present, while
+        // retaining generic invalid-question for malformed event shapes.
+        code: governed.rule || governed.code,
+        error: `fallback refuses an ungoverned question event${governed.field ? ` (${governed.field})` : ''}`,
       }
     }
     const defer = this.guard.deferToTerminal({

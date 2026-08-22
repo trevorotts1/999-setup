@@ -112,13 +112,13 @@ check('recordAnswer refuses a question-key mismatch (no cross-answer)', () => {
   assert.strictEqual(r.code, 'question-key-mismatch')
 })
 
-check('a different pending question cannot overwrite the first', () => {
+check('a cross-skill key cannot overwrite the owning session pending question', () => {
   const sm = new SessionManager({ stateDir: tempDir() })
   sm.beginSession({ sessionId: 'sess-no-overwrite', skill: 'spec-protocol' })
   assert.strictEqual(sm.setPendingQuestion({ sessionId: 'sess-no-overwrite', questionKey: 'BUILD_TARGET' }).ok, true)
   const refused = sm.setPendingQuestion({ sessionId: 'sess-no-overwrite', questionKey: 'KAZEN_TARGET' })
   assert.strictEqual(refused.ok, false)
-  assert.strictEqual(refused.code, 'pending-question-exists')
+  assert.strictEqual(refused.code, 'question-skill-mismatch')
   assert.strictEqual(sm.getSession('sess-no-overwrite').pendingQuestion.questionKey, 'BUILD_TARGET')
 })
 
@@ -130,6 +130,37 @@ check('same pending key is an explicit recovery idempotency exception', () => {
   assert.strictEqual(again.ok, true)
   assert.strictEqual(again.recovery, true)
   assert.strictEqual(again.session.questionCount, 0)
+})
+
+check('direct lifecycle calls refuse unknown and retired keys without persisting pending state', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-governed-only', skill: 'spec-protocol' })
+  for (const questionKey of ['NOT_REGISTERED', 'B3']) {
+    const r = sm.setPendingQuestion({ sessionId: 'sess-governed-only', questionKey })
+    assert.strictEqual(r.ok, false)
+    assert.strictEqual(r.code, questionKey === 'B3' ? 'retired-governed-question' : 'unregistered-governed-question')
+  }
+  assert.strictEqual(sm.getSession('sess-governed-only').pendingQuestion, null)
+})
+
+check('restart drops a legacy ungoverned pending key before recovery can surface it', () => {
+  const dir = tempDir()
+  fs.writeFileSync(path.join(dir, 'candice-sessions.json'), JSON.stringify({
+    schemaVersion: '1.0',
+    sessions: [{
+      schemaVersion: '1.0',
+      sessionId: 'sess-legacy-ungoverned',
+      skill: 'spec-protocol',
+      status: 'active',
+      pendingQuestion: { questionKey: 'NOT_REGISTERED', text: 'legacy bypass' },
+      answeredQuestionKeys: [],
+    }],
+  }))
+  const sm = new SessionManager({ stateDir: dir })
+  assert.strictEqual(sm.getSession('sess-legacy-ungoverned').pendingQuestion, null)
+  assert.strictEqual(sm.recoverPendingQuestion({ sessionId: 'sess-legacy-ungoverned' }).recovered, null)
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'candice-sessions.json'), 'utf8'))
+  assert.strictEqual(saved.sessions[0].pendingQuestion, null, 'migration persists the fail-closed cleanup')
 })
 
 check('answered key cannot be asked again after persisted restart', () => {
@@ -175,7 +206,7 @@ check('recovery with nothing pending returns recovered null', () => {
 
 check('resumeSession returns a recovering session to active', () => {
   const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
-  sm.beginSession({ sessionId: 'sess-rs', skill: 'bro' })
+  sm.beginSession({ sessionId: 'sess-rs', skill: 'spec-protocol' })
   sm.setPendingQuestion({ sessionId: 'sess-rs', questionKey: 'BUILD_TARGET', counted: true })
   sm.recoverPendingQuestion({ sessionId: 'sess-rs' }) // only then is the session recovering
   const resume = sm.resumeSession({ sessionId: 'sess-rs' })

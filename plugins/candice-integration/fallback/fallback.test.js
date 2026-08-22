@@ -25,6 +25,7 @@ const assert = require('assert')
 const { DoubleCountGuard, validSessionId, validQuestionKey } = require('./double-count-guard')
 const { TerminalInputAdapter } = require('./terminal-input-adapter')
 const { FallbackCoordinator } = require('./fallback-coordinator')
+const { canonicalQuestion } = require('../../../packages/candice-protocol/question-registry')
 
 let failures = 0
 
@@ -63,7 +64,11 @@ function acceptAllRoute() {
   return routeStub(({ sessionId }) => ({ ok: true, routeTo: sessionId }))
 }
 
-const Q = { sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', text: 'Who is the application for?', counted: true }
+const Q = canonicalQuestion({
+  sessionId: 'sess-5-1',
+  questionKey: 'BUILD_TARGET',
+  skill: 'spec-protocol',
+}).question
 
 // ---------------------------------------------------------------------------
 // DoubleCountGuard — defer semantics
@@ -288,9 +293,9 @@ check('fallbackQuestion returns the same question prompt (no state loss)', () =>
   const r = c.fallbackQuestion(Q)
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.redelivered, false)
-  assert.strictEqual(r.counted, true)
-  assert.strictEqual(r.prompt.text, 'Who is the application for?')
-  assert.strictEqual(r.prompt.helpText, null)
+  assert.strictEqual(r.counted, Q.counted)
+  assert.strictEqual(r.prompt.text, Q.text)
+  assert.strictEqual(r.prompt.helpText, Q.helpText)
   assert.deepStrictEqual(r.prompt.allowedInputModes, ['voice', 'typed', 'terminal'])
 })
 
@@ -301,6 +306,16 @@ check('fallbackQuestion twice returns redelivered and keeps one slot', () => {
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.redelivered, true)
   assert.strictEqual(r.guardStatus.filter((g) => g.status === 'deferred').length, 1)
+})
+
+check('fallbackQuestion refuses unknown and retired keys before either terminal delivery or guard state', () => {
+  const c = new FallbackCoordinator()
+  for (const questionKey of ['NOT_REGISTERED', 'B3']) {
+    const r = c.fallbackQuestion({ ...Q, questionKey })
+    assert.strictEqual(r.ok, false)
+    assert.strictEqual(r.code, questionKey === 'B3' ? 'retired-governed-question' : 'unregistered-governed-question')
+  }
+  assert.deepStrictEqual(c.guard.status(), [], 'rejected keys never create a terminal fallback slot')
 })
 
 check('answerFromTerminal yields one answer-event with inputMode terminal, counted once', () => {
