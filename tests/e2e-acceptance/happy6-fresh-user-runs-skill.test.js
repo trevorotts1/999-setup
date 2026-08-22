@@ -15,14 +15,14 @@
  *
  * Proof legs, all FAIL-CLOSED:
  *  1. The wake-up hook is registered for all four slash commands AND
- *     session start (WS-02 hooks.json), async and non-blocking.
+ *     not ordinary session start (WS-02 hooks.json), async and non-blocking.
  *  2. The skill surfaces name Candice's appearance + setup-check role, and
  *     state that she is NOT the setup-deciding component (WS-36).
- *  3. The bootstrap installs every component listed in spec 22 on a fresh
- *     root — driven live through the real WS-31 install + health engines
- *     in a hermetic temp root (no network, no real home touched).
- *  4. The wake handler fails soft when the app is not yet installed
- *     (source proof on the WS-02 wake script).
+ *  3. A fresh bootstrap fails closed before writing an install tree when no
+ *     release-authorized app candidate exists — driven through the real
+ *     WS-31 install engine in a hermetic temp root (no network/home touched).
+ *  4. The cross-platform wake dispatcher fails soft when the app is not yet
+ *     installed (source proof on the WS-02 Node dispatcher).
  *  5. Windows fresh-user path requires a real interactive desktop — the
  *     suite records the honest skip marker with the exact smoke checklist
  *     that must pass before Windows is labeled production-ready.
@@ -64,10 +64,10 @@ function skip(name, reason) {
   const hooks = harness.readJson(path.join(harness.PLUGIN_ROOT, 'hooks', 'hooks.json'))
   const skill = harness.mustRead(harness.SPEC_SKILL)
   const companion = harness.mustRead(harness.COMPANION_REF)
-  const wake = harness.mustRead(path.join(harness.PLUGIN_ROOT, 'bin', 'wake-candice.sh'))
+  const wake = harness.mustRead(path.join(harness.PLUGIN_ROOT, 'bin', 'wake-candice.mjs'))
 
   // -----------------------------------------------------------------------
-  // 1. Wake-up on exactly the four dedicated commands + session start
+  // 1. Wake-up only on exactly the four dedicated commands
   // -----------------------------------------------------------------------
 
   pending.push(check('wake hooks exist for /spec-protocol, /kaizen, /eli5, /bro', () => {
@@ -83,15 +83,17 @@ function skip(name, reason) {
         assert.ok(Number(h.timeout) > 0 && Number(h.timeout) <= 60, `${m.matcher} hook timeout bounded`)
       }
     }
-    assert.ok(Array.isArray(hooks.hooks.SessionStart), 'SessionStart hook present')
+    assert.strictEqual(hooks.hooks.SessionStart, undefined,
+      'ordinary session start must not launch Candice')
   }))
 
-  pending.push(check('wake script fails soft when the app is not installed', () => {
-    // Spec 13.1/20: no Candice failure may stop the skill. The script must
-    // exit 0 silently when no launch command resolves.
-    assert.ok(wake.includes('exit 0'), 'wake script exits 0 on the no-app path')
-    assert.ok(/CANDICE_COMPANION_CMD|command -v candice-companion/.test(wake),
-      'launch command resolution is env/PATH-driven, never a hardcoded path')
+  pending.push(check('wake dispatcher fails soft when the app is not installed', () => {
+    // Spec 13.1/20: no Candice failure may stop the skill. Missing launch
+    // commands are caught without emitting hook payload or terminal content.
+    assert.ok(wake.includes("process.env.CANDICE_COMPANION_CMD || 'candice-companion'"),
+      'launch command is env/PATH-driven, never a hardcoded path')
+    assert.ok(wake.includes('companion-unavailable'),
+      'spawn failure has a named fail-soft outcome')
   }))
 
   // -----------------------------------------------------------------------
@@ -111,26 +113,21 @@ function skip(name, reason) {
   // 3. Fresh machine: bootstrap installs every component, live and hermetic
   // -----------------------------------------------------------------------
 
-  pending.push(check('fresh bootstrap installs skills, plugin, app, assets + checksum metadata', async () => {
+  pending.push(check('fresh bootstrap refuses an un-authorized app candidate before installing anything', async () => {
     const { installAll } = await import(path.join(harness.BOOTSTRAP, 'install.mjs'))
-    const { healthCheck } = await import(path.join(harness.BOOTSTRAP, 'health.mjs'))
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'candice-boot-'))
-    // Hermetic, offline: registry hashes are the WS-33-verified record; no
-    // network, no real HOME, no source compile (spec 22). A staged app
-    // bundle is intentionally NOT provided — the app leg must be recorded
-    // as skipped, never invented (same convention as the WS-49 suite).
+    // Hermetic, offline: no network, no real HOME, no source compile. A
+    // staged app bundle is intentionally not provided. FIX-001 correctly
+    // treats that as a release-authority block, not an installable build.
     const r = await installAll({ root, offline: true, appSource: null })
-    assert.strictEqual(r.ok, true, r.message)
-    for (const name of ['nine-router-setup', 'spec-protocol', 'kaizen', 'eli5', 'bro']) {
-      assert.ok(fs.existsSync(path.join(root, 'skills', name, 'SKILL.md')), `skill ${name} installed`)
-    }
-    assert.ok(fs.existsSync(path.join(root, 'plugin', 'candice-integration', '.claude-plugin', 'plugin.json')),
-      'candice plugin installed')
-    assert.ok(fs.existsSync(path.join(root, 'state', 'bootstrap-state.json')), 'version/checksum metadata written')
-    const h = healthCheck({ root })
-    assert.strictEqual(h.stateComponentMatch, true, 'installed tree matches the version pins')
-    assert.ok(Array.isArray(r.skipped) && r.skipped.includes('app'),
-      'app leg skipped and RECORDED (no fabricated app bundle)')
+    assert.strictEqual(r.ok, false, 'un-authorized app must block bootstrap')
+    assert.match(r.message, /release-authorized Candice app candidate/)
+    assert.strictEqual(fs.existsSync(path.join(root, 'skills')), false,
+      'no partial skills install can imply a releasable app installation')
+    assert.strictEqual(fs.existsSync(path.join(root, 'plugin')), false,
+      'no partial plugin install can imply a releasable app installation')
+    assert.strictEqual(fs.existsSync(path.join(root, 'state', 'bootstrap-state.json')), false,
+      'no successful install state may be written')
   }))
 
   // -----------------------------------------------------------------------

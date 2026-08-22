@@ -97,7 +97,8 @@ check('wake hooks bind to the FOUR supported commands only, all async', () => {
       assert.strictEqual(h.async, true, 'hooks are async — never block the skill')
     }
   }
-  assert.ok(Array.isArray(hooks.hooks.SessionStart), 'SessionStart hook exists (bind on session start)')
+  assert.strictEqual(hooks.hooks.SessionStart, undefined,
+    'ordinary session start must not wake or claim a session binding')
 })
 
 // ---------------------------------------------------------------------------
@@ -201,24 +202,26 @@ check('MCP unavailable: the same question is asked in Claude normally, not a sec
 // provider conversation (the wake hook launches the companion UI only).
 // ---------------------------------------------------------------------------
 
-check('wake script launches the companion UI, never a model conversation', () => {
+check('wake dispatcher launches the companion UI, never a model conversation', () => {
   const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
-  assert.ok(wake.includes('--wake'), 'companion is launched with --wake only')
+  const dispatcher = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.mjs', 'utf8')
+  assert.ok(wake.includes('wake-candice.mjs'), 'legacy wrapper delegates to the Node dispatcher')
+  assert.ok(dispatcher.includes("['--wake', request.command]"), 'companion is launched with --wake only')
   // The wake handler resolves ONE launch command (the companion UI). It
   // contains no "claude" reference at all — it never starts a Claude process,
   // which is exactly the no-second-conversation proof.
-  assert.ok(!wake.includes('claude'), 'the wake handler never mentions, launches, or routes to Claude')
+  assert.ok(!dispatcher.includes("spawn('claude"), 'the dispatcher never launches a Claude process')
 })
 
 check('wake script truthfully limits itself to wake-only until FIX-011', () => {
   const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
-  assert.ok(wake.includes('Current bounded contract (FIX-009): be fast and make a detached `--wake`'),
+  assert.ok(wake.includes('Current bounded contract (FIX-009): make a detached visual wake request'),
     'the header must identify the current bounded wake-only contract')
-  assert.ok(wake.includes('does not receive or forward a Claude\n# session identifier'),
+  assert.ok(wake.includes('does not receive or forward a session identifier'),
     'the header must deny Claude-session transport')
-  assert.ok(wake.includes('bind to a command-window/terminal host, or raise an\n# existing app instance'),
+  assert.ok(wake.includes('bind to\n# a terminal host, or raise an existing app instance'),
     'the header must deny host binding and existing-instance routing')
-  assert.ok(wake.includes('FIX-011\n# must implement authenticated session/host binding and instance routing'),
+  assert.ok(wake.includes('FIX-011 must provide an\n# authenticated session/host boundary'),
     'the header must name the owner required to add these capabilities')
   assert.ok(!wake.includes('--session-id'), 'wake-only launch must not pass an unverified session id')
   assert.ok(!wake.includes('--host-window'), 'wake-only launch must not pass host-window identity')

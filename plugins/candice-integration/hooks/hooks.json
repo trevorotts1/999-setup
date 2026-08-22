@@ -1,5 +1,5 @@
 {
-  "description": "Candice wake-up hooks. Fires on the four supported slash commands and on session start; launches or raises the Candice companion and binds it to the current Claude session and terminal window. Every handler is non-blocking, fails soft, and never stops the skill.",
+  "description": "Candice wake-up hooks. Fires only for the four supported slash commands. The dispatcher requests a fail-soft visual wake; it does not bind a Claude session or terminal host until an authenticated runtime boundary exists. Every handler is non-blocking and never stops the skill.",
   "hooks": {
     "UserPromptExpansion": [
       {
@@ -7,8 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/spec-protocol"],
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs", "--command", "/spec-protocol"],
             "timeout": 30,
             "async": true
           }
@@ -19,8 +19,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/kaizen"],
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs", "--command", "/kaizen"],
             "timeout": 30,
             "async": true
           }
@@ -31,8 +31,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/eli5"],
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs", "--command", "/eli5"],
             "timeout": 30,
             "async": true
           }
@@ -43,21 +43,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/bro"],
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["session-start"],
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs", "--command", "/bro"],
             "timeout": 30,
             "async": true
           }
