@@ -1,8 +1,13 @@
 # Changelog
 
-## [Candice 0.2.0] — 2026-08-21
+## [Candice 0.2.0] — withdrawn historical draft
 
-### Candice Companion — first integrated release
+> **QUARANTINED — NOT A RELEASE.** No Candice 0.2.0 application payload is
+> authorized for download, installation, update, or distribution. The entries
+> below are retained as implementation-history claims only; they are not
+> release evidence and must not be used as an artifact or checksum source.
+
+### Historical implementation claims (not a shipped release)
 
 - **App shell (WS-06/WS-07)**: Tauri 2 shell launches from prebuilt artifacts on macOS Apple Silicon and Windows x64 with no build toolchain on the customer machine; transparent, frameless, always-on-top window, no baked terminal/UI background.
 - **Session bridge (WS-02/WS-03)**: plugin manifest + wake-up hooks for /spec-protocol, /kaizen, /eli5, /bro; begin_session/end_session lifecycle binds the app to the Claude session ID — session identity is the routing authority, never the window.
@@ -16,7 +21,7 @@
 - **Updater (WS-33)**: bundled-component registry with SHA-256 checksums, operator-controlled download sources only, atomic install, rollback, downgrade rejection.
 - **Boss tools (WS-48)**: portable paths, no developer-specific absolute home paths, config-driven campaign data.
 
-### Skill versions
+### Historical proposed version mapping (not install authority)
 
 - spec-protocol 1.16.3 -> 1.17.0; nine-router-setup 1.16.3 -> 1.17.0; kaizen 1.0.1 -> 1.1.0; eli5 1.0.0 -> 1.1.0; bro 1.0.0 -> 1.1.0; candice-integration plugin 1.0.0 (initial); candice-companion app 0.1.0 -> 0.2.0.
 
