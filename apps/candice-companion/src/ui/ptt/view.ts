@@ -9,6 +9,13 @@
  *  - the hold semantics (pointerdown/pointerup/leave map to start/stop —
  *    the same press pair the WS-08 PTT events use).
  *
+ * FIX-014 (I-05/I-06): the label lives in a DEDICATED label element so the
+ * glow/wave children survive every render; busy states set BOTH `disabled`
+ * and `aria-disabled` and every start handler checks eligibility; the
+ * pointer is captured on press so release events outside the button still
+ * end the hold; release closes exactly once on pointerup, pointercancel,
+ * lostpointercapture, pointerleave, keyup, blur, and teardown.
+ *
  * This lane never:
  *  - resolves session/window identity (WS-03's),
  *  - owns the state machine or transcript-confirmation logic
@@ -80,6 +87,10 @@ export const PTT_STYLE_TEXT = `
   outline-offset: 2px;
 }
 .candice-ptt-button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.candice-ptt-button:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -194,6 +205,14 @@ function nullView(): PttView {
  * (single-flight, mirroring the WS-08 `ptt:start` guard). Keyboard: the
  * button also maps Space/Enter hold (repeat filtered).
  *
+ * FIX-014 additions:
+ *  - pointer capture on press + a document-level `pointerup` fallback, so a
+ *    release anywhere still ends the hold exactly once;
+ *  - `lostpointercapture` ends the hold;
+ *  - every start path checks eligibility (busy states disable the button
+ *    with BOTH `disabled` and `aria-disabled`, I-06);
+ *  - `destroy()` releases an active hold before removing the root.
+ *
  * `onTalkStart`/`onTalkStop` are the intent hooks — the caller routes them
  * to the WS-17 capture path. This module never records audio.
  */
@@ -212,7 +231,13 @@ export function createPttView(
   const button = document.createElement('button');
   button.type = 'button';
   button.className = `${PTT_ROOT_CLASS}-button`;
-  button.textContent = '🎙 HOLD TO TALK';
+  button.setAttribute('aria-label', '🎙 HOLD TO TALK');
+
+  // Dedicated label element (I-05): renders NEVER replace it, so the glow
+  // and wave children survive every status render.
+  const label = document.createElement('span');
+  label.className = 'candice-ptt-label';
+  label.textContent = '🎙 HOLD TO TALK';
 
   const glow = document.createElement('span');
   glow.className = 'candice-ptt-glow';
@@ -228,16 +253,18 @@ export function createPttView(
     wave.append(bar);
   }
 
-  button.append(glow);
+  button.append(glow, label);
   root.append(button, wave);
   mount.append(root);
 
   let destroyed = false;
   let pressed = false;
   let keyHeld = false;
+  let eligible = true; // busy statuses disable the control (I-06)
+  let activePointerId: number | null = null;
 
   const start = (): void => {
-    if (pressed) return; // single-flight
+    if (!eligible || pressed) return; // eligibility guard + single-flight
     pressed = true;
     handlers.onTalkStart();
   };
@@ -248,23 +275,65 @@ export function createPttView(
     handlers.onTalkStop();
   };
 
+  const doc = root.ownerDocument ?? (typeof document !== 'undefined' ? document : null);
+
+  // Document-level release fallback (I-06): if the pointer is captured by
+  // the button, pointerup on the button fires; if capture was lost or never
+  // granted, this document-level listener still ends the hold — and `stop`
+  // is idempotent so the mic closes exactly once.
+  const onDocPointerUp = (e: Event): void => {
+    const p = e as PointerEvent;
+    if (activePointerId !== null && p.pointerId === activePointerId) {
+      activePointerId = null;
+      stop();
+    }
+  };
+  if (doc !== null) {
+    doc.addEventListener('pointerup', onDocPointerUp);
+    doc.addEventListener('pointercancel', onDocPointerUp);
+  }
+
   button.addEventListener('pointerdown', (e) => {
-    if ((e as PointerEvent).button !== 0) return;
-    e.preventDefault();
+    const ev = e as PointerEvent;
+    if (ev.button !== 0) return;
+    if (!eligible) return; // guard: disabled control never starts capture
+    ev.preventDefault();
+    try {
+      button.setPointerCapture?.(ev.pointerId);
+      activePointerId = ev.pointerId;
+    } catch {
+      // Capture unsupported (older WebView/fake DOM): the document-level
+      // release fallback still ends the hold.
+    }
     start();
   });
-  button.addEventListener('pointerup', () => stop());
-  button.addEventListener('pointercancel', () => stop());
+  button.addEventListener('pointerup', (e) => {
+    const ev = e as PointerEvent;
+    if (activePointerId !== null && ev.pointerId === activePointerId) activePointerId = null;
+    stop();
+  });
+  button.addEventListener('pointercancel', (e) => {
+    const ev = e as PointerEvent;
+    if (activePointerId !== null && ev.pointerId === activePointerId) activePointerId = null;
+    stop();
+  });
+  button.addEventListener('lostpointercapture', (e) => {
+    const ev = e as PointerEvent;
+    if (activePointerId !== null && ev.pointerId === activePointerId) activePointerId = null;
+    // Capture lost mid-hold (e.g. touch scroll takes over): release.
+    stop();
+  });
   button.addEventListener('pointerleave', () => {
     // Release always ends the hold even if the pointer left the button —
     // the mic is live only while HOLD TO TALK is pressed (E.1 WS-17).
     if (pressed) stop();
   });
   button.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).repeat) return;
-    if ((e as KeyboardEvent).key === ' ' || (e as KeyboardEvent).key === 'Enter') {
-      e.preventDefault();
-      if (keyHeld) return;
+    const ev = e as KeyboardEvent;
+    if (ev.repeat) return;
+    if (ev.key === ' ' || ev.key === 'Enter') {
+      ev.preventDefault();
+      if (!eligible || keyHeld) return; // guard (I-06)
       keyHeld = true;
       pressed = true;
       handlers.onTalkStart();
@@ -282,12 +351,20 @@ export function createPttView(
     if (view.label === null) {
       // Busy states hide the prompt: the button stays (keyboard users can
       // still find it) but is disabled — never icon-only, never removed.
+      // BOTH disabled and aria-disabled (I-06); handlers re-check `eligible`
+      // so no path can start capture while busy.
+      eligible = false;
+      button.disabled = true;
       button.setAttribute('aria-disabled', 'true');
     } else {
+      eligible = true;
+      button.disabled = false;
       button.setAttribute('aria-disabled', 'false');
-      button.textContent = view.label;
+      // The dedicated label element updates; glow/wave children survive (I-05).
+      label.textContent = view.label;
     }
     root.setAttribute('data-candice-ptt-state', view.family);
+    root.setAttribute('data-candice-ptt-interruptible', String(view.interruptible));
     wave.hidden = !view.waveform;
   };
 
@@ -301,7 +378,15 @@ export function createPttView(
       return root.classList.contains(PTT_LISTENING_CLASS);
     },
     destroy(): void {
+      if (destroyed) return;
+      // Release any live hold before removing the root (I-06: teardown is
+      // one of the mandated release paths; stop is idempotent).
+      stop();
       destroyed = true;
+      if (doc !== null) {
+        doc.removeEventListener('pointerup', onDocPointerUp);
+        doc.removeEventListener('pointercancel', onDocPointerUp);
+      }
       root.remove();
     },
   };

@@ -35,6 +35,12 @@ export interface CaptionsControllerOptions {
   textScale?: CaptionsTextScale;
   /** Document injection (tests); defaults to the real document. */
   doc?: Document | null;
+  /**
+   * First visible caption shown at creation (FIX-014 I-13: the exact
+   * setup-check greeting). Null/empty shows nothing until the first
+   * machine effect. Always important (never faded).
+   */
+  initialCaption?: string | null;
 }
 
 export interface CaptionsController {
@@ -60,9 +66,16 @@ function captionOf(effect: CandiceSideEffect): CaptionEntry | null {
 }
 
 export function createCaptionsController(options: CaptionsControllerOptions): CaptionsController {
-  const { machine, mount, textScale = 'medium', doc = null } = options;
+  const { machine, mount, textScale = 'medium', doc = null, initialCaption = null } = options;
   const view: CaptionsView = createCaptionsView(mount, doc);
   if (view.el !== null) view.setTextScale(textScale);
+
+  // FIX-014 (I-13): the setup-check greeting is the first visible caption,
+  // shown at creation before any machine effect exists. Always important
+  // (never faded); empty/null shows nothing until the first effect.
+  if (initialCaption !== null && initialCaption.length > 0) {
+    view.show({ text: clipCaption(initialCaption), important: true, seq: 0 });
+  }
 
   // Entry-importance classification: question/recovering/text-fallback
   // captions are important (never faded); status-only captions are not.

@@ -280,6 +280,9 @@ export function createAnswerControlsView(
   let destroyed = false;
 
   const submitTyped = (): void => {
+    // Render gate already disabled the input; guard again so a stale
+    // handler can never submit outside a question surface (I-12).
+    if (input.disabled) return;
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
@@ -289,7 +292,10 @@ export function createAnswerControlsView(
     if ((e as KeyboardEvent).key === 'Enter') submitTyped();
   });
   submit.addEventListener('click', submitTyped);
-  delegate.addEventListener('click', () => handlers.onDelegateToClaude());
+  delegate.addEventListener('click', () => {
+    if (delegate.disabled) return; // I-12: disabled path never delegates
+    handlers.onDelegateToClaude();
+  });
   voice.addEventListener('click', () => handlers.onVoiceToggle());
   use.addEventListener('click', () => {
     // Render gate already disabled the button; guard again so a stale
@@ -305,6 +311,15 @@ export function createAnswerControlsView(
   const setModel = (model: AnswerControlsModel): void => {
     if (destroyed) return;
     root.setAttribute('data-candice-state', model.inQuestionFlow ? 'question' : 'off-question');
+    // FIX-014 (I-12): the model's usability claims now become real DOM
+    // protections — a disabled control can never start an answer path.
+    // Both methods stay VISIBLE on every question (spec 5.1); usability
+    // only gates interaction, never presence.
+    const typedDisabled = !model.typedUsable;
+    input.disabled = typedDisabled;
+    submit.disabled = typedDisabled;
+    delegate.disabled = !model.delegateUsable;
+    pttSlot.setAttribute('aria-disabled', String(!model.pttUsable));
     // Both methods always present on every question (spec 5.1); the
     // convenience only marks the active one, never hides the other.
     input.setAttribute(

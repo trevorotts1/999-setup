@@ -22,6 +22,16 @@ import {
   bindStatusFlow,
   type GestureStageHost,
 } from '../shell/candice-composition.ts';
+import { createCaptionsController } from '../ui/captions/index.ts';
+import { defaultProfile } from '../prefs/profile.ts';
+
+/**
+ * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
+ * (`packages/candice-protocol/tests/fixtures/status-event.valid.json`).
+ * Shown as the first caption at boot, before any machine effect exists.
+ */
+const SETUP_CHECK_GREETING =
+  "Hi, I'm Candice. Give me just a moment while I make sure everything is set up properly for us to work together.";
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;
@@ -79,6 +89,30 @@ export async function initializeRuntimeComposition(
       unbind = null;
     }
   }
+
+  // FIX-014 (step 6): one persistent caption live region. The captions view
+  // clears its mount on creation, so it gets a DEDICATED mount element —
+  // never the shared #app root (the answer-controls view also clears its
+  // mount). The controller wraps the machine's transition surface so every
+  // real transition renders captions from `machine.lastEffects`; the
+  // original transition stays the single authority (mirror of
+  // `bindStatusFlow`). Installed BEFORE the bridge so bridge-driven
+  // `question:received` transitions render captions.
+  const captionsMount = document.createElement('div');
+  captionsMount.id = 'candice-captions-mount';
+  root.append(captionsMount);
+  const captions = createCaptionsController({
+    machine,
+    mount: captionsMount,
+    textScale: defaultProfile().textSize ?? 'medium',
+    initialCaption: SETUP_CHECK_GREETING,
+  });
+  const originalTransition = machine.transition.bind(machine);
+  machine.transition = (event) => {
+    const result = originalTransition(event);
+    if (result !== null) captions.render();
+    return result;
+  };
 
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.

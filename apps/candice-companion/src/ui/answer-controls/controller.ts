@@ -126,10 +126,23 @@ export function createAnswerControlsController(
     const pttHost = document.createElement('div');
     pttView = createPttView(pttHost, {
       onTalkStart: () => {
-        machine.transition({ type: 'ptt:start' });
+        // FIX-014 (I-04): a hold press while Candice is SPEAKING is an
+        // interrupt intent, not a new listen. `ptt:start` is rejected by
+        // the machine in that status; `speech:interrupted` produces
+        // `tts:stop` FIRST, then `mic:open` — the spec-6 duplex-safety
+        // ordering. Every other status keeps the plain start event.
+        if (machine.getState().status === 'speaking') {
+          machine.transition({ type: 'speech:interrupted' });
+        } else {
+          machine.transition({ type: 'ptt:start' });
+        }
         render();
       },
       onTalkStop: () => {
+        // The machine rejects `ptt:stop` unless the mic is live
+        // (status `listening`); after an interrupt the same event closes
+        // the capture. One event, one transition — the reducer stays the
+        // single authority.
         machine.transition({ type: 'ptt:stop' });
         render();
       },
@@ -166,6 +179,12 @@ export function createAnswerControlsController(
       if (prefs.voiceEnabled !== undefined) voiceEnabled = prefs.voiceEnabled;
       render();
     },
-    destroy: () => view.destroy(),
+    destroy: () => {
+      // pttView holds document-level release listeners and a possible live
+      // hold — its destroy() releases the hold and removes those listeners
+      // (I-06 teardown path) before the answer surface is removed.
+      pttView?.destroy();
+      view.destroy();
+    },
   };
 }

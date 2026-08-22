@@ -262,6 +262,45 @@ test('createCaptionsView: empty caption clears to the reset state, never stale t
   assert.equal(captionTextOf(mount), 'Candice', 'cleared: only the static label remains');
 });
 
+test('FIX-014 I-13: initialCaption shows at creation, important (never faded), before any machine effect', () => {
+  const machine = createCandiceStateMachine();
+  const { doc, mount } = fakeEnv();
+  const greeting =
+    "Hi, I'm Candice. Give me just a moment while I make sure everything is set up properly for us to work together.";
+  const ctrl = createCaptionsController({
+    machine,
+    mount: mount as unknown as HTMLElement,
+    doc: doc as unknown as Document,
+    initialCaption: greeting,
+  });
+  const root = mount.children[0];
+  assert.ok(captionTextOf(mount).includes('Give me just a moment'), 'greeting visible at creation');
+  assert.ok(!root?.classes.contains('candice-captions-stale'), 'greeting is important, never faded');
+  assert.ok(!root?.classes.contains('candice-captions-empty'), 'greeting clears the empty state');
+  // A later machine caption replaces the greeting.
+  machine.transition({ type: 'session:begin' });
+  machine.transition({ type: 'question:received', question: 'What is your name?' });
+  ctrl.render();
+  assert.ok(captionTextOf(mount).includes('What is your name?'), 'machine caption replaces greeting');
+});
+
+test('FIX-014 I-13: null/empty initialCaption shows nothing until the first machine effect', () => {
+  const machine = createCandiceStateMachine();
+  const { doc, mount } = fakeEnv();
+  const ctrl = createCaptionsController({
+    machine,
+    mount: mount as unknown as HTMLElement,
+    doc: doc as unknown as Document,
+    initialCaption: null,
+  });
+  const root = mount.children[0];
+  assert.ok(root?.classes.contains('candice-captions-empty'), 'no initial caption: empty state');
+  machine.transition({ type: 'session:begin' });
+  machine.transition({ type: 'question:received', question: 'Later?' });
+  ctrl.render();
+  assert.ok(captionTextOf(mount).includes('Later?'), 'first machine caption still renders');
+});
+
 test('captions controller: machine null / mount null never throw (spec 20)', () => {
   const { doc, mount } = fakeEnv();
   const ctrl = createCaptionsController({
