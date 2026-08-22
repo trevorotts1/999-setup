@@ -1,0 +1,71 @@
+# deny.toml — cargo-deny configuration for the Candice Companion Rust supply chain.
+#
+# FIX-023 (dependency/supply-chain audit) — dependency file owned by the FIX-023
+# implementation lane. Runs across every Cargo.toml/Cargo.lock pair in the
+# companion tree; see CONTROL/dependency-exceptions.md for the time-bounded
+# exception process that governs any finding this config surfaces.
+#
+# Schema: cargo-deny 0.20.x. Sections: [advisories] (RustSec advisory database)
+# and [licenses] (crate license allow-list). A `cargo deny check` exit code
+# != 0 fails the CI audit job — no skip semantics, no silent suppression.
+
+[advisories]
+# RustSec database: default tracking; refreshed on each check run.
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# cargo-deny 0.20 scope model: vulnerabilities are always denied; the keys
+# below set the SCOPE at which the non-vulnerability advisory classes error
+# vs warn. "workspace" scopes the error to workspace members only (each crate
+# tree is audited as its own workspace here); "all" includes transitive deps.
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "workspace"
+ignore = []
+
+[licenses]
+# Allow-list: judged permissive licenses present in the seven crate trees
+# (see CONTROL/crate-tree-ownership.md for the per-tree record). Anything not
+# listed here, and anything unlicensed, fails the check. Copyleft licenses
+# (GPL family) warn — the TTS GPL worker chain is a Python component and is
+# governed by the notices/exception record, not by this Rust gate.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    # target-lexicon (via cfg-expr -> system-deps -> atk-sys): permissive
+    # LLVM exception variant of Apache-2.0, redistribution-compatible.
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+]
+# Deny-by-default is unconditional in cargo-deny >= 0.16: any license not
+# allowed or excepted, and any undetermined license, fails the check.
+# License exceptions (crate -> license) get added only via the dependency
+# exception process in CONTROL/dependency-exceptions.md.
+exceptions = []
+
+# First-party workspace members marked `publish = false` are skipped by
+# cargo-deny; those without the field are clarified below.
+private = { ignore = true }
+
+# First-party workspace members carry no `license` field in their Cargo.toml
+# (owned by other lanes; FIX-023 does not edit them). The repository root
+# LICENSE is MIT (Copyright 2026 Trevor Otts / BlackCEO), so each first-party
+# crate is clarified as MIT here. The clarify hash pins the root LICENSE
+# content; if the license text changes, cargo-deny fails until the hash is
+# re-pinned — intentional, not silent.
+[[licenses.clarify]]
+crate = "candice-companion"
+expression = "MIT"
+license-files = []
+
+[[licenses.clarify]]
+crate = "candice-macos-signature"
+expression = "MIT"
+license-files = []
