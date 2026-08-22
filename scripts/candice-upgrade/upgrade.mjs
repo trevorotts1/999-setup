@@ -38,7 +38,7 @@ const readArg = (name) => {
 const hasFlag = (name) => args.includes(name);
 
 function usage() {
-  console.error("usage: node upgrade.mjs check|repair|--health [--offline] [--root <dir>] [--simulate]");
+  console.error("usage: node upgrade.mjs check|repair|--health [--offline] [--root <dir>] [--simulate] [--mode test-fixture|developer|release] [--config-root <dir>]");
   process.exit(2);
 }
 
@@ -47,6 +47,12 @@ async function main() {
     offline: hasFlag("--offline"),
     root: readArg("--root"),
     simulate: hasFlag("--simulate"),
+    // FIX-018: repair/health must be able to run release semantics from the
+    // CLI (the lifecycle CLI always passes an explicit mode). A missing
+    // mode keeps the legacy mode-less shape; a supplied mode is validated
+    // by the mode parser before any write.
+    mode: readArg("--mode"),
+    ...(readArg("--config-root") ? { configRoot: readArg("--config-root") } : {}),
   };
 
   if (command === "check") {
@@ -84,9 +90,20 @@ async function main() {
 
   if (command === "--health" || command === "health") {
     const h = await healthCheck(opts);
-    // Compatibility line for the app leg (spec 21 fast check shape):
-    // `MISS candice-companion` + release-authority detail. Then one line per
-    // schema leg: `OK`/`MISS`/`??` + leg name + detail.
+    if (opts.mode === undefined) {
+      // Legacy mode-less shape (base spec 21 fast check contract):
+      // component/asset lines, `missing` = component names.
+      for (const c of h.components) {
+        console.log(`  ${c.ok ? "OK " : "MISS"} ${c.name}${c.version ? ` (${c.version})` : ""}${c.detail ? ` — ${c.detail}` : ""}`);
+      }
+      for (const a of h.assets) {
+        console.log(`  ${a.ok ? "OK " : "MISS"} ${a.name}${a.detail ? ` — ${a.detail}` : ""}`);
+      }
+      console.log(h.ok ? `OK all bundled components healthy at ${h.root}` : `FAIL missing: ${h.missing.join(", ")}`);
+      process.exit(h.ok ? 0 : 1);
+    }
+    // Mode-gated schema report: compatibility line for the app leg, then one
+    // line per schema leg: `OK`/`MISS`/`??` + leg name + detail.
     const app = checkApp(h.root, h.platform);
     console.log(`  ${app.ok ? "OK " : "MISS"} candice-companion${app.detail ? ` — ${app.detail}` : ""} — ${app.ok ? "release-authorized candidate present" : "release-authorized candidate unavailable"}`);
     for (const [leg, rec] of Object.entries(h.legs)) {

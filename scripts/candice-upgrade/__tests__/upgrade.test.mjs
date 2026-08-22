@@ -66,9 +66,9 @@ test("applyRepairs refuses a supplied app and never copies it", async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("repair blocks before creating skills, plugin, assets, app, or state", async () => {
+test("release repair blocks before creating skills, plugin, assets, app, or state", async () => {
   const root = freshRoot();
-  const r = await repair({ root, platform: "darwin", offline: true, noAtomic: true });
+  const r = await repair({ root, platform: "darwin", offline: true, noAtomic: true, mode: "release" });
   assert.equal(r.ok, false);
   assert.equal(r.repair.blocked.length, 1);
   assert.equal(existsSync(skillsDir(root)), false);
@@ -79,10 +79,10 @@ test("repair blocks before creating skills, plugin, assets, app, or state", asyn
   rmSync(root, { recursive: true, force: true });
 });
 
-test("repair blocks an existing arbitrary app and writes no partial state", async () => {
+test("release repair blocks an existing arbitrary app and writes no partial state", async () => {
   const root = freshRoot();
   makeAppFixture(root);
-  const r = await repair({ root, platform: "darwin", offline: true, noAtomic: true });
+  const r = await repair({ root, platform: "darwin", offline: true, noAtomic: true, mode: "release" });
   assert.equal(r.ok, false);
   assert.match(r.message, /untrusted/);
   assert.equal(existsSync(stateFilePath(root)), false);
@@ -90,9 +90,9 @@ test("repair blocks an existing arbitrary app and writes no partial state", asyn
   rmSync(root, { recursive: true, force: true });
 });
 
-test("repair simulation reports the release block and writes nothing", async () => {
+test("release repair simulation reports the release block and writes nothing", async () => {
   const root = freshRoot();
-  const r = await repair({ root, platform: "darwin", offline: true, simulate: true });
+  const r = await repair({ root, platform: "darwin", offline: true, simulate: true, mode: "release" });
   assert.equal(r.ok, false);
   assert.equal(r.repair.blocked[0].id, "candice-companion");
   assert.equal(existsSync(stateFilePath(root)), false);

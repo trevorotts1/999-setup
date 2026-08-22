@@ -113,9 +113,10 @@ export async function uninstall(opts = {}) {
   steps.stop = stopAppBridge(root, platform, opts);
 
   const roots = discoverConfigRoots(env, opts);
+  const regOpts = opts.claudeBin ? { claudeBin: opts.claudeBin } : {};
   const dereg = [];
   for (const { label, root: cfgRoot } of roots) {
-    const r = deregister(cfgRoot, join(root, "plugin", "candice-integration"));
+    const r = deregister(cfgRoot, join(root, "plugin", "candice-integration"), regOpts);
     dereg.push({ label, root: cfgRoot, ...r });
   }
   steps.deregister = { roots: dereg, ok: dereg.every((d) => d.ok) };
@@ -131,7 +132,7 @@ export async function uninstall(opts = {}) {
   // live CLI listing, never a text grep of a registry file.
   const leftovers = [];
   for (const { label, root: cfgRoot } of roots) {
-    const listed = listPlugins(cfgRoot);
+    const listed = listPlugins(cfgRoot, regOpts);
     if (!listed.ok) {
       leftovers.push(`${label}:${cfgRoot} (plugin list failed: ${listed.message})`);
       continue;

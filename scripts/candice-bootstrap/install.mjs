@@ -52,7 +52,7 @@ import { createHash } from "node:crypto";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bootstrapRoot, readState, writeState, STATE_SCHEMA } from "./state.mjs";
-import { skillsDir, pluginDir, appBundlePath, assetsDir } from "./paths.mjs";
+import { skillsDir, pluginDir, appBundlePath, appDir, assetsDir } from "./paths.mjs";
 import { parseMode, isNonRelease, INTERNAL_SIGNED_FIXTURE } from "./modes.mjs";
 import { resolveAppRecord } from "./release-resolver.mjs";
 import { registerAll, verifyAll, deregisterAll } from "./register-plugin.mjs";
@@ -253,7 +253,14 @@ export async function installApp(root, platform, opts = {}) {
   const mode = parsed.mode;
 
   if (mode === "release") {
-    const resolved = resolveAppRecord({ platform, arch: opts.arch, ...(opts.authority ? { authority: opts.authority } : {}) });
+    const resolved = resolveAppRecord({
+      platform,
+      arch: opts.arch,
+      ...(opts.manifestPath ? { manifestPath: opts.manifestPath } : {}),
+      ...(opts.repoRoot ? { repoRoot: opts.repoRoot } : {}),
+      ...(opts.statusScript ? { statusScript: opts.statusScript } : {}),
+      ...(opts.authority ? { authority: opts.authority } : {}),
+    });
     if (!resolved.ok) return result(false, `app install refused: ${resolved.message}`);
     const rec = resolved.record;
     // Expected executable path is root-relative; never allow escapes.
@@ -530,6 +537,9 @@ export async function installAll(opts = {}) {
   journal(root, { step: "installAll.begin", mode, platform, release });
 
   // App first (plan: keep the existing ordering; mode validation precedes it).
+  // Snapshot BEFORE the install so a failing transaction restores the
+  // prior known-good app tree (release transactions never leak a new app).
+  restores.push(snapshotTarget(root, appDir(root), "app"));
   const appR = await installApp(root, platform, { ...opts, mode });
   results.app = appR;
   if (!appR.ok) {
@@ -556,13 +566,19 @@ export async function installAll(opts = {}) {
   }
   journal(root, { step: "plugin.installed" });
 
-  // Plugin registration in the real shared config root(s) + verification
+  // Plugin registration in the shared Claude config root(s) + verification
   // (plan layer 3: registration after atomic install, idempotent, verify
-  // exactly one effective registration). Non-release modes must not touch
-  // the live config root: an explicit config root is required there and is
-  // passed through as the registration target.
-  const regOpts = {};
-  if (!release && opts.configRoot) regOpts.configRoot = opts.configRoot;
+  // exactly one effective registration). Release mode targets the live
+  // discovered root (or an injected configRoot for hermetic release tests).
+  // Non-release modes must NEVER touch the live config root: an explicit
+  // configRoot is required there, and its absence is a hard failure —
+  // discovery would otherwise target the live ~/.claude.
+  const regOpts = opts.configRoot && opts.configRoot.length > 0 ? { configRoot: opts.configRoot } : {};
+  if (opts.claudeBin) regOpts.claudeBin = opts.claudeBin;
+  if (!release && !regOpts.configRoot) {
+    const rb = rollback("non-release plugin registration refused: no explicit configRoot (live config root is never a fixture target)");
+    return finish(root, platform, results, false, "non-release install requires an explicit configRoot for plugin registration; live config root never targeted", [], { mode, notReleaseInstall: isNonRelease(mode), rollback: rb });
+  }
   const regR = registerAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
   results.pluginRegistration = regR;
   if (!regR.ok) {
@@ -579,7 +595,9 @@ export async function installAll(opts = {}) {
   }
   journal(root, { step: "plugin.registered", roots: (regR.done || []).map((d) => d.root) });
 
-  const assetsR = await installAssets(root, platform, { ...opts, release });
+  // installAssets has its own mode enum (download|record): offline means
+  // record-only metadata — never a download attempt in an offline run.
+  const assetsR = await installAssets(root, platform, { ...opts, mode: opts.offline ? "record" : "download", release });
   results.assets = assetsR;
   if (!assetsR.ok) {
     await deregisterAll(env, pluginDir(root), regOpts);

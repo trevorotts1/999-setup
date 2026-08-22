@@ -21,7 +21,7 @@
 import { bootstrapRoot } from "./state.mjs";
 import { installAll } from "./install.mjs";
 import { healthCheck } from "./health.mjs";
-import { parseMode } from "./modes.mjs";
+import { parseMode, isNonRelease } from "./modes.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0] || "install";
@@ -65,8 +65,8 @@ async function main() {
   }
   const mode = parsed.mode;
   const root = readArg("--root");
-  if (mode === "test-fixture" && !root) {
-    console.error("FAIL test-fixture mode requires an explicit --root (temporary root)");
+  if (isNonRelease(mode) && !root) {
+    console.error(`FAIL ${mode} mode requires an explicit --root (temporary root); the live install root is never a non-release target`);
     process.exit(2);
   }
   const opts = {

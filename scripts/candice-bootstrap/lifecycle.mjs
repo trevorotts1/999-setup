@@ -42,7 +42,7 @@ const readArg = (name) => {
 const hasFlag = (name) => args.includes(name);
 
 function usage() {
-  console.error("usage: node lifecycle.mjs install|health|repair|rollback|uninstall --mode test-fixture|developer|release [--root <dir>] [--offline] [--simulate] [rollback: --to <dir>]");
+  console.error("usage: node lifecycle.mjs install|health|repair|rollback|uninstall --mode test-fixture|developer|release [--root <dir>] [--config-root <dir>] [--offline] [--simulate] [rollback: --to <dir>]");
   process.exit(2);
 }
 
@@ -51,7 +51,7 @@ async function main() {
   const mode = requireCliMode(readArg("--mode"), `lifecycle ${command}`);
   const root = readArg("--root");
   enforceNonReleaseRoot(mode, root);
-  const opts = { mode, root, offline: hasFlag("--offline"), simulate: hasFlag("--simulate") };
+  const opts = { mode, root, offline: hasFlag("--offline"), simulate: hasFlag("--simulate"), ...(readArg("--config-root") ? { configRoot: readArg("--config-root") } : {}) };
 
   if (command === "install") {
     const r = await installAll(opts);
@@ -79,7 +79,9 @@ async function main() {
 
   if (command === "repair") {
     // Delegates to the WS-32 repair engine; never reimplements repair.
-    const r = spawnSync(process.execPath, [UPGRADE_CLI, "repair", "--root", opts.root || "", ...(opts.offline ? ["--offline"] : []), ...(opts.simulate ? ["--simulate"] : [])], { encoding: "utf8" });
+    // --mode and --config-root pass through so release semantics reach the
+    // repair transaction (the lifecycle CLI already validated --mode).
+    const r = spawnSync(process.execPath, [UPGRADE_CLI, "repair", "--root", opts.root || "", ...(opts.offline ? ["--offline"] : []), ...(opts.simulate ? ["--simulate"] : []), "--mode", opts.mode, ...(opts.configRoot ? ["--config-root", opts.configRoot] : [])], { encoding: "utf8" });
     process.stdout.write(r.stdout || "");
     process.stderr.write(r.stderr || "");
     process.exit(r.status ?? 1);

@@ -22,9 +22,9 @@ test("check is never a false current result", () => {
   if (r.status === 2) assert.match(r.stderr, /UNDETERMINED/);
 });
 
-test("repair exits nonzero for a quarantined app and writes no partial tree", () => {
+test("release repair exits nonzero for a quarantined app and writes no partial tree", () => {
   const root = freshRoot();
-  const r = runCli(["repair", "--offline", "--root", root]);
+  const r = runCli(["repair", "--offline", "--root", root, "--mode", "release"]);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /repair blocked.*release-authorized/i);
   assert.equal(existsSync(join(root, "skills")), false);
@@ -32,9 +32,9 @@ test("repair exits nonzero for a quarantined app and writes no partial tree", ()
   rmSync(root, { recursive: true, force: true });
 });
 
-test("repair --simulate reports the same release block and writes nothing", () => {
+test("release repair --simulate reports the same release block and writes nothing", () => {
   const root = freshRoot();
-  const r = runCli(["repair", "--offline", "--root", root, "--simulate"]);
+  const r = runCli(["repair", "--offline", "--root", root, "--simulate", "--mode", "release"]);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /repair blocked/);
   assert.equal(existsSync(join(root, "state")), false);

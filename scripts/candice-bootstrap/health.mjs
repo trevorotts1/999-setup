@@ -60,15 +60,38 @@ export function checkPluginTree(root, version) {
   return { name: "candice-integration", present, version, expected: version, ok: present };
 }
 
-/** Health check the companion app for the current platform (executable presence only; provenance/hash are separate legs). */
+/** Health check the companion app for the current platform.
+ * Legacy contract (base WS-31): a local bundle has no release-authority
+ * provenance, so the component is NEVER ok — `present` only records whether
+ * an executable exists on disk. The schema report's app legs (executable /
+ * hash / provenance / launch) carry the mode-gated semantics.
+ */
 export function checkApp(root, platform) {
   if (platform === "darwin") {
     const exe = join(appBundlePath(root), "Contents", "MacOS", "candice-companion");
-    return { name: "candice-companion", present: existsSync(exe), version: null, expected: "release-authorized candidate", ok: existsSync(exe), exe };
+    const present = existsSync(exe);
+    return {
+      name: "candice-companion",
+      present,
+      version: null,
+      expected: "release-authorized candidate",
+      ok: false,
+      detail: present ? "local app bundle is untrusted; no release-authorized candidate exists" : "no release-authorized Candice app candidate is available",
+      exe,
+    };
   }
   if (platform === "win32") {
     const exe = join(root, "app", "candice-companion.exe");
-    return { name: "candice-companion", present: existsSync(exe), version: null, expected: "release-authorized candidate", ok: existsSync(exe), exe };
+    const present = existsSync(exe);
+    return {
+      name: "candice-companion",
+      present,
+      version: null,
+      expected: "release-authorized candidate",
+      ok: false,
+      detail: present ? "local app bundle is untrusted; no release-authorized candidate exists" : "no release-authorized Candice app candidate is available",
+      exe,
+    };
   }
   return { name: "candice-companion", present: false, ok: false, detail: `unsupported platform ${platform}` };
 }
@@ -96,17 +119,19 @@ export function checkAssets(root, platform, state, opts = {}) {
     const filePresent = existsSync(file);
     const markerPresent = existsSync(marker);
     const rec = state && state.assets && Object.values(state.assets).find((a) => a.file === c.file);
+    const recOverride = opts.stateOverride && opts.stateOverride.assets && Object.values(opts.stateOverride.assets).find((a) => a.file === c.file);
+    const effective = recOverride || rec;
     let ok = false;
     let detail = "absent";
     if (filePresent) {
-      if (rec && rec.sha256 && /^[a-f0-9]{64}$/.test(rec.sha256)) {
+      if (effective && effective.sha256 && /^[a-f0-9]{64}$/.test(effective.sha256)) {
         try {
           const actual = sha256File(file);
-          if (actual === rec.sha256) {
+          if (actual === effective.sha256) {
             ok = true;
             detail = "present, sha256 verified";
           } else {
-            detail = `sha256 mismatch: got ${actual}, expected ${rec.sha256}`;
+            detail = `sha256 mismatch: got ${actual}, expected ${effective.sha256}`;
           }
         } catch (e) {
           detail = `hash read failed: ${e.message}`;
@@ -127,14 +152,52 @@ export function checkAssets(root, platform, state, opts = {}) {
  * @param {object} opts root, platform, env, mode, release (bool), probes (injected probe fns for tests)
  * @returns {Promise<{ok:boolean, schema:string, root:string, platform:string, mode:string, legs:object, missing:string[], stateComponentMatch:boolean, note:string}>}
  */
-export async function healthCheck(opts = {}) {
+export function healthCheck(opts = {}) {
+  const env = opts.env || process.env;
+  const platform = opts.platform || process.platform;
+  const root = opts.root || bootstrapRoot(env, platform);
+  const mode = opts.mode || "unknown";
+
+  // Legacy (mode-less) callers keep the base WS-31 SYNC shape: components +
+  // assets arrays and `missing` = component names, returned synchronously
+  // (cross-lane upgrade-journey contract calls it without await). The
+  // mode-gated schema report is async because probes are.
+  if (mode === "unknown" && opts.probes === undefined) {
+    const state = readState(root, platform);
+    const components = [];
+    for (const [name, version] of Object.entries(SKILL_PINS)) components.push(checkSkill(root, name, version));
+    components.push(checkPluginTree(root, PLUGIN_PINS["candice-integration"]));
+    components.push(checkApp(root, platform));
+    const assets = checkAssets(root, platform, state);
+    const failed = components.filter((c) => !c.ok).map((c) => c.name);
+    const stateComponentMatch = Object.keys(SKILL_PINS).every(
+      (n) => state.components[n] && state.components[n].status === "installed",
+    );
+    return {
+      ok: failed.length === 0,
+      root,
+      platform,
+      components,
+      assets,
+      missing: failed,
+      stateComponentMatch,
+      note: "fast health/version check — run the bootstrap when any component reports missing",
+    };
+  }
+
+  return schemaHealthCheck({ ...opts, env, platform, root, mode });
+}
+
+async function schemaHealthCheck(opts = {}) {
   const env = opts.env || process.env;
   const platform = opts.platform || process.platform;
   const root = opts.root || bootstrapRoot(env, platform);
   const mode = opts.mode || "unknown";
   const release = opts.release === true || mode === "release";
   const report = emptyReport(platform);
-  const state = readState(root, platform);
+  // stateOverride (repair re-probe): verify against the prospective state
+  // document before the atomic switch; absent, the on-disk state is used.
+  const state = opts.stateOverride || readState(root, platform);
   const probes = opts.probes || {};
 
   const set = (leg, status, detail) => {
@@ -156,7 +219,9 @@ export async function healthCheck(opts = {}) {
   {
     const tree = checkPluginTree(root, PLUGIN_PINS["candice-integration"]);
     set("plugin-loaded", tree.ok ? LEG_OK : LEG_FAIL, tree.ok ? "plugin tree present" : "plugin tree missing");
-    const reg = verifyAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], opts.configRoot ? { configRoot: opts.configRoot } : {});
+    const regOpts = opts.configRoot ? { configRoot: opts.configRoot } : {};
+    if (opts.claudeBin) regOpts.claudeBin = opts.claudeBin;
+    const reg = verifyAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
     set("plugin-registered", reg.ok ? LEG_OK : LEG_FAIL, reg.message);
     const hooksFile = join(pluginDir(root), "hooks", "hooks.json");
     const mcpFile = join(pluginDir(root), ".mcp.json");
@@ -216,9 +281,13 @@ export async function healthCheck(opts = {}) {
     }
   }
 
-  // --- bridge IPC leg through the FIX-011 seam.
+  // --- bridge IPC leg through the FIX-011 seam. The bridge probe launches
+  // the installed companion (state.launch.command) for the authenticated
+  // hello handshake; without a recorded launch command the leg FAILs
+  // (fail closed, never OK).
   {
-    const bridge = await (probes.bridgeProbe || bridgeProbe)(pluginDir(root), {});
+    const launch = state.launch && state.launch.command;
+    const bridge = await (probes.bridgeProbe || bridgeProbe)(pluginDir(root), launch ? { launchCommand: launch } : {});
     set("bridge-ipc", bridge.status, bridge.detail);
   }
 
