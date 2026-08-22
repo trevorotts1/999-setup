@@ -18,6 +18,7 @@ const { deriveOperationId, isValidOperationId } = require('../../session/lifecyc
 const BRIDGE_PROTOCOL_VERSION = '1.0'
 const MAX_FRAME_BYTES = 64 * 1024
 const ACTIVATION_TTL_MS = 30 * 1000
+const RECOVERY_LEASE_MS = 30 * 1000 // one bounded replay lease per reconnect
 const OPAQUE_ID = /^[A-Za-z0-9._:-]{1,128}$/
 
 function bridgeFailure(code) {
@@ -48,9 +49,36 @@ class LocalCompanionBridge {
     this.binding = null
     this.onAnswer = typeof options.onAnswer === 'function' ? options.onAnswer : () => bridgeFailure('answer-handler-unavailable')
     this.onCancel = typeof options.onCancel === 'function' ? options.onCancel : () => ({ ok: true })
+    // FIX-013 S4 lifecycle: one explicit lifecycle per launch, surfaced to the
+    // MCP server so a disconnect during an in-flight ask can wait a bounded
+    // reconnect window (the app may have crashed and restarted) before the
+    // durable record transfers to the terminal fallback.
+    this.onDisconnect = typeof options.onDisconnect === 'function' ? options.onDisconnect : null
+    this.onRecovered = typeof options.onRecovered === 'function' ? options.onRecovered : null
+    this.onLifecycleEvent = typeof options.onLifecycleEvent === 'function' ? options.onLifecycleEvent : () => {}
+    this.recoveryLeaseMs = options.recoveryLeaseMs || RECOVERY_LEASE_MS
+    this.lifecycle = {
+      phase: 'none', // none | connected | disconnected | reconnecting | ended
+      ended: false,
+    }
+    this.replay = null // { key, entry } — the ONE unacknowledged pending op
+    this.replayLease = null // { leaseId, grantedAt, replayable } — recovery lease
+    this.endCallbacks = []
+    this._ended = false
   }
 
   _key(sessionId, questionKey) { return `${sessionId}::${questionKey}` }
+
+  /** Emit one lifecycle event (callback + wire frame, never a secret). */
+  _lifecycle(kind, extra) {
+    const payload = Object.assign({ type: 'lifecycle', lifecycle: kind }, extra || {})
+    if (this.binding) {
+      payload.sessionId = this.binding.sessionId
+      payload.activationId = this.binding.activationId
+    }
+    this.onLifecycleEvent(Object.assign({}, payload))
+    this._write(payload)
+  }
 
   async start() {
     if (this.started) return this
@@ -170,6 +198,23 @@ class LocalCompanionBridge {
             || candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
             socket.destroy(); return
           }
+          // FIX-013 S4 reconnect: a disconnect is the ONLY path that may
+          // re-acknowledge the same activation. It must be the exact same
+          // authenticated process instance (same session + activation +
+          // instance id). Any other credential set — a replay from a
+          // different instance, a mismatched session, a stale activation —
+          // is refused exactly as on first connect. An ended bridge never
+          // accepts another hello: the lifecycle ends exactly once.
+          const reconnected = this.socket !== null || this.lifecycle.phase === 'disconnected' || this.lifecycle.phase === 'reconnecting'
+          if (reconnected) {
+            if (!this.binding
+              || this.lifecycle.ended
+              || this.binding.sessionId !== message.sessionId
+              || this.binding.activationId !== message.activationId
+              || this.binding.instanceId !== message.instanceId) {
+              socket.destroy(); return
+            }
+          }
           authenticated = true
           this.socket = socket
           this.ready = true
@@ -187,6 +232,21 @@ class LocalCompanionBridge {
             bindingId: this.binding.bindingId,
             instanceId: this.binding.instanceId,
           })
+          if (reconnected) {
+            // Same authenticated process re-established the transport. The
+            // ONE unacknowledged pending operation is replayed under a fresh
+            // bounded recovery lease; a consumed activation cannot select a
+            // replacement instance, so the lease belongs to this exact
+            // process (mismatched/replayed credentials never got here).
+            const leaseId = crypto.randomUUID()
+            this.replayLease = { leaseId, grantedAt: this.now(), replayable: true }
+            this.lifecycle.phase = 'reconnecting'
+            this._lifecycle('reconnecting', { instanceId: this.binding.instanceId })
+            this._replayPending(leaseId)
+          } else {
+            this.lifecycle.phase = 'connected'
+            this._lifecycle('connected', { instanceId: this.binding.instanceId })
+          }
           continue
         }
         this._receive(message)
@@ -200,15 +260,138 @@ class LocalCompanionBridge {
     if (this.socket !== socket) return
     this.socket = null
     this.ready = false
-    // The activation was consumed by a specific instance. It is never reused
-    // after a disconnect; callers fail soft rather than accidentally route a
-    // later session to a stale or replacement process.
+    // FIX-013 S4: a disconnect is a RE-CONNECTABLE event, not a terminal one.
+    // The same authenticated process instance may re-establish the transport
+    // and replay the ONE unacknowledged pending operation under a recovery
+    // lease. The activation is never reused by another instance; a consumed
+    // activation cannot select a replacement process.
+    const hadBinding = this.binding
+    if (this.lifecycle.phase !== 'ended') {
+      this.lifecycle.phase = 'disconnected'
+      this._lifecycle('disconnected', hadBinding ? { instanceId: this.binding.instanceId } : undefined)
+    }
+    // A delivery acknowledgement in flight fails: the caller re-persists and
+    // retries the SAME operation id, and the retry becomes the replay.
     for (const ack of this.pendingAcks.values()) ack.resolve(bridgeFailure('companion-disconnected'))
+    this.pendingAcks.clear()
+    for (const [key, pending] of this.active.entries()) {
+      // Do NOT drop the slot on a plain transport loss: if the same process
+      // reconnects within the bounded window, this exact entry is replayed
+      // once under the recovery lease (never re-acknowledged as a new
+      // question, never double-counted). An ended lifecycle drops it below.
+      if (this.lifecycle.ended) {
+        this.active.delete(key)
+        this.onCancel(pending)
+      }
+    }
+    if (!this.lifecycle.ended) {
+      this._armReplayLease()
+      if (this.onDisconnect) this.onDisconnect()
+    }
+  }
+
+  /**
+   * Arm the bounded recovery lease that lets the SAME authenticated process
+   * replay the one unacknowledged pending operation after a reconnect. The
+   * lease is single-use and expires; a second disconnect does not renew it.
+   */
+  _armReplayLease() {
+    if (!this.replayLease) {
+      this.replayLease = { leaseId: crypto.randomUUID(), grantedAt: this.now(), replayable: true }
+    }
+    const lease = this.replayLease
+    const remaining = this.recoveryLeaseMs - (this.now() - lease.grantedAt)
+    if (remaining <= 0) {
+      this._expireReplayLease()
+      return
+    }
+    if (lease.timer) clearTimeout(lease.timer)
+    lease.timer = setTimeout(() => this._expireReplayLease(), remaining)
+    if (typeof lease.timer.unref === 'function') lease.timer.unref()
+  }
+
+  /** The lease expired or was consumed: replay is no longer possible. */
+  _expireReplayLease() {
+    if (this.replayLease) {
+      if (this.replayLease.timer) clearTimeout(this.replayLease.timer)
+      this.replayLease.replayable = false
+      this.replayLease.timer = null
+    }
+    if (this.lifecycle.phase === 'reconnecting') {
+      // The SAME process never reconnected within the bounded window: the
+      // disconnect is now terminal for replay. No second disconnected event
+      // is emitted — the server's reconnect window is already armed and
+      // bounded; an extra event would only re-arm it.
+      this.lifecycle.phase = 'disconnected'
+    }
+  }
+
+  /**
+   * Replay the ONE unacknowledged pending operation under the fresh recovery
+   * lease. The operation identity is carried unchanged, so the server sees
+   * exactly one terminal result for the same (sessionId, questionKey,
+   * operationId). Nothing is re-acked as a NEW question; the frame's
+   * `replayed` marker lets the app surface the recovery to the user.
+   */
+  _replayPending(leaseId) {
+    if (!this.replay || !this.replayLease || this.replayLease.replayable !== true) return
+    const entry = this.replay
+    if (this.active.has(entry.key)) {
+      if (this._write({
+        type: 'question', version: BRIDGE_PROTOCOL_VERSION,
+        question: entry.question, operationId: entry.operationId,
+        replayed: true, leaseId,
+      })) {
+        this._consumeReplayLease()
+      }
+    }
+  }
+
+  _consumeReplayLease() {
+    if (this.replayLease) {
+      if (this.replayLease.timer) clearTimeout(this.replayLease.timer)
+      this.replayLease.replayable = false
+      this.replayLease.timer = null
+    }
+  }
+
+  /**
+   * endLifecycle — shutdown ends the lifecycle EXACTLY ONCE: the transport
+   * closes, the bridge bindings are released, pending slots are cancelled
+   * (the durable store transfer is the server's job), the replay lease is
+   * consumed, and the `ended` event is emitted. Returns a promise that
+   * resolves after the end callbacks have run.
+   */
+  async endLifecycle() {
+    if (this._ended) return { ok: true, alreadyEnded: true }
+    if (this.lifecycle.phase === 'ended') return { ok: true, alreadyEnded: true }
+    this._ended = true
+    this.ready = false
+    this.lifecycle.phase = 'ended'
+    this.lifecycle.ended = true
+    this._consumeReplayLease()
+    this.replay = null
+    for (const ack of this.pendingAcks.values()) ack.resolve(bridgeFailure('companion-ended'))
     this.pendingAcks.clear()
     for (const [key, pending] of this.active.entries()) {
       this.active.delete(key)
       this.onCancel(pending)
     }
+    this._lifecycle('ended')
+    if (this.socket) this.socket.destroy()
+    if (this.server) await new Promise((resolve) => this.server.close(resolve))
+    try { fs.unlinkSync(this.tokenFile) } catch (_) { /* already removed */ }
+    try { fs.rmdirSync(this.socketDir) } catch (_) { /* only our empty dir */ }
+    const callbacks = this.endCallbacks.splice(0)
+    for (const callback of callbacks) {
+      try { await callback() } catch (_) { /* best-effort teardown */ }
+    }
+    return { ok: true }
+  }
+
+  /** Register a shutdown hook (temp-audio sweep, protected-state removal). */
+  onEnd(callback) {
+    if (typeof callback === 'function') this.endCallbacks.push(callback)
   }
 
   _receive(message) {
@@ -217,6 +400,34 @@ class LocalCompanionBridge {
     if (message.type === 'delivered') {
       const ack = this.pendingAcks.get(key)
       if (ack) { this.pendingAcks.delete(key); ack.resolve({ ok: true }) }
+      // The delivered acknowledgement ends the unacknowledged window: this
+      // operation is never replayed (one terminal result per operation).
+      if (this.replay && this.replay.key === key) this.replay = null
+      return
+    }
+    if (message.type === 'recovered') {
+      // The reconnected app re-acknowledges the exact replayed operation
+      // (optionally carrying the granted recovery lease). This is the one
+      // handoff completion for the replayed frame; an unknown operation or a
+      // mismatched lease is ignored — the replay lease stays authoritative.
+      const pending = this.active.get(key)
+      if (!pending) return
+      if (message.operationId !== undefined && pending.operationId !== message.operationId) return
+      if (message.leaseId !== undefined && (!this.replayLease || this.replayLease.leaseId !== message.leaseId)) return
+      if (this.replay && this.replay.key === key) this.replay = null
+      this._consumeReplayLease()
+      if (this.onRecovered) this.onRecovered(pending)
+      this._write({ type: 'recovered-result', sessionId: message.sessionId, questionKey: message.questionKey, ok: true })
+      // The exact handoff is acknowledged: the lifecycle returns to
+      // connected, and the recovered step is surfaced once.
+      this.lifecycle.phase = 'connected'
+      this._lifecycle('recovered', { instanceId: this.binding ? this.binding.instanceId : undefined })
+      return
+    }
+    if (message.type === 'ended') {
+      // The app initiated normal shutdown: the lifecycle ends exactly once
+      // (idempotent), closing bindings and running shutdown hooks.
+      void this.endLifecycle()
       return
     }
     if (message.type === 'unavailable') {
@@ -243,12 +454,18 @@ class LocalCompanionBridge {
         answer: message.answer,
         operationId: pending.operationId,
       })
-      if (result && result.ok) this.active.delete(key)
+      if (result && result.ok) {
+        this.active.delete(key)
+        // A terminal answer ends the unacknowledged window permanently: the
+        // operation must never be replayed (exactly one terminal result).
+        if (this.replay && this.replay.key === key) this.replay = null
+      }
       this._write({ type: 'answer-result', sessionId: message.sessionId, questionKey: message.questionKey, ok: !!(result && result.ok), code: result && result.code })
       return
     }
     if (message.type === 'cancel') {
       this.active.delete(key)
+      if (this.replay && this.replay.key === key) this.replay = null
       this.onCancel(pending)
       this._write({ type: 'cancel-result', sessionId: message.sessionId, questionKey: message.questionKey, ok: true })
     }
@@ -287,12 +504,30 @@ class LocalCompanionBridge {
       operationId,
       deliveredAt: new Date().toISOString(),
     })
+    // FIX-013 S4: the ONE unacknowledged pending operation is the replay
+    // candidate for a same-process reconnect under the recovery lease.
+    // A delivered/acked or answered operation is no longer unacknowledged
+    // and is never replayed; an ended lifecycle replays nothing.
+    if (!this._ended) {
+      this.replay = { key, entry: this.active.get(key), question, operationId }
+    }
     if (!this._write({ type: 'question', version: BRIDGE_PROTOCOL_VERSION, question, operationId })) {
       this.active.delete(key)
+      if (this.replay && this.replay.key === key) this.replay = null
       return bridgeFailure('companion-disconnected')
     }
     const result = await ack
-    if (!result.ok) this.active.delete(key)
+    if (!result.ok) {
+      // A transport disconnect is RE-CONNECTABLE (FIX-013 S4): the slot stays
+      // as the ONE replay candidate for the same authenticated process under
+      // its bounded recovery lease. Other failures (delivery timeout, cancel,
+      // ended lifecycle) drop the slot permanently.
+      const keepForReplay = result.code === 'companion-disconnected' && !this._ended
+      if (!keepForReplay) {
+        this.active.delete(key)
+        if (this.replay && this.replay.key === key) this.replay = null
+      }
+    }
     return result
   }
 
@@ -300,6 +535,9 @@ class LocalCompanionBridge {
     const key = this._key(sessionId, questionKey)
     const pending = this.active.get(key)
     this.active.delete(key)
+    // A cancelled question is terminal: it must never be replayed under a
+    // recovery lease after a reconnect (FIX-013 S4).
+    if (this.replay && this.replay.key === key) this.replay = null
     const pendingAck = this.pendingAcks.get(key)
     if (pendingAck) { this.pendingAcks.delete(key); pendingAck.resolve(bridgeFailure('question-cancelled')) }
     this._write({
@@ -311,12 +549,11 @@ class LocalCompanionBridge {
   }
 
   async close() {
-    this.ready = false
-    if (this.socket) this.socket.destroy()
-    if (this.server) await new Promise((resolve) => this.server.close(resolve))
-    try { fs.unlinkSync(this.tokenFile) } catch (_) { /* already removed */ }
-    try { fs.rmdirSync(this.socketDir) } catch (_) { /* only our empty dir */ }
+    // Legacy close and the FIX-013 S4 shutdown path are the same operation:
+    // the lifecycle ends exactly once (idempotent — a second close reports
+    // alreadyEnded and never re-cancels or re-emits).
+    await this.endLifecycle()
   }
 }
 
-module.exports = { LocalCompanionBridge, BRIDGE_PROTOCOL_VERSION }
+module.exports = { LocalCompanionBridge, BRIDGE_PROTOCOL_VERSION, RECOVERY_LEASE_MS }

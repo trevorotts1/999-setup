@@ -162,6 +162,9 @@ class AskUserServer {
     this.fallback = options.fallback || null
     this.sleep = typeof options.sleep === 'function' ? options.sleep : (ms) => new Promise((r) => setTimeout(r, ms))
     this.waitWindowMs = options.waitWindowMs || 10 * 60 * 1000 // injectable for tests
+    this.reconnectWindowMs = options.reconnectWindowMs || 3000 // bounded reconnect wait after a transport disconnect
+    this.disconnectedSince = null
+    this.disconnectDeadline = 0
     this.skipped = options.skipped || false // test instrumentation
     this.cancelledSlots = new Set()
     if (this.bridge) {
@@ -170,7 +173,108 @@ class AskUserServer {
         this.cancelledSlots.add(`${input.sessionId}::${input.questionKey}`)
         return this.registry.cancel(input)
       }
+      // FIX-013 S4: ONE bridge lifecycle per launch. `disconnected` is
+      // re-connectable (bounded wait, then terminal fallback); `recovered`
+      // mirrors the app re-acknowledging a replayed operation; `ended` fires
+      // exactly once at shutdown.
+      this.bridge.onLifecycleEvent = (event) => {
+        if (event.lifecycle === 'disconnected') this._onBridgeDisconnected(event)
+        else if (event.lifecycle === 'recovered') this._onBridgeRecovered(event)
+        else if (event.lifecycle === 'ended') this._onBridgeEnded()
+      }
+      // FIX-013 S4 normal shutdown: the lifecycle ends exactly once, bridge
+      // bindings close, queue/answer slots release, session temp audio is
+      // swept (marker-guarded, WS-20 safety mirror), and protected pending
+      // state is removed durably (endSession clears the pending record).
+      if (this.lifecycle && typeof this.bridge.onEnd === 'function') {
+        this.bridge.onEnd(async () => {
+          await this._shutdownCleanup()
+        })
+      }
     }
+  }
+
+  /** One bounded reconnect window per disconnect (never re-opened by an
+   * ended lifecycle). */
+  _onBridgeDisconnected() {
+    if (this._ended) return
+    const deadline = Date.now() + this.reconnectWindowMs
+    if (this.disconnectedSince === null) this.disconnectedSince = Date.now()
+    if (deadline > this.disconnectDeadline) this.disconnectDeadline = deadline
+  }
+
+  _onBridgeRecovered(event) {
+    if (this.lifecycle && typeof this.lifecycle.acknowledgeRecoveryHandoff === 'function' && event.sessionId) {
+      try {
+        this.lifecycle.acknowledgeRecoveryHandoff({
+          sessionId: event.sessionId,
+          leaseId: event.leaseId,
+        })
+      } catch (_) {
+        // Acknowledge is best-effort here; the app's own recovered
+        // acknowledgement is the authoritative completion path.
+      }
+    }
+  }
+
+  _onBridgeEnded() {
+    this._ended = true
+    this.disconnectedSince = null
+    this.disconnectDeadline = null
+  }
+
+  /** True while the app may still re-establish the same authenticated
+   * transport after a disconnect. */
+  _withinReconnectWindow() {
+    if (this.disconnectedSince === null) return false
+    return Date.now() < this.disconnectDeadline
+  }
+
+  /**
+   * _shutdownCleanup — the normal-shutdown sweep (FIX-013 S4). For every
+   * session the lifecycle still owns: end it durably (removes protected
+   * pending state), then sweep that session's temp audio — ONLY a
+   * marker-carrying directory directly under the Candice temp root is ever
+   * removed (the WS-20 ownership proof; a naming coincidence never causes a
+   * delete). Every failure is contained: shutdown must never throw.
+   */
+  async _shutdownCleanup() {
+    const lifecycle = this.lifecycle
+    if (!lifecycle || !lifecycle.sessions) return
+    let sessions = []
+    try { sessions = lifecycle.sessions.listActiveSessions() || [] } catch (_) { return }
+    for (const record of sessions) {
+      const sessionId = record && record.sessionId
+      if (!sessionId) continue
+      try {
+        const ended = await Promise.resolve(lifecycle.endSession({ sessionId, reason: 'bridge-ended' }))
+        if (ended && ended.ok && this._sweepSessionTemp) await this._sweepSessionTemp(sessionId)
+      } catch (_) { /* shutdown is best-effort; the durable store is the truth */ }
+    }
+  }
+
+  /**
+   * _sweepSessionTemp — marker-guarded removal of one session's temp audio
+   * dir. Mirrors the WS-20 safety contract: only `<tmp>/candice-companion/
+   * session-<id>` directories carrying `.candice-session` are removed, and
+   * the resolved dir must be a direct child of the Candice-owned root.
+   */
+  async _sweepSessionTemp(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 128) return
+    const fs = require('fs')
+    const os = require('os')
+    const path = require('path')
+    const root = path.join(os.tmpdir(), 'candice-companion')
+    const dir = path.join(root, `session-${sessionId}`)
+    try {
+      const realRoot = fs.realpathSync(root)
+      const realDir = fs.realpathSync(dir)
+      const rest = realDir.slice(realRoot.length)
+      if (!rest.startsWith('/') && !rest.startsWith('\\')) return
+      const marker = path.join(dir, '.candice-session')
+      if (!fs.existsSync(marker)) return
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch (_) { /* absent or unverifiable: never delete blindly */ }
   }
 
   _cancelSlot(input) {
@@ -369,18 +473,46 @@ class AskUserServer {
       delivered = { ok: false, code: 'delivery-threw', error: String((err && err.message) || err) }
     }
     if (!delivered || delivered.ok !== true) {
-      // The question never reached the companion surface. Release the slot,
-      // send the matching cancel/handoff to the bridge (invalidate UI), then
-      // atomically transfer the durable record to 'fallback-pending' BEFORE
-      // returning the fail-soft instruction (F13-03: a timeout must never
-      // leave a recoverable pending record).
-      this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
-      const cause = (delivered && (delivered.code === 'companion-busy' || delivered.code === 'app-missing'))
-        ? 'app-unavailable'
-        : 'delivery-failure'
-      // The deliverer's stable code (e.g. `app-missing`) surfaces in the
-      // message so the skill can branch on the exact mode of unavailability.
-      return this._runFallback(cause, q, operationId, delivered && (delivered.error || delivered.code))
+      // A plain transport disconnect is RE-CONNECTABLE (FIX-013 S4): the
+      // same authenticated process may crash and restart within the bounded
+      // window and replay this exact operation under its recovery lease.
+      // Only when the window expires (or the delivery failed for a
+      // non-transport reason) does the question transfer to the terminal
+      // fallback — never while a reconnect is still possible.
+      const transportLoss = delivered && (delivered.code === 'companion-disconnected' || delivered.code === 'companion-delivery-timeout')
+      if (transportLoss) {
+        while (this._withinReconnectWindow()) {
+          await this.sleep(50)
+          const replayed = this.registry.peek({ sessionId: q.sessionId, questionKey: q.questionKey })
+          if (replayed.ok && replayed.status === 'answered') break
+          const ready = this.bridge ? this.bridge.isReady() : false
+          if (ready && this.registry.openCount() > 0) {
+            const replayed = this.registry.peek({ sessionId: q.sessionId, questionKey: q.questionKey })
+            if (replayed.ok && replayed.status === 'waiting') break
+          }
+        }
+      }
+      if (this.bridge && this.bridge.lifecycle && this.bridge.lifecycle.phase === 'reconnecting') {
+        // The SAME authenticated process reconnected and the replayed frame
+        // is in flight: fall through to the wait loop with the original
+        // operation (the replay carries the identical operation id). The
+        // slot was never cancelled, so the one answer completes the one
+        // operation — no second ask, no double-count.
+      } else {
+        // The question never reached the companion surface (or the
+        // reconnect window expired). Release the slot, send the matching
+        // cancel/handoff to the bridge (invalidate UI), then atomically
+        // transfer the durable record to 'fallback-pending' BEFORE
+        // returning the fail-soft instruction (F13-03: a timeout must never
+        // leave a recoverable pending record).
+        this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+        const cause = (delivered && (delivered.code === 'companion-busy' || delivered.code === 'app-missing'))
+          ? 'app-unavailable'
+          : 'delivery-failure'
+        // The deliverer's stable code (e.g. `app-missing`) surfaces in the
+        // message so the skill can branch on the exact mode of unavailability.
+        return this._runFallback(cause, q, operationId, delivered && (delivered.error || delivered.code))
+      }
     }
 
     // Delivered acknowledgement received: the app has the question on screen
@@ -623,6 +755,25 @@ if (require.main === module) {
     const bridge = new LocalCompanionBridge()
     await bridge.start()
     const { lifecycle, coordinator } = createComposition(stateDirArg ? { stateDir: stateDirArg } : {})
-    new AskUserServer({ bridge, lifecycle, fallback: coordinator }).run()
+    const server = new AskUserServer({ bridge, lifecycle, fallback: coordinator })
+    // FIX-013 S4: normal shutdown ends the lifecycle EXACTLY ONCE (idempotent
+    // on repeat signals): close bridge bindings, sweep session temp audio,
+    // remove protected pending state. Stdin EOF (Claude closing the tool
+    // process) takes the same path.
+    let ending = false
+    const endLifecycle = () => {
+      if (ending) return
+      ending = true
+      void bridge.endLifecycle().finally(() => process.exit(0))
+    }
+    process.on('SIGINT', endLifecycle)
+    process.on('SIGTERM', endLifecycle)
+    process.on('SIGQUIT', endLifecycle)
+    const originalExit = process.exit
+    process.exit = (code) => {
+      endLifecycle()
+      setTimeout(() => originalExit(code), 1000).unref()
+    }
+    server.run()
   })().catch(() => process.exit(0))
 }

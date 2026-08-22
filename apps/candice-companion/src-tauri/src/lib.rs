@@ -59,6 +59,8 @@ pub fn run() {
             runtime::cmd_release_bridge_question,
             runtime::cmd_set_answer_input_enabled,
             runtime::cmd_take_pending_bridge_question,
+            runtime::cmd_ack_replayed_question,
+            runtime::cmd_end_bridge_lifecycle,
         ])
         .setup(|app| {
             initialize_shell(app.handle())?;

@@ -585,6 +585,127 @@ check('ask_user fails soft when the durable store is blocked (never persists bli
 })
 
 // ——————————————————————————————————————————————
+// 4c. FIX-013 S4 — disconnect is re-connectable: bounded wait, then terminal
+//     fallback; normal shutdown ends the lifecycle exactly once
+// ——————————————————————————————————————————————
+
+check('ask_user waits out a bounded reconnect window on a transport disconnect, then falls back', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s4-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const registry = new AnswerSlotRegistry()
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: coordinator,
+      isCompanionReady: () => true,
+      deliverQuestion: async () => ({ ok: false, code: 'companion-disconnected' }),
+      sleep: async (ms) => new Promise((r) => setTimeout(r, ms)),
+      waitWindowMs: 1000,
+      reconnectWindowMs: 200,
+    })
+    const started = Date.now()
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    const elapsed = Date.now() - started
+    assert.ok(elapsed >= 150, `the ask waited for the bounded reconnect window (elapsed ${elapsed}ms)`)
+    assert.strictEqual(result.result.isError, true)
+    assert.strictEqual(result.result.fallback.cause, 'delivery-failure')
+    assert.strictEqual(result.result.fallback.durableState, 'fallback-pending', 'expired window transfers the durable record')
+    assert.strictEqual(server.registry.openCount(), 0, 'slot invalidated after the window expires')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('ask_user recovers the SAME operation when the app reconnects and replays within the window', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s4-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const registry = new AnswerSlotRegistry()
+    const bridge = {
+      lifecycle: { phase: 'reconnecting' },
+      isReady: () => true,
+      ensureSession: async () => ({ ok: true }),
+      deliverQuestion: async () => ({ ok: false, code: 'companion-disconnected' }),
+    }
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: coordinator,
+      bridge,
+      isCompanionReady: () => true,
+      sleep: async (ms) => new Promise((r) => setTimeout(r, ms)),
+      waitWindowMs: 500,
+      reconnectWindowMs: 4000,
+    })
+    // The app reconnects inside the window and the replayed frame is in
+    // flight; then the user's answer arrives for the SAME operation id.
+    setTimeout(() => {
+      registry.put({ sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET', answer: answer(), operationId: server.registry.peek({ sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET' }).operationId })
+    }, 30)
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    assert.strictEqual(result.result.ok, true, 'the replayed operation completes with its one answer')
+    assert.strictEqual(result.result.answer.answerText, 'I want a booking tool for local barbers.')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).questionCount, 1, 'one terminal commit for the one operation')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('ask_user normal shutdown ends the lifecycle exactly once and removes protected pending state', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s4-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({
+      sessionId: 'opaque-session-id',
+      questionKey: 'BUILD_TARGET',
+      text: 'Tell me about your idea in your own words: what is it, and who is it for?',
+      answerKind: 'free_text',
+      counted: false,
+    })
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    let ended = 0
+    let fakeEnded = false
+    const bridge = {
+      lifecycle: { phase: 'connected' },
+      isReady: () => true,
+      ensureSession: async () => ({ ok: true }),
+      deliverQuestion: async () => ({ ok: true }),
+      onEnd: (callback) => { bridge._end = callback },
+      endLifecycle: async () => {
+        // Mirrors the real bridge's exactly-once latch.
+        if (fakeEnded) return { ok: true, alreadyEnded: true }
+        fakeEnded = true
+        ended += 1
+        if (bridge._end) await bridge._end()
+        return { ok: true }
+      },
+    }
+    const server = new AskUserServer({ bridge, lifecycle, fallback: coordinator })
+    await server.bridge.endLifecycle()
+    assert.strictEqual(ended, 1, 'the lifecycle ends exactly once')
+    await server.bridge.endLifecycle()
+    assert.strictEqual(ended, 1, 'a second shutdown never re-ends the lifecycle')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).ok, true)
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).status, 'ended', 'the session is durably ended')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).hasPendingQuestion, false, 'protected pending state removed by endSession')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+// ——————————————————————————————————————————————
 // 5. MCP wire layer (stdio json-rpc)
 // ——————————————————————————————————————————————
 
