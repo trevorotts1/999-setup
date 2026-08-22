@@ -1,0 +1,159 @@
+/**
+ * WS-33 component-registry unit tests (node:test).
+ *
+ * Run: node --test scripts/candice-updater/checksums/__tests__/
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  COMPONENTS,
+  PUBLISHED_PAYLOADS,
+  REPO_TREE_COMPONENTS,
+  resolveComponent,
+  compareVersions,
+  isNewer,
+  isDowngrade,
+  platformKeys,
+  RUNTIME_PINS,
+} from "../components.mjs";
+
+test("all 9 component identities present (5 skills + plugin + app + speech/wave asset groups)", () => {
+  const ids = Object.keys(COMPONENTS);
+  assert.equal(ids.length, 9);
+  for (const id of [
+    "nine-router-setup",
+    "spec-protocol",
+    "kaizen",
+    "eli5",
+    "bro",
+    "candice-integration",
+    "candice-companion",
+    "stt-assets",
+    "tts-assets",
+  ]) {
+    assert.ok(COMPONENTS[id], `missing ${id}`);
+  }
+});
+
+test("every published payload has a 64-hex sha256 and operator-controlled source", () => {
+  const entries = Object.entries(PUBLISHED_PAYLOADS);
+  assert.ok(entries.length >= 7, `expected >=7 verified payloads, saw ${entries.length}`);
+  for (const [key, entry] of entries) {
+    assert.ok(entry.payload, `${key} missing payload`);
+    assert.equal(entry.payload.sha256.length, 64, `${key} sha256 not 64-hex: "${entry.payload.sha256}"`);
+    assert.match(entry.payload.sha256, /^[0-9a-f]{64}$/, `${key} sha256 not lowercase hex`);
+    assert.ok(entry.payload.sourceUrl, `${key} missing sourceUrl`);
+    assert.ok(entry.payload.file, `${key} missing file`);
+    if (entry.payload.sha256 !== "0".repeat(64)) {
+      assert.ok(entry.payload.sizeBytes > 0, `${key} sizeBytes must be recorded`);
+    }
+  }
+});
+
+test("REPO_TREE components carry version pins for all 7 tree components", () => {
+  assert.equal(Object.keys(REPO_TREE_COMPONENTS).length, 7);
+  assert.equal(REPO_TREE_COMPONENTS["nine-router-setup"].version, "1.17.0");
+  assert.equal(REPO_TREE_COMPONENTS["spec-protocol"].version, "1.17.0");
+  assert.equal(REPO_TREE_COMPONENTS.kaizen.version, "1.1.0");
+  assert.equal(REPO_TREE_COMPONENTS.eli5.version, "1.1.0");
+  assert.equal(REPO_TREE_COMPONENTS.bro.version, "1.1.0");
+  assert.equal(REPO_TREE_COMPONENTS["candice-integration"].version, "1.0.0");
+  assert.equal(REPO_TREE_COMPONENTS["candice-companion"].version, "0.2.0");
+});
+
+test("speech asset pins match WS-16/WS-19 verified records", () => {
+  assert.equal(
+    PUBLISHED_PAYLOADS["stt-assets@whisper-1.9.2@darwin"].payload.sha256,
+    "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b",
+  );
+  assert.equal(
+    PUBLISHED_PAYLOADS["stt-assets@whisper-1.9.2@darwin"].payload.sizeBytes,
+    32166155,
+  );
+  assert.equal(
+    PUBLISHED_PAYLOADS["tts-assets@kokoro-model-files-v1.1@any"].payload.sha256,
+    "f3a290d384fbb27966d462905c71a46cef9e5fd00516b40df32a0b4afe77ac96",
+  );
+  assert.equal(
+    PUBLISHED_PAYLOADS["tts-assets@kokoro-model-files-v1.1@any"].payload.sizeBytes,
+    163527961,
+  );
+  assert.equal(
+    PUBLISHED_PAYLOADS["tts-assets@kokoro-model-files-v1.1@voicepack"].payload.sha256,
+    "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+  );
+});
+
+test("whisper win32 runtime archives carry verified per-platform hashes", () => {
+  assert.equal(
+    PUBLISHED_PAYLOADS["stt-assets@whisper-1.9.2@win32"].payload.sha256,
+    "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a",
+  );
+  assert.equal(
+    PUBLISHED_PAYLOADS["stt-assets@whisper-1.9.2@win32-x86"].payload.sha256,
+    "de170719aebcb4794d695d449e179002db1fe03b862f21f5c34b2909a7cf8f22",
+  );
+});
+
+test("candice-companion 0.2.0 payloads carry placeholder hashes (recompute owed from integrated build)", () => {
+  const mac = PUBLISHED_PAYLOADS["candice-companion@0.2.0@darwin"];
+  assert.equal(mac.payload.sha256, "0".repeat(64));
+  assert.equal(mac.payload.sizeBytes, 0);
+  assert.equal(mac.payload.file, "Candice Companion_0.2.0_aarch64.dmg");
+  const win = PUBLISHED_PAYLOADS["candice-companion@0.2.0@win32"];
+  assert.equal(win.payload.sha256, "0".repeat(64));
+  assert.equal(win.payload.sizeBytes, 0);
+  assert.equal(win.payload.file, "Candice Companion_0.2.0_x64-setup.exe");
+});
+
+test("no ad-hoc third-party URL anywhere in the registry", () => {
+  const allUrls = JSON.stringify({ p: PUBLISHED_PAYLOADS, r: REPO_TREE_COMPONENTS });
+  const suspects = allUrls.match(/https?:\/\/[^"]+/g) || [];
+  assert.ok(suspects.length > 0);
+  for (const u of suspects) {
+    assert.ok(
+      u.startsWith("https://github.com/") || u.startsWith("https://huggingface.co/"),
+      `URL not operator-controlled: ${u}`,
+    );
+  }
+});
+
+test("resolveComponent honours platform fallback ('any')", () => {
+  const mac = resolveComponent("candice-companion", "0.2.0", "darwin");
+  assert.ok(mac);
+  assert.equal(mac.payload.file, "Candice Companion_0.2.0_aarch64.dmg");
+  const win = resolveComponent("stt-assets", "whisper-1.9.2", "win32");
+  assert.ok(win);
+  assert.equal(win.payload.file, "whisper-bin-x64.zip");
+  assert.equal(resolveComponent("kaizen", "1.0.1", "linux"), undefined);
+  assert.equal(resolveComponent("candice-companion", "9.9.9", "darwin"), undefined);
+});
+
+test("platformKeys include shared 'any' for known platforms", () => {
+  assert.deepEqual(platformKeys("darwin"), ["darwin", "any"]);
+  assert.deepEqual(platformKeys("win32"), ["win32", "any"]);
+  assert.deepEqual(platformKeys("linux"), ["linux"]);
+});
+
+test("compareVersions orders dot versions correctly", () => {
+  assert.equal(compareVersions("1.16.3", "1.16.2"), 1);
+  assert.equal(compareVersions("1.16.3", "1.16.3"), 0);
+  assert.equal(compareVersions("1.0.0", "1.0.1"), -1);
+  assert.equal(compareVersions("v1.0.1", "1.0.1"), 0);
+  assert.equal(compareVersions("1.2", "1.2.0"), 0);
+  assert.equal(compareVersions("whisper-1.9.2", "whisper-1.9.2"), 0);
+});
+
+test("isNewer / isDowngrade detect upgrade vs downgrade", () => {
+  assert.ok(isNewer("1.16.3", "1.16.2"));
+  assert.ok(!isNewer("1.16.2", "1.16.3"));
+  assert.ok(isDowngrade("1.16.2", "1.16.3"));
+  assert.ok(!isDowngrade("1.16.3", "1.16.3"));
+  assert.ok(!isDowngrade("1.16.3", "1.16.2"));
+});
+
+test("runtime pins present", () => {
+  assert.equal(RUNTIME_PINS.whisperCpp, "1.9.2");
+  assert.equal(RUNTIME_PINS.kokoroOnnx, "0.6.1");
+  assert.equal(RUNTIME_PINS.onnxruntime, "1.29.0");
+});

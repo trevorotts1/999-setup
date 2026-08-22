@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/preferences.schema.v2.proposal.json",
+  "title": "Candice Local Preferences — version 2 proposal",
+  "note": "WS-34 (WR-018) proposal against WR-010-owned packages/candice-protocol/schemas/preferences.schema.json. Application is the integration/release owner's (manifest 9.4 class 2). Field names align to the v1 protocol contract; v1 runtime alias `textScale` maps to the `textSize` enum; `lastAnswerMethod` is renamed to `lastUsedAnswerMethod`; `companionPosition {left,top}` becomes `companionScreenPosition {x,y,anchor}`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.0",
+      "description": "Schema version. WS-34 migrates integer 1 -> integer 2; the published string version is this lane's proposal to WR-010."
+    },
+    "preferredName": {
+      "type": ["string", "null"],
+      "maxLength": 64,
+      "description": "The user's stated preferred name. Never inferred from the OS username (spec 4). Null until asked."
+    },
+    "voiceOutputEnabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "volume": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 1.0
+    },
+    "speechRate": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2.0,
+      "default": 1.0
+    },
+    "lastUsedAnswerMethod": {
+      "type": ["string", "null"],
+      "enum": ["voice", "typed", "terminal", null],
+      "description": "Remembered convenience only; never a lock (spec 5.1)."
+    },
+    "textSize": {
+      "type": ["string", "null"],
+      "enum": ["small", "medium", "large", null],
+      "default": "medium",
+      "description": "Caption/UI text size."
+    },
+    "reducedMotion": {
+      "type": ["boolean", "null"],
+      "description": "Null = follow OS reduced-motion; true = force minimal animation; false = animations allowed (spec 10)."
+    },
+    "companionScreenPosition": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "description": "Screen x offset in points relative to the bound terminal anchor, or free position when floating." },
+        "y": { "type": "number", "description": "Screen y offset in points." },
+        "anchor": { "type": "string", "enum": ["left", "right", "floating"], "description": "Anchoring preference beside the bound terminal, or independent movable floating mode." }
+      },
+      "description": "Remembered preferred offset; the user may always reposition."
+    },
+    "lastUsedSkill": {
+      "type": ["string", "null"],
+      "enum": ["spec-protocol", "kaizen", "eli5", "bro", null]
+    },
+    "nameAskedAt": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 UTC timestamp of when the first-run name question was asked. Null when never asked. Deprecated in v3 in favor of nameAsked."
+    }
+  }
+}

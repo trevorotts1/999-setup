@@ -1,0 +1,5 @@
+# Candice TTS runtime pins (WS-19) — verified 2026-08-21.
+# Same versions on macOS arm64 and Windows amd64 (cp312 wheels exist for all).
+kokoro-onnx==0.6.1
+onnxruntime==1.29.0
+soundfile==0.13.1

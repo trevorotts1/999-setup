@@ -1,0 +1,118 @@
+/* Candice Companion — shell base styles (WS-06). */
+
+:root {
+  color-scheme: light dark;
+  --candice-accent: #7c5cff;
+  --candice-surface: rgba(20, 20, 28, 0.92);
+  --candice-text: #eceaf3;
+  --candice-muted: #a8a3b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: var(--candice-surface);
+  color: var(--candice-text);
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Boot surface (shown before src/main.ts first paint) */
+.boot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--candice-muted);
+}
+
+.boot-glow {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--candice-accent) 0%, transparent 70%);
+  animation: candice-breathe 2.4s ease-in-out infinite;
+}
+
+/* Visual stage (mounted by src/shell/visual-stage.ts) */
+#candice-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* Dev placeholder ONLY — final artwork binds through the WR-013 asset
+   contract (spec 11). Never shipped as the character. */
+.candice-placeholder {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #b9a8ff 0%, #5b45c8 55%, #241b52 100%);
+  box-shadow:
+    0 0 40px rgba(124, 92, 255, 0.45),
+    inset 0 -14px 30px rgba(0, 0, 0, 0.35);
+  animation: candice-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes candice-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+/* Text fallback (Master Spec 20) */
+.fallback {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.fallback-title {
+  font-weight: 600;
+}
+
+.fallback-hint {
+  font-size: 13px;
+  color: var(--candice-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-glow,
+  .candice-placeholder {
+    animation: none;
+  }
+}

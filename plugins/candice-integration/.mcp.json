@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "candice": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/ask-user/server.js"],
+      "env": {
+        "CANDICE_COMPANION_READY": "probe"
+      }
+    }
+  }
+}

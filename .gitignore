@@ -30,3 +30,16 @@ route-state.json
 # entry-gate epoch, caps, sanctioned classes) is box-local — only the neutral
 # example is committed.
 CONTROL/boss-config.json
+
+# Candice Companion build outputs (never committed; release CI rebuilds).
+# Disclosed WS-23 relocation 2026-08-21: covers the app bundle staging dir,
+# the Tauri shell outputs, and every nested crate target at any depth
+# (src-tauri/**/target/ matches audio/capture, audio/capture-windows, tts,
+# stt, signature-helper).
+apps/candice-companion/dist/
+apps/candice-companion/src-tauri/dist/
+apps/candice-companion/src-tauri/target/
+apps/candice-companion/src-tauri/**/target/
+apps/candice-companion/src-tauri/gen/
+# Generated mirror of the app-root tauri.conf.json (build.rs copies it)
+apps/candice-companion/src-tauri/tauri.conf.json

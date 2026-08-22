@@ -1,0 +1,37 @@
+# WS-28 Windows microphone/audio/device path — Candice Companion.
+#
+# Owned by WR-016 lane (ownership map 9.2, native task-graph snapshot
+# owned_paths): apps/candice-companion/src-tauri/audio/capture-windows/**
+#
+# Implements the WS-17 `candice-capture::MicSource` trait with native
+# Windows WASAPI/MMDevice plumbing (cpal 0.18 WASAPI host — cpal is the
+# spec-18 platform-audio boundary this lane owns). The mic is live only
+# between MicSource::open and MicSource::close, which the WS-17 controller
+# calls exclusively from press()/release() — push-to-talk by construction.
+#
+# `cargo test` runs with NO Windows host requirement: tests inject the
+# decision logic (MMDevice presence -> CaptureError mapping) with plain
+# fixtures; the live WASAPI stream is exercised on the interactive
+# Windows 10/11 matrix (spec 18 release gate).
+
+[package]
+name = "candice-capture-windows"
+version = "0.1.0"
+edition = "2021"
+description = "WS-28 Windows microphone/audio/device path (Candice Companion)"
+publish = false
+
+[features]
+default = []
+# Real Windows device path via cpal's WASAPI host (spec 18 plumbing).
+wasapi = ["dep:cpal", "candice-capture/cpal"]
+
+[dependencies]
+# WS-17 boundary trait + errors. The integration owner (9.3) wires the
+# app crate at fan-in; this dependency resolves inside the unit tree today
+# because Cargo.lock pins it in the sibling dir only — see CHECKPOINT note.
+candice-capture = { path = "../capture" }
+cpal = { version = "0.18", optional = true }
+
+[profile.test]
+opt-level = 0
