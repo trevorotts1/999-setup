@@ -116,7 +116,7 @@
     "rules": [
       "Read sources in sorted filename order",
       "Iterate tiers and inputs in spec order (JSON arrays)",
-      "Fixed encoder parameters (PNG compress_level=6, optimize=False; WEBP lossless=True, quality=90, method=6)",
+      "Fixed encoder parameters (PNG compress_level=6, optimize=False; WEBP lossless=False, quality=95, method=6)",
       "Fixed file mtime 2026-01-01T00:00:00Z on every output (sources keep their own mtimes; never rewritten)",
       "No randomness, no timestamps, no hostname, no absolute paths embedded in any output",
       "PIL LANCZOS resize is deterministic for these fixed inputs and parameters (verified by two-build hash comparison)"

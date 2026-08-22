@@ -6,7 +6,7 @@
   "status": "PENDING-OPERATOR-APPROVAL",
   "approvalGate": "FIX-003 operator approval pending; hashes in this file pin the build so approval binds instantly",
   "sourceManifestSha256": "ec1302067622ecb7f16d16476425f4ab3836e7fea581e207c41d448ff6b7dfa0",
-  "specSha256": "f6fba79393f79cd83cfa92ac830819fe48bb7ecbb49c037b52ed6d7407dd46c5",
+  "specSha256": "a10dfd6457aa36b13075b829abf05759b5c0e90db213ccaa0b7ab99c0b7a0452",
   "tool": {
     "name": "python3",
     "version": "3.14.5",
