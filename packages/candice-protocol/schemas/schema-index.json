@@ -41,8 +41,20 @@
     {
       "name": "question-keys-registry",
       "path": "question-keys.json",
+      "schemaVersion": "2.0",
+      "description": "Versioned governed-question authority registry data (spec 14)."
+    },
+    {
+      "name": "question-inventory",
+      "path": "question-inventory.schema.json",
       "schemaVersion": "1.0",
-      "description": "Machine-enumerable stable question key registry data (spec 14)."
+      "description": "Schema for source doctrine to governed-key traceability."
+    },
+    {
+      "name": "question-inventory-data",
+      "path": "question-inventory.json",
+      "schemaVersion": "1.0",
+      "description": "Reviewed inventory of active, retired, and zero-governed questions."
     }
   ]
 }

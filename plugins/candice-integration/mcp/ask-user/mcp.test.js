@@ -123,9 +123,28 @@ check('validateQuestionEvent rejects an unsupported input mode', () => {
   assert.strictEqual(r.field, 'allowedInputModes')
 })
 
-check('validateQuestionEvent accepts secret sensitivity with readAloud false', () => {
+check('validateQuestionEvent rejects an unregistered secret even when readAloud is false', () => {
   const r = validateQuestionEvent(question({ sensitivity: 'secret', readAloud: false }))
-  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.rule, 'question-authority-mismatch')
+})
+
+check('validateQuestionEvent refuses unknown keys, wrong skill, and altered registry authority', () => {
+  for (const changed of [
+    question({ questionKey: 'UNREGISTERED_GOVERNED_QUESTION' }),
+    question({ skill: 'kaizen' }),
+    question({ text: 'A producer cannot replace governed wording.' }),
+    question({ options: ['invented'] }),
+    question({ counted: true }),
+    question({ readAloud: false }),
+  ]) {
+    assert.strictEqual(validateQuestionEvent(changed).ok, false)
+  }
+})
+
+check('validateAnswerEvent refuses an unregistered answer key and mismatched privacy', () => {
+  assert.strictEqual(validateAnswerEvent(answer({ questionKey: 'UNREGISTERED_GOVERNED_QUESTION' })).ok, false)
+  assert.strictEqual(validateAnswerEvent(answer({ sensitivity: 'secret' })).ok, false)
 })
 
 // ——————————————————————————————————————————————
@@ -167,61 +186,61 @@ check('validateAnswerEvent refuses an unknown input mode', () => {
 
 check('registry: open -> put -> take returns exactly one answer once', () => {
   const reg = new AnswerSlotRegistry()
-  assert.strictEqual(reg.open({ sessionId: 's1', questionKey: 'Q1' }).ok, true)
-  assert.strictEqual(reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 's1', questionKey: 'Q1' }) }).ok, true)
-  const first = reg.take({ sessionId: 's1', questionKey: 'Q1' })
+  assert.strictEqual(reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' }).ok, true)
+  assert.strictEqual(reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 's1', questionKey: 'BUILD_TARGET' }) }).ok, true)
+  const first = reg.take({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(first.ok, true)
   assert.strictEqual(first.answer.answerText, 'I want a booking tool for local barbers.')
-  const second = reg.take({ sessionId: 's1', questionKey: 'Q1' })
+  const second = reg.take({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(second.ok, false)
   assert.strictEqual(second.code, 'not-answered')
 })
 
 check('registry: second answer to the same question is refused', () => {
   const reg = new AnswerSlotRegistry()
-  reg.open({ sessionId: 's1', questionKey: 'Q1' })
-  assert.strictEqual(reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 's1', questionKey: 'Q1' }) }).ok, true)
-  const dup = reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 's1', questionKey: 'Q1', answerText: 'second try' }) })
+  reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 's1', questionKey: 'BUILD_TARGET' }) }).ok, true)
+  const dup = reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 's1', questionKey: 'BUILD_TARGET', answerText: 'second try' }) })
   assert.strictEqual(dup.ok, false)
   assert.strictEqual(dup.code, 'already-answered')
 })
 
 check('registry: double open of the same question is refused', () => {
   const reg = new AnswerSlotRegistry()
-  reg.open({ sessionId: 's1', questionKey: 'Q1' })
-  const again = reg.open({ sessionId: 's1', questionKey: 'Q1' })
+  reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
+  const again = reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(again.ok, false)
   assert.strictEqual(again.code, 'slot-open')
 })
 
 check('registry: answer for the WRONG session is refused, never re-routed (spec 17)', () => {
   const reg = new AnswerSlotRegistry()
-  reg.open({ sessionId: 's1', questionKey: 'Q1' })
-  const wrong = reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 'other-session', questionKey: 'Q1' }) })
+  reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
+  const wrong = reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 'other-session', questionKey: 'BUILD_TARGET' }) })
   assert.strictEqual(wrong.ok, false)
   assert.strictEqual(wrong.code, 'session-mismatch')
 })
 
 check('registry: answer with the wrong questionKey is refused', () => {
   const reg = new AnswerSlotRegistry()
-  reg.open({ sessionId: 's1', questionKey: 'Q1' })
-  const wrong = reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 's1', questionKey: 'OTHER' }) })
+  reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
+  const wrong = reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 's1', questionKey: 'KAZEN_TARGET' }) })
   assert.strictEqual(wrong.ok, false)
   assert.strictEqual(wrong.code, 'question-key-mismatch')
 })
 
 check('registry: put without an open slot is refused', () => {
   const reg = new AnswerSlotRegistry()
-  const r = reg.put({ sessionId: 's1', questionKey: 'Q1', answer: answer({ sessionId: 's1', questionKey: 'Q1' }) })
+  const r = reg.put({ sessionId: 's1', questionKey: 'BUILD_TARGET', answer: answer({ sessionId: 's1', questionKey: 'BUILD_TARGET' }) })
   assert.strictEqual(r.ok, false)
   assert.strictEqual(r.code, 'no-open-slot')
 })
 
 check('registry: cancel releases the slot, take then finds nothing', () => {
   const reg = new AnswerSlotRegistry()
-  reg.open({ sessionId: 's1', questionKey: 'Q1' })
-  assert.strictEqual(reg.cancel({ sessionId: 's1', questionKey: 'Q1' }).ok, true)
-  const t = reg.take({ sessionId: 's1', questionKey: 'Q1' })
+  reg.open({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(reg.cancel({ sessionId: 's1', questionKey: 'BUILD_TARGET' }).ok, true)
+  const t = reg.take({ sessionId: 's1', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(t.ok, false)
 })
 
@@ -330,6 +349,22 @@ check('ask_user records the pending question in the WS-03 lifecycle for crash re
   assert.strictEqual(recorded[0].questionKey, 'BUILD_TARGET')
   assert.strictEqual(recorded[0].counted, false)
   assert.deepStrictEqual(recorded[1], { sessionId: 'opaque-session-id', questionKey: 'BUILD_TARGET' })
+})
+
+check('ask_user refuses lifecycle-rejected question before it opens or delivers a slot', async () => {
+  let delivered = false
+  const registry = new AnswerSlotRegistry()
+  const server = new AskUserServer({
+    registry,
+    lifecycle: { setPendingQuestion: () => ({ ok: false, code: 'question-already-answered' }) },
+    isCompanionReady: () => true,
+    deliverQuestion: async () => { delivered = true; return { ok: true } },
+  })
+  const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+  assert.strictEqual(result.result.isError, true)
+  assert.ok(result.result.content[0].text.includes('question-already-answered'))
+  assert.strictEqual(delivered, false)
+  assert.strictEqual(registry.openCount(), 0)
 })
 
 check('ask_user never logs or echoes answer text beyond the answer result', async () => {

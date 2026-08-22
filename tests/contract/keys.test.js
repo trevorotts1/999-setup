@@ -71,15 +71,10 @@ check('registry keys are strictly unique', () => {
   assert.strictEqual(new Set(keys).size, keys.length, 'duplicate key in registry')
 })
 
-check('per-skill key lists are unique and match the keys array', () => {
+check('activeKeys exactly enumerate the active authority entries', () => {
   const data = readJson(KEYS_DATA)
-  for (const skill of SKILLS) {
-    const listed = data.skills[skill]
-    assert.ok(Array.isArray(listed), `skills.${skill} must be an array`)
-    assert.strictEqual(new Set(listed).size, listed.length, `duplicate in skills.${skill}`)
-    const fromKeys = data.keys.filter((k) => k.skill === skill).map((k) => k.key).sort()
-    assert.deepStrictEqual(listed.slice().sort(), fromKeys, `skills.${skill} must match keys entries`)
-  }
+  assert.deepStrictEqual(data.activeKeys.slice().sort(), data.keys.map((k) => k.key).sort())
+  for (const retired of data.retiredKeys) assert.ok(!data.activeKeys.includes(retired.key), `retired key ${retired.key} is active`)
 })
 
 check('every registry key matches the ^[A-Z][A-Z0-9_-]*$ pattern', () => {
@@ -103,12 +98,12 @@ check('every registry key produces a valid question event for its skill', () => 
       skill: k.skill,
       event: 'question',
       questionKey: k.key,
-      text: k.meaning,
+      text: k.display,
       answerKind: k.answerKind || 'free_text',
       allowedInputModes: ['voice', 'typed', 'terminal'],
-      readAloud: k.sensitivity === 'secret' ? false : true,
-      sensitivity: k.sensitivity || 'normal',
-      counted: !!k.counted,
+      readAloud: k.privacy.readAloud,
+      sensitivity: k.privacy.sensitivity,
+      counted: k.count.counted,
       progress: null,
       helpText: null,
       canGoBack: true,
@@ -127,7 +122,7 @@ check('BUILD_TARGET is the seeded spec-protocol key with spec 14 meaning', () =>
   assert.ok(bt, 'BUILD_TARGET must exist')
   assert.strictEqual(bt.skill, 'spec-protocol')
   assert.strictEqual(bt.answerKind, 'free_text')
-  assert.ok(bt.meaning.includes('their own words'), 'meaning carries the spec 14 wording')
+  assert.ok(bt.display.includes('your own words'), 'display carries the spec 14 wording')
 })
 
 // ————————————————————————————————

@@ -27,6 +27,7 @@ const SKILLS = ['spec-protocol', 'kaizen', 'eli5', 'bro']
 const ANSWER_KINDS = ['free_text', 'single_choice', 'yes_no', 'confirm', 'mode_choice']
 const INPUT_MODES = ['voice', 'typed', 'terminal']
 const SENSITIVITIES = ['normal', 'secret', 'personal']
+const questionRegistry = require('../../../../packages/candice-protocol/question-registry')
 
 const MAX_TEXT_LENGTH = 4096
 const MAX_SESSION_ID_LENGTH = 128
@@ -127,7 +128,11 @@ function validateQuestionEvent(event) {
       return bad(key, 'additionalProperties:false (unknown field)')
     }
   }
-  return { ok: true, event }
+  // A structurally valid object is still not deliverable unless every
+  // authority-bearing field was produced by the versioned registry.
+  const authority = questionRegistry.verifyQuestion(event)
+  if (!authority.ok) return bad(authority.field || 'questionKey', authority.code)
+  return { ok: true, event: authority.event, registryVersion: authority.registryVersion }
 }
 
 const ALLOWED_QUESTION_FIELDS = [
@@ -201,6 +206,10 @@ function validateAnswerEvent(answer) {
     if (!ALLOWED_ANSWER_FIELDS.includes(key)) {
       return { ok: false, code: 'invalid-answer', field: key, rule: 'additionalProperties:false (unknown field)' }
     }
+  }
+  const authority = questionRegistry.verifyAnswer(answer)
+  if (!authority.ok) {
+    return { ok: false, code: 'invalid-answer', field: authority.field || 'questionKey', rule: authority.code }
   }
   return { ok: true, answer }
 }

@@ -1,0 +1,20 @@
+{
+  "schemaVersion":"1.0",
+  "doctrineDigest":"d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87",
+  "records":[
+    {"key":"BUILD_TARGET","skill":"spec-protocol","status":"active","source":".claude/skills/spec-protocol/references/interview.md#entry-and-discovery"},
+    {"key":"KAZEN_TARGET","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#1-target"},
+    {"key":"KAZEN_LOCATION","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#2-location"},
+    {"key":"KAZEN_BETTER","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#3-better"},
+    {"key":"KAZEN_SCOPE","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#4-scope"},
+    {"key":"KAZEN_PERMISSION","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#5-permission"},
+    {"key":"KAZEN_PROOF","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#6-proof"},
+    {"key":"KAZEN_INTERVAL","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#7-interval"},
+    {"key":"KAZEN_CONTRACT_APPROVAL","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#contract-approval"},
+    {"key":"B3","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
+    {"key":"C7","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
+    {"key":"C8","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
+    {"key":"ELI5_REVIEWED_ZERO","skill":"eli5","status":"zero-governed","source":".claude/skills/eli5/SKILL.md"},
+    {"key":"BRO_REVIEWED_ZERO","skill":"bro","status":"zero-governed","source":".claude/skills/bro/SKILL.md"}
+  ]
+}

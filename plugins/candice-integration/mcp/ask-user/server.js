@@ -181,6 +181,25 @@ class AskUserServer {
       )
     }
 
+    // Persist the governed slot before opening or delivering it. A lifecycle
+    // refusal is authoritative: do not let a second pending/answered key reach
+    // the companion and do not disturb FIX-011's authenticated bridge.
+    let marked = false
+    if (this.lifecycle && typeof this.lifecycle.setPendingQuestion === 'function') {
+      const m = await Promise.resolve(this.lifecycle.setPendingQuestion({
+        sessionId: q.sessionId,
+        questionKey: q.questionKey,
+        text: q.text,
+        answerKind: q.answerKind,
+        counted: q.counted,
+      }))
+      if (!m || !m.ok) {
+        const reason = (m && (m.code || m.error)) || 'pending-question-refused'
+        return this._toolResult(this._composeTextResult(`candice.ask_user: ${reason}; ask the same question in Claude normally`, true))
+      }
+      marked = true
+    }
+
     const slotOpen = this.registry.open({ sessionId: q.sessionId, questionKey: q.questionKey })
     if (!slotOpen.ok) {
       return this._toolResult(this._composeTextResult(`candice.ask_user: ${slotOpen.error}`, true))
@@ -204,21 +223,6 @@ class AskUserServer {
       return this._toolResult(
         this._composeTextResult(`candice.ask_user: ${reason}; ask the same question in Claude normally`, true)
       )
-    }
-
-    // Durability handoff (spec 20: recover the exact pending question without
-    // re-count). Best-effort: a lifecycle failure is metadata-only; the user
-    // is already answering.
-    let marked = false
-    if (this.lifecycle && typeof this.lifecycle.setPendingQuestion === 'function') {
-      const m = this.lifecycle.setPendingQuestion({
-        sessionId: q.sessionId,
-        questionKey: q.questionKey,
-        text: q.text,
-        answerKind: q.answerKind,
-        counted: q.counted,
-      })
-      marked = !!(m && m.ok)
     }
 
     // Wait for exactly one approved answer in the owning session (spec 13.2).
@@ -250,7 +254,7 @@ class AskUserServer {
     if (recorded && this.lifecycle && typeof this.lifecycle.recordAnswer === 'function') {
       // Duplicate answer protection: the WS-03 manager is authoritative.
       try {
-        this.lifecycle.recordAnswer({ sessionId: q.sessionId, questionKey: q.questionKey })
+        await Promise.resolve(this.lifecycle.recordAnswer({ sessionId: q.sessionId, questionKey: q.questionKey }))
       } catch (err) {
         // The answer was already delivered to the skill; a record failure must
         // not destroy the answer (spec 20).

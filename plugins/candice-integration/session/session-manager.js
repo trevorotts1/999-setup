@@ -29,6 +29,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { registryVersion } = require('../../../packages/candice-protocol/question-registry')
 
 const MAX_SESSION_ID_LENGTH = 128
 const MAX_SKILL_LENGTH = 64
@@ -77,6 +78,8 @@ function createSessionRecord({ sessionId, skill, windowAnchor, clock }) {
     windowAnchor: windowAnchor || null,
     pendingQuestion: null, // { questionKey, text, answerKind, counted, askedAt }
     questionCount: 0, // answered questions in THIS session, for accounting only
+    answeredQuestionKeys: [],
+    registryVersion,
   }
 }
 
@@ -118,6 +121,11 @@ class SessionManager {
     const list = Array.isArray(parsed.sessions) ? parsed.sessions : []
     for (const record of list) {
       if (record && typeof record.sessionId === 'string' && record.sessionId.length > 0) {
+        // Safe migration for pre-registry state: absent history stays empty;
+        // it never becomes an unvalidated arbitrary object.
+        if (!Array.isArray(record.answeredQuestionKeys)) record.answeredQuestionKeys = []
+        record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys.filter((k) => typeof k === 'string' && k.length > 0))]
+        if (typeof record.registryVersion !== 'string') record.registryVersion = registryVersion
         this.sessions.set(record.sessionId, record)
       }
     }
@@ -222,8 +230,7 @@ class SessionManager {
   /**
    * Set the pending question — the exact governed question Candice is currently
    * asking (sections 13.2/15). The companion must preserve one governed question
-   * at a time; a second set overwrites the previous pending question, which is
-   * by design (a skill asks exactly one question at a time).
+   * at a time. A different question never overwrites a pending question.
    */
   setPendingQuestion({ sessionId, questionKey, text, answerKind, counted }) {
     const id = sanitizeSessionId(sessionId)
@@ -235,6 +242,13 @@ class SessionManager {
     }
     if (typeof questionKey !== 'string' || questionKey.length === 0) {
       return { ok: false, code: 'invalid-question-key', error: 'questionKey is required' }
+    }
+    if (record.answeredQuestionKeys.includes(questionKey)) {
+      return { ok: false, code: 'question-already-answered', error: 'question was already answered in this session' }
+    }
+    if (record.pendingQuestion) {
+      if (record.pendingQuestion.questionKey === questionKey) return { ok: true, recovery: true, session: record }
+      return { ok: false, code: 'pending-question-exists', error: 'another question is already pending in this session' }
     }
     record.pendingQuestion = {
       questionKey,
@@ -269,6 +283,8 @@ class SessionManager {
       }
     }
     record.questionCount += 1
+    record.answeredQuestionKeys.push(record.pendingQuestion.questionKey)
+    record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys)]
     record.pendingQuestion = null
     record.lastActiveAt = nowIso(this.clock)
     this._save()

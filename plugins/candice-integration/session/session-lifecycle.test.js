@@ -112,6 +112,39 @@ check('recordAnswer refuses a question-key mismatch (no cross-answer)', () => {
   assert.strictEqual(r.code, 'question-key-mismatch')
 })
 
+check('a different pending question cannot overwrite the first', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-no-overwrite', skill: 'spec-protocol' })
+  assert.strictEqual(sm.setPendingQuestion({ sessionId: 'sess-no-overwrite', questionKey: 'BUILD_TARGET' }).ok, true)
+  const refused = sm.setPendingQuestion({ sessionId: 'sess-no-overwrite', questionKey: 'KAZEN_TARGET' })
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(refused.code, 'pending-question-exists')
+  assert.strictEqual(sm.getSession('sess-no-overwrite').pendingQuestion.questionKey, 'BUILD_TARGET')
+})
+
+check('same pending key is an explicit recovery idempotency exception', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-same-key', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-same-key', questionKey: 'BUILD_TARGET' })
+  const again = sm.setPendingQuestion({ sessionId: 'sess-same-key', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(again.ok, true)
+  assert.strictEqual(again.recovery, true)
+  assert.strictEqual(again.session.questionCount, 0)
+})
+
+check('answered key cannot be asked again after persisted restart', () => {
+  const dir = tempDir()
+  const sm1 = new SessionManager({ stateDir: dir })
+  sm1.beginSession({ sessionId: 'sess-never-reask', skill: 'spec-protocol' })
+  sm1.setPendingQuestion({ sessionId: 'sess-never-reask', questionKey: 'BUILD_TARGET' })
+  sm1.recordAnswer({ sessionId: 'sess-never-reask', questionKey: 'BUILD_TARGET' })
+  const sm2 = new SessionManager({ stateDir: dir })
+  const refused = sm2.setPendingQuestion({ sessionId: 'sess-never-reask', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(refused.code, 'question-already-answered')
+  assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, '2.0.0')
+})
+
 check('recovery returns the exact pending question and does not re-count', () => {
   const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
   sm.beginSession({ sessionId: 'sess-rec', skill: 'spec-protocol' })

@@ -19,6 +19,8 @@ const path = require('path')
 const FILES = [
   'schema.test.js',
   'keys.test.js',
+  'registry-authority.test.js',
+  'interview-inventory.test.js',
   'exactly-one.test.js',
   'secret.test.js',
 ]
