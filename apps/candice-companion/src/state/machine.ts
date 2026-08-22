@@ -98,6 +98,8 @@ export type CandiceEventType =
   | 'error'
   | 'bridge:unavailable'
   | 'bridge:restored'
+  /** Authenticated server cancellation/timeout of the exact active question. */
+  | 'bridge:cancelled'
   | 'fallback:text'
   | 'compact:enter'
   | 'compact:exit'
@@ -335,6 +337,16 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
 
       case 'bridge:restored': {
         state = { ...state, bridgeUnavailable: false };
+        return state;
+      }
+
+      case 'bridge:cancelled': {
+        // The authenticated bridge has closed the exact answer slot (for
+        // example because the caller's wait window elapsed). Its controls
+        // must not remain a false live-answer surface.
+        lastEffects.push({ type: 'tts:stop', caption: null });
+        lastEffects.push({ type: 'mic:close', caption: null });
+        state = { ...state, pendingQuestion: null, transcript: null, status: 'idle' };
         return state;
       }
 

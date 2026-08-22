@@ -171,6 +171,12 @@ fn valid_opaque_id(value: &str) -> bool {
             .all(|byte| matches!(byte, b'!'..=b'~'))
 }
 
+fn valid_question_key(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(b'A'..=b'Z'))
+        && bytes.all(|byte| matches!(byte, b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-'))
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeCapabilities {
@@ -206,8 +212,56 @@ impl RuntimeCapabilities {
 pub struct RuntimeState {
     capabilities: Mutex<RuntimeCapabilities>,
     pending_question: Mutex<Option<Value>>,
+    /// The one question that this single-surface companion has admitted.
+    /// A second question must never be acknowledged as delivered while this
+    /// slot is occupied: the webview deliberately presents one answer flow.
+    active_question: Mutex<Option<BridgeQuestionIdentity>>,
     bridge_session_id: Option<String>,
     bridge_writer: Mutex<Option<TcpStream>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BridgeQuestionIdentity {
+    session_id: String,
+    question_key: String,
+}
+
+impl BridgeQuestionIdentity {
+    fn from_question_message(message: &Value, expected_session: Option<&str>) -> Option<Self> {
+        if message.get("type").and_then(Value::as_str) != Some("question")
+            || message.get("version").and_then(Value::as_str) != Some("1.0") {
+            return None;
+        }
+        let question = message.get("question")?.as_object()?;
+        let session_id = question.get("sessionId")?.as_str()?;
+        let question_key = question.get("questionKey")?.as_str()?;
+        if !valid_session_id(session_id)
+            || !valid_question_key(question_key)
+            || question.get("schemaVersion").and_then(Value::as_str) != Some("1.0")
+            || question.get("text").and_then(Value::as_str).filter(|value| !value.is_empty()).is_none()
+            || question.get("allowedInputModes").and_then(Value::as_array).is_none()
+            || expected_session != Some(session_id) {
+            return None;
+        }
+        Some(Self { session_id: session_id.into(), question_key: question_key.into() })
+    }
+
+    fn from_cancel_message(message: &Value, expected_session: Option<&str>) -> Option<Self> {
+        if message.get("type").and_then(Value::as_str) != Some("cancel") { return None; }
+        let session_id = message.get("sessionId")?.as_str()?;
+        let question_key = message.get("questionKey")?.as_str()?;
+        if !valid_session_id(session_id)
+            || !valid_question_key(question_key)
+            || expected_session != Some(session_id) {
+            return None;
+        }
+        Some(Self { session_id: session_id.into(), question_key: question_key.into() })
+    }
+
+    fn matches_message(&self, message: &Value) -> bool {
+        message.get("question").and_then(|question| question.get("sessionId")).and_then(Value::as_str) == Some(self.session_id.as_str())
+            && message.get("question").and_then(|question| question.get("questionKey")).and_then(Value::as_str) == Some(self.question_key.as_str())
+    }
 }
 
 impl RuntimeState {
@@ -241,6 +295,7 @@ pub fn initialize_runtime<R: Runtime>(
     app.manage(RuntimeState {
         capabilities: Mutex::new(capabilities.clone()),
         pending_question: Mutex::new(None),
+        active_question: Mutex::new(None),
         bridge_session_id: launch.session_id.clone(),
         bridge_writer: Mutex::new(None),
     });
@@ -306,21 +361,55 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
             line.clear();
             if reader.read_line(&mut line).ok().filter(|count| *count > 0).is_none() { break }
             let Ok(message) = serde_json::from_str::<Value>(&line) else { break };
-            if message.get("type").and_then(Value::as_str) == Some("question") {
-                let valid = message.get("version").and_then(Value::as_str) == Some("1.0")
-                    && message.get("question").map(Value::is_object).unwrap_or(false)
-                    && message.get("question").and_then(|q| q.get("sessionId")).and_then(Value::as_str).is_some()
-                    && message.get("question").and_then(|q| q.get("questionKey")).and_then(Value::as_str).is_some();
-                let expected_session = app.state::<RuntimeState>().bridge_session_id.clone();
-                let session_matches = expected_session.as_deref() == message.get("question").and_then(|q| q.get("sessionId")).and_then(Value::as_str);
-                if valid && session_matches {
-                    let state = app.state::<RuntimeState>();
+            let state = app.state::<RuntimeState>();
+            let expected_session = state.bridge_session_id.as_deref();
+            if let Some(identity) = BridgeQuestionIdentity::from_question_message(&message, expected_session) {
+                let admitted = {
+                    let mut active = state.active_question.lock().expect("active question mutex poisoned");
+                    if active.is_none() {
+                        *active = Some(identity.clone());
+                        Some(true)
+                    } else {
+                        // A retry of the same question can safely receive its
+                        // original acknowledgement; a distinct question is
+                        // explicitly refused rather than silently overwritten.
+                        (active.as_ref() == Some(&identity)).then_some(false)
+                    }
+                };
+                let Some(newly_admitted) = admitted else {
+                    let unavailable = json!({
+                        "type": "unavailable", "sessionId": identity.session_id,
+                        "questionKey": identity.question_key, "code": "companion-busy",
+                    });
+                    let _ = writeln!(stream, "{}", unavailable);
+                    continue;
+                };
+                if newly_admitted {
                     *state.pending_question.lock().expect("pending question mutex poisoned") = Some(message.clone());
                     state.set_question_bound(true);
                     let _ = app.emit(RUNTIME_CAPABILITIES_EVENT, state.capabilities());
                     let _ = app.emit("candice:bridge-question", message.clone());
-                    let ack = json!({ "type": "delivered", "sessionId": message["question"]["sessionId"], "questionKey": message["question"]["questionKey"] });
-                    let _ = writeln!(stream, "{}", ack);
+                }
+                let ack = json!({ "type": "delivered", "sessionId": identity.session_id, "questionKey": identity.question_key });
+                let _ = writeln!(stream, "{}", ack);
+            } else if let Some(identity) = BridgeQuestionIdentity::from_cancel_message(&message, expected_session) {
+                let cancelled = {
+                    let mut active = state.active_question.lock().expect("active question mutex poisoned");
+                    if active.as_ref() == Some(&identity) {
+                        *active = None;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if cancelled {
+                    let mut pending = state.pending_question.lock().expect("pending question mutex poisoned");
+                    if pending.as_ref().map(|value| identity.matches_message(value)).unwrap_or(false) {
+                        *pending = None;
+                    }
+                    let _ = app.emit("candice:bridge-cancel", json!({
+                        "sessionId": identity.session_id, "questionKey": identity.question_key,
+                    }));
                 }
             }
         }
@@ -354,6 +443,11 @@ pub fn cmd_submit_bridge_answer(
     state: State<'_, RuntimeState>,
     request: BridgeAnswerRequest,
 ) -> Result<(), String> {
+    let identity = BridgeQuestionIdentity { session_id: request.session_id.clone(), question_key: request.question_key.clone() };
+    {
+        let active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
+        if active.as_ref() != Some(&identity) { return Err("bridge question is no longer active".into()) }
+    }
     let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
     let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
     serde_json::to_writer(&mut *stream, &json!({
@@ -369,11 +463,31 @@ pub fn cmd_cancel_bridge_question(
     session_id: String,
     question_key: String,
 ) -> Result<(), String> {
+    let identity = BridgeQuestionIdentity { session_id: session_id.clone(), question_key: question_key.clone() };
+    {
+        let active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
+        if active.as_ref() != Some(&identity) { return Err("bridge question is no longer active".into()) }
+    }
     let mut writer = state.bridge_writer.lock().map_err(|_| "bridge state unavailable")?;
     let stream = writer.as_mut().ok_or_else(|| "bridge unavailable".to_string())?;
     serde_json::to_writer(&mut *stream, &json!({ "type": "cancel", "sessionId": session_id, "questionKey": question_key }))
         .map_err(|_| "bridge write failed")?;
     stream.write_all(b"\n").map_err(|_| "bridge unavailable")?;
+    Ok(())
+}
+
+/// The frontend calls this only after it has destroyed the old controls and
+/// restored click-through. Keeping admission closed until that point prevents
+/// a concurrent question being acknowledged in the tiny submit/teardown gap.
+#[tauri::command]
+pub fn cmd_release_bridge_question(
+    state: State<'_, RuntimeState>,
+    session_id: String,
+    question_key: String,
+) -> Result<(), String> {
+    let identity = BridgeQuestionIdentity { session_id, question_key };
+    let mut active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
+    if active.as_ref() == Some(&identity) { *active = None; }
     Ok(())
 }
 
@@ -465,5 +579,29 @@ mod tests {
                 .as_deref(),
             Some("invalid session id")
         );
+    }
+
+    #[test]
+    fn accepts_only_a_complete_exact_question_and_cancel_identity() {
+        let question = json!({
+            "type": "question", "version": "1.0", "question": {
+                "schemaVersion": "1.0", "sessionId": "session-a", "questionKey": "PROJECT_NAME",
+                "text": "What is the project name?", "allowedInputModes": ["typed"],
+            }
+        });
+        let identity = BridgeQuestionIdentity::from_question_message(&question, Some("session-a")).expect("valid question");
+        assert_eq!(identity.question_key, "PROJECT_NAME");
+        assert!(BridgeQuestionIdentity::from_question_message(&question, Some("other-session")).is_none());
+
+        let cancel = json!({ "type": "cancel", "sessionId": "session-a", "questionKey": "PROJECT_NAME" });
+        assert_eq!(BridgeQuestionIdentity::from_cancel_message(&cancel, Some("session-a")), Some(identity));
+        assert!(BridgeQuestionIdentity::from_cancel_message(&cancel, Some("other-session")).is_none());
+
+        let malformed = json!({ "type": "question", "version": "1.0", "question": {
+            "schemaVersion": "1.0", "sessionId": "session-a", "questionKey": "PROJECT_NAME"
+        }});
+        assert!(BridgeQuestionIdentity::from_question_message(&malformed, Some("session-a")).is_none());
+        let lower_key = json!({ "type": "cancel", "sessionId": "session-a", "questionKey": "project-name" });
+        assert!(BridgeQuestionIdentity::from_cancel_message(&lower_key, Some("session-a")).is_none());
     }
 }

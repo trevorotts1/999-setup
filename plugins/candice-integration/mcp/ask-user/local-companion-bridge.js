@@ -218,6 +218,18 @@ class LocalCompanionBridge {
       if (ack) { this.pendingAcks.delete(key); ack.resolve({ ok: true }) }
       return
     }
+    if (message.type === 'unavailable') {
+      // A single-surface companion explicitly refuses a concurrent question
+      // rather than falsely acknowledging one it cannot present. Resolve the
+      // delivery awaiter immediately so the caller can fall back safely.
+      const ack = this.pendingAcks.get(key)
+      if (ack) {
+        this.pendingAcks.delete(key)
+        ack.resolve(bridgeFailure(typeof message.code === 'string' ? message.code : 'companion-unavailable'))
+      }
+      this.active.delete(key)
+      return
+    }
     const pending = this.active.get(key)
     if (!pending) return
     if (message.type === 'answer') {

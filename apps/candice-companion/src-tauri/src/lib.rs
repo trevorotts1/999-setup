@@ -56,6 +56,7 @@ pub fn run() {
             runtime::cmd_get_runtime_capabilities,
             runtime::cmd_submit_bridge_answer,
             runtime::cmd_cancel_bridge_question,
+            runtime::cmd_release_bridge_question,
             runtime::cmd_set_answer_input_enabled,
             runtime::cmd_take_pending_bridge_question,
         ])

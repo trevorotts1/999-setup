@@ -112,6 +112,30 @@ test('wrong token, session, or question key cannot answer an authenticated slot'
   await bridge.close()
 })
 
+test('an explicitly busy single-surface companion never leaves a concurrent question acknowledged', async () => {
+  const bridge = new LocalCompanionBridge()
+  await bridge.start()
+  await bridge.ensureSession('session-a')
+  const activation = { ...bridge.activation, instanceId: 'candice-single-surface' }
+  let readyResolve
+  const ready = new Promise((resolve) => { readyResolve = resolve })
+  const companion = await connect(bridge.endpoint, bridge.token, activation, (message, socket) => {
+    if (message.type === 'ready') readyResolve()
+    if (message.type === 'question') {
+      const q = message.question
+      socket.write(JSON.stringify({
+        type: 'unavailable', sessionId: q.sessionId, questionKey: q.questionKey, code: 'companion-busy',
+      }) + '\n')
+    }
+  })
+  await ready
+  const result = await bridge.deliverQuestion(question())
+  assert.deepEqual(result, { ok: false, code: 'companion-busy' })
+  assert.equal(bridge.active.size, 0, 'a refused question is not retained as a live answer slot')
+  companion.destroy()
+  await bridge.close()
+})
+
 test('activation acknowledgement is exact, expires, and cannot be replayed by another instance', async () => {
   let clock = 1_000
   const bridge = new LocalCompanionBridge({ now: () => clock, activationTtlMs: 50 })

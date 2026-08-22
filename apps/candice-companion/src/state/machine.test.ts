@@ -129,6 +129,16 @@ test('answer:confirmed with no transcript anywhere is ignored', () => {
   assert.equal(m.transition({ type: 'answer:confirmed' }), null);
 });
 
+test('authenticated bridge cancellation clears an expired question surface', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'Will this wait forever?' });
+  m.transition({ type: 'bridge:cancelled' });
+  assert.equal(m.getState().status, 'idle');
+  assert.equal(m.getState().pendingQuestion, null);
+  assert.equal(m.getState().transcript, null);
+  assert.deepEqual(m.lastEffects.map((effect) => effect.type), ['tts:stop', 'mic:close']);
+});
+
 test('push-to-talk lifecycle and speech interruption', () => {
   const m = createCandiceStateMachine();
   m.transition({ type: 'ptt:start' });
