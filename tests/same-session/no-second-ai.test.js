@@ -210,6 +210,20 @@ check('wake script launches the companion UI, never a model conversation', () =>
   assert.ok(!wake.includes('claude'), 'the wake handler never mentions, launches, or routes to Claude')
 })
 
+check('wake script truthfully limits itself to wake-only until FIX-011', () => {
+  const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
+  assert.ok(wake.includes('Current bounded contract (FIX-009): be fast and make a detached `--wake`'),
+    'the header must identify the current bounded wake-only contract')
+  assert.ok(wake.includes('does not receive or forward a Claude\n# session identifier'),
+    'the header must deny Claude-session transport')
+  assert.ok(wake.includes('bind to a command-window/terminal host, or raise an\n# existing app instance'),
+    'the header must deny host binding and existing-instance routing')
+  assert.ok(wake.includes('FIX-011\n# must implement authenticated session/host binding and instance routing'),
+    'the header must name the owner required to add these capabilities')
+  assert.ok(!wake.includes('--session-id'), 'wake-only launch must not pass an unverified session id')
+  assert.ok(!wake.includes('--host-window'), 'wake-only launch must not pass host-window identity')
+})
+
 if (failures > 0) {
   console.log(`\n${failures} CHECK(S) FAILED`)
   process.exit(1)

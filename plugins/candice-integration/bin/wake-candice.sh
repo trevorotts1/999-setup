@@ -6,11 +6,12 @@
 # argument: the triggering slash command ("/spec-protocol", "/kaizen",
 # "/eli5", "/bro") or "session-start".
 #
-# Contract (Master Spec section 13.1): be fast, launch/raise the app, bind
-# to the current Claude session identifier where available, bind to the
-# foreground command-window/terminal host, and never block skill execution
-# if Candice fails. Hook runs async (hooks.json "async": true): a nonzero
-# exit or a slow start must never block or delay Claude Code.
+# Current bounded contract (FIX-009): be fast and make a detached `--wake`
+# launch request only. This script does not receive or forward a Claude
+# session identifier, bind to a command-window/terminal host, or raise an
+# existing app instance. It runs async (hooks.json "async": true), and a
+# nonzero exit or slow start must never block or delay Claude Code. FIX-011
+# must implement authenticated session/host binding and instance routing.
 #
 # The companion binary is intentionally not a hard dependency of this
 # workstream. The launch command is resolved from the plugin environment;
