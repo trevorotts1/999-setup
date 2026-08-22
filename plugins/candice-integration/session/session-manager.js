@@ -286,6 +286,25 @@ class SessionManager {
     return Array.from(this.sessions.values()).filter((r) => r.status === 'active')
   }
 
+  /**
+   * getPendingOperation — read the current durable pending record for a
+   * session (FIX-013 S3). The fallback coordinator uses this to decide
+   * whether a fallback handoff must CREATE the durable record (fail-before-
+   * persist case) or TRANSITION the existing one, and the retry path uses it
+   * to prove which durableState an already-pending operation carries. Read
+   * only — never mutates.
+   */
+  getPendingOperation({ sessionId }) {
+    const id = sanitizeSessionId(sessionId)
+    if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
+    const record = this.sessions.get(id)
+    if (!record) return { ok: false, code: 'not-found', error: `no session ${id}` }
+    if (!record.pendingQuestion) {
+      return { ok: false, code: 'no-pending-question', error: `session ${id} has no pending question` }
+    }
+    return { ok: true, pending: record.pendingQuestion }
+  }
+
   /** Crash recovery: find the active session carrying an unanswered pending question. */
   findPendingQuestion() {
     for (const record of this.sessions.values()) {
@@ -298,8 +317,15 @@ class SessionManager {
    * Set the pending question — the exact governed question Candice is currently
    * asking (sections 13.2/15). The companion must preserve one governed question
    * at a time. A different question never overwrites a pending question.
+   *
+   * FIX-013 S3: `durableState` may optionally create the record directly at
+   * `fallback-pending` (the terminal-fallback claim happens when the MCP path
+   * failed BEFORE any persist — one durable commit, never a window in which a
+   * restart could re-show a question the terminal surface already owns).
+   * Any value other than 'fallback-pending' (or absent) yields the normal
+   * 'displaying' (persist-before-delivery) record.
    */
-  setPendingQuestion({ sessionId, questionKey, text, answerKind, counted, operationId, deliveredAt }) {
+  setPendingQuestion({ sessionId, questionKey, text, answerKind, counted, operationId, deliveredAt, durableState }) {
     const id = sanitizeSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     const record = this.sessions.get(id)
@@ -342,10 +368,12 @@ class SessionManager {
       return { ok: false, code: 'pending-question-exists', error: 'another question is already pending in this session' }
     }
     const askedAt = nowIso(this.clock)
+    // 'fallback-pending' is the only creator-visible alternative (S3): the
+    // terminal-fallback claim for a question the MCP path never persisted.
     record.pendingQuestion = {
       questionKey,
       operationId: resolvedOperationId,
-      durableState: 'displaying', // persisted BEFORE delivery (FIX-013)
+      durableState: durableState === 'fallback-pending' ? 'fallback-pending' : 'displaying', // persisted BEFORE delivery (FIX-013)
       text: sanitizeText(text),
       answerKind: answerKind || 'free_text',
       counted: !!counted,
@@ -394,13 +422,92 @@ class SessionManager {
         }
       }
     }
+    // ONE commit: mutate, persist, and only on a durable success keep the
+    // terminal clear. A failed commit REVERTS the in-memory mutation so
+    // exactly one recoverable record stays (FIX-013 S3 — the caller returns a
+    // retryable non-success and the same operation id re-commits idempotently).
+    const pendingBefore = record.pendingQuestion
+    const countBefore = record.questionCount
+    const keysBefore = record.answeredQuestionKeys
     record.questionCount += 1
-    record.answeredQuestionKeys.push(record.pendingQuestion.questionKey)
-    record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys)]
+    record.answeredQuestionKeys = [...new Set([...record.answeredQuestionKeys, record.pendingQuestion.questionKey])]
     record.pendingQuestion = null
     record.lastActiveAt = nowIso(this.clock)
     const saved = this._save()
-    return { ok: true, session: record, durableCommitOk: saved.ok === true }
+    if (saved.ok !== true) {
+      record.questionCount = countBefore
+      record.answeredQuestionKeys = keysBefore
+      record.pendingQuestion = pendingBefore
+      return { ok: true, session: record, durableCommitOk: false }
+    }
+    return { ok: true, session: record, durableCommitOk: true }
+  }
+
+  /**
+   * recordFallbackAnswer — terminal completion for the TERMINAL FALLBACK path
+   * (FIX-013 S3). Same exactly-once operation identity as recordAnswer:
+   * (sessionId, questionKey, operationId) enforced, no-pending / key-mismatch /
+   * operation-id-mismatch all fail closed. It additionally requires the
+   * pending record's durableState to be `fallback-pending` so an answer can
+   * never complete a record still owned by the MCP/app path. The record is
+   * cleared in ONE commit: after it returns ok:true with durableCommitOk:true,
+   * the durable truth is "no pending record" — a second terminal answer finds
+   * no-pending-question, and a restart can never recover/re-ask it. Double-
+   * count protection is therefore durable through the terminal transaction
+   * (never memory-only).
+   */
+  recordFallbackAnswer({ sessionId, questionKey, operationId }) {
+    const id = sanitizeSessionId(sessionId)
+    if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
+    const record = this.sessions.get(id)
+    if (!record) return { ok: false, code: 'not-found', error: `no session ${id}` }
+    if (!record.pendingQuestion) {
+      return { ok: false, code: 'no-pending-question', error: `session ${id} has no pending question` }
+    }
+    if (questionKey !== undefined && record.pendingQuestion.questionKey !== questionKey) {
+      return {
+        ok: false,
+        code: 'question-key-mismatch',
+        error: `pending question is ${record.pendingQuestion.questionKey}, not ${questionKey}`,
+      }
+    }
+    if (operationId !== undefined && operationId !== null) {
+      const expected = record.pendingQuestion.operationId
+      const submitted = sanitizeOperationId(operationId)
+      if (!submitted || submitted !== expected) {
+        return {
+          ok: false,
+          code: 'operation-id-mismatch',
+          error: `operation id ${submitted} does not match the pending operation ${expected}`,
+        }
+      }
+    }
+    if (record.pendingQuestion.durableState !== 'fallback-pending') {
+      return {
+        ok: false,
+        code: 'fallback-not-owner',
+        error: `pending durable state is ${record.pendingQuestion.durableState}, not fallback-pending; the MCP/app path owns this question`,
+      }
+    }
+    // ONE terminal commit: mutate, persist, and only on a durable success keep
+    // the clear. A failed commit reverts the in-memory mutation so exactly one
+    // recoverable fallback record stays (the coordinator returns a retryable
+    // non-success; the same operation id re-commits idempotently).
+    const pendingBefore = record.pendingQuestion
+    const countBefore = record.questionCount
+    const keysBefore = record.answeredQuestionKeys
+    record.questionCount += 1
+    record.answeredQuestionKeys = [...new Set([...record.answeredQuestionKeys, record.pendingQuestion.questionKey])]
+    record.pendingQuestion = null // the one terminal completion clears the fallback-owned record
+    record.lastActiveAt = nowIso(this.clock)
+    const saved = this._save()
+    if (saved.ok !== true) {
+      record.questionCount = countBefore
+      record.answeredQuestionKeys = keysBefore
+      record.pendingQuestion = pendingBefore
+      return { ok: true, session: record, durableCommitOk: false, recorded: false }
+    }
+    return { ok: true, session: record, durableCommitOk: true, recorded: true }
   }
 
   /**
@@ -514,6 +621,9 @@ class SessionManager {
    * durable state, it is never deleted before the skill records the handoff),
    * or `recovering -> displayed` (after a recovery handoff is re-shown).
    * Unknown/illegal transitions fail closed without changing state.
+   * durableState `fallback-pending` is TERMINAL FOR RECOVERY (a restart can
+   * never re-recover a fallback-owned question, F13-03) and is completed only
+   * by recordAnswer/recordFallbackAnswer/endSession.
    */
   transitionPendingDurableState({ sessionId, operationId, from, to }) {
     const id = sanitizeSessionId(sessionId)

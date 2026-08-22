@@ -129,6 +129,17 @@ class SessionLifecycle {
     return this.sessions.setPendingQuestion(args)
   }
 
+  /** getPendingOperation — read the current durable pending record (S3 read seam). */
+  getPendingOperation(args) {
+    return this.sessions.getPendingOperation(args)
+  }
+
+  /** recordFallbackAnswer — one durable terminal completion for the terminal
+   * fallback path (FIX-013 S3; fallback-pending records only). */
+  recordFallbackAnswer(args) {
+    return this.sessions.recordFallbackAnswer(args)
+  }
+
   /** recordAnswer — one terminal commit; the manager enforces the operation id. */
   recordAnswer(args) {
     return this.sessions.recordAnswer(args)

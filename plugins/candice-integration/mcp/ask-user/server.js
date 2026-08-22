@@ -22,6 +22,28 @@
  *       then drives the same question through the WS-05 terminal fallback
  *       without double-counting.
  *
+ * FIX-013 S3 — durable lifecycle and fallback wiring:
+ *
+ *   - ONE lifecycle + ONE FallbackCoordinator are constructed per
+ *     authenticated launch (see `createComposition` below; entrypoint) and
+ *     injected into AskUserServer. A production path that only returns a text
+ *     instruction without durable handoff does not exist: every fallback
+ *     cause (mcp-unavailable, app-unavailable, delivery-failure, timeout,
+ *     user-cancel from the companion, disconnect, recovery-failure) invokes
+ *     the SAME coordinator method with the validated original question,
+ *     session, key, counted flag and operation id.
+ *   - Persist BEFORE delivery (setPendingQuestion with durableState
+ *     'displaying'); require the delivered acknowledgement before 'displayed'
+ *     (on delivered -> transitionPendingDurableState displaying -> displayed).
+ *   - On timeout/cancel/bridge-failure the durable record is atomically
+ *     transferred to 'fallback-pending' and the UI is invalidated (slot
+ *     cancelled + bridge cancel frame before the fail-soft instruction).
+ *   - On answer: the terminal commit (recordAnswer) MUST commit before the
+ *     MCP success is returned. If the durable commit failed, the tool returns
+ *     a RETRYABLE non-success (commit-pending) and retains exactly one
+ *     recoverable record — the skill retries the same (sessionId, questionKey,
+ *     operationId) and the idempotent terminal completion resolves it.
+ *
  * No answer text is logged. Raw audio never enters the contract (spec 14).
  *
  * JSON-RPC/MCP wire layer (zero dependencies, per sections 12/17/27): handles
@@ -31,10 +53,15 @@
  * otherwise echoes the client version as the per-protocol rule requires.
  */
 
+const os = require('os')
+const path = require('path')
+
 const { validateQuestionEvent } = require('./validate')
 const { AnswerSlotRegistry } = require('./answer-registry')
 const { LocalCompanionBridge } = require('./local-companion-bridge')
 const { deriveOperationId } = require('../../session/lifecycle-protocol')
+const { SessionLifecycle } = require('../../session/session-lifecycle')
+const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
 
 const SERVER_NAME = 'candice'
 const SERVER_VERSION = '1.0.0'
@@ -62,6 +89,40 @@ function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * defaultStateDir — one deterministic per-user state root shared by the MCP
+ * process and the companion: `~/.candice/state` (POSIX) / %USERPROFILE%\.candice\state.
+ * Never read from the environment — the provider-identity gate pins the
+ * plugin's env surface to the single readiness probe; `homedir()` is the
+ * OS-owned user home resolution, not an env read.
+ */
+function defaultStateDir() {
+  return path.join(os.homedir(), '.candice', 'state')
+}
+
+/**
+ * createComposition — construct EXACTLY ONE lifecycle + ONE FallbackCoordinator
+ * per authenticated launch (FIX-013 S3). The MCP entrypoint owns this; the
+ * components are then injected into the AskUserServer. The state root is
+ * deterministic per-user (never an env probe) and the lifecycle is lazily
+ * opened — a blocked store (storeBlockedReason) is surfaced on the
+ * lifecycle so a later ask gates on it instead of persisting blind.
+ */
+function createComposition(options) {
+  const opts = options || {}
+  const stateDir = opts.stateDir || defaultStateDir()
+  const lifecycle = opts.lifecycle instanceof SessionLifecycle
+    ? opts.lifecycle
+    : new SessionLifecycle({
+        stateDir: opts.stateDir ? opts.stateDir : stateDir,
+        clock: opts.clock || undefined,
+      })
+  const coordinator = opts.coordinator instanceof FallbackCoordinator
+    ? opts.coordinator
+    : new FallbackCoordinator(Object.assign({}, opts.coordinatorOpts || {}, { lifecycle }))
+  return { lifecycle, coordinator, stateDir }
+}
+
 class AskUserServer {
   /**
    * @param {object} opts
@@ -73,9 +134,14 @@ class AskUserServer {
    * @param {function} [opts.isCompanionReady] () => boolean — runtime probe;
    *   when false the tool fails soft fast (companion unavailable, spec 20).
    * @param {function} [opts.poll] (() => boolean) — registry poll override.
-   * @param {object} [opts.lifecycle] WS-03-compatible { setPendingQuestion,
-   *   recoverPendingQuestion, resumeSession, recordAnswer } — durability
-   *   record for crash recovery (spec 20: recover the exact pending question).
+   * @param {SessionLifecycle} [opts.lifecycle] WS-03-compatible lifecycle
+   *   (setPendingQuestion, recordAnswer, transitionPendingDurableState,
+   *   getPendingOperation, recordFallbackAnswer, beginSession) — durability
+   *   record for crash recovery (spec 20). REQUIRED for the durable path in
+   *   production; when absent the server fails soft WITHOUT durable handoff
+   *   (legacy embedders/tests) and never marks the answer committed.
+   * @param {FallbackCoordinator} [opts.fallback] coordinator for the durable
+   *   terminal handoff (constructed once per authenticated launch).
    */
   constructor(opts) {
     const options = opts || {}
@@ -93,6 +159,7 @@ class AskUserServer {
       ? options.isCompanionReady
       : () => this.bridge ? this.bridge.isReady() : false
     this.lifecycle = options.lifecycle || null
+    this.fallback = options.fallback || null
     this.sleep = typeof options.sleep === 'function' ? options.sleep : (ms) => new Promise((r) => setTimeout(r, ms))
     this.waitWindowMs = options.waitWindowMs || 10 * 60 * 1000 // injectable for tests
     this.skipped = options.skipped || false // test instrumentation
@@ -109,6 +176,22 @@ class AskUserServer {
   _cancelSlot(input) {
     this.registry.cancel(input)
     this.bridge?.cancel(input)
+  }
+
+  /**
+   * _failSoft — one shared fail-soft assembly. The skill instruction text is
+   * always present; `commitRef` carries the durable handoff proof (cause +
+   * operationId + durableState) so a QC trace can prove the terminal fallback
+   * path was entered with the SAME operation, not just a text instruction.
+   */
+  _failSoft(reason, cause, q, operationId) {
+    const text = `candice.ask_user: ${reason}; ask the same question in Claude normally`
+    const extra = { cause, operationId, questionKey: q ? q.questionKey : undefined }
+    return this._toolResult({
+      content: [{ type: 'text', text }],
+      isError: true,
+      fallback: extra,
+    })
   }
 
   /**
@@ -143,10 +226,44 @@ class AskUserServer {
   }
 
   /**
+   * _runFallback — the ONE coordinator entry for every fallback cause.
+   * Returns the ready-made fail-soft result. The durable claim happens here,
+   * before the instruction text leaves the process. The instruction surface
+   * carries a stable human-readable reason (the cause word, or the
+   * underlying stable code when `detail` is given, e.g. the deliverer's
+   * `app-missing`) so the skill can branch on the exact mode of
+   * unavailability; the `fallback` envelope carries the durable proof
+   * (cause + operationId + durableState) for the QC trace.
+   */
+  _runFallback(cause, q, operationId, detail) {
+    const reason = detail || cause
+    const text = cause === 'user-cancel'
+      ? 'candice.ask_user: question cancelled by the companion; ask the same question in Claude normally'
+      : `candice.ask_user: companion is unavailable (${reason}); ask the same question in Claude normally`
+    if (this.fallback && typeof this.fallback.fallbackQuestion === 'function') {
+      const handled = this.fallback.fallbackQuestion(q, cause, operationId)
+      if (!handled.ok) {
+        // The durable claim failed closed: surface the reason, NEVER a bare
+        // text-only return (there is no text-only production path).
+        return this._failSoft(`fallback handoff refused (${handled.code})`, cause, q, operationId)
+      }
+      return this._toolResult({
+        content: [{ type: 'text', text }],
+        isError: true,
+        fallback: { cause: handled.cause || cause, operationId, questionKey: q ? q.questionKey : undefined, durableState: handled.durableState },
+      })
+    }
+    // No coordinator (legacy embedders/tests): fail soft WITHOUT a durable
+    // claim — the caller did not wire the durable path.
+    return this._toolResult({ content: [{ type: 'text', text }], isError: true })
+  }
+
+  /**
    * askUser — the single exposed tool. See the file header for the contract.
    * FAILS SOFT on every companion/unavailability path (spec 13.2, 20):
    * the result carries isError:true with a stable instruction the skill can
-   * act on ("ask the same question in Claude normally").
+   * act on ("ask the same question in Claude normally") plus the durable
+   * fallback handoff record.
    */
   async askUser(params) {
     if (!isPlainObject(params)) {
@@ -169,26 +286,33 @@ class AskUserServer {
           `candice.ask_user: sessionId mismatch between params (${sessionId}) and question (${q.sessionId}); refused (spec 17)`, true)
       )
     }
+    // One operation identity for this question: the SAME operationId is used
+    // for the durable pending record, the answer slot, the bridge frame, and
+    // the fallback handoff, so a retry of the same valid question produces one
+    // transition and one terminal result (FIX-013 S1/S3).
+    const operationId = deriveOperationId({ sessionId: q.sessionId, questionKey: q.questionKey })
+
     if (this.bridge) {
       const bound = await this.bridge.ensureSession(q.sessionId)
       if (!bound.ok) {
-        return this._toolResult(this._composeTextResult(`candice.ask_user: companion is unavailable (${bound.code}); ask the same question in Claude normally`, true))
+        return this._runFallback('mcp-unavailable', q, operationId)
       }
     }
     if (!this.isCompanionReady()) {
+      return this._runFallback('app-unavailable', q, operationId)
+    }
+    // S2 handoff: a BLOCKED durable store (unproven owner/mode/ACL, quarantine
+    // failure) must gate the tool — never persist blind. No durable claim is
+    // possible, so the ONLY honest return is the text fail-soft (the store
+    // itself degrades to Claude text mode by design).
+    if (this.lifecycle && this.lifecycle.sessions && this.lifecycle.sessions.storeBlockedReason) {
       return this._toolResult(
         this._composeTextResult(
-          'candice.ask_user: companion is unavailable; ask the same question in Claude normally (spec 13.2 — MCP bridge unavailable)', true)
+          `candice.ask_user: durable state is blocked (${this.lifecycle.sessions.storeBlockedReason}); ask the same question in Claude normally`, true)
       )
     }
 
-    // One operation identity for this question: the SAME operationId is used
-    // for the durable pending record, the answer slot, and the bridge frame,
-    // so a retry of the same valid question produces one transition and one
-    // terminal result (FIX-013 S1).
-    const operationId = deriveOperationId({ sessionId: q.sessionId, questionKey: q.questionKey })
-
-    // Persist the governed slot before opening or delivering it. A lifecycle
+    // Persist the governed slot BEFORE opening or delivering it. A lifecycle
     // refusal is authoritative: do not let a second pending/answered key reach
     // the companion and do not disturb FIX-011's authenticated bridge.
     let marked = false
@@ -203,7 +327,9 @@ class AskUserServer {
       }))
       if (!m || !m.ok) {
         const reason = (m && (m.code || m.error)) || 'pending-question-refused'
-        return this._toolResult(this._composeTextResult(`candice.ask_user: ${reason}; ask the same question in Claude normally`, true))
+        // The lifecycle refused the slot BEFORE any delivery: the question
+        // never reached the companion. Terminal fallback owns it now.
+        return this._runFallback(reason, q, operationId)
       }
       marked = true
     }
@@ -212,7 +338,11 @@ class AskUserServer {
     if (!slotOpen.ok) {
       return this._toolResult(this._composeTextResult(`candice.ask_user: ${slotOpen.error}`, true))
     }
-    q.operationId = operationId
+    // NOTE: the canonical question event is NOT mutated with operationId —
+    // operationId is lifecycle-envelope metadata, not a question-event field
+    // (FIX-012 schema authority). The bridge derives it per frame, the slot
+    // and the durable record carry it, and the coordinator receives it as the
+    // explicit argument, so a re-validation of the event stays clean.
 
     let delivered
     try {
@@ -223,15 +353,30 @@ class AskUserServer {
       delivered = { ok: false, code: 'delivery-threw', error: String((err && err.message) || err) }
     }
     if (!delivered || delivered.ok !== true) {
-      // The question never reached the companion surface. Release the slot and
-      // fail soft — the skill asks the same question in Claude normally.
+      // The question never reached the companion surface. Release the slot,
+      // send the matching cancel/handoff to the bridge (invalidate UI), then
+      // atomically transfer the durable record to 'fallback-pending' BEFORE
+      // returning the fail-soft instruction (F13-03: a timeout must never
+      // leave a recoverable pending record).
+      this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+      const cause = (delivered && (delivered.code === 'companion-busy' || delivered.code === 'app-missing'))
+        ? 'app-unavailable'
+        : 'delivery-failure'
       // The deliverer's stable code (e.g. `app-missing`) surfaces in the
       // message so the skill can branch on the exact mode of unavailability.
-      this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey })
-      const reason = (delivered && (delivered.error || delivered.code)) || 'companion delivery failed'
-      return this._toolResult(
-        this._composeTextResult(`candice.ask_user: ${reason}; ask the same question in Claude normally`, true)
-      )
+      return this._runFallback(cause, q, operationId, delivered && (delivered.error || delivered.code))
+    }
+
+    // Delivered acknowledgement received: the app has the question on screen
+    // (or is about to). Persist displayed BEFORE waiting; a crash after the
+    // acknowledgement but before the answer must recover exactly once.
+    if (marked && this.lifecycle && typeof this.lifecycle.transitionPendingDurableState === 'function') {
+      await Promise.resolve(this.lifecycle.transitionPendingDurableState({
+        sessionId: q.sessionId,
+        operationId,
+        from: 'displaying',
+        to: 'displayed',
+      }))
     }
 
     // Wait for exactly one approved answer in the owning session (spec 13.2).
@@ -239,7 +384,11 @@ class AskUserServer {
     let answer
     for (;;) {
       if (this.cancelledSlots.delete(`${q.sessionId}::${q.questionKey}`)) {
-        return this._toolResult(this._composeTextResult('candice.ask_user: question cancelled by the companion; ask the same question in Claude normally', true))
+        // Companion cancelled (FIX-011 timeout-cancel / user cancel): the UI
+        // is already invalid on the app side; this side transfers the durable
+        // record to the terminal fallback before instructioning the skill.
+        this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+        return this._runFallback('user-cancel', q, operationId)
       }
       const t = this.registry.take({ sessionId: q.sessionId, questionKey: q.questionKey })
       if (t.ok) {
@@ -248,10 +397,8 @@ class AskUserServer {
       }
       if (t.code === 'not-answered') {
         if (Date.now() > deadline) {
-          this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey })
-          return this._toolResult(
-            this._composeTextResult('candice.ask_user: no approved answer within the wait window; ask the same question in Claude normally', true)
-          )
+          this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+          return this._runFallback('timeout', q, operationId)
         }
         await this.sleep(120)
         continue
@@ -262,18 +409,20 @@ class AskUserServer {
     const recorded = answer.userConfirmedTranscript === true
     if (recorded && this.lifecycle && typeof this.lifecycle.recordAnswer === 'function') {
       // Duplicate answer protection: the WS-03 manager is authoritative and
-      // enforces the operation identity (FIX-013 S1). A record failure after
-      // the skill saw the answer must still not double-return; the durable
-      // record stays and recovery resolves it by operation id.
-      try {
-        await Promise.resolve(this.lifecycle.recordAnswer({
+      // enforces the operation identity (FIX-013 S1). The commit MUST succeed
+      // before the MCP success is returned: a commit failure is a retryable
+      // non-success (commit-pending) and exactly one recoverable record stays
+      // — the skill retries the same operation id and the idempotent
+      // completion resolves it. The answer was never shown as success.
+      const commit = await Promise.resolve(
+        this.lifecycle.recordAnswer({
           sessionId: q.sessionId,
           questionKey: q.questionKey,
           operationId,
-        }))
-      } catch (err) {
-        // The answer was already delivered to the skill; a record failure must
-        // not destroy the answer (spec 20).
+        })
+      )
+      if (!commit || commit.ok !== true || commit.durableCommitOk === false) {
+        return this._failSoft(`answer commit failed (${(commit && (commit.code && !commit.durableCommitOk ? 'durable-commit-failed' : commit.code)) || 'commit-pending'}); retryable — the same question/session/operation may be retried`, 'delivery-failure', q, operationId)
       }
     }
 
@@ -289,6 +438,7 @@ class AskUserServer {
       },
       // Fail-soft hook for the caller: the answer is a single structured event.
       ok: true,
+      committed: recorded && !!this.lifecycle,
     })
   }
 
@@ -338,6 +488,7 @@ class AskUserServer {
                   'Output: the answer-event schema — exactly one answer (answerText, inputMode voice|typed|terminal, userConfirmedTranscript true). ' +
                   'Fail-soft (spec 13.2/20): when the companion is unavailable, delivery fails, or no confirmation arrives, this tool returns isError with instructions to ask the SAME question normally in Claude ' +
                   '(the skill then falls back through the candice-integration fallback adapter — no second count). ' +
+                  'A retry of the same (sessionId, questionKey) after a commit failure is idempotent (same operation identity). ' +
                   'Never send Raw audio; never read a question aloud when sensitivity is "secret"; the answer routes to the session that asked (spec 17).',
                 inputSchema: ANSWER_TOOL_SCHEMA,
               },
@@ -432,16 +583,30 @@ class AskUserServer {
   }
 }
 
-module.exports = { AskUserServer, SERVER_NAME, SERVER_VERSION, SUPPORTED_PROTOCOL_VERSIONS }
+module.exports = {
+  AskUserServer,
+  SERVER_NAME,
+  SERVER_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  createComposition,
+  defaultStateDir,
+}
 
 if (require.main === module) {
   // One MCP process creates one fresh per-launch capability token and local
-  // Unix endpoint. `ready` is true only after the separately running Tauri
+  // endpoint. `ready` is true only after the separately running Tauri
   // companion authenticates that exact launch; it is never an environment
-  // string or a foreground-window guess.
+  // string or a foreground-window guess. EXACTLY ONE lifecycle and ONE
+  // FallbackCoordinator are constructed here, per authenticated launch
+  // (FIX-013 S3), and injected into the server.
+  // Optional arg: `--state-dir <path>` (hermetic launches/tests); the
+  // default is the deterministic per-user root.
   ;(async () => {
+    const argv = process.argv.slice(2)
+    const stateDirArg = argv.indexOf('--state-dir') >= 0 ? argv[argv.indexOf('--state-dir') + 1] : null
     const bridge = new LocalCompanionBridge()
     await bridge.start()
-    new AskUserServer({ bridge }).run()
+    const { lifecycle, coordinator } = createComposition(stateDirArg ? { stateDir: stateDirArg } : {})
+    new AskUserServer({ bridge, lifecycle, fallback: coordinator }).run()
   })().catch(() => process.exit(0))
 }

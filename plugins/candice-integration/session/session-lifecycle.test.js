@@ -518,6 +518,92 @@ check('a fallback-owned question can never be re-recovered after restart (F13-03
   assert.strictEqual(sm2.getSession('sess-fb').questionCount, 1)
 })
 
+// ---------------------------------------------------------------------------
+// FIX-013 S3 — durable fallback terminal completion + read seam
+// ---------------------------------------------------------------------------
+
+check('getPendingOperation reads the durable record without mutating it', () => {
+  const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
+  sm.beginSession({ sessionId: 'sess-gpo', skill: 'spec-protocol' })
+  const none = sm.getPendingOperation({ sessionId: 'sess-gpo' })
+  assert.strictEqual(none.ok, false)
+  assert.strictEqual(none.code, 'no-pending-question')
+  sm.setPendingQuestion({ sessionId: 'sess-gpo', questionKey: 'BUILD_TARGET' })
+  const got = sm.getPendingOperation({ sessionId: 'sess-gpo' })
+  assert.strictEqual(got.ok, true)
+  assert.strictEqual(got.pending.durableState, 'displaying')
+  const after = sm.getSession('sess-gpo')
+  assert.strictEqual(after.pendingQuestion.durableState, 'displaying', 'read never mutates')
+})
+
+check('recordFallbackAnswer completes the one terminal commit for a fallback-pending record', () => {
+  const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
+  sm.beginSession({ sessionId: 'sess-rfa', skill: 'spec-protocol' })
+  const set = sm.setPendingQuestion({
+    sessionId: 'sess-rfa', questionKey: 'BUILD_TARGET', counted: true, durableState: 'fallback-pending',
+  })
+  assert.strictEqual(set.ok, true)
+  const rec = sm.recordFallbackAnswer({ sessionId: 'sess-rfa', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(rec.ok, true)
+  assert.strictEqual(rec.durableCommitOk, true)
+  const status = sm.getSession('sess-rfa')
+  assert.strictEqual(status.questionCount, 1)
+  assert.strictEqual(status.pendingQuestion, null)
+  // second terminal answer finds no record (durable exactly-once)
+  const again = sm.recordFallbackAnswer({ sessionId: 'sess-rfa', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(again.ok, false)
+  assert.strictEqual(again.code, 'no-pending-question')
+})
+
+check('recordFallbackAnswer refuses a record still owned by the MCP/app path', () => {
+  const sm = new SessionManager({ stateDir: tempDir(), clock: fixedClock('2026-08-21T00:00:00.000Z') })
+  sm.beginSession({ sessionId: 'sess-rfa2', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-rfa2', questionKey: 'BUILD_TARGET' }) // displaying
+  const rec = sm.recordFallbackAnswer({ sessionId: 'sess-rfa2', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(rec.ok, false)
+  assert.strictEqual(rec.code, 'fallback-not-owner')
+  assert.strictEqual(sm.getSession('sess-rfa2').questionCount, 0)
+})
+
+check('recordAnswer reverts the in-memory terminal clear when the durable commit fails (exactly one recoverable record)', () => {
+  const dir = tempDir()
+  const sm = new SessionManager({ stateDir: dir })
+  sm.beginSession({ sessionId: 'sess-tx', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-tx', questionKey: 'BUILD_TARGET', text: 'exact question text' })
+  const originalSave = sm._save.bind(sm)
+  sm._save = () => ({ ok: false, code: 'store:write-failed', error: 'injected commit failure' })
+  const rec = sm.recordAnswer({ sessionId: 'sess-tx', questionKey: 'BUILD_TARGET' })
+  sm._save = originalSave
+  assert.strictEqual(rec.ok, true)
+  assert.strictEqual(rec.durableCommitOk, false)
+  const record = sm.getSession('sess-tx')
+  assert.strictEqual(record.questionCount, 0, 'no count on an unproven commit')
+  assert.ok(record.pendingQuestion, 'exactly one recoverable record retained')
+  assert.strictEqual(record.pendingQuestion.text, 'exact question text')
+  // the same operation id re-commits idempotently once the store works
+  const ok = sm.recordAnswer({ sessionId: 'sess-tx', questionKey: 'BUILD_TARGET' })
+  assert.strictEqual(ok.ok, true)
+  assert.strictEqual(ok.durableCommitOk, true)
+  assert.strictEqual(sm.getSession('sess-tx').questionCount, 1)
+})
+
+check('recordFallbackAnswer reverts the in-memory clear when the durable commit fails', () => {
+  const dir = tempDir()
+  const sm = new SessionManager({ stateDir: dir })
+  sm.beginSession({ sessionId: 'sess-tx2', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-tx2', questionKey: 'BUILD_TARGET', counted: true, durableState: 'fallback-pending' })
+  const originalSave = sm._save.bind(sm)
+  sm._save = () => ({ ok: false, code: 'store:write-failed', error: 'injected commit failure' })
+  const rec = sm.recordFallbackAnswer({ sessionId: 'sess-tx2', questionKey: 'BUILD_TARGET' })
+  sm._save = originalSave
+  assert.strictEqual(rec.ok, true)
+  assert.strictEqual(rec.durableCommitOk, false)
+  assert.strictEqual(rec.recorded, false)
+  const record = sm.getSession('sess-tx2')
+  assert.strictEqual(record.questionCount, 0)
+  assert.strictEqual(record.pendingQuestion.durableState, 'fallback-pending', 'exactly one recoverable fallback record retained')
+})
+
 if (failures > 0) {
   console.log(`\n${failures} FAILURE(S)`)
   process.exit(1)
