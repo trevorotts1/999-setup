@@ -24,6 +24,7 @@ import {
 } from '../shell/candice-composition.ts';
 import { createCaptionsController } from '../ui/captions/index.ts';
 import { defaultProfile } from '../prefs/profile.ts';
+import { textScaleToTextSize } from '../preferences/migrations/registry.ts';
 
 /**
  * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
@@ -104,7 +105,7 @@ export async function initializeRuntimeComposition(
   const captions = createCaptionsController({
     machine,
     mount: captionsMount,
-    textScale: defaultProfile().textSize ?? 'medium',
+    textScale: textScaleToTextSize(defaultProfile().textScale),
     initialCaption: SETUP_CHECK_GREETING,
   });
   const originalTransition = machine.transition.bind(machine);
