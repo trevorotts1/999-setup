@@ -30,6 +30,10 @@ fn generate_context() -> tauri::Context {
 /// full app instance.
 pub fn initialize_shell(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(shell::ShellState::default());
+    // The state latch and event describe the same completed shell
+    // initialization. The IPC health probe reads this fact; it must not be
+    // the operation that first mutates it.
+    app.state::<shell::ShellState>().mark_ready();
     app.emit(shell::SHELL_READY_EVENT, shell::ShellReadyPayload::default())
         .map_err(|e| tauri::Error::Anyhow(e.into()))
 }

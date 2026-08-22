@@ -8,11 +8,14 @@
  * session and never accepts interview answers.
  */
 
-export function showTextFallback(root: HTMLElement): void {
+export function showTextFallback(root: HTMLElement | null): void {
+  if (!root) return;
   root.replaceChildren();
 
   const card = document.createElement('div');
   card.className = 'fallback';
+  card.setAttribute('role', 'status');
+  card.setAttribute('aria-live', 'polite');
 
   const title = document.createElement('p');
   title.className = 'fallback-title';

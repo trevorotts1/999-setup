@@ -19,6 +19,7 @@
  */
 
 import type { CandiceStateMachine } from '../state/machine';
+import type { ShellInfo } from './boot-health';
 
 export interface ShellCapabilities {
   /** Commands the shared shell backend exposes over IPC (WS-06 subset). */
@@ -50,22 +51,24 @@ export interface ShellCommandRegistry {
  */
 export function registerShellCommands(
   _machine: CandiceStateMachine,
+  shellInfo?: Pick<ShellInfo, 'appVersion' | 'shellReady'>,
 ): ShellCommandRegistry {
   let disposed = false;
+  const nativeShellAvailable = shellInfo?.shellReady === true;
 
   const getCapabilities = (): ShellCapabilities => {
     if (disposed) {
       throw new Error('candice: shell command registry disposed');
     }
     return {
-      commands: { showWindow: true, hideWindow: true },
-      windows: { mainLabel: 'main', available: true },
-      appVersion: __CANDICE_APP_VERSION__,
+      commands: { showWindow: nativeShellAvailable, hideWindow: nativeShellAvailable },
+      windows: { mainLabel: 'main', available: nativeShellAvailable },
+      appVersion: shellInfo?.appVersion ?? __CANDICE_APP_VERSION__,
     };
   };
 
   const showWindow = async (): Promise<boolean> => {
-    if (disposed) return false;
+    if (disposed || !nativeShellAvailable) return false;
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().show();
@@ -79,7 +82,7 @@ export function registerShellCommands(
   };
 
   const hideWindow = async (): Promise<boolean> => {
-    if (disposed) return false;
+    if (disposed || !nativeShellAvailable) return false;
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().hide();

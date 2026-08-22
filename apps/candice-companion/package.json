@@ -11,7 +11,7 @@
     "tauri": "tauri",
     "tauri:build": "npm run build && node -e \"require('fs').copyFileSync('tauri.conf.json','src-tauri/tauri.conf.json')\" && cd src-tauri && tauri build",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts",
+    "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts src/shell/__tests__/boot-health.test.ts",
     "verify:visual-bundle": "npm run build && node scripts/assert-visual-bundle.mjs"
   },
   "dependencies": {

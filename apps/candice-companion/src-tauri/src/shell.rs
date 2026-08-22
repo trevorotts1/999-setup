@@ -70,17 +70,11 @@ pub struct ShellInfo {
     pub app_version: String,
     pub supplied_asset_count: usize,
     pub window_visible: bool,
-    /// True when the front-end entered the text fallback (spec 20).
-    pub text_fallback_active: bool,
+    /// True only once the native shell completed its own initialization.
+    pub shell_ready: bool,
     /// Shell subsystem list — what this lane declares available. New
     /// subsystems append here through their owning lanes.
     pub subsystems: Vec<String>,
-}
-
-/// Crate-level placeholders the shell can prove without any other lane:
-/// the bundled dev payload exists after `npm run build` (frontendDist).
-fn bundled_payload_present() -> bool {
-    std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/dist/index.html")).exists()
 }
 
 /// Where the front-end payload is expected to be bundled. Kept `cfg(test)`
@@ -104,18 +98,13 @@ pub fn cmd_get_shell_info<R: Runtime>(
             .get_webview_window("main")
             .map(|w| w.is_visible().unwrap_or(false))
             .unwrap_or(false),
-        text_fallback_active: !bundled_payload_present(),
+        shell_ready: state.ready(),
         subsystems: vec![
             "shell".into(),
             "window-visibility".into(),
             "events".into(),
         ],
     };
-    if !state.ready() {
-        // First successful probe flips the latch; event emission happens
-        // in initialize_shell after plugin init.
-        state.mark_ready();
-    }
     Ok(info)
 }
 
@@ -151,7 +140,7 @@ mod tests {
             app_version: APP_VERSION.to_string(),
             supplied_asset_count: SUPPLIED_ASSET_COUNT,
             window_visible: false,
-            text_fallback_active: false,
+            shell_ready: true,
             subsystems: vec!["shell".into()],
         };
         // Serialization shape is the IPC contract — additive changes only.
@@ -161,7 +150,7 @@ mod tests {
             "appVersion",
             "suppliedAssetCount",
             "windowVisible",
-            "textFallbackActive",
+            "shellReady",
             "subsystems",
         ] {
             assert!(map.contains_key(key), "missing field {key}");
