@@ -3,7 +3,6 @@
 :root {
   color-scheme: light dark;
   --candice-accent: #7c5cff;
-  --candice-surface: rgba(20, 20, 28, 0.92);
   --candice-text: #eceaf3;
   --candice-muted: #a8a3b8;
 }
@@ -25,7 +24,7 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
-  background: var(--candice-surface);
+  background: transparent;
   color: var(--candice-text);
   overflow: hidden;
   user-select: none;
@@ -66,16 +65,12 @@ body {
   min-height: 0;
 }
 
-/* Dev placeholder ONLY — final artwork binds through the WR-013 asset
-   contract (spec 11). Never shipped as the character. */
-.candice-placeholder {
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #b9a8ff 0%, #5b45c8 55%, #241b52 100%);
-  box-shadow:
-    0 0 40px rgba(124, 92, 255, 0.45),
-    inset 0 -14px 30px rgba(0, 0, 0, 0.35);
+.candice-character-image {
+  display: block;
+  max-width: min(100%, 520px);
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(124, 92, 255, 0.42));
   animation: candice-breathe 3.2s ease-in-out infinite;
 }
 
@@ -112,7 +107,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .boot-glow,
-  .candice-placeholder {
+  .candice-character-image {
     animation: none;
   }
 }

@@ -176,7 +176,7 @@ export class AssetRegistry {
   }
 
   /** The only pixel-producing call: decode exactly the requested entry. */
-  loadImage(entry: AssetEntry): HTMLImageElement {
-    return this.imageFactory(`${this.manifest.sourceDirectory}${entry.file}`);
+  loadImage(entry: AssetEntry, sourceUrl?: string): HTMLImageElement {
+    return this.imageFactory(sourceUrl ?? `${this.manifest.sourceDirectory}${entry.file}`);
   }
 }

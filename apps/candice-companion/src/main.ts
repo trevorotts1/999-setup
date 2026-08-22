@@ -5,7 +5,7 @@
  * entry of the webview payload. It owns ONLY shell boot concerns:
  *   - create the application state machine host,
  *   - register shell commands (backend capabilities of the shared shell),
- *   - render the boot surface and attach the placeholder visual stage,
+ *   - render the boot surface and attach the canonical visual stage,
  *   - never decide interview outcome, question order, or progress.
  *
  * The brain, rules, memory, and source of truth are the active Claude Code
@@ -23,8 +23,6 @@ import {
   unregisterShellCommands,
 } from './shell/shell-commands';
 
-const BOOT_TIMEOUT_MS = 10_000;
-
 /** Boot the companion shell. Never throws: failure must never stop Claude. */
 export async function bootCandice(): Promise<void> {
   try {
@@ -39,18 +37,14 @@ export async function bootCandice(): Promise<void> {
     const machine = createCandiceStateMachine();
     const registry = registerShellCommands(machine);
 
-    // Bind the boot failure latch: any unrecoverable shell error drops the
-    // companion to the plain text surface instead of hanging (spec 20).
-    const timeout = window.setTimeout(() => {
-      teardown(registry);
-      showTextFallback(document.getElementById('app') as HTMLElement);
-    }, BOOT_TIMEOUT_MS);
-
+    // Bind actual shell failures to text fallback (spec 20). There is no
+    // synthetic readiness timer here: a visual composition is not evidence
+    // that a native/session/backend bridge is ready, and it must not vanish
+    // merely because another integration lane has not connected yet.
     window.addEventListener('candice:shell-error', () => {
-      window.clearTimeout(timeout);
       teardown(registry);
       showTextFallback(document.getElementById('app') as HTMLElement);
-    });
+    }, { once: true });
   } catch (err) {
     console.error('[candice] shell boot failed, entering text fallback', err);
     showTextFallback(document.getElementById('app') as HTMLElement);
