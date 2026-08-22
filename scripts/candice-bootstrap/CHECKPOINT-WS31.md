@@ -54,13 +54,19 @@ registry records.
    sha256 + launch record; `stateMatches` gates the fast health check.
    Tests PASS (round-trip, end-to-end state assertions).
 
-## Verified live (this machine)
+## Superseded verification record
+
+This historical checkpoint is not release authority. The prior local
+`--app-source` smoke path was removed because it permitted an arbitrary app
+bundle to bypass immutable-manifest, hash/signature, and release-authority
+verification. Current bootstrap intentionally fails before it writes any
+install/state tree until a release-authorized candidate exists.
 
 - `node --test "__tests__/*.test.mjs"` -> **23/23 PASS, 0 fail** (node
   v26.7.0).
-- CLI smoke: `bootstrap.mjs install --offline --root <tmp> --app-source
-  <fixture.app>` -> `OK bootstrap completed: skills, plugin, app, assets,
-  launch metadata`; then `--health` -> all 10 components `OK`, exit 0.
+- Historical CLI smoke using `--app-source` is invalid and must not be
+  repeated. The CLI now rejects that option with usage exit code 2 and makes
+  no install/state writes.
 - WS-33 subprocess seam exercised against the real `atomic-install.mjs`
   (stage->install->backup->marker) and the real `download.mjs` (refused
   unverifiable payload, nothing written).

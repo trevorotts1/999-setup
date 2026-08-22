@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import {
   bootstrapRoot,
@@ -15,7 +17,6 @@ import {
 import {
   skillsDir,
   pluginDir,
-  appDir,
   appBundlePath,
   assetsDir,
   sttBinaryPath,
@@ -33,9 +34,10 @@ import {
   skillSourceExists,
   SKILL_PINS,
   PLUGIN_PINS,
-  APP_PINS,
 } from "../install.mjs";
 import { healthCheck } from "../health.mjs";
+
+const BOOTSTRAP_CLI = fileURLToPath(new URL("../bootstrap.mjs", import.meta.url));
 
 /** Hermetic root per test. */
 function freshRoot() {
@@ -134,32 +136,46 @@ test("installPlugin: plugin tree lands with manifest + hooks + wake handler", ()
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp darwin: staged .app bundle lands at <root>/app/Candice Companion.app", () => {
+test("installApp refuses a caller-staged .app bundle until release authority exists", () => {
   const root = freshRoot();
   const app = join(root, "fixture.app");
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
   writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
   const r = installApp(root, "darwin", { appSource: app, noAtomic: true });
-  assert.equal(r.ok, true, r.message);
-  assert.equal(existsSync(join(appBundlePath(root), "Contents", "MacOS", "candice-companion")), true);
-  assert.equal(r.installed["candice-companion"].version, "0.2.0");
+  assert.equal(r.ok, false);
+  assert.equal(r.blocked, true);
+  assert.match(r.message, /release-authorized/);
+  assert.equal(existsSync(join(appBundlePath(root), "Contents", "MacOS", "candice-companion")), false);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp darwin refuses when no bundle staged (fail closed)", () => {
+test("installApp darwin refuses when no release-authorized candidate exists (fail closed)", () => {
   const root = freshRoot();
   const r = installApp(root, "darwin", { noAtomic: true });
   assert.equal(r.ok, false);
-  assert.equal(r.skipped, true);
+  assert.equal(r.blocked, true);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installApp win32: records the NSIS placement, never fakes an app tree", () => {
+test("installApp win32 refuses until a release-authorized candidate exists", () => {
   const root = freshRoot();
   const r = installApp(root, "win32", { noAtomic: true });
   assert.equal(r.ok, false);
-  assert.equal(r.skipped, true);
-  assert.match(r.message, /NSIS/);
+  assert.equal(r.blocked, true);
+  assert.match(r.message, /release-authorized/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("CLI rejects --app-source before any install, state write, or network-capable leg", () => {
+  const root = freshRoot();
+  const app = join(root, "unverified.app");
+  mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
+  writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
+  const proc = spawnSync(process.execPath, [BOOTSTRAP_CLI, "install", "--offline", "--root", root, "--app-source", app], { encoding: "utf8" });
+  assert.equal(proc.status, 2, proc.stderr);
+  assert.match(proc.stderr, /usage:/);
+  assert.equal(existsSync(appBundlePath(root)), false);
+  assert.equal(existsSync(stateFilePath(root)), false);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -184,80 +200,61 @@ test("installAssets win32 record mode includes stt-runtime leg", async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installAll end-to-end (darwin, offline, no-atomic): state carries components+assets+launch", async () => {
+test("installAll blocks before writing skills, plugin, app, assets, or state without release authority", async () => {
   const root = freshRoot();
   const app = join(root, "fixture.app");
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
   writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
 
   const r = await installAll({ root, platform: "darwin", offline: true, noAtomic: true, appSource: app });
-  assert.equal(r.ok, true, r.message);
-  assert.equal(r.results.skills.ok, true);
-  assert.equal(r.results.plugin.ok, true);
-  assert.equal(r.results.app.ok, true);
-  assert.equal(r.results.assets.ok, true);
-
-  const state = readState(root, "darwin");
-  assert.equal(state.schema, STATE_SCHEMA);
-  assert.equal(Object.keys(state.components).length, 7); // 5 skills + plugin + app
-  assert.equal(state.components["spec-protocol"].version, "1.17.0");
-  assert.equal(state.components["candice-integration"].version, "1.0.0");
-  assert.equal(state.components["candice-companion"].version, "0.2.0");
-  assert.equal(Object.keys(state.assets).length, 3);
-  assert.equal(state.launch.ok, true);
-  assert.match(state.launch.command, /Candice Companion\.app\/Contents\/MacOS\/candice-companion$/);
+  assert.equal(r.ok, false);
+  assert.equal(r.results.app.blocked, true);
+  assert.equal(r.results.skills, undefined);
+  assert.equal(r.results.plugin, undefined);
+  assert.equal(r.results.assets, undefined);
+  assert.equal(existsSync(skillsDir(root)), false);
+  assert.equal(existsSync(pluginDir(root)), false);
+  assert.equal(existsSync(appBundlePath(root)), false);
+  assert.equal(existsSync(assetsDir(root, "stt")), false);
+  assert.equal(existsSync(stateFilePath(root)), false);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installAll is idempotent: second run over the same root reports ok", async () => {
+test("installAll remains blocked on repeat invocations and leaves no bootstrap state", async () => {
   const root = freshRoot();
-  const app = join(root, "fixture.app");
-  mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
-  writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
-  const opts = { root, platform: "darwin", offline: true, noAtomic: true, appSource: app };
+  const opts = { root, platform: "darwin", offline: true, noAtomic: true };
   const r1 = await installAll(opts);
   const r2 = await installAll(opts);
-  assert.equal(r1.ok, true);
-  assert.equal(r2.ok, true, r2.message);
+  assert.equal(r1.ok, false);
+  assert.equal(r2.ok, false, r2.message);
+  assert.equal(existsSync(stateFilePath(root)), false);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("installAll win32: app skipped with NSIS note, rest installs, state honest", async () => {
+test("installAll win32 blocks before writing an incomplete bootstrap state", async () => {
   const root = freshRoot();
   const r = await installAll({ root, platform: "win32", offline: true, noAtomic: true });
-  assert.equal(r.ok, true, r.message);
-  assert.equal(r.results.app.skipped, true);
+  assert.equal(r.ok, false, r.message);
+  assert.equal(r.results.app.blocked, true);
   assert.equal(r.results.app.ok, false);
-  assert.equal(r.skipped.includes("app"), true);
-  const state = readState(root, "win32");
-  assert.equal(Object.keys(state.components).length, 6); // skills + plugin (app absent -> 6, not 7)
+  assert.equal(existsSync(stateFilePath(root)), false);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("healthCheck after full darwin install: all ok; before install: reports missing", async () => {
+test("healthCheck reports the app unavailable before release authority exists", () => {
   const root = freshRoot();
-  // Before: everything missing.
-  const before = healthCheck({ root, platform: "darwin" });
-  assert.equal(before.ok, false);
-  assert.ok(before.missing.length >= 5);
-
-  const app = join(root, "fixture.app");
-  mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
-  writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
-  await installAll({ root, platform: "darwin", offline: true, noAtomic: true, appSource: app });
-
-  const after = healthCheck({ root, platform: "darwin" });
-  assert.equal(after.ok, true, JSON.stringify(after.components));
-  assert.equal(after.stateComponentMatch, true);
+  const health = healthCheck({ root, platform: "darwin" });
+  assert.equal(health.ok, false);
+  const app = health.components.find((c) => c.name === "candice-companion");
+  assert.equal(app.ok, false);
+  assert.match(app.detail, /release-authorized/);
   rmSync(root, { recursive: true, force: true });
 });
 
-test("healthCheck catches stale skill versions", async () => {
+test("healthCheck catches stale skill versions independently of the blocked app", () => {
   const root = freshRoot();
-  const app = join(root, "fixture.app");
-  mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
-  writeFileSync(join(app, "Contents", "MacOS", "candice-companion"), "#!/bin/sh\n");
-  await installAll({ root, platform: "darwin", offline: true, noAtomic: true, appSource: app });
+  assert.equal(installSkills(root, SKILL_PINS, { noAtomic: true }).ok, true);
+  assert.equal(installPlugin(root, PLUGIN_PINS, { noAtomic: true }).ok, true);
   // Corrupt one skill's VERSION to simulate staleness.
   writeFileSync(join(skillsDir(root), "bro", "VERSION"), "0.0.1\n");
   const h = healthCheck({ root, platform: "darwin" });

@@ -29,16 +29,28 @@ const readArg = (name) => {
 const hasFlag = (name) => args.includes(name);
 
 function usage() {
-  console.error("usage: node bootstrap.mjs install|--health [--offline] [--root <dir>] [--app-source <prebuilt.app>]");
+  console.error("usage: node bootstrap.mjs install|--health [--offline] [--root <dir>]");
   process.exit(2);
 }
 
 async function main() {
+  // The app may only arrive through a future release-authorized candidate.
+  // In particular, do not accept a caller-selected local bundle: that would
+  // bypass the updater's immutable manifest, hash/signature verification and
+  // release-authority check.
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--offline") continue;
+    if (arg === "--root" && args[i + 1] && !args[i + 1].startsWith("--")) {
+      i += 1;
+      continue;
+    }
+    usage();
+  }
   const root = readArg("--root");
   const opts = {
     offline: hasFlag("--offline"),
     root,
-    appSource: readArg("--app-source"),
   };
 
   if (command === "install") {

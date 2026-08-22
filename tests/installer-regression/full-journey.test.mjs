@@ -3,9 +3,8 @@
  * rollback on one hermetic root (spec 21/22 end-to-end, E.1 WS-49).
  *
  * Drives the real shipped engines in sequence over a temp root:
- *   1. fresh bootstrap install (skills + plugin + app + assets offline/record
- *      mode + state metadata) — spec 22 legs 1-6,
- *   2. health/version check reports all healthy,
+ *   1. fresh bootstrap correctly refuses without a release-authorized app,
+ *   2. the independently installable skill/plugin tree is then exercised,
  *   3. simulated update: a newer skill tree is installed through the atomic
  *      engine, old tree lands in the backup root outside the config root,
  *   4. simulated failure: rollback restores the previous tree,
@@ -20,30 +19,25 @@ import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync
 import { join } from "node:path";
 import { freshRoot, uninstall, load, run, ATOMIC } from "./helpers.mjs";
 
-test("full journey: bootstrap -> health -> update -> rollback -> uninstall", async () => {
+test("full journey: bootstrap blocks app bypass -> update -> rollback -> uninstall", async () => {
   const root = freshRoot("ws49-journey-");
   try {
-    // 1. Fresh install (offline: registry hashes are the WS-33-verified record;
-    //    app uses a synthetic staged .app bundle so no network is involved).
-    const appBundle = join(root, "staged-app", "Candice Companion.app");
-    // (install.mjs expects Contents/MacOS/candice-companion for darwin)
-    const { installAll } = await load("scripts/candice-bootstrap/install.mjs");
-    const r = await installAll({ root, platform: "darwin", offline: true, appSource: null });
-    // Without a staged app bundle the app leg is skipped (recorded, never
-    // invented) — the other legs must still complete.
-    assert.equal(r.ok, true, r.message);
+    // 1. Bootstrap must stop before creating an incomplete state when no
+    // release-authorized application candidate exists.
+    const { installAll, installSkills, installPlugin, SKILL_PINS, PLUGIN_PINS } = await load("scripts/candice-bootstrap/install.mjs");
+    const r = await installAll({ root, platform: "darwin", offline: true });
+    assert.equal(r.ok, false, r.message);
+    assert.equal(r.results.app.blocked, true);
+    assert.equal(existsSync(join(root, "state", "bootstrap-state.json")), false, "blocked bootstrap writes no state");
+
+    // The app block does not weaken the independently testable skill/plugin
+    // update mechanics below.
+    assert.equal(installSkills(root, SKILL_PINS, { noAtomic: true }).ok, true);
+    assert.equal(installPlugin(root, PLUGIN_PINS, { noAtomic: true }).ok, true);
     assert.equal(existsSync(join(root, "skills", "kaizen", "SKILL.md")), true);
     assert.equal(existsSync(join(root, "plugin", "candice-integration", ".claude-plugin", "plugin.json")), true);
-    assert.ok(existsSync(join(root, "state", "bootstrap-state.json")), "state metadata written");
-    assert.ok(r.skipped.includes("app"), "app leg skipped and RECORDED (never invented)");
 
-    // 2. Health check: installed components healthy; app absent is platform
-    //    truth for darwin only when bundle missing.
-    const { healthCheck } = await load("scripts/candice-bootstrap/health.mjs");
-    const h = healthCheck({ root, platform: "darwin" });
-    assert.equal(h.stateComponentMatch, true, "state matches pins for installed components");
-
-    // 3. Update: replace one skill through the real atomic engine.
+    // 2. Update: replace one skill through the real atomic engine.
     const to = join(root, "skills", "kaizen");
     const staged = join(root, "state", "staging", "kaizen-v2");
     mkdirSync(staged, { recursive: true });
@@ -58,12 +52,12 @@ test("full journey: bootstrap -> health -> update -> rollback -> uninstall", asy
     );
     assert.equal(b.length, 1, "update backed up the old tree");
 
-    // 4. Rollback the failed update.
+    // 3. Rollback the failed update.
     const rb = run([ATOMIC, "rollback", "--to", to]);
     assert.equal(rb.code, 0, rb.out);
     assert.equal(readFileSync(join(to, "VERSION"), "utf8"), "1.1.0\n", "rollback restored pinned version");
 
-    // 5. Uninstall removes the entire root.
+    // 4. Uninstall removes the entire root.
     uninstall(root);
     assert.equal(existsSync(root), false, "uninstall removed the install root");
   } finally {

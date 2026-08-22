@@ -9,7 +9,7 @@ compile on the customer machine:
 
 1. current bundled skills,
 2. the Candice integration plugin,
-3. the Candice Companion desktop app,
+3. a Candice Companion desktop app only after a release-authorized candidate exists,
 4. pinned local STT/TTS assets,
 5. the launch/bridge command,
 6. version/checksum metadata.
@@ -23,7 +23,7 @@ never re-implements checksumming, atomicity, or the payload registry.
 | File | Purpose |
 |---|---|
 | `bootstrap.mjs` | CLI entry: `install` (full bootstrap) and `--health` (fast health/version check, spec 21 step 7). |
-| `install.mjs` | Install engine: skills + plugin from the repo checkout (spec 21 first hop), app from a verified release payload, assets through the WS-33 download gate, state/metadata write. |
+| `install.mjs` | Install engine. It refuses the entire bootstrap before writing state until an app candidate has passed immutable-manifest, hash/signature, and release-authority checks; it never accepts a caller-supplied app path. |
 | `state.mjs` | Persistent `bootstrap-state.json` (schema `candice.bootstrap.state/v1`) — the installed-tree state: component versions, asset checksums, launch record. |
 | `paths.mjs` | Platform install paths, all derived from `HOME`/`LOCALAPPDATA` (spec 24: no operator-specific absolute path). |
 | `health.mjs` | Fast health/version check: present / stale / missing per component; never downloads, never writes. |
@@ -36,7 +36,7 @@ never re-implements checksumming, atomicity, or the payload registry.
 │                                            Windows %LOCALAPPDATA%\BlackCEO\999
 ├── skills/<skill>                           bundled skills (whole tree, SKILL.md + VERSION)
 ├── plugin/candice-integration/              candice-integration plugin (manifest + hooks + bin)
-├── app/Candice Companion.app/               prebuilt macOS bundle (never compiled here)
+├── app/Candice Companion.app/               unavailable until a release-authorized candidate exists
 ├── assets/stt/                              ggml-tiny.en-q5_1.bin, whisper-cli(.exe)
 ├── assets/tts/                              kokoro-v1.0.fp16.onnx, voices-v1.0.bin
 └── state/bootstrap-state.json               version + sha256 + launch metadata (E.1 leg 6)
@@ -53,19 +53,18 @@ production run without it derives the standard path at runtime).
 - `installAssets` mode **record**: writes the registry's verified sha256 as
   a record marker (offline/CI mode; registry hashes were live-verified by
   the WS-33 lane 2026-08-21).
-- Skills/plugin/app placement uses the WS-33 atomic-install engine
+- Skills/plugin placement uses the WS-33 atomic-install engine
   (`atomic-install.mjs`): stage -> backup old -> atomic rename -> marker
   verify -> journal.
-- A leg with no verifiable registry record is **SKIPPED and reported** —
-  never invented. Today (2026-08-21, zero releases on `trevorotts1/999-setup`),
-  the app payload and win32 runtime are recorded as skipped-with-note in
-  health checks; release-publish fills them (9.4 owner).
+- A missing app candidate is a **hard bootstrap failure**, not a skipped
+  leg. This prevents a partial install or caller-supplied bundle from being
+  represented as a completed Candice release.
 
 ## No-compile invariant
 
 - Skills/plugin install as whole-tree copies from the checkout.
-- The app installs from a prebuilt `.app` (macOS) / NSIS installer (Windows,
-  WS-29 lane owns placement).
+- The app install path is deliberately disabled until a prebuilt macOS/Windows
+  candidate has passed the release-authority gate.
 - No `cargo`/`npm` build step exists anywhere in this lane.
 
 ## Plain `claude` untouched

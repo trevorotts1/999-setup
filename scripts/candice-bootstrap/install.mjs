@@ -15,10 +15,10 @@
  *
  * "No source compile on the customer machine": skills/plugin are copied from
  * the repo checkout (spec-21 first hop); app and speech assets are installed
- * from checksum-verified release payloads through the WS-33 gate
- * (download.mjs -> verify.mjs -> atomic-install.mjs). A leg whose payload
- * has no verifiable registry record is SKIPPED and reported — never
- * invented (fail closed, WS-33 doctrine).
+ * from the repo checkout. Speech assets use the checksum-verified WS-33
+ * gate (download.mjs -> verify.mjs -> atomic-install.mjs). App installation
+ * is unavailable until a future candidate is independently release-authorized
+ * — never accept a caller-selected bundle (fail closed, WS-33 doctrine).
  *
  * Plain `claude` is never touched: no settings.json / .claude.json edits
  * (spec 22 "keep plain claude untouched"). Visibility into the shared Claude
@@ -35,7 +35,6 @@ import { bootstrapRoot, readState, writeState } from "./state.mjs";
 import {
   skillsDir,
   pluginDir,
-  appDir,
   appBundlePath,
   assetsDir,
 } from "./paths.mjs";
@@ -51,9 +50,10 @@ export const SKILL_PINS = {
   bro: "1.1.0",
 };
 export const PLUGIN_PINS = { "candice-integration": "1.0.0" };
-export const APP_PINS = { "candice-companion": "0.2.0" };
-
-const MACOS_BUNDLE_REL = "Candice Companion.app";
+// There is deliberately no app pin until a release-authorized candidate has
+// passed the release gate.  A historical version string is not install
+// authority.
+export const APP_PINS = {};
 
 /** WS-33 subprocess paths — this lane calls them, never re-implements them. */
 export const UPDATER_DIR = join(__dirname, "..", "candice-updater");
@@ -167,34 +167,16 @@ export function installPlugin(root, pins = PLUGIN_PINS, opts = {}) {
 }
 
 /**
- * Install the prebuilt companion app.
- * darwin: the staged `.app` bundle (from a verified release payload) is
- *   placed at <root>/app/Candice Companion.app (atomic).
- * win32: the NSIS installer (WS-29) owns placement; this lane records the
- *   payload name and reports the platform step — never invents an unpacked
- *   app tree.
+ * Refuse app installation until an independently release-authorized payload
+ * path exists.  In particular, this function must never trust a local
+ * caller-supplied `.app`; it has no immutable manifest, hash/signature, or
+ * release-authority proof.
  */
 export function installApp(root, platform, opts = {}) {
-  if (platform === "darwin") {
-    const staged = opts.appSource;
-    if (!staged || !existsSync(join(staged, "Contents", "MacOS", "candice-companion"))) {
-      return result(false, "no prebuilt .app bundle staged (release payload must be downloaded first)", { skipped: true });
-    }
-    const target = join(appDir(root), MACOS_BUNDLE_REL);
-    if (opts.noAtomic) {
-      replaceTree(staged, target);
-    } else {
-      const r = runAtomic(staged, target, opts);
-      if (!r.ok) return r;
-    }
-    return result(true, `app installed: ${MACOS_BUNDLE_REL}`, {
-      installed: { "candice-companion": { id: "candice-companion", version: APP_PINS["candice-companion"], kind: "app", status: "installed" } },
-    });
-  }
-  if (platform === "win32") {
-    return result(false, "windows app payload is the NSIS installer (WS-29) — recorded, not faked", { skipped: true });
-  }
-  return result(false, `unsupported platform: ${platform}`, { skipped: true });
+  void root;
+  void platform;
+  void opts;
+  return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
 }
 
 /** Load the WS-33 component registry module (source of truth for payloads). */
@@ -287,7 +269,7 @@ export function launchCommand(root, platform) {
 
 /**
  * Run the full fresh-install bootstrap.
- * @param {object} opts root, platform, env, offline/mode, noAtomic, appSource
+ * @param {object} opts root, platform, env, offline/mode, noAtomic
  * @returns {Promise<{ok:boolean,message:string,root:string,platform:string,skipped:string[],results:object,state?:object}>}
  */
 export async function installAll(opts = {}) {
@@ -296,6 +278,13 @@ export async function installAll(opts = {}) {
   const root = opts.root || bootstrapRoot(env, platform);
   const results = {};
 
+  // Stop before creating any installed tree or bootstrap-state record.  A
+  // successful bootstrap without an authorized app would falsely imply a
+  // releasable installation.
+  const appR = installApp(root, platform, opts);
+  results.app = appR;
+  if (!appR.ok) return finish(root, platform, results, false, `app install blocked: ${appR.message}`);
+
   const skillsR = installSkills(root, SKILL_PINS, opts);
   results.skills = skillsR;
   if (!skillsR.ok) return finish(root, platform, results, false, `skills failed: ${skillsR.message}`);
@@ -303,9 +292,6 @@ export async function installAll(opts = {}) {
   const pluginR = installPlugin(root, PLUGIN_PINS, opts);
   results.plugin = pluginR;
   if (!pluginR.ok) return finish(root, platform, results, false, `plugin failed: ${pluginR.message}`);
-
-  const appR = installApp(root, platform, opts);
-  results.app = appR;
 
   const assetsR = await installAssets(root, platform, opts);
   results.assets = assetsR;

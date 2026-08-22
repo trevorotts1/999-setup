@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bootstrapRoot, readState } from "./state.mjs";
 import { skillsDir, pluginDir, appBundlePath, assetsDir } from "./paths.mjs";
-import { SKILL_PINS, PLUGIN_PINS, APP_PINS } from "./install.mjs";
+import { SKILL_PINS, PLUGIN_PINS } from "./install.mjs";
 
 /**
  * @typedef {{
@@ -54,16 +54,23 @@ export function checkApp(root, platform) {
   if (platform === "darwin") {
     const exe = join(appBundlePath(root), "Contents", "MacOS", "candice-companion");
     const present = existsSync(exe);
-    return { name: "candice-companion", present, version: APP_PINS["candice-companion"], expected: APP_PINS["candice-companion"], ok: present };
+    return {
+      name: "candice-companion",
+      present,
+      version: null,
+      expected: "release-authorized candidate",
+      ok: false,
+      detail: "no release-authorized Candice app candidate is available",
+    };
   }
   if (platform === "win32") {
     return {
       name: "candice-companion",
       present: false,
-      version: APP_PINS["candice-companion"],
-      expected: APP_PINS["candice-companion"],
+      version: null,
+      expected: "release-authorized candidate",
       ok: false,
-      detail: "windows app placement is the NSIS installer's write (WS-29); health reported by that lane",
+      detail: "no release-authorized Candice app candidate is available",
     };
   }
   return { name: "candice-companion", present: false, ok: false, detail: `unsupported platform ${platform}` };
