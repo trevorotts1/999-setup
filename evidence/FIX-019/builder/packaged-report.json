@@ -1,0 +1,126 @@
+{
+  "reportSchema": "fix-019/1",
+  "generatedAt": "2026-08-22T20:18:32.700Z",
+  "repo": "999-setup-audit",
+  "commitSha": "packaged-suite-run",
+  "packagedBinarySha": null,
+  "runId": "packaged-suite-blocked-1787429912700",
+  "launcher": "node tests/e2e-acceptance/packaged/suite.js",
+  "verdict": "BLOCKED",
+  "legs": [
+    {
+      "id": "typed-build-target",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: typed-build-target",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "wrong-session",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: wrong-session",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "duplicate",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: duplicate",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "fallback",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: fallback",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "restart",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: restart",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "compact",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: compact",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    }
+  ],
+  "tiers": [
+    {
+      "tier": "PACKAGED_AUTOMATED",
+      "required": true,
+      "verdict": "BLOCKED",
+      "legs": [
+        {
+          "id": "typed-build-target",
+          "name": "packaged-automated: typed-build-target",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "wrong-session",
+          "name": "packaged-automated: wrong-session",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "duplicate",
+          "name": "packaged-automated: duplicate",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "fallback",
+          "name": "packaged-automated: fallback",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "restart",
+          "name": "packaged-automated: restart",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "compact",
+          "name": "packaged-automated: compact",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        }
+      ]
+    }
+  ],
+  "blockedLines": [
+    "BLOCKED PACKAGED_AUTOMATED - typed-build-target",
+    "BLOCKED PACKAGED_AUTOMATED - wrong-session",
+    "BLOCKED PACKAGED_AUTOMATED - duplicate",
+    "BLOCKED PACKAGED_AUTOMATED - fallback",
+    "BLOCKED PACKAGED_AUTOMATED - restart",
+    "BLOCKED PACKAGED_AUTOMATED - compact"
+  ],
+  "notes": "Packaged suite environment gate closed: screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+}
