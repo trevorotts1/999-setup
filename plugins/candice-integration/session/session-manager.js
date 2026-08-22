@@ -26,11 +26,10 @@
  * Windows native paths without a package manager step (sections 12/17/27).
  */
 
-const fs = require('fs')
-const path = require('path')
 const crypto = require('crypto')
 const { registryVersion, lookup } = require('../../../packages/candice-protocol/question-registry')
 const { deriveOperationId, LIMITS } = require('./lifecycle-protocol')
+const { ProtectedStateStore, STATE_SCHEMA_VERSION } = require('./protected-state-store')
 
 const MAX_SESSION_ID_LENGTH = 128
 const MAX_SKILL_LENGTH = 64
@@ -114,34 +113,43 @@ class SessionManager {
    * @param {string|null} opts.stateDir  directory for write-through JSON state;
    *                                    null/undefined -> in-memory only
    * @param {function} [opts.clock]      () => ISO string, injectable for tests
+   * @param {object} [opts.store]        injected ProtectedStateStore (tests);
+   *                                    default: one per stateDir
    */
   constructor(opts) {
     const options = opts || {}
     this.stateDir = options.stateDir || null
     this.clock = options.clock || null
     this.sessions = new Map() // sessionId -> record
+    // FIX-013 S2: the durable store is the protected per-user boundary. All
+    // reads/writes go through it; corrupt/old/permissive state is quarantined
+    // or migrated and a protected write is the ONLY commit. The manager begins
+    // in-memory-only when a state dir is not configured (legacy embedders and
+    // tests retain their behavior).
+    this.store = options.store instanceof ProtectedStateStore
+      ? options.store
+      : this.stateDir
+        ? new ProtectedStateStore({ dir: this.stateDir, clock: this.clock })
+        : null
     this._load()
   }
 
-  _stateFilePath() {
-    return this.stateDir ? path.join(this.stateDir, 'candice-sessions.json') : null
-  }
-
   _load() {
-    const file = this._stateFilePath()
-    if (!file) return
-    let raw
-    try {
-      raw = fs.readFileSync(file, 'utf8')
-    } catch (err) {
-      if (err.code === 'ENOENT') return // fresh start
-      throw new Error(`session-manager: cannot read state file ${file}: ${err.message}`)
+    if (!this.store) return
+    const opened = this.store.open()
+    if (!opened.ok) {
+      // Fail closed: unproven store (owner/mode/ACL/quarantine failure) means
+      // the manager must NOT trust any on-disk state. It starts empty and the
+      // first protected save re-establishes the store; every write is atomic,
+      // so no success is ever returned on top of an unproven durable commit.
+      this.storeBlockedReason = opened.code
+      return
     }
-    let parsed
-    try {
-      parsed = JSON.parse(raw)
-    } catch (err) {
-      throw new Error(`session-manager: state file ${file} is corrupt JSON: ${err.message}`)
+    const parsed = opened.state
+    if (!parsed) {
+      // Fresh root or quarantined corrupt state: empty store, clean slate.
+      // The quarantine happened WITHOUT copying payload into any log.
+      return
     }
     const list = Array.isArray(parsed.sessions) ? parsed.sessions : []
     let migrated = false
@@ -183,19 +191,26 @@ class SessionManager {
     if (migrated) this._save()
   }
 
+  /**
+   * _save — ONE durable commit, through the protected store: 0700 dir / 0600
+   * file, unique temp, fsync where supported, owner+mode verified before
+   * rename, directory fsync. Never weakens permissions; a failed commit is
+   * returned to the caller as `durableCommitOk:false` — the caller must not
+   * report success. Throws nothing on expected store failures.
+   */
   _save() {
-    const file = this._stateFilePath()
-    if (!file) return
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    const payload = JSON.stringify(
-      { schemaVersion: '1.0', sessions: Array.from(this.sessions.values()) },
-      null,
-      2
-    )
-    // Atomic write: temp file + rename, so a crash mid-write never corrupts state.
-    const tmp = `${file}.tmp`
-    fs.writeFileSync(tmp, payload, 'utf8')
-    fs.renameSync(tmp, file)
+    if (!this.store) return { ok: true, durableCommitOk: true } // in-memory only
+    const payload = {
+      schemaVersion: STATE_SCHEMA_VERSION,
+      sessions: Array.from(this.sessions.values()),
+    }
+    const written = this.store.save(payload)
+    return {
+      ok: written.ok,
+      durableCommitOk: written.ok,
+      ...(written.ok ? {} : { error: written.error }),
+      rejectCode: written.ok ? undefined : written.code,
+    }
   }
 
   /**
@@ -227,8 +242,8 @@ class SessionManager {
     }
     const record = createSessionRecord({ sessionId: id, skill, windowAnchor, clock: this.clock })
     this.sessions.set(id, record)
-    this._save()
-    return { ok: true, session: record }
+    const saved = this._save()
+    return { ok: true, session: record, durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -250,8 +265,8 @@ class SessionManager {
     record.windowAnchor = null
     record.pendingQuestion = null
     record.endReason = sanitizeText(reason || '')
-    this._save()
-    return { ok: true, session: record }
+    const saved = this._save()
+    return { ok: true, session: record, durableCommitOk: saved.ok === true }
   }
 
   /** get_session / status — returns the live record, or null. */
@@ -341,8 +356,8 @@ class SessionManager {
       leaseHeldUntil: null,
     }
     record.lastActiveAt = askedAt
-    this._save()
-    return { ok: true, session: record }
+    const saved = this._save()
+    return { ok: true, session: record, durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -384,8 +399,8 @@ class SessionManager {
     record.answeredQuestionKeys = [...new Set(record.answeredQuestionKeys)]
     record.pendingQuestion = null
     record.lastActiveAt = nowIso(this.clock)
-    this._save()
-    return { ok: true, session: record }
+    const saved = this._save()
+    return { ok: true, session: record, durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -435,8 +450,8 @@ class SessionManager {
     pending.durableState = 'recovering'
     record.status = 'recovering'
     record.lastActiveAt = nowIso(this.clock)
-    this._save()
-    return { ok: true, recovered: pending, lease: { leaseId: leaseIdValue, heldUntil } }
+    const saved = this._save()
+    return { ok: true, recovered: pending, lease: { leaseId: leaseIdValue, heldUntil }, durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -465,8 +480,8 @@ class SessionManager {
     record.pendingQuestion = null // handed off exactly once — a second recovery finds nothing
     record.status = 'active'
     record.lastActiveAt = nowIso(this.clock)
-    this._save()
-    return { ok: true, session: record, state: 'recovered' }
+    const saved = this._save()
+    return { ok: true, session: record, state: 'recovered', durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -487,8 +502,8 @@ class SessionManager {
     }
     record.status = 'active'
     record.lastActiveAt = nowIso(this.clock)
-    this._save()
-    return { ok: true, session: record }
+    const saved = this._save()
+    return { ok: true, session: record, durableCommitOk: saved.ok === true }
   }
 
   /**
@@ -539,8 +554,8 @@ class SessionManager {
     if (to === 'displayed') pending.acknowledgedAt = pending.acknowledgedAt || nowIso(this.clock)
     if (to === 'fallback-pending') pending.leaseId = null
     record.lastActiveAt = nowIso(this.clock)
-    this._save()
-    return { ok: true, session: record, durableState: to }
+    const saved = this._save()
+    return { ok: true, session: record, durableState: to, durableCommitOk: saved.ok === true }
   }
 
   /** Purge ended sessions (housekeeping). Returns the count removed. */
