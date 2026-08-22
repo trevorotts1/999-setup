@@ -16,6 +16,7 @@ import {
   platformKeys,
   RUNTIME_PINS,
 } from "../components.mjs";
+import { QUARANTINED_PAYLOADS } from "../quarantined-payloads.mjs";
 
 test("all 9 component identities present (5 skills + plugin + app + speech/wave asset groups)", () => {
   const ids = Object.keys(COMPONENTS);
@@ -37,7 +38,7 @@ test("all 9 component identities present (5 skills + plugin + app + speech/wave 
 
 test("every published payload has a 64-hex sha256 and operator-controlled source", () => {
   const entries = Object.entries(PUBLISHED_PAYLOADS);
-  assert.ok(entries.length >= 7, `expected >=7 verified payloads, saw ${entries.length}`);
+  assert.ok(entries.length >= 6, `expected >=6 active verified payloads, saw ${entries.length}`);
   for (const [key, entry] of entries) {
     assert.ok(entry.payload, `${key} missing payload`);
     assert.equal(entry.payload.sha256.length, 64, `${key} sha256 not 64-hex: "${entry.payload.sha256}"`);
@@ -95,15 +96,19 @@ test("whisper win32 runtime archives carry verified per-platform hashes", () => 
   );
 });
 
-test("candice-companion 0.2.0 darwin carries the real integrated-build hash; win32 stays fail-closed placeholder", () => {
-  const mac = PUBLISHED_PAYLOADS["candice-companion@0.2.0@darwin"];
+test("unproven candice-companion 0.2.0 artifacts are quarantined, never updater-resolvable", () => {
+  const mac = QUARANTINED_PAYLOADS["candice-companion@0.2.0@darwin"];
   assert.equal(mac.payload.sha256, "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf");
   assert.equal(mac.payload.sizeBytes, 2686932);
   assert.equal(mac.payload.file, "Candice Companion_0.2.0_aarch64.dmg");
-  const win = PUBLISHED_PAYLOADS["candice-companion@0.2.0@win32"];
+  assert.equal(mac.status, "QUARANTINED");
+  const win = QUARANTINED_PAYLOADS["candice-companion@0.2.0@win32"];
   assert.equal(win.payload.sha256, "0".repeat(64));
   assert.equal(win.payload.sizeBytes, 0);
   assert.equal(win.payload.file, "Candice Companion_0.2.0_x64-setup.exe");
+  assert.equal(win.status, "QUARANTINED");
+  assert.equal(resolveComponent("candice-companion", "0.2.0", "darwin"), undefined);
+  assert.equal(resolveComponent("candice-companion", "0.2.0", "win32"), undefined);
 });
 
 test("no ad-hoc third-party URL anywhere in the registry", () => {
@@ -119,9 +124,7 @@ test("no ad-hoc third-party URL anywhere in the registry", () => {
 });
 
 test("resolveComponent honours platform fallback ('any')", () => {
-  const mac = resolveComponent("candice-companion", "0.2.0", "darwin");
-  assert.ok(mac);
-  assert.equal(mac.payload.file, "Candice Companion_0.2.0_aarch64.dmg");
+  assert.equal(resolveComponent("candice-companion", "0.2.0", "darwin"), undefined);
   const win = resolveComponent("stt-assets", "whisper-1.9.2", "win32");
   assert.ok(win);
   assert.equal(win.payload.file, "whisper-bin-x64.zip");

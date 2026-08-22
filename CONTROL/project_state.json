@@ -1,9 +1,9 @@
 {
  "schema": "spec-protocol/project-state@1",
  "project": "999-master-fix",
- "updated": "2026-08-22T03:40:00Z",
- "updated_by": "final-batch merge+verify agent (sonnet)",
- "run_status": "RUNNING",
+ "updated": "2026-08-22T11:43:34Z",
+ "updated_by": "FIX-001 release-truth repair",
+ "run_status": "REPAIR_IN_PROGRESS",
  "round": 0,
  "phase": "wave-5",
  "scores": {
@@ -768,7 +768,20 @@
    "recorded": "2026-08-21"
   },
   "last_reconciliation": "2026-08-22",
-  "release_ready": true,
+  "release_ready": false,
+  "repair_status": "REPAIR_IN_PROGRESS",
+  "repair_audit": {
+   "audited_at": "2026-08-22T11:43:34Z",
+   "audited_commit": "414e46f031ecf65d10745b4c12e9f3f10438ad43",
+   "open_fix_ids": [
+    "FIX-001", "FIX-002", "FIX-003", "FIX-004", "FIX-005", "FIX-006",
+    "FIX-007", "FIX-008", "FIX-009", "FIX-010", "FIX-011", "FIX-012",
+    "FIX-013", "FIX-014", "FIX-015", "FIX-016", "FIX-017", "FIX-018",
+    "FIX-019", "FIX-020", "FIX-021", "FIX-022", "FIX-023", "FIX-024"
+   ],
+   "release_authority": "CONTROL/release-gate.json",
+   "external_repair_ledger": "Operator Downloads/CANDACE FIXES/LIVE-LEDGER.md"
+  },
   "updated": "2026-08-22T03:40:00Z",
   "max_agents_per_workflow": {
    "value": 10,
@@ -808,6 +821,6 @@
     "recorded_by": "reconciliation agent (sonnet/max, W2-W5 RECONCILIATION 2026-08-22)"
    }
   ],
-  "release_ready_note": "final-batch close 2026-08-22: merged main cd2b51f (7622b0c squash 'candice: final batch \u2014 CI matrix + control reconciliation' + PR #15 ci-fix squash). All 12 gates green on merged main: contract, e2e-acceptance 6/6, failure-matrix, installer-regression 20/20, migrations 41/41, privacy-audit 3/3, same-session, upgrade-fixtures 19/19, checksums (WS-33) 4/4, verify-macos 8/8, tsc clean, perf GATE PASS (ttfv 1393ms<=3000, ptt-transcript 321ms<=5000, first-audio 2053ms<=2500). Tag candice-v0.2.0 kept at 3a04f57."
+  "release_ready_note": "FIX-001 reset on 2026-08-22: prior release-ready/all-gates-green claim was not supported by the incomplete acceptance checklist, unresolved runtime defects, unproven release evidence, and quarantined 0.2.0 application payloads. Distribution is blocked until CONTROL/release-gate.json is RELEASE_CANDIDATE and scripts/candice-release/status.mjs exits 0 on the exact candidate commit."
  }
 }

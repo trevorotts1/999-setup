@@ -5,7 +5,7 @@
  * The single source of truth for every component the updater knows about
  * (MASTER-SPEC section 21, E.1 WS-33):
  *
- *   - PUBLISHED_PAYLOADS: components installed from a downloadable release
+ *   - PUBLISHED_PAYLOADS: components installed from a currently downloadable release
  *     artifact. Every SHA-256 here was verified on 2026-08-21 by direct
  *     download from the recorded source URL, then shasum -a 256. Sources are
  *     operator-controlled release locations only (github.com/trevorotts1/
@@ -80,40 +80,9 @@ export const PLACEHOLDER_SHA256 = "0".repeat(64);
  * @type {Record<string, PublishedEntry>}
  */
 export const PUBLISHED_PAYLOADS = {
-  // ------------------------------------------------------------------ app
-  "candice-companion@0.2.0@darwin": {
-    id: "candice-companion",
-    version: "0.2.0",
-    platform: "darwin",
-    kind: "app",
-    payload: {
-      file: "Candice Companion_0.2.0_aarch64.dmg",
-      // Real hash from the integrated 0.2.0 build (2026-08-22): npx tauri
-      // build exit 0 in worktrees/wr001-bootstrap, then shasum -a 256 on
-      // the produced DMG (2,686,932 B). Artifact unsigned/adhoc (WS-23:
-      // zero Developer ID identities on the build host).
-      sha256: "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf",
-      sizeBytes: 2686932,
-      sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_aarch64.dmg`,
-    },
-  },
-  "candice-companion@0.2.0@win32": {
-    id: "candice-companion",
-    version: "0.2.0",
-    platform: "win32",
-    kind: "app",
-    payload: {
-      file: "Candice Companion_0.2.0_x64-setup.exe",
-      // NSIS hash owed from Windows build — the NSIS installer cannot be
-      // built on this macOS host (recorded limitation). UNSIGNED — recorded
-      // limitation (WS-29): the installer is never misrepresented as
-      // trusted. Fail-closed until the 9.4 release owner computes the real
-      // hash from the Windows CI build.
-      sha256: PLACEHOLDER_SHA256,
-      sizeBytes: 0,
-      sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_x64-setup.exe`,
-    },
-  },
+  // App records are intentionally absent until FIX-022 creates an approved
+  // signed release candidate and the release authority passes. See
+  // QUARANTINED_PAYLOADS for the historical 0.2.0 records.
 
   // ------------------------------------------------------------ stt assets
   "stt-assets@whisper-1.9.2@darwin": {
