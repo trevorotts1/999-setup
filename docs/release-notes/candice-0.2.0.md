@@ -41,9 +41,11 @@ would collide with the repo-wide `v1.x` tag series).
    Windows x64 capture is owed at WS-46 interactive smoke.
 4. **Interactive Windows 10/11 desktop smoke owed (WS-46)**: Windows is not
    labeled production-ready until the interactive smoke completes (spec 18).
-5. **Release-artifact checksums owed**: the 0.2.0 DMG and NSIS installer
-   SHA-256 values in `CONTROL/bundled-components.json` are placeholders
-   (`RECOMPUTE-FROM-INTEGRATED-BUILD`). The 0.1.0 DMG hash was a stale
-   worktree artifact. The updater fails closed on placeholder hashes until the
-   9.4 release owner recomputes and republishes them from the integrated
-   build.
+5. **Release-artifact checksums**: the 0.2.0 DMG SHA-256 in
+   `CONTROL/bundled-components.json` is now the real integrated-build hash
+   (`f24f4bcb…b0dbaf`, 2,686,932 B — computed 2026-08-22 from the 0.2.0
+   `npx tauri build` artifact; unsigned/adhoc, signing remains late-bound).
+   The NSIS installer hash is still a fail-closed placeholder: **NSIS hash
+   owed from Windows build** — the installer cannot be built on this macOS
+   host. The updater refuses the placeholder until the 9.4 release owner
+   computes the real hash from the Windows CI build.

@@ -64,6 +64,19 @@ test("verify rejects an unknown component (fail closed, no record)", () => {
   }
 });
 
+test("verify refuses a placeholder checksum (fail closed, NSIS owed from Windows build)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ws33-v-"));
+  try {
+    const f = join(dir, "payload.bin");
+    writeFileSync(f, "anything");
+    const r = run(["--file", f, "--id", "candice-companion", "--version", "0.2.0", "--platform", "win32"]);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /placeholder checksum|refusing/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("verify validates registry lookup against real recorded sha256", () => {
   const dir = mkdtempSync(join(tmpdir(), "ws33-v-"));
   try {

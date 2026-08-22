@@ -41,11 +41,12 @@ export const RELEASE_CHANNEL = "https://github.com/trevorotts1/999-setup/release
 export const MANIFEST_NAME = "bundled-components.json";
 
 /**
- * Placeholder for release-artifact checksums that can only be computed from
- * the integrated 0.2.0 build (the 0.1.0 DMG hash was a stale worktree
- * artifact). Entries carrying this hash are unverifiable by construction:
+ * Placeholder for release-artifact checksums that cannot be computed on
+ * this host. The darwin 0.2.0 DMG hash is now real (integrated build,
+ * 2026-08-22); the win32 NSIS installer hash remains owed from a Windows
+ * build. Entries carrying this hash are unverifiable by construction:
  * verify.mjs and download.mjs fail closed on them until the 9.4 release
- * owner recomputes and republishes the real hash.
+ * owner computes and republishes the real hash.
  */
 export const PLACEHOLDER_SHA256 = "0".repeat(64);
 
@@ -67,7 +68,7 @@ export const PLACEHOLDER_SHA256 = "0".repeat(64);
  *  - ggml-tiny.en-q5_1.bin  sha256 c77c5766…66c7c2b   (direct download, shasum match)
  *  - whisper-bin-x64.zip    49dcc16d…4d674a           (direct download, shasum match)
  *  - whisper-bin-Win32.zip  de170719…a7cf8f22         (direct download, shasum match)
- *  - Candice Companion_0.2.0_aarch64.dmg  <RECOMPUTE-FROM-INTEGRATED-BUILD>  (0.2.0 stamp; the 0.1.0 hash 938cb110…35f7bb was a stale worktree build)
+ *  - Candice Companion_0.2.0_aarch64.dmg  f24f4bcb…b0dbaf  (integrated 0.2.0 build, 2026-08-22: npx tauri build exit 0, shasum -a 256 on the produced DMG; 2,686,932 B)
  *  - kokoro-v1.0.fp16.onnx  f3a290d3…77ac96           (direct download, shasum match)
  *  - kokoro-v1.0.int8.onnx   ae315a79…70ee9c           (WS-19 verified record)
  *  - voices-v1.0.bin        bca610b8…f1fbf7d           (direct download, shasum match)
@@ -87,11 +88,12 @@ export const PUBLISHED_PAYLOADS = {
     kind: "app",
     payload: {
       file: "Candice Companion_0.2.0_aarch64.dmg",
-      // RECOMPUTE-FROM-INTEGRATED-BUILD: the 0.1.0 hash (938cb110…) was a
-      // stale worktree artifact; the 0.2.0 DMG hash is owed from the
-      // integrated build. Fail-closed until republished.
-      sha256: PLACEHOLDER_SHA256,
-      sizeBytes: 0,
+      // Real hash from the integrated 0.2.0 build (2026-08-22): npx tauri
+      // build exit 0 in worktrees/wr001-bootstrap, then shasum -a 256 on
+      // the produced DMG (2,686,932 B). Artifact unsigned/adhoc (WS-23:
+      // zero Developer ID identities on the build host).
+      sha256: "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf",
+      sizeBytes: 2686932,
       sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_aarch64.dmg`,
     },
   },
@@ -102,9 +104,11 @@ export const PUBLISHED_PAYLOADS = {
     kind: "app",
     payload: {
       file: "Candice Companion_0.2.0_x64-setup.exe",
-      // RECOMPUTE-FROM-INTEGRATED-BUILD: owed from the integrated 0.2.0
-      // Windows build. UNSIGNED — recorded limitation (WS-29): the installer
-      // is never misrepresented as trusted. Fail-closed until republished.
+      // NSIS hash owed from Windows build — the NSIS installer cannot be
+      // built on this macOS host (recorded limitation). UNSIGNED — recorded
+      // limitation (WS-29): the installer is never misrepresented as
+      // trusted. Fail-closed until the 9.4 release owner computes the real
+      // hash from the Windows CI build.
       sha256: PLACEHOLDER_SHA256,
       sizeBytes: 0,
       sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_x64-setup.exe`,

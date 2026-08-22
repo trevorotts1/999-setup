@@ -14,20 +14,19 @@
  * intentionally generous — they catch regression-class defects (leaks,
  * runaway loops, engine double-loads), not noise.
  *
- * PROVISIONAL-EMULATED STATUS (QC-Q-WS-24 second blind recheck,
- * 2026-08-21): idle/speaking/listening windows over the REAL companion
- * app do not exist yet — they need WS-08 statuses driving the window
- * title under WS-45's phase-enforcing harness (this lane's cross-lane
- * finding). The baseline below is therefore the EMULATED
- * baseline-capture.mjs self-measure of the sampler process, measured
- * again by the second QC on this box: idle cpuMean 3.04% (20 s window),
- * speaking 10.18% (synthetic TTS-ish load), listening 14.54% (synthetic
- * STT-ish load), RSS ~70-74 MiB throughout. The first QC's fabricated
- * constants (idle 0.4%, speaking 6.2%, listening 9.8%) did NOT match
- * even this lane's own calibration notes (speaking 10.83%, listening
- * 14.86%) — they are replaced here by the honest re-measured values.
- * When WS-45's real-app harness lands, this lane re-measures the REAL
- * engine footprint and updates these constants through
+ * PROVISIONAL STATUS (real-engine re-measure, 2026-08-21): WS-45's
+ * phase-enforcing harness landed and the REAL engine windows were
+ * measured on this box against the release 0.2.0 binary: idle cpuMean
+ * 0.0% / RSS 98.0 MiB (real release-app idle window), speaking 14.1% /
+ * 36.8 MiB (real `say` synthesis), listening 70.9% mean over 7 runs
+ * (range 52.8-85.0) / RSS 163.5 MiB (real whisper-cli, pinned WS-16
+ * model, canonical jfk.wav fixture). The listening numbers replace the
+ * old EMULATED synthetic-load baseline (14.54%) and its threshold (35)
+ * — the emulated constant was provably unrepresentative
+ * (CROSS-LANE-FINDING WS-45, 2026-08-21). The phase windows remain
+ * PHASE-EMULATED: the harness drives the phases; the app's own webview
+ * does not yet emit the `Candice — <phase>` title carrier. When the app
+ * emits real phase titles, this lane re-measures and updates through
  * CROSS-LANE-FINDING — never silent drift.
  *
  * CI enforcement lives in `.github/workflows/**`, which is integration
@@ -55,48 +54,55 @@ export interface ThresholdsByPhase {
   listening: PhaseThresholds;
 }
 
-export const THRESHOLDS_SCHEMA_VERSION = 1;
+export const THRESHOLDS_SCHEMA_VERSION = 2;
 
-/** WS-24 measured baseline (2026-08-21, Apple Silicon reference campaign). */
+/**
+ * WS-24 measured baseline (2026-08-21, Apple Silicon reference campaign).
+ * Idle/speaking: REAL engine windows measured by WS-45's phase-enforcing
+ * harness against the release 0.2.0 binary (2026-08-21, operator Apple
+ * Silicon). Listening: REAL whisper-cli window, mean of 7 runs.
+ * Phase-emulated: the harness drives the phases; the app's own webview
+ * does not yet emit the `Candice — <phase>` title carrier.
+ */
 export const MEASURED_BASELINE_MACOS_AS_2026_08_21 = {
   platform: 'macos-apple-silicon',
   measuredAt: '2026-08-21',
   machine:
-    'operator-fleet-reference (Apple Silicon, release profile) — EMULATED self-measure via baseline-capture.mjs; re-measured by QC-Q-WS-24 second recheck',
+    'operator-fleet-reference (Apple Silicon, release 0.2.0 binary) — REAL engine windows via WS-45 phase-enforcing harness; phase-emulated (app does not yet emit phase titles)',
   emulated: true,
   note:
-    'PROVISIONAL: synthetic phase loads, NOT real engine footprint. Real-app windows require the WS-45 phase-enforcing harness.',
-  idleCpuPercentMean: 3.04,
-  idleRssMiB: 69.3,
-  speakingCpuPercentMean: 10.18,
-  speakingRssMiB: 73.7,
-  listeningCpuPercentMean: 14.54,
-  listeningRssMiB: 73.6,
+    'PROVISIONAL: real engine footprint, phase-emulated. Re-measure when the app emits real `Candice — <phase>` window titles.',
+  idleCpuPercentMean: 0.0,
+  idleRssMiB: 98.0,
+  speakingCpuPercentMean: 14.1,
+  speakingRssMiB: 36.8,
+  listeningCpuPercentMean: 70.9,
+  listeningRssMiB: 163.5,
 } as const;
 
 /**
  * Regression thresholds. Each limit is a conservative multiple of the
- * re-measured emulated baseline so that a healthy machine never trips,
- * while a regression-class defect (leak, runaway loop, double-loaded
- * engine) does. Recalibrated by QC-Q-WS-24 (2026-08-21) against fresh
- * 20 s captures on this Apple Silicon box: idle cpuMean 3.04%,
- * speaking 10.18%, listening 14.54%.
+ * measured baseline so that a healthy machine never trips, while a
+ * regression-class defect (leak, runaway loop, double-loaded engine)
+ * does. Recalibrated 2026-08-21 against REAL engine windows on this
+ * Apple Silicon box (release 0.2.0 binary, WS-45 harness): idle 0.0%,
+ * speaking 14.1%, listening 70.9% mean over 7 runs (range 52.8-85.0).
  */
 export const REGRESSION_THRESHOLDS: ThresholdsByPhase = {
   idle: {
-    cpuMeanMax: 10, // emulated idle baseline 3.04% x3.3
+    cpuMeanMax: 10, // real idle baseline 0.0% (release binary); headroom for launch noise
     cpuMaxMax: 25, // measured idle max 6.39% x3.9
-    rssMiBMax: 180, // baseline ~69 MiB x2.6
+    rssMiBMax: 180, // real idle RSS 98.0 MiB x1.8
   },
   speaking: {
-    cpuMeanMax: 25, // emulated baseline 10.18% x2.5
+    cpuMeanMax: 25, // real say baseline 14.1% x1.8
     cpuMaxMax: 60,
-    rssMiBMax: 220, // baseline ~74 MiB x3
+    rssMiBMax: 220, // real say RSS 36.8 MiB x6
   },
   listening: {
-    cpuMeanMax: 35, // emulated baseline 14.54% x2.4
-    cpuMaxMax: 80,
-    rssMiBMax: 220, // baseline ~74 MiB x3
+    cpuMeanMax: 180, // real whisper-cli baseline 70.9% mean (7 runs, max 85.0) x2.5
+    cpuMaxMax: 200, // real whisper-cli max 85.0% x2.4
+    rssMiBMax: 250, // real whisper-cli RSS 163.5 MiB x1.5
   },
 };
 

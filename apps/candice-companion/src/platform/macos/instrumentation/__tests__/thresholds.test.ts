@@ -36,7 +36,7 @@ function windowOf(cpuPercentMean: number, cpuPercentMax: number, rssMiBMax: numb
 }
 
 test('checkThresholds — clean window passes all three phases', () => {
-  const clean = windowOf(3.04, 6.4, 70); // emulated re-measured baseline (QC-Q-WS-24)
+  const clean = windowOf(3.04, 6.4, 70); // under every phase cap (real-baseline recalibration 2026-08-21)
   for (const phase of PHASE_NAMES) {
     const result = checkThresholds(clean, phase);
     assert.equal(result.ok, true, `${phase} should pass`);
@@ -52,7 +52,7 @@ test('checkThresholds — leak (RSS over) fails with named violation', () => {
 });
 
 test('checkThresholds — CPU runaway fails with named violation', () => {
-  const busy = windowOf(45, 90, 70); // far above any cpuMeanMax cap
+  const busy = windowOf(250, 300, 70); // far above the listening cpuMeanMax cap (180)
   const result = checkThresholds(busy, 'listening');
   assert.equal(result.ok, false);
   assert.ok(result.violations.some((v) => v.startsWith('listening cpuPercentMean')));
@@ -75,9 +75,9 @@ test('verifyReport — missing phase window FAILS (never a silent pass)', () => 
 
 test('verifyReport — full three-phase report verdicts', () => {
   const report = verifyReport({
-    idle: windowOf(3.04, 6.4, 70),
-    speaking: windowOf(10.18, 30, 74),
-    listening: windowOf(14.54, 40, 72),
+    idle: windowOf(0.0, 6.4, 98),
+    speaking: windowOf(14.1, 43, 37),
+    listening: windowOf(70.9, 85, 164),
   });
   assert.equal(report.ok, true);
   assert.equal(report.results.length, 3);
@@ -98,6 +98,8 @@ test('measured baseline — emulated flag on, every phase mean under its own thr
   // A baseline that trips its own regression threshold is a fabrication
   // signal: the threshold must always clear the measurement it derives
   // from, or the honest healthy run fails the gate.
+  // emulated:true now means PHASE-EMULATED (real engine windows driven by
+  // the WS-45 harness; the app does not yet emit real phase titles).
   assert.equal(MEASURED_BASELINE_MACOS_AS_2026_08_21.emulated, true);
   const b = MEASURED_BASELINE_MACOS_AS_2026_08_21;
   assert.ok(b.idleCpuPercentMean <= REGRESSION_THRESHOLDS.idle.cpuMeanMax);

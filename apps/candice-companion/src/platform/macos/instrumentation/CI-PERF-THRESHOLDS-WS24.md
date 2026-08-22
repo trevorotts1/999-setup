@@ -40,16 +40,18 @@ Steps:
 ```
 
 Thresholds (single source: `thresholds.ts`; JSON twin in
-`thresholds-registry.ts`; EMULATED baseline re-measured 2026-08-21
-Apple Silicon reference via `baseline-capture.mjs` — provisional until
-WS-45's real-app phase harness lands; the cross-lane finding then
-re-measures the real engine footprint):
+`thresholds-registry.ts`; REAL engine baseline measured 2026-08-21 on
+operator Apple Silicon, release 0.2.0 binary, via WS-45's phase-enforcing
+harness — phase-emulated: the harness drives the phases, the app's own
+webview does not yet emit the `Candice — <phase>` title carrier.
+Provisional until the app emits real phase titles; the cross-lane finding
+then re-measures):
 
 | Phase | cpuMeanMax | cpuMaxMax | rssMiBMax |
 |---|---|---|---|
 | idle | 10 | 25 | 180 |
 | speaking | 25 | 60 | 220 |
-| listening | 35 | 80 | 220 |
+| listening | 180 | 200 | 250 |
 
 A missing measurement window FAILS the gate (`verifyReport` treats a
 missing phase as a violation) — a failed measurement is never a silent
