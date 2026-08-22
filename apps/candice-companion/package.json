@@ -1,7 +1,7 @@
 {
   "name": "candice-companion",
   "private": true,
-  "version": "0.2.0",
+  "version": "1.0.0-rc.1",
   "description": "Candice Companion — local visual and voice companion for Claude Code skills (Tauri 2 shell)",
   "type": "module",
   "scripts": {

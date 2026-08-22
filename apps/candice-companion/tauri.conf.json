@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Candice Companion",
-  "version": "0.2.0",
+  "version": "1.0.0-rc.1",
   "identifier": "com.blackceo.candice",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "nsis"],
     "category": "Productivity",
     "shortDescription": "Local visual and voice companion for Claude Code skills",
     "longDescription": "Candice is the face, voice, ears, and lightweight user interface for the active Claude Code session and the invoked skill — which remain the brain, rules, memory, and source of truth. Speech is local and offline (whisper.cpp STT, Kokoro TTS); no per-use cloud cost.",
@@ -42,6 +42,44 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "../../../THIRD_PARTY_NOTICES.md"
+    ],
+    "createUpdaterArtifacts": "v1Compatible",
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "signingIdentity": null,
+      "providerShortName": null,
+      "entitlements": "scripts/package-macos/entitlements.plist",
+      "dmg": {
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 }
+      }
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "certificateThumbprint": null,
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "installerHooks": "../scripts/package-windows/installerHooks.nsh"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RELEASE_OWNER_MUST_REPLACE_WITH_BASE64_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/trevorotts1/999-setup/releases/download/{{current_version}}/{{target}}-{{arch}}-{{current_version}}.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

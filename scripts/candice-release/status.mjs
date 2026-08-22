@@ -37,6 +37,20 @@ const REQUIRED_GATES = Object.freeze([
 // review; that change itself requires review and a release-gate recheck.
 const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
 
+// FIX-021: every report artifact the required CI matrix must upload. The
+// evidence record must name all of them; names live here (code), never in a
+// user-editable control document, so a forged evidence record cannot invent
+// its own artifact set.
+const REQUIRED_CI_ARTIFACTS = Object.freeze([
+  "commit-sha",
+  "perf-report",
+  "verifier-macos",
+  "verifier-windows",
+  "windows-shell-compat",
+  "cargo-test-output",
+  "determinism-evidence",
+]);
+
 function argValue(args, name) {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
@@ -146,6 +160,55 @@ export function evaluateRelease(root) {
     if (head !== candidate.commit) errors.push("candidate commit is not the checked-out commit");
   }
 
+  // FIX-021: ciRequiredChecks evidence enforcement (fail closed, no
+  // environment override — consistent with the rest of this authority).
+  // The evidence record lives on the gate document itself and is written by
+  // the control-owner lane after independent QC; a PASS string in
+  // requiredGates alone is not evidence.
+  const ciEvidence = gate.ciRequiredChecks;
+  if (!ciEvidence || typeof ciEvidence !== "object" || Array.isArray(ciEvidence)) {
+    errors.push("ciRequiredChecks evidence record is missing from the release gate");
+  } else {
+    if (!/^[0-9a-f]{40}$/i.test(ciEvidence.commitSha || "")) {
+      errors.push("ciRequiredChecks evidence commitSha is missing or not a full commit SHA");
+    } else if (candidate && ciEvidence.commitSha.toLowerCase() !== candidate.commit.toLowerCase()) {
+      errors.push("ciRequiredChecks evidence commitSha does not equal the candidate commit");
+    }
+    const runIds = Array.isArray(ciEvidence.runIds) ? ciEvidence.runIds : [];
+    const hosted = runIds.filter((id) => typeof id === "string" && /^\d{8,13}$/.test(id));
+    if (hosted.length !== runIds.length || new Set(hosted).size < 2) {
+      errors.push("ciRequiredChecks evidence must carry at least two distinct hosted run IDs");
+    }
+    if (ciEvidence.requiredFailures !== 0) {
+      errors.push(`ciRequiredChecks evidence reports requiredFailures: ${ciEvidence.requiredFailures}, not 0`);
+    }
+    if (ciEvidence.requiredSkips !== 0) {
+      errors.push(`ciRequiredChecks evidence reports requiredSkips: ${ciEvidence.requiredSkips}, not 0`);
+    }
+    if (ciEvidence.continueOnErrorCount !== 0) {
+      errors.push(`ciRequiredChecks evidence reports continueOnErrorCount: ${ciEvidence.continueOnErrorCount}, not 0`);
+    }
+    const artifacts = Array.isArray(ciEvidence.reportArtifacts)
+      ? ciEvidence.reportArtifacts.filter((name) => typeof name === "string" && name.length > 0)
+      : [];
+    const missingArtifacts = REQUIRED_CI_ARTIFACTS.filter((name) => !artifacts.includes(name));
+    if (missingArtifacts.length > 0) {
+      errors.push(`ciRequiredChecks evidence is missing uploaded report artifacts: ${missingArtifacts.join(", ")}`);
+    }
+    if (ciEvidence.windowsProduction !== false && (gates || {})["windowsSigningAndInteractiveSmoke"] !== "PASS") {
+      errors.push("windowsProduction must remain false until windowsSigningAndInteractiveSmoke is PASS");
+    }
+  }
+
+  // FIX-021: the release-blocking workflow file itself is scanned. A
+  // continue-on-error in candice-ci.yml means a required verifier can exit
+  // green while skipped — refuse release regardless of the evidence record.
+  const ciWorkflowPath = resolve(root, ".github", "workflows", "candice-ci.yml");
+  if (!existsSync(ciWorkflowPath)) {
+    errors.push(`missing CI workflow: ${ciWorkflowPath}`);
+  } else if (/^\s*continue-on-error:\s*true/m.test(readFileSync(ciWorkflowPath, "utf8"))) {
+    errors.push("candice-ci.yml contains continue-on-error: true (required verifiers must block)");
+  }
   if (!Array.isArray(gate.artifacts) || gate.artifacts.length === 0) {
     errors.push("no signed release artifacts recorded");
   } else {

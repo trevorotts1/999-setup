@@ -103,8 +103,19 @@ export function readInstalledVersion(skillDir) {
   return v;
 }
 
+/**
+ * Test/config override: CANDICE_UPGRADE_PUBLISHED_URL points the detector at
+ * a pinned local channel fixture (FIX-021 hermetic contract) instead of the
+ * live operator channel. Never set by the release path.
+ */
+export function publishedUrl(env = process.env) {
+  const explicit = env.CANDICE_UPGRADE_PUBLISHED_URL;
+  if (explicit && explicit.length > 0) return explicit;
+  return PUBLISHED_VERSION_URL;
+}
+
 /** Fetch the published spec-protocol VERSION over the operator-controlled channel. */
-export async function fetchPublishedVersion(fetchImpl = globalThis.fetch, url = PUBLISHED_VERSION_URL) {
+export async function fetchPublishedVersion(fetchImpl = globalThis.fetch, url = publishedUrl()) {
   let res;
   try {
     res = await fetchImpl(url);

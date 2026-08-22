@@ -1,9 +1,11 @@
-# CI fragment PROPOSAL — WS-45 performance suite runner
+# CI fragment — WS-45 performance suite runner
 
-**Status: PROPOSAL — not applied.** `.github/workflows/**` is integration
-owned (PROJECT-MANIFEST 9.4 class 4). WS-46 proposes the matrix; the
-integration owner applies. This fragment is the exact step to wire in;
-threshold numbers live in the WS-24/WS-30 registries, never here.
+**Status: APPLIED (FIX-021).** `.github/workflows/**` is integration
+owned (PROJECT-MANIFEST 9.4 class 4). The matrix is wired in
+`candice-ci.yml` with FIX-021 semantics: the Tauri release bundle is built
+BEFORE this step, the step runs with `--require-bundle "<bundle path>"`, and
+the perf JSON report is uploaded as an artifact on every run. Threshold
+numbers live in the WS-24/WS-30 registries, never here.
 
 ## Job: `perf-smoke` (member of the WS-46 CI/release matrix)
 
