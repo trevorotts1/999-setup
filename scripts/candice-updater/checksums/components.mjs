@@ -41,6 +41,20 @@ export const RELEASE_CHANNEL = "https://github.com/trevorotts1/999-setup/release
 export const MANIFEST_NAME = "bundled-components.json";
 
 /**
+ * Immutable secondary origins the download gate accepts — the pinned
+ * upstream release locations recorded per-payload in PUBLISHED_PAYLOADS.
+ * An origin is accepted only as a URL PREFIX, and only when the resolved
+ * payload record's own sourceUrl starts with it (a record's declared origin
+ * cannot be swapped without a registry edit). The runtime never accepts a
+ * bare github.com/huggingface.co path (FIX-018 P0 allow-list).
+ */
+export const SECONDARY_ORIGINS = Object.freeze([
+  "https://github.com/ggml-org/whisper.cpp/releases/download/",
+  "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/",
+]);
+
+/**
  * Placeholder for a future release artifact checksum.  Historical 0.2.0 app
  * hash data is quarantined audit material, not a release artifact and not a
  * verification basis. Entries carrying this placeholder are unverifiable by

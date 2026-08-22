@@ -16,7 +16,7 @@
  * component/version facts only — never question/answer content, never
  * conversation data, never secrets.
  */
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, chmodSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 export const STATE_FILENAME = "bootstrap-state.json";
@@ -92,14 +92,21 @@ export function readState(root, platform = process.platform) {
   return emptyStateObj(platform);
 }
 
-/** Write state atomically (write-temp + rename). Returns boolean; never throws. */
+/** Write state atomically (write-temp + rename) at the FIX-013 permission
+ * posture: state dir 0700, state document 0600 (Unix). The permission probe
+ * fails closed otherwise, so the write must produce the posture, not hope
+ * for a tight umask. Returns boolean; never throws. */
 export function writeState(root, state) {
   const file = stateFilePath(root);
   const tmp = `${file}.tmp-${process.pid}`;
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`);
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, file);
+    if (process.platform !== "win32") {
+      chmodSync(file, 0o600);
+      chmodSync(dirname(file), 0o700);
+    }
     return true;
   } catch {
     try {

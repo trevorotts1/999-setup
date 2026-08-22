@@ -25,7 +25,7 @@ test("full journey: bootstrap blocks app bypass -> update -> rollback -> uninsta
     // 1. Bootstrap must stop before creating an incomplete state when no
     // release-authorized application candidate exists.
     const { installAll, installSkills, installPlugin, SKILL_PINS, PLUGIN_PINS } = await load("scripts/candice-bootstrap/install.mjs");
-    const r = await installAll({ root, platform: "darwin", offline: true });
+    const r = await installAll({ root, platform: "darwin", offline: true, mode: "test-fixture" });
     assert.equal(r.ok, false, r.message);
     assert.equal(r.results.app.blocked, true);
     assert.equal(existsSync(join(root, "state", "bootstrap-state.json")), false, "blocked bootstrap writes no state");

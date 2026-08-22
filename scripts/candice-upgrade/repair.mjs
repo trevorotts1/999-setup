@@ -37,7 +37,13 @@
  *
  * No commit, no push (builder contract).
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { bootstrapRoot, readState, writeState } from "../candice-bootstrap/state.mjs";
 import { skillsDir, pluginDir, appBundlePath, assetsDir } from "../candice-bootstrap/paths.mjs";
@@ -49,7 +55,10 @@ import {
   installApp,
   installAssets,
   launchCommand,
+  snapshotTarget,
 } from "../candice-bootstrap/install.mjs";
+import { registerAll, verifyAll, deregisterAll } from "../candice-bootstrap/register-plugin.mjs";
+import { parseMode } from "../candice-bootstrap/modes.mjs";
 import { healthCheck } from "../candice-bootstrap/health.mjs";
 import { detect, compareVersions, PUBLISHED_VERSION_URL } from "./detect.mjs";
 
@@ -186,8 +195,9 @@ function journal(root, entry) {
   try {
     mkdirSync(join(root, "state"), { recursive: true });
     appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
+    return true;
   } catch {
-    /* journal failure is non-fatal; the state doc is the authority */
+    return false;
   }
 }
 
@@ -197,12 +207,73 @@ function journal(root, entry) {
  * through the WS-33 atomic engine; assets go through the WS-33 download gate
  * with SHA-256 verification. App repair is blocked until a future candidate
  * has release authority — never invented (fail closed).
+ *
+ * FIX-018 mode semantics:
+ *   - no mode (legacy callers)          -> best-effort, legacy shapes;
+ *     plugin registration is NOT touched (the live config root is never
+ *     a silent repair target for mode-less callers),
+ *   - release mode                      -> transactional: every target is
+ *     snapshotted before mutation, any failure rolls every leg back and
+ *     deregisters a half-registered plugin; asset skips are hard failures.
+ *     A release rollback aborts the transaction — no later leg re-mutates
+ *     after the rollback; the prior known-good state stands,
+ *   - non-release modes with an explicit configRoot -> hermetic registration
+ *     repair against that root only (never the live ~/.claude).
  */
 export async function applyRepairs(root, platform, repairs, opts = {}) {
   const done = [];
   const skipped = [];
   const failed = [];
   const blocked = [];
+  const parsed = parseMode(opts.mode);
+  const release = parsed.ok && parsed.mode === "release";
+  // Registration target policy: release uses live discovery (or the injected
+  // configRoot for hermetic release tests); other modes require an explicit
+  // configRoot; mode-less legacy callers never register.
+  const registrationAllowed = parsed.ok && (release || (opts.configRoot && opts.configRoot.length > 0));
+  const env = opts.env || process.env;
+  const regOpts = opts.configRoot && opts.configRoot.length > 0 ? { configRoot: opts.configRoot } : {};
+  if (opts.claudeBin) regOpts.claudeBin = opts.claudeBin;
+  const restores = [];
+  // True only when THIS transaction registered the plugin. Rollback must
+  // deregister what it registered, never destroy a registration that
+  // pre-existed the transaction (prior known-good state includes it).
+  const registered = { active: false, verifyPre: null };
+  // FIX-018: a release rollback aborts the transaction. Once `hard()`
+  // restored the prior known-good state, every later leg block is skipped —
+  // nothing re-mutates after a rollback (no partial second attempt).
+  let aborted = false;
+
+  const rollbackAll = (reason) => {
+    const errors = [];
+    // Deregister only what THIS transaction registered. A registration that
+    // was already valid before the transaction is prior known-good state —
+    // rollback leaves it intact.
+    if (registered.active && registered.verifyPre === false) {
+      const dr = deregisterAll(env, pluginDir(root), regOpts);
+      if (!dr.ok) errors.push(`deregister: ${dr.message}`);
+      registered.active = false;
+    }
+    for (const restore of restores.slice().reverse()) {
+      try {
+        restore();
+      } catch (e) {
+        errors.push(e.message);
+      }
+    }
+    return errors;
+  };
+
+  const hard = (kind, ids, message) => {
+    if (release) {
+      const errors = rollbackAll(message);
+      aborted = true;
+      failed.push({ kind, ids, message: errors.length ? `${message}; rollback errors: ${errors.join("; ")}` : `${message}; transaction rolled back` });
+      return true;
+    }
+    failed.push({ kind, ids, message });
+    return false;
+  };
 
   const skillRepairs = repairs.filter((r) => r.kind === "skill");
   const pluginRepairs = repairs.filter((r) => r.kind === "plugin");
@@ -210,12 +281,13 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
   const appRepairs = repairs.filter((r) => r.kind === "app");
   const assetRepairs = repairs.filter((r) => r.kind === "asset");
 
-  if (skillRepairs.length > 0) {
+  if (!aborted && skillRepairs.length > 0) {
     const pin = {};
     for (const r of skillRepairs) pin[r.id] = SKILL_PINS[r.id];
+    restores.push(snapshotTarget(root, skillsDir(root), "skills-repair"));
     const r = installSkills(root, pin, opts);
     if (!r.ok) {
-      failed.push({ kind: "skill", ids: Object.keys(pin), message: r.message });
+      hard("skill", Object.keys(pin), r.message);
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
         done.push({ kind: "skill", id, version: rec.version, action: "repaired" });
@@ -224,15 +296,16 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
     }
   }
 
-  if (pluginRepairs.length > 0 || integrationRepairs.length > 0) {
+  if (!aborted && (pluginRepairs.length > 0 || integrationRepairs.length > 0)) {
     // The plugin tree carries integrations/ (WS-37/38/39 implementations). A
     // missing integration inside a present plugin is repaired by re-installing
     // the plugin tree from the repo checkout — the deterministic bundle path
     // (spec 21 step 5).
+    restores.push(snapshotTarget(root, pluginDir(root), "plugin-repair"));
     const r = installPlugin(root, PLUGIN_PINS, opts);
     if (!r.ok) {
       const ids = [...pluginRepairs.map((x) => x.id), ...integrationRepairs.map((x) => x.id)];
-      failed.push({ kind: "plugin", ids, message: r.message });
+      hard("plugin", ids, r.message);
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
         done.push({ kind: "plugin", id, version: rec.version, action: "repaired" });
@@ -245,15 +318,43 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
     }
   }
 
-  if (appRepairs.length > 0) {
-    const r = await installApp(root, platform, opts);
+  // FIX-018: a removed plugin registration is repaired here — detect
+  // (verifyAll) then fix (registerAll), never a silent skip in release.
+  // This runs whenever registration is allowed, independent of whether the
+  // plugin TREE needed repair (a broken registration is a broken install
+  // even when the tree is intact).
+  if (!aborted && registrationAllowed) {
+    // Pre-transaction verification: if registration is ALREADY valid, a
+    // later rollback must leave it in place (never deregister what this
+    // transaction did not register).
+    const v0 = verifyAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+    registered.verifyPre = v0.ok;
+    if (!v0.ok) {
+      const reg = registerAll(env, pluginDir(root), PLUGIN_PINS["candice-integration"], regOpts);
+      if (!reg.ok) {
+        hard("plugin-registration", ["candice-integration"], `registration repair failed: ${reg.message}`);
+      } else {
+        registered.active = true;
+        done.push({ kind: "plugin-registration", id: "candice-integration", action: "repaired" });
+        journal(root, { id: "candice-integration", kind: "plugin-registration", action: "repaired" });
+      }
+    }
+  }
+
+  if (!aborted && appRepairs.length > 0) {
+    // installApp is mode-gated (FIX-018): a missing mode is itself a refusal.
+    // Repair never invents a candidate, so absent a caller mode the app leg
+    // runs in test-fixture semantics — always blocked, never copied.
+    const r = await installApp(root, platform, { ...opts, mode: opts.mode || "test-fixture" });
     if (!r.ok) {
-      if (r.blocked) {
+      if (r.blocked || r.modeRequired) {
         blocked.push({ kind: "app", id: "candice-companion", reason: r.message });
       } else if (r.skipped) {
         skipped.push({ kind: "app", id: "candice-companion", reason: r.message });
       } else {
-        failed.push({ kind: "app", ids: ["candice-companion"], message: r.message });
+        const rolled = release;
+        hard("app", ["candice-companion"], r.message);
+        if (rolled) blocked.push({ kind: "app", id: "candice-companion", reason: `release transaction rolled back: ${r.message}` });
       }
     } else {
       for (const [id, rec] of Object.entries(r.installed || {})) {
@@ -263,22 +364,61 @@ export async function applyRepairs(root, platform, repairs, opts = {}) {
     }
   }
 
-  if (assetRepairs.length > 0) {
-    const r = await installAssets(root, platform, opts);
+  if (!aborted && assetRepairs.length > 0) {
+    restores.push(snapshotTarget(root, assetsDir(root, ""), "assets-repair"));
+    // installAssets' mode enum is download|record — a repair mode string
+    // ("release") must never fall through to the download path. Offline
+    // repairs record registry-verified hashes as markers; online repairs go
+    // through the WS-33 download gate.
+    const r = await installAssets(root, platform, { ...opts, release, mode: opts.offline ? "record" : "download" });
     if (!r.ok) {
-      failed.push({ kind: "assets", ids: [], message: r.message });
+      hard("assets", [], r.message);
     } else {
-      for (const [key, rec] of Object.entries(r.installed || {})) {
-        done.push({ kind: "asset", id: key, version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
-        journal(root, { id: key, kind: "asset", version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
-      }
-      for (const sk of r.skipped || []) {
-        skipped.push({ kind: "asset", id: "assets", reason: String(sk) });
+      // Release mode: an asset skip (no verifiable record) is a hard
+      // failure, never a partial success.
+      if (release && r.skipped && r.skipped.length > 0) {
+        hard("assets", [], `unverifiable asset legs in release mode: ${r.skipped.join("; ")}`);
+      } else {
+        for (const [key, rec] of Object.entries(r.installed || {})) {
+          done.push({ kind: "asset", id: key, version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
+          journal(root, { id: key, kind: "asset", version: rec.version, file: rec.file || "", sha256: rec.sha256 || "", action: "repaired" });
+        }
+        for (const sk of r.skipped || []) {
+          skipped.push({ kind: "asset", id: "assets", reason: String(sk) });
+        }
       }
     }
   }
 
-  return { done, skipped, failed, blocked };
+  // The live restore closures (snapshotTarget returns a function, not a
+  // disk artifact for absent targets). repair() needs them for post-apply
+  // rollbacks (re-probe / state-write / commit-marker failures) — a disk
+  // scan of state/staging/pre cannot restore a target that did not exist
+  // before the transaction.
+  return { done, skipped, failed, blocked, release, aborted, restores };
+}
+
+/**
+ * Roll back the whole repair transaction after applyRepairs has already
+ * returned (FIX-018 re-probe / state-write / commit-marker failures):
+ * deregister any half-registered plugin, then run the transaction's live
+ * restore closures in reverse order (snapshotTarget returns a closure, not
+ * a disk artifact for absent targets — a disk scan cannot restore a target
+ * that did not exist before the transaction). Returns the list of rollback
+ * errors (empty = prior known-good state restored).
+ */
+function releaseRollback(root, platform, env, regOpts, restores = []) {
+  const errors = [];
+  const dr = deregisterAll(env, pluginDir(root), regOpts);
+  if (!dr.ok) errors.push(`deregister: ${dr.message}`);
+  for (const restore of restores.slice().reverse()) {
+    try {
+      restore();
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return errors;
 }
 
 /**
@@ -291,14 +431,25 @@ export async function repair(opts = {}) {
   const platform = opts.platform || process.platform;
   const root = opts.root || bootstrapRoot(env, platform);
 
-  const items = enumerate(root, platform, opts);
+  // Test seams (hermetic fault injection at every transaction boundary);
+  // production callers never pass them.
+  const jlog = opts.journal || journal;
+  const hc = opts.healthCheck || healthCheck;
+  const wstate = opts.writeState || writeState;
+
+  const items = (opts.enumerate || enumerate)(root, platform, opts);
   const { repairs, skips } = planRepairs(items);
   const blocked = skips.filter((item) => item.action === "blocked");
 
   // Do not repair a subset and then call it a successful Candice repair. The
   // current application is quarantined, so every normal repair fails before
   // any component/state write until a release-authorized candidate exists.
-  if (blocked.length > 0) {
+  // RELEASE ONLY: legacy (mode-less) callers keep the base contract — the
+  // app leg is reported as a blocked SKIP while skills/plugin/assets still
+  // repair and the run succeeds (cross-lane upgrade-journey contract).
+  const parsedMode = parseMode(opts.mode);
+  const releaseRun = parsedMode.ok && parsedMode.mode === "release";
+  if (releaseRun && blocked.length > 0) {
     return result(false, `repair blocked: ${blocked.map((item) => `${item.id} (${item.note})`).join("; ")}`, {
       root,
       platform,
@@ -318,7 +469,31 @@ export async function repair(opts = {}) {
     };
   }
 
+  // The pre-transaction state document (commit-marker rollback restores it).
+  const priorState = readState(root, platform);
   const applied = await applyRepairs(root, platform, repairs, opts);
+  const release = applied.release;
+  const regOpts = opts.configRoot && opts.configRoot.length > 0 ? { configRoot: opts.configRoot } : {};
+  if (opts.claudeBin) regOpts.claudeBin = opts.claudeBin;
+
+  // FIX-018: a release rollback is terminal. The prior known-good state was
+  // restored by applyRepairs; nothing here may write state or journal a
+  // commit on top of it. The run fails.
+  if (release && applied.failed.length > 0) {
+    jlog(root, {
+      step: "repair.commit",
+      ok: false,
+      phase: "post-apply",
+      reason: `release transaction rolled back: ${applied.failed.map((f) => f.message).join("; ")}`,
+    });
+    return result(false, `repair failed; transaction rolled back: ${applied.failed.map((f) => f.message).join("; ")}`, {
+      root,
+      platform,
+      plan: { repairs, skips },
+      repair: applied,
+      state: readState(root, platform),
+    });
+  }
 
   // Persist the repaired state (version/checksum metadata, E.1 leg 6).
   const state = readState(root, platform);
@@ -332,7 +507,105 @@ export async function repair(opts = {}) {
   }
   const cmd = launchCommand(root, platform);
   state.launch = { command: cmd.path, ok: cmd.ok };
-  writeState(root, state);
+
+  // FIX-018 re-probe: after a fully authorized successful release repair,
+  // the fail-closed health probe re-verifies the installed tree against the
+  // PROSPECTIVE state document (the on-disk state is still the pre-repair
+  // one until the atomic switch below). Any failing REQUIRED leg fails the
+  // run and rolls the whole transaction back — a repair that stages but
+  // cannot prove itself healthy is not committed.
+  let health = null;
+  if (release && applied.failed.length === 0) {
+    health = await hc({
+      root,
+      platform,
+      env,
+      mode: "release",
+      release: true,
+      stateOverride: state,
+      ...(opts.configRoot ? { configRoot: opts.configRoot } : {}),
+      ...(opts.claudeBin ? { claudeBin: opts.claudeBin } : {}),
+      ...(opts.probes ? { probes: opts.probes } : {}),
+    });
+    if (!health.ok) {
+      const rollbackErrors = releaseRollback(root, platform, env, regOpts, applied.restores);
+      jlog(root, {
+        step: "repair.commit",
+        ok: false,
+        phase: "re-probe",
+        reason: `post-repair health probe failed (${(health.missing || []).join(", ")}); transaction rolled back`,
+      });
+      return result(false, `post-repair health probe failed (${(health.missing || []).join(", ")}); transaction rolled back${rollbackErrors.length ? `; rollback errors: ${rollbackErrors.join("; ")}` : ""}`, {
+        root,
+        platform,
+        plan: { repairs, skips },
+        repair: applied,
+        health,
+        state: readState(root, platform),
+      });
+    }
+  }
+
+  // FIX-018: a state-write failure in release is a transaction failure —
+  // the switch is atomic only when the state document lands.
+  const wrote = wstate(root, state);
+  if (!wrote && release) {
+    const rollbackErrors = releaseRollback(root, platform, env, regOpts, applied.restores);
+    jlog(root, {
+      step: "repair.commit",
+      ok: false,
+      phase: "state-write",
+      reason: `state write failed; transaction rolled back${rollbackErrors.length ? `; rollback errors: ${rollbackErrors.join("; ")}` : ""}`,
+    });
+    return result(false, `state write failed; transaction rolled back${rollbackErrors.length ? `; rollback errors: ${rollbackErrors.join("; ")}` : ""}`, {
+      root,
+      platform,
+      plan: { repairs, skips },
+      repair: applied,
+      health,
+      state: readState(root, platform),
+    });
+  }
+
+  // FIX-018 journal commit marker: the transaction is committed only when
+  // every step (apply, re-probe, state write) succeeded. A failed commit
+  // marker write in release fails the run the same way a state-write
+  // failure does.
+  const commitOk = jlog(root, {
+    step: "repair.commit",
+    ok: true,
+    repaired: applied.done.map((d) => `${d.kind}:${d.id}`),
+    health: health ? { ok: true, missing: [] } : undefined,
+  });
+  if (!commitOk && release) {
+    // Restore the state document too — it was already switched by the
+    // state-write step above, and the transaction is not committed.
+    if (wstate(root, priorState) === false) {
+      // Journal the failure of the failure (best effort); the trees are
+      // already restored below.
+      jlog(root, {
+        step: "repair.commit",
+        ok: false,
+        phase: "commit-marker",
+        reason: "commit marker write failed and the prior state document could not be restored",
+      });
+    }
+    const rollbackErrors = releaseRollback(root, platform, env, regOpts, applied.restores);
+    jlog(root, {
+      step: "repair.commit",
+      ok: false,
+      phase: "commit-marker",
+      reason: `commit marker write failed; transaction rolled back${rollbackErrors.length ? `; rollback errors: ${rollbackErrors.join("; ")}` : ""}`,
+    });
+    return result(false, `commit marker write failed; transaction rolled back${rollbackErrors.length ? `; rollback errors: ${rollbackErrors.join("; ")}` : ""}`, {
+      root,
+      platform,
+      plan: { repairs, skips },
+      repair: applied,
+      health,
+      state: readState(root, platform),
+    });
+  }
 
   const repaired = applied.done;
   const message =
@@ -345,6 +618,7 @@ export async function repair(opts = {}) {
     platform,
     plan: { repairs, skips },
     repair: applied,
+    ...(health ? { health } : {}),
     state,
   });
 }

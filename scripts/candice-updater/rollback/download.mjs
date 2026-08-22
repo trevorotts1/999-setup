@@ -22,7 +22,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { resolveComponent, RELEASE_CHANNEL } from "../checksums/components.mjs";
+import { resolveComponent, RELEASE_CHANNEL, SECONDARY_ORIGINS } from "../checksums/components.mjs";
 
 const args = process.argv.slice(2);
 const readArg = (name) => {
@@ -76,7 +76,12 @@ async function main() {
   }
 
   const url = record.payload.sourceUrl;
-  const allowed = url.startsWith(RELEASE_CHANNEL) || url.startsWith("https://github.com/") || url.startsWith("https://huggingface.co/");
+  // FIX-018 P0 allow-list: the operator release channel plus the immutable
+  // secondary origins declared in the registry — never a bare github.com or
+  // huggingface.co prefix. A record whose own declared sourceUrl matches a
+  // declared origin passes; any other host is refused before any fetch.
+  const allowed =
+    url.startsWith(RELEASE_CHANNEL) || SECONDARY_ORIGINS.some((origin) => url.startsWith(origin));
   if (!allowed) {
     console.error(`FAIL source not operator-controlled: ${url}`);
     process.exit(1);
