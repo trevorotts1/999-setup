@@ -49,6 +49,14 @@ pub fn run() {
     let launch = runtime::parse_runtime_launch(std::env::args().skip(1));
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // FIX-022: in-app updater (tauri-plugin-updater, spec 21). The plugin
+        // refuses non-https endpoints in release builds and verifies every
+        // downloaded payload against the pinned public key before install.
+        // Config (endpoints/pubkey/installMode) lives in tauri.conf.json; the
+        // build fails hard unless TAURI_SIGNING_PRIVATE_KEY matches that
+        // pubkey, so a keyless dev build must pass `--no-sign` explicitly —
+        // which tauri-bundler refuses when updater artifacts are requested.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             shell::cmd_get_shell_info,
             shell::cmd_show_window,
