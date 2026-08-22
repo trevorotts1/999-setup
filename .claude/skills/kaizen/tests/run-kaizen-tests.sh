@@ -110,7 +110,7 @@ check_eq "7.1G bash resolver parity (match)" "$exp_b" "$rb_b"
 say "== 7.2 registry (collision, atomic update, invalid-JSON recovery) =="
 FIX_R="$(mktemp -d)"
 mkdir -p "$FIX_R/OpenClaw Master Files/Kaizen"
-REG="$FIX_R/OpenClaw Master Files/Kaizen/registry.json"
+REG="$FIX_R/OpenClaw Master Files/Kaizen/REGISTRY.json"
 KAIZEN_DOWNLOADS="$FIX_R" "$NODE_BIN" "$STATE_MJS" registry-add loop-a >/dev/null
 KAIZEN_DOWNLOADS="$FIX_R" "$NODE_BIN" "$STATE_MJS" registry-add loop-a >/dev/null
 cnt="$(KAIZEN_DOWNLOADS="$FIX_R" "$NODE_BIN" "$STATE_MJS" registry-list | grep -c '"loop_id"')"

@@ -122,7 +122,7 @@ check_eq "selection deterministic (sorted by finding ID)" "$(printf '%s\n' "$ID_
 # DO 1 — one small change on an isolated branch (fix the typo).
 # ---------------------------------------------------------------------------
 git -C "$SITE" checkout -q -b "kaizen-fix-$SELECTED_FIRST"
-sed -i '' 's/user@exmaple\.com/user@example.com/' "$SITE/index.html"
+sed -i.bak 's/user@exmaple\.com/user@example.com/' "$SITE/index.html" && rm -f "$SITE/index.html.bak"
 [ -n "$(grep -n 'mailto:user@example.com' "$SITE/index.html" || true)" ] \
   && ok "DO: typo fixed on isolated branch" || bad "DO: typo fix not applied"
 
@@ -144,7 +144,7 @@ VERDICT_D1="KEEP"
 # ---------------------------------------------------------------------------
 # DO 2 — deliberately failing change: break a tag.
 # ---------------------------------------------------------------------------
-sed -i '' 's|<title>Demo Site</title>|<titleDemo Site</title>|' "$SITE/index.html"
+sed -i.bak 's|<title>Demo Site</title>|<titleDemo Site</title>|' "$SITE/index.html" && rm -f "$SITE/index.html.bak"
 if grep -q '<title>Demo Site</title>' "$SITE/index.html"; then
   bad "DO 2: tag break not applied"
 else

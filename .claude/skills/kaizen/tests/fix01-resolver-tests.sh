@@ -148,7 +148,10 @@ if command -v pwsh >/dev/null 2>&1; then
   check_eq "1.12 pwsh: one master -> match/Kaizen" "$FIX_DL/OpenClaw Master Files/Kaizen" "$p"
   FIX_DL5="$(mktemp -d "$FIX_BASE/kaizen-fix01-dl5.XXXXXX")"
   p5="$(KAIZEN_DOWNLOADS="$FIX_DL5" pwsh -NoProfile -NonInteractive -File "$PS_RESOLVER" 2>/dev/null | tr -d '\r')"
-  check_eq "1.12 pwsh: no master -> fallback" "$FIX_DL5\\Kaizen" "$p5"
+  # Join-Path uses the host platform separator: '\' on Windows, '/' on POSIX.
+  PW_SEP="/"
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PW_SEP='\';; esac
+  check_eq "1.12 pwsh: no master -> fallback" "$FIX_DL5${PW_SEP}Kaizen" "$p5"
   rm -rf "$FIX_DL5"
 else
   echo "info: pwsh not found; PowerShell resolver parity not run (not a failure)"
