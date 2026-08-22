@@ -84,7 +84,7 @@ test("a required skip in one run that the other lacks fails (injected-skip oracl
   assert.ok(record.differences.some((d) => d.includes("performed in only one run")));
 });
 
-test("required leg blocked in both runs fails (never two silently-skipped greens)", () => {
+test("the same BLOCKED row in both runs is an agreed host-class limitation (FIX-021 convention)", () => {
   const report = legReport([
     { key: "macos-arm64: verifier", status: "BLOCKED", record: { reason: "no host class" } },
   ]);
@@ -93,8 +93,38 @@ test("required leg blocked in both runs fails (never two silently-skipped greens
     runA: { report, reportSha256: "x", fingerprint: "f" },
     runB: { report, reportSha256: "x", fingerprint: "f" },
   });
+  assert.equal(ok, true, JSON.stringify(record.differences));
+  assert.equal(record.verdict, "IDENTICAL");
+  assert.equal(record.requiredLegs[0].blocked, true);
+});
+
+test("BLOCKED rows with divergent reasons fail", () => {
+  const a = legReport([
+    { key: "macos-arm64: verifier", status: "BLOCKED", record: { reason: "no host class" } },
+  ]);
+  const b = legReport([
+    { key: "macos-arm64: verifier", status: "BLOCKED", record: { reason: "injected divergence" } },
+  ]);
+  const { ok, record } = compareRuns({
+    sha: SHA,
+    runA: { report: a, reportSha256: "x", fingerprint: "f" },
+    runB: { report: b, reportSha256: "x", fingerprint: "f" },
+  });
   assert.equal(ok, false);
-  assert.ok(record.differences.some((d) => d.includes("blocked in both runs")));
+  assert.ok(record.differences.some((d) => d.includes("BLOCKED reason diverges")));
+});
+
+test("report content SHA disagreement fails", () => {
+  const report = legReport([
+    { key: "macos-arm64: verifier", status: "PASS", record: { checked: 8 } },
+  ]);
+  const { ok, record } = compareRuns({
+    sha: SHA,
+    runA: { report, reportSha256: "aaa", fingerprint: "f" },
+    runB: { report, reportSha256: "bbb", fingerprint: "f" },
+  });
+  assert.equal(ok, false);
+  assert.ok(record.differences.some((d) => d.includes("report SHAs disagree")));
 });
 
 test("same-key failures with different fingerprints diverge (two reds are not a pass)", () => {

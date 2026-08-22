@@ -162,6 +162,17 @@ export function isSingleReport(value) {
   );
 }
 
+/**
+ * Normalize a report file name for cross-run comparison. Timestamped report
+ * names (perf-<stamp>.json, determinism evidence stamps) map to their class
+ * name — two honest reruns differ only in the stamp, never in the class.
+ */
+export function normalizedFileName(file) {
+  return String(file)
+    .replace(/perf-\d{4}-\d{2}-\d{2}T[\d.-]+Z?\.json/, "perf-<stamp>.json")
+    .replace(/-2026-\d{2}-\d{2}T[\d.-]+Z?\.json/, "-<stamp>.json");
+}
+
 /** Legs from a single report or a {fileName: report} manifest. */
 export function allLegs(report) {
   if (isSingleReport(report)) return extractLegs(report);
@@ -169,10 +180,29 @@ export function allLegs(report) {
   for (const [file, sub] of Object.entries(report ?? {})) {
     if (sub === null || typeof sub !== "object") continue;
     for (const leg of extractLegs(sub)) {
-      legs.push({ ...leg, key: `${file}:${leg.key}` });
+      legs.push({ ...leg, key: `${normalizedFileName(file)}:${leg.key}` });
     }
   }
   return legs;
+}
+
+/** Sorted normalized report-file names of a manifest, or null for a single report. */
+export function manifestFiles(report) {
+  if (isSingleReport(report)) return null;
+  return Object.keys(report ?? {}).map(normalizedFileName).sort();
+}
+
+/**
+ * Stable projection of a report set for content hashing: normalized legs
+ * only (key/status/blocked/fingerprint). Wall clocks, durations, and
+ * per-run timestamps never enter the projection — deterministic reruns must
+ * hash equal.
+ */
+export function stableProjection(report) {
+  const legs = allLegs(report)
+    .map((l) => ({ key: l.key, status: l.status, blocked: l.blocked, fingerprint: l.fingerprint }))
+    .sort((x, y) => x.key.localeCompare(y.key));
+  return JSON.stringify(legs);
 }
 
 /**
@@ -190,6 +220,19 @@ export function compareRuns({ sha, runA, runB }) {
   const differences = [];
   const requiredLegs = [];
 
+  // Report-file manifest must agree: a file present in only one run is a
+  // missing required leg, never silently absorbed.
+  const filesA = manifestFiles(runA.report);
+  const filesB = manifestFiles(runB.report);
+  if (filesA && filesB && JSON.stringify(filesA) !== JSON.stringify(filesB)) {
+    differences.push(`report file manifest diverges (${filesA.join(", ") || "none"} vs ${filesB.join(", ") || "none"})`);
+  }
+  // Stable content SHAs must agree (computed from verdict lines / stable
+  // projections only — never wall clocks).
+  if (runA.reportSha256 !== runB.reportSha256) {
+    differences.push(`report SHAs disagree (${runA.reportSha256} vs ${runB.reportSha256})`);
+  }
+
   for (const key of keys) {
     const a = byKeyA.get(key);
     const b = byKeyB.get(key);
@@ -198,7 +241,14 @@ export function compareRuns({ sha, runA, runB }) {
       continue;
     }
     if (a.blocked && b.blocked) {
-      differences.push(`${key}: required leg blocked in both runs`);
+      // Both reruns recorded the same BLOCKED row: agreed host-class
+      // limitation (FIX-021 BLOCKED-required convention). The rows must be
+      // identical — a divergent reason still fails below.
+      if (a.fingerprint !== b.fingerprint) {
+        differences.push(`${key}: BLOCKED reason diverges (${a.fingerprint} vs ${b.fingerprint})`);
+        continue;
+      }
+      requiredLegs.push({ key, status: a.status, pass: false, blocked: true, fingerprint: a.fingerprint });
       continue;
     }
     if (a.blocked !== b.blocked) {
@@ -268,7 +318,11 @@ function main() {
       }
       report[file] = loaded.report;
     }
-    runs.push({ dir, report, reportSha256: createHash("sha256").update(JSON.stringify(report)).digest("hex") });
+    runs.push({
+      dir,
+      report,
+      reportSha256: createHash("sha256").update(stableProjection(report)).digest("hex"),
+    });
   }
   for (const run of runs) {
     run.fingerprint = reportFingerprint(run.report);
