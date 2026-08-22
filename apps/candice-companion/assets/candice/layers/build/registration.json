@@ -1,0 +1,160 @@
+{
+  "baseFrame": "03-mouth-neutral-closed",
+  "baseCanvas": [
+    1254,
+    1254
+  ],
+  "zOrder": [
+    "base",
+    "mouth",
+    "eye"
+  ],
+  "mouthRect": [
+    549,
+    518,
+    751,
+    628
+  ],
+  "eyeRect": [
+    441,
+    344,
+    853,
+    594
+  ],
+  "transforms": {
+    "03": [
+      [
+        1.0,
+        -0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ]
+    ],
+    "04": [
+      [
+        1.009434,
+        0.012241,
+        -12.765738
+      ],
+      [
+        -0.012241,
+        1.009434,
+        16.63909
+      ]
+    ],
+    "05": [
+      [
+        0.979614,
+        0.029166,
+        -13.616761
+      ],
+      [
+        -0.029166,
+        0.979614,
+        16.726332
+      ]
+    ],
+    "06": [
+      [
+        0.978339,
+        0.002734,
+        13.795794
+      ],
+      [
+        -0.002734,
+        0.978339,
+        20.320505
+      ]
+    ],
+    "07": [
+      [
+        1.000117,
+        0.019142,
+        -20.525151
+      ],
+      [
+        -0.019142,
+        1.000117,
+        4.355895
+      ]
+    ],
+    "08": [
+      [
+        1.021044,
+        0.028196,
+        -30.08543
+      ],
+      [
+        -0.028196,
+        1.021044,
+        16.91185
+      ]
+    ],
+    "09": [
+      [
+        0.964491,
+        0.026509,
+        -11.196399
+      ],
+      [
+        -0.026509,
+        0.964491,
+        32.19209
+      ]
+    ]
+  },
+  "eyeBoxesBase": [
+    [
+      505,
+      408,
+      107,
+      107
+    ],
+    [
+      695,
+      436,
+      94,
+      94
+    ]
+  ],
+  "mouthStates": {
+    "closed": {
+      "source": "03",
+      "file": "assets/mouth-neutral-closed.png"
+    },
+    "open-small": {
+      "source": "04",
+      "file": "assets/mouth-open-small.png"
+    },
+    "open-medium": {
+      "source": "05",
+      "file": "assets/mouth-open-medium.png"
+    },
+    "open-wide": {
+      "source": "06",
+      "file": "assets/mouth-open-wide.png"
+    },
+    "smile-closed": {
+      "source": "07",
+      "file": "assets/mouth-smile-closed.png"
+    },
+    "smile-open": {
+      "source": "08",
+      "file": "assets/mouth-smile-open.png"
+    }
+  },
+  "eyeStates": {
+    "open": "assets/eye-open.png",
+    "half": "assets/eye-half.png",
+    "closed": "assets/eye-closed.png"
+  },
+  "notes": [
+    "Placement tolerance zero: fixed rects, images swapped in place.",
+    "eye-half/eye-closed synthesized from 09; operator approval required.",
+    "Frame 11 excluded from pixel authority (different batch/lighting)."
+  ]
+}

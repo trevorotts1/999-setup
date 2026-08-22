@@ -1,0 +1,125 @@
+{
+  "generatedBy": "FIX-005 build_layers.py",
+  "layers": [
+    {
+      "id": "base",
+      "file": "assets/base-neutral.png",
+      "role": "face/base-neutral",
+      "source": "source/operator-approved/09-eye-open.png (derived, lid wipe)",
+      "sourceSha256": "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36",
+      "outputSha256": "41c800f6a5507df45e38b85a2eca46fdca03241694758ba60c837cb978e42d16",
+      "width": 1254,
+      "height": 1254,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "03",
+      "file": "assets/mouth-neutral-closed.png",
+      "role": "mouth/closed",
+      "source": "source/operator-approved/03-mouth-neutral-closed.png",
+      "sourceSha256": "18b58e9fc40f3b39ee61b1cb83ea3bba61aacdf3860fd377012a0f47dbab2bd2",
+      "outputSha256": "55f7b8da327c6d42ab9a13406817babd43e8ac0350996b6ba6735995d82c1595",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "04",
+      "file": "assets/mouth-open-small.png",
+      "role": "mouth/open-small",
+      "source": "source/operator-approved/04-mouth-slight-open.png",
+      "sourceSha256": "e311fb3d13e99a20203612f3d4785b2f58da5688628df8aaabb15702073f93aa",
+      "outputSha256": "14d3a9c4d247b2b25cbeb6e346c8137693dda29ed4afc9e1540d8ecfede543cb",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "05",
+      "file": "assets/mouth-open-medium.png",
+      "role": "mouth/open-medium",
+      "source": "source/operator-approved/05-mouth-medium-open.png",
+      "sourceSha256": "ac52f72aa66cf95c36dc7706e4006421e24b1d14a7fdcdda66f32354d493bc46",
+      "outputSha256": "b9766ad81c63622a9f1e72c8022c996b8c9d442155185bbff9a5160ccf706e9e",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "06",
+      "file": "assets/mouth-open-wide.png",
+      "role": "mouth/open-wide",
+      "source": "source/operator-approved/06-mouth-wide-open.png",
+      "sourceSha256": "9f4c28e095e5df0b833f18e941a89de6bf733fb7f8b8359f99cbac6f1653b388",
+      "outputSha256": "39c606b51a106abf122019d59fb4802d8cb916f0bb5d25914f83aab577401523",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "07",
+      "file": "assets/mouth-smile-closed.png",
+      "role": "mouth/smile-closed",
+      "source": "source/operator-approved/07-mouth-smile-closed.png",
+      "sourceSha256": "cb4e740ba3401c2ecaae23a6cb2bdde4947f11ac6164653faea15941df6ef1a2",
+      "outputSha256": "806e2fa0726833183637c8d88aef59619dc0a43f1c88c27e18f85046ec2ac9bd",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "08",
+      "file": "assets/mouth-smile-open.png",
+      "role": "mouth/smile-open",
+      "source": "source/operator-approved/08-mouth-smile-open.png",
+      "sourceSha256": "c47646fd71a4138c51ec9212c69bc9f51aab2c4fa27a18cc382c42ae010bfa6e",
+      "outputSha256": "61a169bf98b68c4a5f64977b355f90e845af781cb4d519a503f08d6f77faa250",
+      "width": 202,
+      "height": 110,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "09",
+      "file": "assets/eye-open.png",
+      "role": "eye/open",
+      "source": "source/operator-approved/09-eye-open.png",
+      "sourceSha256": "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36",
+      "outputSha256": "63e8029f3812c561bf088ccfa77be4316287215c0f64c39d54433348756f3c39",
+      "width": 412,
+      "height": 250,
+      "synthesized": false,
+      "approval": "operator-approved"
+    },
+    {
+      "id": "eye-half",
+      "file": "assets/eye-half.png",
+      "role": "eye/half-blink",
+      "source": "source/operator-approved/09-eye-open.png (derived, lid wipe)",
+      "sourceSha256": "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36",
+      "outputSha256": "41ba7a3552ffcef9bd22b95876859dac57462692195a9417f9d8db3342ad6d28",
+      "width": 412,
+      "height": 250,
+      "synthesized": true,
+      "approval": "pending-operator"
+    },
+    {
+      "id": "eye-closed",
+      "file": "assets/eye-closed.png",
+      "role": "eye/closed",
+      "source": "source/operator-approved/09-eye-open.png (derived, lid wipe)",
+      "sourceSha256": "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36",
+      "outputSha256": "0ba28ea63a8f0c704bb98fa8cbcf9927e8527c4f58b91b473719c9541e90ae1f",
+      "width": 412,
+      "height": 250,
+      "synthesized": true,
+      "approval": "pending-operator"
+    }
+  ]
+}

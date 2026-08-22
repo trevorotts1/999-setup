@@ -42,6 +42,45 @@ stage; its anchor and scale are recorded against the same reference.
   unknown entry. Loads the JSON lazily; the registry never reads image bytes.
 - `__tests__/registry.test.ts` — node:test acceptance tests.
 
+## Baked layers (fixed-rect contract, phase 2)
+
+On top of the anchor registry, `tools/build_layers.py` bakes the seven
+canonical mouth/eye sources into base-space (1254x1254 == frame 03) and
+crops fixed region rects. Generated outputs:
+
+- `assets/base-neutral.png` — base 03, full-frame.
+- `assets/mouth-*.png` — six mouth states, `build/registration.json` `mouthRect`.
+- `assets/eye-open.png`, `assets/eye-half.png`, `assets/eye-closed.png` —
+  `eyeRect`. Half/closed derive from 09 by lid wipe (no approved closed-eye
+  art exists) and are flagged `approval: "pending-operator"` in
+  `build/manifest.json`.
+- `build/manifest.json`, `build/registration.json`, `build/build.log` —
+  generated records (transforms, rects, hashes, landmark log).
+
+Bake method: per source, affine (translate+scale+rotate) mapping source
+space to base space from Haar eye-pair landmarks, warped INTER_NEAREST
+(no new colors), cropped to the fixed rect. Placement tolerance zero by
+construction: a state change swaps the image inside a fixed rect; the
+rect never moves. Runtime contract: `src/animation/viseme/layers.ts`.
+
+Regeneration (deterministic; same sources -> same bytes):
+
+```bash
+/usr/bin/python3 tools/build_layers.py <assets/candice root>
+```
+
+Regression harness (independent golden composite generator + bitwise
+checker; exit 0 only when all 9 phoneme/blink states match with zero
+differing pixels):
+
+```bash
+/usr/bin/python3 tools/regression.py <assets/candice root> <outDir> --make-golden
+/usr/bin/python3 tools/regression.py <assets/candice root> <outDir> --check <outJson>
+```
+
+Determinism proof: two clean rebuilds plus the committed outputs,
+13/13 files byte-identical (sha256 + cmp).
+
 ## Non-negotiable
 
 - The 7 canonical mouth/eye PNGs are read-only (mode 444, WS-11 staged).

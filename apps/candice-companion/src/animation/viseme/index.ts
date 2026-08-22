@@ -32,6 +32,20 @@ export {
   recordRegistrationMeasured,
 } from "./registration.ts";
 export {
+  LAYER_REGISTRATION,
+  VISEME_LAYER_FILES,
+  assertRectUnchanged,
+  eyeLayerFile,
+  eyeRect,
+  mouthRect,
+} from "./layers.ts";
+export type {
+  EyeState,
+  LayerRect,
+  LayerRegistration,
+  MouthState,
+} from "./layers.ts";
+export {
   CANONICAL_SOURCE_SHA256,
   EYE_STATES,
   assertValidLayerRegistry,
