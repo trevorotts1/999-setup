@@ -35,21 +35,35 @@ export interface LayerRegistration {
   mouthRect: LayerRect;
   eyeRect: LayerRect;
   transforms: Readonly<Record<string, number[][]>>;
-  eyeBoxesBase: number[][];
+  eyeBoxesBase: readonly (readonly number[])[];
   mouthStates: Readonly<Record<string, { source: string; file: string }>>;
   eyeStates: Readonly<Record<string, string>>;
-  notes: string[];
+  notes: readonly string[];
 }
 
-const REG: LayerRegistration = registration;
+/** Raw JSON import shape: arrays are plain number[], not tuples. */
+type RawRegistration = {
+  baseFrame: string;
+  baseCanvas: number[];
+  zOrder: string[];
+  mouthRect: number[];
+  eyeRect: number[];
+  transforms: Record<string, number[][]>;
+  eyeBoxesBase: number[][];
+  mouthStates: Record<string, { source: string; file: string }>;
+  eyeStates: Record<string, string>;
+  notes: string[];
+};
+
+const REG: RawRegistration = registration;
 
 /** Frozen view of the build record. */
 export const LAYER_REGISTRATION: Readonly<LayerRegistration> = Object.freeze({
   ...REG,
-  baseCanvas: Object.freeze([...REG.baseCanvas]),
+  baseCanvas: Object.freeze([...REG.baseCanvas]) as readonly [number, number],
   zOrder: Object.freeze([...REG.zOrder]),
-  mouthRect: Object.freeze([...REG.mouthRect]),
-  eyeRect: Object.freeze([...REG.eyeRect]),
+  mouthRect: Object.freeze([...REG.mouthRect]) as LayerRect,
+  eyeRect: Object.freeze([...REG.eyeRect]) as LayerRect,
   transforms: Object.freeze(REG.transforms),
   eyeBoxesBase: Object.freeze(REG.eyeBoxesBase.map((b) => Object.freeze([...b]))),
   mouthStates: Object.freeze({ ...REG.mouthStates }),

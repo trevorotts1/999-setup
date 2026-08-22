@@ -79,10 +79,11 @@ test("eye states exist and derived states are flagged pending approval", () => {
   assert.equal(eyeLayerFile("open"), LAYER_REGISTRATION.eyeStates["open"]);
   assert.equal(eyeLayerFile("half"), LAYER_REGISTRATION.eyeStates["half"]);
   assert.equal(eyeLayerFile("closed"), LAYER_REGISTRATION.eyeStates["closed"]);
+  type ManifestLayer = { id: string; synthesized?: boolean; approval?: string };
   const manifest = JSON.parse(
     readFileSync(join(LAYERS_DIR, "build", "manifest.json"), "utf8"),
-  );
-  const byId = new Map(manifest.layers.map((l: { id: string }) => [l.id, l]));
+  ) as { layers: ManifestLayer[] };
+  const byId = new Map(manifest.layers.map((l) => [l.id, l] as const));
   for (const id of ["eye-half", "eye-closed"]) {
     assert.equal(byId.get(id)?.synthesized, true);
     assert.equal(byId.get(id)?.approval, "pending-operator");
