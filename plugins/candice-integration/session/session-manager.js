@@ -660,12 +660,28 @@ class SessionManager {
     if (pending.durableState === 'recovering' && !pending.leaseId) {
       return { ok: false, code: 'recovery-lease-required', error: 'a recovering record must carry its lease before it may transition' }
     }
+    // ONE commit: mutate, persist, and only on a durable success keep the
+    // transition. A failed commit REVERTS the in-memory mutation so the
+    // durable truth (disk) and the in-memory truth never diverge — a caller
+    // that claimed the new state on an unproven commit would otherwise
+    // report a handoff the store does not hold (FIX-013 S3 QC D1).
+    const stateBefore = pending.durableState
+    const ackBefore = pending.acknowledgedAt
+    const leaseBefore = pending.leaseId
+    const lastActiveBefore = record.lastActiveAt
     pending.durableState = to
     if (to === 'displayed') pending.acknowledgedAt = pending.acknowledgedAt || nowIso(this.clock)
     if (to === 'fallback-pending') pending.leaseId = null
     record.lastActiveAt = nowIso(this.clock)
     const saved = this._save()
-    return { ok: true, session: record, durableState: to, durableCommitOk: saved.ok === true }
+    if (saved.ok !== true) {
+      pending.durableState = stateBefore
+      pending.acknowledgedAt = ackBefore
+      pending.leaseId = leaseBefore
+      record.lastActiveAt = lastActiveBefore
+      return { ok: true, session: record, durableState: stateBefore, durableCommitOk: false }
+    }
+    return { ok: true, session: record, durableState: to, durableCommitOk: true }
   }
 
   /** Purge ended sessions (housekeeping). Returns the count removed. */

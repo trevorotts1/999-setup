@@ -501,7 +501,16 @@ check('ask_user commits the answer ONCE before MCP success; a failed durable com
     })
     const manager = lifecycle.sessions
     const originalSave = manager._save.bind(manager)
-    manager._save = () => ({ ok: false, code: 'store:write-failed', error: 'injected commit failure' })
+    // Fail only the ANSWER commit (save #2): the pending persist (save #1)
+    // must succeed so the question is delivered, then the terminal commit
+    // fails — the retryable non-success path under test. (A failed save #1
+    // now gates delivery entirely: FIX-013 S3 QC D4.)
+    let saves = 0
+    manager._save = () => {
+      saves += 1
+      if (saves >= 2) return { ok: false, code: 'store:write-failed', error: 'injected commit failure' }
+      return originalSave()
+    }
     const failed = await server2.askUser({
       question: question({ sessionId: 'opaque-session-2' }),
       sessionId: 'opaque-session-2',
@@ -757,6 +766,85 @@ check('wire: ask_user over real stdio fails soft when companion absent', async (
 // ——————————————————————————————————————————————
 // 6. Regression: sibling lanes still load (cross-lane import seam)
 // ——————————————————————————————————————————————
+
+check('S3 QC D4: a failed pending persist gates delivery — the question never reaches the companion', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s3-d4-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    let delivered = false
+    const server = new AskUserServer({
+      lifecycle,
+      isCompanionReady: () => true,
+      deliverQuestion: async () => { delivered = true; return { ok: true } },
+      sleep: async () => {},
+    })
+    const manager = lifecycle.sessions
+    const originalSave = manager._save.bind(manager)
+    manager._save = () => ({ ok: false, code: 'store:write-failed', error: 'injected commit failure' })
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    manager._save = originalSave
+    assert.strictEqual(delivered, false, 'no delivery without a durable pending record')
+    assert.strictEqual(result.result.isError, true)
+    assert.ok(result.result.content[0].text.includes('durable-commit-failed'), 'persist failure is a retryable non-success')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3 QC D1: a failed fallback-claim commit never reports a fallback-pending handoff', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-s3-d1-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const server = new AskUserServer({
+      lifecycle,
+      fallback: coordinator,
+      isCompanionReady: () => true,
+      deliverQuestion: async () => ({ ok: true }),
+      waitWindowMs: 200,
+    })
+    const manager = lifecycle.sessions
+    const originalSave = manager._save.bind(manager)
+    // Save #1 = pending persist, #2 = displaying->displayed, #3 = the
+    // fallback ownership transfer (displayed->fallback-pending). Fail #3.
+    let saves = 0
+    manager._save = () => {
+      saves += 1
+      if (saves >= 3) return { ok: false, code: 'store:write-failed', error: 'injected commit failure' }
+      return originalSave()
+    }
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    manager._save = originalSave
+    assert.strictEqual(result.result.isError, true)
+    assert.ok(result.result.content[0].text.includes('fallback handoff commit failed'), 'unproven claim is a retryable non-success')
+    assert.strictEqual(result.result.fallback.durableState, undefined, 'no fallback-pending claim on an unproven commit')
+    const pending = lifecycle.getPendingOperation({ sessionId: 'opaque-session-id' }).pending
+    assert.strictEqual(pending.durableState, 'displayed', 'in-memory state reverted to the durable truth')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3 QC D2: a lifecycle refusal surfaces as a valid fallback cause with the refusal code in the text', async () => {
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const coordinator = new FallbackCoordinator()
+  const server = new AskUserServer({
+    lifecycle: { setPendingQuestion: () => ({ ok: false, code: 'question-already-answered' }) },
+    fallback: coordinator,
+    isCompanionReady: () => true,
+    deliverQuestion: async () => ({ ok: true }),
+    sleep: async () => {},
+  })
+  const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+  assert.strictEqual(result.result.isError, true)
+  assert.ok(result.result.content[0].text.includes('question-already-answered'), 'refusal code stays visible to the skill')
+  assert.strictEqual(result.result.fallback.cause, 'mcp-unavailable', 'cause is a protocol value, never a lifecycle code')
+})
 
 check('regression: WS-03 session-lifecycle still loads and passes its suite', async () => {
   const lifecycle = require('../../session/session-lifecycle')

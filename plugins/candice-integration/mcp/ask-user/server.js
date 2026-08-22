@@ -247,6 +247,12 @@ class AskUserServer {
         // text-only return (there is no text-only production path).
         return this._failSoft(`fallback handoff refused (${handled.code})`, cause, q, operationId)
       }
+      if (handled.durableCommitOk === false) {
+        // The claim's terminal durable commit did not reach disk: the
+        // terminal surface does NOT own the question. Never report a
+        // fallback-pending handoff on an unproven commit (FIX-013 S3 QC D1).
+        return this._failSoft('fallback handoff commit failed; retryable — the same question/session/operation may be retried', cause, q, operationId)
+      }
       return this._toolResult({
         content: [{ type: 'text', text }],
         isError: true,
@@ -328,8 +334,18 @@ class AskUserServer {
       if (!m || !m.ok) {
         const reason = (m && (m.code || m.error)) || 'pending-question-refused'
         // The lifecycle refused the slot BEFORE any delivery: the question
-        // never reached the companion. Terminal fallback owns it now.
-        return this._runFallback(reason, q, operationId)
+        // never reached the companion. Terminal fallback owns it now. The
+        // refusal code is a lifecycle verdict, NOT a fallback cause: the
+        // coordinator validates causes against FALLBACK_CAUSES, so pass a
+        // valid cause and surface the refusal code as the detail (FIX-013
+        // S3 QC D2 — a refusal code as cause corrupts the handoff).
+        return this._runFallback('mcp-unavailable', q, operationId, reason)
+      }
+      if (m.durableCommitOk === false) {
+        // The pending record did not reach disk: persist-before-delivery is
+        // broken. NEVER deliver a question the store cannot recover — fail
+        // soft without opening or delivering the slot (FIX-013 S3 QC D4).
+        return this._failSoft('pending persist failed (durable-commit-failed); retryable — the same question/session/operation may be retried', 'mcp-unavailable', q, operationId)
       }
       marked = true
     }
