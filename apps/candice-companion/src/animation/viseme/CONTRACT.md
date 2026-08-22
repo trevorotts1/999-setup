@@ -2,6 +2,24 @@
 
 Stable API surface. Breaking changes require a version bump and recheck.
 
+## FIX-005 layer anchor registry (registered mouth/eye layers)
+
+Reference anchor registry data: `assets/candice/layers/layer-anchor-registry.json`
+(schema: `schema.json`, generator: `tools/measure-anchors.py`, both in the same
+directory). Every registered state resolves to a canonical operator-original
+SHA-256; a registration that does not resolve fails loudly.
+
+| Function | Contract |
+|---|---|
+| `validateLayerRegistry(data)` | collects every shape/hash defect as `string[]`; `[]` = sound |
+| `assertValidLayerRegistry(data)` | throws with the full defect list when unsound |
+| `loadLayerRegistry()` | lazy, fail-loud; returns `LayerAnchorRegistry` |
+| `resolveLayerState(stateId)` | one registered state or throws for unknown ids |
+| `stateForViseme(viseme)` | `VisemeId` → registered canonical mouth layer; no lookalike fallback |
+| `stateForBlink("open"\|"halfBlink")` | registered canonical eye layer; no approved closed-eye art exists, so `eye-closed` fails loudly |
+| `CANONICAL_SOURCE_SHA256` | frozen hash table of the seven canonical mouth/eye sources |
+| `EYE_STATES` | frozen `{ open: "eye-open", halfBlink: "eye-half-blink" }` |
+
 ## Types
 
 ```ts

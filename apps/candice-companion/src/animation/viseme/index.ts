@@ -31,3 +31,17 @@ export {
   assertRegistrationMeasured,
   recordRegistrationMeasured,
 } from "./registration.ts";
+export {
+  CANONICAL_SOURCE_SHA256,
+  EYE_STATES,
+  assertValidLayerRegistry,
+  loadLayerRegistry,
+  resolveLayerState,
+  stateForBlink,
+  stateForViseme,
+  validateLayerRegistry,
+} from "./registry.ts";
+export type {
+  LayerAnchorRegistry,
+  LayerAnchorState,
+} from "./registry.ts";
