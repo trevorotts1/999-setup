@@ -77,6 +77,12 @@ jobs:
           npm install
           npm run build
 
+      - name: FIX-014 interaction composition suite + bundle sentinel
+        run: |
+          cd apps/candice-companion
+          npm run test:interaction-composition
+          npm run verify:interaction-composition
+
       - name: macOS platform verifier (tests/macos/verify-macos.sh)
         continue-on-error: true
         run: bash tests/macos/verify-macos.sh

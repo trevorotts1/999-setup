@@ -152,3 +152,47 @@ recommended action: WR-010 WS-01 should define preferences.schema.json with
   WS-08) + this lane; no package.json exists yet — the suite is dependency-free
   by design so it runs standalone. The app root package.json is a 9.3
   within-run shared file; this lane did not create it.
+
+## WS-34 v3 UNIFICATION (FIX-014 appui lane, 2026-08-22)
+
+The prefs lane now CONSUMES the WS-34 versioned-schema authority
+(`src/preferences/migrations/`) instead of owning a v1 schema:
+
+- `src/prefs/schema.ts` — `CandiceProfile` = WS-34 `ProfileV3`;
+  `LATEST_SCHEMA_VERSION` = `CURRENT_SCHEMA_VERSION` (3); v3 field names
+  (`lastUsedAnswerMethod`, `textSize`, `companionScreenPosition` {x,y,anchor},
+  `nameAsked` {askedAt}); `PROFILE_DEFAULTS.reducedMotion = null` (follow the
+  OS — I-10 fix); own MIGRATIONS registry removed.
+- `src/prefs/profile.ts` — `migrateProfile` delegates to WS-34
+  `runMigrations` (integer versions as-is, protocol string "N.0" -> N+1,
+  garbage -> 1, future preserved untouched); `normalizeProfile` delegates to
+  `normalizeVersionedDoc` at CURRENT; `mergeProfile` MOVED here from
+  `store.ts` (browser-safe: no `node:fs` in the webview bundle);
+  `defaultProfile` returns v3 defaults.
+- `src/prefs/store.ts` — unchanged persistence semantics (atomic
+  write-then-rename, 0o600, stale-lock tolerance, corruption backup,
+  future-version save refusal); `mergeProfile` removed (now in `profile.ts`).
+- `src/prefs/name.ts` — `nameAsked: { askedAt }` object shape; cleared name
+  stores null; imports `mergeProfile` from `profile.ts` (never `store.ts`).
+- `src/prefs/index.ts` — exports `mergeProfile` from `profile.ts`; own
+  MIGRATIONS export removed.
+
+Tests: `tests/prefs/prefs.test.ts` rewritten to v3 expectations (32 tests,
+was 29): v1 fixtures migrate through the real WS-34 chain with zero data loss
+(rename + enum mapping + nameAsked structure pinned), on-disk v1 document
+loads at v3, dirty-v3 normalization, future-version (v99) preservation and
+save-refusal regressions kept. Fixtures stay legacy v1 (shared with the WS-34
+migration suite).
+
+Verification (2026-08-22, worktree 999-setup-audit-wt-appui @ 09a7b90):
+
+```text
+$ node --test tests/prefs/prefs.test.ts
+exit=0  tests 32  pass 32  fail 0
+
+$ node --test tests/migrations/migrations.test.ts   (repo root)
+exit=0  tests 41  pass 41  fail 0
+
+$ npx tsc --noEmit   (apps/candice-companion)
+exit=0
+```

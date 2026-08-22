@@ -24,6 +24,12 @@ import {
 } from '../shell/candice-composition.ts';
 import { createCaptionsController } from '../ui/captions/index.ts';
 import { defaultProfile } from '../prefs/profile.ts';
+import type { CandiceProfile } from '../prefs/schema.ts';
+import type { PrefsLoadResult } from '../prefs/ipc.ts';
+import {
+  initializeCandiceInteractionComposition,
+  type InteractionComposition,
+} from './interaction-composition.ts';
 
 /**
  * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
@@ -35,6 +41,13 @@ const SETUP_CHECK_GREETING =
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;
+  /**
+   * FIX-014 (I-08/I-11): the profile loaded ONCE at boot by main.ts, plus
+   * its load result. Absent (tests/legacy callers) the composition falls
+   * back to the defaults profile with a truthful failed-load result.
+   */
+  profile?: CandiceProfile;
+  prefsLoad?: PrefsLoadResult;
 }
 
 export async function initializeRuntimeComposition(
@@ -43,6 +56,16 @@ export async function initializeRuntimeComposition(
   options: RuntimeCompositionOptions = {},
 ): Promise<RuntimeCapabilities> {
   const capabilities = await probeRuntimeCapabilities(options.invokeAdapter);
+  // FIX-014 (I-08/I-11): the boot-loaded profile (main.ts loads it once via
+  // the native seam). Absent options degrade truthfully to defaults with a
+  // failed-load result — never a fabricated persisted preference.
+  const profile: CandiceProfile = options.profile ?? defaultProfile();
+  const prefsLoad: PrefsLoadResult = options.prefsLoad ?? {
+    ok: false,
+    profile: defaultProfile(),
+    recoveredFromCorruption: false,
+    error: 'profile not provided to composition',
+  };
   root.dataset.runtimeContractVersion = capabilities.contractVersion;
   root.dataset.runtimeComposition = 'active';
   root.dataset.bridgeAvailable = String(capabilities.bridgeAvailable);
@@ -104,7 +127,8 @@ export async function initializeRuntimeComposition(
   const captions = createCaptionsController({
     machine,
     mount: captionsMount,
-    textScale: defaultProfile().textSize ?? 'medium',
+    // FIX-014 (I-08): the persisted text size, not the defaults profile.
+    textScale: profile.textSize ?? 'medium',
     initialCaption: SETUP_CHECK_GREETING,
   });
   const originalTransition = machine.transition.bind(machine);
@@ -114,11 +138,38 @@ export async function initializeRuntimeComposition(
     return result;
   };
 
+  // FIX-014 (EXECUTION-PLAN step 8): the application-owned interaction
+  // composition — one instance, mounted once, wiring the boot-loaded
+  // profile into the mounted surfaces (captions text size, voice-output
+  // persistence, first-run name flow). It never loads the profile a second
+  // time; main.ts owns the single boot load.
+  const interaction: InteractionComposition = await initializeCandiceInteractionComposition(
+    root,
+    machine,
+    captions,
+    { profile, prefsLoad, invokeAdapter: options.invokeAdapter },
+  );
+
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.
   // A connected transport does not by itself display controls or invent a
   // session; those conditions are met only by the delivered event.
-  await initializeAuthenticatedBridge(root, machine);
+  await initializeAuthenticatedBridge(root, machine, {
+    // FIX-014 (I-11): the persisted convenience values feed the answer
+    // surface; the voice toggle reports back and is persisted through the
+    // native seam (spec 5.2 / 9).
+    lastUsedMethod: interaction.profile.lastUsedAnswerMethod,
+    voiceEnabled: interaction.profile.voiceOutputEnabled,
+    onVoiceToggleChange: (voiceEnabled) => {
+      void interaction.persist({ voiceOutputEnabled: voiceEnabled });
+    },
+  });
+
+  // FIX-014 (I-11): the post-setup name flow (spec 4). Deferred until after
+  // the bridge is installed so a delivered question can never be wiped by
+  // the prompt mount, and the prompt can never sit under a live answer
+  // surface.
+  interaction.beginNameFlow();
 
   return capabilities;
 }

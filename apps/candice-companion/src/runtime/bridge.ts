@@ -6,6 +6,7 @@
 
 import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
+import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -46,10 +47,24 @@ function parseCancellation(payload: unknown): BridgeCancellation | null {
   return { sessionId: value.sessionId, questionKey: value.questionKey };
 }
 
+/**
+ * FIX-014 (I-11): the persisted convenience values the answer surface
+ * consumes, and the voice-toggle report the profile lane persists.
+ */
+export interface BridgePreferencesHooks {
+  /** Remembered convenience only; never a lock (spec 5.1). */
+  lastUsedMethod?: AnswerMethod | null;
+  /** Separate persistent toggle (spec 5.2). */
+  voiceEnabled?: boolean;
+  /** The WS-40 profile lane owns persistence; the bridge only reports. */
+  onVoiceToggleChange?: (voiceEnabled: boolean) => void;
+}
+
 /** Mount answer controls only after native delivered an authenticated question. */
 export async function initializeAuthenticatedBridge(
   root: HTMLElement,
   machine: CandiceStateMachine,
+  prefs: BridgePreferencesHooks = {},
 ): Promise<() => void> {
   const [{ listen }, { invoke }] = await Promise.all([
     import('@tauri-apps/api/event'),
@@ -99,9 +114,19 @@ export async function initializeAuthenticatedBridge(
       try { await invoke('cmd_set_answer_input_enabled', { enabled: false }); } catch { /* fail closed */ }
       return;
     }
+    // FIX-014 (I-13 mount bug): the answer-controls view clears its mount on
+    // creation (`mount.innerHTML = ''`), so it gets a DEDICATED container —
+    // never the shared #app root, which also hosts the captions live region
+    // and the gesture stage. A delivered question must not wipe them.
+    const controlsMount = document.createElement('div');
+    controlsMount.id = 'candice-answer-controls-mount';
+    root.append(controlsMount);
     controls = createAnswerControlsController({
       machine,
-      mount: root,
+      mount: controlsMount,
+      lastUsedMethod: prefs.lastUsedMethod ?? null,
+      voiceEnabled: prefs.voiceEnabled,
+      onVoiceToggleChange: prefs.onVoiceToggleChange,
       submitAnswer: (text) => {
         if (!active || submitted || text.trim().length === 0) return;
         submitted = true;

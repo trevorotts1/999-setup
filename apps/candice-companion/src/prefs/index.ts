@@ -7,9 +7,11 @@
  *
  * This module owns: preferred name lifecycle (asked at most once per local
  * user, never inferred from the OS username, changeable later, used naturally),
- * voice-output toggle, volume, speech rate, last answer method, text scale,
+ * voice-output toggle, volume, speech rate, last answer method, text size,
  * reduced motion, companion position, optional last-used skill, and versioned
- * migration (spec 9; CHECKLIST WS-34).
+ * migration (spec 9; CHECKLIST WS-34). The versioned schema and migration
+ * chain are the WS-34 lane's authority (`src/preferences/migrations/`); this
+ * lane consumes that seam.
  *
  * Non-goals (spec 9): this store is NEVER project/conversation memory. It
  * never reads answers, questions, or session content; the active Claude skill
@@ -24,13 +26,18 @@ export {
   type CandiceProfile,
   PROFILE_DEFAULTS,
   PREFS_FIELD_NAMES,
-  MIGRATIONS,
   LATEST_SCHEMA_VERSION,
   PREFS_DIR_OVERRIDE_ENV,
   PREFS_FILENAME,
 } from './schema.ts';
-export { migrateProfile, normalizeProfile, prefsDirPath, defaultProfile } from './profile.ts';
-export { loadProfile, saveProfile, mergeProfile, type LoadResult } from './store.ts';
+export {
+  migrateProfile,
+  normalizeProfile,
+  mergeProfile,
+  prefsDirPath,
+  defaultProfile,
+} from './profile.ts';
+export { loadProfile, saveProfile, type LoadResult } from './store.ts';
 export {
   normalizeName,
   isUsableName,
