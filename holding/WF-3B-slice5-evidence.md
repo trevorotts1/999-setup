@@ -126,10 +126,10 @@ sha256 all match the recorded values.)
   state=success, creditsConsumed=6.0, costTime=65.
 
 Independent re-verification (2026-08-16, no credit spend):
-- `live/row1-hero:main.png` — 945,874 bytes, PNG 1254x1254 8-bit RGB,
+- `live/row1-hero-main.png` — 945,874 bytes, PNG 1254x1254 8-bit RGB,
   magic `89504e470d0a1a0a`, sha256
   `2e79fad48684ba1d824108cf7d5a863fe9c08ec3be5503127e850112f93c2668`
-- `live/row2-body:feature.png` — 900,030 bytes, PNG 1254x1254 8-bit RGB,
+- `live/row2-body-feature.png` — 900,030 bytes, PNG 1254x1254 8-bit RGB,
   magic `89504e470d0a1a0a`, sha256
   `d4d644698e5a329c63d3e5479438807e3e9d05b0c765fdbfce2f345e995dc98c`
 - Both match the recorded rowN-result.txt values exactly.
@@ -147,7 +147,7 @@ record -> manifest status updated in place.
 
 - gate.txt: `GATE:PASS body.code=200`
 - Manifest: 2 rows, both `status=GENERATED-CAPTURED`
-- Files: `stub/row1-hero:main.png`, `stub/row2-body:feature.png` — both
+- Files: `stub/row1-hero-main.png`, `stub/row2-body-feature.png` — both
   valid PNG (magic `89504e470d0a1a0a`), non-empty
 - accounting.txt: `manifest-rows=2 result-records=2 image-files=2
   orphan-images=0 generated-captured-missing-file=0`

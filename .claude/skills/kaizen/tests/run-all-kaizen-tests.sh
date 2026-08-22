@@ -39,7 +39,11 @@ run_suite "fix04 lock" "$TESTS_DIR/fix04-lock-tests.sh"
 run_suite "fix05 validator" "$TESTS_DIR/fix05-validator-tests.sh"
 run_suite "fix06 secrets" "$TESTS_DIR/fix06-secret-tests.sh"
 run_suite "fix07 scheduler" "$TESTS_DIR/fix07-schedule-tests.sh"
-run_suite "fix08 launchd" "$TESTS_DIR/fix08-launchd-tests.sh"
+if [ "$(uname -s)" = "Darwin" ]; then
+  run_suite "fix08 launchd" "$TESTS_DIR/fix08-launchd-tests.sh"
+else
+  say "== fix08 launchd: SKIPPED (macOS-only suite on $(uname -s)) =="
+fi
 run_suite "fix09 windows-structural" "$TESTS_DIR/fix09-windows-notes.sh"
 run_suite "fix10 installer" "$TESTS_DIR/fix10-installer-tests.sh"
 run_suite "fix11 pdca-behavioral" "$TESTS_DIR/fix11-pdca-behavioral.sh"

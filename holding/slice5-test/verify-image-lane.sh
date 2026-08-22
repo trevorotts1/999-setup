@@ -217,7 +217,7 @@ while IFS=$'\t' read -r _fields; do
   if [[ "${MODE}" == "stub" ]]; then
     # stub poll: terminal success immediately; stub capture: deterministic file
     state="success"
-    outfile="${OUTDIR}/row${row}-${local_slot}.png"
+    outfile="${OUTDIR}/row${row}-$(printf '%s' "${local_slot}" | tr ':' '-').png"
     rgb="ff0000"; [[ "${row}" == "2" ]] && rgb="0000ff"
     stub_png "${outfile}" "${rgb}"
   else
@@ -249,7 +249,7 @@ while IFS=$'\t' read -r _fields; do
           url=$(echo "${result_urls}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["resultUrls"][0])' 2>/dev/null)
           echo "terminal success. resultUrl=${url}"
           # CAPTURE IN THE SAME POLL ITERATION (13.2 Phase A): download + verify
-          outfile="${OUTDIR}/row${row}-${local_slot}.png"
+          outfile="${OUTDIR}/row${row}-$(printf '%s' "${local_slot}" | tr ':' '-').png"
           printf 'header = "Authorization: Bearer %s"\n' "${KEY}" \
             | curl -sS --max-time 60 --config - -o "${outfile}" "${url}" 2>/dev/null
           break

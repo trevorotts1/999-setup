@@ -156,6 +156,10 @@ check_eq "10.2C link count unchanged (5)" "5" "$LINK_COUNT_2"
 NESTED_2="$(find "$ROOT_1/skills" -name skill1 -type d | wc -l | tr -d ' ')"
 check_eq "10.2D no nested skill1 dirs anywhere" "0" "$NESTED_2"
 
+# Portable stat: BSD (macOS) uses -f, GNU (Linux) uses -c.
+stat_inode() { case "$(uname -s)" in Darwin) stat -f '%i' "$1";; *) stat -c '%i' "$1";; esac; }
+stat_mtime() { case "$(uname -s)" in Darwin) stat -f '%m' "$1";; *) stat -c '%Y' "$1";; esac; }
+
 # ---------------------------------------------------------------------------
 say "== 10.3 existing correct link: up to date, no rewrite (inode/mtime unchanged) =="
 F3="$(mktemp -d)"
@@ -164,8 +168,8 @@ make_wrapper "$F3/wrapper.sh"
 HOME_3="$F3/home"
 mkdir -p "$HOME_3/.claude/skills"
 ln -s "$(norm "$F3/repo/.claude/skills/skill1")" "$HOME_3/.claude/skills/skill1"
-INODE_BEFORE="$(stat -f '%i' "$HOME_3/.claude/skills/skill1")"
-MTIME_BEFORE="$(stat -f '%m' "$HOME_3/.claude/skills/skill1")"
+INODE_BEFORE="$(stat_inode "$HOME_3/.claude/skills/skill1")"
+MTIME_BEFORE="$(stat_mtime "$HOME_3/.claude/skills/skill1")"
 OUT_3="$(
   HOME="$HOME_3" REPO_ROOT="$F3/repo" REPO_SKILL_DIR="$F3/repo/.claude/skills/nine-router-setup" \
     bash "$F3/wrapper.sh" link_skills_into_root "$HOME_3/.claude" 2>&1
@@ -174,8 +178,8 @@ case "$OUT_3" in
   *"skill up to date: skill1"*) pass "10.3A existing correct link reported up to date" ;;
   *) fail "10.3A existing correct link not reported up to date (got: $OUT_3)" ;;
 esac
-INODE_AFTER="$(stat -f '%i' "$HOME_3/.claude/skills/skill1")"
-MTIME_AFTER="$(stat -f '%m' "$HOME_3/.claude/skills/skill1")"
+INODE_AFTER="$(stat_inode "$HOME_3/.claude/skills/skill1")"
+MTIME_AFTER="$(stat_mtime "$HOME_3/.claude/skills/skill1")"
 check_eq "10.3B inode unchanged" "$INODE_BEFORE" "$INODE_AFTER"
 check_eq "10.3C mtime unchanged" "$MTIME_BEFORE" "$MTIME_AFTER"
 
