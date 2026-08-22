@@ -41,7 +41,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Version pins mirror the WS-33 registry (0.2.0 stamp 2026-08-21, see CHECKPOINT). */
+/** Non-application version pins mirror the active WS-33 registry. */
 export const SKILL_PINS = {
   "nine-router-setup": "1.17.0",
   "spec-protocol": "1.17.0",

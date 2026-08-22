@@ -70,7 +70,7 @@ async function main() {
   }
   if (record.payload.sha256 === "0".repeat(64)) {
     console.error(
-      `FAIL placeholder checksum for ${id}@${version}@${platform} — recompute owed from integrated build — refusing download (fail closed)`,
+      `FAIL placeholder checksum for ${id}@${version}@${platform} — no authorized artifact checksum exists — refusing download (fail closed)`,
     );
     process.exit(1);
   }

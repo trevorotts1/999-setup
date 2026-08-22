@@ -3,9 +3,10 @@
  * Candice bundled-components.json fragment builder (WS-33).
  *
  * Emits the versioned component manifest described by MASTER-SPEC section 21
- * and E.1 WS-33: every bundled component (5 skills, plugin, app, STT assets,
+ * and E.1 WS-33: the active bundled components (5 skills, plugin, STT assets,
  * TTS assets) with version, platform, SHA-256 (published payloads), install
- * source, license, and operator-controlled source URL.
+ * source, license, and operator-controlled source URL. No application payload
+ * is emitted until a future release-authorized candidate exists.
  *
  * OUTPUT IS A PROPOSAL — CONTROL/bundled-components.json is 9.4 shared-class
  * (manifest owner applies; PROJECT-MANIFEST 9.2 WR-017). This lane never

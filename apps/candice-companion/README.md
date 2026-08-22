@@ -70,9 +70,10 @@ npm run tauri dev
   them; the front-end boots into a text-mode degraded surface.
 - Dev tooling pins are fixed so release CI reproduces the exact same artifact
   (cargo/package.json pins; no floating majors).
-- App version is `0.2.0` (0.2.0 stamp 2026-08-21; the release workflow performs the single
-  coordinated bump to `1.0.0` (section 26, 0G — release owner's file, never
-  this lane's edit).
+- The source-tree version `0.2.0` is an unshipped historical development
+  stamp, not a release or install authority. No application artifact is
+  currently authorized; a future release workflow assigns the version only
+  after the independent release-authority gate passes.
 
 ## Smoke test
 

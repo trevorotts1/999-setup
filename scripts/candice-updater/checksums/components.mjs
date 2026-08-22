@@ -41,12 +41,11 @@ export const RELEASE_CHANNEL = "https://github.com/trevorotts1/999-setup/release
 export const MANIFEST_NAME = "bundled-components.json";
 
 /**
- * Placeholder for release-artifact checksums that cannot be computed on
- * this host. The darwin 0.2.0 DMG hash is now real (integrated build,
- * 2026-08-22); the win32 NSIS installer hash remains owed from a Windows
- * build. Entries carrying this hash are unverifiable by construction:
- * verify.mjs and download.mjs fail closed on them until the 9.4 release
- * owner computes and republishes the real hash.
+ * Placeholder for a future release artifact checksum.  Historical 0.2.0 app
+ * hash data is quarantined audit material, not a release artifact and not a
+ * verification basis. Entries carrying this placeholder are unverifiable by
+ * construction: verify.mjs and download.mjs fail closed until a future
+ * release owner publishes an independently authorized candidate.
  */
 export const PLACEHOLDER_SHA256 = "0".repeat(64);
 
@@ -64,16 +63,17 @@ export const PLACEHOLDER_SHA256 = "0".repeat(64);
 /**
  * Verified, downloadable payloads. Keyed by `<id>@<version>@<platform>`.
  *
- * Every entry verified live 2026-08-21:
+ * Every active entry verified live 2026-08-21:
  *  - ggml-tiny.en-q5_1.bin  sha256 c77c5766…66c7c2b   (direct download, shasum match)
  *  - whisper-bin-x64.zip    49dcc16d…4d674a           (direct download, shasum match)
  *  - whisper-bin-Win32.zip  de170719…a7cf8f22         (direct download, shasum match)
- *  - Candice Companion_0.2.0_aarch64.dmg  f24f4bcb…b0dbaf  (integrated 0.2.0 build, 2026-08-22: npx tauri build exit 0, shasum -a 256 on the produced DMG; 2,686,932 B)
  *  - kokoro-v1.0.fp16.onnx  f3a290d3…77ac96           (direct download, shasum match)
  *  - kokoro-v1.0.int8.onnx   ae315a79…70ee9c           (WS-19 verified record)
  *  - voices-v1.0.bin        bca610b8…f1fbf7d           (direct download, shasum match)
  *
- * The int8/v1.0.bin pair were recorded by the WS-19 lane with the same
+ * The 0.2.0 application records are deliberately excluded: they remain
+ * audit-only quarantine data and are neither resolver-visible nor
+ * downloadable. The int8/v1.0.bin pair were recorded by the WS-19 lane with the same
  * upstream source; the three largest payloads were re-verified byte-for-byte
  * by this lane's builder on the same date.
  *
