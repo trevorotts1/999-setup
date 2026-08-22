@@ -101,6 +101,54 @@ function defaultStateDir() {
 }
 
 /**
+ * FIX-013 S5 — production startup recovery, spawned BEFORE the interactive
+ * surface. The WS-35 runner (src-tauri/recovery/startup-runner.ts) executes
+ * the REAL store recovery + the REAL WS-20 temp sweep over the real
+ * node:fs adapter + the WS-33 updater journal (validated, never executed).
+ * Runner IO is bounded (one child, one JSON line, hard 20 s cap); a failure
+ * degrades the server state and never blocks Claude (spec 20). The recovered
+ * record stays `recovering` — startup never resumes it; the app or terminal
+ * fallback acknowledges the exact handoff later.
+ */
+function runProductionStartupRecovery(options) {
+  const opts = options || {}
+  const runner = path.join(__dirname, '..', '..', '..', '..', 'apps', 'candice-companion', 'src-tauri', 'recovery', 'startup-runner.ts')
+  const args = ['--experimental-strip-types', runner, '--state-dir', opts.stateDir || defaultStateDir(), '--temp-root', opts.tempRoot || os.tmpdir()]
+  if (opts.sessionId) { args.push('--session-id', opts.sessionId) }
+  if (opts.journalFile) { args.push('--journal', opts.journalFile) }
+  if (opts.updaterComponent) { args.push('--component', opts.updaterComponent) }
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (outcome) => {
+      if (settled) return
+      settled = true
+      resolve(outcome)
+    }
+    let child
+    try {
+      child = require('child_process').spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (_) {
+      done({ ok: false, failures: ['runner:spawn-failed'], degraded: { reason: 'sweep-failed', detail: 'startup runner could not spawn', retryAtStartup: true } })
+      return
+    }
+    const timeout = setTimeout(() => { try { child.kill() } catch (_) {} done({ ok: false, failures: ['runner:timeout'], degraded: { reason: 'sweep-failed', detail: 'startup runner exceeded 15s', retryAtStartup: true } }) }, 15000)
+    let out = ''
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (d) => { out += d })
+    child.on('error', () => { clearTimeout(timeout); done({ ok: false, failures: ['runner:error'], degraded: { reason: 'sweep-failed', detail: 'startup runner process error', retryAtStartup: true } }) })
+    child.on('exit', () => {
+      clearTimeout(timeout)
+      const line = out.split('\n').find((l) => l.trim().length > 0)
+      try {
+        const parsed = line ? JSON.parse(line) : null
+        if (parsed && typeof parsed === 'object') { done(parsed); return }
+      } catch (_) { /* fall through to degraded */ }
+      done({ ok: false, failures: ['runner:unparseable'], degraded: { reason: 'sweep-failed', detail: 'startup runner produced no parseable outcome', retryAtStartup: true } })
+    })
+  })
+}
+
+/**
  * createComposition — construct EXACTLY ONE lifecycle + ONE FallbackCoordinator
  * per authenticated launch (FIX-013 S3). The MCP entrypoint owns this; the
  * components are then injected into the AskUserServer. The state root is
@@ -168,6 +216,11 @@ class AskUserServer {
     this._recovered = false // FIX-013 S4 QC D2: recovery acknowledged for the in-flight operation
     this.skipped = options.skipped || false // test instrumentation
     this.cancelledSlots = new Set()
+    // FIX-013 S5: production startup recovery outcome (real store + sweep +
+    // disposition), recorded before the interactive surface. `startupDegraded`
+    // is the bounded degraded status; null on a clean pass. Never blocks.
+    this.startupOutcome = options.startupOutcome || null
+    this.startupDegraded = options.startupDegraded || null
     if (this.bridge) {
       this.bridge.onAnswer = (input) => this.registry.put(input)
       this.bridge.onCancel = (input) => {
@@ -768,13 +821,33 @@ if (require.main === module) {
   // (FIX-013 S3), and injected into the server.
   // Optional arg: `--state-dir <path>` (hermetic launches/tests); the
   // default is the deterministic per-user root.
+  // FIX-013 S5: recovery + startup sweep + updater disposition run BEFORE
+  // the interactive surface (bridge, window, question delivery). The real
+  // WS-35 runner executes against the REAL protected store, the REAL WS-20
+  // sweep engine over the real node:fs adapter, and the WS-33 updater
+  // journal (read + validated, never executed). The outcome is recorded on
+  // the server; partial cleanup degrades (bounded, safe retry) and never
+  // blocks Claude. The recovered record stays `recovering` — `resumeSession`
+  // is never called by startup; the exact handoff is acknowledged by the
+  // app (`recovered-result`) or the terminal fallback.
   ;(async () => {
     const argv = process.argv.slice(2)
     const stateDirArg = argv.indexOf('--state-dir') >= 0 ? argv[argv.indexOf('--state-dir') + 1] : null
     const bridge = new LocalCompanionBridge()
-    await bridge.start()
+    // FIX-013 S5: recovery + startup sweep + updater disposition run BEFORE
+    // the interactive surface AND before the lifecycle is constructed, so
+    // the in-memory lifecycle loads the durable post-claim state (the lease
+    // and `recovering` are already on disk when the server starts).
+    let startup = null
+    if (process.env.CANDICE_SKIP_STARTUP_RECOVERY !== '1') {
+      startup = await runProductionStartupRecovery({
+        stateDir: stateDirArg || defaultStateDir(),
+        tempRoot: os.tmpdir(),
+      })
+    }
     const { lifecycle, coordinator } = createComposition(stateDirArg ? { stateDir: stateDirArg } : {})
-    const server = new AskUserServer({ bridge, lifecycle, fallback: coordinator })
+    const server = new AskUserServer({ bridge, lifecycle, fallback: coordinator, startupOutcome: startup, startupDegraded: startup ? startup.degraded : null })
+    await bridge.start()
     // FIX-013 S4: normal shutdown ends the lifecycle EXACTLY ONCE (idempotent
     // on repeat signals): close bridge bindings, sweep session temp audio,
     // remove protected pending state. Stdin EOF (Claude closing the tool

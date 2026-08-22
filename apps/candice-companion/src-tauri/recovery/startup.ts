@@ -15,30 +15,39 @@
  *      `recovering` via its `status` event; the front-end re-raises the
  *      question with `question:recovered`.
  *   2. Sweep stale temp audio (spec 8 step 6) via the WS-20 sweep engine.
- *   3. Update rollback (spec 21) is NOT attempted at startup on this
- *      machine: the WS-33 rollback engine owns that decision and runs
- *      before the new version starts, not after a boot. This lane only
- *      exposes the guard that proves the rollback surface is reachable and
- *      reports the machine-readable reason when it is not.
+ *      FIX-013 S5: the sweep surface IS the real `sweepStaleTempAudio`
+ *      signature (`{ fs, baseRoot, nowMs? }`) — the real Node-fs adapter
+ *      passes directly, never an injected test-only fake. A partial or
+ *      failed sweep fails SOFT: it records a bounded degraded status with a
+ *      safe retry at the next startup and never blocks the interactive
+ *      surface or Claude.
+ *   3. Update startup disposition (spec 21). The WS-33 engine OWNS rollback
+ *      and runs it BEFORE a failed update starts; this lane receives ONLY
+ *      the updater's journaled outcome, validated here. Rollback itself is
+ *      never invoked from this lane. An invalid disposition degrades the
+ *      startup state and remains the updater's to replace.
  *
  * Failure isolation (spec 20): every leg is total. A failed leg is
- * recorded in `failures` and returned — it never throws into the caller.
+ * recorded in `failures`/`degraded` and returned — it never throws into
+ * the caller, and no leg ever blocks the interactive surface.
  */
 
 import type {
+  FsAdapter,
   Lifecycle,
   PendingQuestion,
   RecoveryEvent,
-  RollbackFn,
   StartupOutcome,
   StartupRecoveryResult,
   StartupSweepResult,
   SweepFn,
+  UpdaterDisposition,
+  UpdaterJournal,
 } from "./types.ts";
-// NOTE (FIX-013 S1): startup no longer calls resumeSession immediately after
+import { readUpdaterDisposition } from "./disposition.ts";
+// NOTE (FIX-013 S1): startup never calls resumeSession immediately after
 // constructing a recovery event — the recovered record stays `recovering`
-// until the exact handoff is acknowledged (stage 5 wires the acknowledged
-// completion path through Lifecycle.acknowledgeRecoveryHandoff).
+// until the exact handoff is acknowledged.
 
 /** Wall-clock facade — injectable for deterministic tests. */
 export interface Clock {
@@ -48,16 +57,29 @@ export interface Clock {
 const REAL_CLOCK: Clock = { now: () => Date.now() };
 
 export interface StartupRecoveryOptions {
+  /** WS-03 lifecycle surface (recoverPendingQuestion / setPendingQuestion). */
   lifecycle: Lifecycle;
+  /** The REAL WS-20 sweep engine — `sweepStaleTempAudio` passes directly. */
   sweep: SweepFn;
+  /** Real filesystem adapter handed to the sweep engine (node:fs/promises). */
+  fs: FsAdapter;
   /** Platform temp root (os.tmpdir() / %LOCALAPPDATA%\Temp). */
   tempRoot: string;
   /** Session id of the session being recovered, when known. */
   sessionId?: string;
-  /** WS-33 rollback guard probe. */
-  rollbackAvailable?: () => boolean;
-  /** WS-33 rollback invocation (may be async). */
-  rollback?: RollbackFn;
+  /**
+   * FIX-013 S5: the production runner already discovered there is nothing to
+   * recover (no pending record in the real store). When true and no session
+   * id is bound, the recovery leg is neutral (question:none, no failure) —
+   * a clean restart must not be a named failure. Direct callers keep the
+   * strict contract: an unbound session with no explicit discovery is a
+   * named `recovery:no-session-id` failure.
+   */
+  recoveryOptional?: boolean;
+  /** Updater journal surface; a disposition is validated (never executed). */
+  updaterJournal?: UpdaterJournal;
+  /** The updater component whose install disposition gates startup. */
+  updaterComponent?: string;
   clock?: Clock;
   /** Event sink; defaults to a no-op collector. */
   onEvent?: (event: RecoveryEvent) => void;
@@ -74,8 +96,9 @@ function noopEvent(_event: RecoveryEvent): void {}
 
 /**
  * Run the startup recovery pass. Pure sequencing over injected surfaces —
- * the only IO is what the injected lifecycle/sweep do. Deterministic when
- * the clock is injected. Every failure is named in the result.
+ * the only IO is what the injected lifecycle/sweep/journal do. Deterministic
+ * when the clock is injected. Every failure is named in the result; partial
+ * cleanup degrades (soft-fail, bounded) and never blocks the caller.
  */
 export async function runStartupRecovery(options: StartupRecoveryOptions): Promise<StartupOutcome> {
   const lifecycle = options.lifecycle;
@@ -84,6 +107,7 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
   const onEvent = options.onEvent ?? noopEvent;
 
   const failures: string[] = [];
+  let degraded: StartupOutcome["degraded"] = null;
   let pending: PendingQuestion | null = null;
   let recoveredSessionId: string | null = null;
   let markedRecovering = false;
@@ -97,9 +121,13 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
   // is raised durably by the manager. Startup NEVER resumes the session
   // immediately after constructing a recovery event: the record stays
   // `recovering` until the app or terminal fallback acknowledges the exact
-  // handoff (stage 5 wires the acknowledged sequence).
+  // handoff.
   if (sessionId == null) {
-    failures.push("recovery:no-session-id");
+    if (options.recoveryOptional !== true) {
+      failures.push("recovery:no-session-id");
+    } else {
+      onEvent({ type: "question:none" });
+    }
   } else {
     let result: { ok: boolean; recovered?: PendingQuestion | null; lease?: { leaseId: string; heldUntil: string } | null; code?: string; error?: string };
     try {
@@ -136,10 +164,15 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
     counted,
   };
 
-  // ---- Leg 2: startup temp sweep (spec 8 step 6). ----
+  // ---- Leg 2: startup temp sweep (spec 8 step 6, FIX-013 S5). ----
+  // The REAL WS-20 engine signature — `{ fs, baseRoot, nowMs? }` — is the
+  // contract; the production caller passes `sweepStaleTempAudio` with the
+  // real Node-fs adapter directly. A partial/failed sweep fails SOFT: it is
+  // a named failure AND a bounded degraded status with a safe retry at the
+  // next startup — it never blocks the interactive surface or Claude.
   let sweep: StartupSweepResult;
   try {
-    const raw = await options.sweep({ baseRoot: options.tempRoot, nowMs: clock.now() });
+    const raw = await options.sweep({ fs: options.fs, baseRoot: options.tempRoot, nowMs: clock.now() });
     sweep = {
       scanned: raw.scanned ?? 0,
       removed: raw.removed ?? 0,
@@ -148,6 +181,7 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
     };
     if (sweep.failed > 0) {
       failures.push("sweep:partial-failure");
+      degraded = { reason: "sweep-partial", detail: `${sweep.failed} stale dir(s) could not be removed`, retryAtStartup: true };
       onEvent({ type: "sweep:failure" });
     } else {
       onEvent({ type: "sweep:done" });
@@ -155,24 +189,35 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
   } catch (err) {
     sweep = { scanned: 0, removed: 0, kept: 0, failed: 1 };
     failures.push("sweep:threw");
+    degraded = { reason: "sweep-failed", detail: err instanceof Error ? err.message : String(err), retryAtStartup: true };
     onEvent({ type: "sweep:failure", code: err instanceof Error ? err.message : String(err) });
   }
 
-  // ---- Leg 3: update-rollback availability guard (spec 21). ----
+  // ---- Leg 3: update startup disposition (spec 21, FIX-013 S5). ----
   // The WS-33 engine runs rollback BEFORE a failed update starts; startup
-  // never attempts it itself. This leg only proves the interface is wired.
-  const probe = options.rollbackAvailable ?? (() => true);
-  try {
-    const available = probe();
-    if (!available) {
-      failures.push("rollback:unavailable");
-      onEvent({ type: "rollback:not-needed", code: "probe-denied" });
+  // never executes rollback itself. This leg validates the updater's own
+  // journaled outcome. When a journal is configured and invalid, startup
+  // degrades (bounded) and the updater replaces it later — the leg never
+  // invents a rollback decision and never blocks Claude. When NO journal
+  // is configured (this build has no updater wiring), the leg is neutral:
+  // a clean companion startup must not fail for lack of a journal.
+  let disposition: UpdaterDisposition | null = null;
+  if (options.updaterJournal && options.updaterComponent) {
+    disposition = readUpdaterDisposition(options.updaterJournal, options.updaterComponent);
+    if (disposition.valid) {
+      onEvent({ type: "disposition:valid" });
+    } else if (disposition.invalidReason === "updater-journal:missing") {
+      // A never-run updater is a neutral fact: nothing to validate, no
+      // degradation — a clean companion startup must not fail for it.
     } else {
-      onEvent({ type: "rollback:not-needed" });
+      failures.push(`disposition:invalid:${disposition.invalidReason ?? "unknown"}`);
+      degraded = {
+        reason: "disposition-invalid",
+        detail: disposition.invalidReason ?? "unknown",
+        retryAtStartup: true,
+      };
+      onEvent({ type: "disposition:invalid", code: disposition.invalidReason ?? "invalid" });
     }
-  } catch {
-    failures.push("rollback:unavailable");
-    onEvent({ type: "rollback:not-needed", code: "probe-threw" });
   }
 
   onEvent({ type: "startup:complete" });
@@ -182,5 +227,6 @@ export async function runStartupRecovery(options: StartupRecoveryOptions): Promi
     sweep,
     failures,
     ok: failures.length === 0,
+    degraded,
   };
 }

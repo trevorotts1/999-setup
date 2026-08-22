@@ -82,14 +82,27 @@ export interface Lifecycle {
   setPendingQuestion(args: { sessionId: string; questionKey: string; text: string; answerKind: string; counted: boolean; operationId?: string }): { ok: boolean; code?: string; error?: string };
 }
 
-/** The WS-20 startup sweep surface (src-tauri/audio/cleanup/sweep.ts). */
-export interface SweepFn {
-  (options: { baseRoot: string; nowMs?: number }): Promise<{ scanned: number; removed: number; kept: number; failed: number }>;
+/**
+ * The WS-20 startup sweep surface (src-tauri/audio/cleanup/sweep.ts).
+ * FIX-013 S5: this IS the real `sweepStaleTempAudio` signature — the `fs`
+ * adapter is part of the contract (the real Node-fs adapter passes directly,
+ * never an injected test-only fake), plus a `policy` overlay. The lane type
+ * re-exports the WS-20 result shape unchanged.
+ */
+import type { SweepResult } from "../audio/cleanup/sweep.ts";
+import type { FsAdapter } from "../audio/cleanup/types.ts";
+
+export type { SweepResult } from "../audio/cleanup/sweep.ts";
+export type { FsAdapter } from "../audio/cleanup/types.ts";
+
+export interface SweepOptions {
+  fs: FsAdapter;
+  baseRoot: string;
+  nowMs?: number;
 }
 
-/** The WS-33 rollback surface (scripts/candice-updater/rollback). */
-export interface RollbackFn {
-  (args: { targetDir: string; backupDir?: string }): Promise<{ ok: boolean; restored?: string; error?: string }>;
+export interface SweepFn {
+  (options: SweepOptions): Promise<SweepResult>;
 }
 
 /**
@@ -122,7 +135,9 @@ export interface StartupSweepResult {
   failed: number;
 }
 
-/** Outcome of the combined startup sequence. */
+/**
+ * Outcome of the combined startup sequence.
+ */
 export interface StartupOutcome {
   recovery: StartupRecoveryResult;
   sweep: StartupSweepResult;
@@ -130,12 +145,48 @@ export interface StartupOutcome {
   failures: string[];
   /** True when every leg completed without a failure. */
   ok: boolean;
+  /**
+   * FIX-013 S5: bounded degraded status. A partial cleanup (or an invalid
+   * updater disposition) never blocks Claude — the caller runs the
+   * interactive surface regardless — but the app is degraded: the sweep
+   * retries at the next startup and the disposition stays invalid until the
+   * updater replaces it. `null` on a clean pass.
+   */
+  degraded: {
+    reason: "sweep-partial" | "sweep-failed" | "disposition-invalid";
+    detail: string;
+    retryAtStartup: boolean;
+  } | null;
 }
 
 /**
- * The recovery machine's step event — one event per transition, mirroring
- * the WS-08 state-machine discipline: state only moves when an event fired.
+ * Validated update startup disposition (FIX-013 S5, audit F13-06). The WS-33
+ * updater OWNS rollback execution; the companion receives ONLY the updater's
+ * own journaled outcome, parsed and validated here. A disposition is valid
+ * only when it is an `install` journal line whose terminal result is `ok` —
+ * a failed/missing/malformed journal yields an invalid disposition, never a
+ * guess. Rollback itself is never invoked from this lane.
  */
+export interface UpdaterDisposition {
+  /** True only when the updater journal proves a successful install. */
+  valid: boolean;
+  /** Validated journal facts (empty on an invalid disposition). */
+  detail: {
+    component: string;
+    targetDir: string;
+    backupDir: string | null;
+    installedAt: string;
+  } | null;
+  /** Why the disposition is invalid (missing journal, unreadable, malformed,
+   * non-ok result, unvalidated target). Absent when `valid`. */
+  invalidReason: string | null;
+}
+
+/** The updater journal surface the startup sequence reads. */
+export interface UpdaterJournal {
+  /** Read the newest journal entry for the component; null when absent. */
+  readNewest(component: string): { ok: boolean; line?: Record<string, unknown> | null; error?: string };
+}
 export interface RecoveryEvent {
   readonly type:
     | 'startup:begin'
@@ -146,8 +197,8 @@ export interface RecoveryEvent {
     | 'handoff:failure'
     | 'sweep:done'
     | 'sweep:failure'
-    | 'rollback:attempted'
-    | 'rollback:not-needed'
+    | 'disposition:valid'
+    | 'disposition:invalid'
     | 'startup:complete';
   /** Optional machine-readable failure code (present on failure events). */
   readonly code?: string;
