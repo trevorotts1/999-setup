@@ -95,10 +95,22 @@ if (run1 && run2) {
     interactive.length === 0,
     interactive.length ? interactive.map((n) => n.role).join(',') : 'none found');
 
-  // ---- determinism: identical modulo capturedAt ------------------------------
+  // ---- determinism: identical modulo capturedAt + animated geometry ----------
+  // The AXImage is the idle holographic assistant; its breathe animation
+  // legitimately moves its bounds between captures. Everything else —
+  // roles, labels, values, focus order, window geometry — must be
+  // byte-identical across runs.
   const strip = (d) => {
     const copy = JSON.parse(JSON.stringify(d));
     delete copy.capturedAt;
+    const walk = (n) => {
+      if (n.role === 'AXImage') {
+        delete n.position;
+        delete n.size;
+      }
+      for (const c of n.children ?? []) walk(c);
+    };
+    walk(copy.window);
     return JSON.stringify(copy);
   };
   check('AX export deterministic across two runs', strip(run1) === strip(run2));

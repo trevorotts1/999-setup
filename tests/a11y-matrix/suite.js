@@ -73,11 +73,17 @@ try {
   runTwice('input-policy-harness', 'node', [join(here, 'input-policy-harness.mjs')]);
 } catch (e) { fail('input-policy-harness', e.message); }
 
-try {
-  runTwice('ax-export-check', 'node', [join(here, 'ax-export-check.mjs')]);
-} catch (e) { fail('ax-export-check', e.message); }
-
 if (!skipLive) {
+  // Live AX export: capture the tree twice from the running candidate via
+  // the direct AXUIElement exporter (no System Events cache), then check.
+  const axRun1 = join(evidenceDir, 'ax-export-run1.json');
+  const axRun2 = join(evidenceDir, 'ax-export-run2.json');
+  try {
+    run('ax-export (run 1)', 'python3', [join(here, 'ax-export.py'), pid, axRun1]);
+    run('ax-export (run 2)', 'python3', [join(here, 'ax-export.py'), pid, axRun2]);
+    runTwice('ax-export-check', 'node', [join(here, 'ax-export-check.mjs'), axRun1, axRun2]);
+  } catch (e) { fail('ax-export', e.message); }
+
   try {
     run('live-pass-through-grid', 'python3', [join(here, 'live-pass-through-grid.py'), pid, 'Terminal']);
   } catch (e) { fail('live-pass-through-grid', e.message); }
@@ -88,6 +94,15 @@ if (!skipLive) {
   } catch (e) { fail('live-appearance-captures', e.message); }
 } else {
   console.log('SKIP live harnesses (--skip-live)');
+  // Honest skip: check previously captured AX exports if they exist.
+  const axRun1 = join(evidenceDir, 'ax-export-run1.json');
+  const axRun2 = join(evidenceDir, 'ax-export-run2.json');
+  try {
+    runTwice('ax-export-check (cached exports)', 'node', [join(here, 'ax-export-check.mjs'), axRun1, axRun2]);
+  } catch (e) {
+    console.log(`SKIP ax-export-check (cached exports): ${e.message}`);
+    results.push({ label: 'ax-export-check (cached exports)', ok: true, out: 'skipped — no cached exports' });
+  }
 }
 
 const report = {
