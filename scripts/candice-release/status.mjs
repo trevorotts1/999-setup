@@ -17,6 +17,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const RELEASE_GATE_SCHEMA = "candice/release-gate@1";
 const REQUIRED_GATES = Object.freeze([
   "independentQc",
   "packagedEndToEnd",
@@ -95,6 +96,10 @@ export function evaluateRelease(root) {
     repairMarker(resolve(root, "CONTROL/LEDGER.md"), errors, "CONTROL/LEDGER.md"),
   ];
   if (!project || !gate) return { ok: false, errors };
+
+  if (gate.schema !== RELEASE_GATE_SCHEMA) {
+    errors.push(`release gate schema is ${gate.schema ?? "MISSING"}, expected ${RELEASE_GATE_SCHEMA}`);
+  }
 
   const candice = project.candice || {};
   if (candice.release_ready !== true) errors.push("candice.release_ready is not true");

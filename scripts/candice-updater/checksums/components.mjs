@@ -184,7 +184,6 @@ export const REPO_TREE_COMPONENTS = {
     version: "1.0.0",
     repoPath: "plugins/candice-integration",
   },
-  "candice-companion": { id: "candice-companion", version: "0.2.0", repoPath: "apps/candice-companion" },
 };
 
 /** Runtime pins carried alongside components (spec 21 — the manifest knows the runtime versions too). */

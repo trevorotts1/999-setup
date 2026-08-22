@@ -51,15 +51,15 @@ test("every published payload has a 64-hex sha256 and operator-controlled source
   }
 });
 
-test("REPO_TREE components carry version pins for all 7 tree components", () => {
-  assert.equal(Object.keys(REPO_TREE_COMPONENTS).length, 7);
+test("REPO_TREE components carry version pins for the 6 non-application tree components", () => {
+  assert.equal(Object.keys(REPO_TREE_COMPONENTS).length, 6);
   assert.equal(REPO_TREE_COMPONENTS["nine-router-setup"].version, "1.17.0");
   assert.equal(REPO_TREE_COMPONENTS["spec-protocol"].version, "1.17.0");
   assert.equal(REPO_TREE_COMPONENTS.kaizen.version, "1.1.0");
   assert.equal(REPO_TREE_COMPONENTS.eli5.version, "1.1.0");
   assert.equal(REPO_TREE_COMPONENTS.bro.version, "1.1.0");
   assert.equal(REPO_TREE_COMPONENTS["candice-integration"].version, "1.0.0");
-  assert.equal(REPO_TREE_COMPONENTS["candice-companion"].version, "0.2.0");
+  assert.equal(REPO_TREE_COMPONENTS["candice-companion"], undefined);
 });
 
 test("speech asset pins match WS-16/WS-19 verified records", () => {

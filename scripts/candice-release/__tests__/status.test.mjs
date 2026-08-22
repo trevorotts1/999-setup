@@ -12,6 +12,7 @@ function fixture({ releaseReady = false, lifecycle = "REPAIR_IN_PROGRESS", openF
   mkdirSync(join(root, "CONTROL"));
   writeFileSync(join(root, "CONTROL", "project_state.json"), JSON.stringify({ candice: { release_ready: releaseReady, repair_status: lifecycle } }));
   writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify({
+    schema: "candice/release-gate@1",
     lifecycle,
     openFixIds,
     requiredGates: { independentQc: "PENDING" },
@@ -42,6 +43,7 @@ test("release authority rejects a forged editable release-gate document", () => 
   const gatePath = join(root, "CONTROL", "release-gate.json");
   const fakeSha = "a".repeat(64);
   writeFileSync(gatePath, JSON.stringify({
+    schema: "anything-else",
     lifecycle: "RELEASE_CANDIDATE",
     openFixIds: [],
     requiredGates: { madeUpGate: "PASS" },
@@ -52,6 +54,7 @@ test("release authority rejects a forged editable release-gate document", () => 
   writeFileSync(join(root, "fake.bin"), "forged");
   const result = evaluateRelease(root);
   assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes("release gate schema is anything-else")));
   assert.ok(result.errors.some((error) => error.includes("fixed release schema")));
   assert.ok(result.errors.some((error) => error.includes("operator release authority is not configured")));
 });
