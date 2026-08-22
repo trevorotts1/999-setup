@@ -1,0 +1,28 @@
+{
+  "name": "candice-companion",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Candice Companion — local visual and voice companion for Claude Code skills (Tauri 2 shell)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build --config vite.config.build.ts",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:build": "npm run build && node -e \"require('fs').copyFileSync('tauri.conf.json','src-tauri/tauri.conf.json')\" && cd src-tauri && tauri build",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts",
+    "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts src/shell/__tests__/boot-health.test.ts src/runtime/__tests__/capabilities.test.ts",
+    "verify:visual-bundle": "npm run build && node scripts/assert-visual-bundle.mjs",
+    "verify:accessibility-bundle": "npm run build && node scripts/assert-accessibility-bundle.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "26.2.0",
+    "typescript": "5.9.3",
+    "vite": "5.4.21"
+  }
+}

@@ -14,6 +14,7 @@
 
 mod runtime;
 mod shell;
+mod speech_timing;
 
 use tauri::{Emitter, Manager};
 
@@ -59,6 +60,9 @@ pub fn run() {
             runtime::cmd_release_bridge_question,
             runtime::cmd_set_answer_input_enabled,
             runtime::cmd_take_pending_bridge_question,
+            speech_timing::cmd_speech_timing_start,
+            speech_timing::cmd_speech_timing_boundary,
+            speech_timing::cmd_speech_timing_drain,
         ])
         .setup(|app| {
             initialize_shell(app.handle())?;
