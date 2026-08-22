@@ -1,0 +1,226 @@
+# candice-ci.yml — Candice Companion cross-platform CI/release matrix
+#
+# Owned class: .github/workflows/** (PROJECT-MANIFEST 9.4 item 4 — global CI,
+# non-partitionable; integration/release owner applies). WS-46 proposes,
+# owner applies. Workstream WS-46 (candice-final-validation lane).
+#
+# Matrix (CHECKLIST E.1 WS-46):
+#   - macOS Apple Silicon job: full app build (Tauri 2), TypeScript check,
+#     cargo tests across the four standalone crates (capture, permissions,
+#     binding/macos, binding/windows) + signature-helper crate, all 14
+#     Candice test suites, platform verifiers.
+#   - Windows x64 job: WASAPI capture build, Win32 binding build, parity
+#     engine unit tests, native Windows parity + shell-compat verifiers.
+#
+# Gated, not run here: the interactive Windows 10/11 desktop smoke
+# (apps/candice-companion/tests/windows-shell-compat/INTERACTIVE-WINDOWS-SMOKE.md
+# — Windows Terminal + PS 5.1/PS 7/CMD + standalone console hosts, both
+# `claude` and `claude-nine.cmd`, tabs/panes, mic, PTT, transparency,
+# minimize/restore/monitor move, install/update/uninstall cleanup) requires a
+# real interactive Windows desktop session that CI cannot provide; it is
+# recorded as GATED and run by hand before Windows is labeled
+# production-ready. Windows-hosted CI runs are likewise gated until a
+# Windows runner is provisioned (see the interactive-gate job). Noninteractive
+# legs that need a real microphone or a live Tauri window record honest skips
+# inside the suites and still exit 0 (suite convention, spec 27).
+
+name: candice-ci
+
+on:
+  push:
+    paths:
+      - 'apps/candice-companion/**'
+      - 'packages/candice-protocol/**'
+      - 'plugins/candice-integration/**'
+      - 'scripts/candice-*/**'
+      - 'tests/**'
+      - 'tools/windows-parity/**'
+      - 'launchers/**'
+      - '.github/workflows/candice-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/candice-companion/**'
+      - 'packages/candice-protocol/**'
+      - 'plugins/candice-integration/**'
+      - 'scripts/candice-*/**'
+      - 'tests/**'
+      - 'tools/windows-parity/**'
+      - 'launchers/**'
+      - '.github/workflows/candice-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # macOS Apple Silicon — reference platform (spec 0.3)
+  # ---------------------------------------------------------------------------
+  macos-arm64:
+    name: macOS Apple Silicon — build + all Candice suites
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify arm64 host
+        run: |
+          [ "$(uname -m)" = "arm64" ] || { echo "FAIL: expected arm64 runner"; exit 1; }
+          echo "host $(uname -s) $(uname -m)"
+
+      - name: App frontend build + tsc + vite
+        run: |
+          cd apps/candice-companion
+          npm install
+          npm run build
+
+      - name: macOS platform verifier (tests/macos/verify-macos.sh)
+        continue-on-error: true
+        run: bash tests/macos/verify-macos.sh
+
+      # --- 14 Candice test suites (plain node, zero deps) ---
+      - name: WS-41 contract suite
+        run: node tests/contract/suite.js
+      - name: WS-33 checksums + bundled components suite
+        run: node --test "scripts/candice-updater/checksums/__tests__/*.test.mjs"
+      - name: WS-31 bootstrap suite
+        run: node --test "scripts/candice-bootstrap/__tests__/*.test.mjs"
+      - name: WS-33 rollback suite
+        run: node --test "scripts/candice-updater/rollback/__tests__/*.test.mjs"
+      - name: WS-49 installer/updater regression suite
+        run: node --test "tests/installer-regression/*.test.mjs"
+      - name: WS-47 upgrade fixtures suite
+        run: node --test tests/upgrade-fixtures/*.test.mjs
+      - name: WS-32 candice-upgrade suite
+        run: node --test "scripts/candice-upgrade/__tests__/*.test.mjs"
+      - name: WS-43 failure/chaos matrix suite
+        run: node tests/failure-matrix/suite.js
+      - name: WS-50 e2e acceptance suite
+        run: node tests/e2e-acceptance/suite.js
+      - name: WS-34 migrations suite
+        run: node --test tests/migrations/migrations.test.ts
+      - name: WS-42 same-session suite
+        run: node tests/same-session/suite.js
+      - name: WS-44 privacy/security audit
+        run: node tests/privacy-audit/run.js
+      - name: WS-45 performance suite (quick gate)
+        env:
+          CANDICE_PERF_IDLE_MS: 3000
+          CANDICE_PERF_ENGINE_MS: 3000
+          CANDICE_PERF_INTERVAL_MS: 300
+        run: node tests/performance/run.mjs --quick
+      - name: Interview R5 shape check (fixtures + selfcheck)
+        run: |
+          node tests/interview/r5-shape-check.mjs --selfcheck
+          node tests/interview/r5-shape-check.mjs --fixtures-dir tests/interview/fixtures
+
+      - name: Terminal-compat CI suites (WS-25)
+        run: |
+          cd apps/candice-companion
+          node --test tests/terminal-compat/integration.test.ts
+          node --test tests/terminal-compat/launcher-analysis.test.ts
+
+      - name: Cargo tests — app shell crate
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/Cargo.toml
+
+      - name: Cargo tests — capture crate (WS-17)
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/audio/capture/Cargo.toml
+
+      - name: Cargo tests — permissions crate (WS-22)
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/permissions/Cargo.toml
+
+      - name: Cargo tests — binding/macos crate (WS-21)
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/binding/macos/Cargo.toml
+
+      - name: Cargo tests — binding/windows crate (WS-26, platform-neutral logic)
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/binding/windows/Cargo.toml
+
+      - name: Cargo tests — signature-helper crate (WS-23)
+        run: cargo test --manifest-path apps/candice-companion/scripts/package-macos/signature-helper/Cargo.toml
+
+      - name: Packaging self-test (WS-23, offline)
+        run: bash apps/candice-companion/scripts/package-macos/self-test.sh
+
+      - name: Tauri release bundle build (macOS, unsigned)
+        run: |
+          cd apps/candice-companion
+          npm run tauri:build
+
+  # ---------------------------------------------------------------------------
+  # Windows x64 — WASAPI capture build + parity + shell-compat
+  # ---------------------------------------------------------------------------
+  windows-x64:
+    name: Windows x64 — capture + parity + shell-compat
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Verify Windows x64 host
+        shell: pwsh
+        run: |
+          if ($env:OS -ne 'Windows_NT') { Write-Host 'FAIL: expected Windows host'; exit 1 }
+          Write-Host "matrix: $env:OS on $env:PROCESSOR_ARCHITECTURE"
+
+      - name: Cargo tests — capture-windows crate (WS-28, WASAPI backend)
+        shell: pwsh
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/audio/capture-windows/Cargo.toml --features wasapi
+
+      - name: Cargo tests — capture crate (WS-17, cpal feature)
+        shell: pwsh
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/audio/capture/Cargo.toml --features cpal
+
+      - name: Cargo tests — binding/windows crate (WS-26, win32 feature)
+        shell: pwsh
+        run: cargo test --manifest-path apps/candice-companion/src-tauri/binding/windows/Cargo.toml --features win32
+
+      - name: Cargo check — app workspace for x64 (no run)
+        shell: pwsh
+        run: cargo check --manifest-path apps/candice-companion/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: windows-parity unit tests (WS-27 golden guard)
+        shell: pwsh
+        run: node tools/windows-parity/tests/parity-tests.mjs
+
+      - name: Parity shell matrix verifier (WS-27)
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows-parity/shell-matrix/verify-shell-matrix.ps1
+
+      - name: Windows platform verifier (tests/windows/verify-windows.ps1)
+        continue-on-error: true
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/windows/verify-windows.ps1
+
+      - name: Windows shell-compat verifier (WS-27)
+        continue-on-error: true
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File apps/candice-companion/tests/windows-shell-compat/verify-windows-shell-compat.ps1
+
+  # ---------------------------------------------------------------------------
+  # WS-46 interactive Windows desktop gate — GATED, manual
+  # ---------------------------------------------------------------------------
+  # Windows is NOT labeled production-ready until at least one interactive
+  # Windows 10/11 desktop run completes
+  # apps/candice-companion/tests/windows-shell-compat/INTERACTIVE-WINDOWS-SMOKE.md
+  # (Windows Terminal + PS 5.1/PS 7/CMD, standalone console hosts, both
+  # `claude` and `claude-nine.cmd`, tabs/panes, mic, PTT, transparency,
+  # minimize/restore/monitor move, install/update/uninstall cleanup). CI hosts
+  # cannot run it: it needs a physical PC or interactive VM under a real
+  # desktop session.
+  interactive-windows-smoke:
+    name: WS-46 interactive Windows smoke — GATED (manual)
+    runs-on: windows-latest
+    if: false
+    steps:
+      - run: echo "GATED — interactive Windows desktop smoke requires a real host; run manually"
