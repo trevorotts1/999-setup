@@ -37,7 +37,7 @@ import {
   chmodSync,
   cpSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -392,6 +392,35 @@ test("bounded probe: nonzero exit is FAIL with output; timeout bound enforced", 
   const hung = await runProbeCommand(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { timeoutMs: 500 });
   assert.equal(hung.status, "FAIL");
   assert.match(hung.detail, /timed out after 500ms/);
+});
+
+test("bridge seam: companion-ready-timeout leaves no live timer chain (host process exits naturally)", () => {
+  // Regression for the FIX-011 seam poll-loop leak: after the 3000ms
+  // companion-ready-timeout fired, the ensureSession poll chain kept
+  // re-arming setTimeout(poll, 25) forever, so a FAILed bridge probe hung
+  // the host process. A fail-closed probe must never keep the loop alive.
+  const bridgePath = resolve(here, "../../../plugins/candice-integration/mcp/ask-user/local-companion-bridge.js");
+  const script = `
+    const { LocalCompanionBridge } = require(process.env.BRIDGE_PATH)
+    const bridge = new LocalCompanionBridge({ launchCommand: process.execPath })
+    ;(async () => {
+      await bridge.start()
+      const r = await bridge.ensureSession('session-a')
+      await bridge.close()
+      console.log(JSON.stringify(r))
+      // No process.exit: the child must drain naturally. A leaked poll
+      // timer chain keeps the loop alive and the parent's timeout kills us.
+    })()
+  `;
+  const child = spawnSync(process.execPath, ["-e", script], {
+    env: { ...process.env, BRIDGE_PATH: bridgePath },
+    timeout: 15000,
+    encoding: "utf8",
+  });
+  assert.equal(child.status, 0, `child must exit naturally after companion-ready-timeout; stderr: ${child.stderr}`);
+  const r = JSON.parse(child.stdout.trim());
+  assert.equal(r.ok, false);
+  assert.equal(r.code, "companion-ready-timeout");
 });
 
 test("permissionProbe: 0700/0600 PASS; 0755 FAIL; missing state FAIL", () => {

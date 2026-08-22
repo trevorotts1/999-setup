@@ -100,11 +100,20 @@ class LocalCompanionBridge {
     }
     if (this.isReady()) return { ok: true }
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(bridgeFailure('companion-ready-timeout')), 3000)
+      let settled = false
+      let pollTimer = null
+      const finish = (result) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        if (pollTimer) clearTimeout(pollTimer)
+        resolve(result)
+      }
+      const timeout = setTimeout(() => finish(bridgeFailure('companion-ready-timeout')), 3000)
       const poll = () => {
-        if (this.isReady()) { clearTimeout(timeout); resolve({ ok: true }); return }
-        if (!this.started || this.launchSessionId !== sessionId) { clearTimeout(timeout); resolve(bridgeFailure('companion-not-ready')); return }
-        setTimeout(poll, 25)
+        if (this.isReady()) { finish({ ok: true }); return }
+        if (!this.started || this.launchSessionId !== sessionId) { finish(bridgeFailure('companion-not-ready')); return }
+        pollTimer = setTimeout(poll, 25)
       }
       poll()
     })
