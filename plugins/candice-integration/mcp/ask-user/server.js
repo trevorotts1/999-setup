@@ -839,7 +839,7 @@ if (require.main === module) {
     // the in-memory lifecycle loads the durable post-claim state (the lease
     // and `recovering` are already on disk when the server starts).
     let startup = null
-    if (process.env.CANDICE_SKIP_STARTUP_RECOVERY !== '1') {
+    if (!argv.includes('--skip-startup-recovery')) {
       startup = await runProductionStartupRecovery({
         stateDir: stateDirArg || defaultStateDir(),
         tempRoot: os.tmpdir(),
