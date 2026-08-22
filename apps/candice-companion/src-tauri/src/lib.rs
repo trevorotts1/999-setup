@@ -62,6 +62,11 @@ pub fn run() {
             // launch-argument wake capability, not a session bridge, so show
             // the visual shell on setup rather than claim event-driven bind.
             if let Some(win) = app.get_webview_window("main") {
+                // A transparent webview still has rectangular native hit
+                // bounds. Start click-through before front-end composition;
+                // FIX-008 only enables bounded input after a native adapter
+                // can prove it, so Terminal remains usable around Candice.
+                let _ = win.set_ignore_cursor_events(true);
                 let _ = win.show();
             }
             Ok(())

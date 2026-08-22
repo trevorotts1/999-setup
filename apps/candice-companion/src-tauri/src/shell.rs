@@ -108,15 +108,15 @@ pub fn cmd_get_shell_info<R: Runtime>(
     Ok(info)
 }
 
-/// Show and focus the main window. WS-07 owns positioning/anchoring
-/// behavior; this is the plain visibility primitive.
+/// Passively show the main window. Wake/show must not steal terminal focus;
+/// only an explicit user action in a later interaction lane may focus it.
+/// WS-07 owns positioning/anchoring behavior.
 #[tauri::command]
 pub fn cmd_show_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "candice: main window missing".to_string())?;
     win.show().map_err(|e| format!("candice: show failed: {e}"))?;
-    win.set_focus().map_err(|e| format!("candice: focus failed: {e}"))?;
     Ok(())
 }
 

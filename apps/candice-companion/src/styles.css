@@ -3,8 +3,12 @@
 :root {
   color-scheme: light dark;
   --candice-accent: #7c5cff;
-  --candice-text: #eceaf3;
-  --candice-muted: #a8a3b8;
+  --candice-text: #faf7ff;
+  --candice-muted: #d7cfdf;
+  --candice-ui-surface: #171321;
+  --candice-ui-border: #beb0ff;
+  --candice-focus-ring: #dfd7ff;
+  --candice-text-scale: 1;
 }
 
 * {
@@ -27,7 +31,6 @@ body {
   background: transparent;
   color: var(--candice-text);
   overflow: hidden;
-  user-select: none;
 }
 
 #app {
@@ -44,8 +47,24 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  font-size: 14px;
+  font-size: calc(14px * var(--candice-text-scale));
   color: var(--candice-muted);
+}
+
+.candice-status-surface,
+.fallback-title,
+.fallback-hint,
+.candice-runtime-status {
+  width: fit-content;
+  max-width: min(92vw, 420px);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--candice-ui-border);
+  border-radius: 8px;
+  background: var(--candice-ui-surface);
+  color: var(--candice-text);
+  font-size: calc(1em * var(--candice-text-scale));
+  overflow-wrap: anywhere;
 }
 
 .boot-glow {
@@ -109,8 +128,33 @@ body {
 }
 
 .fallback-hint {
-  font-size: 13px;
+  font-size: calc(13px * var(--candice-text-scale));
   color: var(--candice-muted);
+}
+
+:focus-visible {
+  outline: 3px solid var(--candice-focus-ring);
+  outline-offset: 3px;
+}
+
+@media (forced-colors: active) {
+  .candice-status-surface,
+  .fallback-title,
+  .fallback-hint,
+  .candice-runtime-status,
+  button,
+  input,
+  textarea,
+  select {
+    forced-color-adjust: auto;
+    background: Canvas;
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

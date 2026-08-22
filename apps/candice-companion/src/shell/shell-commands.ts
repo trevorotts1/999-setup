@@ -26,6 +26,8 @@ export interface ShellCapabilities {
   commands: {
     showWindow: boolean;
     hideWindow: boolean;
+    /** May be used only by an explicit future user interaction. */
+    focusWindow: boolean;
   };
   /** Window primitive availability. Window behavior details are WS-07's. */
   windows: {
@@ -61,7 +63,11 @@ export function registerShellCommands(
       throw new Error('candice: shell command registry disposed');
     }
     return {
-      commands: { showWindow: nativeShellAvailable, hideWindow: nativeShellAvailable },
+      commands: {
+        showWindow: nativeShellAvailable,
+        hideWindow: nativeShellAvailable,
+        focusWindow: nativeShellAvailable,
+      },
       windows: { mainLabel: 'main', available: nativeShellAvailable },
       appVersion: shellInfo?.appVersion ?? __CANDICE_APP_VERSION__,
     };
@@ -72,7 +78,6 @@ export function registerShellCommands(
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().show();
-      await getCurrentWindow().setFocus();
       return true;
     } catch (err) {
       console.warn('[candice] window.show unavailable', err);
@@ -93,11 +98,25 @@ export function registerShellCommands(
     }
   };
 
+  /** Deliberate focus transfer only; never call as part of wake/show. */
+  const focusWindow = async (): Promise<boolean> => {
+    if (disposed || !nativeShellAvailable) return false;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().setFocus();
+      return true;
+    } catch (err) {
+      console.warn('[candice] window.focus unavailable', err);
+      return false;
+    }
+  };
+
   // Shell IPC contract: consumers invoke through the window-global registry,
   // never through ad-hoc internals.
   (window as unknown as { __candiceShell?: unknown }).__candiceShell = {
     showWindow,
     hideWindow,
+    focusWindow,
     getCapabilities,
   };
 

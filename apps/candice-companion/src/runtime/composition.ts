@@ -30,7 +30,7 @@ export async function initializeRuntimeComposition(
 
   const status = document.createElement('p');
   status.id = 'candice-runtime-status';
-  status.className = 'candice-runtime-status';
+  status.className = 'candice-runtime-status candice-status-surface';
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.textContent = runtimeStatusText(capabilities);

@@ -23,6 +23,11 @@ import { showTextFallback } from './shell/text-fallback';
 import { mountVisualStage } from './shell/visual-stage';
 import { initializeRuntimeComposition } from './runtime/composition';
 import {
+  initializeAccessibilityRuntime,
+  type AccessibilityRuntime,
+} from './a11y/runtime';
+import { createWindowInputPolicy, readyWindowAppearance } from './window';
+import {
   registerShellCommands,
   type ShellCommandRegistry,
   unregisterShellCommands,
@@ -39,6 +44,7 @@ export async function bootCandice(): Promise<void> {
   }
 
   let registry: ShellCommandRegistry | undefined;
+  let accessibility: AccessibilityRuntime | undefined;
   let fellBack = false;
   const setStatus = (status: BootPresentationStatus): void => {
     const surface = document.getElementById('candice-boot-status');
@@ -55,6 +61,7 @@ export async function bootCandice(): Promise<void> {
     fellBack = true;
     window.removeEventListener('candice:shell-error', onShellError);
     if (registry) teardown(registry);
+    accessibility?.dispose();
     setStatus('text-fallback');
     showTextFallback(root);
   };
@@ -78,6 +85,32 @@ export async function bootCandice(): Promise<void> {
     // emitted before the WebView starts; it is therefore not accepted as the
     // sole proof of readiness.
     const shellInfo = await probeNativeShell();
+    // The window is visible but pointer-transparent until a future native
+    // input-region adapter can prove bounded visible controls. This prevents
+    // the 420x640 transparent companion rectangle from eating Terminal clicks.
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const nativeWindow = getCurrentWindow();
+    const windowState = await readyWindowAppearance(nativeWindow);
+    if (!windowState.windowAvailable) {
+      throw new Error('candice: native window appearance unavailable');
+    }
+    const inputPolicy = createWindowInputPolicy(nativeWindow);
+    if (!await inputPolicy.enablePassThrough()) {
+      try {
+        await nativeWindow.hide();
+      } catch {
+        // Failure remains contained by the text-mode fallback below.
+      }
+      throw new Error('candice: safe pointer pass-through unavailable');
+    }
+    root.dataset.candiceInputPolicy = inputPolicy.mode;
+    accessibility = initializeAccessibilityRuntime(root, {
+      // The actual local preference IPC is not implemented yet. `null` is
+      // deliberately the truthful "follow OS" setting, not a fabricated
+      // persisted preference.
+      reducedMotion: null,
+      textScale: 1,
+    });
     registry = registerShellCommands(machine, shellInfo);
     await initializeRuntimeComposition(root, machine);
     setStatus('shell-ready');

@@ -36,6 +36,7 @@ export {
 
 export { createDragSurface } from './dragging.ts';
 export { applyWindowStyles, WINDOW_STYLE_TEXT } from './style.ts';
+export { createWindowInputPolicy } from './input-policy.ts';
 
 export type {
   WindowAppearanceConfig,
@@ -43,3 +44,10 @@ export type {
   WindowLike,
 } from './behavior.ts';
 export type { DragSurfaceController, DraggableWindowLike } from './dragging.ts';
+export type {
+  CursorEventsWindowLike,
+  InputPolicyMode,
+  InputRegion,
+  PartialInputRegionAdapter,
+  WindowInputPolicy,
+} from './input-policy.ts';
