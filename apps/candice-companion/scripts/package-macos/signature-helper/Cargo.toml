@@ -1,0 +1,20 @@
+# WS-23 — macOS signing-state helper crate for the Candice Companion shell.
+#
+# Owned lane: apps/candice-companion/scripts/package-macos/** (PROJECT-MANIFEST
+# 9.2, WR-015 row, WS-23 glob). Pure read-only diagnostics: reports whether
+# the running artifact is Developer ID-signed (Master Spec 23 truthfulness
+# rule). No signing, no keychain access, no network.
+#
+# Consumption: the WS-06 shell crate (src-tauri/src) adds this as a path
+# dependency during fan-in and calls
+# candice_macos_signature::macos_signature_state().
+
+[package]
+name = "candice-macos-signature"
+version = "0.1.0"
+description = "Candice Companion — macOS signing-state diagnostics (WS-23)"
+authors = ["BlackCEO"]
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

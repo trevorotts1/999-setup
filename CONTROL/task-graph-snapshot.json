@@ -1,0 +1,2476 @@
+{
+  "schema": "candice/task-graph-snapshot@1",
+  "project": "Candice Companion AI",
+  "repository": "https://github.com/trevorotts1/999-setup",
+  "base_sha": "6bb00ec70af69510fab5a9c2ef332751e260d036",
+  "source": "SPEC/MASTER-SPEC-2026-08-21.md — Section 0E (50-workstream map), 0F (waves/dependencies), 0J (canonical control apparatus)",
+  "generated_by": "WR-007 planning run — builder unit: native task graph + workstream slices",
+  "generated_at": "2026-08-21",
+  "note_on_run_records": "Run records refreshed 2026-08-21T17:14Z by fresh fixer (wave wf_c3365a01-526) against live machine truth. Live run store ~/.claude/projects/-Users-blackceomacmini/e795d99d-a774-457a-81f9-a116e882fdd7/subagents/workflows/ = 25 run dirs; terminal records .../workflows/*.json = 24 (22 completed + 2 killed: wf_40977ba0-353, wf_edc5ea4c-947); live run = wf_c3365a01-526 (fresh fixer wave, 4 sonnet/max started 17:03:15Z, no terminal record yet); all other dirs terminal. run_records below = 25 rows covering all 25 dirs. WR-003 = planning wf_40977ba0-353 STOPPED-RESTARTED as WR-007 wf_66e51e17-7cc; WR-007 planning COMPLETED 2026-08-21 (truth-update: 5 opus builders + 5 sonnet QC, all 10 resulted); WR-004 capacity COMPLETED (canaries PASS, safe width 50, runs 5, epoch budget 700 of session 1,000 — EXECUTION-PLAN 6.2/6.3, CAPACITY-LEDGER 2026-08-21); WR-006 baseline COMPLETED 5/5 suites PASS (handle wf_63e7cd35-51c); WR-008 watchdog-census-fix COMPLETED; audits/repairs/reconciles wf_7cb74348-fec / wf_d99de8ad-90b / wf_7920d06d-4c9 / wf_1b5a3a00-e4b / wf_8222a8fa-215 / wf_61fe0666-d88 / wf_587604e9-de8 / wf_802e202c-116 / wf_ecc575ed-cf9 / wf_13ee1ba1-624 / wf_da0ccfb6-3c0 / wf_9f089d63-c0e COMPLETED; watchdog wf_edc5ea4c-947 STOPPED conductor-killed; planning-rolling-recheck wf_bef69fc1-fd8 COMPLETED (terminal 16:22:38.380Z, journal 10/10 resulted); truth-enumeration wf_d6dd0a72-000 COMPLETED (terminal 15:43:49.151Z, journal 2/2 resulted); fresh recheck wf_4b6321b2-3fc COMPLETED (terminal 17:02:54.880Z, 6 sonnet started 5/5 resulted: ownership-map PASS, task-graph/acceptance-criteria/dependency-dag/launch-board FAIL -> fixer wave wf_c3365a01-526). ID namespaces (binding, EXECUTION-PLAN section 1/6.2 dependency-dag re-verification): board run IDs (WR-001..WR-008 used; next free WR-033+), manifest 9.2 slice-row IDs (WR-010..WR-021, owned-glob authorities), snapshot slices[] IDs (WR-008..WR-024, launch-slice authorities). W1 launch uses the snapshot slice IDs: W1-A = WR-008 (WS-01/02/06), W1-B = WR-009 (WS-16/17/19), W1-C = WR-012 (WS-48); the QC-FIX ROUND 1 plan-row numbers WR-030/WR-031/WR-032 are RETIRED (they collide with manifest 9.2 row IDs and the LEDGER launch-order reservation). Next-free launch IDs: WR-033+ in launch order.",
+  "nodes": [
+    {
+      "id": "WS-01",
+      "domain": "Candice event/question/answer schemas",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-008",
+      "required_outputs": [
+        "packages/candice-protocol/schemas/question-event.schema.json",
+        "answer-event.schema.json",
+        "status-event.schema.json",
+        "preferences.schema.json",
+        "stable question keys"
+      ],
+      "acceptance_criteria": [
+        "question-event.schema.json, answer-event.schema.json, status-event.schema.json, preferences.schema.json exist in packages/candice-protocol/schemas/ and validate (spec 27 contract tests)",
+        "stable question keys fixed and machine-enumerable (spec 14/27)"
+      ],
+      "owned_paths": [
+        "packages/candice-protocol/schemas/question-event.schema.json",
+        "packages/candice-protocol/schemas/answer-event.schema.json",
+        "packages/candice-protocol/schemas/status-event.schema.json",
+        "packages/candice-protocol/schemas/preferences.schema.json"
+      ]
+    },
+    {
+      "id": "WS-02",
+      "domain": "Claude plugin manifest and hook registration",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-008",
+      "required_outputs": [
+        "plugins/candice-integration/.claude-plugin/plugin.json",
+        "hooks/hooks.json wake-up hook on /spec-protocol /kaizen /eli5 /bro",
+        ".mcp.json bundle declaration"
+      ],
+      "acceptance_criteria": [
+        "plugins/candice-integration/.claude-plugin/plugin.json exists with valid plugin manifest (spec 13)",
+        "hooks/hooks.json registers wake-up hook on /spec-protocol /kaizen /eli5 /bro (spec 3, 13.1)",
+        "workspace .mcp.json declares the ask_user MCP server bundle (spec 13.2)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/.claude-plugin/plugin.json",
+        "hooks/hooks.json",
+        ".mcp.json"
+      ]
+    },
+    {
+      "id": "WS-03",
+      "domain": "session lifecycle + binding bridge",
+      "deps": [
+        "WS-01",
+        "WS-02"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-010",
+      "required_outputs": [
+        "session lifecycle state machine",
+        "session-id <-> host-window binding bridge contract (placement vs identity separation)"
+      ],
+      "acceptance_criteria": [
+        "session lifecycle state machine documented as contract (spec 13.3)",
+        "session-id <-> host-window binding bridge contract states placement != identity (spec 17, 22)",
+        "no host window treated as session identity (spec 28 acceptance)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/session/"
+      ]
+    },
+    {
+      "id": "WS-04",
+      "domain": "structured ask_user MCP path",
+      "deps": [
+        "WS-01",
+        "WS-02",
+        "WS-03"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-013",
+      "required_outputs": [
+        "ask_user MCP tool (question events in, structured answer out)",
+        "answer routes to owning Claude session"
+      ],
+      "acceptance_criteria": [
+        "ask_user MCP tool accepts question-event payload and returns structured answer (spec 13.2)",
+        "answers route to the owning Claude session, never another session (spec 17, 28)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/mcp/ask-user/"
+      ]
+    },
+    {
+      "id": "WS-05",
+      "domain": "same-session free-conversation/terminal fallback adapter",
+      "deps": [
+        "WS-01",
+        "WS-03"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-013",
+      "required_outputs": [
+        "terminal fallback adapter",
+        "Answer in Claude instead path with no double-count guard",
+        "same-session identity enforcement"
+      ],
+      "acceptance_criteria": [
+        "'Answer in Claude instead' falls back to terminal input without losing state",
+        "question counted exactly once across both paths (no double-count, spec 5.1, 27)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/fallback/"
+      ]
+    },
+    {
+      "id": "WS-06",
+      "domain": "Tauri application shell",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-008",
+      "required_outputs": [
+        "apps/candice-companion (src, src-tauri, assets, tests, package.json, tauri.conf.json)",
+        "cross-platform app skeleton"
+      ],
+      "acceptance_criteria": [
+        "apps/candice-companion tree exists (src, src-tauri, assets, tests, package.json, tauri.conf.json) and builds (spec 12)",
+        "app launches on macOS Apple Silicon (spec 18)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src",
+        "apps/candice-companion/src-tauri",
+        "apps/candice-companion/package.json",
+        "apps/candice-companion/tauri.conf.json"
+      ]
+    },
+    {
+      "id": "WS-07",
+      "domain": "transparent/frameless window behavior",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-011",
+      "required_outputs": [
+        "transparent/frameless/always-on-top window behavior",
+        "movable independent window fallback"
+      ],
+      "acceptance_criteria": [
+        "app window renders transparent/frameless/always-on-top (spec 10, 12)",
+        "movable independent floating window works as fallback (spec 20)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/window/",
+        "apps/candice-companion/src-tauri/window-config/"
+      ]
+    },
+    {
+      "id": "WS-08",
+      "domain": "Candice application state machine",
+      "deps": [
+        "WS-01",
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-010",
+      "required_outputs": [
+        "app state machine (idle/listening/thinking/speaking/processing/compact/recovering/text-fallback)",
+        "status-event emission from real state only"
+      ],
+      "acceptance_criteria": [
+        "state machine implements idle/listening/thinking/speaking/processing/compact/recovering/text-fallback (spec 12)",
+        "status events emitted only from real state transitions (spec 16)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/state/"
+      ]
+    },
+    {
+      "id": "WS-09",
+      "domain": "floating answer controls + PTT UI",
+      "deps": [
+        "WS-01",
+        "WS-08",
+        "WS-17"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-014",
+      "required_outputs": [
+        "HOLD TO TALK / LISTENING / TYPE ANSWER / Answer in Claude instead controls",
+        "voice-output ON/OFF toggle",
+        "unmistakable listening glow/pulse"
+      ],
+      "acceptance_criteria": [
+        "HOLD TO TALK / LISTENING / TYPE ANSWER / Answer in Claude instead controls present (spec 5.1, 6)",
+        "voice-output ON/OFF toggle independent of answer method (spec 5.2)",
+        "unmistakable listening glow/pulse (spec 6)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/ui/answer-controls/",
+        "apps/candice-companion/src/ui/ptt/"
+      ]
+    },
+    {
+      "id": "WS-10",
+      "domain": "compact progress-companion mode",
+      "deps": [
+        "WS-01",
+        "WS-03",
+        "WS-08"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-014",
+      "required_outputs": [
+        "compact circular companion mode",
+        "click-to-expand surface",
+        "progress rendered only from real status events"
+      ],
+      "acceptance_criteria": [
+        "compact circular companion mode renders after interview (spec 16)",
+        "click-to-expand surface works",
+        "progress rendered only from real status events (spec 16)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/ui/compact/"
+      ]
+    },
+    {
+      "id": "WS-11",
+      "domain": "asset manifest + final-art loader",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-010",
+      "required_outputs": [
+        "apps/candice-companion/assets/candice/asset-manifest.json (16 assets, stable product filenames)",
+        "lazy-loaded final-art loader",
+        "derived runtime sizes + source->derived checksums"
+      ],
+      "acceptance_criteria": [
+        "apps/candice-companion/assets/candice/asset-manifest.json lists 16 assets with stable product filenames (spec 11B)",
+        "lazy-loaded final-art loader present (spec 11)",
+        "derived runtime sizes + source->derived checksums recorded (spec 11)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/assets/candice/asset-manifest.json",
+        "apps/candice-companion/src/loader/"
+      ]
+    },
+    {
+      "id": "WS-12",
+      "domain": "mouth/viseme animation",
+      "deps": [
+        "WS-11",
+        "WS-19"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-015",
+      "required_outputs": [
+        "mouth/viseme states synced to TTS timing",
+        "landmark-registered face animation (no whole-frame swaps before registration measured)"
+      ],
+      "acceptance_criteria": [
+        "mouth/viseme states sync to TTS timing (spec 10)",
+        "landmark/face-state registration measured before whole-frame speech animation used (spec 28)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/animation/viseme/"
+      ]
+    },
+    {
+      "id": "WS-13",
+      "domain": "blink/idle/head/gesture animation",
+      "deps": [
+        "WS-08",
+        "WS-11"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-015",
+      "required_outputs": [
+        "blink/idle/head/gesture animation",
+        "speaking/listening/processing glow states driven by state machine"
+      ],
+      "acceptance_criteria": [
+        "blink/idle/head/gesture animation present (spec 10)",
+        "speaking/listening/processing glow driven by state machine (spec 10)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/animation/gesture/"
+      ]
+    },
+    {
+      "id": "WS-14",
+      "domain": "accessibility/reduced-motion/captions",
+      "deps": [
+        "WS-01",
+        "WS-08",
+        "WS-12",
+        "WS-13"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-015",
+      "required_outputs": [
+        "always-on captions (voice ON or OFF)",
+        "OS reduced-motion compliance",
+        "a11y labels on controls"
+      ],
+      "acceptance_criteria": [
+        "captions shown always, voice ON or OFF (spec 5.2)",
+        "OS reduced-motion preference honored (spec 9)",
+        "a11y labels on all controls (spec 10)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/a11y/",
+        "apps/candice-companion/src/ui/captions/"
+      ]
+    },
+    {
+      "id": "WS-15",
+      "domain": "visual/transparent-background test harness",
+      "deps": [
+        "WS-06",
+        "WS-07",
+        "WS-11"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-014",
+      "required_outputs": [
+        "visual test harness (transparency/edge quality on light+dark backgrounds)",
+        "low-memory animation behavior checks"
+      ],
+      "acceptance_criteria": [
+        "visual harness proves transparency/edge quality on light+dark backgrounds (spec 10)",
+        "low-memory animation behavior measured (spec 19)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/tests/visual/"
+      ]
+    },
+    {
+      "id": "WS-16",
+      "domain": "whisper.cpp runtime integration",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-009",
+      "required_outputs": [
+        "whisper.cpp runtime integration (pinned tested version)",
+        "bundled/deterministic model with checksum verification",
+        "Apple Silicon acceleration + native Windows support"
+      ],
+      "acceptance_criteria": [
+        "whisper.cpp pinned tested version integrated (spec 7)",
+        "bundled/deterministic model with checksum verification (spec 7)",
+        "Apple Silicon acceleration + native Windows support proven (spec 7, 18)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/stt/"
+      ]
+    },
+    {
+      "id": "WS-17",
+      "domain": "local microphone capture + push-to-talk",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-009",
+      "required_outputs": [
+        "mic capture abstraction",
+        "PTT state/control path",
+        "in-memory/ring buffer",
+        "no-device fallback",
+        "mic active only while talk control held"
+      ],
+      "acceptance_criteria": [
+        "mic capture abstraction + PTT state/control path present (spec 6)",
+        "in-memory/ring buffer path (spec 8)",
+        "no-device fallback works (spec 20)",
+        "mic active only while talk control held (spec 8)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/audio/capture/"
+      ]
+    },
+    {
+      "id": "WS-18",
+      "domain": "transcription confirmation/edit/retry",
+      "deps": [
+        "WS-01",
+        "WS-04",
+        "WS-16",
+        "WS-17"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-016",
+      "required_outputs": [
+        "Here is what I heard... transcript display",
+        "USE ANSWER / EDIT / TRY AGAIN",
+        "no submission before user confirmation"
+      ],
+      "acceptance_criteria": [
+        "'Here is what I heard...' transcript displayed after PTT release (spec 6)",
+        "USE ANSWER / EDIT / TRY AGAIN all work (spec 6)",
+        "no submission before user confirmation (spec 6)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/ui/transcript/"
+      ]
+    },
+    {
+      "id": "WS-19",
+      "domain": "Kokoro runtime + canonical Candice voice",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-009",
+      "required_outputs": [
+        "Kokoro 82M-compatible local ONNX runtime integration",
+        "versioned replaceable voicepack contract",
+        "system-TTS fallback clearly marked non-canonical"
+      ],
+      "acceptance_criteria": [
+        "Kokoro 82M-compatible local ONNX runtime integrated (spec 7)",
+        "versioned replaceable voicepack contract (spec 7)",
+        "system-TTS fallback marked non-canonical (spec 7)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/tts/"
+      ]
+    },
+    {
+      "id": "WS-20",
+      "domain": "speech interruption, duplex safety, audio cleanup",
+      "deps": [
+        "WS-08",
+        "WS-17",
+        "WS-19"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-016",
+      "required_outputs": [
+        "PTT interrupts Candice speech immediately",
+        "no TTS->STT feedback (duplex safety)",
+        "temp audio cleanup (per-session dir, delete on success/failure, startup cleanup)"
+      ],
+      "acceptance_criteria": [
+        "PTT interrupts Candice speech immediately (spec 6)",
+        "no TTS->STT feedback loop (spec 6)",
+        "temp audio cleanup: per-session dir, delete on success/failure, startup cleanup (spec 8)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/audio/duplex/",
+        "apps/candice-companion/src-tauri/audio/cleanup/"
+      ]
+    },
+    {
+      "id": "WS-21",
+      "domain": "macOS terminal-window discovery/binding",
+      "deps": [
+        "WS-03",
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-017",
+      "required_outputs": [
+        "Terminal.app + iTerm2 window discovery/binding",
+        "anchor beside terminal, move/resize/monitor tracking",
+        "Accessibility-gated"
+      ],
+      "acceptance_criteria": [
+        "Terminal.app + iTerm2 window discovery/binding proven (spec 17)",
+        "anchor beside terminal + move/resize/monitor tracking (spec 17)",
+        "Accessibility permission gating (spec 17)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/binding/macos/"
+      ]
+    },
+    {
+      "id": "WS-22",
+      "domain": "macOS permissions + degraded floating mode",
+      "deps": [
+        "WS-06",
+        "WS-21"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-017",
+      "required_outputs": [
+        "Accessibility/mic permission handling in plain language",
+        "movable independent floating companion on denial",
+        "never stop Claude on denial"
+      ],
+      "acceptance_criteria": [
+        "permission denial explained in plain language (spec 20)",
+        "movable independent floating companion on denial (spec 20)",
+        "Claude never stopped on denial (spec 20)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/permissions/"
+      ]
+    },
+    {
+      "id": "WS-23",
+      "domain": "macOS packaging/signing/notarization path",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-024",
+      "required_outputs": [
+        "Developer ID signing + notarization path",
+        "Gatekeeper-acceptable artifacts",
+        "external blocker record if credentials absent"
+      ],
+      "acceptance_criteria": [
+        "Developer ID signing + notarization path defined (spec 23)",
+        "Gatekeeper-acceptable artifacts produced (spec 23)",
+        "external blocker recorded if credentials absent (spec 23)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/scripts/package-macos/"
+      ]
+    },
+    {
+      "id": "WS-24",
+      "domain": "macOS resource/performance instrumentation",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-011",
+      "required_outputs": [
+        "idle/speaking/listening RSS+CPU measurement",
+        "time-to-first-visible, PTT-release-to-transcript, time-to-first-audio"
+      ],
+      "acceptance_criteria": [
+        "idle/speaking/listening RSS+CPU measured on macOS (spec 19)",
+        "time-to-first-visible, PTT-release-to-transcript, time-to-first-audio measured (spec 19)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/scripts/instrument-macos/"
+      ]
+    },
+    {
+      "id": "WS-25",
+      "domain": "macOS Terminal/iTerm compatibility",
+      "deps": [
+        "WS-21"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-017",
+      "required_outputs": [
+        "Terminal.app + iTerm2 compatibility proof",
+        "tab/session identity separation (window placement != session identity)"
+      ],
+      "acceptance_criteria": [
+        "Terminal.app + iTerm2 compatibility proven (spec 17)",
+        "tab/session identity separation proven (spec 17)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/tests/terminal-compat/"
+      ]
+    },
+    {
+      "id": "WS-26",
+      "domain": "Windows Win32 window discovery/binding",
+      "deps": [
+        "WS-03",
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-017",
+      "required_outputs": [
+        "Win32 top-level host-window discovery/binding",
+        "tab/panes-safe anchoring",
+        "host window never treated as session identity"
+      ],
+      "acceptance_criteria": [
+        "Win32 top-level host-window discovery/binding works (spec 17)",
+        "tab/panes-safe anchoring (spec 17)",
+        "host window never treated as session identity (spec 17)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/binding/windows/"
+      ]
+    },
+    {
+      "id": "WS-27",
+      "domain": "Windows Terminal/PowerShell/CMD compatibility + native deterministic-tool parity",
+      "deps": [
+        "WS-26"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-017",
+      "required_outputs": [
+        "Windows Terminal + PowerShell 5.1/PowerShell 7/CMD compatibility",
+        "native parity for capacity/anchor/env-sweep/ledger/update/self-update tools (Node .mjs + .ps1 wrappers)",
+        "golden fixtures matching macOS semantics"
+      ],
+      "acceptance_criteria": [
+        "Windows Terminal + PowerShell 5.1/PowerShell 7/CMD compatibility proven (spec 27)",
+        "native parity for capacity/anchor/env-sweep/ledger/update/self-update tools (Node .mjs + .ps1 wrappers, spec 0.3)",
+        "golden fixtures match macOS semantics (spec 27)"
+      ],
+      "owned_paths": [
+        "tools/windows-parity/",
+        "apps/candice-companion/tests/windows-shell-compat/"
+      ]
+    },
+    {
+      "id": "WS-28",
+      "domain": "Windows microphone/audio/device path",
+      "deps": [
+        "WS-17"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-011",
+      "required_outputs": [
+        "Windows mic/audio/device implementation of the capture contract",
+        "privacy handling + no-device fallback"
+      ],
+      "acceptance_criteria": [
+        "Windows mic/audio/device implementation of capture contract (spec 7, 18)",
+        "privacy handling + no-device fallback (spec 8, 20)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/audio/capture-windows/"
+      ]
+    },
+    {
+      "id": "WS-29",
+      "domain": "Windows packaging/signing/SmartScreen path",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-024",
+      "required_outputs": [
+        "Windows installer packaging",
+        "Authenticode signing path",
+        "SmartScreen mitigation; limitation recorded if unsigned"
+      ],
+      "acceptance_criteria": [
+        "Windows installer packaging works (spec 23)",
+        "Authenticode signing path defined (spec 23)",
+        "SmartScreen mitigation present; limitation recorded if unsigned (spec 23)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/scripts/package-windows/"
+      ]
+    },
+    {
+      "id": "WS-30",
+      "domain": "Windows resource/performance instrumentation",
+      "deps": [
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-011",
+      "required_outputs": [
+        "Windows idle/speaking/listening resource measurements"
+      ],
+      "acceptance_criteria": [
+        "Windows idle/speaking/listening resource measurements recorded (spec 19)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/scripts/instrument-windows/"
+      ]
+    },
+    {
+      "id": "WS-31",
+      "domain": "fresh-install Candice bootstrap",
+      "deps": [
+        "WS-02",
+        "WS-06",
+        "WS-23",
+        "WS-29",
+        "WS-33"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-020",
+      "required_outputs": [
+        "AGENT_INSTALL.md + orchestrator updates (plugin, app, STT/TTS assets, launch/bridge, version metadata)",
+        "no compile-from-source on customer machines"
+      ],
+      "acceptance_criteria": [
+        "AGENT_INSTALL.md + orchestrator updates cover plugin, app, STT/TTS assets, launch/bridge, version metadata (spec 22)",
+        "no compile-from-source on customer machines (spec 22)"
+      ],
+      "owned_paths": [
+        "AGENT_INSTALL.md",
+        "scripts/candice-bootstrap/"
+      ]
+    },
+    {
+      "id": "WS-32",
+      "domain": "existing-user upgrade bootstrap",
+      "deps": [
+        "WS-31",
+        "WS-33",
+        "WS-34"
+      ],
+      "zero_dependency": false,
+      "level": 4,
+      "wave": "W3",
+      "slice": "WR-020",
+      "required_outputs": [
+        "existing-user upgrade flow (old spec-protocol -> new bootstrap installs/repairs missing Candice components)",
+        "fast health/version check after successful bootstrap"
+      ],
+      "acceptance_criteria": [
+        "upgrade flow: old spec-protocol -> new bootstrap installs/repairs missing Candice components (spec 21)",
+        "fast health/version check after bootstrap (spec 21)"
+      ],
+      "owned_paths": [
+        "scripts/candice-upgrade/"
+      ]
+    },
+    {
+      "id": "WS-33",
+      "domain": "bundled-component manifest/checksums/rollback",
+      "deps": [
+        "WS-02",
+        "WS-06"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-018",
+      "required_outputs": [
+        "CONTROL/bundled-components.json (nine-router-setup, spec-protocol, kaizen, eli5, bro, candice-integration, candice-companion, speech assets)",
+        "SHA-256 checksums, downgrade rejection, atomic install, backup+rollback",
+        "GitHub Releases default channel + size/licensing check"
+      ],
+      "level_note": "level > max(dep levels)+1 by design: WS-33 also gates WS-35 crash-rollback and the W3 upgrade machinery (spec 27 existing-user update tests item 6, spec 0G); W2 placement keeps the updater path ahead of W3 journeys",
+      "acceptance_criteria": [
+        "CONTROL/bundled-components.json lists all 8 components (spec 21)",
+        "SHA-256 checksums, downgrade rejection, atomic install, backup+rollback (spec 21)",
+        "GitHub Releases default channel + size/licensing check (spec 21)"
+      ],
+      "owned_paths": [
+        "CONTROL/bundled-components.json",
+        "scripts/candice-updater/checksums/",
+        "scripts/candice-updater/rollback/"
+      ]
+    },
+    {
+      "id": "WS-34",
+      "domain": "version/preferences/schema migrations",
+      "deps": [
+        "WS-01",
+        "WS-40"
+      ],
+      "zero_dependency": false,
+      "level": 2,
+      "wave": "W2",
+      "slice": "WR-013",
+      "required_outputs": [
+        "versioned JSON preferences schema",
+        "migration path + migration tests"
+      ],
+      "acceptance_criteria": [
+        "versioned JSON preferences schema (spec 9)",
+        "migration path + migration tests (spec 9)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/preferences/migrations/",
+        "tests/migrations/"
+      ]
+    },
+    {
+      "id": "WS-35",
+      "domain": "crash/restart/recovery/update rollback",
+      "deps": [
+        "WS-08",
+        "WS-33"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-018",
+      "required_outputs": [
+        "crash recovery of exact pending question (no re-ask/increment)",
+        "update rollback on failure",
+        "startup temp-audio cleanup"
+      ],
+      "acceptance_criteria": [
+        "crash recovery restores exact pending question, no re-ask/increment (spec 20)",
+        "update rollback on failure (spec 21)",
+        "startup temp-audio cleanup (spec 8)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src-tauri/recovery/"
+      ]
+    },
+    {
+      "id": "WS-36",
+      "domain": "Spec Protocol Candice integration",
+      "deps": [
+        "WS-01",
+        "WS-02",
+        "WS-04",
+        "WS-05"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-019",
+      "required_outputs": [
+        "concise SKILL.md section (activation, companion availability check, structured bridge rules, fallback, reference)",
+        "references/candice-companion.md + candice-question-contract.md"
+      ],
+      "acceptance_criteria": [
+        "concise SKILL.md section: activation, availability check, bridge rules, fallback, reference (spec 25)",
+        "references/candice-companion.md + candice-question-contract.md created (spec 25)"
+      ],
+      "owned_paths": [
+        ".claude/skills/spec-protocol/SKILL.md",
+        ".claude/skills/spec-protocol/references/candice-companion.md",
+        ".claude/skills/spec-protocol/references/candice-question-contract.md"
+      ]
+    },
+    {
+      "id": "WS-37",
+      "domain": "Kaizen Candice integration",
+      "deps": [
+        "WS-04",
+        "WS-05",
+        "WS-36"
+      ],
+      "zero_dependency": false,
+      "level": 4,
+      "wave": "W3",
+      "slice": "WR-021",
+      "required_outputs": [
+        "Kaizen minimum integration instructions",
+        "no question-order/rules modification"
+      ],
+      "acceptance_criteria": [
+        "Kaizen minimum integration instructions present (spec 25)",
+        "no question-order/rules modification (spec 15)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/integrations/kaizen/"
+      ]
+    },
+    {
+      "id": "WS-38",
+      "domain": "ELI5 Candice integration",
+      "deps": [
+        "WS-04",
+        "WS-05",
+        "WS-36",
+        "WS-37"
+      ],
+      "zero_dependency": false,
+      "level": 5,
+      "wave": "W3",
+      "slice": "WR-021",
+      "required_outputs": [
+        "ELI5 minimum integration instructions"
+      ],
+      "acceptance_criteria": [
+        "ELI5 minimum integration instructions present (spec 25)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/integrations/eli5/"
+      ]
+    },
+    {
+      "id": "WS-39",
+      "domain": "Bro Candice integration",
+      "deps": [
+        "WS-04",
+        "WS-05",
+        "WS-36",
+        "WS-37",
+        "WS-38"
+      ],
+      "zero_dependency": false,
+      "level": 6,
+      "wave": "W4",
+      "slice": "WR-021",
+      "required_outputs": [
+        "Bro minimum integration instructions",
+        "compact-companion /bro submission path"
+      ],
+      "acceptance_criteria": [
+        "Bro minimum integration instructions present (spec 25)",
+        "compact-companion /bro submission path works (spec 16)"
+      ],
+      "owned_paths": [
+        "plugins/candice-integration/integrations/bro/"
+      ]
+    },
+    {
+      "id": "WS-40",
+      "domain": "user name/preferences/local profile",
+      "deps": [
+        "WS-01"
+      ],
+      "zero_dependency": false,
+      "level": 1,
+      "wave": "W1",
+      "slice": "WR-010",
+      "required_outputs": [
+        "local profile store (name, voice toggle, volume, rate, method, text size, reduced-motion, position, last skill)",
+        "macOS ~/Library/Application Support/BlackCEO/999/Candice + Windows %LOCALAPPDATA%\\BlackCEO\\999\\Candice",
+        "never project/conversation memory"
+      ],
+      "acceptance_criteria": [
+        "local profile stores name, voice toggle, volume, rate, method, text size, reduced-motion, position, last skill (spec 9)",
+        "paths: macOS ~/Library/Application Support/BlackCEO/999/Candice + Windows %LOCALAPPDATA%\\BlackCEO\\999\\Candice (spec 9)",
+        "profile never project/conversation memory (spec 9)"
+      ],
+      "owned_paths": [
+        "apps/candice-companion/src/profile/"
+      ]
+    },
+    {
+      "id": "WS-41",
+      "domain": "contract/schema test suite",
+      "deps": [
+        "WS-01",
+        "WS-04",
+        "WS-05"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-013",
+      "required_outputs": [
+        "contract tests (schema validation, stable keys, exactly-one-answer per path, no double-count, secret question never read aloud)"
+      ],
+      "acceptance_criteria": [
+        "contract tests: schema validation, stable keys, exactly-one-answer per path, no double-count, secret question never read aloud (spec 27)"
+      ],
+      "owned_paths": [
+        "tests/contract/"
+      ]
+    },
+    {
+      "id": "WS-42",
+      "domain": "same-session Claude + Claude-Nine test suite",
+      "deps": [
+        "WS-02",
+        "WS-03",
+        "WS-04",
+        "WS-05",
+        "WS-36"
+      ],
+      "zero_dependency": false,
+      "level": 4,
+      "wave": "W3",
+      "slice": "WR-021",
+      "required_outputs": [
+        "same-session tests under claude AND claude-nine (same session owns Q+A, no second AI conversation, provider-agnostic)"
+      ],
+      "acceptance_criteria": [
+        "same-session tests pass under claude AND claude-nine (spec 27)",
+        "same session owns Q+A, no second AI conversation, provider-agnostic (spec 27)"
+      ],
+      "owned_paths": [
+        "tests/same-session/"
+      ]
+    },
+    {
+      "id": "WS-43",
+      "domain": "failure/fallback/chaos test suite",
+      "deps": [
+        "WS-04",
+        "WS-16",
+        "WS-17",
+        "WS-19",
+        "WS-22",
+        "WS-35"
+      ],
+      "zero_dependency": false,
+      "level": 4,
+      "wave": "W3",
+      "slice": "WR-022",
+      "required_outputs": [
+        "failure matrix tests (app missing/crash, model corrupt, mic denied, no device, MCP unavailable, wrong session target, Claude busy)"
+      ],
+      "acceptance_criteria": [
+        "failure matrix tests: app missing/crash, model corrupt, mic denied, no device, MCP unavailable, wrong session target, Claude busy (spec 27)"
+      ],
+      "owned_paths": [
+        "tests/failure-matrix/"
+      ]
+    },
+    {
+      "id": "WS-44",
+      "domain": "privacy/security/secrets audit",
+      "deps": [
+        "WS-04",
+        "WS-17",
+        "WS-20",
+        "WS-40"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-019",
+      "required_outputs": [
+        "privacy audit (raw audio discarded, no cloud speech endpoints, no secrets/audio logged, no API keys in prompts read aloud)"
+      ],
+      "acceptance_criteria": [
+        "privacy audit: raw audio discarded, no cloud speech endpoints, no secrets/audio logged, no API keys in prompts read aloud (spec 8)"
+      ],
+      "owned_paths": [
+        "tests/privacy-audit/",
+        "docs/privacy-audit/"
+      ]
+    },
+    {
+      "id": "WS-45",
+      "domain": "performance/load/resource test suite",
+      "deps": [
+        "WS-16",
+        "WS-19",
+        "WS-24",
+        "WS-30"
+      ],
+      "zero_dependency": false,
+      "level": 3,
+      "wave": "W2",
+      "slice": "WR-019",
+      "required_outputs": [
+        "performance suite with measured baselines + CI regression thresholds (idle RSS/CPU, speaking, listening, first-visible, PTT->transcript, first-audio)"
+      ],
+      "level_note": "level > max(dep levels)+1 by design: WS-45 produces the regression thresholds WS-46 consumes; W2 placement (level 3) keeps those thresholds ahead of the W3 CI matrix",
+      "acceptance_criteria": [
+        "performance suite with measured baselines + CI regression thresholds: idle RSS/CPU, speaking, listening, first-visible, PTT->transcript, first-audio (spec 19)"
+      ],
+      "owned_paths": [
+        "tests/performance/"
+      ]
+    },
+    {
+      "id": "WS-46",
+      "domain": "cross-platform CI/release matrix",
+      "deps": [
+        "WS-23",
+        "WS-29",
+        "WS-41",
+        "WS-42"
+      ],
+      "zero_dependency": false,
+      "level": 5,
+      "wave": "W3",
+      "slice": "WR-022",
+      "required_outputs": [
+        "CI matrix (macOS ARM64 + Windows x64 native) building prebuilt signed artifacts",
+        "Dedicated Candice CI"
+      ],
+      "acceptance_criteria": [
+        "CI matrix: macOS ARM64 + Windows x64 native building prebuilt signed artifacts (spec 27)",
+        "dedicated Candice CI exists (spec 27)"
+      ],
+      "owned_paths": [
+        ".github/workflows/candice-ci.yml"
+      ]
+    },
+    {
+      "id": "WS-47",
+      "domain": "upgrade/backward-compatibility fixtures",
+      "deps": [
+        "WS-32",
+        "WS-34"
+      ],
+      "zero_dependency": false,
+      "level": 5,
+      "wave": "W3",
+      "slice": "WR-020",
+      "required_outputs": [
+        "fixture: old spec-protocol + Candice absent + older skills -> update detected, safe spec-protocol update, Candice installed, skills refreshed, plain claude config untouched, rollback works"
+      ],
+      "acceptance_criteria": [
+        "fixture: old spec-protocol + Candice absent + older skills -> update detected, safe spec-protocol update, Candice installed, skills refreshed, plain claude config untouched, rollback works (spec 27)"
+      ],
+      "owned_paths": [
+        "tests/upgrade-fixtures/"
+      ]
+    },
+    {
+      "id": "WS-48",
+      "domain": "operator-specific boss-cron portability repair",
+      "deps": [],
+      "zero_dependency": true,
+      "level": 0,
+      "wave": "W1",
+      "slice": "WR-012",
+      "required_outputs": [
+        "generic runtime free of /Users/blackceomacmini absolute paths",
+        "six-wave campaign isolated from customer projects",
+        "arbitrary-user path tests (macOS + Windows), no-interference tests"
+      ],
+      "acceptance_criteria": [
+        "generic runtime free of /Users/blackceomacmini absolute paths (spec 24)",
+        "six-wave campaign isolated from customer projects (spec 24)",
+        "arbitrary-user path tests (macOS + Windows) + no-interference tests (spec 24)"
+      ],
+      "owned_paths": [
+        "tools/boss-cron/",
+        "tests/portability/"
+      ]
+    },
+    {
+      "id": "WS-49",
+      "domain": "installer/updater regression and rollback validation",
+      "deps": [
+        "WS-31",
+        "WS-32",
+        "WS-33"
+      ],
+      "zero_dependency": false,
+      "level": 5,
+      "wave": "W3",
+      "slice": "WR-022",
+      "required_outputs": [
+        "installer/updater regression + rollback validation (checksum fail, injected failure rollback, uninstall cleanup)"
+      ],
+      "acceptance_criteria": [
+        "installer/updater regression + rollback validation: checksum fail, injected failure rollback, uninstall cleanup (spec 27)"
+      ],
+      "owned_paths": [
+        "tests/installer-regression/"
+      ]
+    },
+    {
+      "id": "WS-50",
+      "domain": "end-to-end nontechnical-user acceptance harness",
+      "deps": [
+        "WS-31",
+        "WS-36",
+        "WS-37",
+        "WS-38",
+        "WS-39",
+        "WS-42"
+      ],
+      "zero_dependency": false,
+      "level": 7,
+      "wave": "W5",
+      "slice": "WR-023",
+      "required_outputs": [
+        "E2E nontechnical-user acceptance harness (full journey: install -> activate -> name capture -> talk/type -> one answer -> compact companion)"
+      ],
+      "acceptance_criteria": [
+        "E2E acceptance: install -> activate -> name capture -> talk/type -> one answer -> compact companion, nontechnical-user script (spec 28, 29)"
+      ],
+      "owned_paths": [
+        "tests/e2e-acceptance/"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "WS-03",
+      "to": "WS-01",
+      "required_output": "status/session event schemas for lifecycle events"
+    },
+    {
+      "from": "WS-03",
+      "to": "WS-02",
+      "required_output": "hook invocation detection (slash-command wake-up) and plugin lifecycle"
+    },
+    {
+      "from": "WS-04",
+      "to": "WS-01",
+      "required_output": "question-event/answer-event schemas as MCP payload contract"
+    },
+    {
+      "from": "WS-04",
+      "to": "WS-02",
+      "required_output": ".mcp.json bundle declaring the ask_user MCP server"
+    },
+    {
+      "from": "WS-04",
+      "to": "WS-03",
+      "required_output": "session binding: answer routes to the owning Claude session"
+    },
+    {
+      "from": "WS-05",
+      "to": "WS-01",
+      "required_output": "question/answer schemas for terminal fallback rendering"
+    },
+    {
+      "from": "WS-05",
+      "to": "WS-03",
+      "required_output": "session identity for same-session fallback and no-double-count"
+    },
+    {
+      "from": "WS-07",
+      "to": "WS-06",
+      "required_output": "Tauri shell window to configure transparent/frameless"
+    },
+    {
+      "from": "WS-08",
+      "to": "WS-01",
+      "required_output": "status-event schema for state transitions"
+    },
+    {
+      "from": "WS-08",
+      "to": "WS-06",
+      "required_output": "hosting app shell"
+    },
+    {
+      "from": "WS-09",
+      "to": "WS-01",
+      "required_output": "question events to render in answer controls"
+    },
+    {
+      "from": "WS-09",
+      "to": "WS-08",
+      "required_output": "listening/answering state machine states"
+    },
+    {
+      "from": "WS-09",
+      "to": "WS-17",
+      "required_output": "PTT capture control path"
+    },
+    {
+      "from": "WS-10",
+      "to": "WS-01",
+      "required_output": "status events as the only progress source"
+    },
+    {
+      "from": "WS-10",
+      "to": "WS-03",
+      "required_output": "session lifecycle events (start/end) for companion dormancy"
+    },
+    {
+      "from": "WS-10",
+      "to": "WS-08",
+      "required_output": "state machine for compact/expanded states"
+    },
+    {
+      "from": "WS-11",
+      "to": "WS-06",
+      "required_output": "app asset contract/bundle location"
+    },
+    {
+      "from": "WS-12",
+      "to": "WS-11",
+      "required_output": "mouth/viseme assets from asset manifest"
+    },
+    {
+      "from": "WS-12",
+      "to": "WS-19",
+      "required_output": "TTS timing/viseme classes for sync"
+    },
+    {
+      "from": "WS-13",
+      "to": "WS-08",
+      "required_output": "state machine triggers for gestures/glow"
+    },
+    {
+      "from": "WS-13",
+      "to": "WS-11",
+      "required_output": "blink/idle/gesture assets from asset manifest"
+    },
+    {
+      "from": "WS-14",
+      "to": "WS-01",
+      "required_output": "caption text sources (question/status events)"
+    },
+    {
+      "from": "WS-14",
+      "to": "WS-08",
+      "required_output": "state events for caption synchronization"
+    },
+    {
+      "from": "WS-14",
+      "to": "WS-12",
+      "required_output": "viseme animation to gate under reduced-motion"
+    },
+    {
+      "from": "WS-14",
+      "to": "WS-13",
+      "required_output": "animation layer to gate under reduced-motion"
+    },
+    {
+      "from": "WS-15",
+      "to": "WS-06",
+      "required_output": "app under test"
+    },
+    {
+      "from": "WS-15",
+      "to": "WS-07",
+      "required_output": "transparency behavior to verify"
+    },
+    {
+      "from": "WS-15",
+      "to": "WS-11",
+      "required_output": "assets for light/dark background edge-quality tests"
+    },
+    {
+      "from": "WS-18",
+      "to": "WS-01",
+      "required_output": "transcript placement in the answer flow contract"
+    },
+    {
+      "from": "WS-18",
+      "to": "WS-04",
+      "required_output": "confirmed-answer submission via ask_user"
+    },
+    {
+      "from": "WS-18",
+      "to": "WS-16",
+      "required_output": "whisper.cpp transcription output"
+    },
+    {
+      "from": "WS-18",
+      "to": "WS-17",
+      "required_output": "captured audio buffer"
+    },
+    {
+      "from": "WS-20",
+      "to": "WS-08",
+      "required_output": "speaking state for interruption coordination"
+    },
+    {
+      "from": "WS-20",
+      "to": "WS-17",
+      "required_output": "mic input path for duplex safety (no TTS->STT feedback)"
+    },
+    {
+      "from": "WS-20",
+      "to": "WS-19",
+      "required_output": "TTS output stream to interrupt"
+    },
+    {
+      "from": "WS-21",
+      "to": "WS-03",
+      "required_output": "bridge binding contract (session identity authority)"
+    },
+    {
+      "from": "WS-21",
+      "to": "WS-06",
+      "required_output": "app window to anchor beside terminal"
+    },
+    {
+      "from": "WS-22",
+      "to": "WS-06",
+      "required_output": "app shell for floating mode"
+    },
+    {
+      "from": "WS-22",
+      "to": "WS-21",
+      "required_output": "permission-gated binding behavior"
+    },
+    {
+      "from": "WS-23",
+      "to": "WS-06",
+      "required_output": "buildable app to package/sign/notarize"
+    },
+    {
+      "from": "WS-24",
+      "to": "WS-06",
+      "required_output": "app runtime to instrument"
+    },
+    {
+      "from": "WS-25",
+      "to": "WS-21",
+      "required_output": "terminal binding to verify on Terminal.app/iTerm2"
+    },
+    {
+      "from": "WS-26",
+      "to": "WS-03",
+      "required_output": "bridge binding contract (window != session identity)"
+    },
+    {
+      "from": "WS-26",
+      "to": "WS-06",
+      "required_output": "app window to anchor"
+    },
+    {
+      "from": "WS-27",
+      "to": "WS-26",
+      "required_output": "Win32 host-window binding for shell compatibility"
+    },
+    {
+      "from": "WS-28",
+      "to": "WS-17",
+      "required_output": "shared capture contract to implement on Windows"
+    },
+    {
+      "from": "WS-29",
+      "to": "WS-06",
+      "required_output": "buildable app to package on Windows"
+    },
+    {
+      "from": "WS-30",
+      "to": "WS-06",
+      "required_output": "app runtime to instrument on Windows"
+    },
+    {
+      "from": "WS-31",
+      "to": "WS-02",
+      "required_output": "plugin component to install"
+    },
+    {
+      "from": "WS-31",
+      "to": "WS-06",
+      "required_output": "app component to install"
+    },
+    {
+      "from": "WS-31",
+      "to": "WS-23",
+      "required_output": "macOS installer artifact"
+    },
+    {
+      "from": "WS-31",
+      "to": "WS-29",
+      "required_output": "Windows installer artifact"
+    },
+    {
+      "from": "WS-31",
+      "to": "WS-33",
+      "required_output": "component manifest/checksums for verified install"
+    },
+    {
+      "from": "WS-32",
+      "to": "WS-31",
+      "required_output": "install/repair machinery to reuse for upgrades"
+    },
+    {
+      "from": "WS-32",
+      "to": "WS-33",
+      "required_output": "component manifest for missing/stale detection"
+    },
+    {
+      "from": "WS-32",
+      "to": "WS-34",
+      "required_output": "schema migrations for upgraded preferences"
+    },
+    {
+      "from": "WS-33",
+      "to": "WS-02",
+      "required_output": "plugin component version"
+    },
+    {
+      "from": "WS-33",
+      "to": "WS-06",
+      "required_output": "app component version"
+    },
+    {
+      "from": "WS-34",
+      "to": "WS-01",
+      "required_output": "preferences.schema.json to version and migrate"
+    },
+    {
+      "from": "WS-34",
+      "to": "WS-40",
+      "required_output": "local profile store to migrate"
+    },
+    {
+      "from": "WS-35",
+      "to": "WS-08",
+      "required_output": "state machine pending-question state for recovery"
+    },
+    {
+      "from": "WS-35",
+      "to": "WS-33",
+      "required_output": "component rollback mechanism"
+    },
+    {
+      "from": "WS-36",
+      "to": "WS-01",
+      "required_output": "question contract for structured bridge rules"
+    },
+    {
+      "from": "WS-36",
+      "to": "WS-02",
+      "required_output": "wake-up hook registration for /spec-protocol"
+    },
+    {
+      "from": "WS-36",
+      "to": "WS-04",
+      "required_output": "ask_user structured question bridge"
+    },
+    {
+      "from": "WS-36",
+      "to": "WS-05",
+      "required_output": "same-session fallback adapter"
+    },
+    {
+      "from": "WS-37",
+      "to": "WS-04",
+      "required_output": "structured bridge for Kaizen questions"
+    },
+    {
+      "from": "WS-37",
+      "to": "WS-05",
+      "required_output": "fallback adapter"
+    },
+    {
+      "from": "WS-37",
+      "to": "WS-36",
+      "required_output": "established integration pattern/reference"
+    },
+    {
+      "from": "WS-38",
+      "to": "WS-04",
+      "required_output": "structured bridge"
+    },
+    {
+      "from": "WS-38",
+      "to": "WS-05",
+      "required_output": "fallback adapter"
+    },
+    {
+      "from": "WS-38",
+      "to": "WS-36",
+      "required_output": "integration pattern/reference"
+    },
+    {
+      "from": "WS-38",
+      "to": "WS-37",
+      "required_output": "Kaizen integration as pattern"
+    },
+    {
+      "from": "WS-39",
+      "to": "WS-04",
+      "required_output": "structured bridge"
+    },
+    {
+      "from": "WS-39",
+      "to": "WS-05",
+      "required_output": "fallback adapter"
+    },
+    {
+      "from": "WS-39",
+      "to": "WS-36",
+      "required_output": "integration pattern/reference"
+    },
+    {
+      "from": "WS-39",
+      "to": "WS-37",
+      "required_output": "Kaizen integration as pattern"
+    },
+    {
+      "from": "WS-39",
+      "to": "WS-38",
+      "required_output": "ELI5 integration as pattern"
+    },
+    {
+      "from": "WS-40",
+      "to": "WS-01",
+      "required_output": "preferences.schema.json as profile store schema"
+    },
+    {
+      "from": "WS-41",
+      "to": "WS-01",
+      "required_output": "schemas to validate"
+    },
+    {
+      "from": "WS-41",
+      "to": "WS-04",
+      "required_output": "structured answer paths under test"
+    },
+    {
+      "from": "WS-41",
+      "to": "WS-05",
+      "required_output": "fallback answer paths under test"
+    },
+    {
+      "from": "WS-42",
+      "to": "WS-02",
+      "required_output": "plugin under test on claude and claude-nine"
+    },
+    {
+      "from": "WS-42",
+      "to": "WS-03",
+      "required_output": "session binding under test"
+    },
+    {
+      "from": "WS-42",
+      "to": "WS-04",
+      "required_output": "bridge under test"
+    },
+    {
+      "from": "WS-42",
+      "to": "WS-05",
+      "required_output": "fallback under test"
+    },
+    {
+      "from": "WS-42",
+      "to": "WS-36",
+      "required_output": "spec-protocol integration under test"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-04",
+      "required_output": "MCP-unavailable fallback behavior"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-16",
+      "required_output": "whisper failure modes"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-17",
+      "required_output": "mic denied / no-device behavior"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-19",
+      "required_output": "Kokoro failure -> system TTS fallback"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-22",
+      "required_output": "permission-denied degraded floating mode"
+    },
+    {
+      "from": "WS-43",
+      "to": "WS-35",
+      "required_output": "crash recovery behavior"
+    },
+    {
+      "from": "WS-44",
+      "to": "WS-04",
+      "required_output": "secret-question guard in structured path"
+    },
+    {
+      "from": "WS-44",
+      "to": "WS-17",
+      "required_output": "mic privacy (PTT-only access)"
+    },
+    {
+      "from": "WS-44",
+      "to": "WS-20",
+      "required_output": "audio cleanup path to audit"
+    },
+    {
+      "from": "WS-44",
+      "to": "WS-40",
+      "required_output": "profile store privacy (no conversation memory)"
+    },
+    {
+      "from": "WS-45",
+      "to": "WS-16",
+      "required_output": "whisper resource profile"
+    },
+    {
+      "from": "WS-45",
+      "to": "WS-19",
+      "required_output": "Kokoro resource profile"
+    },
+    {
+      "from": "WS-45",
+      "to": "WS-24",
+      "required_output": "macOS instrumentation data"
+    },
+    {
+      "from": "WS-45",
+      "to": "WS-30",
+      "required_output": "Windows instrumentation data"
+    },
+    {
+      "from": "WS-46",
+      "to": "WS-23",
+      "required_output": "macOS build path for CI"
+    },
+    {
+      "from": "WS-46",
+      "to": "WS-29",
+      "required_output": "Windows build path for CI"
+    },
+    {
+      "from": "WS-46",
+      "to": "WS-41",
+      "required_output": "contract tests to run in CI"
+    },
+    {
+      "from": "WS-46",
+      "to": "WS-42",
+      "required_output": "same-session tests to run in CI"
+    },
+    {
+      "from": "WS-47",
+      "to": "WS-32",
+      "required_output": "upgrade path to fixture-test"
+    },
+    {
+      "from": "WS-47",
+      "to": "WS-34",
+      "required_output": "migrations to fixture-test"
+    },
+    {
+      "from": "WS-49",
+      "to": "WS-31",
+      "required_output": "fresh-install flow to validate"
+    },
+    {
+      "from": "WS-49",
+      "to": "WS-32",
+      "required_output": "upgrade flow to validate"
+    },
+    {
+      "from": "WS-49",
+      "to": "WS-33",
+      "required_output": "checksum/rollback mechanics to validate"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-31",
+      "required_output": "installed product (fresh-install bootstrap)"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-36",
+      "required_output": "spec-protocol activation journey"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-37",
+      "required_output": "Kaizen activation journey"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-38",
+      "required_output": "ELI5 activation journey"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-39",
+      "required_output": "Bro activation journey"
+    },
+    {
+      "from": "WS-50",
+      "to": "WS-42",
+      "required_output": "same-session proof across the journey"
+    }
+  ],
+  "zero_dependency_set": [
+    "WS-01",
+    "WS-02",
+    "WS-06",
+    "WS-16",
+    "WS-17",
+    "WS-19",
+    "WS-48"
+  ],
+  "slices": [
+    {
+      "id": "WR-008",
+      "wave": "W1",
+      "levels": [
+        0
+      ],
+      "units": [
+        "WS-01",
+        "WS-02",
+        "WS-06"
+      ],
+      "domains": [
+        "protocol schemas",
+        "plugin manifest/hooks",
+        "Tauri shell"
+      ],
+      "ownership": "disjoint: packages/candice-protocol vs plugins/candice-integration vs apps/candice-companion",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-009",
+      "wave": "W1",
+      "levels": [
+        0
+      ],
+      "units": [
+        "WS-16",
+        "WS-17",
+        "WS-19"
+      ],
+      "domains": [
+        "whisper.cpp",
+        "mic capture/PTT",
+        "Kokoro voice"
+      ],
+      "ownership": "disjoint: speech engine integration files; single speech-runtime domain",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-010",
+      "wave": "W1",
+      "levels": [
+        1
+      ],
+      "units": [
+        "WS-03",
+        "WS-08",
+        "WS-11",
+        "WS-40"
+      ],
+      "domains": [
+        "session bridge",
+        "state machine",
+        "asset manifest",
+        "local profile"
+      ],
+      "ownership": "disjoint: bridge in plugins layer vs app state/assets vs profile store",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-011",
+      "wave": "W1",
+      "levels": [
+        1
+      ],
+      "units": [
+        "WS-07",
+        "WS-24",
+        "WS-28",
+        "WS-30"
+      ],
+      "domains": [
+        "transparent window",
+        "macOS perf instrumentation",
+        "Windows mic path",
+        "Windows perf instrumentation"
+      ],
+      "ownership": "disjoint: app window behavior vs mac/win adapters + instrumentation",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-012",
+      "wave": "W1",
+      "levels": [
+        0
+      ],
+      "units": [
+        "WS-48"
+      ],
+      "domains": [
+        "boss-cron portability repair"
+      ],
+      "ownership": "disjoint: tools/boss-cron + spec-protocol runtime scripts only; single-unit to avoid SKILL.md collision with WS-36",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-024",
+      "wave": "W1",
+      "levels": [
+        1
+      ],
+      "units": [
+        "WS-23",
+        "WS-29"
+      ],
+      "domains": [
+        "macOS packaging/signing/notarization",
+        "Windows packaging/SmartScreen"
+      ],
+      "ownership": "disjoint: mac vs win packaging scripts + CI artifact paths",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-013",
+      "wave": "W2",
+      "levels": [
+        2,
+        3
+      ],
+      "units": [
+        "WS-04",
+        "WS-05",
+        "WS-34",
+        "WS-41"
+      ],
+      "domains": [
+        "ask_user MCP",
+        "terminal fallback",
+        "schema migrations",
+        "contract tests"
+      ],
+      "ownership": "disjoint: MCP server + .mcp.json vs fallback adapter vs preferences migration vs tests; WS-41 in-slice dep on WS-04/WS-05",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-014",
+      "wave": "W2",
+      "levels": [
+        2
+      ],
+      "units": [
+        "WS-09",
+        "WS-10",
+        "WS-15"
+      ],
+      "domains": [
+        "floating PTT UI",
+        "compact companion",
+        "visual test harness"
+      ],
+      "ownership": "disjoint: app src UI components vs test harness",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-015",
+      "wave": "W2",
+      "levels": [
+        2,
+        3
+      ],
+      "units": [
+        "WS-12",
+        "WS-13",
+        "WS-14"
+      ],
+      "domains": [
+        "viseme animation",
+        "gesture/blink animation",
+        "a11y/captions"
+      ],
+      "ownership": "disjoint: animation modules vs a11y/captions module; WS-14 in-slice dep on WS-12/WS-13",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-016",
+      "wave": "W2",
+      "levels": [
+        2,
+        3
+      ],
+      "units": [
+        "WS-18",
+        "WS-20"
+      ],
+      "domains": [
+        "transcription confirm/edit/retry",
+        "speech interruption/duplex/cleanup"
+      ],
+      "ownership": "disjoint: transcript UX vs audio duplex/cleanup",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-017",
+      "wave": "W2",
+      "levels": [
+        2,
+        3
+      ],
+      "units": [
+        "WS-21",
+        "WS-22",
+        "WS-25",
+        "WS-26",
+        "WS-27"
+      ],
+      "domains": [
+        "macOS window binding",
+        "macOS perms/floating",
+        "macOS terminal compat",
+        "Windows Win32 binding",
+        "Windows native-tool parity"
+      ],
+      "ownership": "disjoint: mac binding chain (21->22->25) vs win binding chain (26->27); in-slice deps",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-018",
+      "wave": "W2",
+      "levels": [
+        2,
+        3
+      ],
+      "units": [
+        "WS-33",
+        "WS-35"
+      ],
+      "domains": [
+        "component manifest/checksums",
+        "crash/recovery/rollback"
+      ],
+      "ownership": "disjoint: CONTROL/bundled-components.json + updater mechanics vs recovery module",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-019",
+      "wave": "W2",
+      "levels": [
+        3
+      ],
+      "units": [
+        "WS-36",
+        "WS-44",
+        "WS-45"
+      ],
+      "domains": [
+        "Spec Protocol integration",
+        "privacy/security audit",
+        "performance suite"
+      ],
+      "ownership": "disjoint: SKILL.md + references vs audit vs tests; WS-36 single-writer on consolidated SKILL.md per 0C shared-file list",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-020",
+      "wave": "W2/W3",
+      "levels": [
+        3,
+        4,
+        5
+      ],
+      "units": [
+        "WS-31",
+        "WS-32",
+        "WS-47"
+      ],
+      "domains": [
+        "fresh-install bootstrap",
+        "existing-user upgrade",
+        "upgrade fixtures"
+      ],
+      "ownership": "disjoint: orchestrators/AGENT_INSTALL.md vs upgrade flow vs fixtures; WS-32 in-slice dep on WS-31; WS-47 in-slice dep on WS-32",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-021",
+      "wave": "W3/W4",
+      "levels": [
+        4,
+        5,
+        6
+      ],
+      "units": [
+        "WS-37",
+        "WS-38",
+        "WS-39",
+        "WS-42"
+      ],
+      "domains": [
+        "Kaizen integration",
+        "ELI5 integration",
+        "Bro integration",
+        "same-session tests"
+      ],
+      "ownership": "disjoint: per-skill SKILL.md sections + references vs session test suite; WS-38 in-slice dep on WS-37; WS-39 in-slice dep on WS-37/WS-38",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-022",
+      "wave": "W3",
+      "levels": [
+        4,
+        5
+      ],
+      "units": [
+        "WS-43",
+        "WS-46",
+        "WS-49"
+      ],
+      "domains": [
+        "failure/chaos tests",
+        "CI/release matrix",
+        "installer regression"
+      ],
+      "ownership": "disjoint: tests vs .github workflows vs validation fixtures",
+      "status": "PROPOSED"
+    },
+    {
+      "id": "WR-023",
+      "wave": "W5",
+      "levels": [
+        7
+      ],
+      "units": [
+        "WS-50"
+      ],
+      "domains": [
+        "E2E acceptance harness"
+      ],
+      "ownership": "single unit; runs last as the release-verification gate",
+      "status": "PROPOSED"
+    }
+  ],
+  "wave_map": {
+    "forecast_source": "SPEC/MASTER-SPEC-2026-08-21.md Section 0F — planning aid, never a barrier; native dependency graph governs release",
+    "W1": {
+      "name": "Independent foundations/components",
+      "forecast_width": "300-500",
+      "levels": [
+        0,
+        1
+      ],
+      "workstreams": [
+        "WS-01",
+        "WS-02",
+        "WS-03",
+        "WS-06",
+        "WS-07",
+        "WS-08",
+        "WS-11",
+        "WS-16",
+        "WS-17",
+        "WS-19",
+        "WS-23",
+        "WS-24",
+        "WS-28",
+        "WS-29",
+        "WS-30",
+        "WS-40",
+        "WS-48"
+      ],
+      "slices": [
+        "WR-008",
+        "WR-009",
+        "WR-010",
+        "WR-011",
+        "WR-012",
+        "WR-024"
+      ]
+    },
+    "W2": {
+      "name": "Cross-component integration + rolling QC/fix",
+      "forecast_width": "250-400",
+      "levels": [
+        2,
+        3
+      ],
+      "workstreams": [
+        "WS-04",
+        "WS-05",
+        "WS-09",
+        "WS-10",
+        "WS-12",
+        "WS-13",
+        "WS-14",
+        "WS-15",
+        "WS-18",
+        "WS-20",
+        "WS-21",
+        "WS-22",
+        "WS-25",
+        "WS-26",
+        "WS-27",
+        "WS-31",
+        "WS-33",
+        "WS-34",
+        "WS-35",
+        "WS-36",
+        "WS-41",
+        "WS-44",
+        "WS-45"
+      ],
+      "slices": [
+        "WR-013",
+        "WR-014",
+        "WR-015",
+        "WR-016",
+        "WR-017",
+        "WR-018",
+        "WR-019",
+        "WR-020"
+      ]
+    },
+    "W3": {
+      "name": "End-to-end user journeys + system repair",
+      "forecast_width": "150-300",
+      "levels": [
+        4,
+        5
+      ],
+      "workstreams": [
+        "WS-32",
+        "WS-37",
+        "WS-38",
+        "WS-42",
+        "WS-43",
+        "WS-46",
+        "WS-47",
+        "WS-49"
+      ],
+      "slices": [
+        "WR-020",
+        "WR-021",
+        "WR-022"
+      ]
+    },
+    "W4": {
+      "name": "Cross-platform/update/failure/privacy hardening",
+      "forecast_width": "75-200",
+      "levels": [
+        6
+      ],
+      "workstreams": [
+        "WS-39"
+      ],
+      "slices": [
+        "WR-021"
+      ]
+    },
+    "W5": {
+      "name": "Final fan-in/release verification",
+      "forecast_width": "10-50",
+      "levels": [
+        7
+      ],
+      "workstreams": [
+        "WS-50"
+      ],
+      "slices": [
+        "WR-023"
+      ]
+    },
+    "note": "Wave = dependency level per 0F (wave = dependency level; epoch = session budget boundary). WS-27 (Windows native deterministic-tool parity, P0 release gate per spec 0.3) sits at W2 by depth; wave label never gates release. W4/W5 carry one workstream each by depth (Bro integration last of the skill set; E2E acceptance gates release)."
+  },
+  "run_records": [
+    {
+      "id": "WR-001",
+      "name": "bootstrap-audit",
+      "handle": "wf_bb855713-af9",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "WR-002",
+      "name": "apparatus-baseline",
+      "handle": "wf_9529b3f1-4bb",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "WR-003",
+      "name": "planning",
+      "handle": "wf_40977ba0-353",
+      "status": "STOPPED-RESTARTED",
+      "note": "restarted as WR-007 (wf_66e51e17-7cc); 3 units OK (launch-board, acceptance-criteria-checklist, ownership-map)"
+    },
+    {
+      "id": "WR-004",
+      "name": "capacity",
+      "handle": "wf_b9f59642-d5c",
+      "status": "COMPLETED",
+      "note": "route canaries PASS both seats, max-thinking proven, safe width 50, runs 5, epoch budget 700 of session 1,000 (CAPACITY-LEDGER 2026-08-21)"
+    },
+    {
+      "id": "WR-005",
+      "name": "setup-ci-fix",
+      "handle": "wf_9cdd60f8-358",
+      "status": "COMPLETED",
+      "note": "2 OK + 1 WARN (windows parity scaffold); checkpoint aa23ed9"
+    },
+    {
+      "id": "WR-006",
+      "name": "baseline",
+      "handle": "wf_63e7cd35-51c",
+      "status": "COMPLETED",
+      "note": "baseline clean 5/5 suites PASS; verify-windows.ps1 Windows-only, recorded not runnable"
+    },
+    {
+      "id": "WR-007",
+      "name": "planning",
+      "handle": "wf_66e51e17-7cc",
+      "status": "COMPLETED",
+      "note": "planning restart (WR-003 replacement), 5 builders + 5 QC all 10 resulted; 5 blind QC FAILs since re-checked per EXECUTION-PLAN sections 7-9; COMPLETED per truth-update 2026-08-21"
+    },
+    {
+      "id": "WR-008",
+      "name": "watchdog-census-fix",
+      "handle": "wf_046b1be8-ea3",
+      "status": "COMPLETED",
+      "note": "fixture + runner PASS: live=6, old census reproduced 616 > cap 500 regression gate"
+    },
+    {
+      "id": "wf_7cb74348-fec",
+      "name": "compliance-audit",
+      "handle": "wf_7cb74348-fec",
+      "status": "COMPLETED",
+      "note": "produced the FAIL findings the QC-FIX ROUND 1 reconciliation resolved"
+    },
+    {
+      "id": "wf_d99de8ad-90b",
+      "name": "compliance-audit",
+      "handle": "wf_d99de8ad-90b",
+      "status": "COMPLETED",
+      "note": "5/5 audit verdicts recorded; corrections appended to SESSION-LOG (0J append-only)"
+    },
+    {
+      "id": "wf_61fe0666-d88",
+      "name": "audit-repair",
+      "handle": "wf_61fe0666-d88",
+      "status": "COMPLETED",
+      "note": "scripts patched per compliance audit findings (parallel() barrier justification, board normalization, control-carrier fixes)"
+    },
+    {
+      "id": "wf_7920d06d-4c9",
+      "name": "compliance-audit",
+      "handle": "wf_7920d06d-4c9",
+      "status": "COMPLETED",
+      "note": "two-truth consolidation per 0J single-machine-truth; verdict record appended"
+    },
+    {
+      "id": "wf_edc5ea4c-947",
+      "name": "watchdog",
+      "handle": "wf_edc5ea4c-947",
+      "status": "STOPPED",
+      "note": "deliberately killed by the conductor"
+    },
+    {
+      "id": "wf_1b5a3a00-e4b",
+      "name": "compliance-audit",
+      "handle": "wf_1b5a3a00-e4b",
+      "status": "COMPLETED",
+      "note": "compliance audit (5 opus)"
+    },
+    {
+      "id": "wf_587604e9-de8",
+      "name": "spec-discovery",
+      "handle": "wf_587604e9-de8",
+      "status": "COMPLETED",
+      "note": "spec discovery — V8 NOT_FOUND verdict"
+    },
+    {
+      "id": "wf_802e202c-116",
+      "name": "repair-two-truth",
+      "handle": "wf_802e202c-116",
+      "status": "COMPLETED",
+      "note": "repair + two-truth consolidation"
+    },
+    {
+      "id": "wf_ecc575ed-cf9",
+      "name": "watchdog-v8-truth-gate",
+      "handle": "wf_ecc575ed-cf9",
+      "status": "COMPLETED",
+      "note": "watchdog-v8 + truth-gate reconciliation"
+    },
+    {
+      "id": "wf_13ee1ba1-624",
+      "name": "truth-gate-qc-fix",
+      "handle": "wf_13ee1ba1-624",
+      "status": "COMPLETED",
+      "note": "truth-gate QC-FIX ROUND 1 + fresh recheck"
+    },
+    {
+      "id": "wf_da0ccfb6-3c0",
+      "name": "truth-gate-audit",
+      "handle": "wf_da0ccfb6-3c0",
+      "status": "COMPLETED",
+      "note": "truth-gate 4-seat audit"
+    },
+    {
+      "id": "wf_8222a8fa-215",
+      "name": "compliance-audit",
+      "handle": "wf_8222a8fa-215",
+      "status": "COMPLETED",
+      "note": "compliance audit (5 opus)"
+    },
+    {
+      "id": "wf_9f089d63-c0e",
+      "name": "state-reconcile",
+      "handle": "wf_9f089d63-c0e",
+      "status": "COMPLETED",
+      "note": "project_state regen, session-log corrections, board handle corrections"
+    },
+    {
+      "id": "wf_bef69fc1-fd8",
+      "name": "planning-rolling-recheck",
+      "handle": "wf_bef69fc1-fd8",
+      "status": "COMPLETED",
+      "note": "5 opus builders + 5 sonnet QC re-validating WR-007 planning deliverables; child of wf_66e51e17-7cc; terminal record status=completed ts 2026-08-21T16:22:38.380Z, journal 10/10 resulted"
+    },
+    {
+      "id": "wf_d6dd0a72-000",
+      "name": "truth-enumeration",
+      "handle": "wf_d6dd0a72-000",
+      "status": "COMPLETED",
+      "note": "truth-enumeration/truth-update lane (2 opus, both resulted); terminal record status=completed ts 2026-08-21T15:43:49.151Z"
+    },
+    {
+      "id": "wf_4b6321b2-3fc",
+      "name": "planning-rolling-recheck-fresh",
+      "handle": "wf_4b6321b2-3fc",
+      "status": "COMPLETED",
+      "note": "fresh independent sonnet recheck of the 5 repaired planning artifacts (6 sonnet started, 5/5 resulted); terminal record status=completed ts 2026-08-21T17:02:54.880Z; verdicts: ownership-map PASS, task-graph/acceptance-criteria/dependency-dag/launch-board FAIL -> fixer wave wf_c3365a01-526 dispatched"
+    },
+    {
+      "id": "wf_c3365a01-526",
+      "name": "planning-fresh-fixers",
+      "handle": "wf_c3365a01-526",
+      "status": "ACTIVE",
+      "note": "live fixer wave (4 sonnet/max started 17:03:15Z: task-graph, dependency-dag, acceptance-criteria, launch-board); no terminal record yet"
+    }
+  ],
+  "reconciliation_inputs": {
+    "master_spec": "SPEC/MASTER-SPEC-2026-08-21.md (canonical, 0E/0F/0J)",
+    "project_manifest": "SPEC/PROJECT-MANIFEST.md",
+    "todo": "CONTROL/TODO.md — all 50 WS listed PENDING; this graph is the zero-dependency/runnable computation 0E requires before dispatch",
+    "launch_board": "CONTROL/EXECUTION-PLAN.md — board carries WR-001..WR-008 + audit rows (23 intended handles have rows per truth-update reconciliation 2026-08-21); W1 launch IDs = snapshot slices[] IDs per section 6.2/6.4 binding resolution (W1-A = WR-008, W1-B = WR-009, W1-C = WR-012); QC-FIX ROUND 1 plan-row numbers WR-030/WR-031/WR-032 RETIRED (manifest 9.2 + LEDGER reservation collision); next-free launch IDs WR-033+; section 6 DAG reconciled to this snapshot node-by-node (fresh-QC-reconcile 2026-08-21)",
+    "project_state": "CONTROL/project_state.json — candice namespace: intended/created/visible 23 handles, active 2 (wf_bef69fc1-fd8, wf_d6dd0a72-000), completed 20, max_agents_per_workflow 10, safe_width 50, integration base 6bb00ec70af69510fab5a9c2ef332751e260d036; carries 999-master-fix residue per LEDGER.md restart step 3. NOTE (fresh-fixer truth diff 2026-08-21T17:14Z): live run-store now holds 25 dirs incl. wf_4b6321b2-3fc (fresh recheck, terminal record COMPLETED 17:02:54.880Z) and wf_c3365a01-526 (live fixer wave, ACTIVE, 4 sonnet) — project_state candice lists need the same two-row refresh at the next reconciliation; the 24-terminal-record count is 22 completed + 2 killed (wf_40977ba0-353, wf_edc5ea4c-947)"
+  },
+  "dispatch_rules": {
+    "pipeline_default": "per references/workflows.md — pipeline() default, parallel() only with // BARRIER-JUSTIFIED",
+    "slice_launch": "launch only when capacity ledger + 0H gates pass; zero-dependency set computed above is the W1 dispatch basis",
+    "partial_runs_allowed": "fewer units than 5 when domain cannot split into real units (0E — no padded seats)"
+  },
+  "ownership_check": {
+    "check": "no owned path is owned by two units in different slices",
+    "result": "PASS",
+    "checked_at": "2026-08-21",
+    "checked_by": "blind plan-QC (spec step 3) + rolling-pipeline recheck 2026-08-21 (B-task-graph)",
+    "rechecked_at": "2026-08-21"
+  },
+  "revalidated_at": "2026-08-21T17:14Z",
+  "revalidated_by": "fresh-fixer-task-graph (sonnet/max) — FRESH FIXER WAVE wf_c3365a01-526 after fresh-recheck FAIL (wf_4b6321b2-3fc); backup task-graph-snapshot.bak-2026-08-21T17-14-32Z-pre-fresh-fixer.json",
+  "revalidation_result": "FAIL -> FIXED (fresh fixer, 2026-08-21T17:14Z, live-truth diff): (1) run_records wf_bef69fc1-fd8 + wf_d6dd0a72-000 flipped ACTIVE -> COMPLETED on terminal-record evidence (status=completed ts 16:22:38.380Z journal 10/10 resulted; ts 15:43:49.151Z journal 2/2 resulted — d6dd0a72-000 predated the prior 15:51Z stamp, so the prior edit was stale at stamp time). (2) run_records row added for wf_4b6321b2-3fc (fresh recheck, terminal record status=completed ts 17:02:54.880Z, 6 sonnet started 5/5 resulted: ownership-map PASS; task-graph/acceptance-criteria/dependency-dag/launch-board FAIL) and row added for live wf_c3365a01-526 (ACTIVE fixer wave, 4 sonnet started 17:03:15Z, no terminal record yet). run_records now 25 rows vs live store 25 dirs. (3) note_on_run_records + reconciliation_inputs refreshed to live truth: 25 run dirs; 24 terminal records = 22 completed + 2 killed (wf_40977ba0-353, wf_edc5ea4c-947); live run = wf_c3365a01-526; all others terminal. (4) budget wording harmonized: capacity WR-004 = epoch budget 700 of session 1,000 (EXECUTION-PLAN 6.2/6.3, CAPACITY-LEDGER 2026-08-21). Open item recorded: project_state.json candice namespace still needs the wf_4b6321b2-3fc + wf_c3365a01-526 row refresh (out of scope for this unit, noted in reconciliation_inputs.project_state). THIRD INDEPENDENT RECHECK REQUIRED (0.1 override 2: this editor may not final-certify)."
+}

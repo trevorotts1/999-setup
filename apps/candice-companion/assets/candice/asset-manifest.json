@@ -1,0 +1,358 @@
+{
+  "manifestVersion": 1,
+  "contract": "candice-final-art-v1",
+  "spec": "MASTER-SPEC-2026-08-21.md sections 11, 11A, 11B",
+  "generatedAt": "2026-08-21T21:41:15Z",
+  "assetCount": 17,
+  "sourceDirectory": "source/",
+  "assets": [
+    {
+      "id": "01-fullbody-idle",
+      "file": "01-fullbody-idle.png",
+      "role": "body/idle-standing",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 75.0
+      },
+      "sha256": "44c9e6705274ab730e12aa7358fe74c20cda59ccfd1a5944836d165c5e716268",
+      "bytes": 1769428,
+      "readOnly": true
+    },
+    {
+      "id": "02-small-companion",
+      "file": "02-small-companion.png",
+      "role": "body/compact-companion",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 70.9
+      },
+      "sha256": "3f3cd8d90d0c123bc526cc97622b5684dfbb292754d954bb876054146b36804c",
+      "bytes": 1652163,
+      "readOnly": true
+    },
+    {
+      "id": "03-mouth-neutral-closed",
+      "file": "03-mouth-neutral-closed.png",
+      "role": "face/mouth-neutral-closed",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 76.9
+      },
+      "sha256": "4ffff3dfa8bb0776ffda319dfc7debb4049bf5cb5cdc3bd7c4f4578252b4a60c",
+      "bytes": 1779264,
+      "readOnly": true
+    },
+    {
+      "id": "04-mouth-slight-open",
+      "file": "04-mouth-slight-open.png",
+      "role": "face/mouth-slight-open",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 74.9
+      },
+      "sha256": "2f69fd61046786bf2467f89743e769d060dab9104072eb54f3c6ed912b340d0b",
+      "bytes": 1791749,
+      "readOnly": true
+    },
+    {
+      "id": "05-mouth-medium-open",
+      "file": "05-mouth-medium-open.png",
+      "role": "face/mouth-medium-open",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 78.4
+      },
+      "sha256": "035e2c20495b03a1e6fd062795d2b026a00f3f268acc67be4315c4a9f4ecca91",
+      "bytes": 1762678,
+      "readOnly": true
+    },
+    {
+      "id": "06-mouth-wide-open",
+      "file": "06-mouth-wide-open.png",
+      "role": "face/mouth-wide-open",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 81.9
+      },
+      "sha256": "a2f0c5ef14553040cefb05e1e87cf7662be068068dae1beec9c5cd9a8e1b7cff",
+      "bytes": 1752913,
+      "readOnly": true
+    },
+    {
+      "id": "07-mouth-smile-closed",
+      "file": "07-mouth-smile-closed.png",
+      "role": "face/mouth-smile-closed",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 76.5
+      },
+      "sha256": "6c54f6ebf4a53071f8cc28e7a39fa8e6d4b5ef94eae66539defbfad99a18c802",
+      "bytes": 1742388,
+      "readOnly": true
+    },
+    {
+      "id": "08-mouth-smile-open",
+      "file": "08-mouth-smile-open.png",
+      "role": "face/mouth-smile-open",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 80.6
+      },
+      "sha256": "babee319a1b69b9cc9a1ad008952552f73d4ea9882a28fbc072e6b4e6b934dc6",
+      "bytes": 1824234,
+      "readOnly": true
+    },
+    {
+      "id": "09-eye-open",
+      "file": "09-eye-open.png",
+      "role": "face/eye-open",
+      "batch": "first-batch (9)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 78.7
+      },
+      "sha256": "b82a8afcbbd26fb7c4da494b064164db1f0c6ee89e84d5f1c2227188dd8441cf",
+      "bytes": 1849811,
+      "readOnly": true
+    },
+    {
+      "id": "10-eye-half-blink",
+      "file": "10-eye-half-blink.png",
+      "role": "face/eye-half-blink",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 169.9
+      },
+      "sha256": "775cc03814f3932fb8af7e4209335e350ab79051b47a14ac618e027589cd8711",
+      "bytes": 3226405,
+      "readOnly": true
+    },
+    {
+      "id": "11-eye-closed",
+      "file": "11-eye-closed.png",
+      "role": "face/eye-closed",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 73.5
+      },
+      "sha256": "cdf1e330e2c7a3ec2c29e3c8eafe0c3616f9e971b92d74b045f2fde87ce6aa6a",
+      "bytes": 1645315,
+      "readOnly": true
+    },
+    {
+      "id": "12-gesture-welcome",
+      "file": "12-gesture-welcome.png",
+      "role": "body/welcome-wave",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1520,
+      "height": 2688,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 80.7
+      },
+      "sha256": "140dfb2414e99e3a3356b0228677ba24d8a46b0a02c2593dc0d1769ef954df4e",
+      "bytes": 2845065,
+      "readOnly": true
+    },
+    {
+      "id": "13-gesture-presenting",
+      "file": "13-gesture-presenting.png",
+      "role": "body/presenting",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 76.0
+      },
+      "sha256": "6bc6de782ed7374218dc75c1af61aae14cb2aba194a2a79a25f236c0e49e5ca0",
+      "bytes": 1696807,
+      "readOnly": true
+    },
+    {
+      "id": "14-gesture-listening",
+      "file": "14-gesture-listening.png",
+      "role": "body/listening",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 75.6
+      },
+      "sha256": "d5a73f2d4d19fbdb4918479b48d60fa036f9d24fa9bf7c1cc41d2c1ba1d906d5",
+      "bytes": 1699172,
+      "readOnly": true
+    },
+    {
+      "id": "15-gesture-thinking",
+      "file": "15-gesture-thinking.png",
+      "role": "body/thinking",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1520,
+      "height": 2688,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 69.7
+      },
+      "sha256": "1958c4d93bc83b4f36db92b98809f4a8cdedc481aba42f79f38e2937e7b77838",
+      "bytes": 2600950,
+      "readOnly": true
+    },
+    {
+      "id": "16-gesture-affirmative",
+      "file": "16-gesture-affirmative.png",
+      "role": "body/approval",
+      "batch": "second-batch (7)",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 76.7
+      },
+      "sha256": "e3b89e2e7a102375902b07a245de294853b9cfb7a518469873234f99ea21fee7",
+      "bytes": 1689214,
+      "readOnly": true
+    },
+    {
+      "id": "17-processing-pose",
+      "file": "17-processing-pose.png",
+      "role": "body/focus-processing",
+      "batch": "operator-supplied optional 17th",
+      "format": "RGBA",
+      "width": 1152,
+      "height": 2048,
+      "alpha": {
+        "min": 0,
+        "max": 255,
+        "mean": 74.2
+      },
+      "sha256": "32ded78d45e7b4b6e85ca20dc44810aac76e33a47a4bbd416acb82c72f7ca513",
+      "bytes": 1685981,
+      "readOnly": true
+    }
+  ],
+  "stateMap": {
+    "default": {
+      "idle": "01-fullbody-idle.png",
+      "compact": "02-small-companion.png",
+      "thinking": "15-gesture-thinking.png",
+      "speaking": "05-mouth-medium-open.png",
+      "listening": "14-gesture-listening.png"
+    },
+    "eye": {
+      "open": "09-eye-open.png",
+      "half": "10-eye-half-blink.png",
+      "closed": "11-eye-closed.png"
+    },
+    "mouth": {
+      "neutral-closed": "03-mouth-neutral-closed.png",
+      "slight-open": "04-mouth-slight-open.png",
+      "medium-open": "05-mouth-medium-open.png",
+      "wide-open": "06-mouth-wide-open.png",
+      "smile-closed": "07-mouth-smile-closed.png",
+      "smile-open": "08-mouth-smile-open.png"
+    },
+    "gesture": {
+      "welcome": "12-gesture-welcome.png",
+      "presenting": "13-gesture-presenting.png",
+      "listening": "14-gesture-listening.png",
+      "thinking": "15-gesture-thinking.png",
+      "affirmative": "16-gesture-affirmative.png",
+      "processing": "17-processing-pose.png"
+    },
+    "body": {
+      "idle-standing": "01-fullbody-idle.png",
+      "welcome-wave": "12-gesture-welcome.png",
+      "presenting": "13-gesture-presenting.png",
+      "listening": "14-gesture-listening.png",
+      "thinking": "15-gesture-thinking.png",
+      "approval": "16-gesture-affirmative.png",
+      "focus-processing": "17-processing-pose.png",
+      "rest-eyes-closed": "11-eye-closed.png"
+    },
+    "face": {
+      "idle-neutral": "03-mouth-neutral-closed.png",
+      "smile": "07-mouth-smile-closed.png",
+      "speech-small": "04-mouth-slight-open.png",
+      "speech-medium": "05-mouth-medium-open.png",
+      "speech-wide": "06-mouth-wide-open.png"
+    }
+  },
+  "derivedAssets": [],
+  "notes": [
+    "16 supplied assets (9 first-batch + 7 second-batch) plus operator-supplied optional 17th processing pose; spec 11: 16 sufficient for V1, 17th optional unless operator supplies one - operator supplied it (KIE asset pack MASTER-BRIEF deliverable 17).",
+    "Source PNGs are READ-ONLY (spec 11A/11B): keep originals untouched, generate derived assets only under derived/ when WS-12/WS-13 require them.",
+    "All files verified RGBA with alpha extrema (0,255). Preserve source alpha; do not flatten onto black (11B).",
+    "10-eye-half-blink.png alpha mean 169.9 (mostly opaque frame) vs ~70-82 for siblings - flag for WS-15 light/dark transparency verification.",
+    "No dedicated wink, present-left, present-right, or present-two-hands assets in pack; those spec-11B roles share source 13-gesture-presenting (presenting angles) and 02-small-companion (close-up); crops/derivatives are WS-12/WS-13 work, not invented here.",
+    "No ChatGPT download filenames anywhere in production paths - assets normalized to stable numbered names at pack generation.",
+    "No baked terminal window, captions, buttons, or question text in character art (spec 11; verified visually via thumbnail grid).",
+    "Multi-pose character sheet: pack contains no sheet; individual states already normalized (11B sheet clause not applicable).",
+    "Light/dark edge test (spec 11 step 5) is owned by WS-15 visual harness; low-memory animation behavior (step 6) is WS-13; placeholder replacement (step 7) and removal from bundle (step 8) happen at final-art binding, which loads through this manifest."
+  ]
+}

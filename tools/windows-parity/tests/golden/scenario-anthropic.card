@@ -1,0 +1,68 @@
+# CAPACITY LEDGER — golden-fixture — 2026-08-21T00:00:00Z
+Launcher: claude-nine      Harness mode: claude-nine
+Config fingerprint: a1b2c3d4  (comparator only — launcher, resolved seat map, provider-key presence set; names and model ids, NEVER values)
+Cores: 12 (MEASURED) → clientCap = min(systemConcurrentMax, cores−2) = 10
+  clientCap provenance: systemConcurrentMax=10 (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [[ASSUMED no-source-given]]; cores [MEASURED test-fixture 2026-08-21T00:00:00Z]
+  per-workflow concurrency = clientCap = 10
+Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on `cx/` = ~372K real, NOT the profile's 900K)
+ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
+  orchestrator=lead seat
+  builder=opus
+  researcher=sonnet
+  visual-verifier=UNRESOLVED(resolve from live config)
+  technical-judge=UNRESOLVED(resolve from live config)
+  security-judge=UNRESOLVED(resolve from live config)
+  release-judge=UNRESOLVED(resolve from live config)
+Ceilings: Anthropic subscription (window-metered, opaque — the runtime rate-limit response is the meter) | operator cap 20/wave   [ASSUMED no-source-given]
+Reserve applied: 25% (no numeric provider ceiling to reserve against)   [ASSUMED no-source-given]
+Governing number: harness 50×10=500 | operator-cap 20 | provider n/a → GOVERNS: 20 (operator cap)
+AGENT TEAM: mode=team (probe + consent required before any spawn — feature-not-enabled is a SILENT NO-OP)
+  commanders=4 → persistent slots = lead+4 = 5 → 15 remain for workflow width
+  Commanders are NOT agent executions against the 52/150/200 gauntlet budget, but their
+  burn IS budgeted (full session rate, pessimistic shared bucket) and their liveness IS
+  part of the reconciler's state-delta fingerprint. Teammates do NOT survive /resume —
+  the resumed lead re-spawns them from disk (references/resume.md step 8.5).
+WAVE SIZE: 15 (workflow width) + 5 persistent = 20    WORKFLOW COUNT: 2    AGENTS PER WORKFLOW: ≤10 (= clientCap 10)
+BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, `references/gauntlet.md` §13):
+  batch size = clientCap (10); batches = ceil(slice count / clientCap); wave count unchanged.
+  Worked example: 16 builder slices at clientCap 10 → 2 batches (10 + 6). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+AGENT BUDGET DECLARATION (all eight §17 quantities):
+  1. number of workflows: 2
+  2. agents per workflow: ≤10
+  3. maximum concurrency: 20 (operator cap)
+  4. model role per workflow: from ROLE RESOLUTION above — by role and alias, resolved model cited
+  5. expected total agent executions: 52 for the initial gauntlet run (8+16+16+8+4), scaled to this task graph
+  6. selective-repair formula: N = failed workstreams, one repairer each, ≤12/wave
+  7. soft budget: 75–125 scaled to this project's task graph; at 150 analyze whether measurable progress is still occurring
+  8. hard safety cap: 200 executions → HARD STOP, preserve the best stable build, produce a blocker report (run_status=STOPPED_CAP)
+Session agent budget (AXIS 2 — the OPERATOR's policy, a LIFETIME COUNT, never a width
+  and never a platform fact): 1000 per session,
+  tracked as a DECREMENTING budget in project_state.json (agents.session_budget_remaining).
+  Every workflow's declared AGENT COUNT plus the repair formula must SUM against it BEFORE
+  dispatch. Commander sessions are separate processes — whether they draw from the same
+  1000 is UNDETERMINED; budget pessimistically as if they do until probed.
+Request budget per 5h window: not window-metered — governed by rate-limit responses; on 429/limit → park-and-resume (Loop 6), never retry-hammer
+Burn governor: subscription; watch for 429/limit responses; commanders counted at full session rate (pessimistic shared bucket)
+Throttle: gentle
+Fallback: builder/QC/merger/critic each fall back one tier — never onto the tier that produced the work being judged.
+SEAT lines: the conductor completes one SEAT line per seat in CAPACITY-LEDGER.md
+  (capacity.md section 4 template, procedure in section 11) — dispatched id, resolved
+  model, lane=<alias|direct|combo(members…)>, provider node, ceiling CLASS and figure,
+  which burn meter it feeds, headroom floor, independence proof. This script records
+  what it is handed; it never resolves a seat and never selects one.
+Provenance: every value-bearing line above carries a bracketed mark. Any line whose
+  mark reads ASSUMED with no source was handed to this script without its
+  `<KEY>_SOURCE` line and MUST be sized conservatively (capacity.md section 13.2).
+REVISIONS (append-only; the card above is never edited in place):
+  (none yet — a mid-run change appends: <ISO8601> | REVISION | field=<name> | old→new |
+   trigger=<measured|429-cluster|balance-check|tripwire|resume-remeasure> | source-mark=<new mark>)
+
+IMPORTANT CAPACITY RULE: "Provider capacity is NOT an instruction to maximize agent
+count. Do not spawn additional agents simply because DeepSeek or OpenRouter can
+support them. Every spawned agent must have: unique responsibility; evidence to
+inspect or work to perform; an explicit deliverable; an acceptance criterion. More
+agents are useful only when the work can actually be decomposed into independent
+valuable tasks. Quality per agent matters more than raw agent count."
+
+Waves narrower than the ceiling run at the width the dependency graph allows (Law 45)
+— the ceiling only ever lowers the dispatch, never widens a wave.

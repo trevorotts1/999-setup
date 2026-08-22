@@ -1,0 +1,5 @@
+# WS-23 — route this crate's build artifacts into the app's gitignored
+# target dir (apps/candice-companion/.gitignore ignores src-tauri/target/)
+# so the helper never leaves untracked build droppings of its own.
+[build]
+target-dir = "../../../src-tauri/target/macos-helper"

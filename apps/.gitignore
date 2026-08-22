@@ -1,0 +1,5 @@
+
+# Generated build mirror of the app-root config (build.rs copies it here)
+apps/candice-companion/src-tauri/tauri.conf.json
+
+apps/candice-companion/src-tauri/dist

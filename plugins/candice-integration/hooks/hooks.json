@@ -1,0 +1,68 @@
+{
+  "description": "Candice wake-up hooks. Fires on the four supported slash commands and on session start; launches or raises the Candice companion and binds it to the current Claude session and terminal window. Every handler is non-blocking, fails soft, and never stops the skill.",
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": "spec-protocol",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
+            "args": ["/spec-protocol"],
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "kaizen",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
+            "args": ["/kaizen"],
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "eli5",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
+            "args": ["/eli5"],
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "bro",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
+            "args": ["/bro"],
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
+            "args": ["session-start"],
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

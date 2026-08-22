@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/question-event.schema.json",
+  "title": "Candice Question Event",
+  "description": "A structured governed question from the active Claude Code session (Spec Protocol, Kaizen, ELI5, or Bro) to be displayed and/or spoken by the Candice Companion. The companion is a surface only: it never rewrites question order or rules, and never creates a second AI conversation. Contract root: Candice Master Spec section 14. Version: 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "skill",
+    "event",
+    "questionKey",
+    "text",
+    "answerKind",
+    "allowedInputModes",
+    "readAloud",
+    "sensitivity",
+    "counted",
+    "progress",
+    "helpText",
+    "canGoBack"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version of this event schema. Bumped by the integration/release owner only (manifest 9.4 class 2); consumers reject unknown versions."
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque Claude Code session identifier. Routing authority: answers must return to the same session that asked. Never derived from window position or host window."
+    },
+    "skill": {
+      "type": "string",
+      "enum": ["spec-protocol", "kaizen", "eli5", "bro"],
+      "description": "The supported BlackCEO skill that invoked Candice."
+    },
+    "event": {
+      "type": "string",
+      "const": "question",
+      "description": "Event discriminator for the shared envelope."
+    },
+    "questionKey": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_-]*$",
+      "description": "Stable machine-enumerable key, fixed for the life of the contract (see question-keys.json). Never re-asked: the same key is never sent again to the same session once answered."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display and spoken wording of the question."
+    },
+    "answerKind": {
+      "type": "string",
+      "enum": [
+        "free_text",
+        "single_choice",
+        "yes_no",
+        "confirm",
+        "mode_choice"
+      ],
+      "description": "How the answer is validated before it is returned to the owning session."
+    },
+    "allowedInputModes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["voice", "typed", "terminal"]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Which answer paths are permitted for this question. 'terminal' is Answer-in-Claude: the same question falls back to the terminal input surface without losing state and without double-counting."
+    },
+    "readAloud": {
+      "type": "boolean",
+      "description": "False for secret-bearing questions: the companion must never speak them aloud (captions still show regardless of voice state)."
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["normal", "secret", "personal"],
+      "description": "'secret' forbids read-aloud and any logging of the answer; 'personal' forbids read-aloud unless the user opts in."
+    },
+    "counted": {
+      "type": "boolean",
+      "description": "True when this question counts toward the governed question ceiling. Answer-in-Claude must not double-count: a fallback to terminal is the same counted question, never a second ask."
+    },
+    "progress": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["current", "ceiling", "shortcut"],
+          "properties": {
+            "current": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Question ordinal, spoken as 'Question N of no more than C'."
+            },
+            "ceiling": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Stated question ceiling C, fixed at interview start and never moved silently."
+            },
+            "shortcut": {
+              "type": ["integer", "null"],
+              "description": "Expected landing count T (usually fewer than C). Null when C and T are within two and the single-number form is spoken."
+            }
+          }
+        }
+      ],
+      "description": "Real interview progress only. Never invented percentages: percentages come from status events, not from the question event."
+    },
+    "helpText": {
+      "type": ["string", "null"],
+      "description": "Optional plain-language guidance for the question."
+    },
+    "options": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "Optional allowed choices for single_choice or mode_choice answer kinds."
+    },
+    "validation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "requiredText": {
+          "type": "string"
+        }
+      },
+      "description": "Optional answer validation hints enforced by the companion before return."
+    },
+    "canGoBack": {
+      "type": "boolean",
+      "description": "Whether the user may return to a previously answered governed question."
+    }
+  }
+}

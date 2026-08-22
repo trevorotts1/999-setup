@@ -1,0 +1,13 @@
+{
+  "name": "windows-parity",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Native Windows parity toolset for the Spec Protocol deterministic tools (WS-27). Zero dependencies; Node >= 18.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node tests/parity-tests.mjs"
+  }
+}
