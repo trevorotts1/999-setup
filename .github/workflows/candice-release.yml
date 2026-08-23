@@ -1,0 +1,233 @@
+# candice-release.yml — Q-10 protected signed-release workflow.
+#
+# This is the ONLY path that produces updater-ready Candice artifacts. The
+# CI matrix in candice-ci.yml builds unsigned SMOKE artifacts only
+# (createUpdaterArtifacts: false, enforced by the Q-10 smoke posture gate
+# before every Tauri build there). Signing never happens on a push/PR run:
+# this workflow fires exclusively on refs/tags/candice-v*, requires the
+# GitHub environment `candice-release` (branch/tag protection must restrict
+# that environment to the release owner), and pulls the signing identity
+# from the repository secrets mechanism:
+#
+#   TAURI_SIGNING_PRIVATE_KEY            base64 minisign secret key
+#                                        (`tauri signer generate`)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   optional key password (if set at
+#                                        generation time)
+#   CANDICE_UPDATER_PUBKEY               the matching public key — this job
+#                                        HARD-VALIDATES it against the
+#                                        committed apps/candice-companion/
+#                                        tauri.conf.json plugins.updater.pubkey
+#                                        (the secret and the shipped trust
+#                                        anchor must be the same key pair)
+#
+# Release order (fail-closed; any step failure aborts publication):
+#   1. release-authority: scripts/candice-release/status.mjs --root on the
+#      exact tagged checkout (CONTROL/RELEASE-PROTECTION.md). Nonzero = stop.
+#   2. release posture gate: apply-release-config.mjs overlays release
+#      secrets onto a GITIGNORED copy of tauri.conf.json (never the tracked
+#      file) with createUpdaterArtifacts re-enabled, then
+#      updater-sign.mjs --posture release proves the overlay config is an
+#      honest RELEASE posture before anything is built.
+#   3. signed build: npm run tauri:build -- --config <overlay> with
+#      TAURI_SIGNING_PRIVATE_KEY in env (tauri-bundler fails hard when the
+#      key is absent).
+#   4. hard match gate: updater-sign.mjs signs each updater artifact AND
+#      verifies every signature against the configured pubkey via the
+#      updater-sign-helper binary (tauri-bundler only warns on mismatch;
+#      this step refuses).
+#   5. manifest + authority recheck: build-updater-manifest.mjs emits
+#      latest.json inside the enforced candice-v* tag namespace (signature
+#      required per platform) and status.mjs runs once more over the final
+#      artifact records before upload.
+#
+# Secrets are consumed via env indirection only. No secret value is ever
+# echoed, logged, or written to the tracked tree.
+
+name: candice-release
+
+on:
+  push:
+    tags:
+      - 'candice-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: candice-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-authority:
+    name: Release authority (status.mjs on the tagged commit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Refuse unverified release candidate
+        run: node scripts/candice-release/status.mjs --root $GITHUB_WORKSPACE
+
+  signed-release:
+    name: Signed release build (macOS Apple Silicon)
+    needs: [release-authority]
+    environment: candice-release
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.97.1
+
+      - name: Verify arm64 host
+        run: |
+          [ "$(uname -m)" = "arm64" ] || { echo "FAIL: expected arm64 runner"; exit 1; }
+          echo "host $(uname -s) $(uname -m)"
+
+      - name: App frontend build (npm ci, committed lockfile)
+        run: |
+          cd apps/candice-companion
+          npm ci
+          npm run build
+
+      # Q-10 secret validation: the CANDICE_UPDATER_PUBKEY secret must be
+      # byte-identical to plugins.updater.pubkey committed in the tracked
+      # tauri.conf.json. A secret that does not match the shipped trust
+      # anchor would sign releases no installed client accepts; refuse here,
+      # before any artifact exists. Values are compared by hash, never printed.
+      - name: Validate signing pubkey matches the committed trust anchor
+        env:
+          CANDICE_UPDATER_PUBKEY: ${{ secrets.CANDICE_UPDATER_PUBKEY }}
+        run: |
+          node - <<'EOF'
+          import { readFileSync, createHash } from "node:fs";
+          const conf = JSON.parse(readFileSync("apps/candice-companion/tauri.conf.json", "utf8"));
+          const committed = conf.plugins?.updater?.pubkey;
+          const secret = (process.env.CANDICE_UPDATER_PUBKEY || "").trim();
+          const hash = (v) => createHash("sha256").update(v).digest("hex").slice(0, 12);
+          if (!committed || !secret) {
+            console.error("release pubkey validation: CANDICE_UPDATER_PUBKEY secret or committed plugins.updater.pubkey is empty");
+            process.exit(1);
+          }
+          if (secret !== committed) {
+            console.error(`release pubkey validation: CANDICE_UPDATER_PUBKEY secret does not match the committed plugins.updater.pubkey (secret ${hash(secret)} vs committed ${hash(committed)}); refusing to build`);
+            process.exit(1);
+          }
+          console.log("release pubkey validation: OK (matches committed trust anchor)");
+          EOF
+
+      # Q-10 release posture: overlay release secrets onto a gitignored COPY
+      # of the config, then prove the overlay is honest RELEASE posture
+      # (createUpdaterArtifacts enabled, real non-placeholder pubkey) BEFORE
+      # building. The tracked tauri.conf.json stays the fail-closed smoke
+      # state; apply-release-config.mjs itself refuses to overwrite it.
+      - name: Release posture gate (overlay config, updater artifacts enabled)
+        env:
+          CANDICE_UPDATER_PUBKEY: ${{ secrets.CANDICE_UPDATER_PUBKEY }}
+        run: |
+          node scripts/candice-release/apply-release-config.mjs \
+            --input apps/candice-companion/tauri.conf.json \
+            --output "$RUNNER_TEMP/release-tauri.conf.json"
+          node scripts/candice-release/updater-sign.mjs \
+            --posture release \
+            --config "$RUNNER_TEMP/release-tauri.conf.json"
+
+      # Build the updater helper binary first: it is the hard match gate for
+      # every signature produced below.
+      - name: Build updater-sign-helper (hard signature match gate)
+        run: |
+          cd scripts/candice-release/release-config-guard
+          cargo build --locked
+          echo "UPDATER_SIGN_HELPER=$(pwd)/target/debug/updater-sign-helper" >> "$GITHUB_ENV"
+
+      - name: Tauri signed bundle build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cd apps/candice-companion
+          npm run tauri:build -- --config "$RUNNER_TEMP/release-tauri.conf.json"
+          test -d "src-tauri/target/release/bundle/macos/Candice Companion.app" || { echo "FAIL: bundle not found"; exit 1; }
+
+      # Q-10: sign each updater artifact and VERIFY every signature against
+      # the configured pubkey (via --verify-helper) before proceeding. This
+      # is the check tauri-bundler lacks — it merely warns when the signing
+      # key does not match the configured public key; this step refuses.
+      - name: Sign updater artifacts + verify signatures against the configured pubkey
+        working-directory: apps/candice-companion
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          BUNDLE="src-tauri/target/release/bundle/macos"
+          ARTIFACT="$BUNDLE/Candice Companion.app.tar.gz"
+          test -f "$ARTIFACT" || { echo "FAIL: updater artifact not found: $ARTIFACT"; exit 1; }
+          node ../../scripts/candice-release/updater-sign.mjs \
+            --signing-key-env TAURI_SIGNING_PRIVATE_KEY \
+            --key-password-env TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+            --pubkey-file "$RUNNER_TEMP/release-tauri.conf.json" \
+            --verify-helper "$UPDATER_SIGN_HELPER" \
+            --out-signatures-dir "$BUNDLE" \
+            --artifact "$ARTIFACT"
+
+      # Emit latest.json inside the enforced candice-v* tag namespace; the
+      # builder refuses a URL root outside its own release and refuses any
+      # platform entry without a real signature.
+      - name: Build updater manifest (latest.json)
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            candice-v*) ;;
+            *) echo "FAIL: ref $TAG is outside the candice-v* release namespace"; exit 1 ;;
+          esac
+          BUNDLE="apps/candice-companion/src-tauri/target/release/bundle/macos"
+          node scripts/candice-release/build-updater-manifest.mjs \
+            --version "${TAG#candice-v}" \
+            --artifact-url-root "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" \
+            --platform darwin-aarch64 \
+            --artifact "$BUNDLE/Candice Companion.app.tar.gz" \
+            --signature "$BUNDLE/Candice Companion.app.tar.gz.sig" \
+            --out "$RUNNER_TEMP/latest.json"
+          node -e 'const m=require(process.env.RUNNER_TEMP+"/latest.json");const p=m.platforms["darwin-aarch64"];if(!p||!p.signature||p.signature.length<64){console.error("latest.json signature missing");process.exit(1)}console.log("latest.json OK:",m.version,"darwin-aarch64 signature present")'
+
+      # Final fail-closed recheck on the exact tagged checkout after all
+      # artifacts exist. Nonzero exit aborts the release before upload.
+      - name: Release authority recheck (final)
+        run: node scripts/candice-release/status.mjs --root $GITHUB_WORKSPACE
+
+      - name: Current-commit evidence
+        run: git rev-parse HEAD > commit-sha.txt
+
+      - name: Record release evidence (no secrets)
+        run: |
+          {
+            echo "tag=$GITHUB_REF_NAME"
+            echo "commit=$(git rev-parse HEAD)"
+            shasum -a 256 "apps/candice-companion/src-tauri/target/release/bundle/macos/Candice Companion.app.tar.gz" | awk '{print "artifact_sha256="$1}'
+            echo "manifest=darwin-aarch64 (signature verified against committed pubkey)"
+          } > release-evidence.txt
+          cat release-evidence.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candice-signed-release
+          path: |
+            commit-sha.txt
+            release-evidence.txt
+            ${{ runner.temp }}/latest.json
+            apps/candice-companion/src-tauri/target/release/bundle/macos/Candice Companion.app.tar.gz
+            apps/candice-companion/src-tauri/target/release/bundle/macos/Candice Companion.app.tar.gz.sig
+          if-no-files-found: error
