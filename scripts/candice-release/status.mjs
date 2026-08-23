@@ -18,6 +18,12 @@ import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const RELEASE_GATE_SCHEMA = "candice/release-gate@1";
+// QFIX-adhoc: the macOS signing gate accepts BOTH names — the original
+// "macosSigningAndNotarization" and the honest post-adhoc alias
+// "macosSigningAdhoc". REQUIRED_GATES keeps the original name so existing
+// release-gate.json documents (JSON schema consumers) keep validating
+// unchanged; a gate author may instead record the alias.
+const MACOS_SIGNING_GATE_NAMES = Object.freeze(["macosSigningAndNotarization", "macosSigningAdhoc"]);
 const REQUIRED_GATES = Object.freeze([
   "independentQc",
   "packagedEndToEnd",
@@ -262,13 +268,49 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
   if (!gates || typeof gates !== "object" || Array.isArray(gates)) {
     errors.push("required gates are missing or malformed");
   } else {
+    // QFIX-adhoc: the macOS signing dimension may be recorded under its
+    // original name (macosSigningAndNotarization) or the honest ad-hoc alias
+    // (macosSigningAdhoc). Exactly one of the two must be present and PASS;
+    // both present is ambiguous and refused. All other gates are exact-match.
+    const macosSigningRecorded = MACOS_SIGNING_GATE_NAMES.filter((name) => {
+      // `in` would count an explicit undefined value as recorded; require a
+      // real own property with a value.
+      return Object.prototype.hasOwnProperty.call(gates, name) && gates[name] != null;
+    });
+    const otherGates = REQUIRED_GATES.filter((name) => !MACOS_SIGNING_GATE_NAMES.includes(name));
     const actual = Object.keys(gates).sort();
     const expected = [...REQUIRED_GATES].sort();
-    if (actual.join("|") !== expected.join("|")) {
-      errors.push("required gate names do not exactly match the fixed release schema");
+    let namesOk;
+    if (macosSigningRecorded.length === 0) {
+      namesOk = false;
+      errors.push("required gate macosSigningAndNotarization (or its macosSigningAdhoc alias) is MISSING — record exactly one macOS signing gate (QFIX-adhoc)");
+      // A gate document with neither macOS name almost certainly has a wrong
+      // key set overall; surface the schema-name refusal for that case too
+      // (e.g. a forged doc full of made-up gate names).
+      if (actual.join("|") !== expected.join("|")) {
+        errors.push("required gate names do not exactly match the fixed release schema");
+      }
+    } else if (macosSigningRecorded.length > 1) {
+      namesOk = false;
+      errors.push(`both macOS signing gate names present (${macosSigningRecorded.join(", ")}) — record exactly one (QFIX-adhoc)`);
+    } else {
+      // Exactly one macOS signing name: every key set is accepted only when
+      // it equals REQUIRED_GATES (alias swaps one name for the other, same
+      // count). Any extra/missing/made-up key still trips the schema check.
+      const aliasExpected = [...REQUIRED_GATES];
+      const recordedName = macosSigningRecorded[0];
+      const swapped = actual.length === expected.length
+        && actual.every((name) => (name === recordedName ? MACOS_SIGNING_GATE_NAMES.includes(name) : true))
+        && aliasExpected.filter((name) => !MACOS_SIGNING_GATE_NAMES.includes(name)).every((name) => actual.includes(name))
+        && actual.filter((name) => !MACOS_SIGNING_GATE_NAMES.includes(name)).every((name) => aliasExpected.includes(name));
+      namesOk = swapped;
+      if (!namesOk) errors.push("required gate names do not exactly match the fixed release schema");
     }
-    for (const name of REQUIRED_GATES) {
+    for (const name of otherGates) {
       if (gates[name] !== "PASS") errors.push(`required gate ${name} is ${gates[name] ?? "MISSING"}, not PASS`);
+    }
+    if (namesOk && macosSigningRecorded.length === 1 && gates[macosSigningRecorded[0]] !== "PASS") {
+      errors.push(`required gate ${macosSigningRecorded[0]} is ${gates[macosSigningRecorded[0]]}, not PASS`);
     }
   }
   for (const marker of markers) {

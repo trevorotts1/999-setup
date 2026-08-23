@@ -635,3 +635,107 @@ test("Q-10: a symlinked artifact is refused by the release authority", () => {
     result.errors.join("; "),
   );
 });
+
+// ---------------------------------------------------------------------------
+// QFIX-adhoc: the macOS signing dimension accepts the honest ad-hoc alias
+// "macosSigningAdhoc" as an alternative to "macosSigningAndNotarization".
+// Exactly one of the two names must be present and PASS; both present is
+// ambiguous and refused; neither present fails the schema-name check.
+// ---------------------------------------------------------------------------
+
+function aliasFixture({ macosGate }) {
+  const root = mkdtempSync(join(tmpdir(), "candice-release-alias-"));
+  mkdirSync(join(root, "CONTROL"));
+  writeFileSync(join(root, "CONTROL", "project_state.json"), JSON.stringify({ candice: { release_ready: true, repair_status: "RELEASE_CANDIDATE" } }));
+  const requiredGates = {
+    independentQc: "PASS", packagedEndToEnd: "PASS", privacy: "PASS", visualParity: "PASS",
+    cleanMachine: "PASS",
+    windowsSigningAndInteractiveSmoke: "PENDING", ciRequiredChecks: "PASS", supplyChain: "PASS",
+  };
+  if (macosGate !== null) Object.assign(requiredGates, macosGate);
+  const gate = {
+    schema: "candice/release-gate@1",
+    lifecycle: "RELEASE_CANDIDATE",
+    openFixIds: [],
+    requiredGates,
+    checklist: { requiredUnchecked: 0 },
+    candidate: { commit: "e".repeat(40), tag: "v1.0.0" },
+    artifacts: [],
+  };
+  if (requiredGates.windowsSigningAndInteractiveSmoke === "PASS") {
+    gate.ciRequiredChecks = {
+      commitSha: "e".repeat(40),
+      runIds: ["12345678901", "12345678902"],
+      requiredFailures: 0,
+      requiredSkips: 0,
+      continueOnErrorCount: 0,
+      reportArtifacts: [...FULL_ARTIFACTS],
+      windowsProduction: false,
+    };
+  }
+  writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify(gate));
+  return root;
+}
+
+test("macosSigningAdhoc alias satisfies the macOS signing gate", () => {
+  const result = evaluateRelease(aliasFixture({ macosGate: { macosSigningAdhoc: "PASS" } }));
+  assert.equal(result.ok, false); // authority pin still unconfigured — expected
+  assert.ok(
+    !result.errors.some((e) => e.includes("macosSigning")),
+    `alias must not produce a macOS signing error; got: ${result.errors.join("; ")}`,
+  );
+});
+
+test("original macosSigningAndNotarization name keeps working unchanged", () => {
+  const result = evaluateRelease(aliasFixture({ macosGate: { macosSigningAndNotarization: "PASS" } }));
+  assert.equal(result.ok, false);
+  assert.ok(!result.errors.some((e) => e.includes("macosSigning")), result.errors.join("; "));
+});
+
+test("both macOS signing gate names present is ambiguous and refused", () => {
+  const result = evaluateRelease(aliasFixture({ macosGate: { macosSigningAdhoc: "PASS", macosSigningAndNotarization: "PASS" } }));
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("record exactly one")),
+    `expected ambiguity refusal; got: ${result.errors.join("; ")}`,
+  );
+});
+
+test("neither macOS signing name present refuses release (schema-name check)", () => {
+  const result = evaluateRelease(aliasFixture({ macosGate: { macosSigningAdhoc: "PASS", macosSigningAndNotarization: undefined } }));
+  // Simulate "neither present" by deleting both keys post-construction.
+  const root = mkdtempSync(join(tmpdir(), "candice-release-alias-"));
+  mkdirSync(join(root, "CONTROL"));
+  writeFileSync(join(root, "CONTROL", "project_state.json"), JSON.stringify({ candice: { release_ready: true, repair_status: "RELEASE_CANDIDATE" } }));
+  const gate = {
+    schema: "candice/release-gate@1",
+    lifecycle: "RELEASE_CANDIDATE",
+    openFixIds: [],
+    requiredGates: {
+      independentQc: "PASS", packagedEndToEnd: "PASS", privacy: "PASS", visualParity: "PASS",
+      cleanMachine: "PASS",
+      windowsSigningAndInteractiveSmoke: "PENDING", ciRequiredChecks: "PASS", supplyChain: "PASS",
+    },
+    checklist: { requiredUnchecked: 0 },
+    candidate: null,
+    artifacts: [],
+  };
+  writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify(gate));
+  const result2 = evaluateRelease(root);
+  assert.equal(result2.ok, false);
+  const joined = result2.errors.join("; ");
+  assert.ok(
+    joined.includes("fixed release schema") || joined.includes("macosSigning"),
+    `expected missing-macos-gate refusal; got: ${joined}`,
+  );
+  void result;
+});
+
+test("macosSigningAdhoc recorded as non-PASS still blocks release", () => {
+  const result = evaluateRelease(aliasFixture({ macosGate: { macosSigningAdhoc: "PENDING" } }));
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("required gate macosSigningAdhoc is PENDING, not PASS")),
+    result.errors.join("; "),
+  );
+});

@@ -11,9 +11,13 @@
 #                 (or APPLE_DEVELOPER_IDENTITY), hardened runtime on,
 #                 entitlements applied. For notarization run
 #                 scripts/package-macos/notarize.sh afterwards.
-#   mode=adhoc    codesign --force --deep -s - (local smoke only; NOT a
-#                 distribution artifact — Gatekeeper will reject it).
-#   mode=unsigned no signing pass at all.
+#   mode=adhoc    RELEASE posture (QFIX-adhoc 2026-08-23, operator decision):
+#                 codesign --force --options runtime --entitlements <plist>
+#                 -s - (ad-hoc identity). Hardened runtime + entitlement
+#                 baseline applied. Gatekeeper cannot accept an ad-hoc
+#                 signature so spctl is NOT a gate; clients bypass it once at
+#                 first launch. codesign --verify is the fail-closed gate.
+#   mode=unsigned no signing pass at all (local test artifact only).
 #
 # Exit codes:
 #   0  bundle built (+ signed when a mode was applied) and spctl --assess
@@ -154,16 +158,41 @@ case "$MODE" in
     ;;
 
   adhoc)
-    # Local smoke only. Deliberately NOT Gatekeeper-accepted; never ship.
-    codesign --force --deep -s - "$APP" || {
+    # QFIX-adhoc 2026-08-23: ad-hoc is now the RELEASE posture (operator
+    # decision — no Developer ID cert, no notarization; clients bypass
+    # Gatekeeper once at first launch). Signed with hardened runtime and the
+    # entitlement baseline so the artifact keeps the same runtime posture a
+    # Developer ID build would have. spctl is deliberately NOT required here:
+    # Gatekeeper can never accept an ad-hoc signature. The gate that remains
+    # fail-closed is codesign --verify.
+    ADHOC_ARGS=(--force --options runtime)
+    [[ -f "$ENTITLEMENTS" ]] && ADHOC_ARGS+=(--entitlements "$ENTITLEMENTS")
+
+    # Binary first, nested helpers (deepest-first safety net), then the outer
+    # bundle — mirrors the prod pass so the layout stays identical.
+    codesign "${ADHOC_ARGS[@]}" -s - "$BIN" || {
+      echo "build-macos-bundle: ad-hoc codesign failed on $BIN" >&2
+      exit 1
+    }
+    find "$APP/Contents" -type f -perm -111 -not -path "*/MacOS/*" -print0 \
+      | while IFS= read -r -d '' f; do
+          codesign "${ADHOC_ARGS[@]}" -s - "$f" || {
+            echo "build-macos-bundle: ad-hoc codesign failed on nested executable $f" >&2
+            exit 1
+          }
+        done
+    codesign "${ADHOC_ARGS[@]}" -s - "$APP" || {
       echo "build-macos-bundle: ad-hoc codesign failed on $APP" >&2
       exit 1
     }
-    codesign --verify --deep --strict "$APP" || {
-      echo "build-macos-bundle: ad-hoc verify failed on $APP" >&2
+
+    # THE gate under adhoc posture: signature must verify. Tampered or broken
+    # artifacts still exit nonzero here.
+    codesign --verify --deep --strict --verbose=2 "$APP" || {
+      echo "build-macos-bundle: ad-hoc verify failed on $APP (tampered or broken signature)" >&2
       exit 1
     }
-    echo "ADHOC-SIGNED $APP (local smoke only — NOT Gatekeeper-accepted, NOT a distribution artifact)"
+    echo "ADHOC-SIGNED $APP (release posture: ad-hoc per operator decision 2026-08-23 — valid ad-hoc signature required, Gatekeeper bypassed once by clients at first launch)"
     ;;
 
   unsigned)
