@@ -10,10 +10,10 @@
  * Usage:
  *   node scripts/candice-release/status.mjs [--root <repository-root>]
  */
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, lstatSync } from "node:fs";
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, relative, isAbsolute, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -49,6 +49,65 @@ const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
 // of this file (whole-file SHA-256), so PEM armor and line endings are part
 // of the pin, not normalized away.
 const RELEASE_AUTHORITY_KEY_FILE = "CONTROL/release-authority.pub";
+
+// QFIX-q3-paths: the only directory a signed artifact's localPath may point
+// into. This root is code, not control-document configuration: a forged
+// release-gate.json cannot redirect the artifact lookup outside it. Artifact
+// bytes are large and never committed; the release lane stages them here on
+// the machine that runs the authority.
+const CANDIDATE_ARTIFACTS_ROOT = "release-artifacts";
+
+/**
+ * Resolves one artifact localPath to a verified, contained, real file path,
+ * or returns null. Rules, in order:
+ * - the record value must be a non-empty string and NOT absolute;
+ * - every component of the value (including the leaf) must lstat, and no
+ *   component may be a symbolic link — a symlink anywhere in the chain is
+ *   rejected even when it points back inside the root;
+ * - the designated root itself may not be a symlink (lstat, then realpath
+ *   for containment comparison; a symlinked root is rejected);
+ * - the realpath of the leaf must exist, be a regular file, and live inside
+ *   realpath(root)/release-artifacts — `..` escapes, absolute paths, and
+ *   hard links to outside files are all refused.
+ * A realpath that throws (dangling link, missing file) yields null, never a
+ * partially resolved path.
+ */
+function resolveArtifactLocalPath(root, artifact) {
+  const localPath = typeof artifact?.localPath === "string" ? artifact.localPath : null;
+  if (!localPath || localPath.length === 0) return null;
+  if (isAbsolute(localPath)) return null;
+  const joined = resolve(root, localPath);
+  const relativePath = relative(root, joined);
+  if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) return null;
+  const components = relativePath.split(sep).filter((part) => part.length > 0);
+  const baseComponents = CANDIDATE_ARTIFACTS_ROOT.split("/").filter((part) => part.length > 0);
+  if (components.length <= baseComponents.length) return null;
+  for (let i = 0; i < baseComponents.length; i += 1) {
+    if (components[i] !== baseComponents[i]) return null;
+  }
+  // Walk every component from repo root through the leaf; lstat so a
+  // symlink is seen as a link, never followed.
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    try {
+      const stat = lstatSync(current);
+      if (!stat.isFile() && !stat.isDirectory()) return null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const artifactRootReal = realpathSync(resolve(root, CANDIDATE_ARTIFACTS_ROOT));
+    const leafReal = realpathSync(current);
+    const rel = relative(artifactRootReal, leafReal);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+    if (!lstatSync(leafReal).isFile()) return null;
+    return leafReal;
+  } catch {
+    return null;
+  }
+}
 
 // Q-03 steps 2-3: canonical signed payload. The bytes the operator signs are
 // EXACTLY this string (UTF-8, one line per field, `key=value`, no separators
@@ -89,6 +148,19 @@ const SIGNED_PAYLOAD_FIELD_NAMES = Object.freeze([
  * Values are rendered as strings exactly as they appear in the gate
  * document (no trimming, no lowercasing, no re-encoding) so a modified
  * candidate, tag, name, URL, or hash changes the bytes and fails verify.
+ *
+ * Rendering rules, all enforced by construction:
+ * - Exactly the five fields of SIGNED_PAYLOAD_FIELD_NAMES appear, in that
+ *   order; no record carries extra fields into the payload and no gate
+ *   document can reorder or rename them.
+ * - Every field is emitted as `<name>=<value>` then one U+000A (LF). The
+ *   final field has NO trailing LF — payload ends with the sha256 value's
+ *   last hex character.
+ * - A value that is missing (undefined/null) renders as the literal string
+ *   "undefined"/"null" — never as an empty field — so an incomplete record
+ *   yields bytes no honest signer signed and verification fails.
+ * - Non-ASCII values are UTF-8 encoded verbatim (no NFC/NFD normalization);
+ *   leading/trailing whitespace inside a value is preserved verbatim.
  */
 export function canonicalSignedPayload(record) {
   return SIGNED_PAYLOAD_FIELD_NAMES.map((name) => `${name}=${record[name]}`).join("\n");
@@ -297,10 +369,10 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
     errors.push("no signed release artifacts recorded");
   } else {
     for (const artifact of gate.artifacts) {
-      const localPath = typeof artifact?.localPath === "string" ? resolve(root, artifact.localPath) : null;
+      const localPath = resolveArtifactLocalPath(root, artifact);
       if (
         !artifact?.name || !/^https:\/\//.test(artifact.url || "") || !isSha256(artifact.sha256)
-        || !artifact.signature || !localPath || !existsSync(localPath)
+        || !artifact.signature || !localPath
       ) {
         errors.push(`invalid artifact record: ${artifact?.name || "unnamed"}`);
       } else if (sha256File(localPath) !== artifact.sha256) {

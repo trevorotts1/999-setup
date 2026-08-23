@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -49,9 +49,10 @@ test("release authority rejects a forged editable release-gate document", () => 
     requiredGates: { madeUpGate: "PASS" },
     checklist: { requiredUnchecked: 0 },
     candidate: { commit: "b".repeat(40), tag: "v9.9.9" },
-    artifacts: [{ name: "forged", url: "https://example.test/fake", sha256: fakeSha, signature: "forged", localPath: "fake.bin" }],
+    artifacts: [{ name: "forged", url: "https://example.test/fake", sha256: fakeSha, signature: "forged", localPath: "release-artifacts/fake.bin" }],
   }));
-  writeFileSync(join(root, "fake.bin"), "forged");
+  mkdirSync(join(root, "release-artifacts"));
+  writeFileSync(join(root, "release-artifacts", "fake.bin"), "forged");
   const result = evaluateRelease(root);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes("release gate schema is anything-else")));
@@ -340,10 +341,11 @@ function signatureFixture({ commit = "d".repeat(40), tag = "v9.9.9", artifactOve
       reportArtifacts: ["commit-sha", "perf-report", "verifier-macos", "verifier-windows", "windows-shell-compat", "cargo-test-output", "determinism-evidence"],
       windowsProduction: false,
     },
-    artifacts: [{ name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha, signature: "", localPath: "candice-0.2.0.dmg", ...artifactOverrides }],
+    artifacts: [{ name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha, signature: "", localPath: "release-artifacts/candice-0.2.0.dmg", ...artifactOverrides }],
   };
   writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify(gate));
-  writeFileSync(join(root, "candice-0.2.0.dmg"), artifactContent);
+  mkdirSync(join(root, "release-artifacts"));
+  writeFileSync(join(root, "release-artifacts", "candice-0.2.0.dmg"), artifactContent);
   writeFileSync(join(root, "CONTROL", "release-authority.pub"), keyBytes);
   return { root, commit, tag, artifactSha, pin: makeCompiledPin(keyBytes) };
 }
@@ -432,4 +434,97 @@ test("signature from a different key pair is rejected", () => {
   const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
   assert.equal(result.ok, false);
   assert.ok(signatureErrors(result).some((e) => e.includes("verification failed")), result.errors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// QFIX-q3-paths: artifact localPath confinement. The designated
+// release-artifacts/ root is code, not configuration: no control-document
+// value may redirect artifact reads outside it, through it, or around it.
+// ---------------------------------------------------------------------------
+
+function pathAttackFixture({ localPath, setup } = {}) {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: localPath === undefined ? {} : { localPath } });
+  if (setup) setup(root);
+  return { root, keyBytes };
+}
+
+function assertInvalidArtifactRecord(result) {
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("invalid artifact record")), result.errors.join("; "));
+}
+
+test("localPath outside the designated candidate-artifacts root is rejected", () => {
+  const { root, keyBytes } = pathAttackFixture({ localPath: "candice-0.2.0.dmg" });
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("localPath escaping the designated root via .. is rejected", () => {
+  const { root, keyBytes } = pathAttackFixture({ localPath: "../outside.bin" });
+  writeFileSync(join(root, "..", "outside.bin"), "escape bytes");
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("absolute localPath is rejected even when it lands inside the root", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].localPath = join(root, "release-artifacts", "candice-0.2.0.dmg");
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked artifact file is rejected even when it points back inside the root", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/linked.dmg" } });
+  symlinkSync(join(root, "release-artifacts", "candice-0.2.0.dmg"), join(root, "release-artifacts", "linked.dmg"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked intermediate directory is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/linked-dir/out.dmg" } });
+  const outside = mkdtempSync(join(tmpdir(), "candice-outside-dir-"));
+  writeFileSync(join(outside, "out.dmg"), "outside bytes");
+  symlinkSync(outside, join(root, "release-artifacts", "linked-dir"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked candidate-artifacts root is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes });
+  const outside = mkdtempSync(join(tmpdir(), "candice-outside-root-"));
+  writeFileSync(join(outside, "candice-0.2.0.dmg"), "outside bytes");
+  rmSync(join(root, "release-artifacts"), { recursive: true, force: true });
+  symlinkSync(outside, join(root, "release-artifacts"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a non-regular file (directory) as the artifact leaf is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/subdir" } });
+  mkdirSync(join(root, "release-artifacts", "subdir"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a plain file inside the designated root resolves and verifies", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const keyBytes = Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+  const { root, commit, tag, artifactSha } = signatureFixture({ keyBytes });
+  const signature = signRecord(privateKey, { commit, tag, name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].signature = signature;
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.equal(result.errors.some((e) => e.includes("invalid artifact record")), false, result.errors.join("; "));
+  assert.deepEqual(signatureErrors(result), [], signatureErrors(result).join("; "));
 });
