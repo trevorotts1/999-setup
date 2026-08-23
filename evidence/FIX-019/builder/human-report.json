@@ -1,10 +1,10 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-22T18:48:19.000Z",
+  "generatedAt": "2026-08-23T12:06:02.959Z",
   "repo": "999-setup-audit",
   "commitSha": "human-run-record",
   "packagedBinarySha": null,
-  "runId": "human-1787424499000",
+  "runId": "human-1787486762959",
   "launcher": "node tests/e2e-acceptance/human/record-run.js",
   "verdict": "BLOCKED",
   "legs": [
@@ -48,37 +48,37 @@
       "id": "clarification-loop",
       "tier": "HUMAN_HARDWARE",
       "name": "human/hardware: clarification round trip returns to the pending governed question (spec 15)",
-      "verdict": "PASS",
+      "verdict": "BLOCKED",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
     },
     {
       "id": "ceiling-count",
       "tier": "HUMAN_HARDWARE",
       "name": "human/hardware: counted sequence respects the mode wall and R1-first order",
-      "verdict": "PASS",
+      "verdict": "BLOCKED",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
     },
     {
       "id": "input-mode-per-question",
       "tier": "HUMAN_HARDWARE",
       "name": "human/hardware: one input mode per question, recorded per answer",
-      "verdict": "PASS",
+      "verdict": "BLOCKED",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
     },
     {
       "id": "final-write-through",
       "tier": "HUMAN_HARDWARE",
       "name": "human/hardware: final write-through document exists and was verified",
-      "verdict": "PASS",
+      "verdict": "BLOCKED",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
     }
   ],
   "tiers": [
@@ -118,30 +118,30 @@
         {
           "id": "clarification-loop",
           "name": "human/hardware: clarification round trip returns to the pending governed question (spec 15)",
-          "verdict": "PASS",
+          "verdict": "BLOCKED",
           "required": true,
-          "reason": null
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
         },
         {
           "id": "ceiling-count",
           "name": "human/hardware: counted sequence respects the mode wall and R1-first order",
-          "verdict": "PASS",
+          "verdict": "BLOCKED",
           "required": true,
-          "reason": null
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
         },
         {
           "id": "input-mode-per-question",
           "name": "human/hardware: one input mode per question, recorded per answer",
-          "verdict": "PASS",
+          "verdict": "BLOCKED",
           "required": true,
-          "reason": null
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
         },
         {
           "id": "final-write-through",
           "name": "human/hardware: final write-through document exists and was verified",
-          "verdict": "PASS",
+          "verdict": "BLOCKED",
           "required": true,
-          "reason": null
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
         }
       ]
     }
@@ -150,7 +150,11 @@
     "BLOCKED HUMAN_HARDWARE - default-mode-claude",
     "BLOCKED HUMAN_HARDWARE - default-mode-claude-nine",
     "BLOCKED HUMAN_HARDWARE - advanced-mode-claude",
-    "BLOCKED HUMAN_HARDWARE - advanced-mode-claude-nine"
+    "BLOCKED HUMAN_HARDWARE - advanced-mode-claude-nine",
+    "BLOCKED HUMAN_HARDWARE - clarification-loop",
+    "BLOCKED HUMAN_HARDWARE - ceiling-count",
+    "BLOCKED HUMAN_HARDWARE - input-mode-per-question",
+    "BLOCKED HUMAN_HARDWARE - final-write-through"
   ],
   "notes": "Human runs supplied: 0 valid of 0 supplied. Required run legs: default-mode-claude, default-mode-claude-nine, advanced-mode-claude, advanced-mode-claude-nine. QC replays countedSequence against interview.md ceiling arithmetic."
 }
