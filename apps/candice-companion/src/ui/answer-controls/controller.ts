@@ -32,6 +32,11 @@ import type { CandiceEvent, CandiceStateMachine } from '../../state/machine.ts';
 import { answerControlsModel, type AnswerControlsModel } from './model.ts';
 import { createAnswerControlsView, type AnswerControlsView } from './view.ts';
 import { createPttView } from '../ptt/view.ts';
+import {
+  createCaptureConsentGate,
+  type CaptureConsent,
+  type CaptureConsentGate,
+} from './consent.ts';
 import type { AnswerMethod } from './config.ts';
 
 export interface AnswerControlsControllerOptions {
@@ -59,6 +64,17 @@ export interface AnswerControlsControllerOptions {
   /** Transport: the voice-toggle change (spec 5.2). The WS-40 profile
    * lane owns persistence; this lane only reports the change. */
   onVoiceToggleChange?: (voiceEnabled: boolean) => void;
+  /**
+   * FIX-015 FAIL-5 (plan 3D): capture consent gate. When absent, a press
+   * proceeds directly to the machine (legacy test wiring); the shell
+   * always supplies a real query, so capture is gated in production.
+   */
+  captureConsent?: {
+    /** Consult the native `speech_permissions` fact. Never throws. */
+    query: () => CaptureConsent | Promise<CaptureConsent>;
+    /** Called when a press was blocked (machine untouched; typing stays). */
+    onBlocked?: (consent: CaptureConsent, explanation: string) => void;
+  };
 }
 
 export interface AnswerControlsController {
@@ -121,17 +137,35 @@ export function createAnswerControlsController(
   });
 
   // Mount the PTT control into the answer surface (sibling WS-09 lane).
+  // FIX-015 FAIL-5: the press routes through the capture consent gate —
+  // the machine's `ptt:start` fires only on a cleared consent fact
+  // (granted, or not-determined so the OS prompt appears at the press).
+  // Blocked (denied / no-device / error / query failure) leaves the
+  // machine untouched: the typed-answer surface stays exactly as it was.
   let pttView: ReturnType<typeof createPttView> | null = null;
+  let consentGate: CaptureConsentGate | null = null;
+  const stopPtt = (): void => {
+    machine.transition({ type: 'ptt:stop' });
+    render();
+  };
   if (options.mount !== null && typeof document !== 'undefined') {
     const pttHost = document.createElement('div');
-    pttView = createPttView(pttHost, {
-      onTalkStart: () => {
+    consentGate = createCaptureConsentGate({
+      query: options.captureConsent?.query
+        ?? (() => 'error'), // no query wired: fail closed, never open mic
+      onAllowed: () => {
         machine.transition({ type: 'ptt:start' });
         render();
       },
+      onStopped: stopPtt,
+      onBlocked: options.captureConsent?.onBlocked,
+    });
+    pttView = createPttView(pttHost, {
+      onTalkStart: () => {
+        consentGate?.requestStart();
+      },
       onTalkStop: () => {
-        machine.transition({ type: 'ptt:stop' });
-        render();
+        consentGate?.release();
       },
     });
     if (pttView.el !== null) view.attachPtt(pttView.el);
@@ -166,6 +200,10 @@ export function createAnswerControlsController(
       if (prefs.voiceEnabled !== undefined) voiceEnabled = prefs.voiceEnabled;
       render();
     },
-    destroy: () => view.destroy(),
+    destroy: () => {
+      consentGate?.destroy();
+      consentGate = null;
+      view.destroy();
+    },
   };
 }

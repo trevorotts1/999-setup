@@ -38,6 +38,18 @@ export const CANONICAL_VOICE: VoiceSelection = {
   speed: 1.0,
 };
 
+/**
+ * FIX-015 FAIL-6: honest voicepack approval status. `af_heart` is the
+ * pre-approval default — it MAY be used as the canonical voice, but the
+ * shipped status must surface as pending, never claimed approved. The
+ * operator evidence record (sample metadata, reproducible voicepack
+ * hash) has not landed; when it does, flip this one constant to
+ * "approved" (plus the evidence path reference below) — nothing else.
+ */
+export const VOICE_APPROVAL_STATUS: "approved" | "approval-pending" = "approval-pending";
+
+export type VoiceApprovalStatus = typeof VOICE_APPROVAL_STATUS;
+
 export function isKnownVoice(voiceId: string): boolean {
   return voiceId in VOICE_CATALOG;
 }

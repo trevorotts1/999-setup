@@ -6,6 +6,7 @@
 
 import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
+import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -102,6 +103,28 @@ export async function initializeAuthenticatedBridge(
     controls = createAnswerControlsController({
       machine,
       mount: root,
+      // FIX-015 FAIL-5 (plan 3D): consult the native capture-lane fact on
+      // every HOLD TO TALK press. A denied/no-device/error report blocks
+      // the press and leaves the typed-answer surface exactly as it was;
+      // a failed query blocks too (fail closed, mic never opens on an
+      // unknown consent state).
+      captureConsent: {
+        query: async (): Promise<CaptureConsent> => {
+          try {
+            const permissions = await invoke<{ microphone?: unknown }>('cmd_speech_permissions');
+            if (!permissions || typeof permissions !== 'object') return 'error';
+            switch (permissions.microphone) {
+              case 'granted': return 'granted';
+              case 'not-determined': return 'not-determined';
+              case 'denied': return 'denied';
+              case 'no-device': return 'no-device';
+              default: return 'error';
+            }
+          } catch {
+            return 'error';
+          }
+        },
+      },
       submitAnswer: (text) => {
         if (!active || submitted || text.trim().length === 0) return;
         submitted = true;
