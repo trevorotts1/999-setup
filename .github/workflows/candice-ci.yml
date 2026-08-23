@@ -396,19 +396,72 @@ jobs:
       # Fresh-runner rerun of the release-blocking suites. Log lines must be
       # identical across shards (no shard index, no timestamps) so the
       # comparator sees the same legs in both runs.
+      #
+      # Q-01 repair (2026-08-23): a failing suite is never converted into a
+      # successful shell exit. `set -euo pipefail` is on for the whole step;
+      # each suite's exit status is captured into a structured result record
+      # and the step exits "$overall_rc" after the records are written. The
+      # log/records artifacts upload under `if: always()` so evidence is
+      # retained even when a suite fails. The old echo-fallback pattern that
+      # appended a FAIL line without propagating the exit code, followed by an
+      # unconditional "PASS determinism required suites complete" line, could
+      # label a consistently failing shard pair as IDENTICAL success; that is
+      # exactly what this step no longer does.
       - name: Run required suites (shard ${{ matrix.shard }})
         run: |
-          bash tests/macos/verify-macos.sh --ci-root "$RUNNER_TEMP/candice-verify-home" > determinism-run.log 2>&1 || echo "FAIL  macOS platform verifier" >> determinism-run.log
-          node --test "scripts/candice-upgrade/__tests__/*.test.mjs" >> determinism-run.log 2>&1 || echo "FAIL  WS-32 candice-upgrade suite" >> determinism-run.log
-          node --test tests/upgrade-fixtures/*.test.mjs >> determinism-run.log 2>&1 || echo "FAIL  WS-47 upgrade fixtures suite" >> determinism-run.log
-          node tests/privacy-audit/run.js >> determinism-run.log 2>&1 || echo "FAIL  WS-44 privacy/security audit" >> determinism-run.log
-          node tests/performance/run.mjs --quick --require-bundle "apps/candice-companion/src-tauri/target/release/bundle/macos/Candice Companion.app" >> determinism-run.log 2>&1 || echo "FAIL  WS-45 performance suite" >> determinism-run.log
-          echo "PASS  determinism required suites complete" >> determinism-run.log
+          set -euo pipefail
+          : > determinism-run.log
+          : > determinism-results.json
+          results_json='{"schema":"candice/ci/determinism-run@1","suites":[]}'
+          record_suite() {
+            suite_key="$1"
+            suite_rc="$2"
+            if [ "$suite_rc" -eq 0 ]; then
+              suite_status="PASS"
+            else
+              suite_status="FAIL"
+            fi
+            results_json="$(printf '%s' "$results_json" | node -e '
+              let d = "";
+              process.stdin.on("data", (c) => (d += c));
+              process.stdin.on("end", () => {
+                const rec = JSON.parse(d);
+                const [key, status] = process.argv.slice(1);
+                rec.suites.push({ key, status });
+                process.stdout.write(JSON.stringify(rec, null, 2));
+              });
+            ' "$suite_key" "$suite_status")"
+            printf '%s  %s\n' "$suite_status" "$suite_key" >> determinism-run.log
+          }
+          overall_rc=0
+          rc=0; bash tests/macos/verify-macos.sh --ci-root "$RUNNER_TEMP/candice-verify-home" >> determinism-run.log 2>&1 || rc=$?
+          record_suite "macOS platform verifier" "$rc"
+          [ "$rc" -eq 0 ] || overall_rc=1
+          rc=0; node --test "scripts/candice-upgrade/__tests__/*.test.mjs" >> determinism-run.log 2>&1 || rc=$?
+          record_suite "WS-32 candice-upgrade suite" "$rc"
+          [ "$rc" -eq 0 ] || overall_rc=1
+          rc=0; node --test tests/upgrade-fixtures/*.test.mjs >> determinism-run.log 2>&1 || rc=$?
+          record_suite "WS-47 upgrade fixtures suite" "$rc"
+          [ "$rc" -eq 0 ] || overall_rc=1
+          rc=0; node tests/privacy-audit/run.js >> determinism-run.log 2>&1 || rc=$?
+          record_suite "WS-44 privacy/security audit" "$rc"
+          [ "$rc" -eq 0 ] || overall_rc=1
+          rc=0; node tests/performance/run.mjs --quick --require-bundle "apps/candice-companion/src-tauri/target/release/bundle/macos/Candice Companion.app" >> determinism-run.log 2>&1 || rc=$?
+          record_suite "WS-45 performance suite" "$rc"
+          [ "$rc" -eq 0 ] || overall_rc=1
+          printf '%s' "$results_json" > determinism-results.json
           tail -n 30 determinism-run.log
+          exit "$overall_rc"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: determinism-run-shard-${{ matrix.shard }}
           path: determinism-run.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: determinism-results-shard-${{ matrix.shard }}
+          path: determinism-results.json
 
   determinism-compare:
     name: determinism comparator

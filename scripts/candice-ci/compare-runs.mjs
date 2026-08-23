@@ -6,10 +6,11 @@
  * PROJECT-MANIFEST 9.4 class 4 — global CI tooling, non-partitionable).
  *
  * Compares two clean hosted reruns of the exact same candidate commit and
- * fails on any required-result divergence. Two reruns that both went red the
- * same way are divergent from a release claim, not a pass: the verdict only
- * counts a required leg when BOTH runs record it performed (non-BLOCKED) and
- * agree (both pass, or both fail with identical fingerprints).
+ * fails on any required-result divergence, missing required leg, or
+ * deterministic failure. Q-01 step 3: the comparison succeeds ONLY when
+ * every required leg is present in both runs, performed (non-BLOCKED), and
+ * passed. Two reruns that went red the same way are a deterministic
+ * release-blocking failure (verdict FAILED-DETERMINISTICALLY), never a pass.
  *
  * Nothing here is timing-sensitive by design (Master Spec workflow
  * determinism rule): comparisons use stable fingerprints, never wall clocks.
@@ -243,12 +244,14 @@ export function compareRuns({ sha, runA, runB }) {
     if (a.blocked && b.blocked) {
       // Both reruns recorded the same BLOCKED row: agreed host-class
       // limitation (FIX-021 BLOCKED-required convention). The rows must be
-      // identical — a divergent reason still fails below.
+      // identical — a divergent reason still fails below. A blocked leg is
+      // not a success (Q-01 step 3): it never enters the required-leg set
+      // and the comparison cannot pass.
       if (a.fingerprint !== b.fingerprint) {
         differences.push(`${key}: BLOCKED reason diverges (${a.fingerprint} vs ${b.fingerprint})`);
-        continue;
+      } else {
+        differences.push(`${key}: required leg BLOCKED in both runs`);
       }
-      requiredLegs.push({ key, status: a.status, pass: false, blocked: true, fingerprint: a.fingerprint });
       continue;
     }
     if (a.blocked !== b.blocked) {
@@ -259,8 +262,10 @@ export function compareRuns({ sha, runA, runB }) {
       differences.push(`${key}: pass/fail divergence (${a.status} vs ${b.status})`);
       continue;
     }
-    if (!a.pass && a.fingerprint !== b.fingerprint) {
-      differences.push(`${key}: fail fingerprint divergence (${a.fingerprint} vs ${b.fingerprint})`);
+    if (!a.pass) {
+      // Q-01 step 3: two matching FAILs are a deterministic release-blocking
+      // failure, never an agreed non-result. Success requires pass===true.
+      differences.push(`${key}: FAILED-DETERMINISTICALLY`);
       continue;
     }
     requiredLegs.push({
@@ -278,7 +283,12 @@ export function compareRuns({ sha, runA, runB }) {
     runB: { reportSha256: runB.reportSha256, fingerprint: runB.fingerprint },
     requiredLegs,
     differences,
-    verdict: differences.length === 0 ? "IDENTICAL" : "DIVERGENT",
+    verdict:
+      differences.length === 0
+        ? "IDENTICAL"
+        : differences.some((d) => d.endsWith("FAILED-DETERMINISTICALLY"))
+          ? "FAILED-DETERMINISTICALLY"
+          : "DIVERGENT",
   };
   return { ok: differences.length === 0, record };
 }
