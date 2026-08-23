@@ -35,7 +35,20 @@ const REQUIRED_GATES = Object.freeze([
 // document can make a release pass. FIX-024 may replace it with the SHA-256
 // of an operator-owned Ed25519 public key after its independent clean-machine
 // review; that change itself requires review and a release-gate recheck.
+//
+// Q-03 step 1: once configured, the pin is authoritative. The authority loads
+// the operator public key from a fixed repository location (below), hashes the
+// exact file bytes with SHA-256, and rejects release unless the hash equals
+// this compiled pin. A matching hash is required for any later signature
+// verification to be meaningful; the key file itself is otherwise inert.
 const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
+
+// Fixed repository location of the operator release-authority public key.
+// This path is code, not control-document configuration: a forged
+// release-gate.json cannot redirect it. The pin above covers the exact bytes
+// of this file (whole-file SHA-256), so PEM armor and line endings are part
+// of the pin, not normalized away.
+const RELEASE_AUTHORITY_KEY_FILE = "CONTROL/release-authority.pub";
 
 // FIX-021: every report artifact the required CI matrix must upload. The
 // evidence record must name all of them; names live here (code), never in a
@@ -100,7 +113,7 @@ function git(root, args) {
   }
 }
 
-export function evaluateRelease(root) {
+function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
   const errors = [];
   const project = readJson(resolve(root, "CONTROL/project_state.json"), errors, "project state");
   const gate = readJson(resolve(root, "CONTROL/release-gate.json"), errors, "release gate");
@@ -224,10 +237,31 @@ export function evaluateRelease(root) {
       }
     }
   }
-  if (OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 === "UNCONFIGURED") {
+  if (releaseAuthorityPublicKeySha256 === "UNCONFIGURED") {
     errors.push("operator release authority is not configured; FIX-024 independent approval is required");
+  } else {
+    const keyPath = resolve(root, RELEASE_AUTHORITY_KEY_FILE);
+    if (!existsSync(keyPath)) {
+      errors.push(`operator release authority key is missing: ${keyPath}`);
+    } else if (sha256File(keyPath) !== releaseAuthorityPublicKeySha256) {
+      errors.push("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin");
+    }
   }
   return { ok: errors.length === 0, errors };
+}
+
+export function evaluateRelease(root) {
+  // Production path: the pin is the compiled constant. There is no parameter,
+  // environment variable, or control-document field that can override it.
+  return evaluateWithAuthorityPin(root, OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256);
+}
+
+// Test-only seam: exercises the configured state while the compiled pin in
+// this branch is still UNCONFIGURED (it becomes the real key hash after the
+// FIX-024 independent clean-machine review). Never used by the production
+// CLI path or by evaluateRelease.
+export function evaluateReleaseWithPin(root, releaseAuthorityPublicKeySha256) {
+  return evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256);
 }
 
 function main() {

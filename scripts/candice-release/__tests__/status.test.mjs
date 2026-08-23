@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { evaluateRelease } from "../status.mjs";
+import { evaluateRelease, evaluateReleaseWithPin } from "../status.mjs";
 
 function fixture({ releaseReady = false, lifecycle = "REPAIR_IN_PROGRESS", openFixIds = ["FIX-001"] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "candice-release-gate-"));
@@ -219,4 +219,78 @@ test("valid CI evidence with windowsProduction false emits no CI-evidence errors
   assert.equal(result.ok, false);
   const ciErrors = result.errors.filter((e) => e.includes("ciRequiredChecks") || e.includes("windowsProduction") || e.includes("continue-on-error") || e.includes("run IDs"));
   assert.deepEqual(ciErrors, [], ciErrors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// Q-03 key pin: the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin
+// is authoritative once configured. These tests stand in for the configured
+// state (the pin in this branch is still UNCONFIGURED) and prove that a key
+// at the fixed repository location must hash to the pin, exactly as the code
+// would enforce after FIX-024 sets a real pin. They are hermetic: no fixture
+// asserts the pin value itself, only the code path that compares against it.
+// ---------------------------------------------------------------------------
+
+import { createHash } from "node:crypto";
+
+function keyPinFixture(keyFileText = "operator ed25519 public key fixture") {
+  const root = fixture({ releaseReady: true, lifecycle: "RELEASE_CANDIDATE", openFixIds: [] });
+  const CONTROL = join(root, "CONTROL");
+  if (keyFileText !== null) writeFileSync(join(CONTROL, "release-authority.pub"), keyFileText);
+  return root;
+}
+
+function makeCompiledPin(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+test("a key at the fixed repo location whose SHA-256 equals the compiled pin emits no key-pin error", () => {
+  const keyBytes = Buffer.from("operator ed25519 public key fixture");
+  const root = keyPinFixture(keyBytes.toString("utf8"));
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.candidate = { commit: "c".repeat(40), tag: "v9.9.9" };
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  const keyErrors = result.errors.filter((e) => e.includes("release authority key"));
+  assert.deepEqual(keyErrors, [], keyErrors.join("; "));
+});
+
+test("pin mismatch refuses release when the compiled pin differs from the key file hash", () => {
+  const root = keyPinFixture("operator ed25519 public key fixture");
+  const wrongPin = makeCompiledPin(Buffer.from("some other key material"));
+  const result = evaluateReleaseWithPin(root, wrongPin);
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin")),
+    result.errors.join("; "),
+  );
+});
+
+test("missing key file refuses release once a pin is configured", () => {
+  const root = keyPinFixture(null);
+  const result = evaluateReleaseWithPin(root, "a".repeat(64));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("operator release authority key is missing")), result.errors.join("; "));
+});
+
+test("the key pin is authoritative over the editable control document", () => {
+  const root = keyPinFixture("operator ed25519 public key fixture");
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.publicKeySha256 = "forged"; // an edited control document cannot change the pin
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(Buffer.from("tampered key bytes")));
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin")),
+    result.errors.join("; "),
+  );
+});
+
+test("the key pin applies to the exact file bytes, not a re-hash of another file", () => {
+  const root = keyPinFixture("operator ed25519 public key fixture");
+  const pinOfFixture = makeCompiledPin(Buffer.from("operator ed25519 public key fixture"));
+  const result = evaluateReleaseWithPin(root, pinOfFixture);
+  const keyErrors = result.errors.filter((e) => e.includes("release authority key"));
+  assert.deepEqual(keyErrors, [], keyErrors.join("; "));
 });
