@@ -38,6 +38,10 @@ pub struct RuntimeLaunch {
     pub bridge_version: Option<String>,
     pub activation_id: Option<String>,
     pub activation_issued_at: Option<String>,
+    /// FIX-013 S5fix D1: process-level opt-out of the native startup recovery
+    /// pass (the argv replacement for the removed env read; the plugin-side
+    /// `--skip-startup-recovery` flag on the MCP server is unchanged).
+    pub skip_startup_recovery: bool,
 }
 
 impl RuntimeLaunch {
@@ -150,11 +154,88 @@ where
                     break;
                 }
             }
+            "--skip-startup-recovery" => {
+                // FIX-013 S5fix D1: process-level opt-out of the native
+                // startup recovery pass (the argv replacement for the
+                // removed env read; the plugin-side flag on the MCP server
+                // is unchanged).
+                launch.skip_startup_recovery = true;
+                index += 1;
+            }
             _ => index += 1,
         }
     }
 
     launch
+}
+
+/// FIX-013 S5fix D1: run the WS-35 startup recovery runner (real store
+/// recovery + real WS-20 sweep + updater disposition) BEFORE the interactive
+/// surface (plan §5, audit F13-06). The runner is the same
+/// `startup-runner.ts` the MCP process spawns; the native shell executes it
+/// with bounded IO (one child, one JSON line, 15 s cap) and every failure
+/// degrades silently — the shell never blocks Claude (spec 20). The
+/// `--skip-startup-recovery` process argv opts out (the plugin-side flag on
+/// the MCP server is unchanged).
+pub fn run_native_startup_recovery(launch: &RuntimeLaunch) {
+    if launch.skip_startup_recovery { return }
+    let Some(runner) = resolve_startup_runner() else { return };
+    let mut command = std::process::Command::new("node");
+    command
+        .arg("--experimental-strip-types")
+        .arg(&runner)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let Ok(mut child) = command.spawn() else { return };
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        return;
+    };
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut out = String::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            match stdout.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    out.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                    if out.len() > 4096 { break } // one JSON line, bounded
+                }
+            }
+        }
+        out
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut finished = false;
+    while std::time::Instant::now() < deadline {
+        if let Ok(Some(_)) = child.try_wait() { finished = true; break }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if !finished { let _ = child.kill(); }
+    let out = reader.join().unwrap_or_default();
+    // The runner's stdout is the sanitized outcome (no question text, no
+    // secrets). Surface one bounded line to stderr as startup evidence.
+    if let Some(line) = out.lines().find(|line| !line.trim().is_empty()) {
+        let bounded: String = line.chars().take(512).collect();
+        eprintln!("candice-startup-recovery: {bounded}");
+    }
+}
+
+/// Resolve the WS-35 runner next to the repo checkout (dev layout) or the
+/// bundled resources (packaged layout). Absent => the pass is skipped
+/// silently (fail soft, never blocks).
+fn resolve_startup_runner() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let candidates = [
+        // Dev layout: <repo>/apps/candice-companion/src-tauri/target/{debug,release}/candice-companion
+        exe_dir.join("../../../../../apps/candice-companion/src-tauri/recovery/startup-runner.ts"),
+        // Packaged layout: bundled resource next to the binary.
+        exe_dir.join("../resources/startup-runner.ts"),
+    ];
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn valid_session_id(value: &str) -> bool {
@@ -1035,6 +1116,17 @@ mod tests {
         });
         let identity2 = BridgeQuestionIdentity::from_question_message(&bad, Some("session-a")).expect("valid question");
         assert_eq!(identity2.operation_id, None, "unbounded operation id is dropped, never trusted");
+    }
+
+    #[test]
+    fn skip_startup_recovery_flag_is_parsed_and_opts_out() {
+        let launch = parse_runtime_launch(["--skip-startup-recovery"]);
+        assert!(launch.skip_startup_recovery);
+        assert!(launch.rejected_reason.is_none());
+        let ordinary = parse_runtime_launch(["--wake", "/kaizen"]);
+        assert!(!ordinary.skip_startup_recovery);
+        // The opt-out must short-circuit before any child spawn.
+        run_native_startup_recovery(&launch);
     }
 
     #[test]

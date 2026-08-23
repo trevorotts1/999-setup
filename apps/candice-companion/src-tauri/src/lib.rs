@@ -63,6 +63,12 @@ pub fn run() {
             runtime::cmd_end_bridge_lifecycle,
         ])
         .setup(|app| {
+            // FIX-013 S5fix D1 (audit F13-06): the native startup path runs
+            // the WS-35 recovery runner (real store recovery + real WS-20
+            // sweep + updater disposition) BEFORE the interactive surface.
+            // Bounded IO, fail-soft — the shell never blocks Claude (spec 20).
+            // `--skip-startup-recovery` process argv opts out.
+            runtime::run_native_startup_recovery(&launch);
             initialize_shell(app.handle())?;
             runtime::initialize_runtime(app.handle(), launch.clone())?;
             runtime::start_local_bridge(app.handle().clone(), launch);
