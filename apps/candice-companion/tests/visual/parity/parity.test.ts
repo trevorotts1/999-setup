@@ -45,6 +45,8 @@ import {
   evaluate,
   containsProhibitedPhrase,
   loadReviewManifest,
+  loadAnimationStateMap,
+  DISABLED_ANIMATION_STATES,
   SIGN_OFF_ROWS,
   type EngineInput,
 } from './engine.ts';
@@ -73,6 +75,14 @@ function captureMeta(state: string, assetId: string): EngineInput['captures'][nu
     },
   };
 }
+
+const ANIM_EVIDENCE_KINDS = [
+  'idle-loop',
+  'speaking-loop',
+  'listening-indication',
+  'processing-indication',
+  'reduced-companion',
+];
 
 const ALL_STATES = [
   'idle-neutral',
@@ -141,17 +151,27 @@ test('review manifest loads and lists exactly the seven required states', () => 
   ]);
 });
 
-test('complete pack + signed decision + all ANIM pass => BAR-10 PASS and BAR-10A PASS', () => {
+test('complete pack + signed decision => BAR-10 PASS; BAR-10A FAIL closed on disabled required state (D5)', () => {
   const report = evaluate({
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
     anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
   });
   assert.equal(report.verdict, 'PASS');
-  assert.equal(report.animation.verdict, 'PASS');
   assert.ok(report.states.every((s) => s.verdict === 'PASS'));
+  // Fail-closed: PROGRESS_COMPANION_ALERT is a required animation state
+  // that ANIMATION-STATE-MAP.md marks disabled, so BAR-10A can never
+  // silently PASS while it is unwired.
+  assert.equal(report.animation.verdict, 'FAIL');
+  assert.ok(
+    report.animation.stateAccounting.some(
+      (p) => p.metric === 'anim-state(PROGRESS_COMPANION_ALERT)' && !p.pass && /DISABLED/.test(p.note),
+    ),
+    'disabled required state must carry an explicit DISABLED accounting row',
+  );
 });
 
 test('missing one required state capture => BAR-10 FAIL', () => {
@@ -160,6 +180,7 @@ test('missing one required state capture => BAR-10 FAIL', () => {
     captures: fullCaptures().filter((c) => c.meta.file !== 'state-greeting.png'),
     globalOverrides: globalAllPass(),
     anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
   });
   assert.equal(report.verdict, 'FAIL');
@@ -179,9 +200,30 @@ test('capture citing an id outside the approved canonical set => FAIL', () => {
     captures,
     globalOverrides: globalAllPass(),
     anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
   });
   assert.equal(report.verdict, 'FAIL');
+});
+
+test('captures missing build/commit identity => FAIL (D3 builder verification)', () => {
+  const captures = fullCaptures().map((c) => ({
+    ...c,
+    meta: { ...c.meta, build: undefined, commit: undefined },
+  }));
+  const report = evaluate({
+    reviewDir: HERE,
+    captures,
+    globalOverrides: globalAllPass(),
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(report.verdict, 'FAIL');
+  assert.ok(
+    report.states.every((s) => s.rows.every((r) => r.verdict === 'FAIL')),
+    'provenance-less captures must fail every row',
+  );
 });
 
 test('unsigned pack (REQUIRE_SIGN_OFF rows outstanding) => BAR-10 FAIL', () => {
@@ -190,10 +232,27 @@ test('unsigned pack (REQUIRE_SIGN_OFF rows outstanding) => BAR-10 FAIL', () => {
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
     anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: null,
   });
   assert.equal(report.verdict, 'FAIL');
   assert.ok(report.states.some((s) => s.rows.some((r) => r.verdict === 'REQUIRE_SIGN_OFF')));
+});
+
+test('zero global evidence => BAR-10 FAIL, all globalChecks UNEVALUATED (D1)', () => {
+  const report = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(report.verdict, 'FAIL');
+  assert.ok(report.globalChecks.every((g) => g.verdict === 'UNEVALUATED'));
+  assert.ok(
+    report.globalChecks.every((g) => g.proofs.every((p) => !p.pass)),
+    'unevaluated checks must carry failing proofs',
+  );
 });
 
 test('prohibited wording in operator note keeps BAR-10 FAIL', () => {
@@ -206,10 +265,40 @@ test('prohibited wording in operator note keeps BAR-10 FAIL', () => {
       captures: fullCaptures(),
       globalOverrides: globalAllPass(),
       anim: animAllPass(),
+      animEvidenceKinds: ANIM_EVIDENCE_KINDS,
       operatorDecision: d,
     });
     assert.equal(report.verdict, 'FAIL', `phrase '${phrase}' must not pass`);
   }
+});
+
+test('prohibited wording in ANIM or override notes keeps BAR-10 FAIL (D4)', () => {
+  // ANIM notes path
+  const animBad = animAllPass().map((a) =>
+    a.item === 'ANIM-03' ? { ...a, notes: ['scored: same vibe territory'] } : a,
+  );
+  const r1 = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: globalAllPass(),
+    anim: animBad,
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(r1.verdict, 'FAIL', 'prohibited wording in ANIM notes must fail BAR-10');
+
+  // Override/pack notes path
+  const ovBad = globalAllPass();
+  ovBad['identity-tracks-reference'] = { pass: true, notes: ['roughly similar accepted'] };
+  const r2 = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: ovBad,
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(r2.verdict, 'FAIL', 'prohibited wording in override notes must fail BAR-10');
 });
 
 test('ANIM-06 UNMEASURED => BAR-10A FAIL (every item must pass)', () => {
@@ -219,10 +308,63 @@ test('ANIM-06 UNMEASURED => BAR-10A FAIL (every item must pass)', () => {
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
     anim,
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
   });
   assert.equal(report.animation.verdict, 'FAIL');
   assert.equal(report.verdict, 'PASS'); // BAR-10 independent of BAR-10A in the report
+});
+
+test('D5: DISABLED markers surface for unwired animation states, map parse is authoritative', () => {
+  const map = loadAnimationStateMap();
+  assert.ok(map.parseOk, 'animation state map must parse');
+  assert.ok(map.disabledStates.includes('PROGRESS_COMPANION_ALERT'));
+  assert.deepEqual(
+    [...DISABLED_ANIMATION_STATES],
+    map.disabledStates,
+    'engine DISABLED_ANIMATION_STATES must match ANIMATION-STATE-MAP.md',
+  );
+
+  // Measurement claimed for the disabled state => explicit DISABLED marker
+  // and BAR-10A FAIL.
+  const animClaim = animAllPass().map((a) =>
+    a.item === 'ANIM-07'
+      ? { ...a, disabledState: 'PROGRESS_COMPANION_ALERT' }
+      : a,
+  );
+  const r1 = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: globalAllPass(),
+    anim: animClaim,
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(r1.animation.verdict, 'FAIL');
+  const flagged = r1.animation.items.find((a) => a.item === 'ANIM-07');
+  assert.ok(flagged, 'ANIM-07 entry present');
+  assert.equal(flagged.verdict, 'FAIL');
+  assert.ok(
+    flagged.proofs.some((p) => p.metric === 'disabled-state-marker' && !p.pass),
+    'DISABLED marker proof must be emitted',
+  );
+
+  // Honest gap (no measurement claimed, required states consumed) => the
+  // required-state accounting rows carry the DISABLED marker and BAR-10A
+  // FAILs, never a silent pass.
+  const r2 = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: globalAllPass(),
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(r2.animation.verdict, 'FAIL');
+  const acct = r2.animation.stateAccounting.find((p) => p.metric === 'anim-state(PROGRESS_COMPANION_ALERT)');
+  assert.ok(acct, 'disabled-state accounting row must exist');
+  assert.equal(acct.pass, false);
+  assert.match(acct.note, /DISABLED/);
 });
 
 test('asset manifest authority: contract, RGBA, SHA re-derivation, unknown id', () => {
@@ -347,5 +489,45 @@ test('CLI runner: synthetic pack emits review-report.json + reviewer.html, verdi
   const report = JSON.parse(fs.readFileSync(path.join(tmp, 'review-report.json'), 'utf8'));
   assert.equal(report.verdict, 'FAIL'); // unsigned + incomplete pack cannot pass
   assert.equal(report.animation.verdict, 'FAIL'); // no ANIM measurements
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('CLI runner: black-square captures cannot pass the mechanical checks (D2)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-pack-bs-'));
+  const capDir = path.join(tmp, 'captures');
+  const canonDir = path.join(tmp, 'canonical');
+  fs.mkdirSync(capDir);
+  fs.mkdirSync(canonDir);
+  const black = { width: 32, height: 32, rgba: new Uint8Array(32 * 32 * 4).fill(0) };
+  fs.writeFileSync(path.join(capDir, 'state-idle-neutral.png'), encodeRgba(black));
+  fs.writeFileSync(
+    path.join(capDir, 'state-idle-neutral.capture.json'),
+    JSON.stringify({
+      file: 'state-idle-neutral.png',
+      source: 'pack',
+      expectedAssetIds: ['01-fullbody-idle'],
+      build: 'Candice Companion 0.2.0',
+      commit: '0'.repeat(40),
+      os: 'darwin',
+      displayScale: '1x',
+      capturedAt: new Date().toISOString(),
+    }),
+  );
+  // Byte-copy the canonical idle source into the pack canonical dir so the
+  // pair resolves (canonical side stays operator-approved bytes).
+  const idle = decodePngFile(path.join(SOURCE_DIR, '01-fullbody-idle.png'));
+  fs.writeFileSync(path.join(canonDir, '01-fullbody-idle.png'), encodeRgba(idle));
+  const run = spawnSync(
+    process.execPath,
+    [path.join(HERE, 'run-review.ts'), tmp],
+    { encoding: 'utf8' },
+  );
+  assert.equal(run.status, 0, `runner failed: ${run.stderr}`);
+  const report = JSON.parse(fs.readFileSync(path.join(tmp, 'review-report.json'), 'utf8'));
+  assert.equal(report.verdict, 'FAIL', 'black-square capture pack must FAIL');
+  assert.ok(
+    report.globalChecks.some((g) => g.check === 'identity-tracks-reference' && g.verdict === 'FAIL'),
+    'identity check must FAIL on black-square captures',
+  );
   fs.rmSync(tmp, { recursive: true, force: true });
 });

@@ -153,6 +153,10 @@ export interface ParityReviewReport {
     review: 'CANDICE-ANIMATION-PARITY-REVIEW';
     verdict: 'PASS' | 'FAIL';
     items: AnimResult[];
+    /** Per-required-state honesty markers (DISABLED for unwired states). */
+    stateAccounting: CheckProof[];
+    /** Per-required-evidence-kind accounting proofs. */
+    evidenceAccounting: CheckProof[];
   };
   /** Operator sign-off; null until a human completes the packet. */
   operatorDecision: null | {

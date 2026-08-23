@@ -123,6 +123,16 @@ jobs:
           node --test tests/terminal-compat/integration.test.ts
           node --test tests/terminal-compat/launcher-analysis.test.ts
 
+      # FIX-020 parity review harness self-tests (informational only:
+      # suite + gate semantics owned by the FIX-021 gate lane; a FAIL
+      # here does not block the workflow — see FIX-021 gate for the
+      # required parity steps).
+      - name: FIX-020 parity review harness self-tests (informational)
+        continue-on-error: true
+        run: |
+          cd apps/candice-companion
+          node --test tests/visual/parity/parity.test.ts
+
       - name: Cargo tests — app shell crate
         run: cargo test --manifest-path apps/candice-companion/src-tauri/Cargo.toml
 

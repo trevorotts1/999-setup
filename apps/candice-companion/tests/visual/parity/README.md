@@ -18,23 +18,39 @@ FIX-003 the parity gate runs from the pack, not from prose.
      fails) for same-canvas frames: layer composites, golden
      reconstructions;
    - SSIM (8x8 windows, luma-with-alpha) for different-scale
-     capture-vs-source likeness bounds. The bound only detects identity
-     swaps and gross divergence — it never approves likeness. Likeness
-     rows stay REQUIRE_SIGN_OFF until a human signs.
+     capture-vs-source likeness bounds, plus an opaque-pixel coverage
+     check (a fully-transparent or black-square capture cannot be the
+     cited source). The bounds only detect identity swaps and gross
+     divergence — they never approve likeness. Likeness rows stay
+     REQUIRE_SIGN_OFF until a human signs.
 3. **Asset authority** (`asset.ts`) — the only lawful LEFT side is
    `assets/candice/asset-manifest.json` (contract
    `candice-operator-originals-v1`). The harness re-derives every
    canonical SHA-256 from the bytes on disk and rejects any cite of a
    non-canonical id. KIE/placeholder material in a capture set fails
    global checks.
-4. **Binary verdict** (`engine.ts`) — any missing required state, any FAIL
-   row, any un-signed REQUIRE_SIGN_OFF row, any prohibited wording ("same
-   vibe", "looks good enough", "same concept", "roughly similar",
-   "probably used the images") keeps BAR-10 FAIL. ANIM items must all be
-   PASS or BAR-10A FAILs.
+4. **Binary verdict** (`engine.ts`) — fail-closed on every leg:
+   - missing required state, FAIL row, un-signed REQUIRE_SIGN_OFF row,
+     or prohibited wording ("same vibe", "looks good enough",
+     "same concept", "roughly similar",
+     "probably used the images") in ANY consumed note — operator note,
+     ANIM notes, or pack/override notes — keeps BAR-10 FAIL;
+   - a capture that does not name its build AND commit fails every row of
+     its state (builder verification: "every capture from candidate
+     packaged binary naming its commit");
+   - every manifest global check must be evaluated — UNEVALUATED required
+     checks FAIL BAR-10, never a silent pass;
+   - ANIM items must all be PASS and every manifest
+     `animation.requiredEvidence` kind must be named, or BAR-10A FAILs;
+   - animation states that
+     `docs/candice-visual/ANIMATION-STATE-MAP.md` marks disabled carry an
+     explicit DISABLED marker in the report's state accounting and keep
+     BAR-10A FAIL until the map re-enables them (a disabled state can
+     never be scored active — input claiming a measurement for one fails).
 5. **Reviewer-ready HTML** (`report-html.ts`) — canonical source LEFT,
    runtime capture RIGHT, per-row PASS/FAIL chips, proof lines, global
-   checks, ANIM scoring, operator sign-off block.
+   checks, ANIM scoring, DISABLED/evidence accounting tables, operator
+   sign-off block.
 
 ## Pack layout (produced by the capture pipeline, consumed here)
 
@@ -58,7 +74,7 @@ verifies the citation chain before evaluating any row.
 
 ```bash
 cd apps/candice-companion
-node --test tests/visual/parity/parity.test.ts     # harness self-tests (17)
+node --test tests/visual/parity/parity.test.ts     # harness self-tests (22)
 node tests/visual/parity/run-review.ts <reviewDir> # evaluate a pack
 ```
 
@@ -86,5 +102,8 @@ contains no prohibited wording, and only then can BAR-10 PASS.
 - `report-html.ts` — reviewer HTML emitter.
 - `run-review.ts` — CLI pack runner.
 - `parity.test.ts` — self-tests (negative-result contract: missing capture,
-  wrong canonical cite, prohibited wording, alpha corruption, identity
-  swap, unsigned pack all FAIL; complete signed pack PASSes).
+  wrong canonical cite, build/commit-less captures, prohibited wording in
+  operator/ANIM/override notes, zero global evidence, alpha corruption,
+  identity swap, black-square captures, unsigned pack, unwired animation
+  states all FAIL; complete signed pack PASSes BAR-10 and fails BAR-10A
+  closed on the disabled required animation state).
