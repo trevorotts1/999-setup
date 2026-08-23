@@ -20,7 +20,7 @@ function baseConf() {
         hardenedRuntime: true,
         signingIdentity: null,
         providerShortName: null,
-        entitlements: "scripts/package-macos/entitlements.plist",
+        entitlements: "../scripts/package-macos/entitlements.plist",
       },
       windows: {
         digestAlgorithm: "sha256",
@@ -34,13 +34,26 @@ function baseConf() {
       updater: {
         pubkey: PLACEHOLDER,
         endpoints: [
-          "https://github.com/trevorotts1/999-setup/releases/download/{{current_version}}/{{target}}-{{arch}}-{{current_version}}.json",
+          "https://github.com/trevorotts1/999-setup/releases/download/candice-v{{current_version}}/latest.json",
         ],
         windows: { installMode: "passive" },
       },
     },
   };
 }
+
+test("updater endpoint resolves inside the enforced candice-v* tag namespace (FIX-022 wiringfix)", () => {
+  const conf = baseConf();
+  const endpoint = conf.plugins.updater.endpoints[0];
+  // Tauri substitutes the raw `version` string into {{current_version}}
+  // (never a v-prefix), so the literal candice-v prefix in the template is
+  // what lands the request on the release-authority tag namespace.
+  const resolved = endpoint.replaceAll("{{current_version}}", conf.version);
+  assert.ok(resolved.includes(`/download/candice-v${conf.version}/latest.json`), resolved);
+  const tag = resolved.match(/download\/([^/]+)\//)?.[1];
+  assert.ok(/^candice-v\d/.test(tag), `resolved tag segment ${tag} is outside the enforced candice-v* namespace`);
+  assert.equal(resolved.split("/").pop(), "latest.json");
+});
 
 test("no credentials: overlay keeps null identities, reports unsigned, and rejects on the placeholder pubkey", () => {
   const result = applyReleaseConfigOverlay(baseConf(), {});

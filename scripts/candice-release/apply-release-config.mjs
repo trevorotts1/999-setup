@@ -44,6 +44,24 @@
  * produces it (operator-held). TAURI_SIGNING_PRIVATE_KEY is consumed by
  * tauri-bundler itself at bundle time, exactly as the WS-29 fragment
  * documented; this script does not touch it.
+ *
+ * Updater endpoint tag-namespace constraint (FIX-022 wiringfix): the
+ * release-authority job in candice-ci.yml runs only on refs/tags/candice-v*,
+ * and RELEASE-PROTECTION.md restricts publication to candice-v* tags. Tauri
+ * substitutes the raw `version` string from this config into
+ * {{current_version}} — it NEVER emits a v-prefix — so the endpoint template
+ * carries the literal candice-v prefix before {{current_version}} to resolve
+ * into the enforced tag namespace (.../download/candice-v{{current_version}}/
+ * latest.json — the static manifest published per release inside that tag's
+ * asset set; Tauri v1Compatible updater artifacts serve one manifest per
+ * release, not per-{{target}}/{{arch}} JSON files, so the endpoint names
+ * latest.json). An endpoint whose substituted path does not match the
+ * candice-v* namespace must never be served: if a future Tauri version
+ * changes placeholder expansion, the release owner must instead publish the
+ * manifest from a path that DOES match the enforced tag (e.g. latest.json at
+ * the repo root of the release) and change the endpoint accordingly. The
+ * apply-release-config.test.mjs fixture pins the exact endpoint shape and
+ * namespace test.
  */
 
 import { existsSync, readFileSync, writeFileSync, realpathSync, mkdirSync } from "node:fs";
