@@ -372,10 +372,26 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
       const localPath = resolveArtifactLocalPath(root, artifact);
       if (
         !artifact?.name || !/^https:\/\//.test(artifact.url || "") || !isSha256(artifact.sha256)
-        || !artifact.signature || !localPath
+        || !localPath || !existsSync(localPath)
       ) {
         errors.push(`invalid artifact record: ${artifact?.name || "unnamed"}`);
-      } else if (sha256File(localPath) !== artifact.sha256) {
+        continue;
+      }
+      // Q-10 artifact path constraints: the release authority only accepts
+      // regular files it can hash. A symlink file, directory, FIFO or socket
+      // is refused — a candidate artifact must be a real file.
+      let stat;
+      try {
+        stat = lstatSync(localPath);
+      } catch {
+        errors.push(`artifact is not stat-able: ${artifact.name}`);
+        continue;
+      }
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        errors.push(`artifact is not a regular file: ${artifact.name}`);
+        continue;
+      }
+      if (sha256File(localPath) !== artifact.sha256) {
         errors.push(`artifact hash mismatch: ${artifact.name}`);
       } else if (!authorityKeyConfigured) {
         // Key authority broken: never accept any artifact signature.
@@ -405,6 +421,19 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
         } catch {
           errors.push(`artifact signature could not be verified: ${artifact.name}`);
         }
+      }
+      // Q-10 signature policy, enforced per posture after the file check:
+      //   - updater: true requires a cryptographically usable signature
+      //     (>= 64 base64 chars); a smoke-built unsigned artifact must never
+      //     be recorded as updater content.
+      //   - any artifact record without a real signature is refused outright
+      //     (unsigned artifacts may be evidence, never distribution).
+      if (artifact.updater === true) {
+        if (typeof artifact.signature !== "string" || artifact.signature.length < 64) {
+          errors.push(`artifact claims updater-ready posture without a real signature: ${artifact.name} (Q-10)`);
+        }
+      } else if (typeof artifact.signature !== "string" || artifact.signature.length < 64) {
+        errors.push(`artifact record lacks a real signature: ${artifact.name} (Q-10)`);
       }
     }
   }

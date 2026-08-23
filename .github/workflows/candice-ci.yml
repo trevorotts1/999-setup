@@ -16,6 +16,32 @@
 #   - Windows x64 job: WASAPI capture build, Win32 binding build, parity
 #     engine unit tests, native Windows parity + shell-compat verifiers.
 #
+# Q-10 updater posture (enforced by check-workflow.mjs, which requires the
+# smoke posture gate before every Tauri build in a required job):
+#   - SMOKE builds (this workflow) build from the committed
+#     apps/candice-companion/tauri.conf.json, which carries
+#     `createUpdaterArtifacts: false` and the REAL updater public key whose
+#     private key was discarded. Every required job runs
+#     `node scripts/candice-release/updater-sign.mjs --posture smoke` before
+#     `tauri:build`; the gate refuses an enabled-artifacts config or a
+#     placeholder pubkey, so a smoke build can never claim updater-ready
+#     artifacts and produces no latest.json / .sig content.
+#   - RELEASE builds never happen here. Signing is the protected release
+#     workflow's job (candice-v* tag): it overlays the release config via
+#     scripts/candice-release/apply-release-config.mjs with the real pubkey
+#     and enabled artifacts, then
+#     `node scripts/candice-release/updater-sign.mjs` signs each artifact
+#     with the private key from the TAURI_SIGNING_PRIVATE_KEY secret
+#     (password in TAURI_SIGNING_PRIVATE_KEY_PASSWORD) and VERIFIES every
+#     signature against the configured pubkey via
+#     `--verify-helper scripts/candice-release/release-config-guard/target/debug/updater-sign-helper`
+#     (the hard match gate tauri-bundler lacks — it only warns on key
+#     mismatch). The updater manifest is built with
+#     scripts/candice-release/build-updater-manifest.mjs (candice-v*
+#     namespace enforced, signature required per platform), and
+#     scripts/candice-release/status.mjs refuses any artifact that claims
+#     updater posture without a real signature.
+#
 # FIX-021 semantics (enforced by scripts/candice-ci/check-workflow.mjs,
 # which runs as a step here — the workflow validates itself):
 #   - Required verifiers have NO continue-on-error. A required check that
@@ -176,6 +202,14 @@ jobs:
         run: node tests/same-session/suite.js
       - name: WS-44 privacy/security audit
         run: node tests/privacy-audit/run.js
+
+      # Q-10: the smoke posture gate must run BEFORE any Tauri build in a
+      # required job (check-workflow.mjs enforces this). It refuses a smoke
+      # build with updater artifacts enabled or a placeholder pubkey — the
+      # committed config must be the honest smoke posture: real pubkey whose
+      # private key was discarded, createUpdaterArtifacts disabled.
+      - name: Q-10 smoke posture gate (updater artifacts disabled, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
 
       - name: Tauri release bundle build (macOS, unsigned)
         run: |
@@ -378,6 +412,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
+
+      # Q-10: same smoke posture gate on the determinism rerun — a rerun
+      # must build from the same honest smoke config or it is not a rerun.
+      - name: Q-10 smoke posture gate (updater artifacts disabled, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
 
       - name: Tauri release bundle build (build-before-measure)
         run: |

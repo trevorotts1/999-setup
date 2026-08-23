@@ -6,7 +6,12 @@
  * The tauri.conf.json in the repository is the fail-closed commit state:
  *   - bundle.macOS.signingIdentity  = null  (no Apple identity claimed)
  *   - bundle.windows.certificateThumbprint = null (no Authenticode claimed)
- *   - plugins.updater.pubkey        = placeholder sentinel (see below)
+ *   - bundle.createUpdaterArtifacts = false (no updater content claimed)
+ *   - plugins.updater.pubkey        = real committed pubkey whose private
+ *                                     key was discarded (Q-10: the app
+ *                                     embeds a real updater identity, but a
+ *                                     smoke build can never produce an
+ *                                     updater-ready artifact)
  *
  * This script overlays release secrets from the environment onto a COPY of
  * the config (never the tracked file), so a build machine that has the
@@ -21,7 +26,9 @@
  *                                        (exactly 40 hex chars; verified)
  *   - CANDICE_UPDATER_PUBKEY          -> plugins.updater.pubkey (base64 minisign
  *                                        public key string from `tauri signer
- *                                        generate`; must be non-placeholder)
+ *                                        generate`; must be non-placeholder) and
+ *                                        re-enables bundle.createUpdaterArtifacts
+ *                                        (Q-10: release intent is explicit)
  *   - CANDICE_TIMESTAMP_URL           -> bundle.windows.timestampUrl (optional,
  *                                        defaults to DigiCert)
  *
@@ -148,10 +155,15 @@ export function applyReleaseConfigOverlay(conf, env = process.env) {
     } else {
       updater.pubkey = pubkey;
       state.updater = "SIGNED";
+      // Release intent (Q-10): the overlay re-enables updater artifact
+      // production, which the committed smoke config disables. The produced
+      // artifacts are then signed by updater-sign.mjs and verified against
+      // this pubkey before the release may proceed.
+      bundle.createUpdaterArtifacts = "v1Compatible";
     }
   } else if (updater.pubkey === PUBKEY_PLACEHOLDER) {
     errors.push(
-      "plugins.updater.pubkey is still the commit-state placeholder — run `tauri signer generate` and set CANDICE_UPDATER_PUBKEY before a release build",
+      "plugins.updater.pubkey is still the commit-state placeholder — replace it with the real base64 public key (Q-10); a placeholder is never a real signing identity",
     );
   }
 

@@ -7,6 +7,11 @@ import { spawnSync } from "node:child_process";
 import { applyReleaseConfigOverlay } from "../apply-release-config.mjs";
 
 const PLACEHOLDER = "RELEASE_OWNER_MUST_REPLACE_WITH_BASE64_PUBLIC_KEY";
+// Committed-shape pubkey: a real minisign pubkey (base64 of the minisign text
+// box) whose private key was discarded — exactly what the committed
+// apps/candice-companion/tauri.conf.json carries (Q-10).
+const COMMITTED_PUBKEY =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc0M0U0NTk5QjJDNzNEMjEKUldRaFBjZXltVVUrZEFVQllpSlM1VHJ6MUdqNEJUa2NobWtVNnVWTlkzd0lBamVRL0ZZUWxGYy8=";
 
 function baseConf() {
   return {
@@ -14,7 +19,7 @@ function baseConf() {
     bundle: {
       active: true,
       targets: ["app", "dmg", "nsis"],
-      createUpdaterArtifacts: "v1Compatible",
+      createUpdaterArtifacts: false,
       macOS: {
         minimumSystemVersion: "12.0",
         hardenedRuntime: true,
@@ -32,7 +37,7 @@ function baseConf() {
     },
     plugins: {
       updater: {
-        pubkey: PLACEHOLDER,
+        pubkey: COMMITTED_PUBKEY,
         endpoints: [
           "https://github.com/trevorotts1/999-setup/releases/download/candice-v{{current_version}}/latest.json",
         ],
@@ -55,17 +60,28 @@ test("updater endpoint resolves inside the enforced candice-v* tag namespace (FI
   assert.equal(resolved.split("/").pop(), "latest.json");
 });
 
-test("no credentials: overlay keeps null identities, reports unsigned, and rejects on the placeholder pubkey", () => {
-  const result = applyReleaseConfigOverlay(baseConf(), {});
-  assert.equal(result.ok, false);
+test("no credentials: overlay keeps null identities, reports unsigned, and the committed real pubkey is not an error (Q-10 smoke posture)", () => {
+  const conf = baseConf();
+  const result = applyReleaseConfigOverlay(conf, {});
+  assert.equal(result.ok, true);
   assert.deepEqual(result.state, { macos: "UNSIGNED", windows: "UNSIGNED", updater: "UNSIGNED" });
-  assert.equal(result.conf === undefined, true);
-  assert.ok(result.errors.some((e) => e.includes("placeholder")));
+  // committed pubkey is real; a no-credential overlay keeps it and keeps
+  // createUpdaterArtifacts disabled — honest smoke posture, no error.
+  assert.equal(conf.plugins.updater.pubkey, COMMITTED_PUBKEY);
+  assert.equal(conf.bundle.createUpdaterArtifacts, false);
   // identities remain null — nothing is claimed without credentials
   assert.equal(baseConf().bundle.macOS.signingIdentity, null);
 });
 
-test("full credentials: all three surfaces signed, timestamp defaulted, placeholder replaced", () => {
+test("placeholder pubkey in the input config is rejected in any credential state (Q-10)", () => {
+  const conf = baseConf();
+  conf.plugins.updater.pubkey = PLACEHOLDER;
+  const result = applyReleaseConfigOverlay(conf, {});
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("placeholder")));
+});
+
+test("full credentials: all three surfaces signed, timestamp defaulted, pubkey replaced, updater artifacts re-enabled (Q-10 release intent)", () => {
   const conf = baseConf();
   const env = {
     APPLE_DEVELOPER_IDENTITY: "Developer ID Application: BlackCEO (TEAM123456)",
@@ -79,6 +95,7 @@ test("full credentials: all three surfaces signed, timestamp defaulted, placehol
   assert.equal(conf.bundle.windows.certificateThumbprint, "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678");
   assert.equal(conf.bundle.windows.timestampUrl, "http://timestamp.digicert.com");
   assert.equal(conf.plugins.updater.pubkey, "RWRp0V3qLp1m8sJkZfQx7yNw==");
+  assert.equal(conf.bundle.createUpdaterArtifacts, "v1Compatible");
 });
 
 test("malformed thumbprint rejected; valid overlay still applies the other surfaces", () => {
@@ -102,7 +119,9 @@ test("placeholder pubkey value from env is rejected, not accepted as an identity
   const result = applyReleaseConfigOverlay(conf, env);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes("placeholder")));
-  assert.equal(conf.plugins.updater.pubkey, PLACEHOLDER);
+  // the env placeholder was refused; the committed real pubkey is untouched
+  assert.equal(conf.plugins.updater.pubkey, COMMITTED_PUBKEY);
+  assert.equal(conf.bundle.createUpdaterArtifacts, false);
 });
 
 test("whitespace in secret values is stripped without printing", () => {
@@ -123,8 +142,9 @@ test("macOS-only credentials: windows and updater stay unsigned; state reflects 
   const conf = baseConf();
   const env = { APPLE_DEVELOPER_IDENTITY: "Developer ID Application: BlackCEO (TEAM123456)" };
   const result = applyReleaseConfigOverlay(conf, env);
-  assert.equal(result.ok, false); // updater placeholder still present
+  assert.equal(result.ok, true); // committed pubkey is real; smoke posture is honest
   assert.deepEqual(result.state, { macos: "SIGNED", windows: "UNSIGNED", updater: "UNSIGNED" });
+  assert.equal(conf.bundle.createUpdaterArtifacts, false);
 });
 
 test("CLI: refuses to write the tracked app-root tauri.conf.json as overlay output", () => {
@@ -145,7 +165,7 @@ test("CLI: refuses to write the tracked app-root tauri.conf.json as overlay outp
   rmSync(root, { recursive: true, force: true });
 });
 
-test("CLI: overlay to a temp path with no credentials exits 1 on placeholder pubkey, posture UNSIGNED-UNSIGNED-UNSIGNED, no secret echo", () => {
+test("CLI: overlay to a temp path with no credentials exits 0 with honest smoke posture (committed real pubkey, artifacts disabled)", () => {
   const root = mkdtempSync(join(tmpdir(), "candice-apply-release-"));
   const inputConf = join(root, "tauri.conf.json");
   const outputConf = join(root, "out", "tauri.release.json");
@@ -155,12 +175,30 @@ test("CLI: overlay to a temp path with no credentials exits 1 on placeholder pub
     encoding: "utf8",
     env: { ...process.env },
   });
-  assert.equal(run.status, 1, run.stdout + run.stderr); // placeholder pubkey -> not releaseable
-  assert.ok(run.stderr.includes("UNSIGNED-UNSIGNED-UNSIGNED"));
-  assert.ok(run.stderr.includes("placeholder"));
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.ok(run.stdout.includes("UNSIGNED-UNSIGNED-UNSIGNED"));
   const out = JSON.parse(readFileSync(outputConf, "utf8"));
   assert.equal(out.bundle.macOS.signingIdentity, null);
   assert.equal(out.bundle.windows.certificateThumbprint, null);
+  assert.equal(out.bundle.createUpdaterArtifacts, false);
+  assert.equal(out.plugins.updater.pubkey, COMMITTED_PUBKEY);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("CLI: placeholder pubkey in input exits 1 regardless of credentials", () => {
+  const root = mkdtempSync(join(tmpdir(), "candice-apply-release-"));
+  const inputConf = join(root, "tauri.conf.json");
+  const outputConf = join(root, "out", "tauri.release.json");
+  const bad = baseConf();
+  bad.plugins.updater.pubkey = PLACEHOLDER;
+  writeFileSync(inputConf, JSON.stringify(bad, null, 2));
+  const script = join(import.meta.dirname, "..", "apply-release-config.mjs");
+  const run = spawnSync(process.execPath, [script, "--input", inputConf, "--output", outputConf], {
+    encoding: "utf8",
+    env: { ...process.env },
+  });
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.ok(run.stderr.includes("placeholder"));
   rmSync(root, { recursive: true, force: true });
 });
 
