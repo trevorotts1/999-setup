@@ -11,7 +11,7 @@
  *   node scripts/candice-release/status.mjs [--root <repository-root>]
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,6 +49,50 @@ const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
 // of this file (whole-file SHA-256), so PEM armor and line endings are part
 // of the pin, not normalized away.
 const RELEASE_AUTHORITY_KEY_FILE = "CONTROL/release-authority.pub";
+
+// Q-03 steps 2-3: canonical signed payload. The bytes the operator signs are
+// EXACTLY this string (UTF-8, one line per field, `key=value`, no separators
+// between fields, no trailing newline, keys in this fixed order):
+//
+//   candidateCommit=<full 40-hex SHA>
+//   tag=<semantic version tag>
+//   artifactName=<name>
+//   url=<https URL>
+//   sha256=<64-hex artifact SHA-256>
+//
+// Example bytes (the 5 fields joined by U+000A):
+//   candidateCommit=0123456789abcdef0123456789abcdef01234567
+//   tag=v0.2.0
+//   artifactName=candice-companion-0.2.0.dmg
+//   url=https://example.test/releases/candice-companion-0.2.0.dmg
+//   sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+//
+// Any other serialization — different key order, extra fields, trailing
+// newline, JSON, whitespace — produces different bytes and therefore a
+// signature that does not verify. The signer signs payload bytes directly
+// (detached Ed25519), NOT a hash of them, so verification is one step:
+//   verify(null, canonicalPayload, key, signature)
+// Nothing from the editable release-gate.json participates except the six
+// field values themselves; the field names, order, and separators are code.
+const SIGNED_PAYLOAD_FIELD_NAMES = Object.freeze([
+  "candidateCommit",
+  "tag",
+  "artifactName",
+  "url",
+  "sha256",
+]);
+
+/**
+ * Builds the canonical signed payload for one artifact record. Byte-exact:
+ * each field renders as `<name>=<value>` followed by U+000A, in the fixed
+ * order above, with no leading/trailing separator, no other characters.
+ * Values are rendered as strings exactly as they appear in the gate
+ * document (no trimming, no lowercasing, no re-encoding) so a modified
+ * candidate, tag, name, URL, or hash changes the bytes and fails verify.
+ */
+export function canonicalSignedPayload(record) {
+  return SIGNED_PAYLOAD_FIELD_NAMES.map((name) => `${name}=${record[name]}`).join("\n");
+}
 
 // FIX-021: every report artifact the required CI matrix must upload. The
 // evidence record must name all of them; names live here (code), never in a
@@ -222,6 +266,33 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
   } else if (/^\s*continue-on-error:\s*true/m.test(readFileSync(ciWorkflowPath, "utf8"))) {
     errors.push("candice-ci.yml contains continue-on-error: true (required verifiers must block)");
   }
+  // Q-03 steps 2-3: the release-authority key must load BEFORE any artifact
+  // signature check. A key that hashes to the pin is loaded once; if it does
+  // not parse as a public key, every artifact signature fails verification
+  // below (no artifact is ever accepted with an unparsable authority key).
+  let authorityKey = null;
+  let authorityKeyConfigured = true;
+  if (releaseAuthorityPublicKeySha256 === "UNCONFIGURED") {
+    authorityKeyConfigured = false;
+    errors.push("operator release authority is not configured; FIX-024 independent approval is required");
+  } else {
+    const keyPath = resolve(root, RELEASE_AUTHORITY_KEY_FILE);
+    if (!existsSync(keyPath)) {
+      authorityKeyConfigured = false;
+      errors.push(`operator release authority key is missing: ${keyPath}`);
+    } else if (sha256File(keyPath) !== releaseAuthorityPublicKeySha256) {
+      authorityKeyConfigured = false;
+      errors.push("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin");
+    } else {
+      try {
+        authorityKey = createPublicKey(readFileSync(keyPath));
+      } catch (error) {
+        authorityKeyConfigured = false;
+        errors.push(`operator release authority key does not parse as a public key: ${error.message}`);
+      }
+    }
+  }
+
   if (!Array.isArray(gate.artifacts) || gate.artifacts.length === 0) {
     errors.push("no signed release artifacts recorded");
   } else {
@@ -234,17 +305,35 @@ function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
         errors.push(`invalid artifact record: ${artifact?.name || "unnamed"}`);
       } else if (sha256File(localPath) !== artifact.sha256) {
         errors.push(`artifact hash mismatch: ${artifact.name}`);
+      } else if (!authorityKeyConfigured) {
+        // Key authority broken: never accept any artifact signature.
+        errors.push(`artifact signature not verified (release authority key not available): ${artifact.name}`);
+      } else {
+        // Q-03 step 3: detached Ed25519 verification over the canonical
+        // payload. The payload binds candidate commit, tag, artifact name,
+        // URL, and SHA-256; the record passes ONLY if the signature is a
+        // valid detached Ed25519 signature of those exact bytes under the
+        // pinned key. A truthy non-signature string can never pass.
+        const payload = Buffer.from(
+          canonicalSignedPayload({
+            candidateCommit: candidate.commit,
+            tag: candidate.tag,
+            artifactName: artifact.name,
+            url: artifact.url,
+            sha256: artifact.sha256,
+          }),
+          "utf8",
+        );
+        const signature = Buffer.from(artifact.signature, "base64");
+        try {
+          const valid = verify(null, payload, authorityKey, signature);
+          if (!valid) {
+            errors.push(`artifact signature verification failed: ${artifact.name}`);
+          }
+        } catch {
+          errors.push(`artifact signature could not be verified: ${artifact.name}`);
+        }
       }
-    }
-  }
-  if (releaseAuthorityPublicKeySha256 === "UNCONFIGURED") {
-    errors.push("operator release authority is not configured; FIX-024 independent approval is required");
-  } else {
-    const keyPath = resolve(root, RELEASE_AUTHORITY_KEY_FILE);
-    if (!existsSync(keyPath)) {
-      errors.push(`operator release authority key is missing: ${keyPath}`);
-    } else if (sha256File(keyPath) !== releaseAuthorityPublicKeySha256) {
-      errors.push("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin");
     }
   }
   return { ok: errors.length === 0, errors };
