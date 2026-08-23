@@ -85,6 +85,18 @@ export function writeReviewerHtml(report: ParityReviewReport, dir: string): stri
           .join('')}</td></tr>`,
     )
     .join('');
+  const animStateAcct = (report.animation.stateAccounting ?? [])
+    .map(
+      (p) =>
+        `<tr><td>${esc(p.metric)}</td><td>${p.pass ? chip('PASS') : chip('DISABLED')}</td><td><div class="proof ${p.pass ? 'ok' : 'bad'}">${esc(p.note)}</div></td></tr>`,
+    )
+    .join('');
+  const animEvidenceAcct = (report.animation.evidenceAccounting ?? [])
+    .map(
+      (p) =>
+        `<tr><td>${esc(p.metric)}</td><td>${p.pass ? chip('PASS') : chip('FAIL')}</td><td><div class="proof ${p.pass ? 'ok' : 'bad'}">${esc(p.note)}</div></td></tr>`,
+    )
+    .join('');
   const op = report.operatorDecision;
   const opBlock = op
     ? `<div class="op signed"><h3>Operator decision</h3>
@@ -148,6 +160,14 @@ ${report.states.map((s) => stateHtml(s, dir)).join('\n')}
 <section class="state">
   <h3>${esc(report.animation.review)} — ANIM scoring ${chip(report.animation.verdict)}</h3>
   <table><thead><tr><th>Item</th><th>Verdict</th><th>Proofs</th></tr></thead><tbody>${anim}</tbody></table>
+</section>
+<section class="state">
+  <h3>Animation required states — honesty markers</h3>
+  <table><thead><tr><th>State</th><th>Marker</th><th>Note</th></tr></thead><tbody>${animStateAcct || '<tr><td colspan="3">none</td></tr>'}</tbody></table>
+</section>
+<section class="state">
+  <h3>Animation required evidence — accounting</h3>
+  <table><thead><tr><th>Kind</th><th>Verdict</th><th>Note</th></tr></thead><tbody>${animEvidenceAcct || '<tr><td colspan="3">none</td></tr>'}</tbody></table>
 </section>
 ${opBlock}
 </main>

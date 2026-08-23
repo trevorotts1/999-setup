@@ -16,6 +16,7 @@
  */
 
 import registration from "../../../assets/candice/layers/build/registration.json" with { type: "json" };
+import { stateForViseme } from "./registry.ts";
 import type { VisemeId } from "./types.ts";
 
 /** One fixed placement rect in base-canvas space. [x, y, x1, y1]. */
@@ -71,16 +72,37 @@ export const LAYER_REGISTRATION: Readonly<LayerRegistration> = Object.freeze({
   notes: Object.freeze([...REG.notes]),
 });
 
-/** Viseme → mouth layer file (frozen data, never code). */
+/**
+ * Viseme → mouth layer file. Derived from the anchor registry's
+ * `stateForViseme` (the measurement authority): the registry state's
+ * canonical source number (03–08) selects the matching `mouthStates`
+ * entry in the build record. A viseme whose registry state has no
+ * matching mouth-state entry throws at module load — the two mappings
+ * can never silently diverge.
+ */
 export const VISEME_LAYER_FILES: Readonly<Record<VisemeId, string>> = Object.freeze({
-  closed: REG.mouthStates["closed"].file,
-  rest: REG.mouthStates["closed"].file,
-  mm: REG.mouthStates["open-small"].file,
-  ai: REG.mouthStates["open-medium"].file,
-  ee: REG.mouthStates["open-medium"].file,
-  oh: REG.mouthStates["open-wide"].file,
-  wide: REG.mouthStates["open-wide"].file,
+  closed: mouthFileForViseme("closed"),
+  rest: mouthFileForViseme("rest"),
+  mm: mouthFileForViseme("mm"),
+  ai: mouthFileForViseme("ai"),
+  ee: mouthFileForViseme("ee"),
+  oh: mouthFileForViseme("oh"),
+  wide: mouthFileForViseme("wide"),
 });
+
+/** Registry state → build-record mouth-state file, fail-loud on mismatch. */
+function mouthFileForViseme(viseme: VisemeId): string {
+  const state = stateForViseme(viseme);
+  const sourceNum = state.sourceFile.split("-")[0];
+  const entry = Object.values(REG.mouthStates).find((m) => m.source === sourceNum);
+  if (!entry) {
+    throw new Error(
+      `viseme "${viseme}" resolves to registry state "${state.stateId}" ` +
+        `(source ${state.sourceFile}) with no mouthStates entry in the build record`,
+    );
+  }
+  return entry.file;
+}
 
 /** Mouth rect from the build record. */
 export function mouthRect(): LayerRect {

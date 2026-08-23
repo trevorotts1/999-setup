@@ -61,7 +61,7 @@
   ],
   "animation": {
     "bar": "BAR-10A",
-    "requiredStates": ["IDLE", "GREETING", "LISTENING", "SPEAKING", "THINKING", "SUCCESS", "PROGRESS_COMPANION_IDLE", "ALERT"],
+    "requiredStates": ["IDLE", "GREETING", "LISTENING", "SPEAKING", "THINKING_PROCESSING", "SUCCESS_CONFIRMATION", "PROGRESS_COMPANION_IDLE", "PROGRESS_COMPANION_ALERT"],
     "items": [
       "ANIM-01",
       "ANIM-02",
