@@ -13,7 +13,17 @@
 //! captions/text when a capability is absent.
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Runtime, State};
+
+/// Installer-managed verified asset directory (QFIX Q-05, q2-design.md
+/// section 5 — the binding asset-delivery authority for this fix lane).
+mod assets;
+
+use assets::{InventoryEntry, InventoryRecord};
+
+// Trait methods on the capture crate's device sources (default_input_device
+// probe in cmd_speech_health, design 2.5).
+use candice_capture::MicSource as _;
 
 /// Versioned boundary contract (plan section 3A freeze). Additive only.
 pub const SPEECH_CONTRACT_VERSION: &str = "1.0";
@@ -82,13 +92,24 @@ pub struct SpeechHealth {
     pub stt_runtime: String,
     pub stt_runtime_version: String,
     pub stt_model: String,
+    /// The inventory pin — the only accepted checksum (design 5.4).
     pub stt_model_sha256: String,
+    /// Probe result for the on-disk model file: ok | absent | mismatch |
+    /// no-pin | probe-error. Mismatch is degraded with a precise reason,
+    /// never silent.
+    pub stt_model_sha256_status: String,
+    /// The on-disk measured hash (empty string when the probe could not
+    /// measure). Emitted to the app's own webview only, never logged.
+    pub stt_model_sha256_measured: String,
     pub stt_engine_ready: bool,
     pub tts_engine_ready: bool,
     pub tts_model: String,
     pub tts_voicepack_release: String,
     pub canonical_voice_id: String,
     pub canonical_voice_approval: String,
+    /// QFIX Q-05: the installer provenance receipt is present next to the
+    /// verified per-user asset directory (design 5.5).
+    pub receipt_present: bool,
     /// Human-actionable degraded status when any lane is down.
     pub degraded: bool,
     pub degraded_reason: Option<String>,
@@ -144,16 +165,6 @@ pub struct SpeechState {
     active_speak_request: std::sync::Mutex<Option<String>>,
 }
 
-/// The resource root for bundled speech assets. `tauri.conf.json`
-/// `bundle.resources` copies `speech-assets/` next to the executable;
-/// Tauri exposes it as a resource path resolved against the app bundle.
-fn speech_resource_root<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
-    app.path()
-        .resource_dir()
-        .ok()
-        .map(|dir| dir.join("speech-assets"))
-}
-
 /// The packaged Python interpreter is only valid inside the app bundle;
 /// never trust a host `python3` (FIX-015 FAIL-3: no host-machine
 /// runtime assumptions in a shipped package).
@@ -161,59 +172,130 @@ pub(crate) fn bundled_python_hint() -> Option<String> {
     std::env::var_os("CANDICE_PYTHON").map(|v| v.to_string_lossy().into_owned())
 }
 
-/// Health command (plan 3A `speech_health`). Never returns audio, model
-/// bytes, or secret text; every fact maps to the captions fallback.
+/// Run `binary --version` under a bounded 5 s deadline (design 2.5).
+/// The child is killed on timeout — a hung probe can neither stall the
+/// health command forever nor leak the process.
+fn bounded_version_probe(path: &std::path::Path) -> bool {
+    let Ok(mut child) = std::process::Command::new(path)
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// Health command (QFIX Q-05, q2-design.md sections 2.5 + 5). Every fact
+/// is a real probe: file exists AND sha256 matches the inventory pin AND
+/// (binaries) runs its `--version` under a bounded timeout. The manifest
+/// pin and the on-disk measured hash are both reported; a mismatch is
+/// degraded with a precise reason, never silent. Slot-based facts are
+/// removed — the capture probe is a real device result.
 #[tauri::command]
 pub fn cmd_speech_health<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<SpeechHealth, String> {
-    let root = speech_resource_root(&app);
-    let root_ok = root.as_ref().map(|p| p.is_dir()).unwrap_or(false);
+    let res = assets::resolve_speech_assets(&app);
+    let inventory: Option<InventoryRecord> = res
+        .inventory_text
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok());
 
-    // STT lane facts (whisper.cpp contract, WS-16). The model is
-    // checksum-verified by the STT lane before use; health reports the
-    // pinned identity and whether the packaged files exist.
-    let stt_model = "ggml-tiny.en-q5_1.bin".to_string();
-    let stt_model_sha256 =
-        "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b".to_string();
-    let stt_model_present = root_ok
-        && root
+    let entry = |id: &str| -> Option<InventoryEntry> {
+        inventory
             .as_ref()
-            .map(|p| p.join("stt").join(&stt_model).is_file())
-            .unwrap_or(false);
-    // whisper-cli ships inside the app bundle on macOS; on Windows the
-    // installer lane places whisper-cli.exe. Absent here = unavailable,
-    // captions stay available (never silently use a host binary).
-    let stt_binary_present = root_ok
-        && (root.as_ref().map(|p| p.join("stt").join("whisper-cli").is_file()).unwrap_or(false)
-            || root.as_ref().map(|p| p.join("stt").join("whisper-cli.exe").is_file()).unwrap_or(false));
-    let stt_engine_ready = stt_model_present && stt_binary_present;
+            .and_then(|inv| inv.entries.iter().find(|e| e.id == id).cloned())
+    };
+    let id_pin = |id: &str| entry(id).and_then(|e| e.sha256.filter(|s| !s.is_empty()));
+    let id_path = |id: &str| -> Option<std::path::PathBuf> {
+        entry(id).and_then(|e| res.root_for(&e))
+    };
 
-    // TTS lane facts (Kokoro pins, WS-19). Bundled interpreter +
-    // model + voicepack must all be present for `tts_available`.
-    let tts_model = "kokoro-v1.0.fp16.onnx".to_string();
-    let tts_model_present = root_ok
-        && root
-            .as_ref()
-            .map(|p| p.join("tts").join("runtime").join(&tts_model).is_file())
+    let verify = |id: &str| -> Result<(bool, String, String), String> {
+        let Some(pin) = id_pin(id) else {
+            return Ok((false, "no-pin".into(), "inventory pin missing".into()));
+        };
+        let Some(path) = id_path(id) else {
+            return Ok((false, "no-candidate-root".into(), pin));
+        };
+        if !path.is_file() {
+            return Ok((false, "absent".into(), pin));
+        }
+        let measured = assets::sha256_file(&path)
+            .map_err(|e| format!("asset probe failed for {id}: {e}"))?;
+        if !measured.eq_ignore_ascii_case(&pin) {
+            return Ok((false, "mismatch".into(), measured));
+        }
+        Ok((true, "ok".into(), measured))
+    };
+
+    // STT model: exists + hash match (verified pre-run by the transcribe
+    // path; health proves it without running the engine).
+    let stt_model = entry("stt-model")
+        .map(|e| e.filename)
+        .unwrap_or_else(|| "ggml-tiny.en-q5_1.bin".into());
+    let stt_model_pin = id_pin("stt-model")
+        .unwrap_or_else(|| "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b".into());
+    let (stt_model_ok, stt_model_status, stt_model_measured) =
+        verify("stt-model").unwrap_or((false, "probe-error".into(), String::new()));
+
+    // STT binary: exists + hash match + runs `--version` (bounded 5 s).
+    let stt_binary_id = if cfg!(target_os = "macos") {
+        "stt-binary-macos"
+    } else {
+        "stt-binary-windows-x64"
+    };
+    let stt_binary_present = verify(stt_binary_id)
+        .map(|(ok, _, _)| ok)
+        .unwrap_or(false);
+    let stt_binary_runs = stt_binary_present
+        && id_path(stt_binary_id)
+            .map(|p| bounded_version_probe(&p))
             .unwrap_or(false);
-    let tts_voices_present = root_ok
-        && root
-            .as_ref()
-            .map(|p| p.join("tts").join("runtime").join("voices-v1.0.bin").is_file())
-            .unwrap_or(false);
-    let tts_runtime_present = root_ok
-        && root
-            .as_ref()
-            .map(|p| p.join("tts").join("runtime").join("runtime.py").is_file())
-            .unwrap_or(false);
-    let tts_python_present = root_ok
-        && root
-            .as_ref()
-            .map(|p| p.join("tts").join("python").join("bin").join("python3").is_file())
-            .unwrap_or(false)
+    let stt_engine_ready = stt_model_ok && stt_binary_present && stt_binary_runs;
+
+    // TTS: model + voices exist and hash-match; worker script + bundled
+    // Python interpreter exist (hash pins for the script land with the
+    // installer work; presence is the honest fact today).
+    let tts_model = entry("tts-model")
+        .map(|e| e.filename)
+        .unwrap_or_else(|| "kokoro-v1.0.fp16.onnx".into());
+    let (tts_model_ok, _, _) = verify("tts-model").unwrap_or((false, "probe-error".into(), String::new()));
+    let (tts_voices_ok, _, _) = verify("tts-voices").unwrap_or((false, "probe-error".into(), String::new()));
+    let tts_runtime_present = entry("tts-worker")
+        .and_then(|e| res.root_for(&e))
+        .map(|p| p.is_file())
+        .unwrap_or(false);
+    let tts_python_present = entry("tts-worker")
+        .and_then(|e| res.root_for(&e))
+        .map(|worker| {
+            worker
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("python").join("bin").join("python3"))
+                .map(|p| p.is_file())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
         || bundled_python_hint().is_some();
-    let tts_engine_ready = tts_model_present && tts_voices_present && tts_runtime_present && tts_python_present;
+    let tts_engine_ready = tts_model_ok && tts_voices_ok && tts_runtime_present && tts_python_present;
 
     // System-TTS fallback probe. macOS: `say` must exist and run.
     // Windows: the adapter lane (WR-016) registers itself later; until
@@ -227,6 +309,20 @@ pub fn cmd_speech_health<R: Runtime>(
     #[cfg(not(target_os = "macos"))]
     let system_tts_available = false;
 
+    // Capture probe: a real default-input-device result (cpal), not a
+    // slot. Absent device = no-device, reported honestly.
+    let capture_mounted = candice_capture::CpalMicSource::default()
+        .default_input_device()
+        .is_some();
+
+    // Provenance: the installer receipt next to the verified directory.
+    // Health reports presence; the receipt's own rows carry the source
+    // URL + sha256 + placement timestamp (design 5.5).
+    let receipt_present = res
+        .receipt_path()
+        .map(|p| p.is_file())
+        .unwrap_or(false);
+
     // Canonical voice: af_heart is the pre-approval default (plan 1:
     // no "canonical voice" claims before operator approval exists).
     // FIX-015 FAIL-6: the bundled SPEECH-INVENTORY.json is the approval
@@ -234,10 +330,10 @@ pub fn cmd_speech_health<R: Runtime>(
     // its value wins; without the manifest the boundary fails closed to
     // approval-pending — never claims approved by default.
     let canonical_voice_id = "af_heart".to_string();
-    let canonical_voice_approval = root
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p.join("SPEECH-INVENTORY.json")).ok())
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    let canonical_voice_approval = res
+        .inventory_text
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
         .and_then(|v| {
             v.get("canonicalVoice")
                 .and_then(|cv| cv.get("approval"))
@@ -250,12 +346,27 @@ pub fn cmd_speech_health<R: Runtime>(
 
     let stt_available = stt_engine_ready;
     let tts_available = tts_engine_ready;
-    let capture_mounted = root_ok;
     let duplex_mounted = true; // composition mounts the controller (see frontend)
 
     let degraded = !(stt_available || tts_available || system_tts_available || capture_mounted);
     let degraded_reason = degraded.then(|| {
-        "speech assets are not packaged; captions and typed answers remain available".to_string()
+        let mut parts: Vec<String> = Vec::new();
+        if !capture_mounted {
+            parts.push("no microphone device".into());
+        }
+        if !stt_engine_ready {
+            parts.push(format!(
+                "STT not ready (model {}, binary present {} and running {})",
+                if stt_model_ok { "ok" } else { &stt_model_status },
+                stt_binary_present,
+                stt_binary_runs
+            ));
+        }
+        if !tts_engine_ready {
+            parts.push("TTS not ready (model/voices hash, worker, or python missing)".into());
+        }
+        parts.push("captions and typed answers remain available".into());
+        parts.join("; ")
     });
 
     Ok(SpeechHealth {
@@ -271,13 +382,16 @@ pub fn cmd_speech_health<R: Runtime>(
         stt_runtime: "whisper.cpp".into(),
         stt_runtime_version: "1.9.2".into(),
         stt_model,
-        stt_model_sha256,
+        stt_model_sha256: stt_model_pin,
+        stt_model_sha256_status: stt_model_status,
+        stt_model_sha256_measured: stt_model_measured,
         stt_engine_ready,
         tts_engine_ready,
         tts_model,
         tts_voicepack_release: "model-files-v1.1".into(),
         canonical_voice_id,
         canonical_voice_approval,
+        receipt_present,
         degraded,
         degraded_reason,
     })
@@ -517,12 +631,15 @@ mod tests {
             stt_runtime_version: "1.9.2".into(),
             stt_model: "ggml-tiny.en-q5_1.bin".into(),
             stt_model_sha256: "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b".into(),
+            stt_model_sha256_status: "absent".into(),
+            stt_model_sha256_measured: String::new(),
             stt_engine_ready: false,
             tts_engine_ready: false,
             tts_model: "kokoro-v1.0.fp16.onnx".into(),
             tts_voicepack_release: "model-files-v1.1".into(),
             canonical_voice_id: "af_heart".into(),
             canonical_voice_approval: "approval-pending".into(),
+            receipt_present: false,
             degraded: true,
             degraded_reason: Some("assets missing".into()),
         };
@@ -535,10 +652,13 @@ mod tests {
             "sttRuntimeVersion",
             "sttModel",
             "sttModelSha256",
+            "sttModelSha256Status",
+            "sttModelSha256Measured",
             "sttEngineReady",
             "ttsEngineReady",
             "canonicalVoiceId",
             "canonicalVoiceApproval",
+            "receiptPresent",
             "degraded",
         ] {
             assert!(map.contains_key(key), "missing field {key}");

@@ -184,6 +184,10 @@ function main() {
         sha256Status: present
           ? (entry.sha256 === null ? 'measured-from-tree' : 'pinned')
           : 'absent',
+        // QFIX Q-05: where the installer lane must place this artifact,
+        // relative to the verified asset root (per-user dir or bundle
+        // resource dir — the app resolves via this exact path).
+        installPath: entry.path.join('/'),
         sourceUrl: entry.sourceUrl,
         role: entry.role,
         bundled: present,
