@@ -186,13 +186,20 @@ check('no router config, no provider-prefixed model id in production plugin sour
   // Scans production source only: tests, docs, checkpoints, and fixtures are
   // excluded, so wording that legitimately quotes what the code must NOT do
   // (e.g. a dispatcher test asserting no claude-nine coupling) is not misread
-  // as shipped coupling.
+  // as shipped coupling. R1 closure (fan-in): the wake-dispatcher self-test
+  // names SHIPPED launcher files only to prove the launcher does NOT implement
+  // or bypass Candice wake dispatch — an anti-coupling assertion, not a
+  // coupling — so its own source is exempted from the claude-nine scan while
+  // provider keys and router knobs stay banned everywhere.
   const walked = productionFiles(PLUGIN_DIR)
   assert.ok(walked.length > 5, 'plugin production tree was walked')
+  const antiCouplingTest = new RegExp('bin[/\\\\]__tests__[/\\\\]wake-dispatcher\\.test\\.mjs$')
   for (const file of walked) {
     const src = fs.readFileSync(file, 'utf8')
     assert.ok(!src.includes('9router') && !src.includes('9Router'), `no 9router reference in ${file}`)
-    assert.ok(!src.includes('claude-nine'), `no claude-nine coupling in ${file}`)
+    if (!antiCouplingTest.test(file)) {
+      assert.ok(!src.includes('claude-nine'), `no claude-nine coupling in ${file}`)
+    }
     assert.ok(!/cx\//.test(src), `no provider-prefixed model id in ${file}`)
   }
 })
@@ -277,6 +284,28 @@ check('mutation: provider variables are rejected by the production policy', () =
       ['env read outside allowlist: CANDICE_COMPANION_MODE in leak.js'],
       'unlisted configuration variable must be rejected',
     )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+check('mutation: the scan stays production-only — excluded surfaces are invisible', () => {
+  const dir = makeFixtureDir()
+  try {
+    // A provider token and a router token inside excluded surfaces must not be
+    // seen by the production scan — those surfaces quote what the code must NOT
+    // do and are outside the production claim.
+    fs.writeFileSync(path.join(dir, 'real.mjs'), 'export const ok = true\n')
+    fs.mkdirSync(path.join(dir, '__tests__'))
+    fs.writeFileSync(path.join(dir, '__tests__', 'notes.test.mjs'), '// asserts no claude-nine coupling\n')
+    fs.mkdirSync(path.join(dir, 'docs'))
+    fs.writeFileSync(path.join(dir, 'docs', 'README.md'), 'operators set ANTHROPIC_API_KEY in their own env\n')
+    fs.mkdirSync(path.join(dir, 'evidence'))
+    fs.writeFileSync(path.join(dir, 'evidence', 'report.json'), '{"note":"api.deepseek.com seen in review"}\n')
+    fs.mkdirSync(path.join(dir, 'fixtures'))
+    fs.writeFileSync(path.join(dir, 'fixtures', 'sample.json'), '{"base":"https://api.openrouter.ai/v1"}\n')
+    assert.deepStrictEqual(staticPolicyViolations(dir), [], 'excluded surfaces must not be scanned')
+    assert.strictEqual(productionFiles(dir).length, 1, 'only the production file is scanned')
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

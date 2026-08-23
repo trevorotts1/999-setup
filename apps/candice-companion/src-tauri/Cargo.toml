@@ -20,6 +20,16 @@ tauri-plugin-shell = "2.3.5"
 tauri-plugin-updater = "2.10.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# QFIX Q-05 (q2-design.md section 5): installer-managed verified asset
+# directory. The capture crate joins the app with its real `cpal` device
+# source (design 3.1) so health/permission probes are real device results;
+# sha2 verifies on-disk asset hashes against the inventory pins.
+candice-capture = { path = "audio/capture", features = ["cpal"] }
+sha2 = "0.10"
+# QFIX Q-02 (q2-design.md section 3.2): the app owns the TTS output stream —
+# the Kokoro worker renders PCM, this crate plays it on a real `cpal` output
+# device so the webview never touches audio bytes.
+cpal = "0.18"
 
 [profile.release]
 codegen-units = 1

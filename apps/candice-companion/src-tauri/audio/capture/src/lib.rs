@@ -23,10 +23,10 @@ mod ring_buffer;
 mod source;
 
 pub use config::{defaults, CaptureConfig};
-pub use controller::{CaptureStatus, PttController};
+pub use controller::{CaptureStatus, DiscardReason, PttController, PttEvent};
 pub use devices::{no_device_error, DeviceInfo};
 pub use error::{CaptureError, CaptureErrorCode};
-pub use ring_buffer::RingBuffer;
+pub use ring_buffer::{CaptureChunk, Recording, RingBuffer};
 #[cfg(feature = "cpal")]
 pub use source::CpalMicSource;
 pub use source::{FakeMicSource, MicSource, SourceChunk};

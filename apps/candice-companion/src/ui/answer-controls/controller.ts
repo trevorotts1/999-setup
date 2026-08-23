@@ -70,7 +70,7 @@ export interface AnswerControlsControllerOptions {
    * always supplies a real query, so capture is gated in production.
    */
   captureConsent?: {
-    /** Consult the native `speech_permissions` fact. Never throws. */
+    /** Consult the native `cmd_speech_permissions` fact. Never throws. */
     query: () => CaptureConsent | Promise<CaptureConsent>;
     /** Called when a press was blocked (machine untouched; typing stays). */
     onBlocked?: (consent: CaptureConsent, explanation: string) => void;

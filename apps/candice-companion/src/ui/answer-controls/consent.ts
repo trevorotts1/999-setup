@@ -2,8 +2,10 @@
  * FIX-015 FAIL-5 capture consent gate (plan section 3D).
  *
  * Gating doctrine: the mic opens only when the OS-level state says it may.
- * The native `speech_permissions` command reports the capture lane's real
- * last-known state; this gate consults it on every HOLD TO TALK press.
+ * The native `cmd_speech_permissions` command (name via
+ * `SPEECH_COMMANDS.permissions` — Rust registration is truth) reports the
+ * capture lane's real last-known state; this gate consults it on every
+ * HOLD TO TALK press.
  *
  *  - `granted` / `not-determined` -> capture proceeds. Not-determined
  *    proceeds BY DESIGN: the macOS TCC prompt appears at the press itself

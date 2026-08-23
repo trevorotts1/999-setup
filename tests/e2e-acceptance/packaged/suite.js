@@ -47,6 +47,10 @@ const LEGS = [
   { id: 'fallback', file: 'packaged-fallback.test.js' },
   { id: 'restart', file: 'packaged-restart.test.js' },
   { id: 'compact', file: 'packaged-compact.test.js' },
+  // QFIX-q2 (Q-05 step 4 + Q-02 step 6): post-bundle speech-asset delivery
+  // and the installed-app keyboard path.
+  { id: 'speech-assets', file: 'packaged-speech-assets.test.js' },
+  { id: 'speech-keyboard', file: 'packaged-speech-keyboard.test.js' },
 ]
 
 const LEG_IDS = LEGS.map((l) => l.id)

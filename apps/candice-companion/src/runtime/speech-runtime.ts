@@ -3,7 +3,8 @@
  *
  * The single webview consumer of the speech lanes. Mounts the deterministic
  * duplex controller (WS-20) and probes the native speech boundary
- * (`speech_health` / `speech_permissions`, registered in the Rust shell).
+ * (`cmd_speech_health` / `cmd_speech_permissions`, registered in the Rust
+ * shell — names via `SPEECH_COMMANDS`, Rust registration is truth).
  * Heavy engines (whisper-cli, the Kokoro Python worker) live in subprocesses
  * spawned by the shell side; raw audio never crosses this boundary — every
  * command carries bounded text, request ids, and paths the cleanup lane
@@ -24,6 +25,7 @@
 
 import { DuplexController } from '../../src-tauri/audio/duplex/index.ts';
 import type { SpeechTarget } from '../../src-tauri/audio/duplex/index.ts';
+import { SPEECH_COMMANDS } from './speech-commands.ts';
 
 /** Mirrors the native SpeechHealth shape (src-tauri/speech/mod.rs, camelCase). */
 export interface SpeechHealthFact {
@@ -198,14 +200,14 @@ export async function initializeSpeechRuntime(
   let health: SpeechHealthFact | null = null;
   let permissions: SpeechPermissionsFact | null = null;
   try {
-    health = parseSpeechHealth(await adapter.invoke('speech_health'));
+    health = parseSpeechHealth(await adapter.invoke(SPEECH_COMMANDS.health));
   } catch {
     // Native boundary absent: duplex stays mounted, capabilities stay
     // unknown — captions/typing unaffected (spec 20 fail closed).
     health = null;
   }
   try {
-    permissions = parseSpeechPermissions(await adapter.invoke('speech_permissions'));
+    permissions = parseSpeechPermissions(await adapter.invoke(SPEECH_COMMANDS.permissions));
   } catch {
     permissions = null;
   }
@@ -219,12 +221,12 @@ export async function initializeSpeechRuntime(
       return permissions;
     },
     async probe(): Promise<SpeechHealthFact> {
-      const next = parseSpeechHealth(await adapter.invoke('speech_health'));
+      const next = parseSpeechHealth(await adapter.invoke(SPEECH_COMMANDS.health));
       health = next;
       return next;
     },
     async probePermissions(): Promise<SpeechPermissionsFact> {
-      const next = parseSpeechPermissions(await adapter.invoke('speech_permissions'));
+      const next = parseSpeechPermissions(await adapter.invoke(SPEECH_COMMANDS.permissions));
       permissions = next;
       return next;
     },
