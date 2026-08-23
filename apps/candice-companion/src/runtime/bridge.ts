@@ -8,6 +8,7 @@ import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
+import { SPEECH_COMMANDS } from './speech-commands.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -136,7 +137,7 @@ export async function initializeAuthenticatedBridge(
       captureConsent: {
         query: async (): Promise<CaptureConsent> => {
           try {
-            const permissions = await invoke<{ microphone?: unknown }>('cmd_speech_permissions');
+            const permissions = await invoke<{ microphone?: unknown }>(SPEECH_COMMANDS.permissions);
             if (!permissions || typeof permissions !== 'object') return 'error';
             switch (permissions.microphone) {
               case 'granted': return 'granted';
