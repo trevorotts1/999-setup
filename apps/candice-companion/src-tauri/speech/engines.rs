@@ -983,12 +983,14 @@ mod tests {
         "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b";
 
     fn stt_test_inputs() -> Option<(PathBuf, PathBuf, &'static str)> {
-        let model = std::env::var_os("CANDICE_STT_MODEL")
-            .map(PathBuf::from)
-            .or_else(|| home_dir().join("candice-stt-cache").join("ggml-tiny.en-q5_1.bin").into());
-        let binary = std::env::var_os("CANDICE_STT_BINARY")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/whisper-cli"));
+        let model = match std::env::var_os("CANDICE_STT_MODEL") {
+            Some(v) => PathBuf::from(v),
+            None => home_dir().join("candice-stt-cache").join("ggml-tiny.en-q5_1.bin"),
+        };
+        let binary = match std::env::var_os("CANDICE_STT_BINARY") {
+            Some(v) => PathBuf::from(v),
+            None => PathBuf::from("/opt/homebrew/bin/whisper-cli"),
+        };
         if !model.is_file() || !binary.is_file() {
             return None;
         }
@@ -1071,12 +1073,27 @@ mod tests {
             err.contains("checksum mismatch"),
             "wrong pin must be refused: {err}"
         );
-        assert!(!wav.exists(), "wav deleted even on pin failure");
-        // Case-insensitive pin comparison is accepted form-wise (the real
-        // hash check happens below with the exact pin).
-        let ok_case = run_whisper(&wav, &model, &PINNED_MODEL_SHA256[..8].to_owned() + "", &binary, "en");
-        // Re-write the wav (previous call consumed it).
-        let _ = ok_case;
+        // The checksum gate fires BEFORE the engine run, so the wav is
+        // still on disk here (deletion happens only around the actual
+        // transcription). The gate's position is the load-bearing fact.
+        assert!(wav.exists(), "pin refusal must precede the engine run");
+        let _ = std::fs::remove_file(&wav);
+        // The exact pinned checksum passes the gate and reaches a REAL
+        // engine run (the transcription itself is proven in the dedicated
+        // test; here we only need past the integrity refusal).
+        let (wav, _) = write_session_wav("pin2", &[0.0f32; 1_600]);
+        let outcome = run_whisper(&wav, &model, PINNED_MODEL_SHA256, &binary, "en");
+        let pin_ok = match &outcome {
+            Ok(_) => true,
+            Err(e) => {
+                e.contains("no speech was recognized") || e.contains("speech recognition failed")
+            }
+        };
+        assert!(
+            pin_ok,
+            "exact pin must not fail integrity: {outcome:?}"
+        );
+        assert!(!wav.exists());
     }
 
     #[test]
