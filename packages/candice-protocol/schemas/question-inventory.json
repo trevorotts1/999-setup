@@ -1,22 +1,414 @@
 {
-  "schemaVersion":"1.0",
-  "doctrineDigest":"d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87",
-  "records":[
-    {"key":"BUILD_TARGET","skill":"spec-protocol","status":"active","source":".claude/skills/spec-protocol/references/interview.md#entry-and-discovery"},
-    {"key":"SECRET_INPUT","skill":"spec-protocol","status":"active","source":"plugins/candice-integration/privacy/final-boundary-guard.js#fix-017-secret-boundary"},
-    {"key":"PERSONAL_INPUT","skill":"spec-protocol","status":"active","source":"plugins/candice-integration/privacy/final-boundary-guard.js#fix-017-personal-boundary"},
-    {"key":"KAZEN_TARGET","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#1-target"},
-    {"key":"KAZEN_LOCATION","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#2-location"},
-    {"key":"KAZEN_BETTER","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#3-better"},
-    {"key":"KAZEN_SCOPE","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#4-scope"},
-    {"key":"KAZEN_PERMISSION","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#5-permission"},
-    {"key":"KAZEN_PROOF","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#6-proof"},
-    {"key":"KAZEN_INTERVAL","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#7-interval"},
-    {"key":"KAZEN_CONTRACT_APPROVAL","skill":"kaizen","status":"active","source":".claude/skills/kaizen/references/onboarding.md#contract-approval"},
-    {"key":"B3","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
-    {"key":"C7","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
-    {"key":"C8","skill":"spec-protocol","status":"retired","source":".claude/skills/spec-protocol/references/interview.md#historical"},
-    {"key":"ELI5_REVIEWED_ZERO","skill":"eli5","status":"zero-governed","source":".claude/skills/eli5/SKILL.md"},
-    {"key":"BRO_REVIEWED_ZERO","skill":"bro","status":"zero-governed","source":".claude/skills/bro/SKILL.md"}
+  "schemaVersion": "1.0",
+  "doctrineDigest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87",
+  "records": [
+    {
+      "key": "BUILD_TARGET",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/SKILL.md#THE BUILD TARGET QUESTION"
+    },
+    {
+      "key": "KAZEN_TARGET",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#1. Target"
+    },
+    {
+      "key": "KAZEN_LOCATION",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#2. Location"
+    },
+    {
+      "key": "KAZEN_BETTER",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#3. Better"
+    },
+    {
+      "key": "KAZEN_SCOPE",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#4. Scope"
+    },
+    {
+      "key": "KAZEN_PERMISSION",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#5. Permission"
+    },
+    {
+      "key": "KAZEN_PROOF",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#6. Proof"
+    },
+    {
+      "key": "KAZEN_INTERVAL",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#7. Interval"
+    },
+    {
+      "key": "KAZEN_CONTRACT_APPROVAL",
+      "skill": "kaizen",
+      "status": "active",
+      "source": ".claude/skills/kaizen/references/onboarding.md#Kaizen Contract"
+    },
+    {
+      "key": "ENTRY_MODE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/SKILL.md#The entry — interview me, or here is the info"
+    },
+    {
+      "key": "INTERVIEW_MODE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#R1. The two modes — offered FIRST, not at question eleven"
+    },
+    {
+      "key": "JOB_ARCHETYPE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Step 1b — The job archetype (one question, before the blocks)"
+    },
+    {
+      "key": "STEP1D_APP_CONFIRM",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_DESKTOP_SHAPE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_DB",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_ACCOUNTS",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_MOBILE_STORE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_MOBILEWEB_SHAPE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If APP / SOFTWARE — ask these:"
+    },
+    {
+      "key": "STEP1D_WEB_PAGES",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If WEBSITE — ask these:"
+    },
+    {
+      "key": "STEP1D_WEB_COMPLEXITY",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If WEBSITE — ask these:"
+    },
+    {
+      "key": "STEP1D_WEB_HOSTING",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If WEBSITE — ask these:"
+    },
+    {
+      "key": "STEP1D_FUNNEL_GOAL",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If SALES FUNNEL — ask these (the funnel discovery):"
+    },
+    {
+      "key": "STEP1D_FUNNEL_OFFER",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If SALES FUNNEL — ask these (the funnel discovery):"
+    },
+    {
+      "key": "STEP1D_FUNNEL_PIECES",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If SALES FUNNEL — ask these (the funnel discovery):"
+    },
+    {
+      "key": "STEP1D_FUNNEL_SHAPE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#If SALES FUNNEL — ask these (the funnel discovery):"
+    },
+    {
+      "key": "MEDIA_CREATE_OR_SUPPLY",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Media and Creative (any build that needs artwork — after the shape is confirmed)"
+    },
+    {
+      "key": "MEDIA_PROVIDER_CHOICE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Media and Creative (any build that needs artwork — after the shape is confirmed)"
+    },
+    {
+      "key": "MEDIA_MODEL_PICK",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Media and Creative (any build that needs artwork — after the shape is confirmed)"
+    },
+    {
+      "key": "MEDIA_KEY_NEEDED",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Media and Creative (any build that needs artwork — after the shape is confirmed)"
+    },
+    {
+      "key": "CAPACITY_HARNESS_CONFIRM",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block A — Capacity (nothing here can be measured; all of it must be asked)"
+    },
+    {
+      "key": "CAPACITY_PLAN_DEEPSEEK",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Resolving which provider path this build will run on"
+    },
+    {
+      "key": "CAPACITY_PLAN_OLLAMA",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Resolving which provider path this build will run on"
+    },
+    {
+      "key": "CAPACITY_PLAN_AGNES",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Resolving which provider path this build will run on"
+    },
+    {
+      "key": "CAPACITY_PLAN_RECALL",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Resolving which provider path this build will run on"
+    },
+    {
+      "key": "CAPACITY_OPENROUTER_KEY",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Resolving which provider path this build will run on"
+    },
+    {
+      "key": "CAPACITY_EFFORT_SETTING",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block A — Capacity (nothing here can be measured; all of it must be asked)"
+    },
+    {
+      "key": "CAPACITY_AGENT_COUNT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block A — Capacity (nothing here can be measured; all of it must be asked)"
+    },
+    {
+      "key": "CAPACITY_THREE_SEAT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block A — Capacity (nothing here can be measured; all of it must be asked)"
+    },
+    {
+      "key": "CAPACITY_PROVIDER_PATH",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block A — Capacity (nothing here can be measured; all of it must be asked)"
+    },
+    {
+      "key": "REPO_AMBIGUITY",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block B — Repositories (measure what you can; ask the rest)"
+    },
+    {
+      "key": "REPO_NEVER_PUSH",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block B — Repositories (measure what you can; ask the rest)"
+    },
+    {
+      "key": "LOOP_FOLDER",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block C — Loop Shape"
+    },
+    {
+      "key": "LOOP_DONE_CONDITION",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block C — Loop Shape"
+    },
+    {
+      "key": "GAUNTLET_EXAMPLE",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block D — The measuring stick (the Gauntlet questions)"
+    },
+    {
+      "key": "GAUNTLET_WINNING_BAR",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block D — The measuring stick (the Gauntlet questions)"
+    },
+    {
+      "key": "GAUNTLET_DOWNLOAD_CONSENT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block D — The measuring stick (the Gauntlet questions)"
+    },
+    {
+      "key": "GAUNTLET_AVOID",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Block D — The measuring stick (the Gauntlet questions)"
+    },
+    {
+      "key": "COLLAPSE_CONFIRM_B",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Fast path 2 — the small-plan collapse (after block A)"
+    },
+    {
+      "key": "COLLAPSE_CONFIRM_C",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/interview.md#Fast path 2 — the small-plan collapse (after block A)"
+    },
+    {
+      "key": "AGENT_TEAM_CONSENT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/references/agent-team.md#5.3 EXPLAIN — plain words, no jargon"
+    },
+    {
+      "key": "STEP17_REPO_ASK",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": ".claude/skills/spec-protocol/SKILL.md#17. **Determine GitHub.** New repo or pre-existing? Ask."
+    },
+    {
+      "key": "B3",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#B3 IS RETIRED"
+    },
+    {
+      "key": "C7",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#The artwork clause is a CLAUSE of C6"
+    },
+    {
+      "key": "C8",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#The artwork clause is a CLAUSE of C6"
+    },
+    {
+      "key": "A4_DEFAULT_FORM",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#A4 (how many agents do you want) — deleted in default mode"
+    },
+    {
+      "key": "A6_USAGE_WINDOW",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#A6 (usage window) — deleted"
+    },
+    {
+      "key": "A7_SHARE_FREE",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#A7 (share to leave free) — deleted"
+    },
+    {
+      "key": "A8_BACKUPS",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#A8 (backups) — deleted"
+    },
+    {
+      "key": "A2_PROVIDER_PATH",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#The provider-path half of A2 (direct-or-via-Ollama) — deleted"
+    },
+    {
+      "key": "B1_REPO_COUNT",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#B1 and B2 (repo count, branch, pusher) — deleted"
+    },
+    {
+      "key": "B2_BRANCH_PUSHER",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#B1 and B2 (repo count, branch, pusher) — deleted"
+    },
+    {
+      "key": "C0_WATCHED_OR_NOT",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#C0 and C3 (watched-or-unattended, how long) — deleted"
+    },
+    {
+      "key": "C1_STATE_FILE",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#C1 (which file holds the loop state) — deleted"
+    },
+    {
+      "key": "C2_APPROVE_MERGES",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#C2 (approve merges?) — deleted"
+    },
+    {
+      "key": "C3_DURATION",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#C0 and C3 (watched-or-unattended, how long) — deleted"
+    },
+    {
+      "key": "C6_BUSY_SIGNAL",
+      "skill": "spec-protocol",
+      "status": "retired",
+      "source": ".claude/skills/spec-protocol/references/interview.md#C6 (busy-signal policy) — deleted as a question"
+    },
+    {
+      "key": "ELI5_REVIEWED_ZERO",
+      "skill": "eli5",
+      "status": "zero-governed",
+      "source": ".claude/skills/eli5/SKILL.md"
+    },
+    {
+      "key": "BRO_REVIEWED_ZERO",
+      "skill": "bro",
+      "status": "zero-governed",
+      "source": ".claude/skills/bro/SKILL.md"
+    }
   ]
 }

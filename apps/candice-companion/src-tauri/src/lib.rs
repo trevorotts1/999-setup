@@ -83,10 +83,17 @@ pub fn run() {
             speech::cmd_speech_speak,
             speech::cmd_speech_stop,
             speech::cmd_speech_permissions,
+            runtime::cmd_ack_replayed_question,
+            runtime::cmd_end_bridge_lifecycle,
         ])
         .setup(|app| {
+            // FIX-013 S5fix D1 (audit F13-06): the native startup path runs
+            // the WS-35 recovery runner (real store recovery + real WS-20
+            // sweep + updater disposition) BEFORE the interactive surface.
+            // Bounded IO, fail-soft — the shell never blocks Claude (spec 20).
+            // `--skip-startup-recovery` process argv opts out.
+            runtime::run_native_startup_recovery(&launch);
             app.manage(speech::SpeechState::default());
-            initialize_shell(app.handle())?;
             runtime::initialize_runtime(app.handle(), launch.clone())?;
             runtime::start_local_bridge(app.handle().clone(), launch);
             // Window starts hidden (tauri.conf.json); show the visual shell

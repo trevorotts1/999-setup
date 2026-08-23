@@ -28,6 +28,7 @@ const ANSWER_KINDS = ['free_text', 'single_choice', 'yes_no', 'confirm', 'mode_c
 const INPUT_MODES = ['voice', 'typed', 'terminal']
 const SENSITIVITIES = ['normal', 'secret', 'personal']
 const questionRegistry = require('../../../../packages/candice-protocol/question-registry')
+const { checkBoundedIsoTime, LIMITS } = require('../../session/lifecycle-protocol')
 
 const MAX_TEXT_LENGTH = 4096
 const MAX_SESSION_ID_LENGTH = 128
@@ -201,6 +202,16 @@ function validateAnswerEvent(answer) {
     if (typeof answer.answeredAt !== 'string' || Number.isNaN(Date.parse(answer.answeredAt))) {
       return { ok: false, code: 'invalid-answer', field: 'answeredAt', rule: 'must be an ISO date-time string' }
     }
+    // Bounded timestamp (FIX-013 S1): stale or future-skewed timestamps fail
+    // closed, never accepted into the durable record.
+    const bounded = checkBoundedIsoTime(answer.answeredAt, {
+      nowMs: Date.now(),
+      maxAgeMs: LIMITS.maxAgeMs,
+      maxFutureSkewMs: LIMITS.maxFutureSkewMs,
+    })
+    if (bounded) {
+      return { ok: false, code: 'invalid-answer', field: 'answeredAt', rule: bounded }
+    }
   }
   for (const key of Object.keys(answer)) {
     if (!ALLOWED_ANSWER_FIELDS.includes(key)) {
@@ -231,4 +242,11 @@ module.exports = {
   validateAnswerEvent,
   SESSION_ID_RE,
   QUESTION_KEY_RE,
+  MAX_TEXT_LENGTH,
+  MAX_SESSION_ID_LENGTH,
+  ANSWER_KINDS,
+  INPUT_MODES,
+  SENSITIVITIES,
+  checkBoundedIsoTime,
+  LIMITS,
 }

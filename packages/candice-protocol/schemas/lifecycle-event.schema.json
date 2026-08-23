@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/lifecycle-event.schema.json",
+  "title": "Candice Lifecycle Event",
+  "description": "Versioned lifecycle control envelope shared by the MCP process, the local bridge, the companion app, the fallback path, and startup recovery. One discriminated branch per lifecycle event: activation, question, delivered (acknowledgement), answer, cancel, fallback, reconnect, lease, and lifecycle state. Every durable operation carries operationId plus bounded timestamps; temporal bounds (max age, future skew, lease horizon) are enforced by the runtime validator plugins/candice-integration/session/lifecycle-protocol.js, which this schema documents and mirrors. The governed question text and answer text never enter this envelope: they ride the FIX-011 bridge frames and the question-event/answer-event schemas, and are never persisted by the lifecycle layer. Candice Master Spec sections 13.2/14/16/17/20. Version: 1.0. Bumped by the integration/release owner only (manifest 9.4 class 2); consumers reject unknown versions.",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "activationId", "activationIssuedAt"],
+      "properties": {
+        "schemaVersion": { "const": "1.0", "description": "Version of this lifecycle envelope. Consumers reject unknown versions; producers must not silently downgrade." },
+        "event": { "const": "activation", "description": "Authenticated activation of one session binding (FIX-010 identity consumed, never replaced)." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Opaque Claude Code session identifier. Routing authority; never derived from window position." },
+        "activationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "Single-use activation claim id issued with the session binding." },
+        "activationIssuedAt": { "type": "string", "format": "date-time", "description": "ISO-8601 issuance time. Bounded: not older than the max-age window, not ahead of the future-skew window." }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "askedAt"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "question", "description": "Lifecycle record of one governed question operation being delivered. The governed text itself rides the question-event schema; this branch is identity and timing only." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "Stable operation identity for this one question transition; a retry of the same operation id is idempotent, a different id for the same question is refused." },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$", "description": "Governed question key owned by FIX-012; the lifecycle layer stores and routes only validated governed keys." },
+        "askedAt": { "type": "string", "format": "date-time", "description": "ISO-8601 ask time (bounded)." }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "delivered", "description": "The companion acknowledged the exact question surface; only an acknowledged delivery may transition to displayed." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$" },
+        "at": { "type": "string", "format": "date-time", "description": "ISO-8601 acknowledgement time (bounded)." }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "answer", "description": "One terminal answer completion for the operation. This branch is bookkeeping only (identity, key, time): answer text rides the answer-event schema and is never persisted by the lifecycle layer." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "cancel", "description": "The question surface was cancelled/invalidated by the matching (sessionId, questionKey, operationId); a later answer for the same operation must fail closed." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "cause", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "fallback", "description": "Ownership of this question atomically transferred to the Claude terminal fallback; the original validated question, session, key, and counted flag are preserved." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$" },
+        "cause": {
+          "type": "string",
+          "enum": ["mcp-unavailable", "app-unavailable", "delivery-failure", "timeout", "user-cancel", "disconnect", "recovery-failure"],
+          "description": "Machine-readable fallback cause; all fallback branches invoke the same coordinator method with the same validated question."
+        },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "instanceId", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "reconnect", "description": "The same authenticated session reconnected; mismatched or replayed identities are refused before this event exists." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "The single unacknowledged pending operation being resumed, or a fresh operation id when nothing was pending." },
+        "instanceId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "Authenticated companion instance that reconnected." },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "operationId", "questionKey", "leaseId", "heldUntil"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "lease", "description": "Recovery lease claim on one pending operation. A lease never deletes the pending record; only an acknowledged handoff may complete it. Bounded by heldUntil." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+        "questionKey": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]*$" },
+        "leaseId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "Opaque lease id; a second process claiming the same operation must arrive with the same or refused lease." },
+        "heldUntil": { "type": "string", "format": "date-time", "description": "ISO-8601 lease horizon (bounded: within max lease length, not past the future-skew window)." }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "event", "sessionId", "state", "at"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "event": { "const": "lifecycle", "description": "Published lifecycle state for one session: durable states plus live connection states. Transition order is owned by the single lifecycle owner, never by an event." },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$", "description": "Present when the state is scoped to one operation; absent for session-scoped states." },
+        "state": {
+          "type": "string",
+          "enum": ["active", "displaying", "displayed", "recovering", "fallback-pending", "answered", "cancelled", "ended", "connected", "disconnected", "reconnecting", "recovered"],
+          "description": "Publishable lifecycle state."
+        },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    }
+  ]
+}

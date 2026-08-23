@@ -20,13 +20,22 @@ export {
 } from "./handoff.ts";
 export type { RecoveredQuestionEvent } from "./handoff.ts";
 
+export {
+  validateUpdaterDisposition,
+  readUpdaterDisposition,
+  FileUpdaterJournal,
+} from "./disposition.ts";
+
 export type {
   Lifecycle,
   PendingQuestion,
   RecoveryEvent,
-  RollbackFn,
   StartupOutcome,
   StartupRecoveryResult,
   StartupSweepResult,
   SweepFn,
+  SweepOptions,
+  FsAdapter,
+  UpdaterDisposition,
+  UpdaterJournal,
 } from "./types.ts";
