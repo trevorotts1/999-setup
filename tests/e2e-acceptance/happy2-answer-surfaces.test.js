@@ -181,13 +181,16 @@ function skip(name, reason) {
   // -----------------------------------------------------------------------
 
   check('last-used answer method is only a stored convenience field', () => {
+    // N2 re-base to the v3 contract: the field is lastUsedAnswerMethod and
+    // the never-a-lock rule lives in the answer-controls config and the v3
+    // migration proposal (the schema doc itself no longer carries prose).
     const profile = prefsProfile.defaultProfile()
-    assert.ok('lastAnswerMethod' in profile || true) // field exists in the schema family
+    assert.ok('lastUsedAnswerMethod' in profile, 'v3 profile carries lastUsedAnswerMethod')
     const { mustRead } = harness
     const answerConfig = mustRead(path.join(harness.APP_SRC, 'ui', 'answer-controls', 'config.ts'))
     assert.ok(answerConfig.includes('never a lock'), 'answer-controls config states the never-a-lock rule')
-    const prefsSchema = mustRead(path.join(harness.APP_SRC, 'prefs', 'schema.ts'))
-    assert.ok(prefsSchema.includes('never a lock'), 'prefs schema states the never-a-lock rule')
+    const proposal = mustRead(path.join(harness.APP_SRC, 'preferences', 'migrations', 'schemas', 'preferences-v3.proposal.json'))
+    assert.ok(proposal.includes('never a lock'), 'v3 proposal states the never-a-lock rule')
   })
 
   // -----------------------------------------------------------------------

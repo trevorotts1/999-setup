@@ -81,9 +81,20 @@ async function loadPrefs() {
     for (const forbidden of ['os.userInfo(', 'getpwuid', 'process.env.USER', 'process.env.USERNAME']) {
       assert.ok(!src.includes(forbidden), `prefs lane must never read the OS username (found ${forbidden})`)
     }
-    // Behavioral gate: needsNameAsk is true even when the OS username exists.
-    assert.strictEqual(prefs.name.needsNameAsk({ schemaVersion: 1 }), true,
-      'name ask pending regardless of who the OS user is')
+    // Behavioral gate (N2 re-base to the v3 contract): needsNameAsk is true
+    // for a fresh v3 profile — `nameAsked: null` and no stored name — no
+    // matter who the OS user is. The v2 shape ({schemaVersion: 1} with no
+    // nameAsked field) normalizes to nameAsked null through mergeProfile.
+    assert.strictEqual(
+      prefs.name.needsNameAsk(prefs.profile.mergeProfile(prefs.profile.defaultProfile(), {})),
+      true,
+      'fresh v3 profile has the ask pending regardless of who the OS user is',
+    )
+    assert.strictEqual(
+      prefs.name.needsNameAsk(prefs.profile.defaultProfile()),
+      true,
+      'defaultProfile() itself reports the first-run ask pending',
+    )
   })
 
   // -----------------------------------------------------------------------

@@ -78,25 +78,29 @@ function skip(name, reason) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'candice-prefs-'))
     const env = { ...process.env, CANDICE_PREFS_DIR: dir }
     // Every answer method combined with both voice states round-trips.
+    // N2 re-base to the v3 contract: fields are lastUsedAnswerMethod and
+    // schemaVersion 3; partial docs go through mergeProfile so every
+    // contract field is present before saveProfile persists it.
     for (const method of ['voice', 'typed', 'terminal']) {
       for (const voice of [true, false]) {
-        const saved = store.saveProfile(
-          { schemaVersion: 1, lastAnswerMethod: method, voiceOutputEnabled: voice },
-          env
-        )
+        const doc = profile.mergeProfile(profile.defaultProfile(), {
+          lastUsedAnswerMethod: method,
+          voiceOutputEnabled: voice,
+        })
+        const saved = store.saveProfile(doc, env)
         assert.strictEqual(saved, true, `save ${method}/${voice}`)
         const loaded = store.loadProfile(env)
         assert.strictEqual(loaded.profile.voiceOutputEnabled, voice, `voice state ${voice} round-trips`)
-        assert.strictEqual(loaded.profile.lastAnswerMethod, method, `method ${method} round-trips`)
+        assert.strictEqual(loaded.profile.lastUsedAnswerMethod, method, `method ${method} round-trips`)
       }
     }
   })
 
   check('last-used method is remembered but never forces the voice state', () => {
     // Typing while Candice speaks: method=typed with voice ON must persist
-    // together — the two controls never conflate (spec 5.1/5.2).
-    const p = store.mergeProfile({ schemaVersion: 1 }, { lastAnswerMethod: 'typed', voiceOutputEnabled: true })
-    assert.strictEqual(p.lastAnswerMethod, 'typed')
+    // together — the two controls never conflate (spec 5.1/5.2). (v3 names.)
+    const p = profile.mergeProfile(profile.defaultProfile(), { lastUsedAnswerMethod: 'typed', voiceOutputEnabled: true })
+    assert.strictEqual(p.lastUsedAnswerMethod, 'typed')
     assert.strictEqual(p.voiceOutputEnabled, true)
   })
 
