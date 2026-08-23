@@ -126,6 +126,26 @@ check('BUILD_TARGET is the seeded spec-protocol key with spec 14 meaning', () =>
 })
 
 // ————————————————————————————————
+// 4b. FIX-012 rulefix: CAPACITY_PLAN_DEEPSEEK is a tier question only —
+//     the direct-vs-Ollama half is a RULE, reported never asked
+// ————————————————————————————————
+
+check('CAPACITY_PLAN_DEEPSEEK never asks the direct-vs-Ollama question (R2 rule, reported)', () => {
+  const data = readJson(KEYS_DATA)
+  const k = data.keys.find((e) => e.key === 'CAPACITY_PLAN_DEEPSEEK')
+  assert.ok(k, 'CAPACITY_PLAN_DEEPSEEK must exist')
+  assert.strictEqual(k.answerKind, 'single_choice')
+  assert.strictEqual(k.options, null, 'tier options are runtime-filled (registry stores the shape only)')
+  for (const field of ['display', 'spoken']) {
+    assert.ok(!/direct one/i.test(k[field]), `${field} must not ask the direct-vs-Ollama question`)
+    assert.ok(!/Ollama/i.test(k[field]), `${field} must not mention Ollama`)
+  }
+  assert.ok(/plan/i.test(k.display), 'display asks the plan tier')
+  assert.ok(typeof k.report === 'string' && k.report.length > 0, 'report field carries the R2 rule')
+  assert.ok(/rule/i.test(k.report) && /never a question/i.test(k.report), 'report states the rule is never a question')
+})
+
+// ————————————————————————————————
 // 5. Never-re-ask at the session layer (spec 14: a key is never re-asked
 //     once answered in the session)
 // ————————————————————————————————

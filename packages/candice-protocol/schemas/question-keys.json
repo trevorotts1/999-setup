@@ -1714,8 +1714,9 @@
         "anchor": "Resolving which provider path this build will run on",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "Is your DeepSeek account the direct one — the one you topped up with a balance — or are you reaching DeepSeek through Ollama?",
-      "spoken": "Is your DeepSeek account the direct one — the one you topped up with a balance — or are you reaching DeepSeek through Ollama?",
+      "display": "Which DeepSeek plan do you pay for?",
+      "spoken": "Which DeepSeek plan do you pay for?",
+      "report": "The direct-vs-Ollama path is a rule, never a question: when a DeepSeek direct account exists and its balance is positive, DeepSeek direct is the builder path. A hosted DeepSeek (Ollama) is the fallback only when direct is absent or unfunded — and that state is reported, never asked about.",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
