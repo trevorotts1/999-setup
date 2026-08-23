@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { evaluateRelease } from "../status.mjs";
+import { evaluateRelease, evaluateReleaseWithPin } from "../status.mjs";
 
 function fixture({ releaseReady = false, lifecycle = "REPAIR_IN_PROGRESS", openFixIds = ["FIX-001"] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "candice-release-gate-"));
@@ -49,9 +49,10 @@ test("release authority rejects a forged editable release-gate document", () => 
     requiredGates: { madeUpGate: "PASS" },
     checklist: { requiredUnchecked: 0 },
     candidate: { commit: "b".repeat(40), tag: "v9.9.9" },
-    artifacts: [{ name: "forged", url: "https://example.test/fake", sha256: fakeSha, signature: "forged", localPath: "fake.bin" }],
+    artifacts: [{ name: "forged", url: "https://example.test/fake", sha256: fakeSha, signature: "forged", localPath: "release-artifacts/fake.bin" }],
   }));
-  writeFileSync(join(root, "fake.bin"), "forged");
+  mkdirSync(join(root, "release-artifacts"));
+  writeFileSync(join(root, "release-artifacts", "fake.bin"), "forged");
   const result = evaluateRelease(root);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes("release gate schema is anything-else")));
@@ -219,4 +220,311 @@ test("valid CI evidence with windowsProduction false emits no CI-evidence errors
   assert.equal(result.ok, false);
   const ciErrors = result.errors.filter((e) => e.includes("ciRequiredChecks") || e.includes("windowsProduction") || e.includes("continue-on-error") || e.includes("run IDs"));
   assert.deepEqual(ciErrors, [], ciErrors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// Q-03 key pin: the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin
+// is authoritative once configured. These tests stand in for the configured
+// state (the pin in this branch is still UNCONFIGURED) and prove that a key
+// at the fixed repository location must hash to the pin, exactly as the code
+// would enforce after FIX-024 sets a real pin. They are hermetic: no fixture
+// asserts the pin value itself, only the code path that compares against it.
+// ---------------------------------------------------------------------------
+
+import { createHash, generateKeyPairSync } from "node:crypto";
+
+// Real Ed25519 SPKI PEM, generated per run: the authority parses it with
+// createPublicKey, and the pin covers its exact bytes.
+function makeKeyBytes() {
+  const { publicKey } = generateKeyPairSync("ed25519");
+  return Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+}
+
+function keyPinFixture(keyFileText = null) {
+  const root = fixture({ releaseReady: true, lifecycle: "RELEASE_CANDIDATE", openFixIds: [] });
+  const CONTROL = join(root, "CONTROL");
+  if (keyFileText !== null) writeFileSync(join(CONTROL, "release-authority.pub"), keyFileText);
+  return root;
+}
+
+function makeCompiledPin(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+test("a key at the fixed repo location whose SHA-256 equals the compiled pin emits no key-pin error", () => {
+  const keyBytes = makeKeyBytes();
+  const root = keyPinFixture(keyBytes);
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.candidate = { commit: "c".repeat(40), tag: "v9.9.9" };
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  const keyErrors = result.errors.filter((e) => e.includes("release authority key"));
+  assert.deepEqual(keyErrors, [], keyErrors.join("; "));
+});
+
+test("pin mismatch refuses release when the compiled pin differs from the key file hash", () => {
+  const root = keyPinFixture(makeKeyBytes());
+  const wrongPin = makeCompiledPin(makeKeyBytes());
+  const result = evaluateReleaseWithPin(root, wrongPin);
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin")),
+    result.errors.join("; "),
+  );
+});
+
+test("missing key file refuses release once a pin is configured", () => {
+  const root = keyPinFixture(null);
+  const result = evaluateReleaseWithPin(root, "a".repeat(64));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("operator release authority key is missing")), result.errors.join("; "));
+});
+
+test("the key pin is authoritative over the editable control document", () => {
+  const root = keyPinFixture(makeKeyBytes());
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.publicKeySha256 = "forged"; // an edited control document cannot change the pin
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(makeKeyBytes()));
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => e.includes("hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin")),
+    result.errors.join("; "),
+  );
+});
+
+test("the key pin applies to the exact file bytes, not a re-hash of another file", () => {
+  const keyBytes = makeKeyBytes();
+  const root = keyPinFixture(keyBytes);
+  const pinOfFixture = makeCompiledPin(keyBytes);
+  const result = evaluateReleaseWithPin(root, pinOfFixture);
+  const keyErrors = result.errors.filter((e) => e.includes("release authority key"));
+  assert.deepEqual(keyErrors, [], keyErrors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// Q-03 steps 2-3: canonical payload + detached Ed25519 signature verification.
+// The authority loads the pinned key and verifies each artifact signature
+// against the canonical payload; a truthy non-signature can never pass.
+// ---------------------------------------------------------------------------
+
+import { sign as edSign, createHash as hashFn } from "node:crypto";
+import { canonicalSignedPayload } from "../status.mjs";
+
+const FULL_GATE_NAMES = Object.freeze([
+  "independentQc", "packagedEndToEnd", "privacy", "visualParity", "cleanMachine",
+  "macosSigningAndNotarization", "windowsSigningAndInteractiveSmoke",
+  "ciRequiredChecks", "supplyChain",
+]);
+
+function signatureFixture({ commit = "d".repeat(40), tag = "v9.9.9", artifactOverrides = {}, keyBytes }) {
+  const root = mkdtempSync(join(tmpdir(), "candice-release-sig-"));
+  mkdirSync(join(root, "CONTROL"));
+  writeFileSync(join(root, "CONTROL", "project_state.json"), JSON.stringify({ candice: { release_ready: true, repair_status: "RELEASE_CANDIDATE" } }));
+  const artifactContent = Buffer.from("artifact bytes for signature fixture");
+  const artifactSha = hashFn("sha256").update(artifactContent).digest("hex");
+  const gate = {
+    schema: "candice/release-gate@1",
+    lifecycle: "RELEASE_CANDIDATE",
+    openFixIds: [],
+    requiredGates: Object.fromEntries(FULL_GATE_NAMES.map((n) => [n, n === "windowsSigningAndInteractiveSmoke" ? "PENDING" : "PASS"])),
+    checklist: { requiredUnchecked: 0 },
+    candidate: { commit, tag },
+    ciRequiredChecks: {
+      commitSha: commit,
+      runIds: ["12345678901", "12345678902"],
+      requiredFailures: 0,
+      requiredSkips: 0,
+      continueOnErrorCount: 0,
+      reportArtifacts: ["commit-sha", "perf-report", "verifier-macos", "verifier-windows", "windows-shell-compat", "cargo-test-output", "determinism-evidence"],
+      windowsProduction: false,
+    },
+    artifacts: [{ name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha, signature: "", localPath: "release-artifacts/candice-0.2.0.dmg", ...artifactOverrides }],
+  };
+  writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify(gate));
+  mkdirSync(join(root, "release-artifacts"));
+  writeFileSync(join(root, "release-artifacts", "candice-0.2.0.dmg"), artifactContent);
+  writeFileSync(join(root, "CONTROL", "release-authority.pub"), keyBytes);
+  return { root, commit, tag, artifactSha, pin: makeCompiledPin(keyBytes) };
+}
+
+function payloadFor({ commit, tag, name, url, sha256 }) {
+  return Buffer.from(canonicalSignedPayload({
+    candidateCommit: commit,
+    tag,
+    artifactName: name,
+    url,
+    sha256,
+  }), "utf8");
+}
+
+function signRecord(privateKey, { commit, tag, name, url, sha256 }) {
+  return edSign(null, payloadFor({ commit, tag, name, url, sha256 }), privateKey).toString("base64");
+}
+
+function signatureErrors(result) {
+  return result.errors.filter((e) => e.includes("signature"));
+}
+
+test("canonical signed payload is byte-exact", () => {
+  const payload = canonicalSignedPayload({
+    candidateCommit: "0123456789abcdef0123456789abcdef01234567",
+    tag: "v0.2.0",
+    artifactName: "candice-companion-0.2.0.dmg",
+    url: "https://example.test/releases/candice-companion-0.2.0.dmg",
+    sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  });
+  assert.equal(payload, [
+    "candidateCommit=0123456789abcdef0123456789abcdef01234567",
+    "tag=v0.2.0",
+    "artifactName=candice-companion-0.2.0.dmg",
+    "url=https://example.test/releases/candice-companion-0.2.0.dmg",
+    "sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  ].join("\n"));
+});
+
+test("valid detached Ed25519 signature over the canonical payload emits no signature error", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const keyBytes = Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+  const { root, commit, tag, artifactSha } = signatureFixture({ keyBytes });
+  const signature = signRecord(privateKey, { commit, tag, name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].signature = signature;
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.deepEqual(signatureErrors(result), [], signatureErrors(result).join("; "));
+});
+
+test("truthy non-signature string is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { signature: "not-a-signature" } });
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.equal(result.ok, false);
+  assert.ok(signatureErrors(result).length > 0, result.errors.join("; "));
+});
+
+test("signature over a different payload is rejected", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const keyBytes = Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+  const { root, commit, tag } = signatureFixture({ keyBytes });
+  // Sign the payload for a DIFFERENT artifact hash (tampered hash field).
+  const forged = signRecord(privateKey, { commit, tag, name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: "f".repeat(64) });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].signature = forged;
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.equal(result.ok, false);
+  assert.ok(signatureErrors(result).some((e) => e.includes("verification failed")), result.errors.join("; "));
+});
+
+test("signature from a different key pair is rejected", () => {
+  const { publicKey, privateKey: otherPrivate } = generateKeyPairSync("ed25519");
+  const keyBytes = Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+  const { root, commit, tag, artifactSha } = signatureFixture({ keyBytes });
+  const wrongKey = generateKeyPairSync("ed25519");
+  const forged = signRecord(wrongKey.privateKey, { commit, tag, name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].signature = forged;
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.equal(result.ok, false);
+  assert.ok(signatureErrors(result).some((e) => e.includes("verification failed")), result.errors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// QFIX-q3-paths: artifact localPath confinement. The designated
+// release-artifacts/ root is code, not configuration: no control-document
+// value may redirect artifact reads outside it, through it, or around it.
+// ---------------------------------------------------------------------------
+
+function pathAttackFixture({ localPath, setup } = {}) {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: localPath === undefined ? {} : { localPath } });
+  if (setup) setup(root);
+  return { root, keyBytes };
+}
+
+function assertInvalidArtifactRecord(result) {
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("invalid artifact record")), result.errors.join("; "));
+}
+
+test("localPath outside the designated candidate-artifacts root is rejected", () => {
+  const { root, keyBytes } = pathAttackFixture({ localPath: "candice-0.2.0.dmg" });
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("localPath escaping the designated root via .. is rejected", () => {
+  const { root, keyBytes } = pathAttackFixture({ localPath: "../outside.bin" });
+  writeFileSync(join(root, "..", "outside.bin"), "escape bytes");
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("absolute localPath is rejected even when it lands inside the root", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].localPath = join(root, "release-artifacts", "candice-0.2.0.dmg");
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked artifact file is rejected even when it points back inside the root", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/linked.dmg" } });
+  symlinkSync(join(root, "release-artifacts", "candice-0.2.0.dmg"), join(root, "release-artifacts", "linked.dmg"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked intermediate directory is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/linked-dir/out.dmg" } });
+  const outside = mkdtempSync(join(tmpdir(), "candice-outside-dir-"));
+  writeFileSync(join(outside, "out.dmg"), "outside bytes");
+  symlinkSync(outside, join(root, "release-artifacts", "linked-dir"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a symlinked candidate-artifacts root is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes });
+  const outside = mkdtempSync(join(tmpdir(), "candice-outside-root-"));
+  writeFileSync(join(outside, "candice-0.2.0.dmg"), "outside bytes");
+  rmSync(join(root, "release-artifacts"), { recursive: true, force: true });
+  symlinkSync(outside, join(root, "release-artifacts"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a non-regular file (directory) as the artifact leaf is rejected", () => {
+  const keyBytes = makeKeyBytes();
+  const { root } = signatureFixture({ keyBytes, artifactOverrides: { localPath: "release-artifacts/subdir" } });
+  mkdirSync(join(root, "release-artifacts", "subdir"));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assertInvalidArtifactRecord(result);
+});
+
+test("a plain file inside the designated root resolves and verifies", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const keyBytes = Buffer.from(publicKey.export({ type: "spki", format: "pem" }).toString("utf8"));
+  const { root, commit, tag, artifactSha } = signatureFixture({ keyBytes });
+  const signature = signRecord(privateKey, { commit, tag, name: "candice-0.2.0.dmg", url: "https://example.test/candice-0.2.0.dmg", sha256: artifactSha });
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts[0].signature = signature;
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateReleaseWithPin(root, makeCompiledPin(keyBytes));
+  assert.equal(result.errors.some((e) => e.includes("invalid artifact record")), false, result.errors.join("; "));
+  assert.deepEqual(signatureErrors(result), [], signatureErrors(result).join("; "));
 });

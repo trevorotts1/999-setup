@@ -10,10 +10,10 @@
  * Usage:
  *   node scripts/candice-release/status.mjs [--root <repository-root>]
  */
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, lstatSync } from "node:fs";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, relative, isAbsolute, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -35,7 +35,136 @@ const REQUIRED_GATES = Object.freeze([
 // document can make a release pass. FIX-024 may replace it with the SHA-256
 // of an operator-owned Ed25519 public key after its independent clean-machine
 // review; that change itself requires review and a release-gate recheck.
+//
+// Q-03 step 1: once configured, the pin is authoritative. The authority loads
+// the operator public key from a fixed repository location (below), hashes the
+// exact file bytes with SHA-256, and rejects release unless the hash equals
+// this compiled pin. A matching hash is required for any later signature
+// verification to be meaningful; the key file itself is otherwise inert.
 const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
+
+// Fixed repository location of the operator release-authority public key.
+// This path is code, not control-document configuration: a forged
+// release-gate.json cannot redirect it. The pin above covers the exact bytes
+// of this file (whole-file SHA-256), so PEM armor and line endings are part
+// of the pin, not normalized away.
+const RELEASE_AUTHORITY_KEY_FILE = "CONTROL/release-authority.pub";
+
+// QFIX-q3-paths: the only directory a signed artifact's localPath may point
+// into. This root is code, not control-document configuration: a forged
+// release-gate.json cannot redirect the artifact lookup outside it. Artifact
+// bytes are large and never committed; the release lane stages them here on
+// the machine that runs the authority.
+const CANDIDATE_ARTIFACTS_ROOT = "release-artifacts";
+
+/**
+ * Resolves one artifact localPath to a verified, contained, real file path,
+ * or returns null. Rules, in order:
+ * - the record value must be a non-empty string and NOT absolute;
+ * - every component of the value (including the leaf) must lstat, and no
+ *   component may be a symbolic link — a symlink anywhere in the chain is
+ *   rejected even when it points back inside the root;
+ * - the designated root itself may not be a symlink (lstat, then realpath
+ *   for containment comparison; a symlinked root is rejected);
+ * - the realpath of the leaf must exist, be a regular file, and live inside
+ *   realpath(root)/release-artifacts — `..` escapes, absolute paths, and
+ *   hard links to outside files are all refused.
+ * A realpath that throws (dangling link, missing file) yields null, never a
+ * partially resolved path.
+ */
+function resolveArtifactLocalPath(root, artifact) {
+  const localPath = typeof artifact?.localPath === "string" ? artifact.localPath : null;
+  if (!localPath || localPath.length === 0) return null;
+  if (isAbsolute(localPath)) return null;
+  const joined = resolve(root, localPath);
+  const relativePath = relative(root, joined);
+  if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) return null;
+  const components = relativePath.split(sep).filter((part) => part.length > 0);
+  const baseComponents = CANDIDATE_ARTIFACTS_ROOT.split("/").filter((part) => part.length > 0);
+  if (components.length <= baseComponents.length) return null;
+  for (let i = 0; i < baseComponents.length; i += 1) {
+    if (components[i] !== baseComponents[i]) return null;
+  }
+  // Walk every component from repo root through the leaf; lstat so a
+  // symlink is seen as a link, never followed.
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    try {
+      const stat = lstatSync(current);
+      if (!stat.isFile() && !stat.isDirectory()) return null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const artifactRootReal = realpathSync(resolve(root, CANDIDATE_ARTIFACTS_ROOT));
+    const leafReal = realpathSync(current);
+    const rel = relative(artifactRootReal, leafReal);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+    if (!lstatSync(leafReal).isFile()) return null;
+    return leafReal;
+  } catch {
+    return null;
+  }
+}
+
+// Q-03 steps 2-3: canonical signed payload. The bytes the operator signs are
+// EXACTLY this string (UTF-8, one line per field, `key=value`, no separators
+// between fields, no trailing newline, keys in this fixed order):
+//
+//   candidateCommit=<full 40-hex SHA>
+//   tag=<semantic version tag>
+//   artifactName=<name>
+//   url=<https URL>
+//   sha256=<64-hex artifact SHA-256>
+//
+// Example bytes (the 5 fields joined by U+000A):
+//   candidateCommit=0123456789abcdef0123456789abcdef01234567
+//   tag=v0.2.0
+//   artifactName=candice-companion-0.2.0.dmg
+//   url=https://example.test/releases/candice-companion-0.2.0.dmg
+//   sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+//
+// Any other serialization — different key order, extra fields, trailing
+// newline, JSON, whitespace — produces different bytes and therefore a
+// signature that does not verify. The signer signs payload bytes directly
+// (detached Ed25519), NOT a hash of them, so verification is one step:
+//   verify(null, canonicalPayload, key, signature)
+// Nothing from the editable release-gate.json participates except the six
+// field values themselves; the field names, order, and separators are code.
+const SIGNED_PAYLOAD_FIELD_NAMES = Object.freeze([
+  "candidateCommit",
+  "tag",
+  "artifactName",
+  "url",
+  "sha256",
+]);
+
+/**
+ * Builds the canonical signed payload for one artifact record. Byte-exact:
+ * each field renders as `<name>=<value>` followed by U+000A, in the fixed
+ * order above, with no leading/trailing separator, no other characters.
+ * Values are rendered as strings exactly as they appear in the gate
+ * document (no trimming, no lowercasing, no re-encoding) so a modified
+ * candidate, tag, name, URL, or hash changes the bytes and fails verify.
+ *
+ * Rendering rules, all enforced by construction:
+ * - Exactly the five fields of SIGNED_PAYLOAD_FIELD_NAMES appear, in that
+ *   order; no record carries extra fields into the payload and no gate
+ *   document can reorder or rename them.
+ * - Every field is emitted as `<name>=<value>` then one U+000A (LF). The
+ *   final field has NO trailing LF — payload ends with the sha256 value's
+ *   last hex character.
+ * - A value that is missing (undefined/null) renders as the literal string
+ *   "undefined"/"null" — never as an empty field — so an incomplete record
+ *   yields bytes no honest signer signed and verification fails.
+ * - Non-ASCII values are UTF-8 encoded verbatim (no NFC/NFD normalization);
+ *   leading/trailing whitespace inside a value is preserved verbatim.
+ */
+export function canonicalSignedPayload(record) {
+  return SIGNED_PAYLOAD_FIELD_NAMES.map((name) => `${name}=${record[name]}`).join("\n");
+}
 
 // FIX-021: every report artifact the required CI matrix must upload. The
 // evidence record must name all of them; names live here (code), never in a
@@ -100,7 +229,7 @@ function git(root, args) {
   }
 }
 
-export function evaluateRelease(root) {
+function evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256) {
   const errors = [];
   const project = readJson(resolve(root, "CONTROL/project_state.json"), errors, "project state");
   const gate = readJson(resolve(root, "CONTROL/release-gate.json"), errors, "release gate");
@@ -209,25 +338,91 @@ export function evaluateRelease(root) {
   } else if (/^\s*continue-on-error:\s*true/m.test(readFileSync(ciWorkflowPath, "utf8"))) {
     errors.push("candice-ci.yml contains continue-on-error: true (required verifiers must block)");
   }
+  // Q-03 steps 2-3: the release-authority key must load BEFORE any artifact
+  // signature check. A key that hashes to the pin is loaded once; if it does
+  // not parse as a public key, every artifact signature fails verification
+  // below (no artifact is ever accepted with an unparsable authority key).
+  let authorityKey = null;
+  let authorityKeyConfigured = true;
+  if (releaseAuthorityPublicKeySha256 === "UNCONFIGURED") {
+    authorityKeyConfigured = false;
+    errors.push("operator release authority is not configured; FIX-024 independent approval is required");
+  } else {
+    const keyPath = resolve(root, RELEASE_AUTHORITY_KEY_FILE);
+    if (!existsSync(keyPath)) {
+      authorityKeyConfigured = false;
+      errors.push(`operator release authority key is missing: ${keyPath}`);
+    } else if (sha256File(keyPath) !== releaseAuthorityPublicKeySha256) {
+      authorityKeyConfigured = false;
+      errors.push("operator release authority key hash does not equal the compiled OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 pin");
+    } else {
+      try {
+        authorityKey = createPublicKey(readFileSync(keyPath));
+      } catch (error) {
+        authorityKeyConfigured = false;
+        errors.push(`operator release authority key does not parse as a public key: ${error.message}`);
+      }
+    }
+  }
+
   if (!Array.isArray(gate.artifacts) || gate.artifacts.length === 0) {
     errors.push("no signed release artifacts recorded");
   } else {
     for (const artifact of gate.artifacts) {
-      const localPath = typeof artifact?.localPath === "string" ? resolve(root, artifact.localPath) : null;
+      const localPath = resolveArtifactLocalPath(root, artifact);
       if (
         !artifact?.name || !/^https:\/\//.test(artifact.url || "") || !isSha256(artifact.sha256)
-        || !artifact.signature || !localPath || !existsSync(localPath)
+        || !artifact.signature || !localPath
       ) {
         errors.push(`invalid artifact record: ${artifact?.name || "unnamed"}`);
       } else if (sha256File(localPath) !== artifact.sha256) {
         errors.push(`artifact hash mismatch: ${artifact.name}`);
+      } else if (!authorityKeyConfigured) {
+        // Key authority broken: never accept any artifact signature.
+        errors.push(`artifact signature not verified (release authority key not available): ${artifact.name}`);
+      } else {
+        // Q-03 step 3: detached Ed25519 verification over the canonical
+        // payload. The payload binds candidate commit, tag, artifact name,
+        // URL, and SHA-256; the record passes ONLY if the signature is a
+        // valid detached Ed25519 signature of those exact bytes under the
+        // pinned key. A truthy non-signature string can never pass.
+        const payload = Buffer.from(
+          canonicalSignedPayload({
+            candidateCommit: candidate.commit,
+            tag: candidate.tag,
+            artifactName: artifact.name,
+            url: artifact.url,
+            sha256: artifact.sha256,
+          }),
+          "utf8",
+        );
+        const signature = Buffer.from(artifact.signature, "base64");
+        try {
+          const valid = verify(null, payload, authorityKey, signature);
+          if (!valid) {
+            errors.push(`artifact signature verification failed: ${artifact.name}`);
+          }
+        } catch {
+          errors.push(`artifact signature could not be verified: ${artifact.name}`);
+        }
       }
     }
   }
-  if (OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 === "UNCONFIGURED") {
-    errors.push("operator release authority is not configured; FIX-024 independent approval is required");
-  }
   return { ok: errors.length === 0, errors };
+}
+
+export function evaluateRelease(root) {
+  // Production path: the pin is the compiled constant. There is no parameter,
+  // environment variable, or control-document field that can override it.
+  return evaluateWithAuthorityPin(root, OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256);
+}
+
+// Test-only seam: exercises the configured state while the compiled pin in
+// this branch is still UNCONFIGURED (it becomes the real key hash after the
+// FIX-024 independent clean-machine review). Never used by the production
+// CLI path or by evaluateRelease.
+export function evaluateReleaseWithPin(root, releaseAuthorityPublicKeySha256) {
+  return evaluateWithAuthorityPin(root, releaseAuthorityPublicKeySha256);
 }
 
 function main() {
