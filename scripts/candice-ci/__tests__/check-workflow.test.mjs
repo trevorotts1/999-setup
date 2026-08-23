@@ -35,6 +35,8 @@ jobs:
           cd apps/candice-companion
           npm ci
           npm run build
+      - name: Q-10 smoke posture gate (no updater content, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
       - name: Tauri release bundle build (macOS, unsigned)
         run: |
           cd apps/candice-companion
@@ -130,7 +132,9 @@ test("npm install fails", () => {
 });
 
 test("perf before bundle build fails", () => {
-  const bundleStep = `      - name: Tauri release bundle build (macOS, unsigned)
+  const bundleStep = `      - name: Q-10 smoke posture gate (no updater content, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
+      - name: Tauri release bundle build (macOS, unsigned)
         run: |
           cd apps/candice-companion
           npm run tauri:build
@@ -144,7 +148,9 @@ test("perf before bundle build fails", () => {
 });
 
 test("perf without --require-bundle fails", () => {
-  const bundleStep = `      - name: Tauri release bundle build (macOS, unsigned)
+  const bundleStep = `      - name: Q-10 smoke posture gate (no updater content, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
+      - name: Tauri release bundle build (macOS, unsigned)
         run: |
           cd apps/candice-companion
           npm run tauri:build
@@ -192,5 +198,47 @@ jobs:
   const r = checkWorkflows(root);
   assert.equal(r.ok, false);
   assert.ok(r.errors.some((e) => e.includes("kaizen-tests.yml") && e.includes("unpinned action actions/checkout@v4")));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("Tauri build without Q-10 smoke posture gate fails", () => {
+  const gate = `      - name: Q-10 smoke posture gate (no updater content, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
+`;
+  const body = CLEAN.replace(gate, "");
+  const root = fixture({ "candice-ci.yml": body });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("macos-arm64") && e.includes("Q-10 smoke posture gate")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("Tauri build before the Q-10 smoke posture gate fails", () => {
+  const gate = `      - name: Q-10 smoke posture gate (no updater content, real pubkey)
+        run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json
+`;
+  const bundleStep = `      - name: Tauri release bundle build (macOS, unsigned)
+        run: |
+          cd apps/candice-companion
+          npm run tauri:build
+`;
+  const body = CLEAN.replace(gate + bundleStep, bundleStep + gate);
+  const root = fixture({ "candice-ci.yml": body });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("macos-arm64") && e.includes("before the Q-10 smoke posture gate")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("clean workflow with the smoke posture gate still passes", () => {
+  const root = fixture({ "candice-ci.yml": CLEAN });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, true, r.errors.join("; "));
   rmSync(root, { recursive: true, force: true });
 });

@@ -10,7 +10,9 @@
  *   - required suites missing from the matrix (e.g. the perf step missing
  *     `--require-bundle` when a Tauri bundle step is present);
  *   - a `run:` line invoking `status.mjs` without `--root` pinning to the
- *     workspace checkout.
+ *     workspace checkout;
+ *   - a Tauri build in a required job without the Q-10 smoke posture gate
+ *     (`updater-sign.mjs --posture smoke`) running before the build.
  *
  * Plain JavaScript, no network, no clock — determinism-safe per the Master
  * Spec workflow determinism rules. The workflow validates itself by running
@@ -89,6 +91,19 @@ export function checkWorkflows(root = scriptRoot) {
         const perfIdx = block.search(/tests\/performance\/run\.mjs/);
         if (perfIdx >= 0 && bundleIdx >= 0 && perfIdx < bundleIdx) {
           errors.push(`${file}: job ${jobName} runs the perf suite before the bundle build (build-before-measure required)`);
+        }
+      }
+      // 6. Q-10 smoke posture gate: every required job that runs a Tauri build
+      //    must validate the committed config as honest SMOKE posture
+      //    (updater artifacts disabled, real non-placeholder pubkey) BEFORE
+      //    the build — a smoke build must never claim updater-ready posture.
+      if (hasBundleStep && required) {
+        const postureIdx = block.search(/updater-sign\.mjs\s+--posture\s+smoke/);
+        const bundleIdx = block.search(/tauri:build|tauri build/);
+        if (postureIdx < 0) {
+          errors.push(`${file}: job ${jobName} runs a Tauri build without the Q-10 smoke posture gate (updater-sign.mjs --posture smoke required)`);
+        } else if (bundleIdx >= 0 && postureIdx > bundleIdx) {
+          errors.push(`${file}: job ${jobName} runs the Tauri build before the Q-10 smoke posture gate`);
         }
       }
       // 5. release authority must pin --root to the workspace checkout

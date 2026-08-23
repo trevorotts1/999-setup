@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { evaluateRelease } from "../status.mjs";
 
@@ -219,4 +220,100 @@ test("valid CI evidence with windowsProduction false emits no CI-evidence errors
   assert.equal(result.ok, false);
   const ciErrors = result.errors.filter((e) => e.includes("ciRequiredChecks") || e.includes("windowsProduction") || e.includes("continue-on-error") || e.includes("run IDs"));
   assert.deepEqual(ciErrors, [], ciErrors.join("; "));
+});
+
+// ---------------------------------------------------------------------------
+// Q-10: unsigned smoke artifacts must be rejected by the release authority.
+// ---------------------------------------------------------------------------
+
+function artifactFixture(records) {
+  const root = mkdtempSync(join(tmpdir(), "candice-release-artifact-"));
+  mkdirSync(join(root, "CONTROL"));
+  writeFileSync(join(root, "CONTROL", "project_state.json"), JSON.stringify({ candice: { release_ready: true, repair_status: "RELEASE_CANDIDATE" } }));
+  const gate = {
+    schema: "candice/release-gate@1",
+    lifecycle: "RELEASE_CANDIDATE",
+    openFixIds: [],
+    requiredGates: {
+      independentQc: "PASS", packagedEndToEnd: "PASS", privacy: "PASS", visualParity: "PASS",
+      cleanMachine: "PASS", macosSigningAndNotarization: "PASS",
+      windowsSigningAndInteractiveSmoke: "PENDING", ciRequiredChecks: "PASS", supplyChain: "PASS",
+    },
+    checklist: { requiredUnchecked: 0 },
+    candidate: { commit: "c".repeat(40), tag: "v9.9.9" },
+    artifacts: records,
+    ciRequiredChecks: validCiEvidence(),
+  };
+  writeFileSync(join(root, "CONTROL", "release-gate.json"), JSON.stringify(gate));
+  return root;
+}
+
+test("Q-10: unsigned smoke artifact with an updater claim is rejected by the release authority", () => {
+  const root = artifactFixture([]);
+  const artifactPath = join(root, "smoke.tar.gz");
+  writeFileSync(artifactPath, "smoke bytes");
+  const sha = createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts = [
+    {
+      name: "smoke-unsigned",
+      url: "https://github.com/trevorotts1/999-setup/releases/download/candice-v9.9.9/smoke.tar.gz",
+      sha256: sha,
+      signature: "", // smoke builds produce no .sig
+      updater: true, // but the record claims updater-ready posture
+      localPath: "smoke.tar.gz",
+    },
+  ];
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateRelease(root);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("updater-ready posture")), result.errors.join("; "));
+});
+
+test("Q-10: a signed artifact record with a real signature passes the updater claim check", () => {
+  const root = artifactFixture([]);
+  const artifactPath = join(root, "release.tar.gz");
+  writeFileSync(artifactPath, "release bytes");
+  const sha = createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts = [
+    {
+      name: "release-signed",
+      url: "https://github.com/trevorotts1/999-setup/releases/download/candice-v9.9.9/release.tar.gz",
+      sha256: sha,
+      signature: "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIG1pbmlzaWduIGRlbmV5IEJsYWNrQ0VPClJXdHBIS3A3bmFpdUJPTW9JWWUxZXJ3RjM2Y1lKMEtKUjh1ZkF0bjNEdnJNTElVNDhSTDdJSmlPZ1B4bVE1R2p3b2Z2ZkF0SE5hbVBQOXpSeStBM1ltbW1BPT0KdHJ1c3RlZCBjb21tZW50OiB0aW1lc3RhbXA6MTc4Mjg0ODQ0MyAgZmlsZTpjYW5kaWNlLnRhci5negpYbjFaL3pNMmVmd1NiZEFGRWpOVWZJVGZ5VUplTURBQXNSMDBxU2d4MVJCOStRS1I5WFVhYlN4eHRGNWt1Y2dnNk0xNENlQk5pRVdTTFRybC9PN1Y0aGc9PQo=",
+      updater: true,
+      localPath: "release.tar.gz",
+    },
+  ];
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateRelease(root);
+  const q10Errors = result.errors.filter((e) => e.includes("updater-ready posture"));
+  assert.deepEqual(q10Errors, [], q10Errors.join("; "));
+});
+
+test("Q-10: a symlinked artifact is refused by the release authority", () => {
+  const root = artifactFixture([]);
+  const target = join(root, "real.tar.gz");
+  writeFileSync(target, "real bytes");
+  const link = join(root, "link.tar.gz");
+  symlinkSync(target, link);
+  const sha = createHash("sha256").update(readFileSync(target)).digest("hex");
+  const gatePath = join(root, "CONTROL", "release-gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  gate.artifacts = [
+    {
+      name: "symlinked",
+      url: "https://github.com/trevorotts1/999-setup/releases/download/candice-v9.9.9/link.tar.gz",
+      sha256: sha,
+      signature: "sig",
+      localPath: "link.tar.gz",
+    },
+  ];
+  writeFileSync(gatePath, JSON.stringify(gate));
+  const result = evaluateRelease(root);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("not a regular file")), result.errors.join("; "));
 });

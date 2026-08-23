@@ -46,7 +46,7 @@
       "../../../THIRD_PARTY_NOTICES.md",
       "speech-assets/**/*"
     ],
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "12.0",
       "hardenedRuntime": true,
@@ -73,7 +73,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RELEASE_OWNER_MUST_REPLACE_WITH_BASE64_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxQjI3NDQ2QTk3MDRCREYKUldUZlMzQ3BSblN5TVJyRHRHS3ZLdW9Rem5BY1VjdGtzZ3MxdTEzLzg1K2o1ZHJqMXRJUlhTaXE=",
       "endpoints": [
         "https://github.com/trevorotts1/999-setup/releases/download/candice-v{{current_version}}/latest.json"
       ],
