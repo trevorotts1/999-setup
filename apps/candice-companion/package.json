@@ -4,6 +4,10 @@
   "version": "1.0.0-rc.1",
   "description": "Candice Companion — local visual and voice companion for Claude Code skills (Tauri 2 shell)",
   "type": "module",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || >=22.0.0"
+  },
+  "packageManager": "npm@11.8.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build --config vite.config.build.ts",
@@ -14,7 +18,9 @@
     "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts",
     "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts src/shell/__tests__/boot-health.test.ts src/runtime/__tests__/capabilities.test.ts",
     "verify:visual-bundle": "npm run build && node scripts/assert-visual-bundle.mjs",
-    "verify:accessibility-bundle": "npm run build && node scripts/assert-accessibility-bundle.mjs"
+    "verify:accessibility-bundle": "npm run build && node scripts/assert-accessibility-bundle.mjs",
+    "audit:ci": "npm audit --audit-level=high",
+    "sbom": "node ../../scripts/candice-release/sbom.mjs --root ../.."
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1"
@@ -23,6 +29,6 @@
     "@tauri-apps/cli": "2.11.4",
     "@types/node": "26.2.0",
     "typescript": "5.9.3",
-    "vite": "5.4.21"
+    "vite": "6.4.3"
   }
 }

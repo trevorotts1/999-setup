@@ -43,6 +43,14 @@ allow = [
     "Zlib",
     "0BSD",
     "CC0-1.0",
+    # CDLA-Permissive-2.0 — webpki-root-certs 1.0.9 (via rustls 0.23 ->
+    # tauri 2.11.5). Community Data License Agreement, Permissive variant:
+    # applies to the bundled Mozilla root-CA *data* (certificate metadata),
+    # permits redistribution and commercial use, no copyleft or source-offer
+    # obligation. Redistribution of the data in the shipped app is permitted.
+    # Registered under the dependency exception process
+    # (CONTROL/dependency-exceptions.md, EXC-2026-08-23-01).
+    "CDLA-Permissive-2.0",
 ]
 # Deny-by-default is unconditional in cargo-deny >= 0.16: any license not
 # allowed or excepted, and any undetermined license, fails the check.

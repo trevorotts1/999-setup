@@ -110,6 +110,27 @@ jobs:
           npm ci
           npm run build
 
+      # Required: no continue-on-error. The audit gate exits nonzero on any
+      # high/critical finding. cargo-deny runs per crate tree; the manifests
+      # resolve from each crate directory and deny.toml is discovered from the
+      # repository root (cargo-deny 0.20.2 — the `--manifest-path` flag is not
+      # valid for `cargo deny check`).
+      - name: npm audit — high/critical gate (FIX-023, required)
+        run: |
+          cd apps/candice-companion
+          npm audit --audit-level=high
+      - name: cargo-deny — advisories/bans/licenses/sources, all seven crate trees (FIX-023, required)
+        run: |
+          cargo install cargo-deny --locked --version 0.20.2
+          cd apps/candice-companion
+          for m in src-tauri src-tauri/audio/capture src-tauri/audio/capture-windows \
+                   src-tauri/permissions src-tauri/binding/macos src-tauri/binding/windows \
+                   scripts/package-macos/signature-helper; do
+            echo "== cargo deny check: $m =="
+            (cd "$m" && cargo deny check) || exit 1
+          done
+          cd ../..
+
       # Required: no continue-on-error. Host-class checks the runner cannot
       # provide exit 0 as explicit BLOCKED rows; a FAIL exits nonzero and
       # blocks the job.
@@ -193,6 +214,15 @@ jobs:
       - name: Workflow self-validation (FIX-021 structural check)
         run: node scripts/candice-ci/check-workflow.mjs --root .
 
+      # Required: no continue-on-error. SPDX output is deterministic (sorted
+      # component order, no clock/network/randomness); a rerun must be
+      # byte-identical or the job fails (F23-05 two-run determinism).
+      - name: SBOM generation + two-run determinism (FIX-023, required)
+        run: |
+          node scripts/candice-release/sbom.mjs --root . > sbom-run-1.json
+          node scripts/candice-release/sbom.mjs --root . > sbom-run-2.json
+          cmp sbom-run-1.json sbom-run-2.json
+
       - name: Current-commit evidence
         run: git rev-parse HEAD > commit-sha.txt
       - name: Upload evidence (perf report, verifier log, cargo log, commit sha)
@@ -273,6 +303,15 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File apps/candice-companion/tests/windows-shell-compat/verify-windows-shell-compat.ps1 -StateDir "$env:RUNNER_TEMP\candice-shell-compat-state" *> verifier-windows-shell-compat.log
           Get-Content verifier-windows-shell-compat.log
 
+      # Required: no continue-on-error (FIX-023). npm.cmd resolves under
+      # PowerShell; --audit-level=high fails the job on any high/critical
+      # finding. Same npm surface as the macOS job.
+      - name: npm audit — high/critical gate (FIX-023, required)
+        shell: pwsh
+        run: |
+          cd apps/candice-companion
+          npm.cmd audit --audit-level=high
+
       - name: Current-commit evidence
         shell: pwsh
         run: git rev-parse HEAD > commit-sha.txt
@@ -317,6 +356,14 @@ jobs:
           cd apps/candice-companion
           npm ci
           npm run tauri:build
+
+      # Required: no continue-on-error (FIX-023). The lockfile-level audit
+      # must hold on a fresh runner too — a determinism rerun with vulnerable
+      # deps is not a clean rerun.
+      - name: npm audit — high/critical gate (FIX-023, required)
+        run: |
+          cd apps/candice-companion
+          npm audit --audit-level=high
 
       # Fresh-runner rerun of the release-blocking suites. Log lines must be
       # identical across shards (no shard index, no timestamps) so the
