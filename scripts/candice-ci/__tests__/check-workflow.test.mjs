@@ -176,6 +176,45 @@ test("missing determinism, upload-artifact, or commit evidence fails", () => {
   rmSync(root3, { recursive: true, force: true });
 });
 
+test("|| echo swallowing a failure in a required job fails (QFIX-q1)", () => {
+  // The exact shape of the FIX-021 determinism rerun: required verifiers
+  // appended with `|| echo "FAIL ..."` never propagate the exit code, so the
+  // step exits 0 and the run still prints PASS lines.
+  const swallowStep = `      - name: Run required suites
+        run: |
+          bash tests/macos/verify-macos.sh > determinism-run.log 2>&1 || echo "FAIL  macOS platform verifier" >> determinism-run.log
+          echo "PASS  determinism required suites complete" >> determinism-run.log
+`;
+  const root = fixture({ "candice-ci.yml": CLEAN.replace("      - name: current-commit evidence", swallowStep + "      - name: current-commit evidence") });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => e.includes("swallows a failure via || echo")), r.errors.join("; "));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("|| echo fallback that propagates exit code passes (QFIX-q1)", () => {
+  const guardedStep = `      - name: arch guard with echo + exit
+        run: [ "$(uname -m)" = "arm64" ] || { echo "FAIL: expected arm64 runner"; exit 1; }
+`;
+  const root = fixture({ "candice-ci.yml": CLEAN.replace("      - name: current-commit evidence", guardedStep + "      - name: current-commit evidence") });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, true, r.errors.join("; "));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("|| echo swallowing is allowed in non-blocking jobs (QFIX-q1)", () => {
+  const gate = `  interactive-windows-gate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@${SHA}
+      - run: bash tests/windows/smoke.sh || echo "FAIL  interactive smoke" >> smoke.log
+`;
+  const root = fixture({ "candice-ci.yml": CLEAN + gate });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, true, r.errors.join("; "));
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("kaizen workflow SHA pins are validated too", () => {
   const kaizen = `name: kaizen-tests
 on: push

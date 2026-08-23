@@ -10,7 +10,10 @@
  *   - required suites missing from the matrix (e.g. the perf step missing
  *     `--require-bundle` when a Tauri bundle step is present);
  *   - a `run:` line invoking `status.mjs` without `--root` pinning to the
- *     workspace checkout.
+ *     workspace checkout;
+ *   - a required step swallowing a command failure through `|| echo ...`
+ *     (QFIX-q1) without propagating the exit code — echo fallbacks that end
+ *     in `exit N`/`return` are allowed.
  *
  * Plain JavaScript, no network, no clock — determinism-safe per the Master
  * Spec workflow determinism rules. The workflow validates itself by running
@@ -94,6 +97,22 @@ export function checkWorkflows(root = scriptRoot) {
       // 5. release authority must pin --root to the workspace checkout
       if (jobName === "release-authority" && /status\.mjs/.test(block) && !/status\.mjs\s+--root\s+\$GITHUB_WORKSPACE/.test(block)) {
         errors.push(`${file}: release-authority must run status.mjs --root \$GITHUB_WORKSPACE`);
+      }
+      // 6. QFIX-q1: no || echo exit-code swallowing in required jobs. A `||`
+      //    fallback beginning with `echo` that never propagates the failure
+      //    (no exit N / return) turns the command into a cosmetic failure —
+      //    the step exits 0 and the run still produces a PASS line.
+      if (required) {
+        for (const line of block.split("\n")) {
+          if (!/\|\|\s*\{?\s*echo\b/.test(line)) continue;
+          const fallback = line.slice(line.lastIndexOf("||"));
+          // Propagation only counts when the fallback ENDS by exiting or
+          // returning (e.g. `|| { echo ...; exit 1; }`, `|| echo ...; exit 1`).
+          if (!/;\s*(exit\s+\d+|return)\s*;?\s*\}?\s*$/.test(fallback)) {
+            const preview = line.trim().slice(0, 120);
+            errors.push(`${file}: job ${jobName} swallows a failure via || echo (no exit-code propagation): ${preview}`);
+          }
+        }
       }
     }
     // determinism matrix required in the release-blocking workflow
