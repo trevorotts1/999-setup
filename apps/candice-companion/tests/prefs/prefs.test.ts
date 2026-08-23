@@ -11,7 +11,10 @@
  * 6. Local profile is never project/conversation memory (content isolation:
  *    only known preference fields are read or written).
  * 7. Versioned JSON schema; migrations run; schema bumps migrate without data
- *    loss (WS-34).
+ *    loss (WS-34). The persisted document is the WS-34 v3 contract: integer
+ *    schemaVersion 3, lastUsedAnswerMethod, textSize, companionScreenPosition
+ *    {x,y,anchor}, nameAsked {askedAt}, reducedMotion nullable (null = follow
+ *    the OS).
  * 8. Voice-output ON/OFF is a separate persistent preference, independent of
  *    the answer method (spec 5.2).
  * 9. Spec-9 fields persist: volume, speech rate, text size, reduced motion,
@@ -43,6 +46,7 @@ import {
   normalizeName,
   isUsableName,
   PROFILE_DEFAULTS,
+  LATEST_SCHEMA_VERSION,
 } from '../../src/prefs/index.ts';
 import {
   FIXTURE_PROFILE_FULL_V1,
@@ -71,7 +75,8 @@ test('profile store — persistence and atomicity', async (t) => {
     const r = loadProfile(env);
     assert.equal(r.ok, true);
     assert.equal(r.recoveredFromCorruption, false);
-    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS, schemaVersion: 1 });
+    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS });
+    assert.equal(r.profile.schemaVersion, LATEST_SCHEMA_VERSION);
     // a read must never create the profile document (the temp dir itself is
     // created by mkdtemp, but the store must not write anything)
     assert.equal(fs.existsSync(path.join(dir, 'profile.json')), false);
@@ -84,10 +89,10 @@ test('profile store — persistence and atomicity', async (t) => {
       voiceOutputEnabled: false,
       volume: 0.7,
       speechRate: 1.2,
-      lastAnswerMethod: 'voice',
-      textScale: 1.1,
+      lastUsedAnswerMethod: 'voice',
+      textSize: 'large',
       reducedMotion: true,
-      companionPosition: { left: 12, top: 34 },
+      companionScreenPosition: { x: 12, y: 34, anchor: 'floating' },
       lastUsedSkill: 'kaizen',
     });
     assert.equal(saveProfile(p, env), true);
@@ -97,10 +102,10 @@ test('profile store — persistence and atomicity', async (t) => {
     assert.equal(r.profile.voiceOutputEnabled, false);
     assert.equal(r.profile.volume, 0.7);
     assert.equal(r.profile.speechRate, 1.2);
-    assert.equal(r.profile.lastAnswerMethod, 'voice');
-    assert.equal(r.profile.textScale, 1.1);
+    assert.equal(r.profile.lastUsedAnswerMethod, 'voice');
+    assert.equal(r.profile.textSize, 'large');
     assert.equal(r.profile.reducedMotion, true);
-    assert.deepEqual(r.profile.companionPosition, { left: 12, top: 34 });
+    assert.deepEqual(r.profile.companionScreenPosition, { x: 12, y: 34, anchor: 'floating' });
     assert.equal(r.profile.lastUsedSkill, 'kaizen');
   });
 
@@ -110,11 +115,11 @@ test('profile store — persistence and atomicity', async (t) => {
     // all four voice/type combinations remain valid and independently storable
     for (const voice of [true, false]) {
       for (const method of ['voice', 'typed', 'terminal'] as const) {
-        p = mergeProfile(p, { voiceOutputEnabled: voice, lastAnswerMethod: method });
+        p = mergeProfile(p, { voiceOutputEnabled: voice, lastUsedAnswerMethod: method });
         assert.equal(saveProfile(p, env), true);
         const r = loadProfile(env);
         assert.equal(r.profile.voiceOutputEnabled, voice);
-        assert.equal(r.profile.lastAnswerMethod, method);
+        assert.equal(r.profile.lastUsedAnswerMethod, method);
       }
     }
   });
@@ -126,7 +131,7 @@ test('profile store — persistence and atomicity', async (t) => {
     const r = loadProfile(env);
     assert.equal(r.ok, true);
     assert.equal(r.recoveredFromCorruption, true);
-    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS, schemaVersion: 1 });
+    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS });
     const leftover = fs.readdirSync(dir);
     assert.ok(leftover.some((f) => f.startsWith('profile.json.corrupt-')), 'corrupt backup exists');
   });
@@ -161,7 +166,7 @@ test('profile store — failure degradation (spec 20)', async (t) => {
     // never a throw
     const r = loadProfile(badEnv);
     assert.equal(r.ok, false);
-    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS, schemaVersion: 1 });
+    assert.deepEqual(r.profile, { ...PROFILE_DEFAULTS });
   });
 });
 
@@ -188,7 +193,7 @@ test('name flow (spec 4)', async (t) => {
     assert.equal(saveProfile(p, env), true);
     const r = loadProfile(env);
     assert.equal(r.profile.preferredName, 'Trevor');
-    assert.equal(r.profile.nameAskedAt, '2026-08-21T00:00:00.000Z');
+    assert.deepEqual(r.profile.nameAsked, { askedAt: '2026-08-21T00:00:00.000Z' });
   });
 
   await t.test('name is changeable later (spec 4 item 9)', () => {
@@ -213,7 +218,7 @@ test('name flow (spec 4)', async (t) => {
     // Simulate hostile OS usernames that differ from any stored name:
     const hostile = { ...env, USER: 'admin', USERNAME: 'admin', LOGNAME: 'admin' };
     const r = loadProfile(hostile);
-    assert.equal(r.profile.preferredName, undefined);
+    assert.equal(r.profile.preferredName, null);
     // The lane source must not contain a code path that reads the OS username:
     const srcDir = path.join(HERE, '..', '..', 'src', 'prefs');
     const srcFiles = fs.readdirSync(srcDir).filter((f) => f.endsWith('.ts'));
@@ -235,21 +240,56 @@ test('name flow (spec 4)', async (t) => {
     assert.equal(isUsableName(''), false);
     assert.equal(isUsableName('   '), false);
     assert.equal(isUsableName(undefined), false);
+    assert.equal(isUsableName(null), false);
   });
 });
 
 test('versioned schema and migrations (CHECKLIST WS-34)', async (t) => {
-  await t.test('unknown-fields documents are normalized and defaults applied', () => {
-    const { profile } = migrateProfile({
+  await t.test('v1 documents migrate to the v3 contract through the WS-34 chain', () => {
+    const { profile, migrated, startVersion, endVersion, violations } = migrateProfile({
       schemaVersion: 1,
       preferredName: 'Trevor',
-      volume: 99, // out of range -> default
+      volume: 99, // out of range -> v1 default
       extra: 'not-a-field',
     } as unknown as Record<string, unknown>);
+    assert.equal(migrated, true);
+    assert.equal(startVersion, 1);
+    assert.equal(endVersion, LATEST_SCHEMA_VERSION);
+    assert.deepEqual(violations, []);
+    assert.equal(profile.schemaVersion, LATEST_SCHEMA_VERSION);
     assert.equal(profile.preferredName, 'Trevor');
     assert.equal(profile.volume, PROFILE_DEFAULTS.volume);
     // unknown fields never enter the typed profile
     assert.ok(!('extra' in profile));
+  });
+
+  await t.test('v1 field renames land on the protocol contract names (WS-34 v2)', () => {
+    const { profile } = migrateProfile(FIXTURE_PROFILE_FULL_V1 as unknown as Record<string, unknown>);
+    assert.equal(profile.schemaVersion, LATEST_SCHEMA_VERSION);
+    assert.equal(profile.preferredName, 'Trevor');
+    assert.equal(profile.lastUsedAnswerMethod, 'voice');
+    assert.equal(profile.textSize, 'large'); // textScale 1.1 > 1
+    assert.deepEqual(profile.companionScreenPosition, { x: 12, y: 34, anchor: 'floating' });
+    assert.deepEqual(profile.nameAsked, { askedAt: '2026-08-20T10:00:00.000Z' });
+    assert.equal(profile.lastUsedSkill, 'kaizen');
+    assert.equal(profile.reducedMotion, true);
+  });
+
+  await t.test('a real v1 document on disk loads at v3 with zero data loss', () => {
+    const { env, dir } = tmpEnv();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'profile.json'),
+      JSON.stringify(FIXTURE_PROFILE_FULL_V1)
+    );
+    const r = loadProfile(env);
+    assert.equal(r.ok, true);
+    assert.equal(r.profile.schemaVersion, LATEST_SCHEMA_VERSION);
+    assert.equal(r.profile.preferredName, 'Trevor');
+    assert.equal(r.profile.lastUsedAnswerMethod, 'voice');
+    assert.equal(r.profile.textSize, 'large');
+    assert.deepEqual(r.profile.companionScreenPosition, { x: 12, y: 34, anchor: 'floating' });
+    assert.deepEqual(r.profile.nameAsked, { askedAt: '2026-08-20T10:00:00.000Z' });
   });
 
   await t.test('future schema version is preserved at its own version, not downgraded', () => {
@@ -319,29 +359,43 @@ test('versioned schema and migrations (CHECKLIST WS-34)', async (t) => {
     assert.equal(fs.readFileSync(file, 'utf8'), JSON.stringify(onDisk));
   });
 
-  await t.test('migration registry exists and version 1 has no migrations (bounded loop)', () => {
-    const { profile, migrated } = migrateProfile({
-      schemaVersion: 1,
-      preferredName: 'Trevor',
-    });
-    assert.equal(migrated, false);
-    assert.equal(profile.preferredName, 'Trevor');
-    // a nonsense version cannot spin the migration loop
-    const { migrated: m2 } = migrateProfile({ schemaVersion: -5 } as unknown as Record<string, unknown>);
-    assert.equal(m2, false);
+  await t.test('a nonsense version cannot spin the migration loop', () => {
+    const { profile, migrated, startVersion } = migrateProfile({ schemaVersion: -5 } as unknown as Record<string, unknown>);
+    assert.equal(startVersion, 1); // garbage resolves to the pre-versioned baseline
+    assert.equal(migrated, true);
+    assert.equal(profile.schemaVersion, LATEST_SCHEMA_VERSION);
   });
 
-  await t.test('fixtures: v1 documents normalize without data loss', () => {
-    const full = normalizeProfile(FIXTURE_PROFILE_FULL_V1 as unknown as Record<string, unknown>);
+  await t.test('fixtures: v1 documents migrate without data loss', () => {
+    const full = migrateProfile(FIXTURE_PROFILE_FULL_V1 as unknown as Record<string, unknown>).profile;
     assert.equal(full.preferredName, 'Trevor');
-    assert.equal(full.lastAnswerMethod, 'voice');
-    assert.deepEqual(full.companionPosition, { left: 12, top: 34 });
-    const partial = normalizeProfile(FIXTURE_PROFILE_PARTIAL_V1 as unknown as Record<string, unknown>);
-    assert.equal(partial.nameAskedAt, '2026-08-20T10:00:00.000Z');
-    assert.equal(partial.preferredName, undefined);
-    const dirty = normalizeProfile(FIXTURE_PROFILE_DIRTY_V1 as unknown as Record<string, unknown>);
+    assert.equal(full.lastUsedAnswerMethod, 'voice');
+    assert.deepEqual(full.companionScreenPosition, { x: 12, y: 34, anchor: 'floating' });
+    const partial = migrateProfile(FIXTURE_PROFILE_PARTIAL_V1 as unknown as Record<string, unknown>).profile;
+    assert.deepEqual(partial.nameAsked, { askedAt: '2026-08-20T10:00:00.000Z' });
+    assert.equal(partial.preferredName, null);
+    const dirty = migrateProfile(FIXTURE_PROFILE_DIRTY_V1 as unknown as Record<string, unknown>).profile;
     assert.equal(dirty.preferredName, 'Trevor'); // valid field survives
     assert.equal(dirty.volume, PROFILE_DEFAULTS.volume); // invalid value repaired
+    assert.equal(dirty.textSize, 'medium'); // textScale -3 repaired to v1 default 1 -> medium
+  });
+
+  await t.test('normalizeProfile repairs dirty v3 values without inventing choices', () => {
+    const p = normalizeProfile({
+      schemaVersion: 3,
+      preferredName: 'Trevor',
+      volume: 99,
+      textSize: 'huge', // bad enum -> null (unknown choice)
+      reducedMotion: 'yes', // wrong type -> null (follow the OS)
+      companionScreenPosition: 'sideways', // wrong type -> null
+      extra: 'not-a-field',
+    } as unknown as Record<string, unknown>);
+    assert.equal(p.preferredName, 'Trevor');
+    assert.equal(p.volume, PROFILE_DEFAULTS.volume);
+    assert.equal(p.textSize, null);
+    assert.equal(p.reducedMotion, null);
+    assert.equal(p.companionScreenPosition, null);
+    assert.ok(!('extra' in p));
   });
 });
 
@@ -378,21 +432,36 @@ test('no project/conversation memory (spec 9)', async (t) => {
     assert.equal(saveProfile(p, env), true);
     const doc = readFile(env);
     assert.notEqual(doc, null);
-    // defaults-only doc contains the always-present fields, nothing else
+    // defaults-only doc contains the always-present v3 fields, nothing else
     const docKeys = Object.keys(doc as Record<string, unknown>);
-    assert.deepEqual(docKeys.sort(), ['reducedMotion', 'schemaVersion', 'speechRate', 'textScale', 'voiceOutputEnabled', 'volume']);
+    assert.deepEqual(
+      docKeys.sort(),
+      [
+        'schemaVersion',
+        'preferredName',
+        'voiceOutputEnabled',
+        'volume',
+        'speechRate',
+        'lastUsedAnswerMethod',
+        'textSize',
+        'reducedMotion',
+        'companionScreenPosition',
+        'lastUsedSkill',
+        'nameAsked',
+      ].sort()
+    );
     // A doc with every field set still contains only preference fields:
     const full = mergeProfile(p, {
       preferredName: 'Trevor',
       voiceOutputEnabled: false,
       volume: 0.8,
       speechRate: 1.1,
-      lastAnswerMethod: 'typed',
-      textScale: 1.2,
+      lastUsedAnswerMethod: 'typed',
+      textSize: 'small',
       reducedMotion: true,
-      companionPosition: { left: 1, top: 2 },
+      companionScreenPosition: { x: 1, y: 2, anchor: 'left' },
       lastUsedSkill: 'bro',
-      nameAskedAt: '2026-08-21T00:00:00.000Z',
+      nameAsked: { askedAt: '2026-08-21T00:00:00.000Z' },
     });
     assert.equal(saveProfile(full, env), true);
     const fullDoc = readFile(env) as Record<string, unknown>;
@@ -404,12 +473,12 @@ test('no project/conversation memory (spec 9)', async (t) => {
         'voiceOutputEnabled',
         'volume',
         'speechRate',
-        'lastAnswerMethod',
-        'textScale',
+        'lastUsedAnswerMethod',
+        'textSize',
         'reducedMotion',
-        'companionPosition',
+        'companionScreenPosition',
         'lastUsedSkill',
-        'nameAskedAt',
+        'nameAsked',
       ].sort()
     );
   });

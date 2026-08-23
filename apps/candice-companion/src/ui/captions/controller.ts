@@ -50,6 +50,13 @@ export interface CaptionsController {
   render(): void;
   /** Set the display scale (spec 9). */
   setTextScale(scale: CaptionsTextScale): void;
+  /**
+   * Show an explicit caption outside machine effects (FIX-014: the
+   * welcome-back greeting and the first-run name question). A later
+   * machine transition re-renders from real effects and replaces it —
+   * the machine stays the source of truth.
+   */
+  announce(text: string, important?: boolean): void;
   destroy(): void;
 }
 
@@ -121,6 +128,11 @@ export function createCaptionsController(options: CaptionsControllerOptions): Ca
     setTextScale: (scale: CaptionsTextScale) => {
       if (!CAPTIONS_TEXT_SCALES.includes(scale)) return;
       view.setTextScale(scale);
+    },
+    announce: (text: string, important = true) => {
+      const clipped = clipCaption(text);
+      if (clipped.length === 0) return;
+      view.show({ text: clipped, important, seq: 0 });
     },
     destroy: () => {
       view.destroy();

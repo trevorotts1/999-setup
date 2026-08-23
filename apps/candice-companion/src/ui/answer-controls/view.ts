@@ -48,7 +48,8 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   gap: 10px;
   max-width: 420px;
   padding: 12px 16px;
-  font-size: 14px;
+  /* FIX-014: consume the a11y text-scale token (spec 9 text size). */
+  font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.35;
   color: var(--candice-ac-text);
 }

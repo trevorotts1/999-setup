@@ -110,6 +110,12 @@ jobs:
           npm ci
           npm run build
 
+      - name: FIX-014 interaction composition suite + bundle sentinel
+        run: |
+          cd apps/candice-companion
+          npm run test:interaction-composition
+          npm run verify:interaction-composition
+
       # Required: no continue-on-error. Host-class checks the runner cannot
       # provide exit 0 as explicit BLOCKED rows; a FAIL exits nonzero and
       # blocks the job.

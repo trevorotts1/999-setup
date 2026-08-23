@@ -24,6 +24,8 @@ import {
 import { showTextFallback } from './shell/text-fallback';
 import { mountVisualStage } from './shell/visual-stage';
 import { initializeRuntimeComposition } from './runtime/composition';
+import { loadProfileViaIpc } from './prefs/ipc';
+import { textSizeToScale } from './runtime/interaction-composition';
 import {
   initializeAccessibilityRuntime,
   type AccessibilityRuntime,
@@ -114,15 +116,22 @@ export async function bootCandice(): Promise<void> {
       throw new Error('candice: safe pointer pass-through unavailable');
     }
     root.dataset.candiceInputPolicy = inputPolicy.mode;
+    // FIX-014 (I-08/I-11): load the local preference profile ONCE at boot
+    // through the native seam (cmd_load_profile). A failed load degrades
+    // truthfully: the a11y runtime follows the OS (reducedMotion null) and
+    // the composition reports the machine's `preferences` error — never a
+    // fabricated persisted preference.
+    const { invoke } = await import('@tauri-apps/api/core');
+    const prefsLoad = await loadProfileViaIpc({ invoke });
     accessibility = initializeAccessibilityRuntime(root, {
-      // The actual local preference IPC is not implemented yet. `null` is
-      // deliberately the truthful "follow OS" setting, not a fabricated
-      // persisted preference.
-      reducedMotion: null,
-      textScale: 1,
+      reducedMotion: prefsLoad.profile.reducedMotion,
+      textScale: textSizeToScale(prefsLoad.profile.textSize),
     });
     registry = registerShellCommands(machine, shellInfo);
-    await initializeRuntimeComposition(root, machine);
+    await initializeRuntimeComposition(root, machine, {
+      profile: prefsLoad.profile,
+      prefsLoad,
+    });
     setStatus('shell-ready');
 
   } catch (err) {

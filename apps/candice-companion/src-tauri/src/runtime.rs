@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
@@ -509,6 +509,143 @@ pub fn cmd_get_runtime_capabilities(
     Ok(state.capabilities())
 }
 
+// ---------------------------------------------------------------------------
+// Local preference profile IO (FIX-014, spec 9). Dumb IO only: the native
+// side reads/writes the raw JSON document and never interprets its fields.
+// The WS-34 migration authority stays in TypeScript (the webview migrates
+// and normalizes the returned document). Failure degrades to defaults, never
+// blocks the session (spec 20).
+// ---------------------------------------------------------------------------
+
+const PREFS_DIR_OVERRIDE_ENV: &str = "CANDICE_PREFS_DIR";
+const PREFS_FILENAME: &str = "profile.json";
+const PREFS_LOCK_FILENAME: &str = "profile.json.lock";
+const PREFS_LOCK_STALE_MS: u128 = 10_000;
+const PREFS_LOCK_WAIT_MS: u128 = 1_500;
+
+/// Spec-9 recommended location: macOS
+/// `~/Library/Application Support/BlackCEO/999/Candice/`, Windows
+/// `%LOCALAPPDATA%\BlackCEO\999\Candice\`. `CANDICE_PREFS_DIR` overrides
+/// both for tests and sandboxes. The crate has no `dirs` dependency, so the
+/// resolution is explicit here.
+fn prefs_dir() -> Option<PathBuf> {
+    if let Ok(override_dir) = std::env::var(PREFS_DIR_OVERRIDE_ENV) {
+        if !override_dir.is_empty() {
+            return Some(PathBuf::from(override_dir));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            if !local_app_data.is_empty() {
+                return Some(PathBuf::from(local_app_data).join("BlackCEO").join("999").join("Candice"));
+            }
+        }
+        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            if !user_profile.is_empty() {
+                return Some(PathBuf::from(user_profile).join("AppData").join("Local").join("BlackCEO").join("999").join("Candice"));
+            }
+        }
+        return None;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            if !home.is_empty() {
+                return Some(PathBuf::from(home).join("Library").join("Application Support").join("BlackCEO").join("999").join("Candice"));
+            }
+        }
+        return None;
+    }
+}
+
+/// Load the raw profile document. Corruption is backed up (never deleted)
+/// and reset to defaults; a missing file is defaults. The webview runs the
+/// WS-34 migration chain on the returned document.
+#[tauri::command]
+pub fn cmd_load_profile() -> Value {
+    let Some(dir) = prefs_dir() else {
+        return json!({ "ok": false, "doc": null, "recoveredFromCorruption": false, "error": "profile directory could not be resolved" });
+    };
+    if dir.exists() && !dir.is_dir() {
+        return json!({ "ok": false, "doc": null, "recoveredFromCorruption": false, "error": "profile directory path is not a directory" });
+    }
+    let file = dir.join(PREFS_FILENAME);
+    let text = match fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(_) => return json!({ "ok": true, "doc": null, "recoveredFromCorruption": false }),
+    };
+    match serde_json::from_str::<Value>(&text) {
+        Ok(doc) if doc.is_object() => json!({ "ok": true, "doc": doc, "recoveredFromCorruption": false }),
+        _ => {
+            // Back up the unreadable file, then start fresh. Do not log its
+            // content. Best-effort: a failed backup still resets to defaults.
+            let backup = format!("{}.corrupt-{}", file.display(), std::process::id());
+            let _ = fs::rename(&file, &backup);
+            json!({ "ok": true, "doc": null, "recoveredFromCorruption": true })
+        }
+    }
+}
+
+/// Persist the raw profile document atomically (write-temp-then-rename)
+/// under a per-process lock. The lock is never fatal: a stale lock is
+/// broken; a contended fresh lock is bypassed after a bounded wait so the
+/// app cannot block (spec 20). Returns true when the write landed.
+#[tauri::command]
+pub fn cmd_save_profile(doc: Value) -> bool {
+    if !doc.is_object() {
+        return false;
+    }
+    let Some(dir) = prefs_dir() else { return false };
+    if fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    let lock_file = dir.join(PREFS_LOCK_FILENAME);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(PREFS_LOCK_WAIT_MS as u64);
+    loop {
+        match fs::OpenOptions::new().write(true).create_new(true).open(&lock_file) {
+            Ok(mut lock) => {
+                let _ = writeln!(lock, "{}", std::process::id());
+                break;
+            }
+            Err(_) => {
+                let stale = fs::metadata(&lock_file)
+                    .and_then(|metadata| metadata.modified())
+                    .map(|modified| modified.elapsed().map(|elapsed| elapsed.as_millis() > PREFS_LOCK_STALE_MS).unwrap_or(true))
+                    .unwrap_or(true);
+                if stale {
+                    let _ = fs::remove_file(&lock_file);
+                } else if std::time::Instant::now() > deadline {
+                    // Bounded wait exhausted: proceed without the lock rather
+                    // than block the session (spec 20).
+                    break;
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            }
+        }
+    }
+    let file = dir.join(PREFS_FILENAME);
+    let tmp = dir.join(format!(".{}.tmp", PREFS_FILENAME));
+    let result = (|| -> std::io::Result<()> {
+        let serialized = serde_json::to_string_pretty(&doc).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        fs::write(&tmp, format!("{serialized}\n"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+        }
+        fs::rename(&tmp, &file)?;
+        Ok(())
+    })();
+    let _ = fs::remove_file(&lock_file);
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,5 +740,41 @@ mod tests {
         assert!(BridgeQuestionIdentity::from_question_message(&malformed, Some("session-a")).is_none());
         let lower_key = json!({ "type": "cancel", "sessionId": "session-a", "questionKey": "project-name" });
         assert!(BridgeQuestionIdentity::from_cancel_message(&lower_key, Some("session-a")).is_none());
+    }
+
+    #[test]
+    fn prefs_round_trip_through_the_native_seam() {
+        let dir = std::env::temp_dir().join(format!("candice-prefs-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::env::set_var(PREFS_DIR_OVERRIDE_ENV, &dir);
+
+        // Missing file: ok with a null doc, no corruption flag.
+        let loaded = cmd_load_profile();
+        assert_eq!(loaded.get("ok"), Some(&Value::Bool(true)));
+        assert_eq!(loaded.get("doc"), Some(&Value::Null));
+        assert_eq!(loaded.get("recoveredFromCorruption"), Some(&Value::Bool(false)));
+
+        // Save a raw document, then load it back byte-for-byte in shape.
+        let doc = json!({ "schemaVersion": 3, "preferredName": "Trevor", "textSize": "large" });
+        assert!(cmd_save_profile(doc.clone()));
+        let loaded = cmd_load_profile();
+        assert_eq!(loaded.get("ok"), Some(&Value::Bool(true)));
+        assert_eq!(loaded.get("doc"), Some(&doc));
+
+        // Corruption is backed up, never deleted, and resets to defaults.
+        let file = dir.join(PREFS_FILENAME);
+        fs::write(&file, "{ not json").expect("write corrupt profile");
+        let loaded = cmd_load_profile();
+        assert_eq!(loaded.get("ok"), Some(&Value::Bool(true)));
+        assert_eq!(loaded.get("doc"), Some(&Value::Null));
+        assert_eq!(loaded.get("recoveredFromCorruption"), Some(&Value::Bool(true)));
+        let backup = format!("{}.corrupt-{}", file.display(), std::process::id());
+        assert!(Path::new(&backup).exists(), "corrupt file must be backed up, not deleted");
+
+        // Non-object documents are refused by the save command.
+        assert!(!cmd_save_profile(json!([1, 2, 3])));
+
+        let _ = fs::remove_dir_all(&dir);
+        std::env::remove_var(PREFS_DIR_OVERRIDE_ENV);
     }
 }
