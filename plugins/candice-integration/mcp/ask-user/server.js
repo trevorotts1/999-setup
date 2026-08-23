@@ -412,7 +412,9 @@ class AskUserServer {
     const reason = detail || cause
     const text = cause === 'user-cancel'
       ? 'candice.ask_user: question cancelled by the companion; ask the same question in Claude normally'
-      : `candice.ask_user: companion is unavailable (${reason}); ask the same question in Claude normally`
+      : cause === 'timeout'
+        ? 'candice.ask_user: no approved answer within the wait window; ask the same question in Claude normally'
+        : `candice.ask_user: companion is unavailable (${reason}); ask the same question in Claude normally`
     if (this.fallback && typeof this.fallback.fallbackQuestion === 'function') {
       const handled = this.fallback.fallbackQuestion(q, cause, operationId)
       if (!handled.ok) {
