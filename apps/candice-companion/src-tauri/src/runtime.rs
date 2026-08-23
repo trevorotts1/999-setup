@@ -1039,7 +1039,7 @@ pub fn cmd_ack_replayed_question<R: Runtime>(
 ) -> Result<(), String> {
     let identity = identity_with_optional_operation(
         BridgeQuestionIdentity { session_id, question_key, operation_id: None },
-        operation_id,
+        operation_id.clone(),
     );
     // Q-07: the acknowledgement must carry and match the COMPLETE four-field
     // identity (session, operation, question key, lease). Any missing or
@@ -1526,6 +1526,8 @@ mod tests {
         let error = state.consume_replay(&replay_identity()).expect_err("duplicated acknowledgement must be rejected");
         assert_eq!(error, ReplayConsumeError::NoOutstandingLease);
         assert!(!state.lifecycle.lock().expect("lifecycle mutex poisoned").replayable);
+    }
+
     #[test]
     fn question_identity_carries_the_operation_id() {
         let question = json!({
