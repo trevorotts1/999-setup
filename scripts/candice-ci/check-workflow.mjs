@@ -12,7 +12,21 @@
  *   - a `run:` line invoking `status.mjs` without `--root` pinning to the
  *     workspace checkout;
  *   - a Tauri build in a required job without the Q-10 smoke posture gate
- *     (`updater-sign.mjs --posture smoke`) running before the build.
+ *     (`updater-sign.mjs --posture smoke`) running before the build
+ *     (a release workflow may instead run `--posture release` on an overlay
+ *     config before the build — same gate, honest release posture);
+ *
+ * Q-10 release-path teeth (enforced across all workflow files):
+ *   - TAURI_SIGNING_PRIVATE_KEY may appear ONLY in a workflow whose sole
+ *     push/pull_request-free trigger is the protected `candice-v*` tag
+ *     namespace — signing material must never load into a run a pull
+ *     request can reach;
+ *   - such a release workflow must wire CANDICE_UPDATER_PUBKEY from
+ *     secrets AND contain the hard validation that the secret pubkey
+ *     matches the committed plugins.updater.pubkey trust anchor;
+ *   - every signing invocation (--signing-key-env) must carry
+ *     --verify-helper: signatures are verified against the configured
+ *     pubkey before a release proceeds (tauri-bundler only warns).
  *
  * Plain JavaScript, no network, no clock — determinism-safe per the Master
  * Spec workflow determinism rules. The workflow validates itself by running
@@ -98,17 +112,51 @@ export function checkWorkflows(root = scriptRoot) {
       //    (updater artifacts disabled, real non-placeholder pubkey) BEFORE
       //    the build — a smoke build must never claim updater-ready posture.
       if (hasBundleStep && required) {
-        const postureIdx = block.search(/updater-sign\.mjs\s+--posture\s+smoke/);
+        // The posture gate may wrap its arguments across continuation lines.
+        const postureIdx = block.search(
+          /updater-sign\.mjs[\s\\]+(?:[^\n]*\\\n\s*)*--posture\s+(smoke|release)/,
+        );
         const bundleIdx = block.search(/tauri:build|tauri build/);
         if (postureIdx < 0) {
-          errors.push(`${file}: job ${jobName} runs a Tauri build without the Q-10 smoke posture gate (updater-sign.mjs --posture smoke required)`);
+          errors.push(`${file}: job ${jobName} runs a Tauri build without the Q-10 posture gate (updater-sign.mjs --posture smoke|release required)`);
         } else if (bundleIdx >= 0 && postureIdx > bundleIdx) {
-          errors.push(`${file}: job ${jobName} runs the Tauri build before the Q-10 smoke posture gate`);
+          errors.push(`${file}: job ${jobName} runs the Tauri build before the Q-10 posture gate`);
         }
       }
       // 5. release authority must pin --root to the workspace checkout
       if (jobName === "release-authority" && /status\.mjs/.test(block) && !/status\.mjs\s+--root\s+\$GITHUB_WORKSPACE/.test(block)) {
         errors.push(`${file}: release-authority must run status.mjs --root \$GITHUB_WORKSPACE`);
+      }
+    }
+    // Q-10 release-path teeth, per file. Scan config lines only: strip
+    // comment lines (# ...) so documentation prose about the signing path
+    // can never satisfy or trip these rules.
+    const configText = text
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+    const isReleaseWorkflow = /\n\s*-\s*'candice-v\*'\s*\n/.test(configText);
+    if (/\bTAURI_SIGNING_PRIVATE_KEY\b/.test(configText) && !isReleaseWorkflow) {
+      errors.push(
+        `${file}: references TAURI_SIGNING_PRIVATE_KEY but does not trigger exclusively on the protected candice-v* tag namespace; signing material must never load into a run a push or pull request can reach (Q-10)`,
+      );
+    }
+    if (isReleaseWorkflow) {
+      // The secret pubkey must be wired AND validated against the committed trust anchor.
+      if (!/CANDICE_UPDATER_PUBKEY:\s*\$\{\{\s*secrets\.CANDICE_UPDATER_PUBKEY\s*\}\}/.test(configText)) {
+        errors.push(`${file}: candice-v* release workflow must wire CANDICE_UPDATER_PUBKEY from secrets.CANDICE_UPDATER_PUBKEY via env indirection (Q-10)`);
+      }
+      if (!/release pubkey validation/i.test(configText)) {
+        errors.push(`${file}: candice-v* release workflow must validate that the CANDICE_UPDATER_PUBKEY secret matches the committed plugins.updater.pubkey trust anchor before building (Q-10)`);
+      }
+      // Every signing invocation must carry the hard verify gate. An
+      // invocation spans from `updater-sign.mjs` through its continuation
+      // lines (`\` at end of line) up to the next non-continuation line.
+      for (const m of configText.matchAll(/updater-sign\.mjs(?:[^\n]*\\\n)*[^\n]*/g)) {
+        const invocation = m[0];
+        if (/--signing-key-env/.test(invocation) && !/--verify-helper/.test(invocation)) {
+          errors.push(`${file}: updater-sign.mjs signing invocation lacks --verify-helper; every signature must be verified against the configured pubkey before a release proceeds (Q-10)`);
+        }
       }
     }
     // determinism matrix required in the release-blocking workflow

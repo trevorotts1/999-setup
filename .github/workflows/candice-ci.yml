@@ -259,9 +259,26 @@ jobs:
       # JavaScript, no network, no clock) fails on any required-job
       # continue-on-error, unpinned action, loose dependency install, or
       # missing determinism/upload/commit-evidence wiring in this
-      # repository's workflow files.
+      # repository's workflow files — plus the Q-10 release-path teeth
+      # (signing material only on candice-v* tags, secret pubkey validated
+      # against the committed trust anchor, --verify-helper on every signing
+      # invocation).
       - name: Workflow self-validation (FIX-021 structural check)
         run: node scripts/candice-ci/check-workflow.mjs --root .
+
+      # Q-10 release-path unit tests: smoke/release posture validation,
+      # sign+verify end-to-end through the updater-sign-helper binary,
+      # unsigned-smoke rejection by the release authority, and the
+      # secret-vs-committed pubkey match contract. The updater-sign tests
+      # build the helper first (it is also the CI signing match gate).
+      - name: Q-10 release-path tests (posture, sign/verify, authority)
+        run: |
+          cd scripts/candice-release/release-config-guard
+          cargo build --locked
+          cd ../../..
+          node --test scripts/candice-release/__tests__/updater-sign.test.mjs \
+            scripts/candice-release/__tests__/release-pubkey-match.test.mjs \
+            scripts/candice-ci/__tests__/check-workflow.test.mjs
 
       # Required: no continue-on-error. SPDX output is deterministic (sorted
       # component order, no clock/network/randomness); a rerun must be

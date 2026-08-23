@@ -210,7 +210,7 @@ test("Tauri build without Q-10 smoke posture gate fails", () => {
   const r = checkWorkflows(root);
   assert.equal(r.ok, false);
   assert.ok(
-    r.errors.some((e) => e.includes("macos-arm64") && e.includes("Q-10 smoke posture gate")),
+    r.errors.some((e) => e.includes("macos-arm64") && e.includes("Q-10 posture gate")),
     r.errors.join("; "),
   );
   rmSync(root, { recursive: true, force: true });
@@ -230,7 +230,7 @@ test("Tauri build before the Q-10 smoke posture gate fails", () => {
   const r = checkWorkflows(root);
   assert.equal(r.ok, false);
   assert.ok(
-    r.errors.some((e) => e.includes("macos-arm64") && e.includes("before the Q-10 smoke posture gate")),
+    r.errors.some((e) => e.includes("macos-arm64") && e.includes("before the Q-10 posture gate")),
     r.errors.join("; "),
   );
   rmSync(root, { recursive: true, force: true });
@@ -238,6 +238,126 @@ test("Tauri build before the Q-10 smoke posture gate fails", () => {
 
 test("clean workflow with the smoke posture gate still passes", () => {
   const root = fixture({ "candice-ci.yml": CLEAN });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, true, r.errors.join("; "));
+  rmSync(root, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// Q-10 release-path teeth (protected release workflow rules)
+// ---------------------------------------------------------------------------
+
+const RELEASE_WORKFLOW = `name: candice-release
+on:
+  push:
+    tags:
+      - 'candice-v*'
+jobs:
+  signed-release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@${SHA}
+      - uses: actions/setup-node@${SHA}
+        with:
+          node-version: 22
+      - name: Validate signing pubkey matches the committed trust anchor
+        env:
+          CANDICE_UPDATER_PUBKEY: \${{ secrets.CANDICE_UPDATER_PUBKEY }}
+        run: |
+          node - <<'EOF'
+          console.log("release pubkey validation: OK");
+          EOF
+      - name: Release posture gate (overlay config)
+        env:
+          CANDICE_UPDATER_PUBKEY: \${{ secrets.CANDICE_UPDATER_PUBKEY }}
+        run: |
+          node scripts/candice-release/updater-sign.mjs \\
+            --posture release \\
+            --config "$RUNNER_TEMP/release-tauri.conf.json"
+      - name: Tauri signed bundle build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm run tauri:build -- --config "$RUNNER_TEMP/release-tauri.conf.json"
+      - name: Sign updater artifacts + verify signatures against the configured pubkey
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: \${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node scripts/candice-release/updater-sign.mjs \\
+            --signing-key-env TAURI_SIGNING_PRIVATE_KEY \\
+            --verify-helper "$UPDATER_SIGN_HELPER" \\
+            --artifact "Candice.app.tar.gz"
+`;
+
+test("protected release workflow with full Q-10 wiring passes", () => {
+  const root = fixture({ "candice-release.yml": RELEASE_WORKFLOW });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, true, r.errors.join("; "));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("TAURI_SIGNING_PRIVATE_KEY outside a candice-v* tag workflow fails", () => {
+  const root = fixture({
+    "candice-release.yml": RELEASE_WORKFLOW.replace("    tags:\n      - 'candice-v*'\n", ""),
+  });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("TAURI_SIGNING_PRIVATE_KEY") && e.includes("candice-v*")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("release workflow without the secret pubkey validation fails", () => {
+  const root = fixture({
+    "candice-release.yml": RELEASE_WORKFLOW.replace(
+      / {6}- name: Validate signing pubkey[\s\S]*?EOF\n/,
+      "",
+    ),
+  });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("validate that the CANDICE_UPDATER_PUBKEY secret matches")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("release workflow signing invocation without --verify-helper fails", () => {
+  const root = fixture({
+    "candice-release.yml": RELEASE_WORKFLOW.replace('            --verify-helper "$UPDATER_SIGN_HELPER" \\\n', ""),
+  });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("--verify-helper")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("release workflow without the CANDICE_UPDATER_PUBKEY wiring fails", () => {
+  const root = fixture({
+    "candice-release.yml": RELEASE_WORKFLOW.replace(
+      / {8}CANDICE_UPDATER_PUBKEY: [^\n]+\n/g,
+      "",
+    ),
+  });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("wire CANDICE_UPDATER_PUBKEY from secrets")),
+    r.errors.join("; "),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("comment-only mention of the signing key in CI does not fail", () => {
+  // candice-ci.yml documents the release path in comments; prose must never
+  // trip the protected-secret rule.
+  const body = CLEAN + `# TAURI_SIGNING_PRIVATE_KEY is mentioned here in documentation only.\n`;
+  const root = fixture({ "candice-ci.yml": body });
   const r = checkWorkflows(root);
   assert.equal(r.ok, true, r.errors.join("; "));
   rmSync(root, { recursive: true, force: true });
