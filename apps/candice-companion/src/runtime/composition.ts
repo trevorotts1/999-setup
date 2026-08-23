@@ -30,7 +30,8 @@ import {
   initializeCandiceInteractionComposition,
   type InteractionComposition,
 } from './interaction-composition.ts';
-import { initializeSpeechRuntime, type SpeechRuntime } from './speech-runtime.ts';
+import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime } from './speech-runtime.ts';
+import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
 /**
  * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
@@ -85,10 +86,12 @@ export async function initializeRuntimeComposition(
   status.textContent = runtimeStatusText(capabilities);
   root.append(status);
 
-  // FIX-015 speech seam: mount the duplex controller and probe the native
-  // speech boundary once. Failure is silent capability absence — the shell
-  // never blocks composition on speech (spec 20).
+  // FIX-015 speech seam + QFIX Q-02 orchestrator (design section 2): mount
+  // the duplex controller, probe the native boundary once, and create THE
+  // one speech command executor. Failure is silent capability absence —
+  // the shell never blocks composition on speech (spec 20).
   let speech: SpeechRuntime | null = null;
+  let orchestrator: SpeechOrchestrator | null = null;
   try {
     speech = await initializeSpeechRuntime(options.speech?.invokeAdapter);
     root.dataset.speechSeam = 'active';
@@ -98,18 +101,18 @@ export async function initializeRuntimeComposition(
     } else {
       root.dataset.speechStatus = 'unprobed';
     }
-    // The FIX-014 PTT lane owns the control surface; this seam only
-    // exposes the controller for shell wiring. The duplex controller
-    // gates every press (including interrupts) — mounted here so the
-    // capture path is reached through one authority.
-    speech.attachSpeechTarget({
-      abort: () => {
-        // FIX-017 boundary applied by the caller before any speak;
-        // abort here stops the engine handle synchronously.
-        speech?.detachSpeechTarget();
-      },
-      stop: async () => ({ stoppedAtMs: Date.now() }),
+    // The sole-caller rule (design 2.1): every `cmd_speech_*` invoke on the
+    // voice path originates inside this orchestrator — consent, capture,
+    // transcribe, speak, stop. The fake `Date.now()` target that used to be
+    // attached here is GONE; the duplex target now drives the real native
+    // stop through the orchestrator.
+    orchestrator = new SpeechOrchestrator({
+      invoke: options.speech?.invokeAdapter
+        ?? await defaultSpeechInvokeAdapter(),
+      machine,
+      duplex: speech.duplex,
     });
+    speech.attachSpeechTarget(orchestrator.createSpeechTarget());
   } catch {
     root.dataset.speechStatus = 'unavailable';
   }
@@ -198,6 +201,11 @@ export async function initializeRuntimeComposition(
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
     },
+    // QFIX Q-02 (design 2.2): the consent query routes through the
+    // orchestrator — the bridge never invokes a `cmd_speech_*` command.
+    queryConsent: orchestrator
+      ? () => orchestrator.queryConsent()
+      : undefined,
   });
 
   // FIX-014 (I-11): the post-setup name flow (spec 4). Deferred until after

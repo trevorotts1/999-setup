@@ -8,7 +8,6 @@ import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
-import { SPEECH_COMMANDS } from './speech-commands.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -62,11 +61,21 @@ export interface BridgePreferencesHooks {
   onVoiceToggleChange?: (voiceEnabled: boolean) => void;
 }
 
+/**
+ * QFIX Q-02 (design 2.2): the consent transport the answer surface uses.
+ * The composition injects the orchestrator's `queryConsent` here so the
+ * sole-caller rule holds — the bridge never invokes a `cmd_speech_*`
+ * command itself.
+ */
+export interface BridgeSpeechHooks {
+  queryConsent?: () => CaptureConsent | Promise<CaptureConsent>;
+}
+
 /** Mount answer controls only after native delivered an authenticated question. */
 export async function initializeAuthenticatedBridge(
   root: HTMLElement,
   machine: CandiceStateMachine,
-  prefs: BridgePreferencesHooks = {},
+  prefs: BridgePreferencesHooks & BridgeSpeechHooks = {},
 ): Promise<() => void> {
   const [{ listen }, { invoke }] = await Promise.all([
     import('@tauri-apps/api/event'),
@@ -135,21 +144,11 @@ export async function initializeAuthenticatedBridge(
       // a failed query blocks too (fail closed, mic never opens on an
       // unknown consent state).
       captureConsent: {
-        query: async (): Promise<CaptureConsent> => {
-          try {
-            const permissions = await invoke<{ microphone?: unknown }>(SPEECH_COMMANDS.permissions);
-            if (!permissions || typeof permissions !== 'object') return 'error';
-            switch (permissions.microphone) {
-              case 'granted': return 'granted';
-              case 'not-determined': return 'not-determined';
-              case 'denied': return 'denied';
-              case 'no-device': return 'no-device';
-              default: return 'error';
-            }
-          } catch {
-            return 'error';
-          }
-        },
+        // QFIX Q-02 (design 2.2): the consent query routes through the
+        // orchestrator's sole-caller seam. The composition always supplies
+        // it; the inline fallback keeps the fail-closed contract for legacy
+        // callers without a wired orchestrator.
+        query: prefs.queryConsent ?? (async (): Promise<CaptureConsent> => 'error'),
       },
       submitAnswer: (text) => {
         if (!active || submitted || text.trim().length === 0) return;
