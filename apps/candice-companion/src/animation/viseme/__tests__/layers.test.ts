@@ -20,6 +20,7 @@ import {
   eyeRect,
   mouthRect,
 } from "../layers.ts";
+import { stateForViseme } from "../registry.ts";
 import type { VisemeId } from "../types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,27 @@ test("every viseme maps to a mouth layer file", () => {
   // conservative mapping: no viseme drives the smile states
   for (const v of visemes) {
     assert.ok(!VISEME_LAYER_FILES[v].includes("smile"), `${v} must not drive a smile layer`);
+  }
+});
+
+test("VISEME_LAYER_FILES agrees with the registry's stateForViseme for every viseme", () => {
+  // Cross-consistency guard (FIX-005 recheck defect): the registry's
+  // measurement data is the authority for viseme → mouth-state mapping.
+  // VISEME_LAYER_FILES is derived from it; this test fails loudly if the
+  // two ever diverge (e.g. a hand-edited mapping one notch more open).
+  const visemes: VisemeId[] = ["closed", "rest", "ai", "oh", "ee", "mm", "wide"];
+  for (const v of visemes) {
+    const state = stateForViseme(v);
+    const sourceNum = state.sourceFile.split("-")[0];
+    const entry = Object.values(LAYER_REGISTRATION.mouthStates).find(
+      (m) => m.source === sourceNum,
+    );
+    assert.ok(entry, `viseme ${v}: registry state ${state.stateId} has a mouthStates entry`);
+    assert.equal(
+      VISEME_LAYER_FILES[v],
+      entry.file,
+      `viseme ${v}: VISEME_LAYER_FILES must match registry state ${state.stateId}`,
+    );
   }
 });
 
