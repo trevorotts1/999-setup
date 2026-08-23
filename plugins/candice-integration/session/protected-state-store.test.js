@@ -366,6 +366,37 @@ check('win32: unproven DACL fails closed (never reads or writes payload)', () =>
   assert.strictEqual(saved.code, 'windows-acl-unproven')
 })
 
+check('win32: locked schema migration succeeds even when statSync reports 0o666 (Windows mode semantics)', () => {
+  // QC repair regression (FIX-013 S2): _writeAtomicTo enforced POSIX 0600 on
+  // Windows, where Node statSync reports 0o666 for all files. Migration then
+  // failed closed with store:write-failed. The mode check must be POSIX-only;
+  // on Windows the user-only DACL (ensureRoot) is the permission proof.
+  const dir = tempDir()
+  const old = { schemaVersion: '9.9', sessions: [{ schemaVersion: '9.9', sessionId: 'win-old', status: 'active' }] }
+  writeJson(dir, 'candice-sessions.json', old, 0o600)
+  const winFs = Object.create(fs)
+  winFs.statSync = (p) => {
+    const st = fs.statSync(p)
+    if (st.isFile()) return Object.assign({}, st, { mode: 0o666 })
+    return st
+  }
+  const store = new ProtectedStateStore({ dir, platform: 'win32', fs: winFs, windowsAcl: () => ({ ok: true }) })
+  const opened = store.open()
+  assert.strictEqual(opened.ok, true)
+  assert.strictEqual(opened.migrated, true)
+  assert.strictEqual(opened.state.schemaVersion, STATE_SCHEMA_VERSION)
+})
+
+check('win32: marker write reports false when the atomic write fails (result is the truth)', () => {
+  const dir = tempDir()
+  const failFs = Object.create(fs)
+  failFs.renameSync = () => { throw new Error('simulated rename failure') }
+  const store = new ProtectedStateStore({ dir, fs: failFs })
+  const ok = store._writeMarker({ schemaVersion: '1.0', outcome: 'ok' })
+  assert.strictEqual(ok, false)
+  assert.strictEqual(fs.existsSync(path.join(dir, '.candice-sessions.json.migration.json')), false)
+})
+
 check('win32: the default DACL adapter fails closed when whoami yields no principal', () => {
   // The branch is ordinary code; branch coverage is exercised with a
   // whoami that returns an empty line — the adapter must refuse, never

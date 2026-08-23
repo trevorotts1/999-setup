@@ -340,9 +340,11 @@ class ProtectedStateStore {
 
   _writeMarker(content) {
     // Sidecar marker: bounded metadata only (schema, outcome, timestamp).
+    // The write result is the truth: a failed atomic write must never be
+    // reported as a marker present.
     try {
-      this._writeAtomicTo(this._markerPath(), content)
-      return true
+      const written = this._writeAtomicTo(this._markerPath(), content)
+      return written.ok === true
     } catch (err) {
       return false
     }
@@ -350,12 +352,13 @@ class ProtectedStateStore {
 
   _writeAtomicTo(file, content) {
     const fs = this.fs
+    const windows = isWindowsPlatform(this.platform)
     const tmp = path.join(this.dir, `${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(6).toString('hex')}`)
     const payload = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
     let fd = null
     try {
       fd = fs.openSync(tmp, 'wx', FILE_MODE)
-      fs.fchmodSync(fd, FILE_MODE)
+      if (!windows) fs.fchmodSync(fd, FILE_MODE) // Windows: the DACL is the boundary; mode bits carry no meaning
       fs.writeFileSync(fd, payload, 'utf8')
       try {
         fs.fsyncSync(fd)
@@ -365,7 +368,9 @@ class ProtectedStateStore {
       fs.closeSync(fd)
       fd = null
       const st = fs.statSync(tmp)
-      if (!this._verifyUserOwned(st) || (st.mode & 0o777) !== FILE_MODE) {
+      // Windows statSync reports 0o666 for files; owner/mode proof there is
+      // the user-only DACL (ensureRoot), so only POSIX checks mode bits.
+      if (!this._verifyUserOwned(st) || (!windows && (st.mode & 0o777) !== FILE_MODE)) {
         fs.unlinkSync(tmp)
         throw new Error('temp file owner/mode unverifiable')
       }
