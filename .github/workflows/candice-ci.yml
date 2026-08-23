@@ -229,6 +229,13 @@ jobs:
       - name: Workflow self-validation (FIX-021 structural check)
         run: node scripts/candice-ci/check-workflow.mjs --root .
 
+      # Required: no continue-on-error. Q-08: assert every lockfile entry
+      # (scoped names intact) appears in the SBOM as exact name@version, and
+      # SPDX ids are collision-safe for scoped packages, before the two-run
+      # determinism check (F23-05) below.
+      - name: SBOM identity + collision tests (Q-08, required)
+        run: node --test "scripts/candice-release/__tests__/sbom.test.mjs"
+
       # Required: no continue-on-error. SPDX output is deterministic (sorted
       # component order, no clock/network/randomness); a rerun must be
       # byte-identical or the job fails (F23-05 two-run determinism).

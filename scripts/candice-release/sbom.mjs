@@ -41,7 +41,7 @@
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -88,7 +88,17 @@ function sha256Hex(buffer) {
 }
 
 function spdxId(name, version, taken) {
-  const base = `SPDXRef-Package-${String(name).replace(/[^A-Za-z0-9.-]+/g, "-")}-${String(version).replace(/[^A-Za-z0-9.-]+/g, "-")}`;
+  // Scoped names carry `@` and `/`, both stripped by the sanitizer, so
+  // distinct names can sanitize to one base (e.g. `@a/b@1.0.0` and
+  // `a-b@1.0.0` both become `a-b-1.0.0`). Salt the base with a short hash
+  // of the exact `name@version` string to make ids collision-safe without
+  // changing the id of any existing unscoped package (Q-08).
+  const exact = `${String(name)}@${String(version)}`;
+  const clean = String(name).replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+/, "");
+  const suffix = /[^A-Za-z0-9.-]/.test(String(name))
+    ? `-${sha256Hex(exact).slice(0, 8)}`
+    : "";
+  const base = `SPDXRef-Package-${clean}-${String(version).replace(/[^A-Za-z0-9.-]+/g, "-")}${suffix}`;
   if (!taken.has(base)) {
     taken.add(base);
     return base;
@@ -123,21 +133,54 @@ function readRequired(path, label) {
   }
 }
 
+/**
+ * npm package identity from one package-lock `packages` entry.
+ * name/version/lock entry stay separate data: name is never re-derived from
+ * a `name@version` string, so scoped names survive intact (Q-08).
+ */
+function npmIdentity(path, entry, rootPackageJson) {
+  // lockfileVersion 3 entries usually omit `name`; the installed path is the
+  // canonical name (node_modules/@scope/pkg keeps the scope as one segment).
+  // Scoped path form must be matched BEFORE the plain-leaf fallback: the leaf
+  // of node_modules/@scope/pkg is `pkg` and must never win (Q-08).
+  const parts = path.split("/");
+  const isRoot = path === "";
+  const scoped = parts[0] === "node_modules" && parts[1]?.startsWith("@") && parts.length >= 3
+    ? `${parts[1]}/${parts[2]}`
+    : undefined;
+  const name = (isRoot && rootPackageJson?.name)
+    || (typeof entry.name === "string" && entry.name)
+    || scoped
+    || (/^node_modules\//.test(path) ? parts[parts.length - 1] : undefined);
+  return name ? { name, version: entry.version, entry, path } : null;
+}
+
 function npmComponents(packageJson, lock) {
   const components = [];
   const byKey = new Map();
   const rootEntry = lock.packages[""];
-  if (rootEntry?.name && rootEntry.version) {
-    byKey.set(`${rootEntry.name}@${rootEntry.version}`, rootEntry);
+  if (rootEntry?.version) {
+    const rootId = npmIdentity("", rootEntry, packageJson);
+    if (rootId) {
+      byKey.set(`${rootId.name}@${rootId.version}`, { ...rootId, path: "" });
+    }
   }
   for (const [path, entry] of Object.entries(lock.packages).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    const name = entry.name || basename(path);
-    if (!name || !entry.version) continue;
-    const key = `${name}@${entry.version}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
+    if (path === "") continue;
+    const id = npmIdentity(path, entry, packageJson);
+    if (!id || !id.version) continue;
+    const key = `${id.name}@${id.version}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, { ...id, path });
+    }
   }
-  for (const [key, entry] of [...byKey.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    const [name, version] = key.split("@");
+  // Single source of truth for the component loop: iterate the lockfile
+  // itself, never a re-parsed name@version key (Q-08).
+  const lockEntries = [];
+  for (const key of [...byKey.keys()].sort()) {
+    lockEntries.push({ key, ...byKey.get(key) });
+  }
+  for (const { key, name, version, entry } of lockEntries) {
     const component = {
       name,
       SPDXID: "PLACEHOLDER",
@@ -274,6 +317,7 @@ function pinnedComponents() {
   return components;
 }
 
+export { npmComponents, npmIdentity, spdxId };
 export function generateSbom(root = scriptRoot) {
   const appDir = join(root, "apps", "candice-companion");
   const manifestDir = join(appDir, "src-tauri", "stt", "runtime", "manifests");
