@@ -585,6 +585,173 @@ check('ask_user fails soft when the durable store is blocked (never persists bli
 })
 
 // ——————————————————————————————————————————————
+// 4b2. FIX-013 S5 QC D2 — the startup recovery outcome is CONSUMED by the
+//      MCP ask_user path: the recovered question is re-asked exactly once
+//      under the runner's lease, or routed to fallback-pending; never
+//      double-counted
+// ——————————————————————————————————————————————
+
+/** Build the runner-shaped startupOutcome from a REAL recoverPendingQuestion
+ * claim (the same durable record the production runner would print). */
+function recoveredStartupOutcome(lifecycle, sessionId) {
+  const rec = lifecycle.recoverPendingQuestion({ sessionId })
+  assert.strictEqual(rec.ok, true, 'fixture: the recovery claim must succeed')
+  return {
+    ok: true,
+    degraded: null,
+    failures: [],
+    sweep: { scanned: 0, removed: 0, kept: 0, failed: 0 },
+    recovery: {
+      recovered: true,
+      sessionId,
+      pending: {
+        questionKey: rec.recovered.questionKey,
+        operationId: rec.recovered.operationId,
+        durableState: rec.recovered.durableState,
+        counted: rec.recovered.counted,
+        leaseId: rec.lease.leaseId,
+      },
+      failures: [],
+      markedRecovering: true,
+      counted: false,
+    },
+  }
+}
+
+check('D2: a matching ask re-asks the recovered question exactly once, completes with one count, and a second ask is refused', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-d2-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({
+      sessionId: 'opaque-session-id',
+      questionKey: 'BUILD_TARGET',
+      text: question().text,
+      answerKind: 'free_text',
+      counted: false,
+    })
+    const startupOutcome = recoveredStartupOutcome(lifecycle, 'opaque-session-id')
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const registry = new AnswerSlotRegistry()
+    let deliveries = 0
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: coordinator,
+      startupOutcome,
+      isCompanionReady: () => true,
+      deliverQuestion: async (q) => {
+        deliveries += 1
+        registry.put({ sessionId: q.sessionId, questionKey: q.questionKey, answer: answer() })
+        return { ok: true }
+      },
+      sleep: async () => {},
+    })
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    assert.strictEqual(result.result.ok, true, 'the recovered question completes with its one answer')
+    assert.strictEqual(result.result.committed, true)
+    assert.strictEqual(deliveries, 1, 'the recovered question was re-asked exactly once')
+    const status = lifecycle.status({ sessionId: 'opaque-session-id' })
+    assert.strictEqual(status.questionCount, 1, 'one terminal commit; never double-counted')
+    assert.strictEqual(status.status, 'active', 'the session resumed to active after the recovery completion')
+    assert.strictEqual(status.hasPendingQuestion, false, 'the recovered record is cleared')
+    // A second ask of the same question can never re-ask or double-count.
+    const second = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    assert.strictEqual(second.result.isError, true)
+    assert.ok(second.result.content[0].text.includes('question-already-answered'), 'the answered key is refused')
+    assert.strictEqual(deliveries, 1, 'no second delivery')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).questionCount, 1, 'count still exactly one')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('D2: a matching ask with the companion unavailable routes the recovered record to fallback-pending (lease released, session active)', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-d2-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({
+      sessionId: 'opaque-session-id',
+      questionKey: 'BUILD_TARGET',
+      text: question().text,
+      answerKind: 'free_text',
+      counted: false,
+    })
+    const startupOutcome = recoveredStartupOutcome(lifecycle, 'opaque-session-id')
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const server = new AskUserServer({
+      lifecycle,
+      fallback: coordinator,
+      startupOutcome,
+      isCompanionReady: () => false,
+      deliverQuestion: async () => ({ ok: false, code: 'companion-not-ready' }),
+      sleep: async () => {},
+    })
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+    assert.strictEqual(result.result.isError, true)
+    assert.strictEqual(result.result.fallback.cause, 'app-unavailable')
+    assert.strictEqual(result.result.fallback.durableState, 'fallback-pending', 'the recovery branch transferred the record, not the coordinator refusal')
+    const pending = lifecycle.getPendingOperation({ sessionId: 'opaque-session-id' }).pending
+    assert.strictEqual(pending.durableState, 'fallback-pending')
+    assert.strictEqual(pending.leaseId, null, 'the recovery lease is released on the transfer')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).status, 'active', 'the session resumed to active')
+    // A restart can never re-recover this fallback-owned question.
+    const rec = lifecycle.recoverPendingQuestion({ sessionId: 'opaque-session-id' })
+    assert.strictEqual(rec.code, 'fallback-owns-question')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('D2: a non-matching ask (different session) never touches the recovered record and takes the normal path', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-d2-mcp-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({
+      sessionId: 'opaque-session-id',
+      questionKey: 'BUILD_TARGET',
+      text: question().text,
+      answerKind: 'free_text',
+      counted: false,
+    })
+    const startupOutcome = recoveredStartupOutcome(lifecycle, 'opaque-session-id')
+    const coordinator = new FallbackCoordinator({ lifecycle })
+    const registry = new AnswerSlotRegistry()
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: coordinator,
+      startupOutcome,
+      isCompanionReady: () => true,
+      deliverQuestion: async (q) => {
+        registry.put({ sessionId: q.sessionId, questionKey: q.questionKey, answer: answer({ sessionId: q.sessionId }) })
+        return { ok: true }
+      },
+      sleep: async () => {},
+    })
+    lifecycle.beginSession({ sessionId: 'opaque-session-2', skill: 'spec-protocol' })
+    const result = await server.askUser({ question: question({ sessionId: 'opaque-session-2' }), sessionId: 'opaque-session-2' })
+    assert.strictEqual(result.result.ok, true, 'the unrelated ask completes normally')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-2' }).questionCount, 1)
+    // The recovered record is untouched: still recovering, lease intact.
+    const pending = lifecycle.getPendingOperation({ sessionId: 'opaque-session-id' }).pending
+    assert.strictEqual(pending.durableState, 'recovering', 'the recovered record is untouched by a non-matching ask')
+    assert.ok(pending.leaseId, 'the recovery lease is still held')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).status, 'recovering')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+// ——————————————————————————————————————————————
 // 4c. FIX-013 S4 — disconnect is re-connectable: bounded wait, then terminal
 //     fallback; normal shutdown ends the lifecycle exactly once
 // ——————————————————————————————————————————————

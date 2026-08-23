@@ -221,6 +221,12 @@ class AskUserServer {
     // is the bounded degraded status; null on a clean pass. Never blocks.
     this.startupOutcome = options.startupOutcome || null
     this.startupDegraded = options.startupDegraded || null
+    // FIX-013 S5 QC D2: the startup recovery outcome is consumed EXACTLY
+    // ONCE. The flag is set when the matching ask enters the recovery branch
+    // and is cleared only on a retryable failure (the same operation may
+    // re-enter); a terminal outcome keeps it so a second ask of the same
+    // question can never re-ask or double-count.
+    this._startupRecoveryConsumed = false
     if (this.bridge) {
       this.bridge.onAnswer = (input) => this.registry.put(input)
       this.bridge.onCancel = (input) => {
@@ -432,6 +438,210 @@ class AskUserServer {
   }
 
   /**
+   * FIX-013 S5 QC D2 — the startup recovery outcome is the MCP process's
+   * consumer of the runner's recovered record. The runner claimed the lease
+   * and printed the outcome; this server stored it and now READS it.
+   *
+   * Match is on the full operation identity (sessionId, questionKey,
+   * operationId) — the same identity the runner recovered and the same one
+   * this ask derives. The durable store remains the authority: the branch
+   * engages only when the durable record is still `recovering` with the same
+   * operationId (a record already acked by the app is gone and falls through
+   * to the normal path).
+   */
+  _matchesStartupRecovery(q, operationId) {
+    if (this._startupRecoveryConsumed) return false
+    const o = this.startupOutcome
+    if (!o || !o.recovery || o.recovery.recovered !== true) return false
+    if (o.recovery.sessionId !== q.sessionId) return false
+    const p = o.recovery.pending
+    if (!p) return false
+    if (p.questionKey !== q.questionKey) return false
+    if (p.operationId !== operationId) return false
+    return true
+  }
+
+  /** Best-effort session resume after a recovery-owned record completes.
+   * recordAnswer/recordFallbackAnswer never change record.status, so without
+   * this the session would stay `recovering` and every later ask would be
+   * refused `session-not-active`. Never throws, never blocks. */
+  async _resumeAfterRecovery(sessionId) {
+    if (this.lifecycle && typeof this.lifecycle.resumeSession === 'function') {
+      try { await Promise.resolve(this.lifecycle.resumeSession({ sessionId })) } catch (_) { /* best-effort */ }
+    }
+  }
+
+  /**
+   * FIX-013 S5 QC D2 — re-ask the recovered question EXACTLY ONCE under the
+   * runner's recovery lease. Returns null when the durable record no longer
+   * matches (the app already acknowledged the handoff) so the caller falls
+   * through to the normal path. The re-ask is a FRESH delivery frame (no
+   * replayed flag — the app treats it as a new question), then the legal
+   * durable transition `recovering -> displayed`, then the same wait loop as
+   * the normal path, then the ONE terminal recordAnswer commit. The consumed
+   * flag is cleared only on a retryable failure so the same operation may
+   * re-enter; a terminal outcome keeps it — a second ask of the same
+   * question can never re-ask or double-count.
+   */
+  async _reaskRecoveredQuestion(q, operationId) {
+    if (!this.lifecycle || typeof this.lifecycle.getPendingOperation !== 'function') return null
+    const durable = await Promise.resolve(this.lifecycle.getPendingOperation({ sessionId: q.sessionId }))
+    if (!durable || !durable.ok || !durable.pending) return null
+    const pending = durable.pending
+    if (pending.durableState !== 'recovering' || pending.operationId !== operationId) return null
+    this._startupRecoveryConsumed = true
+
+    const slotOpen = this.registry.open({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+    if (!slotOpen.ok) {
+      return this._toolResult(this._composeTextResult(`candice.ask_user: ${slotOpen.error}`, true))
+    }
+
+    let delivered
+    try {
+      delivered = this.deliverQuestion
+        ? await this.deliverQuestion(q)
+        : { ok: false, code: 'no-deliverer' }
+    } catch (err) {
+      delivered = { ok: false, code: 'delivery-threw', error: String((err && err.message) || err) }
+    }
+    if (!delivered || delivered.ok !== true) {
+      // Same bounded reconnect window as the normal path: the same
+      // authenticated process may crash and restart and replay this exact
+      // operation under its recovery lease.
+      const transportLoss = delivered && (delivered.code === 'companion-disconnected' || delivered.code === 'companion-delivery-timeout')
+      if (transportLoss) {
+        while (this._withinReconnectWindow()) {
+          await this.sleep(50)
+          const replayed = this.registry.peek({ sessionId: q.sessionId, questionKey: q.questionKey })
+          if (replayed.ok && replayed.status === 'answered') break
+          const ready = this.bridge ? this.bridge.isReady() : false
+          if (ready && this.registry.openCount() > 0) {
+            const replayed2 = this.registry.peek({ sessionId: q.sessionId, questionKey: q.questionKey })
+            if (replayed2.ok && replayed2.status === 'waiting') break
+          }
+        }
+      }
+      const phase = this.bridge && this.bridge.lifecycle ? this.bridge.lifecycle.phase : null
+      if (phase === 'reconnecting' || (this._recovered && phase === 'connected')) {
+        // The replayed frame is in flight: fall through to the wait loop.
+      } else {
+        // The question never reached the companion surface. The record is
+        // still `recovering` (the coordinator would refuse it with
+        // `recovery-owns-question`), so the recovery branch owns the
+        // transfer: `recovering -> fallback-pending` first, then the
+        // coordinator sees a redelivered terminal claim.
+        this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+        const cause = (delivered && (delivered.code === 'companion-busy' || delivered.code === 'app-missing' || delivered.code === 'companion-not-ready'))
+          ? 'app-unavailable'
+          : 'delivery-failure'
+        return this._routeRecoveredToFallback(q, operationId, cause, delivered && (delivered.error || delivered.code))
+      }
+    }
+
+    // Delivered acknowledgement received: persist the legal recovery
+    // transition BEFORE waiting (the record carries the runner's leaseId).
+    if (this.lifecycle && typeof this.lifecycle.transitionPendingDurableState === 'function') {
+      const t = await Promise.resolve(this.lifecycle.transitionPendingDurableState({
+        sessionId: q.sessionId,
+        operationId,
+        from: 'recovering',
+        to: 'displayed',
+      }))
+      if (!t || !t.ok || t.durableCommitOk === false) {
+        this._startupRecoveryConsumed = false
+        this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+        return this._failSoft('recovery re-ask persist failed (durable-commit-failed); retryable — the same question/session/operation may be retried', 'delivery-failure', q, operationId)
+      }
+    }
+
+    // Wait for exactly one approved answer in the owning session (spec 13.2).
+    const deadline = Date.now() + this.waitWindowMs
+    let answer
+    for (;;) {
+      if (this.cancelledSlots.delete(`${q.sessionId}::${q.questionKey}`)) {
+        this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+        const res = this._runFallback('user-cancel', q, operationId)
+        if (res.result && res.result.fallback) await this._resumeAfterRecovery(q.sessionId)
+        return res
+      }
+      const t = this.registry.take({ sessionId: q.sessionId, questionKey: q.questionKey })
+      if (t.ok) {
+        answer = t.answer
+        break
+      }
+      if (t.code === 'not-answered') {
+        if (Date.now() > deadline) {
+          this._cancelSlot({ sessionId: q.sessionId, questionKey: q.questionKey, operationId })
+          const res = this._runFallback('timeout', q, operationId)
+          if (res.result && res.result.fallback) await this._resumeAfterRecovery(q.sessionId)
+          return res
+        }
+        await this.sleep(120)
+        continue
+      }
+      return this._toolResult(this._composeTextResult(`candice.ask_user: ${t.error}`, true))
+    }
+
+    const recorded = answer.userConfirmedTranscript === true
+    if (recorded && this.lifecycle && typeof this.lifecycle.recordAnswer === 'function') {
+      const commit = await Promise.resolve(
+        this.lifecycle.recordAnswer({
+          sessionId: q.sessionId,
+          questionKey: q.questionKey,
+          operationId,
+        })
+      )
+      if (!commit || commit.ok !== true || commit.durableCommitOk === false) {
+        this._startupRecoveryConsumed = false
+        return this._failSoft(`answer commit failed (${(commit && (commit.code && !commit.durableCommitOk ? 'durable-commit-failed' : commit.code)) || 'commit-pending'}); retryable — the same question/session/operation may be retried`, 'delivery-failure', q, operationId)
+      }
+    }
+
+    // recordAnswer never changes record.status: the session would stay
+    // `recovering` and every later ask would be refused `session-not-active`.
+    await this._resumeAfterRecovery(q.sessionId)
+
+    return this._toolResult({
+      answer: {
+        schemaVersion: answer.schemaVersion,
+        sessionId: answer.sessionId,
+        questionKey: answer.questionKey,
+        answerText: answer.answerText,
+        inputMode: answer.inputMode,
+        userConfirmedTranscript: answer.userConfirmedTranscript,
+      },
+      ok: true,
+      committed: recorded && !!this.lifecycle,
+    })
+  }
+
+  /**
+   * FIX-013 S5 QC D2 — route a recovery-owned question to the terminal
+   * fallback. The record is still `recovering` (the coordinator refuses it
+   * with `recovery-owns-question`), so the recovery branch performs the
+   * legal transfer `recovering -> fallback-pending` FIRST (clears the
+   * leaseId), then resumes the session, then hands the terminal claim to the
+   * coordinator — which sees `fallback-pending` and returns redelivered:true.
+   * A failed transfer clears the consumed flag and fails soft retryable.
+   */
+  async _routeRecoveredToFallback(q, operationId, cause, detail) {
+    if (this.lifecycle && typeof this.lifecycle.transitionPendingDurableState === 'function') {
+      const t = await Promise.resolve(this.lifecycle.transitionPendingDurableState({
+        sessionId: q.sessionId,
+        operationId,
+        from: 'recovering',
+        to: 'fallback-pending',
+      }))
+      if (!t || !t.ok || t.durableCommitOk === false) {
+        this._startupRecoveryConsumed = false
+        return this._failSoft('recovery fallback persist failed (durable-commit-failed); retryable — the same question/session/operation may be retried', cause, q, operationId)
+      }
+    }
+    await this._resumeAfterRecovery(q.sessionId)
+    return this._runFallback(cause, q, operationId, detail)
+  }
+
+  /**
    * askUser — the single exposed tool. See the file header for the contract.
    * FAILS SOFT on every companion/unavailability path (spec 13.2, 20):
    * the result carries isError:true with a stable instruction the skill can
@@ -474,9 +684,6 @@ class AskUserServer {
         return this._runFallback('mcp-unavailable', q, operationId)
       }
     }
-    if (!this.isCompanionReady()) {
-      return this._runFallback('app-unavailable', q, operationId)
-    }
     // S2 handoff: a BLOCKED durable store (unproven owner/mode/ACL, quarantine
     // failure) must gate the tool — never persist blind. No durable claim is
     // possible, so the ONLY honest return is the text fail-soft (the store
@@ -486,6 +693,21 @@ class AskUserServer {
         this._composeTextResult(
           `candice.ask_user: durable state is blocked (${this.lifecycle.sessions.storeBlockedReason}); ask the same question in Claude normally`, true)
       )
+    }
+    // FIX-013 S5 QC D2 — the startup recovery consumer. When this ask
+    // matches the runner's recovered record (sessionId, questionKey,
+    // operationId) and the durable record is still `recovering`, the
+    // recovery branch OWNS the routing: it re-asks exactly once under the
+    // lease, or transfers the record to fallback-pending when the companion
+    // cannot take it. It sits BEFORE the readiness probe because a
+    // not-ready companion must route to fallback-pending, not hit the
+    // coordinator's `recovery-owns-question` refusal and strand the record.
+    if (this._matchesStartupRecovery(q, operationId)) {
+      const recovered = await this._reaskRecoveredQuestion(q, operationId)
+      if (recovered !== null) return recovered
+    }
+    if (!this.isCompanionReady()) {
+      return this._runFallback('app-unavailable', q, operationId)
     }
 
     // Persist the governed slot BEFORE opening or delivering it. A lifecycle
