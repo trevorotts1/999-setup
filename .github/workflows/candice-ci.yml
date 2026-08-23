@@ -108,6 +108,12 @@ jobs:
         run: |
           cd apps/candice-companion
           npm ci
+          # QFIX-q11 (Q-11): assert the installed Vite equals the lockfile
+          # version before building, so CI can never silently build with a
+          # stale local dependency.
+          echo "installed vite: $(node -e "console.log(require('vite/package.json').version)")"
+          echo "lockfile vite:  $(node -e "console.log(require('./package-lock.json').packages['node_modules/vite'].version)")"
+          node -e "const assert=require('assert');assert.strictEqual(require('vite/package.json').version,require('./package-lock.json').packages['node_modules/vite'].version)"
           npm run build
 
       - name: FIX-014 interaction composition suite + bundle sentinel
