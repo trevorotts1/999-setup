@@ -84,7 +84,7 @@ test("a required skip in one run that the other lacks fails (injected-skip oracl
   assert.ok(record.differences.some((d) => d.includes("performed in only one run")));
 });
 
-test("the same BLOCKED row in both runs is an agreed host-class limitation (FIX-021 convention)", () => {
+test("a BLOCKED row in both runs is a missing required leg, never a success (Q-01)", () => {
   const report = legReport([
     { key: "macos-arm64: verifier", status: "BLOCKED", record: { reason: "no host class" } },
   ]);
@@ -93,9 +93,27 @@ test("the same BLOCKED row in both runs is an agreed host-class limitation (FIX-
     runA: { report, reportSha256: "x", fingerprint: "f" },
     runB: { report, reportSha256: "x", fingerprint: "f" },
   });
-  assert.equal(ok, true, JSON.stringify(record.differences));
-  assert.equal(record.verdict, "IDENTICAL");
-  assert.equal(record.requiredLegs[0].blocked, true);
+  assert.equal(ok, false, JSON.stringify(record.differences));
+  assert.equal(record.verdict, "DIVERGENT");
+  assert.ok(record.differences.some((d) => d.includes("required leg BLOCKED in both runs")));
+  assert.equal(record.requiredLegs.length, 0);
+});
+
+test("a required leg PASS in one run and BLOCKED in the other is a blocked/perform mismatch", () => {
+  const a = legReport([
+    { key: "macos-arm64: verifier", status: "PASS", record: { checked: 8 } },
+  ]);
+  const b = legReport([
+    { key: "macos-arm64: verifier", status: "BLOCKED", record: { reason: "no host class" } },
+  ]);
+  const { ok, record } = compareRuns({
+    sha: SHA,
+    runA: { report: a, reportSha256: "x", fingerprint: "f" },
+    runB: { report: b, reportSha256: "x", fingerprint: "f" },
+  });
+  assert.equal(ok, false);
+  assert.equal(record.verdict, "DIVERGENT");
+  assert.ok(record.differences.some((d) => d.includes("blocked/perform mismatch")));
 });
 
 test("BLOCKED rows with divergent reasons fail", () => {
@@ -127,12 +145,12 @@ test("report content SHA disagreement fails", () => {
   assert.ok(record.differences.some((d) => d.includes("report SHAs disagree")));
 });
 
-test("same-key failures with different fingerprints diverge (two reds are not a pass)", () => {
+test("two matching FAILs are FAILED-DETERMINISTICALLY, never a pass (Q-01 step 3)", () => {
   const a = legReport([
     { key: "ws45", status: "FAIL", record: { reason: "gate A" } },
   ]);
   const b = legReport([
-    { key: "ws45", status: "FAIL", record: { reason: "gate B" } },
+    { key: "ws45", status: "FAIL", record: { reason: "gate A" } },
   ]);
   const { ok, record } = compareRuns({
     sha: SHA,
@@ -140,7 +158,9 @@ test("same-key failures with different fingerprints diverge (two reds are not a 
     runB: { report: b, reportSha256: "x", fingerprint: "f" },
   });
   assert.equal(ok, false);
-  assert.ok(record.differences.some((d) => d.includes("fingerprint divergence")));
+  assert.equal(record.verdict, "FAILED-DETERMINISTICALLY");
+  assert.ok(record.differences.some((d) => d.includes("FAILED-DETERMINISTICALLY")));
+  assert.equal(record.requiredLegs.length, 0);
 });
 
 test("WS-45 verdict shape: failures and skip reasons become required legs", () => {
