@@ -88,9 +88,23 @@ workspace members are MIT by root `LICENSE` (clarified in `deny.toml`;
 ```sh
 cargo install cargo-deny --locked   # pins via cargo-deny's own lockfile
 cd <repo root>
+# cargo-deny 0.20.2 resolves the manifest from the current directory;
+# `--manifest-path` is not a valid `cargo deny check` flag. Run from the
+# crate directory; deny.toml is discovered from the repository root.
 for m in src-tauri src-tauri/audio/capture src-tauri/audio/capture-windows \
          src-tauri/permissions src-tauri/binding/macos src-tauri/binding/windows \
          scripts/package-macos/signature-helper; do
-  cargo deny --manifest-path "apps/candice-companion/$m/Cargo.toml" check || exit 1
+  (cd "apps/candice-companion/$m" && cargo deny check) || exit 1
 done
 ```
+
+## License allow-list amendment (2026-08-23, H15-03 repair)
+
+`CDLA-Permissive-2.0` added to the `deny.toml` allow-list for
+`webpki-root-certs 1.0.9` (via rustls 0.23 -> tauri 2.11.5). Judgment:
+Community Data License Agreement, Permissive variant — applies to the bundled
+Mozilla root-CA certificate *data*; permits redistribution and commercial
+use; no copyleft or source-offer obligation. Registered in
+`CONTROL/dependency-exceptions.md` as EXC-2026-08-23-01 (non-expiring,
+license-classification category). Verified live after the amendment:
+`cargo deny check` in `apps/candice-companion/src-tauri` exits 0.

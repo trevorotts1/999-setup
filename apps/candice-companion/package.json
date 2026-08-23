@@ -4,6 +4,10 @@
   "version": "1.0.0-rc.1",
   "description": "Candice Companion — local visual and voice companion for Claude Code skills (Tauri 2 shell)",
   "type": "module",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || >=22.0.0"
+  },
+  "packageManager": "npm@11.8.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build --config vite.config.build.ts",
@@ -17,7 +21,9 @@
     "test:interaction-composition": "node --test --experimental-strip-types src/runtime/__tests__/interaction-composition.test.ts",
     "verify:visual-bundle": "npm run build && node scripts/assert-visual-bundle.mjs",
     "verify:accessibility-bundle": "npm run build && node scripts/assert-accessibility-bundle.mjs",
-    "verify:interaction-composition": "npm run build && node scripts/assert-interaction-composition.mjs"
+    "verify:interaction-composition": "npm run build && node scripts/assert-interaction-composition.mjs",
+    "audit:ci": "npm audit --audit-level=high",
+    "sbom": "node ../../scripts/candice-release/sbom.mjs --root ../.."
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1"
@@ -26,6 +32,6 @@
     "@tauri-apps/cli": "2.11.4",
     "@types/node": "26.2.0",
     "typescript": "5.9.3",
-    "vite": "5.4.21"
+    "vite": "6.4.3"
   }
 }
