@@ -26,6 +26,10 @@ serde_json = "1"
 # sha2 verifies on-disk asset hashes against the inventory pins.
 candice-capture = { path = "audio/capture", features = ["cpal"] }
 sha2 = "0.10"
+# QFIX Q-02 (q2-design.md section 3.2): the app owns the TTS output stream —
+# the Kokoro worker renders PCM, this crate plays it on a real `cpal` output
+# device so the webview never touches audio bytes.
+cpal = "0.18"
 
 [profile.release]
 codegen-units = 1

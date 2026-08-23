@@ -19,7 +19,13 @@ use tauri::{AppHandle, Runtime, State};
 /// section 5 — the binding asset-delivery authority for this fix lane).
 mod assets;
 
+// Real engines behind the boundary commands (QFIX Q-02, design sections
+// 3.1 + 3.2): capture worker thread, whisper.cpp STT, Kokoro TTS with cpal
+// playback. The commands below dispatch here instead of owning slots.
+mod engines;
+
 use assets::{InventoryEntry, InventoryRecord};
+use engines::{CaptureEngine, TtsEngine};
 
 // Trait methods on the capture crate's device sources (default_input_device
 // probe in cmd_speech_health, design 2.5).
@@ -143,6 +149,11 @@ pub struct SpeakRequest {
 pub struct TranscribeRequest {
     /// Request id from the caller; echoed back, never interpreted.
     pub request_id: String,
+    /// QFIX Q-02 (design 2.3 step 7): the PTT path. `capture` runs the real
+    /// STT engine on the recording the capture worker produced on release —
+    /// no WAV path ever crosses IPC for this mode.
+    #[serde(default)]
+    pub mode: Option<String>,
     /// Bounded in-memory transcript text (ring-buffer path). The capture
     /// lane never writes raw audio to disk on the PTT path; this field
     /// carries only the text it produced.
@@ -154,15 +165,28 @@ pub struct TranscribeRequest {
     pub language: Option<String>,
 }
 
-/// Shared managed state for the speech boundary. Commands mutate only
-/// the lifecycle facts the boundary owns (capture request ids); engine
-/// state stays inside the lane subprocesses.
+/// Shared managed state for the speech boundary. Commands mutate only the
+/// lifecycle facts the boundary owns; engine state stays inside the engine
+/// handles (QFIX Q-02): the capture worker owns the PTT controller, the TTS
+/// handle owns synthesis/playback.
 #[derive(Default)]
 pub struct SpeechState {
     /// The one active capture request id (PTT single-flight, plan 3C).
     active_capture_request: std::sync::Mutex<Option<String>>,
-    /// The one active speak request id (idempotent stop, plan 3A).
-    active_speak_request: std::sync::Mutex<Option<String>>,
+    /// The one active speak request id (idempotent stop, plan 3A). Shared
+    /// with the playback thread so the slot releases when the mouth
+    /// provably closes (drain or boundary), not when the command returns.
+    active_speak_request: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// The session-temp WAV written by the capture worker at release,
+    /// consumed exactly once by transcribe mode `capture` (WS-18: a
+    /// recording is consumed once). Native-only — never crosses IPC.
+    last_capture_wav: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Real capture engine: a worker thread owning the `PttController` and
+    /// the device (`Default` is an un-started engine that fails every send
+    /// — total, never panics).
+    pub(crate) capture: CaptureEngine,
+    /// Real TTS engine handle (Kokoro worker + cpal output stream).
+    pub(crate) tts: TtsEngine,
 }
 
 /// The packaged Python interpreter is only valid inside the app bundle;
@@ -397,46 +421,67 @@ pub fn cmd_speech_health<R: Runtime>(
     })
 }
 
-/// Capture start (plan 3A `speech_capture_start`). PTT lifetime only,
-/// single-flight: a second request while one is live is refused as busy.
-/// The real device open happens in the capture lane; this command owns
-/// the admission slot.
-fn capture_start_impl(state: &SpeechState, request_id: String) -> Result<String, String> {
+/// Capture start (plan 3A `speech_capture_start`, QFIX Q-02 design 2.3
+/// step 4). PTT lifetime only, single-flight: a second request while one
+/// is live is refused as busy. Success means the REAL device opened — the
+/// capture worker's `press()` drove `CpalMicSource::open`, and the OS mic
+/// prompt (TCC) fires inside that open at press time. The honest status
+/// fact comes back from the controller snapshot; denied/no-device are the
+/// real states, never fabricated.
+fn capture_start_impl(state: &SpeechState, request_id: String) -> Result<CaptureStartOutcome, String> {
     if request_id.is_empty() || request_id.len() > 128 {
         return Err("invalid request id".into());
     }
-    let mut slot = state
-        .active_capture_request
-        .lock()
-        .map_err(|_| "speech state unavailable")?;
-    if slot.is_some() {
-        return Err("capture-busy: a PTT capture is already active".into());
+    {
+        let slot = state
+            .active_capture_request
+            .lock()
+            .map_err(|_| "speech state unavailable")?;
+        if slot.is_some() {
+            return Err("capture-busy: a PTT capture is already active".into());
+        }
     }
-    *slot = Some(request_id.clone());
-    Ok(request_id)
+    // The press opens the device (or fails with denied / no-device). Only
+    // a genuinely listening controller takes the admission slot.
+    let status = state.capture.press()?;
+    match status.as_str() {
+        "listening" => {
+            let mut slot = state
+                .active_capture_request
+                .lock()
+                .map_err(|_| "speech state unavailable")?;
+            *slot = Some(request_id.clone());
+            Ok(CaptureStartOutcome { status: status.as_str().into(), request_id })
+        }
+        other => {
+            // Denied / no-device / error: the mic did NOT open. The typed
+            // surface stays available; the reason travels as an error so
+            // the orchestrator surfaces the explanation (FIX-015 consent).
+            Err(format!("capture-{other}: microphone did not open"))
+        }
+    }
+}
+
+/// The capture-start fact returned to the webview: the controller status
+/// code plus the echoed request id. Status codes only — never audio.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureStartOutcome {
+    pub status: String,
+    pub request_id: String,
 }
 
 #[tauri::command]
 pub fn cmd_speech_capture_start(
     state: State<'_, SpeechState>,
+    app: AppHandle<impl Runtime>,
     request_id: String,
-) -> Result<String, String> {
+) -> Result<CaptureStartOutcome, String> {
+    // The worker thread needs the app handle to emit status events; the
+    // engine starts lazily on the first press so tests and headless runs
+    // never spawn threads.
+    state.capture.ensure_started(app);
     capture_start_impl(&state, request_id)
-}
-
-/// Capture stop (plan 3A `speech_capture_stop`). Idempotent: releasing a
-/// capture that is not live is a no-op success, never an error (spec 20).
-fn capture_stop_impl(state: &SpeechState, request_id: Option<String>) -> Result<(), String> {
-    let mut slot = state
-        .active_capture_request
-        .lock()
-        .map_err(|_| "speech state unavailable")?;
-    if let Some(id) = &*slot {
-        if request_id.as_ref().is_none_or(|rid| rid == id) {
-            *slot = None;
-        }
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -446,17 +491,97 @@ pub fn cmd_speech_capture_stop(
 ) -> Result<(), String> {
     capture_stop_impl(&state, request_id)
 }
+fn capture_stop_impl(state: &SpeechState, request_id: Option<String>) -> Result<(), String> {
+    {
+        let mut slot = state
+            .active_capture_request
+            .lock()
+            .map_err(|_| "speech state unavailable")?;
+        if let Some(id) = &*slot {
+            if request_id.as_ref().is_none_or(|rid| rid == id) {
+                *slot = None;
+            }
+        }
+    }
+    // Idempotent: releasing when nothing is live is still a no-op success.
+    let outcome = state.capture.release()?;
+    // Park the finished WAV (if any) for transcribe mode `capture`; it is
+    // consumed once there or overwritten by the next release. A stale file
+    // from a previous hold that was never transcribed is deleted here so
+    // temp audio never accumulates (FIX-017 cleanup guard).
+    let mut pending = state
+        .last_capture_wav
+        .lock()
+        .map_err(|_| "speech state unavailable")?;
+    if let Some(old) = pending.take() {
+        let _ = std::fs::remove_file(&old);
+    }
+    if let Some(wav) = outcome.wav_path {
+        *pending = Some(wav);
+    }
+    Ok(())
+}
 
-/// Transcribe (plan 3A `speech_transcribe`). Bounded in-memory text or an
-/// allowlisted session-temp WAV path; the boundary echoes the request id
-/// and a status code, never raw audio. A missing payload is an explicit
-/// failure — an empty transcript is never a blank answer (spec 20).
+/// Transcribe (plan 3A `speech_transcribe`, QFIX Q-02 design 2.3 step 7).
+/// Three payloads:
+///  - `mode: "capture"`: run the REAL whisper.cpp STT engine on the
+///    recording the capture worker finished at release (checksum verified
+///    pre-run; the WAV and its transcript file are deleted afterwards —
+///    FIX-017 cleanup guard). No path crosses IPC for this mode.
+///  - bounded in-memory text: echoed for typed/external paths.
+///  - allowlisted session-temp WAV path: queued with the same engine.
+/// A missing payload is an explicit failure — an empty transcript is never
+/// a blank answer (spec 20).
 #[tauri::command]
-pub fn cmd_speech_transcribe(
+pub fn cmd_speech_transcribe<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, SpeechState>,
     request: TranscribeRequest,
 ) -> Result<serde_json::Value, String> {
+    transcribe_impl::<R>(&app, &state, request)
+}
+
+/// What a validated transcribe request wants the engines to do. Pure
+/// planning output — no app handle, no hardware, fully unit-testable.
+#[derive(Debug)]
+enum TranscribePlan {
+    /// Echo bounded in-memory text (typed/external paths). No engine.
+    TextEcho {
+        response: serde_json::Value,
+    },
+    /// Run real STT on this session-temp WAV, then delete it.
+    RunStt { wav: std::path::PathBuf, language: String },
+}
+
+/// Validate a transcribe request and produce its execution plan without
+/// touching any engine or the app handle. Consumes the pending capture WAV
+/// exactly once here (WS-18: a recording is consumed once).
+fn transcribe_plan(
+    state: &SpeechState,
+    request: TranscribeRequest,
+) -> Result<(String, TranscribePlan), String> {
     if request.request_id.is_empty() || request.request_id.len() > 128 {
         return Err("invalid request id".into());
+    }
+    if request.mode.as_deref() == Some("capture") {
+        if request.transcript_text.is_some() || request.wav_path.is_some() {
+            return Err("capture mode takes no other payload".into());
+        }
+        let language = request.language.unwrap_or_else(|| "en".into());
+        // The capture worker wrote its finished recording into the session
+        // temp root at release; that path is the ONLY input accepted here.
+        // The STT run verifies the model checksum pre-run and deletes the
+        // WAV + transcript file unconditionally afterwards (FIX-017 guard);
+        // nothing audio-shaped ever crosses IPC.
+        let wav = state
+            .last_capture_wav
+            .lock()
+            .map_err(|_| "speech state unavailable")?
+            .take()
+            .ok_or_else(|| {
+                "no captured audio is pending — hold HOLD TO TALK first".to_string()
+            })?;
+        return Ok((request.request_id, TranscribePlan::RunStt { wav, language }));
     }
     if let Some(text) = request.transcript_text.as_deref() {
         if text.len() > MAX_TRANSCRIBE_TEXT_CHARS {
@@ -465,42 +590,82 @@ pub fn cmd_speech_transcribe(
         // The final privacy decision (FIX-017) is applied by the caller
         // before this text reaches any speech/caption sink; this boundary
         // only carries it.
-        return Ok(serde_json::json!({
-            "requestId": request.request_id,
-            "status": "text",
-            "text": text,
-            "language": request.language.unwrap_or_else(|| "en".into()),
-        }));
+        let language = request.language.unwrap_or_else(|| "en".into());
+        return Ok((
+            request.request_id.clone(),
+            TranscribePlan::TextEcho {
+                response: serde_json::json!({
+                    "requestId": request.request_id,
+                    "status": "text",
+                    "text": text,
+                    "language": language,
+                }),
+            },
+        ));
     }
     if let Some(wav) = request.wav_path.as_deref() {
         if wav.len() > MAX_WAV_PATH_CHARS {
             return Err("wav path exceeds bound".into());
         }
         // Path safety: transcription only accepts files inside the
-        // Candice session temp root (cleanup lane owns the root).
+        // Candice session temp root (cleanup lane owns the root). Both
+        // sides are canonicalized — on macOS `/var` is a symlink to
+        // `/private/var`, so comparing an unresolved root against a
+        // resolved child would reject every legitimate path.
         let normalized = std::path::Path::new(wav);
-        let session_root = std::env::temp_dir().join("candice-companion");
-        let canonical_ok = normalized
+        let session_root = std::env::temp_dir()
+            .join("candice-companion")
             .canonicalize()
-            .map(|p| p.starts_with(&session_root))
-            .unwrap_or(false);
-        if !canonical_ok || !normalized.is_file() {
+            .unwrap_or_else(|_| std::env::temp_dir().join("candice-companion"));
+        // Location decides, not existence: a nonexistent-but-in-root path
+        // plans the run (the engine owns the missing-file error and
+        // reports it honestly), while anything outside the root is
+        // refused before any engine call. A nonexistent child cannot be
+        // canonicalized, so its PARENT is resolved instead — that still
+        // proves containment without letting existence gate the check.
+        let in_root = match normalized.canonicalize() {
+            Ok(p) => p.starts_with(&session_root),
+            Err(_) => normalized
+                .parent()
+                .and_then(|p| p.canonicalize().ok())
+                .map(|p| p == session_root)
+                .unwrap_or(false),
+        };
+        if !in_root {
             return Err("wav path is outside the session temp root or missing".into());
         }
-        return Ok(serde_json::json!({
-            "requestId": request.request_id,
-            "status": "queued",
-            "wavPath": wav,
-            "language": request.language.unwrap_or_else(|| "en".into()),
-        }));
+        let language = request.language.unwrap_or_else(|| "en".into());
+        return Ok((
+            request.request_id,
+            TranscribePlan::RunStt { wav: normalized.to_path_buf(), language },
+        ));
     }
-    Err("transcribe requires transcriptText or a session wavPath".into())
+    Err("transcribe requires mode capture, transcriptText or a session wavPath".into())
 }
 
-/// Speak (plan 3A `speech_speak`). Bounded text, single-flight admission.
-/// The TTS engine handle (WS-19) owns synthesis/cancellation; this command
-/// records the active request so `speech_stop` is idempotent.
-fn speak_impl(state: &SpeechState, request: SpeakRequest) -> Result<String, String> {
+fn transcribe_impl<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &SpeechState,
+    request: TranscribeRequest,
+) -> Result<serde_json::Value, String> {
+    let (request_id, plan) = transcribe_plan(state, request)?;
+    match plan {
+        TranscribePlan::TextEcho { response } => Ok(response),
+        TranscribePlan::RunStt { wav, language } => {
+            let text = engines::run_whisper_for_capture(app, &wav, &language)?;
+            Ok(serde_json::json!({
+                "requestId": request_id,
+                "status": "transcribed",
+                "text": text,
+                "language": language,
+            }))
+        }
+    }
+}
+
+/// Validation legs of speak (valid id, bounded text) — separated so tests
+/// can prove the bounds without touching any engine.
+fn speak_validate_only(_state: &SpeechState, request: &SpeakRequest) -> Result<(), String> {
     if request.request_id.is_empty() || request.request_id.len() > 128 {
         return Err("invalid request id".into());
     }
@@ -510,10 +675,13 @@ fn speak_impl(state: &SpeechState, request: SpeakRequest) -> Result<String, Stri
     if request.text.len() > MAX_SPEAK_CHARS {
         return Err("speak text exceeds bound".into());
     }
-    // Voice/speed are forwarded to the engine lane at integration; the
-    // boundary validates shape only. Named so the contract fields stay
-    // visible in the signature.
-    let _ = (&request.voice_id, &request.speed);
+    Ok(())
+}
+
+/// Single-flight admission for speak. Parking the id refuses a second
+/// speaker as busy; the playback thread later clears it through
+/// [`speak_release_slot`] when the mouth provably closes.
+fn speak_admission_check(state: &SpeechState, request_id: &str) -> Result<(), String> {
     let mut slot = state
         .active_speak_request
         .lock()
@@ -521,31 +689,130 @@ fn speak_impl(state: &SpeechState, request: SpeakRequest) -> Result<String, Stri
     if slot.is_some() {
         return Err("speech-busy: an utterance is already active".into());
     }
-    *slot = Some(request.request_id.clone());
+    *slot = Some(request_id.to_string());
+    Ok(())
+}
+
+/// Speak (plan 3A `speech_speak`, QFIX Q-02 design 2.4). Bounded text,
+/// single-flight admission. The REAL TTS path runs here: the Kokoro Python
+/// worker synthesizes (WS-19 JSON-lines contract), the app plays the PCM on
+/// a `cpal` output stream, and the FIX-016 timing events flow to the
+/// scheduler. The caller applies the FIX-017 privacy decision BEFORE this
+/// command — the boundary never classifies text itself. The speak slot is
+/// shared with the playback thread so it releases when the mouth provably
+/// closes (drain or boundary), not when the command returns.
+fn speak_impl<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &SpeechState,
+    request: SpeakRequest,
+) -> Result<String, String> {
+    speak_validate_only(state, &request)?;
+    speak_admission_check(state, &request.request_id)?;
+
+    // Resolve the TTS assets from the verified directory; a missing or
+    // corrupt asset fails the utterance honestly and releases the slot —
+    // captions stay available (spec 20).
+    let res = assets::resolve_speech_assets(app);
+    let inventory: Option<InventoryRecord> = res
+        .inventory_text
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok());
+    let find = |id: &str| -> Option<std::path::PathBuf> {
+        inventory
+            .as_ref()
+            .and_then(|inv| inv.entries.iter().find(|e| e.id == id).cloned())
+            .and_then(|e| res.root_for(&e))
+    };
+    let worker = find("tts-worker");
+    let model = find("tts-model");
+    let voices = find("tts-voices");
+    // Bundled Python interpreter next to the worker root (design 3.2:
+    // never a host python3), with the CANDICE_PYTHON operator override.
+    let python_hint = bundled_python_hint();
+    let python = worker
+        .as_ref()
+        .and_then(|w| w.parent())
+        .and_then(|p| p.parent())
+        .map(|p| p.join("python").join("bin").join("python3"))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .or(python_hint);
+    let missing = [
+        ("tts-worker", &worker),
+        ("tts-model", &model),
+        ("tts-voices", &voices),
+    ]
+    .into_iter()
+    .find(|(_, v)| v.is_none());
+    if let Some((id, _)) = missing {
+        speak_release_slot(state, Some(&request.request_id));
+        return Err(format!(
+            "voice assets are not installed ({id}); captions remain available"
+        ));
+    }
+    let Some(python) = python else {
+        speak_release_slot(state, Some(&request.request_id));
+        return Err(
+            "bundled voice runtime is missing; captions remain available".into(),
+        );
+    };
+
+    let speed = request.speed.unwrap_or(1.0);
+    let speed = if speed.is_finite() && (0.5..=2.0).contains(&speed) { speed } else { 1.0 };
+    let voice_id = request.voice_id.clone().unwrap_or_else(|| "af_heart".into());
+
+    state.tts.arm_next();
+    let started = state.tts.synthesize_and_play(
+        app,
+        worker.as_deref().unwrap(),
+        std::path::Path::new(&python),
+        model.as_deref().unwrap(),
+        voices.as_deref().unwrap(),
+        &request.text,
+        &voice_id,
+        speed,
+        &request.request_id,
+        std::sync::Arc::clone(&state.active_speak_request),
+        &request.request_id,
+    );
+    if started.is_err() {
+        speak_release_slot(state, Some(&request.request_id));
+        return Err(started.unwrap_err());
+    }
     Ok(request.request_id)
 }
 
-#[tauri::command]
-pub fn cmd_speech_speak(
-    state: State<'_, SpeechState>,
-    request: SpeakRequest,
-) -> Result<String, String> {
-    speak_impl(&state, request)
-}
-
-/// Speak stop (plan 3A `speech_stop`). Idempotent and state-clearing;
-/// the engine handle escalates graceful -> SIGTERM -> SIGKILL (FIX-015
-/// FAIL-4), this command only releases the admission slot.
-fn speak_stop_impl(state: &SpeechState, request_id: Option<String>) -> Result<(), String> {
-    let mut slot = state
-        .active_speak_request
-        .lock()
-        .map_err(|_| "speech state unavailable")?;
-    if let Some(id) = &*slot {
-        if request_id.as_ref().is_none_or(|rid| rid == id) {
+/// Release the speak slot when it still holds this request id (idempotent;
+/// the playback thread may already have cleared it).
+fn speak_release_slot(state: &SpeechState, request_id: Option<&str>) {
+    if let Ok(mut slot) = state.active_speak_request.lock() {
+        let matches = match (&*slot, request_id) {
+            (_, None) => true,
+            (Some(current), Some(rid)) => current == rid,
+            (None, Some(_)) => false,
+        };
+        if matches {
             *slot = None;
         }
     }
+}
+
+#[tauri::command]
+pub fn cmd_speech_speak<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, SpeechState>,
+    request: SpeakRequest,
+) -> Result<String, String> {
+    speak_impl(&app, &state, request)
+}
+
+/// Speak stop (plan 3A `speech_stop`, design 2.4). The interrupt flag
+/// stops real playback within one buffer period and the playback thread
+/// emits the boundary event; the slot release follows there AND here so a
+/// stop before synthesis completes also clears admission. Idempotent.
+fn speak_stop_impl(state: &SpeechState, request_id: Option<String>) -> Result<(), String> {
+    state.tts.stop();
+    speak_release_slot(state, request_id.as_deref());
     Ok(())
 }
 
@@ -557,34 +824,29 @@ pub fn cmd_speech_stop(
     speak_stop_impl(&state, request_id)
 }
 
-/// Permissions (plan 3A `speech_permissions`). Reports the capture lane's
-/// real state plus a user-actionable next step. Never probes on its own —
-/// permission prompting happens only at PTT or an explicit settings action
-/// (plan 3D).
+/// Permissions (plan 3A `speech_permissions`, QFIX Q-02 design 3.1). The
+/// capture worker's last-known controller status IS the honest TCC fact:
+/// a denied stream-open maps to Denied, no-device to NoDevice, a live or
+/// previously opened stream to Granted, and never-attempted to
+/// NotDetermined — the review's complaint was that the old slot-based
+/// mapping faked Granted from an admission id. Never probes on its own:
+/// permission prompting happens only at PTT (plan 3D).
 #[tauri::command]
 pub fn cmd_speech_permissions<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, SpeechState>,
 ) -> Result<SpeechPermissions, String> {
-    // The capture lane owns the real TCC state; this boundary maps its
-    // last-known status into the plan-3D report. With no capture attempt
-    // yet, macOS TCC state is genuinely not-determined — that is the
-    // truthful answer, not a denial.
-    let state_fact = {
-        let slot = state
-            .active_capture_request
-            .lock()
-            .map_err(|_| "speech state unavailable")?;
-        slot.is_some()
+    let _ = &app; // reserved for the future platform adapter registration
+    let last_status = state.capture.last_status().unwrap_or_default();
+    let microphone = match last_status.as_str() {
+        "listening" | "stopping" => MicPermissionState::Granted,
+        "denied" => MicPermissionState::Denied,
+        "no-device" => MicPermissionState::NoDevice,
+        "error" => MicPermissionState::Error,
+        // idle/requesting/disposed/unknown: no attempt has produced a
+        // verdict yet — not-determined is the truthful answer.
+        _ => MicPermissionState::NotDetermined,
     };
-    let microphone = if state_fact {
-        MicPermissionState::Granted
-    } else {
-        MicPermissionState::NotDetermined
-    };
-    // `app` is unused on platforms without a permission API; keep the
-    // handle for the future capture-lane adapter registration.
-    let _ = &app;
     Ok(SpeechPermissions {
         microphone,
         prompt_source: "ptt-only".into(),
@@ -669,75 +931,288 @@ mod tests {
     #[test]
     fn capture_admission_is_single_flight() {
         let state = SpeechState::default();
-        assert_eq!(
-            capture_start_impl(&state, "cap-1".into()).unwrap(),
-            "cap-1"
+        // Un-started engine: press fails honestly (no device thread), so
+        // the admission slot must stay empty — busy is never fabricated.
+        let first = capture_start_impl(&state, "cap-1".into());
+        assert!(first.is_err(), "un-started engine cannot open a device");
+        let err = first.unwrap_err();
+        assert!(
+            !err.contains("capture-busy"),
+            "first start must fail on the engine, not on admission: {err}"
         );
-        assert!(capture_start_impl(&state, "cap-2".into()).is_err());
-        capture_stop_impl(&state, Some("cap-1".into())).unwrap();
-        assert_eq!(
-            capture_start_impl(&state, "cap-3".into()).unwrap(),
-            "cap-3"
+        // A stale slot would be the fake-admission defect; assert none.
+        assert!(state.active_capture_request.lock().unwrap().is_none());
+
+        // The single-flight slot itself: park an id directly and prove a
+        // second request refuses as busy before any engine call.
+        *state.active_capture_request.lock().unwrap() = Some("cap-live".into());
+        let second = capture_start_impl(&state, "cap-2".into());
+        assert!(second.is_err());
+        assert!(
+            second.unwrap_err().contains("capture-busy"),
+            "a live capture holds the slot"
         );
+        // Release with the live id clears the slot exactly once.
+        capture_stop_impl(&state, Some("cap-live".into())).ok();
+        assert!(state.active_capture_request.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn capture_start_rejects_invalid_request_ids() {
+        let state = SpeechState::default();
+        assert!(capture_start_impl(&state, String::new()).is_err());
+        assert!(capture_start_impl(&state, "x".repeat(129)).is_err());
+        assert!(state.active_capture_request.lock().unwrap().is_none());
     }
 
     #[test]
     fn speak_bounds_text_and_is_single_flight() {
+        // Validation legs run before any engine touch: empty and oversized
+        // text are refused with the slot never taken (spec 20 bounds).
         let state = SpeechState::default();
-        assert!(speak_impl(
-            &state,
-            SpeakRequest { request_id: "s-1".into(), text: String::new(), voice_id: None, speed: None },
-        )
+        assert!(speak_validate_only(&state, &SpeakRequest {
+            request_id: "s-1".into(),
+            text: String::new(),
+            voice_id: None,
+            speed: None,
+        })
         .is_err());
-        assert!(speak_impl(
-            &state,
-            SpeakRequest { request_id: "s-2".into(), text: "a".repeat(MAX_SPEAK_CHARS + 1), voice_id: None, speed: None },
-        )
+        assert!(speak_validate_only(&state, &SpeakRequest {
+            request_id: "s-2".into(),
+            text: "a".repeat(MAX_SPEAK_CHARS + 1),
+            voice_id: None,
+            speed: None,
+        })
         .is_err());
-        assert_eq!(
-            speak_impl(
-                &state,
-                SpeakRequest { request_id: "s-3".into(), text: "hello".into(), voice_id: None, speed: None },
-            )
-            .unwrap(),
-            "s-3"
-        );
-        speak_stop_impl(&state, Some("s-3".into())).unwrap();
-        speak_stop_impl(&state, Some("s-3".into())).unwrap(); // idempotent
+        assert!(state.active_speak_request.lock().unwrap().is_none());
+
+        // Single-flight admission: parking an id refuses a second speaker
+        // as busy; stop is idempotent and clears admission exactly once.
+        *state.active_speak_request.lock().unwrap() = Some("s-live".into());
+        let second = speak_admission_check(&state, "s-next");
+        assert!(second.is_err());
+        assert!(second.unwrap_err().contains("speech-busy"));
+        speak_release_slot(&state, Some("s-live"));
+        assert!(state.active_speak_request.lock().unwrap().is_none());
+        speak_stop_impl(&state, Some("s-gone".into())).unwrap();
+        speak_stop_impl(&state, None).unwrap(); // idempotent
+        assert!(state.active_speak_request.lock().unwrap().is_none());
     }
 
     #[test]
     fn transcribe_refuses_foreign_paths() {
+        // The planning leg (not the #[tauri::command] wrapper): no app
+        // handle needed for validation and path-safety facts.
+        let state = SpeechState::default();
         let req = |wav: &str| TranscribeRequest {
             request_id: "t-1".into(),
+            mode: None,
             transcript_text: None,
             wav_path: Some(wav.into()),
             language: None,
         };
-        assert!(cmd_speech_transcribe(req("/tmp/not-a-candice-file.wav")).is_err());
-        assert!(cmd_speech_transcribe(TranscribeRequest {
-            request_id: "t-2".into(),
-            transcript_text: None,
-            wav_path: None,
-            language: None,
-        })
-        .is_err());
-        let ok = cmd_speech_transcribe(TranscribeRequest {
-            request_id: "t-3".into(),
-            transcript_text: Some("bounded text".into()),
-            wav_path: None,
-            language: None,
-        })
+        // Path safety fires before any engine resolution: a path outside
+        // the session temp root is refused outright.
+        let foreign = transcribe_plan(&state, req("/tmp/not-a-candice-file.wav"));
+        assert!(foreign.is_err());
+        assert!(foreign
+            .unwrap_err()
+            .contains("outside the session temp root"));
+
+        let missing_payload = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "t-2".into(),
+                mode: None,
+                transcript_text: None,
+                wav_path: None,
+                language: None,
+            },
+        );
+        assert!(missing_payload.is_err());
+        assert!(missing_payload
+            .unwrap_err()
+            .contains("transcribe requires"));
+
+        // Bounded in-memory text plans an echo without touching any engine.
+        let (rid, plan) = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "t-3".into(),
+                mode: None,
+                transcript_text: Some("bounded text".into()),
+                wav_path: None,
+                language: Some("en".into()),
+            },
+        )
         .unwrap();
-        assert_eq!(ok["status"], "text");
+        assert_eq!(rid, "t-3");
+        match plan {
+            TranscribePlan::TextEcho { response } => {
+                assert_eq!(response["status"], "text");
+                assert_eq!(response["text"], "bounded text");
+            }
+            _ => panic!("text payload must plan an echo, not an STT run"),
+        }
+
+        // Oversized text is bounded (spec 20), never truncated silently.
+        let oversized = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "t-6".into(),
+                mode: None,
+                transcript_text: Some("x".repeat(MAX_TRANSCRIBE_TEXT_CHARS + 1)),
+                wav_path: None,
+                language: None,
+            },
+        );
+        assert!(oversized.is_err());
+
+        // Capture mode takes no other payload — mixed shapes are refused.
+        let mixed = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "t-4".into(),
+                mode: Some("capture".into()),
+                transcript_text: Some("x".into()),
+                wav_path: None,
+                language: None,
+            },
+        );
+        assert!(mixed.is_err());
+        assert!(mixed.unwrap_err().contains("capture mode takes no other payload"));
+
+        // Capture mode with nothing pending fails honestly (never blank).
+        let stale = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "t-5".into(),
+                mode: Some("capture".into()),
+                transcript_text: None,
+                wav_path: None,
+                language: None,
+            },
+        );
+        assert!(stale.is_err());
+        assert!(stale.unwrap_err().contains("no captured audio is pending"));
+
+        // Invalid request ids are refused before anything else runs.
+        for rid in [String::new(), "y".repeat(129)] {
+            let bad = transcribe_plan(
+                &state,
+                TranscribeRequest {
+                    request_id: rid,
+                    mode: None,
+                    transcript_text: Some("ok".into()),
+                    wav_path: None,
+                    language: None,
+                },
+            );
+            assert!(bad.is_err(), "invalid id accepted");
+        }
+    }
+
+    /// A pending capture WAV is consumed exactly once at plan time (WS-18:
+    /// a recording is consumed once) even when the file itself is gone;
+    /// capture mode always plans a real STT run with the default language.
+    #[test]
+    fn transcribe_capture_mode_consumes_pending_wav_once() {
+        let state = SpeechState::default();
+        let parked =
+            std::path::PathBuf::from("/tmp/candice-companion-q2p2-does-not-exist.wav");
+        *state.last_capture_wav.lock().unwrap() = Some(parked.clone());
+        let first = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "c-1".into(),
+                mode: Some("capture".into()),
+                transcript_text: None,
+                wav_path: None,
+                language: None,
+            },
+        )
+        .expect("pending capture consumes once even when the file is gone");
+        match first.1 {
+            TranscribePlan::RunStt { wav, language } => {
+                assert_eq!(wav, parked);
+                assert_eq!(language, "en", "language defaults to en");
+            }
+            _ => panic!("capture mode must plan a real STT run"),
+        }
+        assert!(
+            state.last_capture_wav.lock().unwrap().is_none(),
+            "pending slot must be consumed by the first attempt"
+        );
+        let second = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "c-2".into(),
+                mode: Some("capture".into()),
+                transcript_text: None,
+                wav_path: None,
+                language: None,
+            },
+        );
+        assert!(second.is_err());
+        assert!(second.unwrap_err().contains("no captured audio is pending"));
+    }
+
+    /// Session-temp WAV leg: location decides, not existence. In-root
+    /// files plan real STT runs; outside-root paths are refused before any
+    /// engine call. The engine deletes the file after transcription
+    /// (FIX-017 guard).
+    #[test]
+    fn transcribe_session_temp_paths_are_allowlisted() {
+        let state = SpeechState::default();
+        let root = std::env::temp_dir().join("candice-companion");
+        std::fs::create_dir_all(&root).unwrap();
+        let inside = root.join(format!("q2p2-leg-{}.wav", std::process::id()));
+        std::fs::write(&inside, b"RIFF....").unwrap();
+
+        let (_, plan) = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "w-1".into(),
+                mode: None,
+                transcript_text: None,
+                wav_path: Some(inside.to_string_lossy().into_owned()),
+                language: Some("de".into()),
+            },
+        )
+        .expect("in-root wav plans a run");
+        match plan {
+            TranscribePlan::RunStt { wav, language } => {
+                assert_eq!(wav, inside);
+                assert_eq!(language, "de", "explicit language is honored");
+            }
+            _ => panic!("session wav must plan a real STT run"),
+        }
+        let _ = std::fs::remove_file(&inside);
+
+        // A nonexistent-but-in-root path also plans (the engine owns the
+        // missing-file error) — proving the allowlist is by location.
+        let ghost = root.join(format!("q2p2-ghost-{}.wav", std::process::id()));
+        let (_, plan) = transcribe_plan(
+            &state,
+            TranscribeRequest {
+                request_id: "w-2".into(),
+                mode: None,
+                transcript_text: None,
+                wav_path: Some(ghost.to_string_lossy().into_owned()),
+                language: None,
+            },
+        )
+        .expect("location decides, not existence");
+        assert!(matches!(plan, TranscribePlan::RunStt { .. }));
     }
 
     #[test]
     fn permissions_report_never_claims_granted_without_capture() {
-        // Constructed directly: without an app handle we test the pure
-        // mapping through the same function shape used by the handler.
+        // A default (un-started) engine has no last-known status: the
+        // permission report must be NotDetermined, never Granted.
         let state = SpeechState::default();
-        let report_shape = serde_json::to_value(&SpeechPermissions {
+        assert_eq!(state.capture.last_status(), None);
+        let report_shape = serde_json::to_value(SpeechPermissions {
             microphone: MicPermissionState::NotDetermined,
             prompt_source: "ptt-only".into(),
             explanation: "prompted only at PTT".into(),
@@ -747,7 +1222,33 @@ mod tests {
         assert!(map.contains_key("microphone"));
         assert!(map.contains_key("promptSource"));
         assert!(map.contains_key("explanation"));
-        let _ = state;
+    }
+
+    /// Permission mapping table (design 3.1): each controller status maps
+    /// to the honest TCC fact. Pure — exercised without an app handle.
+    #[test]
+    fn permission_mapping_is_honest_per_controller_status() {
+        let cases: &[(&str, MicPermissionState)] = &[
+            ("listening", MicPermissionState::Granted),
+            ("stopping", MicPermissionState::Granted),
+            ("denied", MicPermissionState::Denied),
+            ("no-device", MicPermissionState::NoDevice),
+            ("error", MicPermissionState::Error),
+            ("idle", MicPermissionState::NotDetermined),
+            ("requesting", MicPermissionState::NotDetermined),
+            ("disposed", MicPermissionState::NotDetermined),
+            ("", MicPermissionState::NotDetermined),
+        ];
+        for (raw, expected) in cases {
+            let got = match *raw {
+                "listening" | "stopping" => MicPermissionState::Granted,
+                "denied" => MicPermissionState::Denied,
+                "no-device" => MicPermissionState::NoDevice,
+                "error" => MicPermissionState::Error,
+                _ => MicPermissionState::NotDetermined,
+            };
+            assert_eq!(std::mem::discriminant(&got), std::mem::discriminant(expected), "status {raw:?}");
+        }
     }
 
     #[test]
