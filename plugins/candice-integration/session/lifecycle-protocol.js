@@ -231,7 +231,7 @@ function validateLifecycleEvent(event, opts) {
         return bad('heldUntil', 'lease horizon must be an ISO-8601 date-time within the temporal window')
       }
       if (!isBoundedLease(event.heldUntil, nowMs, limits)) {
-        return bad('heldUntil', 'lease horizon exceeds the maximum lease length')
+        return bad('heldUntil', 'lease horizon must fall within [now, now + maxLeaseMs]')
       }
       return pass(event)
     case 'lifecycle':
@@ -252,14 +252,13 @@ function isBoundedIso(value, nowMs, limits) {
   return checkBoundedIsoTime(value, { nowMs, maxAgeMs: limits.maxAgeMs, maxFutureSkewMs: limits.maxFutureSkewMs }) === null
 }
 
-function isBoundedIso(value, nowMs, limits) {
-  return checkBoundedIsoTime(value, { nowMs, maxAgeMs: limits.maxAgeMs, maxFutureSkewMs: limits.maxFutureSkewMs }) === null
-}
-
 function isBoundedLease(value, nowMs, limits) {
   const time = Date.parse(value)
   if (Number.isNaN(time)) return false
-  return time <= nowMs + limits.maxLeaseMs
+  // FIX-013 S1 QC D2: the lease horizon must fall within [now, now + maxLeaseMs].
+  // An already-expired horizon (time < now) is not a lease — it is a dead claim
+  // and must fail closed.
+  return time >= nowMs && time <= nowMs + limits.maxLeaseMs
 }
 
 function bad(field, rule) {

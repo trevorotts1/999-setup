@@ -109,6 +109,17 @@ check('lease horizon beyond the max lease length fails closed', () => {
   assert.strictEqual(r.field, 'heldUntil')
 })
 
+check('an already-expired lease horizon fails closed (lower bound)', () => {
+  // 1 hour in the past still passes isBoundedIso's 7-day maxAge window, so
+  // isBoundedLease's [now, now + maxLeaseMs] lower bound is the gate.
+  const r = proto.validateLifecycleEvent(
+    base({ event: 'lease', operationId: 'op-1', questionKey: 'BUILD_TARGET', leaseId: 'lease-1', heldUntil: within(-60 * 60 * 1000) }),
+    { nowMs: NOW }
+  )
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.field, 'heldUntil')
+})
+
 check('all lifecycle event branches validate', () => {
   const cases = [
     base({ event: 'activation', activationId: 'act-1', activationIssuedAt: within(0) }),

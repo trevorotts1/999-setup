@@ -442,6 +442,12 @@ check('durable transitions: displaying -> displayed and displayed -> fallback-pe
   const illegal = sm.transitionPendingDurableState({ sessionId: 'sess-dt', operationId: p.operationId, from: 'fallback-pending', to: 'displaying' })
   assert.strictEqual(illegal.ok, false)
   assert.strictEqual(illegal.code, 'illegal-durable-transition')
+  // FIX-013 S1 QC D1: fallback-pending is terminal — it can never be pulled
+  // back into the display path (terminal states own the record).
+  const illegalDisplayed = sm.transitionPendingDurableState({ sessionId: 'sess-dt', operationId: p.operationId, from: 'fallback-pending', to: 'displayed' })
+  assert.strictEqual(illegalDisplayed.ok, false)
+  assert.strictEqual(illegalDisplayed.code, 'illegal-durable-transition')
+  assert.strictEqual(sm.getSession('sess-dt').pendingQuestion.durableState, 'fallback-pending')
 })
 
 check('a recovering record requires its lease before it may transition', () => {
@@ -458,6 +464,31 @@ check('a recovering record requires its lease before it may transition', () => {
   })
   assert.strictEqual(t.ok, true)
   assert.strictEqual(t.durableState, 'displayed')
+})
+
+check('recovery acknowledgement without lease proof is refused (D3)', () => {
+  const sm = new SessionManager({ stateDir: tempDir() })
+  sm.beginSession({ sessionId: 'sess-ack-proof', skill: 'spec-protocol' })
+  sm.setPendingQuestion({ sessionId: 'sess-ack-proof', questionKey: 'BUILD_TARGET' })
+  const rec = sm.recoverPendingQuestion({ sessionId: 'sess-ack-proof' })
+  assert.strictEqual(rec.ok, true)
+  // Bare ack: no lease proof — must fail closed, record stays recovering.
+  const bare = sm.acknowledgeRecoveryHandoff({ sessionId: 'sess-ack-proof' })
+  assert.strictEqual(bare.ok, false)
+  assert.strictEqual(bare.code, 'recovery-lease-required')
+  // Lease proof but no operation id — must fail closed.
+  const noOp = sm.acknowledgeRecoveryHandoff({ sessionId: 'sess-ack-proof', leaseId: rec.lease.leaseId })
+  assert.strictEqual(noOp.ok, false)
+  assert.strictEqual(noOp.code, 'operation-id-required')
+  assert.strictEqual(sm.getSession('sess-ack-proof').pendingQuestion.durableState, 'recovering')
+  // Full proof — the only path that completes the handoff.
+  const full = sm.acknowledgeRecoveryHandoff({
+    sessionId: 'sess-ack-proof',
+    leaseId: rec.lease.leaseId,
+    operationId: rec.recovered.operationId,
+  })
+  assert.strictEqual(full.ok, true)
+  assert.strictEqual(full.state, 'recovered')
 })
 
 check('SessionLifecycle façade exposes the full FIX-013 lifecycle surface', () => {

@@ -564,10 +564,12 @@ class SessionManager {
   /**
    * Acknowledge the exact recovery handoff (FIX-013 S1). The app or terminal
    * fallback received the exact recovered record; only now may the pending
-   * record complete/release. Same leaseId required (the acknowledging process
-   * must be the lease holder); wrong lease or wrong operation fails closed and
-   * the record stays in `recovering`. The session returns to `active` with no
-   * pending question; `state: 'recovered'` mirrors the WS-08 recovered step.
+   * record complete/release. BOTH the claimed leaseId and the exact
+   * operationId are required (the acknowledging process must prove it holds
+   * the lease and knows the operation); missing or wrong proof fails closed
+   * and the record stays in `recovering`. The session returns to `active`
+   * with no pending question; `state: 'recovered'` mirrors the WS-08
+   * recovered step.
    */
   acknowledgeRecoveryHandoff({ sessionId, operationId, leaseId }) {
     const id = sanitizeSessionId(sessionId)
@@ -578,10 +580,21 @@ class SessionManager {
       return { ok: false, code: 'not-recovering', error: `session ${id} has no recovery handoff to acknowledge` }
     }
     const pending = record.pendingQuestion
-    if (leaseId !== undefined && pending.leaseId !== sanitizeOperationId(leaseId)) {
+    // FIX-013 S1 QC D3: the acknowledgement must PROVE the handoff — the
+    // claimed lease id and the exact operation id are both mandatory. A bare
+    // ack (no lease proof) can never release a pending record.
+    const submittedLease = sanitizeOperationId(leaseId)
+    if (!submittedLease) {
+      return { ok: false, code: 'recovery-lease-required', error: 'acknowledgement must carry the claimed lease id' }
+    }
+    if (pending.leaseId !== submittedLease) {
       return { ok: false, code: 'recovery-lease-mismatch', error: 'acknowledgement lease id does not match the claimed lease' }
     }
-    if (operationId !== undefined && operationId !== null && sanitizeOperationId(operationId) !== pending.operationId) {
+    const submittedOperation = sanitizeOperationId(operationId)
+    if (!submittedOperation) {
+      return { ok: false, code: 'operation-id-required', error: 'acknowledgement must carry the pending operation id' }
+    }
+    if (submittedOperation !== pending.operationId) {
       return { ok: false, code: 'operation-id-mismatch', error: 'operation id does not match the pending operation' }
     }
     record.pendingQuestion = null // handed off exactly once — a second recovery finds nothing
@@ -641,11 +654,15 @@ class SessionManager {
     if (!isPendingDurableState(from) || !isPendingDurableState(to)) {
       return { ok: false, code: 'invalid-durable-state', error: 'from/to must be one of: displaying, displayed, fallback-pending, recovering' }
     }
+    // FIX-013 S1 QC D1: `fallback-pending` has NO outgoing arc. It is a
+    // terminal state (lifecycle-state.js TERMINAL_STATES) — the record is
+    // atomically owned by the terminal fallback and is completed only by
+    // recordAnswer/recordFallbackAnswer/endSession. A replayed/hostile
+    // transition can never pull it back into the display path.
     const legal = {
       displaying: ['displayed', 'fallback-pending'],
       displayed: ['fallback-pending'],
       recovering: ['displayed', 'fallback-pending'],
-      'fallback-pending': ['displayed'],
     }[from]
     if (!legal || !legal.includes(to)) {
       return { ok: false, code: 'illegal-durable-transition', error: `cannot transition ${from} -> ${to}` }
