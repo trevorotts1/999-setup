@@ -16,6 +16,9 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 pub const RUNTIME_CONTRACT_VERSION: &str = "1.0";
 pub const RUNTIME_CAPABILITIES_EVENT: &str = "candice:runtime-capabilities";
+/// FIX-013 S4: explicit bridge lifecycle events for the webview —
+/// `connected`, `disconnected`, `reconnecting`, `recovered`, `ended`.
+pub const RUNTIME_LIFECYCLE_EVENT: &str = "candice:bridge-lifecycle";
 
 const SUPPORTED_WAKE_COMMANDS: [&str; 4] = [
     "/spec-protocol",
@@ -218,12 +221,93 @@ pub struct RuntimeState {
     active_question: Mutex<Option<BridgeQuestionIdentity>>,
     bridge_session_id: Option<String>,
     bridge_writer: Mutex<Option<TcpStream>>,
+    /// FIX-013 S4 lifecycle: connected / disconnected / reconnecting /
+    /// recovered / ended, plus the one bounded replay lease and the
+    /// exactly-once ended latch. `ended` accepts no further hello.
+    lifecycle: Mutex<LifecycleState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct LifecycleState {
+    phase: String,
+    replayable: bool,
+    lease_id: Option<String>,
+    ended: bool,
+    /// Set once the SAME authenticated process reconnects and replays the
+    /// one unacknowledged operation; cleared only when an acknowledgement
+    /// matches the complete four-field replay identity (the `recovered`
+    /// handoff). A partial or mismatched acknowledgement never clears these
+    /// (Q-07): the record stays under recovery for the honest handoff.
+    replay_pending_operation_id: Option<String>,
+    replay_pending_question_key: Option<String>,
+    replay_pending_session_id: Option<String>,
+}
+
+impl LifecycleState {
+    fn new() -> Self {
+        Self {
+            phase: "none".into(),
+            replayable: false,
+            lease_id: None,
+            ended: false,
+            replay_pending_operation_id: None,
+            replay_pending_question_key: None,
+            replay_pending_session_id: None,
+        }
+    }
+}
+
+/// The complete identity of the active recovery replay. Every field must
+/// match exactly before any `consume_replay` may run (Q-07): a partial
+/// acknowledgement is a mismatch and is refused without mutating state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReplayIdentity {
+    session_id: String,
+    operation_id: String,
+    question_key: String,
+    lease_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ReplayConsumeError {
+    /// No replay lease is outstanding (never armed, already consumed, or ended).
+    NoOutstandingLease,
+    /// The acknowledgement did not carry the complete four-field identity
+    /// (session ID, operation ID, question key, lease ID) or one of the four
+    /// fields did not match the active replay state. The discriminant names
+    /// the field; the payload is never attached (redaction: no
+    /// session/lease/operation values enter the diagnostic).
+    FieldMismatch(&'static str),
+}
+
+impl ReplayConsumeError {
+    /// Redacted diagnostic: names the failing class only. No identity value
+    /// is ever rendered, so a hostile or stale acknowledgement cannot leak
+    /// session, operation, question, or lease material into logs.
+    fn message(&self) -> String {
+        match self {
+            ReplayConsumeError::NoOutstandingLease => "no replay lease is outstanding".to_string(),
+            ReplayConsumeError::FieldMismatch(field) => format!("replay {field} mismatch"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq)]
 struct BridgeQuestionIdentity {
     session_id: String,
     question_key: String,
+    operation_id: Option<String>,
+}
+
+impl PartialEq for BridgeQuestionIdentity {
+    /// The active-question slot is keyed by `(sessionId, questionKey)` only.
+    /// `operationId` participates in replay identity (Q-07) but never in slot
+    /// matching, so a submit/cancel/release built without the optional
+    /// operation field still matches the admitted question exactly as before
+    /// the replay fields existed.
+    fn eq(&self, other: &Self) -> bool {
+        self.session_id == other.session_id && self.question_key == other.question_key
+    }
 }
 
 impl BridgeQuestionIdentity {
@@ -243,7 +327,12 @@ impl BridgeQuestionIdentity {
             || expected_session != Some(session_id) {
             return None;
         }
-        Some(Self { session_id: session_id.into(), question_key: question_key.into() })
+        // FIX-013 S4: the frame carries the one operation identity; a replay
+        // of the same (sessionId, questionKey) carries the same operationId.
+        let operation_id = message.get("operationId").and_then(Value::as_str)
+            .filter(|value| valid_opaque_id(value))
+            .map(str::to_string);
+        Some(Self { session_id: session_id.into(), question_key: question_key.into(), operation_id })
     }
 
     fn from_cancel_message(message: &Value, expected_session: Option<&str>) -> Option<Self> {
@@ -255,13 +344,30 @@ impl BridgeQuestionIdentity {
             || expected_session != Some(session_id) {
             return None;
         }
-        Some(Self { session_id: session_id.into(), question_key: question_key.into() })
+        let operation_id = message.get("operationId").and_then(Value::as_str)
+            .filter(|value| valid_opaque_id(value))
+            .map(str::to_string);
+        Some(Self { session_id: session_id.into(), question_key: question_key.into(), operation_id })
     }
 
     fn matches_message(&self, message: &Value) -> bool {
         message.get("question").and_then(|question| question.get("sessionId")).and_then(Value::as_str) == Some(self.session_id.as_str())
             && message.get("question").and_then(|question| question.get("questionKey")).and_then(Value::as_str) == Some(self.question_key.as_str())
     }
+}
+
+/// The lifecycle event the native shell emits to the webview for every
+/// transport/durable phase (FIX-013 S4): connected, disconnected,
+/// reconnecting, recovered, ended.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeLifecycleEvent {
+    pub lifecycle: String,
+    pub session_id: Option<String>,
+    pub activation_id: Option<String>,
+    pub lease_id: Option<String>,
+    pub operation_id: Option<String>,
+    pub question_key: Option<String>,
 }
 
 impl RuntimeState {
@@ -282,6 +388,97 @@ impl RuntimeState {
     fn set_question_bound(&self, bound: bool) {
         self.capabilities.lock().expect("runtime capabilities mutex poisoned").session_binding_active = bound;
     }
+
+    /// Emit one explicit lifecycle event to the webview (FIX-013 S4).
+    fn emit_lifecycle<R: Runtime>(&self, app: &AppHandle<R>, event: BridgeLifecycleEvent) {
+        let _ = app.emit(RUNTIME_LIFECYCLE_EVENT, event);
+    }
+
+    fn lifecycle_ended(&self) -> bool {
+        self.lifecycle.lock().expect("lifecycle mutex poisoned").ended
+    }
+
+    fn set_lifecycle(&self, phase: &str) {
+        let mut lifecycle = self.lifecycle.lock().expect("lifecycle mutex poisoned");
+        lifecycle.phase = phase.to_string();
+    }
+
+    /// Mark the lifecycle ended exactly once. Returns false when it was
+    /// already ended (the ended event fires exactly once).
+    fn mark_ended(&self) -> bool {
+        let mut lifecycle = self.lifecycle.lock().expect("lifecycle mutex poisoned");
+        if lifecycle.ended { return false }
+        lifecycle.ended = true;
+        lifecycle.phase = "ended".to_string();
+        lifecycle.replayable = false;
+        lifecycle.lease_id = None;
+        lifecycle.replay_pending_operation_id = None;
+        lifecycle.replay_pending_question_key = None;
+        lifecycle.replay_pending_session_id = None;
+        true
+    }
+
+    /// Arm the ONE bounded replay lease (FIX-013 S4). The complete identity
+    /// is recorded so any later acknowledgement must match all four fields
+    /// exactly (Q-07).
+    fn begin_replay(&self, session_id: &str, operation_id: &str, question_key: &str, lease_id: &str) {
+        let mut lifecycle = self.lifecycle.lock().expect("lifecycle mutex poisoned");
+        lifecycle.phase = "reconnecting".to_string();
+        lifecycle.replayable = true;
+        lifecycle.lease_id = Some(lease_id.to_string());
+        lifecycle.replay_pending_session_id = Some(session_id.to_string());
+        lifecycle.replay_pending_operation_id = Some(operation_id.to_string());
+        lifecycle.replay_pending_question_key = Some(question_key.to_string());
+    }
+
+    /// Validate an acknowledgement against the active replay state and, only
+    /// on exact equality of session ID, operation ID, question key, and lease
+    /// ID, consume the lease. Any mismatch returns the named field error
+    /// WITHOUT clearing or mutating replay state (Q-07): the record stays
+    /// under recovery so the honest acknowledgement can still land.
+    fn consume_replay(&self, expected: &ReplayIdentity) -> Result<(), ReplayConsumeError> {
+        let mut lifecycle = self.lifecycle.lock().expect("lifecycle mutex poisoned");
+        if !lifecycle.replayable { return Err(ReplayConsumeError::NoOutstandingLease) }
+        let pending_session = lifecycle.replay_pending_session_id.as_deref();
+        let pending_operation = lifecycle.replay_pending_operation_id.as_deref();
+        let pending_question = lifecycle.replay_pending_question_key.as_deref();
+        let pending_lease = lifecycle.lease_id.as_deref();
+        // Q-07: all four identity fields must be PRESENT in the active
+        // replay state. The bridge only arms the lease through the complete
+        // `begin_replay` (all four recorded together), so this also protects
+        // against any partial arming or field-specific clearing.
+        if pending_session.is_none() {
+            return Err(ReplayConsumeError::FieldMismatch("session id"));
+        }
+        if pending_operation.is_none() {
+            return Err(ReplayConsumeError::FieldMismatch("operation id"));
+        }
+        if pending_question.is_none() {
+            return Err(ReplayConsumeError::FieldMismatch("question key"));
+        }
+        if pending_lease.is_none() {
+            return Err(ReplayConsumeError::FieldMismatch("lease id"));
+        }
+        if pending_session != Some(expected.session_id.as_str()) {
+            return Err(ReplayConsumeError::FieldMismatch("session id"));
+        }
+        if pending_operation != Some(expected.operation_id.as_str()) {
+            return Err(ReplayConsumeError::FieldMismatch("operation id"));
+        }
+        if pending_question != Some(expected.question_key.as_str()) {
+            return Err(ReplayConsumeError::FieldMismatch("question key"));
+        }
+        if pending_lease != Some(expected.lease_id.as_str()) {
+            return Err(ReplayConsumeError::FieldMismatch("lease id"));
+        }
+        lifecycle.replayable = false;
+        lifecycle.lease_id = None;
+        lifecycle.replay_pending_session_id = None;
+        lifecycle.replay_pending_operation_id = None;
+        lifecycle.replay_pending_question_key = None;
+        lifecycle.phase = "recovered".to_string();
+        Ok(())
+    }
 }
 
 /// Start and publish the composition boundary before the webview is shown.
@@ -298,6 +495,7 @@ pub fn initialize_runtime<R: Runtime>(
         active_question: Mutex::new(None),
         bridge_session_id: launch.session_id.clone(),
         bridge_writer: Mutex::new(None),
+        lifecycle: Mutex::new(LifecycleState::new()),
     });
     app.emit(RUNTIME_CAPABILITIES_EVENT, capabilities)
         .map_err(|error| tauri::Error::Anyhow(error.into()))
@@ -356,6 +554,15 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
             if let Ok(writer) = stream.try_clone() { *state.bridge_writer.lock().expect("bridge writer mutex poisoned") = Some(writer); }
             state.set_bridge_connected(true);
             let _ = app.emit(RUNTIME_CAPABILITIES_EVENT, state.capabilities());
+            state.set_lifecycle("connected");
+            state.emit_lifecycle(&app, BridgeLifecycleEvent {
+                lifecycle: "connected".into(),
+                session_id: Some(session_id.clone()),
+                activation_id: Some(activation_id.clone()),
+                lease_id: None,
+                operation_id: None,
+                question_key: None,
+            });
         }
         loop {
             line.clear();
@@ -363,7 +570,45 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
             let Ok(message) = serde_json::from_str::<Value>(&line) else { break };
             let state = app.state::<RuntimeState>();
             let expected_session = state.bridge_session_id.as_deref();
+            if message.get("type").and_then(Value::as_str) == Some("ended") {
+                // The server requests normal shutdown: end the lifecycle
+                // EXACTLY ONCE (idempotent latch) and drop the replay record.
+                if state.mark_ended() {
+                    state.emit_lifecycle(&app, BridgeLifecycleEvent {
+                        lifecycle: "ended".into(),
+                        session_id: state.bridge_session_id.clone(),
+                        activation_id: None,
+                        lease_id: None,
+                        operation_id: None,
+                        question_key: None,
+                    });
+                }
+                break;
+            }
             if let Some(identity) = BridgeQuestionIdentity::from_question_message(&message, expected_session) {
+                let replayed = message.get("replayed").and_then(Value::as_bool) == Some(true);
+                let replay_lease = message.get("leaseId").and_then(Value::as_str)
+                    .filter(|value| valid_opaque_id(value))
+                    .map(str::to_string);
+                if replayed {
+                    // FIX-013 S4: the ONE unacknowledged operation is replayed
+                    // under a bounded recovery lease. Q-07: the replay record
+                    // is armed with the complete four-field identity (session,
+                    // operation, question key, lease) — the later
+                    // acknowledgement must match every field exactly or the
+                    // record stays armed for the honest handoff.
+                    if let (Some(lease), Some(operation_id)) = (replay_lease.as_deref(), identity.operation_id.as_deref()) {
+                        state.begin_replay(&identity.session_id, operation_id, &identity.question_key, lease);
+                        state.emit_lifecycle(&app, BridgeLifecycleEvent {
+                            lifecycle: "reconnecting".into(),
+                            session_id: Some(identity.session_id.clone()),
+                            activation_id: None,
+                            lease_id: replay_lease.clone(),
+                            operation_id: Some(operation_id.to_string()),
+                            question_key: Some(identity.question_key.clone()),
+                        });
+                    }
+                }
                 let admitted = {
                     let mut active = state.active_question.lock().expect("active question mutex poisoned");
                     if active.is_none() {
@@ -390,7 +635,13 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
                     let _ = app.emit(RUNTIME_CAPABILITIES_EVENT, state.capabilities());
                     let _ = app.emit("candice:bridge-question", message.clone());
                 }
-                let ack = json!({ "type": "delivered", "sessionId": identity.session_id, "questionKey": identity.question_key });
+                let mut ack = json!({ "type": "delivered", "sessionId": identity.session_id, "questionKey": identity.question_key });
+                if let Some(operation_id) = identity.operation_id.as_deref() {
+                    ack["operationId"] = json!(operation_id);
+                }
+                if let Some(lease) = replay_lease.as_deref() {
+                    ack["leaseId"] = json!(lease);
+                }
                 let _ = writeln!(stream, "{}", ack);
             } else if let Some(identity) = BridgeQuestionIdentity::from_cancel_message(&message, expected_session) {
                 let cancelled = {
@@ -411,12 +662,71 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
                         "sessionId": identity.session_id, "questionKey": identity.question_key,
                     }));
                 }
+            } else if message.get("type").and_then(Value::as_str) == Some("recovered-result") {
+                // The broker acknowledges the exact replayed operation
+                // handoff. Q-07: EVERY identity field in this frame must match
+                // the active replay record exactly — session, operation,
+                // question key, AND lease. A syntactically valid frame that
+                // does not match is rejected without consuming the lease and
+                // the diagnostic is redacted (field class only).
+                let session_id = message.get("sessionId").and_then(Value::as_str)
+                    .filter(|value| valid_opaque_id(value));
+                let operation_id = message.get("operationId").and_then(Value::as_str)
+                    .filter(|value| valid_opaque_id(value));
+                let question_key = message.get("questionKey").and_then(Value::as_str)
+                    .filter(|value| valid_question_key(value));
+                let lease_id = message.get("leaseId").and_then(Value::as_str)
+                    .filter(|value| valid_opaque_id(value));
+                if let (Some(session_id), Some(operation_id), Some(question_key), Some(lease_id)) =
+                    (session_id, operation_id, question_key, lease_id)
+                {
+                    let expected = ReplayIdentity {
+                        session_id: session_id.to_string(),
+                        operation_id: operation_id.to_string(),
+                        question_key: question_key.to_string(),
+                        lease_id: lease_id.to_string(),
+                    };
+                    match state.consume_replay(&expected) {
+                        Ok(()) => {
+                            state.emit_lifecycle(&app, BridgeLifecycleEvent {
+                                lifecycle: "recovered".into(),
+                                session_id: state.bridge_session_id.clone(),
+                                activation_id: None,
+                                lease_id: None,
+                                operation_id: Some(operation_id.to_string()),
+                                question_key: Some(question_key.to_string()),
+                            });
+                            let _ = writeln!(stream, "{}", json!({
+                                "type": "lifecycle", "lifecycle": "recovered",
+                                "sessionId": state.bridge_session_id.clone().unwrap_or_default(),
+                            }));
+                        }
+                        Err(error) => {
+                            // Q-07: reject WITHOUT clearing or mutating replay
+                            // state, and emit only the redacted reason.
+                            let _ = writeln!(stream, "{}", json!({
+                                "type": "error", "reason": error.message(),
+                            }));
+                        }
+                    }
+                }
             }
         }
         let state = app.state::<RuntimeState>();
         *state.bridge_writer.lock().expect("bridge writer mutex poisoned") = None;
         state.set_bridge_connected(false);
         let _ = app.emit(RUNTIME_CAPABILITIES_EVENT, state.capabilities());
+        if !state.lifecycle_ended() {
+            state.set_lifecycle("disconnected");
+            state.emit_lifecycle(&app, BridgeLifecycleEvent {
+                lifecycle: "disconnected".into(),
+                session_id: state.bridge_session_id.clone(),
+                activation_id: None,
+                lease_id: None,
+                operation_id: None,
+                question_key: None,
+            });
+        }
     });
 }
 
@@ -443,7 +753,7 @@ pub fn cmd_submit_bridge_answer(
     state: State<'_, RuntimeState>,
     request: BridgeAnswerRequest,
 ) -> Result<(), String> {
-    let identity = BridgeQuestionIdentity { session_id: request.session_id.clone(), question_key: request.question_key.clone() };
+    let identity = BridgeQuestionIdentity { session_id: request.session_id.clone(), question_key: request.question_key.clone(), operation_id: None };
     {
         let active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
         if active.as_ref() != Some(&identity) { return Err("bridge question is no longer active".into()) }
@@ -463,7 +773,7 @@ pub fn cmd_cancel_bridge_question(
     session_id: String,
     question_key: String,
 ) -> Result<(), String> {
-    let identity = BridgeQuestionIdentity { session_id: session_id.clone(), question_key: question_key.clone() };
+    let identity = BridgeQuestionIdentity { session_id: session_id.clone(), question_key: question_key.clone(), operation_id: None };
     {
         let active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
         if active.as_ref() != Some(&identity) { return Err("bridge question is no longer active".into()) }
@@ -485,7 +795,7 @@ pub fn cmd_release_bridge_question(
     session_id: String,
     question_key: String,
 ) -> Result<(), String> {
-    let identity = BridgeQuestionIdentity { session_id, question_key };
+    let identity = BridgeQuestionIdentity { session_id, question_key, operation_id: None };
     let mut active = state.active_question.lock().map_err(|_| "bridge state unavailable")?;
     if active.as_ref() == Some(&identity) { *active = None; }
     Ok(())
@@ -776,5 +1086,138 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
         std::env::remove_var(PREFS_DIR_OVERRIDE_ENV);
+    }
+
+    // -----------------------------------------------------------------------
+    // Q-07: replay acknowledgement must bind EVERY identity field before any
+    // consume_replay. Each negative case below proves (a) the consume is
+    // refused, (b) replay state is NOT cleared or mutated, and (c) the
+    // diagnostic is redacted (names only the failing field class).
+    // -----------------------------------------------------------------------
+
+    fn replay_state() -> RuntimeState {
+        RuntimeState {
+            capabilities: Mutex::new(RuntimeCapabilities::from_launch(&RuntimeLaunch::default())),
+            pending_question: Mutex::new(None),
+            active_question: Mutex::new(None),
+            bridge_session_id: None,
+            bridge_writer: Mutex::new(None),
+            lifecycle: Mutex::new(LifecycleState::new()),
+        }
+    }
+
+    const REPLAY_SESSION: &str = "session-replay-1";
+    const REPLAY_OPERATION: &str = "operation-replay-1";
+    const REPLAY_QUESTION: &str = "PROJECT_NAME";
+    const REPLAY_LEASE: &str = "lease-replay-1";
+
+    fn replay_identity() -> ReplayIdentity {
+        ReplayIdentity {
+            session_id: REPLAY_SESSION.into(),
+            operation_id: REPLAY_OPERATION.into(),
+            question_key: REPLAY_QUESTION.into(),
+            lease_id: REPLAY_LEASE.into(),
+        }
+    }
+
+    /// Prove the full four-field identity is present in the active replay
+    /// state after a mismatched consume (Q-07: no clearing, no mutation).
+    fn assert_replay_untouched(state: &RuntimeState) {
+        let lifecycle = state.lifecycle.lock().expect("lifecycle mutex poisoned");
+        assert!(lifecycle.replayable, "mismatch must not consume the replay lease");
+        assert_eq!(lifecycle.lease_id.as_deref(), Some(REPLAY_LEASE));
+        assert_eq!(lifecycle.replay_pending_session_id.as_deref(), Some(REPLAY_SESSION));
+        assert_eq!(lifecycle.replay_pending_operation_id.as_deref(), Some(REPLAY_OPERATION));
+        assert_eq!(lifecycle.replay_pending_question_key.as_deref(), Some(REPLAY_QUESTION));
+        assert_eq!(lifecycle.phase, "reconnecting");
+    }
+
+    fn begin_replay_for_test(state: &RuntimeState) {
+        state.begin_replay(REPLAY_SESSION, REPLAY_OPERATION, REPLAY_QUESTION, REPLAY_LEASE);
+    }
+
+    /// Diagnostic redaction: the error message names only the field class.
+    /// No session, operation, question, or lease VALUE may appear in it.
+    fn assert_redacted(error: &ReplayConsumeError) {
+        let message = error.message();
+        assert!(!message.contains(REPLAY_SESSION), "redacted diagnostic leaked session id: {message}");
+        assert!(!message.contains(REPLAY_OPERATION), "redacted diagnostic leaked operation id: {message}");
+        assert!(!message.contains(REPLAY_QUESTION), "redacted diagnostic leaked question key: {message}");
+        assert!(!message.contains(REPLAY_LEASE), "redacted diagnostic leaked lease id: {message}");
+    }
+
+    #[test]
+    fn q07_wrong_session_is_rejected_without_mutating_replay_state() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        let mut attempt = replay_identity();
+        attempt.session_id = "session-other".into();
+        let error = state.consume_replay(&attempt).expect_err("wrong session must be rejected");
+        assert_eq!(error, ReplayConsumeError::FieldMismatch("session id"));
+        assert_redacted(&error);
+        assert_replay_untouched(&state);
+    }
+
+    #[test]
+    fn q07_wrong_operation_is_rejected_without_mutating_replay_state() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        let mut attempt = replay_identity();
+        attempt.operation_id = "operation-other".into();
+        let error = state.consume_replay(&attempt).expect_err("wrong operation must be rejected");
+        assert_eq!(error, ReplayConsumeError::FieldMismatch("operation id"));
+        assert_redacted(&error);
+        assert_replay_untouched(&state);
+    }
+
+    #[test]
+    fn q07_wrong_question_key_is_rejected_without_mutating_replay_state() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        let mut attempt = replay_identity();
+        attempt.question_key = "OTHER_QUESTION".into();
+        let error = state.consume_replay(&attempt).expect_err("wrong question key must be rejected");
+        assert_eq!(error, ReplayConsumeError::FieldMismatch("question key"));
+        assert_redacted(&error);
+        assert_replay_untouched(&state);
+    }
+
+    #[test]
+    fn q07_wrong_lease_is_rejected_without_mutating_replay_state() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        let mut attempt = replay_identity();
+        attempt.lease_id = "lease-other".into();
+        let error = state.consume_replay(&attempt).expect_err("wrong lease must be rejected");
+        assert_eq!(error, ReplayConsumeError::FieldMismatch("lease id"));
+        assert_redacted(&error);
+        assert_replay_untouched(&state);
+    }
+
+    #[test]
+    fn q07_stale_recovered_result_after_consume_is_rejected() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        // The honest acknowledgement consumes the lease exactly once.
+        state.consume_replay(&replay_identity()).expect("exact identity must consume");
+        // A stale or replayed `recovered-result` frame (re-transmit, or an
+        // old handoff racing the new lifecycle) must be rejected and must
+        // NOT resurrect or mutate the now-consumed replay state.
+        let error = state.consume_replay(&replay_identity()).expect_err("stale recovered result must be rejected");
+        assert_eq!(error, ReplayConsumeError::NoOutstandingLease);
+        let lifecycle = state.lifecycle.lock().expect("lifecycle mutex poisoned");
+        assert!(!lifecycle.replayable);
+        assert!(lifecycle.lease_id.is_none());
+        assert_eq!(lifecycle.phase, "recovered");
+    }
+
+    #[test]
+    fn q07_duplicated_acknowledgement_is_rejected() {
+        let state = replay_state();
+        begin_replay_for_test(&state);
+        state.consume_replay(&replay_identity()).expect("first acknowledgement must consume");
+        let error = state.consume_replay(&replay_identity()).expect_err("duplicated acknowledgement must be rejected");
+        assert_eq!(error, ReplayConsumeError::NoOutstandingLease);
+        assert!(!state.lifecycle.lock().expect("lifecycle mutex poisoned").replayable);
     }
 }
