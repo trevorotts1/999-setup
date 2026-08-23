@@ -431,6 +431,15 @@ function assessDmg(deps, add, artifactPath, posture) {
   const findRes = deps.run("xcrun", ["--find", "stapler"]);
 
   // DMG signature (codesign --verify)
+  // QFIX-adhoc recheck 2026-08-23: the WS-23 lane deliberately emits an
+  // UNSIGNED DMG under the adhoc posture (build-macos-bundle.sh refuses dmg
+  // for non-prod modes), so there is no DMG-level signature to verify — the
+  // tamper-detection gate lives on the mounted .app below. This is the named
+  // skip ADHOC_UNSIGNED_DMG_REASON already documented here, not a fabricated
+  // pass; under devid posture the verify requirement stands unchanged.
+  if (adhoc) {
+    add("dmg-signature", "DMG codesign --verify", "SKIP", `SKIPPED: ${ADHOC_UNSIGNED_DMG_REASON}`, {});
+  } else {
   const verifyRes = deps.run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", artifactPath]);
   if (verifyRes.status === 0) {
     add("dmg-signature", "DMG codesign --verify", "PASS", `${artifactPath} passes codesign --verify --deep --strict`, {
@@ -441,6 +450,7 @@ function assessDmg(deps, add, artifactPath, posture) {
       ...ACTION_SIGN,
       evidence: [evidence(`codesign --verify --deep --strict --verbose=2 ${artifactPath}`, verifyRes)],
     });
+  }
   }
 
   // DMG signature kind (Developer ID vs ad-hoc — codesign --verify alone
@@ -636,9 +646,14 @@ function assessDmg(deps, add, artifactPath, posture) {
     }
 
     // Hardened runtime
+    // QFIX-adhoc recheck 2026-08-23: ad-hoc signatures emit
+    // `flags=0x10002(adhoc,runtime)` — the runtime flag IS present; the old
+    // pattern demanded `(runtime)` as the sole flag word and misread a
+    // hardened ad-hoc signature as unsigned-runtime. Match runtime as one of
+    // the comma-separated flag words instead.
     const rtRes = deps.run("codesign", ["-dvvv", appPath]);
     const rtText = `${rtRes.stdout}\n${rtRes.stderr}`;
-    if (rtRes.status === 0 && /flags=0x[0-9a-f]+\(runtime\)/.test(rtText)) {
+    if (rtRes.status === 0 && /flags=0x[0-9a-f]+\([^)]*\bruntime\b[^)]*\)/.test(rtText)) {
       add("hardened-runtime", "hardened runtime enabled", "PASS", "CodeDirectory flags include runtime (0x10000)", {
         evidence: [evidence(`codesign -dvvv ${appPath}`, rtRes)],
       });
