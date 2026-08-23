@@ -5,13 +5,66 @@ import { isSystemTtsAvailable, speakWithSystemTts, speechToPlayable } from "../f
 import { KOKORO_SAMPLE_RATE } from "../types.ts";
 
 describe("system-TTS fallback (WS-19)", () => {
-  it("reports unavailable until a platform adapter lands — never fabricates capability", () => {
-    assert.equal(isSystemTtsAvailable(), false);
+  it("injected probe is authoritative — never fabricates capability", () => {
+    assert.equal(isSystemTtsAvailable(() => true), true);
+    assert.equal(isSystemTtsAvailable(() => false), false);
+  });
+
+  it("default probe proves the real macOS say binary on darwin", () => {
+    // Deterministic capability, not a mock: this suite runs on the
+    // operator Mac; /usr/bin/say --version must succeed here (FAIL-2
+    // evidence). On non-darwin hosts the truthful answer is false.
+    const available = isSystemTtsAvailable();
+    if (process.platform === "darwin") {
+      assert.equal(available, true);
+    } else {
+      assert.equal(available, false);
+    }
   });
 
   it("speakWithSystemTts fails closed to captions-only while unavailable", async () => {
-    const result = await speakWithSystemTts("hello");
+    const result = await speakWithSystemTts("hello", {});
+    if (process.platform === "darwin") {
+      // Real say speaker: either the OS rendered the utterance or the
+      // engine reported failure — never a fabricated ok.
+      if (result.ok) {
+        assert.equal(result.usedFallback, true);
+      } else {
+        assert.equal(result.reason, "engine-unavailable");
+      }
+    } else {
+      assert.deepEqual(result, { ok: false, reason: "engine-unavailable" });
+    }
+  });
+
+  it("injected probe + speaker keep the ladder deterministic", async () => {
+    const calls: string[] = [];
+    const ok = await speakWithSystemTts("hello", {
+      speak: async (text) => {
+        calls.push(text);
+        return true;
+      },
+    });
+    assert.deepEqual(ok, { ok: true, usedFallback: true });
+    assert.deepEqual(calls, ["hello"]);
+
+    const denied = await speakWithSystemTts("hello", {
+      speak: async () => false,
+    });
+    assert.deepEqual(denied, { ok: false, reason: "engine-unavailable" });
+  });
+
+  it("unavailable probe short-circuits before any speaker runs", async () => {
+    let spoke = false;
+    const result = await speakWithSystemTts("hello", {
+      probe: () => false,
+      speak: async () => {
+        spoke = true;
+        return true;
+      },
+    });
     assert.deepEqual(result, { ok: false, reason: "engine-unavailable" });
+    assert.equal(spoke, false);
   });
 
   it("speechToPlayable writes a valid 16-bit mono WAV header", () => {

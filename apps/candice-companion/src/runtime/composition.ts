@@ -30,6 +30,7 @@ import {
   initializeCandiceInteractionComposition,
   type InteractionComposition,
 } from './interaction-composition.ts';
+import { initializeSpeechRuntime, type SpeechRuntime } from './speech-runtime.ts';
 
 /**
  * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
@@ -48,6 +49,11 @@ export interface RuntimeCompositionOptions {
    */
   profile?: CandiceProfile;
   prefsLoad?: PrefsLoadResult;
+  /**
+   * Speech runtime seam (FIX-015). Optional: tests and headless runs may
+   * omit it; the visual shell stays fully usable (spec 20 fail closed).
+   */
+  speech?: { invokeAdapter?: import('./speech-runtime.ts').SpeechInvokeAdapter };
 }
 
 export async function initializeRuntimeComposition(
@@ -78,6 +84,35 @@ export async function initializeRuntimeComposition(
   status.setAttribute('aria-live', 'polite');
   status.textContent = runtimeStatusText(capabilities);
   root.append(status);
+
+  // FIX-015 speech seam: mount the duplex controller and probe the native
+  // speech boundary once. Failure is silent capability absence — the shell
+  // never blocks composition on speech (spec 20).
+  let speech: SpeechRuntime | null = null;
+  try {
+    speech = await initializeSpeechRuntime(options.speech?.invokeAdapter);
+    root.dataset.speechSeam = 'active';
+    if (speech.health) {
+      root.dataset.speechStatus = speech.health.degraded ? 'degraded' : 'available';
+      root.dataset.canonicalVoiceApproval = speech.health.canonicalVoiceApproval;
+    } else {
+      root.dataset.speechStatus = 'unprobed';
+    }
+    // The FIX-014 PTT lane owns the control surface; this seam only
+    // exposes the controller for shell wiring. The duplex controller
+    // gates every press (including interrupts) — mounted here so the
+    // capture path is reached through one authority.
+    speech.attachSpeechTarget({
+      abort: () => {
+        // FIX-017 boundary applied by the caller before any speak;
+        // abort here stops the engine handle synchronously.
+        speech?.detachSpeechTarget();
+      },
+      stop: async () => ({ stoppedAtMs: Date.now() }),
+    });
+  } catch {
+    root.dataset.speechStatus = 'unavailable';
+  }
 
   // Animation host (FIX-016): bind the gesture stage to the machine only
   // after the backend handshake, per the audit repair plan. Shell errors

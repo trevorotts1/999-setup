@@ -156,105 +156,122 @@ function main() {
   }
 
   const runs = [...runChecks.values()].filter((r) => r.problems.length === 0)
-  const allRuns = [...runChecks.values()]
+
+  // Cross-run legs operate on validated runs only (D2): a run whose template
+  // failed validation is already recorded as its own FAIL leg and must not
+  // contribute frames — or crash the loops on a missing frames array. With
+  // zero validated runs there is no interview evidence at all: the leg is
+  // BLOCKED, never a vacuous PASS (D1).
+  const NO_EVIDENCE = 'no interview runs supplied — no evidence for cross-run checks'
+  function crossRunLeg(id, name, check) {
+    if (runs.length === 0) {
+      return leg({ id, tier: 'HUMAN_HARDWARE', name, verdict: 'BLOCKED', reason: NO_EVIDENCE })
+    }
+    for (const r of runs) {
+      if (!Array.isArray(r.template.frames) || r.template.frames.length === 0) {
+        return leg({
+          id, tier: 'HUMAN_HARDWARE', name, verdict: 'BLOCKED',
+          reason: `run ${r.template.mode}-mode-${r.template.launcher} carries no frames array — no evidence for ${id}`,
+        })
+      }
+    }
+    const problems = check(runs)
+    return leg({
+      id, tier: 'HUMAN_HARDWARE', name,
+      verdict: problems.length === 0 ? 'PASS' : 'FAIL',
+      reason: problems.length === 0 ? undefined : problems.join('; '),
+    })
+  }
 
   // clarification-loop: every supplied valid run carries clarification-asked
   // AND clarification-returned frames (spec 15 round trip).
-  {
-    const missing = []
-    for (const r of allRuns) {
-      const kinds = new Set(r.template.frames.map((f) => f.eventKind))
-      if (!kinds.has('clarification-asked') || !kinds.has('clarification-returned')) {
-        missing.push(`${r.template.mode}-${r.template.launcher}`)
+  legs.push(crossRunLeg(
+    'clarification-loop',
+    'human/hardware: clarification round trip returns to the pending governed question (spec 15)',
+    (rs) => {
+      const missing = []
+      for (const r of rs) {
+        const kinds = new Set(r.template.frames.map((f) => f.eventKind))
+        if (!kinds.has('clarification-asked') || !kinds.has('clarification-returned')) {
+          missing.push(`${r.template.mode}-${r.template.launcher}`)
+        }
       }
+      return missing.length === 0 ? [] : [`clarification frames missing in: ${missing.join(', ')}`]
     }
-    legs.push(leg({
-      id: 'clarification-loop',
-      tier: 'HUMAN_HARDWARE',
-      name: 'human/hardware: clarification round trip returns to the pending governed question (spec 15)',
-      verdict: missing.length === 0 ? 'PASS' : 'FAIL',
-      reason: missing.length === 0 ? undefined : `clarification frames missing in: ${missing.join(', ')}`,
-    }))
-  }
+  ))
 
   // ceiling-count: mode question first (BUILD_TARGET), DEFAULT MODE wall of
   // nine, ADVANCED MODE wall of the target table row (Website = 32 — the
   // runbook pins the Website brief). QC replays the full sequence against
   // the interview.md oracle; this leg checks the two mechanical walls.
-  {
-    const problems = []
-    for (const r of allRuns) {
-      const seq = r.template.countedSequence
-      const label = `${r.template.mode}-mode-${r.template.launcher}`
-      if (seq.length === 0) { problems.push(`${label}: countedSequence empty`); continue }
-      if (seq[0] !== 'BUILD_TARGET') problems.push(`${label}: first counted question is ${seq[0]}, expected BUILD_TARGET (mode question first, R1)`)
-      if (r.template.mode === 'default' && seq.length > 9) {
-        problems.push(`${label}: DEFAULT MODE counted ${seq.length} questions — crosses the R6 wall of nine`)
+  legs.push(crossRunLeg(
+    'ceiling-count',
+    'human/hardware: counted sequence respects the mode wall and R1-first order',
+    (rs) => {
+      const problems = []
+      for (const r of rs) {
+        const seq = r.template.countedSequence
+        const label = `${r.template.mode}-mode-${r.template.launcher}`
+        if (seq.length === 0) { problems.push(`${label}: countedSequence empty`); continue }
+        if (seq[0] !== 'BUILD_TARGET') problems.push(`${label}: first counted question is ${seq[0]}, expected BUILD_TARGET (mode question first, R1)`)
+        if (r.template.mode === 'default' && seq.length > 9) {
+          problems.push(`${label}: DEFAULT MODE counted ${seq.length} questions — crosses the R6 wall of nine`)
+        }
+        if (r.template.mode === 'advanced' && seq.length > 32) {
+          problems.push(`${label}: ADVANCED MODE counted ${seq.length} questions — crosses the Website row (32)`)
+        }
       }
-      if (r.template.mode === 'advanced' && seq.length > 32) {
-        problems.push(`${label}: ADVANCED MODE counted ${seq.length} questions — crosses the Website row (32)`)
-      }
+      return problems
     }
-    legs.push(leg({
-      id: 'ceiling-count',
-      tier: 'HUMAN_HARDWARE',
-      name: 'human/hardware: counted sequence respects the mode wall and R1-first order',
-      verdict: problems.length === 0 ? 'PASS' : 'FAIL',
-      reason: problems.length === 0 ? undefined : problems.join('; '),
-    }))
-  }
+  ))
 
   // input-mode-per-question: every answer-submitted frame carries exactly
   // one of voice|typed, and no question records two input modes.
-  {
-    const problems = []
-    for (const r of allRuns) {
-      const label = `${r.template.mode}-mode-${r.template.launcher}`
-      const answered = r.template.frames.filter((f) => f.eventKind === 'answer-submitted')
-      for (const f of answered) {
-        if (!['voice', 'typed'].includes(f.inputMode)) {
-          problems.push(`${label}: answer-submitted frame with inputMode ${JSON.stringify(f.inputMode)}`)
+  legs.push(crossRunLeg(
+    'input-mode-per-question',
+    'human/hardware: one input mode per question, recorded per answer',
+    (rs) => {
+      const problems = []
+      for (const r of rs) {
+        const label = `${r.template.mode}-mode-${r.template.launcher}`
+        const answered = r.template.frames.filter((f) => f.eventKind === 'answer-submitted')
+        for (const f of answered) {
+          if (!['voice', 'typed'].includes(f.inputMode)) {
+            problems.push(`${label}: answer-submitted frame with inputMode ${JSON.stringify(f.inputMode)}`)
+          }
+        }
+        const byKey = new Map()
+        for (const f of answered) {
+          if (!byKey.has(f.questionKey)) byKey.set(f.questionKey, new Set())
+          byKey.get(f.questionKey).add(f.inputMode)
+        }
+        for (const [k, modes] of byKey) {
+          if (modes.size > 1) problems.push(`${label}: question ${k} answered in multiple input modes`)
         }
       }
-      const byKey = new Map()
-      for (const f of answered) {
-        if (!byKey.has(f.questionKey)) byKey.set(f.questionKey, new Set())
-        byKey.get(f.questionKey).add(f.inputMode)
-      }
-      for (const [k, modes] of byKey) {
-        if (modes.size > 1) problems.push(`${label}: question ${k} answered in multiple input modes`)
-      }
+      return problems
     }
-    legs.push(leg({
-      id: 'input-mode-per-question',
-      tier: 'HUMAN_HARDWARE',
-      name: 'human/hardware: one input mode per question, recorded per answer',
-      verdict: problems.length === 0 ? 'PASS' : 'FAIL',
-      reason: problems.length === 0 ? undefined : problems.join('; '),
-    }))
-  }
+  ))
 
   // final-write-through: every supplied valid run verified its documents.
-  {
-    const problems = []
-    for (const r of allRuns) {
-      const wt = r.template.finalWriteThrough
-      const label = `${r.template.mode}-mode-${r.template.launcher}`
-      if (wt.verified !== true) problems.push(`${label}: write-through not verified`)
-      if (typeof wt.documentPath !== 'string' || wt.documentPath.length === 0) {
-        problems.push(`${label}: documentPath missing`)
-      } else if (!fs.existsSync(wt.documentPath)) {
-        problems.push(`${label}: documentPath does not exist: ${wt.documentPath}`)
+  legs.push(crossRunLeg(
+    'final-write-through',
+    'human/hardware: final write-through document exists and was verified',
+    (rs) => {
+      const problems = []
+      for (const r of rs) {
+        const wt = r.template.finalWriteThrough
+        const label = `${r.template.mode}-mode-${r.template.launcher}`
+        if (wt.verified !== true) problems.push(`${label}: write-through not verified`)
+        if (typeof wt.documentPath !== 'string' || wt.documentPath.length === 0) {
+          problems.push(`${label}: documentPath missing`)
+        } else if (!fs.existsSync(wt.documentPath)) {
+          problems.push(`${label}: documentPath does not exist: ${wt.documentPath}`)
+        }
       }
+      return problems
     }
-    legs.push(leg({
-      id: 'final-write-through',
-      tier: 'HUMAN_HARDWARE',
-      name: 'human/hardware: final write-through document exists and was verified',
-      verdict: problems.length === 0 ? 'PASS' : 'FAIL',
-      reason: problems.length === 0 ? undefined : problems.join('; '),
-    }))
-  }
+  ))
 
   // Sanctioned skips only. Any other skip name is an unknown leg — never
   // silently accepted.

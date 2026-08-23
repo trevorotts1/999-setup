@@ -1,10 +1,10 @@
 # FIX-019 e2e-acceptance report
 
 - Verdict: **FAIL**
-- Generated: 2026-08-22T20:19:17.685Z
+- Generated: 2026-08-23T12:09:35.540Z
 - Repository: 999-setup-audit
 - Commit SHA: recorded-at-run-time
-- Run id: suite-1787429957684
+- Run id: suite-1787486975540
 - Launcher: node tests/e2e-acceptance/suite.js
 
 ## Tier verdicts
@@ -28,6 +28,10 @@
 - BLOCKED HUMAN_HARDWARE - default-mode-claude-nine
 - BLOCKED HUMAN_HARDWARE - advanced-mode-claude
 - BLOCKED HUMAN_HARDWARE - advanced-mode-claude-nine
+- BLOCKED HUMAN_HARDWARE - clarification-loop
+- BLOCKED HUMAN_HARDWARE - ceiling-count
+- BLOCKED HUMAN_HARDWARE - input-mode-per-question
+- BLOCKED HUMAN_HARDWARE - final-write-through
 
 ## Leg details
 
@@ -51,7 +55,7 @@
 - [PASS] (required) failure-matrix-mic-denied — unit suite: failure-matrix/mic-denied
 - [PASS] (required) failure-matrix-no-device — unit suite: failure-matrix/no-device
 - [PASS] (required) failure-matrix-plugin-missing — unit suite: failure-matrix/plugin-missing
-- [PASS] (required) failure-matrix-speech-model-missing — unit suite: failure-matrix/speech-model-missing
+- [FAIL] (required) failure-matrix-speech-model-missing — unit suite: failure-matrix/speech-model-missing — test file failed or exited nonzero
 - [PASS] (required) failure-matrix-temp-unwritable — unit suite: failure-matrix/temp-unwritable
 - [PASS] (required) failure-matrix-wrong-session — unit suite: failure-matrix/wrong-session
 - [PASS] (required) tier-self-test — unit: tier framework fail-closed self-test
@@ -80,10 +84,10 @@
 - [SKIPPED] (required) default-mode-claude-nine — human/hardware: default-mode-claude-nine interview — no filled trace template supplied for default-mode-claude-nine
 - [SKIPPED] (required) advanced-mode-claude — human/hardware: advanced-mode-claude interview — no filled trace template supplied for advanced-mode-claude
 - [SKIPPED] (required) advanced-mode-claude-nine — human/hardware: advanced-mode-claude-nine interview — no filled trace template supplied for advanced-mode-claude-nine
-- [PASS] (required) clarification-loop — human/hardware: clarification round trip returns to the pending governed question (spec 15)
-- [PASS] (required) ceiling-count — human/hardware: counted sequence respects the mode wall and R1-first order
-- [PASS] (required) input-mode-per-question — human/hardware: one input mode per question, recorded per answer
-- [PASS] (required) final-write-through — human/hardware: final write-through document exists and was verified
+- [BLOCKED] (required) clarification-loop — human/hardware: clarification round trip returns to the pending governed question (spec 15) — no interview runs supplied — no evidence for cross-run checks
+- [BLOCKED] (required) ceiling-count — human/hardware: counted sequence respects the mode wall and R1-first order — no interview runs supplied — no evidence for cross-run checks
+- [BLOCKED] (required) input-mode-per-question — human/hardware: one input mode per question, recorded per answer — no interview runs supplied — no evidence for cross-run checks
+- [BLOCKED] (required) final-write-through — human/hardware: final write-through document exists and was verified — no interview runs supplied — no evidence for cross-run checks
 
 ## Notes
 

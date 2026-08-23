@@ -33,7 +33,6 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "nsis"],
-    "category": "Productivity",
     "shortDescription": "Local visual and voice companion for Claude Code skills",
     "longDescription": "Candice is the face, voice, ears, and lightweight user interface for the active Claude Code session and the invoked skill — which remain the brain, rules, memory, and source of truth. Speech is local and offline (whisper.cpp STT, Kokoro TTS); no per-use cloud cost.",
     "icon": [

@@ -24,7 +24,18 @@ export interface KokoroEngine {
   /** True when the Python runtime process is alive. */
   readonly running: boolean;
   start(): Promise<void>;
-  stop(): Promise<void>;
+  /**
+   * FIX-015 FAIL-4: escalating stop (stdin EOF -> SIGTERM -> SIGKILL).
+   * Resolves only when the worker is provably gone, reporting the moment
+   * teardown completed. Matches the duplex SpeechTarget contract.
+   */
+  stop(): Promise<{ stoppedAtMs: number }>;
+  /**
+   * Synchronous duplex abort seam: skips the graceful window and escalates
+   * immediately. Returns before the process is confirmed dead (the ladder
+   * runs detached), so a press call can never block.
+   */
+  abort(): void;
   /** Synthesize text -> PCM at 24 kHz. Throws on failure. */
   synthesize(text: string, voiceId: string, speed: number): Promise<RenderedSpeech>;
 }

@@ -16,6 +16,9 @@ mod runtime;
 mod shell;
 mod speech_timing;
 
+#[path = "../speech/mod.rs"]
+mod speech;
+
 use tauri::{Emitter, Manager};
 
 /// generate_context!() resolves tauri.conf.json against the crate dir,
@@ -73,8 +76,16 @@ pub fn run() {
             speech_timing::cmd_speech_timing_start,
             speech_timing::cmd_speech_timing_boundary,
             speech_timing::cmd_speech_timing_drain,
+            speech::cmd_speech_health,
+            speech::cmd_speech_capture_start,
+            speech::cmd_speech_capture_stop,
+            speech::cmd_speech_transcribe,
+            speech::cmd_speech_speak,
+            speech::cmd_speech_stop,
+            speech::cmd_speech_permissions,
         ])
         .setup(|app| {
+            app.manage(speech::SpeechState::default());
             initialize_shell(app.handle())?;
             runtime::initialize_runtime(app.handle(), launch.clone())?;
             runtime::start_local_bridge(app.handle().clone(), launch);

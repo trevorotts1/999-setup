@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { CANONICAL_VOICE_CANDIDATES, DEFAULT_CANONICAL_VOICE } from "../assets.ts";
 import {
   CANONICAL_VOICE,
+  VOICE_APPROVAL_STATUS,
   VOICE_CATALOG,
   isKnownVoice,
   resolveVoiceSelection,
@@ -40,5 +41,13 @@ describe("canonical Candice voice catalog (WS-19)", () => {
     const resolved = resolveVoiceSelection("af_sky");
     assert.equal(resolved.voiceId, "af_sky");
     assert.equal(resolved.voicepackRelease, CANONICAL_VOICE.voicepackRelease);
+  });
+
+  it("FIX-015 FAIL-6: shipped approval status is honest approval-pending, never approved", () => {
+    // af_heart is the pre-approval default. It may be used as the
+    // canonical voice, but the surfaced status must stay pending until
+    // the operator evidence record lands. Also matches the native
+    // boundary value in src-tauri/speech/mod.rs (canonical_voice_approval).
+    assert.equal(VOICE_APPROVAL_STATUS, "approval-pending");
   });
 });
