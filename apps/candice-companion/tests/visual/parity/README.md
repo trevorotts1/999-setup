@@ -40,6 +40,16 @@ FIX-003 the parity gate runs from the pack, not from prose.
      packaged binary naming its commit");
    - every manifest global check must be evaluated — UNEVALUATED required
      checks FAIL BAR-10, never a silent pass;
+   - a pack override claiming PASS for a pixel-gated global check
+     (`identity-tracks-reference`, `palette-tracks-reference`,
+     `alpha-preserved-light-and-dark`) is intersected against the pixel
+     proofs the runner computes from the pack bytes: if any computed
+     proof failed (or is missing), the override is rejected and the check
+     verdict becomes FAIL with reason
+     `override-conflicts-with-pixel-proof` (FIX-020-overridegate / R1).
+     An override may only downgrade a passing mechanical proof to a
+     documented operator judgment, never upgrade a failed or missing
+     proof to PASS;
    - ANIM items must all be PASS and every manifest
      `animation.requiredEvidence` kind must be named, or BAR-10A FAILs;
    - animation states that
@@ -70,11 +80,18 @@ A capture names its cited canonical ids, build/commit, OS/display scale,
 and timestamp; the harness re-derives the capture PNG's own SHA and
 verifies the citation chain before evaluating any row.
 
+`evidence.overrides.json` is advisory for pixel-gated checks: `pass: true`
+there is only accepted when the harness's own computed pixel proofs for
+that capture pass (strictDiff / SSIM identity bound / opaque coverage /
+capture SHA). A failed or missing mechanical proof cannot be upgraded by
+an override — the check verdict becomes FAIL with reason
+`override-conflicts-with-pixel-proof`.
+
 ## Run
 
 ```bash
 cd apps/candice-companion
-node --test tests/visual/parity/parity.test.ts     # harness self-tests (22)
+node --test tests/visual/parity/parity.test.ts     # harness self-tests (26)
 node tests/visual/parity/run-review.ts <reviewDir> # evaluate a pack
 ```
 
@@ -104,6 +121,8 @@ contains no prohibited wording, and only then can BAR-10 PASS.
 - `parity.test.ts` — self-tests (negative-result contract: missing capture,
   wrong canonical cite, build/commit-less captures, prohibited wording in
   operator/ANIM/override notes, zero global evidence, alpha corruption,
-  identity swap, black-square captures, unsigned pack, unwired animation
-  states all FAIL; complete signed pack PASSes BAR-10 and fails BAR-10A
-  closed on the disabled required animation state).
+  identity swap, black-square captures, black-square captures + all-pass
+  overrides, identity-swapped captures + all-pass overrides, unsigned
+  pack, unwired animation states all FAIL; complete signed pack PASSes
+  BAR-10 and fails BAR-10A closed on the disabled required animation
+  state).

@@ -43,6 +43,7 @@ import type {
   AnimResult,
   AnimVerdict,
   CaptureMetadata,
+  CheckProof,
   GlobalCheckResult,
   ParityManifest,
   ParityReviewReport,
@@ -167,6 +168,91 @@ export const SIGN_OFF_ROWS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Global checks the harness itself proves from capture pixels, per capture.
+ * For these checks an override may only DOWNGRADE a passing mechanical
+ * proof to a documented operator judgment, never UPGRADE a failed or
+ * missing proof to PASS (FIX-020-overridegate / R1). Every other global
+ * check is not pixel-gated: overrides for those are accepted as pack
+ * evidence (the harness has no counter-proof to raise).
+ */
+const OVERRIDE_GATED_PIXEL_CHECKS: ReadonlySet<string> = new Set([
+  'identity-tracks-reference',
+  'palette-tracks-reference',
+  'alpha-preserved-light-and-dark',
+]);
+
+/**
+ * Computed per-capture pixel proof grouping for the override gate.
+ * The runner computes these from pack bytes (strictDiff/SSIM/coverage),
+ * and they are the ground truth an override cannot contradict.
+ */
+export interface PixelProofGroup {
+  /** One capture's file name (the RIGHT side). */
+  capture: string;
+  /** All proofs computed for this capture from its pack bytes
+   *  (strictDiff / SSIM identity bound / opaque coverage / capture SHA).
+   *  Passing proofs satisfy the gate but never approve likeness. */
+  proofs: CheckProof[];
+}
+
+/**
+ * Override-gate policy (R1): when the pack carries an override whose
+ * `pass` is true for a pixel-gated global check, every computed capture
+ * proof must pass, otherwise the override is rejected and the check
+ * verdict becomes FAIL with reason
+ * `override-conflicts-with-pixel-proof`. Missing pixel proofs for a
+ * capture reject the override the same way. A passing override claim can
+ * only DOWNGRADE a passing proof to a documented operator judgment; it
+ * can never UPGRADE a failed or missing proof to PASS.
+ */
+export function gateOverrideAgainstPixelProofs(
+  check: string,
+  override: { pass: boolean; notes: string[] },
+  groups: PixelProofGroup[],
+): CheckProof[] {
+  if (!override.pass || !OVERRIDE_GATED_PIXEL_CHECKS.has(check)) return [];
+  const metricTag = check.slice(0, 32);
+  if (groups.length === 0) {
+    return [
+      {
+        metric: `override-gate(${metricTag} | no-capture-proofs)`,
+        value: 0,
+        threshold: 1,
+        pass: false,
+        note: `override-conflicts-with-pixel-proof: pack override claims PASS for '${check}' but the runner computed no pixel proofs for any capture — a passing override requires passing mechanical pixel proofs, never missing ones`,
+      },
+    ];
+  }
+  for (const g of groups) {
+    if (g.proofs.length === 0) {
+      return [
+        {
+          metric: `override-gate(${metricTag} | ${g.capture})`,
+          value: 0,
+          threshold: 1,
+          pass: false,
+          note: `override-conflicts-with-pixel-proof: pack override claims PASS for '${check}' but the runner computed no pixel proofs for capture ${g.capture}`,
+        },
+      ];
+    }
+    for (const p of g.proofs) {
+      if (!p.pass) {
+        return [
+          {
+            metric: `override-gate(${metricTag} | ${g.capture})`,
+            value: 0,
+            threshold: 1,
+            pass: false,
+            note: `override-conflicts-with-pixel-proof: pack override claims PASS for '${check}' but computed ${p.metric} for capture ${g.capture} failed (${p.note}) — an override may downgrade a passing mechanical proof to a documented operator judgment, never upgrade a failed or missing proof to PASS`,
+          },
+        ];
+      }
+    }
+  }
+  return [];
+}
+
+/**
  * Row kinds with a mechanical pixel/origin proof the harness can compute
  * from a capture that lies over a source-authenticated composite (a
  * packed capture whose pixels trace to cited canonical assets).
@@ -213,6 +299,15 @@ export interface EngineInput {
   captures: InputCapture[];
   /** Optional global-check overrides (pixel proofs precomputed by the pack). */
   globalOverrides?: Record<string, { pass: boolean; notes: string[] }>;
+  /**
+   * Optional per-capture pixel proofs the runner computed from pack bytes
+   * (strictDiff / SSIM identity bound / opaque-coverage / capture SHA).
+   * When present they are verdict-gating: a pack override claiming PASS
+   * for a pixel-gated global check (identity/palette/alpha) is rejected
+   * with reason `override-conflicts-with-pixel-proof` if any computed
+   * proof for that check failed or is missing (FIX-020-overridegate / R1).
+   */
+  pixelProofs?: PixelProofGroup[];
   anim?: InputAnim[];
   /**
    * Animation evidence kinds named by the pack (manifest
@@ -364,14 +459,24 @@ export function evaluate(input: EngineInput): ParityReviewReport {
 
   const globalChecks: GlobalCheckResult[] = manifest.globalChecks.map((check) => {
     const override = input.globalOverrides?.[check];
+    // R1 override gate: a passing override for a pixel-gated check is
+    // intersected against the runner's computed pixel proofs. An override
+    // may downgrade a passing mechanical proof to a documented operator
+    // judgment, never upgrade a failed or missing proof to PASS.
+    const gateProofs = override
+      ? gateOverrideAgainstPixelProofs(check, override, input.pixelProofs ?? [])
+      : [];
     const proofs = override
-      ? override.notes.map((n, i) => ({
-          metric: `${check}-proof-${i}`,
-          value: override.pass ? 1 : 0,
-          threshold: 1,
-          pass: override.pass,
-          note: n,
-        }))
+      ? [
+          ...gateProofs,
+          ...override.notes.map((n, i) => ({
+            metric: `${check}-proof-${i}`,
+            value: override.pass ? 1 : 0,
+            threshold: 1,
+            pass: override.pass,
+            note: n,
+          })),
+        ]
       : [
           {
             metric: 'evaluated',
@@ -383,7 +488,8 @@ export function evaluate(input: EngineInput): ParityReviewReport {
         ];
     return {
       check,
-      verdict: override ? (override.pass ? 'PASS' : 'FAIL') : 'UNEVALUATED',
+      verdict:
+        gateProofs.length > 0 ? 'FAIL' : override ? (override.pass ? 'PASS' : 'FAIL') : 'UNEVALUATED',
       proofs,
     };
   });

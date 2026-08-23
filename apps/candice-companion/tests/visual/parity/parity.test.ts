@@ -133,6 +133,31 @@ function globalAllPass(): NonNullable<EngineInput['globalOverrides']> {
   return out;
 }
 
+/** Passing per-capture pixel proofs (the runner computes these from pack
+ *  bytes; engine-level tests supply the pass case explicitly — see
+ *  FIX-020-overridegate / R1: passing overrides require passing proofs). */
+function pixelProofsAllPass(): EngineInput['pixelProofs'] {
+  return fullCaptures().map((c) => ({
+    capture: c.meta.file,
+    proofs: [
+      {
+        metric: `alphaCoverage(${c.meta.expectedAssetIds[0]} vs ${c.meta.file})`,
+        value: 1,
+        threshold: 0.25,
+        pass: true,
+        note: 'opaque coverage ratio 1.0000 within identity band',
+      },
+      {
+        metric: `strictDiff(${c.meta.expectedAssetIds[0]} vs ${c.meta.file})`,
+        value: 0,
+        threshold: 0,
+        pass: true,
+        note: 'capture byte-identical to cited canonical source',
+      },
+    ],
+  }));
+}
+
 test('review manifest loads and lists exactly the seven required states', () => {
   const m = loadReviewManifest(HERE);
   assert.equal(m.bar, 'BAR-10');
@@ -156,6 +181,7 @@ test('complete pack + signed decision => BAR-10 PASS; BAR-10A FAIL closed on dis
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -179,6 +205,7 @@ test('missing one required state capture => BAR-10 FAIL', () => {
     reviewDir: HERE,
     captures: fullCaptures().filter((c) => c.meta.file !== 'state-greeting.png'),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -199,6 +226,7 @@ test('capture citing an id outside the approved canonical set => FAIL', () => {
     reviewDir: HERE,
     captures,
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -215,6 +243,7 @@ test('captures missing build/commit identity => FAIL (D3 builder verification)',
     reviewDir: HERE,
     captures,
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -231,6 +260,7 @@ test('unsigned pack (REQUIRE_SIGN_OFF rows outstanding) => BAR-10 FAIL', () => {
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: null,
@@ -264,6 +294,7 @@ test('prohibited wording in operator note keeps BAR-10 FAIL', () => {
       reviewDir: HERE,
       captures: fullCaptures(),
       globalOverrides: globalAllPass(),
+      pixelProofs: pixelProofsAllPass(),
       anim: animAllPass(),
       animEvidenceKinds: ANIM_EVIDENCE_KINDS,
       operatorDecision: d,
@@ -281,6 +312,7 @@ test('prohibited wording in ANIM or override notes keeps BAR-10 FAIL (D4)', () =
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animBad,
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -307,6 +339,7 @@ test('ANIM-06 UNMEASURED => BAR-10A FAIL (every item must pass)', () => {
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim,
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -336,6 +369,7 @@ test('D5: DISABLED markers surface for unwired animation states, map parse is au
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animClaim,
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -356,6 +390,7 @@ test('D5: DISABLED markers surface for unwired animation states, map parse is au
     reviewDir: HERE,
     captures: fullCaptures(),
     globalOverrides: globalAllPass(),
+    pixelProofs: pixelProofsAllPass(),
     anim: animAllPass(),
     animEvidenceKinds: ANIM_EVIDENCE_KINDS,
     operatorDecision: signedDecision(),
@@ -489,6 +524,164 @@ test('CLI runner: synthetic pack emits review-report.json + reviewer.html, verdi
   const report = JSON.parse(fs.readFileSync(path.join(tmp, 'review-report.json'), 'utf8'));
   assert.equal(report.verdict, 'FAIL'); // unsigned + incomplete pack cannot pass
   assert.equal(report.animation.verdict, 'FAIL'); // no ANIM measurements
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+function allPassOverrides(): Record<string, { pass: boolean; notes: string[] }> {
+  const out: Record<string, { pass: boolean; notes: string[] }> = {};
+  for (const c of loadReviewManifest(HERE).globalChecks) {
+    out[c] = { pass: true, notes: ['pack-provided evidence'] };
+  }
+  return out;
+}
+
+/** Write a full 7-state pack: captures, all-pass overrides, anim pass, signed decision. */
+function writeFullPack(tmp: string, captureFor: (state: string) => { width: number; height: number; rgba: Uint8Array }): void {
+  const capDir = path.join(tmp, 'captures');
+  fs.mkdirSync(capDir, { recursive: true });
+  for (const s of ALL_STATES) {
+    const frame = captureFor(s);
+    fs.writeFileSync(path.join(capDir, `state-${s}.png`), encodeRgba(frame));
+    fs.writeFileSync(
+      path.join(capDir, `state-${s}.capture.json`),
+      JSON.stringify({
+        file: `state-${s}.png`,
+        source: 'pack',
+        expectedAssetIds: [DEFAULT_ASSET[s]],
+        build: 'Candice Companion 0.2.0',
+        commit: '0'.repeat(40),
+        os: 'darwin arm64',
+        displayScale: '1x',
+        capturedAt: new Date().toISOString(),
+      }),
+    );
+  }
+  fs.writeFileSync(path.join(tmp, 'evidence.overrides.json'), JSON.stringify(allPassOverrides()));
+  fs.writeFileSync(
+    path.join(tmp, 'anim.json'),
+    JSON.stringify({ items: animAllPass(), evidenceKinds: ANIM_EVIDENCE_KINDS }),
+  );
+  fs.writeFileSync(path.join(tmp, 'decision.json'), JSON.stringify(signedDecision()));
+}
+
+function runCli(tmp: string): { status: number; report: { verdict: string; globalChecks: Array<{ check: string; verdict: string; proofs: Array<{ metric: string; pass: boolean; note: string }> }> } } {
+  const run = spawnSync(
+    process.execPath,
+    [path.join(HERE, 'run-review.ts'), tmp],
+    { encoding: 'utf8' },
+  );
+  assert.equal(run.status, 0, `runner failed: ${run.stderr}`);
+  return {
+    status: run.status ?? -1,
+    report: JSON.parse(fs.readFileSync(path.join(tmp, 'review-report.json'), 'utf8')),
+  };
+}
+
+test('R1 engine gate: passing override + failed pixel proof => FAIL with override-conflicts-with-pixel-proof', () => {
+  const report = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: globalAllPass(),
+    pixelProofs: [
+      {
+        capture: 'state-idle-neutral.png',
+        proofs: [
+          {
+            metric: 'alphaCoverage(01-fullbody-idle vs state-idle-neutral.png)',
+            value: 0,
+            threshold: 0.25,
+            pass: false,
+            note: 'opaque coverage ratio 0.0000 outside identity band',
+          },
+        ],
+      },
+    ],
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(report.verdict, 'FAIL');
+  const gated = report.globalChecks.filter((g) =>
+    g.proofs.some((p) => p.metric.startsWith('override-gate(')),
+  );
+  assert.ok(gated.length > 0, 'pixel-gated checks must carry override-gate proofs');
+  assert.ok(gated.every((g) => g.verdict === 'FAIL'), 'gated checks must be FAIL');
+  const reason = gated
+    .flatMap((g) => g.proofs)
+    .find((p) => p.metric.startsWith('override-gate('))!.note;
+  assert.match(reason, /override-conflicts-with-pixel-proof/);
+});
+
+test('R1 engine gate: passing override + passing pixel proofs => PASS (downgrade path stays open)', () => {
+  const report = evaluate({
+    reviewDir: HERE,
+    captures: fullCaptures(),
+    globalOverrides: globalAllPass(),
+    pixelProofs: [
+      {
+        capture: 'state-idle-neutral.png',
+        proofs: [
+          {
+            metric: 'alphaCoverage(01-fullbody-idle vs state-idle-neutral.png)',
+            value: 1,
+            threshold: 0.25,
+            pass: true,
+            note: 'opaque coverage ratio 1.0000 within identity band',
+          },
+          {
+            metric: 'ssimBound(01-fullbody-idle vs state-idle-neutral.png)',
+            value: 0.99,
+            threshold: 0.5,
+            pass: true,
+            note: 'cross-scale identity bound',
+          },
+        ],
+      },
+    ],
+    anim: animAllPass(),
+    animEvidenceKinds: ANIM_EVIDENCE_KINDS,
+    operatorDecision: signedDecision(),
+  });
+  assert.equal(report.verdict, 'PASS');
+});
+
+test('CLI runner: black-square captures + all-pass overrides => FAIL (R1 adversarial)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-pack-r1-bs-'));
+  const black = () => ({ width: 32, height: 32, rgba: new Uint8Array(32 * 32 * 4).fill(0) });
+  writeFullPack(tmp, black);
+  const { report } = runCli(tmp);
+  assert.equal(report.verdict, 'FAIL', 'black squares + all-pass overrides must not pass');
+  const gated = report.globalChecks.filter((g) =>
+    g.proofs.some((p) => p.metric.startsWith('override-gate(')),
+  );
+  assert.ok(gated.length > 0, 'override gate must fire on black-square captures');
+  assert.ok(gated.every((g) => g.verdict === 'FAIL'));
+  assert.ok(
+    gated.flatMap((g) => g.proofs).some((p) => /override-conflicts-with-pixel-proof/.test(p.note)),
+    'reason must name override-conflicts-with-pixel-proof',
+  );
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('CLI runner: identity-swapped capture + all-pass overrides => FAIL (R1 adversarial)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-pack-r1-swap-'));
+  const welcome = decodePngFile(path.join(SOURCE_DIR, '02-gesture-welcome.png'));
+  const canonicalFor = (id: string) => decodePngFile(path.join(SOURCE_DIR, `${id}.png`));
+  writeFullPack(tmp, (state) => {
+    // idle-neutral capture bytes = canonical B (welcome), metadata cites A (idle): identity swap.
+    return state === 'idle-neutral' ? welcome : canonicalFor(DEFAULT_ASSET[state]);
+  });
+  const { report } = runCli(tmp);
+  assert.equal(report.verdict, 'FAIL', 'identity swap + all-pass overrides must not pass');
+  const gated = report.globalChecks.filter((g) =>
+    g.proofs.some((p) => p.metric.startsWith('override-gate(')),
+  );
+  assert.ok(gated.length > 0, 'override gate must fire on identity-swapped captures');
+  assert.ok(gated.every((g) => g.verdict === 'FAIL'));
+  assert.ok(
+    gated.flatMap((g) => g.proofs).some((p) => /override-conflicts-with-pixel-proof/.test(p.note)),
+    'reason must name override-conflicts-with-pixel-proof',
+  );
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

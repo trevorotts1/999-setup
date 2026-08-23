@@ -17,7 +17,11 @@
  * pixels are compared against its cited canonical source (strictDiff for
  * same-canvas, SSIM identity bound for different-scale) and the three
  * mechanical asset global checks are computed from the pack bytes. The
- * resulting proofs are fed into the engine's scoring.
+ * resulting proofs are fed into the engine's scoring and verdict-gate
+ * pack overrides: a passing override for a pixel-gated global check
+ * (identity/palette/alpha) is rejected with reason
+ * `override-conflicts-with-pixel-proof` when any computed capture proof
+ * failed (FIX-020-overridegate / R1).
  *
  * Produces review-report.json (machine verdict) and reviewer.html
  * (side-by-side reviewer page) inside the pack directory.
@@ -30,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { evaluate, writeReport } from './engine.ts';
+import { evaluate, writeReport, type PixelProofGroup } from './engine.ts';
 import { writeReviewerHtml } from './report-html.ts';
 import { decodePngFile } from '../png.ts';
 import { strictDiff, ssimProof, likenessBound, type Frame } from './diff.ts';
@@ -158,8 +162,10 @@ function main(): number {
   // and fed into the engine scoring.
   const manifest = loadManifest();
   const pixelProofs: CheckProof[] = [];
+  const pixelGroups: PixelProofGroup[] = [];
   const canonDir = path.join(dir, 'canonical');
   for (const c of captures) {
+    const group: PixelProofGroup = { capture: c.meta.file, proofs: [] };
     const capSha = sha256File(path.join(capDir, c.meta.file));
     const cited = c.meta.expectedAssetIds;
     const entries = cited
@@ -181,7 +187,7 @@ function main(): number {
       const capCov = opaqueCoverage(c.frame);
       const coverageRatio = srcCov > 0 ? capCov / srcCov : 0;
       const coverageOk = coverageRatio >= 0.25 && coverageRatio <= 4;
-      pixelProofs.push({
+      const coverageProof: CheckProof = {
         metric: `alphaCoverage(${e.id} vs ${c.meta.file})`,
         value: Number(coverageRatio.toFixed(4)),
         threshold: 0.25,
@@ -189,10 +195,12 @@ function main(): number {
         note: coverageOk
           ? `opaque coverage ratio ${coverageRatio.toFixed(4)} within identity band`
           : `opaque coverage ratio ${coverageRatio.toFixed(4)} outside identity band (source ${(srcCov * 100).toFixed(1)}%, capture ${(capCov * 100).toFixed(1)}%) — capture cannot be this source`,
-      });
+      };
+      pixelProofs.push(coverageProof);
+      group.proofs.push(coverageProof);
       if (srcFrame.width === c.frame.width && srcFrame.height === c.frame.height) {
         const d = strictDiff(srcFrame, c.frame);
-        pixelProofs.push({
+        const diffProof: CheckProof = {
           metric: `strictDiff(${e.id} vs ${c.meta.file})`,
           value: d.mismatchPx,
           threshold: 0,
@@ -200,10 +208,12 @@ function main(): number {
           note: d.equal
             ? `${c.meta.file} is byte-identical to canonical ${e.id} (${d.region.w}x${d.region.h} region, 0 differing bytes)`
             : `${c.meta.file} differs from canonical ${e.id}: ${d.mismatchPx}/${d.region.w * d.region.h} px differ (alpha ${d.alphaMismatchPx}, color-only ${d.colorOnlyMismatchPx}, max channel delta ${d.maxChannelDelta})`,
-        });
+        };
+        pixelProofs.push(diffProof);
+        group.proofs.push(diffProof);
       } else {
         const bound = likenessBound(srcFrame, c.frame, 128);
-        pixelProofs.push({
+        const ssimProofRow: CheckProof = {
           ...ssimProof(
             bound,
             0.5,
@@ -211,11 +221,13 @@ function main(): number {
             `cross-scale identity bound; likeness approval stays operator territory`,
           ),
           value: Number(bound.toFixed(4)),
-        });
+        };
+        pixelProofs.push(ssimProofRow);
+        group.proofs.push(ssimProofRow);
       }
     }
     if (c.meta.captureSha256 !== undefined) {
-      pixelProofs.push({
+      const shaProof: CheckProof = {
         metric: `capture-sha256(${c.meta.file})`,
         value: c.meta.captureSha256.length,
         threshold: 64,
@@ -224,8 +236,11 @@ function main(): number {
           c.meta.captureSha256 === capSha
             ? `capture sha re-derived from pack bytes: ${capSha}`
             : `capture sha mismatch: pack bytes derive ${capSha}, metadata claims ${c.meta.captureSha256}`,
-      });
+      };
+      pixelProofs.push(shaProof);
+      group.proofs.push(shaProof);
     }
+    pixelGroups.push(group);
   }
 
   // Mechanical global checks: computed from the pack bytes, not asserted.
@@ -313,6 +328,7 @@ function main(): number {
     reviewDir: HERE,
     captures,
     globalOverrides: packGlobal,
+    pixelProofs: pixelGroups,
     anim,
     animEvidenceKinds,
     operatorDecision: decision,
