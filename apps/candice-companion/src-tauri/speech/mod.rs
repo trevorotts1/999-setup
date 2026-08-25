@@ -932,14 +932,17 @@ pub fn cmd_speech_stop(
 /// NotDetermined — the review's complaint was that the old slot-based
 /// mapping faked Granted from an admission id. Never probes on its own:
 /// permission prompting happens only at PTT (plan 3D).
-#[tauri::command]
-pub fn cmd_speech_permissions<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, SpeechState>,
-) -> Result<SpeechPermissions, String> {
-    let _ = &app; // reserved for the future platform adapter registration
-    let last_status = state.capture.last_status().unwrap_or_default();
-    let microphone = match last_status.as_str() {
+/// Map a capture-controller status to the honest TCC fact (design 3.1).
+///
+/// Extracted from `cmd_speech_permissions` so a test can drive the REAL
+/// mapping. It previously lived inline inside a `#[tauri::command]` that
+/// needs an `AppHandle` and `State`, which is exactly why its test
+/// re-implemented the `match` instead of calling it.
+///
+/// Fails closed: any status that has not produced a verdict maps to
+/// NotDetermined, never Granted.
+pub(crate) fn mic_permission_for_status(status: &str) -> MicPermissionState {
+    match status {
         "listening" | "stopping" => MicPermissionState::Granted,
         "denied" => MicPermissionState::Denied,
         "no-device" => MicPermissionState::NoDevice,
@@ -947,7 +950,17 @@ pub fn cmd_speech_permissions<R: Runtime>(
         // idle/requesting/disposed/unknown: no attempt has produced a
         // verdict yet — not-determined is the truthful answer.
         _ => MicPermissionState::NotDetermined,
-    };
+    }
+}
+
+#[tauri::command]
+pub fn cmd_speech_permissions<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, SpeechState>,
+) -> Result<SpeechPermissions, String> {
+    let _ = &app; // reserved for the future platform adapter registration
+    let last_status = state.capture.last_status().unwrap_or_default();
+    let microphone = mic_permission_for_status(last_status.as_str());
     Ok(SpeechPermissions {
         microphone,
         prompt_source: "ptt-only".into(),
@@ -1328,7 +1341,14 @@ mod tests {
     }
 
     /// Permission mapping table (design 3.1): each controller status maps
-    /// to the honest TCC fact. Pure — exercised without an app handle.
+    /// to the honest TCC fact.
+    ///
+    /// The test this replaces built this same table and then
+    /// RE-IMPLEMENTED the production `match` inside its own body, asserting
+    /// the copy matched the table. The production mapping could have been
+    /// deleted entirely and it would still have passed. This one calls the
+    /// real `mic_permission_for_status`, so removing or altering any arm
+    /// fails it.
     #[test]
     fn permission_mapping_is_honest_per_controller_status() {
         let cases: &[(&str, MicPermissionState)] = &[
@@ -1341,16 +1361,27 @@ mod tests {
             ("requesting", MicPermissionState::NotDetermined),
             ("disposed", MicPermissionState::NotDetermined),
             ("", MicPermissionState::NotDetermined),
+            // An unrecognised status must fail closed, so a controller
+            // state added later cannot silently read as microphone access.
+            ("some-future-status", MicPermissionState::NotDetermined),
         ];
         for (raw, expected) in cases {
-            let got = match *raw {
-                "listening" | "stopping" => MicPermissionState::Granted,
-                "denied" => MicPermissionState::Denied,
-                "no-device" => MicPermissionState::NoDevice,
-                "error" => MicPermissionState::Error,
-                _ => MicPermissionState::NotDetermined,
-            };
-            assert_eq!(std::mem::discriminant(&got), std::mem::discriminant(expected), "status {raw:?}");
+            assert_eq!(
+                mic_permission_for_status(raw),
+                *expected,
+                "status {raw:?} must map to {expected:?}"
+            );
+        }
+        // The dangerous direction as its own assertion: nothing outside the
+        // two live-stream statuses may EVER report Granted.
+        for raw in [
+            "idle", "requesting", "disposed", "denied", "no-device", "error", "", "??",
+        ] {
+            assert_ne!(
+                mic_permission_for_status(raw),
+                MicPermissionState::Granted,
+                "status {raw:?} must never report microphone access"
+            );
         }
     }
 
