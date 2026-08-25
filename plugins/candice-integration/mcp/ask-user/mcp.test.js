@@ -26,10 +26,23 @@ const { AnswerSlotRegistry } = require('./answer-registry')
 const { validateQuestionEvent, validateAnswerEvent } = require('./validate')
 
 let failures = 0
+// An async check returns a promise: its assertions settle AFTER check() has
+// returned. Printing PASS on return reported every async failure as a pass and
+// still printed ALL TESTS PASSED — the process only failed later, on the
+// unhandled rejection. Collect the promises and settle them before the verdict
+// so an async FAIL is counted and named like a sync one.
+const settling = []
 
 function check(name, fn) {
   try {
-    fn()
+    const result = fn()
+    if (result && typeof result.then === 'function') {
+      settling.push(result.then(
+        () => { console.log(`PASS ${name}`) },
+        (err) => { failures += 1; console.log(`FAIL ${name}: ${err.message}`) }
+      ))
+      return
+    }
     console.log(`PASS ${name}`)
   } catch (err) {
     failures += 1
@@ -1216,6 +1229,109 @@ check('S3 QC D2: a lifecycle refusal surfaces as a valid fallback cause with the
   assert.strictEqual(result.result.fallback.cause, 'mcp-unavailable', 'cause is a protocol value, never a lifecycle code')
 })
 
+// ——————————————————————————————————————————————
+// 4c. FRESH-SESSION BEGIN — question 1 of a brand-new Claude session.
+//     Nothing has called begin_session (the bridge only binds transport), so
+//     the durable record does not exist yet. Before the fix, setPendingQuestion
+//     refused with `not-found` and EVERY session's first question fell to text
+//     mode ("Candice companion unavailable"); the fallback then opened the
+//     session, so Q2+ worked and the defect read as intermittent.
+//     NOTE: every other check in this file calls lifecycle.beginSession() by
+//     hand first — which is exactly why the defect was invisible to the suite.
+// ——————————————————————————————————————————————
+
+check('a FRESH session (nothing called beginSession) delivers question 1 to the companion and never runs the fallback', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-fresh-session-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    // Deliberately NO beginSession — this is the fresh Claude session.
+    assert.strictEqual(
+      lifecycle.getPendingOperation({ sessionId: 'opaque-session-id' }).code,
+      'not-found',
+      'precondition: the session has no durable record at all'
+    )
+    const delivered = []
+    const registry = new AnswerSlotRegistry()
+    const server = new AskUserServer({
+      registry,
+      lifecycle,
+      fallback: new FallbackCoordinator({ lifecycle }),
+      isCompanionReady: () => true,
+      deliverQuestion: async (q) => {
+        delivered.push(q.questionKey)
+        registry.put({ sessionId: q.sessionId, questionKey: q.questionKey, answer: answer() })
+        return { ok: true }
+      },
+      sleep: async () => {},
+    })
+    const fallbacks = []
+    const originalRunFallback = server._runFallback.bind(server)
+    server._runFallback = (cause, ev, operationId, detail) => {
+      fallbacks.push({ cause, detail })
+      return originalRunFallback(cause, ev, operationId, detail)
+    }
+
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+
+    assert.deepStrictEqual(fallbacks, [], 'question 1 must NOT take the fallback path')
+    assert.deepStrictEqual(delivered, ['BUILD_TARGET'], 'the companion received question 1')
+    assert.notStrictEqual(result.result.isError, true, 'question 1 is not a fail-soft text result')
+    assert.strictEqual(result.result.ok, true, 'the answer came back through the companion')
+    assert.strictEqual(result.result.answer.questionKey, 'BUILD_TARGET')
+    // The begin was real and durable, carrying the asking skill.
+    const status = lifecycle.status({ sessionId: 'opaque-session-id' })
+    assert.strictEqual(status.ok, true, 'the session record now exists')
+    assert.strictEqual(status.status, 'active')
+    assert.strictEqual(status.skill, 'spec-protocol', 'the session was opened for the asking skill')
+    assert.strictEqual(status.questionCount, 1, 'committed exactly once — the begin never double-counts')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('the fresh-session begin never reopens a RECOVERING session — the lease and pending record survive', async () => {
+  const { SessionLifecycle } = require('../../session/session-lifecycle')
+  const { FallbackCoordinator } = require('../../fallback/fallback-coordinator')
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-fresh-recovering-'))
+  try {
+    const lifecycle = new SessionLifecycle({ stateDir: dir })
+    lifecycle.beginSession({ sessionId: 'opaque-session-id', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({
+      sessionId: 'opaque-session-id',
+      questionKey: 'BUILD_TARGET',
+      text: question().text,
+      answerKind: 'free_text',
+      counted: false,
+    })
+    const claimed = lifecycle.recoverPendingQuestion({ sessionId: 'opaque-session-id', leaseId: 'lease-under-test' })
+    assert.strictEqual(claimed.ok, true, 'precondition: a recovery lease is held')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).status, 'recovering')
+
+    const server = new AskUserServer({
+      registry: new AnswerSlotRegistry(),
+      lifecycle,
+      fallback: new FallbackCoordinator({ lifecycle }),
+      isCompanionReady: () => true,
+      deliverQuestion: async () => ({ ok: true }),
+      sleep: async () => {},
+    })
+    const result = await server.askUser({ question: question(), sessionId: 'opaque-session-id' })
+
+    // beginSession only short-circuits on `active`; an unguarded call here
+    // would replace the record with a fresh one and destroy the lease.
+    assert.strictEqual(result.result.isError, true, 'a recovering session still refuses a foreign ask')
+    const after = lifecycle.getPendingOperation({ sessionId: 'opaque-session-id' })
+    assert.strictEqual(after.ok, true, 'the recovering pending record still exists')
+    assert.strictEqual(after.pending.durableState, 'recovering', 'still under recovery, never reset')
+    assert.ok(after.pending.leaseId, 'the recovery lease was not wiped by a fresh beginSession')
+    assert.strictEqual(lifecycle.status({ sessionId: 'opaque-session-id' }).status, 'recovering')
+  } finally {
+    try { fsSync.rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
 check('regression: WS-03 session-lifecycle still loads and passes its suite', async () => {
   const lifecycle = require('../../session/session-lifecycle')
   assert.strictEqual(typeof lifecycle.SessionLifecycle, 'function')
@@ -1229,9 +1345,11 @@ check('regression: WS-05 fallback coordinator still loads', () => {
   assert.strictEqual(typeof FallbackCoordinator, 'function')
 })
 
-if (failures === 0) {
-  console.log('ALL TESTS PASSED')
-} else {
-  console.log(`${failures} CHECK(S) FAILED`)
-  process.exit(1)
-}
+Promise.all(settling).then(() => {
+  if (failures === 0) {
+    console.log('ALL TESTS PASSED')
+  } else {
+    console.log(`${failures} CHECK(S) FAILED`)
+    process.exit(1)
+  }
+})

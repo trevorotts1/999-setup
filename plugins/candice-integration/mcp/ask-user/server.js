@@ -712,6 +712,39 @@ class AskUserServer {
       return this._runFallback('app-unavailable', q, operationId)
     }
 
+    // A FRESH Claude session has no durable session record — nothing has
+    // called begin_session yet, because the bridge only binds transport.
+    // setPendingQuestion refuses an unknown session with `not-found`, which
+    // sent QUESTION 1 of EVERY session down _runFallback('mcp-unavailable')
+    // and showed the user text mode instead of the companion window. The
+    // fallback then opened the session, so Q2+ worked — the defect looked
+    // intermittent when it was in fact the first ask, every time.
+    //
+    // Mirrors the terminal-claim path in fallback/fallback-coordinator.js:
+    // consult the durable record first and begin ONLY when there is none, so
+    // a `recovering` or `ended` record is never overwritten by a fresh one
+    // (beginSession short-circuits on `active` alone and would otherwise
+    // clobber a recovery lease and its pending question). This sits AFTER the
+    // blocked-store gate — a blocked store must never be persisted into — and
+    // AFTER the readiness probe, because a not-ready companion routes to the
+    // coordinator, which opens the session itself.
+    if (
+      this.lifecycle &&
+      typeof this.lifecycle.beginSession === 'function' &&
+      typeof this.lifecycle.getPendingOperation === 'function' &&
+      q.skill !== undefined
+    ) {
+      const known = await Promise.resolve(this.lifecycle.getPendingOperation({ sessionId: q.sessionId }))
+      if (known && known.ok === false && known.code === 'not-found') {
+        const begin = await Promise.resolve(this.lifecycle.beginSession({ sessionId: q.sessionId, skill: q.skill }))
+        // 'already-active' is the idempotent same-session case — not a failure.
+        if (!begin || (!begin.ok && begin.code !== 'already-active')) {
+          const reason = (begin && (begin.code || begin.error)) || 'session-not-active'
+          return this._runFallback('mcp-unavailable', q, operationId, reason)
+        }
+      }
+    }
+
     // Persist the governed slot BEFORE opening or delivering it. A lifecycle
     // refusal is authoritative: do not let a second pending/answered key reach
     // the companion and do not disturb FIX-011's authenticated bridge.
