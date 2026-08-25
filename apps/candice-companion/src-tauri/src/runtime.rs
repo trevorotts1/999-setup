@@ -1114,10 +1114,15 @@ pub fn cmd_end_bridge_lifecycle<R: Runtime>(
 /// The transparent companion is click-through unless a delivered question
 /// owns the visible answer controls. This is intentionally toggled only by
 /// the authenticated bridge lifecycle, never by window focus or arbitrary JS.
+///
+/// The lifecycle now states its intent as an override instead of writing
+/// `set_ignore_cursor_events` directly: `hit_test` is the single writer of
+/// that flag, so a delivered question and the cursor hit test cannot fight
+/// over it. The behavior for the bridge is unchanged — `true` captures the
+/// pointer for the whole window until it is set back to `false`.
 #[tauri::command]
 pub fn cmd_set_answer_input_enabled<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or_else(|| "candice: main window missing".to_string())?;
-    window.set_ignore_cursor_events(!enabled).map_err(|error| format!("candice: input policy failed: {error}"))
+    crate::hit_test::set_answer_override(&app, enabled)
 }
 
 /// Webview capability probe. A result is always truthful and serializable;

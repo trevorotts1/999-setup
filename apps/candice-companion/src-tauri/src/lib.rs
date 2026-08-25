@@ -12,6 +12,7 @@
 //! presentation infrastructure: a failure here must never stop Claude
 //! (spec 20).
 
+mod hit_test;
 mod runtime;
 mod shell;
 mod speech_timing;
@@ -55,9 +56,15 @@ fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> 
             std::io::ErrorKind::NotFound,
             "candice: main window missing",
         ).into()))?;
-    // Pointer transparency is best-effort at startup; it is reasserted by
-    // the webview's input policy once the composition is ready.
+    // Pointer transparency is best-effort at startup and is the resting
+    // state for the whole session. Once the composition is ready the webview
+    // publishes its visible regions and `hit_test` becomes the single writer
+    // of this flag, lifting pass-through only while the cursor is over
+    // pixels the operator can actually see.
     let _ = window.set_ignore_cursor_events(true);
+    if std::env::var_os("CANDICE_POINTER_TRACE").is_some() {
+        eprintln!("candice-pointer: startup pass-through asserted (ignore_cursor_events=true)");
+    }
     window.show()
 }
 
@@ -91,6 +98,8 @@ pub fn run() {
             runtime::cmd_take_pending_bridge_question,
             runtime::cmd_load_profile,
             runtime::cmd_save_profile,
+            hit_test::cmd_set_input_regions,
+            hit_test::cmd_get_pointer_policy,
             speech_timing::cmd_speech_timing_start,
             speech_timing::cmd_speech_timing_boundary,
             speech_timing::cmd_speech_timing_drain,
@@ -110,6 +119,10 @@ pub fn run() {
             // is shown so a normal startup cannot be mistaken for a failed
             // shell and replaced by the text fallback.
             initialize_shell(app.handle())?;
+            // Pointer policy state must exist before the webview can publish
+            // its visible regions; the poll thread starts lazily on the first
+            // publish, so a shell that never publishes costs nothing.
+            app.manage(hit_test::HitTestState::default());
             app.manage(speech::SpeechState::default());
             runtime::initialize_runtime(app.handle(), launch.clone())?;
             // `visible: false` prevents the blank native first frame; this

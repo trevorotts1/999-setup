@@ -15,7 +15,7 @@
     "tauri": "tauri",
     "tauri:build": "npm run build && node -e \"require('fs').copyFileSync('tauri.conf.json','src-tauri/tauri.conf.json')\" && cd src-tauri && tauri build",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts",
+    "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts src/window/__tests__/visible-regions.test.ts src/window/__tests__/native-input-regions.test.ts",
     "test:visual-stage": "node --test --experimental-strip-types assets/candice/__tests__/loader.test.ts src/shell/__tests__/visual-stage.test.ts src/shell/__tests__/boot-health.test.ts src/runtime/__tests__/capabilities.test.ts",
     "test:speech-timing": "node --test --experimental-strip-types src/runtime/__tests__/speech-timing.test.ts",
     "test:interaction-composition": "node --test --experimental-strip-types src/runtime/__tests__/interaction-composition.test.ts",

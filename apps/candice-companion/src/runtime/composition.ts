@@ -31,6 +31,7 @@ import {
   initializeCandiceInteractionComposition,
   type InteractionComposition,
 } from './interaction-composition.ts';
+import { createAnimationToggle } from '../ui/animation-toggle/index.ts';
 import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime } from './speech-runtime.ts';
 import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
@@ -56,6 +57,22 @@ export interface RuntimeCompositionOptions {
    * omit it; the visual shell stays fully usable (spec 20 fail closed).
    */
   speech?: { invokeAdapter?: import('./speech-runtime.ts').SpeechInvokeAdapter };
+  /**
+   * The live WS-14 accessibility runtime from main.ts, which owns the
+   * SINGLE writer of the `candice-reduced-motion` class. The animation
+   * toggle drives motion through this handle and never touches the class
+   * itself — a second writer would fight the controller's OS listener.
+   * Absent (tests/headless) the toggle still mounts and still persists; it
+   * simply has nothing live to apply to.
+   */
+  accessibility?: { setReducedMotionPreference(preference: boolean | null): void };
+  /**
+   * Called after the composition changes which controls are on screen, so
+   * the native hit test can republish its regions
+   * (`src/window/native-input-regions.ts`). Without it the toggle paints
+   * but the pointer passes straight through it.
+   */
+  onLayoutChange?: () => void;
 }
 
 export async function initializeRuntimeComposition(
@@ -192,6 +209,26 @@ export async function initializeRuntimeComposition(
     captions,
     { profile, prefsLoad, invokeAdapter: options.invokeAdapter },
   );
+
+  // The operator asked for "an option to turn animation off". It stores into
+  // the EXISTING spec-9 `reducedMotion` field and applies through the
+  // EXISTING WS-14 controller — no new preference file, no second motion
+  // class. Checked = follow the OS (`null`), unchecked = always minimal
+  // (`true`); it never writes `false`, which would override
+  // `prefers-reduced-motion: reduce`. See ui/animation-toggle/config.ts.
+  const animationToggle = createAnimationToggle({
+    mount: root,
+    reducedMotion: interaction.profile.reducedMotion ?? null,
+    applyPreference: (preference) => {
+      options.accessibility?.setReducedMotionPreference(preference);
+    },
+    persist: (preference) => interaction.persist({ reducedMotion: preference }),
+    onLayoutChange: options.onLayoutChange,
+  });
+  // Evidence for QC and the packaged-bundle sentinel: whether the control
+  // actually mounted, and which way it is currently set.
+  root.dataset.candiceAnimationToggle = animationToggle.element ? 'mounted' : 'absent';
+  root.dataset.candiceAnimation = animationToggle.motionOff ? 'off' : 'on';
 
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.

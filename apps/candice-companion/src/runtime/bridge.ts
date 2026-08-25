@@ -209,8 +209,19 @@ export async function initializeAuthenticatedBridge(
    */
   const speakQuestion = (question: BridgeQuestion): void => {
     const speak = prefs.speakQuestion;
-    if (!speak) return;
     const voiceOn = prefs.voiceOutputEnabled?.() ?? false;
+    // TEMPORARY DIAGNOSTIC — removed before the shipping build.
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().setTitle(
+          `DIAG hook=${speak ? 'yes' : 'NULL'} ra=${String(question.readAloud)}`
+          + ` sens=${String(question.sensitivity)} voiceOn=${String(voiceOn)}`
+          + ` decide=${String(shouldSpeakQuestion(question, voiceOn))}`,
+        );
+      } catch { /* diagnostic only */ }
+    })();
+    if (!speak) return;
     if (!shouldSpeakQuestion(question, voiceOn)) return;
     const utterance = question.spoken ?? question.text;
     const identity = identityKey(question);

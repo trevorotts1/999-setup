@@ -29,6 +29,38 @@
 
 import type { AssetEntry, AssetRegistry } from '../../assets/candice/loader.ts';
 import canonicalIdleUrl from '../../assets/candice/source/operator-approved/01-fullbody-idle.png?url';
+
+/**
+ * Build-time URL for EVERY operator-approved source, not just the idle.
+ *
+ * The idle alone had a static `?url` import, so the idle alone was emitted as
+ * a bundled asset. Every other pose fell through to `loadImage`'s fallback,
+ * `sourceDirectory + file` — i.e. `source/operator-approved/<file>.png`, a
+ * path that exists in the repo and NOT inside the .app. In the packaged shell
+ * those all 404 and fire the layer `error` listener, so binding the four poses
+ * in the manifest could never have put them on screen by itself.
+ *
+ * `import.meta.glob` is resolved by Vite at build time, so each approved PNG
+ * gets a real hashed asset URL. Keys are module paths; match on the trailing
+ * `/<file>` so the manifest's `file` field stays the single source of truth.
+ */
+const BUNDLED_SOURCE_URLS = import.meta.glob<string>(
+  '../../assets/candice/source/operator-approved/*.png',
+  { eager: true, query: '?url', import: 'default' },
+);
+
+/**
+ * The bundled URL for a manifest entry, or `undefined` to let the registry
+ * apply its own fallback. Never throws: an unresolvable layer must degrade
+ * through the existing `error` path, not break the mount (spec 20).
+ */
+function bundledUrlFor(entry: AssetEntry): string | undefined {
+  const suffix = `/${entry.file}`;
+  for (const [modulePath, url] of Object.entries(BUNDLED_SOURCE_URLS)) {
+    if (modulePath.endsWith(suffix)) return url;
+  }
+  return undefined;
+}
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_IDS,
@@ -83,14 +115,36 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
   const driver = createGestureDriver();
   const layers: HTMLElement[] = [];
   const mountedGestures = new Set<GestureId>();
+  /**
+   * Gestures whose approved layer could not be decoded at runtime. Kept as
+   * evidence rather than silently forgotten: the stage publishes the count so
+   * a packaged run can be asked whether it is showing everything it bound.
+   */
+  const failedGestures = new Set<GestureId>();
+
+  /**
+   * Publish what is ACTUALLY on screen, not what the manifest bound.
+   * A packaged run has no console, so this attribute is the only way to ask
+   * whether a pose that is bound is also reachable.
+   */
+  function publishLayerEvidence(): void {
+    character.dataset.candiceGestureLayers = String(mountedGestures.size);
+    if (failedGestures.size > 0) {
+      character.dataset.candiceGestureFailed = [...failedGestures].sort().join(',');
+    } else {
+      delete character.dataset.candiceGestureFailed;
+    }
+  }
 
   const mountLayer = (gesture: GestureId, entry: AssetEntry): HTMLElement => {
-    // The canonical idle rides a Vite-bundled URL (the only source URL
-    // the packaged shell can resolve); FIX-003-bound layers will arrive
-    // through the same manifest-backed loader path.
+    // Every approved layer now rides a Vite-bundled URL, not just the idle.
+    // The idle keeps its explicit static import as the guaranteed floor: if
+    // the glob ever stops matching, the canonical idle must still resolve or
+    // the shell has no character at all.
     const img = registry.loadImage(
       entry,
-      entry.id === CANONICAL_IDLE_ASSET_ID ? canonicalIdleUrl : undefined,
+      bundledUrlFor(entry) ??
+        (entry.id === CANONICAL_IDLE_ASSET_ID ? canonicalIdleUrl : undefined),
     );
     img.className = GESTURE_LAYER_CLASS;
     img.setAttribute('data-candice-gesture', gesture);
@@ -100,7 +154,30 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
     img.alt = entry.semanticPose;
     img.decoding = 'async';
     img.addEventListener('error', () => {
-      reportShellError?.();
+      // ONLY the idle layer failing is a shell error.
+      //
+      // Every layer used to report, so one unreachable pose dropped the whole
+      // companion to text mode — the approved idle would load perfectly and
+      // then be thrown away because a DIFFERENT layer 404'd. That is the
+      // opposite of ANIMATION-STATE-MAP rule 2, which says an unavailable
+      // state degrades to the approved idle. A non-idle failure now does
+      // exactly what an unbound pose already does: it leaves the set, so
+      // `setStatus` falls back to the idle layer plus an honest caption.
+      if (gesture === IDLE_GESTURE) {
+        reportShellError?.();
+        return;
+      }
+      mountedGestures.delete(gesture);
+      failedGestures.add(gesture);
+      publishLayerEvidence();
+      img.remove();
+      const index = layers.indexOf(img);
+      if (index !== -1) layers.splice(index, 1);
+      // The driver may be showing this layer right now; re-resolve so the
+      // character is never left on a broken image.
+      if (character.getAttribute('data-candice-gesture-active') === gesture) {
+        setStatus(driver.status);
+      }
     });
     character.append(img);
     layers.push(img);
@@ -124,6 +201,7 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
   // desktop WebView may not support it at the app's deployment version.
   // This is set only after the approved idle layer mounted successfully.
   character.dataset.candiceGestureMounted = 'true';
+  publishLayerEvidence();
 
   // Register every mounted layer with the driver; a gesture with no
   // canonical layer is never registered and never gets placeholder art.

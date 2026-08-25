@@ -31,7 +31,13 @@ import {
   initializeAccessibilityRuntime,
   type AccessibilityRuntime,
 } from './a11y/runtime';
-import { createWindowInputPolicy, readyWindowAppearance } from './window';
+import { createDragSurface, createWindowInputPolicy, readyWindowAppearance } from './window';
+import {
+  createInputRegionController,
+  createNativeInputRegionAdapter,
+  defaultRegionInvoke,
+  type InputRegionController,
+} from './window/native-input-regions';
 import {
   registerShellCommands,
   type ShellCommandRegistry,
@@ -77,6 +83,8 @@ export async function bootCandice(): Promise<void> {
   let registry: ShellCommandRegistry | undefined;
   let accessibility: AccessibilityRuntime | undefined;
   let speechTiming: SpeechTimingChannel | undefined;
+  let inputRegions: InputRegionController | undefined;
+  let dragSurface: ReturnType<typeof createDragSurface> | undefined;
   let fellBack = false;
   const setStatus = (status: BootPresentationStatus): void => {
     const surface = document.getElementById('candice-boot-status');
@@ -97,6 +105,13 @@ export async function bootCandice(): Promise<void> {
     speechTiming?.dispose();
     setStatus('text-fallback');
     showTextFallback(root, detail);
+    // The drag surface and the region policy deliberately SURVIVE the
+    // fallback. The companion degraded, but its window is still on screen
+    // and still covers part of the operator's desktop, so he must still be
+    // able to move it out of his way. Nothing is made less safe: the
+    // regions still cover only pixels the fallback card actually paints,
+    // and every other pixel stays click-through.
+    void inputRegions?.refresh();
   };
   const onShellError = (): void => enterTextFallback('candice:shell-error event');
 
@@ -150,7 +165,19 @@ export async function bootCandice(): Promise<void> {
     if (!windowState.windowAvailable) {
       throw new Error('candice: native window appearance unavailable');
     }
-    const inputPolicy = createWindowInputPolicy(nativeWindow);
+    // The partial-region adapter is what FIX-008 left unimplemented, which
+    // is why `setInteractiveRegions` always failed closed and the whole
+    // window ignored the pointer. With it, pass-through stays the resting
+    // state and native lifts it only over measured visible pixels. A shell
+    // without the command yields a null adapter and the original
+    // whole-window pass-through behavior, unchanged.
+    let regionAdapter = null;
+    try {
+      regionAdapter = createNativeInputRegionAdapter(await defaultRegionInvoke());
+    } catch {
+      // No IPC: the policy below keeps the safe FIX-008 policy on its own.
+    }
+    const inputPolicy = createWindowInputPolicy(nativeWindow, regionAdapter);
     if (!await inputPolicy.enablePassThrough()) {
       try {
         await nativeWindow.hide();
@@ -160,6 +187,38 @@ export async function bootCandice(): Promise<void> {
       throw new Error('candice: safe pointer pass-through unavailable');
     }
     root.dataset.candiceInputPolicy = inputPolicy.mode;
+
+    // The window is frameless, so the character IS the title bar: grabbing
+    // Candice is the only way to move her. `createDragSurface` has existed
+    // and been unit-tested since WS-07 but was never mounted by any boot
+    // path, which is the second half of why dragging did nothing.
+    //
+    // Mounted on the shell root so every painted surface is a handle, while
+    // clickable children (buttons, inputs, anything focusable) still act as
+    // controls — both this controller and Tauri's own drag-region script
+    // exclude them. Pointer input still only reaches the window over the
+    // regions published below, so marking the root drags nothing invisible.
+    //
+    // Installed HERE, before the runtime composition, on purpose: the
+    // composition ends by awaiting the session bridge, and the operator's
+    // ability to move the window out of his own way must not be hostage to
+    // a handshake that may never complete. The controller re-measures on
+    // mutation, resize, image load and a safety interval, so every surface
+    // the composition mounts afterwards is picked up on its own.
+    try {
+      dragSurface = createDragSurface(nativeWindow);
+      dragSurface.attach(root);
+    } catch (error) {
+      // Dragging is a convenience; losing it must not cost the session.
+      console.warn('[candice] drag surface unavailable', error);
+    }
+    try {
+      inputRegions = createInputRegionController({ policy: inputPolicy, root });
+    } catch (error) {
+      // Failing here leaves the policy in whole-window pass-through: the
+      // operator cannot drag, but nothing blocks the Terminal.
+      console.warn('[candice] input regions unavailable', error);
+    }
     // FIX-014 (I-08/I-11): load the local preference profile ONCE at boot
     // through the native seam (cmd_load_profile). A failed load degrades
     // truthfully: the a11y runtime follows the OS (reducedMotion null) and
@@ -184,10 +243,19 @@ export async function bootCandice(): Promise<void> {
       await initializeRuntimeComposition(root, machine, {
         profile: prefsLoad.profile,
         prefsLoad,
+        accessibility,
+        onLayoutChange: () => { void inputRegions?.refresh(); },
       });
     } catch (error) {
       throw bootStepError('initialize-runtime-composition', error);
     }
+
+    // A late refresh is not required for correctness — the controller's own
+    // observers pick the composition's surfaces up — but taking one here
+    // means the regions are already correct on the first frame the operator
+    // can see, instead of up to one safety interval later.
+    void inputRegions?.refresh();
+    root.dataset.candiceInputPolicy = inputPolicy.mode;
     setStatus('shell-ready');
 
   } catch (err) {
