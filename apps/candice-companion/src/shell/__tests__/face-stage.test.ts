@@ -24,6 +24,7 @@ import registration from '../../../assets/candice/layers/build/registration.json
 import { REDUCED_MOTION_CLASS } from '../../animation/gesture/config.ts';
 import {
   FACE_BASE_ATTR,
+  FACE_BODY_ATTR,
   FACE_EYE_ATTR,
   FACE_HEAD_ATTR,
   FACE_MOUTH_ATTR,
@@ -252,6 +253,41 @@ test('unknown states are ignored and never throw (spec 20)', () => {
   assert.doesNotThrow(() => host.setMouthState('not-a-real-viseme'));
   assert.doesNotThrow(() => host.setEyeState('winking'));
   assert.equal(mouth.src, before, 'an unknown state must leave the last good image up');
+});
+
+test('the bust BREATHES — it carries the driver idle-loop target', () => {
+  const { character } = mount();
+  const body = character.find(FACE_BODY_ATTR);
+  assert.ok(
+    body,
+    `no [${FACE_BODY_ATTR}] on the bust — she freezes the moment she starts speaking`,
+  );
+  // The bust must sit inside it, or the scale reaches nothing visible.
+  assert.ok(body.find(FACE_EYE_ATTR), 'the face layers must be inside the breath wrapper');
+});
+
+test('breath and drift targets are NEVER the same node', () => {
+  const { character } = mount();
+
+  // Both driver loops assign `style.transform` outright — breath writes
+  // `scale(...)`, drift writes `translateX(...)`. Sharing a node makes them
+  // clobber each other last-writer-wins, and it fails INTERMITTENTLY with
+  // loop interleaving, which presents as "the drift randomly stopped".
+  // Collapsing these back into one element is the obvious-looking
+  // simplification; this test exists to stop it.
+  const walk = (el: FakeEl): FakeEl[] => [el, ...el.children.flatMap(walk)];
+  for (const el of walk(character)) {
+    const isBody = el.attributes.has(FACE_BODY_ATTR);
+    const isHead = el.attributes.has(FACE_HEAD_ATTR);
+    assert.ok(
+      !(isBody && isHead),
+      'one element carries BOTH transform targets — the two driver loops will clobber each other',
+    );
+  }
+
+  // And prove the nesting is real, not two unrelated siblings.
+  const body = character.find(FACE_BODY_ATTR)!;
+  assert.ok(body.find(FACE_HEAD_ATTR), 'the drift node must nest inside the breath node');
 });
 
 test('REFUSES eye states whose art is not operator-approved', () => {

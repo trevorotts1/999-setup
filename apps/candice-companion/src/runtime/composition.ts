@@ -73,6 +73,14 @@ export interface RuntimeCompositionOptions {
    * but the pointer passes straight through it.
    */
   onLayoutChange?: () => void;
+  /**
+   * The live WS-12 viseme scheduler from main.ts. `speech-timing.ts` already
+   * feeds it real phoneme timings; handing it down here is what finally
+   * gives those timings a READER, through the mouth renderer the gesture
+   * stage owns. Omitted in tests/headless: the bust still mounts and the
+   * mouth simply rests closed.
+   */
+  visemeScheduler?: import('../animation/viseme/mouth-renderer.ts').VisemeSource;
 }
 
 export async function initializeRuntimeComposition(
@@ -158,6 +166,7 @@ export async function initializeRuntimeComposition(
         document,
         character,
         registry: AssetRegistry.create(),
+        visemeScheduler: options.visemeScheduler,
         reportShellError: () => {
           window.dispatchEvent(new Event('candice:shell-error'));
         },

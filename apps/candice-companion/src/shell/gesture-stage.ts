@@ -79,6 +79,9 @@ import {
   resolveGestureEntry,
   type GestureStageHost,
 } from './candice-composition.ts';
+import { mountFaceStage } from './face-stage.ts';
+import { createMouthRenderer } from '../animation/viseme/mouth-renderer.ts';
+import type { MouthRenderer, VisemeSource } from '../animation/viseme/mouth-renderer.ts';
 
 /** Minimal document surface consumed; the real `document` satisfies it. */
 export interface GestureStageDocumentLike {
@@ -102,6 +105,13 @@ export interface MountGestureStageOptions {
   registry: AssetRegistry;
   /** Called when a layer image fails to load (shell-error path). */
   reportShellError?: () => void;
+  /**
+   * The live WS-12 scheduler (created in main.ts, fed real phoneme timings
+   * by speech-timing.ts). Optional: without it the bust still mounts and
+   * still blinks, the mouth simply rests closed. Tests and headless runs
+   * omit it.
+   */
+  visemeScheduler?: VisemeSource;
 }
 
 /**
@@ -111,7 +121,7 @@ export interface MountGestureStageOptions {
  * caller's boot catch turns it into the text fallback.
  */
 export function mountGestureStage(options: MountGestureStageOptions): GestureStageHost {
-  const { document, character, registry, reportShellError } = options;
+  const { document, character, registry, reportShellError, visemeScheduler } = options;
   const driver = createGestureDriver();
   const layers: HTMLElement[] = [];
   const mountedGestures = new Set<GestureId>();
@@ -203,6 +213,25 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
   character.dataset.candiceGestureMounted = 'true';
   publishLayerEvidence();
 
+  // The bust surface (FIX-005): base + mouth + eye at measured registration.
+  // Mounted HERE rather than in the composition root because the container
+  // the face needs is the same one the gesture driver is already bound to —
+  // which is why blink and head drift reach it with no driver change at all.
+  // Fails closed to an inert host, so a face that cannot mount never costs
+  // the body pose.
+  const faceStage = mountFaceStage({ document, character });
+
+  // The WS-12 output stage. `visemeAt` is a PULL api: until something polls
+  // it, the real phoneme timings speech-timing.ts already feeds in are never
+  // read and the mouth cannot move however good those timings are. Owned
+  // here so the surface and its renderer share one lifetime — `detach()`
+  // cannot leave a renderer polling a destroyed face.
+  const mouthRenderer: MouthRenderer | null =
+    visemeScheduler === undefined
+      ? null
+      : createMouthRenderer({ scheduler: visemeScheduler, surface: faceStage });
+  mouthRenderer?.start();
+
   // Register every mounted layer with the driver; a gesture with no
   // canonical layer is never registered and never gets placeholder art.
   for (const gesture of mountedGestures) {
@@ -243,6 +272,11 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
 
   function setStatus(status: CandiceStatus): void {
     character.dataset.candiceState = status;
+    // Forwarded FIRST, ahead of every early return below. `text-fallback`
+    // returns before the driver line, and the bust must hide on that path
+    // too. Framing ruling (c) — bust while speaking, body otherwise — is
+    // face-stage.ts's decision to make, not this file's.
+    faceStage.setStatus(status);
     if (status === 'text-fallback') {
       driver.detach();
       showCaption(status, '');
@@ -273,8 +307,13 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
     get driver() {
       return driver;
     },
+    get faceStage() {
+      return faceStage;
+    },
     setStatus,
     detach: () => {
+      mouthRenderer?.stop();
+      faceStage.destroy();
       driver.detach();
       delete character.dataset.candiceGestureMounted;
       showCaption('idle', '');

@@ -244,6 +244,7 @@ export async function bootCandice(): Promise<void> {
         profile: prefsLoad.profile,
         prefsLoad,
         accessibility,
+        visemeScheduler,
         onLayoutChange: () => { void inputRegions?.refresh(); },
       });
     } catch (error) {

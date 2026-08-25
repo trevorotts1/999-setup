@@ -14,6 +14,7 @@ import {
 import type { GestureDriver, GestureId } from '../animation/gesture/index.ts';
 import type { CandiceStateMachine } from '../state/machine.ts';
 import type { CandiceStatus } from '../state/status.ts';
+import type { FaceStageHost } from './face-stage.ts';
 
 /** The one canonical image that the initial composition is permitted to use. */
 export const CANONICAL_IDLE_ASSET_ID = '01-fullbody-idle' as const;
@@ -93,6 +94,12 @@ export interface GestureStageHost {
   detach(): void;
   /** The mounted WS-13 driver (glow/breathing/layer-swap owner). */
   readonly driver: GestureDriver;
+  /**
+   * The bust surface (FIX-005 mouth/eye targets). Always present: the face
+   * stage returns an inert host when it cannot mount, so callers never have
+   * to null-check a surface that failed closed.
+   */
+  readonly faceStage: FaceStageHost;
 }
 
 /**

@@ -150,6 +150,7 @@ test('FIX-016: bindStatusFlow repaints only on real transitions and unbinds clea
     setStatus: (status) => { seen.push(status); },
     detach: () => undefined,
     driver: null as unknown as GestureStageHost['driver'],
+    faceStage: null as unknown as GestureStageHost['faceStage'],
   };
 
   const unbind = bindStatusFlow(machine, host);

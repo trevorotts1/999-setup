@@ -58,6 +58,12 @@ function defaultLayerUrls(): Record<string, string> {
 
 /** Container and layer selectors published to the animation lane. */
 export const FACE_STAGE_ATTR = 'data-candice-face';
+/**
+ * Breath target. Same attribute the gesture layers carry, because it is the
+ * one the driver's idle loop queries — the bust has to opt in explicitly or
+ * it simply does not breathe.
+ */
+export const FACE_BODY_ATTR = 'data-candice-body';
 export const FACE_HEAD_ATTR = 'data-candice-head';
 export const FACE_BASE_ATTR = 'data-candice-face-base';
 export const FACE_MOUTH_ATTR = 'data-candice-mouth';
@@ -203,6 +209,14 @@ function injectStyle(doc: FaceStageDocumentLike): void {
 }
 .${FACE_STAGE_CLASS}.${FACE_ACTIVE_CLASS} { opacity: 1; }
 .${FACE_STAGE_CLASS}[hidden] { display: none; }
+/* Breath and drift wrappers both fill the container. Breath scales from the
+   bottom, matching .candice-gesture-layer's transform-origin, so the bust
+   rises and settles rather than pulsing about its centre. */
+.${FACE_STAGE_CLASS} [${FACE_BODY_ATTR}] {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
 .${FACE_STAGE_CLASS} [${FACE_HEAD_ATTR}] {
   position: absolute;
   inset: 0;
@@ -273,6 +287,21 @@ export function mountFaceStage(options: MountFaceStageOptions): FaceStageHost {
     // would remove it from layout and defeat the cross-fade on first show.
     root.hidden = false;
 
+    // Breath wrapper. Without it the bust does not breathe, so the instant
+    // she starts speaking all idle motion stops and she freezes for the whole
+    // utterance — the original "isn't the image supposed to be animated"
+    // complaint, reproduced in the one state a viewer watches hardest.
+    //
+    // It MUST be its own node. `data-candice-body` and `data-candice-head`
+    // are driven by two separate driver loops that each assign
+    // `style.transform` outright — breath writes `scale(...)`, drift writes
+    // `translateX(...)`. On a shared node they clobber each other
+    // last-writer-wins, which fails INTERMITTENTLY with loop interleaving and
+    // reads as "the drift randomly stopped working". One transform owner per
+    // element; see the guard test asserting these two never share a node.
+    const body = doc.createElement('div');
+    body.setAttribute(FACE_BODY_ATTR, '');
+
     const head = doc.createElement('div');
     head.setAttribute(FACE_HEAD_ATTR, '');
 
@@ -300,7 +329,8 @@ export function mountFaceStage(options: MountFaceStageOptions): FaceStageHost {
     (eye as HTMLImageElement).alt = '';
     head.appendChild(eye);
 
-    root.appendChild(head);
+    body.appendChild(head);
+    root.appendChild(body);
     character.appendChild(root);
 
     setMouthState('closed');
