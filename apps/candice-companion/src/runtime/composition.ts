@@ -192,6 +192,19 @@ export async function initializeRuntimeComposition(
         : String(error);
       captionsFailure = 'Candice\u2019s animation could not start. Everything else still works.';
     }
+    // The face stage fails CLOSED to an inert host, so a bust that cannot
+    // mount never throws and never reaches the catch above -- it records
+    // itself on `data-candice-face-failed` and stops there. That attribute is
+    // DOM-only, and a packaged run can read neither the DOM nor the
+    // accessibility tree (the WebView exposes no AXWebArea and
+    // AXManualAccessibility is unsupported), so the record was exactly as
+    // silent as the `return inert` it replaced. Captions are on-screen text,
+    // so promoting it here is what makes it readable -- by a person, and by
+    // the pixel capture that is now the only verification channel.
+    const faceFailed = character.dataset.candiceFaceFailed;
+    if (captionsFailure === null && faceFailed !== undefined && faceFailed !== '') {
+      captionsFailure = `Candice\u2019s face did not load (${faceFailed}). Everything else still works.`;
+    }
   }
 
   // FIX-014 (step 6): one persistent caption live region. The captions view

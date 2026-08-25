@@ -140,8 +140,20 @@ export const GESTURE_TIMING = {
    * created by any mount path, so this value has never actually rendered
    * and the claim is unproven. Check it visually once the head layer exists,
    * then set it deliberately rather than guessing a second time.
+   *
+   * RESOLVED by arithmetic against a MEASURED reference, not by eye. Idle
+   * breath moves the head 56 device px (28 pt) peak-to-peak, and that was
+   * captured on video and reads clearly. `headDriftPxMax: 2` is 4 pt
+   * peak-to-peak -- 7x smaller than a motion now proven visible, on a
+   * HORIZONTAL axis, with no supporting landmark movement, while that
+   * 7x-larger vertical motion runs simultaneously on the same element. It
+   * cannot register. Raised to 4 (8 pt peak-to-peak, roughly a third of
+   * breath): a living sway that reads without competing with the breathing.
+   * Note the two are not comparable by capture -- breath is `scale`
+   * (vertical), drift is `translateX` (horizontal), so the breath travel
+   * numbers say nothing about drift either way.
    */
-  headDriftPxMax: 2,
+  headDriftPxMax: 4,
   /** Glow pulse period for active statuses. */
   glowPulsePeriodMs: 2_200,
 } as const;

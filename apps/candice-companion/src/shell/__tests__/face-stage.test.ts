@@ -356,3 +356,65 @@ test('an unusable DOM yields an inert host rather than throwing', () => {
     host.destroy();
   });
 });
+
+// ------------------------------------------- the three silent mount-time exits
+//
+// `reportLayerError` is only consulted inside `swap()`, which runs AFTER
+// mount. So every mount-time `return inert` reported NOTHING: the bust was
+// simply absent, with no record anywhere, while the body pose kept working —
+// which reads as "the animation is fine". These three tests exist so that a
+// future refactor cannot quietly restore the silence.
+
+test('mount exit: an unusable DOM REPORTS rather than failing silently', () => {
+  const seen: string[] = [];
+  const host = mountFaceStage({
+    document: null as never,
+    character: null as never,
+    reportLayerError: (s) => seen.push(s),
+  });
+  assert.equal(host.element, null, 'still fails closed to an inert host');
+  assert.deepEqual(seen, ['mount:no-document'], 'the exit must name itself');
+});
+
+test('mount exit: a missing approved base REPORTS rather than failing silently', () => {
+  const { doc } = makeDoc();
+  const character = new FakeEl('div');
+  const withoutBase = Object.fromEntries(
+    Object.entries(FAKE_LAYER_URLS).filter(([k]) => !k.endsWith('/base-neutral.png')),
+  );
+  const seen: string[] = [];
+  const host = mountFaceStage({
+    document: doc as never,
+    character: character as never,
+    layerUrls: withoutBase,
+    reportLayerError: (s) => seen.push(s),
+  });
+  assert.equal(host.element, null, 'still fails closed without approved base art');
+  assert.deepEqual(seen, ['mount:no-approved-base'], 'the exit must name itself');
+});
+
+test('mount exit: a throw during DOM construction REPORTS its message', () => {
+  const { doc } = makeDoc();
+  const character = new FakeEl('div');
+  const boom = {
+    ...doc,
+    createElement: (t: string) => {
+      if (t === 'img') throw new Error('createElement exploded');
+      return new FakeEl(t);
+    },
+  };
+  const seen: string[] = [];
+  const host = mountFaceStage({
+    document: boom as never,
+    character: character as never,
+    layerUrls: FAKE_LAYER_URLS,
+    reportLayerError: (s) => seen.push(s),
+  });
+  assert.equal(host.element, null, 'a throw still fails closed');
+  assert.equal(seen.length, 1, 'exactly one report');
+  assert.match(
+    seen[0]!,
+    /^mount:threw:createElement exploded$/,
+    'the caught exception message must survive into the report, not be discarded',
+  );
+});

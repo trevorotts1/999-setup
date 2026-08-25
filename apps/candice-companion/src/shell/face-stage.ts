@@ -262,7 +262,14 @@ export function mountFaceStage(options: MountFaceStageOptions): FaceStageHost {
 
   const doc = options.document;
   const character = options.character;
-  if (doc == null || character == null) return inert;
+  if (doc == null || character == null) {
+    // Was a SILENT `return inert`. Every mount-time exit below now reports,
+    // because `reportLayerError` is only consulted inside `swap()` -- which
+    // runs AFTER mount -- so a mount that never happens reported nothing at
+    // all and the bust was simply absent with no record of why.
+    options.reportLayerError?.('mount:no-document');
+    return inert;
+  }
 
   let root: HTMLElement | null = null;
   let mouth: HTMLElement | null = null;
@@ -274,7 +281,10 @@ export function mountFaceStage(options: MountFaceStageOptions): FaceStageHost {
   const baseUrl = layerUrl(urls, 'base-neutral.png');
   // Fail closed: without the approved base there is no bust to show, and a
   // mouth floating over the body pose would be worse than no face at all.
-  if (baseUrl === undefined) return inert;
+  if (baseUrl === undefined) {
+    options.reportLayerError?.('mount:no-approved-base');
+    return inert;
+  }
 
   try {
     injectStyle(doc);
@@ -335,7 +345,13 @@ export function mountFaceStage(options: MountFaceStageOptions): FaceStageHost {
 
     setMouthState('closed');
     setEyeState('open');
-  } catch {
+  } catch (error) {
+    // NEVER discard this. A throw here means the bust, blink and lip sync are
+    // absent while the body pose keeps working, which reads as "animation is
+    // fine" and cost this campaign a day of inference.
+    options.reportLayerError?.(
+      `mount:threw:${error instanceof Error ? error.message : String(error)}`,
+    );
     return inert;
   }
 
