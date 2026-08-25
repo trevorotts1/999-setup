@@ -544,6 +544,24 @@ pub(crate) fn kokoro_command(
     cmd
 }
 
+// PlaybackExit below is a Drop guard, and Drop only runs while UNWINDING.
+// Under `panic = "abort"` the playback thread dies without dropping: no stop
+// event reaches the webview and the speak slot is never released, so she goes
+// silent for the rest of the session — the exact defect the guard exists to
+// prevent, restored by one line in a different file.
+//
+// This must fail the BUILD, because it cannot fail a test: unit tests compile
+// under `[profile.test]`, which unwinds, so the guard's own tests would stay
+// green while the shipped binary lost the guarantee. `[profile.release]` in
+// Cargo.toml is size-tuned (codegen-units/lto/opt-level/strip) and
+// `panic = "abort"` is the standard next line in every guide for that recipe.
+#[cfg(panic = "abort")]
+compile_error!(
+    "candice-companion requires panic=unwind: PlaybackExit is a Drop guard and \
+     is the only thing that stops speech and frees the speak slot when the \
+     playback thread panics. Under panic=abort she goes permanently mute."
+);
+
 /// Guarantees the FIX-016 stop contract AND the speak-slot release on every
 /// exit from the playback thread — including an unwind.
 ///

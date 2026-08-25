@@ -89,6 +89,15 @@ and disarmed only after the thread emits its own stop, so an unwind emits
 mouth anyway) and releases the slot. Drop runs during unwind because this
 workspace does not set `panic = "abort"`.
 
+That last sentence is now ENFORCED rather than observed. `[profile.release]` is
+size-tuned, and `panic = "abort"` is the standard next line for that recipe — it
+would turn the drop guard into dead code and restore the permanent-mute bug
+while every Rust test stayed green, because tests compile under
+`[profile.test]`, which unwinds. So `speech/engines.rs` carries a
+`#[cfg(panic = "abort")] compile_error!` that fails the BUILD instead. Verified
+in both directions on rustc 1.97.1: `cargo test` passes 64/64 as normal, and
+`RUSTFLAGS="-C panic=abort" cargo check` refuses to compile the crate.
+
 **So the guarantee is now true by construction on all three exit paths, not by
 luck.** Consumers still should not *depend* on that: the animation lane closes
 the mouth past the last scheduled span using the utterance's own duration as

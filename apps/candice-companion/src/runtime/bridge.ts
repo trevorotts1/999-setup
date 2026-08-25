@@ -16,7 +16,13 @@ import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
-import { SPEECH_BOUNDARY_EVENT, SPEECH_DRAIN_EVENT } from './speech-timing.ts';
+import {
+  parseSpeechMarker,
+  parseSpeechStart,
+  SPEECH_BOUNDARY_EVENT,
+  SPEECH_DRAIN_EVENT,
+  SPEECH_START_EVENT,
+} from './speech-timing.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -227,16 +233,35 @@ const identityKey = (identity: BridgeIdentity): string =>
 const sameIdentity = (a: BridgeIdentity, b: BridgeIdentity): boolean =>
   a.sessionId === b.sessionId && a.questionKey === b.questionKey;
 
+/**
+ * The Tauri host seam. Injected ONLY so the event wiring can be tested:
+ * every dispatch in this module lived behind two dynamic imports, so
+ * deleting the hologram dispatch or a completion listener left the whole
+ * suite green. That is the shape of the defect this module was repaired
+ * for, one layer out. `attachSpeechTimingChannel` already takes its
+ * `listenApi` the same way.
+ *
+ * Production passes nothing and resolves the real APIs below.
+ */
+export interface BridgeHostApi {
+  listen: <T>(event: string, handler: (event: { payload: T }) => void) => Promise<() => void>;
+  invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+}
+
 /** Mount answer controls only after native delivered an authenticated question. */
 export async function initializeAuthenticatedBridge(
   root: HTMLElement,
   machine: CandiceStateMachine,
   prefs: BridgePreferencesHooks & BridgeSpeechHooks = {},
+  host?: BridgeHostApi,
 ): Promise<() => void> {
-  const [{ listen }, { invoke }] = await Promise.all([
-    import('@tauri-apps/api/event'),
-    import('@tauri-apps/api/core'),
-  ]);
+  const { listen, invoke } = host ?? await (async (): Promise<BridgeHostApi> => {
+    const [events, core] = await Promise.all([
+      import('@tauri-apps/api/event'),
+      import('@tauri-apps/api/core'),
+    ]);
+    return { listen: events.listen, invoke: core.invoke };
+  })();
   let controls: AnswerControlsController | null = null;
   let active: (BridgeQuestion & { operationId?: string }) | null = null;
   let submitted = false;
@@ -244,6 +269,16 @@ export async function initializeAuthenticatedBridge(
   let awaitingRecovery = false;
   /** Identity of the utterance in flight, so a stale result cannot re-arm. */
   let speakingFor: string | null = null;
+  /**
+   * The speech-engine utterance id now playing, learned from `speech-start`
+   * exactly as `speech-timing.ts:160` learns it.
+   *
+   * This is a DIFFERENT NAMESPACE from `speakingFor`, which is a question
+   * identity (`sessionId::questionKey`). They are never compared with each
+   * other, and correlating them is not needed: a completion marker carries
+   * an utterance id, so it is matched against the utterance id.
+   */
+  let activeUtteranceId: string | null = null;
 
   /**
    * Debug-only playback state. NOTHING READS THIS — not a CSS rule, not the
@@ -492,8 +527,38 @@ export async function initializeAuthenticatedBridge(
   // without this she would sit in `speaking` from the moment the hologram
   // wire above fires until the next teardown, with HOLD TO TALK refused the
   // entire time. Both events mean the same thing here: the mouth is closed.
-  const unlistenDrain = await listen<unknown>(SPEECH_DRAIN_EVENT, () => { endSpeaking(); });
-  const unlistenBoundary = await listen<unknown>(SPEECH_BOUNDARY_EVENT, () => { endSpeaking(); });
+  const unlistenSpeechStart = await listen<unknown>(SPEECH_START_EVENT, (event) => {
+    const payload = parseSpeechStart(event.payload);
+    if (!payload) return;
+    activeUtteranceId = payload.utteranceId;
+  });
+  /**
+   * A completion marker ends `speaking` only if it belongs to the utterance
+   * that is actually playing. Without this, barging in mid-sentence — B
+   * replacing A — lets A's late drain end B's speaking state while B is
+   * still audible: bust gone, lip sync stopped, PTT unblocked mid-word.
+   * Interrupt-and-replace is ordinary use, not an exotic race.
+   *
+   * A null active id accepts any marker: never having seen a start is not
+   * evidence the marker is stale, and staying stuck in `speaking` is the
+   * worse failure.
+   *
+   * An UNPARSEABLE payload is ignored rather than treated as a completion.
+   * That is a deliberate behaviour change from the first version of these
+   * listeners, which discarded the payload entirely. `speech-timing.ts`
+   * ignores it, and the two consumers of these events must agree: if this
+   * one acted on a malformed marker and the scheduler did not, the bust
+   * would vanish while the mouth kept animating.
+   */
+  const endOnMarker = (payload: unknown): void => {
+    const marker = parseSpeechMarker(payload);
+    if (!marker) return;
+    if (activeUtteranceId !== null && marker.utteranceId !== activeUtteranceId) return;
+    activeUtteranceId = null;
+    endSpeaking();
+  };
+  const unlistenDrain = await listen<unknown>(SPEECH_DRAIN_EVENT, (event) => { endOnMarker(event.payload); });
+  const unlistenBoundary = await listen<unknown>(SPEECH_BOUNDARY_EVENT, (event) => { endOnMarker(event.payload); });
 
   // An event emitted before WebView initialization is retrieved exactly once.
   // Register first, then take the pending value so neither ordering loses it.
@@ -502,6 +567,7 @@ export async function initializeAuthenticatedBridge(
     unlisten();
     unlistenCancel();
     unlistenLifecycle();
+    unlistenSpeechStart();
     unlistenDrain();
     unlistenBoundary();
     void closeControls();
