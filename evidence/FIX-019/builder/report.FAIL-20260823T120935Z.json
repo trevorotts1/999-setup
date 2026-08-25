@@ -1,12 +1,12 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-23T22:54:59.286Z",
+  "generatedAt": "2026-08-23T12:09:35.540Z",
   "repo": "999-setup-audit",
   "commitSha": "recorded-at-run-time",
   "packagedBinarySha": null,
-  "runId": "suite-1787525699285",
+  "runId": "suite-1787486975540",
   "launcher": "node tests/e2e-acceptance/suite.js",
-  "verdict": "BLOCKED",
+  "verdict": "FAIL",
   "legs": [
     {
       "id": "contract-schema",
@@ -75,10 +75,10 @@
       "id": "same-session-provider-identity",
       "tier": "UNIT",
       "name": "unit suite: same-session/provider-identity",
-      "verdict": "PASS",
+      "verdict": "FAIL",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "test file failed or exited nonzero"
     },
     {
       "id": "same-session-same-session",
@@ -174,10 +174,10 @@
       "id": "failure-matrix-speech-model-missing",
       "tier": "UNIT",
       "name": "unit suite: failure-matrix/speech-model-missing",
-      "verdict": "PASS",
+      "verdict": "FAIL",
       "required": true,
       "skippableReason": null,
-      "reason": null
+      "reason": "test file failed or exited nonzero"
     },
     {
       "id": "failure-matrix-temp-unwritable",
@@ -391,7 +391,7 @@
     {
       "tier": "UNIT",
       "required": true,
-      "verdict": "PASS",
+      "verdict": "FAIL",
       "legs": [
         {
           "id": "contract-schema",
@@ -445,9 +445,9 @@
         {
           "id": "same-session-provider-identity",
           "name": "unit suite: same-session/provider-identity",
-          "verdict": "PASS",
+          "verdict": "FAIL",
           "required": true,
-          "reason": null
+          "reason": "test file failed or exited nonzero"
         },
         {
           "id": "same-session-same-session",
@@ -522,9 +522,9 @@
         {
           "id": "failure-matrix-speech-model-missing",
           "name": "unit suite: failure-matrix/speech-model-missing",
-          "verdict": "PASS",
+          "verdict": "FAIL",
           "required": true,
-          "reason": null
+          "reason": "test file failed or exited nonzero"
         },
         {
           "id": "failure-matrix-temp-unwritable",

@@ -1,17 +1,17 @@
 # FIX-019 e2e-acceptance report
 
-- Verdict: **BLOCKED**
-- Generated: 2026-08-23T22:54:59.286Z
+- Verdict: **FAIL**
+- Generated: 2026-08-23T12:09:35.540Z
 - Repository: 999-setup-audit
 - Commit SHA: recorded-at-run-time
-- Run id: suite-1787525699285
+- Run id: suite-1787486975540
 - Launcher: node tests/e2e-acceptance/suite.js
 
 ## Tier verdicts
 
 | Tier | Required | Verdict | Legs |
 | --- | --- | --- | --- |
-| UNIT | yes | **PASS** | 22 |
+| UNIT | yes | **FAIL** | 22 |
 | INTEGRATION | yes | **PASS** | 6 |
 | PACKAGED_AUTOMATED | yes | **BLOCKED** | 6 |
 | HUMAN_HARDWARE | yes | **BLOCKED** | 8 |
@@ -35,7 +35,7 @@
 
 ## Leg details
 
-### UNIT (PASS)
+### UNIT (FAIL)
 
 - [PASS] (required) contract-schema — unit suite: contract/schema
 - [PASS] (required) contract-keys — unit suite: contract/keys
@@ -44,7 +44,7 @@
 - [PASS] (required) contract-exactly-one — unit suite: contract/exactly-one
 - [PASS] (required) contract-secret — unit suite: contract/secret
 - [PASS] (required) same-session-no-second-ai — unit suite: same-session/no-second-ai
-- [PASS] (required) same-session-provider-identity — unit suite: same-session/provider-identity
+- [FAIL] (required) same-session-provider-identity — unit suite: same-session/provider-identity — test file failed or exited nonzero
 - [PASS] (required) same-session-same-session — unit suite: same-session/same-session
 - [PASS] (required) same-session-session-authority — unit suite: same-session/session-authority
 - [PASS] (required) failure-matrix-app-crash — unit suite: failure-matrix/app-crash
@@ -55,7 +55,7 @@
 - [PASS] (required) failure-matrix-mic-denied — unit suite: failure-matrix/mic-denied
 - [PASS] (required) failure-matrix-no-device — unit suite: failure-matrix/no-device
 - [PASS] (required) failure-matrix-plugin-missing — unit suite: failure-matrix/plugin-missing
-- [PASS] (required) failure-matrix-speech-model-missing — unit suite: failure-matrix/speech-model-missing
+- [FAIL] (required) failure-matrix-speech-model-missing — unit suite: failure-matrix/speech-model-missing — test file failed or exited nonzero
 - [PASS] (required) failure-matrix-temp-unwritable — unit suite: failure-matrix/temp-unwritable
 - [PASS] (required) failure-matrix-wrong-session — unit suite: failure-matrix/wrong-session
 - [PASS] (required) tier-self-test — unit: tier framework fail-closed self-test
