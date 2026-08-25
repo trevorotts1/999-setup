@@ -211,6 +211,22 @@ export async function initializeRuntimeComposition(
     queryConsent: orchestrator
       ? () => orchestrator.queryConsent()
       : undefined,
+    // The speech call site (FIX-015 last wire). Same sole-caller rule as
+    // queryConsent: the bridge decides WHETHER to speak, the orchestrator is
+    // the only thing that may issue `cmd_speech_speak`. `voiceId` is
+    // deliberately omitted so the native side resolves the operator-approved
+    // canonical voice from the bundled SPEECH-INVENTORY.json — the voice can
+    // change without this call site changing.
+    speakQuestion: orchestrator
+      ? (text: string) => orchestrator.speak(text)
+      : undefined,
+    cancelSpeech: orchestrator
+      ? () => orchestrator.abortSpeech()
+      : undefined,
+    // Read-only view of the user's preference; the profile lane owns the
+    // store (spec 5.2). Re-read on every question so a mid-session toggle
+    // takes effect on the next one.
+    voiceOutputEnabled: () => interaction.profile.voiceOutputEnabled === true,
   });
 
   // FIX-014 (I-11): the post-setup name flow (spec 4). Deferred until after

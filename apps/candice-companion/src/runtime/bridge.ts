@@ -23,6 +23,16 @@ interface BridgeQuestion {
   questionKey: string;
   text: string;
   allowedInputModes: readonly string[];
+  /**
+   * FIX-017 privacy echoes from the question event. These are the caller's
+   * UNTRUSTED echo of the registry, exactly as `decideSpeech` treats them —
+   * the registry remains the authority server-side. The webview uses them
+   * only to refuse MORE than the server guard would, never to permit more.
+   */
+  readAloud?: boolean;
+  sensitivity?: string;
+  /** Registry `spoken` variant when the producer sends one; else `text`. */
+  spoken?: string;
 }
 
 interface BridgeIdentity {
@@ -51,7 +61,43 @@ function parseQuestion(payload: unknown): BridgeQuestion | null {
     || typeof question.text !== 'string' || question.text.length === 0
     || !Array.isArray(question.allowedInputModes)
   ) return null;
-  return question as unknown as BridgeQuestion;
+  const parsed = { ...question } as unknown as BridgeQuestion;
+  // Carry the privacy echoes verbatim; validation happens in the speech
+  // decision, which fails closed on anything that is not exactly right.
+  parsed.readAloud = question.readAloud === true;
+  parsed.sensitivity = typeof question.sensitivity === 'string' ? question.sensitivity : undefined;
+  parsed.spoken = typeof question.spoken === 'string' && question.spoken.length > 0
+    ? question.spoken
+    : undefined;
+  return parsed;
+}
+
+/**
+ * Whether a delivered question may be spoken aloud (FIX-017 defense in depth).
+ *
+ * The authority is `decideSpeech` in the FIX-017 final-boundary guard, which
+ * runs server-side against the registry. That guard cannot run in the webview
+ * (it needs the registry module), so this is deliberately STRICTER than the
+ * guard rather than a reimplementation of it — refusing more than the
+ * authority is safe, permitting more would be a leak:
+ *
+ *   - `secret`   never spoken (matches the guard, which refuses unconditionally)
+ *   - `personal` never spoken HERE. The guard allows it with an explicit
+ *     `readAloudOptIn` consent, but no trustworthy opt-in signal reaches the
+ *     webview yet, so it fails closed. 10 of the 51 active registry entries
+ *     are `personal`; wiring that consent through is a follow-up, not a bug.
+ *   - anything other than exactly `normal` + `readAloud === true` is refused,
+ *     including absent or malformed metadata.
+ *
+ * The user's own voice-output preference is an independent veto.
+ */
+export function shouldSpeakQuestion(
+  question: Pick<BridgeQuestion, 'readAloud' | 'sensitivity'>,
+  voiceOutputEnabled: boolean,
+): boolean {
+  if (voiceOutputEnabled !== true) return false;
+  if (question.readAloud !== true) return false;
+  return question.sensitivity === 'normal';
 }
 
 /** Accept only a native cancellation for an exact opaque bridge question. */
@@ -88,6 +134,24 @@ export interface BridgePreferencesHooks {
  */
 export interface BridgeSpeechHooks {
   queryConsent?: () => CaptureConsent | Promise<CaptureConsent>;
+  /**
+   * Speak a delivered question. The composition wires this to the
+   * orchestrator so the sole-caller rule holds — the bridge never invokes a
+   * `cmd_speech_*` command itself. Rejection is non-fatal: the question is
+   * already displayed before this is ever called.
+   */
+  speakQuestion?: (text: string) => Promise<void>;
+  /**
+   * Stop any utterance still playing. Called on EVERY teardown path —
+   * answered, delegated, server-cancelled, session ended — so an utterance
+   * can never talk over the next question.
+   */
+  cancelSpeech?: () => void;
+  /**
+   * The user's voice-output preference (spec 5.2). Read-only here; the
+   * profile lane owns the store. Absent means "unknown" and fails closed.
+   */
+  voiceOutputEnabled?: () => boolean;
 }
 function parseLifecycle(payload: unknown): BridgeLifecycleEvent | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -122,9 +186,51 @@ export async function initializeAuthenticatedBridge(
   let submitted = false;
   /** Set while a replayed question is awaiting its native recovered ack. */
   let awaitingRecovery = false;
+  /** Identity of the utterance in flight, so a stale result cannot re-arm. */
+  let speakingFor: string | null = null;
+
+  /** Observable playback state; see docs/SPEECH-PLAYBACK-CONTRACT.md. */
+  const setPlaybackState = (state: 'speaking' | 'idle' | 'failed'): void => {
+    root.dataset.speechPlayback = state;
+  };
+
+  const stopSpeaking = (): void => {
+    if (speakingFor === null) return;
+    speakingFor = null;
+    setPlaybackState('idle');
+    try { prefs.cancelSpeech?.(); } catch { /* stopping must never throw */ }
+  };
+
+  /**
+   * Speak a delivered question. Total by construction (spec 20): the
+   * question is already on screen before this runs, so a refusal or a
+   * synthesis failure costs the caption nothing. Failures are surfaced on
+   * `data-speech-playback`, never thrown and never swallowed into silence.
+   */
+  const speakQuestion = (question: BridgeQuestion): void => {
+    const speak = prefs.speakQuestion;
+    if (!speak) return;
+    const voiceOn = prefs.voiceOutputEnabled?.() ?? false;
+    if (!shouldSpeakQuestion(question, voiceOn)) return;
+    const utterance = question.spoken ?? question.text;
+    const identity = identityKey(question);
+    speakingFor = identity;
+    setPlaybackState('speaking');
+    void speak(utterance).catch(() => {
+      // Only the utterance we started may clear the state; a late rejection
+      // from a superseded question must not stomp the current one.
+      if (speakingFor !== identity) return;
+      speakingFor = null;
+      setPlaybackState('failed');
+    });
+  };
 
   const closeControls = async (): Promise<void> => {
     const closing = active;
+    // Stop first, before anything can await: an utterance must never talk
+    // over the next question, and every teardown path funnels through here
+    // (answered, delegated, server-cancelled, session ended).
+    stopSpeaking();
     controls?.destroy();
     controls = null;
     try { await invoke('cmd_set_answer_input_enabled', { enabled: false }); } catch { /* native disconnect fails closed */ }
@@ -251,6 +357,12 @@ export async function initializeAuthenticatedBridge(
         }).finally(closeControls);
       },
     });
+
+    // The question is now displayed and interactive. Speaking is the LAST
+    // thing that happens, so nothing about the caption or the answer surface
+    // depends on it. Re-check currency: an await above may have let a
+    // cancellation land while this question was still being mounted.
+    if (isCurrent(question)) speakQuestion(active ?? question);
   };
   const unlisten = await listen<unknown>('candice:bridge-question', (event) => { void present(event.payload); });
   const unlistenCancel = await listen<unknown>('candice:bridge-cancel', (event) => {

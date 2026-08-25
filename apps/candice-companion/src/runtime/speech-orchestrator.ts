@@ -392,14 +392,29 @@ export class SpeechOrchestrator {
    * reports the silence time from the injected clock. A failed/rejected
    * stop propagates — the duplex force limb recovers (spec 20).
    */
+  /**
+   * Interrupt the utterance in flight, fire-and-forget. Idempotent and total:
+   * safe with nothing playing, and it never throws — a caller stopping speech
+   * is usually already tearing something down and must not be derailed.
+   *
+   * This is the ONE immediate-stop path. `createSpeechTarget().abort` and the
+   * bridge's teardown both delegate here rather than issuing their own
+   * `cmd_speech_stop`, so there is a single place where a stop can be missed.
+   */
+  abortSpeech(): void {
+    const requestId = this.#utteranceId;
+    if (requestId === null) return;
+    this.#utteranceId = null;
+    void this.#invoke
+      .invoke(SPEECH_COMMANDS.stop, { requestId, immediate: true })
+      .catch(() => {});
+    this.#duplex.finishSpeaking();
+  }
+
   createSpeechTarget(): SpeechTarget {
     return {
       abort: () => {
-        const requestId = this.#utteranceId;
-        if (requestId === null) return;
-        void this.#invoke
-          .invoke(SPEECH_COMMANDS.stop, { requestId, immediate: true })
-          .catch(() => {});
+        this.abortSpeech();
       },
       stop: async () => {
         const requestId = this.#utteranceId;
