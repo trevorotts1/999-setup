@@ -27,7 +27,9 @@
  */
 
 const crypto = require('crypto')
-const { registryVersion, lookup } = require('../../../packages/candice-protocol/question-registry')
+// Keep the question authority inside the installed plugin.  A plugin package
+// must not depend on an adjacent monorepo checkout.
+const { registryVersion, lookup } = require('../packages/candice-protocol/question-registry')
 const { deriveOperationId, LIMITS } = require('./lifecycle-protocol')
 const { ProtectedStateStore, STATE_SCHEMA_VERSION } = require('./protected-state-store')
 

@@ -104,7 +104,7 @@ body {
   display: none; /* no placeholder art: visible only with mounted layers */
 }
 
-.candice-character:has(.candice-gesture-layer) {
+.candice-character[data-candice-gesture-mounted="true"] {
   display: block;
   flex: 1;
   min-height: 0;

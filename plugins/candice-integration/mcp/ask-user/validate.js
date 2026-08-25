@@ -27,7 +27,9 @@ const SKILLS = ['spec-protocol', 'kaizen', 'eli5', 'bro']
 const ANSWER_KINDS = ['free_text', 'single_choice', 'yes_no', 'confirm', 'mode_choice']
 const INPUT_MODES = ['voice', 'typed', 'terminal']
 const SENSITIVITIES = ['normal', 'secret', 'personal']
-const questionRegistry = require('../../../../packages/candice-protocol/question-registry')
+// The registry is vendored inside the plugin so a customer installation never
+// reaches back into the source checkout (which does not exist at runtime).
+const questionRegistry = require('../../packages/candice-protocol/question-registry')
 const { checkBoundedIsoTime, LIMITS } = require('../../session/lifecycle-protocol')
 
 const MAX_TEXT_LENGTH = 4096

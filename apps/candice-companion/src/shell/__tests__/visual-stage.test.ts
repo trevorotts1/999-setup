@@ -15,6 +15,19 @@ import {
   resolveGestureEntry,
   type GestureStageHost,
 } from '../candice-composition.ts';
+import { dismissBootSurface } from '../boot-surface.ts';
+
+test('a mounted visual stage removes the first-paint boot surface', () => {
+  let removed = false;
+  const root = {
+    querySelector: (selector: string) => selector === '.boot'
+      ? { remove: () => { removed = true; } }
+      : null,
+  } as unknown as HTMLElement;
+
+  dismissBootSurface(root);
+  assert.equal(removed, true);
+});
 
 test('the initial composition resolves the canonical operator-approved idle image', () => {
   const entry = resolveCanonicalIdle();

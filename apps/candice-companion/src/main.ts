@@ -22,6 +22,7 @@ import {
   type BootPresentationStatus,
 } from './shell/boot-health';
 import { showTextFallback } from './shell/text-fallback';
+import { dismissBootSurface } from './shell/boot-surface';
 import { mountVisualStage } from './shell/visual-stage';
 import { initializeRuntimeComposition } from './runtime/composition';
 import { loadProfileViaIpc } from './prefs/ipc';
@@ -82,6 +83,10 @@ export async function bootCandice(): Promise<void> {
     // Install this before visual creation or any IPC work can report failure.
     window.addEventListener('candice:shell-error', onShellError, { once: true });
     mountVisualStage(root);
+    // The boot surface is only a first-paint placeholder. Keeping it after
+    // the approved visual mounts competes for the fixed companion viewport
+    // and visibly shrinks the hologram.
+    dismissBootSurface(root);
 
     // The state machine is the sibling WS-08 lane's pure reducer; the shell
     // hosts one instance and keeps a reference for the boot latch. It has no

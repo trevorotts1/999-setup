@@ -582,8 +582,11 @@ pub fn initialize_runtime<R: Runtime>(
         bridge_writer: Mutex::new(None),
         lifecycle: Mutex::new(LifecycleState::new()),
     });
-    app.emit(RUNTIME_CAPABILITIES_EVENT, capabilities)
-        .map_err(|error| tauri::Error::Anyhow(error.into()))
+    // The frontend reads the same truth through `cmd_get_runtime_capabilities`.
+    // A best-effort event before the WebView subscribes must not prevent the
+    // native window from starting.
+    let _ = app.emit(RUNTIME_CAPABILITIES_EVENT, capabilities);
+    Ok(())
 }
 
 /// Start the authenticated per-launch client. The server is IPv4 loopback

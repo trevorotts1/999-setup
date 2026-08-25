@@ -18,6 +18,7 @@ import {
   GESTURE_CHARACTER_CLASS,
   mountGestureStage,
 } from '../shell/gesture-stage.ts';
+import { VISUAL_STAGE_ID } from '../shell/visual-stage.ts';
 import {
   bindStatusFlow,
   type GestureStageHost,
@@ -145,6 +146,10 @@ export async function initializeRuntimeComposition(
         },
       });
       unbind = bindStatusFlow(machine, host);
+      // The gesture host now owns the same canonical idle artwork. Remove
+      // the bootstrap-only stage so the hologram is rendered once and gets
+      // the available viewport rather than sharing it with a duplicate.
+      document.getElementById(VISUAL_STAGE_ID)?.remove();
     } catch {
       host = null;
       unbind = null;

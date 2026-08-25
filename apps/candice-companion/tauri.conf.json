@@ -42,10 +42,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../../../THIRD_PARTY_NOTICES.md",
-      "speech-assets/**/*"
-    ],
+    "resources": {
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "speech-assets/": "speech-assets/",
+      "recovery/startup-runner.ts": "startup-runner.ts"
+    },
     "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "12.0",

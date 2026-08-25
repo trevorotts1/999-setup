@@ -120,6 +120,11 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
     if (entry) mountLayer(gesture, entry);
   }
 
+  // Do not rely on CSS :has() for the actual visibility contract: the
+  // desktop WebView may not support it at the app's deployment version.
+  // This is set only after the approved idle layer mounted successfully.
+  character.dataset.candiceGestureMounted = 'true';
+
   // Register every mounted layer with the driver; a gesture with no
   // canonical layer is never registered and never gets placeholder art.
   for (const gesture of mountedGestures) {
@@ -193,6 +198,7 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
     setStatus,
     detach: () => {
       driver.detach();
+      delete character.dataset.candiceGestureMounted;
       showCaption('idle', '');
     },
   };

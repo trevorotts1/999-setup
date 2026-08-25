@@ -16,7 +16,7 @@
  */
 
 const assert = require('assert')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 const fsSync = require('fs')
 const os = require('os')
 const path = require('path')
@@ -92,6 +92,25 @@ function makeServer(opts) {
 check('validateQuestionEvent accepts the canonical question event', () => {
   const r = validateQuestionEvent(question())
   assert.strictEqual(r.ok, true)
+})
+
+check('the installed plugin is self-contained and loads its vendored registry', () => {
+  const pluginRoot = path.resolve(__dirname, '../..')
+  const installedRoot = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-plugin-install-'))
+  const installedPlugin = path.join(installedRoot, 'candice-integration')
+  try {
+    fsSync.cpSync(pluginRoot, installedPlugin, { recursive: true })
+    const load = spawnSync(process.execPath, [
+      '-e',
+      "const v=require('./mcp/ask-user/validate'); if (!v.validateQuestionEvent) process.exit(1)",
+    ], { cwd: installedPlugin, encoding: 'utf8' })
+    assert.strictEqual(load.status, 0, load.stderr || load.stdout)
+    const sourceRegistry = fsSync.readFileSync(path.join(pluginRoot, 'packages/candice-protocol/schemas/question-keys.json'))
+    const installedRegistry = fsSync.readFileSync(path.join(installedPlugin, 'packages/candice-protocol/schemas/question-keys.json'))
+    assert.deepStrictEqual(installedRegistry, sourceRegistry)
+  } finally {
+    fsSync.rmSync(installedRoot, { recursive: true, force: true })
+  }
 })
 
 check('validateQuestionEvent rejects unknown fields (additionalProperties:false)', () => {
