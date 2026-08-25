@@ -42,6 +42,9 @@ import {
 import { createGestureRegistry } from './gestures.ts';
 import type { GestureLayer } from './gestures.ts';
 import {
+  blinkClosedUnits,
+  blinkIntervalMs,
+  blinkSpanMs,
   breathScale,
   glowIntensity,
   headDriftPx,
@@ -97,6 +100,10 @@ export function createGestureDriver(): GestureDriver {
   let driftPhase = 0;
   let glowPhase = 0;
   let blinkElapsed = 0;
+  /** Which blink is next; drives the deterministic irregular gap. */
+  let blinkIndex = 0;
+  /** Elapsed-time mark at which the next blink starts closing. */
+  let nextBlinkAt = blinkIntervalMs(0);
 
   function queryStage(root: HTMLElement | null): HTMLElement | null {
     if (!root) return null;
@@ -185,12 +192,18 @@ export function createGestureDriver(): GestureDriver {
     loops.blink = scheduleLoop(16, (elapsed) => {
       if (!stage) return;
       blinkElapsed += elapsed;
-      const period = GESTURE_TIMING.blinkPeriodMs;
-      const closed = GESTURE_TIMING.blinkClosedMs;
-      const inCycle = blinkElapsed % period;
-      const closedUnits =
-        inCycle < closed ? 1 : (inCycle - closed) < closed ? 0.5 : 0;
-      const ratio = eyeOpenRatio(closedUnits);
+      // Time since the current blink was due. Negative means the eye is
+      // resting between blinks; past the span means this blink is over and
+      // the next gap is drawn.
+      const sinceDue = blinkElapsed - nextBlinkAt;
+      if (sinceDue >= blinkSpanMs()) {
+        blinkIndex += 1;
+        nextBlinkAt = blinkElapsed + blinkIntervalMs(blinkIndex);
+      }
+      const ratio =
+        sinceDue < 0 || sinceDue >= blinkSpanMs()
+          ? 1
+          : eyeOpenRatio(blinkClosedUnits(sinceDue));
       for (const eye of Array.from(
         stage.querySelectorAll<HTMLElement>('[data-candice-eye]'),
       )) {

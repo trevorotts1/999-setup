@@ -39,13 +39,20 @@ export const CONTROL_SELECTOR = [
   '[role="switch"]',
   '[role="checkbox"]',
   '[tabindex]:not([tabindex="-1"])',
+  // The painted surfaces, taken from the app's OWN enumeration of them:
+  // the `@media (forced-colors: active)` rule in styles.css lists exactly
+  // the classes that paint a background, because those are the ones that
+  // must repaint in forced-colors mode. Mirroring that list keeps this
+  // selector from drifting into a private opinion about what is visible.
+  // `.fallback-*` matters most: when the companion has degraded to the text
+  // card, it is the ONLY thing on screen the operator can grab.
   '.candice-status-surface',
   '.candice-runtime-status',
   '.candice-state-caption',
-  // The text-fallback card. It paints the same opaque `--candice-ui-surface`
-  // as the pills above (styles.css groups them in one rule), and when the
-  // companion has degraded to this card it is the ONLY thing on screen the
-  // operator can grab to move the window off his work.
+  '.candice-captions',
+  '.candice-answer-controls',
+  '.candice-ptt',
+  '.candice-name-prompt',
   '.fallback-title',
   '.fallback-hint',
 ].join(',');
@@ -218,6 +225,13 @@ export function measureVisibleRegions(
  * mounted character's measured width was observed oscillating by 8.66px
  * (295.03 -> 286.37) on the packaged build, which a tolerance of 8 does not
  * absorb, so the regions were being republished about twice a second.
+ *
+ * THIS COUPLES THIS LANE TO THE ANIMATION LANE. The number is an empirical
+ * fact about the breathing keyframes (`candice-breathe` in styles.css), not
+ * a free parameter. If the breath amplitude changes, re-measure the
+ * oscillation and re-set this: too low and every animation frame republishes
+ * over IPC, too high and a real move of the character is not published and
+ * the operator loses the grab region until the next larger change.
  */
 export function regionsDiffer(
   a: readonly InputRegion[],

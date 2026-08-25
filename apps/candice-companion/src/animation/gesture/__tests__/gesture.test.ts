@@ -188,8 +188,37 @@ test('eyeOpenRatio: open when outside the blink window, closed inside', () => {
   assert.equal(eyeOpenRatio(0), 1, 'fully open at rest');
   assert.equal(eyeOpenRatio(1), 0, 'fully closed inside the blink');
   assert.equal(eyeOpenRatio(2), 0, 'still closed beyond the window');
-  const mid = eyeOpenRatio(0.5);
-  assert.ok(mid > 0 && mid < 1, `mid blink must be between open and closed, got ${mid}`);
+
+  // 0.5 is the CLOSED point, not the halfway point: eyeOpenRatio is
+  // cos(u * PI), which reaches zero at u = 0.5. Asserting it explicitly so
+  // nobody reads 0.5 as "half closed" again.
+  assert.equal(
+    Number(eyeOpenRatio(0.5).toFixed(3)),
+    0,
+    'closedUnits 0.5 is fully closed, not half closed',
+  );
+
+  // This assertion used to read `eyeOpenRatio(0.5)` and require only
+  // `mid > 0 && mid < 1`. It passed on 6.123233995736766e-17 — the
+  // floating-point residue of cos(PI/2) — so it certified an eyelid ramp
+  // that did not exist while the driver rendered a 240ms hard cut. The
+  // bounds below are PERCEPTIBLE ones: no float epsilon can satisfy them,
+  // and they are sampled where the ramp actually lives, (0, 0.5).
+  const mid = eyeOpenRatio(0.25);
+  assert.ok(
+    mid > 0.2 && mid < 0.8,
+    `mid blink must be a visibly partial eyelid, got ${mid}`,
+  );
+
+  // A ramp is monotonic: sampling across the closing sweep must strictly
+  // decrease. A single mid-point cannot prove that on its own.
+  const sweep = [0, 0.1, 0.2, 0.3, 0.4, 0.5].map(eyeOpenRatio);
+  for (let i = 1; i < sweep.length; i += 1) {
+    assert.ok(
+      sweep[i]! < sweep[i - 1]!,
+      `eyelid must close monotonically; step ${i} went ${sweep[i - 1]} -> ${sweep[i]}`,
+    );
+  }
 });
 
 test('breathScale: bounded and centered on 1', () => {
