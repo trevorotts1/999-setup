@@ -14,10 +14,23 @@ const os = require('os')
 const path = require('path')
 const { spawn } = require('child_process')
 const { deriveOperationId, isValidOperationId } = require('../../session/lifecycle-protocol')
+const { resolveConfiguredLaunchCommand } = require('../../shared/launch-command')
 
 const BRIDGE_PROTOCOL_VERSION = '1.0'
 const MAX_FRAME_BYTES = 64 * 1024
 const ACTIVATION_TTL_MS = 30 * 1000
+/**
+ * How long one launch may take to complete the authenticated ready handshake.
+ *
+ * This is a COLD app start: process spawn, WebView creation, asset load and
+ * the boot handshake, on a machine that is already running a build. The
+ * previous 3s budget expired mid-launch on a loaded machine and reported
+ * `companion-ready-timeout` for an app that was starting normally. The cost of
+ * waiting is a bounded pause before the terminal fallback takes the question;
+ * the cost of expiring early is a working companion declared dead, so the
+ * budget is generous.
+ */
+const READY_TIMEOUT_MS = 20 * 1000
 const RECOVERY_LEASE_MS = 30 * 1000 // one bounded replay lease per reconnect
 const OPAQUE_ID = /^[A-Za-z0-9._:-]{1,128}$/
 
@@ -28,7 +41,20 @@ function bridgeFailure(code) {
 class LocalCompanionBridge {
   constructor(options = {}) {
     this.token = options.token || crypto.randomBytes(32).toString('hex')
-    this.launchCommand = options.launchCommand || process.env.CANDICE_COMPANION_CMD || null
+    // The MCP transport is a SEPARATE launch path from the hook dispatcher and
+    // must resolve the companion the same way: a fresh client install carries
+    // `CANDICE_COMPANION_READY=1` but no `CANDICE_COMPANION_CMD`, so reading
+    // only the env var left this bridge unable to launch an installed app.
+    // The strict resolver is used (never the bare PATH-name fallback) so a
+    // genuinely absent install still reports `companion-not-configured`
+    // instead of spawning a name that cannot exist and timing out.
+    //
+    // An explicit `launchCommand: null` means "never launch" and is honored as
+    // given: discovery must not resurrect a launch the caller opted out of, or
+    // a test driving its own socket would spawn the user's real app.
+    this.launchCommand = options.launchCommand !== undefined
+      ? options.launchCommand
+      : resolveConfiguredLaunchCommand()
     this.socketDir = options.socketDir || fs.mkdtempSync(path.join(os.tmpdir(), 'candice-mcp-'))
     // Loopback TCP is deliberately used instead of a Unix socket so the
     // exact authenticated protocol works in native Windows builds too. The
@@ -37,6 +63,7 @@ class LocalCompanionBridge {
     this.endpoint = options.endpoint || null
     this.tokenFile = options.tokenFile || path.join(this.socketDir, 'bridge-token')
     this.activationTtlMs = options.activationTtlMs || ACTIVATION_TTL_MS
+    this.readyTimeoutMs = options.readyTimeoutMs || READY_TIMEOUT_MS
     this.now = typeof options.now === 'function' ? options.now : Date.now
     this.server = null
     this.socket = null
@@ -138,7 +165,7 @@ class LocalCompanionBridge {
         if (pollTimer) clearTimeout(pollTimer)
         resolve(result)
       }
-      const timeout = setTimeout(() => finish(bridgeFailure('companion-ready-timeout')), 3000)
+      const timeout = setTimeout(() => finish(bridgeFailure('companion-ready-timeout')), this.readyTimeoutMs)
       const poll = () => {
         if (this.isReady()) { finish({ ok: true }); return }
         if (!this.started || this.launchSessionId !== sessionId) { finish(bridgeFailure('companion-not-ready')); return }

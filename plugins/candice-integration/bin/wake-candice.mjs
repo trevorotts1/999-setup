@@ -13,9 +13,13 @@
 
 import { spawn as nodeSpawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+// Shared with the MCP ask_user bridge so the two launch paths can never
+// resolve the companion differently (see shared/launch-command.js).
+import { resolveLaunchCommand } from '../shared/launch-command.js';
+
+export { resolveLaunchCommand };
 
 export const SUPPORTED_COMMANDS = Object.freeze([
   '/spec-protocol',
@@ -77,35 +81,6 @@ export function buildWakeRequest(command, payload) {
     activationId: payload.activationId,
     hostCorrelation: payload.hostCorrelation,
   };
-}
-
-/** Resolve the provisioned app without depending on an interactive-shell PATH. */
-export function resolveLaunchCommand({
-  env = process.env,
-  platform = process.platform,
-  exists = existsSync,
-} = {}) {
-  if (env.CANDICE_COMPANION_CMD) return env.CANDICE_COMPANION_CMD;
-
-  const candidates = [];
-  if (platform === 'darwin' && env.HOME) {
-    candidates.push(join(
-      env.HOME,
-      'Library', 'Application Support', 'BlackCEO', '999', 'app',
-      'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
-    ));
-  }
-  if (platform === 'win32' && env.LOCALAPPDATA) {
-    candidates.push(join(
-      env.LOCALAPPDATA, 'BlackCEO', '999', 'app',
-      'Candice Companion', 'candice-companion.exe',
-    ));
-    candidates.push(join(
-      env.LOCALAPPDATA, 'BlackCEO', '999', 'app',
-      'Candice Companion.exe',
-    ));
-  }
-  return candidates.find((candidate) => exists(candidate)) || 'candice-companion';
 }
 
 /**

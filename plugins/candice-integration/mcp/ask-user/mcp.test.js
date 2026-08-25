@@ -1092,6 +1092,25 @@ check('wire: stdio subprocess boots, initializes, lists tools, and exits clean',
   assert.ok(!errOut.includes('Error'), 'no stderr errors: ' + errOut)
 })
 
+/**
+ * A child environment with genuinely NO installed companion.
+ *
+ * The bridge discovers the app under HOME (macOS) / LOCALAPPDATA (Windows) as
+ * well as CANDICE_COMPANION_CMD, so on a developer machine that really has the
+ * app installed these "companion absent" wire tests would otherwise launch a
+ * GUI process and assert the opposite of what they mean. Pointing the child at
+ * an empty root makes the premise true instead of ambient.
+ */
+function companionAbsentEnv() {
+  const emptyRoot = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-no-companion-'))
+  return Object.assign({}, process.env, {
+    CANDICE_COMPANION_READY: 'probe',
+    CANDICE_COMPANION_CMD: '',
+    HOME: emptyRoot,
+    LOCALAPPDATA: emptyRoot,
+  })
+}
+
 check('wire: ask_user over real stdio with CANONICAL framing fails soft when companion absent', async () => {
   // Duplicate of the check above, but with the exact framing a real MCP client
   // (Claude Code) puts on the wire: params.arguments instead of params.params.
@@ -1100,7 +1119,7 @@ check('wire: ask_user over real stdio with CANONICAL framing fails soft when com
   const wireState = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-mcp-wire-'))
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js'), '--state-dir', wireState], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: Object.assign({}, process.env, { CANDICE_COMPANION_READY: 'probe' }),
+    env: companionAbsentEnv(),
   })
   const out = []
   child.stdout.setEncoding('utf8')
@@ -1125,7 +1144,7 @@ check('wire: ask_user over real stdio fails soft when companion absent', async (
   const wireState = fsSync.mkdtempSync(path.join(os.tmpdir(), 'candice-mcp-wire-'))
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js'), '--state-dir', wireState], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: Object.assign({}, process.env, { CANDICE_COMPANION_READY: 'probe' }),
+    env: companionAbsentEnv(),
   })
   const out = []
   child.stdout.setEncoding('utf8')

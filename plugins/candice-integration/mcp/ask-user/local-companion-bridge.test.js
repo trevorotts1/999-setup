@@ -3,9 +3,24 @@
 const assert = require('assert')
 const fs = require('fs')
 const net = require('net')
+const os = require('os')
+const path = require('path')
 const test = require('node:test')
 const { AskUserServer } = require('./server')
 const { LocalCompanionBridge } = require('./local-companion-bridge')
+const {
+  DEFAULT_LAUNCH_COMMAND,
+  resolveConfiguredLaunchCommand,
+  resolveLaunchCommand,
+} = require('../../shared/launch-command')
+
+/**
+ * These tests drive their own loopback socket and must NEVER spawn the real
+ * companion. `launchCommand: null` says so explicitly; the bridge otherwise
+ * discovers the installed app, which on a developer machine would launch a
+ * GUI process per test and block on its ready handshake.
+ */
+const UNCONFIGURED = Object.freeze({ launchCommand: null })
 
 function question(sessionId = 'session-a', questionKey = 'BUILD_TARGET') {
   return {
@@ -43,7 +58,7 @@ async function connect(endpoint, token, activation, handler) {
 }
 
 test('authenticated local bridge completes deliver → confirmed answer → same MCP call', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   await bridge.start()
   if (process.platform !== 'win32') {
     assert.equal(fs.statSync(bridge.tokenFile).mode & 0o077, 0,
@@ -82,7 +97,7 @@ test('authenticated local bridge completes deliver → confirmed answer → same
 })
 
 test('wrong token, session, or question key cannot answer an authenticated slot', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   await bridge.start()
   await bridge.ensureSession('session-a')
   const activation = { ...bridge.activation, instanceId: 'candice-authenticated' }
@@ -113,7 +128,7 @@ test('wrong token, session, or question key cannot answer an authenticated slot'
 })
 
 test('an explicitly busy single-surface companion never leaves a concurrent question acknowledged', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   await bridge.start()
   await bridge.ensureSession('session-a')
   const activation = { ...bridge.activation, instanceId: 'candice-single-surface' }
@@ -138,7 +153,7 @@ test('an explicitly busy single-surface companion never leaves a concurrent ques
 
 test('activation acknowledgement is exact, expires, and cannot be replayed by another instance', async () => {
   let clock = 1_000
-  const bridge = new LocalCompanionBridge({ now: () => clock, activationTtlMs: 50 })
+  const bridge = new LocalCompanionBridge({ ...UNCONFIGURED, now: () => clock, activationTtlMs: 50 })
   await bridge.start()
   await bridge.ensureSession('session-a')
   const activation = { ...bridge.activation, instanceId: 'candice-owner' }
@@ -170,7 +185,7 @@ test('activation acknowledgement is exact, expires, and cannot be replayed by an
 })
 
 test('FIX-013 S4: same-instance reconnect re-authenticates and replays ONE unacked op under a bounded lease', async () => {
-  const bridge = new LocalCompanionBridge({ recoveryLeaseMs: 5000 })
+  const bridge = new LocalCompanionBridge({ ...UNCONFIGURED, recoveryLeaseMs: 5000 })
   const events = []
   bridge.onLifecycleEvent = (event) => events.push(event.lifecycle)
   await bridge.start()
@@ -238,7 +253,7 @@ test('FIX-013 S4: same-instance reconnect re-authenticates and replays ONE unack
 })
 
 test('FIX-013 S4: reconnect refuses a mismatched instance and an ended bridge accepts no hello', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   await bridge.start()
   await bridge.ensureSession('session-a')
   const activation = { ...bridge.activation, instanceId: 'candice-original' }
@@ -275,7 +290,7 @@ test('FIX-013 S4: reconnect refuses a mismatched instance and an ended bridge ac
 })
 
 test('FIX-013 S4: endLifecycle is exactly-once and sweeps registered shutdown hooks', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   const events = []
   bridge.onLifecycleEvent = (event) => events.push(event.lifecycle)
   let swept = 0
@@ -301,7 +316,7 @@ test('FIX-013 S4: endLifecycle is exactly-once and sweeps registered shutdown ho
 })
 
 test('FIX-013 S4: delivered or answered operations are never replayed after a reconnect', async () => {
-  const bridge = new LocalCompanionBridge()
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
   await bridge.start()
   await bridge.ensureSession('session-a')
   const activation = { ...bridge.activation, instanceId: 'candice-acked' }
@@ -339,4 +354,117 @@ test('FIX-013 S4: delivered or answered operations are never replayed after a re
   assert.equal(replayedFrame, false, 'a fully answered operation is never replayed')
   restarted.destroy()
   await bridge.close()
+})
+
+// ------------------------------------------- companion launch-command resolution
+//
+// The MCP bridge is a SEPARATE launch path from the `wake-candice` hook. It
+// used to read only `process.env.CANDICE_COMPANION_CMD`, while the installed
+// `.mcp.json` sets only `CANDICE_COMPANION_READY=1` — so on a fresh client
+// install the bridge had no command at all and every ask_user call failed
+// `companion-not-configured` despite a correctly installed app. Both paths now
+// share `shared/launch-command.js`.
+
+const MACOS_INSTALL = [
+  'Library', 'Application Support', 'BlackCEO', '999', 'app',
+  'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
+]
+
+/** A HOME/LOCALAPPDATA root that really contains an installed companion. */
+function installedRoot() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'candice-installed-'))
+  const exe = process.platform === 'win32'
+    ? path.join(root, 'BlackCEO', '999', 'app', 'Candice Companion', 'candice-companion.exe')
+    : path.join(root, ...MACOS_INSTALL)
+  fs.mkdirSync(path.dirname(exe), { recursive: true })
+  fs.writeFileSync(exe, '', { mode: 0o755 })
+  return { root, exe }
+}
+
+/** Run `fn` with the companion env vars replaced, then restore them exactly. */
+function withEnv(patch, fn) {
+  const keys = ['CANDICE_COMPANION_CMD', 'HOME', 'LOCALAPPDATA']
+  const saved = new Map(keys.map((key) => [key, process.env[key]]))
+  try {
+    for (const key of keys) {
+      if (patch[key] === undefined) delete process.env[key]
+      else process.env[key] = patch[key]
+    }
+    return fn()
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
+test('resolveConfiguredLaunchCommand finds the installed bundle with no CANDICE_COMPANION_CMD', () => {
+  const darwin = { env: { HOME: '/Users/someone' }, platform: 'darwin', exists: () => true }
+  assert.equal(
+    resolveConfiguredLaunchCommand(darwin),
+    path.join('/Users/someone', ...MACOS_INSTALL),
+    'the macOS install path is discovered without any env override',
+  )
+  // CONTROL: the same call with nothing installed must NOT invent a path.
+  assert.equal(
+    resolveConfiguredLaunchCommand({ ...darwin, exists: () => false }),
+    null,
+    'no install and no override resolves to null, never a guess',
+  )
+  // An explicit override still wins over discovery.
+  assert.equal(
+    resolveConfiguredLaunchCommand({
+      env: { CANDICE_COMPANION_CMD: '/custom/candice', HOME: '/Users/someone' },
+      platform: 'darwin',
+      exists: () => true,
+    }),
+    '/custom/candice',
+  )
+  // The hook dispatcher's PATH fallback is unchanged.
+  assert.equal(
+    resolveLaunchCommand({ env: {}, platform: 'linux', exists: () => false }),
+    DEFAULT_LAUNCH_COMMAND,
+  )
+})
+
+test('the MCP bridge resolves the installed companion with NO CANDICE_COMPANION_CMD set', () => {
+  const { root, exe } = installedRoot()
+  const resolved = withEnv(
+    { HOME: root, LOCALAPPDATA: root },
+    () => new LocalCompanionBridge().launchCommand,
+  )
+  assert.equal(
+    process.env.CANDICE_COMPANION_CMD,
+    undefined,
+    'guard: the variable really was absent inside the bridge construction',
+  )
+  assert.equal(resolved, exe, 'a fresh client install is launchable without the env var')
+
+  // CONTROL: with nothing installed the bridge stays honestly unconfigured, so
+  // `ensureSession` still reports `companion-not-configured` rather than
+  // spawning a name that cannot exist and timing out.
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'candice-absent-'))
+  const absent = withEnv(
+    { HOME: emptyRoot, LOCALAPPDATA: emptyRoot },
+    () => new LocalCompanionBridge().launchCommand,
+  )
+  assert.equal(absent, null, 'no install resolves to null')
+
+  // An explicit opt-out is honored even when an install exists.
+  const optedOut = withEnv(
+    { HOME: root, LOCALAPPDATA: root },
+    () => new LocalCompanionBridge({ launchCommand: null }).launchCommand,
+  )
+  assert.equal(optedOut, null, 'launchCommand: null is never resurrected by discovery')
+})
+
+test('an unconfigured companion still reports companion-not-configured', async () => {
+  const bridge = new LocalCompanionBridge(UNCONFIGURED)
+  await bridge.start()
+  try {
+    assert.equal((await bridge.ensureSession('session-z')).code, 'companion-not-configured')
+  } finally {
+    await bridge.close()
+  }
 })
