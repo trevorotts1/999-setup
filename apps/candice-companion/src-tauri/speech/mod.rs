@@ -82,9 +82,11 @@ pub struct SpeechCapabilityFact {
     /// Capture lane mounted and able to run (binary exists; hardware
     /// availability is a permission/lifecycle fact, not a wiring fact).
     pub capture_mounted: bool,
-    /// Canonical voice is operator-APPROVED. Always false until the
-    /// approval gate (spec section 7) lands: `af_heart` is a
-    /// pre-approval default and must be labeled pending.
+    /// Canonical voice is operator-APPROVED. True only when the manifest's
+    /// `canonicalVoice.approval` is exactly `approved` — there is no
+    /// pre-approval default and no substitute voice, so an unapproved or
+    /// unresolvable manifest yields no speech at all rather than a voice
+    /// the client did not choose. Captions remain available.
     pub canonical_voice_approved: bool,
 }
 
@@ -113,6 +115,10 @@ pub struct SpeechHealth {
     pub tts_voicepack_release: String,
     pub canonical_voice_id: String,
     pub canonical_voice_approval: String,
+    /// Which root supplied the manifest this report was built from:
+    /// "env" | "user" | "bundle" | "none". Surfaced because an overriding
+    /// manifest is otherwise invisible from outside the process.
+    pub speech_assets_root: String,
     /// QFIX Q-05: the installer provenance receipt is present next to the
     /// verified per-user asset directory (design 5.5).
     pub receipt_present: bool,
@@ -348,34 +354,26 @@ pub fn cmd_speech_health<R: Runtime>(
         .unwrap_or(false);
 
     // Canonical voice: the bundled SPEECH-INVENTORY.json is the record for
-    // BOTH the voice id and its approval (FIX-015 FAIL-6). The id is read
-    // from the manifest rather than hardcoded here — hardcoding it would
-    // make this a second runtime write point that silently disagrees with
-    // the TS single write point (src-tauri/tts/assets.ts
-    // DEFAULT_CANONICAL_VOICE), which is what the manifest exists to
-    // prevent. Without a readable manifest this falls back to the
-    // pre-approval default and approval fails closed to approval-pending —
-    // it never claims approved by default.
-    let canonical_voice_id = inventory
-        .as_ref()
-        .and_then(|inv| inv.canonical_voice.as_ref())
-        .and_then(|cv| cv.get("id"))
-        .and_then(|id| id.as_str())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| "af_heart".to_string());
-    let canonical_voice_approval = res
-        .inventory_text
-        .as_deref()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
-        .and_then(|v| {
-            v.get("canonicalVoice")
-                .and_then(|cv| cv.get("approval"))
-                .and_then(|a| a.as_str())
-                .map(str::to_string)
-        })
-        .filter(|s| s == "approved" || s == "approval-pending")
-        .unwrap_or_else(|| "approval-pending".to_string());
+    // BOTH the voice id and its approval (FIX-015 FAIL-6), and it is read
+    // rather than hardcoded so this cannot become a second runtime write
+    // point disagreeing with the TS single write point
+    // (src-tauri/tts/assets.ts DEFAULT_CANONICAL_VOICE).
+    //
+    // ONE document, ONE parser. The id used to come from the typed record
+    // while approval came from a SECOND, raw parse of the same file, so a
+    // typed-parse failure could report `approved` beside a fallback id — an
+    // approved-looking wrong voice. There is no longer a pre-approval
+    // default: an unresolvable voice reports itself as unresolved rather
+    // than naming a substitute the reader would mistake for a real choice.
+    // A shadowing manifest can never be reported as approved.
+    let (canonical_voice_id, canonical_voice_approval) = match (
+        res.canonical_voice_conflict(),
+        resolve_approved_voice(inventory.as_ref(), None),
+    ) {
+        (Some(_), _) => ("conflicted".to_string(), "approval-pending".to_string()),
+        (None, Ok(voice)) => (voice.id, voice.approval),
+        (None, Err(_)) => ("unresolved".to_string(), "approval-pending".to_string()),
+    };
     let canonical_voice_approved = canonical_voice_approval == "approved";
 
     let stt_available = stt_engine_ready;
@@ -425,6 +423,7 @@ pub fn cmd_speech_health<R: Runtime>(
         tts_voicepack_release: "model-files-v1.1".into(),
         canonical_voice_id,
         canonical_voice_approval,
+        speech_assets_root: res.used_root_kind.unwrap_or("none").to_string(),
         receipt_present,
         degraded,
         degraded_reason,
@@ -711,6 +710,57 @@ fn speak_admission_check(state: &SpeechState, request_id: &str) -> Result<(), St
 /// command — the boundary never classifies text itself. The speak slot is
 /// shared with the playback thread so it releases when the mouth provably
 /// closes (drain or boundary), not when the command returns.
+/// The operator-approved voice for this session.
+#[derive(Debug)]
+pub(crate) struct ApprovedVoice {
+    pub id: String,
+    pub approval: String,
+}
+
+/// Resolve the approved voice from the manifest, or say why it could not be.
+///
+/// There is deliberately NO default here. Every branch that cannot produce
+/// the operator-approved id returns an error, because speaking in a voice
+/// the client did not choose — without telling them — is worse than not
+/// speaking at all. Captions remain available either way.
+///
+/// This is the check that would have caught the af_heart incident on day
+/// one: the manifest shipped `af_heart`/`approval-pending` for three days,
+/// `af_heart` is a real voice in the pack, so it synthesized perfectly and
+/// nothing ever raised.
+pub(crate) fn resolve_approved_voice(
+    inventory: Option<&InventoryRecord>,
+    inventory_error: Option<&str>,
+) -> Result<ApprovedVoice, String> {
+    let Some(inv) = inventory else {
+        return Err(inventory_error
+            .unwrap_or("the speech manifest could not be read")
+            .to_string());
+    };
+    let Some(cv) = inv.canonical_voice.as_ref() else {
+        return Err("the speech manifest declares no canonical voice".to_string());
+    };
+    let id = cv
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "the speech manifest declares no canonical voice id".to_string())?;
+    let approval = cv
+        .get("approval")
+        .and_then(|v| v.as_str())
+        .unwrap_or("approval-pending");
+    if approval != "approved" {
+        return Err(format!(
+            "the canonical voice '{id}' is not operator-approved (approval: {approval})"
+        ));
+    }
+    Ok(ApprovedVoice {
+        id: id.to_string(),
+        approval: approval.to_string(),
+    })
+}
+
 fn speak_impl<R: Runtime>(
     app: &AppHandle<R>,
     state: &SpeechState,
@@ -723,10 +773,14 @@ fn speak_impl<R: Runtime>(
     // corrupt asset fails the utterance honestly and releases the slot —
     // captions stay available (spec 20).
     let res = assets::resolve_speech_assets(app);
-    let inventory: Option<InventoryRecord> = res
-        .inventory_text
-        .as_deref()
-        .and_then(|text| serde_json::from_str(text).ok());
+    // The parse error is carried, not swallowed: a malformed manifest must
+    // be able to name itself in the failure the operator actually sees.
+    let inventory_result: Result<InventoryRecord, String> = match res.inventory_text.as_deref() {
+        Some(text) => serde_json::from_str::<InventoryRecord>(text)
+            .map_err(|e| format!("the speech manifest is malformed: {e}")),
+        None => Err("no speech manifest was found".to_string()),
+    };
+    let inventory: Option<InventoryRecord> = inventory_result.as_ref().ok().cloned();
     let find = |id: &str| -> Option<std::path::PathBuf> {
         inventory
             .as_ref()
@@ -769,21 +823,44 @@ fn speak_impl<R: Runtime>(
 
     let speed = request.speed.unwrap_or(1.0);
     let speed = if speed.is_finite() && (0.5..=2.0).contains(&speed) { speed } else { 1.0 };
-    // Default voice: the bundled manifest's canonicalVoice.id — the operator
-    // approval record — never a hardcoded id, so the voice the app actually
-    // speaks in cannot drift from the approved one. A caller may still
-    // override per utterance. Falls back to the pre-approval default only
-    // when the manifest is missing or unreadable.
-    let voice_id = request.voice_id.clone().unwrap_or_else(|| {
-        inventory
-            .as_ref()
-            .and_then(|inv| inv.canonical_voice.as_ref())
-            .and_then(|cv| cv.get("id"))
-            .and_then(|id| id.as_str())
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| "af_heart".to_string())
-    });
+    // Voice: the manifest's canonicalVoice.id — the operator approval
+    // record — or nothing at all. There is no fallback. Speaking in a voice
+    // the client did not choose, without telling them, is worse than not
+    // speaking; captions carry the answer either way.
+    //
+    // A manifest from a user-writable root that disagrees with the signed
+    // bundle is refused before anything else: obeying it is how a client
+    // gets locked to a voice they never chose.
+    if let Some(conflict) = res.canonical_voice_conflict() {
+        speak_release_slot(state, Some(&request.request_id));
+        return Err(format!("{conflict}; captions remain available"));
+    }
+    let approved = match resolve_approved_voice(
+        inventory.as_ref(),
+        inventory_result.as_ref().err().map(String::as_str),
+    ) {
+        Ok(voice) => voice,
+        Err(why) => {
+            speak_release_slot(state, Some(&request.request_id));
+            return Err(format!("{why}; captions remain available"));
+        }
+    };
+    // A per-utterance override may only ever name the approved voice.
+    // NOTE: this narrows an existing (currently unused) capability — the
+    // frontend never sends `voiceId`. A legitimate override path needs its
+    // own approval story.
+    let voice_id = match request.voice_id.as_deref() {
+        None => approved.id.clone(),
+        Some(requested) if requested == approved.id => approved.id.clone(),
+        Some(requested) => {
+            speak_release_slot(state, Some(&request.request_id));
+            return Err(format!(
+                "requested voice '{requested}' is not the approved voice '{}'; \
+                 captions remain available",
+                approved.id
+            ));
+        }
+    };
 
     state.tts.arm_next();
     let started = state.tts.synthesize_and_play(
@@ -925,6 +1002,7 @@ mod tests {
             tts_voicepack_release: "model-files-v1.1".into(),
             canonical_voice_id: "af_heart".into(),
             canonical_voice_approval: "approval-pending".into(),
+            speech_assets_root: "none".into(),
             receipt_present: false,
             degraded: true,
             degraded_reason: Some("assets missing".into()),
@@ -944,6 +1022,7 @@ mod tests {
             "ttsEngineReady",
             "canonicalVoiceId",
             "canonicalVoiceApproval",
+            "speechAssetsRoot",
             "receiptPresent",
             "degraded",
         ] {
@@ -1275,20 +1354,149 @@ mod tests {
         }
     }
 
+    // ---- approved-voice enforcement (the af_heart incident) -------------
+
+    fn manifest_with(canonical: serde_json::Value) -> InventoryRecord {
+        serde_json::from_value(serde_json::json!({
+            "schema": "candice.speech-inventory/v1",
+            "canonicalVoice": canonical,
+            "entries": [],
+        }))
+        .expect("fixture manifest must deserialize")
+    }
+
+    /// Approval must be EARNED.
+    ///
+    /// The test this replaces asserted that a field equals itself —
+    /// `approval == "approved"` on both sides of an `assert_eq!` — so it
+    /// could never fail, and it passed unchanged through the entire
+    /// af_heart incident. This one drives the real resolver and fails in
+    /// BOTH directions: no non-approved status may yield a speakable
+    /// voice, and the approved one must.
     #[test]
     fn canonical_voice_approval_is_honest_pending() {
-        let approval = "approval-pending";
-        assert_eq!(
-            approval == "approved",
+        // Note "APPROVED": the comparison is case-sensitive by design, so a
+        // manifest shouting it does not get a pass.
+        for status in [
+            "approval-pending",
+            "pending",
+            "rejected",
+            "revoked",
+            "",
+            "APPROVED",
+        ] {
+            let inv = manifest_with(serde_json::json!({
+                "id": "af_bella", "approval": status
+            }));
+            let err = resolve_approved_voice(Some(&inv), None)
+                .err()
+                .unwrap_or_else(|| panic!("approval {status:?} must not yield a speakable voice"));
+            assert!(
+                err.contains("not operator-approved"),
+                "approval {status:?} must be refused for the approval reason, got: {err}"
+            );
+        }
+
+        let approved = manifest_with(serde_json::json!({
+            "id": "af_bella", "approval": "approved"
+        }));
+        let voice =
+            resolve_approved_voice(Some(&approved), None).expect("an approved manifest resolves");
+        assert_eq!(voice.id, "af_bella");
+        assert_eq!(voice.approval, "approved");
+        // The capability flag the UI reads is derived from this same string.
+        assert!(
             SpeechCapabilityFact {
                 stt_available: false,
                 tts_available: false,
                 system_tts_available: false,
                 duplex_mounted: false,
                 capture_mounted: false,
-                canonical_voice_approved: approval == "approved",
+                canonical_voice_approved: voice.approval == "approved",
             }
             .canonical_voice_approved
         );
+    }
+
+    #[test]
+    fn approved_manifest_resolves_to_its_declared_voice() {
+        let inv = manifest_with(serde_json::json!({
+            "id": "af_bella", "approval": "approved"
+        }));
+        let voice = resolve_approved_voice(Some(&inv), None).expect("must resolve");
+        assert_eq!(voice.id, "af_bella");
+        assert_eq!(voice.approval, "approved");
+    }
+
+    /// THE REGRESSION TEST. Before this change every one of these branches
+    /// silently produced `af_heart` — a real voice in the pack, so it
+    /// synthesized perfectly and the client heard a voice they never chose.
+    /// Each case must now REFUSE, and must not name a substitute.
+    #[test]
+    fn unresolvable_voice_refuses_and_never_substitutes() {
+        let cases: Vec<(&str, Option<InventoryRecord>)> = vec![
+            ("no manifest at all", None),
+            (
+                "manifest without a canonicalVoice",
+                Some(
+                    serde_json::from_value(serde_json::json!({
+                        "schema": "candice.speech-inventory/v1", "entries": []
+                    }))
+                    .unwrap(),
+                ),
+            ),
+            (
+                "canonicalVoice without an id",
+                Some(manifest_with(serde_json::json!({ "approval": "approved" }))),
+            ),
+            (
+                "empty id",
+                Some(manifest_with(
+                    serde_json::json!({ "id": "   ", "approval": "approved" }),
+                )),
+            ),
+            (
+                "id present but not approved",
+                Some(manifest_with(serde_json::json!({
+                    "id": "af_bella", "approval": "approval-pending"
+                }))),
+            ),
+        ];
+        for (label, inv) in cases {
+            let result = resolve_approved_voice(inv.as_ref(), None);
+            let err = result
+                .err()
+                .unwrap_or_else(|| panic!("{label}: must refuse, never substitute"));
+            // Mutation proof: reintroducing ANY hardcoded fallback makes
+            // this fail, because a substituted id would have to appear.
+            assert!(
+                !err.contains("af_heart"),
+                "{label}: refusal must not name a substitute voice, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_manifest_names_itself_in_the_refusal() {
+        let err =
+            resolve_approved_voice(None, Some("the speech manifest is malformed: expected `,`"))
+                .expect_err("must refuse");
+        assert!(
+            err.contains("malformed"),
+            "the parse error must reach the operator, got: {err}"
+        );
+    }
+
+    #[test]
+    fn health_reports_unresolved_rather_than_a_plausible_wrong_voice() {
+        // The old code reported `af_heart` here, which reads as a real
+        // answer. "unresolved" cannot be mistaken for a chosen voice.
+        let (id, approval) = match resolve_approved_voice(None, None) {
+            Ok(v) => (v.id, v.approval),
+            Err(_) => ("unresolved".to_string(), "approval-pending".to_string()),
+        };
+        assert_eq!(id, "unresolved");
+        assert_ne!(id, "af_heart");
+        assert_eq!(approval, "approval-pending");
     }
 }

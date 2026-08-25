@@ -153,9 +153,58 @@ pub struct AssetResolution {
     pub user_root: Option<std::path::PathBuf>,
     pub bundle_root: Option<std::path::PathBuf>,
     pub inventory_text: Option<String>,
+    /// Which root actually supplied `inventory_text`: "env", "user" or
+    /// "bundle". Recorded because a manifest found in a user-writable root
+    /// silently overrides the shipped one, and an operator debugging a
+    /// wrong voice must be able to see WHICH document was obeyed.
+    pub used_root_kind: Option<&'static str>,
+    /// The bundled manifest, read even when a higher-priority root won.
+    /// This is the record the app was built and signed with, and it is the
+    /// reference an overriding manifest is checked against.
+    pub bundle_inventory_text: Option<String>,
 }
 
 impl AssetResolution {
+    /// The canonical voice (id, approval) a manifest document declares.
+    fn declared_voice(text: &str) -> Option<(String, String)> {
+        let value: serde_json::Value = serde_json::from_str(text).ok()?;
+        let cv = value.get("canonicalVoice")?;
+        let id = cv.get("id")?.as_str()?.trim().to_string();
+        if id.is_empty() {
+            return None;
+        }
+        let approval = cv
+            .get("approval")
+            .and_then(|a| a.as_str())
+            .unwrap_or("approval-pending")
+            .to_string();
+        Some((id, approval))
+    }
+
+    /// A loud description of an overriding manifest that names a different
+    /// voice than the shipped one, or None when they agree.
+    ///
+    /// A stale SPEECH-INVENTORY.json left in a user-writable directory
+    /// permanently shadows the signed bundle's copy - across every
+    /// reinstall and every rebuild, with nothing ever reporting it. That is
+    /// how a client gets locked to a voice they never chose, so a
+    /// disagreement is refused rather than obeyed.
+    pub fn canonical_voice_conflict(&self) -> Option<String> {
+        if self.used_root_kind == Some("bundle") {
+            return None;
+        }
+        let (used_id, _) = Self::declared_voice(self.inventory_text.as_deref()?)?;
+        let (shipped_id, _) = Self::declared_voice(self.bundle_inventory_text.as_deref()?)?;
+        if used_id == shipped_id {
+            return None;
+        }
+        Some(format!(
+            "the {} speech manifest declares voice '{used_id}' but the bundled manifest \
+             declares '{shipped_id}'; refusing to speak in a voice that is not the shipped, \
+             approved one",
+            self.used_root_kind.unwrap_or("overriding")
+        ))
+    }
     /// The root that supplies this entry, or None (artifact absent).
     pub fn root_for(&self, entry: &InventoryEntry) -> Option<std::path::PathBuf> {
         for root in self.candidates() {
@@ -210,23 +259,35 @@ pub fn resolve_speech_assets<R: Runtime>(app: &AppHandle<R>) -> AssetResolution 
         .ok()
         .map(|dir| dir.join("speech-assets"));
 
+    let read_manifest = |root: &std::path::Path| -> Option<String> {
+        std::fs::read_to_string(root.join("SPEECH-INVENTORY.json")).ok()
+    };
+
     let mut inventory_text: Option<String> = None;
-    for root in [env_root.as_ref(), user_root.as_ref(), bundle_root.as_ref()]
-        .into_iter()
-        .flatten()
-    {
-        let manifest = root.join("SPEECH-INVENTORY.json");
-        if let Ok(text) = std::fs::read_to_string(&manifest) {
+    let mut used_root_kind: Option<&'static str> = None;
+    for (kind, root) in [
+        ("env", env_root.as_ref()),
+        ("user", user_root.as_ref()),
+        ("bundle", bundle_root.as_ref()),
+    ] {
+        let Some(root) = root else { continue };
+        if let Some(text) = read_manifest(root) {
             inventory_text = Some(text);
+            used_root_kind = Some(kind);
             break;
         }
     }
+    // Always read the shipped manifest as well, even when an earlier root
+    // won, so the two documents can be compared rather than assumed equal.
+    let bundle_inventory_text = bundle_root.as_deref().and_then(read_manifest);
 
     AssetResolution {
         env_root,
         user_root,
         bundle_root,
         inventory_text,
+        used_root_kind,
+        bundle_inventory_text,
     }
 }
 
@@ -332,6 +393,66 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- shadowing-manifest enforcement --------------------------------
+
+    fn resolution(
+        used_kind: Option<&'static str>,
+        used: Option<&str>,
+        bundled: Option<&str>,
+    ) -> AssetResolution {
+        AssetResolution {
+            env_root: None,
+            user_root: None,
+            bundle_root: None,
+            inventory_text: used.map(str::to_string),
+            used_root_kind: used_kind,
+            bundle_inventory_text: bundled.map(str::to_string),
+        }
+    }
+
+    fn doc(id: &str) -> String {
+        serde_json::json!({
+            "schema": "candice.speech-inventory/v1",
+            "canonicalVoice": { "id": id, "approval": "approved" },
+            "entries": []
+        })
+        .to_string()
+    }
+
+    /// THE CLIENT TRAP. A stale manifest in a user-writable directory
+    /// permanently shadows the signed bundle's copy, surviving every
+    /// reinstall, with nothing reporting it. It must be refused.
+    #[test]
+    fn user_manifest_naming_a_different_voice_is_refused() {
+        let res = resolution(Some("user"), Some(&doc("af_heart")), Some(&doc("af_bella")));
+        let conflict = res
+            .canonical_voice_conflict()
+            .expect("a shadowing manifest that disagrees must be refused");
+        assert!(conflict.contains("af_heart"), "must name what it found: {conflict}");
+        assert!(conflict.contains("af_bella"), "must name what shipped: {conflict}");
+    }
+
+    #[test]
+    fn agreeing_manifests_are_not_refused() {
+        let res = resolution(Some("user"), Some(&doc("af_bella")), Some(&doc("af_bella")));
+        assert!(res.canonical_voice_conflict().is_none());
+    }
+
+    #[test]
+    fn the_bundle_never_conflicts_with_itself() {
+        let res = resolution(Some("bundle"), Some(&doc("af_bella")), Some(&doc("af_bella")));
+        assert!(res.canonical_voice_conflict().is_none());
+    }
+
+    #[test]
+    fn env_override_is_checked_too() {
+        let res = resolution(Some("env"), Some(&doc("af_nicole")), Some(&doc("af_bella")));
+        let conflict = res
+            .canonical_voice_conflict()
+            .expect("env override must be checked");
+        assert!(conflict.contains("env"), "must name the root: {conflict}");
+    }
 
     fn entry(id: &str, filename: &str, install_path: Option<&str>) -> InventoryEntry {
         InventoryEntry {
