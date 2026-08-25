@@ -592,3 +592,92 @@ test('every attribute the composition writes is a valid, non-empty token', async
     assert.doesNotMatch(name, /(^-|-$|--|\s)/, `attribute ${name} has a malformed token`);
   }
 });
+
+// ------------------------------ the name flow never overwrites a live question
+//
+// The composition root defers beginNameFlow() until after the bridge is
+// installed, but the bridge can deliver a question DURING that install. The
+// caption region is the only place the user can read the governed question, so
+// neither the first-run name question nor the welcome-back greeting may
+// announce over it. Observed live: the window showed "Hi, I'm Candice. What's
+// your name?" / "Welcome back, Trevor" while the delivered interview question
+// was nowhere on screen.
+
+/** Put the machine in the exact state a delivered question leaves behind. */
+function machineWithPendingQuestion(question: string): CandiceStateMachine {
+  const machine = createCandiceStateMachine();
+  machine.transition({ type: 'session:begin' });
+  machine.transition({ type: 'question:received', question });
+  assert.equal(
+    machine.getState().pendingQuestion,
+    question,
+    'guard: the fixture really did leave a question pending',
+  );
+  return machine;
+}
+
+test('a pending question survives the first-run name prompt (no caption announce)', async () => {
+  const machine = machineWithPendingQuestion('What are we building?');
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const composition = await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    { profile: freshProfile(), prefsLoad: loadResult(freshProfile()), doc: new FakeDocument() as unknown as Document },
+  );
+  composition.beginNameFlow();
+  assert.ok(
+    root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`) !== null,
+    'the prompt still mounts: spec 4 is not skipped, only its caption announce is',
+  );
+  assert.ok(
+    textOf(root).includes(NAME_QUESTION_TEXT),
+    'the prompt still shows its own question text to the user',
+  );
+  assert.deepEqual(captions.announced, [], 'nothing was announced over the delivered question');
+});
+
+test('a pending question survives the welcome-back greeting', async () => {
+  const machine = machineWithPendingQuestion('What are we building?');
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const profile = { ...freshProfile(), preferredName: 'Trevor', nameAsked: { askedAt: '2026-08-25T00:00:00.000Z' } };
+  const composition = await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    { profile, prefsLoad: loadResult(profile), doc: new FakeDocument() as unknown as Document },
+  );
+  composition.beginNameFlow();
+  assert.deepEqual(captions.announced, [], 'the greeting never overwrites the governed question');
+});
+
+test('CONTROL: with NO question pending the name flow still announces normally', async () => {
+  // Without this the tests above would pass even if the announce were deleted
+  // outright. Same code path, only the pending question removed.
+  const machine = createCandiceStateMachine();
+  assert.equal(machine.getState().pendingQuestion, null, 'guard: no question pending');
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const composition = await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    { profile: freshProfile(), prefsLoad: loadResult(freshProfile()), doc: new FakeDocument() as unknown as Document },
+  );
+  composition.beginNameFlow();
+  assert.deepEqual(captions.announced, [NAME_QUESTION_TEXT], 'the name question is still announced');
+
+  const back = new FakeElement('div');
+  const backCaptions = new FakeCaptions();
+  const known = { ...freshProfile(), preferredName: 'Trevor', nameAsked: { askedAt: '2026-08-25T00:00:00.000Z' } };
+  const returning = await initializeCandiceInteractionComposition(
+    back as unknown as HTMLElement,
+    createCandiceStateMachine(),
+    backCaptions,
+    { profile: known, prefsLoad: loadResult(known), doc: new FakeDocument() as unknown as Document },
+  );
+  returning.beginNameFlow();
+  assert.deepEqual(backCaptions.announced, ['Welcome back, Trevor'], 'the greeting is still announced');
+});

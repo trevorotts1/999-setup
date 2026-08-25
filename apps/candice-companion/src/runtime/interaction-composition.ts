@@ -128,6 +128,13 @@ function mountNamePrompt(
   nowIso: () => string,
   persist: (patch: Partial<CandiceProfile>) => Promise<boolean>,
   current: () => CandiceProfile,
+  /**
+   * Whether the prompt may also speak its question into the shared caption
+   * region. False while a governed question is already displayed there: the
+   * prompt renders its own question text either way, so suppressing the
+   * announce costs the user nothing and keeps the interview question visible.
+   */
+  announceQuestion = true,
 ): HTMLElement | null {
   if (root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`) !== null) return null;
 
@@ -236,7 +243,7 @@ function mountNamePrompt(
   });
 
   root.append(prompt);
-  captions?.announce(NAME_QUESTION_TEXT);
+  if (announceQuestion) captions?.announce(NAME_QUESTION_TEXT);
   input.focus();
   return prompt;
 }
@@ -291,10 +298,18 @@ export async function initializeCandiceInteractionComposition(
   };
 
   const beginNameFlow = (): void => {
+    // The composition root defers this until after the bridge is installed so
+    // a delivered question is never wiped by the prompt. The bridge can
+    // deliver DURING that install, though, in which case a governed question
+    // is already on the caption region — and it is the caption region, not the
+    // prompt, that is the only place the user can read the question. Neither
+    // the name question nor the welcome-back greeting may overwrite it; both
+    // are pleasantries, the interview question is the actual ask.
+    const questionPending = machine !== null && machine.getState().pendingQuestion !== null;
     // First-run name question (spec 4): asked at most once per local user.
     if (needsNameAsk(current)) {
-      mountNamePrompt(root, doc, captions, nowIso, persist, () => current);
-    } else {
+      mountNamePrompt(root, doc, captions, nowIso, persist, () => current, !questionPending);
+    } else if (!questionPending) {
       const phrase = welcomeBackPhrase(current);
       if (phrase !== null) captions?.announce(phrase);
     }
