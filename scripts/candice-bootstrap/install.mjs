@@ -42,6 +42,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -216,6 +217,18 @@ export function installPlugin(root, pins = PLUGIN_PINS, opts = {}) {
     rmSync(staged, { recursive: true, force: true });
     mkdirSync(dirname(staged), { recursive: true });
     cpSync(plugin, staged, { recursive: true });
+    if (opts.companionReady === true) {
+      const mcpPath = join(staged, ".mcp.json");
+      const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
+      if (!mcp.mcpServers?.candice?.command) {
+        return result(false, "plugin stage failed: candice MCP server missing");
+      }
+      mcp.mcpServers.candice.env = {
+        ...(mcp.mcpServers.candice.env || {}),
+        CANDICE_COMPANION_READY: "1",
+      };
+      writeFileSync(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
+    }
     writeFileSync(join(staged, ".candice-install-ok"), `plugin ${name} ${version}\n`);
   } catch (e) {
     return result(false, `plugin stage failed: ${e.message}`);
@@ -558,7 +571,9 @@ export async function installAll(opts = {}) {
   journal(root, { step: "skills.installed", count: Object.keys(skillsR.installed || {}).length });
 
   restores.push(snapshotTarget(root, pluginDir(root), "plugin"));
-  const pluginR = installPlugin(root, PLUGIN_PINS, opts);
+  // The app leg has already passed. Mark only this provisioned installed copy
+  // ready; the repo source remains fail-soft when installed without the app.
+  const pluginR = installPlugin(root, PLUGIN_PINS, { ...opts, companionReady: true });
   results.plugin = pluginR;
   if (!pluginR.ok) {
     const rb = rollback(`plugin failed: ${pluginR.message}`);

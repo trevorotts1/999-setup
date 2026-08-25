@@ -244,7 +244,16 @@ async function schemaHealthCheck(opts = {}) {
       try {
         const mcp = JSON.parse(readFileSync(mcpFile, "utf8"));
         const server = mcp.mcpServers && mcp.mcpServers.candice;
-        set("plugin-mcp", server && server.command ? LEG_OK : LEG_FAIL, server && server.command ? "candice MCP server declared" : "candice MCP server missing");
+        const ready = server?.env?.CANDICE_COMPANION_READY === "1";
+        set(
+          "plugin-mcp",
+          server?.command && ready ? LEG_OK : LEG_FAIL,
+          !server?.command
+            ? "candice MCP server missing"
+            : ready
+              ? "candice MCP server declared and provisioned"
+              : "candice MCP server is not provisioned (CANDICE_COMPANION_READY=1 missing)",
+        );
       } catch (e) {
         set("plugin-mcp", LEG_FAIL, `.mcp.json unreadable: ${e.message}`);
       }

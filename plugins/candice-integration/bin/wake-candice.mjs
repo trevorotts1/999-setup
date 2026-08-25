@@ -13,6 +13,9 @@
 
 import { spawn as nodeSpawn } from 'node:child_process';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export const SUPPORTED_COMMANDS = Object.freeze([
   '/spec-protocol',
@@ -76,6 +79,35 @@ export function buildWakeRequest(command, payload) {
   };
 }
 
+/** Resolve the provisioned app without depending on an interactive-shell PATH. */
+export function resolveLaunchCommand({
+  env = process.env,
+  platform = process.platform,
+  exists = existsSync,
+} = {}) {
+  if (env.CANDICE_COMPANION_CMD) return env.CANDICE_COMPANION_CMD;
+
+  const candidates = [];
+  if (platform === 'darwin' && env.HOME) {
+    candidates.push(join(
+      env.HOME,
+      'Library', 'Application Support', 'BlackCEO', '999', 'app',
+      'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
+    ));
+  }
+  if (platform === 'win32' && env.LOCALAPPDATA) {
+    candidates.push(join(
+      env.LOCALAPPDATA, 'BlackCEO', '999', 'app',
+      'Candice Companion', 'candice-companion.exe',
+    ));
+    candidates.push(join(
+      env.LOCALAPPDATA, 'BlackCEO', '999', 'app',
+      'Candice Companion.exe',
+    ));
+  }
+  return candidates.find((candidate) => exists(candidate)) || 'candice-companion';
+}
+
 /**
  * Ask the locally installed visual app to wake.  Arguments are never composed
  * through a shell.  The current runtime receives only a supported command;
@@ -83,7 +115,7 @@ export function buildWakeRequest(command, payload) {
  * cross-session claim and is intentionally forbidden until FIX-011.
  */
 export function dispatchWake(request, {
-  launchCommand = process.env.CANDICE_COMPANION_CMD || 'candice-companion',
+  launchCommand = resolveLaunchCommand(),
   spawn = nodeSpawn,
 } = {}) {
   if (!request.ok) return { outcome: 'ignored', code: request.code };
@@ -109,6 +141,28 @@ export function commandFromArgs(args) {
   return index >= 0 ? args[index + 1] ?? null : null;
 }
 
+/** Extract only a supported leading slash command; never retain prompt text. */
+export function commandFromHookPayload(raw) {
+  if (raw === '' || Buffer.byteLength(raw, 'utf8') > MAX_STDIN_BYTES) return null;
+  try {
+    const payload = JSON.parse(raw);
+    if (!payload || typeof payload.prompt !== 'string') return null;
+    const prompt = payload.prompt.trimStart();
+    const firstToken = prompt.split(/\s+/, 1)[0];
+    if (SUPPORTED_COMMANDS.includes(firstToken)) return firstToken;
+
+    // Claude expands a recognized slash command into this bounded envelope
+    // before UserPromptSubmit hooks run. Read only command-name; never inspect
+    // or forward command-args or the expanded skill body.
+    const expanded = prompt.match(
+      /^<command-message>[^<]*<\/command-message>\s*<command-name>(\/[a-z0-9-]+)<\/command-name>(?:\s|$)/,
+    );
+    return expanded && SUPPORTED_COMMANDS.includes(expanded[1]) ? expanded[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function readStdin(stream = process.stdin) {
   const chunks = [];
   let bytes = 0;
@@ -123,8 +177,9 @@ export async function readStdin(stream = process.stdin) {
 
 export async function main({ args = process.argv.slice(2), stdin = process.stdin } = {}) {
   try {
-    const command = commandFromArgs(args);
-    const request = buildWakeRequest(command, parseHookPayload(await readStdin(stdin)));
+    const raw = await readStdin(stdin);
+    const command = commandFromArgs(args) || commandFromHookPayload(raw);
+    const request = buildWakeRequest(command, parseHookPayload(raw));
     dispatchWake(request);
   } catch {
     // Hooks are asynchronous and must never stop the invoking skill. Intentionally
@@ -133,6 +188,10 @@ export async function main({ args = process.argv.slice(2), stdin = process.stdin
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function isMainModule(moduleUrl = import.meta.url, argvPath = process.argv[1]) {
+  return Boolean(argvPath) && moduleUrl === pathToFileURL(argvPath).href;
+}
+
+if (isMainModule()) {
   main().then((code) => { process.exitCode = code; });
 }

@@ -4,27 +4,52 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   buildWakeRequest,
+  commandFromHookPayload,
   dispatchWake,
+  isMainModule,
   parseHookPayload,
+  resolveLaunchCommand,
   SUPPORTED_COMMANDS,
 } from '../wake-candice.mjs';
 
 test('FIX-010: hook registration invokes the Node dispatcher for only supported commands', () => {
   const hooks = JSON.parse(readFileSync(new URL('../../hooks/hooks.json', import.meta.url), 'utf8'));
-  assert.deepEqual(Object.keys(hooks.hooks), ['UserPromptExpansion']);
-  const entries = hooks.hooks.UserPromptExpansion;
-  assert.equal(entries.length, SUPPORTED_COMMANDS.length);
-  assert.deepEqual(entries.map((entry) => `/${entry.matcher}`), SUPPORTED_COMMANDS);
-  for (const entry of entries) {
-    const hook = entry.hooks[0];
-    assert.equal(hook.type, 'command');
-    assert.equal(hook.command, 'node');
-    assert.equal(hook.async, true);
-    assert.equal(hook.args[0], '${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs');
-  }
+  assert.deepEqual(Object.keys(hooks.hooks), ['UserPromptSubmit']);
+  const hook = hooks.hooks.UserPromptSubmit[0].hooks[0];
+  assert.equal(hook.type, 'command');
+  assert.equal(hook.command,
+    'node "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs" --from-prompt');
+  assert.equal(Object.hasOwn(hook, 'args'), false,
+    'Claude command hooks require the executable and arguments in command');
+  assert.equal(Object.hasOwn(hook, 'async'), false,
+    'wake dispatch must complete before slash-command preflight begins');
+});
+
+test('FIX-010: prompt hook extracts only supported leading commands', () => {
+  assert.equal(commandFromHookPayload(JSON.stringify({
+    prompt: '/spec-protocol I want to build something',
+  })), '/spec-protocol');
+  assert.equal(commandFromHookPayload(JSON.stringify({ prompt: '  /eli5 explain it' })), '/eli5');
+  assert.equal(commandFromHookPayload(JSON.stringify({ prompt: '/ordinary hello' })), null);
+  assert.equal(commandFromHookPayload(JSON.stringify({ prompt: 'mention /bro later' })), null);
+  assert.equal(commandFromHookPayload('{'), null);
+});
+
+test('FIX-010: prompt hook recognizes Claude slash-command expansion envelope', () => {
+  assert.equal(commandFromHookPayload(JSON.stringify({
+    hook_event_name: 'UserPromptSubmit',
+    prompt: '<command-message>spec-protocol</command-message>\n'
+      + '<command-name>/spec-protocol</command-name>\n'
+      + '<command-args>I want to build something</command-args>',
+  })), '/spec-protocol');
+  assert.equal(commandFromHookPayload(JSON.stringify({
+    prompt: '<command-message>ordinary</command-message>\n'
+      + '<command-name>/ordinary</command-name>',
+  })), null);
 });
 
 test('FIX-010: dispatcher accepts bounded opaque metadata and ignores prompt content', () => {
@@ -61,6 +86,20 @@ test('FIX-010: malformed hook input and unsupported commands are ignored fail-so
     outcome: 'ignored',
     code: 'invalid-json',
   });
+});
+
+test('FIX-010: installed app resolves without an interactive-shell PATH', () => {
+  const mac = '/Users/test/Library/Application Support/BlackCEO/999/app/Candice Companion.app/Contents/MacOS/candice-companion';
+  assert.equal(resolveLaunchCommand({
+    env: { HOME: '/Users/test' },
+    platform: 'darwin',
+    exists: (candidate) => candidate === mac,
+  }), mac);
+  assert.equal(resolveLaunchCommand({
+    env: { HOME: '/Users/test', CANDICE_COMPANION_CMD: '/custom/candice' },
+    platform: 'darwin',
+    exists: () => false,
+  }), '/custom/candice');
 });
 
 test('FIX-010: oversized and malformed identifiers never become routing metadata', () => {
@@ -139,4 +178,10 @@ test('FIX-010: legacy positional wrapper translates the command before dispatch'
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
+});
+
+test('FIX-010: main-module detection is URL-safe for installed paths containing spaces', () => {
+  const installed = '/Users/test/Library/Application Support/BlackCEO/wake candice.mjs';
+  assert.equal(isMainModule(pathToFileURL(installed).href, installed), true);
+  assert.equal(isMainModule('file:///different/wake-candice.mjs', installed), false);
 });

@@ -136,6 +136,15 @@ test("installPlugin: plugin tree lands with manifest + hooks + wake handler", ()
   rmSync(root, { recursive: true, force: true });
 });
 
+test("installPlugin: provisioned copy declares companion readiness", () => {
+  const root = freshRoot();
+  const r = installPlugin(root, PLUGIN_PINS, { noAtomic: true, companionReady: true });
+  assert.equal(r.ok, true, r.message);
+  const mcp = JSON.parse(readFileSync(join(pluginDir(root), ".mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers.candice.env.CANDICE_COMPANION_READY, "1");
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("installApp refuses a caller-staged .app bundle until release authority exists", async () => {
   const root = freshRoot();
   const app = join(root, "fixture.app");
