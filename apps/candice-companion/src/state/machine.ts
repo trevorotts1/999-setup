@@ -92,6 +92,7 @@ export type CandiceEventType =
   | 'answer:confirmed'
   | 'speech:transcript'
   | 'speech:tts'
+  | 'speech:ended'
   | 'speech:interrupted'
   | 'ptt:start'
   | 'ptt:stop'
@@ -274,6 +275,33 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           ttsFallbackActive: event.ttsFallback === true,
         };
         lastEffects.push({ type: 'tts:speak', caption: state.pendingQuestion });
+        return state;
+      }
+
+      case 'speech:ended': {
+        // NATURAL completion of an utterance: the audio finished, or the
+        // engine refused it. This is NOT `speech:interrupted` — that is a
+        // barge-in, and it pushes `tts:stop` (stopping audio that already
+        // stopped) plus `mic:open` (opening the mic is the USER's decision,
+        // spec 6). Using it for completion would mean a stop for speech that
+        // already ended and a mic she never asked to open.
+        //
+        // Without this event `speaking` is a TERMINAL status: the only way
+        // out is `speech:interrupted`, and nothing dispatches that when an
+        // utterance simply ends. Because `ptt:start` refuses while speaking,
+        // making `speech:tts` reachable WITHOUT this would leave HOLD TO TALK
+        // permanently dead — a worse regression than the unreachable
+        // `speaking` status it was fixing.
+        //
+        // She rests where the delivered question already sat (`thinking`), so
+        // the user can answer the moment she stops talking. No effects: the
+        // caption is already correct and nothing needs stopping.
+        if (state.status !== 'speaking') return null;
+        state = {
+          ...state,
+          status: state.pendingQuestion === null ? 'idle' : 'thinking',
+          ttsFallbackActive: false,
+        };
         return state;
       }
 

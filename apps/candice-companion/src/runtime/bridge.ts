@@ -16,6 +16,7 @@ import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
+import { SPEECH_BOUNDARY_EVENT, SPEECH_DRAIN_EVENT } from './speech-timing.ts';
 
 interface BridgeQuestion {
   schemaVersion: '1.0';
@@ -255,10 +256,25 @@ export async function initializeAuthenticatedBridge(
     root.dataset.speechPlayback = state;
   };
 
-  const stopSpeaking = (): void => {
+  /**
+   * The utterance is over — drained naturally, interrupted, or refused.
+   *
+   * This is what takes her OUT of `status: 'speaking'`, and it must run on
+   * EVERY exit path: `ptt:start` refuses while speaking, so a missed exit
+   * leaves HOLD TO TALK dead until the next question. Idempotent — the
+   * machine ignores `speech:ended` unless she is actually speaking, so a
+   * duplicate drain, or a teardown after a drain, costs nothing.
+   */
+  const endSpeaking = (): void => {
     if (speakingFor === null) return;
     speakingFor = null;
     setPlaybackState('idle');
+    machine.transition({ type: 'speech:ended' });
+  };
+
+  const stopSpeaking = (): void => {
+    if (speakingFor === null) return;
+    endSpeaking();
     try { prefs.cancelSpeech?.(); } catch { /* stopping must never throw */ }
   };
 
@@ -282,12 +298,20 @@ export async function initializeAuthenticatedBridge(
     const identity = identityKey(question);
     speakingFor = identity;
     setPlaybackState('speaking');
+    // THE hologram wire. `status: 'speaking'` is the only status the bust,
+    // blink, lip sync and head drift render under, and this is its ONLY
+    // dispatch in the app: `speech:tts` was declared, handled and tested
+    // while nothing ever fired it, so those layers were never once reachable.
+    machine.transition({ type: 'speech:tts', ttsFallback: false });
     void speak(utterance).catch((error: unknown) => {
       // Only the utterance we started may clear the state; a late rejection
       // from a superseded question must not stomp the current one.
       if (speakingFor !== identity) return;
       speakingFor = null;
       setPlaybackState('failed');
+      // A refused utterance must leave `speaking` too, or a synthesis error
+      // strands her there and HOLD TO TALK never comes back.
+      machine.transition({ type: 'speech:ended' });
       // The parameter is the whole point: this catch used to take none, so
       // every reason the native side produced died here.
       reportSpeechFailure(error, prefs.announceSpeechFailure);
@@ -461,10 +485,27 @@ export async function initializeAuthenticatedBridge(
       machine.transition({ type: 'session:end' });
     }
   });
+  // END OF AUDIO. The native playback thread already emits exactly one of
+  // these per utterance — `speech-drain` when it plays out, `speech-boundary`
+  // when it is cut short — and until now the ONLY consumer was the viseme
+  // scheduler. Nothing told the state machine she had stopped talking, so
+  // without this she would sit in `speaking` from the moment the hologram
+  // wire above fires until the next teardown, with HOLD TO TALK refused the
+  // entire time. Both events mean the same thing here: the mouth is closed.
+  const unlistenDrain = await listen<unknown>(SPEECH_DRAIN_EVENT, () => { endSpeaking(); });
+  const unlistenBoundary = await listen<unknown>(SPEECH_BOUNDARY_EVENT, () => { endSpeaking(); });
+
   // An event emitted before WebView initialization is retrieved exactly once.
   // Register first, then take the pending value so neither ordering loses it.
   await present(await invoke('cmd_take_pending_bridge_question'));
-  return () => { unlisten(); unlistenCancel(); unlistenLifecycle(); void closeControls(); };
+  return () => {
+    unlisten();
+    unlistenCancel();
+    unlistenLifecycle();
+    unlistenDrain();
+    unlistenBoundary();
+    void closeControls();
+  };
 }
 
 export { parseQuestion, parseCancellation, parseLifecycle };

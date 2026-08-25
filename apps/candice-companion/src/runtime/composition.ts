@@ -150,6 +150,8 @@ export async function initializeRuntimeComposition(
   // Reduced motion is owned by the WS-14 runtime in main.ts, which
   // applies the class to `<html>` before this root runs; the driver
   // reads it through the stage's ownerDocument root.
+  /** Set when the gesture stage fails; announced once captions exist. */
+  let captionsFailure: string | null = null;
   const character = document.querySelector<HTMLElement>(`.${GESTURE_CHARACTER_CLASS}`);
   let host: GestureStageHost | null = null;
   let unbind: (() => void) | null = null;
@@ -176,9 +178,19 @@ export async function initializeRuntimeComposition(
       // the bootstrap-only stage so the hologram is rendered once and gets
       // the available viewport rather than sharing it with a duplicate.
       document.getElementById(VISUAL_STAGE_ID)?.remove();
-    } catch {
+    } catch (error) {
+      // NEVER swallow this. A throw here means the hologram silently does not
+      // mount — the bust, blink, lip sync and head drift simply are not there,
+      // and the app looks like it is working. That cost this campaign hours.
+      // The shell still degrades (spec 20): the session continues without the
+      // gesture stage, but the reason is recorded where a human can find it.
       host = null;
       unbind = null;
+      root.dataset.gestureStage = 'failed';
+      root.dataset.gestureStageError = error instanceof Error
+        ? error.message
+        : String(error);
+      captionsFailure = 'Candice\u2019s animation could not start. Everything else still works.';
     }
   }
 
@@ -200,6 +212,10 @@ export async function initializeRuntimeComposition(
     textScale: profile.textSize ?? 'medium',
     initialCaption: SETUP_CHECK_GREETING,
   });
+  // The gesture stage may have failed before captions existed. Say so now,
+  // once, rather than leaving a silently missing hologram.
+  if (captionsFailure !== null) captions.announce(captionsFailure);
+
   const originalTransition = machine.transition.bind(machine);
   machine.transition = (event) => {
     const result = originalTransition(event);

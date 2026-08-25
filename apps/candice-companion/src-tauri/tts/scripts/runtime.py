@@ -7,8 +7,12 @@ Reads one JSON command per line on stdin, writes one JSON result per line on
 stdout. Exits cleanly on EOF.
 
 Command:
-    {"kind": "synthesize", "text": "...", "voiceId": "af_heart",
+    {"kind": "synthesize", "text": "...", "voiceId": "af_bella",
      "speed": 1.0, "withTimings": true}
+
+`voiceId` is REQUIRED. There is no default: an absent or empty voiceId is
+refused rather than substituted, because a voice the operator did not
+approve is worse than no speech at all.
 
 Result:
     {"ok": true, "pcmB64": "...", "sampleRate": 24000,
@@ -189,7 +193,18 @@ def main() -> int:
             continue
 
         text = str(cmd.get("text", ""))[:MAX_TEXT_CHARS]
-        voice = str(cmd.get("voiceId", "af_heart"))
+        # NO DEFAULT VOICE. This used to fall back to "af_heart" when voiceId
+        # was absent or empty. af_heart is a real voice in the pack, so it
+        # synthesized perfectly and nothing ever raised -- the client simply
+        # heard someone the operator never approved. The native side refuses
+        # the same substitution (resolve_approved_voice); the worker must not
+        # quietly undo that refusal one layer down.
+        voice = str(cmd.get("voiceId") or "").strip()
+        if not voice:
+            print(json.dumps({"ok": False, "error":
+                              "no voiceId in request; refusing to choose a voice "
+                              "the operator did not approve"}), flush=True)
+            continue
         speed = float(cmd.get("speed", 1.0))
         with_timings = bool(cmd.get("withTimings", False))
 

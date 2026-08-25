@@ -1,7 +1,7 @@
 {
   "schema": "candice.speech-inventory/v1",
   "generatedBy": "scripts/generate-speech-inventory.mjs (FIX-015)",
-  "generatedAt": "2026-08-25T19:03:36.825Z",
+  "generatedAt": "2026-08-25T21:33:02.424Z",
   "bundleRoot": "speech-assets/",
   "canonicalVoice": {
     "id": "af_bella",
@@ -109,8 +109,8 @@
       "version": "0.6.1",
       "license": "MIT (worker script); runtime pins per src-tauri/tts/NOTICE.md",
       "arch": "universal",
-      "sizeBytes": 8578,
-      "sha256": "7a97d341ec6cb0e80d496c54ebda5a69cd3744ba47fd9f6521bb6c0a8fd60528",
+      "sizeBytes": 9456,
+      "sha256": "37c1f5943a2cd99baa39efbb1e768c53988c970dd1eb518c6a090ba4c18484a4",
       "sha256Status": "measured-from-tree",
       "installPath": "tts/runtime/runtime.py",
       "sourceUrl": "apps/candice-companion/src-tauri/tts/scripts/runtime.py",

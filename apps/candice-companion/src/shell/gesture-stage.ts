@@ -219,7 +219,21 @@ export function mountGestureStage(options: MountGestureStageOptions): GestureSta
   // which is why blink and head drift reach it with no driver change at all.
   // Fails closed to an inert host, so a face that cannot mount never costs
   // the body pose.
-  const faceStage = mountFaceStage({ document, character });
+  const failedFaceLayers = new Set<string>();
+  const faceStage = mountFaceStage({
+    document,
+    character,
+    // A mouth or eye layer that fails to load used to be SILENT: the face
+    // simply did not appear and nothing recorded why. Reported as evidence
+    // exactly like a body pose — and deliberately NOT escalated to
+    // `reportShellError`, because one missing viseme must not drop the whole
+    // companion to text mode (ANIMATION-STATE-MAP rule 2, the same reasoning
+    // as the non-idle body layers above).
+    reportLayerError: (state: string) => {
+      failedFaceLayers.add(state);
+      character.dataset.candiceFaceFailed = [...failedFaceLayers].sort().join(',');
+    },
+  });
 
   // The WS-12 output stage. `visemeAt` is a PULL api: until something polls
   // it, the real phoneme timings speech-timing.ts already feeds in are never

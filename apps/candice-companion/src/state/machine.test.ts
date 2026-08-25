@@ -300,3 +300,76 @@ test('isBusy marks the statuses that block terminal injection (spec 13.3)', () =
   assert.equal(isBusy('compact'), false);
   assert.equal(isBusy('text-fallback'), false);
 });
+
+// --------------------------------------------- speaking is not a dead end
+
+/**
+ * THE REGRESSION THIS PREVENTS. `status: 'speaking'` is the only status the
+ * bust, blink, lip sync and head drift render under, and nothing in the app
+ * ever dispatched `speech:tts`, so those layers were unreachable. Making it
+ * reachable is only half the repair: the sole exit from `speaking` was
+ * `speech:interrupted`, and nothing fires that when an utterance simply ends.
+ * Since `ptt:start` refuses while speaking, dispatching the start ALONE would
+ * have traded an invisible hologram for a dead HOLD TO TALK button.
+ *
+ * These assert the OUTCOME — the button works — not the status string.
+ */
+test('HOLD TO TALK still works after she finishes speaking (the PTT trap)', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'What are we building?' });
+  m.transition({ type: 'speech:tts' });
+  assert.equal(m.getState().status, 'speaking', 'the hologram wire must reach speaking');
+
+  // Refusing PTT WHILE she talks is correct and must stay.
+  assert.equal(m.transition({ type: 'ptt:start' }), null, 'PTT is refused mid-utterance');
+
+  m.transition({ type: 'speech:ended' });
+
+  // THE OUTCOME. Without the completion transition this returns null and
+  // Trevor presses HOLD TO TALK and nothing happens.
+  const pressed = m.transition({ type: 'ptt:start' });
+  assert.notEqual(pressed, null, 'HOLD TO TALK must work once she stops talking');
+  assert.equal(m.getState().status, 'listening');
+});
+
+test('a failed utterance does not strand her in speaking either', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'What are we building?' });
+  m.transition({ type: 'speech:tts' });
+  // Synthesis refused: the bridge dispatches the same completion event.
+  m.transition({ type: 'speech:ended' });
+  assert.notEqual(m.transition({ type: 'ptt:start' }), null, 'PTT survives a synthesis failure');
+});
+
+test('natural completion is not a barge-in: no tts:stop, no mic:open', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'What are we building?' });
+  m.transition({ type: 'speech:tts' });
+  m.transition({ type: 'speech:ended' });
+  // `speech:interrupted` pushes tts:stop + mic:open. Completion must push
+  // NEITHER: the audio already stopped, and opening the mic is the user's
+  // decision (spec 6), never a side effect of her finishing a sentence.
+  assert.deepEqual(m.lastEffects.map((e) => e.type), [], 'completion emits no effects');
+  // She rests where the delivered question sat, ready for the answer.
+  assert.equal(m.getState().status, 'thinking');
+  assert.equal(m.getState().pendingQuestion, 'What are we building?');
+});
+
+test('speech:ended is ignored unless she is actually speaking (idempotent)', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'What are we building?' });
+  assert.equal(m.transition({ type: 'speech:ended' }), null, 'no-op when not speaking');
+  m.transition({ type: 'speech:tts' });
+  assert.notEqual(m.transition({ type: 'speech:ended' }), null);
+  // A duplicate drain, or teardown after a drain, must cost nothing.
+  assert.equal(m.transition({ type: 'speech:ended' }), null, 'second completion is a no-op');
+});
+
+test('speech:interrupted is still a barge-in and still opens the mic', () => {
+  const m = createCandiceStateMachine();
+  m.transition({ type: 'question:received', question: 'What are we building?' });
+  m.transition({ type: 'speech:tts' });
+  m.transition({ type: 'speech:interrupted' });
+  assert.deepEqual(m.lastEffects.map((e) => e.type), ['tts:stop', 'mic:open']);
+  assert.equal(m.getState().status, 'listening');
+});
