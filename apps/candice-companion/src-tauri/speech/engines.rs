@@ -544,6 +544,31 @@ pub(crate) fn kokoro_command(
     cmd
 }
 
+/// The playback thread could not be created at all.
+///
+/// This is the THIRD way to strand her, and the guard below cannot cover it:
+/// `PlaybackExit` is armed INSIDE the closure, so a thread that never starts
+/// never arms it. `emit_speech_start` has already fired by this point, so the
+/// viseme scheduler is animating a mouth with no audio behind it and the
+/// webview believes she is speaking.
+///
+/// Emits `boundary`, never `drain` — the audio did not play out. Same choice
+/// as the unwind path, for the same reason: both close the mouth, so honesty
+/// is free.
+///
+/// The emitter is INJECTED because a real `Builder::spawn` failure needs
+/// EAGAIN under thread or memory pressure, which a unit test cannot honestly
+/// manufacture. So the HANDLING is proven and the TRIGGER is not — stated
+/// here rather than discovered later.
+fn playback_spawn_failed(
+    utterance_id: &str,
+    error: &std::io::Error,
+    emit_boundary: &dyn Fn(&str),
+) -> String {
+    emit_boundary(utterance_id);
+    format!("voice engine playback thread could not start: {error}; captions remain available")
+}
+
 // PlaybackExit below is a Drop guard, and Drop only runs while UNWINDING.
 // Under `panic = "abort"` the playback thread dies without dropping: no stop
 // event reaches the webview and the speak slot is never released, so she goes
@@ -673,7 +698,13 @@ impl TtsEngine {
                     }
                 }
             })
-            .expect("kokoro reader thread must start");
+            // A panic here would unwind out of the Tauri command with the
+            // speak slot still held. As a value it reaches `speak_impl`'s
+            // existing error path, which releases the slot and returns the
+            // reason to the caption surface.
+            .map_err(|e| format!(
+                "voice engine reader thread could not start: {e}; captions remain available"
+            ))?;
 
         let cmd_line = serde_json::json!({
             "kind": "synthesize",
@@ -758,7 +789,7 @@ impl TtsEngine {
         let app_handle = app.clone();
         let uid = utterance_id.to_string();
         let rid = request_id.to_string();
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("candice-playback".into())
             .spawn(move || {
                 // Armed BEFORE playback: if `play_f32_pcm` unwinds, Drop still
@@ -780,8 +811,18 @@ impl TtsEngine {
                     let _ = crate::speech_timing::emit_speech_boundary(&app_handle, &uid);
                 }
                 exit.disarm();
-            })
-            .expect("playback thread must start");
+            });
+        // `.expect()` here panicked on the CALLING thread, inside the Tauri
+        // command, so it took the command down and unwound straight past
+        // `speak_impl`'s `speak_release_slot` on the error path. The recovery
+        // was never missing — the panic simply jumped over it, and the slot
+        // stayed held for the rest of the session.
+        if let Err(error) = spawned {
+            let boundary_app = app.clone();
+            return Err(playback_spawn_failed(utterance_id, &error, &|id: &str| {
+                let _ = crate::speech_timing::emit_speech_boundary(&boundary_app, id);
+            }));
+        }
         Ok(())
     }
 
@@ -1017,6 +1058,48 @@ mod tests {
     /// Without the guard the webview sits in `status: 'speaking'` with HOLD TO
     /// TALK refused, AND the speak slot stays parked so every later utterance
     /// is answered "speech-busy" — a permanently mute session.
+    /// A playback thread that NEVER STARTS strands her the same way a panicking
+    /// one does, and `PlaybackExit` cannot help: the guard is armed inside the
+    /// closure, so a thread that never runs never arms it.
+    ///
+    /// `emit_speech_start` has already fired at this point, so the scheduler is
+    /// animating a mouth with no audio behind it. The stop must still be sent.
+    #[test]
+    fn a_playback_thread_that_never_starts_still_stops_the_mouth() {
+        let emitted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&emitted);
+        let err = std::io::Error::new(std::io::ErrorKind::WouldBlock, "EAGAIN");
+
+        let reason = playback_spawn_failed("utt-7", &err, &move |id: &str| {
+            log.lock().expect("emit log").push(id.to_string());
+        });
+
+        assert_eq!(
+            emitted.lock().expect("emit log").as_slice(),
+            ["utt-7"],
+            "the mouth is left animating with no audio unless a stop is emitted"
+        );
+        assert!(reason.contains("EAGAIN"), "the real cause must survive: {reason}");
+        assert!(
+            reason.contains("captions remain available"),
+            "the user must be told what still works: {reason}"
+        );
+    }
+
+    /// The stop must name the utterance that failed, never a hardcoded or
+    /// stale id — a stop for the wrong utterance would close the mouth on a
+    /// DIFFERENT, healthy one.
+    #[test]
+    fn the_spawn_failure_stop_carries_the_failing_utterance_id() {
+        let emitted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&emitted);
+        let err = std::io::Error::other("thread limit");
+        let _ = playback_spawn_failed("utt-second", &err, &move |id: &str| {
+            log.lock().expect("emit log").push(id.to_string());
+        });
+        assert_eq!(emitted.lock().expect("emit log").as_slice(), ["utt-second"]);
+    }
+
     #[test]
     fn a_panicking_playback_thread_still_stops_speech_and_frees_the_slot() {
         let slot = Arc::new(Mutex::new(Some("req-1".to_string())));
