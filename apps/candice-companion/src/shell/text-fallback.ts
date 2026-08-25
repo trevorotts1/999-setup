@@ -8,7 +8,7 @@
  * session and never accepts interview answers.
  */
 
-export function showTextFallback(root: HTMLElement | null): void {
+export function showTextFallback(root: HTMLElement | null, detail?: string): void {
   if (!root) return;
   root.replaceChildren();
 
@@ -27,5 +27,11 @@ export function showTextFallback(root: HTMLElement | null): void {
     'Continue in Claude text mode — your session is unaffected.';
 
   card.append(title, hint);
+  if (detail) {
+    const reason = document.createElement('p');
+    reason.className = 'fallback-hint';
+    reason.textContent = detail;
+    card.append(reason);
+  }
   root.append(card);
 }

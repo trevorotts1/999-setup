@@ -38,6 +38,11 @@ import {
   unregisterShellCommands,
 } from './shell/shell-commands';
 
+function bootStepError(step: string, error: unknown): Error {
+  const detail = error instanceof Error ? error.message : String(error);
+  return new Error(`${step}: ${detail}`);
+}
+
 /** Boot the companion shell. Never throws: failure must never stop Claude. */
 export async function bootCandice(): Promise<void> {
   const root = document.getElementById('app');
@@ -62,7 +67,7 @@ export async function bootCandice(): Promise<void> {
         ? 'Candice shell ready'
         : 'Candice companion unavailable';
   };
-  const enterTextFallback = (): void => {
+  const enterTextFallback = (detail?: string): void => {
     if (fellBack) return;
     fellBack = true;
     window.removeEventListener('candice:shell-error', onShellError);
@@ -70,9 +75,9 @@ export async function bootCandice(): Promise<void> {
     accessibility?.dispose();
     speechTiming?.dispose();
     setStatus('text-fallback');
-    showTextFallback(root);
+    showTextFallback(root, detail);
   };
-  const onShellError = (): void => enterTextFallback();
+  const onShellError = (): void => enterTextFallback('candice:shell-error event');
 
   try {
     // Surface the boot markup as fast as possible (spec 28: Candice appears
@@ -82,7 +87,11 @@ export async function bootCandice(): Promise<void> {
 
     // Install this before visual creation or any IPC work can report failure.
     window.addEventListener('candice:shell-error', onShellError, { once: true });
-    mountVisualStage(root);
+    try {
+      mountVisualStage(root);
+    } catch (error) {
+      throw bootStepError('mount-visual-stage', error);
+    }
     // The boot surface is only a first-paint placeholder. Keeping it after
     // the approved visual mounts competes for the fixed companion viewport
     // and visibly shrinks the hologram.
@@ -97,7 +106,11 @@ export async function bootCandice(): Promise<void> {
     // events; the render lane consumes its steps later. Absent the
     // native event API the channel stays inert and never throws.
     const visemeScheduler = new VisemeScheduler();
-    speechTiming = await attachSpeechTimingChannel(visemeScheduler);
+    try {
+      speechTiming = await attachSpeechTimingChannel(visemeScheduler);
+    } catch (error) {
+      throw bootStepError('attach-speech-timing', error);
+    }
     // Invoke is the durable initial shell latch. A native ready event can be
     // emitted before the WebView starts; it is therefore not accepted as the
     // sole proof of readiness.
@@ -105,8 +118,13 @@ export async function bootCandice(): Promise<void> {
     // The window is visible but pointer-transparent until a future native
     // input-region adapter can prove bounded visible controls. This prevents
     // the 420x640 transparent companion rectangle from eating Terminal clicks.
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    const nativeWindow = getCurrentWindow();
+    let nativeWindow;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      nativeWindow = getCurrentWindow();
+    } catch (error) {
+      throw bootStepError('get-current-window', error);
+    }
     const windowState = await readyWindowAppearance(nativeWindow);
     if (!windowState.windowAvailable) {
       throw new Error('candice: native window appearance unavailable');
@@ -128,20 +146,32 @@ export async function bootCandice(): Promise<void> {
     // fabricated persisted preference.
     const { invoke } = await import('@tauri-apps/api/core');
     const prefsLoad = await loadProfileViaIpc({ invoke });
-    accessibility = initializeAccessibilityRuntime(root, {
-      reducedMotion: prefsLoad.profile.reducedMotion,
-      textScale: textSizeToScale(prefsLoad.profile.textSize),
-    });
-    registry = registerShellCommands(machine, shellInfo);
-    await initializeRuntimeComposition(root, machine, {
-      profile: prefsLoad.profile,
-      prefsLoad,
-    });
+    try {
+      accessibility = initializeAccessibilityRuntime(root, {
+        reducedMotion: prefsLoad.profile.reducedMotion,
+        textScale: textSizeToScale(prefsLoad.profile.textSize),
+      });
+    } catch (error) {
+      throw bootStepError('initialize-accessibility', error);
+    }
+    try {
+      registry = registerShellCommands(machine, shellInfo);
+    } catch (error) {
+      throw bootStepError('register-shell-commands', error);
+    }
+    try {
+      await initializeRuntimeComposition(root, machine, {
+        profile: prefsLoad.profile,
+        prefsLoad,
+      });
+    } catch (error) {
+      throw bootStepError('initialize-runtime-composition', error);
+    }
     setStatus('shell-ready');
 
   } catch (err) {
     console.error('[candice] shell boot failed, entering text fallback', err);
-    enterTextFallback();
+    enterTextFallback(err instanceof Error ? err.message : String(err));
   }
 }
 
