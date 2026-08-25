@@ -63,6 +63,9 @@ export const PTT_STYLE_TEXT = `
   line-height: 1.3;
   color: var(--candice-ptt-text);
   user-select: none;
+  /* FIX-008: opaque backdrop for the cluster's own label text. */
+  background: var(--candice-ui-surface, #171321);
+  border-radius: 12px;
 }
 .candice-ptt-button {
   position: relative;
@@ -74,7 +77,11 @@ export const PTT_STYLE_TEXT = `
   padding: 14px 22px;
   border: 2px solid var(--candice-ptt-accent);
   border-radius: 999px;
-  background: transparent;
+  /* FIX-008: HOLD TO TALK sits on a transparent window. Without an opaque
+     fill it vanished into the desktop and read as disabled — a false
+     affordance, since the model enables it whenever delegate mode is off.
+     The disabled states below stay the only thing that dims this button. */
+  background: var(--candice-ui-surface, #171321);
   color: var(--candice-ptt-text);
   font: inherit;
   font-weight: 600;
@@ -133,25 +140,38 @@ html.${PTT_REDUCED_MOTION_CLASS} .candice-ptt.candice-ptt-listening .candice-ptt
   gap: 3px;
   height: 20px;
 }
+/*
+ * "display: flex" above beats the user-agent "[hidden] { display: none }"
+ * rule, so "wave.hidden = true" did NOTHING and the bars rendered in EVERY
+ * status — including "thinking" and "speaking", where the status table sets
+ * "waveform: false". The operator saw them moving while nothing was playing.
+ * Same guard the state caption and answer-confirm rows already carry.
+ */
+.candice-ptt-wave[hidden] {
+  display: none;
+}
+/*
+ * Bar height is DATA, not decoration.
+ *
+ * These bars previously ran an unconditional 420ms keyframe loop, so they
+ * animated whenever they were on screen regardless of whether any audio
+ * existed. That is an indicator asserting something that is not happening —
+ * the exact failure this project exists to eliminate.
+ *
+ * The height is now a pure function of a MEASURED input level. No level
+ * source attached means "--candice-ptt-level" stays 0 and the bars sit flat:
+ * a static affordance that claims nothing. When the capture lane feeds real
+ * levels through "setInputLevel", they move because the microphone moved.
+ */
 .candice-ptt-wave-bar {
   width: 4px;
-  height: 8px;
+  height: calc(4px + (16px * var(--candice-ptt-level, 0)));
   border-radius: 2px;
   background: var(--candice-ptt-danger);
-  animation: candice-ptt-wave-pop 420ms ease-in-out infinite alternate;
-}
-.candice-ptt-wave-bar:nth-child(2n) {
-  animation-delay: 120ms;
-}
-.candice-ptt-wave-bar:nth-child(3n) {
-  animation-delay: 240ms;
+  transition: height 90ms linear;
 }
 html.${PTT_REDUCED_MOTION_CLASS} .candice-ptt-wave-bar {
-  animation: none;
-}
-@keyframes candice-ptt-wave-pop {
-  from { height: 8px; opacity: 0.7; }
-  to { height: 20px; opacity: 1; }
+  transition: none;
 }
 `;
 
@@ -181,6 +201,15 @@ export interface PttView {
   show(status: import('../../state/status.ts').CandiceStatus): void;
   /** True when the control currently shows the live-mic listening state. */
   isListening(): boolean;
+  /**
+   * Feed a MEASURED input level (0..1) from the capture lane.
+   *
+   * This is the only thing that may move the waveform bars. Never call it
+   * with a synthesised, timer-derived or assumed value: an indicator that
+   * moves without a real signal behind it is a lie about the microphone.
+   * Values outside 0..1 are clamped; NaN is ignored.
+   */
+  setInputLevel(level: number): void;
   /** Idempotent teardown; never throws. */
   destroy(): void;
 }
@@ -192,6 +221,7 @@ function nullView(): PttView {
     setStatus() {},
     show() {},
     isListening: () => false,
+    setInputLevel() {},
     destroy() {},
   };
 }
@@ -376,6 +406,12 @@ export function createPttView(
     },
     isListening(): boolean {
       return root.classList.contains(PTT_LISTENING_CLASS);
+    },
+    setInputLevel(level: number): void {
+      if (destroyed) return;
+      if (typeof level !== 'number' || Number.isNaN(level)) return;
+      const clamped = Math.min(1, Math.max(0, level));
+      root.style.setProperty('--candice-ptt-level', String(clamped));
     },
     destroy(): void {
       if (destroyed) return;

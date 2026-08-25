@@ -76,6 +76,11 @@ export const COMPACT_STYLE_TEXT = `
   text-align: center;
   color: var(--candice-compact-muted);
 }
+/* The "display" in the rule below beats the user-agent [hidden] rule, so
+   setting .hidden = true alone cannot hide this element. */
+.candice-compact-hint[hidden] {
+  display: none;
+}
 .candice-compact-hint {
   max-width: 280px;
   text-align: center;

@@ -79,6 +79,16 @@ class FakeEl {
   classSet = new Set<string>();
   ownerDocument: FakeEl | null = null;
   capturedPointerId: number | null = null;
+  /** Minimal CSSStyleDeclaration seam: setInputLevel writes a custom property. */
+  style = {
+    props: new Map<string, string>(),
+    setProperty(name: string, value: string): void {
+      this.props.set(name, value);
+    },
+    getPropertyValue(name: string): string {
+      return this.props.get(name) ?? '';
+    },
+  };
 
   get className(): string {
     return this._className;
@@ -499,7 +509,16 @@ test('integrated surface: machine status drives the embedded PTT control', () =>
 
 // ------------------------------------------- FIX-014 (I-04) interrupt path
 
-test('press while speaking dispatches the interrupt: tts:stop THEN mic:open', () => {
+// The interrupt now runs inside the capture-consent gate: `onAllowed` fires
+// only after a granted permission answer, and the gate resolves that answer
+// through `Promise.resolve(...).then(...)` so it lands on a microtask even
+// when the query is synchronous. These two tests were written before that
+// gate existed, so they wired no consent (defaulting to the fail-closed
+// `() => 'error'` query, which never opens the mic) and asserted
+// synchronously. Both are updated to grant consent and await the microtask;
+// the behaviour under test — tts:stop THEN mic:open — is unchanged.
+
+test('press while speaking dispatches the interrupt: tts:stop THEN mic:open', async () => {
   const machine = createCandiceStateMachine();
 
   installFakeDom();
@@ -507,6 +526,7 @@ test('press while speaking dispatches the interrupt: tts:stop THEN mic:open', ()
   const ctl = createAnswerControlsController({
     machine,
     mount: mount as unknown as HTMLElement,
+    captureConsent: { query: () => 'granted' },
   });
   // Reach the speaking status through the real machine path.
   ctl.handle({ type: 'question:received', question: 'What is 2+2?' });
@@ -516,6 +536,7 @@ test('press while speaking dispatches the interrupt: tts:stop THEN mic:open', ()
   const root = mount.children[0] as FakeEl;
   const button = root.findFirst('button') as FakeEl;
   button.dispatch('pointerdown', { button: 0 });
+  await Promise.resolve(); // the consent gate resolves onAllowed on a microtask
   uninstallFakeDom();
 
   assert.equal(machine.getState().status, 'listening', 'interrupt opens the mic');
@@ -527,7 +548,7 @@ test('press while speaking dispatches the interrupt: tts:stop THEN mic:open', ()
   );
 });
 
-test('press while speaking never dispatches a rejected ptt:start', () => {
+test('press while speaking never dispatches a rejected ptt:start', async () => {
   const machine = createCandiceStateMachine();
 
   installFakeDom();
@@ -535,6 +556,7 @@ test('press while speaking never dispatches a rejected ptt:start', () => {
   const ctl = createAnswerControlsController({
     machine,
     mount: mount as unknown as HTMLElement,
+    captureConsent: { query: () => 'granted' },
   });
   ctl.handle({ type: 'question:received', question: 'What is 2+2?' });
   ctl.handle({ type: 'speech:tts' });
@@ -543,6 +565,7 @@ test('press while speaking never dispatches a rejected ptt:start', () => {
   const root = mount.children[0] as FakeEl;
   const button = root.findFirst('button') as FakeEl;
   button.dispatch('pointerdown', { button: 0 });
+  await Promise.resolve(); // the consent gate resolves onAllowed on a microtask
   uninstallFakeDom();
 
   // ptt:start is REJECTED while speaking; the interrupt path must have been
@@ -550,4 +573,79 @@ test('press while speaking never dispatches a rejected ptt:start', () => {
   // have left the machine speaking).
   assert.equal(machine.getState().status, 'listening');
   assert.equal(machine.lastEffects[0].type, 'tts:stop');
+});
+
+// ------------------------------------- FIX-001: indicators must not lie
+//
+// Two independent defects made the waveform bars assert live microphone
+// audio that was not happening. The operator reported seeing them move while
+// hearing nothing, at a moment when the speech worker had never even been
+// spawned.
+//
+//  1. `.candice-ptt-wave` sets `display: flex`, which beats the user-agent
+//     `[hidden] { display: none }` rule — so `wave.hidden = true` had no
+//     effect and the bars rendered in EVERY status, including the ones whose
+//     status view sets `waveform: false`.
+//  2. The bars ran an unconditional infinite keyframe loop, so even when
+//     legitimately shown they moved on a timer rather than on audio.
+
+test('FIX-001: the waveform is hidden in every status whose view sets waveform:false', () => {
+  // CONTROL first: the status table must actually distinguish the states, or
+  // this test proves nothing.
+  assert.equal(pttStatusView('listening').waveform, true, 'CONTROL: listening shows the waveform');
+  for (const status of ['idle', 'thinking', 'speaking', 'transcribing'] as const) {
+    assert.equal(pttStatusView(status).waveform, false, `${status} must not show a mic waveform`);
+  }
+  // The CSS must be able to act on `hidden`. Without this rule the flag is
+  // set correctly and ignored completely.
+  assert.match(
+    PTT_STYLE_TEXT,
+    /\.candice-ptt-wave\[hidden\]\s*\{[^}]*display:\s*none/,
+    'the wave rule sets display, so it needs an explicit [hidden] guard',
+  );
+});
+
+test('FIX-001: waveform bars are driven by a measured level, never by a timer', () => {
+  const barRule = PTT_STYLE_TEXT.match(/\.candice-ptt-wave-bar\s*\{([^}]*)\}/);
+  if (barRule === null) throw new Error('the waveform bar rule must exist');
+  assert.doesNotMatch(
+    barRule[1],
+    /animation\s*:/,
+    'bars must not run a keyframe loop: that animates with no audio behind it',
+  );
+  assert.match(
+    barRule[1],
+    /height:[^;]*var\(--candice-ptt-level/,
+    'bar height must be a function of the measured level',
+  );
+  // With no level source attached the level token defaults to 0, so the bars
+  // sit flat and assert nothing.
+  assert.match(barRule[1], /var\(--candice-ptt-level,\s*0\)/, 'default level is 0 (flat, silent)');
+  assert.doesNotMatch(
+    PTT_STYLE_TEXT,
+    /@keyframes\s+candice-ptt-wave-pop/,
+    'the decorative wave keyframes must be gone, not merely unreferenced',
+  );
+});
+
+test('FIX-001: setInputLevel only accepts a real number and clamps it', () => {
+  installFakeDom();
+  const mount = new FakeEl();
+  const view = createPttView(mount as unknown as HTMLElement, {
+    onTalkStart: () => {},
+    onTalkStop: () => {},
+  });
+  const root = mount.children[0] as FakeEl;
+  const levelOf = (): string => root.style.getPropertyValue('--candice-ptt-level');
+
+  view.setInputLevel(0.5);
+  assert.equal(levelOf(), '0.5', 'a measured level drives the bars');
+  view.setInputLevel(4);
+  assert.equal(levelOf(), '1', 'above range clamps to 1');
+  view.setInputLevel(-2);
+  assert.equal(levelOf(), '0', 'below range clamps to 0');
+  view.setInputLevel(Number.NaN);
+  assert.equal(levelOf(), '0', 'NaN is ignored rather than moving the bars');
+  view.destroy();
+  uninstallFakeDom();
 });
