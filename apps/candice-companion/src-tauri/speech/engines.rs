@@ -544,6 +544,65 @@ pub(crate) fn kokoro_command(
     cmd
 }
 
+/// Guarantees the FIX-016 stop contract AND the speak-slot release on every
+/// exit from the playback thread — including an unwind.
+///
+/// `play_f32_pcm` drives cpal callbacks and resampling. A panic in there used
+/// to take both guarantees with it, and the two consequences are not
+/// symmetric with an ordinary failure:
+///
+///   - no stop event  -> the webview never leaves `status: 'speaking'`, and
+///     `ptt:start` refuses while speaking, so HOLD TO TALK goes dead until
+///     the next question. That is the exact failure `speech:ended` exists to
+///     prevent, surviving in the one branch it could not reach.
+///   - no slot release -> `speak_admission_check` answers "speech-busy: an
+///     utterance is already active" for every later utterance, so she never
+///     speaks again for the rest of the session.
+///
+/// Drop runs during unwind (this workspace does not set `panic = "abort"`),
+/// so "exactly one stop follows every start" is true by construction here
+/// rather than by luck. The emitter is injected so the guarantee is provable
+/// in a unit test without an `AppHandle`.
+struct PlaybackExit {
+    utterance_id: String,
+    request_id: String,
+    slot: Arc<Mutex<Option<String>>>,
+    emit_boundary: Box<dyn Fn(&str) + Send>,
+    /// True until the thread has emitted its own stop event.
+    armed: bool,
+}
+
+impl PlaybackExit {
+    /// Release the slot only when it still holds THIS request — a later
+    /// utterance must never be cancelled by an older thread's cleanup.
+    fn release_slot(&self) {
+        if let Ok(mut slot) = self.slot.lock() {
+            if slot.as_deref() == Some(self.request_id.as_str()) {
+                *slot = None;
+            }
+        }
+    }
+
+    /// Normal exit: the thread emitted its own drain or boundary.
+    fn disarm(&mut self) {
+        self.armed = false;
+        self.release_slot();
+    }
+}
+
+impl Drop for PlaybackExit {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        // Reachable only on an unwind. Boundary, never drain: the audio did
+        // NOT play out, and claiming it did would lie to the animation lane.
+        // Both close the mouth, so the honest one costs nothing.
+        (self.emit_boundary)(&self.utterance_id);
+        self.release_slot();
+    }
+}
+
 impl TtsEngine {
     /// Synthesize `text` through the worker and start real playback.
     /// Emits FIX-016 speech-start (with engine phoneme timings) before
@@ -684,17 +743,25 @@ impl TtsEngine {
         std::thread::Builder::new()
             .name("candice-playback".into())
             .spawn(move || {
+                // Armed BEFORE playback: if `play_f32_pcm` unwinds, Drop still
+                // emits the stop and releases the slot.
+                let boundary_app = app_handle.clone();
+                let mut exit = PlaybackExit {
+                    utterance_id: uid.clone(),
+                    request_id: rid.clone(),
+                    slot,
+                    emit_boundary: Box::new(move |id: &str| {
+                        let _ = crate::speech_timing::emit_speech_boundary(&boundary_app, id);
+                    }),
+                    armed: true,
+                };
                 let finished = play_f32_pcm(&pcm, sample_rate, &stop);
                 if finished {
                     let _ = crate::speech_timing::emit_speech_drain(&app_handle, &uid);
                 } else {
                     let _ = crate::speech_timing::emit_speech_boundary(&app_handle, &uid);
                 }
-                if let Ok(mut slot) = slot.lock() {
-                    if slot.as_deref() == Some(rid.as_str()) {
-                        *slot = None;
-                    }
-                }
+                exit.disarm();
             })
             .expect("playback thread must start");
         Ok(())
@@ -923,6 +990,97 @@ fn play_f32_pcm(pcm: &[f32], sample_rate: u32, stop: &Arc<AtomicBool>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A panic inside `play_f32_pcm` must not strand the session.
+    ///
+    /// Reported by the animation lane against the real trace: both native
+    /// emitters live AFTER `play_f32_pcm` returns, and `speak()` has already
+    /// resolved by then, so the webview's rejection handler cannot cover this.
+    /// Without the guard the webview sits in `status: 'speaking'` with HOLD TO
+    /// TALK refused, AND the speak slot stays parked so every later utterance
+    /// is answered "speech-busy" — a permanently mute session.
+    #[test]
+    fn a_panicking_playback_thread_still_stops_speech_and_frees_the_slot() {
+        let slot = Arc::new(Mutex::new(Some("req-1".to_string())));
+        let emitted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let slot_thread = Arc::clone(&slot);
+        let emitted_thread = Arc::clone(&emitted);
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {})); // the panic is the fixture, not noise
+        let joined = std::thread::spawn(move || {
+            let _exit = PlaybackExit {
+                utterance_id: "utt-1".to_string(),
+                request_id: "req-1".to_string(),
+                slot: slot_thread,
+                emit_boundary: Box::new(move |id: &str| {
+                    emitted_thread.lock().expect("emit log").push(id.to_string());
+                }),
+                armed: true,
+            };
+            panic!("cpal unwound mid-playback");
+        })
+        .join();
+        std::panic::set_hook(previous_hook);
+
+        assert!(joined.is_err(), "the fixture must actually panic");
+        assert_eq!(
+            emitted.lock().expect("emit log").as_slice(),
+            ["utt-1"],
+            "exactly one stop must still reach the webview, or HOLD TO TALK stays dead"
+        );
+        assert_eq!(
+            *slot.lock().expect("slot"),
+            None,
+            "the speak slot must be released, or she never speaks again this session"
+        );
+    }
+
+    /// The normal exit must not double-emit: the thread already sent its own
+    /// drain or boundary, so Drop must stay quiet and only free the slot.
+    #[test]
+    fn a_normal_playback_exit_emits_no_second_stop() {
+        let slot = Arc::new(Mutex::new(Some("req-2".to_string())));
+        let emitted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let emitted_guard = Arc::clone(&emitted);
+        {
+            let mut exit = PlaybackExit {
+                utterance_id: "utt-2".to_string(),
+                request_id: "req-2".to_string(),
+                slot: Arc::clone(&slot),
+                emit_boundary: Box::new(move |id: &str| {
+                    emitted_guard.lock().expect("emit log").push(id.to_string());
+                }),
+                armed: true,
+            };
+            exit.disarm();
+        }
+        assert!(
+            emitted.lock().expect("emit log").is_empty(),
+            "Drop must not emit a second stop on the normal path"
+        );
+        assert_eq!(*slot.lock().expect("slot"), None, "the slot is still freed");
+    }
+
+    /// An older thread's cleanup must never cancel a NEWER utterance.
+    #[test]
+    fn the_exit_guard_never_frees_a_slot_that_a_later_utterance_owns() {
+        let slot = Arc::new(Mutex::new(Some("req-NEW".to_string())));
+        {
+            let _exit = PlaybackExit {
+                utterance_id: "utt-old".to_string(),
+                request_id: "req-OLD".to_string(),
+                slot: Arc::clone(&slot),
+                emit_boundary: Box::new(|_| {}),
+                armed: true,
+            };
+        }
+        assert_eq!(
+            slot.lock().expect("slot").as_deref(),
+            Some("req-NEW"),
+            "a stale guard must leave the current utterance's slot alone"
+        );
+    }
 
     /// Regression guard for a shipping defect: the Kokoro worker runs from
     /// inside the code-signed .app bundle, so if CPython is allowed to write

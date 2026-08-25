@@ -70,6 +70,31 @@ Failure before audio exists (worker error, unreadable or silent PCM) returns
 `Err` **before** `speech-start` is emitted, so there is no start without a
 stop and no orphaned "speaking" state.
 
+### The third exit path: an unwind
+
+Both emitters above run *after* `play_f32_pcm` returns, and `cmd_speech_speak`
+has already resolved by then — so the webview's own rejection handler cannot
+cover a panic inside playback. That branch used to emit nothing at all, and it
+cost two things, not one:
+
+- **no stop** — the webview never leaves `status: 'speaking'`, and `ptt:start`
+  refuses while speaking, so HOLD TO TALK goes dead until the next question;
+- **no slot release** — `speak_admission_check` then answers *"speech-busy: an
+  utterance is already active"* for every later utterance, so she never speaks
+  again for the rest of the session.
+
+A `PlaybackExit` drop guard now covers it. It is armed before playback starts
+and disarmed only after the thread emits its own stop, so an unwind emits
+`boundary` (never `drain` — the audio did not play out, and both close the
+mouth anyway) and releases the slot. Drop runs during unwind because this
+workspace does not set `panic = "abort"`.
+
+**So the guarantee is now true by construction on all three exit paths, not by
+luck.** Consumers still should not *depend* on that: the animation lane closes
+the mouth past the last scheduled span using the utterance's own duration as
+an event horizon, which is the right belt-and-braces and is not an invented
+timeout. Keep it.
+
 > There is prior art for getting this wrong: the orange PTT wave bars kept
 > animating after speech ended, because they were driven by an assumption
 > rather than by a stop signal. Drive the mouth from `drain`/`boundary` and
