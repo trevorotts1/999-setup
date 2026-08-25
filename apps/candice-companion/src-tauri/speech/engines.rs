@@ -519,6 +519,31 @@ pub struct TtsEngine {
     stop: Arc<AtomicBool>,
 }
 
+/// Build the Kokoro worker command.
+///
+/// `PYTHONDONTWRITEBYTECODE` / `-B` is load-bearing, not tidiness. The worker
+/// script and its interpreter live inside the code-signed .app bundle, and
+/// CPython writes `__pycache__` next to every module it imports. Those writes
+/// land in `Contents/Resources`, break the bundle's sealed-resource hashes,
+/// and `codesign --verify` fails from the first time voice is ever used —
+/// after which macOS can refuse to launch the app. Both forms are set: `-B`
+/// survives a stripped environment, the env var is inherited by children.
+/// Never remove either.
+pub(crate) fn kokoro_command(
+    python: &Path,
+    worker: &Path,
+    model: &Path,
+    voices: &Path,
+) -> Command {
+    let mut cmd = Command::new(python);
+    cmd.arg("-B")
+        .arg(worker)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .env("CANDICE_KOKORO_MODEL", model)
+        .env("CANDICE_KOKORO_VOICES", voices);
+    cmd
+}
+
 impl TtsEngine {
     /// Synthesize `text` through the worker and start real playback.
     /// Emits FIX-016 speech-start (with engine phoneme timings) before
@@ -544,10 +569,7 @@ impl TtsEngine {
         if self.stop.load(Ordering::SeqCst) {
             return Err("utterance interrupted before synthesis".into());
         }
-        let mut child = Command::new(python)
-            .arg(worker)
-            .env("CANDICE_KOKORO_MODEL", model)
-            .env("CANDICE_KOKORO_VOICES", voices)
+        let mut child = kokoro_command(python, worker, model, voices)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -901,6 +923,43 @@ fn play_f32_pcm(pcm: &[f32], sample_rate: u32, stop: &Arc<AtomicBool>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression guard for a shipping defect: the Kokoro worker runs from
+    /// inside the code-signed .app bundle, so if CPython is allowed to write
+    /// __pycache__ it drops files into Contents/Resources and the bundle's
+    /// signature stops verifying the first time a client ever uses voice.
+    /// Observed in the field: 335 stray .pyc files, `codesign --verify
+    /// --deep --strict` rc=1. Both `-B` and PYTHONDONTWRITEBYTECODE=1 must
+    /// stay on the spawn.
+    #[test]
+    fn kokoro_worker_is_barred_from_writing_bytecode_into_the_signed_bundle() {
+        let cmd = kokoro_command(
+            Path::new("/candice/python3"),
+            Path::new("/candice/runtime.py"),
+            Path::new("/candice/model.onnx"),
+            Path::new("/candice/voices.bin"),
+        );
+
+        let has_env = cmd.get_envs().any(|(key, value)| {
+            key == "PYTHONDONTWRITEBYTECODE" && value == Some("1".as_ref())
+        });
+        assert!(
+            has_env,
+            "spawn must set PYTHONDONTWRITEBYTECODE=1 — without it the worker \
+             invalidates the app's code signature on first use"
+        );
+
+        let has_flag = cmd.get_args().any(|arg| arg == "-B");
+        assert!(
+            has_flag,
+            "spawn must pass -B so a stripped environment cannot re-enable \
+             bytecode writing"
+        );
+
+        // The worker script must still be the thing being run.
+        let has_worker = cmd.get_args().any(|arg| arg == "/candice/runtime.py");
+        assert!(has_worker, "worker script argument was lost");
+    }
     use candice_capture::CaptureChunk;
 
     fn rec(chunks: Vec<CaptureChunk>, total: usize) -> Recording {

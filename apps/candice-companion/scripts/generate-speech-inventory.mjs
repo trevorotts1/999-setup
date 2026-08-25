@@ -146,13 +146,14 @@ function main() {
     generatedAt: new Date().toISOString(),
     bundleRoot: 'speech-assets/',
     canonicalVoice: {
-      id: 'af_heart',
+      id: 'af_bella',
       voicepackRelease: 'model-files-v1.1',
-      // FIX-015 FAIL-6: af_heart is the pre-approval default. It may be
-      // used as the canonical voice, but the shipped status is honest:
-      // approval evidence (operator record, sample metadata, reproducible
-      // voice-pack hash) has not landed, so this stays approval-pending.
-      approval: 'approval-pending',
+      // FIX-015 FAIL-6: the operator approval record landed 2026-08-25
+      // (evidence/FIX-015/operator-review/VOICE-APPROVAL.md) — Trevor chose
+      // af_bella after auditioning all 11 candidates. src-tauri/speech/mod.rs
+      // reads this value and fails closed to approval-pending if it and
+      // src-tauri/tts/voices.ts ever disagree, so keep them in step.
+      approval: 'approved',
     },
     pythonRuntime: {
       version: '3.12',

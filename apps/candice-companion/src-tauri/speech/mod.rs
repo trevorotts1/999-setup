@@ -347,13 +347,23 @@ pub fn cmd_speech_health<R: Runtime>(
         .map(|p| p.is_file())
         .unwrap_or(false);
 
-    // Canonical voice: af_heart is the pre-approval default (plan 1:
-    // no "canonical voice" claims before operator approval exists).
-    // FIX-015 FAIL-6: the bundled SPEECH-INVENTORY.json is the approval
-    // record (canonicalVoice.approval). When it is present and parseable
-    // its value wins; without the manifest the boundary fails closed to
-    // approval-pending — never claims approved by default.
-    let canonical_voice_id = "af_heart".to_string();
+    // Canonical voice: the bundled SPEECH-INVENTORY.json is the record for
+    // BOTH the voice id and its approval (FIX-015 FAIL-6). The id is read
+    // from the manifest rather than hardcoded here — hardcoding it would
+    // make this a second runtime write point that silently disagrees with
+    // the TS single write point (src-tauri/tts/assets.ts
+    // DEFAULT_CANONICAL_VOICE), which is what the manifest exists to
+    // prevent. Without a readable manifest this falls back to the
+    // pre-approval default and approval fails closed to approval-pending —
+    // it never claims approved by default.
+    let canonical_voice_id = inventory
+        .as_ref()
+        .and_then(|inv| inv.canonical_voice.as_ref())
+        .and_then(|cv| cv.get("id"))
+        .and_then(|id| id.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "af_heart".to_string());
     let canonical_voice_approval = res
         .inventory_text
         .as_deref()
@@ -759,7 +769,21 @@ fn speak_impl<R: Runtime>(
 
     let speed = request.speed.unwrap_or(1.0);
     let speed = if speed.is_finite() && (0.5..=2.0).contains(&speed) { speed } else { 1.0 };
-    let voice_id = request.voice_id.clone().unwrap_or_else(|| "af_heart".into());
+    // Default voice: the bundled manifest's canonicalVoice.id — the operator
+    // approval record — never a hardcoded id, so the voice the app actually
+    // speaks in cannot drift from the approved one. A caller may still
+    // override per utterance. Falls back to the pre-approval default only
+    // when the manifest is missing or unreadable.
+    let voice_id = request.voice_id.clone().unwrap_or_else(|| {
+        inventory
+            .as_ref()
+            .and_then(|inv| inv.canonical_voice.as_ref())
+            .and_then(|cv| cv.get("id"))
+            .and_then(|id| id.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| "af_heart".to_string())
+    });
 
     state.tts.arm_next();
     let started = state.tts.synthesize_and_play(
