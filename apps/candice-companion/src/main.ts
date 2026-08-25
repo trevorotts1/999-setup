@@ -38,9 +38,30 @@ import {
   unregisterShellCommands,
 } from './shell/shell-commands';
 
+/**
+ * Name the failing boot step AND the code that threw.
+ *
+ * The fallback card is the only diagnostic surface a packaged run has: there
+ * is no console to read once the app is installed. A bare `error.message`
+ * names the step but not the thrower, which cost several sessions on a
+ * WebKit-only DOM exception whose message ("The string did not match the
+ * expected pattern.") is identical for every SyntaxError. The error name and
+ * the first frames of the stack make the throwing function self-evident.
+ */
 function bootStepError(step: string, error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error);
-  return new Error(`${step}: ${detail}`);
+  const name = error instanceof Error && error.name ? error.name : 'UnknownError';
+  const frames = error instanceof Error && typeof error.stack === 'string'
+    ? error.stack
+      .split('\n')
+      .map((line) => line.trim())
+      // Drop the leading "Name: message" header WebKit/V8 print above frames.
+      .filter((line) => line.length > 0 && !line.startsWith(`${name}:`))
+      .slice(0, 3)
+      .join(' | ')
+    : '';
+  const trace = frames.length > 0 ? ` @ ${frames}` : '';
+  return new Error(`${step}: ${name}: ${detail}${trace}`);
 }
 
 /** Boot the companion shell. Never throws: failure must never stop Claude. */

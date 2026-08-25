@@ -28,6 +28,7 @@ import { defaultProfile } from "../../prefs/profile.ts";
 import type { CandiceProfile } from "../../prefs/schema.ts";
 import type { PrefsIpcAdapter, PrefsLoadResult } from "../../prefs/ipc.ts";
 import {
+  INTERACTION_COMPOSITION_ATTR,
   INTERACTION_COMPOSITION_SENTINEL,
   NAME_PROMPT_ROOT_CLASS,
   NAME_PROMPT_STYLE_ID,
@@ -53,11 +54,56 @@ class FakeClassList {
   list(): string[] { return [...this.set]; }
 }
 
+/** WHATWG HTML DOMStringMap setter step 1: "-" + ASCII lower alpha is illegal. */
+const ILLEGAL_DATASET_KEY = /-[a-z]/;
+
+/** A legal `data-*` attribute name: non-empty, lowercase, no edge hyphens. */
+export const LEGAL_DATA_ATTRIBUTE = /^data-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+/**
+ * Spec-faithful `DOMStringMap` stand-in (WHATWG HTML 3.2.6.6).
+ *
+ * The fake DOM previously exposed `dataset` as a plain object, which accepts
+ * every key a real engine rejects. That blind spot is precisely how a
+ * `SyntaxError` DOMException reached a packaged WebKit build while the whole
+ * Node suite stayed green. This stand-in enforces what the real setter does:
+ *   1. a name containing "-" followed by an ASCII lower alpha throws
+ *      `SyntaxError` — WebKit words it "The string did not match the expected
+ *      pattern.", which is the string the companion's fallback card showed;
+ *   2. otherwise the camelCase name maps to its `data-*` attribute.
+ * Reads and writes go through the element's attribute map, so `dataset` and
+ * `getAttribute` can never disagree.
+ */
+function createFakeDataset(element: FakeElement): Record<string, string> {
+  const toAttribute = (key: string): string =>
+    `data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+  return new Proxy({} as Record<string, string>, {
+    get: (_target, prop) =>
+      (typeof prop === 'string' ? element.attributes.get(toAttribute(prop)) : undefined),
+    set: (_target, prop, value) => {
+      if (typeof prop !== 'string') return false;
+      if (ILLEGAL_DATASET_KEY.test(prop)) {
+        const error = new Error('The string did not match the expected pattern.');
+        error.name = 'SyntaxError';
+        throw error;
+      }
+      element.attributes.set(toAttribute(prop), String(value));
+      return true;
+    },
+    has: (_target, prop) =>
+      typeof prop === 'string' && element.attributes.has(toAttribute(prop)),
+    deleteProperty: (_target, prop) => {
+      if (typeof prop === 'string') element.attributes.delete(toAttribute(prop));
+      return true;
+    },
+  });
+}
+
 class FakeElement {
   readonly attributes = new Map<string, string>();
   readonly classes = new FakeClassList();
   readonly children: FakeElement[] = [];
-  readonly dataset: Record<string, string> = {};
+  readonly dataset: Record<string, string> = createFakeDataset(this);
   readonly style: Record<string, string> = {};
   parent: FakeElement | null = null;
   textContent = '';
@@ -204,7 +250,7 @@ test('failed boot load reports the truthful preferences error to the machine', a
   );
   assert.equal(composition.loadOk, false);
   assert.equal(machine.getState().preferencesUnavailable, true, 'reducer set preferencesUnavailable');
-  assert.equal(root.dataset[INTERACTION_COMPOSITION_SENTINEL], 'active');
+  assert.equal(root.getAttribute(INTERACTION_COMPOSITION_ATTR), 'active');
 });
 
 test('successful boot load never flags preferencesUnavailable and applies the persisted text size', async () => {
@@ -223,7 +269,7 @@ test('successful boot load never flags preferencesUnavailable and applies the pe
   assert.deepEqual(captions.scales, ['large'], 'persisted text size applied to captions');
   assert.equal(root.dataset.candiceVoiceOutput, 'false');
   assert.equal(root.dataset.candicePreferredName, 'Trevor');
-  assert.equal(root.dataset[INTERACTION_COMPOSITION_SENTINEL], 'active');
+  assert.equal(root.getAttribute(INTERACTION_COMPOSITION_ATTR), 'active');
 });
 
 test('null machine and null captions degrade to a no-op composition (spec 20)', async () => {
@@ -466,4 +512,83 @@ test('destroy removes a mounted prompt', async () => {
   assert.ok(root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`) !== null);
   composition.destroy();
   assert.equal(root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`), null, 'prompt removed on destroy');
+});
+
+// -------------------------------------------- WebKit DOM-token regression
+//
+// The packaged macOS build runs in WKWebView, not Node. `root.dataset[
+// INTERACTION_COMPOSITION_SENTINEL]` threw a SyntaxError DOMException there
+// ("The string did not match the expected pattern.") because the sentinel is
+// a hyphenated attribute token, not a legal DOMStringMap key. Boot aborted at
+// `initialize-runtime-composition` and the window showed the text-fallback
+// card instead of the hologram. These tests assert on the TOKENS themselves,
+// so they hold without a WebKit engine to run in.
+
+test('CONTROL: the fake DOMStringMap rejects the same keys a real engine rejects', () => {
+  // A negative result from the tests below is only meaningful if this guard
+  // actually discriminates. Prove it fires on the illegal key and stays out
+  // of the way for the legal one.
+  const element = new FakeElement('div');
+  assert.throws(
+    () => { element.dataset['candice-interaction-composition'] = 'active'; },
+    (error: unknown) => error instanceof Error
+      && error.name === 'SyntaxError'
+      && error.message === 'The string did not match the expected pattern.',
+    'a hyphen followed by an ASCII lower alpha must throw SyntaxError',
+  );
+  assert.doesNotThrow(() => { element.dataset.candiceInteractionComposition = 'ok'; });
+  assert.equal(
+    element.getAttribute('data-candice-interaction-composition'),
+    'ok',
+    'the legal camelCase key maps to the same attribute the sentinel names',
+  );
+});
+
+test('the composition sentinel is a valid, non-empty data-* attribute token', () => {
+  assert.ok(
+    INTERACTION_COMPOSITION_SENTINEL.length > 0,
+    'the packaged-bundle sentinel must be non-empty',
+  );
+  assert.equal(
+    INTERACTION_COMPOSITION_ATTR,
+    `data-${INTERACTION_COMPOSITION_SENTINEL}`,
+    'the attribute is the sentinel the bundle assertion greps for',
+  );
+  assert.match(
+    INTERACTION_COMPOSITION_ATTR,
+    LEGAL_DATA_ATTRIBUTE,
+    'the attribute name must be lowercase, non-empty and free of edge hyphens',
+  );
+  // The reason the attribute exists: the sentinel itself is NOT a usable
+  // dataset key, so it must never be handed to a DOMStringMap.
+  assert.match(
+    INTERACTION_COMPOSITION_SENTINEL,
+    ILLEGAL_DATASET_KEY,
+    'the sentinel is hyphenated; writing it through `dataset` is a SyntaxError',
+  );
+});
+
+test('every attribute the composition writes is a valid, non-empty token', async () => {
+  const machine = createCandiceStateMachine();
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const profile = { ...freshProfile(), preferredName: 'Trevor' };
+  await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    { profile, prefsLoad: loadResult(profile), doc: new FakeDocument() as unknown as Document },
+  );
+  assert.equal(
+    root.getAttribute(INTERACTION_COMPOSITION_ATTR),
+    'active',
+    'mount evidence lands on the sentinel attribute',
+  );
+  const names = [...root.attributes.keys()];
+  assert.ok(names.length > 0, 'the composition writes at least one attribute');
+  for (const name of names) {
+    assert.ok(name.length > 0, 'attribute names are never empty');
+    assert.equal(name, name.toLowerCase(), `attribute ${name} must be lowercase`);
+    assert.doesNotMatch(name, /(^-|-$|--|\s)/, `attribute ${name} has a malformed token`);
+  }
 });

@@ -43,8 +43,21 @@ import {
   welcomeBackPhrase,
 } from '../prefs/name.ts';
 
-/** Packaged-bundle sentinel token (assert-interaction-composition.mjs). */
+/**
+ * Packaged-bundle sentinel token (assert-interaction-composition.mjs).
+ *
+ * This is a hyphenated ATTRIBUTE token, never a `dataset` key. The
+ * DOMStringMap setter (WHATWG HTML, step 1) throws a `SyntaxError`
+ * DOMException for any name containing "-" followed by an ASCII lower alpha,
+ * so `root.dataset[INTERACTION_COMPOSITION_SENTINEL]` is a hard failure in a
+ * real engine. WebKit words that exception "The string did not match the
+ * expected pattern.", which is what a packaged macOS build reports. Write it
+ * through {@link INTERACTION_COMPOSITION_ATTR} with `setAttribute`.
+ */
 export const INTERACTION_COMPOSITION_SENTINEL = 'candice-interaction-composition';
+
+/** The mount-evidence attribute written to the root: `data-` + the sentinel. */
+export const INTERACTION_COMPOSITION_ATTR = `data-${INTERACTION_COMPOSITION_SENTINEL}`;
 
 /** Root class of the first-run name prompt surface. */
 export const NAME_PROMPT_ROOT_CLASS = 'candice-name-prompt';
@@ -260,7 +273,10 @@ export async function initializeCandiceInteractionComposition(
   captions?.setTextScale(current.textSize ?? 'medium');
   root.dataset.candiceVoiceOutput = String(current.voiceOutputEnabled);
   root.dataset.candicePreferredName = current.preferredName ?? '';
-  root.dataset[INTERACTION_COMPOSITION_SENTINEL] = 'active';
+  // Mount evidence for tests/QC and the packaged-bundle sentinel. It is set
+  // as an attribute because the hyphenated sentinel is not a legal
+  // DOMStringMap key; the resulting DOM is identical to a `data-*` write.
+  root.setAttribute(INTERACTION_COMPOSITION_ATTR, 'active');
 
   const persist = async (patch: Partial<CandiceProfile>): Promise<boolean> => {
     const next = mergeProfile(current, patch);
