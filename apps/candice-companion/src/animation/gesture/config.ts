@@ -76,8 +76,18 @@ export const GESTURE_TIMING = {
   blinkClosedMs: 120,
   /** Idle breathing period (scale). */
   idleBreathPeriodMs: 3_200,
-  /** Maximum idle scale delta either side of 1. */
-  idleBreathScaleMax: 0.008,
+  /**
+   * Maximum idle scale delta either side of 1.
+   *
+   * This was 0.008. On the ~500px-tall character that is a 4px total travel
+   * over 3.2s — measurable in a frame diff and invisible to a person, which
+   * is why the operator read her as a still image. The layers scale from
+   * `transform-origin: 50% 100%` (the feet), so the delta lands at the head
+   * where it reads as breathing. 0.025 gives roughly 12px of head travel:
+   * clearly alive, and still well under the 0.03 the old CSS breathe used,
+   * so it cannot read as a bounce.
+   */
+  idleBreathScaleMax: 0.025,
   /** Maximum head-motion delta (px) either side of rest. */
   headDriftPxMax: 2,
   /** Glow pulse period for active statuses. */

@@ -430,3 +430,24 @@ function statusForGesture(id: string): Parameters<typeof gestureForStatus>[0] {
       return 'idle';
   }
 }
+
+test('breathScale: the idle breath is perceptible, not merely measurable', () => {
+  // Regression guard. The breath ran at 0.008 for the whole campaign: real
+  // enough to show up in a frame diff, far too small for a person to see, so
+  // the character read as a still image. A frame-diff test would have passed
+  // the entire time. Assert the amplitude a HUMAN needs, not the one a diff
+  // detects.
+  //
+  // The character renders ~500px tall and scales from the feet, so the delta
+  // lands at the head: 0.02 is ~10px of travel, around the floor of what
+  // reads as motion at a 3.2s period.
+  const max = GESTURE_TIMING.idleBreathScaleMax;
+  assert.ok(max >= 0.02, `idle breath ${max} is below the perceptibility floor of 0.02`);
+  // Upper bound: past ~0.04 a 3.2s scale cycle reads as a bounce, not breath.
+  assert.ok(max <= 0.04, `idle breath ${max} is large enough to read as a bounce`);
+  // The head travel that amplitude buys, stated explicitly so the intent
+  // survives a future edit of the number.
+  const characterHeightPx = 500;
+  const headTravelPx = characterHeightPx * max * 2;
+  assert.ok(headTravelPx >= 10, `only ${headTravelPx.toFixed(1)}px of head travel`);
+});
