@@ -246,10 +246,17 @@ test('release runs capture_stop then transcribe(mode capture) then CONFIRMING', 
   assert.equal(h.calls[afterPress]?.command, SPEECH_COMMANDS.captureStop);
   assert.equal(h.calls[afterPress]?.args?.requestId, 'req-1');
   assert.equal(h.calls[afterPress + 1]?.command, SPEECH_COMMANDS.transcribe);
-  assert.equal(h.calls[afterPress + 1]?.args?.requestId, 'req-1');
-  assert.equal(h.calls[afterPress + 1]?.args?.mode, 'capture');
-  assert.equal(h.calls[afterPress + 1]?.args?.transcriptText, undefined);
-  assert.equal(h.calls[afterPress + 1]?.args?.wavPath, undefined);
+  // `cmd_speech_transcribe` takes one named `request` parameter, so the
+  // payload is wrapped. Asserting the wrapper as well as the fields keeps a
+  // flat payload — which native rejects outright — from passing again.
+  const transcribeArgs = h.calls[afterPress + 1]?.args as Record<string, unknown> | undefined;
+  const transcribeRequest = transcribeArgs?.request as Record<string, unknown> | undefined;
+  assert.ok(transcribeRequest, 'transcribe payload must be wrapped in `request`');
+  assert.equal(transcribeArgs?.requestId, undefined, 'no flat requestId beside the wrapper');
+  assert.equal(transcribeRequest?.requestId, 'req-1');
+  assert.equal(transcribeRequest?.mode, 'capture');
+  assert.equal(transcribeRequest?.transcriptText, undefined);
+  assert.equal(transcribeRequest?.wavPath, undefined);
 
   // Machine: listening -> transcribing -> confirming with the transcript.
   assert.equal(h.machine.getState().status, 'confirming');
@@ -576,14 +583,25 @@ test('unknown capture status codes are recorded facts, never state changes', asy
 test('speak carries bounded text to the real boundary (cmd_speech_speak)', async () => {
   const h = makeHarness({
     handlers: {
-      [SPEECH_COMMANDS.speak]: (args) => String(args?.requestId),
+      [SPEECH_COMMANDS.speak]: (args) => String(
+        (args?.request as Record<string, unknown> | undefined)?.requestId,
+      ),
     },
   });
   await h.orchestrator.speak('Here is the next question.');
   const speak = h.calls.find((c) => c.command === SPEECH_COMMANDS.speak);
   assert.ok(speak, 'speak must reach the boundary');
-  assert.equal(speak.args?.text, 'Here is the next question.');
-  assert.match(String(speak.args?.requestId), /^req-\d+$/);
+  // `cmd_speech_speak(app, state, request: SpeakRequest)` takes ONE named
+  // parameter. A flat payload is rejected by Tauri before the engine runs
+  // ("invalid args `request` ... missing required key"), which is exactly how
+  // the packaged app stayed silent while this test passed. Assert the wrapper.
+  const speakRequest = speak.args?.request as Record<string, unknown> | undefined;
+  assert.ok(speakRequest, 'speak payload must be wrapped in `request`');
+  assert.equal(speak.args?.text, undefined, 'no flat text beside the wrapper');
+  assert.equal(speakRequest?.text, 'Here is the next question.');
+  assert.match(String(speakRequest?.requestId), /^req-\d+$/);
+  // The canonical voice is resolved natively from the bundled manifest.
+  assert.equal(speakRequest?.voiceId, undefined, 'voiceId stays unset on the call site');
 });
 
 test('speak refuses empty text without touching the engine (spec 20 bounded payloads)', async () => {

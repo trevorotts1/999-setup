@@ -295,10 +295,10 @@ export class SpeechOrchestrator {
       }
       let raw: unknown;
       try {
+        // Same wrapping rule as speak: `cmd_speech_transcribe(app, state,
+        // request: TranscribeRequest)` takes one named `request` parameter.
         raw = await this.#invoke.invoke(SPEECH_COMMANDS.transcribe, {
-          requestId,
-          mode: 'capture',
-          language: 'en',
+          request: { requestId, mode: 'capture', language: 'en' },
         });
       } catch {
         this.#failStt();
@@ -376,7 +376,13 @@ export class SpeechOrchestrator {
     // spec-6 interrupt (abort fires inside the press call).
     this.#duplex.speak();
     try {
-      await this.#invoke.invoke(SPEECH_COMMANDS.speak, { requestId, text });
+      // `cmd_speech_speak(app, state, request: SpeakRequest)` takes ONE named
+      // parameter, so the payload must be wrapped in `request`. Sent flat it
+      // is rejected before the engine is touched:
+      //   invalid args `request` for command `cmd_speech_speak`: missing required key
+      // `voiceId` is deliberately omitted so the native side resolves the
+      // operator-approved canonical voice from the bundled manifest.
+      await this.#invoke.invoke(SPEECH_COMMANDS.speak, { request: { requestId, text } });
     } catch (error) {
       // The boundary refused the utterance: output never happened, so the
       // duplex must not stay in the speaking phase.
