@@ -100,6 +100,50 @@ export function shouldSpeakQuestion(
   return question.sensitivity === 'normal';
 }
 
+/** Longest failure reason shown to a user; the rest is elided, never dropped. */
+const MAX_SPEECH_FAILURE_CHARS = 200;
+
+/**
+ * Turn whatever `cmd_speech_speak` rejected with into one readable line.
+ *
+ * Tauri rejects a `Result<_, String>` with the RAW STRING, not an `Error`, so
+ * `error.message` is undefined on the exact path that matters — which is how
+ * every message the native side produces got discarded here. Both shapes are
+ * handled, and an unusable error still yields text rather than silence.
+ */
+export function describeSpeechFailure(error: unknown): string {
+  const raw = typeof error === 'string'
+    ? error
+    : error instanceof Error && typeof error.message === 'string'
+      ? error.message
+      : '';
+  const reason = raw.replace(/\s+/g, ' ').trim();
+  if (reason.length === 0) {
+    return 'Candice could not speak this question aloud. The voice engine gave no reason.';
+  }
+  const bounded = reason.length > MAX_SPEECH_FAILURE_CHARS
+    ? reason.slice(0, MAX_SPEECH_FAILURE_CHARS - 1) + '\u2026'
+    : reason;
+  return 'Candice could not speak this question aloud: ' + bounded;
+}
+
+/**
+ * Announce a speech failure and return the exact text announced.
+ *
+ * Total by construction (spec 20): reporting a failure must never itself
+ * throw, or a speech problem becomes a session problem.
+ */
+export function reportSpeechFailure(
+  error: unknown,
+  announce: ((text: string) => void) | undefined,
+): string {
+  const text = describeSpeechFailure(error);
+  try {
+    announce?.(text);
+  } catch { /* the report is best effort; it must never escalate */ }
+  return text;
+}
+
 /** Accept only a native cancellation for an exact opaque bridge question. */
 function parseCancellation(payload: unknown): BridgeIdentity | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -152,6 +196,17 @@ export interface BridgeSpeechHooks {
    * profile lane owns the store. Absent means "unknown" and fails closed.
    */
   voiceOutputEnabled?: () => boolean;
+  /**
+   * Report a speech failure to the user IN WORDS. The composition wires this
+   * to the caption surface, which is the only channel a human actually reads:
+   * `data-speech-playback` is debug state with no reader anywhere in the app.
+   *
+   * This exists because the native side now REFUSES to substitute a voice the
+   * operator did not approve (`resolve_approved_voice`). Without a reader for
+   * the reason it gives, that refusal degrades from "wrong voice" to
+   * "unexplained silence" — correct, refused, and nobody told.
+   */
+  announceSpeechFailure?: (text: string) => void;
 }
 function parseLifecycle(payload: unknown): BridgeLifecycleEvent | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -189,7 +244,13 @@ export async function initializeAuthenticatedBridge(
   /** Identity of the utterance in flight, so a stale result cannot re-arm. */
   let speakingFor: string | null = null;
 
-  /** Observable playback state; see docs/SPEECH-PLAYBACK-CONTRACT.md. */
+  /**
+   * Debug-only playback state. NOTHING READS THIS — not a CSS rule, not the
+   * animation lane, not a test. It is a breadcrumb for a human with a
+   * debugger, and it is NOT how a failure reaches the user; that is
+   * `announceSpeechFailure`. Do not treat this attribute as a report.
+   * See docs/SPEECH-PLAYBACK-CONTRACT.md.
+   */
   const setPlaybackState = (state: 'speaking' | 'idle' | 'failed'): void => {
     root.dataset.speechPlayback = state;
   };
@@ -204,8 +265,13 @@ export async function initializeAuthenticatedBridge(
   /**
    * Speak a delivered question. Total by construction (spec 20): the
    * question is already on screen before this runs, so a refusal or a
-   * synthesis failure costs the caption nothing. Failures are surfaced on
-   * `data-speech-playback`, never thrown and never swallowed into silence.
+   * synthesis failure costs the caption nothing.
+   *
+   * A failure is REPORTED IN WORDS on the caption surface, carrying the
+   * reason the native side gave. That matters most for the one the native
+   * side now raises deliberately: an unapproved or unresolvable canonical
+   * voice. Refusing to speak in a voice the operator did not choose is only
+   * an improvement if the user is told why she went quiet.
    */
   const speakQuestion = (question: BridgeQuestion): void => {
     const speak = prefs.speakQuestion;
@@ -216,12 +282,15 @@ export async function initializeAuthenticatedBridge(
     const identity = identityKey(question);
     speakingFor = identity;
     setPlaybackState('speaking');
-    void speak(utterance).catch(() => {
+    void speak(utterance).catch((error: unknown) => {
       // Only the utterance we started may clear the state; a late rejection
       // from a superseded question must not stomp the current one.
       if (speakingFor !== identity) return;
       speakingFor = null;
       setPlaybackState('failed');
+      // The parameter is the whole point: this catch used to take none, so
+      // every reason the native side produced died here.
+      reportSpeechFailure(error, prefs.announceSpeechFailure);
     });
   };
 

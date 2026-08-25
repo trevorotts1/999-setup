@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseCancellation, parseLifecycle, parseQuestion, shouldSpeakQuestion } from '../bridge.ts';
+import {
+  describeSpeechFailure, parseCancellation, parseLifecycle, parseQuestion,
+  reportSpeechFailure, shouldSpeakQuestion,
+} from '../bridge.ts';
 
 test('bridge question and cancellation parsers accept only presentable exact payloads', () => {
   const question = {
@@ -91,4 +94,65 @@ test('the user voice-output preference is an independent veto', () => {
     shouldSpeakQuestion({ readAloud: true, sensitivity: 'normal' }, undefined as unknown as boolean),
     false,
   );
+});
+
+// ------------------------------------------------- speech failure reporting
+
+/**
+ * The exact strings `resolve_approved_voice` produces. Tauri rejects a
+ * `Result<_, String>` with the RAW STRING, so these arrive as strings and NOT
+ * as `Error` — which is why `error.message` found nothing and every one of
+ * them was discarded before this repair.
+ */
+const NATIVE_VOICE_FAILURES = [
+  'the approved voice could not be resolved; captions remain available',
+  "the user speech manifest declares voice 'af_heart' but the bundled manifest declares 'af_bella'",
+  'the speech manifest is malformed: expected `,`',
+  "the canonical voice 'af_heart' is not operator-approved (approval: approval-pending)",
+];
+
+test('an unresolvable voice produces text a human can read, carrying the reason', () => {
+  for (const native of NATIVE_VOICE_FAILURES) {
+    const announced: string[] = [];
+    const text = reportSpeechFailure(native, (t) => announced.push(t));
+    assert.equal(announced.length, 1, 'exactly one announcement per failure');
+    assert.equal(announced[0], text, 'the returned text is the text announced');
+    // Readable: a sentence a person can act on, not a code or an attribute.
+    assert.match(text, /^Candice could not speak this question aloud/);
+    // The REASON must survive — this is the assertion the old catch failed.
+    const kernel = native.slice(0, 40);
+    assert.ok(text.includes(kernel), `the native reason must survive: ${native}`);
+  }
+});
+
+test('a rejection that carries no usable reason still says something, never silence', () => {
+  for (const empty of [undefined, null, '', '   ', {}, 42]) {
+    const announced: string[] = [];
+    reportSpeechFailure(empty, (t) => announced.push(t));
+    assert.equal(announced.length, 1);
+    assert.ok(announced[0].length > 0, 'never an empty announcement');
+    assert.match(announced[0], /gave no reason/);
+  }
+});
+
+test('an Error rejection is read from .message, a string rejection from itself', () => {
+  const fromError = describeSpeechFailure(new Error('voice engine exploded'));
+  assert.ok(fromError.includes('voice engine exploded'));
+  const fromString = describeSpeechFailure('voice engine exploded');
+  assert.ok(fromString.includes('voice engine exploded'));
+});
+
+test('a runaway reason is bounded and elided, never dropped and never unbounded', () => {
+  const text = describeSpeechFailure('x'.repeat(5000));
+  assert.ok(text.length < 300, `bounded, got ${text.length}`);
+  assert.ok(text.includes('\u2026'), 'elision is visible');
+  assert.ok(text.includes('xxx'), 'the reason is still represented');
+});
+
+test('reporting a failure never throws, even when the caption surface does', () => {
+  assert.doesNotThrow(() => {
+    reportSpeechFailure('some reason', () => { throw new Error('captions are down'); });
+  });
+  // Absent sink is the degraded case, not a crash.
+  assert.doesNotThrow(() => reportSpeechFailure('some reason', undefined));
 });

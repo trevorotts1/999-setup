@@ -106,9 +106,23 @@ it from the consumer side — the payload is producer-owned.
 data-speech-playback = "speaking" | "idle" | "failed"
 ```
 
-This is for debugging, tests and screenshots. It is set from the call site,
-not from the audio thread, so it can lag the real audio by an IPC hop —
-**do not drive animation from it.** Use the events.
+**Nothing reads this attribute.** Verified across `apps/candice-companion/src`,
+all file types: `speech-playback|speechPlayback` occurs only where it is
+written (`bridge.ts`) and in comments — no CSS rule, no UI code, no test.
+Control on the same search: `candice-captions` returns 5 files including
+`src/styles.css`, so the search discriminates.
+
+It is a breadcrumb for a human with a debugger, nothing more. It is set from
+the call site, not from the audio thread, so it can lag the real audio by an
+IPC hop — **do not drive animation from it.** Use the events.
+
+**It is NOT how a failure reaches the user.** A speech failure is announced in
+words on the caption surface via the `announceSpeechFailure` hook, carrying
+the reason the native side gave. That matters most for the refusal the native
+side now raises deliberately — an unapproved or unresolvable canonical voice —
+because refusing to speak in a voice the operator did not choose is only an
+improvement if the user is told why she went quiet. An attribute mutation
+tells nobody anything.
 
 Separately, `data-speech-status` (`available` | `degraded` | `unprobed` |
 `unavailable`) is engine *health* from the startup probe. It is not playback

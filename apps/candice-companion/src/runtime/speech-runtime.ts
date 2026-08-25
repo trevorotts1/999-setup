@@ -241,9 +241,13 @@ export async function initializeSpeechRuntime(
 }
 
 /**
- * Surface the honest voice-approval status (FAIL-6). `af_heart` is the
- * pre-approval default: it may be used as the canonical voice, but its
- * approval status must be visible — never claimed approved.
+ * Surface the honest voice-approval status (FAIL-6).
+ *
+ * There is no longer a pre-approval default. `af_bella` is the operator's
+ * approved canonical voice, and `resolve_approved_voice` refuses outright
+ * when the manifest declares an unapproved or unresolvable id rather than
+ * substituting one — so an unapproved status here means she will not speak,
+ * not that she will speak as something else. Never claim approved.
  */
 export function voiceApprovalStatusText(health: SpeechHealthFact | null): string {
   if (!health) {

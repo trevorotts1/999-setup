@@ -273,6 +273,11 @@ export async function initializeRuntimeComposition(
     // store (spec 5.2). Re-read on every question so a mid-session toggle
     // takes effect on the next one.
     voiceOutputEnabled: () => interaction.profile.voiceOutputEnabled === true,
+    // A speech failure must reach the user IN WORDS. The caption surface is
+    // the only channel anything actually reads — `data-speech-playback` has
+    // no reader in the app at all. Without this, the native side's refusal to
+    // speak in an unapproved voice becomes an unexplained silence.
+    announceSpeechFailure: (text: string) => captions.announce(text),
   });
 
   // FIX-014 (I-11): the post-setup name flow (spec 4). Deferred until after
