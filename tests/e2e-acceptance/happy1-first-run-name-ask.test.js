@@ -152,8 +152,8 @@ async function loadPrefs() {
     const spec = harness.mustRead(path.join(harness.REPO_ROOT, 'spec', 'MASTER-SPEC-2026-08-21.md'))
     // The spec-3 greeting: Candice appears and reports setup checking before
     // the long preflight — the WS-36 integration surface carries it verbatim.
-    assert.ok(skill.includes('Hi, I’m Candice. Give me just a moment') || skill.includes("Hi, I'm Candice. Give me just a moment"),
-      'SKILL.md carries the setup-check greeting (spec 3)')
+    assert.ok(/Hi, I['’]m Candice\.\s+I['’]m here to help/.test(skill),
+      'SKILL.md carries the immediate welcome (spec 3)')
     assert.ok(companion.includes('setup-check surface'), 'companion reference names the setup-check surface')
     // The spec-4 name question: "Hi, I'm Candice. What's your name?" — the
     // wording authority is the spec; the WS-40 prefs lane implements the

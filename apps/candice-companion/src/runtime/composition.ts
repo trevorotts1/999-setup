@@ -35,12 +35,12 @@ import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime
 import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
 /**
- * FIX-014 (I-13): the exact setup-check greeting from the protocol fixture
- * (`packages/candice-protocol/tests/fixtures/status-event.valid.json`).
- * Shown as the first caption at boot, before any machine effect exists.
+ * The welcome shown by the slash-command wake path before preflight or any
+ * governed question. It is presentation only: no answer is requested and no
+ * protocol count/order changes here.
  */
 const SETUP_CHECK_GREETING =
-  "Hi, I'm Candice. Give me just a moment while I make sure everything is set up properly for us to work together.";
+  "Hi, I'm Candice. I'm here to help you build the app, the software, or the thing you've always dreamed about. Think of me as your fairy godmother: you make a wish, and I help make it real. I'm getting everything ready for us now.";
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;

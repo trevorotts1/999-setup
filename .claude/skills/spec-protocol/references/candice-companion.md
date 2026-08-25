@@ -28,12 +28,15 @@ UserPromptExpansion and SessionStart). The companion is launched/raised
 asynchronously and bound to the current Claude session id and foreground
 terminal host (Master Spec §13.1). The hook never blocks this skill.
 
-**Spec Protocol's own Candice touchpoint:** the "Hi, I'm Candice. Give me just
-a moment while I make sure everything is set up properly for us to work
-together." setup-check surface (Master Spec §3). Candice is a progress surface
-for the preflight — **she is not the component that decides whether the setup
-passes.** This skill still runs its own environment/preflight checks, records
-the results, and reports them itself.
+**Spec Protocol's own Candice touchpoint:** Candice appears at the beginning of
+the slash-command run and welcomes the user before preflight: "Hi, I'm
+Candice. I'm here to help you build the app, the software, or the thing you've
+always dreamed about. Think of me as your fairy godmother: you make a wish,
+and I help make it real." This is a presentation-only setup-check surface, not
+a question: it does not alter governed-question order or counts. Candice is a
+progress surface for the preflight — **she is not the component that decides
+whether setup passes.** This skill still runs its own environment/preflight
+checks, records the results, and reports them itself.
 
 ### Companion availability check
 

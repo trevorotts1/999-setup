@@ -266,7 +266,7 @@ test('FIX-014 I-13: initialCaption shows at creation, important (never faded), b
   const machine = createCandiceStateMachine();
   const { doc, mount } = fakeEnv();
   const greeting =
-    "Hi, I'm Candice. Give me just a moment while I make sure everything is set up properly for us to work together.";
+    "Hi, I'm Candice. I'm here to help you build the app, the software, or the thing you've always dreamed about. Think of me as your fairy godmother: you make a wish, and I help make it real. I'm getting everything ready for us now.";
   const ctrl = createCaptionsController({
     machine,
     mount: mount as unknown as HTMLElement,
@@ -274,7 +274,7 @@ test('FIX-014 I-13: initialCaption shows at creation, important (never faded), b
     initialCaption: greeting,
   });
   const root = mount.children[0];
-  assert.ok(captionTextOf(mount).includes('Give me just a moment'), 'greeting visible at creation');
+  assert.ok(captionTextOf(mount).includes('fairy godmother'), 'welcome visible at creation');
   assert.ok(!root?.classes.contains('candice-captions-stale'), 'greeting is important, never faded');
   assert.ok(!root?.classes.contains('candice-captions-empty'), 'greeting clears the empty state');
   // A later machine caption replaces the greeting.

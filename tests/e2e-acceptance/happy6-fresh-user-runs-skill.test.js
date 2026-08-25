@@ -101,8 +101,8 @@ function skip(name, reason) {
   // -----------------------------------------------------------------------
 
   pending.push(check('the skill names the setup-check-first surface and its caption rule', () => {
-    assert.ok(skill.includes('Hi, I’m Candice. Give me just a moment') || skill.includes("Hi, I'm Candice. Give me just a moment"),
-      'SKILL.md names the setup-check greeting')
+    assert.ok(/Hi, I['’]m Candice\.\s+I['’]m here to help/.test(skill),
+      'SKILL.md names the immediate welcome')
     assert.ok(skill.includes('before preflight'), 'SKILL.md orders Candice before the long preflight')
     assert.ok(companion.includes('setup-check surface'), 'companion ref names the setup-check surface')
     assert.ok(companion.includes('she is not the component that decides'),

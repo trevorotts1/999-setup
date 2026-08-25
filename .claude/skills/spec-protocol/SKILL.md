@@ -647,10 +647,13 @@ is generic across `/spec-protocol`, `/kaizen`, `/eli5`, `/bro`; do not rename
 those commands.
 
 **Activation:** the plugin wakes Candice on the slash command before preflight
-completes (spec 13.1) and shows the setup-check message
-("Hi, I'm Candice. Give me just a moment..."). She is a progress surface for
-the preflight — she never decides whether setup passes; you still run and
-report the checks yourself.
+completes (spec 13.1) and immediately shows her welcome: "Hi, I'm Candice.
+I'm here to help you build the app, the software, or the thing you've always
+dreamed about. Think of me as your fairy godmother: you make a wish, and I
+help make it real." This welcome is a presentation-only progress surface for
+the preflight — it is not a question, does not alter question order or counts,
+and she never decides whether setup passes; you still run and report the
+checks yourself.
 
 **Companion availability check (environment-driven, no self-probe):**
 1. Plugin registered → hooks fired → Candice wakes. Absent → she never wakes;

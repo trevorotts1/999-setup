@@ -146,8 +146,8 @@ function skip(name, reason) {
     const companion = harness.mustRead(harness.COMPANION_REF)
     assert.ok(companion.includes('caption'), 'companion reference states the caption requirement (spec 3/5.2)')
     const skill = harness.mustRead(harness.SPEC_SKILL)
-    assert.ok(skill.includes('Hi, I’m Candice. Give me just a moment') || skill.includes("Hi, I'm Candice. Give me just a moment"),
-      'greeting carried by the skill surface')
+    assert.ok(/Hi, I['’]m Candice\.\s+I['’]m here to help/.test(skill),
+      'immediate welcome carried by the skill surface')
   })
 
   // -----------------------------------------------------------------------
