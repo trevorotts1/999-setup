@@ -683,7 +683,15 @@ class AskUserServer {
     if (this.bridge) {
       const bound = await this.bridge.ensureSession(q.sessionId)
       if (!bound.ok) {
-        return this._runFallback('mcp-unavailable', q, operationId)
+        // Pass the bridge's OWN code through as the detail. Collapsing every
+        // ensureSession failure into a bare `mcp-unavailable` told the
+        // operator the environment was broken when the truth was
+        // `companion-not-configured` (fixable config) or
+        // `companion-launch-failed` (a bad install path) — a diagnosable
+        // fault reported as an environmental one. The CAUSE stays a valid
+        // FALLBACK_CAUSES member so the coordinator handoff is unchanged;
+        // only the operator-visible detail is widened.
+        return this._runFallback('mcp-unavailable', q, operationId, bound.code)
       }
     }
     // S2 handoff: a BLOCKED durable store (unproven owner/mode/ACL, quarantine

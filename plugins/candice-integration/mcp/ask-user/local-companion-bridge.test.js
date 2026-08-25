@@ -468,3 +468,128 @@ test('an unconfigured companion still reports companion-not-configured', async (
     await bridge.close()
   }
 })
+
+// ——————————————————————————————————————————————
+// A launch that cannot execute: loud, fast, and never fatal.
+//
+// The bridge used to swallow this entirely. `spawn` reports ENOENT/EACCES
+// ASYNCHRONOUSLY through an 'error' event, so the try/catch around it never
+// saw them — and an 'error' event with no listener is an uncaught exception,
+// which in the stdio MCP server kills every other tool call with it.
+// ——————————————————————————————————————————————
+
+/** A path that cannot exist, so `spawn` must fail with ENOENT. */
+function unrunnableCommand() {
+  return path.join(os.tmpdir(), `candice-does-not-exist-${process.pid}-${Date.now()}`)
+}
+
+test('a launch command that cannot execute fails loudly, and fails FAST', async () => {
+  const bridge = new LocalCompanionBridge({
+    launchCommand: unrunnableCommand(),
+    // Deliberately generous: if the failure were only discovered by waiting,
+    // this test would take the whole budget and the elapsed assertion below
+    // would catch it.
+    readyTimeoutMs: 5000,
+  })
+  await bridge.start()
+  try {
+    const started = Date.now()
+    const result = await bridge.ensureSession('session-launch-fail')
+    const elapsed = Date.now() - started
+
+    assert.equal(result.ok, false, 'a binary that cannot run is not a session')
+    assert.equal(
+      result.code,
+      'companion-launch-failed',
+      'the operator must be told the launch FAILED, not that it was slow ' +
+        '(companion-ready-timeout) and not that it was never configured',
+    )
+    assert.ok(
+      elapsed < 2000,
+      `waited ${elapsed}ms for a process that never executed; a proven launch ` +
+        'failure must not sit out the readiness budget',
+    )
+  } finally {
+    await bridge.close()
+  }
+})
+
+test('an unresolvable launch command never crashes the MCP server process', async () => {
+  // Process-level on purpose. An unhandled child 'error' event does not throw
+  // where it can be caught — it takes the host process down. The only honest
+  // way to prove it does not is to run it in a real child and read the exit
+  // code: with the listener removed this child dies on an uncaught ENOENT.
+  const { spawn: spawnChild } = require('child_process')
+  const modulePath = require.resolve('./local-companion-bridge')
+  const source = `
+    const { LocalCompanionBridge } = require(${JSON.stringify(modulePath)})
+    const bridge = new LocalCompanionBridge({
+      launchCommand: ${JSON.stringify(unrunnableCommand())},
+      readyTimeoutMs: 3000,
+    })
+    bridge.start()
+      .then(() => bridge.ensureSession('session-crash-probe'))
+      .then(async (result) => {
+        await bridge.close()
+        process.exit(result.code === 'companion-launch-failed' ? 0 : 3)
+      })
+      .catch(async () => { try { await bridge.close() } catch (_) {} ; process.exit(4) })
+  `
+  const code = await new Promise((resolve) => {
+    const child = spawnChild(process.execPath, ['-e', source], { stdio: 'ignore' })
+    child.on('exit', (exitCode) => resolve(exitCode))
+  })
+  assert.equal(
+    code,
+    0,
+    code === 1
+      ? 'the child died on an uncaught spawn error — a bad install path takes ' +
+        'the whole MCP server down with it'
+      : `child exited ${code}; expected a clean companion-launch-failed`,
+  )
+})
+
+test('a bridge failure reaches the operator as its own code, not a bare mcp-unavailable', async () => {
+  // Every ensureSession failure used to collapse into `mcp-unavailable`, so a
+  // fixable configuration fault was reported as an environmental one. The
+  // cause stays a valid fallback cause; the DETAIL must survive.
+  const server = new AskUserServer({
+    isCompanionReady: () => true,
+    deliverQuestion: async () => ({ ok: true }),
+    sleep: async () => {},
+    bridge: { ensureSession: async () => ({ ok: false, code: 'companion-not-configured' }) },
+  })
+  const result = await server.askUser({ question: question(), sessionId: 'session-a' })
+  const text = result.result.content[0].text
+
+  assert.equal(result.result.isError, true, 'still fails soft')
+  assert.ok(
+    text.includes('companion-not-configured'),
+    `the diagnosable cause was lost; operator saw: ${text}`,
+  )
+  assert.ok(
+    text.includes('ask the same question in Claude normally'),
+    'the fail-soft instruction must survive alongside the real code',
+  )
+})
+
+test('distinct bridge failures stay distinguishable from each other', async () => {
+  // The regression is not "one code is missing" but "all codes look alike".
+  const seen = []
+  for (const code of ['companion-not-configured', 'companion-launch-failed', 'companion-ready-timeout']) {
+    const server = new AskUserServer({
+      isCompanionReady: () => true,
+      deliverQuestion: async () => ({ ok: true }),
+      sleep: async () => {},
+      bridge: { ensureSession: async () => ({ ok: false, code }) },
+    })
+    const result = await server.askUser({ question: question(), sessionId: 'session-a' })
+    seen.push(result.result.content[0].text)
+  }
+  assert.equal(
+    new Set(seen).size,
+    3,
+    'three different bridge faults produced identical operator text; a ' +
+      'diagnosable problem is being reported as an environmental one',
+  )
+})

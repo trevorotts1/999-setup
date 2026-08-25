@@ -55,6 +55,9 @@ class LocalCompanionBridge {
     this.launchCommand = options.launchCommand !== undefined
       ? options.launchCommand
       : resolveConfiguredLaunchCommand()
+    // Set when a launch attempt provably failed (ENOENT/EACCES/spawn throw).
+    // A failed launch is a FACT the waiter must see, not an absence to wait out.
+    this.launchError = null
     this.socketDir = options.socketDir || fs.mkdtempSync(path.join(os.tmpdir(), 'candice-mcp-'))
     // Loopback TCP is deliberately used instead of a Unix socket so the
     // exact authenticated protocol works in native Windows builds too. The
@@ -168,6 +171,10 @@ class LocalCompanionBridge {
       const timeout = setTimeout(() => finish(bridgeFailure('companion-ready-timeout')), this.readyTimeoutMs)
       const poll = () => {
         if (this.isReady()) { finish({ ok: true }); return }
+        // A launch that provably failed can never become ready. Waiting the
+        // full readiness budget for it reported `companion-ready-timeout` —
+        // "it started but was too slow" — for a binary that never executed.
+        if (this.launchError) { finish(bridgeFailure('companion-launch-failed')); return }
         if (!this.started || this.launchSessionId !== sessionId) { finish(bridgeFailure('companion-not-ready')); return }
         pollTimer = setTimeout(poll, 25)
       }
@@ -179,7 +186,17 @@ class LocalCompanionBridge {
     // The user may start the app separately with these launch arguments; a
     // configured executable simply removes that manual step. Never shell out
     // through an interpolated command string.
+    //
+    // Reaching here with no command means a companion is ALREADY connected:
+    // ensureSession returns `companion-not-configured` above when it is not.
+    // There is genuinely nothing to launch, so there is nothing to report.
     if (!this.launchCommand) return
+    const failLaunch = (error) => {
+      // Recorded, never thrown. The waiter turns this into an honest
+      // `companion-launch-failed` instead of sitting out the readiness
+      // budget for a process that was never going to connect.
+      this.launchError = (error && error.code) || 'spawn-failed'
+    }
     try {
       const child = spawn(this.launchCommand, [
         '--bridge-endpoint', this.endpoint,
@@ -189,9 +206,19 @@ class LocalCompanionBridge {
         '--activation-id', activation.activationId,
         '--activation-issued-at', String(activation.issuedAt),
       ], { detached: true, stdio: 'ignore' })
+      // MANDATORY, not defensive style. `spawn` reports ENOENT/EACCES
+      // ASYNCHRONOUSLY through 'error', so the catch below never sees them —
+      // and an 'error' event with NO listener is an uncaught exception that
+      // takes the whole stdio MCP server down, killing every other tool call
+      // with it. Verified empirically: spawn() of a missing path returns a
+      // child with `pid === undefined` and throws nothing synchronously.
+      // A bad install path must degrade to the terminal fallback, not crash.
+      child.on('error', failLaunch)
       child.unref()
-    } catch (_) {
-      // A launch failure is represented by lack of authenticated readiness.
+    } catch (error) {
+      // Synchronous throws only (invalid argument shapes); ENOENT arrives
+      // through the listener above.
+      failLaunch(error)
     }
   }
 
