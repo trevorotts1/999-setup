@@ -45,3 +45,17 @@ apps/candice-companion/src-tauri/gen/
 apps/candice-companion/src-tauri/tauri.conf.json
 # Q-10 release-config-guard crate build outputs (sign/verify helper binary)
 scripts/candice-release/release-config-guard/target/
+
+# Candice speech assets (FIX-015 installer lane): the model binaries and the
+# relocatable Python interpreter are placed into the source tree at build time
+# so `bundle.resources` can pick them up. They are NOT tracked artifacts — the
+# durable copies live at
+# ~/Library/Application Support/BlackCEO/999/speech-assets-source/.
+# SPEECH-INVENTORY.json is source and MUST stay tracked; it is not listed here.
+apps/candice-companion/src-tauri/speech-assets/stt/ggml-tiny.en-q5_1.bin
+apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli
+apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli.exe
+apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli-win32/
+apps/candice-companion/src-tauri/speech-assets/tts/runtime/kokoro-v1.0.fp16.onnx
+apps/candice-companion/src-tauri/speech-assets/tts/runtime/voices-v1.0.bin
+apps/candice-companion/src-tauri/speech-assets/tts/python/
