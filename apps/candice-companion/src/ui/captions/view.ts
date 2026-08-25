@@ -56,9 +56,21 @@ export const CAPTIONS_STYLE_TEXT = `
   color: var(--candice-cap-text);
   text-align: center;
   transition: opacity 200ms ease;
+  /* FIX-008: the window is transparent, so the question text needs its own
+     opaque backdrop or it renders straight onto the user's desktop. This is
+     the same surface token the contrast matrix measures every ratio against. */
+  background: var(--candice-ui-surface);
+  border: 1px solid var(--candice-ui-border);
+  border-radius: 8px;
 }
+/* FIX-008: staleness dims the TEXT, never the backdrop. Fading the element
+   fades the scrim with it and hands the effective contrast back to whatever
+   desktop is behind the window. */
 .candice-captions.candice-captions-stale {
-  opacity: 0.55;
+  opacity: 1;
+}
+.candice-captions.candice-captions-stale .candice-captions-text {
+  color: var(--candice-cap-muted);
 }
 .candice-captions-label {
   font-size: 11px;

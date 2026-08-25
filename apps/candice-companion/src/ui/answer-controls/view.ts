@@ -42,6 +42,8 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   --candice-ac-text: var(--candice-text, #eceaf3);
   --candice-ac-muted: var(--candice-muted, #a8a3b8);
   --candice-ac-accent: var(--candice-accent, #7c5cff);
+  /* FIX-008: accent applied to TEXT needs the AAA-safe tint. */
+  --candice-ac-accent-text: var(--candice-accent-text, #b9a8ff);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -52,6 +54,10 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.35;
   color: var(--candice-ac-text);
+  /* FIX-008: opaque backdrop over the transparent window. */
+  background: var(--candice-ui-surface, #171321);
+  border: 1px solid var(--candice-ui-border, #beb0ff);
+  border-radius: 10px;
 }
 .candice-answer-methods {
   display: flex;
@@ -71,7 +77,8 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   min-width: 160px;
   border: 1px solid var(--candice-ac-muted);
   border-radius: 10px;
-  background: transparent;
+  /* FIX-008: opaque so the typed answer is readable over any desktop. */
+  background: var(--candice-ui-surface, #171321);
   color: inherit;
   font: inherit;
   padding: 10px 12px;
@@ -82,7 +89,10 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 .candice-answer-submit {
   border: 1px solid var(--candice-ac-accent);
   border-radius: 999px;
-  background: transparent;
+  /* FIX-008: an opaque fill reads as an ENABLED control. Transparent over a
+     bright desktop read as a disabled ghost, which is a false affordance:
+     the model enables this button whenever delegate mode is inactive. */
+  background: var(--candice-ui-surface, #171321);
   color: inherit;
   font: inherit;
   font-weight: 600;
@@ -96,20 +106,24 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 }
 .candice-answer-link {
   border: 0;
-  background: transparent;
+  /* FIX-008: opaque backdrop; this is a real action, not decoration. */
+  background: var(--candice-ui-surface, #171321);
   color: var(--candice-ac-muted);
   font: inherit;
   padding: 4px 6px;
+  border-radius: 6px;
   cursor: pointer;
 }
 .candice-answer-link:hover {
-  color: var(--candice-ac-accent);
+  color: var(--candice-ac-accent-text);
   text-decoration: underline;
 }
 .candice-answer-toggle {
   border: 1px solid var(--candice-ac-muted);
   border-radius: 999px;
-  background: transparent;
+  /* FIX-008: opaque backdrop; the muted colour is the OFF state, not a
+     disabled state, and it stays AAA against this surface. */
+  background: var(--candice-ui-surface, #171321);
   color: var(--candice-ac-muted);
   font: inherit;
   padding: 6px 14px;
@@ -117,7 +131,7 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 }
 .candice-answer-toggle[data-voice-on='true'] {
   border-color: var(--candice-ac-accent);
-  color: var(--candice-ac-accent);
+  color: var(--candice-ac-accent-text);
 }
 .candice-answer-confirm {
   display: flex;

@@ -38,6 +38,7 @@ import {
   contrastRatio,
   extractCssTokens,
   hexToRgb,
+  parseCssColor,
   resolveToken,
   THRESHOLDS,
 } from './lib/wcag.mjs';
@@ -266,4 +267,254 @@ test('FIX-008 contrast: report artifact is written deterministically', () => {
   assert.equal(reread.cells.length, report.cells.length);
   assert.equal(reread.captionCells.length, report.captionCells.length);
   assert.ok(reread.generatedAt.length > 0);
+});
+
+// ------------------------------------------------- FIX-008 opaque backdrop
+//
+// The hole this suite had: every ratio above is computed against
+// `--candice-ui-surface`, but the window is `transparent: true`, so a surface
+// is only really behind the text when a rule PAINTS it. The captions, the
+// answer controls, the push-to-talk button and the name prompt all drew
+// near-white text straight onto the transparency. The matrix stayed green
+// while the operator could read his terminal scrollback through the question
+// text. A ratio measured against a backdrop that is never painted is not a
+// measurement of anything.
+//
+// Opacity is the load-bearing property. An alpha scrim makes the effective
+// ratio depend on whatever desktop happens to be behind the window, which is
+// the unbounded case this gate exists to eliminate — the companion is
+// alwaysOnTop and floats over arbitrary content. A fully opaque backdrop
+// makes the measured ratio the delivered ratio on any desktop.
+
+const ANSWER_CONTROLS_VIEW = readFileSync(join(APP, 'ui', 'answer-controls', 'view.ts'), 'utf8');
+const PTT_VIEW = readFileSync(join(APP, 'ui', 'ptt', 'view.ts'), 'utf8');
+const INTERACTION_COMPOSITION = readFileSync(join(APP, 'runtime', 'interaction-composition.ts'), 'utf8');
+
+/**
+ * The name prompt's stylesheet is an inline `style.textContent = ` template,
+ * not a named export. Scanning the whole TS source would tokenise function
+ * bodies as CSS rules, so pull out just the stylesheet.
+ */
+function extractInlineStyleText(source) {
+  const m = source.match(/style\.textContent = `([\s\S]*?)`;/);
+  if (!m) throw new Error('inline style template not found');
+  return m[1];
+}
+
+/**
+ * Substitute `${CONST}` placeholders with the string constants the same
+ * source exports. The name prompt builds its selectors from
+ * NAME_PROMPT_ROOT_CLASS, and `${...}` braces would otherwise tokenise as a
+ * declaration block. Resolving from the source keeps the assertion pinned to
+ * the class the app actually ships rather than a copy that can drift.
+ */
+function resolveTemplatePlaceholders(cssText, source) {
+  return cssText.replace(/\$\{([A-Z0-9_]+)\}/g, (whole, name) => {
+    const m = source.match(new RegExp(`export const ${name} = '([^']+)'`));
+    if (!m) throw new Error(`cannot resolve \${${name}} from source`);
+    return m[1];
+  });
+}
+
+const NAME_PROMPT_STYLE = resolveTemplatePlaceholders(
+  extractInlineStyleText(INTERACTION_COMPOSITION),
+  INTERACTION_COMPOSITION,
+);
+
+/** Pull a `export const NAME = ` ... `` template literal out of a TS source. */
+function extractStyleText(source, constName) {
+  const m = source.match(new RegExp(`${constName} = \`([\\s\\S]*?)\`;`));
+  if (!m) throw new Error(`${constName} not found`);
+  return m[1];
+}
+
+/** Drop CSS comments before parsing, exactly as a real CSS parser does. */
+function stripComments(cssText) {
+  return String(cssText).replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * The declaration block of a selector, or null.
+ *
+ * Selectors are matched against the whole comma-separated prelude, because
+ * the shipped stylesheet groups surfaces (`.candice-status-surface,
+ * .fallback-title, ... { }`). An earlier version of this helper required the
+ * selector to sit immediately before `{` and reported the already-correct
+ * control surfaces as failures — which is exactly what the control is for.
+ */
+function ruleFor(rawCssText, selector) {
+  const cssText = stripComments(rawCssText);
+  const re = /([^{}]+)\{([^}]*)\}/g;
+  let m;
+  while ((m = re.exec(cssText)) !== null) {
+    const selectors = m[1].split(',').map((s) => s.trim()).filter(Boolean);
+    if (selectors.includes(selector)) return m[2];
+  }
+  return null;
+}
+
+/** The declared `background` shorthand of a block, or null when absent. */
+function backgroundOf(block) {
+  const m = block.match(/(?:^|;)\s*background\s*:\s*([^;]+)/);
+  return m ? m[1].trim() : null;
+}
+
+/** Resolve `var(--token)` and `var(--token, fallback)` against the token map. */
+function resolveVar(tokens, value) {
+  const v = String(value).trim();
+  const m = v.match(/^var\(\s*(--[a-z0-9-]+)\s*(?:,\s*([^)]+))?\)$/);
+  if (!m) return v;
+  const [, name, fallback] = m;
+  if (tokens.has(name)) return tokens.get(name).trim();
+  return fallback === undefined ? v : fallback.trim();
+}
+
+/** A background counts only when it resolves to a fully opaque color. */
+function opaqueBackground(tokens, block) {
+  const raw = backgroundOf(block);
+  if (raw === null) return { opaque: false, reason: 'no background declared' };
+  const resolved = resolveVar(tokens, raw);
+  if (/transparent|none/i.test(resolved)) return { opaque: false, reason: `background: ${raw}` };
+  let parsed;
+  try {
+    parsed = parseCssColor(resolved);
+  } catch (error) {
+    if (!/unparseable CSS color|not a hex color/.test(String(error && error.message))) throw error;
+    return { opaque: false, reason: `unresolvable background: ${raw}` };
+  }
+  if (parsed.a !== undefined && parsed.a < 1) {
+    return { opaque: false, reason: `alpha ${parsed.a} makes contrast desktop-dependent` };
+  }
+  return { opaque: true, color: resolved };
+}
+
+/**
+ * Every surface that paints text over the transparent window.
+ * `control: true` marks a surface that ALREADY had its backdrop before this
+ * gate — it proves the check discriminates instead of failing everything.
+ */
+const TEXT_BEARING_SURFACES = [
+  { name: 'shell status pill', css: STYLES, selector: '.candice-status-surface', control: true },
+  { name: 'state caption pill', css: STYLES, selector: '.candice-state-caption', control: true },
+  { name: 'captions region', css: CAPTIONS_STYLE, selector: '.candice-captions' },
+  {
+    name: 'answer controls',
+    css: extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT'),
+    selector: '.candice-answer-controls',
+  },
+  {
+    name: 'answer input',
+    css: extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT'),
+    selector: '.candice-answer-input',
+  },
+  {
+    name: 'answer submit',
+    css: extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT'),
+    selector: '.candice-answer-submit',
+  },
+  {
+    name: 'voice toggle',
+    css: extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT'),
+    selector: '.candice-answer-toggle',
+  },
+  {
+    name: 'answer link',
+    css: extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT'),
+    selector: '.candice-answer-link',
+  },
+  { name: 'push-to-talk button', css: extractStyleText(PTT_VIEW, 'PTT_STYLE_TEXT'), selector: '.candice-ptt-button' },
+  { name: 'name prompt', css: NAME_PROMPT_STYLE, selector: '.candice-name-prompt' },
+];
+
+test('FIX-008 backdrop: the check discriminates (already-backed surfaces pass)', () => {
+  const tokens = extractCssTokens(STYLES);
+  const controls = TEXT_BEARING_SURFACES.filter((s) => s.control);
+  assert.ok(controls.length > 0, 'the matrix must carry at least one known-good control');
+  for (const surface of controls) {
+    const block = ruleFor(surface.css, surface.selector);
+    assert.ok(block !== null, `${surface.name}: rule ${surface.selector} not found`);
+    const result = opaqueBackground(tokens, block);
+    assert.ok(result.opaque, `CONTROL ${surface.name} should already be opaque: ${result.reason}`);
+  }
+});
+
+test('FIX-008 backdrop: every text-bearing surface paints an opaque backdrop', () => {
+  const tokens = extractCssTokens(STYLES);
+  const failures = [];
+  for (const surface of TEXT_BEARING_SURFACES) {
+    const block = ruleFor(surface.css, surface.selector);
+    if (block === null) {
+      failures.push(`${surface.name}: rule ${surface.selector} not found`);
+      continue;
+    }
+    const result = opaqueBackground(tokens, block);
+    if (!result.opaque) failures.push(`${surface.name} (${surface.selector}): ${result.reason}`);
+  }
+  assert.deepEqual(
+    failures,
+    [],
+    `text drawn on the transparent window with no opaque backdrop is unreadable over a bright desktop:\n  ${failures.join('\n  ')}`,
+  );
+});
+
+test('FIX-008 backdrop: text on each painted backdrop meets AAA 7:1', () => {
+  const tokens = extractCssTokens(STYLES);
+  const text = hexToRgb(tokens.get('--candice-text'));
+  const muted = hexToRgb(tokens.get('--candice-muted'));
+  // Accent applied to TEXT (the voice toggle's ON state, the name prompt's
+  // SAVE, the delegate link on hover). The decorative --candice-accent is
+  // 4.20:1 here and is deliberately NOT a text colour.
+  const accentText = hexToRgb(tokens.get('--candice-accent-text'));
+  for (const surface of TEXT_BEARING_SURFACES) {
+    const block = ruleFor(surface.css, surface.selector);
+    if (block === null) continue;
+    const result = opaqueBackground(tokens, block);
+    if (!result.opaque) continue; // the test above owns that failure
+    const bg = hexToRgb(result.color);
+    for (const [label, fg] of [['text', text], ['muted', muted], ['accent-text', accentText]]) {
+      const ratio = contrastRatio(fg, bg);
+      assert.ok(
+        ratio >= THRESHOLDS.aaa,
+        `${surface.name}: ${label} on ${result.color} is ${ratio.toFixed(2)}:1 < ${THRESHOLDS.aaa}:1 AAA`,
+      );
+    }
+  }
+});
+
+test('FIX-008 backdrop: caption staleness never fades the backdrop out from under the text', () => {
+  // Spec 5.2 keeps a stale caption visible and marked. Expressing that as
+  // element-level opacity dims the scrim along with the text and puts the
+  // effective ratio back at the mercy of the desktop behind the window.
+  const stale = ruleFor(CAPTIONS_STYLE, '.candice-captions.candice-captions-stale');
+  assert.ok(stale !== null, 'the stale rule must exist: staleness is still signalled');
+  const opacity = stale.match(/(?:^|;)\s*opacity\s*:\s*([\d.]+)/);
+  if (opacity !== null) {
+    assert.equal(
+      Number(opacity[1]),
+      1,
+      `stale captions must not dim their own backdrop (opacity ${opacity[1]})`,
+    );
+  }
+});
+
+test('FIX-008 contrast: the decorative accent is never used as a text colour', () => {
+  // --candice-accent is 4.20:1 on the surface: fine for a 3:1 border or glow,
+  // below even AA 4.5 for text. Guard the distinction, because reaching for
+  // the brand accent when colouring text is the natural mistake.
+  const tokens = extractCssTokens(STYLES);
+  const decorative = contrastRatio(hexToRgb(tokens.get('--candice-accent')), hexToRgb(tokens.get('--candice-ui-surface')));
+  assert.ok(decorative < THRESHOLDS.normalText, 'guard: this test is only meaningful while the accent is text-unsafe');
+  const sources = [
+    ['answer controls', extractStyleText(ANSWER_CONTROLS_VIEW, 'ANSWER_CONTROLS_STYLE_TEXT')],
+    ['push-to-talk', extractStyleText(PTT_VIEW, 'PTT_STYLE_TEXT')],
+    ['name prompt', NAME_PROMPT_STYLE],
+    ['shell', STYLES],
+  ];
+  for (const [name, css] of sources) {
+    const offenders = stripComments(css)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => /^color\s*:/.test(line) && /accent(?!-text)/.test(line));
+    assert.deepEqual(offenders, [], `${name}: accent used as a text colour (use --candice-accent-text)`);
+  }
 });

@@ -1,5 +1,20 @@
 /* Candice Companion — shell base styles (WS-06). */
 
+/*
+ * FIX-008 legibility invariant.
+ *
+ * The companion window is `transparent: true` and `alwaysOnTop`, so it floats
+ * over arbitrary content — a bright terminal, a white page, a photo. Text
+ * drawn straight onto that transparency has NO defined background and its
+ * contrast is whatever the desktop happens to be.
+ *
+ * Every text-bearing surface therefore paints `--candice-ui-surface`, the same
+ * opaque token the FIX-008 contrast matrix measures every ratio against.
+ * Opaque is the load-bearing property: an alpha scrim would put the effective
+ * ratio back at the mercy of the desktop. The transparency that the design
+ * actually depends on — around the character — is untouched, and `body` stays
+ * transparent (asserted by tests/a11y-matrix/contrast-harness.mjs).
+ */
 :root {
   color-scheme: light dark;
   --candice-accent: #7c5cff;
@@ -7,6 +22,14 @@
   --candice-muted: #d7cfdf;
   --candice-ui-surface: #171321;
   --candice-ui-border: #beb0ff;
+  /*
+   * FIX-008: accent-as-TEXT. --candice-accent (#7c5cff) is 4.20:1 on the
+   * surface — below AA 4.5 and far below the 7:1 this gate holds dark-theme
+   * surfaces to. It stays the accent for borders, glows and drop-shadows,
+   * where the 3:1 UI-component threshold applies and it passes. Accent text
+   * uses this lighter tint of the same hue instead (8.78:1).
+   */
+  --candice-accent-text: #b9a8ff;
   --candice-focus-ring: #dfd7ff;
   --candice-text-scale: 1;
 }
@@ -196,6 +219,11 @@ body {
   .fallback-title,
   .fallback-hint,
   .candice-runtime-status,
+  .candice-state-caption,
+  .candice-captions,
+  .candice-answer-controls,
+  .candice-ptt,
+  .candice-name-prompt,
   button,
   input,
   textarea,

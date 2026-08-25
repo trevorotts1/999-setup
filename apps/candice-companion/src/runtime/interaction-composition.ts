@@ -153,6 +153,11 @@ function mountNamePrompt(
   line-height: 1.35;
   color: var(--candice-text, #eceaf3);
   text-align: center;
+  /* FIX-008: opaque backdrop — the window is transparent, so this prompt
+     otherwise renders onto the user's desktop and cannot be read. */
+  background: var(--candice-ui-surface, #171321);
+  border: 1px solid var(--candice-ui-border, #beb0ff);
+  border-radius: 10px;
 }
 .${NAME_PROMPT_ROOT_CLASS} input {
   min-width: 220px;
@@ -178,7 +183,8 @@ function mountNamePrompt(
 }
 .${NAME_PROMPT_ROOT_CLASS} button.candice-name-prompt-save {
   border-color: var(--candice-accent, #7c5cff);
-  color: var(--candice-accent, #7c5cff);
+  /* FIX-008: accent as TEXT uses the AAA-safe tint. */
+  color: var(--candice-accent-text, #b9a8ff);
 }
 `;
     (doc.head ?? doc.documentElement).append(style);

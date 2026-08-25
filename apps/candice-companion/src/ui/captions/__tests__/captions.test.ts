@@ -318,10 +318,33 @@ test('captions controller: machine null / mount null never throw (spec 20)', () 
   assert.doesNotThrow(() => ctrl2.destroy());
 });
 
-test('captions style text: no hex/rgba/url/background (WS-07 transparent invariant, spec 11)', () => {
+test('captions style text: token-only colors, no baked literals (WS-07 transparent invariant, spec 11)', () => {
+  // The invariant this protects is "bake nothing": no literal colors, no
+  // images, every color from the shared token set, so the window stays the
+  // transparent holographic surface the design depends on. Those checks are
+  // unchanged.
+  //
+  // The blanket `no background` clause was NARROWED for FIX-008. It was
+  // copied from the character-surface invariant (gesture.test.ts, where it
+  // still holds absolutely and is untouched), but the captions region is
+  // TEXT, not artwork. The window is `transparent: true` and alwaysOnTop, so
+  // a caption with no backdrop renders onto the user's desktop: the operator
+  // reported reading his terminal scrollback straight through the governed
+  // question. A token-based opaque scrim behind the text is now required —
+  // the transparency that matters, around the character, is unaffected.
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /#(?:[0-9a-fA-F]{3,8})/, 'no hex colors');
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /rgba?\(/i, 'no rgb/rgba colors');
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /url\(/i, 'no background images');
-  assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /background/i, 'no background declarations');
+  const backgrounds = CAPTIONS_STYLE_TEXT.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^background(-color)?\s*:/.test(line));
+  assert.ok(backgrounds.length > 0, 'FIX-008: the caption text must paint an opaque backdrop');
+  for (const declaration of backgrounds) {
+    assert.match(
+      declaration,
+      /^background(-color)?\s*:\s*var\(--candice-[a-z-]+\)\s*;?$/,
+      `background must come from a shared token, never a baked value: ${declaration}`,
+    );
+  }
   assert.ok(CAPTIONS_STYLE_TEXT.includes('candice-reduced-motion'), 'consumes the shared reduced-motion class');
 });
