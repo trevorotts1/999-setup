@@ -156,47 +156,116 @@ async function main() {
       }
     })
 
-    await check('payload pins: every checksum-pinned row carries a 64-hex SHA-256; deferred rows are honestly marked', () => {
-      // The manifest's own contract (generate-speech-inventory.mjs): the
-      // six payload rows carry real pins today; tts-worker/tts-runtime-pins
-      // deliberately pin later with the installer lane. A null pin is only
-      // honest when sha256Status says so — a null pin claiming "ok" would
-      // be the exact slot-fakery Q-05 removed.
-      const DEFERRED = new Set(['tts-worker', 'tts-runtime-pins'])
+    await check('every row\'s pin agrees with its declared sha256Status', () => {
+      // REWRITTEN. This asserted an installer posture the manifest does not
+      // hold and the build does not implement: it treated tts-worker and
+      // tts-runtime-pins as "deferred" rows that must NOT carry a pin, and
+      // failed with "unexpected pin on deferred row" because they do carry
+      // one. They carry one because they ARE bundled and they ARE measured.
+      //
+      // The manifest is the authority and it is honest: every row states
+      // `bundled` and `sha256Status`. So the check is now that those two
+      // fields agree with the pin, which is a real integrity statement rather
+      // than a claim about which lane places files.
       for (const e of inventory.entries) {
         if (typeof e.installPath !== 'string' || e.installPath.length === 0) {
           throw new Error(`row ${e.id}: installPath missing`)
         }
         const pinned = typeof e.sha256 === 'string' && /^[0-9a-f]{64}$/.test(e.sha256)
-        if (!pinned) {
-          if (!DEFERRED.has(e.id)) {
-            throw new Error(`row ${e.id}: sha256 pin missing or malformed`)
-          }
-          continue
+        if (!pinned) throw new Error(`row ${e.id}: sha256 pin missing or malformed`)
+        if (e.sha256Status !== 'pinned'
+          && e.sha256Status !== 'measured-from-tree'
+          && e.sha256Status !== 'absent') {
+          throw new Error(`row ${e.id}: unknown sha256Status ${e.sha256Status}`)
         }
-        if (DEFERRED.has(e.id)) throw new Error(`row ${e.id}: unexpected pin on deferred row`)
+        // `absent` means the payload is NOT here. Such a row may keep an
+        // upstream pin to verify against later, but it must never also claim
+        // to be bundled — that pair is the slot-fakery Q-05 removed.
+        if (e.sha256Status === 'absent' && e.bundled !== false) {
+          throw new Error(`row ${e.id}: sha256Status absent but bundled=${e.bundled}`)
+        }
+        if (e.sha256Status !== 'absent' && e.bundled !== true) {
+          throw new Error(`row ${e.id}: status ${e.sha256Status} but bundled=${e.bundled}`)
+        }
+        if (e.sha256Status === 'absent' && typeof e.absentNote !== 'string') {
+          throw new Error(`row ${e.id}: absent rows must say why (absentNote)`)
+        }
       }
-      const pinnedCount = inventory.entries.filter(
-        (e) => !DEFERRED.has(e.id),
-      ).length
-      fs.writeFileSync(path.join(TRACE_DIR, 'pin-coverage.txt'), `pinned=${pinnedCount} deferred=${inventory.entries.length - pinnedCount}\n`, 'utf8')
-      // Canonical voice stays fail-closed until the operator approval gate.
-      if (inventory.canonicalVoice.approval !== 'approval-pending') {
-        throw new Error(`canonical voice approval must stay approval-pending, got ${inventory.canonicalVoice.approval}`)
+      const bundled = inventory.entries.filter((e) => e.bundled === true)
+      const absent = inventory.entries.filter((e) => e.bundled !== true)
+      fs.writeFileSync(
+        path.join(TRACE_DIR, 'pin-coverage.txt'),
+        `bundled=${bundled.length} absent=${absent.length}\n`
+        + `absent rows: ${absent.map((e) => e.id).join(', ')}\n`,
+        'utf8',
+      )
+      // The canonical voice gate, asserted as the gate rather than as one
+      // side of it. This required `approval-pending` forever, which is a
+      // requirement that Candice never speak: the operator approved af_bella
+      // in a134db5 ("approve af_bella and make the shipped bundle actually
+      // speak"), so the gate has been passed and the leg was failing the
+      // product for obeying its own operator.
+      //
+      // What must hold is that the value is EXACTLY one of the two governed
+      // strings. speech/mod.rs resolves a speakable voice only on the exact
+      // lowercase `approved` and refuses everything else as "not
+      // operator-approved" — including `Approved` and `APPROVED`, which it
+      // has a test for. Accepting a casing variant here is what would let an
+      // unapproved voice look approved.
+      const approval = inventory.canonicalVoice.approval
+      if (approval !== 'approved' && approval !== 'approval-pending') {
+        throw new Error(
+          `canonical voice approval must be exactly "approved" or "approval-pending", got ${JSON.stringify(approval)}`,
+        )
       }
+      if (typeof inventory.canonicalVoice.id !== 'string' || inventory.canonicalVoice.id.length === 0) {
+        throw new Error('canonical voice has no id')
+      }
+      fs.writeFileSync(
+        path.join(TRACE_DIR, 'canonical-voice.txt'),
+        `${inventory.canonicalVoice.id} ${approval} ${inventory.canonicalVoice.voicepackRelease}\n`,
+        'utf8',
+      )
     })
 
-    // ---- Leg 3: degraded precondition — bundle ships NO payloads --------
-    await check('degraded-by-design: zero pinned payloads ship inside the bundle', () => {
+    // ---- Leg 3: what the manifest says is bundled IS bundled, byte for byte --
+    await check('every bundled row is present and matches its pin; absent rows are absent', () => {
+      // REWRITTEN. This asserted "zero pinned payloads ship inside the bundle
+      // (installer lane owns placement)" and failed naming five payloads that
+      // do ship. They ship on purpose: tauri.conf.json bundles speech-assets,
+      // the manifest marks those five `bundled: true`, and that is what makes
+      // Candice able to speak the moment a client opens her. No installer
+      // lane exists in this repo to place them instead, so the old assertion
+      // could only ever have been satisfied by a mute product.
+      //
+      // Verifying the bytes is strictly stronger than asserting the posture:
+      // a corrupted or swapped payload passed the old check trivially, by
+      // being absent.
       const resDir = path.join(bundleRoot, 'Contents', 'Resources', 'speech-assets')
-      const offenders = []
+      const problems = []
+      let verified = 0
       for (const e of inventory.entries) {
         const candidate = path.join(resDir, e.installPath)
-        if (fs.existsSync(candidate)) offenders.push(e.id)
+        const here = fs.existsSync(candidate)
+        if (e.bundled === true) {
+          if (!here) { problems.push(`${e.id}: declared bundled but missing from the artifact`); continue }
+          const measured = sha256(fs.readFileSync(candidate))
+          if (measured !== e.sha256) {
+            problems.push(`${e.id}: bundled bytes do not match the pin (pinned ${e.sha256.slice(0, 16)}, measured ${measured.slice(0, 16)})`)
+            continue
+          }
+          verified += 1
+        } else if (here) {
+          problems.push(`${e.id}: declared absent but present in the artifact`)
+        }
       }
-      if (offenders.length > 0) {
-        throw new Error(`payload artifacts unexpectedly inside the bundle (installer lane owns placement): ${offenders.join(', ')}`)
-      }
+      fs.writeFileSync(
+        path.join(TRACE_DIR, 'bundled-payload-verification.txt'),
+        `verified=${verified} problems=${problems.length}\n${problems.join('\n')}\n`,
+        'utf8',
+      )
+      if (problems.length > 0) throw new Error(problems.join('; '))
+      if (verified === 0) throw new Error('no bundled payload was verified — the check proved nothing')
     })
 
     // ---- Leg 4: corrupt-byte negative control ---------------------------
