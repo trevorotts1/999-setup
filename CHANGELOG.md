@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.16.4] — 2026-08-26
+
+### Status line: the Wave bar could never clear, and counted prose as progress
+
+Two independent defects made the Wave bar report a dead project's status
+indefinitely, in every session, in every directory, in BOTH config stores
+(`~/.claude` and `~/.claude-nine` share one script, so both harnesses showed it).
+Observed live as `Wave 6 ██░░░░░░░░ 20%` ten days after that wave closed.
+
+- **Hardcoded foreign-project fallback removed.** The wave lookup fell back to
+  `$HOME/work-999-setup/FIX-LEDGER.md` when `$cwd` had no ledger — so a session
+  in ANY unrelated directory rendered this repo's wave. It now reads
+  `$cwd/FIX-LEDGER.md`, else the ledger at the **git repo root of `$cwd`**, and
+  never a hardcoded absolute path. Same defect class as the 1.16.3 boss-tools
+  portability fix, in the one script that pass missed.
+- **Closed waves no longer render.** Current wave was "highest `WAVE <n>`
+  mentioned", which a `WAVE <n> CLOSED` line does not change — so a finished
+  wave stayed on screen forever. Current wave is now the highest `WAVE <n>`
+  with NO `WAVE <n> CLOSED` line; all waves closed → segment omitted. The bar
+  now clears itself when the last wave closes.
+- **Prose no longer counts as workflows.** The deployed script matched
+  `grep -c "WF-<n>"` unanchored, so violation records, review findings and the
+  plan table all counted as workflow rows — the observed `20%` was 1 of 5
+  narrative paragraphs, not 1 of 5 workflows. Both numerator and denominator
+  now anchor on the `` - `WF-<n>x `` line class.
+- **Installer/deployed drift closed.** `scripts/setup-statusline.sh` already
+  carried the anchored match; `~/.claude/statusline-command.sh` did not, because
+  the installer was fixed but never re-run. The deployed script is now
+  regenerated from the installer heredoc and verified byte-identical to it.
+  SKILL.md and `references/progress-visibility.md` now state the rule: the
+  installer owns the body, the deployed copy is generated, verify with a
+  heredoc-extract diff.
+- **New doctrine — a progress bar that cannot clear itself is a lie.** Every bar
+  must have a condition under which it disappears, reachable from disk truth
+  alone. Bars pinned to a path outside `$cwd` are banned.
+- **Arithmetic hardening.** `grep` rc≥2 (unreadable file) yields an empty string,
+  not `0`; both counts now default before reaching an arithmetic test.
+
+Verified on the operator box with a five-case battery: home dir (bar gone), this
+repo with all waves closed (bar gone, Project bar intact), repo subdir
+(repo-root walk-up), a synthetic open wave (`Wave 7 ██████░░░░ 60%` — 3 of 5,
+correctly ignoring a plan-table row and a prose mention), and a
+highest-wave-closed fixture (falls through to the open lower wave).
+
 ## [1.16.3] — 2026-08-21
 
 ### Boss tools portability — no hardcoded paths or campaign data

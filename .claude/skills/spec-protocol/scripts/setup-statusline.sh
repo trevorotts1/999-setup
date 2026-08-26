@@ -224,25 +224,43 @@ if [ -n "$cwd_path" ] && [ -f "$state_file" ]; then
 fi
 
 # --- wave bar (wave-shaped runs) -------------------------------------------
-# Looks for FIX-LEDGER.md at $cwd first, then $HOME/work-999-setup/FIX-LEDGER.md.
-# Current wave = highest "WAVE <n>" line; total = its workflow-completion
-# lines ("- `WF-<n>x" class); done = those with a PASS or DONE marker.
-# Denominator and numerator share the same class: the locked-wave table row
-# and log lines (DISPATCH / VIOLATION-STOP / CLOSED / REVIEW-FINDING) that
-# merely mention a wave id are never counted. No workflow lines for the
-# current wave -> segment omitted.
+# SCOPE — the project you are ACTUALLY IN. Reads FIX-LEDGER.md at $cwd, else at
+# the git repo root of $cwd. NEVER a hardcoded absolute path to a named
+# project: a ledger outside the current project is ANOTHER project's status and
+# must never render here. (2026-08-26 defect: a hardcoded
+# $HOME/work-999-setup/FIX-LEDGER.md fallback pinned a long-closed "Wave 6"
+# into every session, in every directory, in both config stores, forever.)
+# CURRENT WAVE — the highest "WAVE <n>" that has NO "WAVE <n> CLOSED" line. A
+# closed wave is history, not status; all waves closed -> segment omitted, so
+# the bar clears itself the moment the last wave closes.
+# TOTAL = that wave's workflow-completion lines ("- `WF-<n>x" class); DONE =
+# those carrying a PASS or DONE marker. Denominator and numerator share the
+# same class: the locked-wave table row and log lines (DISPATCH /
+# VIOLATION-STOP / CLOSED / REVIEW-FINDING) that merely mention a wave id are
+# never counted. No workflow lines for the current wave -> segment omitted.
 wavseg=""
 ledger_file=""
 if [ -n "$cwd_path" ] && [ -f "$cwd_path/FIX-LEDGER.md" ]; then
   ledger_file="$cwd_path/FIX-LEDGER.md"
-elif [ -f "$HOME/work-999-setup/FIX-LEDGER.md" ]; then
-  ledger_file="$HOME/work-999-setup/FIX-LEDGER.md"
+elif [ -n "$cwd_path" ] && [ -d "$cwd_path" ]; then
+  repo_root="$(git -C "$cwd_path" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$repo_root" ] && [ -f "$repo_root/FIX-LEDGER.md" ]; then
+    ledger_file="$repo_root/FIX-LEDGER.md"
+  fi
 fi
 if [ -n "$ledger_file" ]; then
-  cur_wave="$(grep -o 'WAVE [0-9][0-9]*' "$ledger_file" 2>/dev/null | grep -o '[0-9][0-9]*' | sort -n | tail -1)"
+  # Highest wave id first; take the first one with no CLOSED line.
+  cur_wave=""
+  for w in $(grep -o 'WAVE [0-9][0-9]*' "$ledger_file" 2>/dev/null \
+             | grep -o '[0-9][0-9]*' | sort -rnu); do
+    grep -q "WAVE ${w} CLOSED" "$ledger_file" 2>/dev/null || { cur_wave="$w"; break; }
+  done
   if [ -n "$cur_wave" ]; then
     wftotal="$(grep -c "^- \`WF-${cur_wave}[A-Z]" "$ledger_file" 2>/dev/null || true)"
     wfdone="$(grep "^- \`WF-${cur_wave}[A-Z]" "$ledger_file" 2>/dev/null | grep -c 'PASS\|DONE' || true)"
+    # grep rc>=2 (unreadable file) yields empty, not 0 -> never let that reach
+    # an arithmetic test as a bare word.
+    wftotal="${wftotal:-0}"; wfdone="${wfdone:-0}"
     if [ "$wftotal" -gt 0 ]; then
       wpct=$(( wfdone * 100 / wftotal ))
       wfill=$(( wpct / 10 ))

@@ -1029,13 +1029,35 @@ When the operator provides a folder, that folder IS the project. Its documents A
       not mean shipped — merged at HEAD and verified is the delivery claim.
     - **The Wave bar (wave-shaped runs).** When
       wave work is running, the status line shows how close the CURRENT wave
-      is to being done: reads `FIX-LEDGER.md` at `$cwd` first, then the repo
-      checkout's `FIX-LEDGER.md` (the checkout the boss cron runs from);
-      current wave = highest
-      `WAVE <n>` line; percent = that wave's `WF-<n>` lines carrying PASS or
-      DONE divided by its total `WF-<n>` lines. No wave lines → omitted,
-      never guessed. Ledger lines exist only after verification, so the bar
-      inherits the ledger's truthfulness.
+      is to being done. **Scoped to the project you are IN:** reads
+      `FIX-LEDGER.md` at `$cwd`, else at the **git repo root of `$cwd`** —
+      **never a hardcoded absolute path to a named project.** A ledger outside
+      the current project is ANOTHER project's status and must never render
+      here. **Current wave = the highest `WAVE <n>` carrying NO
+      `WAVE <n> CLOSED` line** — a closed wave is history, not status, so the
+      bar CLEARS ITSELF the moment the last wave closes; all waves closed →
+      segment omitted. Percent = that wave's workflow-completion lines
+      (`` - `WF-<n>x `` class) carrying PASS or DONE, divided by its total
+      lines of that same class — the locked-wave table row and log lines
+      (DISPATCH / VIOLATION-STOP / CLOSED / REVIEW-FINDING) that merely
+      MENTION a wave id are never counted, numerator and denominator share one
+      class. No wave lines → omitted, never guessed. Ledger lines exist only
+      after verification, so the bar inherits the ledger's truthfulness.
+    - **A progress bar that cannot clear itself is a LIE.** Every bar in this
+      status line must have a condition under which it disappears, and that
+      condition must be reachable from disk truth alone. A bar pinned to a
+      hardcoded path outside `$cwd` can never clear and is banned. (2026-08-26
+      defect: a `$HOME/work-999-setup/FIX-LEDGER.md` fallback pinned a
+      long-closed `Wave 6` into every session, in every directory, in BOTH
+      config stores, indefinitely.)
+    - **The deployed script is regenerated FROM the installer, never edited in
+      place.** `scripts/setup-statusline.sh` owns the body as a quoted
+      heredoc; `~/.claude/statusline-command.sh` is its output. Editing the
+      deployed copy by hand — or fixing the installer without re-running it —
+      creates silent drift where the shipped fix is not the running code.
+      (2026-08-26: the installer carried the anchored `WF-` match while the
+      deployed script still ran the unanchored one, counting narrative prose
+      as workflow rows.) Verify with a heredoc-extract diff, not by eye.
     - **Unavailable metric = omitted metric, never a failure.** 9Router
       sessions are expected to lack `rate_limits` — omit the 5h/7d segments.
       Never alter 9Router model-routing rules merely to enable progress
