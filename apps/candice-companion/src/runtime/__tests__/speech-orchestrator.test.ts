@@ -369,7 +369,7 @@ test('denied permission: blocked press, machine untouched, explanation routed (F
   assert.equal(h.blocked[0].consent, 'denied');
   // Reworded out of IT-ticket voice; still names the exact settings path,
   // which is the part the user has to act on.
-  assert.match(h.blocked[0].explanation, /System Settings, then Privacy & Security, then Microphone/);
+  assert.match(h.blocked[0].explanation, /privacy settings, under Microphone/);
 });
 
 test('no-device: blocked press with the honest explanation, typed surface stays', async () => {

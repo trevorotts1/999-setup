@@ -572,7 +572,7 @@ const SYSTEM_VOICE_PROBE_SECS: u64 = 5;
 fn kill_and_fail(mut child: std::process::Child, why: &str) -> String {
     let _ = child.kill();
     let _ = child.wait();
-    format!("system voice failed: {why}")
+    format!("your computer's built-in voice could not start ({why}); captions remain available")
 }
 
 /// Run a probe command with a deadline and report whether it succeeded.
@@ -948,7 +948,12 @@ impl TtsEngine {
     /// contract — the caller does not await the utterance.
     #[allow(dead_code)]
     pub fn speak_system_tts(&self, text: &str) -> Result<(), String> {
-        self.spawn_system_tts(text).map(|_| ())
+        let (child, stdin) = self.spawn_system_tts(text)?;
+        // No handle is kept here, so a write failure has nothing to kill;
+        // the child is left to reach EOF and exit on its own.
+        self.pipe_utterance(stdin, text, None)?;
+        drop(child);
+        Ok(())
     }
 
     /// Speak through the OPERATING SYSTEM's voice and drive the same
@@ -987,13 +992,24 @@ impl TtsEngine {
         request_id: &str,
         slot: Arc<Mutex<Option<String>>>,
     ) -> Result<(), String> {
-        let child = self.spawn_system_tts(text)?;
+        let (child, stdin) = self.spawn_system_tts(text)?;
         // Silence any previous child BEFORE publishing this one, or two
         // voices read two questions over each other.
         self.stop_system_voice();
         match self.system_child.lock() {
             Ok(mut held) => *held = Some(child),
-            Err(_) => return Err("system voice failed: handle unavailable".into()),
+            Err(_) => {
+                return Err(
+                    "your computer's built-in voice could not start; captions remain available"
+                        .into(),
+                )
+            }
+        }
+        // The pipe is filled only AFTER the handle is published, so the
+        // writer has something to kill if the write fails.
+        if let Err(e) = self.pipe_utterance(stdin, text, Some(Arc::clone(&self.system_child))) {
+            self.stop_system_voice();
+            return Err(e);
         }
         let _ = crate::speech_timing::emit_speech_start(app, request_id, &[]);
         let app_handle = app.clone();
@@ -1042,16 +1058,70 @@ impl TtsEngine {
             // the kill the child keeps reading the question aloud.
             self.stop_system_voice();
             let _ = crate::speech_timing::emit_speech_drain(app, request_id);
-            return Err("system voice failed: could not watch the voice process".into());
+            return Err(
+                "your computer's built-in voice could not start; captions remain available".into(),
+            );
         }
         Ok(())
+    }
+
+    /// Send the utterance down the child's stdin, on its own thread.
+    ///
+    /// The write CANNOT happen on the calling thread. `cmd_speech_speak`
+    /// is a synchronous Tauri command, which Tauri runs on the main
+    /// thread, and a pipe holds about 4 KB while an utterance may be
+    /// `MAX_SPEAK_CHARS` (8192). PowerShell does not drain the pipe until
+    /// it has finished `Add-Type` -- a 1-3 s cold start, worse with script
+    /// scanning -- so a long question parked the entire UI until then.
+    ///
+    /// Dropping the pipe at the end is load-bearing: closing it is what
+    /// makes `ReadToEnd` return. Without it the synthesizer waits forever
+    /// and never speaks a word.
+    ///
+    /// `owner`, when given, lets a failed write silence the child it was
+    /// writing to. A half-delivered question is worse than none: the
+    /// synthesizer would read the truncated fragment aloud while the app
+    /// had already reported failure.
+    fn pipe_utterance(
+        &self,
+        stdin: Option<std::process::ChildStdin>,
+        text: &str,
+        owner: Option<Arc<Mutex<Option<std::process::Child>>>>,
+    ) -> Result<(), String> {
+        let Some(mut stdin) = stdin else {
+            // macOS passes the text in argv; there is no pipe to fill.
+            return Ok(());
+        };
+        let payload = text.as_bytes().to_vec();
+        std::thread::Builder::new()
+            .name("candice-system-voice-stdin".into())
+            .spawn(move || {
+                if stdin.write_all(&payload).is_err() {
+                    if let Some(owner) = owner {
+                        if let Ok(mut held) = owner.lock() {
+                            if let Some(mut child) = held.take() {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                            }
+                        }
+                    }
+                }
+            })
+            .map(|_| ())
+            .map_err(|_| {
+                "your computer's built-in voice could not start; captions remain available"
+                    .to_string()
+            })
     }
 
     /// Spawn the system voice and hand back the child, so a caller can
     /// wait for a real end-of-audio signal. `speak_system_tts` is the
     /// fire-and-forget wrapper.
     #[allow(dead_code)]
-    pub fn spawn_system_tts(&self, text: &str) -> Result<std::process::Child, String> {
+    pub fn spawn_system_tts(
+        &self,
+        text: &str,
+    ) -> Result<(std::process::Child, Option<std::process::ChildStdin>), String> {
         #[cfg(target_os = "macos")]
         {
             // `--` is load-bearing. Without it `say` parses leading-dash
@@ -1069,7 +1139,13 @@ impl TtsEngine {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| format!("system voice failed: {e}"))
+                .map(|child| (child, None))
+                .map_err(|e| {
+                    format!(
+                        "your computer's built-in voice could not start ({e}); \
+                         captions remain available"
+                    )
+                })
         }
         #[cfg(windows)]
         {
@@ -1086,8 +1162,25 @@ impl TtsEngine {
                     "-ExecutionPolicy",
                     "Bypass",
                     "-Command",
+                    // The utterance is decoded as UTF-8 EXPLICITLY.
+                    // `[Console]::In` decodes redirected stdin with
+                    // Console.InputEncoding, which is the console code
+                    // page -- and under CREATE_NO_WINDOW the child gets a
+                    // hidden console on the OEM page (437 and friends),
+                    // never UTF-8. Rust hands over UTF-8 bytes, so a
+                    // curly apostrophe (E2 80 99) came back as three
+                    // mojibake characters and the synthesizer READ THEM
+                    // ALOUD: "don't" spoken as "don-ay-oh". The registry
+                    // is ASCII today, but its blanks are filled at
+                    // runtime with names, dates and Claude's own prose,
+                    // and Claude emits curly quotes and em-dashes
+                    // constantly. Setting Console.InputEncoding is the
+                    // other route and it can throw on redirected input;
+                    // opening the stream and naming the encoding cannot.
                     "Add-Type -AssemblyName System.Speech; \
-                     $t = [Console]::In.ReadToEnd(); \
+                     $in = [Console]::OpenStandardInput(); \
+                     $r = New-Object System.IO.StreamReader($in, [System.Text.Encoding]::UTF8); \
+                     $t = $r.ReadToEnd(); \
                      $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
                      $s.Speak($t)",
                 ])
@@ -1095,25 +1188,19 @@ impl TtsEngine {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| format!("system voice failed: {e}"))?;
+                .map_err(|e| {
+                    format!(
+                        "your computer's built-in voice could not start ({e}); \
+                         captions remain available"
+                    )
+                })?;
             // Writing then DROPPING stdin closes the pipe, which is what
             // makes ReadToEnd return. Without the drop the synthesizer
             // waits forever and never speaks.
-            // A failure here must not abandon a LIVE child. Dropping it
-            // closes the pipe, `ReadToEnd` returns whatever bytes made it
-            // through, and the synthesizer reads a truncated question
-            // aloud while the app has already reported that speech
-            // failed -- audio with no caption, and no drain behind it.
-            let piped = {
-                let Some(mut stdin) = child.stdin.take() else {
-                    return Err(kill_and_fail(child, "no stdin"));
-                };
-                stdin.write_all(text.as_bytes())
+            let Some(stdin) = child.stdin.take() else {
+                return Err(kill_and_fail(child, "no stdin"));
             };
-            if let Err(e) = piped {
-                return Err(kill_and_fail(child, &e.to_string()));
-            }
-            Ok(child)
+            Ok((child, Some(stdin)))
         }
         #[cfg(not(any(target_os = "macos", windows)))]
         {

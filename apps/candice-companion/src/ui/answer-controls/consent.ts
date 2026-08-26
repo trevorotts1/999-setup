@@ -49,8 +49,19 @@ export const BLOCKED_CONSENTS: ReadonlySet<CaptureConsent> = new Set([
  * user cannot act on is just a dead end with an explanation attached.
  */
 export const BLOCKED_EXPLANATIONS: Readonly<Record<string, string>> = {
+  // Platform-neutral ON PURPOSE. This used to walk the user through
+  // "System Settings, then Privacy & Security, then Microphone" -- the
+  // macOS path, chosen when macOS was the only target. Commit 423c940
+  // made Windows a shipping target, where that screen does not exist, so
+  // the most specific instruction in the app became the one most likely
+  // to send half the users somewhere they cannot go. There is no platform
+  // signal in this layer to branch on (nothing reaches the webview;
+  // prefs/profile.ts reads Node's process.platform, which is a different
+  // process), and inventing a capability field to carry one is a larger
+  // change than this copy is worth. Pointing at what every OS calls the
+  // same thing is correct on both -- and shorter.
   denied:
-    'I’m not allowed to use your microphone. To turn it on: System Settings, then Privacy & Security, then Microphone, then switch on Candice Companion. You can still type your answer.',
+    'I’m not allowed to use your microphone. You can turn it on in your computer’s privacy settings, under Microphone. You can still type your answer.',
   'no-device':
     'I can’t find a microphone on this computer. You can still type your answer.',
   error:

@@ -79,7 +79,9 @@ test('denied press blocks and carries the actionable explanation', async () => {
   assert.equal(allowed(), 0);
   assert.equal(blocked().length, 1);
   assert.equal(blocked()[0].consent, 'denied');
-  assert.ok(blocked()[0].explanation.includes('System Settings'));
+  // Not 'System Settings': that is the macOS screen, and Windows ships
+  // too. What must survive is that the user is told WHERE to go.
+  assert.ok(blocked()[0].explanation.includes('privacy settings'));
   // The explanation must always end by naming the way in that still
   // works -- a refusal the user cannot act on is a dead end.
   assert.ok(blocked()[0].explanation.includes('You can still type your answer'));

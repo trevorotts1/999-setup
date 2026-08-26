@@ -331,8 +331,19 @@ export function createCompactView(
   // plus aria-pressed so a screen reader can read it.
   let muted = true;
   const renderMute = (): void => {
+    // The visible word is the ACTION; the accessible name is the STATE.
+    // They were the same string before, and that inverted the control for
+    // anyone using a screen reader: a muted button labelled "Unmute" with
+    // aria-pressed="true" is announced as "Unmute, pressed" -- which reads
+    // as "unmute is engaged", i.e. sound is ON, the exact opposite of the
+    // truth. A name that is a verb cannot carry a pressed state.
+    //
+    // The state wording is the app's existing pair from
+    // ANSWER_CONTROLS_LABELS, copied rather than imported to keep the
+    // lanes independent, and pinned equal by a test so they cannot drift.
     mute.textContent = muted ? 'Unmute' : 'Mute';
-    mute.setAttribute('aria-pressed', String(muted));
+    mute.setAttribute('aria-label', muted ? 'Voice responses OFF' : 'Voice responses ON');
+    mute.setAttribute('aria-pressed', String(!muted));
   };
   renderMute();
   mute.addEventListener('click', () => {
@@ -363,8 +374,37 @@ export function createCompactView(
   expand.setAttribute('aria-expanded', 'false');
   expand.addEventListener('click', () => handlers.onExpandToggle());
 
+  /**
+   * Collapsed means UNREACHABLE, not merely faded out.
+   *
+   * The collapsed rule is `opacity: 0; pointer-events: none`. That stops
+   * the mouse and nothing else: every control inside stayed in the tab
+   * order and in the accessibility tree. A keyboard user tabbing past
+   * "Open" landed on five controls they could not see -- and Space on the
+   * first of them is HOLD TO TALK, so it opened the microphone with
+   * nothing on screen to say so. `aria-expanded="false"` was
+   * simultaneously telling assistive tech the content was closed.
+   *
+   * `inert` removes focusability and AT exposure together. `aria-hidden`
+   * is the backstop for an engine that has not shipped `inert` yet; it
+   * cannot remove focusability on its own, which is why both are set.
+   */
+  const setSurfaceReachable = (reachable: boolean): void => {
+    // set/removeAttribute rather than toggleAttribute: the same two calls
+    // work in every engine and in the lane's own test double, which
+    // implements the attribute pair and not the newer helper.
+    if (reachable) {
+      surface.removeAttribute('inert');
+    } else {
+      surface.setAttribute('inert', '');
+    }
+    surface.setAttribute('aria-hidden', String(!reachable));
+  };
+
   actions.append(talk, input, send, mute);
   surface.append(actions, pendingEl, toClaude);
+  // The view is born collapsed, so the surface starts unreachable too.
+  setSurfaceReachable(false);
   root.append(slot, statusEl, expand, hintEl, surface);
   mount.append(root);
 
@@ -386,6 +426,7 @@ export function createCompactView(
       root.classList.toggle(COMPACT_EXPANDED_CLASS, expanded);
       expand.setAttribute('aria-expanded', String(expanded));
       expand.textContent = expanded ? 'Close' : 'Open';
+      setSurfaceReachable(expanded);
     },
     setStatus: (view: CompactStatusView) => {
       root.setAttribute(COMPACT_STATUS_ATTR, view.family);

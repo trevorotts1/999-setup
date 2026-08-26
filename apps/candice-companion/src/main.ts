@@ -113,7 +113,17 @@ export async function bootCandice(): Promise<void> {
     // and every other pixel stays click-through.
     void inputRegions?.refresh();
   };
-  const onShellError = (): void => enterTextFallback('candice:shell-error event');
+  // The fallback card's `detail` paragraph is rendered VERBATIM to the
+  // user, and both callers were handing it developer text: this one passed
+  // the literal event name, so a person whose app failed to start read
+  // "candice:shell-error event" on screen under "Candice can't start right
+  // now". The card's title and hint already say the only two things a user
+  // can act on. The diagnostic belongs in the console, where the person who
+  // needs it is actually looking.
+  const onShellError = (): void => {
+    console.error('[candice] shell-error event, entering text fallback');
+    enterTextFallback();
+  };
 
   try {
     // Surface the boot markup as fast as possible (spec 28: Candice appears
@@ -260,8 +270,10 @@ export async function bootCandice(): Promise<void> {
     setStatus('shell-ready');
 
   } catch (err) {
+    // The raw exception is already on the console one line up; putting it
+    // on screen as well only tells the user something they cannot use.
     console.error('[candice] shell boot failed, entering text fallback', err);
-    enterTextFallback(err instanceof Error ? err.message : String(err));
+    enterTextFallback();
   }
 }
 

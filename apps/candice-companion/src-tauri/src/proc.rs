@@ -61,21 +61,39 @@ mod tests {
     #[test]
     fn spawn_sites_all_use_the_helper() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        // App-owned Rust only. Vendored crates and build output are not ours.
-        let files = [
-            root.join("src/runtime.rs"),
-            root.join("src/single_instance.rs"),
-            root.join("src/shell.rs"),
-            root.join("src/speech_timing.rs"),
-            root.join("speech/mod.rs"),
-            root.join("speech/engines.rs"),
-        ];
+        // DISCOVERED, not listed. This used to name six files by hand,
+        // which meant a spawn added anywhere else -- a new module, a
+        // renamed one, a file someone forgot to add -- passed the test
+        // vacuously, on the one platform nobody here can check. A guard
+        // that only sees what it was told about is not a guard.
+        let files = app_owned_rust(root);
+        // CONTROL: a walk that returns nothing would make every assertion
+        // below pass for free, which is the failure mode this rewrite
+        // exists to remove. Pin both that it found files at all and that
+        // it reached the two directories that actually spawn.
+        assert!(
+            files.len() >= 6,
+            "the source walk found only {} files; it is not reaching the tree",
+            files.len()
+        );
+        for expected in ["runtime.rs", "engines.rs"] {
+            assert!(
+                files.iter().any(|f| f.ends_with(expected)),
+                "the source walk never reached {expected}"
+            );
+        }
         let mut offenders: Vec<String> = Vec::new();
         for file in files.iter().filter(|f| f.exists()) {
             let text = std::fs::read_to_string(file).expect("source readable");
             let name = file.file_name().unwrap().to_string_lossy().into_owned();
             for (index, line) in text.lines().enumerate() {
                 if !line.contains("Command::new") {
+                    continue;
+                }
+                // Prose is not a spawn. This module's own documentation
+                // discusses `Command::new` by name, and reading a comment
+                // as a spawn site would make the guard unsatisfiable.
+                if line.trim_start().starts_with("//") {
                     continue;
                 }
                 // No exemptions. A macOS-only spawn cannot flash a Windows
@@ -104,6 +122,31 @@ mod tests {
              flash a console window over Candice on Windows: {}",
             offenders.join(", "),
         );
+    }
+
+    /// Every `.rs` file this app owns. Vendored crates, the permissions
+    /// sub-crate and build output are not ours and are not walked.
+    fn app_owned_rust(root: &Path) -> Vec<std::path::PathBuf> {
+        let mut found = Vec::new();
+        for dir in ["src", "speech"] {
+            collect_rust(&root.join(dir), &mut found);
+        }
+        found.sort();
+        found
+    }
+
+    fn collect_rust(dir: &Path, found: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rust(&path, found);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                found.push(path);
+            }
+        }
     }
 
     #[test]

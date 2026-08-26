@@ -40,6 +40,7 @@ import {
 } from '../index.ts';
 import '../index.ts';
 import { createCandiceStateMachine } from '../../../state/machine.ts';
+import { ANSWER_CONTROLS_LABELS } from '../../answer-controls/config.ts';
 import type { CandiceStateMachine } from '../../../state/machine.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,8 @@ const COMPACT_VIEW_SOURCE = readFileSync(
 
 class FakeClassList {
   private set = new Set<string>();
+  get value(): string { return [...this.set].join(' '); }
+  replaceAll(names: string[]): void { this.set = new Set(names); }
   add(...names: string[]): void { for (const n of names) this.set.add(n); }
   remove(...names: string[]): void { for (const n of names) this.set.delete(n); }
   toggle(name: string, force?: boolean): boolean {
@@ -89,6 +92,18 @@ class FakeElement {
   }
 
   get classList(): FakeClassList { return this.classes; }
+
+  /**
+   * The real DOM keeps `className` and `classList` as two views of one
+   * value. This double did not model `className` AT ALL, so every class
+   * the view assigns that way -- which is most of them -- vanished, and
+   * any assertion about them silently found nothing. Wiring the two
+   * together is what makes a class-based query in a test mean anything.
+   */
+  get className(): string { return this.classes.value; }
+  set className(value: string) {
+    this.classes.replaceAll(value.split(/\s+/).filter((n) => n.length > 0));
+  }
 
   setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
@@ -148,6 +163,24 @@ function findByTag(root: FakeElement, tag: string): FakeElement | null {
   if (root.tagName === tag) return root;
   for (const child of root.children) {
     const hit = findByTag(child, tag);
+    if (hit !== null) return hit;
+  }
+  return null;
+}
+
+function findByClass(root: FakeElement, cls: string): FakeElement | null {
+  if (root.classes.contains(cls)) return root;
+  for (const child of root.children) {
+    const hit = findByClass(child, cls);
+    if (hit !== null) return hit;
+  }
+  return null;
+}
+
+function findByText(root: FakeElement, text: string): FakeElement | null {
+  if (root.textContent === text) return root;
+  for (const child of root.children) {
+    const hit = findByText(child, text);
     if (hit !== null) return hit;
   }
   return null;
@@ -516,4 +549,79 @@ test('CONTROL: the source probe reads the real module', () => {
   // so pin something only this module contains.
   assert.ok(COMPACT_VIEW_SOURCE.length > 3000, 'the module was actually read');
   assert.match(COMPACT_VIEW_SOURCE, /COMPACT_STYLE_TEXT/, 'and it is the compact view');
+});
+
+test('collapsed is unreachable, not merely invisible', () => {
+  // The collapsed rule is `opacity: 0; pointer-events: none`. That stops
+  // the mouse and nothing else: every control inside stayed focusable and
+  // exposed to assistive tech. Tabbing past "Open" landed on five
+  // invisible controls, and Space on the first is HOLD TO TALK -- so the
+  // MICROPHONE opened with nothing on screen to say so, while
+  // aria-expanded="false" simultaneously claimed the content was closed.
+  const { doc, mount } = fakeEnv();
+  const view = createCompactView(mount as unknown as HTMLElement, {
+    onTalkToggle: () => undefined,
+    onSubmit: () => undefined,
+    onExpandToggle: () => undefined,
+    onMuteToggle: () => undefined,
+    onReturnToClaude: () => undefined,
+  }, doc as unknown as Document);
+  const surface = findByClass(mount, 'candice-compact-surface');
+  assert.ok(surface !== null, 'control: the interaction surface must exist to be tested');
+
+  assert.equal(surface.getAttribute('inert'), '', 'born collapsed, so born inert');
+  assert.equal(surface.getAttribute('aria-hidden'), 'true');
+
+  view.setExpanded(true);
+  assert.equal(surface.getAttribute('inert'), null, 'expanded surface must be reachable');
+  assert.equal(surface.getAttribute('aria-hidden'), 'false');
+
+  // CONTROL: it must go back. A one-way latch would leave the surface
+  // permanently reachable after the first expand -- the same defect.
+  view.setExpanded(false);
+  assert.equal(surface.getAttribute('inert'), '', 'collapsing again must re-hide it');
+  assert.equal(surface.getAttribute('aria-hidden'), 'true');
+});
+
+test('the mute button announces the state it is actually in', () => {
+  // It rendered the label "Unmute" WITH aria-pressed="true" while muted.
+  // A screen reader says "Unmute, pressed" -- which reads as "unmute is
+  // engaged", i.e. sound is ON: the precise opposite of the truth. A name
+  // that is a verb cannot carry a pressed state, so the accessible name
+  // states the state and aria-pressed agrees with it.
+  const { doc, mount } = fakeEnv();
+  createCompactView(mount as unknown as HTMLElement, {
+    onTalkToggle: () => undefined,
+    onSubmit: () => undefined,
+    onExpandToggle: () => undefined,
+    onMuteToggle: () => undefined,
+    onReturnToClaude: () => undefined,
+  }, doc as unknown as Document);
+  const mute = findByText(mount, 'Unmute');
+  assert.ok(mute !== null, 'control: the mute control must exist, starting muted');
+
+  assert.equal(mute.getAttribute('aria-label'), 'Voice responses OFF');
+  assert.equal(mute.getAttribute('aria-pressed'), 'false');
+
+  mute.dispatch('click');
+  assert.equal(mute.textContent, 'Mute', 'the visible word stays the ACTION');
+  assert.equal(mute.getAttribute('aria-label'), 'Voice responses ON');
+  assert.equal(mute.getAttribute('aria-pressed'), 'true');
+
+  // The failure this pins: the name and the pressed state must not disagree.
+  const label = mute.getAttribute('aria-label') ?? '';
+  assert.equal(
+    label.endsWith('ON'),
+    mute.getAttribute('aria-pressed') === 'true',
+    'the accessible name and aria-pressed must agree',
+  );
+});
+
+test('compact mute wording matches the answer-controls lane, so they cannot drift', () => {
+  // The strings are copied rather than imported to keep the lanes
+  // independent; this is what stops the copy diverging.
+  assert.match(COMPACT_VIEW_SOURCE, /'Voice responses OFF'/);
+  assert.match(COMPACT_VIEW_SOURCE, /'Voice responses ON'/);
+  assert.equal(ANSWER_CONTROLS_LABELS.VOICE_ON, 'Voice responses ON');
+  assert.equal(ANSWER_CONTROLS_LABELS.VOICE_OFF, 'Voice responses OFF');
 });
