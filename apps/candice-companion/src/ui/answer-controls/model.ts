@@ -95,6 +95,8 @@ const questionDefaults: AnswerControlsModel = {
 export function answerControlsModel(
   state: CandiceState,
   opts: {
+    /** Native fact: is a speech-to-text engine installed? Undefined = not told. */
+    sttAvailable?: boolean;
     lastUsedMethod?: AnswerMethod | null;
     voiceEnabled?: boolean;
   } = {},
@@ -130,7 +132,12 @@ export function answerControlsModel(
     confirming,
     showConfirmRow: confirming && state.transcript !== null && state.transcript !== '',
     canConfirm: status === 'confirming' && state.transcript !== null && state.transcript !== '',
-    pttUsable: !delegateActive,
+    // `sttAvailable === false` is the native fact that this machine has no
+    // speech-to-text engine (SpeechHealth.stt_engine_ready). The control
+    // is not built at all in that case; the model agrees so anything else
+    // reading it reaches the same conclusion. Undefined means "not told",
+    // which stays usable -- the shell always tells it.
+    pttUsable: !delegateActive && opts.sttAvailable !== false,
     listening,
     transcribing,
     typedUsable: !delegateActive,

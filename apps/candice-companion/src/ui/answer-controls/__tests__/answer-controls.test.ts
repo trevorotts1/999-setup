@@ -226,3 +226,61 @@ test('model defaults carry the confirm-row fields (never undefined)', () => {
   assert.equal(m.showConfirmRow, false);
   assert.equal(m.canConfirm, false);
 });
+
+// ------------------------------------------- no STT engine on this machine
+
+/**
+ * The app measures whether a speech-to-text engine exists
+ * (`SpeechHealth.stt_engine_ready`), parsed into
+ * `capabilities.sttEngineReady` — and until this was wired, read by
+ * nothing. So HOLD TO TALK was offered on builds that ship no whisper-cli,
+ * and today NO build ships one: all three STT rows in
+ * SPEECH-INVENTORY.json are `sha256Status: absent`.
+ *
+ * What that cost a user: press HOLD TO TALK, get the microphone
+ * permission prompt, speak, let go — and read "Answer in Claude instead",
+ * every time, because `run_whisper` had no binary to run.
+ */
+test('no STT engine: HOLD TO TALK is not offered', () => {
+  for (const status of ['idle', 'thinking', 'confirming', 'waiting-for-user'] as const) {
+    const m = answerControlsModel(stateOf(status), { sttAvailable: false });
+    assert.equal(m.pttUsable, false, `ptt withheld in ${status}`);
+    // The point of withholding it is that the other way in still works.
+    assert.equal(m.typedUsable, true, `typing still available in ${status}`);
+    assert.equal(m.delegateUsable, true, `answer-in-Claude still available in ${status}`);
+    assert.equal(m.presentingQuestion, true, `the question is still asked in ${status}`);
+  }
+});
+
+test('an UNPROBED runtime keeps HOLD TO TALK: undefined means not told, not absent', () => {
+  // A dev run or a failed health probe reports no health at all. That is
+  // not evidence the engine is missing, and it must not silently remove a
+  // working control. Only a report that actually says false suppresses it.
+  const m = answerControlsModel(stateOf('waiting-for-user'), { sttAvailable: undefined });
+  assert.equal(m.pttUsable, true, 'not-told stays usable');
+  const bare = answerControlsModel(stateOf('waiting-for-user'), {});
+  assert.equal(bare.pttUsable, true, 'omitting the option entirely stays usable');
+});
+
+test('CONTROL: sttAvailable is actually consulted, not ignored', () => {
+  // If the model ignored the flag, the two assertions above would both
+  // pass vacuously by always returning true. Prove the value moves.
+  const withEngine = answerControlsModel(stateOf('waiting-for-user'), { sttAvailable: true });
+  const without = answerControlsModel(stateOf('waiting-for-user'), { sttAvailable: false });
+  assert.notEqual(
+    withEngine.pttUsable,
+    without.pttUsable,
+    'the flag must change the outcome, or this whole block proves nothing',
+  );
+});
+
+test('no STT engine does not disturb the voice-OUTPUT toggle (separate concern)', () => {
+  // Voice IN and voice OUT are different features. A machine with no
+  // transcriber can still speak, and must still offer the speak toggle.
+  const m = answerControlsModel(stateOf('waiting-for-user'), {
+    sttAvailable: false,
+    voiceEnabled: true,
+  });
+  assert.equal(m.pttUsable, false, 'no microphone path');
+  assert.equal(m.voiceEnabled, true, 'she can still talk');
+});

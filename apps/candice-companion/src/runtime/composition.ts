@@ -146,6 +146,10 @@ export async function initializeRuntimeComposition(
     if (speech.health) {
       root.dataset.speechStatus = speech.health.degraded ? 'degraded' : 'available';
       root.dataset.canonicalVoiceApproval = speech.health.canonicalVoiceApproval;
+      // Evidence for the packaged tier: whether HOLD TO TALK is offered at
+      // all is a measured native fact, not a preference, and a reviewer
+      // should be able to read it off the DOM without a debugger.
+      root.dataset.sttEngineReady = String(speech.health.sttEngineReady);
     } else {
       root.dataset.speechStatus = 'unprobed';
     }
@@ -313,6 +317,19 @@ export async function initializeRuntimeComposition(
     // native seam (spec 5.2 / 9).
     lastUsedMethod: interaction.profile.lastUsedAnswerMethod,
     voiceEnabled: interaction.profile.voiceOutputEnabled,
+    // Whether a speech-to-text engine exists is a NATIVE fact, and until
+    // now it was measured and then thrown away: `stt_engine_ready` was
+    // computed in Rust, parsed into `capabilities.sttEngineReady`, and read
+    // by nothing. So HOLD TO TALK was offered on builds that ship no
+    // whisper-cli -- and today NO build ships one, all three STT rows in
+    // SPEECH-INVENTORY.json are `sha256Status: absent`. A user pressing it
+    // was prompted for the microphone, recorded, and then told "Answer in
+    // Claude instead", every time, because transcribe had nothing to run.
+    //
+    // An UNPROBED run passes undefined, not false: no health report means
+    // we were never told, and a dev run must not silently lose the control.
+    // Only a report that actually says false suppresses it.
+    sttAvailable: speech?.health ? speech.health.sttEngineReady : undefined,
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
       // Turning voice OFF has to stop the voice.

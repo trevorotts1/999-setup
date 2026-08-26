@@ -66,6 +66,14 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   flex-wrap: wrap;
   justify-content: center;
 }
+/* When there is no speech-to-text engine on this machine the PTT control
+   is never created, leaving this slot empty. An empty flex child still
+   collects the row's 10px gap and pushes a centre-justified row off
+   centre, so take it out of layout entirely rather than leaving a
+   phantom column beside the type box. */
+#candice-ptt-slot:empty {
+  display: none;
+}
 .candice-answer-type {
   min-width: 260px;
   display: flex;

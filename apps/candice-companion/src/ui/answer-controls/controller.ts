@@ -49,6 +49,26 @@ export interface AnswerControlsControllerOptions {
   /** Voice responses ON/OFF (spec 5.2). Defaults ON. */
   voiceEnabled?: boolean;
   /**
+   * Is there a speech-to-text engine on this machine at all?
+   *
+   * This is the NATIVE fact (`SpeechHealth.stt_engine_ready`), not a user
+   * preference. The app was computing it, parsing it into
+   * `capabilities.sttEngineReady`, and then never reading it -- so HOLD TO
+   * TALK was offered on builds that ship no `whisper-cli`. Pressing it
+   * prompted for the microphone, recorded, and then showed "Answer in
+   * Claude instead", every single time, because the transcribe call had
+   * nothing to run.
+   *
+   * When this is false the PTT control is not created at all. A missing
+   * button is kinder than a dead one: the typed answer box is always
+   * present and always works, so the user simply types, and is never sent
+   * through a permission prompt to reach a dead end.
+   *
+   * Defaults to TRUE so existing callers and tests are unchanged; the real
+   * shell always passes the measured fact. Same posture as `voiceEnabled`.
+   */
+  sttAvailable?: boolean;
+  /**
    * Transport: a confirmed answer handed to the session path (WS-03/WS-04
    * `answer` events / WS-05 fallback). One confirmed answer travels exactly
    * once (spec 5.1 no-double-count, E.1 WS-18). The machine's
@@ -176,7 +196,10 @@ export function createAnswerControlsController(
       onStopped: stopPtt,
       onBlocked: options.captureConsent?.onBlocked,
     });
-    pttView = createPttView(pttHost, {
+    // No engine on this machine: never build the control. See
+    // `sttAvailable` above -- offering it here is what produced the
+    // record-then-give-up loop.
+    pttView = options.sttAvailable === false ? null : createPttView(pttHost, {
       onTalkStart: () => {
         consentGate?.requestStart();
       },
@@ -184,7 +207,7 @@ export function createAnswerControlsController(
         consentGate?.release();
       },
     });
-    if (pttView.el !== null) view.attachPtt(pttView.el);
+    if (pttView !== null && pttView.el !== null) view.attachPtt(pttView.el);
   }
 
   function render(): void {
@@ -199,6 +222,7 @@ export function createAnswerControlsController(
       answerControlsModel(state, {
         lastUsedMethod,
         voiceEnabled,
+        sttAvailable: options.sttAvailable,
       }),
     );
   }

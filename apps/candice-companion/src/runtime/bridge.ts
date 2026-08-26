@@ -196,6 +196,15 @@ export interface BridgePreferencesHooks {
   voiceEnabled?: boolean;
   /** The WS-40 profile lane owns persistence; the bridge only reports. */
   onVoiceToggleChange?: (voiceEnabled: boolean) => void;
+  /**
+   * Native fact, NOT a preference: is a speech-to-text engine installed on
+   * this machine (`SpeechHealth.stt_engine_ready`)? False suppresses the
+   * HOLD TO TALK control entirely -- see `sttAvailable` in
+   * `ui/answer-controls/controller.ts` for why a missing button beats a
+   * dead one. Undefined means "not told", which stays usable; the
+   * composition always supplies the measured value.
+   */
+  sttAvailable?: boolean;
 }
 
 /**
@@ -468,6 +477,7 @@ export async function initializeAuthenticatedBridge(
       lastUsedMethod: prefs.lastUsedMethod ?? null,
       voiceEnabled: prefs.voiceEnabled,
       onVoiceToggleChange: prefs.onVoiceToggleChange,
+      sttAvailable: prefs.sttAvailable,
       // FIX-015 FAIL-5 (plan 3D): consult the native capture-lane fact on
       // every HOLD TO TALK press. A denied/no-device/error report blocks
       // the press and leaves the typed-answer surface exactly as it was;
