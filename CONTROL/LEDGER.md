@@ -318,9 +318,58 @@ Two further defects closed after the packaged work:
   accessibility tree. A sweep of every remaining pointer-cursor control found
   no others: they are all `<button>`, which `CONTROL_SELECTOR` matches whole.
 
+## 7. Closing the last two open decisions (2026-08-26)
+
+Both were escalated to the operator earlier in this session and both came back
+as "make the call and ship". Recorded here as decisions, with what they cost.
+
+- **Speech assets ship BUNDLED** (`306e4be`). The manifest was never dishonest
+  — five rows `bundled: true` with real pins, three STT rows `bundled: false`
+  / `sha256Status: absent` with an `absentNote`. The packaged LEG was the
+  stale side, still asserting "zero pinned payloads ship inside the bundle"
+  from an installer posture the repo abandoned. There is no installer lane
+  here — no download step, no first-run fetch, no receipt-writing installer —
+  so the alternative to bundling is a mute product.
+
+  The leg now checks harder than what it replaced: every `bundled: true` row
+  is read out of the packaged bundle and its bytes hashed against its pin,
+  where the old check only counted files. Measured `verified=5 problems=0`,
+  `bundled=5 absent=3`. Cost accepted and real: ~347 MB in the artifact, and
+  on Windows much of it is macOS-arm64 Python that can never run. Carving the
+  per-platform payload is a build-script change, already tracked.
+
+- **The first-run name prompt is DEFERRED, not skipped** (`330b174`). It used
+  to mount on top of a live question, putting two text inputs in a 420px
+  column and taking the caret into the wrong one — so the first thing a user
+  typed while reading a question went into the name box. The earlier partial
+  fix silenced only the caption announce, which left both the collision and
+  the stolen focus intact. Spec 4 says the name is asked at most once per
+  local user; it does not say it must be asked on top of something else.
+  Nothing is persisted on that path, so the ask simply happens on the next
+  quiet boot. The test that pinned the old wording was rewritten with the
+  reasoning in it.
+
+- **`compact` stays BLOCKED, and the recorded reason was wrong.** It read
+  "FIX-014 appui lane ... not yet landed". FIX-014's surface IS landed and
+  tested — view, controller, queue, status, config, CONTRACT.md. What does
+  not exist is `CompactTransport.submit`, anywhere in the product. The
+  compact surface is a box for the user to message Claude unprompted, and
+  every channel this product owns runs the other way. Verified across four
+  named sources, each with a control that returned non-empty on the same
+  instrument: 25 src-tauri commands (control: `cmd_submit_bridge_answer`
+  found), one MCP tool `candice.ask_user`, 11 protocol schemas (control:
+  `answer-event.schema.json` present), and a source sweep with zero
+  `CompactTransport` implementors outside its own lane (control: the same
+  regex found it in `controller.ts`). Not checked: whether a future MCP
+  revision adds a client-initiated tool — a capability decision, not a defect.
+  Ruling: do not mount it. A text box that submits into nothing would
+  silently eat what the user types. The blocker text now names the real owner.
+
 Final measured state: TypeScript 527/527, Rust 75/75, contract suite 7/7 files
 green, plugin launch-command green, e2e aggregate UNIT PASS (22 legs) +
-INTEGRATION PASS (6 legs). PACKAGED_AUTOMATED is BLOCKED on `compact` alone —
-a surface that has not landed — with `speech-assets` failing on the recorded
-bundle-versus-installer decision. HUMAN_HARDWARE is BLOCKED because it needs a
-person. Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24, complete=0.
+INTEGRATION PASS (6 legs). PACKAGED_AUTOMATED is 7 of 8 legs passing, BLOCKED
+on `compact` alone — not for missing UI, but because the product has no
+user-initiated channel to Claude in any tier. HUMAN_HARDWARE is BLOCKED
+because it needs a person. Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24,
+complete=0 — no gate is marked closed by this pass, because closing one
+requires `independentQc`, which this seat cannot run on its own work.

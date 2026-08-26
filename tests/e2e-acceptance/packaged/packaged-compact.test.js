@@ -9,12 +9,44 @@
  * tree) accepts a typed question and a `/bro` or `/eli5` slash command,
  * and no governed question is re-asked.
  *
- * Dependency-honest gate: the compact surface is rendered by the FIX-014
- * appui lane. When the packaged app at this commit does not expose the
- * compact input (aria-label 'Compact message input') in its
- * a11y tree within the wait window, this leg records BLOCKED with the
- * named dependency — never a fake PASS and never a FAIL for code this
- * lane does not own.
+ * Dependency-honest gate: this leg records BLOCKED with a named dependency
+ * rather than a fake PASS or a FAIL for code it does not own.
+ *
+ * WHAT THE DEPENDENCY ACTUALLY IS (measured 2026-08-26, was previously
+ * recorded wrongly as "FIX-014 appui lane not yet landed"):
+ *
+ * The FIX-014 surface IS landed. `src/ui/compact/` is complete and tested
+ * — view, controller, queue, status, config, CONTRACT.md. Nothing about it
+ * is missing. It is simply never mounted, and mounting it would be wrong,
+ * because `CompactTransport.submit(entry)` has no implementation anywhere
+ * in this product and cannot have one at this commit.
+ *
+ * The compact surface is a box where the user types a message TO Claude,
+ * unprompted. Every channel this product owns runs the other direction:
+ * Claude asks, the user answers, the answer returns to the asking call.
+ * Verified across four sources, each with a control that came back
+ * non-empty on the same instrument:
+ *
+ *   1. src-tauri commands (25 of them) — all bridge-question lifecycle,
+ *      window, prefs or speech. None sends user-initiated text.
+ *      control: cmd_submit_bridge_answer found in lib.rs + runtime.rs.
+ *   2. the MCP plugin — exposes exactly one tool, `candice.ask_user`.
+ *      There is no inbound tool for Claude to receive on.
+ *   3. packages/candice-protocol/schemas — question, answer, status,
+ *      lifecycle, preferences. No user-initiated message schema exists.
+ *      control: answer-event.schema.json present.
+ *   4. a source sweep for any implementor of CompactTransport, or any
+ *      sendToClaude / injectPrompt / user_initiated path: zero hits
+ *      outside src/ui/compact/ itself.
+ *      control: the same regex found CompactTransport in controller.ts.
+ *
+ * NOT checked: whether a future MCP revision adds a client-initiated
+ * message tool. That is a product capability decision, not a defect.
+ *
+ * So this is not a repair that was skipped. Mounting a text box that
+ * submits into nothing would ship a control that silently eats what the
+ * user types — worse than not shipping it. The leg stays BLOCKED and now
+ * names the real owner.
  *
  *   node tests/e2e-acceptance/packaged/packaged-compact.test.js \
  *     --app <packaged binary> --trace-dir <dir> [--wait-ms <n>]
@@ -114,7 +146,7 @@ async function main() {
     // Dependency-honest gate: compact surface is FIX-014's.
     const compactPresent = await waitForCompactInput(COMPACT_WAIT_MS, run.probe)
     if (!compactPresent) {
-      blockedReason = 'compact surface (FIX-014 appui lane) not present in the packaged a11y tree at this commit — dependency not yet landed'
+      blockedReason = 'compact input absent by design: the FIX-014 surface is built and tested, but CompactTransport has no implementation in any tier — this product has no user-initiated channel to Claude (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep). Needs a product capability, not a fix.'
       console.log(`BLOCKED - ${blockedReason}`)
     } else {
       await check('compact typed question submits; no governed question re-asked', async () => {

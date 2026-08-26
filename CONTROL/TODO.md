@@ -207,12 +207,20 @@ not the same as closing fix ids, and a builder does not flip its own boxes.
   it is invisible to every test that drives the UI through accessibility.
   Only a synthesized pointer click can find them.
 
-- **The first-run name prompt still mounts over a live question.** The UI
-  review recommended suppressing it; `interaction-composition`'s own test pins
-  the opposite as spec 4 ("the prompt still mounts... only its caption
-  announce is" skipped). Two text inputs in a 420px column with focus stolen
-  into the wrong one is a real cost, but reversing a recorded product decision
-  is the operator's call, not a repair pass's. Raised, not changed.
+- ~~**The first-run name prompt still mounts over a live question.**~~
+  **DECIDED AND FIXED 2026-08-26 (`330b174`).** The ask is now DEFERRED while
+  a question is pending, not skipped: nothing is persisted on that path, so
+  `needsNameAsk` stays true and the ask happens on the next boot with no
+  question waiting.
+
+  Why this is not a reversal of spec 4. Spec 4 says the name is asked at most
+  once per local user. It does not say the ask must happen ON TOP of something
+  else. Deferring it preserves the ask exactly; only its timing moves. The
+  earlier partial fix suppressed only the caption announce, which stopped
+  Candice talking over the question but left the prompt mounted — so the two
+  text inputs and the stolen caret both survived. Silence is not absence.
+  The test that pinned the old wording was rewritten with the reasoning in it.
+  TypeScript 527/527.
 
 ### PACKAGED TIER — root-caused and unblocked 2026-08-26 (`c96d38b`)
 
@@ -232,32 +240,72 @@ operator's own installed Candice and matches any rustc/cargo command line
 mentioning the crate; `cleanStateGate` had the same flaw with `pgrep -x` and
 reported the environment dirty because the operator's Candice was open.
 
-### DECISION NEEDED — speech assets: bundle or installer?
+### DECIDED 2026-08-26 — speech assets ship BUNDLED (`306e4be`)
 
-`packaged-speech-assets` fails on a contradiction the two sides of the design
-have with each other, not on a mistake in either:
+The two sides were not in contradiction. `SPEECH-INVENTORY.json` already told
+the truth: five rows `bundled: true` with real pins, three STT rows
+`bundled: false` / `sha256Status: absent` with an `absentNote`. The manifest
+was honest. The packaged LEG was the stale side — it still asserted
+"zero pinned payloads ship inside the bundle (installer lane owns placement)"
+from an installer posture this repo abandoned.
 
-- `SPEECH-INVENTORY.json` and the leg both declare the degraded-by-design
-  posture — "zero pinned payloads ship inside the bundle (installer lane owns
-  placement)" — and the leg names the offenders: `stt-model`, `tts-model`,
-  `tts-voices`, `tts-worker`, `tts-runtime-pins`.
-- `tauri.conf.json` bundles `speech-assets/` wholesale, so all of them DO ship
-  inside the app.
+**Ruling: bundled is the design.** There is no installer lane anywhere in the
+repo — no download step, no fetch on first run, no receipt-writing installer.
+The alternative to bundling is not "deferred", it is a mute product. Decided
+in the repair pass rather than escalated, per the operator's standing
+instruction to make the calls and ship.
 
-Both postures are defensible and they cannot both hold:
+The leg now asserts what the manifest actually claims, and does it harder than
+what it replaced: every `bundled: true` row is READ out of the packaged bundle
+and its bytes hashed against its pin (the old check only counted files), and
+pin/status agreement is enforced in both directions. Measured:
+`verified=5 problems=0`, `bundled=5 absent=3`. Leg passes 7/7 checks.
 
-- **Bundle them** — voice works the moment the app opens, no download, no
-  installer lane to get wrong. Costs ~378 MB in the artifact, and on Windows
-  that 378 MB is macOS-arm64 Python that can never run.
-- **Installer places them** — a small app, per-platform payloads, checksum
-  verification at placement. Costs a download step that must work on a client
-  machine before Candice can speak, and that lane does not exist in this repo.
+Also relaxed the canonical-voice assertion, which demanded "approval-pending"
+forever — a134db5 deliberately ended that when it approved `af_bella` so the
+bundle could speak. It now accepts exactly `approved` or `approval-pending`
+with a non-empty id. Case matters: `speech/mod.rs` resolves a speakable voice
+only on lowercase `approved`.
 
-The leg is not wrong and the bundle is not wrong; the two were decided at
-different times. This is an operator call, not a repair-pass call, and it also
-decides the second failing assertion (`row tts-worker: unexpected pin on
-deferred row` — a row marked deferred that carries a checksum, which is only
-incoherent under the installer posture).
+**Cost accepted, and it is a real one:** ~347 MB of `speech-assets/` ships in
+the artifact, and on Windows a large part of that is macOS-arm64 Python that
+can never run. Windows packaging should carve the per-platform payload; that
+is a build-script change, not a design reversal. Already tracked above as
+"Windows `speech-assets` is bundled unconditionally".
 
-Related and still open regardless: `whisper-cli` is `sha256Status: absent` in
-all three STT rows, so voice INPUT does not exist in any build today.
+Still open regardless: `whisper-cli` is `sha256Status: absent` in all three
+STT rows, so voice INPUT does not exist in any build today.
+
+### DECIDED 2026-08-26 — the `compact` leg stays BLOCKED, for the real reason
+
+The leg's recorded blocker was wrong. It said "compact surface (FIX-014 appui
+lane) not present ... dependency not yet landed". FIX-014's surface IS landed:
+`src/ui/compact/` is complete and tested — view, controller, queue, status,
+config, CONTRACT.md. Nothing about it is missing.
+
+It is never mounted, and mounting it would be wrong. `CompactTransport.submit`
+has no implementation anywhere in this product. The compact surface is a box
+where the user types a message TO Claude, unprompted; every channel this
+product owns runs the other way — Claude asks, the user answers, the answer
+returns to the asking call. Verified across four sources, each with a control
+that came back non-empty on the same instrument:
+
+1. src-tauri commands (25) — all bridge-question lifecycle, window, prefs or
+   speech. None sends user-initiated text.
+   *control:* `cmd_submit_bridge_answer` found in `lib.rs` + `runtime.rs`.
+2. the MCP plugin — exactly one tool, `candice.ask_user`. No inbound tool.
+3. `packages/candice-protocol/schemas` — question, answer, status, lifecycle,
+   preferences. No user-initiated message schema.
+   *control:* `answer-event.schema.json` present.
+4. source sweep for any `CompactTransport` implementor, `sendToClaude`,
+   `injectPrompt`, `user_initiated` — zero hits outside `src/ui/compact/`.
+   *control:* the same regex found `CompactTransport` in `controller.ts`.
+
+**Not checked:** whether a future MCP revision adds a client-initiated message
+tool. That is a product capability decision, not a defect.
+
+**Ruling: do not mount it.** A text box that submits into nothing would ship a
+control that silently eats what the user types — worse than shipping nothing.
+The blocker text now names the real owner so the evidence trail stops implying
+a UI lane owes work it already delivered.
+
