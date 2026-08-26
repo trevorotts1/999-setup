@@ -159,3 +159,94 @@ not the same as closing fix ids, and a builder does not flip its own boxes.
   the consequences and stops is broken. A proposed rewrite adds "Shall I turn
   it on?"; that ADDS a sentence rather than simplifying, so it is an operator
   decision and was deliberately not applied.
+
+### OPERATOR-REPORTED — 2026-08-26
+
+- **The Voice-responses and Animation toggles do not take effect.** Reported
+  from live use: both controls flip their label and neither changes what
+  Candice does. Two causes found and fixed in `f650d64`; a third is named and
+  still unproven.
+
+  FIXED — *a preference only took effect if the disk write succeeded.*
+  `interaction-composition`'s persist read `if (saved) current = next`, and
+  `current` is what `voiceOutputEnabled()` returns — the gate `bridge.ts`
+  consults before speaking. The answer-controls surface keeps its own copy and
+  flips its label immediately, so a failed write left the button reading OFF
+  while Candice kept speaking every subsequent question. The preference now
+  applies in memory and the return value reports separately whether it will
+  survive a restart, which is this codebase's own stated rule for the
+  animation toggle ("a failed persist degrades to an in-memory-only toggle").
+
+  FIXED — *nothing stopped the voice.* `onVoiceToggleChange` persisted and did
+  nothing else, and the gate is only read when the NEXT question is delivered.
+  Hitting the toggle because she is talking could not stop her. It now aborts
+  speech in flight.
+
+  OPEN — *whether a real pointer click reaches the controls at all.* The
+  window is transparent with a native hit test that publishes rectangles for
+  painted regions; a control outside a published rectangle never receives the
+  click. This is the only candidate that explains BOTH toggles failing
+  together. It needs a synthesized mouse click at the control's measured
+  screen rectangle — `tests/e2e-acceptance/packaged/ax-driver.swift` has the
+  `rect` and `click` commands for exactly this. An accessibility press cannot
+  discriminate it, because it bypasses pointer routing entirely.
+
+  UNVERIFIED — the animation path checks out on inspection (the mouth renderer
+  re-reads the motion class every tick, the gesture driver watches it with a
+  MutationObserver, and the class is applied through the live a11y runtime),
+  so the persist fix may be the whole of it. Not claimed until observed.
+
+- **The first-run name prompt still mounts over a live question.** The UI
+  review recommended suppressing it; `interaction-composition`'s own test pins
+  the opposite as spec 4 ("the prompt still mounts... only its caption
+  announce is" skipped). Two text inputs in a 420px column with focus stolen
+  into the wrong one is a real cost, but reversing a recorded product decision
+  is the operator's call, not a repair pass's. Raised, not changed.
+
+### PACKAGED TIER — root-caused and unblocked 2026-08-26 (`c96d38b`)
+
+The 31 packaged-leg failures were ONE harness bug, not a product fault. The
+driver looked for the answer controls at `text field 1 of group 1 of window 1`
+— a direct child of the window's first group — while the real tree is
+`AXWindow > AXGroup > AXGroup > AXScrollArea > AXWebArea > ... > AXTextField`,
+because the UI is web content in a WKWebView and a scroll region adds an
+AXScrollArea. The controls were present and correctly labelled the whole time.
+Replaced with a depth-agnostic role+label search over the same public
+accessibility tree a screen reader uses. `packaged-BUILD_TARGET` now PASSES
+against the packaged binary — the first packaged-tier pass in this campaign.
+
+Two process bugs fixed in the same file, both of which reached outside the
+suite: `killAppProcesses` ran `pkill -f candice-companion`, which kills the
+operator's own installed Candice and matches any rustc/cargo command line
+mentioning the crate; `cleanStateGate` had the same flaw with `pgrep -x` and
+reported the environment dirty because the operator's Candice was open.
+
+### DECISION NEEDED — speech assets: bundle or installer?
+
+`packaged-speech-assets` fails on a contradiction the two sides of the design
+have with each other, not on a mistake in either:
+
+- `SPEECH-INVENTORY.json` and the leg both declare the degraded-by-design
+  posture — "zero pinned payloads ship inside the bundle (installer lane owns
+  placement)" — and the leg names the offenders: `stt-model`, `tts-model`,
+  `tts-voices`, `tts-worker`, `tts-runtime-pins`.
+- `tauri.conf.json` bundles `speech-assets/` wholesale, so all of them DO ship
+  inside the app.
+
+Both postures are defensible and they cannot both hold:
+
+- **Bundle them** — voice works the moment the app opens, no download, no
+  installer lane to get wrong. Costs ~378 MB in the artifact, and on Windows
+  that 378 MB is macOS-arm64 Python that can never run.
+- **Installer places them** — a small app, per-platform payloads, checksum
+  verification at placement. Costs a download step that must work on a client
+  machine before Candice can speak, and that lane does not exist in this repo.
+
+The leg is not wrong and the bundle is not wrong; the two were decided at
+different times. This is an operator call, not a repair-pass call, and it also
+decides the second failing assertion (`row tts-worker: unexpected pin on
+deferred row` — a row marked deferred that carries a checksum, which is only
+incoherent under the installer posture).
+
+Related and still open regardless: `whisper-cli` is `sha256Status: absent` in
+all three STT rows, so voice INPUT does not exist in any build today.

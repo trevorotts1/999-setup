@@ -197,3 +197,94 @@ independent QC; a builder recording its own work is not that. Lifecycle stays
 - Duplicate-window gap remaining: a wake-only instance already up, followed by
   an MCP bridge launch, still yields two windows. Closing that is routing work
   in the FIX-011/FIX-013 lane and needs independent QC.
+
+---
+
+## 6. SESSION RECORD — 2026-08-26 (continued): the packaged tier opens
+
+**Still not a release authority.** Lifecycle stays `REPAIR_IN_PROGRESS`,
+open=24, complete=0. No gate marker is moved.
+
+**Branch:** `candice/integration`, pushed to `origin` (the branch had never
+existed on the remote before this session). Commits `7925958`, `caf4890`,
+`c96d38b`, `f650d64`, `42c14af`, `b3c2fd1`.
+
+### The packaged tier was never testing the product
+
+All 31 packaged-leg failures traced to ONE cause: the driver asked for the
+answer controls at `text field 1 of group 1 of window 1` — a direct child of
+the window's first group — while the real tree is `AXWindow > AXGroup >
+AXGroup > AXScrollArea > AXWebArea > ... > AXTextField`, because the UI is web
+content in a WKWebView and a scroll region adds an AXScrollArea. A live dump
+showed the element present and correctly labelled the entire time. A required
+ship gate had been reading FAIL — a verdict about the product — for a
+hardcoded path in the harness.
+
+The AppleScript repair does not exist: `entire contents` returns a flat list
+that cannot be filtered by element class (System Events answers -1700/-1728).
+The search moved to `ax-driver.swift`, which walks the same public
+accessibility tree a screen reader walks, by role and label, at any depth.
+
+Result: **six of eight legs now pass** (typed-build-target, wrong-session,
+duplicate, fallback, restart, speech-keyboard) where zero did. `compact` is
+BLOCKED on a surface that has not landed. `speech-assets` fails on a real
+design contradiction, recorded in TODO as an operator decision.
+
+Two of those six needed their assertions corrected, both verified against
+SessionManager before touching them: `restart` asserted the pre-lease
+recovery contract in two places (a second recovery is REFUSED by the FIX-013
+lease rather than returning nothing, and releasing a pending record requires
+an acknowledged handoff, not a resume). Neither was a product fault.
+
+### Two harness bugs that reached outside the harness
+
+`killAppProcesses` ran `pkill -f candice-companion` — a bare substring match
+against every command line on the box. It kills the operator's own installed
+Candice, and it matches rustc/cargo/tauri command lines that merely mention
+the crate, so a suite run could tear down a build in progress. `cleanStateGate`
+had the same flaw with `pgrep -x` and reported the environment dirty because
+the operator's own Candice was open. Both are now scoped to the packaged
+binary's full path.
+
+### Operator-reported defect: the toggles did nothing
+
+Two causes found and fixed; one still open and named. A preference only took
+effect if the disk write succeeded (`if (saved) current = next`), while the
+control surface flipped its label regardless — so a failed write left the
+button reading OFF while Candice kept speaking. And nothing stopped speech
+already in flight, because the gate is read only when the NEXT question is
+delivered. Whether a real pointer click reaches the controls at all is the
+remaining candidate and is not claimed either way.
+
+### UI pass
+
+Eight review findings, each verified still open at HEAD first; five of the
+reviewers' findings were already fixed and were not re-fixed. The permanent
+"Candice session bridge is available." chip is gone when nothing is wrong and
+every degraded message is out of engineering vocabulary; EDIT was a dead
+button and now fills the type box; the caption stopped re-announcing itself
+once per spoken sentence and now scrolls the highlight into view; option
+buttons no longer rebuild on unrelated renders (which silently swallowed
+clicks) and now show the chosen answer; Enter is IME-safe in all three inputs.
+
+One review recommendation was deliberately NOT taken: the first-run name
+prompt still mounts over a live question, because the repo's own test pins
+that as spec 4. Raised in TODO instead.
+
+### Three questions would have been read aloud with the brackets in
+
+`CAPACITY_AGENT_COUNT`, `REPO_AMBIGUITY` and `LOOP_DONE_CONDITION` still
+carried literal `<measured>` / `<the candidates found>` / `<the checkable
+list>` slots. There is no substitution step anywhere in the registry —
+`canonicalQuestion` sets `text: e.display` verbatim and `verifyQuestion`
+compares with `equal()` — so either delivery was refused or Candice read the
+angle brackets out loud. Rewritten in both registry copies byte-identically;
+interview.md updated to match and its 39 pinned digests plus the inventory's
+`doctrineDigest` re-stamped. The other three pinned source documents were not
+touched and keep their digests.
+
+### Test state at the end of this record
+
+TypeScript 527/527. Rust 75/75. Contract suite 7/7 files green, including
+vendored-parity and interview-inventory. Packaged tier 6/8 legs passing,
+1 BLOCKED, 1 failing on the recorded design decision.
