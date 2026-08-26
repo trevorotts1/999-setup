@@ -41,6 +41,10 @@
 const fs = require('fs')
 const path = require('path')
 const {
+  activateApp,
+  axFocusedDescription,
+  axContains,
+  ax,
   createRun, environmentGate, killAppProcesses, packagedBinarySha,
   appendTrace, traceFrame, waitForAnswerControls, waitForAnswerGone,
   typeAnswer, answerSurfaceVisible, PACKAGED_BINARY, APP_PROCESS, LABELS,
@@ -83,17 +87,11 @@ function osa(script, timeoutMs = 15000) {
  * any absence/failure — callers treat empty as "focus not provable".
  */
 function focusedElementDescription(procName) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    try
-      set el to value of attribute "AXFocusedUIElement"
-      return (value of attribute "AXDescription" of el) & "|" & (value of attribute "AXRole" of el)
-    end try
-  end tell
-end tell
-return ""`
-  try { return osa(script) } catch (_) { return '' }
+  void procName
+  // Was a System Events read against a hardcoded window path. The shared
+  // driver reads AXFocusedUIElement from the application element directly,
+  // which does not care how deeply WebKit nests the focused control.
+  return axFocusedDescription()
 }
 
 /**
@@ -152,17 +150,13 @@ async function main() {
       // through the same accessibility tree the other legs drive; the
       // emoji prefix is part of the spec-6 label but System Events matches
       // on the readable suffix.
-      const script = `
-tell application "System Events"
-  tell (first process whose name is "${APP_PROCESS}")
-    try
-      return exists (button 1 of group 1 of window 1 whose description contains "HOLD TO TALK")
-    end try
-  end tell
-end tell
-return false`
-      const out = (() => { try { return osa(script) } catch (_) { return 'false' } })()
-      if (out !== 'true') throw new Error('PTT control (HOLD TO TALK) absent from the packaged a11y tree')
+      // Substring, because the label carries an emoji prefix the test should
+      // not have to reproduce. Searched at any depth: the previous query
+      // required the button to be a direct child of the window's first group,
+      // and it never has been -- the UI is web content inside an AXScrollArea.
+      if (!axContains('AXButton', 'HOLD TO TALK')) {
+        throw new Error('PTT control (HOLD TO TALK) absent from the packaged a11y tree')
+      }
       pttSeen = true
       fs.writeFileSync(path.join(TRACE_DIR, 'ptt-present'), 'true\n', 'utf8')
     })
@@ -248,25 +242,22 @@ return false`
 
 /** Focuses the TYPE ANSWER field without typing (click only). */
 function typeAnswerFocusOnly(procName) {
-  osa(`
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    click (text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.TYPE_INPUT}")
-  end tell
-end tell`)
+  void procName
+  activateApp()
+  const r = ax('focus', 'AXTextField', LABELS.TYPE_INPUT)
+  if (r.rc !== 0) throw new Error(`could not focus the answer field: ${r.out}`)
 }
 
 /** Types text then presses Return (key code 36) to submit via Enter. */
 function typeAnswerWithEnter(procName, text) {
-  osa(`
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    set targetField to text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.TYPE_INPUT}"
-    set focused of targetField to true
-    keystroke ${JSON.stringify(String(text))}
-    key code 36
-  end tell
-end tell`)
+  void procName
+  activateApp()
+  const r = ax('focus', 'AXTextField', LABELS.TYPE_INPUT)
+  if (r.rc !== 0) throw new Error(`could not focus the answer field: ${r.out}`)
+  // Real key events to the frontmost app: setting AXValue does not fire the
+  // DOM input events the view listens to, so the app never learns the text.
+  osa(`tell application "System Events" to keystroke ${JSON.stringify(String(text))}`)
+  osa('tell application "System Events" to key code 36')
 }
 
 main().catch((err) => {

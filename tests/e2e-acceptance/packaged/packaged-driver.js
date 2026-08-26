@@ -196,6 +196,20 @@ function axExists(role, label) {
   return ax('find', role, label).rc === 0
 }
 
+/** Same, but the label need only CONTAIN the substring (decorated labels). */
+function axContains(role, substring) {
+  return ax('contains', role, substring).rc === 0
+}
+
+/**
+ * "<description>|<role>" of whatever currently holds focus, or '' when focus
+ * is not provable. Used by the keyboard leg to name where a Tab landed.
+ */
+function axFocusedDescription() {
+  const r = ax('focused')
+  return r.rc === 0 ? r.out : ''
+}
+
 /**
  * Bring the app to the front. `keystroke` is delivered to the FRONTMOST
  * application, not to whatever holds AXFocused — without this the keys land
@@ -522,7 +536,11 @@ module.exports = {
   APP_PROCESS,
   axDriver,
   appPid,
+  ax,
   axExists,
+  axContains,
+  axFocusedDescription,
+  activateApp,
   LABELS,
   EVENT_KINDS,
   traceFrame,

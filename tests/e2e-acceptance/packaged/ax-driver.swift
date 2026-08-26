@@ -45,7 +45,9 @@
 // exactly the kind that ships.
 //
 // Usage (exit 0 = found/done, 1 = not found, 2 = error):
-//   ax-driver <pid> find   <role> <label>
+//   ax-driver <pid> find     <role> <label>
+//   ax-driver <pid> contains <role> <substring>
+//   ax-driver <pid> focused
 //   ax-driver <pid> value  <role> <label>
 //   ax-driver <pid> rect   <role> <label>
 //   ax-driver <pid> click  <role> <label>   (a REAL pointer click, not AXPress)
@@ -92,7 +94,7 @@ func kids(_ el: AXUIElement) -> [AXUIElement] {
 /// description or title. Menus are skipped: the app's menu bar carries 150+
 /// system items that can never be an answer control, and walking them turns a
 /// millisecond search into a slow one.
-func find(_ el: AXUIElement, role: String?, label: String, depth: Int = 0) -> AXUIElement? {
+func find(_ el: AXUIElement, role: String?, label: String, exact: Bool = true, depth: Int = 0) -> AXUIElement? {
     if depth > 40 { return nil }
     let r = attr(el, kAXRoleAttribute as String) ?? ""
     if r == "AXMenuBar" || r == "AXMenu" { return nil }
@@ -100,10 +102,18 @@ func find(_ el: AXUIElement, role: String?, label: String, depth: Int = 0) -> AX
     if matchesRole {
         let d = attr(el, kAXDescriptionAttribute as String) ?? ""
         let t = attr(el, kAXTitleAttribute as String) ?? ""
-        if d == label || t == label { return el }
+        if exact {
+            if d == label || t == label { return el }
+        } else if d.contains(label) || t.contains(label) {
+            // Substring, for labels that carry decoration the caller should
+            // not have to reproduce -- the PTT control is "\u{1F399} HOLD TO
+            // TALK", and pinning a test to an emoji is how a label change
+            // becomes a mystery failure.
+            return el
+        }
     }
     for c in kids(el) {
-        if let hit = find(c, role: role, label: label, depth: depth + 1) { return hit }
+        if let hit = find(c, role: role, label: label, exact: exact, depth: depth + 1) { return hit }
     }
     return nil
 }
@@ -167,6 +177,25 @@ case "value":
     guard argv.count >= 5 else { fail("value needs <role> <label>", 2) }
     guard let el = find(app, role: argv[3] == "*" ? nil : argv[3], label: argv[4]) else { print("absent"); exit(1) }
     print(attr(el, kAXValueAttribute as String) ?? "")
+    exit(0)
+
+case "contains":
+    guard argv.count >= 5 else { fail("contains needs <role> <substring>", 2) }
+    if find(app, role: argv[3] == "*" ? nil : argv[3], label: argv[4], exact: false) != nil { print("found"); exit(0) }
+    print("absent"); exit(1)
+
+case "focused":
+    // "<description>|<role>" of whatever currently holds focus, so a keyboard
+    // traversal test can name where focus actually landed.
+    var fv: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &fv) == .success,
+          CFGetTypeID(fv!) == AXUIElementGetTypeID()
+    else { print(""); exit(1) }
+    let focusedEl = fv as! AXUIElement
+    let fd = attr(focusedEl, kAXDescriptionAttribute as String)
+        ?? attr(focusedEl, kAXTitleAttribute as String) ?? ""
+    let fr = attr(focusedEl, kAXRoleAttribute as String) ?? ""
+    print("\(fd)|\(fr)")
     exit(0)
 
 case "rect":

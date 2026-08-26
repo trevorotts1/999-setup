@@ -97,9 +97,32 @@ async function main() {
       if (first.recovered.counted !== false) {
         throw new Error('BUILD_TARGET must be uncounted (STATIC question)')
       }
+      // Exactly-once, checked as a PROPERTY rather than as one return shape.
+      //
+      // This asserted `ok && recovered === null`, which is what recovery
+      // returned before FIX-013 S1 introduced the lease. The lease enforces
+      // the same guarantee by REFUSING the second claim
+      // (`ok:false, code:'recovery-lease-held'`) instead of answering "nothing
+      // pending" — so the leg reported a product failure for a live product
+      // guarantee it was checking in an outdated shape. Verified directly
+      // against SessionManager: first claim returns BUILD_TARGET, second
+      // returns recovery-lease-held.
+      //
+      // What must never happen is the question being handed over twice. That
+      // is what is asserted now, so either refusal shape passes and an actual
+      // double hand-off fails.
       const second = run.lifecycle.recoverPendingQuestion({ sessionId })
-      if (!second.ok || second.recovered !== null) {
-        throw new Error('second recovery must find nothing — pending question hands off exactly once')
+      const handedAgain = second.ok === true
+        && second.recovered !== null
+        && second.recovered !== undefined
+      if (handedAgain) {
+        throw new Error(
+          `second recovery handed the pending question over again (${second.recovered.questionKey}) — `
+          + 'the FIX-013 lease must refuse a second claim',
+        )
+      }
+      if (second.ok === false && second.code !== 'recovery-lease-held') {
+        throw new Error(`second recovery refused for the wrong reason: ${second.code}`)
       }
 
       // No count increment: recovery never double-counts (section 20).
@@ -112,12 +135,37 @@ async function main() {
       }
       emit(sessionId, 'question-presented', 'terminal')
 
-      // resumeSession returns the session to active with no pending question.
-      const resumed = run.lifecycle.resumeSession({ sessionId })
-      if (!resumed.ok) throw new Error(`resumeSession failed: ${resumed.code}`)
+      // Completing the handoff is an ACKNOWLEDGEMENT, not a resume.
+      //
+      // This called `resumeSession` and expected the pending question to be
+      // gone. It is not, and it must not be: FIX-013 S1 requires the receiver
+      // to PROVE it got the exact record — both the claimed lease id and the
+      // exact operation id — before the pending record may be released. A
+      // resume that cleared it without proof would be the silent-drop this
+      // seam exists to prevent. Verified directly against SessionManager:
+      // after recover+resume the pending question is still BUILD_TARGET;
+      // after recover+ack it is null, the session is active, and the count is
+      // still 0.
+      const ack = run.lifecycle.acknowledgeRecoveryHandoff({
+        sessionId,
+        leaseId: first.lease.leaseId,
+        operationId: first.recovered.operationId,
+      })
+      if (!ack.ok) throw new Error(`acknowledgeRecoveryHandoff failed: ${ack.code}`)
       const after = run.lifecycle.getSession(sessionId)
       if (after.status !== 'active' || after.pendingQuestion !== null) {
-        throw new Error('after resume: session active, no pending question — expected')
+        throw new Error(
+          `after the acknowledged handoff the session must be active with nothing pending, got `
+          + `status=${after.status} pending=${after.pendingQuestion ? after.pendingQuestion.questionKey : 'null'}`,
+        )
+      }
+      if (after.questionCount !== 0) {
+        throw new Error(`the handoff must not count the question: ${after.questionCount}`)
+      }
+      // A bare resume now has nothing to resume, which is the correct refusal.
+      const resumed = run.lifecycle.resumeSession({ sessionId })
+      if (resumed.ok !== false || resumed.code !== 'not-recovering') {
+        throw new Error(`resume after an acknowledged handoff must refuse with not-recovering, got ${resumed.code}`)
       }
     })
 
