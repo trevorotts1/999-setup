@@ -309,3 +309,67 @@ control that silently eats what the user types — worse than shipping nothing.
 The blocker text now names the real owner so the evidence trail stops implying
 a UI lane owes work it already delivered.
 
+
+
+### OPEN after the 2026-08-26 voice/copy/UI pass
+
+**Windows cannot hear or speak, and that is a payload problem, not a bug.**
+The app now stays honest about it (no HOLD TO TALK, no per-question speech
+failure), but closing it needs real work:
+- no `whisper-cli.exe` and no `whisper-cli-win32/` ship; all three STT rows
+  are `sha256Status: absent`.
+- no Windows Python ships. The interpreter probe already looks in the right
+  places (`python\python.exe`, `python\Scripts\python.exe`); the payload
+  is a Mach-O arm64 build.
+- `system_tts_available` is hardcoded `false` off macOS and
+  `speak_system_tts` is a no-op there -- the WR-016 adapter lane never
+  registered itself. A Windows SAPI path would give her a voice even with
+  no Kokoro runtime.
+- `speech-assets/` is bundled wholesale to every target, so ~164 MB of
+  macOS-arm64 Python ships inside the Windows NSIS installer today. Tauri
+  per-platform config (`tauri.windows.conf.json`) can carve it; NOT done
+  here because it cannot be verified from this seat and the macOS build is
+  the one currently installed and working.
+
+**Registry copy was left untouched, on purpose.** A copy review flagged
+real problems in `packages/candice-protocol/schemas/question-keys.json`:
+options rendering as routing codes ("Simple ghl", "Complex vercel then
+embedded"), template placeholders sitting inside SPOKEN strings that TTS
+would read aloud ("question less-than N greater-than"), a backticked file
+path in a spoken string, a 559-character monologue that never asks its
+question, a context-free "keep, or change?", and developer words spoken to
+non-technical clients ("repo", "push", "branch", "provider path"). These
+are byte-pinned with digest stamps against the skill source, and
+`canonicalQuestion` copies `display` verbatim with no substitution
+mechanism -- so changing them means changing the skill's interview.md and
+re-stamping in the same move. That is a coordinated change across two
+repos, not a repair-pass edit.
+
+**The `text-fallback` caption duplicates the spec-5.1 button label.**
+"Answer in Claude instead" reads like a menu item rather than Candice
+speaking. `captions.test.ts` asserts it renders "the exact spec-5.1 label"
+verbatim, so changing it is a spec decision. Raised, not changed.
+
+**Consent-blocked copy appears to be unreachable.** The strings in
+`ui/answer-controls/consent.ts` are wired to an `onBlocked` callback that
+neither the orchestrator nor the bridge supplies, so a user whose
+microphone is denied may see nothing at all. Wording and wiring want
+fixing together; not attempted here because the wiring is a behaviour
+change, not a copy change.
+
+**The compact lane, if it is ever mounted**, needs more than a transport:
+its text has no backdrop (it predates FIX-008 and its own contract test
+still bans one), its expand affordance is not in `CONTROL_SELECTOR` so the
+click would pass through to the desktop, its hold-to-talk has no keyboard
+path and no document-level release, and its mute button flips a label
+while the controller's handler does nothing. Recorded so nobody mounts it
+believing it is finished.
+
+**`#app`'s scrollbar cannot be grabbed.** It is the overflow safety valve
+for a 420x640 column at Large text, but the gutter sits outside every
+published region, so the window is pointer-transparent there. Wheel and
+trackpad still work over any published card. Noted mainly so nobody
+"fixes" it by publishing the whole window, which would make Candice a
+solid rectangle. `native-input-regions.ts` also observes mutation, resize
+and load but not scroll, so regions can be stale for up to 500ms after a
+scroll.

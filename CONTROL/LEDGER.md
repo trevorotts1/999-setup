@@ -373,3 +373,123 @@ user-initiated channel to Claude in any tier. HUMAN_HARDWARE is BLOCKED
 because it needs a person. Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24,
 complete=0 — no gate is marked closed by this pass, because closing one
 requires `independentQc`, which this seat cannot run on its own work.
+
+
+## 8. The voice tier, the copy pass, and a UI review (2026-08-26)
+
+### The two dead facts
+
+The app was measuring whether it could hear and whether it could speak,
+and then throwing both answers away.
+
+`SpeechHealth.stt_engine_ready` and `tts_engine_ready` are computed in
+Rust and parsed into `capabilities.*` in TypeScript. Nothing read either
+one. The consequences were not subtle:
+
+- **HOLD TO TALK was a dead end on every build we ship.** All three
+  whisper-cli rows in SPEECH-INVENTORY.json are `sha256Status: absent`,
+  and `speech-assets/stt/` holds only the 31 MB model. So a user pressed
+  the button, was taken through an OS microphone permission prompt,
+  spoke, let go, and read "Answer in Claude instead". Every time. The
+  failure was soft and honest, which is exactly why it survived review:
+  nothing crashed and nothing lied. `pttUsable` was `!delegateActive` and
+  consulted nothing else.
+- **On Windows she would have narrated the same failure forever.** No
+  Windows Python ships (the interpreter probe is already Windows-aware;
+  the only interpreter in the tree is a Mach-O arm64 binary), and
+  `system_tts_available` is hardcoded false off macOS because the WR-016
+  adapter never landed. So every `speak` rejects, and the bridge announced
+  "Candice could not speak this question aloud: <raw engine error>" on
+  every question of the interview.
+
+Both now gate on the measured fact, with the same rule on each side:
+UNPROBED is not ABSENT. A dev run or a failed probe passes `undefined`
+and behaves exactly as before; only a report that actually says false
+suppresses anything. `root.dataset.sttEngineReady` / `.ttsEngineReady`
+carry the facts for the packaged tier to read.
+
+The reason-carrying failure text stays as it is. `bridge.test.ts` pins it
+("the REASON must survive"), and for a rare one-off failure on a machine
+that normally speaks, the reason is the useful part. What was wrong was
+attempting the impossible and then narrating it forever, not the wording.
+
+### What this means for a Windows client, stated plainly
+
+Windows ships a Candice who displays captions and takes typed answers.
+The bridge, the questions, the answer round trip and the recovery lane
+all work. She cannot hear (no whisper-cli.exe) and cannot speak (no
+Windows Python, no system-TTS adapter). She now says nothing about either
+instead of offering controls that cannot work. Closing that gap needs
+per-platform payloads and the WR-016 adapter, not a repair.
+
+### A UI review, verified before acting
+
+Two reviews were run over the copy and the UI. Nothing was taken on
+trust: each finding was checked in the code first, with a control that
+had to come back non-empty on the same instrument, and the ones that
+turned out to be non-issues were dropped (the `Idle` and
+`Compact companion` status labels, for instance, are never rendered --
+gesture-stage.ts:313 emits an empty string for both).
+
+The worst of what was found and fixed:
+
+- **After one interrupted sentence, screen readers went deaf.** Sentence
+  highlighting sets `aria-live: off` deliberately. The only code that
+  turned it back on was `setSpokenProgress(null)`, which returns early
+  when `highlighted === -1` -- exactly what a new caption sets. So one
+  interrupted utterance latched the region off for the rest of the
+  session and every later caption, including every later QUESTION,
+  mutated a dead live region. No visible symptom: sighted users read it
+  fine. This was my own bug, introduced with the highlight work.
+- **A fix that worked everywhere except where it shipped.**
+  `window/style.ts` set `color-scheme: light dark` directly on `body`,
+  beating the `dark` inherited from `:root` -- and scoped to a class only
+  added in the real native window, never the dev browser. The fix in
+  styles.css:18 held in every place it was verified and was reversed in
+  every place it shipped.
+- **The open microphone was inaudible.** The PTT button's `aria-label`
+  was set once and never updated, and aria-label overrides content, so a
+  blind user was never told "LISTENING".
+- **My own toggle fix had made the row narrower.** The repair added a
+  second CSS rule instead of editing the first; it won on source order
+  and cut horizontal padding from 10px to 4px.
+- **A settings checkbox sat between the question and its answers**, and
+  since DOM order is tab order, keyboard users tabbed through it to reach
+  every answer.
+- Option pills washed out on hover (an undefined custom property made the
+  colour declaration invalid), USE ANSWER / EDIT / TRY AGAIN rendered
+  touching with no rule at all on their row, the transcript was
+  re-announced on every render, the remembered-method marker painted
+  nothing, and several controls sat under the 44px target -- which on a
+  pointer-transparent window means a near miss clicks the desktop.
+
+### The copy pass
+
+The operator asked for the opening line to be shorter and the same pass
+everywhere else. The greeting went from 228 characters to 134 (44 words
+to 26) with the fairy-godmother idea and the wish/real pairing intact;
+what came out was one idea said three ways plus a sentence of framing for
+a metaphor that framed itself. Beyond that: state-machine words that
+reached the screen (`Waiting for user`, `Text fallback`, `Transcribing`),
+an all-caps `RECOVERING` caption, passive transcript errors, and a
+failure card written in status-page language.
+
+The `text-fallback` caption was deliberately NOT reworded: it duplicates
+the spec-5.1 button label and captions.test.ts asserts it renders "the
+exact spec-5.1 label" verbatim. Worth revisiting, but a spec decision.
+
+The registry questions were left alone entirely. They are byte-pinned
+with digest stamps against the skill source, so rewording them is a
+change to the skill and the registry together -- listed in TODO.md, not
+attempted here.
+
+### Measured at the close of this session
+
+TypeScript 539/539 · Rust 75/75 · contract suite 7/7 files green · plugin
+launch-command green · e2e happy legs 1-6 all PASS. PACKAGED_AUTOMATED is
+7 of 8, BLOCKED on `compact` alone and for the proven reason recorded in
+section 7. HUMAN_HARDWARE still needs a person.
+
+Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24, complete=0. No gate is
+marked closed, because closing one requires `independentQc` and this seat
+cannot run that on its own work.
