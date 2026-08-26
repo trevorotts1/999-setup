@@ -24,6 +24,7 @@ const FILES = [
   'interview-inventory.test.js',
   'exactly-one.test.js',
   'secret.test.js',
+  'speakable.test.js',
 ]
 
 let failures = 0

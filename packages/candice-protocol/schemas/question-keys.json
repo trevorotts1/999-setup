@@ -662,7 +662,7 @@
         "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "I can make every technical decision myself and just build it — you'd answer only the few questions about your accounts, your money, and what you like. Or you can make the detailed calls with me as we go. Which do you want?",
-      "spoken": "Question <N> of no more than <C> — I can make every technical decision myself and just build it — you'd answer only the few questions about your accounts, your money, and what you like. Or you can make the detailed calls with me as we go. Which do you want?",
+      "spoken": "I can make every technical decision myself and just build it — you'd answer only the few questions about your accounts, your money, and what you like. Or you can make the detailed calls with me as we go. Which do you want?",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -1897,8 +1897,8 @@
         "anchor": "Resolving which provider path this build will run on",
         "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
-      "spoken": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
+      "display": "Last time we worked together, you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
+      "spoken": "Last time we worked together, you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -2295,8 +2295,8 @@
         "anchor": "Block C — Loop Shape",
         "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "Where should I put the project folder? Usually `~/Downloads/projects/`.",
-      "spoken": "Where should I put the project folder? Usually `~/Downloads/projects/`.",
+      "display": "Where should I put the project folder? Usually a folder called projects, inside your Downloads folder.",
+      "spoken": "Where should I put the project folder? Usually a folder called projects, inside your Downloads folder.",
       "answerKind": "free_text",
       "allowedInputModes": [
         "voice",
@@ -2576,8 +2576,8 @@
         "anchor": "Fast path 2 — the small-plan collapse (after block A)",
         "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
-      "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
+      "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: I will use my standard choices, and I will tell you each one in plain words as we go. Is that all right?",
+      "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: I will use my standard choices, and I will tell you each one in plain words as we go. Is that all right?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -2623,8 +2623,8 @@
         "anchor": "Fast path 2 — the small-plan collapse (after block A)",
         "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
-      "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
+      "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: I will use my standard choices, and I will tell you each one in plain words as we go. Is that all right?",
+      "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: I will use my standard choices, and I will tell you each one in plain words as we go. Is that all right?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
