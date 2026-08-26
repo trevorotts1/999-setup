@@ -7,9 +7,13 @@ import { spawnSync } from "node:child_process";
 import { applyReleaseConfigOverlay } from "../apply-release-config.mjs";
 
 const PLACEHOLDER = "RELEASE_OWNER_MUST_REPLACE_WITH_BASE64_PUBLIC_KEY";
-// Committed-shape pubkey: a real minisign pubkey (base64 of the minisign text
-// box) whose private key was discarded — exactly what the committed
-// apps/candice-companion/tauri.conf.json carries (Q-10).
+// Committed-SHAPE pubkey: a real minisign pubkey (base64 of the minisign text
+// box). This is a fixture for the overlay round-trip, not a copy of the live
+// anchor — the test builds its own config and asserts the value survives, so
+// it must not be updated when the real anchor rotates. It used to be the
+// literal committed key, described as one "whose private key was discarded";
+// that anchor was rotated on 2026-08-26 because the missing private half made
+// the release lane unsatisfiable. Nothing here reads the real config.
 const COMMITTED_PUBKEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc0M0U0NTk5QjJDNzNEMjEKUldRaFBjZXltVVUrZEFVQllpSlM1VHJ6MUdqNEJUa2NobWtVNnVWTlkzd0lBamVRL0ZZUWxGYy8=";
 

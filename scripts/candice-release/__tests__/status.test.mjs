@@ -57,7 +57,45 @@ test("release authority rejects a forged editable release-gate document", () => 
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes("release gate schema is anything-else")));
   assert.ok(result.errors.some((error) => error.includes("fixed release schema")));
+  // FIX-024 configured the pin on 2026-08-26, so the authority no longer
+  // fails with "not configured" — it fails because this forged root has no
+  // key file to hash. The property under test is unchanged: a hand-edited
+  // release-gate.json cannot authorize a release. Both authority states are
+  // covered explicitly by the two tests below, so this assertion does not
+  // silently weaken when the compiled pin changes again.
+  assert.ok(result.errors.some((error) => error.includes("operator release authority key is missing")));
+});
+
+test("an unconfigured authority pin still fails closed", () => {
+  // Pinned via the injectable entry point rather than the compiled constant,
+  // so this keeps testing the unconfigured path forever — including after
+  // FIX-024 configured the real one.
+  const root = fixture({ releaseReady: true, lifecycle: "RELEASE_CANDIDATE", openFixIds: [] });
+  const result = evaluateReleaseWithPin(root, "UNCONFIGURED");
+  assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes("operator release authority is not configured")));
+});
+
+test("a key that does not match the pin is rejected, and the matching one is not", () => {
+  const root = fixture({ releaseReady: true, lifecycle: "RELEASE_CANDIDATE", openFixIds: [] });
+  const keyPath = join(root, "CONTROL", "release-authority.pub");
+  writeFileSync(keyPath, "-----BEGIN PUBLIC KEY-----\nnot-the-real-key\n-----END PUBLIC KEY-----\n");
+  const wrong = evaluateReleaseWithPin(root, "c".repeat(64));
+  assert.ok(
+    wrong.errors.some((error) => error.includes("does not equal the compiled")),
+    "a key whose hash misses the pin must be rejected",
+  );
+
+  // CONTROL: the same evaluation with the pin set to this file's ACTUAL hash
+  // must stop producing that error. Without this, an authority check that
+  // rejected everything unconditionally would pass the assertion above while
+  // proving nothing.
+  const actual = createHash("sha256").update(readFileSync(keyPath)).digest("hex");
+  const right = evaluateReleaseWithPin(root, actual);
+  assert.ok(
+    !right.errors.some((error) => error.includes("does not equal the compiled")),
+    "a key whose hash matches the pin must not be reported as mismatched",
+  );
 });
 
 test("CLI executes and fails closed through a symlinked path", () => {

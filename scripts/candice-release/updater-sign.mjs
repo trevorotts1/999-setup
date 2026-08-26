@@ -6,9 +6,13 @@
  *
  *   - SMOKE builds (CI matrix, local dev): unsigned, build from the committed
  *     tauri.conf.json, and carry `createUpdaterArtifacts: false` with the
- *     committed real pubkey (its private key was discarded). They produce
- *     no latest.json and no `.sig` files, so a smoke artifact can never be
- *     mistaken for updater-ready content.
+ *     committed real pubkey. They produce no latest.json and no `.sig`
+ *     files, so a smoke artifact can never be mistaken for updater-ready
+ *     content. NOTE: this used to add "its private key was discarded" as a
+ *     second guarantee. The anchor was rotated on 2026-08-26 because the
+ *     discarded key made the release lane unsatisfiable, so that guarantee
+ *     is gone: separation now rests on the config flag and on the signing
+ *     secret living only in the protected release workflow.
  *   - RELEASE builds (protected release workflow on a candice-v* tag):
  *     build from a release overlay config with the real updater public key
  *     and `createUpdaterArtifacts` enabled, with
@@ -95,8 +99,8 @@ export function failHard(reason) {
  * Validate one build path posture (Q-10).
  *   mode "smoke":    createUpdaterArtifacts must be absent/false AND the
  *                    pubkey must be a real non-placeholder key (the committed
- *                    config carries the real pubkey whose private key was
- *                    discarded) — no updater content, real updater identity.
+ *                    config carries the real, live pubkey) — no updater
+ *                    content, real updater identity.
  *   mode "release":  createUpdaterArtifacts must be enabled and the pubkey
  *                    must not be the placeholder.
  */

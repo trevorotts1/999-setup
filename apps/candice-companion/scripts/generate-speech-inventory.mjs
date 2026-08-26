@@ -51,6 +51,16 @@ const ENTRIES = [
     sourceUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin',
     role: 'speech-to-text model (whisper.cpp ggml format)',
   },
+  // sha256 is null ON PURPOSE, and this is the honest half of shipping a
+  // working engine. What ships is NOT the Homebrew bottle: the bottle's
+  // binary links /opt/homebrew dylibs a client does not have, so
+  // scripts/relocate-whisper-macos.mjs copies the dependency closure next
+  // to the binary and rewrites every install name to @loader_path. That
+  // rewrite changes the bytes, so the bottle digest is no longer the hash
+  // of the shipped file. Recording it as the pin anyway would put a false
+  // statement in the one file whose entire job is to be true. The upstream
+  // digest stays as PROVENANCE — what this was derived from — and the
+  // shipped bytes carry their own measured hash.
   {
     id: 'stt-binary-macos',
     filename: 'whisper-cli',
@@ -58,11 +68,32 @@ const ENTRIES = [
     version: STT_RUNTIME.version,
     license: 'MIT',
     arch: 'aarch64-apple-darwin',
-    sha256: 'c96d59cc9322a25f3b488b5f01d2a91aa6e2298ba2f39239108e1c85cb549460',
-    sourceUrl:
-      'ghcr.io/v2/homebrew/core/whisper-cpp/blobs/sha256:c96d59cc9322a25f3b488b5f01d2a91aa6e2298ba2f39239108e1c85cb549460',
-    role: 'speech-to-text binary (macOS Apple Silicon, Homebrew bottle whisper-cpp@1.9.2)',
+    sha256: null,
+    derivedFrom: {
+      sourceUrl:
+        'ghcr.io/v2/homebrew/core/whisper-cpp/blobs/sha256:c96d59cc9322a25f3b488b5f01d2a91aa6e2298ba2f39239108e1c85cb549460',
+      sha256: 'c96d59cc9322a25f3b488b5f01d2a91aa6e2298ba2f39239108e1c85cb549460',
+      transform: 'install_name_tool: dependency closure staged alongside, install names rewritten to @loader_path',
+    },
+    sourceUrl: 'relocated from the Homebrew bottle by scripts/relocate-whisper-macos.mjs',
+    role: 'speech-to-text binary (macOS Apple Silicon, relocated whisper-cpp@1.9.2)',
   },
+  // The engine's own libraries. They ship beside the binary because
+  // @loader_path resolves from the binary's directory; without them the
+  // first push-to-talk dies with a dyld error on a machine we cannot debug.
+  ...['libwhisper.1.9.2.dylib', 'libggml.0.19.0.dylib', 'libggml-base.0.19.0.dylib', 'libomp.dylib'].map(
+    (name) => ({
+      id: `stt-lib-macos-${name.replace(/\.dylib$/, '').replace(/\./g, '-')}`,
+      filename: name,
+      path: ['stt', name],
+      version: STT_RUNTIME.version,
+      license: 'MIT',
+      arch: 'aarch64-apple-darwin',
+      sha256: null,
+      sourceUrl: 'relocated from the Homebrew bottle by scripts/relocate-whisper-macos.mjs',
+      role: `speech-to-text runtime library (${name}), loaded via @loader_path`,
+    }),
+  ),
   {
     id: 'stt-binary-windows-x64',
     filename: 'whisper-cli.exe',
@@ -164,15 +195,35 @@ function main() {
       let present = false;
       let sizeBytes = null;
       let measuredSha256 = null;
+      // The catch covers ONE question: is there a file here. Nothing else
+      // may run inside it. The pin check below lived in here at first, and
+      // its throw was swallowed by this very catch — so a tampered artifact
+      // was quietly recorded as `absent` and the app degraded politely
+      // around it. An integrity failure that presents as "not shipped" is
+      // worse than no check at all.
       try {
         const st = statSync(abs);
         if (st.isFile()) {
           present = true;
           sizeBytes = st.size;
-          measuredSha256 = entry.sha256 ?? sha256Of(abs);
         }
       } catch {
         present = false;
+      }
+      if (present) {
+        // Measure FIRST, then hold the pin to reality. This read
+        // `entry.sha256 ?? sha256Of(abs)` — it preferred the DECLARED hash
+        // and only measured when none was declared, so a present file whose
+        // bytes disagreed with its pin was recorded as `pinned` carrying a
+        // hash it did not have. A pin that cannot fail is decoration.
+        measuredSha256 = sha256Of(abs);
+        if (entry.sha256 !== null && entry.sha256 !== undefined && entry.sha256 !== measuredSha256) {
+          throw new Error(
+            `speech inventory: ${entry.id} is pinned to ${entry.sha256} but the file at ` +
+              `${abs} measures ${measuredSha256}. Refusing to write an inventory that ` +
+              `asserts a hash the shipped bytes do not have.`,
+          );
+        }
       }
       return {
         id: entry.id,
@@ -190,6 +241,7 @@ function main() {
         // resource dir — the app resolves via this exact path).
         installPath: entry.path.join('/'),
         sourceUrl: entry.sourceUrl,
+        ...(entry.derivedFrom ? { derivedFrom: entry.derivedFrom } : {}),
         role: entry.role,
         bundled: present,
         absentNote: present ? null : 'not present in the source tree; installer lane must place it before packaging',

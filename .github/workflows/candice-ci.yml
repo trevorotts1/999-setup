@@ -323,6 +323,82 @@ jobs:
           path: commit-sha.txt
 
   # ---------------------------------------------------------------------------
+  # Windows config parse — the overlay must actually LOAD on Windows
+  # ---------------------------------------------------------------------------
+  #
+  # This job exists because a real defect got all the way to a commit with
+  # every other check green. `tauri.windows.conf.json` carried a top-level
+  # `$comment` array explaining itself. Tauri's Config is
+  # `deny_unknown_fields`, and the CLI merges the overlay as raw JSON and
+  # THEN deserializes the merged value — so the parse failed outright and
+  # the Windows build would have produced no installer at all.
+  #
+  # Nothing caught it. The windows-x64 job below runs cargo checks WITHOUT
+  # staging the overlay, so the file it broke was never even read there, and
+  # the macOS lane never loads a Windows overlay by design. The overlay was
+  # only ever exercised by a real `npm run tauri:build` on Windows, which
+  # has never run.
+  #
+  # So: stage the overlays exactly as a build does, then make the CLI load
+  # the merged config on the platform it targets. Fast, needs no Rust
+  # toolchain, and fails on the exact class that slipped through.
+  windows-config-parse:
+    name: Windows — platform config merges and parses
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: apps/candice-companion
+        run: npm ci
+
+      - name: Stage the platform overlays, exactly as a build does
+        working-directory: apps/candice-companion
+        run: node scripts/stage-tauri-config.mjs
+
+      - name: The overlay must be present before the parse means anything
+        shell: pwsh
+        working-directory: apps/candice-companion
+        run: |
+          # CONTROL: if staging silently did nothing, `tauri info` would
+          # parse the base config alone and pass while proving nothing.
+          if (-not (Test-Path 'src-tauri/tauri.windows.conf.json')) {
+            Write-Error 'the Windows overlay was not staged; this check would be vacuous'
+            exit 1
+          }
+          Write-Host 'staged overlay present:'
+          Get-Content 'src-tauri/tauri.windows.conf.json'
+
+      - name: Load the merged Windows config
+        working-directory: apps/candice-companion
+        run: npx tauri info
+
+      - name: Prove this check can fail
+        shell: pwsh
+        working-directory: apps/candice-companion
+        run: |
+          # Inject the exact defect that shipped, confirm the CLI rejects it,
+          # then restore. Without this, a `tauri info` that stopped reading
+          # the overlay would leave the job green forever.
+          $path = 'src-tauri/tauri.windows.conf.json'
+          $original = Get-Content $path -Raw
+          $bad = $original | ConvertFrom-Json
+          $bad | Add-Member -NotePropertyName '$comment' -NotePropertyValue @('probe')
+          $bad | ConvertTo-Json -Depth 20 | Set-Content $path
+          npx tauri info 2>&1 | Out-String | Tee-Object -Variable out | Out-Null
+          Set-Content $path $original -NoNewline
+          if ($out -notmatch 'was unexpected') {
+            Write-Error 'CONTROL FAILED: the CLI accepted an unknown config key, so this job cannot catch the defect it exists for'
+            exit 1
+          }
+          Write-Host 'control passed: the CLI rejects an unknown config key'
+
+  # ---------------------------------------------------------------------------
   # Windows x64 — WASAPI capture build + parity + shell-compat
   # ---------------------------------------------------------------------------
   windows-x64:

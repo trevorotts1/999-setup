@@ -7,11 +7,23 @@
  *   - bundle.macOS.signingIdentity  = null  (no Apple identity claimed)
  *   - bundle.windows.certificateThumbprint = null (no Authenticode claimed)
  *   - bundle.createUpdaterArtifacts = false (no updater content claimed)
- *   - plugins.updater.pubkey        = real committed pubkey whose private
- *                                     key was discarded (Q-10: the app
- *                                     embeds a real updater identity, but a
- *                                     smoke build can never produce an
- *                                     updater-ready artifact)
+ *   - plugins.updater.pubkey        = the real, LIVE updater public key
+ *                                     (rotated 2026-08-26; see below)
+ *
+ * That pubkey line used to end "whose private key was discarded", and that
+ * was true and is no longer. The old anchor's private half really was gone,
+ * which made the release lane unsatisfiable as committed: the workflow
+ * refuses to build unless the signing secret's pubkey matches the committed
+ * one byte for byte, and no such secret could exist. Nothing had shipped to
+ * a client yet, so the anchor was rotated rather than inherited — an install
+ * carrying a dead anchor can never auto-update, only be reinstalled by hand.
+ *
+ * The safety property therefore rests on TWO things now, not three:
+ * `createUpdaterArtifacts: false` in the committed config, and the signing
+ * secret existing only inside the protected release workflow. A smoke build
+ * still cannot produce updater content — it has no secret and is configured
+ * not to emit one — but it is no longer additionally protected by the key
+ * simply not existing anywhere. Do not rely on that property again.
  *
  * This script overlays release secrets from the environment onto a COPY of
  * the config (never the tracked file), so a build machine that has the

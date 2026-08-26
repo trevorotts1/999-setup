@@ -47,7 +47,17 @@ const REQUIRED_GATES = Object.freeze([
 // exact file bytes with SHA-256, and rejects release unless the hash equals
 // this compiled pin. A matching hash is required for any later signature
 // verification to be meaningful; the key file itself is otherwise inert.
-const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "UNCONFIGURED";
+// FIX-024: configured 2026-08-26 from the operator-owned Ed25519 key at
+// ~/.ssh/candice-release/release-authority.key. The PUBLIC half was derived
+// with `openssl pkey -pubout` and committed as CONTROL/release-authority.pub;
+// the private half was never read, copied, printed or committed, and does not
+// live in this repository. This pin is the whole-file SHA-256 of that .pub,
+// so PEM armor and line endings are part of it, exactly as documented above.
+//
+// Configuring the pin does NOT by itself authorize a release: the gate still
+// requires every other check, and a matching hash only makes later signature
+// verification meaningful.
+const OPERATOR_RELEASE_AUTHORITY_PUBLIC_KEY_SHA256 = "463087c76446d0e0fccc0a2ca06ce23e9a5ce80c9f563dcfe1b37d873cc0a864";
 
 // Fixed repository location of the operator release-authority public key.
 // This path is code, not control-document configuration: a forged
