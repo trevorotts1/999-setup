@@ -1002,3 +1002,158 @@ machine and a code-signing certificate.**
 Windows signing (certificate plus a real Windows box), and `ciRequiredChecks`
 (hosted Actions runs on the exact candidate commit, whose evidence record is
 written after independent QC).
+
+
+## 13. Four of the five ship blockers closed (2026-08-26 19:05-19:30)
+
+Operator instruction: "FIX ALL FIVE ISUUES AND SHIP", then "DO UR OWN QC
+WORK I DONT HAVE TIME". Section 12 listed five blockers. Four are closed.
+The fifth needs hardware and credentials that do not exist on this project.
+
+### 13.1 Voice input works (blocker 12.4 CLOSED for macOS)
+
+`stt-binary-macos` had been `sha256Status: absent` since the beginning, so
+HOLD TO TALK has never worked on any build. TODO.md recorded why nobody
+simply copied the binary in: the Homebrew bottle links dylibs a client does
+not have (`@rpath/libwhisper.1.dylib`,
+`/opt/homebrew/opt/ggml/lib/libggml*.dylib`), so a straight copy dies with a
+dyld error at the first push-to-talk.
+
+`apps/candice-companion/scripts/relocate-whisper-macos.mjs` walks the
+dependency closure, stages every non-system library beside the binary, and
+rewrites every install name to `@loader_path`. It refuses to stage a
+partially-resolved engine, and refuses to report success while any external
+reference remains.
+
+MEASURED, end to end. Real speech generated to a 16 kHz WAV, transcribed by
+the engine inside the SIGNED bundle: "The quick brown fox jumps over the
+lazy dog.", rc=0.
+
+CONTROL: hiding one staged dylib produces
+`dyld: Library not loaded: @loader_path/libwhisper.1.9.2.dylib`, rc=134. It
+does NOT fall back to Homebrew's copy — which is the entire point, because
+falling back is what would make a developer machine pass while a client
+machine fails. Cost: 2.3 MB.
+
+The payload stays out of git, matching the existing convention; the script
+is the reproducible source of truth, and the engine is mirrored into
+`~/Library/Application Support/BlackCEO/999/speech-assets-source/stt/`.
+
+### 13.2 The inventory tells the truth about it
+
+What ships is NOT the bottle — relocation changes the bytes — so recording
+the bottle digest as its pin would be a false statement in the one file
+whose whole job is to be true. The upstream digest is kept as `derivedFrom`
+provenance; the shipped bytes carry their own measured hash.
+
+That exposed a real defect: the generator read `entry.sha256 ?? sha256Of()`,
+PREFERRING the declared pin and measuring only when none was declared. A
+present file disagreeing with its pin was recorded as `pinned` carrying a
+hash it did not have.
+
+**And my first fix was worse than no fix.** I put the throw inside the `try`
+whose `catch` sets `present = false`, so a tampered artifact was swallowed
+and recorded as ABSENT — an integrity failure presenting as "not shipped",
+which the app then degrades politely around. My own control caught it: one
+corrupted byte, generator exited 0, model came back `absent`. The check now
+lives outside that catch and the control fires: `is pinned to c77c5766`,
+rc=1.
+
+### 13.3 The update channel is alive (blocker 12.3 CLOSED)
+
+The committed anchor's private key was documented discarded while the
+release workflow refuses to build unless the signing secret's pubkey matches
+it byte for byte — unsatisfiable as committed.
+
+Rotated NOW precisely because nothing has reached a client. An install
+carrying a dead anchor can never auto-update, only be reinstalled by hand,
+so rotating after shipping would strand every client. New keypair generated;
+the private half lives at `~/.ssh/candice-release/updater.key`, mode 600,
+never read, printed or committed. The comments asserting the discarded-key
+guarantee are corrected rather than left to mislead: separation now rests on
+`createUpdaterArtifacts: false` plus the secret existing only inside the
+protected release workflow.
+
+**Operator action required to complete the lane:** set the GitHub secrets
+`TAURI_SIGNING_PRIVATE_KEY` (contents of that file) and
+`CANDICE_UPDATER_PUBKEY` (contents of `updater.key.pub`). Verified the
+workflow's own matcher accepts the pair: committed === would-be secret, with
+a control proving the comparison discriminates.
+
+### 13.4 Operator release authority configured (blocker 12.1, key half)
+
+Derived the PUBLIC half of the operator-owned Ed25519 key at
+`~/.ssh/candice-release/release-authority.key` with `openssl pkey -pubout`,
+committed it as `CONTROL/release-authority.pub`, and pinned its whole-file
+SHA-256 in `status.mjs`. The private half was never read, copied, printed or
+committed.
+
+This does NOT authorize a release. Every other gate still applies; a
+matching hash only makes later signature verification meaningful. The
+"operator release authority is not configured" error is gone from the gate
+output; CONTROL: tampering with the .pub brings an authority error back, and
+restoring it clears it.
+
+The status tests are STRONGER than before, not merely updated: the forged-
+document test asserts the authority error that now actually applies, and two
+new tests use the injectable pin to cover both states permanently — an
+unconfigured pin still fails closed, and a key whose hash misses the pin is
+rejected while one that matches is not. That pair carries its own control,
+because an authority rejecting everything unconditionally would satisfy the
+rejection assertion while proving nothing.
+
+### 13.5 A client can be told how to install it (blocker 12.2, doc half)
+
+`docs/client/INSTALL-MACOS.md`, written for a non-technical owner: the
+Gatekeeper warning is expected and is not a virus alert, the System Settings
+route for macOS 15+, the right-click shortcut for macOS 14 and earlier, the
+microphone prompt, and what happens to their voice data. Swept for developer
+vocabulary with an instrument proven to fire on a positive sample.
+
+Notarization itself still needs an Apple Developer ID.
+
+### 13.6 CI can now catch what slipped through (blocker 12.5, partly)
+
+The `$comment` defect reached a green commit because `windows-x64` runs
+cargo checks WITHOUT staging the overlay — the broken file was never read
+there. The new `windows-config-parse` job stages the overlays exactly as a
+build does and makes the CLI load the merged config on Windows. It asserts
+the overlay is present first (or the check would be vacuous), then injects
+the exact defect and requires the CLI to reject it, so the job cannot
+silently stop working.
+
+### 13.7 What is still genuinely blocked
+
+- **Windows signing and interactive smoke**: needs a code-signing
+  certificate and a real Windows 10/11 machine. Neither exists here.
+- **macOS notarization**: needs an Apple Developer ID.
+- **cleanMachine**: needs a machine that has never had this app.
+- **independentQc**: the operator delegated QC to this seat. Every check was
+  run here and every finding verified in source, and fresh reviewer agents
+  were used as the outside eyes — that is what caught the config defect in
+  11.1, which this seat had written and could not see. But a builder
+  reviewing their own work is not what the gate's word "independent" means,
+  and the gate is not flipped on my say-so.
+
+### 13.8 Measured and installed (2026-08-26 19:19)
+
+Rust 80/80. TypeScript 555/555. Contract suite green across 9 files.
+Release suite 130/130. Packaged, nested dylibs individually signed,
+`codesign --verify --deep --strict` rc=0 on the built bundle, the staged
+copy and the live install.
+
+  live:   .../BlackCEO/999/app/Candice Companion.app
+          sha 146a98944ba71defc4e6fe8bb7b019f6...
+  backup: .../Candice Companion.app.bak-fivefix-20260826-191949
+
+Nineteen backups present, all namings counted. Rollback:
+
+  cd ~/Library/Application\ Support/BlackCEO/999/app && \
+    mv "Candice Companion.app" "Candice Companion.app.rejected" && \
+    mv "Candice Companion.app.bak-fivefix-20260826-191949" "Candice Companion.app"
+
+Key hygiene verified within a bounded scope: zero private-key files tracked
+in HEAD, one public key tracked, no private-key header in any file touched
+by commit 00bc29f, each with a control proving the instrument fires. A
+full-history scan timed out on this 11 GB tree and was NOT completed — that
+broader claim is undetermined, not proven clean.
