@@ -543,6 +543,81 @@ struct EngineTiming {
 #[derive(Default)]
 pub struct TtsEngine {
     stop: Arc<AtomicBool>,
+    /// The live system-voice child, while the fallback is speaking.
+    ///
+    /// `stop` above is an audio-callback flag, and it can interrupt Kokoro
+    /// because Kokoro's playback runs inside this process. The system
+    /// voice is a SEPARATE PROCESS, and a flag nobody reads cannot silence
+    /// it. Without a handle here `stop()` returned success while she kept
+    /// talking: barge-in recorded her own voice into the user's answer,
+    /// turning voice OFF was ignored until the sentence ended, and the
+    /// next question could start over the top of the previous one.
+    system_child: Arc<Mutex<Option<std::process::Child>>>,
+}
+
+/// How often the watcher thread checks whether the system voice has
+/// finished. It polls instead of blocking in `wait()` so that `stop()`
+/// can take the handle and kill the child; a thread parked in `wait()`
+/// owns the child and puts it out of reach.
+const SYSTEM_VOICE_POLL_MS: u64 = 50;
+
+/// Ceiling on the availability probe. It runs inside a synchronous
+/// command with the speak slot held, so it must always return.
+const SYSTEM_VOICE_PROBE_SECS: u64 = 5;
+
+/// Reap a child we are giving up on, and say why. Returning the message
+/// rather than logging it keeps the kill on the same expression as the
+/// failure, so no early-return path can skip it.
+#[cfg(windows)]
+fn kill_and_fail(mut child: std::process::Child, why: &str) -> String {
+    let _ = child.kill();
+    let _ = child.wait();
+    format!("system voice failed: {why}")
+}
+
+/// Run a probe command with a deadline and report whether it succeeded.
+///
+/// `.output()` has no timeout. Every probe in this app runs inside a
+/// synchronous Tauri command, so one wedged child freezes that command
+/// with no way back. Anything that shells out to ASK A QUESTION goes
+/// through here.
+pub(crate) fn bounded_probe_success(command: &mut Command) -> bool {
+    bounded_probe_success_within(
+        command,
+        std::time::Duration::from_secs(SYSTEM_VOICE_PROBE_SECS),
+    )
+}
+
+/// The deadline is a parameter so a test can prove the timeout actually
+/// fires without spending the real five seconds to do it.
+fn bounded_probe_success_within(command: &mut Command, budget: std::time::Duration) -> bool {
+    let Ok(mut child) = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(SYSTEM_VOICE_POLL_MS));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 /// Build the Kokoro worker command.
@@ -912,21 +987,63 @@ impl TtsEngine {
         request_id: &str,
         slot: Arc<Mutex<Option<String>>>,
     ) -> Result<(), String> {
-        let mut child = self.spawn_system_tts(text)?;
+        let child = self.spawn_system_tts(text)?;
+        // Silence any previous child BEFORE publishing this one, or two
+        // voices read two questions over each other.
+        self.stop_system_voice();
+        match self.system_child.lock() {
+            Ok(mut held) => *held = Some(child),
+            Err(_) => return Err("system voice failed: handle unavailable".into()),
+        }
         let _ = crate::speech_timing::emit_speech_start(app, request_id, &[]);
         let app_handle = app.clone();
         let uid = request_id.to_string();
-        std::thread::spawn(move || {
-            // Wait regardless of outcome: a failed wait must still end the
-            // utterance, or the mouth never closes.
-            let _ = child.wait();
-            let _ = crate::speech_timing::emit_speech_drain(&app_handle, &uid);
-            if let Ok(mut guard) = slot.lock() {
-                if guard.as_deref() == Some(uid.as_str()) {
-                    *guard = None;
+        let held = Arc::clone(&self.system_child);
+        let watcher = std::thread::Builder::new()
+            .name("candice-system-voice".into())
+            .spawn(move || {
+                loop {
+                    let finished = match held.lock() {
+                        Ok(mut current) => match current.as_mut() {
+                            Some(child) => match child.try_wait() {
+                                // Exited, or unwaitable: either way this
+                                // utterance is over and must be ended.
+                                Ok(Some(_)) | Err(_) => {
+                                    *current = None;
+                                    true
+                                }
+                                Ok(None) => false,
+                            },
+                            // Taken by `stop()`, which already reaped it.
+                            None => true,
+                        },
+                        // Poisoned: end the utterance rather than spin.
+                        Err(_) => true,
+                    };
+                    if finished {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(SYSTEM_VOICE_POLL_MS));
                 }
-            }
-        });
+                let _ = crate::speech_timing::emit_speech_drain(&app_handle, &uid);
+                if let Ok(mut guard) = slot.lock() {
+                    if guard.as_deref() == Some(uid.as_str()) {
+                        *guard = None;
+                    }
+                }
+            });
+        if watcher.is_err() {
+            // `std::thread::spawn` PANICS when the OS refuses a thread;
+            // `Builder::spawn` returns the error instead, which is the
+            // only reason this branch can exist. It has to end the
+            // utterance by hand: speech-start is already out, so without a
+            // drain the frontend never leaves the speaking state and HOLD
+            // TO TALK stays dead for the rest of the session, and without
+            // the kill the child keeps reading the question aloud.
+            self.stop_system_voice();
+            let _ = crate::speech_timing::emit_speech_drain(app, request_id);
+            return Err("system voice failed: could not watch the voice process".into());
+        }
         Ok(())
     }
 
@@ -937,7 +1054,16 @@ impl TtsEngine {
     pub fn spawn_system_tts(&self, text: &str) -> Result<std::process::Child, String> {
         #[cfg(target_os = "macos")]
         {
+            // `--` is load-bearing. Without it `say` parses leading-dash
+            // text as its OWN options, and some of those touch the disk.
+            // Measured on macOS: `say -o out.aiff "-f /etc/hosts"` makes
+            // it try to READ that path instead of speaking the words
+            // (" /etc/hosts: No such file or directory", rc=1), while the
+            // same call with `--` speaks the literal text and exits 0.
+            // Question text is untrusted content and belongs in argv as
+            // DATA. The Windows branch reaches the same end over stdin.
             crate::proc::no_console(&mut Command::new("/usr/bin/say"))
+                .arg("--")
                 .arg(text)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -973,14 +1099,19 @@ impl TtsEngine {
             // Writing then DROPPING stdin closes the pipe, which is what
             // makes ReadToEnd return. Without the drop the synthesizer
             // waits forever and never speaks.
-            {
-                let mut stdin = child
-                    .stdin
-                    .take()
-                    .ok_or_else(|| "system voice failed: no stdin".to_string())?;
-                stdin
-                    .write_all(text.as_bytes())
-                    .map_err(|e| format!("system voice failed: {e}"))?;
+            // A failure here must not abandon a LIVE child. Dropping it
+            // closes the pipe, `ReadToEnd` returns whatever bytes made it
+            // through, and the synthesizer reads a truncated question
+            // aloud while the app has already reported that speech
+            // failed -- audio with no caption, and no drain behind it.
+            let piped = {
+                let Some(mut stdin) = child.stdin.take() else {
+                    return Err(kill_and_fail(child, "no stdin"));
+                };
+                stdin.write_all(text.as_bytes())
+            };
+            if let Err(e) = piped {
+                return Err(kill_and_fail(child, &e.to_string()));
             }
             Ok(child)
         }
@@ -996,6 +1127,22 @@ impl TtsEngine {
     /// Idempotent.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+        self.stop_system_voice();
+    }
+
+    /// Kill the system-voice child, if one is speaking. Idempotent.
+    ///
+    /// Taking the handle OUT is what lets the watcher finish: it polls
+    /// this slot, sees `None`, and emits the drain. So an interrupt still
+    /// produces exactly one drain, and it arrives promptly instead of
+    /// whenever the child would have reached the end of the sentence.
+    pub fn stop_system_voice(&self) {
+        if let Ok(mut held) = self.system_child.lock() {
+            if let Some(mut child) = held.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
     }
 
     /// Clear the interrupt flag for the next utterance.
@@ -1686,5 +1833,158 @@ mod tests {
         }
         assert!(!wav.exists(), "wav deleted even on failure");
         assert!(!txt.exists(), "txt deleted even on failure");
+    }
+
+    // ————————————————————————————————————————————————
+    // The system-voice fallback. None of this was covered before, and
+    // every test below corresponds to a defect that shipped.
+    // ————————————————————————————————————————————————
+
+    /// `stop()` must silence the system voice.
+    ///
+    /// It used to only flip an AtomicBool that the Kokoro audio callback
+    /// reads. The system voice is a separate PROCESS, so the flag reached
+    /// nothing and `cmd_speech_stop` returned success while she kept
+    /// talking -- which broke barge-in (her voice recorded into the
+    /// user's answer), the voice-OFF toggle, and the guarantee that one
+    /// question never speaks over the next.
+    #[test]
+    fn stop_kills_a_live_system_voice_child() {
+        let engine = super::TtsEngine::default();
+        let mut spawn = std::process::Command::new("/bin/sleep");
+        crate::proc::no_console(&mut spawn);
+        let child = spawn
+            .arg("30")
+            .spawn()
+            .expect("spawn a stand-in for the voice process");
+        let pid = child.id();
+        engine
+            .system_child
+            .lock()
+            .expect("handle")
+            .replace(child);
+
+        // CONTROL: the stand-in is genuinely alive first, otherwise a
+        // dead-on-arrival process would make this pass for free.
+        assert!(
+            pid_is_alive(pid),
+            "control failed: the stand-in was not running, so killing it proves nothing"
+        );
+
+        engine.stop();
+
+        assert!(
+            engine.system_child.lock().expect("handle").is_none(),
+            "the handle must be taken, or the watcher never emits its drain"
+        );
+        assert!(!pid_is_alive(pid), "stop() left the voice process running");
+    }
+
+    /// Idempotent, and safe when nothing is speaking.
+    #[test]
+    fn stopping_a_silent_engine_is_harmless() {
+        let engine = super::TtsEngine::default();
+        engine.stop();
+        engine.stop_system_voice();
+        assert!(engine.system_child.lock().expect("handle").is_none());
+    }
+
+    fn pid_is_alive(pid: u32) -> bool {
+        // `kill -0` asks the kernel without sending a signal. Exit status
+        // is the whole answer; a non-zero status means no such process.
+        let mut ask = std::process::Command::new("/bin/kill");
+        crate::proc::no_console(&mut ask);
+        ask.args(["-0", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// The probe must not be able to hang the app.
+    ///
+    /// It used `.output()`, which waits forever, from inside a
+    /// synchronous command that already holds the speak slot. One wedged
+    /// `powershell.exe` froze speech for the session with no recovery.
+    #[test]
+    fn a_probe_that_never_exits_loses_to_the_deadline() {
+        let mut hangs = std::process::Command::new("/bin/sleep");
+        crate::proc::no_console(&mut hangs);
+        hangs.arg("30");
+        let started = std::time::Instant::now();
+        let answered = super::bounded_probe_success_within(
+            &mut hangs,
+            std::time::Duration::from_millis(200),
+        );
+        let waited = started.elapsed();
+        assert!(!answered, "a probe that never answered must not report success");
+        assert!(
+            waited < std::time::Duration::from_secs(5),
+            "the deadline did not fire: waited {waited:?}"
+        );
+    }
+
+    /// CONTROL for the test above. If `bounded_probe_success_within`
+    /// returned false for everything, the timeout test would pass while
+    /// proving nothing. This pins that it can still say yes, and that it
+    /// distinguishes a real failure from a real success.
+    #[test]
+    fn the_bounded_probe_still_reports_real_outcomes() {
+        let mut succeeds = std::process::Command::new("/usr/bin/true");
+        crate::proc::no_console(&mut succeeds);
+        assert!(
+            super::bounded_probe_success_within(
+                &mut succeeds,
+                std::time::Duration::from_secs(5)
+            ),
+            "control failed: a command that exits 0 must report success"
+        );
+        let mut fails = std::process::Command::new("/usr/bin/false");
+        crate::proc::no_console(&mut fails);
+        assert!(
+            !super::bounded_probe_success_within(
+                &mut fails,
+                std::time::Duration::from_secs(5)
+            ),
+            "a command that exits non-zero must not report success"
+        );
+        let mut missing = std::process::Command::new("/nonexistent/candice/probe");
+        crate::proc::no_console(&mut missing);
+        assert!(
+            !super::bounded_probe_success_within(
+                &mut missing,
+                std::time::Duration::from_secs(5)
+            ),
+            "a command that cannot spawn must not report success"
+        );
+    }
+
+    /// Question text must reach `say` as DATA, never as argv options.
+    ///
+    /// Measured: `say -o out.aiff "-f /etc/hosts"` makes say try to READ
+    /// that path. `--` is what stops the parse. This reads the source
+    /// because the argv of a spawned child is not otherwise observable,
+    /// and a behavioural test would make the operator's machine speak.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn say_is_given_an_end_of_options_terminator() {
+        let source = include_str!("engines.rs");
+        // Anchor on the program path alone. Spelling the constructor out
+        // here would put the literal text this file's own spawn-site
+        // guard greps for into a string, and that guard would then flag
+        // this test as an unguarded spawn.
+        let at = source
+            .find("/usr/bin/say\")")
+            .expect("the say spawn site still exists");
+        let window = &source[at..source.len().min(at + 220)];
+        assert!(
+            window.contains(".arg(\"--\")"),
+            "the say spawn site lost its `--` terminator, so leading-dash \
+             question text is parsed as say's own options again"
+        );
+        // CONTROL: prove the window really contains the spawn site, so a
+        // bad `find` cannot make this pass on an empty string.
+        assert!(window.contains("/usr/bin/say"), "control: wrong window read");
     }
 }

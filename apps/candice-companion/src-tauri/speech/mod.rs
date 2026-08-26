@@ -790,32 +790,52 @@ pub(crate) fn resolve_approved_voice(
 /// least one installed voice, because a machine with the assembly and no
 /// voice pack would otherwise advertise a capability that produces
 /// silence.
+///
+/// Bounded, and measured ONCE. Two defects were fixed here together.
+///
+/// It used `.output()`, which waits forever. This runs inside a
+/// synchronous Tauri command with the speak slot already held, so a
+/// single wedged `powershell.exe` -- corporate AV, a broken WMI stack, a
+/// hung profile -- froze speech for the rest of the session with no
+/// timeout to recover from. It now runs under a deadline and reports
+/// `false` if the probe overruns.
+///
+/// It also re-ran on EVERY utterance, which on Windows meant paying a
+/// PowerShell cold start twice per question: once to ask whether a voice
+/// exists, once to speak with it. The answer cannot change while the app
+/// is running, so it is measured once and remembered. A machine that
+/// gains a voice pack mid-session keeps the boot-time answer until
+/// restart; that is the deliberate trade, and it errs toward the old
+/// engine-absent error path rather than toward a wrong claim.
 fn system_voice_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(probe_system_voice)
+}
+
+fn probe_system_voice() -> bool {
     #[cfg(target_os = "macos")]
     {
-        crate::proc::no_console(&mut std::process::Command::new("/usr/bin/say"))
-            .args(["-v", "?"])
-            .output()
-            .map(|out| out.status.success())
-            .unwrap_or(false)
+        let mut probe = std::process::Command::new("/usr/bin/say");
+        crate::proc::no_console(&mut probe);
+        probe.args(["-v", "?"]);
+        crate::speech::engines::bounded_probe_success(&mut probe)
     }
     #[cfg(windows)]
     {
-        crate::proc::no_console(&mut std::process::Command::new("powershell.exe"))
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "try { Add-Type -AssemblyName System.Speech; \
-                 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
-                 if ($s.GetInstalledVoices().Count -gt 0) { exit 0 } else { exit 1 } } \
-                 catch { exit 1 }",
-            ])
-            .output()
-            .map(|out| out.status.success())
-            .unwrap_or(false)
+        let mut probe = std::process::Command::new("powershell.exe");
+        crate::proc::no_console(&mut probe);
+        probe.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "try { Add-Type -AssemblyName System.Speech; \
+             $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+             if ($s.GetInstalledVoices().Count -gt 0) { exit 0 } else { exit 1 } } \
+             catch { exit 1 }",
+        ]);
+        crate::speech::engines::bounded_probe_success(&mut probe)
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {

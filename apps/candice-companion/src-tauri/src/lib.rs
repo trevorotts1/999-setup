@@ -182,6 +182,26 @@ pub fn run() {
             runtime::start_local_bridge(app.handle().clone(), launch);
             Ok(())
         })
-        .run(generate_context())
-        .expect("error while running Candice Companion");
+        .build(generate_context())
+        .expect("error while building Candice Companion")
+        .run(|app_handle, event| {
+            // The system voice is a CHILD PROCESS, so it outlives the
+            // window that started it: quitting mid-question left a
+            // disembodied voice finishing the sentence with nothing on
+            // screen. Kokoro cannot do this -- its playback is in-process
+            // and dies with the app -- so the fallback path is the only
+            // one that needs an explicit last word.
+            //
+            // ExitRequested fires before teardown and Exit after; both are
+            // handled because a platform that skips one still has to go
+            // quiet, and killing an already-reaped child is a no-op.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                if let Some(state) = app_handle.try_state::<speech::SpeechState>() {
+                    state.tts.stop_system_voice();
+                }
+            }
+        });
 }
