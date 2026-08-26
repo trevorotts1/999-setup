@@ -486,6 +486,42 @@ marked here rather than edited in place, so the reasoning trail survives.
   a "fix" containing no fixes, caught only by comparing SHAs. The correct
   sequence is `npm run tauri:build` first. Worth a guard in the script.
 
+### OPEN — from the 2026-08-26 speech-fallback review (commit 19a8f53)
+
+- **A superseded utterance's drain can end the NEXT utterance's speaking
+  state.** `src/runtime/bridge.ts:652` guards markers against
+  `activeUtteranceId`, but that variable is only assigned when the START
+  EVENT arrives (bridge.ts:629). Between `speakQuestion(B)` setting
+  `speakingFor` (bridge.ts:403) and B's start event being delivered,
+  `activeUtteranceId` still holds A — so A's late drain matches, passes the
+  guard, and calls `endSpeaking()` while B is audible: bust vanishes, lip
+  sync stops, HOLD TO TALK unblocks mid-word. This is the exact scenario
+  the guard's own comment says it prevents.
+
+  **Pre-existing, and NOT introduced by WR-016.** WR-016 did widen it —
+  an unkilled system-voice child drained at end-of-sentence, seconds late —
+  but `19a8f53` kills the child on stop, so the drain now lands within one
+  50 ms poll and the window is back to Kokoro's (tens of ms).
+
+  **Deliberately not fixed here.** `speakingFor` is a question-identity key
+  in a different namespace from `activeUtteranceId`, and the bridge never
+  learns B's utterance id synchronously — it is generated inside the
+  orchestrator. Closing it means an "awaiting start" latch that rejects all
+  markers until B's start arrives, and every path that fails to clear that
+  latch leaves her permanently unable to leave the speaking state. That is a
+  worse bug than the one it fixes, and it cannot be exercised from this seat
+  without launching windows the operator has asked not to see. Owner of the
+  bridge lane should take it with a real interactive test.
+
+- **`createSpeechTarget().stop` can pass `requestId = null`**
+  (`src/runtime/speech-orchestrator.ts:449-453`), and
+  `speak_release_slot(state, None)` releases WHOEVER holds the slot
+  (`src-tauri/speech/mod.rs:987`, arm `(_, None) => true`). If the duplex
+  stop-timeout limb fires after `abortSpeech` nulled the utterance id while
+  a NEW utterance holds the slot, single-flight breaks. **UNDETERMINED** —
+  reachability was not traced; `DuplexController`'s tick/stop ordering was
+  not read. Flagged to the duplex lane owner rather than asserted as a bug.
+
 ### Gate markers: deliberately unmoved
 
 `lifecycle=REPAIR_IN_PROGRESS open=24 complete=0` is unchanged at the top of
