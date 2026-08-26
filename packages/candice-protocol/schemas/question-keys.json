@@ -659,7 +659,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "R1. The two modes — offered FIRST, not at question eleven",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "I can make every technical decision myself and just build it — you'd answer only the few questions about your accounts, your money, and what you like. Or you can make the detailed calls with me as we go. Which do you want?",
       "spoken": "Question <N> of no more than <C> — I can make every technical decision myself and just build it — you'd answer only the few questions about your accounts, your money, and what you like. Or you can make the detailed calls with me as we go. Which do you want?",
@@ -708,7 +708,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Step 1b — The job archetype (one question, before the blocks)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "What kind of job is this? Building something new from scratch. Fixing and finishing something that already exists. Checking and measuring things, read-only. Rolling a proven change out to many places. Rescuing something broken. Or something else?",
       "spoken": "What kind of job is this? Building something new from scratch. Fixing and finishing something that already exists. Checking and measuring things, read-only. Rolling a proven change out to many places. Rescuing something broken. Or something else?",
@@ -765,7 +765,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Easy one: is what we agreed on still what you want to build?",
       "spoken": "Easy one: is what we agreed on still what you want to build?",
@@ -828,7 +828,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "When you picture using it, is it a program with a window — buttons and things you can see and click? Or more of a quiet helper that just runs and does its job when you ask it to? If you are not sure, I will make it the kind with a window — that is the friendlier kind.",
       "spoken": "When you picture using it, is it a program with a window — buttons and things you can see and click? Or more of a quiet helper that just runs and does its job when you ask it to? If you are not sure, I will make it the kind with a window — that is the friendlier kind.",
@@ -880,7 +880,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Does it need a database, or does it work with files and memory alone?",
       "spoken": "Does it need a database, or does it work with files and memory alone?",
@@ -948,7 +948,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Does it need user accounts and login, or is it open to anyone?",
       "spoken": "Does it need user accounts and login, or is it open to anyone?",
@@ -1016,7 +1016,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Quick question about the phone part. I'll build your app so anyone can open it on their phone right away and keep it on their home screen, like any other app — nothing to wait for. Now the question: do you also need people to find it in the app store? That road exists too, but the store makes everyone wait days and asks for an Apple or Google account. Most people start without it and add the store later — nothing is lost that way. Not sure? We'll start without it.",
       "spoken": "Quick question about the phone part. I'll build your app so anyone can open it on their phone right away and keep it on their home screen, like any other app — nothing to wait for. Now the question: do you also need people to find it in the app store? That road exists too, but the store makes everyone wait days and asks for an Apple or Google account. Most people start without it and add the store later — nothing is lost that way. Not sure? We'll start without it.",
@@ -1064,7 +1064,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If APP / SOFTWARE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Picture someone on their phone and someone at a computer. Are they doing the same things in the same place? Or does each side have its own job — the phone for one kind of person, the computer for another? If you're not sure, or it's all the same people doing the same things, easy: I'll build one thing that fits itself to whatever screen it's on, and everything stays in step by itself.",
       "spoken": "Picture someone on their phone and someone at a computer. Are they doing the same things in the same place? Or does each side have its own job — the phone for one kind of person, the computer for another? If you're not sure, or it's all the same people doing the same things, easy: I'll build one thing that fits itself to whatever screen it's on, and everything stays in step by itself.",
@@ -1112,7 +1112,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If WEBSITE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "What pages do you picture? Walk me through them — home page, about page, services, contact, maybe a blog or a portfolio?",
       "spoken": "What pages do you picture? Walk me through them — home page, about page, services, contact, maybe a blog or a portfolio?",
@@ -1160,7 +1160,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If WEBSITE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Is this a simple site — mostly text, images, and a contact form, the kind that works as plain HTML and CSS? Or does it need anything interactive — a booking system, a store, a membership area, or complex JavaScript?",
       "spoken": "Is this a simple site — mostly text, images, and a contact form, the kind that works as plain HTML and CSS? Or does it need anything interactive — a booking system, a store, a membership area, or complex JavaScript?",
@@ -1211,7 +1211,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If WEBSITE — ask these:",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Do you already have a place to put it online, or should I set that up?",
       "spoken": "Do you already have a place to put it online, or should I set that up?",
@@ -1264,7 +1264,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If SALES FUNNEL — ask these (the funnel discovery):",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "What is the one thing you want someone to do by the end of this funnel — buy something, book a call, join a list, or something else?",
       "spoken": "What is the one thing you want someone to do by the end of this funnel — buy something, book a call, join a list, or something else?",
@@ -1312,7 +1312,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If SALES FUNNEL — ask these (the funnel discovery):",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "What are you offering, and at what price? Walk me through what happens after someone says yes.",
       "spoken": "What are you offering, and at what price? Walk me through what happens after someone says yes.",
@@ -1360,7 +1360,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If SALES FUNNEL — ask these (the funnel discovery):",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Do you already have any of these pieces — a lead magnet, an existing list, a payment processor connected to Convert and Flow?",
       "spoken": "Do you already have any of these pieces — a lead magnet, an existing list, a payment processor connected to Convert and Flow?",
@@ -1408,7 +1408,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "If SALES FUNNEL — ask these (the funnel discovery):",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "I'll research the best structure for this kind of funnel, then come back with a recommended number of stages and the page types that work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Sound right, or do you already know exactly what stages you want?",
       "spoken": "I'll research the best structure for this kind of funnel, then come back with a recommended number of stages and the page types that work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Sound right, or do you already know exactly what stages you want?",
@@ -1456,7 +1456,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Your app is going to need some artwork — pictures for the front page, maybe icons, maybe a short video showing it off. Do you want me to create those for you, or will you be supplying your own?",
       "spoken": "Your app is going to need some artwork — pictures for the front page, maybe icons, maybe a short video showing it off. Do you want me to create those for you, or will you be supplying your own?",
@@ -1506,7 +1506,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "You have two accounts I can use for artwork. I'd suggest Kie.ai — it has the strongest set of picture models — but it charges real money for each picture, a few cents apiece. Your Agnes account includes a big daily allowance instead, at no extra charge today. Which would you like me to use?",
       "spoken": "You have two accounts I can use for artwork. I'd suggest Kie.ai — it has the strongest set of picture models — but it charges real money for each picture, a few cents apiece. Your Agnes account includes a big daily allowance instead, at no extra charge today. Which would you like me to use?",
@@ -1556,7 +1556,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "For the pictures, I'd go with GPT Image 2 — the best I've found at getting words onto an image right, and it costs about a nickel a picture. Should I use that, or do you have a model you'd rather use? Not sure is a fine answer — I'll choose for you.",
       "spoken": "For the pictures, I'd go with GPT Image 2 — the best I've found at getting words onto an image right, and it costs about a nickel a picture. Should I use that, or do you have a model you'd rather use? Not sure is a fine answer — I'll choose for you.",
@@ -1606,7 +1606,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "To create your artwork I need a key for one of two services: Kie.ai, or your Agnes account. I checked where this computer keeps its keys and didn't find either. Don't worry — I only ever look at the names of keys, never the keys themselves. So: do you have one of these keys, or an account with either service? One favor: please don't paste the key into our chat. I never need to see it — only where it lives.",
       "spoken": "To create your artwork I need a key for one of two services: Kie.ai, or your Agnes account. I checked where this computer keeps its keys and didn't find either. Don't worry — I only ever look at the names of keys, never the keys themselves. So: do you have one of these keys, or an account with either service? One favor: please don't paste the key into our chat. I never need to see it — only where it lives.",
@@ -1662,7 +1662,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Which AI tool are you running this in? The two common ones are regular Claude Code — its own command-line tool — and Claude-Nine, the multi-model router. Which is yours?",
       "spoken": "Which AI tool are you running this in? The two common ones are regular Claude Code — its own command-line tool — and Claude-Nine, the multi-model router. Which is yours?",
@@ -1712,7 +1712,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Resolving which provider path this build will run on",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Which DeepSeek plan do you pay for?",
       "spoken": "Which DeepSeek plan do you pay for?",
@@ -1776,7 +1776,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Resolving which provider path this build will run on",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the hundred-dollar-a-month one?",
       "spoken": "Your Ollama Cloud plan — is it the twenty-dollar-a-month one or the hundred-dollar-a-month one?",
@@ -1835,7 +1835,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Resolving which provider path this build will run on",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Your Agnes account — is it the free one, the forty-dollar-a-year plan, or the hundred-dollar-a-year plan?",
       "spoken": "Your Agnes account — is it the free one, the forty-dollar-a-year plan, or the hundred-dollar-a-year plan?",
@@ -1895,7 +1895,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Resolving which provider path this build will run on",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
       "spoken": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
@@ -1942,7 +1942,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Resolving which provider path this build will run on",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Do you have an OpenRouter key?",
       "spoken": "Do you have an OpenRouter key?",
@@ -1989,7 +1989,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Is the \"effort\" or \"reasoning\" setting turned up? Both tools have one. If you do not know, that is a real answer — I will assume the safest setting.",
       "spoken": "Is the \"effort\" or \"reasoning\" setting turned up? Both tools have one. If you do not know, that is a real answer — I will assume the safest setting.",
@@ -2038,10 +2038,10 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "The work runs in workflows — teams of helpers. On this machine each workflow holds up to <measured> helpers at once, and up to <measured> workflows can run at the same time. Use the maximum, or cap it?",
-      "spoken": "The work runs in workflows — teams of helpers. On this machine each workflow holds up to <measured> helpers at once, and up to <measured> workflows can run at the same time. Use the maximum, or cap it?",
+      "display": "The work runs in workflows — teams of helpers — and this machine has a limit on how many can run at once. The measured limits are on screen in the Claude window. Use the maximum, or set a lower one?",
+      "spoken": "The work runs in workflows — teams of helpers — and this machine has a limit on how many can run at once. The measured limits are on screen in the Claude window. Use the maximum, or set a lower one?",
       "answerKind": "free_text",
       "allowedInputModes": [
         "voice",
@@ -2087,7 +2087,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "keep, or change?",
       "spoken": "keep, or change?",
@@ -2134,7 +2134,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "I could not determine which provider path this build will run on from what I checked. Which account should it use?",
       "spoken": "I could not determine which provider path this build will run on from what I checked. Which account should it use?",
@@ -2181,10 +2181,10 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block B — Repositories (measure what you can; ask the rest)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "I found more than one candidate repository: <the candidates found>. Which one is this project's?",
-      "spoken": "I found more than one candidate repository: <the candidates found>. Which one is this project's?",
+      "display": "I found more than one folder that could be this project, and they are listed in the Claude window. Which one is it?",
+      "spoken": "I found more than one folder that could be this project, and they are listed in the Claude window. Which one is it?",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -2237,7 +2237,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block B — Repositories (measure what you can; ask the rest)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Is there anywhere the loops must not push? A branch, a repo, a server — anything that should never receive an automatic push.",
       "spoken": "Is there anywhere the loops must not push? A branch, a repo, a server — anything that should never receive an automatic push.",
@@ -2293,7 +2293,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block C — Loop Shape",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Where should I put the project folder? Usually `~/Downloads/projects/`.",
       "spoken": "Where should I put the project folder? Usually `~/Downloads/projects/`.",
@@ -2340,10 +2340,10 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block C — Loop Shape",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
-      "display": "Here is how I will know it is finished: <the checkable list>. Does that match — yes, or tell me what is missing?",
-      "spoken": "Here is how I will know it is finished: <the checkable list>. Does that match — yes, or tell me what is missing?",
+      "display": "I have written down how I will know this is finished, and the list is on screen in the Claude window. Does it match what you want — or tell me what is missing?",
+      "spoken": "I have written down how I will know this is finished, and the list is on screen in the Claude window. Does it match what you want — or tell me what is missing?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -2386,7 +2386,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block D — The measuring stick (the Gauntlet questions)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Is there an app or website you already look at and think, \"if mine is as good as that, I would be happy\"? Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick.",
       "spoken": "Is there an app or website you already look at and think, \"if mine is as good as that, I would be happy\"? Name it if one comes to mind. If nothing does, that is fine — later I will show you two or three excellent ones and you will pick.",
@@ -2432,7 +2432,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block D — The measuring stick (the Gauntlet questions)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "When your finished build sits next to that example, what counts as winning? Option A: mine is just as good — a tie counts. Option B: mine has to check every box that example checks. Most people pick A. Not sure? Go with A.",
       "spoken": "When your finished build sits next to that example, what counts as winning? Option A: mine is just as good — a tie counts. Option B: mine has to check every box that example checks. Most people pick A. Not sure? Go with A.",
@@ -2481,7 +2481,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block D — The measuring stick (the Gauntlet questions)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay? If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it.",
       "spoken": "To prove your app really looks as good as the example, I take real screenshots of both, side by side. That needs a one-time download of a browser tool — about 130 MB, onto this machine. Is that download okay? If you would rather not, that is a real answer — I will tell you plainly what I can and cannot prove without it.",
@@ -2528,7 +2528,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Block D — The measuring stick (the Gauntlet questions)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours? Something that annoys you, slows you down, or gets in your way. \"Nothing comes to mind\" is a real answer.",
       "spoken": "Now the flip side: is there anything about that example — or about apps like it — that you specifically do NOT want in yours? Something that annoys you, slows you down, or gets in your way. \"Nothing comes to mind\" is a real answer.",
@@ -2574,7 +2574,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Fast path 2 — the small-plan collapse (after block A)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
       "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
@@ -2621,7 +2621,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/references/interview.md",
         "anchor": "Fast path 2 — the small-plan collapse (after block A)",
-        "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
+        "digest": "b91980581eafcb0d55d50844f75828739494951807cfeb7f16fd5e8468477abe"
       },
       "display": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
       "spoken": "Based on what you told me, this is a small project. Here is what I will assume unless you say otherwise: [the block's defaults in one plain sentence each]. Is that all right?",
