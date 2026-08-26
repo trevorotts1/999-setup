@@ -259,10 +259,30 @@ export function createCaptionsView(
       // already been answered and cleared.
       currentText = '';
       highlighted = -1;
+      // Same restore as the branch below: clearing must not leave the
+      // region latched off for whatever is shown next.
+      root.setAttribute('aria-live', CAPTIONS_LIVE);
       setStale(false);
       return;
     }
     root.classList.remove('candice-captions-empty');
+    // Restore liveness BEFORE the text changes, or this caption is silent.
+    //
+    // Sentence highlighting sets `aria-live: off` so the region is not
+    // re-announced once per sentence over the speech it accompanies. The
+    // only place that turned it back on was `setSpokenProgress(null)` --
+    // and that path returns early when `highlighted === -1`, which is
+    // exactly what a new caption sets. So one interrupted utterance
+    // latched the region off for the rest of the session:
+    //
+    //   highlight active (off) -> new caption renders (highlighted = -1)
+    //   -> drain fires setSpokenProgress(null) -> early return, no restore.
+    //
+    // Every later caption, including every later QUESTION, then mutated a
+    // dead live region. A screen-reader user heard nothing and the
+    // interview simply stopped talking to them -- with no visible symptom,
+    // because sighted users could still read it.
+    root.setAttribute('aria-live', CAPTIONS_LIVE);
     currentText = entry.text;
     highlighted = -1;
     text.textContent = entry.text;

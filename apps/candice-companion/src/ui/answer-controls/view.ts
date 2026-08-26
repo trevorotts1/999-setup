@@ -210,12 +210,49 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   justify-content: center;
   flex-wrap: wrap;
 }
+/* USE ANSWER / EDIT / TRY AGAIN had NO rule of any kind, so three
+   inline-block siblings with no text nodes between them rendered
+   touching. On the one surface whose entire job is confirmation, a
+   three-pixel miss on USE ANSWER landed on TRY AGAIN and threw the
+   transcript away. */
+.candice-answer-confirm-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+/* Click targets. The window is pointer-transparent outside a published
+   rectangle and REGION_PADDING is only 4px, so a small control is not
+   merely fiddly here -- a near miss goes THROUGH Candice to whatever is
+   behind her. The option pills already carry min-height 44px; these are
+   the remaining interactive controls in this surface. */
+.candice-answer-submit,
+.candice-answer-link,
+.candice-answer-toggle {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+/* An unbroken token (a URL or a path read back from EDIT) overflowed the
+   opaque card onto the transparent window, where it sat over the raw
+   desktop and outside the published rectangle. */
+.candice-answer-transcript {
+  overflow-wrap: anywhere;
+}
 .candice-answer-option:hover {
   /* Border-colour alone was almost invisible against this palette, so a
      choice gave no feedback that it was even hoverable. */
   border-color: var(--candice-ac-accent-text);
   background: var(--candice-ac-accent-text);
-  color: var(--candice-ac-surface);
+  /* Was var(--candice-ac-surface), which is defined NOWHERE in this
+     repo. An undefined custom property makes the whole declaration
+     invalid at computed-value time, so the pill kept the inherited
+     near-white --candice-ac-text on the light --candice-ac-accent-text
+     hover background: about 1.9:1. The label washed out at the exact
+     moment the user was aiming at it, which reads as a disabled button.
+     Mirrors the chosen-state rule above. */
+  color: var(--candice-ui-surface, #171321);
 }
 .candice-answer-option:focus-visible {
   outline: 2px solid var(--candice-ac-accent-text);

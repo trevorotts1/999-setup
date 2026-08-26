@@ -398,3 +398,65 @@ test('captions style text: token-only colors, no baked literals (WS-07 transpare
   }
   assert.ok(CAPTIONS_STYLE_TEXT.includes('candice-reduced-motion'), 'consumes the shared reduced-motion class');
 });
+
+// ------------------------------- the live region must never latch OFF
+
+/**
+ * Sentence highlighting sets `aria-live: off` so the caption is not
+ * re-announced once per sentence over the speech it accompanies. The only
+ * code that turned it back on was `setSpokenProgress(null)` -- which
+ * returns early when `highlighted === -1`, and a freshly rendered caption
+ * sets exactly that.
+ *
+ * So one interrupted utterance latched the region off for the rest of the
+ * session, and every later caption -- including every later QUESTION --
+ * mutated a dead live region. There was no visible symptom, because
+ * sighted users could still read it. A screen-reader user simply stopped
+ * being told anything.
+ */
+test('a new caption re-arms the live region even if highlighting left it off', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  assert.ok(root !== null);
+
+  view.show({ text: 'First question. Second sentence.', important: true, seq: 1 });
+  // Highlighting begins: the region goes quiet on purpose.
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off', 'highlighting silences it, by design');
+
+  // The utterance is interrupted and a NEW caption arrives.
+  view.show({ text: 'A different question.', important: true, seq: 2 });
+  assert.equal(
+    root?.getAttribute('aria-live'),
+    CAPTIONS_LIVE,
+    'the new caption must be announceable, or a screen reader never hears it',
+  );
+
+  // The old drain still arrives afterwards and must not undo that.
+  view.setSpokenProgress(null);
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'a late drain leaves it live');
+});
+
+test('clearing the caption also leaves the region live for whatever comes next', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  view.show({ text: 'A question. And more.', important: true, seq: 1 });
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off');
+  view.show({ text: '', important: true, seq: 2 }); // clear
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'cleared, not muted');
+});
+
+test('CONTROL: highlighting really does set it off, so the tests above are not vacuous', () => {
+  // If `setSpokenProgress` never touched aria-live, every assertion above
+  // would pass trivially against a region that is always polite.
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'starts live');
+  view.show({ text: 'One sentence. Two sentences.', important: true, seq: 1 });
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off', 'the off state is real');
+});
