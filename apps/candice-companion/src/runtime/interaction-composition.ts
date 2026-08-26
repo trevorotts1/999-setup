@@ -28,6 +28,7 @@
 import type { CandiceStateMachine } from '../state/machine.ts';
 import type { CaptionsController } from '../ui/captions/index.ts';
 import type { CandiceProfile } from '../prefs/schema.ts';
+import { LATEST_SCHEMA_VERSION } from '../prefs/schema.ts';
 import {
   loadProfileViaIpc,
   saveProfileViaIpc,
@@ -296,14 +297,26 @@ export async function initializeCandiceInteractionComposition(
 
   const persist = async (patch: Partial<CandiceProfile>): Promise<boolean> => {
     const next = mergeProfile(current, patch);
-    const saved = await saveProfileViaIpc(adapter, next);
-    if (saved) {
-      current = next;
-      // Keep the mounted evidence current after every successful save.
-      root.dataset.candiceVoiceOutput = String(current.voiceOutputEnabled);
-      root.dataset.candicePreferredName = current.preferredName ?? '';
-    }
-    return saved;
+    // A newer lane's document is the ONE case where the change must not take
+    // effect at all: this build would be overwriting a file it cannot read.
+    if (next.schemaVersion > LATEST_SCHEMA_VERSION) return false;
+    // APPLY FIRST, then write.
+    //
+    // This used to be `if (saved) current = next`, so a preference only took
+    // effect if the disk write succeeded. `current` is what the live getters
+    // read -- `voiceOutputEnabled()` in composition.ts is the gate the bridge
+    // consults before speaking -- while the answer-controls surface keeps its
+    // own copy and flips its label immediately. A failed write therefore left
+    // the button reading "Voice responses OFF" while Candice went on speaking
+    // every question, with nothing anywhere reporting a problem.
+    //
+    // An off switch must switch things off. Whether the choice survives a
+    // restart is a separate question, and it is the one the return value
+    // answers.
+    current = next;
+    root.dataset.candiceVoiceOutput = String(current.voiceOutputEnabled);
+    root.dataset.candicePreferredName = current.preferredName ?? '';
+    return saveProfileViaIpc(adapter, next);
   };
 
   const beginNameFlow = (): void => {

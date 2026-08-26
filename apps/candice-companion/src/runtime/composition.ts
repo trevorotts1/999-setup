@@ -304,6 +304,15 @@ export async function initializeRuntimeComposition(
     voiceEnabled: interaction.profile.voiceOutputEnabled,
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
+      // Turning voice OFF has to stop the voice.
+      //
+      // This handler used to persist the preference and nothing else, and the
+      // gate it feeds (`voiceOutputEnabled` below) is only ever read when the
+      // NEXT question is delivered. So a user who pressed the toggle because
+      // Candice was talking watched the button say OFF while she carried on
+      // to the end of the utterance — which is what an off switch failing
+      // looks like, whatever the preference file says afterwards.
+      if (!voiceEnabled) orchestrator?.abortSpeech();
     },
     // QFIX Q-02 (design 2.2): the consent query routes through the
     // orchestrator — the bridge never invokes a `cmd_speech_*` command.

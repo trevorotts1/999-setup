@@ -477,7 +477,7 @@ test('persist: successful save updates the in-memory profile and dataset evidenc
   assert.equal((save?.args?.doc as Record<string, unknown>).voiceOutputEnabled, false);
 });
 
-test('persist: a failed native save returns false and never mutates the profile or dataset', async () => {
+test('persist: a failed native save still applies the preference, and says it did not stick', async () => {
   const machine = createCandiceStateMachine();
   const root = new FakeElement('div');
   const captions = new FakeCaptions();
@@ -495,9 +495,53 @@ test('persist: a failed native save returns false and never mutates the profile 
     },
   );
   const saved = await composition.persist({ voiceOutputEnabled: false });
+  // The write failed, and the caller is told so.
   assert.equal(saved, false);
-  assert.equal(composition.profile.voiceOutputEnabled, true, 'in-memory profile unchanged');
-  assert.equal(root.dataset.candiceVoiceOutput, 'true', 'dataset evidence unchanged');
+  // But the preference APPLIES. This assertion was inverted, and the
+  // inversion was the bug the operator reported as "voice off does not work":
+  // `composition.profile` is what the live gate in composition.ts reads
+  // before speaking, while the answer-controls surface keeps its own copy and
+  // flips its label immediately. Gating the in-memory value on a successful
+  // disk write meant a failed write left the button reading OFF while Candice
+  // kept talking, silently.
+  //
+  // Spec 20 as this codebase already states it for the animation toggle: "a
+  // failed persist degrades to an in-memory-only toggle. Losing the
+  // preference must never cost the session." Losing the preference is a
+  // durability problem; ignoring it is a broken control.
+  assert.equal(composition.profile.voiceOutputEnabled, false, 'the preference took effect');
+  assert.equal(root.dataset.candiceVoiceOutput, 'false', 'mounted evidence follows the live value');
+});
+
+test('persist: a NEWER-schema document is refused outright and changes nothing', async () => {
+  // The one case where the change must not take effect either: this build
+  // would be overwriting a file written by a lane it cannot read.
+  const machine = createCandiceStateMachine();
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const adapter = new FakeAdapter();
+  const composition = await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    {
+      profile: freshProfile(),
+      prefsLoad: loadResult(freshProfile()),
+      invokeAdapter: adapter,
+      doc: new FakeDocument() as unknown as Document,
+    },
+  );
+  const saved = await composition.persist({
+    voiceOutputEnabled: false,
+    schemaVersion: 9999,
+  } as Partial<CandiceProfile>);
+  assert.equal(saved, false, 'a future-version document is refused');
+  assert.equal(composition.profile.voiceOutputEnabled, true, 'nothing was applied');
+  assert.equal(
+    adapter.calls.some((c) => c.command === 'cmd_save_profile'),
+    false,
+    'and nothing was written',
+  );
 });
 
 test('destroy removes a mounted prompt', async () => {
