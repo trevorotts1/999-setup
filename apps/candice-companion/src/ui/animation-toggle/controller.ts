@@ -94,7 +94,20 @@ function injectStyle(doc: Document): void {
   align-items: center;
   gap: 8px;
   margin: 0 auto 6px;
-  padding: 5px 10px;
+  /* The ROW is the click target, not the 16px box inside it -- the native
+     hit test publishes this element's rectangle, and outside a published
+     rectangle the window is pointer-transparent, so a near miss does not
+     just fail: it goes through Candice to the desktop behind her.
+     min-height carries it to the 44px target minimum; REGION_PADDING adds
+     only 4px, so the CSS has to do the work.
+
+     This used to be two competing rules. A repair added a second
+     .candice-animation-toggle rule with padding 6px 4px below this one,
+     which won on source order and quietly cut the horizontal padding from
+     10px to 4px -- making the row NARROWER while trying to make it easier
+     to hit. Merged. */
+  padding: 6px 10px;
+  min-height: 44px;
   width: fit-content;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
@@ -102,11 +115,6 @@ function injectStyle(doc: Document): void {
   background: var(--candice-ui-surface, #171321);
   border: 1px solid var(--candice-ui-border, #beb0ff);
   border-radius: 8px;
-}
-.${ANIMATION_TOGGLE_CLASS} {
-  /* The row is the target, not the 14px box inside it. The native hit test
-     publishes this element's rectangle now, so give it a real one. */
-  padding: 6px 4px;
 }
 .${ANIMATION_TOGGLE_CLASS} input {
   width: 16px;
@@ -119,6 +127,12 @@ function injectStyle(doc: Document): void {
   cursor: not-allowed;
 }
 .${ANIMATION_TOGGLE_CLASS} label {
+  /* Stretch to the row so the words are part of the target, not just the
+     checkbox. The label was never published on its own -- that was the
+     original bug here. */
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   user-select: none;
 }

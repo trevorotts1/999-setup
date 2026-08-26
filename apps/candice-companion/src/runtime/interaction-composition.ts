@@ -174,6 +174,13 @@ function mountNamePrompt(
   gap: 10px;
 }
 .${NAME_PROMPT_ROOT_CLASS} button {
+  /* 44px click targets. The whole prompt card is published to the native
+     hit test, so a miss here does not fall through to the desktop the way
+     a miss on a standalone control does -- but SAVE and SKIP are still
+     small, and SKIP discards what the user typed. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   padding: 6px 14px;
   font-size: calc(13px * var(--candice-text-scale, 1));
   border-radius: 6px;

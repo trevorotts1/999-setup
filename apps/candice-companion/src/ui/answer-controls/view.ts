@@ -215,6 +215,15 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
    touching. On the one surface whose entire job is confirmation, a
    three-pixel miss on USE ANSWER landed on TRY AGAIN and threw the
    transcript away. */
+/* Spec 5.1 renders the remembered answer method as the active control.
+   The marker was being WRITTEN (data-active on the input) and no rule
+   anywhere referenced it, so it painted nothing at all -- the control
+   for a sibling marker, data-candice-option-chosen, has rules above.
+   A border tint is enough: it must not read as a lock, because the
+   remembered method is a convenience and never a restriction. */
+.candice-answer-input[data-active='true'] {
+  border-color: var(--candice-ac-accent);
+}
 .candice-answer-confirm-actions {
   display: flex;
   gap: 10px;
@@ -527,7 +536,14 @@ export function createAnswerControlsView(
     const showRow = model.showConfirmRow;
     canConfirm = model.canConfirm;
     confirm.hidden = !showRow;
-    transcript.textContent = showRow ? String(model.transcript ?? '') : '';
+    // Only write when it actually changed. This is a role=status live
+    // region, and every controller handler ends in render() -- so a voice
+    // toggle, a PTT press, any machine transition re-assigned identical
+    // text, which still replaces the text node, which a screen reader
+    // still announces. "Here is what I heard..." was being read out again
+    // and again, over the speech it was meant to accompany.
+    const nextTranscript = showRow ? String(model.transcript ?? '') : '';
+    if (transcript.textContent !== nextTranscript) transcript.textContent = nextTranscript;
     use.disabled = !canConfirm;
     root.classList.toggle('candice-answer-confirming', model.confirming);
   };
