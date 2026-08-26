@@ -13,6 +13,7 @@
 //! (spec 20).
 
 mod hit_test;
+mod proc;
 mod runtime;
 mod single_instance;
 mod shell;

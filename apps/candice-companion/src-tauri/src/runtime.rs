@@ -181,6 +181,7 @@ pub fn run_native_startup_recovery(launch: &RuntimeLaunch) {
     if launch.skip_startup_recovery { return }
     let Some(runner) = resolve_startup_runner() else { return };
     let mut command = std::process::Command::new("node");
+    crate::proc::no_console(&mut command);
     command
         .arg("--experimental-strip-types")
         .arg(&runner)

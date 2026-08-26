@@ -195,6 +195,33 @@ pub struct SpeechState {
     pub(crate) tts: TtsEngine,
 }
 
+/// Resolve the bundled interpreter inside a staged `speech-assets/tts` root.
+///
+/// Both callers used to hardcode `python/bin/python3`. That is the POSIX
+/// layout and it cannot exist in a Windows Python install, where the
+/// interpreter sits at `python\\python.exe`. So on Windows the probe found
+/// nothing and TTS reported "bundled voice runtime is missing" on every
+/// launch -- or worse, if a macOS `speech-assets` tree shipped in a Windows
+/// installer, `python/bin/python3` DOES exist there and is a Mach-O binary,
+/// which fails at spawn with "not a valid Win32 application".
+///
+/// Unverified on real Windows (no machine available); the layout is the
+/// documented one for an embeddable CPython, and `Scripts\\` is included
+/// because a venv-shaped staging puts it there instead.
+pub(crate) fn bundled_python_path(tts_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    let candidates = [
+        tts_root.join("python").join("python.exe"),
+        tts_root.join("python").join("Scripts").join("python.exe"),
+    ];
+    #[cfg(not(windows))]
+    let candidates = [
+        tts_root.join("python").join("bin").join("python3"),
+        tts_root.join("python").join("bin").join("python"),
+    ];
+    candidates.into_iter().find(|c| c.is_file())
+}
+
 /// The packaged Python interpreter is only valid inside the app bundle;
 /// never trust a host `python3` (FIX-015 FAIL-3: no host-machine
 /// runtime assumptions in a shipped package).
@@ -206,7 +233,9 @@ pub(crate) fn bundled_python_hint() -> Option<String> {
 /// The child is killed on timeout — a hung probe can neither stall the
 /// health command forever nor leak the process.
 fn bounded_version_probe(path: &std::path::Path) -> bool {
-    let Ok(mut child) = std::process::Command::new(path)
+    let mut probe = std::process::Command::new(path);
+    crate::proc::no_console(&mut probe);
+    let Ok(mut child) = probe
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -319,9 +348,8 @@ pub fn cmd_speech_health<R: Runtime>(
             worker
                 .parent()
                 .and_then(|p| p.parent())
-                .map(|p| p.join("python").join("bin").join("python3"))
-                .map(|p| p.is_file())
-                .unwrap_or(false)
+                .and_then(|p| bundled_python_path(&p))
+                .is_some()
         })
         .unwrap_or(false)
         || bundled_python_hint().is_some();
@@ -331,7 +359,7 @@ pub fn cmd_speech_health<R: Runtime>(
     // Windows: the adapter lane (WR-016) registers itself later; until
     // then this reports false (truthful — never a fabricated capability).
     #[cfg(target_os = "macos")]
-    let system_tts_available = std::process::Command::new("/usr/bin/say")
+    let system_tts_available = crate::proc::no_console(&mut std::process::Command::new("/usr/bin/say"))
         .args(["-v", "?"])
         .output()
         .map(|out| out.status.success())
@@ -797,8 +825,7 @@ fn speak_impl<R: Runtime>(
         .as_ref()
         .and_then(|w| w.parent())
         .and_then(|p| p.parent())
-        .map(|p| p.join("python").join("bin").join("python3"))
-        .filter(|p| p.is_file())
+        .and_then(|p| bundled_python_path(&p))
         .map(|p| p.to_string_lossy().into_owned())
         .or(python_hint);
     let missing = [

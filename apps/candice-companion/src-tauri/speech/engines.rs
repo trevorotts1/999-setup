@@ -148,16 +148,41 @@ pub fn recording_to_wav(rec: &Recording) -> Option<Vec<u8>> {
     if frames == 0 {
         return None;
     }
+    // Flatten ONCE, then index.
+    //
+    // This used to call `.nth(c * frames + i)` on a freshly built
+    // `chunks.iter().flat_map(...)` INSIDE the inner loop. `nth` walks; the
+    // iterator was rebuilt per sample; so reading sample i cost i steps and
+    // the whole encode was quadratic in frame count.
+    //
+    // MEASURED, because the arithmetic overstates it. A naive reading counts
+    // 4.6e11 element steps at the 60-second capture limit and concludes the
+    // worker wedges for minutes. It does not: `FlatMap::nth` advances the
+    // inner slice iterators a chunk at a time, so the real cost is
+    // O(frames * chunks), not O(frames^2). Benchmarked against this exact
+    // shape (release build, black_box, 16 kHz):
+    //
+    //     16k frames   50us      64k frames  1.20ms     -> ~4x per doubling
+    //
+    // which extrapolates to roughly 15ms for a ten-second hold and ~540ms at
+    // the 60-second limit with the configured 512-frame chunks. Half a second
+    // of pointless CPU inside the capture worker is worth deleting, and the
+    // growth is still quadratic, but it never came close to the 5-second
+    // `CaptureEngine::release` timeout. Recorded here so nobody re-derives
+    // the scary number and treats this as a release blocker.
+    //
+    // The layout is planar -- all of channel 0, then all of channel 1 -- so
+    // sample (c, i) lives at c * frames + i. That is a direct index into the
+    // flattened buffer, and the whole encode becomes linear.
+    let flat: Vec<f32> = rec
+        .chunks
+        .iter()
+        .flat_map(|chunk| chunk.samples.iter().copied())
+        .collect();
     let mut interleaved: Vec<i16> = Vec::with_capacity(rec.total_samples);
     for i in 0..frames {
         for c in 0..channels {
-            let s = rec
-                .chunks
-                .iter()
-                .flat_map(|chunk| chunk.samples.iter())
-                .nth((c as usize) * frames + i)
-                .copied()
-                .unwrap_or(0.0);
+            let s = flat.get((c as usize) * frames + i).copied().unwrap_or(0.0);
             interleaved.push((s.clamp(-1.0, 1.0) * 32767.0).round() as i16);
         }
     }
@@ -390,6 +415,7 @@ pub fn run_whisper(
 
     let out_prefix = wav.with_extension(""); // whisper-cli appends .txt
     let mut cmd = Command::new(binary);
+    crate::proc::no_console(&mut cmd);
     cmd.arg("-m")
         .arg(model)
         .arg("-f")
@@ -536,6 +562,7 @@ pub(crate) fn kokoro_command(
     voices: &Path,
 ) -> Command {
     let mut cmd = Command::new(python);
+    crate::proc::no_console(&mut cmd);
     cmd.arg("-B")
         .arg(worker)
         .env("PYTHONDONTWRITEBYTECODE", "1")
@@ -837,7 +864,7 @@ impl TtsEngine {
     pub fn speak_system_tts(&self, text: &str) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            Command::new("/usr/bin/say")
+            crate::proc::no_console(&mut Command::new("/usr/bin/say"))
                 .arg(text)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -1258,6 +1285,71 @@ mod tests {
         // (round-half-up; the encoder rounds, it never truncates).
         assert_eq!(i16::from_le_bytes(wav[44..46].try_into().unwrap()), 0);
         assert_eq!(i16::from_le_bytes(wav[46..48].try_into().unwrap()), 16384);
+    }
+
+    #[test]
+    fn a_real_length_hold_encodes_in_linear_time() {
+        // A ten-second hold at the configured 16 kHz. Under the previous
+        // implementation -- `.nth()` on an iterator rebuilt inside the inner
+        // loop -- this cost about 15ms of pointless work and grew
+        // quadratically from there (see recording_to_wav for the measurement,
+        // and for why the obvious 1.28e10-step estimate is wrong).
+        //
+        // The bound is deliberately loose (10s for work that takes
+        // milliseconds) so this is not a flaky benchmark: it is a tripwire for
+        // a return to quadratic, which would blow past it by orders of
+        // magnitude on any machine.
+        let frames = 16_000 * 10;
+        let samples: Vec<f32> = (0..frames).map(|i| ((i % 200) as f32 / 200.0) - 0.5).collect();
+        let recording = rec(
+            vec![CaptureChunk {
+                sequence: 0,
+                sample_rate: 16_000,
+                channels: 1,
+                samples,
+                captured_at_ms: 0,
+            }],
+            frames,
+        );
+        let started = std::time::Instant::now();
+        let wav = recording_to_wav(&recording).expect("wav bytes");
+        let elapsed = started.elapsed();
+        assert_eq!(
+            u32::from_le_bytes(wav[40..44].try_into().unwrap()),
+            (frames * 2) as u32,
+            "every frame must survive the encode",
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "encoding 10s of audio took {elapsed:?}; the encoder has gone quadratic again",
+        );
+    }
+
+    #[test]
+    fn planar_channels_interleave_in_the_right_order() {
+        // The layout is planar: all of channel 0, then all of channel 1. The
+        // encode must interleave them, so indexing (c, i) -> c * frames + i
+        // has to stay correct now that it is a direct index rather than a
+        // walk. Two frames, two channels: L0 R0 L1 R1.
+        let recording = rec(
+            vec![CaptureChunk {
+                sequence: 0,
+                sample_rate: 16_000,
+                channels: 2,
+                // channel 0 = [1.0, 0.5], channel 1 = [-1.0, -0.5]
+                samples: vec![1.0, 0.5, -1.0, -0.5],
+                captured_at_ms: 0,
+            }],
+            4,
+        );
+        let mut recording = recording;
+        recording.channels = 2;
+        let wav = recording_to_wav(&recording).expect("wav bytes");
+        let s = |n: usize| i16::from_le_bytes(wav[44 + n * 2..46 + n * 2].try_into().unwrap());
+        assert_eq!(s(0), 32767, "frame 0 channel 0");
+        assert_eq!(s(1), -32767, "frame 0 channel 1");
+        assert_eq!(s(2), 16384, "frame 1 channel 0");
+        assert_eq!(s(3), -16384, "frame 1 channel 1");
     }
 
     #[test]

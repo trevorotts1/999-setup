@@ -35,11 +35,27 @@ function resolveConfiguredLaunchCommand({
 } = {}) {
   if (env.CANDICE_COMPANION_CMD) return env.CANDICE_COMPANION_CMD
 
+  // Ordered by confidence: the operator-managed layout first, then the
+  // locations the SHIPPED INSTALLERS actually use. Those were missing, and a
+  // client who installs the normal way lands in one of them -- so every
+  // ask_user returned `companion-not-configured` and every wake spawned
+  // nothing, with the app sitting correctly installed on disk the whole time.
   const candidates = []
   if (platform === 'darwin' && env.HOME) {
     candidates.push(join(
       env.HOME,
       'Library', 'Application Support', 'BlackCEO', '999', 'app',
+      'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
+    ))
+    // The DMG stages a symlink to /Applications and tells the user to drag
+    // there, which is the only instruction a client ever sees.
+    candidates.push(join(
+      '/Applications',
+      'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
+    ))
+    // Per-user drag target, equally normal on macOS.
+    candidates.push(join(
+      env.HOME, 'Applications',
       'Candice Companion.app', 'Contents', 'MacOS', 'candice-companion',
     ))
   }
@@ -52,6 +68,20 @@ function resolveConfiguredLaunchCommand({
       env.LOCALAPPDATA, 'BlackCEO', '999', 'app',
       'Candice Companion.exe',
     ))
+    // Tauri's NSIS per-user default. Nothing in installerHooks.nsh redirects
+    // InstallDir to the BlackCEO layout, so this is where a Windows client
+    // actually ends up.
+    candidates.push(join(
+      env.LOCALAPPDATA, 'Candice Companion', 'candice-companion.exe',
+    ))
+  }
+  if (platform === 'win32') {
+    // Per-machine NSIS/MSI default.
+    for (const base of [env.PROGRAMFILES, env['PROGRAMFILES(X86)']]) {
+      if (base) {
+        candidates.push(join(base, 'Candice Companion', 'candice-companion.exe'))
+      }
+    }
   }
   return candidates.find((candidate) => exists(candidate)) || null
 }

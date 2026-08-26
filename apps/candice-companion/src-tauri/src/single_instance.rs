@@ -144,7 +144,7 @@ fn owner_alive(pid: u32, expected_name: &str) -> Option<bool> {
         return Some(false);
     }
     #[cfg(windows)]
-    let output = Command::new("tasklist")
+    let output = crate::proc::no_console(&mut Command::new("tasklist"))
         .args([
             "/FI",
             &format!("PID eq {pid}"),
@@ -155,7 +155,7 @@ fn owner_alive(pid: u32, expected_name: &str) -> Option<bool> {
         .stdin(Stdio::null())
         .output();
     #[cfg(not(windows))]
-    let output = Command::new("ps")
+    let output = crate::proc::no_console(&mut Command::new("ps"))
         .args(["-p", &pid.to_string(), "-o", "comm="])
         .stdin(Stdio::null())
         .output();
@@ -280,7 +280,7 @@ pub fn acquire() -> Outcome {
 pub fn focus_existing() {
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open")
+        let _ = crate::proc::no_console(&mut Command::new("open"))
             .args(["-b", APP_ID])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn liveness_needs_the_right_pid_AND_the_right_process() {
+    fn liveness_needs_the_right_pid_and_the_right_process() {
         let me = std::process::id();
         let my_name = own_process_name();
         assert!(!my_name.is_empty(), "cannot name our own executable");
