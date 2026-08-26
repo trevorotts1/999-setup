@@ -91,3 +91,35 @@ test('the label is display only: the submitted value stays the registry string',
     assert.equal(typeof optionLabel(v), 'string');
   }
 });
+
+// ------------------------------- product names and prices, not re-wordings
+
+/**
+ * `optionLabel` must never invent wording -- a label that says something
+ * other than the value risks a client agreeing to something they did not
+ * pick. But de-hyphenation alone produced "Claude code", "Claude nine" and
+ * "$40 year", which are not re-wordings to fix: they are the same words,
+ * spelled wrong.
+ */
+test('product names and prices are formatted, not reworded', () => {
+  assert.equal(optionLabel('claude-code'), 'Claude Code');
+  assert.equal(optionLabel('claude-nine'), 'Claude-Nine');
+  assert.equal(optionLabel('$40-year'), '$40 a year', 'not "$40 year"');
+  assert.equal(optionLabel('$100-year'), '$100 a year');
+});
+
+test('the table stays a formatting table: no option gains a new meaning', () => {
+  // These read badly for a non-technical client, and fixing them means
+  // asserting what each one ROUTES TO. Getting that wrong is worse than a
+  // confusing label, so they are left mechanical and recorded for the
+  // registry owner instead of guessed at here.
+  assert.equal(optionLabel('simple-ghl'), 'Simple ghl');
+  assert.equal(optionLabel('provided-material'), 'Provided material');
+  assert.equal(optionLabel('greenfield'), 'Greenfield');
+});
+
+test('CONTROL: the table is consulted at all, and only for its own keys', () => {
+  assert.notEqual(optionLabel('claude-code'), 'Claude code', 'the table is consulted');
+  assert.equal(optionLabel('some-unlisted-value'), 'Some unlisted value', 'and only for listed keys');
+  assert.equal(optionLabel("I don't know"), "I don't know", 'prose still passes through');
+});

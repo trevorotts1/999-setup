@@ -312,15 +312,51 @@ export interface AnswerControlsView {
 }
 
 /**
+ * FORMATTING fixes for option values, never re-wordings.
+ *
+ * The rule this table lives under is deliberate and is asserted by
+ * options.test.ts: `optionLabel` "never invents wording, because inventing
+ * a label would show the user a choice the registry does not define". That
+ * is right, and the reason matters -- a label that says something other
+ * than the value risks a client agreeing to something they did not pick.
+ *
+ * So this table is limited to cases where the MEANING is untouched and
+ * only the presentation was wrong: the casing of a product name, and a
+ * price that de-hyphenated into "$40 year".
+ *
+ * It deliberately does NOT rescue the hosting options, which de-hyphenate
+ * into "Simple ghl", "Simple vercel", "Complex vercel" and "Complex vercel
+ * then embedded". Those genuinely are unusable for a non-technical client
+ * -- but rewriting them means asserting what each one routes to, and
+ * getting that wrong is worse than a confusing label. They need per-option
+ * labels authored in the REGISTRY by whoever owns the routing. Recorded in
+ * CONTROL/TODO.md.
+ *
+ * Display only: the submitted VALUE is always the registry string (see
+ * `dataset.candiceOptionValue` below).
+ */
+const OPTION_LABELS: Readonly<Record<string, string>> = {
+  // Product names. "Claude code" and "Claude nine" are simply misspelt.
+  'claude-code': 'Claude Code',
+  'claude-nine': 'Claude-Nine',
+  // "$40 year" is not how a price is written or said.
+  '$40-year': '$40 a year',
+  '$100-year': '$100 a year',
+};
+
+/**
  * Human-readable label for a registry option value.
  *
  * Registry options are answer VALUES, not display copy: `provided-material`
  * is what the protocol accepts, and showing that raw is barely better than a
- * blank box. This only re-cases and de-hyphenates -- it never invents wording,
- * because inventing a label would show the user a choice the registry does
- * not define. Values that are already prose (`I don't know`) pass through.
+ * blank box. Beyond the explicit table above this only re-cases and
+ * de-hyphenates -- it never invents wording for an unknown value, because
+ * inventing a label would show the user a choice the registry does not
+ * define. Values that are already prose (`I don't know`) pass through.
  */
 export function optionLabel(value: string): string {
+  const known = OPTION_LABELS[value];
+  if (typeof known === 'string') return known;
   const spaced = value.replace(/[-_]+/g, ' ').trim();
   if (spaced.length === 0) return value;
   if (/[A-Z]/.test(spaced) || /\s/.test(value)) return spaced;
