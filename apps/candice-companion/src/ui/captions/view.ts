@@ -224,7 +224,13 @@ export function createCaptionsView(
   // The caption scrolls when a long question overflows; a scrollable region
   // that cannot be focused is unreachable without a pointer.
   text.tabIndex = 0;
-  text.setAttribute('aria-live', CAPTIONS_LIVE);
+  // NOT a live region. The root above already is one, and a live region
+  // nested inside another makes assistive technology announce the same
+  // caption twice. This element additionally has its children replaced on
+  // every spoken sentence (see setSpokenProgress), which inside a live
+  // region means the WHOLE question is re-announced once per sentence for
+  // the entire utterance -- the caption reads itself over and over while
+  // Candice is still speaking the first line.
 
   root.appendChild(label);
   root.appendChild(text);
@@ -281,6 +287,8 @@ export function createCaptionsView(
         if (highlighted === -1) return;
         highlighted = -1;
         text.textContent = currentText;
+        // The utterance is over; the region speaks for itself again.
+        root.setAttribute('aria-live', CAPTIONS_LIVE);
         return;
       }
       const sentences = splitSentences(currentText);
@@ -291,6 +299,10 @@ export function createCaptionsView(
       if (index === highlighted) return;
       highlighted = index;
       if (index < 0) { text.textContent = currentText; return; }
+      // Highlighting is a VISUAL progress cue. The caption was already
+      // announced once when it was rendered; re-announcing it per sentence
+      // is noise that talks over the speech it is meant to accompany.
+      root.setAttribute('aria-live', 'off');
       const spans = sentences.map((s, i) => {
         const span = d.createElement('span');
         // textContent, never innerHTML: caption text is untrusted content.
@@ -299,6 +311,19 @@ export function createCaptionsView(
         return span;
       });
       text.replaceChildren(...spans);
+      // The caption scrolls (max-height + overflow-y), which is exactly why
+      // the highlight needs to follow: on a long question the sentence being
+      // spoken is otherwise highlighted below the fold, where the whole
+      // feature is invisible. `block: 'nearest'` scrolls only when the span
+      // is actually out of view, so it never fights a user who has scrolled.
+      const active = spans[index];
+      if (active && typeof active.scrollIntoView === 'function') {
+        try {
+          active.scrollIntoView({ block: 'nearest' });
+        } catch {
+          // A view that cannot scroll costs the cue, never the caption.
+        }
+      }
     },
     destroy: () => {
       root.remove();

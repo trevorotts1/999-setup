@@ -16,7 +16,10 @@
  * transparent (asserted by tests/a11y-matrix/contrast-harness.mjs).
  */
 :root {
-  color-scheme: light dark;
+  /* The palette below is hardcoded dark. Declaring `light dark` let a
+     light-mode OS render the form controls, caret and scrollbars light --
+     against dark chips, on the one surface that has no light variant. */
+  color-scheme: dark;
   --candice-accent: #7c5cff;
   --candice-text: #faf7ff;
   --candice-muted: #d7cfdf;

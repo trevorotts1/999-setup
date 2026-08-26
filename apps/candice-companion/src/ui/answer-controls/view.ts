@@ -173,7 +173,27 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
      just under it, 8px apart, in a floating always-on-top window -- which is
      a large part of what "the options were hard to select" meant. */
   min-height: 44px;
+  min-width: 64px;
   cursor: pointer;
+  /* Option text is a raw registry value and can be a sentence or a path. With
+     no wrapping, one long option renders wider than the 420px window, and the
+     body's overflow:hidden then clips it into pixels nobody can click. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+/* A click submits and the surface is torn down a moment later. Between those
+   two events the pills previously looked untouched, so a slow answer read as
+   a dead button and invited a second click on a different option. */
+.candice-answer-option[data-candice-option-chosen='true'] {
+  background: var(--candice-ac-accent);
+  color: var(--candice-ui-surface, #171321);
+  opacity: 1;
+}
+.candice-answer-option:disabled:not([data-candice-option-chosen='true']) {
+  opacity: 0.45;
+  cursor: default;
 }
 .candice-answer-footer {
   display: flex;
@@ -286,6 +306,11 @@ export function createAnswerControlsView(
   const optionsRow = document.createElement('div');
   optionsRow.className = 'candice-answer-options';
   optionsRow.hidden = true;
+  // Without these the options are a run of unrelated buttons: assistive
+  // technology has no way to say that they belong together or that they
+  // are the answers to the question sitting in the caption above them.
+  optionsRow.setAttribute('role', 'group');
+  optionsRow.setAttribute('aria-label', 'Answer choices');
 
   const methods = document.createElement('div');
   methods.className = 'candice-answer-methods';
@@ -365,6 +390,8 @@ export function createAnswerControlsView(
   mount.append(root);
 
   let destroyed = false;
+  /** The option values currently painted, so an unchanged list is not rebuilt. */
+  let renderedOptions: string[] | null = null;
 
   const submitTyped = (): void => {
     // Render gate already disabled the input; guard again so a stale
@@ -376,7 +403,14 @@ export function createAnswerControlsView(
     handlers.onTypeAnswer(text);
   };
   input.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') submitTyped();
+    const key = e as KeyboardEvent;
+    // An IME (Japanese, Chinese, Korean) uses Enter to COMMIT the characters
+    // being composed. Submitting on that Enter sends a half-composed answer
+    // and closes the surface, so the user never gets to finish the word.
+    // `isComposing` is exactly this distinction; 229 is the legacy keyCode
+    // browsers report while a composition is active.
+    if (key.isComposing || key.keyCode === 229) return;
+    if (key.key === 'Enter') submitTyped();
   });
   submit.addEventListener('click', submitTyped);
   delegate.addEventListener('click', () => {
@@ -390,7 +424,30 @@ export function createAnswerControlsView(
     if (!canConfirm) return;
     handlers.onConfirmUse();
   });
-  edit.addEventListener('click', () => handlers.onConfirmEdit());
+  edit.addEventListener('click', () => {
+    // EDIT was a dead button. The controller routes it to
+    // `options.editTranscript?.(...)`, and bridge.ts -- the only place that
+    // builds this controller in production -- never passes that callback, so
+    // clicking EDIT did nothing at all. The surface that WAS built for it
+    // (src/ui/transcript) has no importer anywhere outside its own tests.
+    //
+    // The edit affordance already exists on screen: the type box, whose
+    // submit is a confirmed answer path in its own right. So EDIT now does
+    // the obvious thing -- puts what she heard into the box, ready to be
+    // corrected -- instead of nothing. The machine still stays in
+    // `confirming` via the handler below; nothing is submitted here.
+    const heard = transcript.textContent ?? '';
+    if (heard !== '' && !input.disabled) {
+      input.value = heard;
+      try {
+        input.focus();
+        input.setSelectionRange(heard.length, heard.length);
+      } catch {
+        // Focus is a courtesy; the text is already in the box.
+      }
+    }
+    handlers.onConfirmEdit();
+  });
   retry.addEventListener('click', () => handlers.onConfirmTryAgain());
 
   let canConfirm = false;
@@ -441,8 +498,21 @@ export function createAnswerControlsView(
       if (list === null || list.length === 0) {
         optionsRow.hidden = true;
         optionsRow.replaceChildren();
+        renderedOptions = null;
         return;
       }
+      // Every handler in the controller ends in render(), and render() calls
+      // this. Rebuilding an unchanged list on every voice toggle, PTT press
+      // and retry threw away keyboard focus that was sitting on an option,
+      // and -- worse -- a mousedown and mouseup that straddled a rebuild
+      // landed on two different nodes, so no click event fired at all. A
+      // silently swallowed selection is a large part of what "the options are
+      // hard to select" meant.
+      const unchanged = renderedOptions !== null
+        && renderedOptions.length === list.length
+        && renderedOptions.every((v, i) => v === list[i]);
+      if (unchanged && !optionsRow.hidden) return;
+      renderedOptions = [...list];
       const buttons = list.map((value) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -451,7 +521,15 @@ export function createAnswerControlsView(
         // The LABEL is humanized for reading; the submitted VALUE is always
         // the registry string, never the prettified text.
         b.dataset.candiceOptionValue = value;
-        b.addEventListener('click', () => handlers.onChooseOption(value));
+        b.addEventListener('click', () => {
+          // Mark the choice and close the others BEFORE handing off. The
+          // controller submits synchronously and the bridge tears the surface
+          // down afterwards; until then the user is looking at pixels that
+          // must already say "got it".
+          for (const other of buttons) other.disabled = true;
+          b.dataset.candiceOptionChosen = 'true';
+          handlers.onChooseOption(value);
+        });
         return b;
       });
       optionsRow.replaceChildren(...buttons);

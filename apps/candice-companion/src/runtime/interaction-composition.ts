@@ -244,6 +244,9 @@ function mountNamePrompt(
   save.addEventListener('click', submit);
   skip.addEventListener('click', dismiss);
   input.addEventListener('keydown', (event) => {
+    // An IME commits its composition with Enter; submitting on that one
+    // saves a half-typed name. See the same guard on the answer input.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') submit();
     if (event.key === 'Escape') dismiss();
   });

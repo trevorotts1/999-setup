@@ -111,6 +111,16 @@ export async function initializeRuntimeComposition(
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.textContent = runtimeStatusText(capabilities);
+  // Say nothing when there is nothing wrong.
+  //
+  // This chip sat on screen for the entire session reading "Candice session
+  // bridge is available." -- engineering vocabulary, addressed to nobody the
+  // product has, permanently occupying a row of a 640px column that the
+  // character is already fighting for. A status line that only ever reports
+  // success is not information; it is furniture. It earns its row only when
+  // something is actually degraded and the user has to do something about
+  // it, which is the only case the text below is now written for.
+  status.hidden = runtimeStatusHealthy(capabilities);
   root.append(status);
 
   // FIX-015 speech seam + QFIX Q-02 orchestrator (design section 2): mount
@@ -332,16 +342,37 @@ export async function initializeRuntimeComposition(
   return capabilities;
 }
 
+/**
+ * True when nothing is wrong and the status line has nothing to add.
+ * The chip is hidden in this case; see the mount site for why.
+ */
+export function runtimeStatusHealthy(capabilities: RuntimeCapabilities): boolean {
+  return (
+    !capabilities.rejectedLaunchReason
+    && capabilities.bridgeAvailable
+    && capabilities.answerRoundTripAvailable
+  );
+}
+
+/**
+ * What the user is told when something IS wrong.
+ *
+ * Rewritten out of engineering vocabulary. "Session bridge", "answer
+ * submission" and "text mode" describe the plumbing; a person reading this
+ * needs to know two things and no others: Candice cannot do her part right
+ * now, and answering in the Claude window still works. Every branch says
+ * exactly that, in words nobody needs this project explained to understand.
+ */
 export function runtimeStatusText(capabilities: RuntimeCapabilities): string {
   if (capabilities.rejectedLaunchReason) {
-    return 'Candice wake request was rejected. Continue in Claude text mode.';
+    return 'Candice could not start this time. Keep answering in the Claude window.';
   }
   if (!capabilities.bridgeAvailable) {
-    return 'Candice visual shell is available. Session bridge is unavailable; continue in Claude text mode.';
+    return 'Candice cannot reach your session right now. Keep answering in the Claude window.';
   }
   // This branch is deliberately defensive: the parser does not permit a
   // false-ready answer path to be inferred from a bridge alone.
   return capabilities.answerRoundTripAvailable
-    ? 'Candice session bridge is available.'
-    : 'Candice session bridge is connected without answer submission.';
+    ? 'Candice is ready.'
+    : 'Candice can show questions but cannot send answers yet. Answer in the Claude window.';
 }

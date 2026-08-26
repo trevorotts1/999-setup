@@ -224,8 +224,13 @@ export function createCompactView(
   const input = d.createElement('input');
   input.type = 'text';
   input.className = 'candice-compact-input';
-  input.placeholder = 'Type a question or /bro, /eli5';
+  // Slash commands are how the OPERATOR drives Claude Code; a client typing
+  // to Candice has no idea what /bro or /eli5 are, and a placeholder is not
+  // the place to teach them.
+  input.placeholder = 'Type a message…';
   input.addEventListener('keydown', (e) => {
+    // An IME commits its composition with Enter. See answer-controls/view.ts.
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') {
       const text = input.value.trim();
       if (text !== '') {
