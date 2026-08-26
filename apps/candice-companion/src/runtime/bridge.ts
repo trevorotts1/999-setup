@@ -14,6 +14,7 @@
 
 import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
+import { ANIMATION_TOGGLE_CLASS } from '../ui/animation-toggle/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
 import {
@@ -492,7 +493,23 @@ export async function initializeAuthenticatedBridge(
     // and the gesture stage. A delivered question must not wipe them.
     const controlsMount = document.createElement('div');
     controlsMount.id = 'candice-answer-controls-mount';
-    root.append(controlsMount);
+    // The answer surface belongs directly under the question, ABOVE the
+    // settings row.
+    //
+    // The animation toggle is created at composition time and the answer
+    // controls only when a question arrives, so a plain append put the
+    // column in this order:
+    //
+    //   character -> the question -> "Animation [x]" -> the answers
+    //
+    // The user read a question and then hit a settings checkbox before
+    // reaching any way to answer it, and because DOM order is tab order,
+    // keyboard users tabbed THROUGH that checkbox on the way to every
+    // single answer. Inserting before it keeps DOM order, visual order and
+    // tab order identical, with no CSS `order` trick to drift out of sync.
+    const settingsRow = root.querySelector('.' + ANIMATION_TOGGLE_CLASS);
+    if (settingsRow !== null) root.insertBefore(controlsMount, settingsRow);
+    else root.append(controlsMount);
     controls = createAnswerControlsController({
       machine,
       mount: controlsMount,

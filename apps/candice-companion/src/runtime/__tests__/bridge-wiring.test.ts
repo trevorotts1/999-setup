@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { initializeAuthenticatedBridge, type BridgeHostApi } from '../bridge.ts';
+import { ANIMATION_TOGGLE_CLASS } from '../../ui/animation-toggle/index.ts';
 import { SPEECH_BOUNDARY_EVENT, SPEECH_DRAIN_EVENT, SPEECH_START_EVENT } from '../speech-timing.ts';
 import { createCandiceStateMachine } from '../../state/machine.ts';
 
@@ -62,7 +63,23 @@ class FakeEl {
   addEventListener(): void { /* no interaction is driven here */ }
   removeEventListener(): void { /* no interaction is driven here */ }
   focus(): void { /* not asserted */ }
-  querySelector(): FakeEl | null { return null; }
+  insertBefore(node: FakeEl, ref: FakeEl | null): FakeEl {
+    node.parent = this;
+    const at = ref === null ? -1 : this.children.indexOf(ref);
+    if (at < 0) this.children.push(node);
+    else this.children.splice(at, 0, node);
+    return node;
+  }
+  // Enough of a selector engine to answer '.class' over direct children,
+  // which is all the code under test asks for. Returning a hardcoded null
+  // would have made the DOM-ORDER test below pass without proving
+  // anything -- the append fallback would run every time.
+  querySelector(selector?: string): FakeEl | null {
+    if (typeof selector !== 'string' || !selector.startsWith('.')) return null;
+    const want = selector.slice(1);
+    const hit = this.children.find((c) => c.className.split(/\s+/).includes(want));
+    return hit ?? null;
+  }
   querySelectorAll(): FakeEl[] { return []; }
   closest(): FakeEl | null { return null; }
   contains(): boolean { return false; }
@@ -307,6 +324,70 @@ test('UNPROBED is not ABSENT: omitting ttsAvailable keeps the old behaviour', as
   await new Promise((r) => setImmediate(r));
 
   assert.equal(speakCalls, 1, 'a run that was never told still tries, exactly as before');
+  teardown();
+  restore();
+});
+
+// -------------------------------------------------- column order
+
+/**
+ * The animation toggle is built at composition time; the answer controls
+ * only when a question arrives. A plain append therefore produced:
+ *
+ *   character -> the question -> "Animation [x]" -> the answers
+ *
+ * so the user read a question and met a settings checkbox before reaching
+ * any way to answer it -- and since DOM order is tab order, keyboard users
+ * tabbed through that checkbox on the way to every single answer.
+ */
+test('the answer surface mounts ABOVE the settings row, not below it', async () => {
+  const restore = installFakeDom();
+  const harness = fakeHost();
+  const machine = createCandiceStateMachine();
+  const root = new FakeEl();
+  // Stand in for the animation toggle the composition mounts first.
+  const settings = new FakeEl();
+  settings.className = ANIMATION_TOGGLE_CLASS;
+  root.append(settings);
+
+  const teardown = await initializeAuthenticatedBridge(
+    root as unknown as HTMLElement,
+    machine,
+    { speakQuestion: async () => {}, voiceOutputEnabled: () => false },
+    harness.host,
+  );
+  harness.emit('candice:bridge-question', QUESTION);
+  await new Promise((r) => setImmediate(r));
+
+  const ids = root.children.map((c) => c.id || c.className);
+  const answers = ids.indexOf('candice-answer-controls-mount');
+  const row = ids.indexOf(ANIMATION_TOGGLE_CLASS);
+  assert.ok(answers >= 0, `the answer mount is in the column: ${ids.join(' | ')}`);
+  assert.ok(row >= 0, 'the settings row is still there');
+  assert.ok(answers < row, `answers must come first, got: ${ids.join(' | ')}`);
+  teardown();
+  restore();
+});
+
+test('CONTROL: with no settings row present it still mounts, by append', async () => {
+  // Proves the insert path is a real branch and the fallback still works,
+  // rather than the ordering test passing because nothing mounted at all.
+  const restore = installFakeDom();
+  const harness = fakeHost();
+  const machine = createCandiceStateMachine();
+  const root = new FakeEl();
+  const teardown = await initializeAuthenticatedBridge(
+    root as unknown as HTMLElement,
+    machine,
+    { speakQuestion: async () => {}, voiceOutputEnabled: () => false },
+    harness.host,
+  );
+  harness.emit('candice:bridge-question', QUESTION);
+  await new Promise((r) => setImmediate(r));
+  assert.ok(
+    root.children.some((c) => c.id === 'candice-answer-controls-mount'),
+    'the answer mount is present with no settings row to insert before',
+  );
   teardown();
   restore();
 });
