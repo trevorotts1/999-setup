@@ -58,13 +58,39 @@ fn valid_utterance_id(value: &str) -> bool {
         && value.bytes().all(|byte| matches!(byte, b'!'..=b'~'))
 }
 
+/// Is this string a plausible phoneme label?
+///
+/// THE authority for that question -- `engines.rs` calls this rather than
+/// keeping its own copy. It used to keep one, and both copies independently
+/// required `is_ascii_graphic()`. Kokoro drives espeak-ng, which emits IPA:
+/// on a measured 48-span utterance that rule silently discarded 28 spans in
+/// `filter_map`, and the 20 survivors were almost all consonants, so the
+/// mouth stayed shut for 85% of the audio. Two agreeing copies of a wrong
+/// rule look like corroboration; that is why there is now only one.
+///
+/// The rule is a DENY-list, not an allow-list, because the phoneme alphabet
+/// belongs to the voice engine and will change again: reject control and
+/// format characters (terminal escapes, bidi overrides, zero-width joiners)
+/// and admit everything else. These strings are only ever used as viseme
+/// lookup keys -- never rendered, never executed.
+pub(crate) fn valid_phoneme(phoneme: &str) -> bool {
+    !phoneme.is_empty()
+        && phoneme.chars().count() <= 16
+        && !phoneme.chars().any(|c| {
+            c.is_control()
+                || matches!(c,
+                    '\u{200b}'..='\u{200f}'
+                    | '\u{2028}'..='\u{202e}'
+                    | '\u{2060}'..='\u{2064}'
+                    | '\u{feff}')
+        })
+}
+
 /// Validate one phoneme timing span. Mirrors the WS-12 ingestion rule:
 /// non-finite or non-positive spans are garbage and must never reach the
 /// scheduler.
 fn valid_timing(timing: &SpeechTiming) -> bool {
-    !timing.phoneme.is_empty()
-        && timing.phoneme.len() <= 16
-        && timing.phoneme.bytes().all(|byte| byte.is_ascii_graphic())
+    valid_phoneme(&timing.phoneme)
         && timing.start_sec.is_finite()
         && timing.end_sec.is_finite()
         && timing.end_sec > timing.start_sec
@@ -200,6 +226,24 @@ mod tests {
         assert!(!valid_timing(&timing("a", 0.1, f64::INFINITY)));
         assert!(!valid_timing(&timing("a", -1.0, 0.1)));
         assert!(!valid_timing(&timing("a\tb", 0.1, 0.2)));
+        // IPA is what the pinned voice actually emits. An ASCII-only rule
+        // here silently thinned real utterances until the mouth stopped
+        // moving; these are captured espeak-ng outputs, not invented.
+        assert!(valid_timing(&timing("\u{259}", 0.1, 0.2)), "schwa");
+        assert!(valid_timing(&timing("\u{e6}", 0.1, 0.2)), "ae");
+        assert!(valid_timing(&timing("\u{14b}", 0.1, 0.2)), "eng");
+        assert!(valid_timing(&timing("\u{2c8}", 0.1, 0.2)), "primary stress");
+        assert!(valid_timing(&timing("\u{2d0}", 0.1, 0.2)), "length mark");
+        assert!(valid_timing(&timing("\u{283}", 0.1, 0.2)), "esh");
+        assert!(valid_timing(&timing(" ", 0.1, 0.2)), "word gap");
+        // Control and format characters still do not get through.
+        assert!(!valid_phoneme("a\u{1b}[31m"), "terminal escape");
+        assert!(!valid_phoneme("a\u{202e}b"), "bidi override");
+        assert!(!valid_phoneme("a\u{200b}b"), "zero width space");
+        assert!(!valid_phoneme("a\u{feff}"), "byte order mark");
+        assert!(!valid_phoneme(""), "empty");
+        assert!(!valid_phoneme(&"\u{259}".repeat(17)), "over the 16-char cap");
+        assert!(valid_phoneme(&"\u{259}".repeat(16)), "at the 16-char cap");
         assert!(!valid_timing(&timing("a", 0.1, 0.1)));
     }
 

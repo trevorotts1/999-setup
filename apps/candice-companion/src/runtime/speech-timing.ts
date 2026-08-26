@@ -79,7 +79,12 @@ function validTiming(value: unknown): value is SpeechTiming {
   return typeof timing.phoneme === 'string'
     && timing.phoneme.length > 0
     && timing.phoneme.length <= 16
-    && /^[\x21-\x7e]+$/.test(timing.phoneme)
+    // Mirrors valid_phoneme() in src-tauri/src/speech_timing.rs: a deny-list
+    // of control and format characters, NOT an ASCII allow-list. The pinned
+    // voice emits IPA, and the word gap is a bare space -- an ASCII rule
+    // rejects both. \p{C} is Cc/Cf/Cs/Co/Cn, so IPA letters and combining
+    // marks pass and terminal escapes and bidi overrides do not.
+    && /^\P{C}+$/u.test(timing.phoneme)
     && typeof timing.startSec === 'number'
     && Number.isFinite(timing.startSec)
     && timing.startSec >= 0

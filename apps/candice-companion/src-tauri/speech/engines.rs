@@ -763,13 +763,17 @@ impl TtsEngine {
             .unwrap_or_default()
             .into_iter()
             .filter_map(|t| {
+                // The phoneme rule lives in speech_timing.rs and is called,
+                // not copied. This filter_map DROPS what it rejects, silently
+                // and per-span -- so a rule that is merely a little too strict
+                // does not fail loudly, it just thins the utterance until the
+                // mouth stops moving. That is exactly what an ASCII-only copy
+                // of this rule did to every IPA vowel espeak emits.
                 (t.start_sec.is_finite()
                     && t.end_sec.is_finite()
                     && t.end_sec > t.start_sec
                     && t.start_sec >= 0.0
-                    && !t.phoneme.is_empty()
-                    && t.phoneme.len() <= 16
-                    && t.phoneme.bytes().all(|b| b.is_ascii_graphic()))
+                    && crate::speech_timing::valid_phoneme(&t.phoneme))
                 .then_some(crate::speech_timing::SpeechTiming {
                     phoneme: t.phoneme,
                     start_sec: t.start_sec,

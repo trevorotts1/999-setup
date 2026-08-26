@@ -20,12 +20,21 @@ import {
 } from "../mouth-renderer.ts";
 import { VisemeScheduler } from "../scheduler.ts";
 
-/** Phonemes chosen so consecutive spans resolve to DIFFERENT cutouts. */
+/**
+ * Phonemes chosen so consecutive spans resolve to DIFFERENT cutouts, and
+ * spelled in the alphabet the pinned TTS actually emits.
+ *
+ * This fixture used to read a / o / aa / m. Only two of those are real
+ * espeak-ng output: "aa" is ARPAbet and never arrives, and bare "a" is the
+ * open vowel of "my", not the mid vowel this row wants. A fixture written
+ * in an alphabet the app never receives is how the dead-mouth bug survived
+ * a passing test.
+ */
 const UTTERANCE = [
-  { phoneme: "a", startSec: 0.0, endSec: 0.2 }, // ai   -> open-small
-  { phoneme: "o", startSec: 0.2, endSec: 0.4 }, // oh   -> open-medium
-  { phoneme: "aa", startSec: 0.4, endSec: 0.6 }, // wide -> open-wide
-  { phoneme: "m", startSec: 0.6, endSec: 0.8 }, // mm   -> closed
+  { phoneme: "ə", startSec: 0.0, endSec: 0.2 }, // ai   -> open-small  (schwa, "hello")
+  { phoneme: "o", startSec: 0.2, endSec: 0.4 }, // oh   -> open-medium (rounded, "go")
+  { phoneme: "æ", startSec: 0.4, endSec: 0.6 }, // wide -> open-wide   ("cat")
+  { phoneme: "m", startSec: 0.6, endSec: 0.8 }, // mm   -> closed      (lips together)
 ];
 
 interface Harness {

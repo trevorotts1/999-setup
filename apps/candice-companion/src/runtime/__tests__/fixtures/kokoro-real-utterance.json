@@ -1,0 +1,246 @@
+{
+  "_comment": "CAPTURED, not authored. Produced by running the shipped worker src-tauri/tts/scripts/runtime.py (kokoro-onnx 0.6.1 + espeak-ng, voice af_bella) on the sentence below and recording its timings verbatim. Re-capture with the same command if the TTS pin changes.",
+  "_text": "Hello, this is Candice speaking about the build.",
+  "timings": [
+    {
+      "phoneme": "h",
+      "startSec": 0.091,
+      "endSec": 0.141
+    },
+    {
+      "phoneme": "ə",
+      "startSec": 0.141,
+      "endSec": 0.216
+    },
+    {
+      "phoneme": "l",
+      "startSec": 0.216,
+      "endSec": 0.266
+    },
+    {
+      "phoneme": "ˈ",
+      "startSec": 0.266,
+      "endSec": 0.341
+    },
+    {
+      "phoneme": "o",
+      "startSec": 0.341,
+      "endSec": 0.441
+    },
+    {
+      "phoneme": "ʊ",
+      "startSec": 0.441,
+      "endSec": 0.666
+    },
+    {
+      "phoneme": ",",
+      "startSec": 0.666,
+      "endSec": 0.741
+    },
+    {
+      "phoneme": " ",
+      "startSec": 0.741,
+      "endSec": 0.791
+    },
+    {
+      "phoneme": "ð",
+      "startSec": 0.791,
+      "endSec": 0.816
+    },
+    {
+      "phoneme": "ɪ",
+      "startSec": 0.816,
+      "endSec": 0.866
+    },
+    {
+      "phoneme": "s",
+      "startSec": 0.866,
+      "endSec": 0.916
+    },
+    {
+      "phoneme": " ",
+      "startSec": 0.916,
+      "endSec": 0.966
+    },
+    {
+      "phoneme": "ɪ",
+      "startSec": 0.966,
+      "endSec": 1.016
+    },
+    {
+      "phoneme": "z",
+      "startSec": 1.016,
+      "endSec": 1.066
+    },
+    {
+      "phoneme": " ",
+      "startSec": 1.066,
+      "endSec": 1.141
+    },
+    {
+      "phoneme": "k",
+      "startSec": 1.141,
+      "endSec": 1.191
+    },
+    {
+      "phoneme": "ˈ",
+      "startSec": 1.191,
+      "endSec": 1.266
+    },
+    {
+      "phoneme": "æ",
+      "startSec": 1.266,
+      "endSec": 1.316
+    },
+    {
+      "phoneme": "n",
+      "startSec": 1.316,
+      "endSec": 1.366
+    },
+    {
+      "phoneme": "d",
+      "startSec": 1.366,
+      "endSec": 1.441
+    },
+    {
+      "phoneme": "ɪ",
+      "startSec": 1.441,
+      "endSec": 1.491
+    },
+    {
+      "phoneme": "s",
+      "startSec": 1.491,
+      "endSec": 1.541
+    },
+    {
+      "phoneme": " ",
+      "startSec": 1.541,
+      "endSec": 1.616
+    },
+    {
+      "phoneme": "s",
+      "startSec": 1.616,
+      "endSec": 1.666
+    },
+    {
+      "phoneme": "p",
+      "startSec": 1.666,
+      "endSec": 1.691
+    },
+    {
+      "phoneme": "ˈ",
+      "startSec": 1.691,
+      "endSec": 1.741
+    },
+    {
+      "phoneme": "i",
+      "startSec": 1.741,
+      "endSec": 1.766
+    },
+    {
+      "phoneme": "ː",
+      "startSec": 1.766,
+      "endSec": 1.816
+    },
+    {
+      "phoneme": "k",
+      "startSec": 1.816,
+      "endSec": 1.866
+    },
+    {
+      "phoneme": "ɪ",
+      "startSec": 1.866,
+      "endSec": 1.916
+    },
+    {
+      "phoneme": "ŋ",
+      "startSec": 1.916,
+      "endSec": 1.941
+    },
+    {
+      "phoneme": " ",
+      "startSec": 1.941,
+      "endSec": 1.966
+    },
+    {
+      "phoneme": "ɐ",
+      "startSec": 1.966,
+      "endSec": 1.991
+    },
+    {
+      "phoneme": "b",
+      "startSec": 1.991,
+      "endSec": 2.016
+    },
+    {
+      "phoneme": "ˌ",
+      "startSec": 2.016,
+      "endSec": 2.041
+    },
+    {
+      "phoneme": "a",
+      "startSec": 2.041,
+      "endSec": 2.066
+    },
+    {
+      "phoneme": "ʊ",
+      "startSec": 2.066,
+      "endSec": 2.091
+    },
+    {
+      "phoneme": "t",
+      "startSec": 2.091,
+      "endSec": 2.116
+    },
+    {
+      "phoneme": " ",
+      "startSec": 2.116,
+      "endSec": 2.141
+    },
+    {
+      "phoneme": "ð",
+      "startSec": 2.141,
+      "endSec": 2.166
+    },
+    {
+      "phoneme": "ə",
+      "startSec": 2.166,
+      "endSec": 2.191
+    },
+    {
+      "phoneme": " ",
+      "startSec": 2.191,
+      "endSec": 2.241
+    },
+    {
+      "phoneme": "b",
+      "startSec": 2.241,
+      "endSec": 2.291
+    },
+    {
+      "phoneme": "ˈ",
+      "startSec": 2.291,
+      "endSec": 2.366
+    },
+    {
+      "phoneme": "ɪ",
+      "startSec": 2.366,
+      "endSec": 2.466
+    },
+    {
+      "phoneme": "l",
+      "startSec": 2.466,
+      "endSec": 2.541
+    },
+    {
+      "phoneme": "d",
+      "startSec": 2.541,
+      "endSec": 2.624
+    },
+    {
+      "phoneme": ".",
+      "startSec": 2.624,
+      "endSec": 2.624
+    }
+  ]
+}

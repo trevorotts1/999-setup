@@ -13,6 +13,9 @@ export { VisemeScheduler, type SchedulerOptions } from "./scheduler.ts";
 export {
   phonemeToViseme,
   timingToVisemeEvent,
+  isCarryPhoneme,
+  visemeEventsFromTimings,
+  visemeTableCoverage,
   shouldBlend,
   idleViseme,
 } from "./mapping.ts";

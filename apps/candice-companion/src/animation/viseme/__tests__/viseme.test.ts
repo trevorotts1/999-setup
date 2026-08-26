@@ -46,8 +46,9 @@ class FakeClock implements Clock {
   }
 }
 
+// Real espeak-ng IPA: schwa -> "ai", rounded o -> "oh", m -> "mm".
 const TIMINGS = [
-  { phoneme: "a", startSec: 0.1, endSec: 0.2 },
+  { phoneme: "ə", startSec: 0.1, endSec: 0.2 },
   { phoneme: "o", startSec: 0.3, endSec: 0.4 },
   { phoneme: "m", startSec: 0.4, endSec: 0.5 },
 ];
@@ -63,17 +64,26 @@ function schedulerWith(timings = TIMINGS, options: { blendMode?: "direct" | "cro
 // ---------------------------------------------------------------- mapping
 
 test("phonemeToViseme maps Kokoro phonemes to known shapes", () => {
-  assert.equal(phonemeToViseme("a"), "ai");
-  assert.equal(phonemeToViseme("i"), "ee");
-  assert.equal(phonemeToViseme("o"), "oh");
-  assert.equal(phonemeToViseme("m"), "mm");
-  assert.equal(phonemeToViseme("aa"), "wide");
+  // Every key here was captured from the shipped worker, not copied from a
+  // chart. The stack emits IPA: "aa"/"ae" are ARPAbet and never arrive, and
+  // bare "a" is the OPEN vowel of "my", so it belongs on the wide jaw.
+  assert.equal(phonemeToViseme("ə"), "ai");   // schwa, "hello"
+  assert.equal(phonemeToViseme("i"), "ee");   // "she"
+  assert.equal(phonemeToViseme("o"), "oh");   // "go"
+  assert.equal(phonemeToViseme("m"), "mm");   // lips together
+  assert.equal(phonemeToViseme("æ"), "wide"); // "cat"
+  assert.equal(phonemeToViseme("a"), "wide"); // "my", "now"
 });
 
 test("phonemeToViseme falls back to rest for unmapped phonemes", () => {
-  assert.equal(phonemeToViseme("q"), "rest");
-  assert.equal(phonemeToViseme(" "), "rest");
-  assert.equal(phonemeToViseme("A"), "ai"); // case-insensitive
+  // Genuinely outside any phoneme inventory.
+  assert.equal(phonemeToViseme("zz-not-a-phoneme"), "rest");
+  assert.equal(phonemeToViseme(""), "rest");
+  // A bare space is the WORD GAP, not an unknown symbol: connected speech
+  // does not close the mouth between words, so it must not resolve to rest.
+  assert.notEqual(phonemeToViseme(" "), "rest");
+  // Lowercase fallback still runs for callers holding a case-variant key.
+  assert.equal(phonemeToViseme("A"), "wide");
 });
 
 test("default table covers vowels and bilabials (visible lip work)", () => {
@@ -144,7 +154,7 @@ test("scheduler sorts out-of-order TTS timings and skips garbage", () => {
   const s = new VisemeScheduler({ clock });
   s.start([
     { phoneme: "o", startSec: 0.25, endSec: 0.4 },
-    { phoneme: "a", startSec: 0.1, endSec: 0.2 }, // out of order
+    { phoneme: "ə", startSec: 0.1, endSec: 0.2 }, // out of order
     { phoneme: "x", startSec: Number.NaN, endSec: 0.05 }, // garbage
     { phoneme: "m", startSec: 0.5, endSec: 0.4 }, // invalid span
   ]);
@@ -176,7 +186,7 @@ test("crossfade mode emits an inter-viseme step inside the gap", () => {
   clock.t = 0;
   const s = new VisemeScheduler({ clock, blendMode: "crossfade" });
   s.start([
-    { phoneme: "a", startSec: 0.1, endSec: 0.2 },
+    { phoneme: "ə", startSec: 0.1, endSec: 0.2 },
     { phoneme: "o", startSec: 0.5, endSec: 0.6 },
   ]);
   const steps = s.stepsAt(0, 10_000);
@@ -193,7 +203,7 @@ test("direct mode emits no inter-viseme steps", () => {
   clock.t = 0;
   const s = new VisemeScheduler({ clock, blendMode: "direct" });
   s.start([
-    { phoneme: "a", startSec: 0.1, endSec: 0.2 },
+    { phoneme: "ə", startSec: 0.1, endSec: 0.2 },
     { phoneme: "o", startSec: 0.5, endSec: 0.6 },
   ]);
   const steps = s.stepsAt(0, 10_000);

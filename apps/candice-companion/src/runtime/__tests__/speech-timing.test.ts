@@ -65,8 +65,10 @@ function emit(api: FakeListenApi, event: string, payload: unknown): void {
   }
 }
 
+// Real espeak-ng IPA. The channel test below asserts "ai" for the first
+// span, and schwa is what the pinned TTS actually emits for that shape.
 const TIMINGS = [
-  { phoneme: "a", startSec: 0.1, endSec: 0.2 },
+  { phoneme: "ə", startSec: 0.1, endSec: 0.2 },
   { phoneme: "o", startSec: 0.3, endSec: 0.4 },
   { phoneme: "m", startSec: 0.4, endSec: 0.5 },
 ];
@@ -104,7 +106,19 @@ test("parseSpeechStart accepts a valid payload and rejects malformed traffic", (
   assert.ok(parsed);
   assert.equal(parsed.utteranceId, "engine-42");
   assert.equal(parsed.timings.length, 3);
-  assert.equal(parsed.timings[0].phoneme, "a");
+  assert.equal(parsed.timings[0].phoneme, "ə");
+
+  // The pinned voice emits IPA and separates words with a bare space. An
+  // ASCII-only rule here silently starved the mouth of every vowel.
+  const ipa = (phoneme: string) =>
+    parseSpeechStart({ ...startPayload(), timings: [{ phoneme, startSec: 0.1, endSec: 0.2 }] });
+  for (const p of ["ə", "æ", "ŋ", "ˈ", "ː", "ʃ", " "]) {
+    assert.ok(ipa(p), `phoneme ${JSON.stringify(p)} must be accepted`);
+  }
+  // ...but control and format characters still must not be.
+  assert.equal(ipa("a\u001b[31m"), null, "terminal escape");
+  assert.equal(ipa("a‮b"), null, "bidi override");
+  assert.equal(ipa("a​b"), null, "zero-width space");
 
   assert.equal(parseSpeechStart(null), null);
   assert.equal(parseSpeechStart("nope"), null);

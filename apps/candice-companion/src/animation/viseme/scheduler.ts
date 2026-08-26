@@ -20,7 +20,7 @@
 
 import {
   shouldBlend,
-  timingToVisemeEvent,
+  visemeEventsFromTimings,
 } from "./mapping.ts";
 import type {
   Clock,
@@ -73,13 +73,9 @@ export class VisemeScheduler {
    * machine must never throw on real-world TTS output).
    */
   start(timings: ReadonlyArray<{ phoneme: string; startSec: number; endSec: number }>): void {
-    const events: VisemeEvent[] = [];
-    for (const t of timings) {
-      const ev = timingToVisemeEvent(t.phoneme, t.startSec, t.endSec);
-      if (ev) {
-        events.push(ev);
-      }
-    }
+    // Batch, not per-span: stress and length marks have to inherit a shape
+    // from their neighbours, which a span-at-a-time loop cannot see.
+    const events: VisemeEvent[] = visemeEventsFromTimings(timings);
     // Sort defensively: TTS runtimes occasionally emit out-of-order spans.
     events.sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec);
     if (events.length === 0) {
