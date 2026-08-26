@@ -33,6 +33,7 @@ import {
   type CaptionsTextScale,
 } from './config.ts';
 import type { CaptionEntry } from './model.ts';
+import { splitSentences, activeSentenceIndex } from './highlight.ts';
 
 /**
  * Surface style contract. Variable references ONLY (no hex/rgba/url —
@@ -81,6 +82,36 @@ export const CAPTIONS_STYLE_TEXT = `
 .candice-captions-text {
   max-width: 100%;
   overflow-wrap: anywhere;
+  /* The question is the thing the user has to answer -- it is never shortened
+     to fit. It used to be: 500 chars and an ellipsis, with the remainder
+     unreachable because nothing scrolled. When it does not fit, this scrolls.
+     overscroll-behavior:contain stops a flick past the end of the question
+     from scrolling whatever desktop is behind the transparent window. */
+  max-height: 26vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Question copy uses blank lines to separate the choices. textContent keeps
+     them, but the default white-space collapses them back into one wall of
+     text -- which is the thing the rewrite was meant to stop. */
+  white-space: pre-wrap;
+  text-align: left;
+}
+/* A scrollable region must be reachable by keyboard, not just by trackpad. */
+.candice-captions-text:focus-visible {
+  outline: 2px solid var(--candice-ui-border);
+  outline-offset: 2px;
+}
+/* The sentence currently being spoken. Deliberately a background wash rather
+   than a colour change: the contrast matrix measures caption text against the
+   surface token, and recolouring the text would move a measured ratio. */
+.candice-captions-spoken {
+  background: var(--candice-ui-border);
+  color: var(--candice-ui-surface);
+  border-radius: 3px;
+}
+html.candice-reduced-motion .candice-captions-spoken {
+  /* Reduced motion removes the MOVEMENT, not the information. */
+  background: var(--candice-ui-border);
 }
 .candice-captions.candice-captions-empty {
   opacity: 0;
@@ -111,6 +142,11 @@ export interface CaptionsView {
   fade(): void;
   /** Set the display scale (spec 9 text-size preference). */
   setTextScale(scale: CaptionsTextScale): void;
+  /**
+   * Highlight the sentence being spoken. `fraction` is 0..1 through the
+   * utterance; null clears the highlight and restores plain text.
+   */
+  setSpokenProgress(fraction: number | null): void;
   /** Detach + tear down. */
   destroy(): void;
 }
@@ -123,6 +159,7 @@ function NULL_VIEW(): CaptionsView {
     sync: () => undefined,
     fade: () => undefined,
     setTextScale: () => undefined,
+    setSpokenProgress: () => undefined,
     destroy: () => undefined,
   };
 }
@@ -170,6 +207,9 @@ export function createCaptionsView(
 
   const text = d.createElement('div');
   text.className = 'candice-captions-text';
+  // The caption scrolls when a long question overflows; a scrollable region
+  // that cannot be focused is unreachable without a pointer.
+  text.tabIndex = 0;
   text.setAttribute('aria-live', CAPTIONS_LIVE);
 
   root.appendChild(label);
@@ -177,6 +217,8 @@ export function createCaptionsView(
   mount.appendChild(root);
 
   let stale = false;
+  let currentText = '';
+  let highlighted = -1;
 
   const setStale = (on: boolean): void => {
     if (stale === on) return;
@@ -192,6 +234,8 @@ export function createCaptionsView(
       return;
     }
     root.classList.remove('candice-captions-empty');
+    currentText = entry.text;
+    highlighted = -1;
     text.textContent = entry.text;
     setStale(!entry.important);
   };
@@ -207,6 +251,31 @@ export function createCaptionsView(
     setTextScale: (scale) => {
       const size = CAPTIONS_SCALE_FONT_SIZES[scale];
       if (typeof size === 'string') text.style.fontSize = size;
+    },
+    setSpokenProgress: (fraction) => {
+      if (currentText === '') return;
+      if (fraction === null) {
+        if (highlighted === -1) return;
+        highlighted = -1;
+        text.textContent = currentText;
+        return;
+      }
+      const sentences = splitSentences(currentText);
+      const index = activeSentenceIndex(sentences, fraction);
+      // Rebuild only when the highlighted sentence actually changes: this runs
+      // on an animation frame, and replacing the DOM 60x a second would fight
+      // the user's scroll position inside the caption box.
+      if (index === highlighted) return;
+      highlighted = index;
+      if (index < 0) { text.textContent = currentText; return; }
+      const spans = sentences.map((s, i) => {
+        const span = d.createElement('span');
+        // textContent, never innerHTML: caption text is untrusted content.
+        span.textContent = s.text;
+        if (i === index) span.className = 'candice-captions-spoken';
+        return span;
+      });
+      text.replaceChildren(...spans);
     },
     destroy: () => {
       root.remove();

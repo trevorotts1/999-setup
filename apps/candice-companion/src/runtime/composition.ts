@@ -24,6 +24,7 @@ import {
   type GestureStageHost,
 } from '../shell/candice-composition.ts';
 import { createCaptionsController } from '../ui/captions/index.ts';
+import { attachCaptionHighlight } from '../ui/captions/highlight-driver.ts';
 import { defaultProfile } from '../prefs/profile.ts';
 import type { CandiceProfile } from '../prefs/schema.ts';
 import type { PrefsLoadResult } from '../prefs/ipc.ts';
@@ -228,6 +229,19 @@ export async function initializeRuntimeComposition(
   // The gesture stage may have failed before captions existed. Say so now,
   // once, rather than leaving a silently missing hologram.
   if (captionsFailure !== null) captions.announce(captionsFailure);
+
+  // Highlight the sentence she is currently saying. The duration comes from
+  // the utterance's REAL phoneme timings, so the highlight tracks the actual
+  // audio length rather than a guess. The driver cannot throw: with no native
+  // event API it reports `listening: false` and the caption renders plain.
+  const captionHighlight = await attachCaptionHighlight((fraction) => {
+    captions.setSpokenProgress(fraction);
+  });
+  if (!captionHighlight.listening) {
+    // Not an error worth interrupting the user over -- captions still work --
+    // but it must not be invisible either, the way `data-speech-playback` was.
+    root.dataset.candiceCaptionHighlight = 'unavailable';
+  }
 
   const originalTransition = machine.transition.bind(machine);
   machine.transition = (event) => {

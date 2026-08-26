@@ -121,18 +121,23 @@ test('E.1 WS-14: contract constants are the published values', () => {
   assert.equal(CAPTIONS_ROOT_CLASS, 'candice-captions');
   assert.equal(CAPTIONS_ROLE, 'status');
   assert.equal(CAPTIONS_LIVE, 'polite');
-  assert.equal(CAPTIONS_MAX_CHARS, 500);
+  assert.equal(CAPTIONS_MAX_CHARS, 20000);
   assert.deepEqual([...CAPTIONS_TEXT_SCALES], ['small', 'medium', 'large']);
   assert.equal(CAPTIONS_STYLE_ID, 'candice-captions-style');
 });
 
 test('clipCaption: bounded display copy, never mutates the source string', () => {
-  const long = 'a'.repeat(600);
+  const long = 'a'.repeat(CAPTIONS_MAX_CHARS + 100);
   const clipped = clipCaption(long);
   assert.ok(clipped.length <= CAPTIONS_MAX_CHARS);
   assert.ok(clipped.endsWith('…'));
   const short = 'Hello';
   assert.equal(clipCaption(short), short);
+  // The regression that started this: a real question must arrive WHOLE.
+  // 765 is the longest `spoken` text in the shipped registry (ENTRY_MODE).
+  const realQuestion = 'q'.repeat(765);
+  assert.equal(clipCaption(realQuestion), realQuestion,
+    'a real registry question must never be truncated for display');
 });
 
 test('captionFromEffect + isEmptyCaption: null/empty is the clear signal', () => {

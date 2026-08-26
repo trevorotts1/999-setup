@@ -51,6 +51,11 @@ export interface CaptionsController {
   /** Set the display scale (spec 9). */
   setTextScale(scale: CaptionsTextScale): void;
   /**
+   * Highlight the sentence being spoken; null clears it. Driven from the real
+   * Kokoro phoneme timings that arrive on `candice:speech-start`.
+   */
+  setSpokenProgress(fraction: number | null): void;
+  /**
    * Show an explicit caption outside machine effects (FIX-014: the
    * welcome-back greeting and the first-run name question). A later
    * machine transition re-renders from real effects and replaces it —
@@ -128,6 +133,9 @@ export function createCaptionsController(options: CaptionsControllerOptions): Ca
     setTextScale: (scale: CaptionsTextScale) => {
       if (!CAPTIONS_TEXT_SCALES.includes(scale)) return;
       view.setTextScale(scale);
+    },
+    setSpokenProgress: (fraction: number | null) => {
+      view.setSpokenProgress(fraction);
     },
     announce: (text: string, important = true) => {
       const clipped = clipCaption(text);

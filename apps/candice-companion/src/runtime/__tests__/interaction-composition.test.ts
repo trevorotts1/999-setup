@@ -202,6 +202,8 @@ class FakeCaptions implements CaptionsController {
   handle(): void {}
   render(): void {}
   setTextScale(scale: 'small' | 'medium' | 'large'): void { this.scales.push(scale); }
+  readonly progress: (number | null)[] = [];
+  setSpokenProgress(fraction: number | null): void { this.progress.push(fraction); }
   announce(text: string): void { this.announced.push(text); }
   destroy(): void {}
 }

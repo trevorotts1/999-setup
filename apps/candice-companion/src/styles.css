@@ -104,7 +104,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
+  /* A FLOOR, not a size. With `min-height: 0` the stage collapsed to nothing
+     the moment the caption grew -- a long question pushed Candice off the top
+     of the window entirely. She is the point of the window; the caption
+     scrolls instead of evicting her. */
+  min-height: 150px;
 }
 
 .candice-character-image {
