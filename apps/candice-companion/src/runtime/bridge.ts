@@ -216,6 +216,22 @@ export interface BridgePreferencesHooks {
 export interface BridgeSpeechHooks {
   queryConsent?: () => CaptureConsent | Promise<CaptureConsent>;
   /**
+   * Native fact: can this machine synthesise speech at all
+   * (`SpeechHealth.tts_engine_ready`)? False means do not even attempt an
+   * utterance -- and, more importantly, do not announce a failure for one.
+   *
+   * Without this, a machine with no voice engine announced
+   * "Candice could not speak this question aloud: <raw engine error>" on
+   * EVERY question, pasting an engine string into the caption of a
+   * non-technical user, forever. Saying it once would be fair; saying it
+   * every time is just noise wrapped around a fact the app already knew
+   * before the first question arrived.
+   *
+   * Undefined means "not told" and behaves exactly as before, so an
+   * unprobed or legacy run keeps trying and keeps reporting.
+   */
+  ttsAvailable?: boolean;
+  /**
    * Speak a delivered question. The composition wires this to the
    * orchestrator so the sole-caller rule holds — the bridge never invokes a
    * `cmd_speech_*` command itself. Rejection is non-fatal: the question is
@@ -358,6 +374,12 @@ export async function initializeAuthenticatedBridge(
     const speak = prefs.speakQuestion;
     const voiceOn = prefs.voiceOutputEnabled?.() ?? false;
     if (!speak) return;
+    // No voice engine on this machine: stay quiet rather than attempt an
+    // utterance that can only fail and then narrate its own failure to the
+    // user on every single question. See `ttsAvailable` above. The caption
+    // is already on screen and the answer surface is untouched, so nothing
+    // about the question depends on this.
+    if (prefs.ttsAvailable === false) return;
     if (!shouldSpeakQuestion(question, voiceOn)) return;
     const utterance = question.spoken ?? question.text;
     const identity = identityKey(question);

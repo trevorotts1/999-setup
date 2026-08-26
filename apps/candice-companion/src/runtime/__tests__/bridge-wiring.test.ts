@@ -229,3 +229,84 @@ test('teardown detaches every speech listener it attached', async () => {
   assert.equal(harness.listenerCount(SPEECH_BOUNDARY_EVENT), 0, 'speech-boundary leaked');
   restore();
 });
+
+// ------------------------------------- no voice engine on this machine
+
+/**
+ * Windows today: no Windows Python ships in speech-assets, and
+ * `system_tts_available` is hardcoded false off macOS because the WR-016
+ * adapter never landed. So `tts_engine_ready` is false, every `speak`
+ * rejects, and the bridge announced
+ * "Candice could not speak this question aloud: <raw engine error>"
+ * on EVERY question -- an engine string in the caption of a
+ * non-technical user, forever.
+ *
+ * The app knows before the first question arrives. Staying quiet is the
+ * honest answer; narrating the same failure each time is not.
+ */
+test('no voice engine: she stays quiet instead of narrating the same failure per question', async () => {
+  const restore = installFakeDom();
+  const harness = fakeHost();
+  const machine = createCandiceStateMachine();
+  const root = new FakeEl() as unknown as HTMLElement;
+  let speakCalls = 0;
+  const announced: string[] = [];
+  const teardown = await initializeAuthenticatedBridge(root, machine, {
+    speakQuestion: async () => { speakCalls += 1; },
+    voiceOutputEnabled: () => true,
+    announceSpeechFailure: (t: string) => { announced.push(t); },
+    ttsAvailable: false,
+  }, harness.host);
+  harness.emit('candice:bridge-question', QUESTION);
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(speakCalls, 0, 'no utterance is attempted when there is no engine');
+  assert.deepEqual(announced, [], 'and no failure is announced for one that was never attempted');
+  assert.notEqual(
+    machine.getState().status,
+    'speaking',
+    'she never enters speaking, so nothing waits on a drain that cannot come',
+  );
+  teardown();
+  restore();
+});
+
+test('CONTROL: the same harness DOES speak when the engine is available', async () => {
+  // Without this, the assertions above would pass on a harness that simply
+  // never speaks for some unrelated reason, and would prove nothing.
+  const restore = installFakeDom();
+  const harness = fakeHost();
+  const machine = createCandiceStateMachine();
+  const root = new FakeEl() as unknown as HTMLElement;
+  let speakCalls = 0;
+  const teardown = await initializeAuthenticatedBridge(root, machine, {
+    speakQuestion: async () => { speakCalls += 1; },
+    voiceOutputEnabled: () => true,
+    ttsAvailable: true,
+  }, harness.host);
+  harness.emit('candice:bridge-question', QUESTION);
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(speakCalls, 1, 'the control must speak, or the negative above is meaningless');
+  assert.equal(machine.getState().status, 'speaking');
+  teardown();
+  restore();
+});
+
+test('UNPROBED is not ABSENT: omitting ttsAvailable keeps the old behaviour', async () => {
+  const restore = installFakeDom();
+  const harness = fakeHost();
+  const machine = createCandiceStateMachine();
+  const root = new FakeEl() as unknown as HTMLElement;
+  let speakCalls = 0;
+  const teardown = await initializeAuthenticatedBridge(root, machine, {
+    speakQuestion: async () => { speakCalls += 1; },
+    voiceOutputEnabled: () => true,
+  }, harness.host);
+  harness.emit('candice:bridge-question', QUESTION);
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(speakCalls, 1, 'a run that was never told still tries, exactly as before');
+  teardown();
+  restore();
+});

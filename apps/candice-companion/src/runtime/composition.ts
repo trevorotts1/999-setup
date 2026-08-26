@@ -150,6 +150,7 @@ export async function initializeRuntimeComposition(
       // all is a measured native fact, not a preference, and a reviewer
       // should be able to read it off the DOM without a debugger.
       root.dataset.sttEngineReady = String(speech.health.sttEngineReady);
+      root.dataset.ttsEngineReady = String(speech.health.ttsEngineReady);
     } else {
       root.dataset.speechStatus = 'unprobed';
     }
@@ -330,6 +331,14 @@ export async function initializeRuntimeComposition(
     // we were never told, and a dev run must not silently lose the control.
     // Only a report that actually says false suppresses it.
     sttAvailable: speech?.health ? speech.health.sttEngineReady : undefined,
+    // Same story on the output side. On Windows TODAY she is mute: no
+    // Windows Python ships in speech-assets, and `system_tts_available` is
+    // hardcoded false off macOS because the WR-016 adapter never landed.
+    // So `tts_engine_ready` is false, every `speak` rejects, and the bridge
+    // announced "Candice could not speak this question aloud: <raw engine
+    // error>" on EVERY question. Knowing it in advance, the right move is
+    // to stay quiet rather than narrate the same failure forever.
+    ttsAvailable: speech?.health ? speech.health.ttsEngineReady : undefined,
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
       // Turning voice OFF has to stop the voice.
