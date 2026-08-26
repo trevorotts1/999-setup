@@ -43,3 +43,7 @@ apps/candice-companion/src-tauri/**/target/
 apps/candice-companion/src-tauri/gen/
 # Generated mirror of the app-root tauri.conf.json (build.rs copies it)
 apps/candice-companion/src-tauri/tauri.conf.json
+
+# Boss liveness marker: rewritten every cycle, telemetry not a work record.
+CONTROL/boss-heartbeat
+CONTROL/stop-workstream
