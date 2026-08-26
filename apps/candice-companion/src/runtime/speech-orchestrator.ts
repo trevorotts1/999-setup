@@ -90,6 +90,12 @@ export interface SpeechOrchestratorOptions {
   /** Blocked-press surface (FIX-015): reason travels to the user, typing stays. */
   onBlocked?: (consent: CaptureConsent, explanation: string) => void;
   /**
+   * Called at most once, the first time the native side reports it used
+   * the operating system's voice because Candice's own engine could not
+   * run. The composition wires this to the captions surface.
+   */
+  onSystemVoice?: () => void;
+  /**
    * Exact-once confirmed-answer delivery (spec 5.1 no-double-count). Called
    * only from {@link SpeechOrchestrator.confirmTranscript}, which
    * single-flights per transcript until a NEW transcript arrives.
@@ -142,6 +148,9 @@ export class SpeechOrchestrator {
   readonly #duplex: DuplexController;
   readonly #guard: ((text: string) => boolean) | null;
   readonly #onBlocked: ((consent: CaptureConsent, explanation: string) => void) | null;
+  /** Said once when the OS voice stands in for Candice's own (WR-016). */
+  readonly #onSystemVoice: (() => void) | null;
+  #announcedSystemVoice = false;
   readonly #submit: ((text: string, inputMode: 'voice') => void) | null;
   readonly #now: () => number;
   readonly #newRequestId: () => string;
@@ -163,6 +172,7 @@ export class SpeechOrchestrator {
     this.#duplex = options.duplex;
     this.#guard = options.speechGuard ?? null;
     this.#onBlocked = options.onBlocked ?? null;
+    this.#onSystemVoice = options.onSystemVoice ?? null;
     this.#submit = options.submitAnswer ?? null;
     this.#now = options.now ?? (() => Date.now());
     this.#newRequestId = options.newRequestId ?? defaultRequestId;
@@ -382,7 +392,21 @@ export class SpeechOrchestrator {
       //   invalid args `request` for command `cmd_speech_speak`: missing required key
       // `voiceId` is deliberately omitted so the native side resolves the
       // operator-approved canonical voice from the bundled manifest.
-      await this.#invoke.invoke(SPEECH_COMMANDS.speak, { request: { requestId, text } });
+      const result = await this.#invoke.invoke(SPEECH_COMMANDS.speak, {
+        request: { requestId, text },
+      });
+      // The native side answers `system-voice:<id>` when Candice's own
+      // engine could not run and it used the COMPUTER'S built-in voice
+      // instead. That substitution must never be silent -- the recorded
+      // objection to any voice fallback is precisely that "speaking in a
+      // voice the client did not choose, without telling them, is worse
+      // than not speaking". So say it, once per session: repeating it on
+      // every question would be its own kind of noise.
+      if (typeof result === 'string' && result.startsWith('system-voice:')
+        && !this.#announcedSystemVoice) {
+        this.#announcedSystemVoice = true;
+        this.#onSystemVoice?.();
+      }
     } catch (error) {
       // The boundary refused the utterance: output never happened, so the
       // duplex must not stay in the speaking phase.

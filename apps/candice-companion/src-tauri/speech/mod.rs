@@ -355,17 +355,10 @@ pub fn cmd_speech_health<R: Runtime>(
         || bundled_python_hint().is_some();
     let tts_engine_ready = tts_model_ok && tts_voices_ok && tts_runtime_present && tts_python_present;
 
-    // System-TTS fallback probe. macOS: `say` must exist and run.
-    // Windows: the adapter lane (WR-016) registers itself later; until
-    // then this reports false (truthful — never a fabricated capability).
-    #[cfg(target_os = "macos")]
-    let system_tts_available = crate::proc::no_console(&mut std::process::Command::new("/usr/bin/say"))
-        .args(["-v", "?"])
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-    #[cfg(not(target_os = "macos"))]
-    let system_tts_available = false;
+    // System-TTS fallback probe -- the SAME function `speak_impl` consults
+    // before falling back, so the health report can never advertise a
+    // fallback the speak path would decline to use.
+    let system_tts_available = system_voice_available();
 
     // Capture probe: a real default-input-device result (cpal), not a
     // slot. Absent device = no-device, reported honestly.
@@ -789,6 +782,47 @@ pub(crate) fn resolve_approved_voice(
     })
 }
 
+/// Does this machine have an operating-system voice we can fall back to?
+///
+/// Runs the thing and reads its exit status; the presence of a NAME on
+/// PATH proves nothing about whether it works. macOS asks `say` to list
+/// voices. Windows requires the System.Speech assembly to load AND at
+/// least one installed voice, because a machine with the assembly and no
+/// voice pack would otherwise advertise a capability that produces
+/// silence.
+fn system_voice_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::proc::no_console(&mut std::process::Command::new("/usr/bin/say"))
+            .args(["-v", "?"])
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        crate::proc::no_console(&mut std::process::Command::new("powershell.exe"))
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "try { Add-Type -AssemblyName System.Speech; \
+                 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+                 if ($s.GetInstalledVoices().Count -gt 0) { exit 0 } else { exit 1 } } \
+                 catch { exit 1 }",
+            ])
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        false
+    }
+}
+
 fn speak_impl<R: Runtime>(
     app: &AppHandle<R>,
     state: &SpeechState,
@@ -835,13 +869,48 @@ fn speak_impl<R: Runtime>(
     ]
     .into_iter()
     .find(|(_, v)| v.is_none());
-    if let Some((id, _)) = missing {
+    // The Kokoro engine cannot run here. Before failing the utterance,
+    // try the operating system's own voice (WR-016).
+    //
+    // The comment further down is emphatic that there is no voice
+    // fallback, and it is right about WHY: "Speaking in a voice the client
+    // did not choose, WITHOUT TELLING THEM, is worse than not speaking."
+    // The objection is to concealment. So this returns a request id
+    // prefixed `system-voice:`, and the app says plainly that it is using
+    // the computer's built-in voice instead of Candice's own. Told, not
+    // concealed.
+    //
+    // It matters most on Windows, where the alternative today is total
+    // silence: no Windows Python payload ships, so tts_engine_ready is
+    // false and every single utterance fails.
+    let engine_absent = missing.map(|(id, _)| id.to_string()).or_else(|| {
+        python.as_ref().map_or_else(
+            || Some("bundled voice runtime".to_string()),
+            |_| None,
+        )
+    });
+    if let Some(what) = engine_absent {
+        if system_voice_available() {
+            match state.tts.speak_system_voice(
+                app,
+                &request.text,
+                &request.request_id,
+                std::sync::Arc::clone(&state.active_speak_request),
+            ) {
+                Ok(()) => return Ok(format!("system-voice:{}", request.request_id)),
+                Err(_) => { /* fall through to the honest failure below */ }
+            }
+        }
         speak_release_slot(state, Some(&request.request_id));
-        return Err(format!(
-            "voice assets are not installed ({id}); captions remain available"
-        ));
+        return Err(if what == "bundled voice runtime" {
+            "bundled voice runtime is missing; captions remain available".to_string()
+        } else {
+            format!("voice assets are not installed ({what}); captions remain available")
+        });
     }
     let Some(python) = python else {
+        // Unreachable: `engine_absent` above already returned for this.
+        // Kept so the binding below stays total rather than an unwrap.
         speak_release_slot(state, Some(&request.request_id));
         return Err(
             "bundled voice runtime is missing; captions remain available".into(),

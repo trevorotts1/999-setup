@@ -857,11 +857,84 @@ impl TtsEngine {
         Ok(())
     }
 
-    /// System-TTS fallback (macOS `say`, non-canonical — FIX-015 FAIL-2).
-    /// Reserved for the degraded-TTS path: when the Kokoro engine is
-    /// absent the boundary may offer the system voice instead.
+    /// System-TTS fallback (non-canonical — FIX-015 FAIL-2). Reserved for
+    /// the degraded-TTS path: when the Kokoro engine is absent the
+    /// boundary may offer the system voice instead.
+    ///
+    /// macOS uses `/usr/bin/say`. Windows uses the `System.Speech`
+    /// synthesizer that ships with .NET Framework, driven through
+    /// PowerShell (WR-016). Before that landed this returned
+    /// "system voice is unavailable on this platform" off macOS, which
+    /// combined with the absent Windows Python payload meant a Windows
+    /// build had NO voice at all: `tts_engine_ready` false and no
+    /// fallback behind it.
+    ///
+    /// Fire-and-forget on both platforms, matching the existing macOS
+    /// contract — the caller does not await the utterance.
     #[allow(dead_code)]
     pub fn speak_system_tts(&self, text: &str) -> Result<(), String> {
+        self.spawn_system_tts(text).map(|_| ())
+    }
+
+    /// Speak through the OPERATING SYSTEM's voice and drive the same
+    /// event contract the Kokoro path drives (WR-016).
+    ///
+    /// Why this exists at all. `speak_system_tts` above had no callers --
+    /// it was dead code -- and the comment in `speak_impl` is emphatic
+    /// that there is no voice fallback: "Speaking in a voice the client
+    /// did not choose, WITHOUT TELLING THEM, is worse than not speaking."
+    /// That objection is about concealment, and it is right. So this path
+    /// is taken only when the Kokoro runtime is genuinely absent, and the
+    /// caller reports it as `system-voice:<id>` so the app can say plainly
+    /// that it is using the computer's built-in voice rather than
+    /// Candice's own. Told, not concealed.
+    ///
+    /// The alternative on Windows today is total silence: no Windows
+    /// Python ships, so `tts_engine_ready` is false and every utterance
+    /// fails.
+    ///
+    /// Event contract:
+    ///  - `speech-start` with EMPTY timings. There are no phonemes to
+    ///    report, and the caption highlighter already handles an absent
+    ///    timing stream by rendering the caption plain.
+    ///  - `speech-drain` when the child EXITS. PowerShell's `Speak()` is
+    ///    synchronous, so process exit is a real end-of-audio signal, not
+    ///    an estimated one. This matters more than it sounds: the app
+    ///    refuses `ptt:start` while speaking, so a drain that never
+    ///    arrives leaves HOLD TO TALK dead until the next question.
+    ///  - the slot is released on the same thread, always, including when
+    ///    the wait itself fails.
+    #[allow(dead_code)]
+    pub fn speak_system_voice<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        text: &str,
+        request_id: &str,
+        slot: Arc<Mutex<Option<String>>>,
+    ) -> Result<(), String> {
+        let mut child = self.spawn_system_tts(text)?;
+        let _ = crate::speech_timing::emit_speech_start(app, request_id, &[]);
+        let app_handle = app.clone();
+        let uid = request_id.to_string();
+        std::thread::spawn(move || {
+            // Wait regardless of outcome: a failed wait must still end the
+            // utterance, or the mouth never closes.
+            let _ = child.wait();
+            let _ = crate::speech_timing::emit_speech_drain(&app_handle, &uid);
+            if let Ok(mut guard) = slot.lock() {
+                if guard.as_deref() == Some(uid.as_str()) {
+                    *guard = None;
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// Spawn the system voice and hand back the child, so a caller can
+    /// wait for a real end-of-audio signal. `speak_system_tts` is the
+    /// fire-and-forget wrapper.
+    #[allow(dead_code)]
+    pub fn spawn_system_tts(&self, text: &str) -> Result<std::process::Child, String> {
         #[cfg(target_os = "macos")]
         {
             crate::proc::no_console(&mut Command::new("/usr/bin/say"))
@@ -870,10 +943,48 @@ impl TtsEngine {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| format!("system voice failed: {e}"))?;
-            Ok(())
+                .map_err(|e| format!("system voice failed: {e}"))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        {
+            // The utterance travels on STDIN, never inside the command
+            // line. Caption text is untrusted content: interpolating it
+            // into a PowerShell string would make any apostrophe a syntax
+            // error and anything worse a code-execution bug. The script is
+            // a fixed constant; the only variable part arrives on a pipe
+            // that PowerShell reads as data.
+            let mut child = crate::proc::no_console(&mut Command::new("powershell.exe"))
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    "Add-Type -AssemblyName System.Speech; \
+                     $t = [Console]::In.ReadToEnd(); \
+                     $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
+                     $s.Speak($t)",
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("system voice failed: {e}"))?;
+            // Writing then DROPPING stdin closes the pipe, which is what
+            // makes ReadToEnd return. Without the drop the synthesizer
+            // waits forever and never speaks.
+            {
+                let mut stdin = child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| "system voice failed: no stdin".to_string())?;
+                stdin
+                    .write_all(text.as_bytes())
+                    .map_err(|e| format!("system voice failed: {e}"))?;
+            }
+            Ok(child)
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
         {
             let _ = text;
             Err("system voice is unavailable on this platform".into())

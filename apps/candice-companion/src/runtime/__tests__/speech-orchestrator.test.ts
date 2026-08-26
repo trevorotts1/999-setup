@@ -96,6 +96,7 @@ interface HarnessOptions {
   speechGuard?: (text: string) => boolean;
   submitAnswer?: (text: string, inputMode: 'voice') => void;
   onBlocked?: (consent: string, explanation: string) => void;
+  onSystemVoice?: () => void;
   initial?: Partial<CandiceState>;
   now?: () => number;
 }
@@ -118,6 +119,7 @@ function makeHarness(options: HarnessOptions = {}) {
     speechGuard: options.speechGuard,
     submitAnswer: options.submitAnswer ?? ((text, inputMode) => submitted.push({ text, inputMode })),
     onBlocked: options.onBlocked ?? ((consent, explanation) => blocked.push({ consent, explanation })),
+    onSystemVoice: options.onSystemVoice,
     now: options.now,
   });
   return { orchestrator, duplex, machine, calls, blocked, submitted, ids };
@@ -768,4 +770,42 @@ test('release with no live capture is a clean no-op (idempotent, spec 20)', asyn
   await h.orchestrator.pttRelease();
   assert.deepEqual(h.calls, []);
   assert.equal(h.machine.getState().status, 'idle');
+});
+
+// ------------------------------- the OS voice must never stand in silently
+
+/**
+ * WR-016. When Candice's own engine cannot run, the native side may speak
+ * through the OPERATING SYSTEM's voice and answers `system-voice:<id>`.
+ *
+ * The recorded objection to any voice fallback is precise: "Speaking in a
+ * voice the client did not choose, WITHOUT TELLING THEM, is worse than not
+ * speaking." The objection is to concealment, so the substitution is
+ * allowed only while it is announced. This is the test that keeps it
+ * announced.
+ */
+test('a system-voice substitution is reported, exactly once per session', async () => {
+  const notices: number[] = [];
+  const h = makeHarness({
+    handlers: { [SPEECH_COMMANDS.speak]: () => 'system-voice:req-1' },
+    onSystemVoice: () => notices.push(1),
+  });
+  await h.orchestrator.speak('first question');
+  assert.equal(notices.length, 1, 'the user is told the first time');
+  await h.orchestrator.speak('second question');
+  await h.orchestrator.speak('third question');
+  assert.equal(notices.length, 1, 'and not once per question after that');
+});
+
+test('CONTROL: Candice\u2019s own voice reports nothing', async () => {
+  // Without this the test above would pass on an implementation that
+  // announced unconditionally, putting a false notice on screen for every
+  // client whose real engine is working perfectly.
+  const notices: number[] = [];
+  const h = makeHarness({
+    handlers: { [SPEECH_COMMANDS.speak]: () => 'req-1' },
+    onSystemVoice: () => notices.push(1),
+  });
+  await h.orchestrator.speak('a question');
+  assert.deepEqual(notices, [], 'no notice when the real engine spoke');
 });

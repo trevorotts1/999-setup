@@ -138,6 +138,11 @@ export async function initializeRuntimeComposition(
   // the duplex controller, probe the native boundary once, and create THE
   // one speech command executor. Failure is silent capability absence —
   // the shell never blocks composition on speech (spec 20).
+  // Set when the native side first reports the OS voice standing in for
+  // Candice's own. Read after the captions controller exists, because the
+  // orchestrator is constructed before it.
+  let pendingSystemVoiceNotice = false;
+  let systemVoiceSink: (() => void) | null = null;
   let speech: SpeechRuntime | null = null;
   let orchestrator: SpeechOrchestrator | null = null;
   try {
@@ -164,6 +169,13 @@ export async function initializeRuntimeComposition(
         ?? await defaultSpeechInvokeAdapter(),
       machine,
       duplex: speech.duplex,
+      // Say it plainly, once, if the computer's voice stands in for hers.
+      // Never concealed -- that is the whole condition on which a voice
+      // fallback is acceptable at all.
+      onSystemVoice: () => {
+        if (systemVoiceSink !== null) systemVoiceSink();
+        else pendingSystemVoiceNotice = true;
+      },
     });
     speech.attachSpeechTarget(orchestrator.createSpeechTarget());
   } catch {
@@ -255,6 +267,15 @@ export async function initializeRuntimeComposition(
   // The gesture stage may have failed before captions existed. Say so now,
   // once, rather than leaving a silently missing hologram.
   if (captionsFailure !== null) captions.announce(captionsFailure);
+  // Drain a system-voice notice raised before this surface existed, and
+  // take ownership of any later one.
+  const announceSystemVoice = (): void => {
+    captions.announce(
+      'I’m using your computer’s built-in voice — my own voice isn’t installed on this machine.',
+    );
+  };
+  if (pendingSystemVoiceNotice) announceSystemVoice();
+  systemVoiceSink = announceSystemVoice;
 
   // Highlight the sentence she is currently saying. The duration comes from
   // the utterance's REAL phoneme timings, so the highlight tracks the actual
