@@ -43,6 +43,14 @@ be poking at the watchdog. The dry-run branch no longer writes state; only a
 genuine send arms the cooldown. Proven: a dry run logs the would-send message
 and leaves the cooldown byte-unchanged.
 
+### Cycle log reported a write that never happened
+
+`boss-cron` printed an unconditional `ledger appended` on every cycle. Because
+findings dedupe by timestamp-stripped comparison, a cycle that re-finds the same
+violations writes nothing — so the line told the operator the ledger had moved
+when it had not. The cycle log now counts actual writes and reports either
+`N ledger line(s) appended` or `ledger unchanged (findings already recorded)`.
+
 ### FIX-LEDGER divergence reconciled
 
 Local and origin ledgers had diverged — both **pure appends to the same

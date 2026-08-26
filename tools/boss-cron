@@ -1434,15 +1434,18 @@ def main():
     # every 5 minutes. The ISO timestamp is the ONLY per-cycle field — strip
     # it from both the candidate and the ledger lines before comparing.
     old_lines = {TIMESTAMP_RE.sub("", ln) for ln in ledger_lines(text2)}
+    appended = 0
     with open(LEDGER, "a", encoding="utf-8") as fh:
         for v in violations:
             line = f"- `VIOLATION-STOP {now_iso()}: {v} — conductor MUST TaskStop the named workstream, {ck_note}; {bound}`"
             if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
+                appended += 1
         for pid, outcome in kills:
             line = f"- `VIOLATION-STOP {now_iso()}: kill pid {pid}: {outcome} — conductor re-dispatches, {ck_note}; {bound}`"
             if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
+                appended += 1
     # --- liveness marker -> HEARTBEAT (telemetry), never the tracked ledger ---
     # The findings above are the record; these lines only prove the cycle ran.
     # The file is REWRITTEN each cycle, so it holds this cycle's marker(s) and
@@ -1474,7 +1477,11 @@ def main():
                      + f" | {ck_note}; {bound}")
     elif os.path.exists(STOP):
         os.remove(STOP)
-    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended{alert_note}")
+    # Report what actually happened. Most cycles re-find the SAME findings, which
+    # dedupe to zero writes — printing an unconditional "ledger appended" told the
+    # operator the ledger moved when it did not.
+    led_note = f"{appended} ledger line(s) appended" if appended else "ledger unchanged (findings already recorded)"
+    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), {led_note}{alert_note}")
     sys.exit(2 if violations else 0)
 
 
