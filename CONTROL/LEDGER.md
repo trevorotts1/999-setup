@@ -493,3 +493,51 @@ section 7. HUMAN_HARDWARE still needs a person.
 Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24, complete=0. No gate is
 marked closed, because closing one requires `independentQc` and this seat
 cannot run that on its own work.
+
+
+## 9. Shipped to the operator box (2026-08-26 17:07)
+
+Built, signed and installed. The first attempt at this was WRONG and is
+worth recording, because the failure was silent:
+`scripts/package-macos/build-macos-bundle.sh` does not build the
+frontend -- it packages and signs an .app that already exists ("run
+first: npm run tauri build"). Running it alone produced a bundle whose
+SHA was byte-identical to the previous build, because it had simply
+re-signed a stale tree: `src-tauri/dist/assets/` was from 15:43 and the
+session's edits were 16:46-16:52. Exit code 0 the whole way. Caught by
+comparing the SHA against the installed one and finding them equal, which
+is the only reason it was not shipped as a fix that contained no fixes.
+
+The real sequence is `npm run tauri:build` (tsc + vite + cargo release +
+bundle), THEN the packaging script.
+
+Verified before installing:
+- the emitted chunk `index-CrvJDMXL.js` CONTAINS the new greeting, the
+  new status labels and `sttEngineReady`, and does NOT contain the old
+  greeting or "Waiting for user" -- positive and negative both checked.
+- hardened + ad-hoc: `flags=0x10002(adhoc,runtime)`, `Signature=adhoc`.
+- `codesign --verify --deep --strict` rc=0, on the built bundle AND again
+  on the staged copy after `cp -R`, because a copy can strip a signature.
+- four entitlements, including `com.apple.security.device.audio-input`.
+
+Installed by two renames on one filesystem, NOT with the atomic-install
+engine. The engine replaces its whole `--to` tree, and
+`.../BlackCEO/999/app/` holds fifteen of the operator's own backups
+alongside the live bundle; pointing the engine at that directory would
+have destroyed all of them. Only `Candice Companion.app` was replaced.
+
+  live:    .../BlackCEO/999/app/Candice Companion.app
+           sha 1509bba9c2336e7f55783e5e708c088aaa7c7c1b018da278ee128404a2f71b7d
+  backup:  .../BlackCEO/999/app/Candice Companion.app.bak-preuipass-20260826-170735
+           sha 2392036a336c465e8120ab020d546b75c341535b148e03fdf09840ecc2daaf57
+
+Sixteen backups present afterwards (the fifteen that were there, plus
+this one). `~/.local/bin/candice-companion` resolves to the new binary.
+No Candice process was running, so nothing was launched on the operator's
+screen and no restart is owed.
+
+Rollback is one command:
+
+  cd ~/Library/Application\ Support/BlackCEO/999/app && \
+    mv "Candice Companion.app" "Candice Companion.app.rejected" && \
+    mv "Candice Companion.app.bak-preuipass-20260826-170735" "Candice Companion.app"
