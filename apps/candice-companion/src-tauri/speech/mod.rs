@@ -903,6 +903,21 @@ fn speak_impl<R: Runtime>(
     // It matters most on Windows, where the alternative today is total
     // silence: no Windows Python payload ships, so tts_engine_ready is
     // false and every single utterance fails.
+    // A MANIFEST CONFLICT IS CHECKED FIRST, before any fallback.
+    //
+    // This used to sit below the system-voice branch, which meant a
+    // user-writable manifest declaring a voice the operator never approved
+    // was answered by SPEAKING ANYWAY -- in the system voice -- whenever the
+    // bundled engine happened to be absent. The disclosure notice made that
+    // feel safe, and it is not the point. A manifest that disagrees with the
+    // signed bundle is a tampering signal, and the answer to tampering is to
+    // stop, not to route around it and carry on talking. Refusing here also
+    // gives the honest reason instead of "voice assets are not installed".
+    if let Some(conflict) = res.canonical_voice_conflict() {
+        speak_release_slot(state, Some(&request.request_id));
+        return Err(format!("{conflict}; captions remain available"));
+    }
+
     let engine_absent = missing.map(|(id, _)| id.to_string()).or_else(|| {
         python.as_ref().map_or_else(
             || Some("bundled voice runtime".to_string()),
@@ -947,10 +962,6 @@ fn speak_impl<R: Runtime>(
     // A manifest from a user-writable root that disagrees with the signed
     // bundle is refused before anything else: obeying it is how a client
     // gets locked to a voice they never chose.
-    if let Some(conflict) = res.canonical_voice_conflict() {
-        speak_release_slot(state, Some(&request.request_id));
-        return Err(format!("{conflict}; captions remain available"));
-    }
     let approved = match resolve_approved_voice(
         inventory.as_ref(),
         inventory_result.as_ref().err().map(String::as_str),

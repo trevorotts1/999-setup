@@ -25,6 +25,7 @@ const FILES = [
   'exactly-one.test.js',
   'secret.test.js',
   'speakable.test.js',
+  'tauri-platform-config.test.js',
 ]
 
 let failures = 0
