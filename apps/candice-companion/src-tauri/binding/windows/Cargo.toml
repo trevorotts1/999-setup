@@ -1,0 +1,40 @@
+# WS-26 Windows Win32 window discovery/binding — Candice Companion.
+#
+# Owned by WR-016 lane (ownership map 9.2): apps/candice-companion/src-tauri/binding/windows/**
+# Standalone crate so the unit is buildable/testable independently of the WR-012-owned
+# app Cargo.toml. The run integration owner (9.3) wires this path into the app crate
+# at fan-in; the `win32` feature compiles the real Windows backend.
+#
+# Default feature set is empty: `cargo test` needs no Windows SDK and runs on any
+# host (the logic thread + fake backend are platform-neutral). Enable `win32` to
+# compile the real EnumWindows/GetWindowTextW/GetForegroundWindow backend, which
+# is gated at compile time behind #[cfg(windows)] so a non-Windows build never
+# links user32/dwmapi (target-gated at the feature definition too).
+
+[package]
+name = "candice-win32-bind"
+version = "0.1.0"
+edition = "2021"
+description = "WS-26 Windows Win32 window discovery/binding (Candice Companion)"
+publish = false
+
+[features]
+default = []
+# Real Win32 backend. Compiles only on Windows hosts (target-gated below);
+# the module itself is additionally #[cfg(windows)] so an unexpected
+# `--features win32` on macOS still cannot link user32.
+win32 = ["dep:windows"]
+
+[dependencies]
+windows = { version = "0.62.2", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_HiDpi",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+] }
+
+[profile.test]
+opt-level = 0

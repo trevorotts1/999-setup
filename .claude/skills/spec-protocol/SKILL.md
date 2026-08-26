@@ -634,6 +634,55 @@ VERIFIED matrix (never the example numbers) to the execution plan.
 
 ---
 
+## CANDICE — the companion (activation, bridge, fallback)
+
+Candice is the local visual/voice companion for BlackCEO skills (Master Spec
+3, 13-16). She wakes automatically on `/spec-protocol` via the
+`candice-integration` plugin hooks; she is optional, and **no Candice failure
+may ever destroy, reset, or block this run** (spec 20). She is the face, voice,
+and ears — the active Claude session and THIS skill remain the brain, rules,
+memory, and source of truth. She never creates a second AI conversation and
+never rewrites question order or rules (spec 2/15). The Candice integration
+is generic across `/spec-protocol`, `/kaizen`, `/eli5`, `/bro`; do not rename
+those commands.
+
+**Activation:** the plugin wakes Candice on the slash command before preflight
+completes (spec 13.1) and shows the setup-check message
+("Hi, I'm Candice. Give me just a moment..."). She is a progress surface for
+the preflight — she never decides whether setup passes; you still run and
+report the checks yourself.
+
+**Companion availability check (environment-driven, no self-probe):**
+1. Plugin registered → hooks fired → Candice wakes. Absent → she never wakes;
+   every question is asked normally in Claude.
+2. `CANDICE_COMPANION_READY=1` in the `candice` MCP env
+   (`plugins/candice-integration/.mcp.json`) = companion provisioned; the
+   `ask_user` tool fails soft otherwise. The flag is flipped by the
+   bootstrap/updater lanes, never by this skill.
+
+**Structured bridge (governed questions, spec 13.2):** deliver each governed
+question as a question event through `candice.ask_user`; the tool blocks until
+exactly one approved answer returns in the same session; the answer is
+validated against the answer-event schema. Session identity is the routing
+authority — a window is never routing evidence (spec 17). One governed
+question at a time; when the session crashed, recover the exact pending
+question and re-ask without re-counting (spec 20).
+
+**Fallback (spec 13.2, 20):** on ANY unavailability (`companion unavailable`,
+`delivery failed`, `no answer within the wait window`, session mismatch), the
+tool fails soft — ask the SAME question normally in Claude, same wording,
+same key, same counted state, never counted twice (`inputMode: terminal`).
+When the interview is complete, report progress from real project state only;
+never invent percentages (spec 16). Secret-bearing questions are never read
+aloud (`readAloud:false`; spec 14); raw audio is never part of the answer.
+
+Full detail: `references/candice-companion.md` (behavior, session identity,
+fallback, privacy, failure matrix) and `references/candice-question-contract.md`
+(schema fields, canonical question/answer JSON, key registry, status codes).
+Never restate contract mechanics from memory — read the reference at the step.
+
+---
+
 ## THE PERSONA — you are Candace (the voice, never the license)
 
 Once the harness, launcher, and version check are done, you introduce yourself as
@@ -1983,3 +2032,5 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)
 23. `tools/boss-cron` — the boss cron (PART 4 enforcement): the 5-minute cycle that compares the live ledger (`FIX-LEDGER.md` at the repo root) against the script (concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence, heartbeat, stop file, stop-and-rerun kill via `CONTROL/workflow-pids.json`), writes `VIOLATION-STOP` on violation with the exact finding and `BOSSCYCLE-CLEAN` on clean, exits 2 on violation (governance-exit contract), `--check` runs one cycle read-only, log `CONTROL/boss-cron.log`, cron entry `*/5 * * * *`, heartbeat alert if no `BOSSCYCLE-CLEAN` within two intervals (the boss is governed too), hook-protection clause intact (GATE 0b and the anti-drift contract above)
+24. `references/candice-companion.md` — the Candice companion reference: when she appears, the environment-driven availability check, session identity as routing authority, the structured `candice.ask_user` bridge, the Answer-in-Claude fallback, progress reporting, privacy/safety rules, and the failure matrix. Read it at any step that delivers a governed question or reports progress. **Never restate its mechanics from memory.**
+25. `references/candice-question-contract.md` — the structured question/answer contract: question-event and answer-event fields (schemaVersion 1.0), the canonical spec-14 JSON, the stable key registry, status-event phases, the `candice.ask_user` call shape, and stable fail-soft status codes. Read it before composing the first question event of a run.

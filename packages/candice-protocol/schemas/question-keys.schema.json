@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/question-keys.schema.json",
+  "title": "Candice Stable Question Keys Registry Schema",
+  "description": "Validation schema for question-keys.json, the machine-enumerable registry of stable question keys. Keys are fixed for the life of the contract: never re-ask a key already answered in the session, never reuse a key for a different question. New keys are proposed by the owning skill lane (WS-36/WS-37/WS-38/WS-39) and applied by the integration owner; the registry is the canonical index. Candice Master Spec section 14. Version: 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "skills", "keys"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec-protocol", "kaizen", "eli5", "bro"],
+      "properties": {
+        "spec-protocol": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_-]*$"
+          },
+          "uniqueItems": true
+        },
+        "kaizen": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_-]*$"
+          },
+          "uniqueItems": true
+        },
+        "eli5": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_-]*$"
+          },
+          "uniqueItems": true
+        },
+        "bro": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_-]*$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "skill", "meaning", "counted"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_-]*$"
+          },
+          "skill": {
+            "type": "string",
+            "enum": ["spec-protocol", "kaizen", "eli5", "bro"]
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the key means, in the skill's own language. Not the display wording."
+          },
+          "counted": {
+            "type": "boolean",
+            "description": "True when the question counts toward the governed question ceiling."
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": ["normal", "secret", "personal"],
+            "default": "normal"
+          },
+          "answerKind": {
+            "type": "string",
+            "enum": ["free_text", "single_choice", "yes_no", "confirm", "mode_choice"],
+            "default": "free_text"
+          }
+        }
+      },
+      "uniqueItems": true
+    }
+  }
+}

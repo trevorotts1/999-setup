@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/preferences.schema.json",
+  "title": "Candice Local Preferences",
+  "description": "The small local preference profile persisted per OS user. This is never project/conversation memory: the active Claude skill/project files remain the durable source of truth for project decisions and answers. Versioned for migration (WS-34). Candice Master Spec section 9. Version: 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "preferredName", "voiceOutputEnabled", "lastUsedSkill"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version of the preferences schema. Bumped by the integration/release owner only (manifest 9.4 class 2); WS-34 provides migrations."
+    },
+    "preferredName": {
+      "type": ["string", "null"],
+      "maxLength": 64,
+      "description": "The user's stated preferred name, asked at most once per local OS user (spec 4). Never inferred from the OS username. Null until asked. Changeable later."
+    },
+    "voiceOutputEnabled": {
+      "type": "boolean",
+      "description": "Voice responses ON/OFF. Independent of answer method: every combination of voice/typed input and voiced/muted output must work (spec 5.2)."
+    },
+    "volume": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 1.0,
+      "description": "TTS output volume."
+    },
+    "speechRate": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2.0,
+      "default": 1.0,
+      "description": "TTS speech rate multiplier."
+    },
+    "lastUsedAnswerMethod": {
+      "type": ["string", "null"],
+      "enum": ["voice", "typed", null],
+      "description": "Remembered convenience only; never a lock. Every question still offers both HOLD TO TALK and TYPE ANSWER (spec 5.1)."
+    },
+    "textSize": {
+      "type": "string",
+      "enum": ["small", "medium", "large"],
+      "default": "medium",
+      "description": "Caption/UI text size."
+    },
+    "reducedMotion": {
+      "type": ["boolean", "null"],
+      "description": "Null = follow OS reduced-motion setting; true = force minimal animation; false = animations allowed (spec 10)."
+    },
+    "companionScreenPosition": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "Screen x offset in points relative to the bound terminal anchor, or free position when floating."
+        },
+        "y": {
+          "type": "number",
+          "description": "Screen y offset in points."
+        },
+        "anchor": {
+          "type": "string",
+          "enum": ["left", "right", "floating"],
+          "description": "Anchoring preference beside the bound terminal, or independent movable floating mode (Accessibility denied fallback)."
+        }
+      },
+      "description": "Remembered preferred offset; the user may always reposition."
+    },
+    "lastUsedSkill": {
+      "type": ["string", "null"],
+      "enum": ["spec-protocol", "kaizen", "eli5", "bro", null],
+      "description": "Optional last-used supported skill, for the companion's convenience only."
+    }
+  }
+}

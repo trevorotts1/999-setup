@@ -204,7 +204,7 @@ the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) 
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.16.4,
+Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.17.1,
 `nine-router-setup` 1.16.3, `kaizen` 1.0.1, `eli5` 1.0.0, `bro` 1.0.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all five skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
@@ -305,6 +305,21 @@ key, refuses (non-fatally) if the file is not valid JSON, and never prints the
 settings contents. The change applies to **new sessions**. Both installers
 (`setup-macos.sh`, `setup-windows.ps1`) run it during setup, and the spec-protocol
 (step 2.6) and kaizen onboarding first-run steps apply it too.
+
+## Candice Companion — install
+
+Candice ships as a prebuilt Tauri 2 app (macOS Apple Silicon DMG, Windows x64 NSIS installer) from GitHub Releases. No Rust/Node/build toolchain on the customer machine.
+
+1. Install Claude Code (Step 1 above).
+2. Run the 999-setup bootstrap (WS-31): installs the five bundled skills, the candice-integration plugin, the companion app, pinned STT/TTS assets, and version/checksum metadata.
+3. Existing users: the updater detects newer Spec Protocol, self-updates, and installs missing/stale Candice components on next invocation (WS-32). Plain `claude` settings are untouched.
+4. Candice wakes on /spec-protocol, /kaizen, /eli5, /bro and raises within a few seconds, before preflight completes.
+
+### Release 0.2.0 notes
+
+- macOS: signed with Developer ID + notarized when production credentials are supplied; otherwise the missing-credential limitation is recorded and Gatekeeper is never disabled.
+- Windows: unsigned builds trigger SmartScreen ("Windows protected your PC") — expected and truthful; the installer is never misrepresented as trusted. See apps/candice-companion/scripts/package-windows/SIGNING-STATUS.md.
+- Speech is local and offline (whisper.cpp STT, Kokoro TTS); no per-use cloud cost.
 
 ## License
 

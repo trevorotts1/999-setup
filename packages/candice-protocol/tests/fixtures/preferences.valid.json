@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "preferredName": "Trevor",
+  "voiceOutputEnabled": true,
+  "volume": 0.9,
+  "speechRate": 1.0,
+  "lastUsedAnswerMethod": "typed",
+  "textSize": "medium",
+  "reducedMotion": null,
+  "companionScreenPosition": {
+    "x": 12,
+    "y": 8,
+    "anchor": "right"
+  },
+  "lastUsedSkill": "spec-protocol"
+}

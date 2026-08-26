@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "skills": {
+    "spec-protocol": ["BUILD_TARGET"],
+    "kaizen": [],
+    "eli5": [],
+    "bro": []
+  },
+  "keys": [
+    {
+      "key": "BUILD_TARGET",
+      "skill": "spec-protocol",
+      "meaning": "The user's product idea in their own words: what it is and who it is for (Candice Master Spec section 14 example).",
+      "counted": false,
+      "sensitivity": "normal",
+      "answerKind": "free_text"
+    }
+  ]
+}

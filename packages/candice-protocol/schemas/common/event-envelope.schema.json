@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.blackceo.dev/candice/event-envelope.schema.json",
+  "title": "Candice Event Envelope",
+  "description": "Shared envelope for all Candice companion events (question, answer, status). Each concrete event schema re-declares its own fields (no $ref across files, for standalone validation), and this envelope documents the common discriminators: schemaVersion, sessionId, skill (question/status only), and event. The companion rejects events with an unknown schemaVersion. Candice Master Spec section 14. Version: 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "event"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Version of the event schema. Consumers reject unknown versions; producers must not silently downgrade."
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque Claude Code session identifier. Routing authority; never derived from window position."
+    },
+    "skill": {
+      "type": "string",
+      "enum": ["spec-protocol", "kaizen", "eli5", "bro"],
+      "description": "The supported BlackCEO skill that invoked Candice. Absent on answer events (the answer echoes the question's key instead)."
+    },
+    "event": {
+      "type": "string",
+      "enum": ["question", "answer", "status"],
+      "description": "Event discriminator. Every event is exactly one of these three."
+    }
+  }
+}

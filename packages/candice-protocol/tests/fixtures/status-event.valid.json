@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "sessionId": "opaque-session-id",
+  "event": "status",
+  "phase": "CHECKING_SETUP",
+  "message": "Hi, I'm Candice. Give me just a moment while I make sure everything is set up properly for us to work together.",
+  "captions": true,
+  "timestamp": "2026-08-21T12:00:00Z"
+}
