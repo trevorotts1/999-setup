@@ -41,6 +41,18 @@ import {
 import '../index.ts';
 import { createCandiceStateMachine } from '../../../state/machine.ts';
 import type { CandiceStateMachine } from '../../../state/machine.ts';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// The compact lane is never mounted, so a DOM test cannot reach these
+// behaviours. Read the module text instead -- the same approach
+// proc.rs::spawn_sites_all_use_the_helper takes for a rule that has to
+// hold in code nobody currently executes.
+const COMPACT_VIEW_SOURCE = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'view.ts'),
+  'utf8',
+);
 
 // -------------------------------------------------------------- tiny fake DOM
 
@@ -251,16 +263,32 @@ test('E.1 WS-10: visual modes are bubble/surface only; contract stable', () => {
 // ------------------------------------------------------------- style contract
 
 test('E.1 + spec 11/19: style contract has no baked colors/backgrounds, no loops', () => {
-  // The only background keyword allowed is the explicit transparent reset;
-  // any baked color (hex/rgb/url) is banned (WS-07 lane convention).
+  // NARROWED for FIX-008, exactly as captions.test.ts was, and for the
+  // same reason. The blanket "no background" clause came from the
+  // CHARACTER-surface invariant, where it still holds absolutely. But this
+  // lane is TEXT. The window is `transparent: true` and alwaysOnTop, so
+  // text with no backdrop renders onto the user's desktop -- the operator
+  // reported reading his terminal scrollback straight through a governed
+  // question. Every shipping lane (captions, answer-controls, PTT,
+  // animation-toggle) paints a token scrim; this lane predates the change
+  // and was the only one left enforcing the old rule against itself.
+  //
+  // The transparency that the design actually depends on, around the
+  // character, is untouched.
   assert.doesNotMatch(COMPACT_STYLE_TEXT, /#(?:[0-9a-fA-F]{3,8})/, 'no hex colors');
   assert.doesNotMatch(COMPACT_STYLE_TEXT, /rgba?\(/i, 'no rgb/rgba colors');
   assert.doesNotMatch(COMPACT_STYLE_TEXT, /url\(/i, 'no background images');
-  assert.doesNotMatch(
-    COMPACT_STYLE_TEXT.replace(/background:\s*transparent/gi, ''),
-    /background:/i,
-    'only transparent background resets allowed',
-  );
+  const backgrounds = COMPACT_STYLE_TEXT.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^background(-color)?\s*:/.test(line));
+  assert.ok(backgrounds.length > 0, 'FIX-008: compact text must paint an opaque backdrop');
+  for (const declaration of backgrounds) {
+    assert.match(
+      declaration,
+      /^background(-color)?\s*:\s*(var\(--candice-[a-z-]+\)|transparent)\s*;?$/,
+      `background must come from a shared token, never a baked value: ${declaration}`,
+    );
+  }
   assert.doesNotMatch(COMPACT_STYLE_TEXT, /@keyframes/, 'no keyframe loops');
   assert.doesNotMatch(COMPACT_STYLE_TEXT, /animation:/, 'no animation property');
 });
@@ -436,4 +464,56 @@ test('contract: root class and status attr are declared and distinct', () => {
   assert.equal(COMPACT_ROOT_CLASS, 'candice-compact');
   assert.equal(COMPACT_STATUS_ATTR, 'data-candice-compact-status');
   assert.equal(COMPACT_EXPANDED_CLASS, 'candice-compact-expanded');
+});
+
+// ------------------------------- the lane is unmounted, not exempt
+
+/**
+ * `CompactTransport` has no implementation anywhere in this product, so
+ * this lane is deliberately never mounted. That is exactly why these
+ * defects survived: nothing renders it, so nothing catches them.
+ *
+ * They are fixed and pinned here so that whenever a transport does exist,
+ * mounting the lane does not ship a microphone that can stick open, a
+ * mute button that lies, or a surface no keyboard user can open.
+ */
+test('hold-to-talk cannot strand the microphone open', () => {
+  const source = COMPACT_VIEW_SOURCE;
+  // pointercancel: the OS cancels a pointer mid-hold for its own reasons.
+  // Unhandled, `talkHeld` stayed true and no release ever came.
+  assert.match(source, /pointercancel/, 'a cancelled pointer must release the mic');
+  assert.match(source, /lostpointercapture/, 'losing capture must release the mic');
+  assert.match(source, /setPointerCapture/, 'release outside the button must still reach it');
+  assert.match(source, /'blur'/, 'focus lost mid-hold must release the mic');
+});
+
+test('hold-to-talk works from the keyboard at all', () => {
+  // Space and Enter on a <button> fire `click`, never `pointerdown`. With
+  // only pointer handlers a keyboard-only user could not speak.
+  assert.match(COMPACT_VIEW_SOURCE, /addEventListener\('keydown'/, 'keydown begins the hold');
+  assert.match(COMPACT_VIEW_SOURCE, /addEventListener\('keyup'/, 'keyup ends it');
+});
+
+test('the mute button does not keep its state in its own label', () => {
+  // It read `mute.textContent === 'Unmute' ? ... : ...`, so a copy edit
+  // silently inverted the control and assistive tech was told nothing.
+  assert.doesNotMatch(
+    COMPACT_VIEW_SOURCE,
+    /textContent === 'Unmute'/,
+    'state must not be recovered by comparing the visible label',
+  );
+  assert.match(COMPACT_VIEW_SOURCE, /aria-pressed/, 'the pressed state must be exposed');
+});
+
+test('the expand affordance is reachable without a mouse', () => {
+  assert.match(COMPACT_VIEW_SOURCE, /aria-expanded/, 'expansion state is exposed');
+});
+
+test('CONTROL: the source probe reads the real module', () => {
+  // Every assertion above is a regex over source text. If the read failed
+  // or pointed somewhere empty they would all fail rather than pass
+  // vacuously -- but a future refactor could point it at the wrong file,
+  // so pin something only this module contains.
+  assert.ok(COMPACT_VIEW_SOURCE.length > 3000, 'the module was actually read');
+  assert.match(COMPACT_VIEW_SOURCE, /COMPACT_STYLE_TEXT/, 'and it is the compact view');
 });

@@ -69,6 +69,13 @@ export const CONTROL_SELECTOR = [
   // own rectangle left it at 1. The voice toggle, which is a <button> and
   // therefore matched whole, took the same synthesized click correctly.
   '.candice-animation-toggle',
+  // The compact surface is not mounted today (CompactTransport has no
+  // implementation), so this matches nothing. It is here because the
+  // lane's expand affordance is otherwise outside every published
+  // rectangle -- a click on it would pass THROUGH Candice to the desktop,
+  // the exact bug the animation toggle had. Listing it now means mounting
+  // the lane later cannot reintroduce it.
+  '.candice-compact',
   '.candice-name-prompt',
   '.fallback-title',
   '.fallback-hint',
