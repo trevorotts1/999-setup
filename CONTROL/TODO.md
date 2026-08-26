@@ -99,3 +99,63 @@ Reconcile: MASTER SPEC <-> PROJECT MANIFEST; PROJECT MANIFEST <-> TODO; TODO <->
 Required repairs: checklist says complete but QC proof missing -> reopen; TODO item missing from task graph -> restore it; board claims a run but no handle/tree proves it -> visibility drift; two writers claim the same unit -> freeze conflicting writes and reconcile ownership; completed item has a failing required test -> reopen; ledger/restart steps stale -> regenerate before further dispatch.
 
 Compaction is never permission to re-plan from conversational memory (0J).
+
+---
+
+## LIVE INVENTORY ADDENDUM — 2026-08-26 (Opus defect-repair session)
+
+Appended, not substituted. Nothing above is edited or removed; the FIX-001
+release-truth override at the head of this file still governs. The status
+marker is deliberately unchanged (`open=24 complete=0`): repairing defects is
+not the same as closing fix ids, and a builder does not flip its own boxes.
+
+### Closed this session (defects, with commits — NOT fix-id completions)
+
+| Defect | Commit | Proof |
+|---|---|---|
+| Lip sync dead; mouth never opened | `d592326` | measured 1.01x vs control before; 28/48 spans were being dropped; tests on a committed real-TTS capture |
+| Every wake spawned another Candice | `c37fcd0` | verified live on the operator box: second wake stood down, exit 0 |
+| Character squeezed out of frame; options unclickable | `1c0d49b` | floor was on an element deleted at runtime; stack could exceed 640px |
+| Registry copies drifted at the same version | `54e0ea1` | 12 entries differed; parity guard added and mutation-tested |
+| Windows: no voice, unfindable app, console windows | `3247c83` | source-walking test enforces every spawn site |
+| Wrong app version; unreadable profile read as first run | `9ff8804` | built bundle now carries 1.0.0-rc.1 |
+
+### OPEN — cannot be closed from this seat
+
+- **`macosSigningAndNotarization`** — the artifact is ad-hoc signed by operator
+  decision (2026-08-23). Notarization needs Apple credentials.
+- **`windowsSigningAndInteractiveSmoke`** — no Windows machine exists on this
+  project. `scripts/package-windows/SIGNING-STATUS.md` records NOT SIGNED.
+- **`independentQc` / FIX-024** — requires a reviewer who is not the builder.
+- **`cleanMachine`** — requires a machine with no prior Candice state.
+
+### OPEN — actionable, not yet done
+
+- **STT is absent from the shipped artifact.** All three `whisper-cli` rows in
+  `SPEECH-INVENTORY.json` are `sha256Status: absent`, `bundled: false`. Voice
+  input does not exist until the installer lane places them. The macOS pin
+  points at a Homebrew bottle, which would link Homebrew dylibs — needs
+  checking before it is placed.
+- **Microphone entitlement missing.** `scripts/package-macos/entitlements.plist`
+  carries only the three `cs.*` keys. A hardened-runtime build denies mic
+  access without `com.apple.security.device.audio-input`, regardless of the
+  Info.plist usage string. Dev runs use the unhardened binary, which is why
+  this has never been felt.
+- **Windows `speech-assets` is bundled unconditionally**, so a Windows
+  installer would carry a 378 MB macOS-arm64 Python. Needs platform-specific
+  bundle resources.
+- **Windows whisper DLLs are unpinned.** The upstream zip ships `whisper.dll`
+  and `ggml*.dll`; the inventory has no rows for them, so the exe alone would
+  fail with STATUS_DLL_NOT_FOUND.
+- **`local-companion-bridge.test.js` hangs** with two failures. Pre-existing —
+  confirmed by stashing and re-running at HEAD.
+- **Packaged accessibility tier still BLOCKED.** The answer controls never
+  appear in the packaged a11y tree; an AX dump showed only
+  `WINDOW: Candice > group > group`. Untouched this session.
+- **Duplicate window, remaining case.** Wake-only instance up, then an MCP
+  bridge launch, still yields two windows. Closing it is routing work in the
+  FIX-011/FIX-013 lane.
+- **`AGENT_TEAM_CONSENT` never asks a question.** A consent prompt that states
+  the consequences and stops is broken. A proposed rewrite adds "Shall I turn
+  it on?"; that ADDS a sentence rather than simplifying, so it is an operator
+  decision and was deliberately not applied.
