@@ -102,6 +102,13 @@ export function createAnswerControlsController(
       options.submitAnswer?.(text);
       render();
     },
+    onChooseOption: (value) => {
+      // A picked option is a confirmed answer: it came from the registry's own
+      // list, so there is nothing to transcribe and nothing to confirm.
+      machine.transition({ type: 'answer:confirmed', transcript: value });
+      options.submitAnswer?.(value);
+      render();
+    },
     onDelegateToClaude: () => {
       machine.transition({ type: 'answer:delegate-to-claude' });
       options.delegateToClaude?.();
@@ -187,6 +194,7 @@ export function createAnswerControlsController(
     // activates on the integrated surface, driven by the same reducer
     // the rest of the surface reads.
     if (pttView !== null) pttView.show(state.status);
+    view.showOptions(state.pendingOptions);
     view.setModel(
       answerControlsModel(state, {
         lastUsedMethod,

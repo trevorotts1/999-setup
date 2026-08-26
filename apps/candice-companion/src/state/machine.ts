@@ -59,6 +59,14 @@ export interface CandiceState {
   transcript: string | null;
   /** The pending question, recovered verbatim across `recovering` (spec 20). */
   pendingQuestion: string | null;
+  /**
+   * Registry `options` for the pending question, when it is a choice question.
+   *
+   * These are the exact answer values the protocol expects -- they are not
+   * display copy and are never invented here. Null means "not a choice
+   * question", which is different from an empty list.
+   */
+  pendingOptions: readonly string[] | null;
   /** Voice responses ON/OFF (spec 5.2). Never inferred; always explicit. */
   voiceEnabled: boolean;
   /** TTS degraded to system speech (clearly fallback, never canonical). */
@@ -79,6 +87,8 @@ export interface CandiceEvent {
   readonly transcript?: string;
   /** Present on `question:received` / `question:recovered`. */
   readonly question?: string;
+  /** Choice options for `question:received`, straight from the registry. */
+  readonly options?: readonly string[];
   /** Present on `speech:tts`. */
   readonly ttsFallback?: boolean;
 }
@@ -137,6 +147,7 @@ export const INITIAL_STATE: CandiceState = {
   status: 'idle',
   transcript: null,
   pendingQuestion: null,
+  pendingOptions: null,
   voiceEnabled: true,
   ttsFallbackActive: false,
   bridgeUnavailable: false,
@@ -241,7 +252,18 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           event.question ??
           (event.type === 'question:recovered' ? state.pendingQuestion : null);
         if (question == null) return null;
-        state = { ...state, pendingQuestion: question, status: 'thinking' };
+        // A recovered question keeps the options it was delivered with: the
+        // recovery event carries no registry payload, and dropping them would
+        // silently downgrade a choice question to a text box after a crash.
+        const options =
+          event.options ??
+          (event.type === 'question:recovered' ? state.pendingOptions : null);
+        state = {
+          ...state,
+          pendingQuestion: question,
+          pendingOptions: options ?? null,
+          status: 'thinking',
+        };
         lastEffects.push({ type: 'captions:show', caption: question });
         return state;
       }
@@ -254,6 +276,7 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           ...state,
           transcript,
           pendingQuestion: null,
+          pendingOptions: null,
           status: 'thinking',
         };
         return state;
@@ -374,7 +397,13 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
         // must not remain a false live-answer surface.
         lastEffects.push({ type: 'tts:stop', caption: null });
         lastEffects.push({ type: 'mic:close', caption: null });
-        state = { ...state, pendingQuestion: null, transcript: null, status: 'idle' };
+        state = {
+          ...state,
+          pendingQuestion: null,
+          pendingOptions: null,
+          transcript: null,
+          status: 'idle',
+        };
         return state;
       }
 
@@ -452,12 +481,24 @@ function isCandiceErrorCode(value: unknown): value is CandiceErrorCode {
   return typeof value === 'string' && (Object.values(CANDICE_ERRORS) as string[]).includes(value);
 }
 
+/** Options compare by CONTENT: a re-parsed wire payload is a new array every
+ *  time, so reference equality would report a change on every transition. */
+function sameOptions(
+  a: readonly string[] | null,
+  b: readonly string[] | null,
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 function sameState(a: CandiceState, b: CandiceState): boolean {
   return (
     a.phase === b.phase &&
     a.status === b.status &&
     a.transcript === b.transcript &&
     a.pendingQuestion === b.pendingQuestion &&
+    sameOptions(a.pendingOptions, b.pendingOptions) &&
     a.voiceEnabled === b.voiceEnabled &&
     a.ttsFallbackActive === b.ttsFallbackActive &&
     a.bridgeUnavailable === b.bridgeUnavailable &&

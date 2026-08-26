@@ -148,6 +148,37 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   text-align: center;
   color: var(--candice-ac-muted);
 }
+/* Choice questions ship their answer values in the registry. Before this the
+   webview dropped them and rendered a bare text box, so the user had to type a
+   value they had never been shown. These are big, obvious tap targets. */
+.candice-answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+.candice-answer-options[hidden] {
+  display: none;
+}
+.candice-answer-option {
+  border: 1px solid var(--candice-ac-accent);
+  border-radius: 999px;
+  background: var(--candice-ui-surface, #171321);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 18px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.candice-answer-option:hover {
+  border-color: var(--candice-ac-accent-text);
+}
+.candice-answer-option:focus-visible {
+  outline: 2px solid var(--candice-ac-accent-text);
+  outline-offset: 2px;
+}
 `;
 
 /** Set once by the first DOM-capable creation. */
@@ -168,6 +199,8 @@ export function mountAnswerControlsStyle(): void {
 export interface AnswerControlsViewHandlers {
   /** User pressed ENTER or clicked submit in the type box. */
   onTypeAnswer(text: string): void;
+  /** User picked one of the registry options for a choice question. */
+  onChooseOption(value: string): void;
   /** User chose the terminal/Claude path (spec 5.1). */
   onDelegateToClaude(): void;
   /** User toggled voice responses ON/OFF (spec 5.2). */
@@ -185,7 +218,25 @@ export interface AnswerControlsView {
   setModel(model: AnswerControlsModel): void;
   /** Attach the PTT control into the answer surface (one slot). */
   attachPtt(mount: HTMLElement): void;
+  /** Render the choice buttons for a choice question; null hides the row. */
+  showOptions(options: readonly string[] | null): void;
   destroy(): void;
+}
+
+/**
+ * Human-readable label for a registry option value.
+ *
+ * Registry options are answer VALUES, not display copy: `provided-material`
+ * is what the protocol accepts, and showing that raw is barely better than a
+ * blank box. This only re-cases and de-hyphenates -- it never invents wording,
+ * because inventing a label would show the user a choice the registry does
+ * not define. Values that are already prose (`I don't know`) pass through.
+ */
+export function optionLabel(value: string): string {
+  const spaced = value.replace(/[-_]+/g, ' ').trim();
+  if (spaced.length === 0) return value;
+  if (/[A-Z]/.test(spaced) || /\s/.test(value)) return spaced;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /** Empty no-op view — DOM absence must never throw (spec 20). */
@@ -194,6 +245,7 @@ function nullView(): AnswerControlsView {
     el: null,
     setModel() {},
     attachPtt() {},
+    showOptions() {},
     destroy() {},
   };
 }
@@ -217,6 +269,10 @@ export function createAnswerControlsView(
 
   // Method row: the PTT slot + type answer. The PTT control is mounted by
   // the PTT lane into the slot below; this lane never re-implements it.
+  const optionsRow = document.createElement('div');
+  optionsRow.className = 'candice-answer-options';
+  optionsRow.hidden = true;
+
   const methods = document.createElement('div');
   methods.className = 'candice-answer-methods';
 
@@ -288,7 +344,9 @@ export function createAnswerControlsView(
 
   methods.append(pttSlot, typeWrap);
   typeWrap.append(input, submit);
-  root.append(methods, footer, confirm);
+  // Choices sit ABOVE the answer methods: when a question has options, picking
+  // one is the intended path and typing is the fallback, not the reverse.
+  root.append(optionsRow, methods, footer, confirm);
 
   mount.append(root);
 
@@ -363,6 +421,27 @@ export function createAnswerControlsView(
     setModel,
     attachPtt(inner: HTMLElement): void {
       pttSlot.replaceChildren(inner);
+    },
+    showOptions(list: readonly string[] | null): void {
+      if (destroyed) return;
+      if (list === null || list.length === 0) {
+        optionsRow.hidden = true;
+        optionsRow.replaceChildren();
+        return;
+      }
+      const buttons = list.map((value) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'candice-answer-option';
+        b.textContent = optionLabel(value);
+        // The LABEL is humanized for reading; the submitted VALUE is always
+        // the registry string, never the prettified text.
+        b.dataset.candiceOptionValue = value;
+        b.addEventListener('click', () => handlers.onChooseOption(value));
+        return b;
+      });
+      optionsRow.replaceChildren(...buttons);
+      optionsRow.hidden = false;
     },
     destroy(): void {
       destroyed = true;

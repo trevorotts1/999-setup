@@ -40,6 +40,16 @@ interface BridgeQuestion {
   sensitivity?: string;
   /** Registry `spoken` variant when the producer sends one; else `text`. */
   spoken?: string;
+  /** Registry `answerKind` (`single_choice`, `free_text`, `confirm`, `yes_no`). */
+  answerKind?: string;
+  /**
+   * Registry `options` -- the exact answer values a choice question accepts.
+   *
+   * These arrive on the wire already and were being discarded here, so a
+   * `single_choice` question rendered as a bare text box and the user had to
+   * type a value they were never shown.
+   */
+  options?: readonly string[];
 }
 
 interface BridgeIdentity {
@@ -75,6 +85,17 @@ function parseQuestion(payload: unknown): BridgeQuestion | null {
   parsed.sensitivity = typeof question.sensitivity === 'string' ? question.sensitivity : undefined;
   parsed.spoken = typeof question.spoken === 'string' && question.spoken.length > 0
     ? question.spoken
+    : undefined;
+  parsed.answerKind = typeof question.answerKind === 'string' ? question.answerKind : undefined;
+  // Options are answer VALUES, so a malformed list is refused outright rather
+  // than filtered: a partially-accepted list would offer the user a set of
+  // choices that is not the set the protocol will accept.
+  parsed.options = Array.isArray(question.options)
+    && question.options.length > 0
+    && question.options.every(
+      (o) => typeof o === 'string' && o.length > 0 && o.length <= 200,
+    )
+    ? (question.options as readonly string[])
     : undefined;
   return parsed;
 }
@@ -396,7 +417,11 @@ export async function initializeAuthenticatedBridge(
     active = { ...question, operationId };
     submitted = false;
     awaitingRecovery = replayed;
-    machine.transition({ type: 'question:received', question: question.text });
+    machine.transition({
+      type: 'question:received',
+      question: question.text,
+      options: question.options,
+    });
     try { await invoke('cmd_set_answer_input_enabled', { enabled: true }); } catch {
       machine.transition({ type: 'bridge:unavailable' });
       await closeControls();
