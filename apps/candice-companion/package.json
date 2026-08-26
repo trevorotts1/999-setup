@@ -2,7 +2,7 @@
   "name": "candice-companion",
   "private": true,
   "version": "1.0.0-rc.1",
-  "description": "Candice Companion — local visual and voice companion for Claude Code skills (Tauri 2 shell)",
+  "description": "Candice Companion \u2014 local visual and voice companion for Claude Code skills (Tauri 2 shell)",
   "type": "module",
   "engines": {
     "node": "^18.0.0 || ^20.0.0 || >=22.0.0"
@@ -13,7 +13,7 @@
     "build": "tsc --noEmit && vite build --config vite.config.build.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:build": "npm run build && node -e \"require('fs').copyFileSync('tauri.conf.json','src-tauri/tauri.conf.json')\" && cd src-tauri && tauri build",
+    "tauri:build": "npm run build && node scripts/stage-tauri-config.mjs && cd src-tauri && tauri build",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:ts": "node --test --experimental-strip-types \"src/**/*.test.ts\" \"assets/**/*.test.ts\"",
     "test:fix-008": "node --test --experimental-strip-types src/a11y/__tests__/a11y.test.ts src/a11y/__tests__/runtime.test.ts src/window/__tests__/window.test.ts src/window/__tests__/input-policy.test.ts src/window/__tests__/visible-regions.test.ts src/window/__tests__/native-input-regions.test.ts",

@@ -359,7 +359,17 @@ export async function initializeRuntimeComposition(
     // announced "Candice could not speak this question aloud: <raw engine
     // error>" on EVERY question. Knowing it in advance, the right move is
     // to stay quiet rather than narrate the same failure forever.
-    ttsAvailable: speech?.health ? speech.health.ttsEngineReady : undefined,
+    // "Can she speak at all", not "is the Kokoro engine ready".
+    //
+    // This was `ttsEngineReady` alone, which was correct until the system
+    // voice landed and then quietly cancelled it: on Windows
+    // ttsEngineReady is false, so the bridge returned BEFORE calling
+    // speak, and speak_impl's system-voice fallback could never be
+    // reached. The gate would have suppressed the very capability that
+    // was added to fix the thing it was suppressing for.
+    ttsAvailable: speech?.health
+      ? speech.health.ttsEngineReady || speech.health.capabilities.systemTtsAvailable
+      : undefined,
     // A refused microphone press now SAYS so. The explanation was already
     // being computed for a callback nobody supplied, so a denied mic made
     // the button look simply broken.

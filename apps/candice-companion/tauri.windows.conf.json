@@ -1,0 +1,31 @@
+{
+  "$comment": [
+    "Windows-only overrides, merged over tauri.conf.json by the Tauri CLI",
+    "following JSON Merge Patch (RFC 7396). Under RFC 7396 a null VALUE",
+    "removes the key, which is the only way to drop an entry from the",
+    "resources map on one platform without touching the shared config.",
+    "",
+    "Why speech-assets is removed on Windows: nothing in it can run there.",
+    "tts/python is a Mach-O arm64 CPython build (verified: bin/python3 is",
+    "Mach-O 64-bit arm64, and the tree holds 5 .dylib and 25 .so files and",
+    "ZERO .pyd, so nothing in it is loadable by a Windows interpreter). The",
+    "STT engine is absent on every platform - all three whisper-cli rows in",
+    "SPEECH-INVENTORY.json are sha256Status: absent - so the 31MB model has",
+    "nothing to run it. That left roughly 378MB of payload shipping inside",
+    "the NSIS installer that could never execute.",
+    "",
+    "Windows speech is covered instead by the WR-016 system voice, which",
+    "uses the System.Speech synthesizer already present on the machine and",
+    "needs no bundled assets at all.",
+    "",
+    "UNVERIFIED: there is no Windows machine on this project, so no Windows",
+    "bundle has been produced with this file in place. What IS verified is",
+    "that it does not affect the macOS build - the CLI only reads the",
+    "platform file matching the build target."
+  ],
+  "bundle": {
+    "resources": {
+      "speech-assets/": null
+    }
+  }
+}

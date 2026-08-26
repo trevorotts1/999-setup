@@ -43,6 +43,9 @@ apps/candice-companion/src-tauri/**/target/
 apps/candice-companion/src-tauri/gen/
 # Generated mirror of the app-root tauri.conf.json (build.rs copies it)
 apps/candice-companion/src-tauri/tauri.conf.json
+apps/candice-companion/src-tauri/tauri.windows.conf.json
+apps/candice-companion/src-tauri/tauri.macos.conf.json
+apps/candice-companion/src-tauri/tauri.linux.conf.json
 # Q-10 release-config-guard crate build outputs (sign/verify helper binary)
 scripts/candice-release/release-config-guard/target/
 
