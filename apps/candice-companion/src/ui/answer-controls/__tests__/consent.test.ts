@@ -80,7 +80,9 @@ test('denied press blocks and carries the actionable explanation', async () => {
   assert.equal(blocked().length, 1);
   assert.equal(blocked()[0].consent, 'denied');
   assert.ok(blocked()[0].explanation.includes('System Settings'));
-  assert.ok(blocked()[0].explanation.includes('Typed answers remain available'));
+  // The explanation must always end by naming the way in that still
+  // works -- a refusal the user cannot act on is a dead end.
+  assert.ok(blocked()[0].explanation.includes('You can still type your answer'));
   // Release after a blocked press still routes the stop: the machine's
   // `ptt:stop` transition is a no-op when nothing is listening, so the
   // pointerup path stays uniform regardless of the gate outcome.
@@ -95,7 +97,7 @@ test('no-device and error block with honest explanations', async () => {
     await new Promise((r) => setTimeout(r, 0));
     assert.equal(allowed(), 0);
     assert.equal(blocked().length, 1);
-    assert.ok(blocked()[0].explanation.includes('Typed answers'));
+    assert.ok(blocked()[0].explanation.includes('You can still type your answer'));
   }
 });
 
@@ -137,7 +139,7 @@ test('throwing query closes the gate with error (fail closed at the gate)', asyn
   assert.equal(allowed(), 0);
   assert.equal(blocked().length, 1);
   assert.equal(blocked()[0].consent, 'error');
-  assert.ok(blocked()[0].explanation.includes('Typed answers'));
+  assert.ok(blocked()[0].explanation.includes('You can still type your answer'));
 });
 
 test('rejecting query closes the gate with error', async () => {
@@ -161,4 +163,50 @@ test('destroy discards pending answers and never calls onStopped', async () => {
   assert.equal(allowed(), 0);
   assert.equal(stopped(), 0);
   assert.equal(gate.isPressed(), false);
+});
+
+// ------------------------------ somebody has to actually supply onBlocked
+
+/**
+ * The bug this guards was not in the gate. The gate computed a correct,
+ * actionable explanation for every blocked consent state and handed it to
+ * `onBlocked` -- and NOBODY EVER SUPPLIED AN `onBlocked`. Neither the
+ * bridge nor the orchestrator passed one, so the explanation was built and
+ * dropped. A user whose microphone was denied pressed HOLD TO TALK and saw
+ * nothing at all: no error, no hint, no reason. The single failure mode the
+ * user can fix themselves was the one we said nothing about.
+ *
+ * Every test above passes with the callback wired to nothing, because they
+ * supply their own. So this reads the source, the way
+ * `proc.rs::spawn_sites_all_use_the_helper` does for the same class of
+ * problem: a seam that is only correct if someone downstream connects it.
+ */
+test('the shell wires the blocked explanation to a real surface (source guard)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const read = (rel: string): string => readFileSync(join(here, rel), 'utf8');
+
+  const composition = read('../../../runtime/composition.ts');
+  const bridge = read('../../../runtime/bridge.ts');
+
+  assert.ok(
+    /announceCaptureBlocked:\s*\(/.test(composition),
+    'composition must supply announceCaptureBlocked, or a denied microphone says nothing',
+  );
+  assert.ok(
+    composition.includes('captions.announce'),
+    'and it must route to a surface the user can actually see',
+  );
+  assert.ok(
+    /onBlocked:\s*prefs\.announceCaptureBlocked/.test(bridge),
+    'the bridge must forward it into captureConsent.onBlocked',
+  );
+
+  // CONTROL: the probe reads real files with real content. If these paths
+  // were wrong, every assertion above would throw rather than pass, but a
+  // future refactor could point them at something empty.
+  assert.ok(composition.length > 5000, 'composition.ts was actually read');
+  assert.ok(bridge.length > 5000, 'bridge.ts was actually read');
 });

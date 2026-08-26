@@ -233,6 +233,22 @@ export interface BridgeSpeechHooks {
    */
   ttsAvailable?: boolean;
   /**
+   * Say WHY a HOLD TO TALK press was refused.
+   *
+   * `createCaptureConsentGate` computes an actionable explanation for
+   * every blocked consent state and hands it to `onBlocked` -- and
+   * nothing ever supplied an `onBlocked`. Neither the bridge nor the
+   * orchestrator passed one, so the explanation was built and dropped on
+   * the floor. A user whose microphone is denied pressed the button and
+   * saw NOTHING happen: no error, no hint, no reason. The one failure
+   * mode where the user can actually fix the problem themselves was the
+   * one we said nothing about.
+   *
+   * The composition wires this to the captions surface, which is where
+   * Candice already speaks to the user.
+   */
+  announceCaptureBlocked?: (explanation: string) => void;
+  /**
    * Speak a delivered question. The composition wires this to the
    * orchestrator so the sole-caller rule holds — the bridge never invokes a
    * `cmd_speech_*` command itself. Rejection is non-fatal: the question is
@@ -523,6 +539,12 @@ export async function initializeAuthenticatedBridge(
       // a failed query blocks too (fail closed, mic never opens on an
       // unknown consent state).
       captureConsent: {
+        // Tell the user why the press did nothing. See
+        // `announceCaptureBlocked` above: this callback existed, was
+        // computed for, and was never supplied by anyone.
+        onBlocked: prefs.announceCaptureBlocked
+          ? (_consent, explanation) => prefs.announceCaptureBlocked?.(explanation)
+          : undefined,
         // QFIX Q-02 (design 2.2): the consent query routes through the
         // orchestrator's sole-caller seam. The composition always supplies
         // it; the inline fallback keeps the fail-closed contract for legacy

@@ -339,6 +339,10 @@ export async function initializeRuntimeComposition(
     // error>" on EVERY question. Knowing it in advance, the right move is
     // to stay quiet rather than narrate the same failure forever.
     ttsAvailable: speech?.health ? speech.health.ttsEngineReady : undefined,
+    // A refused microphone press now SAYS so. The explanation was already
+    // being computed for a callback nobody supplied, so a denied mic made
+    // the button look simply broken.
+    announceCaptureBlocked: (explanation) => captions.announce(explanation),
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
       // Turning voice OFF has to stop the voice.

@@ -365,7 +365,9 @@ test('denied permission: blocked press, machine untouched, explanation routed (F
   assert.equal(h.duplex.phase(), 'idle');
   assert.equal(h.blocked.length, 1);
   assert.equal(h.blocked[0].consent, 'denied');
-  assert.match(h.blocked[0].explanation, /System Settings > Privacy & Security > Microphone/);
+  // Reworded out of IT-ticket voice; still names the exact settings path,
+  // which is the part the user has to act on.
+  assert.match(h.blocked[0].explanation, /System Settings, then Privacy & Security, then Microphone/);
 });
 
 test('no-device: blocked press with the honest explanation, typed surface stays', async () => {
@@ -377,7 +379,7 @@ test('no-device: blocked press with the honest explanation, typed surface stays'
   assert.equal(await h.orchestrator.pttPress(), false);
   assert.equal(h.machine.getState().status, 'idle');
   assert.equal(h.blocked[0].consent, 'no-device');
-  assert.match(h.blocked[0].explanation, /No microphone device is available/);
+  assert.match(h.blocked[0].explanation, /can’t find a microphone/);
 });
 
 test('permission query failure fails CLOSED: blocked as error, mic never opens', async () => {
@@ -391,7 +393,7 @@ test('permission query failure fails CLOSED: blocked as error, mic never opens',
   assert.equal(await h.orchestrator.pttPress(), false);
   assert.equal(h.machine.getState().status, 'idle');
   assert.equal(h.blocked[0].consent, 'error');
-  assert.match(h.blocked[0].explanation, /could not be determined/);
+  assert.match(h.blocked[0].explanation, /can’t check the microphone/);
 });
 
 test('malformed permission fact fails closed (unknown state never opens the mic)', async () => {

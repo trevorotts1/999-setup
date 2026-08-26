@@ -37,13 +37,24 @@ export const BLOCKED_CONSENTS: ReadonlySet<CaptureConsent> = new Set([
   'error',
 ]);
 
+/**
+ * What the user is told when a HOLD TO TALK press is refused.
+ *
+ * Written the way Candice speaks, because that is who says it. The old
+ * wording was IT-ticket voice -- "access was denied", "could not be
+ * determined", "remain available" -- and it used > characters that read
+ * badly if this text is ever spoken rather than shown.
+ *
+ * Each one ends by pointing at the way in that still works. A refusal the
+ * user cannot act on is just a dead end with an explanation attached.
+ */
 export const BLOCKED_EXPLANATIONS: Readonly<Record<string, string>> = {
   denied:
-    'Microphone access was denied. Open System Settings > Privacy & Security > Microphone, enable Candice Companion, then return. Typed answers remain available.',
+    'I’m not allowed to use your microphone. To turn it on: System Settings, then Privacy & Security, then Microphone, then switch on Candice Companion. You can still type your answer.',
   'no-device':
-    'No microphone device is available. Typed answers and captions remain available.',
+    'I can’t find a microphone on this computer. You can still type your answer.',
   error:
-    'Microphone state could not be determined. Typed answers and captions remain available.',
+    'I can’t check the microphone right now. You can still type your answer.',
 };
 
 export function isConsentBlocked(consent: CaptureConsent): boolean {
