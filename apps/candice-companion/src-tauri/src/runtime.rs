@@ -1199,7 +1199,23 @@ pub fn cmd_load_profile() -> Value {
     let file = dir.join(PREFS_FILENAME);
     let text = match fs::read_to_string(&file) {
         Ok(text) => text,
-        Err(_) => return json!({ "ok": true, "doc": null, "recoveredFromCorruption": false }),
+        // A MISSING file is a first run: no document, and that is success.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return json!({ "ok": true, "doc": null, "recoveredFromCorruption": false })
+        }
+        // Anything else -- permissions, I/O, an unreadable mount -- is a
+        // FAILURE, and reporting it as a first run is how real preferences get
+        // destroyed: the caller sees ok:true with no document, treats the user
+        // as new, and the next cmd_save_profile writes defaults over a file
+        // that was merely unreadable for a moment.
+        Err(error) => {
+            return json!({
+                "ok": false,
+                "doc": null,
+                "recoveredFromCorruption": false,
+                "error": format!("profile could not be read: {}", error.kind()),
+            })
+        }
     };
     match serde_json::from_str::<Value>(&text) {
         Ok(doc) if doc.is_object() => json!({ "ok": true, "doc": doc, "recoveredFromCorruption": false }),
