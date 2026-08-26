@@ -36,6 +36,7 @@
 import {
   COMPACT_EXPAND_MS,
   COMPACT_EXPANDED_CLASS,
+  COMPACT_INPUT_LABEL,
   COMPACT_REDUCED_MOTION_CLASS,
   COMPACT_ROOT_CLASS,
   COMPACT_STAGE_SLOT_ID,
@@ -228,6 +229,11 @@ export function createCompactView(
   // to Candice has no idea what /bro or /eli5 are, and a placeholder is not
   // the place to teach them.
   input.placeholder = 'Type a message…';
+  // A STABLE accessible name, independent of the visible placeholder. The
+  // packaged suite locates this field by its accessibility label, and with no
+  // aria-label that label was the placeholder text — so a copy edit silently
+  // broke a ship gate. Test locators must not be user-visible prose.
+  input.setAttribute('aria-label', COMPACT_INPUT_LABEL);
   input.addEventListener('keydown', (e) => {
     // An IME commits its composition with Enter. See answer-controls/view.ts.
     if (e.isComposing || e.keyCode === 229) return;

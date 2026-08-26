@@ -54,7 +54,10 @@ const APP_PROCESS = 'candice-companion'
 const LABELS = Object.freeze({
   TYPE_INPUT: 'TYPE ANSWER',
   ANSWER_IN_CLAUDE: 'Answer in Claude instead',
-  COMPACT_INPUT: 'Type a question or /bro, /eli5',
+  // The compact field's aria-label (src/ui/compact/config.ts
+  // COMPACT_INPUT_LABEL), NOT its placeholder. It was the placeholder, so
+  // rewording user-visible copy silently broke this locator.
+  COMPACT_INPUT: 'Compact message input',
   SEND: 'Send',
 })
 
@@ -97,6 +100,119 @@ function runQuiet(cmd, args, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// Accessibility element search (ax-driver.swift)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS REPLACED THE APPLESCRIPT ELEMENT PATHS
+//
+// Every packaged leg failed at the same step with the same message: "answer
+// controls never appeared in the packaged a11y tree". They were in the tree
+// the whole time. The driver asked for
+//
+//     text field 1 of group 1 of window 1 whose ... "AXDescription" is "TYPE ANSWER"
+//
+// which asserts the control is a DIRECT child of the window's first group.
+// The real shape is
+//
+//     AXWindow > AXGroup > AXGroup > AXScrollArea > AXWebArea > ... > AXTextField
+//
+// because the UI is web content in a WKWebView and a scrollable region adds
+// an AXScrollArea of its own. A dump of the live app confirmed the element,
+// correctly labelled, several levels below where the query looked. So the
+// tier read FAIL — a product verdict — for a locator bug in the harness.
+//
+// The AppleScript repair does not exist: `entire contents of window 1`
+// returns a flat list that cannot be filtered by element class (System Events
+// answers -1700/-1728 for `every text field of (entire contents of ...)`),
+// leaving a per-element AppleScript loop inside a polling wait.
+//
+// So the search moved to a tiny Swift tool that walks the same public
+// accessibility tree a screen reader walks, by ROLE and LABEL, at any depth.
+// It reads no DOM internals and injects no test hooks, so the FIX-014
+// boundary this tier must respect is unchanged — and a future layout change
+// cannot silently un-find a control again.
+//
+// Typing still goes through real key events. Setting AXValue directly was
+// tried and does not work: it changes the accessibility value without firing
+// the DOM input events the view listens to, so the app never learns the text,
+// the submit validates an empty answer, and askUser hangs forever.
+
+const AX_SOURCE = path.join(__dirname, 'ax-driver.swift')
+
+let axBinaryCache = null
+
+/**
+ * Compile ax-driver.swift once per source revision and cache it in the temp
+ * dir. Returns { ok, path } or { ok: false, reason } — never throws, because
+ * a toolchain problem is an environment BLOCK, not a product FAIL.
+ */
+function axDriver() {
+  if (axBinaryCache !== null) return axBinaryCache
+  try {
+    const source = fs.readFileSync(AX_SOURCE)
+    const digest = crypto.createHash('sha256').update(source).digest('hex').slice(0, 16)
+    const out = path.join(os.tmpdir(), `candice-ax-driver-${digest}`)
+    if (!fs.existsSync(out)) {
+      runQuiet('swiftc', ['-O', '-o', out, AX_SOURCE], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 })
+    }
+    axBinaryCache = { ok: true, path: out }
+  } catch (err) {
+    axBinaryCache = { ok: false, reason: `ax-driver could not be built: ${osaErrDetail(err)}` }
+  }
+  return axBinaryCache
+}
+
+/**
+ * PID of the packaged app. Matched on the FULL binary path, never on the bare
+ * name: an operator's own Candice (installed elsewhere) has the same process
+ * name, and matching that would drive — or kill — the wrong window.
+ */
+function appPid() {
+  try {
+    const out = runQuiet('pgrep', ['-f', PACKAGED_BINARY], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const pids = out.trim().split('\n').filter(Boolean)
+    return pids.length > 0 ? pids[pids.length - 1] : null
+  } catch (_) {
+    return null
+  }
+}
+
+/** Run one ax-driver command. Returns { rc, out }; rc 1 means "not found". */
+function ax(...args) {
+  const driver = axDriver()
+  if (!driver.ok) return { rc: 2, out: driver.reason }
+  const pid = appPid()
+  if (pid === null) return { rc: 2, out: 'no packaged app process' }
+  try {
+    const out = runQuiet(driver.path, [pid, ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 })
+    return { rc: 0, out: out.trim() }
+  } catch (err) {
+    return { rc: typeof err.status === 'number' ? err.status : 2, out: osaErrDetail(err) }
+  }
+}
+
+/** True when an element with this role and label exists at ANY depth. */
+function axExists(role, label) {
+  return ax('find', role, label).rc === 0
+}
+
+/**
+ * Bring the app to the front. `keystroke` is delivered to the FRONTMOST
+ * application, not to whatever holds AXFocused — without this the keys land
+ * in the terminal running the suite and the field stays empty.
+ */
+function activateApp() {
+  const pid = appPid()
+  if (pid === null) return false
+  try {
+    osa(`tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
 // osascript / System Events accessibility driving
 // ---------------------------------------------------------------------------
 
@@ -109,8 +225,12 @@ function osa(script) {
  * Returns true when the process has a visible window; false otherwise.
  */
 function windowExists(procName) {
-  const script = `tell application "System Events" to exists (first window of (first process whose name is "${procName}"))`
-  return osa(script) === 'true'
+  // Deliberately NOT System Events. Its window enumeration for this app is
+  // unreliable (it answers -1719 "Can't get window 1" on a transparent,
+  // undecorated, always-on-top window), and a flaky readiness probe reports
+  // a healthy app as a launch failure.
+  void procName
+  return axExists('AXWindow', 'Candice')
 }
 
 /** Waits (polling System Events) until the app process exposes a window. */
@@ -181,21 +301,21 @@ function screenLocked() {
 
 /** Waits for the answer controls surface to appear in the app window. */
 async function waitForAnswerControls(procName, timeoutMs, probe) {
+  void procName
   const deadline = Date.now() + timeoutMs
+  let lastSeen = 'nothing'
   for (;;) {
-    const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    try
-      return exists (text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.TYPE_INPUT}")
-    end try
-  end tell
-end tell
-return false`
-    try {
-      if (osa(script) === 'true') return true
-    } catch (_) { /* not yet rendered */ }
-    if (Date.now() > deadline) throw new Error('answer controls never appeared in the packaged a11y tree')
+    // Wait for the WHOLE surface. Waiting on the text field alone raced: the
+    // field and the buttons mount a frame or two apart, so a leg could pass
+    // the wait and then fail to find the submit button that had not rendered.
+    if (answerSurfaceVisible(procName)) return true
+    if (axExists('AXTextField', LABELS.TYPE_INPUT)) lastSeen = 'the input, but not its buttons'
+    else if (axExists('AXWindow', 'Candice')) lastSeen = 'the window, but no answer surface'
+    if (Date.now() > deadline) {
+      throw new Error(
+        `answer controls never appeared in the packaged a11y tree within ${timeoutMs}ms (saw ${lastSeen})`,
+      )
+    }
     await probe.sleep(250)
   }
 }
@@ -206,16 +326,18 @@ return false`
  * and controls are proven present by waitForAnswerControls first).
  */
 function typeAnswer(procName, text) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    set targetField to text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.TYPE_INPUT}"
-    set focused of targetField to true
-    keystroke ${JSON.stringify(String(text))}
-    click (button 1 of group 1 of window 1 whose description is "${LABELS.TYPE_INPUT}")
-  end tell
-end tell`
-  osa(script)
+  void procName
+  activateApp()
+  const focused = ax('focus', 'AXTextField', LABELS.TYPE_INPUT)
+  if (focused.rc !== 0) throw new Error(`could not focus the answer field: ${focused.out}`)
+  // Real key events, so the webview fires the input events its state depends
+  // on. They go to the frontmost app, which activateApp() just made this one.
+  osa(`tell application "System Events" to keystroke ${JSON.stringify(String(text))}`)
+  // The role matters: the surface carries BOTH a text field and a button
+  // labelled TYPE ANSWER, and a role-blind search finds the field, "presses"
+  // it, and reports success while submitting nothing.
+  const pressed = ax('press', 'AXButton', LABELS.TYPE_INPUT)
+  if (pressed.rc !== 0) throw new Error(`could not press the submit button: ${pressed.out}`)
   return true
 }
 
@@ -224,34 +346,18 @@ end tell`
  * field + button and the Answer-in-Claude button. `false` on any absence.
  */
 function answerSurfaceVisible(procName) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    try
-      set f to exists (text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.TYPE_INPUT}")
-      set b to exists (button 1 of group 1 of window 1 whose description is "${LABELS.TYPE_INPUT}")
-      set c to exists (button 1 of group 1 of window 1 whose description is "${LABELS.ANSWER_IN_CLAUDE}")
-      return f and b and c
-    end try
-  end tell
-end tell
-return false`
-  try {
-    return osa(script) === 'true'
-  } catch (_) {
-    return false
-  }
+  void procName
+  return axExists('AXTextField', LABELS.TYPE_INPUT)
+    && axExists('AXButton', LABELS.TYPE_INPUT)
+    && axExists('AXButton', LABELS.ANSWER_IN_CLAUDE)
 }
 
 /** Clicks Answer in Claude instead. */
 function clickAnswerInClaude(procName) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    click (button 1 of group 1 of window 1 whose description is "${LABELS.ANSWER_IN_CLAUDE}")
-  end tell
-end tell`
-  return osa(script)
+  void procName
+  const pressed = ax('press', 'AXButton', LABELS.ANSWER_IN_CLAUDE)
+  if (pressed.rc !== 0) throw new Error(`could not press "${LABELS.ANSWER_IN_CLAUDE}": ${pressed.out}`)
+  return pressed.out
 }
 
 /** Waits until the answer surface is gone from the a11y tree. */
@@ -266,34 +372,19 @@ async function waitForAnswerGone(procName, timeoutMs, probe) {
 
 /** Reads the compact input field presence (post-interview compact surface). */
 function compactInputVisible(procName) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    try
-      return exists (text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.COMPACT_INPUT}")
-    end try
-  end tell
-end tell
-return false`
-  try {
-    return osa(script) === 'true'
-  } catch (_) {
-    return false
-  }
+  void procName
+  return axExists('AXTextField', LABELS.COMPACT_INPUT)
 }
 
 /** Types into the compact input and clicks Send. */
 function compactSubmit(procName, text) {
-  const script = `
-tell application "System Events"
-  tell (first process whose name is "${procName}")
-    set targetField to text field 1 of group 1 of window 1 whose value of attribute "AXDescription" is "${LABELS.COMPACT_INPUT}"
-    set focused of targetField to true
-    keystroke ${JSON.stringify(String(text))}
-    click (button 1 of group 1 of window 1 whose description is "${LABELS.SEND}")
-  end tell
-end tell`
-  osa(script)
+  void procName
+  activateApp()
+  const focused = ax('focus', 'AXTextField', LABELS.COMPACT_INPUT)
+  if (focused.rc !== 0) throw new Error(`could not focus the compact input: ${focused.out}`)
+  osa(`tell application "System Events" to keystroke ${JSON.stringify(String(text))}`)
+  const pressed = ax('press', 'AXButton', LABELS.SEND)
+  if (pressed.rc !== 0) throw new Error(`could not press ${LABELS.SEND}: ${pressed.out}`)
   return true
 }
 
@@ -356,10 +447,19 @@ async function createRun({ launchCommand, waitWindowMs = 45000, probe = { sleep:
   }
 }
 
-/** Kills every leftover packaged app process (clean state, best effort). */
+/**
+ * Kills leftover processes of THE PACKAGED BINARY, matched on its full path.
+ *
+ * This used to be `pkill -f candice-companion`, which is a bare substring
+ * match against every command line on the box. That kills the operator's own
+ * installed Candice (a different binary, same process name) the moment a leg
+ * runs -- and it matches any rustc/cargo/tauri command line that merely
+ * mentions the crate, so a suite run could tear down a build in progress.
+ * A cleanup step is allowed to remove what the suite started and nothing else.
+ */
 function killAppProcesses() {
   try {
-    runQuiet('pkill', ['-f', APP_PROCESS], { stdio: 'ignore' })
+    runQuiet('pkill', ['-f', PACKAGED_BINARY], { stdio: 'ignore' })
   } catch (_) { /* no process — fine */ }
 }
 
@@ -375,9 +475,13 @@ function packagedBinarySha() {
  * createRun. Returns { ok, reason }.
  */
 function cleanStateGate(probe) {
+  void probe
+  // Scoped to the packaged binary's path. `pgrep -x candice-companion`
+  // matched the operator's own installed Candice by name and reported the
+  // environment dirty when nothing of this suite's was running at all.
   try {
-    runQuiet('pgrep', ['-x', APP_PROCESS], { stdio: 'ignore' })
-    return { ok: false, reason: `${APP_PROCESS} process still running` }
+    runQuiet('pgrep', ['-f', PACKAGED_BINARY], { stdio: 'ignore' })
+    return { ok: false, reason: `a packaged app process is still running: ${PACKAGED_BINARY}` }
   } catch (err) {
     if (err.status !== 1) return { ok: false, reason: `pgrep failed: ${err.message}` }
   }
@@ -392,6 +496,12 @@ function environmentGate() {
   }
   if (!fs.existsSync(PACKAGED_BINARY)) {
     problems.push(`packaged binary missing: ${PACKAGED_BINARY} — run Layer 4 (tauri:build + build-macos-bundle.sh adhoc) first`)
+  }
+  if (process.platform === 'darwin') {
+    // A harness that cannot build its own element search has proved nothing
+    // about the product. That is an environment BLOCK, never a leg failure.
+    const driver = axDriver()
+    if (!driver.ok) problems.push(driver.reason)
   }
   if (problems.length === 0) {
     const locked = screenLocked()
@@ -410,6 +520,9 @@ function environmentGate() {
 module.exports = {
   PACKAGED_BINARY,
   APP_PROCESS,
+  axDriver,
+  appPid,
+  axExists,
   LABELS,
   EVENT_KINDS,
   traceFrame,

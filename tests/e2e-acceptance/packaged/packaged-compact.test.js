@@ -11,7 +11,7 @@
  *
  * Dependency-honest gate: the compact surface is rendered by the FIX-014
  * appui lane. When the packaged app at this commit does not expose the
- * compact input (placeholder 'Type a question or /bro, /eli5') in its
+ * compact input (aria-label 'Compact message input') in its
  * a11y tree within the wait window, this leg records BLOCKED with the
  * named dependency — never a fake PASS and never a FAIL for code this
  * lane does not own.
