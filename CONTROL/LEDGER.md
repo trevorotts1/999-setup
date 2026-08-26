@@ -726,3 +726,279 @@ requires `independentQc`, and this seat cannot run that on its own work.
 Also outside this seat: macOS notarization (needs an Apple Developer ID),
 Windows signing (needs a certificate and a Windows machine), and
 `cleanMachine` (needs a machine that has never had this app).
+
+
+## 11. Fable gap review, and the fix that would have broken the build
+    (2026-08-26 18:15-19:05)
+
+Five Fable reviewers over `4789ae1..8e3eb0e`, distinct lenses, read-only.
+All five returned. Every finding was re-verified in the source before
+anything was touched; nothing below is recorded on a reviewer's word.
+
+### 11.1 The worst finding was mine, and it was silent
+
+`tauri.windows.conf.json` -- the file written in section 10.6 to stop 378MB
+of dead payload shipping to Windows -- carried a top-level `$comment` array
+explaining itself. Tauri's `Config` is
+`#[serde(rename_all = "camelCase", deny_unknown_fields)]`
+(tauri-utils-2.9.3/src/config.rs:3586), and the CLI merges the overlay as
+raw JSON and THEN deserializes the merged value. One unknown key fails the
+whole parse, before cargo runs.
+
+MEASURED on the real toolchain:
+
+  $ npx tauri info    # comment key present
+  Error `"tauri.conf.json"` error: Additional properties are not allowed
+        ('$comment' was unexpected)
+  $ npx tauri info    # same file, key removed
+  (no error)
+
+`$schema` is not a counter-example: `Config` gives it an explicit field
+(`#[serde(rename = "$schema")]`, config.rs:3589).
+
+So the fix for a payload bug would have produced NO WINDOWS INSTALLER AT
+ALL -- a worse outcome than the bug -- on the one platform nobody here can
+test. Nothing would have caught it: no CI job stages a platform overlay
+before checking, so the parse failure cannot surface in automation.
+
+Rationale moved to `apps/candice-companion/TAURI-PLATFORM-CONFIG.md`.
+`tests/contract/tauri-platform-config.test.js` fails the suite if a comment
+key returns, and also pins the RFC 7396 null removal, the MAP shape of the
+base `bundle.resources` (a null patch against the array form would replace
+the whole list), and that BOTH staging paths cover overlays. Proven
+non-vacuous by putting the key back and watching it fail.
+
+### 11.2 stop() returned success while she kept talking
+
+`TtsEngine::stop()` flipped an AtomicBool read only by Kokoro's in-process
+audio callback (engines.rs:698, :1188). The system voice is a separate
+PROCESS whose handle was moved into a detached thread blocked in `wait()`.
+Nothing could reach it. Three failures wearing one coat: barge-in recorded
+her own voice into the user's answer; the voice-OFF toggle was ignored
+until the sentence ended; and stop freed the admission slot while the old
+child spoke on, so the next question was admitted and two voices read two
+questions at once, with nothing capping it at two.
+
+The engine holds the child now. The watcher POLLS rather than blocking,
+because a thread parked in `wait()` owns the child and puts it out of reach
+of the thing that must kill it. Taking the handle is also what ends the
+watcher, so an interrupt still yields exactly one drain -- promptly.
+
+Also fixed in the same pass: the watcher used `std::thread::spawn`, which
+PANICS on OS refusal, after speech-start and with the slot held (mute for
+the session, HOLD TO TALK dead); the probe used `.output()` with no
+deadline inside a sync command holding the slot, and re-ran every
+utterance; `say` was handed the question as argv with no `--` (MEASURED:
+`say -o out.aiff "-f /etc/hosts"` makes say READ that path); and a failed
+stdin write abandoned a live child that would speak a truncated question.
+
+### 11.3 The collapsed compact surface could open the microphone
+
+`opacity: 0; pointer-events: none` stops the MOUSE and nothing else. Every
+control stayed in the tab order and the accessibility tree, so a keyboard
+user tabbing past "Open" landed on five invisible controls -- and the first
+is HOLD TO TALK, so Space opened the MICROPHONE with nothing on screen.
+`aria-expanded="false"` claimed the content was closed throughout. The
+keyboard path added in 10.5 is what made this reachable. `inert` plus
+`aria-hidden` now, at birth and on every toggle.
+
+The mute button announced the inverse of its state: label "Unmute" WITH
+`aria-pressed="true"` reads as "unmute is engaged", i.e. sound ON. A name
+that is a verb cannot carry a pressed state. The accessible name states the
+state now, reusing the app's existing "Voice responses ON/OFF" pair, pinned
+equal to the answer-controls lane by a test.
+
+### 11.4 Windows would have spoken mojibake
+
+Rust writes UTF-8; `[Console]::In` decodes redirected stdin with
+Console.InputEncoding, which under CREATE_NO_WINDOW is the hidden console's
+OEM code page. A curly apostrophe would arrive as three characters and the
+synthesizer would READ THEM ALOUD. The registry is ASCII, but its blanks
+are filled at runtime with names, dates and Claude's own prose, and Claude
+emits curly quotes constantly. The script now opens the stream and names
+the encoding, which cannot throw the way setting Console.InputEncoding on
+redirected input can.
+
+The utterance write also moved off the main thread: sync Tauri commands run
+there, a pipe holds ~4KB, MAX_SPEAK_CHARS is 8192, and PowerShell does not
+drain until Add-Type finishes (1-3s cold start).
+
+### 11.5 Guards that could not see, and a double that lied
+
+`build.rs` mirrored only `tauri.conf.json`, so `cargo tauri build` -- what
+CI and a fresh clone naturally run -- SUCCEEDED with no overlay and would
+silently re-ship the 378MB. Verified by deleting the staged file,
+rebuilding, watching build.rs restore it; controlled by confirming a
+platform file with no source is NOT created.
+
+The spawn-site guard walked six hardcoded paths, so a spawn added anywhere
+else passed vacuously and a renamed file silently left coverage. It
+discovers the tree now. Controlled: a spawn planted in a file the old list
+could never have named is caught, and goes green when removed.
+
+`build-macos-bundle.sh` had no freshness check -- the section-9 "fix
+containing no fixes" was fully reproducible. It now refuses to package a
+tree older than its sources, naming the offending file, with
+`CANDICE_ALLOW_STALE_BUNDLE=1` for a deliberate re-sign. Proven both
+directions: refuses stale, passes fresh.
+
+`FakeElement` did not model `className` AT ALL, so every class the view
+assigns that way vanished and class-based queries silently found nothing.
+My own new test's control caught it -- it asserted the surface must exist
+before testing it, and that assertion fired.
+
+### 11.6 A tampering signal is no longer routed around
+
+The canonical-voice conflict check sat BELOW the system-voice branch, so a
+user-writable manifest declaring a voice the operator never approved was
+answered by speaking anyway -- in the system voice -- whenever the bundled
+engine was absent. The disclosure notice made that feel safe; it is not the
+point. A manifest that disagrees with the signed bundle is a tampering
+signal, and the answer to tampering is to stop.
+
+### 11.7 Recorded, not changed
+
+Registry copy (owner's call, byte-pinned across repos). The unmounted
+compact lane's missing live regions and its `${inputMode}: ${text}`
+rendering. The `var(--candice-ui-surface)` fallback question -- that lane's
+own style test BANS a hex fallback, so "add one" would fail the contract it
+is meant to satisfy. `describeSpeechFailure` carrying the native reason
+into the caption: pre-existing and pinned by tests whose comment says "this
+is the assertion the old catch failed", so the leak was fixed at the SOURCE
+(all six of my new native error strings now follow the app's user-facing
+convention) rather than by reversing that decision. `ttsFallbackActive` is
+never set by WR-016 -- real inconsistency, but nothing consumes the flag,
+so fixing it changes nothing observable and risks more than it returns.
+
+### 11.8 Measured, and installed (2026-08-26 19:02)
+
+Rust 80/80 (was 75). TypeScript 555/555 (was 552). Permissions 20/20 under
+its own manifest. Contract suite green across 9 files. Plugin green.
+Windows branches type-checked by cfg-flip, and THAT check was controlled:
+injecting a fault into the windows-only body produced an error.
+
+Built after removing the bundle dir. Frontend chunk `index-CMoltBEi.js`
+(146,614 bytes, existence proven before grepping -- the first attempt at
+this check read a path that does not exist, and every "0" it produced was a
+missing-file error, not an absence). Positives all present, negatives all
+zero, with a control proving the instrument discriminates.
+
+  live:   .../BlackCEO/999/app/Candice Companion.app
+          sha 1d04d976132333210472108691776f77...
+  backup: .../Candice Companion.app.bak-review-20260826-190209
+          sha 1afc4545c1889459676de65b3797ba65...
+
+Eighteen backups present, all accounted for. The install script printed
+"16" using a `*.bak-*` glob that misses two older `.backup-` named
+directories; the true total went 17 to 18. Nothing was deleted, and again
+only `Candice Companion.app` was replaced, by two renames.
+
+Rollback:
+
+  cd ~/Library/Application\ Support/BlackCEO/999/app && \
+    mv "Candice Companion.app" "Candice Companion.app.rejected" && \
+    mv "Candice Companion.app.bak-review-20260826-190209" "Candice Companion.app"
+
+### 11.9 Lifecycle unchanged
+
+Still `REPAIR_IN_PROGRESS open=24 complete=0`. See section 12 for what
+stands between this build and a client.
+
+
+## 12. WHAT IS LEFT BEFORE WE SHIP (verified 2026-08-26 19:05)
+
+Every claim below was measured in this repo, not relayed. The code is done
+and pushed; what remains is almost entirely not code.
+
+### 12.1 There is no authorized artifact
+
+`CONTROL/bundled-components.json` carries NO Candice Companion app payload.
+MEASURED -- its eight components are: stt-assets, tts-assets,
+nine-router-setup, spec-protocol, kaizen, eli5, bro, candice-integration.
+The file's own note says the 0.2.0 app records were quarantined by FIX-001
+and "a new application payload may be added only after
+scripts/candice-release/status.mjs accepts the exact candidate".
+
+`node scripts/candice-release/status.mjs` -> NOT_RELEASE_READY: 24 open
+fixes, nine gates PENDING, no candidate, no signed artifacts, and the
+operator release authority pin is literally UNCONFIGURED.
+
+So the scripted installer cannot install the app. It fails closed, which is
+correct, and it means nothing can be handed to a client that installs
+unaided. **Needs: FIX-024 operator authority (an operator-owned key) plus
+independent QC. Neither is mine to do.**
+
+### 12.2 Gatekeeper, with no instructions anywhere
+
+MEASURED on the fresh bundle: `Signature=adhoc`, `TeamIdentifier=not set`.
+Ad-hoc is a recorded operator decision (QFIX-adhoc 2026-08-23), not a
+defect. The consequence is: a downloaded DMG carries the quarantine
+attribute, and first launch shows "Apple could not verify..." with only
+Done / Move to Trash. On macOS 15+ the right-click-Open bypass no longer
+works for unnotarized apps -- the client must fail a launch, then go to
+System Settings and choose Open Anyway. `minimumSystemVersion` is 12.0, so
+macOS 12-14 clients still have right-click-Open.
+
+No client-facing first-launch document exists in this repo. **Needs EITHER
+an Apple Developer ID plus notarization, OR a written instruction sheet.
+The instruction sheet I can write today on the word go.**
+
+### 12.3 The update channel is a dead end as committed
+
+Three things in the repo cannot all be true and still produce an update:
+
+  a) the committed trust anchor's private key is documented DISCARDED
+     (scripts/candice-release/updater-sign.mjs:9, :98-99;
+     apply-release-config.mjs:11);
+  b) the release workflow REFUSES to build unless the signing secret's
+     pubkey is byte-identical to that committed pubkey
+     (.github/workflows/candice-release.yml:106-130);
+  c) signing requires the mate of that discarded key.
+
+Also `"createUpdaterArtifacts": false` in the committed config
+(tauri.conf.json:51).
+
+If (a) holds, the lane is unsatisfiable as committed. Repairing it means
+committing a NEW pubkey -- after which **every client who installed the
+current artifact carries the dead anchor and can never auto-update**, only
+manually reinstall, which re-enters 12.2. **Needs an operator decision
+before any client install happens, not after.**
+
+### 12.4 Voice input is not in the box
+
+MEASURED: `Resources/speech-assets/stt/` holds only the 31MB
+`ggml-tiny.en-q5_1.bin`. All three whisper-cli rows in SPEECH-INVENTORY.json
+are `sha256Status: absent` on every platform. HOLD TO TALK is correctly
+hidden rather than dead, and the degrade message is honest -- but a
+headline feature is absent while 31MB of unusable model ships. TODO.md
+adds that the pinned macOS binary is a Homebrew bottle that would link
+dylibs clients do not have. **Needs the installer lane to place a
+non-Homebrew-linked engine.**
+
+### 12.5 Windows has never been built, signed, or run
+
+No Windows machine on this project. Today's review caught that the Windows
+config overlay would have failed config parse outright (section 11.1) --
+which is exactly the class of thing that only a real build finds. CI does
+not close this: `candice-ci.yml`'s Windows jobs run cargo checks WITHOUT
+staging the overlay, so that parse failure could not have surfaced there,
+and the interactive Windows smoke is `if: false`. **Needs a Windows
+machine and a code-signing certificate.**
+
+### 12.6 What can still be done here, without the operator
+
+- the first-launch instruction sheet (12.2)
+- the privacy suite (WS-44, tests/privacy-audit/)
+- supply chain: npm audit, cargo-deny, SBOM two-run determinism
+- most of the 24 FIX items are code work; CLOSING them is not, because the
+  box-flip rule requires independent QC per item
+- a CI job that stages the platform overlay and parses the merged config,
+  so 11.1's class is caught by automation rather than by a reviewer
+
+### 12.7 What can never be done here
+
+`independentQc` (reviewing my own work is not independent), `cleanMachine`
+(a machine that has never had this app), notarization (Apple Developer ID),
+Windows signing (certificate plus a real Windows box), and `ciRequiredChecks`
+(hosted Actions runs on the exact candidate commit, whose evidence record is
+written after independent QC).
