@@ -169,10 +169,10 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "THE BUILD TARGET QUESTION",
-        "digest": "1a603237408f5befe6df82b47754455fe44945a693a5caf6998902d2e50e838d"
+        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
       },
-      "display": "First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.",
-      "spoken": "First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.",
+      "display": "First question — an easy one, because it's your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, just like you'd tell a friend. No special words needed. Then I'll say back what I heard, and you tell me if I got it right.",
+      "spoken": "First question — an easy one, because it's your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, just like you'd tell a friend. No special words needed. Then I'll say back what I heard, and you tell me if I got it right.",
       "answerKind": "free_text",
       "allowedInputModes": [
         "voice",
@@ -610,10 +610,10 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "The entry — interview me, or here is the info",
-        "digest": "1a603237408f5befe6df82b47754455fe44945a693a5caf6998902d2e50e838d"
+        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
       },
-      "display": "I will turn your idea into a fully-built, quality-checked, finished <the target, in the same plain words just confirmed in the Build Target exchange — \"mobile app\", \"web app\", \"mobile and web app\", \"software\", \"website\", or \"sales funnel\">. You can walk away once we start and come back to a finished deployment. I can work two ways — pick the one that suits you: 1. Interview me. Tell me about the <confirmed target word> you want to build, in your own words first. I will think it through with you for about fifteen minutes, no structure, no jargon. Then I will ask you some plain questions, one at a time. 2. Here is the info. Point me at a folder, paste a document, or tell me where the notes are. I will read everything you give me. Which works better for you?",
-      "spoken": "I will turn your idea into a fully-built, quality-checked, finished <the target, in the same plain words just confirmed in the Build Target exchange — \"mobile app\", \"web app\", \"mobile and web app\", \"software\", \"website\", or \"sales funnel\">. You can walk away once we start and come back to a finished deployment. I can work two ways — pick the one that suits you: 1. Interview me. Tell me about the <confirmed target word> you want to build, in your own words first. I will think it through with you for about fifteen minutes, no structure, no jargon. Then I will ask you some plain questions, one at a time. 2. Here is the info. Point me at a folder, paste a document, or tell me where the notes are. I will read everything you give me. Which works better for you?",
+      "display": "I'll build your idea from start to finish — designed, quality-checked, and deployed. Once we start, you can walk away and come back to it done.\n\nThere are two ways to begin.\n\nOne: interview me. Tell me your idea in your own words. We'll think it through together for about fifteen minutes — no structure, no jargon — then I'll ask simple questions, one at a time.\n\nTwo: hand me the info. Point me at a folder, paste a document, or tell me where your notes are. I'll read everything you give me.\n\nWhich sounds better to you?",
+      "spoken": "I'll build your idea from start to finish — designed, quality-checked, and deployed. Once we start, you can walk away and come back to it done.\n\nThere are two ways to begin.\n\nOne: interview me. Tell me your idea in your own words. We'll think it through together for about fifteen minutes — no structure, no jargon — then I'll ask simple questions, one at a time.\n\nTwo: hand me the info. Point me at a folder, paste a document, or tell me where your notes are. I'll read everything you give me.\n\nWhich sounds better to you?",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -710,8 +710,8 @@
         "anchor": "Step 1b — The job archetype (one question, before the blocks)",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "What kind of job is this — building something new from scratch, fixing and finishing something that already exists, checking and measuring things (read-only), rolling a proven change out to many places, rescuing something broken, or something else?",
-      "spoken": "What kind of job is this — building something new from scratch, fixing and finishing something that already exists, checking and measuring things (read-only), rolling a proven change out to many places, rescuing something broken, or something else?",
+      "display": "What kind of job is this? Building something new from scratch. Fixing and finishing something that already exists. Checking and measuring things, read-only. Rolling a proven change out to many places. Rescuing something broken. Or something else?",
+      "spoken": "What kind of job is this? Building something new from scratch. Fixing and finishing something that already exists. Checking and measuring things, read-only. Rolling a proven change out to many places. Rescuing something broken. Or something else?",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -767,8 +767,8 @@
         "anchor": "If APP / SOFTWARE — ask these:",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "Question <N> of no more than <C> — an easy one: we said this is <the confirmed target, in their own words>. Still right?",
-      "spoken": "Question <N> of no more than <C> — an easy one: we said this is <the confirmed target, in their own words>. Still right?",
+      "display": "Easy one: is what we agreed on still what you want to build?",
+      "spoken": "Easy one: is what we agreed on still what you want to build?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -1018,8 +1018,8 @@
         "anchor": "If APP / SOFTWARE — ask these:",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "Here is my plan for the phone part, and one small question to go with it. I will build your app so that anyone can open it on their phone right away and keep it on their home screen like any other app — nothing to wait for. My question: is it important to you that people can also find it in the app store on their phone? That road exists too, but the store makes everyone wait days and asks for an account with Apple or Google — so most people start without it and add the store later, and nothing is lost by starting that way. If you are not sure, we will start without it.",
-      "spoken": "Here is my plan for the phone part, and one small question to go with it. I will build your app so that anyone can open it on their phone right away and keep it on their home screen like any other app — nothing to wait for. My question: is it important to you that people can also find it in the app store on their phone? That road exists too, but the store makes everyone wait days and asks for an account with Apple or Google — so most people start without it and add the store later, and nothing is lost by starting that way. If you are not sure, we will start without it.",
+      "display": "Quick question about the phone part. I'll build your app so anyone can open it on their phone right away and keep it on their home screen, like any other app — nothing to wait for. Now the question: do you also need people to find it in the app store? That road exists too, but the store makes everyone wait days and asks for an Apple or Google account. Most people start without it and add the store later — nothing is lost that way. Not sure? We'll start without it.",
+      "spoken": "Quick question about the phone part. I'll build your app so anyone can open it on their phone right away and keep it on their home screen, like any other app — nothing to wait for. Now the question: do you also need people to find it in the app store? That road exists too, but the store makes everyone wait days and asks for an Apple or Google account. Most people start without it and add the store later — nothing is lost that way. Not sure? We'll start without it.",
       "answerKind": "yes_no",
       "allowedInputModes": [
         "voice",
@@ -1066,8 +1066,8 @@
         "anchor": "If APP / SOFTWARE — ask these:",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "One picture question about how people will use it. Think of someone on their phone and someone at a computer: are they both doing the same things in the same place? Or is the phone side for one kind of person and the computer side for another — different jobs on each? If you are not sure, or it is all the same people doing the same things, that is easy: I will build one thing that fits itself to whichever screen it is on, and everything stays in step by itself.",
-      "spoken": "One picture question about how people will use it. Think of someone on their phone and someone at a computer: are they both doing the same things in the same place? Or is the phone side for one kind of person and the computer side for another — different jobs on each? If you are not sure, or it is all the same people doing the same things, that is easy: I will build one thing that fits itself to whichever screen it is on, and everything stays in step by itself.",
+      "display": "Picture someone on their phone and someone at a computer. Are they doing the same things in the same place? Or does each side have its own job — the phone for one kind of person, the computer for another? If you're not sure, or it's all the same people doing the same things, easy: I'll build one thing that fits itself to whatever screen it's on, and everything stays in step by itself.",
+      "spoken": "Picture someone on their phone and someone at a computer. Are they doing the same things in the same place? Or does each side have its own job — the phone for one kind of person, the computer for another? If you're not sure, or it's all the same people doing the same things, easy: I'll build one thing that fits itself to whatever screen it's on, and everything stays in step by itself.",
       "answerKind": "free_text",
       "allowedInputModes": [
         "voice",
@@ -1410,8 +1410,8 @@
         "anchor": "If SALES FUNNEL — ask these (the funnel discovery):",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "I am going to research the best way to structure this kind of funnel. I will come back with a recommended number of stages and the page types that tend to work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Does that sound right, or do you already know exactly what stages you want?",
-      "spoken": "I am going to research the best way to structure this kind of funnel. I will come back with a recommended number of stages and the page types that tend to work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Does that sound right, or do you already know exactly what stages you want?",
+      "display": "I'll research the best structure for this kind of funnel, then come back with a recommended number of stages and the page types that work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Sound right, or do you already know exactly what stages you want?",
+      "spoken": "I'll research the best structure for this kind of funnel, then come back with a recommended number of stages and the page types that work best — things like a lead capture page, a sales page, an upsell page, a downsell page, a checkout page, a thank you page, and follow-up sequences over email and text. Sound right, or do you already know exactly what stages you want?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -1558,8 +1558,8 @@
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "For the pictures themselves I'd recommend the one called GPT Image 2 — it's the best I've found at getting words onto an image correctly, and it runs about a nickel a picture. Want me to go with that, or is there a particular model you'd like me to use instead? If you're not sure, I'll choose for you — that's a fine answer.",
-      "spoken": "For the pictures themselves I'd recommend the one called GPT Image 2 — it's the best I've found at getting words onto an image correctly, and it runs about a nickel a picture. Want me to go with that, or is there a particular model you'd like me to use instead? If you're not sure, I'll choose for you — that's a fine answer.",
+      "display": "For the pictures, I'd go with GPT Image 2 — the best I've found at getting words onto an image right, and it costs about a nickel a picture. Should I use that, or do you have a model you'd rather use? Not sure is a fine answer — I'll choose for you.",
+      "spoken": "For the pictures, I'd go with GPT Image 2 — the best I've found at getting words onto an image right, and it costs about a nickel a picture. Should I use that, or do you have a model you'd rather use? Not sure is a fine answer — I'll choose for you.",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -1608,8 +1608,8 @@
         "anchor": "Media and Creative (any build that needs artwork — after the shape is confirmed)",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "To create your artwork I need a key for one of two services — Kie.ai, or your Agnes account. I looked in the places this computer keeps its keys and didn't find one for either. I only ever check the NAMES — I never read or need the keys themselves. Do you have one of these keys already, or an account with either service? One thing, whatever you do: please don't paste the key into our chat. I never need to see it — I just need to know where it lives.",
-      "spoken": "To create your artwork I need a key for one of two services — Kie.ai, or your Agnes account. I looked in the places this computer keeps its keys and didn't find one for either. I only ever check the NAMES — I never read or need the keys themselves. Do you have one of these keys already, or an account with either service? One thing, whatever you do: please don't paste the key into our chat. I never need to see it — I just need to know where it lives.",
+      "display": "To create your artwork I need a key for one of two services: Kie.ai, or your Agnes account. I checked where this computer keeps its keys and didn't find either. Don't worry — I only ever look at the names of keys, never the keys themselves. So: do you have one of these keys, or an account with either service? One favor: please don't paste the key into our chat. I never need to see it — only where it lives.",
+      "spoken": "To create your artwork I need a key for one of two services: Kie.ai, or your Agnes account. I checked where this computer keeps its keys and didn't find either. Don't worry — I only ever look at the names of keys, never the keys themselves. So: do you have one of these keys, or an account with either service? One favor: please don't paste the key into our chat. I never need to see it — only where it lives.",
       "answerKind": "free_text",
       "allowedInputModes": [
         "voice",
@@ -1664,8 +1664,8 @@
         "anchor": "Block A — Capacity (nothing here can be measured; all of it must be asked)",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "Which AI tool are you running this in? The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours.",
-      "spoken": "Which AI tool are you running this in? The two in common use are the regular Claude Code (its own command-line tool) and Claude-Nine (the multi-model router). Name yours.",
+      "display": "Which AI tool are you running this in? The two common ones are regular Claude Code — its own command-line tool — and Claude-Nine, the multi-model router. Which is yours?",
+      "spoken": "Which AI tool are you running this in? The two common ones are regular Claude Code — its own command-line tool — and Claude-Nine, the multi-model router. Which is yours?",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -1897,8 +1897,8 @@
         "anchor": "Resolving which provider path this build will run on",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "Last time we worked together (on [date]), you told me: your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Is all of that still right?",
-      "spoken": "Last time we worked together (on [date]), you told me: your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Is all of that still right?",
+      "display": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
+      "spoken": "Last time we worked together, on [date], you told me your Ollama plan is the hundred-dollar one, your Agnes plan is the hundred-dollar-a-year one, your DeepSeek account is the direct one you topped up, and you wanted a quarter of everything left free. Nothing on this machine has changed since then. Still right?",
       "answerKind": "confirm",
       "allowedInputModes": [
         "voice",
@@ -2434,8 +2434,8 @@
         "anchor": "Block D — The measuring stick (the Gauntlet questions)",
         "digest": "d1060c871db3a437566305b160200343a43ca48abe3716af9a48edb52b921d87"
       },
-      "display": "When your finished <thing> sits next to that example, what counts as winning? (a) Mine is just as good — a tie counts. (b) Mine must check every box that example checks. Most people pick (a); if you are not sure, (a) it is.",
-      "spoken": "When your finished <thing> sits next to that example, what counts as winning? (a) Mine is just as good — a tie counts. (b) Mine must check every box that example checks. Most people pick (a); if you are not sure, (a) it is.",
+      "display": "When your finished build sits next to that example, what counts as winning? Option A: mine is just as good — a tie counts. Option B: mine has to check every box that example checks. Most people pick A. Not sure? Go with A.",
+      "spoken": "When your finished build sits next to that example, what counts as winning? Option A: mine is just as good — a tie counts. Option B: mine has to check every box that example checks. Most people pick A. Not sure? Go with A.",
       "answerKind": "single_choice",
       "allowedInputModes": [
         "voice",
@@ -2728,7 +2728,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "17. **Determine GitHub.** New repo or pre-existing? Ask.",
-        "digest": "1a603237408f5befe6df82b47754455fe44945a693a5caf6998902d2e50e838d"
+        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
       },
       "display": "New repo or pre-existing?",
       "spoken": "New repo or pre-existing?",
