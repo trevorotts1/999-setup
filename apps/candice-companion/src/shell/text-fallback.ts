@@ -19,12 +19,12 @@ export function showTextFallback(root: HTMLElement | null, detail?: string): voi
 
   const title = document.createElement('p');
   title.className = 'fallback-title';
-  title.textContent = 'Candice companion unavailable';
+  title.textContent = 'Candice can’t start right now';
 
   const hint = document.createElement('p');
   hint.className = 'fallback-hint';
   hint.textContent =
-    'Continue in Claude text mode — your session is unaffected.';
+    'Keep going in the Claude window — nothing is lost.';
 
   card.append(title, hint);
   if (detail) {

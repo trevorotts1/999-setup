@@ -93,8 +93,8 @@ export async function bootCandice(): Promise<void> {
     surface.textContent = status === 'starting'
       ? 'Starting Candice…'
       : status === 'shell-ready'
-        ? 'Candice shell ready'
-        : 'Candice companion unavailable';
+        ? 'Candice is ready'
+        : 'Candice can’t start right now';
   };
   const enterTextFallback = (detail?: string): void => {
     if (fellBack) return;

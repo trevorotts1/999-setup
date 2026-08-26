@@ -40,7 +40,7 @@ export const ANIMATION_TOGGLE_LABEL = 'Animation';
  * in that state: re-enabling animation would mean writing `reducedMotion:
  * false`, which is exactly the OS override this lane refuses to offer.
  */
-export const ANIMATION_TOGGLE_OS_HINT = 'Off — your system asked for reduced motion';
+export const ANIMATION_TOGGLE_OS_HINT = 'Off — your computer asked for less motion';
 
 /** Hint shown when the user turned animation off themselves. */
 export const ANIMATION_TOGGLE_OFF_HINT = 'Off — Candice holds a still pose';

@@ -163,7 +163,12 @@ const CAPTIONS: Record<CandiceStatus, string> = {
   thinking: '',
   speaking: '',
   compact: '',
-  recovering: 'RECOVERING - restoring your question',
+  recovering: 'One moment — bringing your question back…',
+  // NOT reworded, deliberately. This caption duplicates the spec-5.1
+  // button label, and captions.test.ts asserts it renders "the exact
+  // spec-5.1 label" verbatim. A caption that names a button rather than
+  // speaking to the user is worth revisiting -- but that is a spec
+  // decision, not a repair-pass one. Raised in CONTROL/TODO.md.
   'text-fallback': 'Answer in Claude instead',
   building: '',
   'quality-checking': '',
