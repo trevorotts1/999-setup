@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-08-22T21:03:54.550Z",
+  "generatedAt": "2026-08-25T19:39:48.979Z",
   "cdpBase": "http://127.0.0.1:9223",
   "sources": {
-    "styles": "/Users/blackceomacmini/Documents/Codex/2026-08-22/i-x20/work/999-setup-audit-wt-appui/apps/candice-companion/src/styles.css",
-    "captionsView": "/Users/blackceomacmini/Documents/Codex/2026-08-22/i-x20/work/999-setup-audit-wt-appui/apps/candice-companion/src/ui/captions/view.ts"
+    "styles": "/private/tmp/candice-integration/apps/candice-companion/src/styles.css",
+    "captionsView": "/private/tmp/candice-integration/apps/candice-companion/src/ui/captions/view.ts"
   },
   "thresholds": {
     "normalText": 4.5,

@@ -1,66 +1,246 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-22T20:18:32.700Z",
+  "generatedAt": "2026-08-26T19:37:20.923Z",
   "repo": "999-setup-audit",
   "commitSha": "packaged-suite-run",
-  "packagedBinarySha": null,
-  "runId": "packaged-suite-blocked-1787429912700",
+  "packagedBinarySha": "5f3de2b401e83c9e0c7e5732e9d115359d83cb7c4b1a0dfe2903e592320600fe",
+  "runId": "packaged-suite-1787773040923",
   "launcher": "node tests/e2e-acceptance/packaged/suite.js",
   "verdict": "BLOCKED",
   "legs": [
     {
       "id": "typed-build-target",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: typed-build-target",
-      "verdict": "BLOCKED",
+      "name": "packaged-automated: typed-build-target (run 1)",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": null
     },
     {
       "id": "wrong-session",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: wrong-session",
-      "verdict": "BLOCKED",
+      "name": "packaged-automated: wrong-session (run 1)",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": null
     },
     {
       "id": "duplicate",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: duplicate",
-      "verdict": "BLOCKED",
+      "name": "packaged-automated: duplicate (run 1)",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": null
     },
     {
       "id": "fallback",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: fallback",
-      "verdict": "BLOCKED",
+      "name": "packaged-automated: fallback (run 1)",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": null
     },
     {
       "id": "restart",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: restart",
-      "verdict": "BLOCKED",
+      "name": "packaged-automated: restart (run 1)",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": null
     },
     {
       "id": "compact",
       "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: compact",
+      "name": "packaged-automated: compact (run 1)",
       "verdict": "BLOCKED",
       "required": true,
       "skippableReason": null,
-      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+      "reason": "leg exited 2"
+    },
+    {
+      "id": "speech-assets",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: speech-assets (run 1)",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "leg exited 1"
+    },
+    {
+      "id": "speech-keyboard",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: speech-keyboard (run 1)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "typed-build-target",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: typed-build-target (run 2)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "wrong-session",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: wrong-session (run 2)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "duplicate",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: duplicate (run 2)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "fallback",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: fallback (run 2)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "restart",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: restart (run 2)",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "compact",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: compact (run 2)",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "leg exited 2"
+    },
+    {
+      "id": "speech-assets",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: speech-assets (run 2)",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "leg exited 1"
+    },
+    {
+      "id": "speech-keyboard",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: speech-keyboard (run 2)",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "leg exited 1"
+    },
+    {
+      "id": "speech-keyboard-determinism",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: speech-keyboard run determinism (run 1 vs run 2)",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "leg speech-keyboard passed one run and failed the other — packaged behavior is not deterministic across clean-state runs"
+    },
+    {
+      "id": "trace-27835c88963a",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — typed-build-target: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "typed-build-target: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-812e5ed4f1c9",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — wrong-session: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "wrong-session: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-16a6d097d709",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — duplicate: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "duplicate: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-567d14298fd8",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — fallback: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "fallback: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-0744dda5a94b",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — restart: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "restart: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-3565efbe97a5",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "compact: run 1 and run 2 traces differ modulo ts"
+    },
+    {
+      "id": "trace-a1c8c909e847",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — speech-assets run 1: trace missing",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "speech-assets run 1: trace missing"
+    },
+    {
+      "id": "trace-89bebd5c9d09",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — speech-assets run 2: trace missing",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "speech-assets run 2: trace missing"
+    },
+    {
+      "id": "trace-d2a28970b0cc",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — speech-keyboard: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "speech-keyboard: run 1 and run 2 traces differ modulo ts"
     }
   ],
   "tiers": [
@@ -71,56 +251,192 @@
       "legs": [
         {
           "id": "typed-build-target",
-          "name": "packaged-automated: typed-build-target",
-          "verdict": "BLOCKED",
+          "name": "packaged-automated: typed-build-target (run 1)",
+          "verdict": "PASS",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": null
         },
         {
           "id": "wrong-session",
-          "name": "packaged-automated: wrong-session",
-          "verdict": "BLOCKED",
+          "name": "packaged-automated: wrong-session (run 1)",
+          "verdict": "PASS",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": null
         },
         {
           "id": "duplicate",
-          "name": "packaged-automated: duplicate",
-          "verdict": "BLOCKED",
+          "name": "packaged-automated: duplicate (run 1)",
+          "verdict": "PASS",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": null
         },
         {
           "id": "fallback",
-          "name": "packaged-automated: fallback",
-          "verdict": "BLOCKED",
+          "name": "packaged-automated: fallback (run 1)",
+          "verdict": "PASS",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": null
         },
         {
           "id": "restart",
-          "name": "packaged-automated: restart",
-          "verdict": "BLOCKED",
+          "name": "packaged-automated: restart (run 1)",
+          "verdict": "PASS",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": null
         },
         {
           "id": "compact",
-          "name": "packaged-automated: compact",
+          "name": "packaged-automated: compact (run 1)",
           "verdict": "BLOCKED",
           "required": true,
-          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+          "reason": "leg exited 2"
+        },
+        {
+          "id": "speech-assets",
+          "name": "packaged-automated: speech-assets (run 1)",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "leg exited 1"
+        },
+        {
+          "id": "speech-keyboard",
+          "name": "packaged-automated: speech-keyboard (run 1)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "typed-build-target",
+          "name": "packaged-automated: typed-build-target (run 2)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "wrong-session",
+          "name": "packaged-automated: wrong-session (run 2)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "duplicate",
+          "name": "packaged-automated: duplicate (run 2)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "fallback",
+          "name": "packaged-automated: fallback (run 2)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "restart",
+          "name": "packaged-automated: restart (run 2)",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "compact",
+          "name": "packaged-automated: compact (run 2)",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "leg exited 2"
+        },
+        {
+          "id": "speech-assets",
+          "name": "packaged-automated: speech-assets (run 2)",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "leg exited 1"
+        },
+        {
+          "id": "speech-keyboard",
+          "name": "packaged-automated: speech-keyboard (run 2)",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "leg exited 1"
+        },
+        {
+          "id": "speech-keyboard-determinism",
+          "name": "packaged-automated: speech-keyboard run determinism (run 1 vs run 2)",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "leg speech-keyboard passed one run and failed the other — packaged behavior is not deterministic across clean-state runs"
+        },
+        {
+          "id": "trace-27835c88963a",
+          "name": "packaged-automated: trace integrity — typed-build-target: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "typed-build-target: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-812e5ed4f1c9",
+          "name": "packaged-automated: trace integrity — wrong-session: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "wrong-session: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-16a6d097d709",
+          "name": "packaged-automated: trace integrity — duplicate: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "duplicate: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-567d14298fd8",
+          "name": "packaged-automated: trace integrity — fallback: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "fallback: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-0744dda5a94b",
+          "name": "packaged-automated: trace integrity — restart: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "restart: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-3565efbe97a5",
+          "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "compact: run 1 and run 2 traces differ modulo ts"
+        },
+        {
+          "id": "trace-a1c8c909e847",
+          "name": "packaged-automated: trace integrity — speech-assets run 1: trace missing",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "speech-assets run 1: trace missing"
+        },
+        {
+          "id": "trace-89bebd5c9d09",
+          "name": "packaged-automated: trace integrity — speech-assets run 2: trace missing",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "speech-assets run 2: trace missing"
+        },
+        {
+          "id": "trace-d2a28970b0cc",
+          "name": "packaged-automated: trace integrity — speech-keyboard: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "speech-keyboard: run 1 and run 2 traces differ modulo ts"
         }
       ]
     }
   ],
   "blockedLines": [
-    "BLOCKED PACKAGED_AUTOMATED - typed-build-target",
-    "BLOCKED PACKAGED_AUTOMATED - wrong-session",
-    "BLOCKED PACKAGED_AUTOMATED - duplicate",
-    "BLOCKED PACKAGED_AUTOMATED - fallback",
-    "BLOCKED PACKAGED_AUTOMATED - restart",
+    "BLOCKED PACKAGED_AUTOMATED - compact",
     "BLOCKED PACKAGED_AUTOMATED - compact"
   ],
-  "notes": "Packaged suite environment gate closed: screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+  "notes": "Two clean-state runs per leg (EXECUTION-PLAN.md exact fix). Traces at evidence/FIX-019/builder/packaged-traces/."
 }

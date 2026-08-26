@@ -288,3 +288,39 @@ touched and keep their digests.
 TypeScript 527/527. Rust 75/75. Contract suite 7/7 files green, including
 vendored-parity and interview-inventory. Packaged tier 6/8 legs passing,
 1 BLOCKED, 1 failing on the recorded design decision.
+
+### Closing state of this session
+
+Installed on the operator box and verified: sha
+`2392036a336c465e8120ab020d546b75c341535b148e03fdf09840ecc2daaf57`, ad-hoc
+signed, `codesign --verify --deep --strict` clean, microphone entitlement
+embedded. Backups at `~/Library/Application Support/BlackCEO/999/
+app-backup-20260826-105729`, `-153924` and `-154642`.
+
+Two further defects closed after the packaged work:
+
+- **The microphone was denied before the prompt could appear.** The packaged
+  app ships with the hardened runtime on (`flags=0x10002(adhoc,runtime)`) and
+  carried no `com.apple.security.device.audio-input`. The Info.plist usage
+  string is only what the user is shown when the system ASKS; it grants
+  nothing. Push-to-talk could not work in any packaged build, and a dev run
+  uses the unhardened binary, which is why it was never felt.
+
+- **The Animation toggle's click went through Candice.** Measured against a
+  control: an accessibility press flipped it, a synthesized mouse click at the
+  same rectangle did not; the voice toggle, a `<button>`, took the same click
+  correctly. The checkbox is 14x14, so its published hit rectangle was 22x22,
+  and the label beside it was never published at all — outside a published
+  rectangle the window is deliberately pointer-transparent, so the click hit
+  whatever was behind her. Fixed and re-verified at the same coordinates.
+
+  This class of bug is invisible to every test that drives the UI through the
+  accessibility tree. A sweep of every remaining pointer-cursor control found
+  no others: they are all `<button>`, which `CONTROL_SELECTOR` matches whole.
+
+Final measured state: TypeScript 527/527, Rust 75/75, contract suite 7/7 files
+green, plugin launch-command green, e2e aggregate UNIT PASS (22 legs) +
+INTEGRATION PASS (6 legs). PACKAGED_AUTOMATED is BLOCKED on `compact` alone —
+a surface that has not landed — with `speech-assets` failing on the recorded
+bundle-versus-installer decision. HUMAN_HARDWARE is BLOCKED because it needs a
+person. Lifecycle unchanged: REPAIR_IN_PROGRESS, open=24, complete=0.
