@@ -14,6 +14,7 @@
 
 mod hit_test;
 mod runtime;
+mod single_instance;
 mod shell;
 mod speech_timing;
 
@@ -76,6 +77,49 @@ pub fn run() {
     // endpoint and single-use capability token. `--wake` remains a separate
     // non-binding visual wake request.
     let launch = runtime::parse_runtime_launch(std::env::args().skip(1));
+
+    // A wake asks to SHOW Candice, not to create a second one.
+    //
+    // The operator hit the duplicate directly: a bridged companion was on
+    // screen, `/bro` fired the plugin wake hook, and a second window opened
+    // beside the first. Guard the wake-only case here, before any window
+    // exists, so the duplicate is never drawn rather than drawn and closed.
+    //
+    // Bridge launches are deliberately NOT guarded -- see single_instance's
+    // module docs. Their session binding cannot be handed to a process
+    // started for another session without becoming the cross-session leak
+    // the per-launch socket exists to prevent.
+    // EVERY launch registers, so a bridged companion on screen is visible to
+    // the next wake. Only a wake-only launch stands down when it finds one.
+    let stands_down = launch.wake_received() && launch.bridge_endpoint.is_none();
+    let _instance = match single_instance::acquire() {
+        single_instance::Outcome::AlreadyRunning { pid } if stands_down => {
+            single_instance::focus_existing();
+            eprintln!(
+                "candice: already running (pid {pid}); raised it instead of opening a second window"
+            );
+            return;
+        }
+        single_instance::Outcome::AlreadyRunning { pid } => {
+            // A bridge launch proceeds: its session binding cannot be handed
+            // to a process started for another session. Known remaining gap.
+            eprintln!("candice: another instance is running (pid {pid}); this bridge launch continues");
+            None
+        }
+        // Held for the life of the process; the guard releases the lock on
+        // drop so the next launch is not blocked by a corpse.
+        single_instance::Outcome::Primary(guard) => Some(guard),
+        // FAILS OPEN on purpose: a guard that could not run must never be
+        // the reason Candice does not appear. Say why, so a duplicate window
+        // in the field is diagnosable instead of mysterious.
+        single_instance::Outcome::Undetermined { reason } => {
+            if stands_down {
+                eprintln!("candice: single-instance check did not run ({reason}); continuing");
+            }
+            None
+        }
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         // FIX-022: in-app updater (tauri-plugin-updater, spec 21). The plugin

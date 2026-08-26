@@ -27,6 +27,9 @@ type VisemeId = "closed" | "rest" | "ai" | "oh" | "ee" | "mm" | "wide";
 interface VisemeEvent { startSec: number; endSec: number; viseme: VisemeId }
 interface VisemeStep { viseme: VisemeId; startMs: number; endMs: number }
 type VisemeBlendMode = "direct" | "crossfade";
+
+const DEFAULT_PHONEME_TO_VISEME: Readonly<Record<string, VisemeId>>;
+const CARRY_VISEME_PHONEMES: ReadonlySet<string>;
 ```
 
 `VisemeStep` times are in scheduler-clock ms (monotonic, same clock as the
@@ -36,7 +39,10 @@ injected `Clock`).
 
 | Function | Contract |
 |---|---|
-| `phonemeToViseme(phoneme, table?)` | maps Kokoro phoneme → `VisemeId`; unknown → `"rest"`; case-insensitive |
+| `phonemeToViseme(phoneme, table?)` | maps one Kokoro phoneme → `VisemeId`; unknown → `"rest"`; exact key first, lowercase as fallback |
+| `isCarryPhoneme(phoneme)` | true for marks with no aperture of their own (stress, length, aspiration, palatalisation, nasalisation) |
+| `visemeEventsFromTimings(timings)` | whole-utterance conversion; resolves carry marks against their neighbours. **The scheduler uses this, not the per-span function** |
+| `visemeTableCoverage(inventory, table?)` | fraction of a phoneme inventory that resolves to a real shape, 0..1 |
 | `timingToVisemeEvent(phoneme, startSec, endSec)` | `VisemeEvent` or `null` for non-finite or non-positive span |
 | `shouldBlend(mode, a, b)` | true only for `"crossfade"`, differing shapes, real gap |
 | `idleViseme()` | `"closed"` |
@@ -59,6 +65,35 @@ injected `Clock`).
 
 Defaults: `leadMs` 60, `minSpanMs` 50, `blendMode` `"direct"`.
 
+## Phoneme alphabet (load-bearing)
+
+The pinned stack — kokoro-onnx 0.6.1 driving espeak-ng — emits **lowercase
+IPA**, measured by running the shipped worker, not read off a chart:
+
+```
+"Hello, this is Candice speaking about the build."
+  →  h ə l ˈ o ʊ ,   ð ɪ s   ɪ z   k ˈ æ n d ɪ s ...
+```
+
+- Diphthongs arrive as two spans (`e` + `ɪ`), affricates as two (`t` + `ʃ`).
+- The word gap is a bare **space**, and it is a real span.
+- Stress marks sit **between** an onset consonant and its vowel; length marks
+  **trail** the vowel they prolong. Both are carry marks — never give them a
+  shape of their own.
+- Uppercase symbols exist in Kokoro's 114-entry vocabulary but this espeak
+  path never produces them.
+
+The table is validated against a committed capture of real worker output
+(`src/runtime/__tests__/fixtures/kokoro-real-utterance.json`). An ASCII
+phoneme rule anywhere on this path silently starves the mouth: it did, in
+three separate layers, and the packaged mouth never opened.
+
+A phoneme string is accepted by a **deny-list** (control and format
+characters out, everything else in), defined once in
+`src-tauri/src/speech_timing.rs::valid_phoneme` and mirrored in
+`src/runtime/speech-timing.ts`. It is never an allow-list of today's
+alphabet.
+
 ## Invariants (tested)
 
 1. Steps are ordered and non-overlapping.
@@ -67,3 +102,8 @@ Defaults: `leadMs` 60, `minSpanMs` 50, `blendMode` `"direct"`.
 4. Garbage timings never throw and never corrupt the sequence.
 5. The registration guard fails closed until measured.
 6. The default phoneme table is frozen data, never code.
+7. The table covers 100% of the phonemes in the committed real-TTS capture;
+   a mutation test restoring the old ASCII table makes coverage collapse.
+8. Carry marks are absent from the shape table (one authority per symbol).
+9. Across a real utterance the mouth is open for >60% of the audio and
+   reaches at least four distinct shapes.
