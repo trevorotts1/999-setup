@@ -74,7 +74,8 @@ export const CAPTIONS_STYLE_TEXT = `
   color: var(--candice-cap-muted);
 }
 .candice-captions-label {
-  font-size: 11px;
+  /* Scales with the preference like the caption it labels. */
+  font-size: calc(11px * var(--candice-text-scale, 1));
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--candice-cap-muted);

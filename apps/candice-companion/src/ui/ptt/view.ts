@@ -59,7 +59,10 @@ export const PTT_STYLE_TEXT = `
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  font-size: 14px;
+  /* Scales with the text-size preference, like the surface around it.
+     Fixed at 14px, HOLD TO TALK stayed small at Large while the
+     question grew -- the control a low-vision user most needs to hit. */
+  font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-ptt-text);
   user-select: none;
@@ -261,7 +264,14 @@ export function createPttView(
   const button = document.createElement('button');
   button.type = 'button';
   button.className = `${PTT_ROOT_CLASS}-button`;
-  button.setAttribute('aria-label', '🎙 HOLD TO TALK');
+  // No aria-label here, deliberately. It was set ONCE and never updated,
+  // and aria-label overrides element content -- so `setStatus` changed the
+  // visible label to "LISTENING - LET GO WHEN FINISHED" while a screen
+  // reader went on saying "HOLD TO TALK". The single most safety-relevant
+  // state this app has, an OPEN MICROPHONE, was inaudible to the users who
+  // most need to be told about it. The label span below is real text,
+  // re-rendered on every status change, and the glow and wave spans are
+  // aria-hidden, so the button names itself correctly and stays correct.
 
   // Dedicated label element (I-05): renders NEVER replace it, so the glow
   // and wave children survive every status render.

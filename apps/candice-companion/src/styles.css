@@ -199,7 +199,9 @@ body {
   margin: 0;
   padding: 8px 12px 12px;
   text-align: center;
-  font-size: 12px;
+  /* Same rule as line 102, which this used to override by being later
+     at equal specificity -- so degraded-mode guidance never scaled. */
+  font-size: calc(12px * var(--candice-text-scale, 1));
   color: var(--candice-muted);
 }
 

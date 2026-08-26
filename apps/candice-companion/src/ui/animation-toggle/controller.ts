@@ -219,7 +219,10 @@ export function createAnimationToggle(options: AnimationToggleOptions): Animatio
     const off = preference === true || forcedByOs;
     input.checked = !off;
     input.disabled = forcedByOs;
-    input.setAttribute('aria-checked', String(!off));
+    // No aria-checked: a native input[type=checkbox] exposes its own
+    // checked state, and a hand-maintained mirror is one missed render away
+    // from telling a screen reader the opposite of the truth.
+    // `input.checked` above is the whole job.
     hint.textContent = forcedByOs
       ? ANIMATION_TOGGLE_OS_HINT
       : off
