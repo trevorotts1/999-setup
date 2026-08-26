@@ -173,6 +173,14 @@ export function createInputRegionController(
 
   // Artwork changes the painted box only once it has decoded.
   root.addEventListener('load', schedule, true);
+  // Scrolling moves every published rectangle and fires NEITHER a mutation
+  // nor a resize, so without this the regions stayed stale until the next
+  // interval tick -- up to `intervalMs` of clicks landing where a control
+  // used to be. Outside a published rectangle this window is
+  // pointer-transparent, so a stale region does not merely miss: the click
+  // goes through Candice to whatever is behind her. Capture phase, because
+  // scroll does not bubble from the element that actually scrolled.
+  root.addEventListener('scroll', schedule, true);
   view?.addEventListener('resize', schedule);
   const timer = setInterval(schedule, intervalMs);
 
@@ -195,6 +203,7 @@ export function createInputRegionController(
       mutations?.disconnect();
       resizes?.disconnect();
       root.removeEventListener('load', schedule, true);
+      root.removeEventListener('scroll', schedule, true);
       view?.removeEventListener('resize', schedule);
     },
   };
