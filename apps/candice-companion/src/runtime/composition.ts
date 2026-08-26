@@ -40,9 +40,20 @@ import { SpeechOrchestrator } from './speech-orchestrator.ts';
  * The welcome shown by the slash-command wake path before preflight or any
  * governed question. It is presentation only: no answer is requested and no
  * protocol count/order changes here.
+ *
+ * Keep it SHORT. This is the very first thing a new user sees, it is read
+ * aloud, and it lands in a 420px column while they are waiting for setup to
+ * finish -- so every extra word is a second of someone waiting on a
+ * paragraph before anything happens. The previous version ran 228
+ * characters across four sentences; most of that was one idea said three
+ * ways ("the app, the software, or the thing you've always dreamed about")
+ * plus a sentence of framing before the metaphor it was framing.
+ *
+ * What must survive any rewrite: she says her name, the fairy-godmother
+ * idea with its wish/real pairing, and a reason the user is waiting.
  */
 const SETUP_CHECK_GREETING =
-  "Hi, I'm Candice. I'm here to help you build the app, the software, or the thing you've always dreamed about. Think of me as your fairy godmother: you make a wish, and I help make it real. I'm getting everything ready for us now.";
+  "Hi, I'm Candice. Think of me as your fairy godmother for building things: you make a wish, I help make it real. Setting things up now.";
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;

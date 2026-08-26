@@ -310,8 +310,13 @@ test('createCaptionsView: highlight state does not leak from one question to the
 test('FIX-014 I-13: initialCaption shows at creation, important (never faded), before any machine effect', () => {
   const machine = createCandiceStateMachine();
   const { doc, mount } = fakeEnv();
+  // Kept in step with SETUP_CHECK_GREETING in src/runtime/composition.ts.
+  // This is a copy, not an import: the captions lane must not depend on the
+  // runtime composition. It is a fixture for "a real greeting renders at
+  // creation", so if the product greeting changes, update the copy here too
+  // rather than leaving two versions of Candice's voice in the repo.
   const greeting =
-    "Hi, I'm Candice. I'm here to help you build the app, the software, or the thing you've always dreamed about. Think of me as your fairy godmother: you make a wish, and I help make it real. I'm getting everything ready for us now.";
+    "Hi, I'm Candice. Think of me as your fairy godmother for building things: you make a wish, I help make it real. Setting things up now.";
   const ctrl = createCaptionsController({
     machine,
     mount: mount as unknown as HTMLElement,
