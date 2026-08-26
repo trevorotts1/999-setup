@@ -88,7 +88,14 @@ export const CAPTIONS_STYLE_TEXT = `
      overscroll-behavior:contain stops a flick past the end of the question
      from scrolling whatever desktop is behind the transparent window. */
   max-height: 26vh;
+  /* WKWebView overlay scrollbars stay invisible until a scroll is already in
+     progress, so a clipped question reads as truncated even though it
+     scrolls -- the exact complaint this box was widened to answer. The
+     ::-webkit-scrollbar rules above keep the thumb permanently visible, so
+     "there is more below" is legible without touching anything. */
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--candice-ui-border) transparent;
   overscroll-behavior: contain;
   /* Question copy uses blank lines to separate the choices. textContent keeps
      them, but the default white-space collapses them back into one wall of
@@ -97,6 +104,13 @@ export const CAPTIONS_STYLE_TEXT = `
   text-align: left;
 }
 /* A scrollable region must be reachable by keyboard, not just by trackpad. */
+.candice-captions-text::-webkit-scrollbar {
+  width: 8px;
+}
+.candice-captions-text::-webkit-scrollbar-thumb {
+  background: var(--candice-ui-border);
+  border-radius: 4px;
+}
 .candice-captions-text:focus-visible {
   outline: 2px solid var(--candice-ui-border);
   outline-offset: 2px;
@@ -230,6 +244,15 @@ export function createCaptionsView(
     if (entry === null || entry.text === '') {
       root.classList.add('candice-captions-empty');
       text.textContent = '';
+      // Clear the HIGHLIGHT STATE too, not just the DOM. Leaving currentText
+      // set meant a later setSpokenProgress(null) -- which the highlight
+      // driver emits on every drain, 100ms apart -- took the "restore plain
+      // text" branch and wrote the OLD question back into the element. The
+      // empty class hides it visually, so nothing looked wrong, but this is
+      // an aria-live region: a screen reader re-announced a question that had
+      // already been answered and cleared.
+      currentText = '';
+      highlighted = -1;
       setStale(false);
       return;
     }

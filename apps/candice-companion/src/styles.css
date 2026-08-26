@@ -60,6 +60,16 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Safety valve. `body` clips (`overflow: hidden`) and every row except the
+     character refuses to shrink below its content, so in the worst case --
+     tall caption plus a wrapped options row plus the methods and footer rows
+     at a large text scale -- the bottom of the stack fell outside the 640px
+     window. Buttons that are offscreen are not just ugly, they are
+     unclickable, which is what "the options are hard to select" actually was.
+     Scrolling is the wrong look but the right failure: nothing becomes
+     unreachable. The floor above is what keeps it from being needed. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Boot surface (shown before src/main.ts first paint) */
@@ -134,7 +144,15 @@ body {
 .candice-character[data-candice-gesture-mounted="true"] {
   display: block;
   flex: 1;
-  min-height: 0;
+  /* THE FLOOR THAT ACTUALLY APPLIES.
+     `#candice-stage` above carries the same floor, and it does nothing once
+     the gesture stage mounts: composition.ts removes that element outright
+     (`document.getElementById(VISUAL_STAGE_ID)?.remove()`). This container is
+     what holds Candice from then on, and with `min-height: 0` it was the only
+     row in the column allowed to shrink -- so a long caption squeezed her
+     toward nothing while every fixed row below kept its space. Same defect the
+     stage floor was written to fix, on the element that outlives it. */
+  min-height: 200px;
 }
 
 .candice-gesture-layer {

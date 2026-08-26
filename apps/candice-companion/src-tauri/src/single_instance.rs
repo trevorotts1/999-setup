@@ -119,44 +119,87 @@ fn per_user_dir() -> Option<PathBuf> {
 ///
 /// Returns `None` when the question could not be answered — the caller must
 /// treat that as "cannot prove a duplicate" and fail open.
-fn pid_alive(pid: u32) -> Option<bool> {
-    if pid == 0 {
+fn own_process_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_default()
+}
+
+/// Is the process holding this lock still one of OURS?
+///
+/// A bare pid is not an identity. Operating systems recycle pids -- Windows
+/// aggressively, in small multiples of four -- so a crashed companion's pid
+/// can belong to something unrelated within minutes. Asking only "is that pid
+/// alive?" would then answer `true` forever, every wake would stand down, and
+/// the user would have NO Candice at all: the defect this guard exists to
+/// prevent, inverted into something worse than a duplicate window.
+///
+/// So the lock stores the executable name beside the pid, and both must match.
+///
+/// Returns `None` when the question could not be answered -- the caller must
+/// treat that as "cannot prove a duplicate" and fail open.
+fn owner_alive(pid: u32, expected_name: &str) -> Option<bool> {
+    if pid == 0 || expected_name.is_empty() {
         return Some(false);
     }
     #[cfg(windows)]
     let output = Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .args([
+            "/FI",
+            &format!("PID eq {pid}"),
+            "/FI",
+            &format!("IMAGENAME eq {expected_name}"),
+            "/NH",
+        ])
         .stdin(Stdio::null())
         .output();
     #[cfg(not(windows))]
     let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "pid="])
+        .args(["-p", &pid.to_string(), "-o", "comm="])
         .stdin(Stdio::null())
         .output();
 
     let output = output.ok()?;
     // `ps -p` exits non-zero for an absent pid, and tasklist prints
-    // "INFO: No tasks..." while still exiting zero — so check the text, not
-    // just the status. An exit code is not a fact about the process table.
+    // "INFO: No tasks..." while still exiting zero, so read the text rather
+    // than the status. An exit code is not a fact about the process table.
     let text = String::from_utf8_lossy(&output.stdout);
     #[cfg(windows)]
     {
-        Some(text.contains(&pid.to_string()))
+        // Both filters were applied, so any surviving row is same pid AND
+        // same image name.
+        Some(text.to_lowercase().contains(&expected_name.to_lowercase()))
     }
     #[cfg(not(windows))]
     {
-        Some(text.split_whitespace().any(|token| token == pid.to_string()))
+        // `comm=` prints that pid's executable path; compare the leaf name.
+        Some(
+            text.lines()
+                .filter_map(|line| line.trim().rsplit('/').next())
+                .any(|name| name == expected_name),
+        )
     }
 }
 
-fn read_pid(path: &Path) -> Option<u32> {
+/// Lock contents: pid on the first line, executable name on the second.
+fn read_owner(path: &Path) -> Option<(u32, String)> {
     let mut text = String::new();
     File::open(path).ok()?.read_to_string(&mut text).ok()?;
-    text.trim().parse::<u32>().ok()
+    let mut lines = text.lines();
+    let pid = lines.next()?.trim().parse::<u32>().ok()?;
+    // A pid-only lock came from an older build. It carries no identity, so it
+    // is treated as unreadable and reclaimed rather than trusted.
+    let name = lines.next()?.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some((pid, name))
 }
 
-fn write_pid(file: &mut File) -> std::io::Result<()> {
-    write!(file, "{}", std::process::id())?;
+fn write_owner(file: &mut File) -> std::io::Result<()> {
+    writeln!(file, "{}", std::process::id())?;
+    writeln!(file, "{}", own_process_name())?;
     file.flush()
 }
 
@@ -186,7 +229,7 @@ pub fn acquire() -> Outcome {
     for attempt in 0..2 {
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
-                if let Err(error) = write_pid(&mut file) {
+                if let Err(error) = write_owner(&mut file) {
                     // The lock is ours but unlabelled; a later launch would
                     // read no pid and reclaim it. Release rather than hold a
                     // lock nobody can reason about.
@@ -196,14 +239,14 @@ pub fn acquire() -> Outcome {
                 return Outcome::Primary(InstanceGuard { path });
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                let Some(pid) = read_pid(&path) else {
+                let Some((pid, name)) = read_owner(&path) else {
                     // Unreadable or truncated: treat as stale exactly once.
                     if attempt == 0 && fs::remove_file(&path).is_ok() {
                         continue;
                     }
                     return Outcome::Undetermined { reason: "lock file unreadable".into() };
                 };
-                match pid_alive(pid) {
+                match owner_alive(pid, &name) {
                     Some(true) => return Outcome::AlreadyRunning { pid },
                     Some(false) => {
                         // Stale: the owner died without cleaning up (crash,
@@ -259,47 +302,79 @@ mod tests {
     fn every_launch_registers_so_a_later_wake_can_see_it() {
         // Regression: the first draft only registered wake launches, so a
         // bridged companion advertised nothing and the next wake opened a
-        // second window. acquire() must not take a "guarded" argument at
-        // all -- registration is unconditional, blocking is the caller's.
+        // second window. acquire() takes no "guarded" argument at all --
+        // registration is unconditional, blocking is the caller's choice.
         let outcome = acquire();
         assert!(
-            matches!(outcome, Outcome::Primary(_) | Outcome::AlreadyRunning { .. } | Outcome::Undetermined { .. }),
+            matches!(
+                outcome,
+                Outcome::Primary(_) | Outcome::AlreadyRunning { .. } | Outcome::Undetermined { .. }
+            ),
             "acquire must always reach a decision",
         );
     }
 
     #[test]
-    fn our_own_pid_is_alive_and_an_absurd_one_is_not() {
-        // CONTROL first: if this cannot see the process it is running in,
-        // the liveness probe is broken and the negative below proves nothing.
-        assert_eq!(pid_alive(std::process::id()), Some(true), "liveness probe is broken");
-        // 0 is never a real user process id.
-        assert_eq!(pid_alive(0), Some(false));
+    fn liveness_needs_the_right_pid_AND_the_right_process() {
+        let me = std::process::id();
+        let my_name = own_process_name();
+        assert!(!my_name.is_empty(), "cannot name our own executable");
+
+        // CONTROL FIRST. If this cannot see the process it is running inside,
+        // the probe is broken and every negative below proves nothing.
+        assert_eq!(owner_alive(me, &my_name), Some(true), "liveness probe is broken");
+
+        // A live pid wearing the wrong name is NOT our instance. This is the
+        // pid-reuse case: without the name check a recycled pid would pin the
+        // lock forever and no wake would ever show Candice again.
+        assert_eq!(owner_alive(me, "definitely-not-candice-xyz"), Some(false));
+
+        // pid 0 is never a real user process.
+        assert_eq!(owner_alive(0, &my_name), Some(false));
+        // An empty expected name cannot identify anything.
+        assert_eq!(owner_alive(me, ""), Some(false));
     }
 
     #[test]
-    fn a_second_acquire_sees_the_first_and_the_lock_frees_on_drop() {
+    fn a_lock_round_trips_pid_and_name_and_frees_on_drop() {
         let dir = std::env::temp_dir().join(format!("candice-si-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
         let path = dir.join(LOCK_FILE);
         let _ = fs::remove_file(&path);
 
-        // Simulate a live owner: this test's own pid, which is alive.
         {
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)
                 .expect("lock created");
-            write_pid(&mut file).expect("pid written");
+            write_owner(&mut file).expect("owner written");
         }
-        assert_eq!(read_pid(&path), Some(std::process::id()));
-        assert_eq!(pid_alive(read_pid(&path).unwrap()), Some(true));
+        let (pid, name) = read_owner(&path).expect("owner readable");
+        assert_eq!(pid, std::process::id());
+        assert_eq!(name, own_process_name());
+        assert_eq!(owner_alive(pid, &name), Some(true));
 
-        // Dropping the guard removes the file.
         let guard = InstanceGuard { path: path.clone() };
         drop(guard);
         assert!(!path.exists(), "guard did not release the lock on drop");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pid_only_lock_from_an_older_build_is_not_trusted() {
+        // Older builds wrote just the pid. That carries no identity, so it
+        // must read as unreadable and be reclaimed -- never trusted as proof
+        // that something is running.
+        let dir = std::env::temp_dir().join(format!("candice-si-old-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join(LOCK_FILE);
+        let _ = fs::remove_file(&path);
+        {
+            let mut file = File::create(&path).expect("lock created");
+            write!(file, "{}", std::process::id()).expect("pid written");
+        }
+        assert_eq!(read_owner(&path), None, "a pid-only lock must not be trusted");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -313,10 +388,12 @@ mod tests {
         let _ = fs::remove_file(&path);
         {
             let mut file = File::create(&path).expect("lock created");
-            // pid 0 is never alive, standing in for a dead owner.
-            write!(file, "0").expect("pid written");
+            // pid 0 is never alive; it stands in for a dead owner.
+            writeln!(file, "0").expect("pid written");
+            writeln!(file, "candice-companion").expect("name written");
         }
-        assert_eq!(pid_alive(read_pid(&path).unwrap()), Some(false));
+        let (pid, name) = read_owner(&path).expect("owner readable");
+        assert_eq!(owner_alive(pid, &name), Some(false), "a dead owner must read as dead");
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -169,11 +169,25 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   font: inherit;
   font-weight: 600;
   padding: 10px 18px;
-  min-height: 40px;
+  /* 44px is the Apple HIG minimum touch/pointer target. At 40 these pills sat
+     just under it, 8px apart, in a floating always-on-top window -- which is
+     a large part of what "the options were hard to select" meant. */
+  min-height: 44px;
   cursor: pointer;
 }
+.candice-answer-footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 .candice-answer-option:hover {
+  /* Border-colour alone was almost invisible against this palette, so a
+     choice gave no feedback that it was even hoverable. */
   border-color: var(--candice-ac-accent-text);
+  background: var(--candice-ac-accent-text);
+  color: var(--candice-ac-surface);
 }
 .candice-answer-option:focus-visible {
   outline: 2px solid var(--candice-ac-accent-text);

@@ -57,7 +57,21 @@ class FakeElement {
   readonly classes = new FakeClassList();
   readonly children: FakeElement[] = [];
   parent: FakeElement | null = null;
-  textContent = '';
+  #textContent = '';
+  /**
+   * Assigning textContent REPLACES all children in a real DOM. The plain
+   * field this used to be kept them, so a stale <span> from a previous
+   * sentence highlight survived in the fake tree and no test could see the
+   * difference between "cleared" and "cleared but still full of children".
+   * A fake DOM that is more forgiving than the real one hides exactly the
+   * bugs it is there to catch.
+   */
+  get textContent(): string { return this.#textContent; }
+  set textContent(value: string) {
+    this.#textContent = value;
+    for (const child of this.children) child.parent = null;
+    this.children.length = 0;
+  }
   id = '';
   hidden = false;
   readonly tagName: string;
@@ -265,6 +279,32 @@ test('createCaptionsView: empty caption clears to the reset state, never stale t
   assert.ok(captionTextOf(mount).includes('Old text'));
   view.show({ text: '', important: false, seq: 2 });
   assert.equal(captionTextOf(mount), 'Candice', 'cleared: only the static label remains');
+
+  // The DOM check above is not enough on its own. Clearing used to wipe the
+  // element but keep the highlight state, so the next setSpokenProgress(null)
+  // -- which the highlight driver emits on every speech drain -- took the
+  // "restore plain text" branch and wrote the answered question back into an
+  // aria-live region. Invisible (the empty class is opacity 0) and still
+  // re-announced by a screen reader.
+  view.setSpokenProgress(0.5);
+  view.setSpokenProgress(null);
+  assert.equal(
+    captionTextOf(mount),
+    'Candice',
+    'a cleared caption must stay cleared through a speech-progress tick',
+  );
+});
+
+test('createCaptionsView: highlight state does not leak from one question to the next', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  view.show({ text: 'First question. Second sentence.', important: true, seq: 1 });
+  view.setSpokenProgress(0.9);
+  view.show({ text: 'A different question.', important: true, seq: 2 });
+  view.setSpokenProgress(null);
+  const shown = captionTextOf(mount);
+  assert.ok(shown.includes('A different question.'), 'the new question is shown');
+  assert.ok(!shown.includes('First question.'), 'the previous question did not come back');
 });
 
 test('FIX-014 I-13: initialCaption shows at creation, important (never faded), before any machine effect', () => {
