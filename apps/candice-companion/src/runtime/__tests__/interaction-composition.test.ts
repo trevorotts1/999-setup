@@ -25,6 +25,7 @@ import { createCandiceStateMachine } from "../../state/machine.ts";
 import type { CandiceStateMachine } from "../../state/machine.ts";
 import type { CaptionsController } from "../../ui/captions/index.ts";
 import { defaultProfile } from "../../prefs/profile.ts";
+import { needsNameAsk } from "../../prefs/name.ts";
 import type { CandiceProfile } from "../../prefs/schema.ts";
 import type { PrefsIpcAdapter, PrefsLoadResult } from "../../prefs/ipc.ts";
 import {
@@ -662,7 +663,7 @@ function machineWithPendingQuestion(question: string): CandiceStateMachine {
   return machine;
 }
 
-test('a pending question survives the first-run name prompt (no caption announce)', async () => {
+test('a pending question defers the first-run name prompt entirely', async () => {
   const machine = machineWithPendingQuestion('What are we building?');
   const root = new FakeElement('div');
   const captions = new FakeCaptions();
@@ -673,15 +674,31 @@ test('a pending question survives the first-run name prompt (no caption announce
     { profile: freshProfile(), prefsLoad: loadResult(freshProfile()), doc: new FakeDocument() as unknown as Document },
   );
   composition.beginNameFlow();
-  assert.ok(
-    root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`) !== null,
-    'the prompt still mounts: spec 4 is not skipped, only its caption announce is',
+  // CHANGED, deliberately. This asserted that the prompt still mounts and
+  // still shows its own question text while an interview question is live.
+  // Suppressing only the caption announce left two text inputs in a 420px
+  // column with focus stolen into the wrong one, so the user's first
+  // keystrokes went to the name box while they were reading the question.
+  //
+  // Spec 4 says the name is asked at most once per local user. It does not
+  // say it must be asked on top of something else. Nothing is persisted on
+  // this path, so `needsNameAsk` stays true and the ask happens on the next
+  // boot with no question pending: DEFERRED, not skipped.
+  assert.equal(
+    root.querySelector(`.${NAME_PROMPT_ROOT_CLASS}`),
+    null,
+    'the prompt does not mount over a live question',
   );
   assert.ok(
-    textOf(root).includes(NAME_QUESTION_TEXT),
-    'the prompt still shows its own question text to the user',
+    !textOf(root).includes(NAME_QUESTION_TEXT),
+    'and its question text is not put on screen either',
   );
   assert.deepEqual(captions.announced, [], 'nothing was announced over the delivered question');
+  // The ask is not lost: a later boot with nothing pending still asks.
+  assert.ok(
+    needsNameAsk(freshProfile()),
+    'the profile still needs the name ask, so the next quiet boot performs it',
+  );
 });
 
 test('a pending question survives the welcome-back greeting', async () => {

@@ -329,8 +329,20 @@ export async function initializeCandiceInteractionComposition(
     // are pleasantries, the interview question is the actual ask.
     const questionPending = machine !== null && machine.getState().pendingQuestion !== null;
     // First-run name question (spec 4): asked at most once per local user.
-    if (needsNameAsk(current)) {
-      mountNamePrompt(root, doc, captions, nowIso, persist, () => current, !questionPending);
+    if (needsNameAsk(current) && !questionPending) {
+      // The name ask is DEFERRED while a question is on screen, not skipped.
+      //
+      // Suppressing only the caption announce was not enough: the prompt still
+      // MOUNTED, so a 420px column carried two text inputs at once and
+      // `input.focus()` took focus into the wrong one — the user's first
+      // keystrokes went to the name box while they were reading an interview
+      // question. Spec 4 says the name is asked at most once per local user;
+      // it does not say it must be asked ON TOP of something else.
+      //
+      // `needsNameAsk(current)` stays true because nothing is persisted here,
+      // so the ask simply happens on the next boot with no question pending.
+      // The ask is preserved; only its timing changes.
+      mountNamePrompt(root, doc, captions, nowIso, persist, () => current);
     } else if (!questionPending) {
       const phrase = welcomeBackPhrase(current);
       if (phrase !== null) captions?.announce(phrase);
