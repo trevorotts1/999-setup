@@ -89,6 +89,46 @@ const ALLOWED_ENV = ['CANDICE_COMPANION_READY', 'CANDICE_COMPANION_CMD']
 const ROUTER_TOKENS = ['9router', '9Router', 'claude-nine', /cx\//]
 
 /**
+ * The interview registry legitimately NAMES the two supported harnesses in a
+ * question it asks the user: CAPACITY_HARNESS_CONFIRM, "Which AI tool are you
+ * running this in?", options ["claude-code", "claude-nine"]. Naming a product
+ * in a question is not coupling to it -- Candice still never branches on the
+ * answer, which is the invariant this file exists to defend.
+ *
+ * The exemption is SELF-POLICING and deliberately narrow: it holds only while
+ * EVERY occurrence of the token in that file sits inside a question's
+ * user-facing copy. The moment "claude-nine" appears in a key, a validation
+ * rule, or any other position, `seen !== total`, the exemption evaporates, and
+ * the scan fails exactly as before. 9router, provider keys and
+ * provider-prefixed model ids remain banned in this file like everywhere else.
+ */
+const REGISTRY_SCHEMA = /packages[/\\]candice-protocol[/\\]schemas[/\\]question-keys\.json$/
+const REGISTRY_COPY_FIELDS = ['display', 'spoken', 'meaning', 'helpText', 'options']
+
+function claudeNineIsQuestionCopyOnly(src) {
+  let parsed
+  try {
+    parsed = JSON.parse(src)
+  } catch (err) {
+    return false
+  }
+  if (!parsed || !Array.isArray(parsed.keys)) return false
+  const total = (src.match(/claude-nine/g) || []).length
+  if (total === 0) return false
+  let seen = 0
+  for (const entry of parsed.keys) {
+    for (const field of REGISTRY_COPY_FIELDS) {
+      const value = entry[field]
+      const text = Array.isArray(value)
+        ? value.filter((v) => typeof v === 'string').join('\u0000')
+        : (typeof value === 'string' ? value : '')
+      seen += (text.match(/claude-nine/g) || []).length
+    }
+  }
+  return seen === total
+}
+
+/**
  * Walks production source under `root`: skips node_modules, .git, and every
  * non-production surface (__tests__, docs, fixtures, generated output,
  * evidence). Returns absolute file paths.
@@ -139,8 +179,10 @@ function staticPolicyViolations(root) {
         violations.push(`provider token ${token} in ${rel}`)
       }
     }
+    const registryCopyOnly = REGISTRY_SCHEMA.test(file) && claudeNineIsQuestionCopyOnly(src)
     for (const token of ROUTER_TOKENS) {
       if (typeof token === 'string') {
+        if (token === 'claude-nine' && registryCopyOnly) continue
         if (src.includes(token)) {
           violations.push(`router token ${token} in ${rel}`)
         }
@@ -197,7 +239,8 @@ check('no router config, no provider-prefixed model id in production plugin sour
   for (const file of walked) {
     const src = fs.readFileSync(file, 'utf8')
     assert.ok(!src.includes('9router') && !src.includes('9Router'), `no 9router reference in ${file}`)
-    if (!antiCouplingTest.test(file)) {
+    const registryCopyOnly = REGISTRY_SCHEMA.test(file) && claudeNineIsQuestionCopyOnly(src)
+    if (!antiCouplingTest.test(file) && !registryCopyOnly) {
       assert.ok(!src.includes('claude-nine'), `no claude-nine coupling in ${file}`)
     }
     assert.ok(!/cx\//.test(src), `no provider-prefixed model id in ${file}`)

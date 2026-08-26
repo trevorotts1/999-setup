@@ -101,15 +101,26 @@ check('plugin.json declares Candice is the interface, never a second brain', () 
 })
 
 check('wake hooks bind to the FOUR supported commands only, all async', () => {
-  const expansions = hooks.hooks.UserPromptExpansion
-  assert.ok(Array.isArray(expansions) && expansions.length === 4, 'exactly four UserPromptExpansion matchers')
-  const matchers = expansions.map((e) => e.matcher).sort()
-  assert.deepStrictEqual(matchers, ['bro', 'eli5', 'kaizen', 'spec-protocol'], 'the four supported slash commands only')
-  for (const e of expansions) {
-    for (const h of e.hooks) {
-      assert.strictEqual(h.async, true, 'hooks are async — never block the skill')
+  // Commit 0000aab moved the wake-up onto the REAL `UserPromptSubmit` hook
+  // event with a single handler, and derives the slash command from the
+  // submitted prompt instead of registering four matchers on a hook event that
+  // Claude Code does not emit. The "four commands only" invariant therefore now
+  // lives in the dispatcher's SUPPORTED_COMMANDS, and is asserted there.
+  const submit = hooks.hooks.UserPromptSubmit
+  assert.ok(Array.isArray(submit) && submit.length === 1,
+    'exactly one UserPromptSubmit handler is registered')
+  for (const entry of submit) {
+    for (const h of entry.hooks) {
+      assert.strictEqual(h.type, 'command', 'the wake hook is a command hook')
+      assert.ok(Number(h.timeout) > 0 && Number(h.timeout) <= 60,
+        'the wake hook is bounded — it can never hang the skill')
     }
   }
+  // Non-blocking is a property of the spawn, not of a json flag: the companion
+  // is started detached and unref'd, so the hook returns without waiting on it.
+  const wakeSrc = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.mjs', 'utf8')
+  assert.ok(wakeSrc.includes('detached: true') && wakeSrc.includes('unref'),
+    'the companion is spawned detached and unref\'d — never blocks the skill')
   assert.strictEqual(hooks.hooks.SessionStart, undefined,
     'ordinary session start must not wake or claim a session binding')
 })

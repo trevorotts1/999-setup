@@ -34,6 +34,7 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const url = require('url')
 const harness = require('./harness')
 
 let failures = 0
@@ -70,28 +71,68 @@ function skip(name, reason) {
   // 1. Wake-up only on exactly the four dedicated commands
   // -----------------------------------------------------------------------
 
-  pending.push(check('wake hooks exist for /spec-protocol, /kaizen, /eli5, /bro', () => {
-    const matchers = hooks.hooks.UserPromptExpansion.map((m) => m.matcher).sort()
-    assert.deepStrictEqual(matchers, ['bro', 'eli5', 'kaizen', 'spec-protocol'],
+  pending.push(check('wake hooks exist for /spec-protocol, /kaizen, /eli5, /bro', async () => {
+    // The plugin registers ONE real `UserPromptSubmit` handler (commit 0000aab)
+    // and derives the slash command from the submitted prompt, instead of a
+    // per-command matcher list on a hook event that does not exist. So the
+    // "exactly four commands" invariant now lives in the dispatcher, and this
+    // asserts it where it is actually enforced.
+    const submit = hooks.hooks.UserPromptSubmit
+    assert.ok(Array.isArray(submit) && submit.length === 1,
+      'exactly one UserPromptSubmit handler is registered')
+    const mod = await import(url.pathToFileURL(
+      path.join(harness.PLUGIN_ROOT, 'bin', 'wake-candice.mjs')).href)
+    assert.deepStrictEqual([...mod.SUPPORTED_COMMANDS].sort(),
+      ['/bro', '/eli5', '/kaizen', '/spec-protocol'],
       'exactly the four dedicated slash commands wake Candice')
+    for (const cmd of mod.SUPPORTED_COMMANDS) {
+      assert.strictEqual(mod.commandFromHookPayload(JSON.stringify({ prompt: `${cmd} do a thing` })), cmd,
+        `${cmd} is recognised from a real submitted prompt`)
+    }
+    assert.strictEqual(mod.commandFromHookPayload(JSON.stringify({ prompt: '/not-a-candice-command' })), null,
+      'an unsupported command never wakes Candice')
   }))
 
-  pending.push(check('wake hooks are async, bounded, and non-blocking', () => {
-    for (const m of hooks.hooks.UserPromptExpansion) {
+  pending.push(check('wake hooks are bounded and non-blocking', () => {
+    for (const m of hooks.hooks.UserPromptSubmit) {
       for (const h of m.hooks) {
-        assert.strictEqual(h.async, true, `${m.matcher} hook must be async (never blocks Claude)`)
-        assert.ok(Number(h.timeout) > 0 && Number(h.timeout) <= 60, `${m.matcher} hook timeout bounded`)
+        assert.ok(Number(h.timeout) > 0 && Number(h.timeout) <= 60,
+          'wake hook timeout is bounded')
+        assert.strictEqual(h.type, 'command', 'wake hook is a command hook')
       }
     }
     assert.strictEqual(hooks.hooks.SessionStart, undefined,
       'ordinary session start must not launch Candice')
+    // Non-blocking is a property of the SPAWN, not of a json field: the child
+    // is detached and unref'd, so the hook returns without waiting for the app.
+    assert.ok(wake.includes('detached: true') && wake.includes('unref'),
+      'the companion is spawned detached and unref\'d, so the hook never waits on it')
   }))
 
   pending.push(check('wake dispatcher fails soft when the app is not installed', () => {
-    // Spec 13.1/20: no Candice failure may stop the skill. Missing launch
-    // commands are caught without emitting hook payload or terminal content.
-    assert.ok(wake.includes("process.env.CANDICE_COMPANION_CMD || 'candice-companion'"),
-      'launch command is env/PATH-driven, never a hardcoded path')
+    // Behaviour, not source text. The previous version grepped wake-candice.mjs
+    // for a literal expression; when resolution moved into shared/launch-command.js
+    // that assertion failed while the behaviour was in fact correct -- and it
+    // could never have caught a real regression either way.
+    const launcher = require(path.join(harness.PLUGIN_ROOT, 'shared', 'launch-command.js'))
+    assert.strictEqual(
+      launcher.resolveLaunchCommand({ env: { CANDICE_COMPANION_CMD: '/custom/candice' }, exists: () => false }),
+      '/custom/candice', 'an explicit CANDICE_COMPANION_CMD always wins')
+    assert.strictEqual(
+      launcher.resolveLaunchCommand({ env: {}, platform: 'linux', exists: () => false }),
+      launcher.DEFAULT_LAUNCH_COMMAND,
+      'with nothing installed it falls back to the PATH name, never a hardcoded path')
+    assert.strictEqual(
+      launcher.resolveConfiguredLaunchCommand({ env: {}, platform: 'linux', exists: () => false }),
+      null, 'nothing installed is reported as null, never invented')
+    // Cross-platform: a Windows install is resolvable without an env var.
+    const win = launcher.resolveConfiguredLaunchCommand({
+      env: { LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' },
+      platform: 'win32',
+      exists: () => true,
+    })
+    assert.ok(win && win.includes('candice-companion.exe'),
+      'a Windows install resolves to the .exe without an env var')
     assert.ok(wake.includes('companion-unavailable'),
       'spawn failure has a named fail-soft outcome')
   }))

@@ -155,12 +155,24 @@ function a11yControlProbe() {
  */
 function screenLocked() {
   try {
+    // Prints "<lockKey>|<onConsole>|<dictCount>". The COUNT is the control: it
+    // proves the session dictionary was actually read, which is what separates
+    // "the key is absent because the screen is unlocked" (the normal case)
+    // from "the probe learned nothing".
     const out = runQuiet('swift', ['-e',
-      'import Foundation; import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as NSDictionary?; print(d?["CGSSessionScreenIsLocked"] ?? "?")',
+      'import Foundation; import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as NSDictionary?; '
+      + 'print(String(describing: d?["CGSSessionScreenIsLocked"] ?? "absent") + "|" '
+      + '+ String(describing: d?["kCGSSessionOnConsoleKey"] ?? "absent") + "|" + String(d?.count ?? 0))',
     ], { timeout: 30000 })
-    const value = out.trim()
-    if (value === '1') return true
-    if (value === '0') return false
+    const [lockRaw, consoleRaw, countRaw] = out.trim().split('|')
+    const count = Number(countRaw)
+    // No dictionary => the instrument failed. Undetermined, and it still gates.
+    if (!Number.isFinite(count) || count <= 0) return null
+    if (lockRaw === '1') return true
+    // macOS omits the key when unlocked, so absence is the expected unlocked
+    // reading -- but only trust it when the session is on the console, which
+    // is independent corroboration from the same (proven-readable) dictionary.
+    if ((lockRaw === 'absent' || lockRaw === '0') && consoleRaw === '1') return false
     return null
   } catch (err) {
     return null
