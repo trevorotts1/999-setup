@@ -182,19 +182,30 @@ not the same as closing fix ids, and a builder does not flip its own boxes.
   Hitting the toggle because she is talking could not stop her. It now aborts
   speech in flight.
 
-  OPEN — *whether a real pointer click reaches the controls at all.* The
-  window is transparent with a native hit test that publishes rectangles for
-  painted regions; a control outside a published rectangle never receives the
-  click. This is the only candidate that explains BOTH toggles failing
-  together. It needs a synthesized mouse click at the control's measured
-  screen rectangle — `tests/e2e-acceptance/packaged/ax-driver.swift` has the
-  `rect` and `click` commands for exactly this. An accessibility press cannot
-  discriminate it, because it bypasses pointer routing entirely.
+  FIXED — *the click never reached the animation toggle.* Measured with a
+  synthesized mouse click at the control's own screen rectangle, against an
+  accessibility press as the control: the press flipped the checkbox (1 to 0),
+  the real click left it at 1. The voice toggle, a `<button>`, took the same
+  synthesized click correctly — so this was specific to the animation control,
+  not a general pointer failure.
 
-  UNVERIFIED — the animation path checks out on inspection (the mouth renderer
-  re-reads the motion class every tick, the gesture driver watches it with a
-  MutationObserver, and the class is applied through the live a11y runtime),
-  so the persist fix may be the whole of it. Not claimed until observed.
+  Cause: the checkbox is 14x14, so the rectangle published to the native hit
+  test was 22x22 after padding, and the word "Animation" beside it — which has
+  `cursor: pointer` and forwards clicks like any HTML label — was never
+  published at all, because `CONTROL_SELECTOR` matched `input` but nothing
+  covering the label or the group. Everywhere outside that 22px square the
+  window is deliberately pointer-transparent, so clicking the label sent the
+  click straight through Candice to whatever was behind her. The control
+  looked live, was live in the accessibility tree, and did nothing when a
+  person clicked the part of it they were aiming at.
+
+  `.candice-animation-toggle` is now published whole, and the row has real
+  padding so the visible affordance and the hit region agree.
+
+  WORTH A SWEEP, not yet done: any other control whose visible target is
+  larger than the element `CONTROL_SELECTOR` matches has the same defect, and
+  it is invisible to every test that drives the UI through accessibility.
+  Only a synthesized pointer click can find them.
 
 - **The first-run name prompt still mounts over a live question.** The UI
   review recommended suppressing it; `interaction-composition`'s own test pins

@@ -52,6 +52,23 @@ export const CONTROL_SELECTOR = [
   '.candice-captions',
   '.candice-answer-controls',
   '.candice-ptt',
+  // THE WHOLE animation toggle, not just its checkbox.
+  //
+  // `input` above already matched the checkbox, and that was the bug: the box
+  // is 14x14 (animation-toggle/controller.ts), so with REGION_PADDING the
+  // published interactive rectangle was 22x22 -- and the word "Animation"
+  // beside it, which has `cursor: pointer` and forwards clicks to the input
+  // like any HTML label, was never published at all. Everywhere outside that
+  // 22px square the window is deliberately pointer-transparent, so clicking
+  // the label sent the click straight through Candice to whatever was behind
+  // her. The control looked live, was live in the accessibility tree, and did
+  // nothing when a person clicked the part of it they were aiming at.
+  //
+  // Measured, not reasoned: an accessibility press flipped the checkbox
+  // (1 -> 0) while a synthesized mouse click at the centre of the control's
+  // own rectangle left it at 1. The voice toggle, which is a <button> and
+  // therefore matched whole, took the same synthesized click correctly.
+  '.candice-animation-toggle',
   '.candice-name-prompt',
   '.fallback-title',
   '.fallback-hint',

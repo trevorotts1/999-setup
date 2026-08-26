@@ -103,9 +103,14 @@ function injectStyle(doc: Document): void {
   border: 1px solid var(--candice-ui-border, #beb0ff);
   border-radius: 8px;
 }
+.${ANIMATION_TOGGLE_CLASS} {
+  /* The row is the target, not the 14px box inside it. The native hit test
+     publishes this element's rectangle now, so give it a real one. */
+  padding: 6px 4px;
+}
 .${ANIMATION_TOGGLE_CLASS} input {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin: 0;
   cursor: pointer;
   accent-color: var(--candice-accent, #7c5cff);
