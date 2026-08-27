@@ -169,7 +169,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "THE BUILD TARGET QUESTION",
-        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
+        "digest": "5a763d167a2b16ec772adf741af56403acc278acbeac9093a0e8f755fa7cbba0"
       },
       "display": "First question — an easy one, because it's your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, just like you'd tell a friend. No special words needed. Then I'll say back what I heard, and you tell me if I got it right.",
       "spoken": "First question — an easy one, because it's your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, just like you'd tell a friend. No special words needed. Then I'll say back what I heard, and you tell me if I got it right.",
@@ -610,7 +610,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "The entry — interview me, or here is the info",
-        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
+        "digest": "5a763d167a2b16ec772adf741af56403acc278acbeac9093a0e8f755fa7cbba0"
       },
       "display": "I'll build your idea from start to finish — designed, quality-checked, and deployed. Once we start, you can walk away and come back to it done.\n\nThere are two ways to begin.\n\nOne: interview me. Tell me your idea in your own words. We'll think it through together for about fifteen minutes — no structure, no jargon — then I'll ask simple questions, one at a time.\n\nTwo: hand me the info. Point me at a folder, paste a document, or tell me where your notes are. I'll read everything you give me.\n\nWhich sounds better to you?",
       "spoken": "I'll build your idea from start to finish — designed, quality-checked, and deployed. Once we start, you can walk away and come back to it done.\n\nThere are two ways to begin.\n\nOne: interview me. Tell me your idea in your own words. We'll think it through together for about fifteen minutes — no structure, no jargon — then I'll ask simple questions, one at a time.\n\nTwo: hand me the info. Point me at a folder, paste a document, or tell me where your notes are. I'll read everything you give me.\n\nWhich sounds better to you?",
@@ -2728,7 +2728,7 @@
       "source": {
         "path": ".claude/skills/spec-protocol/SKILL.md",
         "anchor": "17. **Determine GitHub.** New repo or pre-existing? Ask.",
-        "digest": "3988f4e82b9e01c43108683f310dde78de90ea1ed0662a4f1a70d85566f61673"
+        "digest": "5a763d167a2b16ec772adf741af56403acc278acbeac9093a0e8f755fa7cbba0"
       },
       "display": "New repo or pre-existing?",
       "spoken": "New repo or pre-existing?",
