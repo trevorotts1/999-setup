@@ -82,6 +82,10 @@ export const CONTROL_SELECTOR = [
   // It also restores the 44px target the row's `min-height` is there to
   // provide: REGION_PADDING adds only 4px, so publishing the button alone
   // gave roughly 34px, under the minimum.
+  // The shared settings rows (voice, hologram). Whole-row entries for the
+  // same reason as the animation toggle above: the checkbox alone is 16px,
+  // and a miss outside a published rectangle goes through to the desktop.
+  '.candice-settings-toggle',
   '.candice-power-off',
   // The compact surface is not mounted today (CompactTransport has no
   // implementation), so this matches nothing. It is here because the

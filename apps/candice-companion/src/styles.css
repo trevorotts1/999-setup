@@ -156,6 +156,22 @@ body {
   display: none; /* no placeholder art: visible only with mounted layers */
 }
 
+/*
+ * Hologram off: hide her image, keep her working.
+ *
+ * More specific than the mounted rule below rather than `!important` — that
+ * rule is what makes her visible at all, so this must outrank it by
+ * specificity (0,2,1 vs 0,1,1) or the setting would silently do nothing.
+ *
+ * `display: none`, not visibility/opacity: an invisible-but-present
+ * character still occupies the column and still animates, so the user would
+ * get a Candice-shaped hole plus the battery cost of a hologram they asked
+ * to turn off.
+ */
+.candice-hologram-hidden .candice-character[data-candice-gesture-mounted="true"] {
+  display: none;
+}
+
 .candice-character[data-candice-gesture-mounted="true"] {
   display: block;
   flex: 1;

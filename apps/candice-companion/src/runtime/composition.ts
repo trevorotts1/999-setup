@@ -35,6 +35,12 @@ import {
 import { createAnimationToggle } from '../ui/animation-toggle/index.ts';
 import { probeHarnessName, harnessWindowPhrase } from '../harness/name.ts';
 import { createPowerOff } from '../ui/power/index.ts';
+import {
+  createSettingsToggle,
+  HOLOGRAM_TOGGLE,
+  VOICE_TOGGLE,
+  type SettingsToggleController,
+} from '../ui/settings-toggle/index.ts';
 import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime } from './speech-runtime.ts';
 import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
@@ -336,6 +342,67 @@ export async function initializeRuntimeComposition(
   root.dataset.candiceAnimationToggle = animationToggle.element ? 'mounted' : 'absent';
   root.dataset.candiceAnimation = animationToggle.motionOff ? 'off' : 'on';
 
+  // Voice, at rest.
+  //
+  // A `Voice: ON/OFF` button already existed, but it belongs to the ANSWER
+  // SURFACE, which is created when a question arrives and destroyed when it
+  // closes. So the only moment you could mute her was while she was already
+  // talking at you; between questions there was no control at all. This row
+  // is always mounted, writes the same spec-9 `voiceOutputEnabled` field,
+  // and the two views are kept in step below so they can never disagree.
+  const voiceToggle: SettingsToggleController = createSettingsToggle({
+    mount: root,
+    id: VOICE_TOGGLE.id,
+    className: VOICE_TOGGLE.className,
+    label: VOICE_TOGGLE.label,
+    onHint: VOICE_TOGGLE.onHint,
+    offHint: VOICE_TOGGLE.offHint,
+    checked: interaction.profile.voiceOutputEnabled === true,
+    apply: (on) => {
+      // Turning voice OFF has to stop the voice that is playing NOW, not
+      // just the next one. The gate this field feeds is read when the next
+      // question is delivered, so without this she finishes the sentence
+      // while the control says OFF.
+      if (!on) orchestrator?.abortSpeech();
+    },
+    persist: (on) => interaction.persist({ voiceOutputEnabled: on }),
+    onLayoutChange: options.onLayoutChange,
+  });
+  root.dataset.candiceVoiceToggle = voiceToggle.element ? 'mounted' : 'absent';
+
+  // The hologram.
+  //
+  // "u have animation off, when i turn it off its suppose to turn candace
+  // off". Motion, presence and VISIBILITY are three different things and
+  // only the first two had controls: animation-off merely calms her, and
+  // Turn off ends the session. This hides her image while she keeps
+  // working -- questions, answers and captions all continue.
+  const hologramToggle: SettingsToggleController = createSettingsToggle({
+    mount: root,
+    id: HOLOGRAM_TOGGLE.id,
+    className: HOLOGRAM_TOGGLE.className,
+    label: HOLOGRAM_TOGGLE.label,
+    onHint: HOLOGRAM_TOGGLE.onHint,
+    offHint: HOLOGRAM_TOGGLE.offHint,
+    checked: interaction.profile.characterHidden !== true,
+    apply: (visible) => {
+      // The class goes on the documentElement, like the reduced-motion class
+      // the a11y lane owns, so one rule can reach the character wherever it
+      // sits in the column.
+      root.ownerDocument?.documentElement?.classList.toggle('candice-hologram-hidden', !visible);
+    },
+    persist: (visible) => interaction.persist({ characterHidden: !visible }),
+    onLayoutChange: options.onLayoutChange,
+  });
+  root.dataset.candiceHologramToggle = hologramToggle.element ? 'mounted' : 'absent';
+  root.dataset.candiceHologram = hologramToggle.isOn() ? 'on' : 'off';
+  // Paint the BOOT state: a stored `characterHidden: true` must be in force
+  // before the first frame, not only after the user touches the control.
+  root.ownerDocument?.documentElement?.classList.toggle(
+    'candice-hologram-hidden',
+    interaction.profile.characterHidden === true,
+  );
+
   // The off button. It sits directly under the animation toggle because
   // that toggle is what the operator kept pressing while trying to turn
   // HER off -- "u have animation off, when i turn it off its suppose to
@@ -401,6 +468,11 @@ export async function initializeRuntimeComposition(
     announceCaptureBlocked: (explanation) => captions.announce(explanation),
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
+      // Two controls, one field. `set` repaints without re-persisting, so
+      // the at-rest row cannot sit at ON while the in-question button says
+      // OFF -- which would leave the user unable to tell what she will
+      // actually do next.
+      voiceToggle.set(voiceEnabled);
       // Turning voice OFF has to stop the voice.
       //
       // This handler used to persist the preference and nothing else, and the
