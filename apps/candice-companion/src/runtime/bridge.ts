@@ -14,7 +14,7 @@
 
 import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
-import { ANIMATION_TOGGLE_CLASS } from '../ui/animation-toggle/index.ts';
+import { SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
 import {
@@ -536,7 +536,11 @@ export async function initializeAuthenticatedBridge(
     // keyboard users tabbed THROUGH that checkbox on the way to every
     // single answer. Inserting before it keeps DOM order, visual order and
     // tab order identical, with no CSS `order` trick to drift out of sync.
-    const settingsRow = root.querySelector('.' + ANIMATION_TOGGLE_CLASS);
+    // Anchor on the SHARED settings-row class, not one particular toggle --
+    // the animation toggle it used to name is no longer mounted, and falling
+    // through to append() would drop the answer surface below the settings
+    // rows, which is the bug this comment exists to prevent.
+    const settingsRow = root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
     if (settingsRow !== null) root.insertBefore(controlsMount, settingsRow);
     else root.append(controlsMount);
     controls = createAnswerControlsController({

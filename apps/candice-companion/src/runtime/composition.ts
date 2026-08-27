@@ -32,7 +32,6 @@ import {
   initializeCandiceInteractionComposition,
   type InteractionComposition,
 } from './interaction-composition.ts';
-import { createAnimationToggle } from '../ui/animation-toggle/index.ts';
 import { probeHarnessName, harnessWindowPhrase } from '../harness/name.ts';
 import { createPowerOff } from '../ui/power/index.ts';
 import {
@@ -333,25 +332,21 @@ export async function initializeRuntimeComposition(
     { profile, prefsLoad, invokeAdapter: options.invokeAdapter },
   );
 
-  // The operator asked for "an option to turn animation off". It stores into
-  // the EXISTING spec-9 `reducedMotion` field and applies through the
-  // EXISTING WS-14 controller — no new preference file, no second motion
-  // class. Checked = follow the OS (`null`), unchecked = always minimal
-  // (`true`); it never writes `false`, which would override
-  // `prefers-reduced-motion: reduce`. See ui/animation-toggle/config.ts.
-  const animationToggle = createAnimationToggle({
-    mount: root,
-    reducedMotion: interaction.profile.reducedMotion ?? null,
-    applyPreference: (preference) => {
-      options.accessibility?.setReducedMotionPreference(preference);
-    },
-    persist: (preference) => interaction.persist({ reducedMotion: preference }),
-    onLayoutChange: options.onLayoutChange,
-  });
-  // Evidence for QC and the packaged-bundle sentinel: whether the control
-  // actually mounted, and which way it is currently set.
-  root.dataset.candiceAnimationToggle = animationToggle.element ? 'mounted' : 'absent';
-  root.dataset.candiceAnimation = animationToggle.motionOff ? 'off' : 'on';
+  // NO ANIMATION TOGGLE. The operator has asked for it to be gone more than
+  // once, and it kept coming back. The shipping control set is exactly three,
+  // and this is the list: hologram on/off, voice on/off, turn Candice off.
+  //
+  // The FEATURE is untouched — reduced motion still works. The app still
+  // honours the OS `prefers-reduced-motion: reduce` setting through the same
+  // WS-14 controller and the same spec-9 `reducedMotion` field; the saved
+  // value is still read at boot and still applied. What is gone is the
+  // fourth checkbox on her face. Anyone who wants minimal motion sets it once
+  // in System Settings, where every other app reads it from, instead of
+  // finding a control here that no other app has.
+  //
+  // ui/animation-toggle/ is left in the tree, built and tested, so this is a
+  // one-line remount if that call is ever reversed. It has no other caller.
+  root.dataset.candiceAnimationToggle = 'absent';
 
   // Voice, at rest.
   //

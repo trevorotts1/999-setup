@@ -26,7 +26,7 @@ import type { CandiceStateMachine } from "../../state/machine.ts";
 import type { CaptionsController } from "../../ui/captions/index.ts";
 import { defaultProfile } from "../../prefs/profile.ts";
 import { needsNameAsk } from "../../prefs/name.ts";
-import { ANIMATION_TOGGLE_CLASS } from "../../ui/animation-toggle/index.ts";
+import { SETTINGS_TOGGLE_CLASS } from "../../ui/settings-toggle/index.ts";
 import type { CandiceProfile } from "../../prefs/schema.ts";
 import type { PrefsIpcAdapter, PrefsLoadResult } from "../../prefs/ipc.ts";
 import {
@@ -764,8 +764,11 @@ test('the name question mounts ABOVE the settings rows, not under them', async (
   const doc = new FakeDocument();
 
   // The settings rows are created at composition time, before any question.
+  // The shared class is what the real rows carry -- naming one specific
+  // toggle here is how this fixture kept passing while the code anchored on
+  // a control that is no longer mounted.
   const settings = new FakeElement('div');
-  settings.className = ANIMATION_TOGGLE_CLASS;
+  settings.className = SETTINGS_TOGGLE_CLASS;
   root.append(settings);
 
   const composition = await initializeCandiceInteractionComposition(

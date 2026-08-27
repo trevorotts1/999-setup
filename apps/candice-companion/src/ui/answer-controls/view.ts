@@ -75,22 +75,41 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 #candice-ptt-slot:empty {
   display: none;
 }
+/* The type box gets its OWN ROW, full width.
+   It used to sit inside the wrapping methods row beside the submit button,
+   which left the field roughly a third of the panel -- a chat box you write
+   a sentence into, sized like a search field. A flex-basis of 100% takes the
+   whole line in the existing wrap, so the field grows without moving any
+   other control or changing the order anything is read in. */
 .candice-answer-type {
-  min-width: 260px;
+  flex-basis: 100%;
+  width: 100%;
+  min-width: 0;
   display: flex;
+  /* Stacked, not side by side. The window is 420px wide and this panel is
+     capped to match it, so every pixel the submit button took on that line
+     came straight out of the field. Column direction gives the field the
+     whole width and puts TYPE ANSWER underneath it, where it reads as the
+     action for what you just wrote rather than a competitor for the row. */
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
 }
 .candice-answer-input {
   flex: 1;
-  min-width: 160px;
+  /* 220px, not 160px, and the row above gives it the width to use it. */
+  min-width: 220px;
   border: 1px solid var(--candice-ac-muted);
   border-radius: 10px;
   /* FIX-008: opaque so the typed answer is readable over any desktop. */
   background: var(--candice-ui-surface, #171321);
   color: inherit;
   font: inherit;
-  padding: 10px 12px;
+  /* Taller and roomier: this is the control the user actually types into,
+     and it was the smallest thing on the panel. */
+  font-size: 1.05em;
+  min-height: 52px;
+  padding: 14px 14px;
 }
 .candice-answer-input::placeholder {
   color: var(--candice-ac-muted);

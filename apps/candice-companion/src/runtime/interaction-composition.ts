@@ -25,7 +25,7 @@
  * @module
  */
 
-import { ANIMATION_TOGGLE_CLASS } from '../ui/animation-toggle/index.ts';
+import { SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
 import type { CandiceStateMachine } from '../state/machine.ts';
 import type { CaptionsController } from '../ui/captions/index.ts';
 import type { CandiceProfile } from '../prefs/schema.ts';
@@ -269,7 +269,14 @@ function mountNamePrompt(
   // checkbox and the control that ends the session. Inserting before the
   // settings row keeps DOM order, visual order and tab order identical,
   // with no CSS `order` trick to drift out of sync.
-  const settingsRow = root.querySelector('.' + ANIMATION_TOGGLE_CLASS);
+  // Anchor on the SHARED settings-row class, not on one particular toggle.
+  // This used to name the animation toggle, which has since been removed from
+  // the mounted control set -- and a querySelector that finds nothing here
+  // falls through to append(), which puts this at the BOTTOM of the column and
+  // silently reinstates the exact tab-order bug the comment above describes.
+  // Every settings row carries SETTINGS_TOGGLE_CLASS, so this finds the first
+  // one whatever it happens to be, and survives the next reordering too.
+  const settingsRow = root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
   if (settingsRow !== null) root.insertBefore(prompt, settingsRow);
   else root.append(prompt);
   if (announceQuestion) captions?.announce(NAME_QUESTION_TEXT);

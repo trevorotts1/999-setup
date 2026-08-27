@@ -1,12 +1,12 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-27T16:18:39.081Z",
+  "generatedAt": "2026-08-27T18:15:06.664Z",
   "repo": "999-setup-audit",
   "commitSha": "packaged-suite-run",
   "packagedBinarySha": "0c9e091a31b5ecea041faa0e974afe838fed36f8f62b47bba371218a875c8494",
-  "runId": "packaged-suite-1787847519080",
+  "runId": "packaged-suite-1787854506663",
   "launcher": "node tests/e2e-acceptance/packaged/suite.js",
-  "verdict": "BLOCKED",
+  "verdict": "FAIL",
   "legs": [
     {
       "id": "typed-build-target",
@@ -57,10 +57,10 @@
       "id": "compact",
       "tier": "PACKAGED_AUTOMATED",
       "name": "packaged-automated: compact (run 1)",
-      "verdict": "BLOCKED",
-      "required": true,
-      "skippableReason": null,
-      "reason": "leg exited 2"
+      "verdict": "SKIPPED",
+      "required": false,
+      "skippableReason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)",
+      "reason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)"
     },
     {
       "id": "speech-assets",
@@ -129,10 +129,10 @@
       "id": "compact",
       "tier": "PACKAGED_AUTOMATED",
       "name": "packaged-automated: compact (run 2)",
-      "verdict": "BLOCKED",
-      "required": true,
-      "skippableReason": null,
-      "reason": "leg exited 2"
+      "verdict": "SKIPPED",
+      "required": false,
+      "skippableReason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)",
+      "reason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)"
     },
     {
       "id": "speech-assets",
@@ -151,13 +151,22 @@
       "required": true,
       "skippableReason": null,
       "reason": null
+    },
+    {
+      "id": "trace-3565efbe97a5",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "compact: run 1 and run 2 traces differ modulo ts"
     }
   ],
   "tiers": [
     {
       "tier": "PACKAGED_AUTOMATED",
       "required": true,
-      "verdict": "BLOCKED",
+      "verdict": "FAIL",
       "legs": [
         {
           "id": "typed-build-target",
@@ -197,9 +206,9 @@
         {
           "id": "compact",
           "name": "packaged-automated: compact (run 1)",
-          "verdict": "BLOCKED",
-          "required": true,
-          "reason": "leg exited 2"
+          "verdict": "SKIPPED",
+          "required": false,
+          "reason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)"
         },
         {
           "id": "speech-assets",
@@ -253,9 +262,9 @@
         {
           "id": "compact",
           "name": "packaged-automated: compact (run 2)",
-          "verdict": "BLOCKED",
-          "required": true,
-          "reason": "leg exited 2"
+          "verdict": "SKIPPED",
+          "required": false,
+          "reason": "compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)"
         },
         {
           "id": "speech-assets",
@@ -270,13 +279,17 @@
           "verdict": "PASS",
           "required": true,
           "reason": null
+        },
+        {
+          "id": "trace-3565efbe97a5",
+          "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "compact: run 1 and run 2 traces differ modulo ts"
         }
       ]
     }
   ],
-  "blockedLines": [
-    "BLOCKED PACKAGED_AUTOMATED - compact",
-    "BLOCKED PACKAGED_AUTOMATED - compact"
-  ],
+  "blockedLines": [],
   "notes": "Two clean-state runs per leg (EXECUTION-PLAN.md exact fix). Traces at evidence/FIX-019/builder/packaged-traces/."
 }

@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { initializeAuthenticatedBridge, type BridgeHostApi } from '../bridge.ts';
-import { ANIMATION_TOGGLE_CLASS } from '../../ui/animation-toggle/index.ts';
+import { SETTINGS_TOGGLE_CLASS } from '../../ui/settings-toggle/index.ts';
 import { SPEECH_BOUNDARY_EVENT, SPEECH_DRAIN_EVENT, SPEECH_START_EVENT } from '../speech-timing.ts';
 import { createCandiceStateMachine } from '../../state/machine.ts';
 
@@ -345,9 +345,10 @@ test('the answer surface mounts ABOVE the settings row, not below it', async () 
   const harness = fakeHost();
   const machine = createCandiceStateMachine();
   const root = new FakeEl();
-  // Stand in for the animation toggle the composition mounts first.
+  // Stand in for the first settings row the composition mounts. It carries
+  // the SHARED class, which is what the insertion point looks for.
   const settings = new FakeEl();
-  settings.className = ANIMATION_TOGGLE_CLASS;
+  settings.className = SETTINGS_TOGGLE_CLASS;
   root.append(settings);
 
   const teardown = await initializeAuthenticatedBridge(
@@ -361,7 +362,7 @@ test('the answer surface mounts ABOVE the settings row, not below it', async () 
 
   const ids = root.children.map((c) => c.id || c.className);
   const answers = ids.indexOf('candice-answer-controls-mount');
-  const row = ids.indexOf(ANIMATION_TOGGLE_CLASS);
+  const row = ids.indexOf(SETTINGS_TOGGLE_CLASS);
   assert.ok(answers >= 0, `the answer mount is in the column: ${ids.join(' | ')}`);
   assert.ok(row >= 0, 'the settings row is still there');
   assert.ok(answers < row, `answers must come first, got: ${ids.join(' | ')}`);

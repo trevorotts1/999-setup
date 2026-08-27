@@ -187,12 +187,28 @@ async function main() {
     if (run) await run.close()
   }
 
+  // A FAILURE OUTRANKS THE BLOCK. This used to exit 2 the moment
+  // `blockedReason` was set, no matter what else had gone wrong — and the
+  // prelude here is a full BUILD_TARGET round trip against the real packaged
+  // app, which can and does fail on its own. It did: run 2 of the 2026-08-27
+  // suite printed "FAIL - BUILD_TARGET round trip completes before compact
+  // state / prelude answer did not return ok" and still exited 2.
+  //
+  // That was survivable only while the suite treated a 2 from this leg as
+  // BLOCKED and stopped the whole tier. Once compact became a sanctioned
+  // skip, the same 2 started meaning "tolerated", and a genuine round-trip
+  // failure would have been laundered into a green tier. The absent compact
+  // surface excuses the compact assertions and nothing else.
+  if (failures > 0) {
+    console.log(`\nLEG packaged-compact: FAILED (${failures} failure(s) outrank the compact block)`)
+    process.exit(1)
+  }
   if (blockedReason) {
     console.log(`\nLEG packaged-compact: BLOCKED`)
     process.exit(2)
   }
-  console.log(`\nLEG packaged-compact: ${failures === 0 ? 'ALL TESTS PASSED' : 'FAILED'}`)
-  process.exit(failures === 0 ? 0 : 1)
+  console.log('\nLEG packaged-compact: ALL TESTS PASSED')
+  process.exit(0)
 }
 
 main().catch((err) => {
