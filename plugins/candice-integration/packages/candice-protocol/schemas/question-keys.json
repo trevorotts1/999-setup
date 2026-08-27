@@ -1,6 +1,6 @@
 {
   "schemaVersion": "2.0",
-  "registryVersion": "3.0.0",
+  "registryVersion": "3.1.0",
   "activeKeys": [
     "BUILD_TARGET",
     "KAZEN_TARGET",
@@ -52,7 +52,9 @@
     "COLLAPSE_CONFIRM_B",
     "COLLAPSE_CONFIRM_C",
     "AGENT_TEAM_CONSENT",
-    "STEP17_REPO_ASK"
+    "STEP17_REPO_ASK",
+    "SECRET_INPUT",
+    "PERSONAL_INPUT"
   ],
   "retiredKeys": [
     {
@@ -2769,6 +2771,96 @@
       },
       "helpText": null,
       "canGoBack": false
+    },
+    {
+      "key": "SECRET_INPUT",
+      "skill": "spec-protocol",
+      "meaning": "Reserved exemplar: any answer that is itself a credential. Never spoken, never captioned, never logged.",
+      "source": {
+        "path": "plugins/candice-integration/privacy/final-boundary-guard.js",
+        "anchor": "decideSpeech",
+        "digest": "9ea77a6c5a1cbb6afb6b34c80e2abd09f28816fb3ffbbc677f7cb5354d31bc0b"
+      },
+      "display": "Please type the value. It will not be shown on screen, read aloud, or written to any log.",
+      "spoken": "Please type the value. It will not be shown on screen, read aloud, or written to any log.",
+      "answerKind": "free_text",
+      "allowedInputModes": [
+        "typed",
+        "terminal"
+      ],
+      "options": null,
+      "validation": null,
+      "privacy": {
+        "sensitivity": "secret",
+        "readAloud": false,
+        "caption": "redact",
+        "log": "never",
+        "personalOptIn": false
+      },
+      "count": {
+        "counted": false,
+        "classification": "STATIC",
+        "progressRule": "none"
+      },
+      "conditions": {
+        "op": "true"
+      },
+      "retry": {
+        "maxRetries": 1,
+        "dontKnow": "accepted",
+        "default": "none"
+      },
+      "resume": {
+        "pendingRecovery": "same-key-once",
+        "answeredKey": "never-reask"
+      },
+      "helpText": null,
+      "canGoBack": true
+    },
+    {
+      "key": "PERSONAL_INPUT",
+      "skill": "spec-protocol",
+      "meaning": "Reserved exemplar: personal detail that needs explicit consent before it is read aloud.",
+      "source": {
+        "path": "plugins/candice-integration/privacy/final-boundary-guard.js",
+        "anchor": "_decideFromEntry",
+        "digest": "9ea77a6c5a1cbb6afb6b34c80e2abd09f28816fb3ffbbc677f7cb5354d31bc0b"
+      },
+      "display": "Please type the details. I will not read them out loud unless you tell me to.",
+      "spoken": "Please type the details. I will not read them out loud unless you tell me to.",
+      "answerKind": "free_text",
+      "allowedInputModes": [
+        "typed",
+        "terminal"
+      ],
+      "options": null,
+      "validation": null,
+      "privacy": {
+        "sensitivity": "personal",
+        "readAloud": false,
+        "caption": "show",
+        "log": "redact",
+        "personalOptIn": true
+      },
+      "count": {
+        "counted": false,
+        "classification": "STATIC",
+        "progressRule": "none"
+      },
+      "conditions": {
+        "op": "true"
+      },
+      "retry": {
+        "maxRetries": 1,
+        "dontKnow": "accepted",
+        "default": "none"
+      },
+      "resume": {
+        "pendingRecovery": "same-key-once",
+        "answeredKey": "never-reask"
+      },
+      "helpText": null,
+      "canGoBack": true
     }
   ]
 }

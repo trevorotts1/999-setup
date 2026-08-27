@@ -5,7 +5,10 @@
   "note": "WS-34 (WR-018) proposal against WR-010-owned packages/candice-protocol/schemas/preferences.schema.json. Application is the integration/release owner's (manifest 9.4 class 2). v3 restructures the first-run name state: nameAskedAt (flat string) becomes nameAsked { askedAt } (object), future-proofing dismissal/rename state.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion"],
+  "required": [
+    "schemaVersion",
+    "characterHidden"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "string",
@@ -13,7 +16,10 @@
       "description": "Schema version. WS-34 migrates integer 2 -> integer 3; the published string version is this lane's proposal to WR-010."
     },
     "preferredName": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "maxLength": 64,
       "description": "The user's stated preferred name. Never inferred from the OS username (spec 4). Null until asked."
     },
@@ -34,35 +40,84 @@
       "default": 1.0
     },
     "lastUsedAnswerMethod": {
-      "type": ["string", "null"],
-      "enum": ["voice", "typed", "terminal", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "voice",
+        "typed",
+        "terminal",
+        null
+      ],
       "description": "Remembered convenience only; never a lock (spec 5.1)."
     },
     "textSize": {
-      "type": ["string", "null"],
-      "enum": ["small", "medium", "large", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "small",
+        "medium",
+        "large",
+        null
+      ],
       "default": "medium",
       "description": "Caption/UI text size."
     },
     "reducedMotion": {
-      "type": ["boolean", "null"],
+      "type": [
+        "boolean",
+        "null"
+      ],
       "description": "Null = follow OS reduced-motion; true = force minimal animation; false = animations allowed (spec 10)."
     },
+    "characterHidden": {
+      "type": "boolean",
+      "description": "True = hide her on-screen image while she keeps working (spec 10). Distinct from reducedMotion, which only calms her — she stays visible — and from quitting, which ends the session. Display preference only: no secret, conversation or audio content."
+    },
     "companionScreenPosition": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "anchor": { "type": "string", "enum": ["left", "right", "floating"] }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "floating"
+          ]
+        }
       }
     },
     "lastUsedSkill": {
-      "type": ["string", "null"],
-      "enum": ["spec-protocol", "kaizen", "eli5", "bro", null]
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "spec-protocol",
+        "kaizen",
+        "eli5",
+        "bro",
+        null
+      ]
     },
     "nameAsked": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "properties": {
         "askedAt": {

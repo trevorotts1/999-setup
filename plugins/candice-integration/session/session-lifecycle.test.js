@@ -173,7 +173,14 @@ check('answered key cannot be asked again after persisted restart', () => {
   const refused = sm2.setPendingQuestion({ sessionId: 'sess-never-reask', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(refused.ok, false)
   assert.strictEqual(refused.code, 'question-already-answered')
-  assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, '3.0.0')
+  // DERIVED, not restated. This pinned the literal '3.0.0', so bumping the
+  // registry broke a session test that has nothing to do with the version
+  // number -- the same second-source-of-truth failure as the question text
+  // that hung the bridge suite. What matters here is that the session
+  // RECORDS the registry it was created under, not what that value is.
+  const { registryVersion } = require(path.join(__dirname, '..', '..', '..', 'packages', 'candice-protocol', 'question-registry'))
+  assert.strictEqual(sm2.getSession('sess-never-reask').registryVersion, registryVersion)
+  assert.match(registryVersion, /^\d+\.\d+\.\d+$/, 'CONTROL: a real semver, not undefined matching undefined')
 })
 
 check('recovery claims a lease without deleting the pending record (FIX-013)', () => {

@@ -409,6 +409,18 @@
       "skill": "bro",
       "status": "zero-governed",
       "source": ".claude/skills/bro/SKILL.md"
+    },
+    {
+      "key": "SECRET_INPUT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": "plugins/candice-integration/privacy/final-boundary-guard.js#decideSpeech"
+    },
+    {
+      "key": "PERSONAL_INPUT",
+      "skill": "spec-protocol",
+      "status": "active",
+      "source": "plugins/candice-integration/privacy/final-boundary-guard.js#_decideFromEntry"
     }
   ]
 }

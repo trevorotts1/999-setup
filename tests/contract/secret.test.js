@@ -178,21 +178,48 @@ check('answer-event schema carries the sensitivity echo for secret answers', () 
 // 5. An answered secret question can never be re-asked (WS-03 lifecycle)
 // ————————————————————————————————
 
-check('never-re-ask: an answered secret question has no pending question to recover', () => {
+check('never-re-ask: a pending secret question hands off exactly once', () => {
+  // THIS CHECK USED TO PASS FOR THE WRONG REASON. SECRET_INPUT was not in
+  // the registry at all, so `setPendingQuestion` refused it outright
+  // (`unregistered-governed-question`) and there was never a pending
+  // question to recover. The assertions below were never reached against a
+  // real lifecycle. Now that the key is registered, they are.
+  //
+  // What was asserted before -- second recovery returns ok:true with
+  // recovered:null, and recordAnswer then refuses with 'no-pending-question'
+  // -- describes behaviour NO key has ever had. The real contract is a
+  // recovery LEASE: the first recovery takes it, a second concurrent
+  // recovery is refused while it is held, and answering after the handoff is
+  // the normal flow (that is what the handoff is FOR).
   const { SessionManager } = require(path.join(__dirname, '..', '..', 'plugins', 'candice-integration', 'session', 'session-manager'))
-  const mgr = new SessionManager({ stateDir: null })
-  mgr.beginSession({ sessionId: 'sess-secret', skill: 'spec-protocol' })
-  mgr.setPendingQuestion({ sessionId: 'sess-secret', questionKey: 'SECRET_INPUT', text: 'Where is your vault password?', counted: true })
-  const rec = mgr.recoverPendingQuestion({ sessionId: 'sess-secret' })
-  assert.strictEqual(rec.ok, true)
-  // First recovery hands the question off; the contract NEVER re-asks it.
-  const again = mgr.recoverPendingQuestion({ sessionId: 'sess-secret' })
-  assert.strictEqual(again.ok, true)
-  assert.strictEqual(again.recovered, null, 'second recovery finds nothing')
-  // Answer record refuses after the handoff — exactly one answer lifecycle.
-  const answer = mgr.recordAnswer({ sessionId: 'sess-secret', questionKey: 'SECRET_INPUT' })
-  assert.strictEqual(answer.ok, false)
-  assert.strictEqual(answer.code, 'no-pending-question')
+
+  const run = (questionKey) => {
+    const mgr = new SessionManager({ stateDir: null })
+    mgr.beginSession({ sessionId: `sess-${questionKey}`, skill: 'spec-protocol' })
+    const pending = mgr.setPendingQuestion({ sessionId: `sess-${questionKey}`, questionKey, text: 'x', counted: true })
+    const first = mgr.recoverPendingQuestion({ sessionId: `sess-${questionKey}` })
+    const second = mgr.recoverPendingQuestion({ sessionId: `sess-${questionKey}` })
+    const answer = mgr.recordAnswer({ sessionId: `sess-${questionKey}`, questionKey })
+    return { pending, first, second, answer }
+  }
+
+  const secret = run('SECRET_INPUT')
+  assert.strictEqual(secret.pending.ok, true, 'a registered secret key must be able to go pending')
+  assert.strictEqual(secret.first.ok, true, 'first recovery hands the question off')
+  assert.strictEqual(secret.second.ok, false, 'a second recovery must not hand the same question off twice')
+  assert.strictEqual(secret.second.code, 'recovery-lease-held')
+  assert.strictEqual(secret.answer.ok, true, 'answering after the handoff is the normal flow')
+
+  // CONTROL: the secret key must take the SAME path as an ordinary one. A
+  // divergence here would mean the secret lane had grown a special case,
+  // which is where retention bugs live -- and it would also mean the
+  // assertions above were describing a quirk rather than the contract.
+  const normal = run('BUILD_TARGET')
+  assert.deepStrictEqual(
+    [secret.pending.ok, secret.first.ok, secret.second.ok, secret.second.code, secret.answer.ok],
+    [normal.pending.ok, normal.first.ok, normal.second.ok, normal.second.code, normal.answer.ok],
+    'a secret question must follow the same lifecycle as a normal one, with no special path',
+  )
 })
 
 if (failures > 0) {
