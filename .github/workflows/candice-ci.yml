@@ -455,6 +455,69 @@ jobs:
       - name: windows-parity unit tests (WS-27 golden guard)
         shell: pwsh
         run: node tools/windows-parity/tests/parity-tests.mjs
+
+      # The shell matrix verifier asks whether `claude` and `claude-nine`
+      # resolve from PowerShell and from CMD. Both were failing because the
+      # runner is a bare Windows box: nothing had ever put either on PATH. That
+      # is an unprovisioned runner, not a Windows defect, and it was being
+      # reported as four product failures.
+      #
+      # `claude` comes from the same pinned package the macOS job installs.
+      # `claude-nine` is staged from the launchers this repo actually ships,
+      # in the layout they actually install into: the .cmd shim on PATH and the
+      # .ps1 one directory up in lib\, because the shim resolves its script as
+      # `%~dp0..\lib\claude-nine.ps1` and the .ps1 must NOT be on PATH (Windows
+      # PowerShell would resolve the bare .ps1 ahead of the .cmd and then refuse
+      # it under the default execution policy). Staging it flat would put a
+      # shim on PATH that cannot find its own script.
+      - name: Stage the Windows launchers the way they install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # CONTROL: copy from a source that must exist. Staging nothing would
+          # leave the verifier failing for a reason the log would not explain.
+          foreach ($f in @('launchers/windows/claude-nine.cmd','launchers/windows/claude-nine.ps1')) {
+            if (-not (Test-Path $f)) { throw "missing launcher in checkout: $f" }
+          }
+          $stage = Join-Path $env:RUNNER_TEMP 'candice-launchers'
+          New-Item -ItemType Directory -Force -Path "$stage/bin","$stage/lib" | Out-Null
+          Copy-Item 'launchers/windows/claude-nine.cmd' "$stage/bin/" -Force
+          Copy-Item 'launchers/windows/claude-nine.ps1' "$stage/lib/" -Force
+          npm install -g @anthropic-ai/claude-code@2.1.227
+
+          # GITHUB_PATH alone is NOT enough here, and this is the whole trick.
+          # verify-shell-matrix.ps1 deliberately rebuilds its PATH from the
+          # Machine and User environment variables and DISCARDS the process
+          # PATH -- it is asking "is this installed on the machine", not "did
+          # this shell happen to inherit it". GITHUB_PATH only edits the
+          # process PATH of later steps, so a launcher staged that way is
+          # invisible to the verifier and it would still report FAIL.
+          # Persist to the User PATH the way a real Windows installer does, so
+          # the verifier is answering its own question honestly. GITHUB_PATH is
+          # set too, for the ordinary steps that read the process PATH.
+          $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
+          if ([string]::IsNullOrEmpty($userPath)) { $userPath = "$stage\bin" }
+          elseif ($userPath -notlike "*$stage\bin*") { $userPath = "$userPath;$stage\bin" }
+          [System.Environment]::SetEnvironmentVariable('Path', $userPath, 'User')
+          "$stage/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: CONTROL — both launchers resolve before the matrix is asked
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Resolve exactly the way the verifier does -- Machine + User, process
+          # PATH discarded -- so this step genuinely predicts the next one. A
+          # failure here is a provisioning fault; a failure in the matrix below
+          # is then a real shell-compat finding. Checking it any other way would
+          # pass here and fail there, which is worse than not checking.
+          $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
+                      [System.Environment]::GetEnvironmentVariable('Path','User')
+          foreach ($cmd in 'claude','claude-nine') {
+            $found = Get-Command $cmd -ErrorAction SilentlyContinue
+            if ($null -eq $found) { throw "not on the Machine+User PATH the verifier reads: $cmd" }
+            Write-Host "$cmd -> $($found.Source)"
+          }
+
       - name: Parity shell matrix verifier (WS-27)
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows-parity/shell-matrix/verify-shell-matrix.ps1
