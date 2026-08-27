@@ -99,6 +99,31 @@ if (existsSync(bashResolver)) {
   // file and compare it to itself" is a no-op on exactly the platform this
   // guard exists for. Normalize to a known base, then emit both endings from
   // it, and the comparison means the same thing on every runner.
+  // The CMD shim forwarded `%*`, which INCLUDES the tool name, so every tool
+  // received its own name as its first argument and exited 2 on a usage error.
+  // Reproduced on this host by invoking the tool the way the shim did:
+  //   node capacity-resolver.mjs capacity-resolver <answers>
+  //     -> "answers file not found: capacity-resolver", exit 2
+  // No Windows machine is needed to see it, and none is needed to guard it.
+  const shimPath = path.join(here, '..', 'claude-nine-parity.cmd');
+  if (existsSync(shimPath)) {
+    const shim = readFileSync(shimPath, 'utf8');
+    // CONTROL: prove we read the shim and found the line that matters, or the
+    // assertion below passes on an empty string.
+    assert(
+      /node "%tool_file%"/.test(shim),
+      'CONTROL: the CMD shim contains the node invocation line',
+    );
+    assert(
+      !/node "%tool_file%"\s+%\*/.test(shim),
+      'CMD shim forwards %* (which includes the tool name) — every tool gets its own name as argv[0]',
+    );
+    assert(
+      /for \/f "tokens=1,\*"/.test(shim) && /node "%tool_file%" %REST%/.test(shim),
+      'CMD shim forwards only the arguments after the tool name',
+    );
+  }
+
   const crlfSource = path.join(here, 'golden', 'scenario-anthropic.answers');
   if (existsSync(crlfSource)) {
     const base = readFileSync(crlfSource, 'utf8').replace(/\r\n/g, '\n');

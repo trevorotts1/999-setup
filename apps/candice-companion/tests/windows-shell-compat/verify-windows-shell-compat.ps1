@@ -118,8 +118,18 @@ if (Test-Path (Join-Path $parityRoot 'claude-nine-parity.cmd')) {
     if (Test-Path $probe) {
         $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $probe 2>$null
         Check ($LASTEXITCODE -eq 0 -and ($out | Where-Object { $_ -match '^CORES=\d+$' })) 'Native probes: CORES=[Environment]::ProcessorCount'
-        Check (($out -join "`n") -match '^RAM=\d+$') 'Native probes: RAM=Win32_ComputerSystem'
-        Check (($out -join "`n") -match '^LOCALAPP=') 'Native probes: Known Folder LocalApplicationData'
+        # These two joined the probe's lines and then anchored with ^...$.
+        # PowerShell's -match is .NET regex WITHOUT RegexOptions.Multiline, so
+        # against a joined block ^ means "start of the whole string" -- and the
+        # probe prints CORES first, so RAM and LOCALAPP could never match no
+        # matter what the machine reported. The tell was the split: CORES
+        # passed and these two failed, on every Windows runner, forever. A
+        # pass/fail split landing exactly on "which form did the check use" is
+        # a fault in the check, not in the machine.
+        #
+        # Match per line, exactly as the CORES check above already does.
+        Check ($null -ne ($out | Where-Object { $_ -match '^RAM=\d+$' })) 'Native probes: RAM=Win32_ComputerSystem'
+        Check ($null -ne ($out | Where-Object { $_ -match '^LOCALAPP=.+$' })) 'Native probes: Known Folder LocalApplicationData'
     } else {
         Check $false 'probe-native.ps1 present'
     }

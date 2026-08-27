@@ -42,5 +42,19 @@ if "%tool_file%"=="" (
   exit /b 2
 )
 
-node "%tool_file%" %*
+REM `%*` expands to EVERY argument INCLUDING %1, which is the tool name. Passing
+REM it straight through handed each tool its own name as its first argument, so
+REM `claude-nine-parity.cmd capacity-resolver answers.txt` ran
+REM `node capacity-resolver.mjs capacity-resolver answers.txt` and the tool
+REM reported `answers file not found: capacity-resolver` and exited 2. Every CMD
+REM invocation of every tool in this shim was broken the same way.
+REM
+REM CMD has no "%*" minus "%1", and `shift` does not rewrite %*, so split the
+REM line: token 1 is the tool name, `*` is the remainder with its quoting intact.
+REM REST is cleared first because a bare tool name with no arguments leaves the
+REM `for` body unexecuted, which would otherwise reuse a stale value.
+set "REST="
+for /f "tokens=1,*" %%A in ("%*") do set "REST=%%B"
+
+node "%tool_file%" %REST%
 exit /b %ERRORLEVEL%
