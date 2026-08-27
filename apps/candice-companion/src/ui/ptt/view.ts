@@ -52,7 +52,15 @@ import { pttStatusView, type PttStatusView } from './status.ts';
 export const PTT_STYLE_TEXT = `
 .candice-ptt {
   --candice-ptt-accent: var(--candice-accent, #7c5cff);
-  --candice-ptt-text: var(--candice-text, #eceaf3);
+  --candice-ptt-text: var(--candice-text, #faf7ff);
+  /* Referenced by the transcribing border below, and defined NOWHERE until
+     now -- so that rule fell through to a hardcoded literal and was the one
+     colour in this block not routed through the shared token. Milder than
+     the --candice-ac-surface defect documented in answer-controls/view.ts
+     (that one had no fallback, so the whole declaration went invalid at
+     computed-value time); this one merely drifted. Same cause: a local alias
+     referenced without being declared. */
+  --candice-ptt-muted: var(--candice-muted, #d7cfdf);
   --candice-ptt-danger: #ff4b4b;
   display: flex;
   flex-direction: column;
@@ -135,7 +143,7 @@ html.${PTT_REDUCED_MOTION_CLASS} .candice-ptt.candice-ptt-listening .candice-ptt
   }
 }
 .candice-ptt.candice-ptt-transcribing .candice-ptt-button {
-  border-color: var(--candice-ptt-muted, #a8a3b8);
+  border-color: var(--candice-ptt-muted);
 }
 .candice-ptt-wave {
   display: flex;

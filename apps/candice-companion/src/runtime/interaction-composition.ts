@@ -25,6 +25,7 @@
  * @module
  */
 
+import { ANIMATION_TOGGLE_CLASS } from '../ui/animation-toggle/index.ts';
 import type { CandiceStateMachine } from '../state/machine.ts';
 import type { CaptionsController } from '../ui/captions/index.ts';
 import type { CandiceProfile } from '../prefs/schema.ts';
@@ -152,7 +153,7 @@ function mountNamePrompt(
   padding: 12px 16px;
   font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.35;
-  color: var(--candice-text, #eceaf3);
+  color: var(--candice-text, #faf7ff);
   text-align: center;
   /* FIX-008: opaque backdrop — the window is transparent, so this prompt
      otherwise renders onto the user's desktop and cannot be read. */
@@ -164,10 +165,10 @@ function mountNamePrompt(
   min-width: 220px;
   padding: 6px 10px;
   font-size: calc(14px * var(--candice-text-scale, 1));
-  border: 1px solid var(--candice-muted, #a8a3b8);
+  border: 1px solid var(--candice-muted, #d7cfdf);
   border-radius: 6px;
-  background: var(--candice-ui-surface, rgba(20, 18, 30, 0.9));
-  color: var(--candice-text, #eceaf3);
+  background: var(--candice-ui-surface, #171321);
+  color: var(--candice-text, #faf7ff);
 }
 .${NAME_PROMPT_ROOT_CLASS} .candice-name-prompt-actions {
   display: flex;
@@ -184,9 +185,9 @@ function mountNamePrompt(
   padding: 6px 14px;
   font-size: calc(13px * var(--candice-text-scale, 1));
   border-radius: 6px;
-  border: 1px solid var(--candice-muted, #a8a3b8);
-  background: var(--candice-ui-surface, rgba(20, 18, 30, 0.9));
-  color: var(--candice-text, #eceaf3);
+  border: 1px solid var(--candice-muted, #d7cfdf);
+  background: var(--candice-ui-surface, #171321);
+  color: var(--candice-text, #faf7ff);
   cursor: pointer;
 }
 .${NAME_PROMPT_ROOT_CLASS} button.candice-name-prompt-save {
@@ -259,7 +260,18 @@ function mountNamePrompt(
     if (event.key === 'Escape') dismiss();
   });
 
-  root.append(prompt);
+  // ABOVE the settings rows, for the reason bridge.ts already documents for
+  // the answer surface: DOM order is tab order.
+  //
+  // This is the very FIRST thing a new user is asked, and a plain append put
+  // it at the BOTTOM of the column -- under "Animation" and "Turn off" --
+  // so it rendered last and was reached last by keyboard, after a settings
+  // checkbox and the control that ends the session. Inserting before the
+  // settings row keeps DOM order, visual order and tab order identical,
+  // with no CSS `order` trick to drift out of sync.
+  const settingsRow = root.querySelector('.' + ANIMATION_TOGGLE_CLASS);
+  if (settingsRow !== null) root.insertBefore(prompt, settingsRow);
+  else root.append(prompt);
   if (announceQuestion) captions?.announce(NAME_QUESTION_TEXT);
   input.focus();
   return prompt;

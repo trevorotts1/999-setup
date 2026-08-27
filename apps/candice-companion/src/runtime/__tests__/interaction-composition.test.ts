@@ -26,6 +26,7 @@ import type { CandiceStateMachine } from "../../state/machine.ts";
 import type { CaptionsController } from "../../ui/captions/index.ts";
 import { defaultProfile } from "../../prefs/profile.ts";
 import { needsNameAsk } from "../../prefs/name.ts";
+import { ANIMATION_TOGGLE_CLASS } from "../../ui/animation-toggle/index.ts";
 import type { CandiceProfile } from "../../prefs/schema.ts";
 import type { PrefsIpcAdapter, PrefsLoadResult } from "../../prefs/ipc.ts";
 import {
@@ -131,6 +132,13 @@ class FakeElement {
     for (const c of children) { c.parent = this; this.children.push(c); }
   }
   appendChild(child: FakeElement): FakeElement { this.append(child); return child; }
+  insertBefore(child: FakeElement, before: FakeElement | null): FakeElement {
+    const at = before === null ? -1 : this.children.indexOf(before);
+    child.parent = this;
+    if (at < 0) this.children.push(child);
+    else this.children.splice(at, 0, child);
+    return child;
+  }
   replaceChildren(...children: FakeElement[]): void {
     this.children.length = 0;
     for (const c of children) { c.parent = this; this.children.push(c); }
@@ -743,4 +751,38 @@ test('CONTROL: with NO question pending the name flow still announces normally',
   );
   returning.beginNameFlow();
   assert.deepEqual(backCaptions.announced, ['Welcome back, Trevor'], 'the greeting is still announced');
+});
+
+test('the name question mounts ABOVE the settings rows, not under them', async () => {
+  // DOM order is tab order. This is the FIRST thing a new user is asked, and
+  // a plain append put it at the BOTTOM of the column -- under "Animation"
+  // and "Turn off" -- so it rendered last and was reached last by keyboard,
+  // after a settings checkbox and the control that ends the session.
+  const machine = createCandiceStateMachine();
+  const root = new FakeElement('div');
+  const captions = new FakeCaptions();
+  const doc = new FakeDocument();
+
+  // The settings rows are created at composition time, before any question.
+  const settings = new FakeElement('div');
+  settings.className = ANIMATION_TOGGLE_CLASS;
+  root.append(settings);
+
+  const composition = await initializeCandiceInteractionComposition(
+    root as unknown as HTMLElement,
+    machine,
+    captions,
+    { profile: freshProfile(), prefsLoad: loadResult(freshProfile()), doc: doc as unknown as Document },
+  );
+  composition.beginNameFlow();
+
+  const order = root.children;
+  const promptAt = order.findIndex((el) => el.classes.contains(NAME_PROMPT_ROOT_CLASS));
+  const settingsAt = order.indexOf(settings);
+  assert.ok(promptAt >= 0, 'CONTROL: the prompt must actually be mounted');
+  assert.ok(settingsAt >= 0, 'CONTROL: the settings row must still be present');
+  assert.ok(
+    promptAt < settingsAt,
+    `the name question must precede the settings rows (prompt ${promptAt}, settings ${settingsAt})`,
+  );
 });

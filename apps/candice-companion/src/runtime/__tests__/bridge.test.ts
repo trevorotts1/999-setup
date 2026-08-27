@@ -117,8 +117,16 @@ test('an unresolvable voice produces text a human can read, carrying the reason'
     const text = reportSpeechFailure(native, (t) => announced.push(t));
     assert.equal(announced.length, 1, 'exactly one announcement per failure');
     assert.equal(announced[0], text, 'the returned text is the text announced');
-    // Readable: a sentence a person can act on, not a code or an attribute.
-    assert.match(text, /^Candice could not speak this question aloud/);
+    // Readable, and it LEADS with what the user can actually do. The
+    // caption used to open "Candice could not speak this question aloud: "
+    // and then hand them the raw native string, so the first thing a stuck
+    // user read was our plumbing. Same opening as the no-reason branch
+    // below, because the user needs the same thing in both cases.
+    assert.match(text, /^Candice couldn\u2019t say that out loud\. You can read it on screen\./);
+    assert.ok(
+      !text.startsWith(native.slice(0, 12)),
+      'the diagnostic must not lead the caption',
+    );
     // The REASON must survive — this is the assertion the old catch failed.
     const kernel = native.slice(0, 40);
     assert.ok(text.includes(kernel), `the native reason must survive: ${native}`);

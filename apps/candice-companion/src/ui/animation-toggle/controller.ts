@@ -118,7 +118,7 @@ function injectStyle(doc: Document): void {
   justify-content: center;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
-  color: var(--candice-text, #eceaf3);
+  color: var(--candice-text, #faf7ff);
   background: var(--candice-ui-surface, #171321);
   border: 1px solid var(--candice-ui-border, #beb0ff);
   border-radius: 8px;
@@ -144,7 +144,7 @@ function injectStyle(doc: Document): void {
   user-select: none;
 }
 .${ANIMATION_TOGGLE_CLASS} .${ANIMATION_TOGGLE_CLASS}-hint {
-  color: var(--candice-muted, #a8a3b8);
+  color: var(--candice-muted, #d7cfdf);
   font-size: calc(11px * var(--candice-text-scale, 1));
 }
 `;

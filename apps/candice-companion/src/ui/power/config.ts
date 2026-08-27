@@ -44,4 +44,16 @@ export const POWER_OFF_BUSY_HINT = 'Closing…';
  * Shown when the close could not be delivered to native. Rare, and the
  * honest thing to say: the button did not work, here is the other way.
  */
-export const POWER_OFF_FAILED_HINT = 'Could not close her. Quit Candice from the Dock or Task Manager.';
+/*
+ * Platform-neutral ON PURPOSE, following the same ruling already made for
+ * the microphone refusal in ui/answer-controls/consent.ts.
+ *
+ * This named "the Dock or Task Manager" -- one of which is always wrong for
+ * whoever is reading it, and a Mac has no Task Manager. Branching is not
+ * available: there is no platform signal in this layer (nothing reaches the
+ * webview; prefs/profile.ts reads Node's process.platform in a different
+ * process), and inventing a capability field to carry one is a larger change
+ * than this one sentence is worth. Saying what is true on both is correct
+ * everywhere -- and shorter.
+ */
+export const POWER_OFF_FAILED_HINT = 'Could not close her. You can quit Candice the way you quit any other app on this computer.';

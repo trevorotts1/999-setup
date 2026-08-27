@@ -40,8 +40,8 @@ import type { AnswerMethod } from './config.ts';
  */
 export const ANSWER_CONTROLS_STYLE_TEXT = `
 .candice-answer-controls {
-  --candice-ac-text: var(--candice-text, #eceaf3);
-  --candice-ac-muted: var(--candice-muted, #a8a3b8);
+  --candice-ac-text: var(--candice-text, #faf7ff);
+  --candice-ac-muted: var(--candice-muted, #d7cfdf);
   --candice-ac-accent: var(--candice-accent, #7c5cff);
   /* FIX-008: accent applied to TEXT needs the AAA-safe tint. */
   --candice-ac-accent-text: var(--candice-accent-text, #b9a8ff);
