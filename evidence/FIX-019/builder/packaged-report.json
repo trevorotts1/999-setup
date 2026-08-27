@@ -1,10 +1,10 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-26T19:37:20.923Z",
+  "generatedAt": "2026-08-27T16:05:48.950Z",
   "repo": "999-setup-audit",
   "commitSha": "packaged-suite-run",
-  "packagedBinarySha": "5f3de2b401e83c9e0c7e5732e9d115359d83cb7c4b1a0dfe2903e592320600fe",
-  "runId": "packaged-suite-1787773040923",
+  "packagedBinarySha": "7fa3ebf61b69683853a91b71fe16810cd9d4e1b314220c1db058a4e327ce32e7",
+  "runId": "packaged-suite-1787846748950",
   "launcher": "node tests/e2e-acceptance/packaged/suite.js",
   "verdict": "BLOCKED",
   "legs": [
@@ -66,10 +66,10 @@
       "id": "speech-assets",
       "tier": "PACKAGED_AUTOMATED",
       "name": "packaged-automated: speech-assets (run 1)",
-      "verdict": "FAIL",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "leg exited 1"
+      "reason": null
     },
     {
       "id": "speech-keyboard",
@@ -138,109 +138,19 @@
       "id": "speech-assets",
       "tier": "PACKAGED_AUTOMATED",
       "name": "packaged-automated: speech-assets (run 2)",
-      "verdict": "FAIL",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "leg exited 1"
+      "reason": null
     },
     {
       "id": "speech-keyboard",
       "tier": "PACKAGED_AUTOMATED",
       "name": "packaged-automated: speech-keyboard (run 2)",
-      "verdict": "FAIL",
+      "verdict": "PASS",
       "required": true,
       "skippableReason": null,
-      "reason": "leg exited 1"
-    },
-    {
-      "id": "speech-keyboard-determinism",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: speech-keyboard run determinism (run 1 vs run 2)",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "leg speech-keyboard passed one run and failed the other — packaged behavior is not deterministic across clean-state runs"
-    },
-    {
-      "id": "trace-27835c88963a",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — typed-build-target: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "typed-build-target: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-812e5ed4f1c9",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — wrong-session: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "wrong-session: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-16a6d097d709",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — duplicate: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "duplicate: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-567d14298fd8",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — fallback: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "fallback: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-0744dda5a94b",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — restart: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "restart: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-3565efbe97a5",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "compact: run 1 and run 2 traces differ modulo ts"
-    },
-    {
-      "id": "trace-a1c8c909e847",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — speech-assets run 1: trace missing",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "speech-assets run 1: trace missing"
-    },
-    {
-      "id": "trace-89bebd5c9d09",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — speech-assets run 2: trace missing",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "speech-assets run 2: trace missing"
-    },
-    {
-      "id": "trace-d2a28970b0cc",
-      "tier": "PACKAGED_AUTOMATED",
-      "name": "packaged-automated: trace integrity — speech-keyboard: run 1 and run 2 traces differ modulo ts",
-      "verdict": "FAIL",
-      "required": true,
-      "skippableReason": null,
-      "reason": "speech-keyboard: run 1 and run 2 traces differ modulo ts"
+      "reason": null
     }
   ],
   "tiers": [
@@ -294,9 +204,9 @@
         {
           "id": "speech-assets",
           "name": "packaged-automated: speech-assets (run 1)",
-          "verdict": "FAIL",
+          "verdict": "PASS",
           "required": true,
-          "reason": "leg exited 1"
+          "reason": null
         },
         {
           "id": "speech-keyboard",
@@ -350,86 +260,16 @@
         {
           "id": "speech-assets",
           "name": "packaged-automated: speech-assets (run 2)",
-          "verdict": "FAIL",
+          "verdict": "PASS",
           "required": true,
-          "reason": "leg exited 1"
+          "reason": null
         },
         {
           "id": "speech-keyboard",
           "name": "packaged-automated: speech-keyboard (run 2)",
-          "verdict": "FAIL",
+          "verdict": "PASS",
           "required": true,
-          "reason": "leg exited 1"
-        },
-        {
-          "id": "speech-keyboard-determinism",
-          "name": "packaged-automated: speech-keyboard run determinism (run 1 vs run 2)",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "leg speech-keyboard passed one run and failed the other — packaged behavior is not deterministic across clean-state runs"
-        },
-        {
-          "id": "trace-27835c88963a",
-          "name": "packaged-automated: trace integrity — typed-build-target: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "typed-build-target: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-812e5ed4f1c9",
-          "name": "packaged-automated: trace integrity — wrong-session: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "wrong-session: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-16a6d097d709",
-          "name": "packaged-automated: trace integrity — duplicate: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "duplicate: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-567d14298fd8",
-          "name": "packaged-automated: trace integrity — fallback: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "fallback: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-0744dda5a94b",
-          "name": "packaged-automated: trace integrity — restart: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "restart: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-3565efbe97a5",
-          "name": "packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "compact: run 1 and run 2 traces differ modulo ts"
-        },
-        {
-          "id": "trace-a1c8c909e847",
-          "name": "packaged-automated: trace integrity — speech-assets run 1: trace missing",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "speech-assets run 1: trace missing"
-        },
-        {
-          "id": "trace-89bebd5c9d09",
-          "name": "packaged-automated: trace integrity — speech-assets run 2: trace missing",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "speech-assets run 2: trace missing"
-        },
-        {
-          "id": "trace-d2a28970b0cc",
-          "name": "packaged-automated: trace integrity — speech-keyboard: run 1 and run 2 traces differ modulo ts",
-          "verdict": "FAIL",
-          "required": true,
-          "reason": "speech-keyboard: run 1 and run 2 traces differ modulo ts"
+          "reason": null
         }
       ]
     }

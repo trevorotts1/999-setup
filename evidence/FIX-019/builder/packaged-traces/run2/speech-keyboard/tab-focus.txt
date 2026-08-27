@@ -1,1 +1,1 @@
-role=AXTextField desc=named
+role=AXButton desc=unnamed

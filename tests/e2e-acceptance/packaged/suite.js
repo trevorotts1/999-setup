@@ -49,16 +49,60 @@ const LEGS = [
   { id: 'compact', file: 'packaged-compact.test.js' },
   // QFIX-q2 (Q-05 step 4 + Q-02 step 6): post-bundle speech-asset delivery
   // and the installed-app keyboard path.
-  { id: 'speech-assets', file: 'packaged-speech-assets.test.js' },
+  //
+  // speech-assets inspects the bundle on disk. It never asks a question, so
+  // it emits no event-trace frames and none can be demanded of it. The
+  // exemption is checked below against the leg's own source, so it cannot
+  // quietly start covering a leg that DOES ask and simply stopped tracing.
+  { id: 'speech-assets', file: 'packaged-speech-assets.test.js', emitsTrace: false },
   { id: 'speech-keyboard', file: 'packaged-speech-keyboard.test.js' },
 ]
 
 const LEG_IDS = LEGS.map((l) => l.id)
 
-function runLeg(def, runNo) {
-  const file = path.join(__dirname, def.file)
+/**
+ * Empty this leg's evidence directory for this run and return its path.
+ *
+ * Called for EVERY leg, including one the clean-state gate turns away. A
+ * blocked leg produces no evidence, so anything left in its directory is a
+ * previous invocation's — and leaving it there is how a blocked run comes to
+ * read as a passing one.
+ */
+function resetTraceDir(def, runNo) {
   const traceDir = path.join(TRACES_DIR, `run${runNo}`, def.id)
+  // Reset, not mkdir. `appendTrace` appends, and this directory is committed
+  // evidence that survives between invocations — so without a reset every
+  // suite run stacked its frames on top of every previous run's. The
+  // committed traces held frames from 2026-08-26 recorded against a build in
+  // /private/tmp/candice-integration, sitting inside evidence for a run made
+  // today from this checkout. Two consequences, both bad:
+  //
+  //   1. The run-1 vs run-2 comparison below was comparing two accumulated
+  //      histories, so a leg that emitted a different number of frames in
+  //      some past invocation could never match again. That is what "compact
+  //      15 vs 14" and "speech-keyboard 15 vs 16" were: old runs, not drift.
+  //   2. A failing run inherited a passing run's evidence. A directory could
+  //      read as a pass on artifacts no run in it ever produced.
+  //
+  // Clearing costs nothing: every file here is written by the leg about to
+  // run. Recursive removal is scoped to TRACES_DIR/run<N>/<leg-id>, all three
+  // segments computed here, none of them from input.
+  fs.rmSync(traceDir, { recursive: true, force: true })
   fs.mkdirSync(traceDir, { recursive: true })
+  // CONTROL: prove the reset actually emptied it. If rmSync silently no-ops
+  // (wrong path, permissions), stale frames would flow straight back into
+  // evidence and the comparison below would go back to being meaningless.
+  const leftovers = fs.readdirSync(traceDir)
+  if (leftovers.length > 0) {
+    throw new Error(
+      `trace dir ${traceDir} still holds ${leftovers.length} file(s) after reset: ${leftovers.join(', ')}`,
+    )
+  }
+  return traceDir
+}
+
+function runLeg(def, runNo, traceDir) {
+  const file = path.join(__dirname, def.file)
   const result = spawnSync(process.execPath, [file, '--app', PACKAGED_BINARY, '--trace-dir', traceDir], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 240000,
   })
@@ -116,6 +160,9 @@ function main() {
   for (const runNo of [1, 2]) {
     console.log(`\n##### PACKAGED RUN ${runNo} (clean state) #####`)
     for (const def of LEGS) {
+      // Before the gate, not after it. A leg that never runs must not keep a
+      // previous invocation's evidence sitting in its directory.
+      const traceDir = resetTraceDir(def, runNo)
       const gateCheck = cleanStateGate()
       if (!gateCheck.ok) {
         killAppProcesses()
@@ -129,7 +176,7 @@ function main() {
         console.log(`==== ${def.id}: BLOCKED (${gateCheck.reason}) ====`)
         continue
       }
-      const { record } = runLeg(def, runNo)
+      const { record } = runLeg(def, runNo, traceDir)
       legs.push({ ...record, name: `${record.name} (run ${runNo})` })
       killAppProcesses()
     }
@@ -155,6 +202,28 @@ function main() {
   // and run-2 frames equal run-1 frames modulo ts (exact-fix determinism).
   const traceProblems = []
   for (const def of LEGS) {
+    if (def.emitsTrace === false) {
+      // The exemption is only honest while the leg really has no round trip
+      // to trace. Read its source and refuse the exemption the moment it
+      // gains one — otherwise "no trace expected" silently becomes cover for
+      // "trace stopped being written".
+      const source = fs.readFileSync(path.join(__dirname, def.file), 'utf8')
+      if (/\baskUser\s*\(/.test(source) || /\bappendTrace\s*\(/.test(source)) {
+        traceProblems.push(
+          `${def.id}: declared emitsTrace:false but its source asks a question or appends frames — the exemption is stale`,
+        )
+      }
+      // CONTROL: the same read must be able to SEE a round trip, or the
+      // check above passes because the file was unreadable or the pattern
+      // never matches anything. Point it at a leg that definitely has one.
+      const control = fs.readFileSync(path.join(__dirname, 'packaged-BUILD_TARGET.test.js'), 'utf8')
+      if (!/\baskUser\s*\(/.test(control)) {
+        traceProblems.push(
+          'exemption control failed: packaged-BUILD_TARGET.test.js does not read as asking a question, so the emitsTrace check cannot detect one',
+        )
+      }
+      continue
+    }
     for (const runNo of [1, 2]) {
       const file = path.join(TRACES_DIR, `run${runNo}`, def.id, 'event-trace.jsonl')
       if (!fs.existsSync(file)) {
@@ -167,10 +236,37 @@ function main() {
     const f1 = path.join(TRACES_DIR, 'run1', def.id, 'event-trace.jsonl')
     const f2 = path.join(TRACES_DIR, 'run2', def.id, 'event-trace.jsonl')
     if (fs.existsSync(f1) && fs.existsSync(f2)) {
-      const norm = (p) => fs.readFileSync(p, 'utf8').trim().split('\n')
-        .filter((l) => l.length > 0)
-        .map((l) => { const o = JSON.parse(l); o.ts = 'X'; return JSON.stringify(o) })
-        .join('\n')
+      // `ts` was the only field normalised, so this comparison could never
+      // succeed: `sessionId` is minted per run by design, and `runId` embeds a
+      // timestamp. Measured across the five legs whose frame counts match,
+      // those two fields were the ONLY difference — the check was reporting a
+      // determinism failure on every leg, every run, since it was written, and
+      // in doing so hid the two legs that really do differ.
+      //
+      // Erasing them outright would go too far the other way: "run 2 used two
+      // sessions where run 1 used one" is exactly the kind of drift this is
+      // for. So each id is replaced by a STABLE ALIAS in order of first
+      // appearance. Identity and reuse structure are preserved; only the
+      // literal value, which cannot repeat across clean-state runs, is not.
+      const norm = (p) => {
+        const aliases = new Map()
+        const alias = (prefix, value) => {
+          if (value === undefined || value === null) return value
+          const key = `${prefix}:${value}`
+          if (!aliases.has(key)) aliases.set(key, `${prefix}${aliases.size + 1}`)
+          return aliases.get(key)
+        }
+        return fs.readFileSync(p, 'utf8').trim().split('\n')
+          .filter((l) => l.length > 0)
+          .map((l) => {
+            const o = JSON.parse(l)
+            o.ts = 'X'
+            if ('sessionId' in o) o.sessionId = alias('S', o.sessionId)
+            if ('runId' in o) o.runId = alias('R', o.runId)
+            return JSON.stringify(o)
+          })
+          .join('\n')
+      }
       if (norm(f1) !== norm(f2)) {
         traceProblems.push(`${def.id}: run 1 and run 2 traces differ modulo ts`)
       }

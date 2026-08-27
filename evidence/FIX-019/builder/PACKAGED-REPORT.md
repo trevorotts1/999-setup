@@ -1,18 +1,18 @@
 # FIX-019 e2e-acceptance report
 
 - Verdict: **BLOCKED**
-- Generated: 2026-08-26T19:37:20.923Z
+- Generated: 2026-08-27T16:05:48.950Z
 - Repository: 999-setup-audit
 - Commit SHA: packaged-suite-run
-- Packaged binary SHA-256: 5f3de2b401e83c9e0c7e5732e9d115359d83cb7c4b1a0dfe2903e592320600fe
-- Run id: packaged-suite-1787773040923
+- Packaged binary SHA-256: 7fa3ebf61b69683853a91b71fe16810cd9d4e1b314220c1db058a4e327ce32e7
+- Run id: packaged-suite-1787846748950
 - Launcher: node tests/e2e-acceptance/packaged/suite.js
 
 ## Tier verdicts
 
 | Tier | Required | Verdict | Legs |
 | --- | --- | --- | --- |
-| PACKAGED_AUTOMATED | yes | **BLOCKED** | 26 |
+| PACKAGED_AUTOMATED | yes | **BLOCKED** | 16 |
 
 ## Blocked details
 
@@ -29,7 +29,7 @@
 - [PASS] (required) fallback — packaged-automated: fallback (run 1)
 - [PASS] (required) restart — packaged-automated: restart (run 1)
 - [BLOCKED] (required) compact — packaged-automated: compact (run 1) — leg exited 2
-- [FAIL] (required) speech-assets — packaged-automated: speech-assets (run 1) — leg exited 1
+- [PASS] (required) speech-assets — packaged-automated: speech-assets (run 1)
 - [PASS] (required) speech-keyboard — packaged-automated: speech-keyboard (run 1)
 - [PASS] (required) typed-build-target — packaged-automated: typed-build-target (run 2)
 - [PASS] (required) wrong-session — packaged-automated: wrong-session (run 2)
@@ -37,18 +37,8 @@
 - [PASS] (required) fallback — packaged-automated: fallback (run 2)
 - [PASS] (required) restart — packaged-automated: restart (run 2)
 - [BLOCKED] (required) compact — packaged-automated: compact (run 2) — leg exited 2
-- [FAIL] (required) speech-assets — packaged-automated: speech-assets (run 2) — leg exited 1
-- [FAIL] (required) speech-keyboard — packaged-automated: speech-keyboard (run 2) — leg exited 1
-- [FAIL] (required) speech-keyboard-determinism — packaged-automated: speech-keyboard run determinism (run 1 vs run 2) — leg speech-keyboard passed one run and failed the other — packaged behavior is not deterministic across clean-state runs
-- [FAIL] (required) trace-27835c88963a — packaged-automated: trace integrity — typed-build-target: run 1 and run 2 traces differ modulo ts — typed-build-target: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-812e5ed4f1c9 — packaged-automated: trace integrity — wrong-session: run 1 and run 2 traces differ modulo ts — wrong-session: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-16a6d097d709 — packaged-automated: trace integrity — duplicate: run 1 and run 2 traces differ modulo ts — duplicate: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-567d14298fd8 — packaged-automated: trace integrity — fallback: run 1 and run 2 traces differ modulo ts — fallback: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-0744dda5a94b — packaged-automated: trace integrity — restart: run 1 and run 2 traces differ modulo ts — restart: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-3565efbe97a5 — packaged-automated: trace integrity — compact: run 1 and run 2 traces differ modulo ts — compact: run 1 and run 2 traces differ modulo ts
-- [FAIL] (required) trace-a1c8c909e847 — packaged-automated: trace integrity — speech-assets run 1: trace missing — speech-assets run 1: trace missing
-- [FAIL] (required) trace-89bebd5c9d09 — packaged-automated: trace integrity — speech-assets run 2: trace missing — speech-assets run 2: trace missing
-- [FAIL] (required) trace-d2a28970b0cc — packaged-automated: trace integrity — speech-keyboard: run 1 and run 2 traces differ modulo ts — speech-keyboard: run 1 and run 2 traces differ modulo ts
+- [PASS] (required) speech-assets — packaged-automated: speech-assets (run 2)
+- [PASS] (required) speech-keyboard — packaged-automated: speech-keyboard (run 2)
 
 ## Notes
 
