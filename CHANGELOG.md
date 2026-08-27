@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.17.7] — 2026-08-27
+
+### Statusline: session cost relabelled `≈$N api-equiv` — it is not a bill
+
+The cost segment rendered a bare `~$112.89` on a plain session. The figure itself is sound —
+it is Claude Code's own `cost.total_cost_usd`, and an independent recomputation over this
+session's transcript (597 turns: 625,998 output, 6,993,513 cache-write, 119,871,445 cache-read
+tokens) reproduced it to within ~6% at Anthropic list rates, the residual being cheaper
+Haiku/Sonnet subagent turns. What it is NOT is money owed: an operator on a Claude
+subscription pays $0 marginal for those tokens, so a bare currency figure reads as a charge
+that was never incurred.
+
+Both cost paths (primary `cost.total_cost_usd` and the token-count fallback) now print
+`≈$N api-equiv`. The number is deliberately kept — it is a genuine usage meter, and on long
+sessions it is dominated by cache reads, which is the most actionable signal on the bar — but
+it can no longer be mistaken for an invoice. Routed (claude-nine/9Router) sessions are
+unaffected: they still omit the cost segment entirely, per 1.17.6.
+
+Verified on the real captured payloads, bash 3.2.57 and 5.3.12, all six runs rc=0: routed →
+`Opus 5` (no figure); plain post-turn → `Haiku 4.5 | ≈$0.06 api-equiv`; plain pre-turn null
+guard → `Haiku 4.5 | ≈$0.00 api-equiv`. Installer heredoc and deployed script byte-identical
+(md5 `a57471ab001ce348487b559aaa1ab276`).
+
 ## [1.17.6] — 2026-08-27
 
 ### Statusline: routed-cost defect was still live — the gate in 1.17.5 keyed on the wrong field

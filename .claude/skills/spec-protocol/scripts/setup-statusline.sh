@@ -23,7 +23,8 @@
 # no cross-harness double-counting). Fallback (older CC builds without that
 # field): cumulative session token counts from `context_window.total_input_tokens`
 # / `.total_output_tokens` times published per-model pricing. Either way the
-# figure is displayed with a ~ marker; a model absent from the pricing table
+# figure is displayed as `≈$N api-equiv` — API-equivalent, never a bill (a
+# subscription operator pays $0 marginal); a model absent from the pricing table
 # -> the cost segment is omitted, never guessed.
 #
 # Never prints API keys or any secret value. Name-only output.
@@ -162,7 +163,14 @@ total_in="$(jqget '.context_window.total_input_tokens // empty')"
 total_out="$(jqget '.context_window.total_output_tokens // empty')"
 cwd_path="$(jqget '.cwd // empty')"
 
-# --- session cost: ~-labeled, never guessed ---------------------------------
+# --- session cost: ≈-labeled "api-equiv", never guessed --------------------
+# LABEL: the figure renders as `≈$N api-equiv` — API-EQUIVALENT, NOT A BILL.
+# Claude Code's `cost.total_cost_usd` prices this session's tokens at
+# Anthropic's pay-per-call list rates. An operator on a Claude subscription
+# pays $0 marginal for those tokens, so a bare `~$N` reads as a charge that
+# was never incurred (operator ruling 2026-08-27). The suffix preserves the
+# signal — it is a real usage meter, and on long sessions it is dominated by
+# cache reads — while making it unmistakable that it is not money owed.
 # ROUTED DETECTION — keyed on `model.id`, NEVER `model.display_name`. Live
 # capture 2026-08-27 (both classes, same instrument, both directions proven):
 # a claude-nine/9Router session sends id="opus-chain" (the raw chain id the
@@ -221,14 +229,14 @@ cost=""
 if [ "$is_routed" = 0 ]; then
   cost_usd="$(jqget '.cost.total_cost_usd // empty')"
   if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
-    cost="$(awk -v c="$cost_usd" 'BEGIN { printf "~$%.2f", c }')"
+    cost="$(awk -v c="$cost_usd" 'BEGIN { printf "≈$%.2f api-equiv", c }')"
   elif [ -n "$total_in" ] && [ -n "$total_out" ] \
      && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
     prices="$(price_for "$model")"
     if [ -n "$prices" ]; then
       pin="${prices%% *}"; pout="${prices##* }"
       cost="$(awk -v ti="$total_in" -v to="$total_out" -v pi="$pin" -v po="$pout" \
-        'BEGIN { printf "~$%.2f", (ti*pi + to*po)/1000000 }')"
+        'BEGIN { printf "≈$%.2f api-equiv", (ti*pi + to*po)/1000000 }')"
     fi
   fi
 fi

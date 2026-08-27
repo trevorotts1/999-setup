@@ -32,7 +32,7 @@ Preferred display, adapted to what the installed version actually exposes (prior
 per spec §1):
 
 ```text
-Claude Opus | ~$1.38 | main ✓ | Project ████░░░░░░ 40% | Wave 2 ██████░░░░ 60%
+Claude Opus | ≈$1.38 api-equiv | main ✓ | Project ████░░░░░░ 40% | Wave 2 ██████░░░░ 60%
 ```
 
 **The client-facing display (operator order 2026-08-16): what truly matters — model, cost,
@@ -181,9 +181,14 @@ installation never fails over a missing metric. Report per metric:
 
 ```text
 Model: Supported
-Session cost: ~-labeled — plain sessions use Claude Code's own tracked session total when
-  available, else derived from cumulative token counts × published pricing; ALWAYS omitted for
-  routed (claude-nine/9Router) sessions, detected via model.id, never display_name
+Session cost: rendered `≈$N api-equiv` — API-EQUIVALENT, NOT A BILL. Plain sessions use Claude
+  Code's own tracked session total when available, else derived from cumulative token counts ×
+  published pricing; ALWAYS omitted for routed (claude-nine/9Router) sessions, detected via
+  model.id, never display_name. The `api-equiv` suffix is REQUIRED: that total prices the
+  session's tokens at Anthropic pay-per-call list rates, but an operator on a Claude
+  subscription pays $0 marginal for them, so a bare `~$N` reads as a charge never incurred
+  (operator ruling 2026-08-27). Keep the number — it is a real usage meter, dominated by cache
+  reads on long sessions — but never present it as money owed.
 Session duration: Not exposed by this Claude Code version
 Context usage: INTERNAL — tracked and acted on, never displayed (operator order 2026-08-16)
 5-hour / 7-day usage: INTERNAL — never displayed (operator order 2026-08-16)
@@ -246,7 +251,7 @@ The status line carries a project segment: how close the project is to being DON
 the main thing the bar exists to show — not just session health.
 
 ```text
-Claude Opus | ~$1.38 | main ✓ | Project ████░░░░░░ 40% | Wave 3 ██░░░░░░░░ 20%
+Claude Opus | ≈$1.38 api-equiv | main ✓ | Project ████░░░░░░ 40% | Wave 3 ██░░░░░░░░ 20%
 ```
 
 **Derivation — disk truth only, never conversation memory.** The statusline script reads
