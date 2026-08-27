@@ -160,6 +160,13 @@ def _acquire_singleton_lock():
 _acquire_singleton_lock()
 
 LEDGER = os.environ.get("BOSS_LEDGER") or os.path.join(REPO_ROOT, "FIX-LEDGER.md")
+# The per-cycle BOSSCYCLE-* liveness marker is TELEMETRY, not a work record.
+# It lives here — rewritten every cycle, never appended, gitignored — because
+# a 5-minute heartbeat written into a git-TRACKED ledger collides on every
+# merge and buries the findings sitting next to it. (2026-08-26: 1552 of 1863
+# uncommitted ledger lines were this one marker.) VIOLATION-STOP findings are
+# real records and stay in LEDGER, where they are already deduped.
+HEARTBEAT = os.environ.get("BOSS_HEARTBEAT") or os.path.join(STATE_DIR, "boss-heartbeat")
 STOP = os.path.join(STATE_DIR, "stop-workstream")
 PIDS = os.path.join(STATE_DIR, "workflow-pids.json")
 PROJECT_STATE = os.path.join(STATE_DIR, "project_state.json")
@@ -645,9 +652,28 @@ def check_claims(lines):
     return broken
 
 
+def read_heartbeat_ts():
+    """Newest BOSSCYCLE-* timestamp from the heartbeat file, or None.
+
+    Returns None when the file is absent/unreadable/empty so every caller
+    falls back to scanning the ledger — installs that predate the heartbeat
+    split, and other checkouts, keep working unchanged.
+    """
+    try:
+        with open(HEARTBEAT, "r", encoding="utf-8") as fh:
+            beats = [ln for ln in fh.read().splitlines()
+                     if ledger_class(ln) in ("BOSSCYCLE-CLEAN", "BOSSCYCLE-ALERT",
+                                             "BOSSCYCLE-VIOLATION")]
+    except OSError:
+        return None
+    return line_timestamp(beats[-1]) if beats else None
+
+
 def check_heartbeat(lines):
-    ts = None
-    for ln in lines:
+    # Heartbeat file first (current installs); ledger scan is the fallback for
+    # installs written before the split, so liveness never reads as dead.
+    ts = read_heartbeat_ts()
+    for ln in ([] if ts else lines):
         # Any BOSSCYCLE-* line (CLEAN, ALERT, VIOLATION) is a cycle line — a
         # violating cycle writes VIOLATION as its liveness line (the finding
         # stands above it; it never masks), and the ALERT line a recovered
@@ -1408,30 +1434,40 @@ def main():
     # every 5 minutes. The ISO timestamp is the ONLY per-cycle field — strip
     # it from both the candidate and the ledger lines before comparing.
     old_lines = {TIMESTAMP_RE.sub("", ln) for ln in ledger_lines(text2)}
+    appended = 0
     with open(LEDGER, "a", encoding="utf-8") as fh:
         for v in violations:
             line = f"- `VIOLATION-STOP {now_iso()}: {v} — conductor MUST TaskStop the named workstream, {ck_note}; {bound}`"
             if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
+                appended += 1
         for pid, outcome in kills:
             line = f"- `VIOLATION-STOP {now_iso()}: kill pid {pid}: {outcome} — conductor re-dispatches, {ck_note}; {bound}`"
             if TIMESTAMP_RE.sub("", line) not in old_lines:
                 fh.write(line + "\n")
-        if alert_note:
-            line = f"- `BOSSCYCLE-ALERT {now_iso()}:{alert_note} — heartbeat alert fired (no BOSSCYCLE-* line within two intervals)`"
-            if TIMESTAMP_RE.sub("", line) not in old_lines:
-                fh.write(line + "\n")
-        if not violations and beat is None:
-            fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`\n")
-        elif not violations:
-            fh.write(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks} (baseline)`\n")
-        else:
-            # Liveness line for a violating cycle: the watchdog's staleness
-            # check reads the newest BOSSCYCLE-* line, and a long violation
-            # streak must not read as a dead cron (that would fire a false
-            # heartbeat alert at the operator). The findings stand above it —
-            # this line names no class, masks nothing.
-            fh.write(f"- `BOSSCYCLE-VIOLATION {now_iso()}: {len(violations)} finding(s) recorded above; checks={checks}`\n")
+                appended += 1
+    # --- liveness marker -> HEARTBEAT (telemetry), never the tracked ledger ---
+    # The findings above are the record; these lines only prove the cycle ran.
+    # The file is REWRITTEN each cycle, so it holds this cycle's marker(s) and
+    # never grows. Readers take the last BOSSCYCLE-* line, so semantics match
+    # the old append-to-ledger behaviour exactly.
+    beat_lines = []
+    if alert_note:
+        beat_lines.append(f"- `BOSSCYCLE-ALERT {now_iso()}:{alert_note} — heartbeat alert fired (no BOSSCYCLE-* line within two intervals)`")
+    if not violations and beat is None:
+        beat_lines.append(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks}`")
+    elif not violations:
+        beat_lines.append(f"- `BOSSCYCLE-CLEAN {now_iso()}: checks={checks} (baseline)`")
+    else:
+        # Liveness line for a violating cycle: the watchdog's staleness check
+        # reads the newest BOSSCYCLE-* line, and a long violation streak must
+        # not read as a dead cron (that would fire a false heartbeat alert at
+        # the operator). The findings stand in the ledger — this line names no
+        # class, masks nothing.
+        beat_lines.append(f"- `BOSSCYCLE-VIOLATION {now_iso()}: {len(violations)} finding(s) recorded above; checks={checks}`")
+    os.makedirs(os.path.dirname(HEARTBEAT), exist_ok=True)
+    with open(HEARTBEAT, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(beat_lines) + "\n")
     # Write/update the stop file on violation (never latch stale findings from
     # an earlier cycle); clear it on a clean cycle so a resolved stop does not
     # re-fire the 'stop file active' violation every cycle.
@@ -1441,7 +1477,11 @@ def main():
                      + f" | {ck_note}; {bound}")
     elif os.path.exists(STOP):
         os.remove(STOP)
-    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), ledger appended{alert_note}")
+    # Report what actually happened. Most cycles re-find the SAME findings, which
+    # dedupe to zero writes — printing an unconditional "ledger appended" told the
+    # operator the ledger moved when it did not.
+    led_note = f"{appended} ledger line(s) appended" if appended else "ledger unchanged (findings already recorded)"
+    print(f"boss-cron cycle {now_iso()}: {len(violations)} violation(s), {len(kills)} kill(s), {led_note}{alert_note}")
     sys.exit(2 if violations else 0)
 
 

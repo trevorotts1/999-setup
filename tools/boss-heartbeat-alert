@@ -45,6 +45,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${BOSS_REPO_ROOT:-$(dirname "$SCRIPT_DIR")}"
 LEDGER="${BOSS_ALERT_LEDGER:-$REPO_ROOT/FIX-LEDGER.md}"
 STATE_DIR="${BOSS_ALERT_STATE_DIR:-$REPO_ROOT/CONTROL}"
+# The per-cycle liveness marker moved out of the tracked ledger and into this
+# rewritten-every-cycle file (see tools/boss-cron HEARTBEAT). Ledger fallback
+# below keeps pre-split installs working.
+HEARTBEAT="${BOSS_ALERT_HEARTBEAT:-$STATE_DIR/boss-heartbeat}"
 LOG="${STATE_DIR}/boss-heartbeat-alert.log"
 STATE="${STATE_DIR}/boss-heartbeat-alert.state"
 mkdir -p "${STATE_DIR}" 2>/dev/null || true
@@ -79,9 +83,14 @@ else
   fi
 fi
 
-# --- Read the newest BOSSCYCLE-* line timestamp off the ledger.
+# --- Read the newest BOSSCYCLE-* line timestamp: heartbeat file first, then
+#     the ledger (pre-split installs). An empty/absent heartbeat file is NOT a
+#     negative — it falls through to the ledger rather than reporting silence.
 last_cycle=""
-if [ -f "${LEDGER}" ]; then
+if [ -f "${HEARTBEAT}" ]; then
+  last_cycle="$(grep -E '^\- `BOSSCYCLE-' "${HEARTBEAT}" | tail -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' || true)"
+fi
+if [ -z "${last_cycle}" ] && [ -f "${LEDGER}" ]; then
   last_cycle="$(grep -E '^\- `BOSSCYCLE-' "${LEDGER}" | tail -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' || true)"
 fi
 if [ -z "${last_cycle}" ]; then
@@ -125,7 +134,10 @@ MSG="[BOSS HEARTBEAT ALERT] boss-cron went silent — no BOSSCYCLE-* line for ${
 
 if [ "${BOSS_ALERT_DRY_RUN:-0}" = "1" ]; then
   say "DRY-RUN: would send to ${TARGET_CHAT}: ${MSG}"
-  echo "$(now_iso)" >"${STATE}"
+  # A dry run must NOT arm the cooldown. Writing STATE here silenced the real
+  # alarm for ALERT_COOLDOWN_MINUTES after every rehearsal — so testing the
+  # watchdog disabled the watchdog, exactly when someone is most likely to be
+  # poking at it. Only a genuine send arms the cooldown (below).
   exit 0
 fi
 

@@ -1,5 +1,113 @@
 # Changelog
 
+## [1.17.2] — 2026-08-26
+
+### Boss cron: liveness heartbeat split out of the tracked ledger
+
+The boss wrote a `BOSSCYCLE-*` liveness marker into `FIX-LEDGER.md` on every
+5-minute cycle. `FIX-LEDGER.md` is git-tracked, so that heartbeat guaranteed a
+merge collision on every merge, forever, and buried the findings sitting next to
+it. Measured on the operator box: **1552 of 1863 uncommitted ledger lines (83%)
+were that one marker**, and the ledger had grown to 667KB — 2.5x its committed
+size — entirely from telemetry.
+
+- **Liveness is telemetry, findings are records.** The per-cycle `BOSSCYCLE-CLEAN`
+  / `BOSSCYCLE-VIOLATION` / `BOSSCYCLE-ALERT` marker now goes to
+  `CONTROL/boss-heartbeat` (new, gitignored), **rewritten** each cycle rather
+  than appended, so it never grows. `VIOLATION-STOP` findings are real records
+  and stay in `FIX-LEDGER.md`, where they were already deduped.
+- **Both readers updated, with a ledger fallback.** `check_heartbeat` in
+  `tools/boss-cron` and `tools/boss-heartbeat-alert` read the heartbeat file
+  first and fall back to scanning the ledger when it is absent, unreadable, or
+  empty — so pre-split installs and other checkouts keep working and an empty
+  heartbeat never reads as a dead boss.
+- **Env-overridable, matching the 1.16.3 portability pattern**: `BOSS_HEARTBEAT`
+  and `BOSS_ALERT_HEARTBEAT`.
+- **Runtime state gitignored**: `CONTROL/boss-heartbeat` and
+  `CONTROL/stop-workstream` are per-cycle runtime state, not source.
+
+Verified: patched boss runs all 16 checks and reports the same 3 pre-existing
+findings (no regression); heartbeat reader **discriminates** — a fresh marker
+yields 0 beat findings, a 45-minute-old marker correctly fires
+`last BOSSCYCLE-* line 45 min ago (> 2 cycles)`; `boss-heartbeat-alert` logs
+`ok: last BOSSCYCLE 0m ago` on fresh and raises the alert on stale (dry-run, no
+message sent).
+
+### Watchdog: a dry run disabled the watchdog it was rehearsing
+
+Found while testing the change above. `tools/boss-heartbeat-alert` wrote the
+alert-cooldown state file inside its `BOSS_ALERT_DRY_RUN` branch, arming the
+60-minute spam guard on a rehearsal that sent nothing. Every dry run therefore
+silenced the real alarm for an hour — precisely when someone is most likely to
+be poking at the watchdog. The dry-run branch no longer writes state; only a
+genuine send arms the cooldown. Proven: a dry run logs the would-send message
+and leaves the cooldown byte-unchanged.
+
+### Cycle log reported a write that never happened
+
+`boss-cron` printed an unconditional `ledger appended` on every cycle. Because
+findings dedupe by timestamp-stripped comparison, a cycle that re-finds the same
+violations writes nothing — so the line told the operator the ledger had moved
+when it had not. The cycle log now counts actual writes and reports either
+`N ledger line(s) appended` or `ledger unchanged (findings already recorded)`.
+
+### FIX-LEDGER divergence reconciled
+
+Local and origin ledgers had diverged — both **pure appends to the same
+1430-line base**, with **zero overlapping lines**, and every appended line on
+both sides machine-written by the boss cron (no human or work record at risk on
+either side). Reconciled as a chronological union: 1430-line base byte-intact,
+1964 unique appended records sorted oldest to newest
+(`2026-08-21T08:10:01Z` -> `2026-08-26T23:05:04Z`). Verified zero lines lost
+from either side, and the boss reports the same 3 findings against the merged
+ledger.
+
+## [1.17.1] — 2026-08-26
+
+### Status line: the Wave bar could never clear, and counted prose as progress
+
+Two independent defects made the Wave bar report a dead project's status
+indefinitely, in every session, in every directory, in BOTH config stores
+(`~/.claude` and `~/.claude-nine` share one script, so both harnesses showed it).
+Observed live as `Wave 6 ██░░░░░░░░ 20%` ten days after that wave closed.
+
+- **Hardcoded foreign-project fallback removed.** The wave lookup fell back to
+  `$HOME/work-999-setup/FIX-LEDGER.md` when `$cwd` had no ledger — so a session
+  in ANY unrelated directory rendered this repo's wave. It now reads
+  `$cwd/FIX-LEDGER.md`, else the ledger at the **git repo root of `$cwd`**, and
+  never a hardcoded absolute path. Same defect class as the 1.16.3 boss-tools
+  portability fix, in the one script that pass missed.
+- **Closed waves no longer render.** Current wave was "highest `WAVE <n>`
+  mentioned", which a `WAVE <n> CLOSED` line does not change — so a finished
+  wave stayed on screen forever. Current wave is now the highest `WAVE <n>`
+  with NO `WAVE <n> CLOSED` line; all waves closed → segment omitted. The bar
+  now clears itself when the last wave closes.
+- **Prose no longer counts as workflows.** The deployed script matched
+  `grep -c "WF-<n>"` unanchored, so violation records, review findings and the
+  plan table all counted as workflow rows — the observed `20%` was 1 of 5
+  narrative paragraphs, not 1 of 5 workflows. Both numerator and denominator
+  now anchor on the `` - `WF-<n>x `` line class.
+- **Installer/deployed drift closed.** `scripts/setup-statusline.sh` already
+  carried the anchored match; `~/.claude/statusline-command.sh` did not, because
+  the installer was fixed but never re-run. The deployed script is now
+  regenerated from the installer heredoc and verified byte-identical to it.
+  SKILL.md and `references/progress-visibility.md` now state the rule: the
+  installer owns the body, the deployed copy is generated, verify with a
+  heredoc-extract diff.
+- **New doctrine — a progress bar that cannot clear itself is a lie.** Every bar
+  must have a condition under which it disappears, reachable from disk truth
+  alone. Bars pinned to a path outside `$cwd` are banned.
+- **Arithmetic hardening.** `grep` rc≥2 (unreadable file) yields an empty string,
+  not `0`; both counts now default before reaching an arithmetic test.
+
+Verified on the operator box with a five-case battery: home dir (bar gone), this
+repo with all waves closed (bar gone, Project bar intact), repo subdir
+(repo-root walk-up), a synthetic open wave (`Wave 7 ██████░░░░ 60%` — 3 of 5,
+correctly ignoring a plan-table row and a prose mention), and a
+highest-wave-closed fixture (falls through to the open lower wave).
+
+## [Candice 0.2.0] — 2026-08-21
+
 ## [Candice 1.0.0-rc.1] — 2026-08-22 (release candidate, not a release)
 
 Release-configuration repair for the Candice Companion app (FIX-022). All

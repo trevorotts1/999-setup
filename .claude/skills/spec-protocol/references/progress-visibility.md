@@ -252,10 +252,37 @@ whose ledger carries wave lines — the status line adds a wave segment:
 ```
 
 **Derivation.** The script looks for `FIX-LEDGER.md` at `$cwd/FIX-LEDGER.md` first, then at
-`$HOME/work-999-setup/FIX-LEDGER.md` (the master spec's named absolute ledger path,
-PART 2.1). Current wave = the highest `WAVE <n>` line; total = the `WF-<n>` workflow lines
-belonging to that wave; done = those carrying a PASS or DONE marker. No wave or workflow
-lines → the segment is OMITTED, never guessed.
+the **git repo root of `$cwd`**. It NEVER falls back to a hardcoded absolute path to a named
+project — a ledger outside the project you are in is ANOTHER project's status, and rendering
+it here is a false report.
+
+Current wave = **the highest `WAVE <n>` that has NO `WAVE <n> CLOSED` line.** A closed wave is
+history, not status. If every wave is closed there is no wave running and the segment is
+OMITTED — this is what lets the bar clear itself.
+
+Total = that wave's **workflow-completion lines** (the `` - `WF-<n>x `` class); done = those
+carrying a PASS or DONE marker. Numerator and denominator share the SAME class, so the
+locked-wave table row and log lines (DISPATCH / VIOLATION-STOP / CLOSED / REVIEW-FINDING)
+that merely MENTION a wave id are never counted as workflows. No wave or workflow lines
+→ the segment is OMITTED, never guessed.
+
+**Two defects this derivation exists to prevent** (both live on the operator box, 2026-08-26,
+in BOTH config stores):
+
+1. *The bar that could never clear.* The old hardcoded `$HOME/work-999-setup/FIX-LEDGER.md`
+   fallback meant every session in every directory rendered that one project's wave. Wave 6
+   there closed 2026-08-16 and the bar still read `Wave 6 ██░░░░░░░░ 20%` ten days later.
+   **Rule: every bar must have a reachable condition under which it disappears.**
+2. *Prose counted as progress.* The old unanchored `grep -c "WF-<n>"` matched any line
+   MENTIONING the wave — violation records, review findings, the plan table. The `20%` was
+   1 of 5 narrative paragraphs, not 1 of 5 workflows. **Rule: count a line class, anchored,
+   never a substring.**
+
+**Installer owns the body; the deployed script is generated.** `scripts/setup-statusline.sh`
+carries the script as a quoted heredoc and `~/.claude/statusline-command.sh` is its output.
+Fixing the installer WITHOUT re-running it leaves the running code stale — exactly how defect
+2 above survived: the installer had the anchored match, the deployed script did not. After any
+change, regenerate the deployed copy from the heredoc and diff the two.
 
 **Guardrails:** the bar counts ledger lines, and ledger lines are written only after
 verification (the boss enforces claim-vs-ledger). A workflow line without a PASS/DONE
