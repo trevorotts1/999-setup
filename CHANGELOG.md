@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.17.3] — 2026-08-27
+
+### Boss gates could not parse the ledger format their own writer emits
+
+The RESEARCH-READY and entry-mode gates matched ledger lines with `^...$`-anchored
+regexes against only two line shapes: bare (`BUILD-TARGET: WEBSITE`) and
+backtick-wrapped list items. Live projects write a THIRD shape — the timestamped
+pipe-delimited row, where the gate line is one field among several:
+
+    2026-08-24T12:00:18Z | BUILD-TARGET: WEBSITE | user words: "..." | confirmed: yes
+
+So the gate reported *"research dispatch-log row exists but NEITHER ledger line is
+present"* on a project whose `CONTROL/LEDGER.md` carried both lines, correctly, on
+lines 1 and 2 — every cycle, indefinitely. A gate that cannot parse the format its
+own writer emits produces false alarms, not findings, and a permanently-red board
+trains the operator to ignore it.
+
+New `ledger_candidates()` yields all three shapes; `ledger_line_value()` and the
+entry-mode matcher both read through it. Verified against the live project: the
+"NEITHER line present" finding is gone and the gate now proceeds to the citation
+comparison it was always meant to reach.
+
+**Not silenced — two findings remain open by design:**
+
+- `entry-mode`: the master fix spec requires an `ENTRY-MODE: interview|pointed`
+  ledger line, and the boss enforces it, but `ENTRY-MODE` appears **zero times**
+  in SKILL.md — the skill never writes it. The enforcement half shipped and the
+  writer half did not. Fixing this means teaching the skill to write the line, not
+  backfilling it into a finished project's ledger.
+- `research` citation drift: the dispatch rows cite
+  `INPUT-CAPTURED: 00-INPUT/RESEARCH-FINDINGS-…md` while the ledger's FIRST such
+  line reads `00-INPUT/BRAINSTORM-…md`. `ledger_line_value()` returns the first
+  match, but the gate's contract says the row must match the ledger's *current*
+  line. Whether a later re-capture legitimately supersedes the first, or is itself
+  the violation, is a semantics decision — left reporting rather than resolved.
+
 ## [1.17.2] — 2026-08-26
 
 ### Boss cron: liveness heartbeat split out of the tracked ledger
