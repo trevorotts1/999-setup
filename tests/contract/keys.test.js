@@ -71,15 +71,10 @@ check('registry keys are strictly unique', () => {
   assert.strictEqual(new Set(keys).size, keys.length, 'duplicate key in registry')
 })
 
-check('per-skill key lists are unique and match the keys array', () => {
+check('activeKeys exactly enumerate the active authority entries', () => {
   const data = readJson(KEYS_DATA)
-  for (const skill of SKILLS) {
-    const listed = data.skills[skill]
-    assert.ok(Array.isArray(listed), `skills.${skill} must be an array`)
-    assert.strictEqual(new Set(listed).size, listed.length, `duplicate in skills.${skill}`)
-    const fromKeys = data.keys.filter((k) => k.skill === skill).map((k) => k.key).sort()
-    assert.deepStrictEqual(listed.slice().sort(), fromKeys, `skills.${skill} must match keys entries`)
-  }
+  assert.deepStrictEqual(data.activeKeys.slice().sort(), data.keys.map((k) => k.key).sort())
+  for (const retired of data.retiredKeys) assert.ok(!data.activeKeys.includes(retired.key), `retired key ${retired.key} is active`)
 })
 
 check('every registry key matches the ^[A-Z][A-Z0-9_-]*$ pattern', () => {
@@ -103,12 +98,12 @@ check('every registry key produces a valid question event for its skill', () => 
       skill: k.skill,
       event: 'question',
       questionKey: k.key,
-      text: k.meaning,
+      text: k.display,
       answerKind: k.answerKind || 'free_text',
       allowedInputModes: ['voice', 'typed', 'terminal'],
-      readAloud: k.sensitivity === 'secret' ? false : true,
-      sensitivity: k.sensitivity || 'normal',
-      counted: !!k.counted,
+      readAloud: k.privacy.readAloud,
+      sensitivity: k.privacy.sensitivity,
+      counted: k.count.counted,
       progress: null,
       helpText: null,
       canGoBack: true,
@@ -127,7 +122,27 @@ check('BUILD_TARGET is the seeded spec-protocol key with spec 14 meaning', () =>
   assert.ok(bt, 'BUILD_TARGET must exist')
   assert.strictEqual(bt.skill, 'spec-protocol')
   assert.strictEqual(bt.answerKind, 'free_text')
-  assert.ok(bt.meaning.includes('their own words'), 'meaning carries the spec 14 wording')
+  assert.ok(bt.display.includes('your own words'), 'display carries the spec 14 wording')
+})
+
+// ————————————————————————————————
+// 4b. FIX-012 rulefix: CAPACITY_PLAN_DEEPSEEK is a tier question only —
+//     the direct-vs-Ollama half is a RULE, reported never asked
+// ————————————————————————————————
+
+check('CAPACITY_PLAN_DEEPSEEK never asks the direct-vs-Ollama question (R2 rule, reported)', () => {
+  const data = readJson(KEYS_DATA)
+  const k = data.keys.find((e) => e.key === 'CAPACITY_PLAN_DEEPSEEK')
+  assert.ok(k, 'CAPACITY_PLAN_DEEPSEEK must exist')
+  assert.strictEqual(k.answerKind, 'single_choice')
+  assert.strictEqual(k.options, null, 'tier options are runtime-filled (registry stores the shape only)')
+  for (const field of ['display', 'spoken']) {
+    assert.ok(!/direct one/i.test(k[field]), `${field} must not ask the direct-vs-Ollama question`)
+    assert.ok(!/Ollama/i.test(k[field]), `${field} must not mention Ollama`)
+  }
+  assert.ok(/plan/i.test(k.display), 'display asks the plan tier')
+  assert.ok(typeof k.report === 'string' && k.report.length > 0, 'report field carries the R2 rule')
+  assert.ok(/rule/i.test(k.report) && /never a question/i.test(k.report), 'report states the rule is never a question')
 })
 
 // ————————————————————————————————

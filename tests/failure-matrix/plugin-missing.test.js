@@ -26,22 +26,9 @@ const FALLBACK = path.join(__dirname, '..', '..', 'plugins', 'candice-integratio
 const { AskUserServer } = require(path.join(MCP, 'server'))
 const { AnswerSlotRegistry } = require(path.join(MCP, 'answer-registry'))
 const { FallbackCoordinator } = require(path.join(FALLBACK, 'fallback-coordinator'))
+const { canonicalQuestion } = require(path.join(__dirname, '..', '..', 'packages', 'candice-protocol', 'question-registry'))
 
-const Q = {
-  schemaVersion: '1.0',
-  sessionId: 'sess-plugin-missing',
-  skill: 'spec-protocol',
-  event: 'question',
-  questionKey: 'BUILD_TARGET',
-  text: 'Who is the application for?',
-  answerKind: 'free_text',
-  allowedInputModes: ['voice', 'typed', 'terminal'],
-  readAloud: false,
-  sensitivity: 'normal',
-  counted: true,
-  progress: null,
-  canGoBack: false,
-}
+const Q = canonicalQuestion({ sessionId: 'sess-plugin-missing', questionKey: 'BUILD_TARGET', skill: 'spec-protocol' }).question
 
 function lifecycleStub() {
   return {

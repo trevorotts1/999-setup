@@ -36,6 +36,7 @@
 import {
   COMPACT_EXPAND_MS,
   COMPACT_EXPANDED_CLASS,
+  COMPACT_INPUT_LABEL,
   COMPACT_REDUCED_MOTION_CLASS,
   COMPACT_ROOT_CLASS,
   COMPACT_STAGE_SLOT_ID,
@@ -62,7 +63,8 @@ export const COMPACT_STYLE_TEXT = `
   min-height: 0;
   position: relative;
   padding: 12px 16px;
-  font-size: 13px;
+  /* Scales with the text-size preference, like every other surface. */
+  font-size: calc(13px * var(--candice-text-scale, 1));
   line-height: 1.35;
   color: var(--candice-compact-text);
 }
@@ -75,11 +77,27 @@ export const COMPACT_STYLE_TEXT = `
   max-width: 280px;
   text-align: center;
   color: var(--candice-compact-muted);
+  /* FIX-008: this lane predates it. The window is transparent and always
+     on top, so text with no backdrop renders straight onto the user's
+     desktop -- the operator reported reading terminal scrollback through
+     a governed question. Token-based scrim, exactly as the captions,
+     answer-controls, PTT and animation-toggle lanes already do. */
+  background: var(--candice-ui-surface);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+/* The "display" in the rule below beats the user-agent [hidden] rule, so
+   setting .hidden = true alone cannot hide this element. */
+.candice-compact-hint[hidden] {
+  display: none;
 }
 .candice-compact-hint {
   max-width: 280px;
   text-align: center;
   color: var(--candice-compact-muted);
+  background: var(--candice-ui-surface);
+  border-radius: 8px;
+  padding: 4px 10px;
 }
 .candice-compact-surface {
   display: flex;
@@ -102,10 +120,17 @@ html.${COMPACT_REDUCED_MOTION_CLASS} .candice-compact-surface {
 }
 .candice-compact-btn {
   border: 0;
-  background: transparent;
+  background: var(--candice-ui-surface);
   color: var(--candice-compact-muted);
   font: inherit;
-  padding: 4px 8px;
+  /* 44px targets. Outside a published rectangle this window is
+     pointer-transparent, so an undersized control is not just fiddly --
+     a near miss clicks the desktop behind her. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 4px 10px;
   cursor: pointer;
 }
 .candice-compact-btn:hover {
@@ -117,9 +142,10 @@ html.${COMPACT_REDUCED_MOTION_CLASS} .candice-compact-surface {
   max-width: 100%;
   border: 1px solid var(--candice-compact-muted);
   border-radius: 8px;
-  background: transparent;
+  background: var(--candice-ui-surface);
   color: inherit;
   font: inherit;
+  min-height: 44px;
   padding: 6px 10px;
 }
 .candice-compact-input::placeholder {
@@ -209,18 +235,72 @@ export function createCompactView(
   talk.type = 'button';
   talk.className = 'candice-compact-btn';
   talk.textContent = 'Hold to talk';
+  // Press/release discipline, matching the hardened PTT lane.
+  //
+  // What was here: pointerdown / pointerup / pointerleave and nothing else.
+  // Three gaps, and the microphone is the worst place in the app to have
+  // them:
+  //   - `pointercancel` was unhandled. The OS cancels a pointer for its own
+  //     reasons mid-hold, and the controller's `talkHeld` then stayed true
+  //     with no release ever coming -- an open microphone stuck open.
+  //   - release OUTSIDE the button never reached it. Only `pointerleave`
+  //     saved it, and only if the pointer crossed the edge first.
+  //   - there was no keyboard path AT ALL. Space and Enter on a <button>
+  //     fire `click`, never `pointerdown`, so a keyboard-only user could
+  //     not speak.
+  let talkHeld = false;
+  const beginTalk = (): void => {
+    if (talkHeld) return;
+    talkHeld = true;
+    talk.setAttribute('aria-pressed', 'true');
+    handlers.onTalkToggle(true);
+  };
+  const endTalk = (): void => {
+    if (!talkHeld) return;
+    talkHeld = false;
+    talk.setAttribute('aria-pressed', 'false');
+    handlers.onTalkToggle(false);
+  };
+  talk.setAttribute('aria-pressed', 'false');
   talk.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    handlers.onTalkToggle(true);
+    // Capture routes the release back here even if the pointer has moved
+    // off the button by then.
+    try { talk.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
+    beginTalk();
   });
-  talk.addEventListener('pointerup', () => handlers.onTalkToggle(false));
-  talk.addEventListener('pointerleave', () => handlers.onTalkToggle(false));
+  talk.addEventListener('pointerup', endTalk);
+  talk.addEventListener('pointercancel', endTalk);
+  talk.addEventListener('lostpointercapture', endTalk);
+  talk.addEventListener('pointerleave', endTalk);
+  talk.addEventListener('keydown', (e) => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (e.repeat) return;
+    e.preventDefault(); // or Space also scrolls and Enter also clicks
+    beginTalk();
+  });
+  talk.addEventListener('keyup', (e) => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    endTalk();
+  });
+  // Focus lost mid-hold must not leave the mic open.
+  talk.addEventListener('blur', endTalk);
 
   const input = d.createElement('input');
   input.type = 'text';
   input.className = 'candice-compact-input';
-  input.placeholder = 'Type a question or /bro, /eli5';
+  // Slash commands are how the OPERATOR drives Claude Code; a client typing
+  // to Candice has no idea what /bro or /eli5 are, and a placeholder is not
+  // the place to teach them.
+  input.placeholder = 'Type a message…';
+  // A STABLE accessible name, independent of the visible placeholder. The
+  // packaged suite locates this field by its accessibility label, and with no
+  // aria-label that label was the placeholder text — so a copy edit silently
+  // broke a ship gate. Test locators must not be user-visible prose.
+  input.setAttribute('aria-label', COMPACT_INPUT_LABEL);
   input.addEventListener('keydown', (e) => {
+    // An IME commits its composition with Enter. See answer-controls/view.ts.
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') {
       const text = input.value.trim();
       if (text !== '') {
@@ -245,9 +325,30 @@ export function createCompactView(
   const mute = d.createElement('button');
   mute.type = 'button';
   mute.className = 'candice-compact-btn';
-  mute.textContent = 'Unmute';
+  // The state used to be recovered by comparing the button's own visible
+  // label against the word Unmute, so any copy edit silently inverted the
+  // control, and assistive tech was told nothing at all. Real state now,
+  // plus aria-pressed so a screen reader can read it.
+  let muted = true;
+  const renderMute = (): void => {
+    // The visible word is the ACTION; the accessible name is the STATE.
+    // They were the same string before, and that inverted the control for
+    // anyone using a screen reader: a muted button labelled "Unmute" with
+    // aria-pressed="true" is announced as "Unmute, pressed" -- which reads
+    // as "unmute is engaged", i.e. sound is ON, the exact opposite of the
+    // truth. A name that is a verb cannot carry a pressed state.
+    //
+    // The state wording is the app's existing pair from
+    // ANSWER_CONTROLS_LABELS, copied rather than imported to keep the
+    // lanes independent, and pinned equal by a test so they cannot drift.
+    mute.textContent = muted ? 'Unmute' : 'Mute';
+    mute.setAttribute('aria-label', muted ? 'Voice responses OFF' : 'Voice responses ON');
+    mute.setAttribute('aria-pressed', String(!muted));
+  };
+  renderMute();
   mute.addEventListener('click', () => {
-    mute.textContent = mute.textContent === 'Unmute' ? 'Mute' : 'Unmute';
+    muted = !muted;
+    renderMute();
     handlers.onMuteToggle();
   });
 
@@ -261,9 +362,50 @@ export function createCompactView(
   toClaude.textContent = 'Return to Claude';
   toClaude.addEventListener('click', () => handlers.onReturnToClaude());
 
+  // Expansion was ONLY a click handler on the root div: not focusable, no
+  // role, no keyboard path -- so a keyboard or screen-reader user could
+  // never open the interaction surface at all. The root click stays,
+  // because spec 16 says clicking compact Candice expands her; this adds
+  // a real control beside it for everyone who is not using a mouse.
+  const expand = d.createElement('button');
+  expand.type = 'button';
+  expand.className = 'candice-compact-btn';
+  expand.textContent = 'Open';
+  expand.setAttribute('aria-expanded', 'false');
+  expand.addEventListener('click', () => handlers.onExpandToggle());
+
+  /**
+   * Collapsed means UNREACHABLE, not merely faded out.
+   *
+   * The collapsed rule is `opacity: 0; pointer-events: none`. That stops
+   * the mouse and nothing else: every control inside stayed in the tab
+   * order and in the accessibility tree. A keyboard user tabbing past
+   * "Open" landed on five controls they could not see -- and Space on the
+   * first of them is HOLD TO TALK, so it opened the microphone with
+   * nothing on screen to say so. `aria-expanded="false"` was
+   * simultaneously telling assistive tech the content was closed.
+   *
+   * `inert` removes focusability and AT exposure together. `aria-hidden`
+   * is the backstop for an engine that has not shipped `inert` yet; it
+   * cannot remove focusability on its own, which is why both are set.
+   */
+  const setSurfaceReachable = (reachable: boolean): void => {
+    // set/removeAttribute rather than toggleAttribute: the same two calls
+    // work in every engine and in the lane's own test double, which
+    // implements the attribute pair and not the newer helper.
+    if (reachable) {
+      surface.removeAttribute('inert');
+    } else {
+      surface.setAttribute('inert', '');
+    }
+    surface.setAttribute('aria-hidden', String(!reachable));
+  };
+
   actions.append(talk, input, send, mute);
   surface.append(actions, pendingEl, toClaude);
-  root.append(slot, statusEl, hintEl, surface);
+  // The view is born collapsed, so the surface starts unreachable too.
+  setSurfaceReachable(false);
+  root.append(slot, statusEl, expand, hintEl, surface);
   mount.append(root);
 
   root.addEventListener('click', (e) => {
@@ -282,6 +424,9 @@ export function createCompactView(
     isExpanded: () => root.classList.contains(COMPACT_EXPANDED_CLASS),
     setExpanded: (expanded: boolean) => {
       root.classList.toggle(COMPACT_EXPANDED_CLASS, expanded);
+      expand.setAttribute('aria-expanded', String(expanded));
+      expand.textContent = expanded ? 'Close' : 'Open';
+      setSurfaceReachable(expanded);
     },
     setStatus: (view: CompactStatusView) => {
       root.setAttribute(COMPACT_STATUS_ATTR, view.family);

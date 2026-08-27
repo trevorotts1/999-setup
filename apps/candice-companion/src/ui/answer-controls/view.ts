@@ -42,15 +42,22 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   --candice-ac-text: var(--candice-text, #eceaf3);
   --candice-ac-muted: var(--candice-muted, #a8a3b8);
   --candice-ac-accent: var(--candice-accent, #7c5cff);
+  /* FIX-008: accent applied to TEXT needs the AAA-safe tint. */
+  --candice-ac-accent-text: var(--candice-accent-text, #b9a8ff);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   max-width: 420px;
   padding: 12px 16px;
-  font-size: 14px;
+  /* FIX-014: consume the a11y text-scale token (spec 9 text size). */
+  font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.35;
   color: var(--candice-ac-text);
+  /* FIX-008: opaque backdrop over the transparent window. */
+  background: var(--candice-ui-surface, #171321);
+  border: 1px solid var(--candice-ui-border, #beb0ff);
+  border-radius: 10px;
 }
 .candice-answer-methods {
   display: flex;
@@ -58,6 +65,14 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
+}
+/* When there is no speech-to-text engine on this machine the PTT control
+   is never created, leaving this slot empty. An empty flex child still
+   collects the row's 10px gap and pushes a centre-justified row off
+   centre, so take it out of layout entirely rather than leaving a
+   phantom column beside the type box. */
+#candice-ptt-slot:empty {
+  display: none;
 }
 .candice-answer-type {
   min-width: 260px;
@@ -70,7 +85,8 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   min-width: 160px;
   border: 1px solid var(--candice-ac-muted);
   border-radius: 10px;
-  background: transparent;
+  /* FIX-008: opaque so the typed answer is readable over any desktop. */
+  background: var(--candice-ui-surface, #171321);
   color: inherit;
   font: inherit;
   padding: 10px 12px;
@@ -81,7 +97,10 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 .candice-answer-submit {
   border: 1px solid var(--candice-ac-accent);
   border-radius: 999px;
-  background: transparent;
+  /* FIX-008: an opaque fill reads as an ENABLED control. Transparent over a
+     bright desktop read as a disabled ghost, which is a false affordance:
+     the model enables this button whenever delegate mode is inactive. */
+  background: var(--candice-ui-surface, #171321);
   color: inherit;
   font: inherit;
   font-weight: 600;
@@ -95,20 +114,24 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 }
 .candice-answer-link {
   border: 0;
-  background: transparent;
+  /* FIX-008: opaque backdrop; this is a real action, not decoration. */
+  background: var(--candice-ui-surface, #171321);
   color: var(--candice-ac-muted);
   font: inherit;
   padding: 4px 6px;
+  border-radius: 6px;
   cursor: pointer;
 }
 .candice-answer-link:hover {
-  color: var(--candice-ac-accent);
+  color: var(--candice-ac-accent-text);
   text-decoration: underline;
 }
 .candice-answer-toggle {
   border: 1px solid var(--candice-ac-muted);
   border-radius: 999px;
-  background: transparent;
+  /* FIX-008: opaque backdrop; the muted colour is the OFF state, not a
+     disabled state, and it stays AAA against this surface. */
+  background: var(--candice-ui-surface, #171321);
   color: var(--candice-ac-muted);
   font: inherit;
   padding: 6px 14px;
@@ -116,7 +139,7 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
 }
 .candice-answer-toggle[data-voice-on='true'] {
   border-color: var(--candice-ac-accent);
-  color: var(--candice-ac-accent);
+  color: var(--candice-ac-accent-text);
 }
 .candice-answer-confirm {
   display: flex;
@@ -132,6 +155,117 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   max-width: 380px;
   text-align: center;
   color: var(--candice-ac-muted);
+}
+/* Choice questions ship their answer values in the registry. Before this the
+   webview dropped them and rendered a bare text box, so the user had to type a
+   value they had never been shown. These are big, obvious tap targets. */
+.candice-answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+.candice-answer-options[hidden] {
+  display: none;
+}
+.candice-answer-option {
+  border: 1px solid var(--candice-ac-accent);
+  border-radius: 999px;
+  background: var(--candice-ui-surface, #171321);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 18px;
+  /* 44px is the Apple HIG minimum touch/pointer target. At 40 these pills sat
+     just under it, 8px apart, in a floating always-on-top window -- which is
+     a large part of what "the options were hard to select" meant. */
+  min-height: 44px;
+  min-width: 64px;
+  cursor: pointer;
+  /* Option text is a raw registry value and can be a sentence or a path. With
+     no wrapping, one long option renders wider than the 420px window, and the
+     body's overflow:hidden then clips it into pixels nobody can click. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+/* A click submits and the surface is torn down a moment later. Between those
+   two events the pills previously looked untouched, so a slow answer read as
+   a dead button and invited a second click on a different option. */
+.candice-answer-option[data-candice-option-chosen='true'] {
+  background: var(--candice-ac-accent);
+  color: var(--candice-ui-surface, #171321);
+  opacity: 1;
+}
+.candice-answer-option:disabled:not([data-candice-option-chosen='true']) {
+  opacity: 0.45;
+  cursor: default;
+}
+.candice-answer-footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+/* USE ANSWER / EDIT / TRY AGAIN had NO rule of any kind, so three
+   inline-block siblings with no text nodes between them rendered
+   touching. On the one surface whose entire job is confirmation, a
+   three-pixel miss on USE ANSWER landed on TRY AGAIN and threw the
+   transcript away. */
+/* Spec 5.1 renders the remembered answer method as the active control.
+   The marker was being WRITTEN (data-active on the input) and no rule
+   anywhere referenced it, so it painted nothing at all -- the control
+   for a sibling marker, data-candice-option-chosen, has rules above.
+   A border tint is enough: it must not read as a lock, because the
+   remembered method is a convenience and never a restriction. */
+.candice-answer-input[data-active='true'] {
+  border-color: var(--candice-ac-accent);
+}
+.candice-answer-confirm-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+/* Click targets. The window is pointer-transparent outside a published
+   rectangle and REGION_PADDING is only 4px, so a small control is not
+   merely fiddly here -- a near miss goes THROUGH Candice to whatever is
+   behind her. The option pills already carry min-height 44px; these are
+   the remaining interactive controls in this surface. */
+.candice-answer-submit,
+.candice-answer-link,
+.candice-answer-toggle {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+/* An unbroken token (a URL or a path read back from EDIT) overflowed the
+   opaque card onto the transparent window, where it sat over the raw
+   desktop and outside the published rectangle. */
+.candice-answer-transcript {
+  overflow-wrap: anywhere;
+}
+.candice-answer-option:hover {
+  /* Border-colour alone was almost invisible against this palette, so a
+     choice gave no feedback that it was even hoverable. */
+  border-color: var(--candice-ac-accent-text);
+  background: var(--candice-ac-accent-text);
+  /* Was var(--candice-ac-surface), which is defined NOWHERE in this
+     repo. An undefined custom property makes the whole declaration
+     invalid at computed-value time, so the pill kept the inherited
+     near-white --candice-ac-text on the light --candice-ac-accent-text
+     hover background: about 1.9:1. The label washed out at the exact
+     moment the user was aiming at it, which reads as a disabled button.
+     Mirrors the chosen-state rule above. */
+  color: var(--candice-ui-surface, #171321);
+}
+.candice-answer-option:focus-visible {
+  outline: 2px solid var(--candice-ac-accent-text);
+  outline-offset: 2px;
 }
 `;
 
@@ -153,6 +287,8 @@ export function mountAnswerControlsStyle(): void {
 export interface AnswerControlsViewHandlers {
   /** User pressed ENTER or clicked submit in the type box. */
   onTypeAnswer(text: string): void;
+  /** User picked one of the registry options for a choice question. */
+  onChooseOption(value: string): void;
   /** User chose the terminal/Claude path (spec 5.1). */
   onDelegateToClaude(): void;
   /** User toggled voice responses ON/OFF (spec 5.2). */
@@ -170,7 +306,61 @@ export interface AnswerControlsView {
   setModel(model: AnswerControlsModel): void;
   /** Attach the PTT control into the answer surface (one slot). */
   attachPtt(mount: HTMLElement): void;
+  /** Render the choice buttons for a choice question; null hides the row. */
+  showOptions(options: readonly string[] | null): void;
   destroy(): void;
+}
+
+/**
+ * FORMATTING fixes for option values, never re-wordings.
+ *
+ * The rule this table lives under is deliberate and is asserted by
+ * options.test.ts: `optionLabel` "never invents wording, because inventing
+ * a label would show the user a choice the registry does not define". That
+ * is right, and the reason matters -- a label that says something other
+ * than the value risks a client agreeing to something they did not pick.
+ *
+ * So this table is limited to cases where the MEANING is untouched and
+ * only the presentation was wrong: the casing of a product name, and a
+ * price that de-hyphenated into "$40 year".
+ *
+ * It deliberately does NOT rescue the hosting options, which de-hyphenate
+ * into "Simple ghl", "Simple vercel", "Complex vercel" and "Complex vercel
+ * then embedded". Those genuinely are unusable for a non-technical client
+ * -- but rewriting them means asserting what each one routes to, and
+ * getting that wrong is worse than a confusing label. They need per-option
+ * labels authored in the REGISTRY by whoever owns the routing. Recorded in
+ * CONTROL/TODO.md.
+ *
+ * Display only: the submitted VALUE is always the registry string (see
+ * `dataset.candiceOptionValue` below).
+ */
+const OPTION_LABELS: Readonly<Record<string, string>> = {
+  // Product names. "Claude code" and "Claude nine" are simply misspelt.
+  'claude-code': 'Claude Code',
+  'claude-nine': 'Claude-Nine',
+  // "$40 year" is not how a price is written or said.
+  '$40-year': '$40 a year',
+  '$100-year': '$100 a year',
+};
+
+/**
+ * Human-readable label for a registry option value.
+ *
+ * Registry options are answer VALUES, not display copy: `provided-material`
+ * is what the protocol accepts, and showing that raw is barely better than a
+ * blank box. Beyond the explicit table above this only re-cases and
+ * de-hyphenates -- it never invents wording for an unknown value, because
+ * inventing a label would show the user a choice the registry does not
+ * define. Values that are already prose (`I don't know`) pass through.
+ */
+export function optionLabel(value: string): string {
+  const known = OPTION_LABELS[value];
+  if (typeof known === 'string') return known;
+  const spaced = value.replace(/[-_]+/g, ' ').trim();
+  if (spaced.length === 0) return value;
+  if (/[A-Z]/.test(spaced) || /\s/.test(value)) return spaced;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /** Empty no-op view — DOM absence must never throw (spec 20). */
@@ -179,6 +369,7 @@ function nullView(): AnswerControlsView {
     el: null,
     setModel() {},
     attachPtt() {},
+    showOptions() {},
     destroy() {},
   };
 }
@@ -202,6 +393,15 @@ export function createAnswerControlsView(
 
   // Method row: the PTT slot + type answer. The PTT control is mounted by
   // the PTT lane into the slot below; this lane never re-implements it.
+  const optionsRow = document.createElement('div');
+  optionsRow.className = 'candice-answer-options';
+  optionsRow.hidden = true;
+  // Without these the options are a run of unrelated buttons: assistive
+  // technology has no way to say that they belong together or that they
+  // are the answers to the question sitting in the caption above them.
+  optionsRow.setAttribute('role', 'group');
+  optionsRow.setAttribute('aria-label', 'Answer choices');
+
   const methods = document.createElement('div');
   methods.className = 'candice-answer-methods';
 
@@ -273,23 +473,40 @@ export function createAnswerControlsView(
 
   methods.append(pttSlot, typeWrap);
   typeWrap.append(input, submit);
-  root.append(methods, footer, confirm);
+  // Choices sit ABOVE the answer methods: when a question has options, picking
+  // one is the intended path and typing is the fallback, not the reverse.
+  root.append(optionsRow, methods, footer, confirm);
 
   mount.append(root);
 
   let destroyed = false;
+  /** The option values currently painted, so an unchanged list is not rebuilt. */
+  let renderedOptions: string[] | null = null;
 
   const submitTyped = (): void => {
+    // Render gate already disabled the input; guard again so a stale
+    // handler can never submit outside a question surface (I-12).
+    if (input.disabled) return;
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
     handlers.onTypeAnswer(text);
   };
   input.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') submitTyped();
+    const key = e as KeyboardEvent;
+    // An IME (Japanese, Chinese, Korean) uses Enter to COMMIT the characters
+    // being composed. Submitting on that Enter sends a half-composed answer
+    // and closes the surface, so the user never gets to finish the word.
+    // `isComposing` is exactly this distinction; 229 is the legacy keyCode
+    // browsers report while a composition is active.
+    if (key.isComposing || key.keyCode === 229) return;
+    if (key.key === 'Enter') submitTyped();
   });
   submit.addEventListener('click', submitTyped);
-  delegate.addEventListener('click', () => handlers.onDelegateToClaude());
+  delegate.addEventListener('click', () => {
+    if (delegate.disabled) return; // I-12: disabled path never delegates
+    handlers.onDelegateToClaude();
+  });
   voice.addEventListener('click', () => handlers.onVoiceToggle());
   use.addEventListener('click', () => {
     // Render gate already disabled the button; guard again so a stale
@@ -297,7 +514,30 @@ export function createAnswerControlsView(
     if (!canConfirm) return;
     handlers.onConfirmUse();
   });
-  edit.addEventListener('click', () => handlers.onConfirmEdit());
+  edit.addEventListener('click', () => {
+    // EDIT was a dead button. The controller routes it to
+    // `options.editTranscript?.(...)`, and bridge.ts -- the only place that
+    // builds this controller in production -- never passes that callback, so
+    // clicking EDIT did nothing at all. The surface that WAS built for it
+    // (src/ui/transcript) has no importer anywhere outside its own tests.
+    //
+    // The edit affordance already exists on screen: the type box, whose
+    // submit is a confirmed answer path in its own right. So EDIT now does
+    // the obvious thing -- puts what she heard into the box, ready to be
+    // corrected -- instead of nothing. The machine still stays in
+    // `confirming` via the handler below; nothing is submitted here.
+    const heard = transcript.textContent ?? '';
+    if (heard !== '' && !input.disabled) {
+      input.value = heard;
+      try {
+        input.focus();
+        input.setSelectionRange(heard.length, heard.length);
+      } catch {
+        // Focus is a courtesy; the text is already in the box.
+      }
+    }
+    handlers.onConfirmEdit();
+  });
   retry.addEventListener('click', () => handlers.onConfirmTryAgain());
 
   let canConfirm = false;
@@ -305,6 +545,15 @@ export function createAnswerControlsView(
   const setModel = (model: AnswerControlsModel): void => {
     if (destroyed) return;
     root.setAttribute('data-candice-state', model.inQuestionFlow ? 'question' : 'off-question');
+    // FIX-014 (I-12): the model's usability claims now become real DOM
+    // protections — a disabled control can never start an answer path.
+    // Both methods stay VISIBLE on every question (spec 5.1); usability
+    // only gates interaction, never presence.
+    const typedDisabled = !model.typedUsable;
+    input.disabled = typedDisabled;
+    submit.disabled = typedDisabled;
+    delegate.disabled = !model.delegateUsable;
+    pttSlot.setAttribute('aria-disabled', String(!model.pttUsable));
     // Both methods always present on every question (spec 5.1); the
     // convenience only marks the active one, never hides the other.
     input.setAttribute(
@@ -323,7 +572,14 @@ export function createAnswerControlsView(
     const showRow = model.showConfirmRow;
     canConfirm = model.canConfirm;
     confirm.hidden = !showRow;
-    transcript.textContent = showRow ? String(model.transcript ?? '') : '';
+    // Only write when it actually changed. This is a role=status live
+    // region, and every controller handler ends in render() -- so a voice
+    // toggle, a PTT press, any machine transition re-assigned identical
+    // text, which still replaces the text node, which a screen reader
+    // still announces. "Here is what I heard..." was being read out again
+    // and again, over the speech it was meant to accompany.
+    const nextTranscript = showRow ? String(model.transcript ?? '') : '';
+    if (transcript.textContent !== nextTranscript) transcript.textContent = nextTranscript;
     use.disabled = !canConfirm;
     root.classList.toggle('candice-answer-confirming', model.confirming);
   };
@@ -333,6 +589,48 @@ export function createAnswerControlsView(
     setModel,
     attachPtt(inner: HTMLElement): void {
       pttSlot.replaceChildren(inner);
+    },
+    showOptions(list: readonly string[] | null): void {
+      if (destroyed) return;
+      if (list === null || list.length === 0) {
+        optionsRow.hidden = true;
+        optionsRow.replaceChildren();
+        renderedOptions = null;
+        return;
+      }
+      // Every handler in the controller ends in render(), and render() calls
+      // this. Rebuilding an unchanged list on every voice toggle, PTT press
+      // and retry threw away keyboard focus that was sitting on an option,
+      // and -- worse -- a mousedown and mouseup that straddled a rebuild
+      // landed on two different nodes, so no click event fired at all. A
+      // silently swallowed selection is a large part of what "the options are
+      // hard to select" meant.
+      const unchanged = renderedOptions !== null
+        && renderedOptions.length === list.length
+        && renderedOptions.every((v, i) => v === list[i]);
+      if (unchanged && !optionsRow.hidden) return;
+      renderedOptions = [...list];
+      const buttons = list.map((value) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'candice-answer-option';
+        b.textContent = optionLabel(value);
+        // The LABEL is humanized for reading; the submitted VALUE is always
+        // the registry string, never the prettified text.
+        b.dataset.candiceOptionValue = value;
+        b.addEventListener('click', () => {
+          // Mark the choice and close the others BEFORE handing off. The
+          // controller submits synchronously and the bridge tears the surface
+          // down afterwards; until then the user is looking at pixels that
+          // must already say "got it".
+          for (const other of buttons) other.disabled = true;
+          b.dataset.candiceOptionChosen = 'true';
+          handlers.onChooseOption(value);
+        });
+        return b;
+      });
+      optionsRow.replaceChildren(...buttons);
+      optionsRow.hidden = false;
     },
     destroy(): void {
       destroyed = true;

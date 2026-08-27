@@ -63,13 +63,35 @@ async function main() {
   })
 
   // ---- TTS: Kokoro unavailable -> system fallback not fabricated. ----
-  check('TTS: system fallback reports unavailable until a platform adapter is wired (never a fake fallback)', () => {
-    assert.equal(isSystemTtsAvailable(), false, 'no platform adapter has registered — capability must not be invented')
+  // N1 fix (fan-in): FAIL-2 made the default probe a REAL macOS `say`
+  // check, so the no-argument probe is host-dependent. The "capability
+  // must not be invented" invariant is proven with an INJECTED false probe
+  // (the DI seam `probe?: SystemTtsProbe`) — that is the platform-less
+  // scenario this leg owns — plus one real-probe assertion that the wired
+  // macOS path reports honestly on this host.
+  check('TTS: system fallback refuses when the injected probe says unavailable (never a fake fallback)', () => {
+    assert.equal(isSystemTtsAvailable(() => false), false, 'an unwired platform must not report capability')
+  })
+
+  check('TTS: real default probe reports the honest host fact (macOS say present here)', () => {
+    // Truth assertion, not a hard true/false: the value must MATCH reality.
+    const expected = process.platform === 'darwin'
+    assert.equal(isSystemTtsAvailable(), expected, 'default probe must reflect the host OS truthfully')
   })
 
   await checkAsync('TTS: speakWithSystemTts fails closed with engine-unavailable (captions-only rung)', async () => {
-    const r = await speakWithSystemTts('hello candice')
+    const r = await speakWithSystemTts('hello candice', { probe: () => false })
     assert.deepEqual(r, { ok: false, reason: 'engine-unavailable' })
+  })
+
+  await checkAsync('TTS: speakWithSystemTts honors a working injected speaker without inventing audio', async () => {
+    let spoken = ''
+    const r = await speakWithSystemTts('probe text', {
+      probe: () => true,
+      speak: async (text) => { spoken = text; return true },
+    })
+    assert.deepEqual(r, { ok: true, usedFallback: true })
+    assert.equal(spoken, 'probe text')
   })
 
   finish('SPEECH-MODEL-MISSING')

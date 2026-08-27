@@ -13,11 +13,12 @@ Implements the E.1 WS-33 acceptance criteria legs that live in this glob:
 
 | File | Purpose |
 |---|---|
-| `components.mjs` | The registry. `PUBLISHED_PAYLOADS` (verified download hashes) + `REPO_TREE_COMPONENTS` (repo-checkout installs with version pins) + `RUNTIME_PINS` + version-comparison primitives (`compareVersions`, `isNewer`, `isDowngrade`). |
+| `components.mjs` | The active registry. `PUBLISHED_PAYLOADS` (currently authorized non-app download hashes) + `REPO_TREE_COMPONENTS` (non-application repo-checkout installs with version pins) + `RUNTIME_PINS` + version-comparison primitives (`compareVersions`, `isNewer`, `isDowngrade`). |
 | `verify.mjs` | Payload verifier. SHA-256 + size check against the registry; refuses any payload with no record (fail closed). Exit 0/1/2. |
 | `gate.mjs` | Downgrade gate. Rejects `candidate < installed` unless `--allow-downgrade`. Exit 0/1/2. |
 | `build-manifest.mjs` | Emits the `CONTROL/bundled-components.json` fragment (PROPOSAL — 9.4 manifest owner applies; this lane never writes CONTROL/**). |
-| `__tests__/` | `node --test` suite — 25 tests green (registry integrity, verifier fail-closed paths, version math, download-gate refusals, atomic install + rollback). |
+| `quarantined-payloads.mjs` | Audit-only historical application payload records. They are not published, resolver-visible, or updater-resolvable. |
+| `__tests__/` | `node --test` suite — registry integrity, verifier fail-closed paths, version math, download-gate refusals, atomic install + rollback. |
 
 ## Verification basis (2026-08-21, all primary-source)
 
@@ -28,17 +29,22 @@ Every `PUBLISHED_PAYLOADS` sha256 was verified live:
 | `ggml-tiny.en-q5_1.bin` (32,166,155 B) | `c77c5766…66c7c2b` | WS-16 record; re-downloaded + `shasum -a 256` match |
 | `whisper-bin-x64.zip` (8,194,445 B) | `49dcc16d…4d674a` | WS-16 record; re-downloaded + shasum match |
 | `whisper-bin-Win32.zip` (5,189,502 B) | `de170719…a7cf8f22` | WS-16 record; re-downloaded + shasum match |
-| `Candice Companion_0.2.0_aarch64.dmg` (2,686,932 B) | `f24f4bcb…b0dbaf` | integrated 0.2.0 build 2026-08-22: `npx tauri build` exit 0 in `worktrees/wr001-bootstrap`, `shasum -a 256` on the produced DMG (app CFBundleShortVersionString 0.2.0, Mach-O arm64; unsigned/adhoc — WS-23 zero Developer ID identities) |
-| `Candice Companion_0.2.0_x64-setup.exe` | placeholder (64 zeros) | NSIS hash owed from Windows build — cannot be built on this macOS host (recorded limitation); fail-closed until the 9.4 release owner computes it from the Windows CI build |
 | `kokoro-v1.0.fp16.onnx` (163,527,961 B) | `f3a290d3…77ac96` | WS-19 record; re-downloaded + shasum match |
 | `kokoro-v1.0.int8.onnx` (114,119,327 B) | `ae315a79…70ee9c` | WS-19 record (same upstream release) |
 | `voices-v1.0.bin` (28,214,398 B) | `bca610b8…f1fbf7d` | WS-19 record; re-downloaded + shasum match |
 
-`verify.mjs` was run against the four live-downloaded payloads (tiny.en, x64
-zip, kokoro fp16, dmg) — all four `OK`, exit 0. On 2026-08-22 the 0.2.0 DMG
-hash was replaced with the real integrated-build hash (see table); the
-win32 NSIS entry stays a fail-closed placeholder until a Windows build
-produces the installer.
+`verify.mjs` was run against the non-application payloads named above. The
+application is intentionally excluded until a new signed candidate passes the
+release authority.
+
+## Quarantined historical application records
+
+The historical 0.2.0 DMG and Windows setup records are retained only in
+`quarantined-payloads.mjs` for audit traceability. They are **not** active
+`PUBLISHED_PAYLOADS`, are not emitted into `bundled-components.json`, and the
+download front door rejects every custom manifest for `candice-companion`
+before network access. The unsigned/adhoc DMG and unverified Windows setup
+must never be described as current release artifacts.
 
 ## Scope discipline / non-fabrication note
 

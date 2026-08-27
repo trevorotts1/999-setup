@@ -1,9 +1,12 @@
-# Candice Companion 0.2.0 — first integrated release
+# Candice Companion 0.2.0 — withdrawn historical draft
 
-Release date: 2026-08-21. Tag: `candice-v0.2.0` (namespaced; a bare `v0.2.0`
-would collide with the repo-wide `v1.x` tag series).
+> **QUARANTINED — NOT A RELEASE.** No `candice-v0.2.0` application payload is
+> authorized for download, installation, or update. The previous release
+> claim and its app checksum references were withdrawn during the release
+> authority repair. Nothing below is evidence that an app shipped; it is an
+> unverified implementation-history draft retained only for audit context.
 
-## What shipped
+## Historical implementation claims (not release evidence)
 
 - **App shell (WS-06/WS-07)**: Tauri 2 shell launches from prebuilt artifacts on macOS Apple Silicon and Windows x64 with no build toolchain on the customer machine; transparent, frameless, always-on-top window, no baked terminal/UI background.
 - **Session bridge (WS-02/WS-03)**: plugin manifest + wake-up hooks for /spec-protocol, /kaizen, /eli5, /bro; begin_session/end_session lifecycle binds the app to the Claude session ID — session identity is the routing authority, never the window.
@@ -17,7 +20,7 @@ would collide with the repo-wide `v1.x` tag series).
 - **Updater (WS-33)**: bundled-component registry with SHA-256 checksums, operator-controlled download sources only, atomic install, rollback, downgrade rejection.
 - **Boss tools (WS-48)**: portable paths, no developer-specific absolute home paths, config-driven campaign data.
 
-## Skill versions
+## Historical proposed version mapping (not install authority)
 
 - spec-protocol 1.16.3 -> 1.17.0
 - nine-router-setup 1.16.3 -> 1.17.0
@@ -41,11 +44,8 @@ would collide with the repo-wide `v1.x` tag series).
    Windows x64 capture is owed at WS-46 interactive smoke.
 4. **Interactive Windows 10/11 desktop smoke owed (WS-46)**: Windows is not
    labeled production-ready until the interactive smoke completes (spec 18).
-5. **Release-artifact checksums**: the 0.2.0 DMG SHA-256 in
-   `CONTROL/bundled-components.json` is now the real integrated-build hash
-   (`f24f4bcb…b0dbaf`, 2,686,932 B — computed 2026-08-22 from the 0.2.0
-   `npx tauri build` artifact; unsigned/adhoc, signing remains late-bound).
-   The NSIS installer hash is still a fail-closed placeholder: **NSIS hash
-   owed from Windows build** — the installer cannot be built on this macOS
-   host. The updater refuses the placeholder until the 9.4 release owner
-   computes the real hash from the Windows CI build.
+5. **Withdrawn artifact checksum statement**: any former 0.2.0 DMG/NSIS
+   checksum mentioned here is quarantined and must not be copied into a
+   manifest, trusted as a release artifact, or used by an installer. A future
+   release requires a newly generated immutable manifest and independent
+   release-authority approval.

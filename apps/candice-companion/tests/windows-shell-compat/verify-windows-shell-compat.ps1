@@ -11,14 +11,48 @@
 #
 # Windows-only by design (exit 2 elsewhere). Writes only its own fixture
 # output. Safe to run repeatedly.
+#
+# FIX-021 semantics: a required check that FAILED exits nonzero and the CI
+# job blocks on it (no continue-on-error). A required check that cannot run
+# on this host class exits 0 as BLOCKED with a machine-readable reason; the
+# release gate refuses evidence missing that BLOCKED row.
+#
+# CI mode (-StateDir <dir>): launcher discovery checks run against
+# provisioned fixture shims under the scratch dir (a bare runner has no
+# launchers on PATH); `claude` binary discovery and PS 7 presence are
+# host-class checks and record BLOCKED rows. Without -StateDir, missing
+# launchers are SKIPs (exit 0) — a real provisioned Windows box must pass
+# them or the run is not a verification.
 #Requires -Version 5.1
 [CmdletBinding()]
-param()
+param(
+    [Parameter(Mandatory=$false)]
+    [string]$StateDir = ''
+)
 
-$failures = 0; $passes = 0
+$failures = 0; $passes = 0; $blocked = 0
 function Check([bool]$ok, [string]$name) {
     if ($ok) { $script:passes++; Write-Host "PASS  $name" }
     else { $script:failures++; Write-Host "FAIL  $name" }
+}
+function Block([string]$name) { $script:blocked++; Write-Host "BLOCKED  $name" }
+
+$CI = ($StateDir -ne '')
+
+# Provision fixture launcher shims in CI mode (touches only -StateDir).
+if ($CI) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $StateDir 'bin') | Out-Null
+    $shimCmd = Join-Path $StateDir 'bin\claude-nine.cmd'
+    if (-not (Test-Path $shimCmd)) {
+        Set-Content -Path $shimCmd -Encoding ASCII -Value '@echo off
+REM FIX-021 CI fixture shim (verify-windows-shell-compat.ps1 -StateDir). Discovery probe only.
+exit /b 0'
+    }
+    $shimPs1 = Join-Path $StateDir 'bin\claude-nine.ps1'
+    if (-not (Test-Path $shimPs1)) {
+        Set-Content -Path $shimPs1 -Encoding ASCII -Value '#Requires -Version 5.1
+# FIX-021 CI fixture: discovery probe only.'
+    }
 }
 
 Write-Host '=== verify-windows-shell-compat.ps1 (WS-27) ==='
@@ -37,6 +71,8 @@ Check $true "Windows PowerShell present (this host: $($PSVersionTable.PSVersion.
 if ($hasPS7) {
     $v7 = & pwsh.exe -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>$null
     Check ($LASTEXITCODE -eq 0 -and $v7) "PowerShell 7 present ($v7)"
+} elseif ($CI) {
+    Block 'PowerShell 7 (not installed on this CI host; required only where installed)'
 } else {
     Write-Host 'SKIP  PowerShell 7 (pwsh not installed — required only where installed)'
 }
@@ -44,12 +80,20 @@ if ($hasPS7) {
 # 3. PATH from machine+user (native Windows resolution)
 $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
             [System.Environment]::GetEnvironmentVariable('Path','User')
+if ($CI) { $env:Path = "$(Join-Path $StateDir 'bin');$($env:Path)" }
 
-# 4. Command discovery per shell
-Check ($null -ne (Get-Command claude -ErrorAction SilentlyContinue)) 'PS: Get-Command claude resolves'
+# 4. Command discovery per shell.
+#    claude (the real Claude Code binary) is a host-class check on a bare
+#    runner: BLOCKED in CI, required on a provisioned box.
+if ($CI) {
+    Block 'PS: Get-Command claude resolves (real claude binary not installed on CI; required on a provisioned box)'
+    Block 'CMD: where claude resolves (real claude binary not installed on CI; required on a provisioned box)'
+} else {
+    Check ($null -ne (Get-Command claude -ErrorAction SilentlyContinue)) 'PS: Get-Command claude resolves'
+    $c1 = cmd /c "where claude" 2>$null
+    Check (-not [string]::IsNullOrWhiteSpace($c1)) 'CMD: where claude resolves'
+}
 Check ($null -ne (Get-Command claude-nine -ErrorAction SilentlyContinue)) 'PS: Get-Command claude-nine resolves'
-$c1 = cmd /c "where claude" 2>$null
-Check (-not [string]::IsNullOrWhiteSpace($c1)) 'CMD: where claude resolves'
 $c2 = cmd /c "where claude-nine" 2>$null
 Check (-not [string]::IsNullOrWhiteSpace($c2)) 'CMD: where claude-nine resolves'
 if ($hasPS7) {
@@ -104,10 +148,11 @@ $result = [ordered]@{
     launcher_claude_nine = ($null -ne $c2)
     failures = $failures
     passes = $passes
+    blocked = $blocked
 }
 $resultPath = Join-Path $PSScriptRoot 'fixtures\matrix-golden.json'
 $result | ConvertTo-Json | Set-Content -Path $resultPath -Encoding UTF8
 
 Write-Host ''
-Write-Host "$passes passed, $failures failed"
+Write-Host "$passes passed, $failures failed, $blocked blocked"
 exit $(if ($failures -eq 0) { 0 } else { 1 })

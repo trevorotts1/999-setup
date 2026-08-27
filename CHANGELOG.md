@@ -108,7 +108,42 @@ highest-wave-closed fixture (falls through to the open lower wave).
 
 ## [Candice 0.2.0] — 2026-08-21
 
-### Candice Companion — first integrated release
+## [Candice 1.0.0-rc.1] — 2026-08-22 (release candidate, not a release)
+
+Release-configuration repair for the Candice Companion app (FIX-022). All
+artifacts below are candidate wiring; no application payload is authorized for
+distribution until the release gate (scripts/candice-release/status.mjs,
+schema `candice/release-gate@1`) reports READY.
+
+- **In-app updater (WS-33)**: `tauri-plugin-updater` 2.10.1 registered in the
+  app runtime with `updater:default` capability; endpoint follows the real tag
+  pattern `https://github.com/trevorotts1/999-setup/releases/download/{{current_version}}/{{target}}-{{arch}}-{{current_version}}.json`;
+  updater artifacts `v1Compatible`; Windows install mode passive.
+- **Fail-closed signing posture**: tracked `tauri.conf.json` carries
+  `signingIdentity: null`, `certificateThumbprint: null`, and a placeholder
+  updater pubkey. New `scripts/candice-release/apply-release-config.mjs`
+  overlays operator-held credentials from environment variables onto a config
+  COPY (never the tracked file; tracked file as output is refused), validates
+  the Windows thumbprint shape (40 hex), rejects the placeholder pubkey, and
+  reports an explicit SIGNED/UNSIGNED posture per surface. `tauri signer
+  generate` + `TAURI_SIGNING_PRIVATE_KEY` remain the operator-held updater
+  keypair path.
+- **Bundle targets**: `["app", "dmg", "nsis"]` — Windows NSIS installer wired
+  with installer hooks; macOS hardened runtime, entitlements, and a
+  minimum-system-version pin; Gatekeeper is never disabled.
+- **Notices fold**: TTS/STT licensing facts folded into root
+  `THIRD_PARTY_NOTICES.md` (Kokoro Apache-2.0, kokoro-onnx/onnxruntime MIT,
+  GPL-3.0 phonemizer components isolated in a separate worker process,
+  whisper.cpp MIT), bundled inside installers via `bundle.resources`.
+
+## [Candice 0.2.0] — withdrawn historical draft
+
+> **QUARANTINED — NOT A RELEASE.** No Candice 0.2.0 application payload is
+> authorized for download, installation, update, or distribution. The entries
+> below are retained as implementation-history claims only; they are not
+> release evidence and must not be used as an artifact or checksum source.
+
+### Historical implementation claims (not a shipped release)
 
 - **App shell (WS-06/WS-07)**: Tauri 2 shell launches from prebuilt artifacts on macOS Apple Silicon and Windows x64 with no build toolchain on the customer machine; transparent, frameless, always-on-top window, no baked terminal/UI background.
 - **Session bridge (WS-02/WS-03)**: plugin manifest + wake-up hooks for /spec-protocol, /kaizen, /eli5, /bro; begin_session/end_session lifecycle binds the app to the Claude session ID — session identity is the routing authority, never the window.
@@ -122,7 +157,7 @@ highest-wave-closed fixture (falls through to the open lower wave).
 - **Updater (WS-33)**: bundled-component registry with SHA-256 checksums, operator-controlled download sources only, atomic install, rollback, downgrade rejection.
 - **Boss tools (WS-48)**: portable paths, no developer-specific absolute home paths, config-driven campaign data.
 
-### Skill versions
+### Historical proposed version mapping (not install authority)
 
 - spec-protocol 1.16.3 -> 1.17.0; nine-router-setup 1.16.3 -> 1.17.0; kaizen 1.0.1 -> 1.1.0; eli5 1.0.0 -> 1.1.0; bro 1.0.0 -> 1.1.0; candice-integration plugin 1.0.0 (initial); candice-companion app 0.1.0 -> 0.2.0.
 

@@ -73,8 +73,11 @@ export const CANONICAL_VOICE_CANDIDATES = [
 ] as const;
 
 /**
- * DEFAULT_CANONICAL_VOICE — pre-approval default. Operator picks the final
- * canonical voice before production release (spec section 7 gate); changing
- * this value is a config change, not a contract change.
+ * DEFAULT_CANONICAL_VOICE — the operator-approved canonical voice. Trevor
+ * selected `af_bella` ("Bella") on 2026-08-25 after auditioning all 11
+ * CANONICAL_VOICE_CANDIDATES; the approval record is referenced by
+ * VOICE_APPROVAL_EVIDENCE in ./voices.ts. This is the single write point for
+ * the voice id (spec section 7 gate); changing it is a config change, not a
+ * contract change.
  */
-export const DEFAULT_CANONICAL_VOICE = "af_heart";
+export const DEFAULT_CANONICAL_VOICE = "af_bella";

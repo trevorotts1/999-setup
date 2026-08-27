@@ -1,0 +1,1357 @@
+{
+  "schema": "candice/derivative-manifest@1",
+  "contract": "candice-derivatives-v1",
+  "spec": "DERIVATIVE-SPEC.json",
+  "generatedAt": "reproducible",
+  "status": "PENDING-OPERATOR-APPROVAL",
+  "approvalGate": "FIX-003 operator approval pending; hashes in this file pin the build so approval binds instantly",
+  "sourceManifestSha256": "ec1302067622ecb7f16d16476425f4ab3836e7fea581e207c41d448ff6b7dfa0",
+  "specSha256": "a10dfd6457aa36b13075b829abf05759b5c0e90db213ccaa0b7ab99c0b7a0452",
+  "tool": {
+    "name": "python3",
+    "version": "3.14.5",
+    "pillow": "11.3.0",
+    "host": "not recorded (determinism)",
+    "fixedMtime": 1767225600
+  },
+  "derivativeCount": 38,
+  "derivatives": [
+    {
+      "id": "01-fullbody-idle-compact-png",
+      "file": "compact/01-fullbody-idle-compact.png",
+      "format": "PNG",
+      "tier": "compact",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "01-fullbody-idle"
+      ],
+      "sourceSha256": [
+        "a32ed302820b7183ae26ac38693653175601a9304795ab39d01cdaa8251c9b02"
+      ],
+      "width": 420,
+      "height": 746,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          420,
+          746
+        ],
+        "targetBox": [
+          420,
+          746
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 314238,
+      "sha256": "f43c096a9a0917966f6e0cf4f112e843c7f65309c99f60f04e517e1995377d8b",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "01-fullbody-idle-compact-webp",
+      "file": "compact/01-fullbody-idle-compact.webp",
+      "format": "WEBP",
+      "tier": "compact",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "01-fullbody-idle"
+      ],
+      "sourceSha256": [
+        "a32ed302820b7183ae26ac38693653175601a9304795ab39d01cdaa8251c9b02"
+      ],
+      "width": 420,
+      "height": 746,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          420,
+          746
+        ],
+        "targetBox": [
+          420,
+          746
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 97500,
+      "sha256": "67d2ce370fdde5a98f2698da3e7b183f7b885118970140b349599e89b17c562a",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "02-gesture-welcome-compact-png",
+      "file": "compact/02-gesture-welcome-compact.png",
+      "format": "PNG",
+      "tier": "compact",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "02-gesture-welcome"
+      ],
+      "sourceSha256": [
+        "60f652b0ee82ca19a8dfbfe7d8740dfc9673c4f8f9d783c4fe0371412069efa5"
+      ],
+      "width": 420,
+      "height": 746,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          420,
+          746
+        ],
+        "targetBox": [
+          420,
+          746
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 328805,
+      "sha256": "6b1c4cade2b3792dcf433cead524e564796c428fa6b05118dc933384b8c100e9",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "02-gesture-welcome-compact-webp",
+      "file": "compact/02-gesture-welcome-compact.webp",
+      "format": "WEBP",
+      "tier": "compact",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "02-gesture-welcome"
+      ],
+      "sourceSha256": [
+        "60f652b0ee82ca19a8dfbfe7d8740dfc9673c4f8f9d783c4fe0371412069efa5"
+      ],
+      "width": 420,
+      "height": 746,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          420,
+          746
+        ],
+        "targetBox": [
+          420,
+          746
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 106514,
+      "sha256": "5f6c6f811c3e571e1ee4d86e9f09ca770b69afcdb2bfddc3a3cae507918284fe",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "01-fullbody-idle-fullbody-png",
+      "file": "fullbody/01-fullbody-idle-fullbody.png",
+      "format": "PNG",
+      "tier": "fullbody",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "01-fullbody-idle"
+      ],
+      "sourceSha256": [
+        "a32ed302820b7183ae26ac38693653175601a9304795ab39d01cdaa8251c9b02"
+      ],
+      "width": 941,
+      "height": 1672,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          941,
+          1672
+        ],
+        "targetBox": [
+          941,
+          1672
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 1391711,
+      "sha256": "46ef1bcb6ecf16a088bbff03f708675065d4c7aef085e37ab851b45ceb7abf61",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "01-fullbody-idle-fullbody-webp",
+      "file": "fullbody/01-fullbody-idle-fullbody.webp",
+      "format": "WEBP",
+      "tier": "fullbody",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "01-fullbody-idle"
+      ],
+      "sourceSha256": [
+        "a32ed302820b7183ae26ac38693653175601a9304795ab39d01cdaa8251c9b02"
+      ],
+      "width": 941,
+      "height": 1672,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          941,
+          1672
+        ],
+        "targetBox": [
+          941,
+          1672
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 350634,
+      "sha256": "dd27e3b72bf747d775474ed7757d2ad2cda1526a71cfed1fe8a3c4e29ce87bae",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "02-gesture-welcome-fullbody-png",
+      "file": "fullbody/02-gesture-welcome-fullbody.png",
+      "format": "PNG",
+      "tier": "fullbody",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "02-gesture-welcome"
+      ],
+      "sourceSha256": [
+        "60f652b0ee82ca19a8dfbfe7d8740dfc9673c4f8f9d783c4fe0371412069efa5"
+      ],
+      "width": 941,
+      "height": 1672,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          941,
+          1672
+        ],
+        "targetBox": [
+          941,
+          1672
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 1455465,
+      "sha256": "5284bba1784e0007538d64960c97651191164674b829cbf2b2a04ded4c877b30",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "02-gesture-welcome-fullbody-webp",
+      "file": "fullbody/02-gesture-welcome-fullbody.webp",
+      "format": "WEBP",
+      "tier": "fullbody",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "02-gesture-welcome"
+      ],
+      "sourceSha256": [
+        "60f652b0ee82ca19a8dfbfe7d8740dfc9673c4f8f9d783c4fe0371412069efa5"
+      ],
+      "width": 941,
+      "height": 1672,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          941,
+          1672
+        ],
+        "targetBox": [
+          941,
+          1672
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 408520,
+      "sha256": "2c7d1184cda7fd31a96fba0111190b26e81e2a51cd7987a431090785b956ef70",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "03-mouth-neutral-closed-face-png",
+      "file": "face/03-mouth-neutral-closed-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "03-mouth-neutral-closed"
+      ],
+      "sourceSha256": [
+        "18b58e9fc40f3b39ee61b1cb83ea3bba61aacdf3860fd377012a0f47dbab2bd2"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 264764,
+      "sha256": "2d60df5dd97741da5d4f6e59ec1cc87b3329ba695b7f05296ce41db404762fde",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "03-mouth-neutral-closed-face-webp",
+      "file": "face/03-mouth-neutral-closed-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "03-mouth-neutral-closed"
+      ],
+      "sourceSha256": [
+        "18b58e9fc40f3b39ee61b1cb83ea3bba61aacdf3860fd377012a0f47dbab2bd2"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 77800,
+      "sha256": "8d21fd7aea57986acc3452600a4a155c8afec05f55e011f45648fefd3663d85e",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "04-mouth-slight-open-face-png",
+      "file": "face/04-mouth-slight-open-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "04-mouth-slight-open"
+      ],
+      "sourceSha256": [
+        "e311fb3d13e99a20203612f3d4785b2f58da5688628df8aaabb15702073f93aa"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 262140,
+      "sha256": "8861e1c94b6f1acd97ecad9e13d2008aae3e01fab32a1437adac1b78469fffa6",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "04-mouth-slight-open-face-webp",
+      "file": "face/04-mouth-slight-open-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "04-mouth-slight-open"
+      ],
+      "sourceSha256": [
+        "e311fb3d13e99a20203612f3d4785b2f58da5688628df8aaabb15702073f93aa"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 71534,
+      "sha256": "0f081944955228bc4420613e825e63dd3789baedff9579d74eb218b249c87dc2",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "05-mouth-medium-open-face-png",
+      "file": "face/05-mouth-medium-open-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "05-mouth-medium-open"
+      ],
+      "sourceSha256": [
+        "ac52f72aa66cf95c36dc7706e4006421e24b1d14a7fdcdda66f32354d493bc46"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 267313,
+      "sha256": "56959327a74963ff788022ea40e3df7a742be869d84a16c28f5efe1dfc222a4f",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "05-mouth-medium-open-face-webp",
+      "file": "face/05-mouth-medium-open-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "05-mouth-medium-open"
+      ],
+      "sourceSha256": [
+        "ac52f72aa66cf95c36dc7706e4006421e24b1d14a7fdcdda66f32354d493bc46"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 73812,
+      "sha256": "7754c521e20a8752eda4c430f5c7e51a6ab003d6cfe7a19de2ded4616924583c",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "06-mouth-wide-open-face-png",
+      "file": "face/06-mouth-wide-open-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "06-mouth-wide-open"
+      ],
+      "sourceSha256": [
+        "9f4c28e095e5df0b833f18e941a89de6bf733fb7f8b8359f99cbac6f1653b388"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 262562,
+      "sha256": "ea8752b95805cdf6479276323b8f4675c7b3ae68fe597de0533a931b45f7901f",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "06-mouth-wide-open-face-webp",
+      "file": "face/06-mouth-wide-open-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "06-mouth-wide-open"
+      ],
+      "sourceSha256": [
+        "9f4c28e095e5df0b833f18e941a89de6bf733fb7f8b8359f99cbac6f1653b388"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 72338,
+      "sha256": "ac89ad3a2b24fa346001c4dfa3e4668505007f3909e6cb9933ee8f4f909111d4",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "07-mouth-smile-closed-face-png",
+      "file": "face/07-mouth-smile-closed-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "07-mouth-smile-closed"
+      ],
+      "sourceSha256": [
+        "cb4e740ba3401c2ecaae23a6cb2bdde4947f11ac6164653faea15941df6ef1a2"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 271911,
+      "sha256": "af24011ad8f8fbdcdeb6c5096bb3ac4122ff39f7c14efebaa58337e289f92bd0",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "07-mouth-smile-closed-face-webp",
+      "file": "face/07-mouth-smile-closed-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "07-mouth-smile-closed"
+      ],
+      "sourceSha256": [
+        "cb4e740ba3401c2ecaae23a6cb2bdde4947f11ac6164653faea15941df6ef1a2"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 78136,
+      "sha256": "c664aadf87793c1bd3e6e6440eb067a210d40dcc21d1bd7a5e30f1a49587c083",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "08-mouth-smile-open-face-png",
+      "file": "face/08-mouth-smile-open-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "08-mouth-smile-open"
+      ],
+      "sourceSha256": [
+        "c47646fd71a4138c51ec9212c69bc9f51aab2c4fa27a18cc382c42ae010bfa6e"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 261972,
+      "sha256": "811a23035d9c75465d805fe74ba4bd8d70760def23466053179fbbca323caf81",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "08-mouth-smile-open-face-webp",
+      "file": "face/08-mouth-smile-open-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "08-mouth-smile-open"
+      ],
+      "sourceSha256": [
+        "c47646fd71a4138c51ec9212c69bc9f51aab2c4fa27a18cc382c42ae010bfa6e"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 73340,
+      "sha256": "a99a5155fd156ac12f44d7d7544d99204e3056c04e48fb160130a827e2700a1d",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "09-eye-open-face-png",
+      "file": "face/09-eye-open-face.png",
+      "format": "PNG",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "09-eye-open"
+      ],
+      "sourceSha256": [
+        "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 263200,
+      "sha256": "423665b07d23175c0efcae86575f21439df533958c65a2c7705019ac110edb73",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "09-eye-open-face-webp",
+      "file": "face/09-eye-open-face.webp",
+      "format": "WEBP",
+      "tier": "face",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "09-eye-open"
+      ],
+      "sourceSha256": [
+        "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36"
+      ],
+      "width": 376,
+      "height": 376,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          376,
+          376
+        ],
+        "targetBox": [
+          376,
+          376
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 76304,
+      "sha256": "89ea878ae92b7a3566e6ea3caa2e841fa190b150be12a46d7c25cfb02be371f3",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "10-presenting-portrait-a-portrait-png",
+      "file": "portrait/10-presenting-portrait-a-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "10-presenting-portrait-a"
+      ],
+      "sourceSha256": [
+        "71fb00e5875285ef0c1753f94846596dd40e3f3f3ce48ce5e246cda80b55b6cb"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 130309,
+      "sha256": "8b84bfce8cc92a7cdc8431942693628613592138c5ffb5057ed7af42c65d5a2b",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "10-presenting-portrait-a-portrait-webp",
+      "file": "portrait/10-presenting-portrait-a-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "10-presenting-portrait-a"
+      ],
+      "sourceSha256": [
+        "71fb00e5875285ef0c1753f94846596dd40e3f3f3ce48ce5e246cda80b55b6cb"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 45376,
+      "sha256": "1aabe4e4960ecc9f4151d3a04bc746643d196bb6363e48a6f4e2a662aba6aa4d",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "11-eye-half-blink-portrait-png",
+      "file": "portrait/11-eye-half-blink-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "11-eye-half-blink"
+      ],
+      "sourceSha256": [
+        "ac492c82877a01bbf910f42f7c08fa2365c323f8014b662807b11569c76593a5"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 269479,
+      "sha256": "defa409e33d2d4daa224f32b73c80df5086589f281ecbe5bcd6fdf816bbd5016",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "11-eye-half-blink-portrait-webp",
+      "file": "portrait/11-eye-half-blink-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "11-eye-half-blink"
+      ],
+      "sourceSha256": [
+        "ac492c82877a01bbf910f42f7c08fa2365c323f8014b662807b11569c76593a5"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 78828,
+      "sha256": "640284e9a71e42011bad50c20af615aecaf75f8ed07623c9bd82be64b31cca6e",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "12-presenting-fullbody-a-portrait-png",
+      "file": "portrait/12-presenting-fullbody-a-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "12-presenting-fullbody-a"
+      ],
+      "sourceSha256": [
+        "d8e06375a8bb46adc836b6333abd5d045f9cdf67127eb9954c2605be07bdce61"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 130869,
+      "sha256": "ca889c5d16f564f6a97838e5e6faf685c2980b3cd71d8a7e1079050f912489c6",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "12-presenting-fullbody-a-portrait-webp",
+      "file": "portrait/12-presenting-fullbody-a-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "12-presenting-fullbody-a"
+      ],
+      "sourceSha256": [
+        "d8e06375a8bb46adc836b6333abd5d045f9cdf67127eb9954c2605be07bdce61"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 44898,
+      "sha256": "0217df12bc3e8c47e3781af6e06862339fd7a179d7acd0da5354963dc1fce4d9",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "14-presenting-twohands-portrait-png",
+      "file": "portrait/14-presenting-twohands-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "14-presenting-twohands"
+      ],
+      "sourceSha256": [
+        "febcb3aa558299e40b85618f0682672de1d8a9edbe6f33b3fe7df2e37a3dee06"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 142145,
+      "sha256": "42f8c27d9017aa545de9e7971f8b5e49a564da94332543051b43b886bde69032",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "14-presenting-twohands-portrait-webp",
+      "file": "portrait/14-presenting-twohands-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "14-presenting-twohands"
+      ],
+      "sourceSha256": [
+        "febcb3aa558299e40b85618f0682672de1d8a9edbe6f33b3fe7df2e37a3dee06"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 49142,
+      "sha256": "f34f46d940659d2048575c41fe2bcf49f29d02a8c43fead55e8676d8add4ad54",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "15-presenting-standing-a-portrait-png",
+      "file": "portrait/15-presenting-standing-a-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "15-presenting-standing-a"
+      ],
+      "sourceSha256": [
+        "8cb8a8898438849f57a60fb73080f0fcc00e2095636aa3d84132a68279efc33f"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 124388,
+      "sha256": "b42c8be9d8c7965c5ea4185bb3d25d17588c9c9ddffc60645e6ae11dff0521e3",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "15-presenting-standing-a-portrait-webp",
+      "file": "portrait/15-presenting-standing-a-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "15-presenting-standing-a"
+      ],
+      "sourceSha256": [
+        "8cb8a8898438849f57a60fb73080f0fcc00e2095636aa3d84132a68279efc33f"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 43654,
+      "sha256": "432792cf1a371462a6f1b11714114e2ca95b5f45b65ff0513bc592efeed45ee1",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "16-presenting-standing-b-portrait-png",
+      "file": "portrait/16-presenting-standing-b-portrait.png",
+      "format": "PNG",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "16-presenting-standing-b"
+      ],
+      "sourceSha256": [
+        "ef19b6cf9a1259f5aba672fafe20ec573be25f1e9e2baab2c9c9420ea50216a3"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 138260,
+      "sha256": "de92e294fd466be6ed2b6bc149444267f50e5b113ea0fc0ccadb41dc9b99f4a2",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "16-presenting-standing-b-portrait-webp",
+      "file": "portrait/16-presenting-standing-b-portrait.webp",
+      "format": "WEBP",
+      "tier": "portrait",
+      "fit": "fit-inside",
+      "sourceIds": [
+        "16-presenting-standing-b"
+      ],
+      "sourceSha256": [
+        "ef19b6cf9a1259f5aba672fafe20ec573be25f1e9e2baab2c9c9420ea50216a3"
+      ],
+      "width": 307,
+      "height": 460,
+      "transform": {
+        "crop": null,
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          460
+        ],
+        "targetBox": [
+          307,
+          461
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 47492,
+      "sha256": "844e35d20d7dc18fd0e02afe58ad00fa7dfc14b8adbba2cdccc66ab7d6c641d6",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "13-multipose-sheet-sheet-pose-a-png",
+      "file": "sheet-pose-a/13-multipose-sheet-sheet-pose-a.png",
+      "format": "PNG",
+      "tier": "sheet-pose-a",
+      "fit": "crop-then-fit",
+      "sourceIds": [
+        "13-multipose-sheet"
+      ],
+      "sourceSha256": [
+        "feecbb315903fa017ed6fc8dea4f10d45ca0835d533974185068cf59bb01db13"
+      ],
+      "width": 307,
+      "height": 237,
+      "transform": {
+        "crop": {
+          "x0": 4,
+          "y0": 10,
+          "x1": 1009,
+          "y1": 786
+        },
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          237
+        ],
+        "targetBox": [
+          307,
+          237
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 143159,
+      "sha256": "f40ec82a939a96a1d6acf385b8a76fb24fe67b3086db52b0c41967d9d3c63e94",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "13-multipose-sheet-sheet-pose-a-webp",
+      "file": "sheet-pose-a/13-multipose-sheet-sheet-pose-a.webp",
+      "format": "WEBP",
+      "tier": "sheet-pose-a",
+      "fit": "crop-then-fit",
+      "sourceIds": [
+        "13-multipose-sheet"
+      ],
+      "sourceSha256": [
+        "feecbb315903fa017ed6fc8dea4f10d45ca0835d533974185068cf59bb01db13"
+      ],
+      "width": 307,
+      "height": 237,
+      "transform": {
+        "crop": {
+          "x0": 4,
+          "y0": 10,
+          "x1": 1009,
+          "y1": 786
+        },
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          237
+        ],
+        "targetBox": [
+          307,
+          237
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 62824,
+      "sha256": "1454611aa7d41de57d048fcdf0c4a1b223de3a35234fa4b1a0b0fdbd1f9d968d",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    },
+    {
+      "id": "13-multipose-sheet-sheet-pose-b-png",
+      "file": "sheet-pose-b/13-multipose-sheet-sheet-pose-b.png",
+      "format": "PNG",
+      "tier": "sheet-pose-b",
+      "fit": "crop-then-fit",
+      "sourceIds": [
+        "13-multipose-sheet"
+      ],
+      "sourceSha256": [
+        "feecbb315903fa017ed6fc8dea4f10d45ca0835d533974185068cf59bb01db13"
+      ],
+      "width": 307,
+      "height": 222,
+      "transform": {
+        "crop": {
+          "x0": 4,
+          "y0": 792,
+          "x1": 1009,
+          "y1": 1518
+        },
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          222
+        ],
+        "targetBox": [
+          307,
+          222
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 141587,
+      "sha256": "506444e5577db0bdc64da408b41d707d1fa23b990dad61287b36952285abd2bd",
+      "encoder": {
+        "compressLevel": 6,
+        "optimize": false
+      }
+    },
+    {
+      "id": "13-multipose-sheet-sheet-pose-b-webp",
+      "file": "sheet-pose-b/13-multipose-sheet-sheet-pose-b.webp",
+      "format": "WEBP",
+      "tier": "sheet-pose-b",
+      "fit": "crop-then-fit",
+      "sourceIds": [
+        "13-multipose-sheet"
+      ],
+      "sourceSha256": [
+        "feecbb315903fa017ed6fc8dea4f10d45ca0835d533974185068cf59bb01db13"
+      ],
+      "width": 307,
+      "height": 222,
+      "transform": {
+        "crop": {
+          "x0": 4,
+          "y0": 792,
+          "x1": 1009,
+          "y1": 1518
+        },
+        "resample": "LANCZOS",
+        "scaledTo": [
+          307,
+          222
+        ],
+        "targetBox": [
+          307,
+          222
+        ],
+        "aspectPreserved": true
+      },
+      "bytes": 62008,
+      "sha256": "04c57918a9485349936130b8b40a060daab579da79bbbbfbbf92c543e3796326",
+      "encoder": {
+        "lossless": false,
+        "quality": 95,
+        "method": 6
+      }
+    }
+  ],
+  "prohibited": [
+    "No generated, synthesized, or AI-produced art enters derived/",
+    "No background fill, flattening, or color manipulation",
+    "Sources are never rewritten; derived outputs land only under derived/approved-pending/",
+    "experimental-kie quarantine remains untouched and is never production authority"
+  ]
+}

@@ -33,9 +33,16 @@ export const CAPTIONS_STYLE_ID = 'candice-captions-style';
 /** Default caption visibility (never hidden by the voice toggle). */
 export const CAPTIONS_DEFAULT_VISIBLE = true;
 
-/** Maximum caption text length. Bounded for display/readability; the full
- * question text always remains on the question contract. */
-export const CAPTIONS_MAX_CHARS = 500;
+/** Anti-runaway ceiling on caption text, NOT a display bound.
+ *
+ * This was 500 and it was a readability device: a 765-char question rendered
+ * as 499 chars plus an ellipsis, and the remainder was unreachable because
+ * the panel did not scroll. Truncating the thing the user is being asked to
+ * answer is worse than a tall panel. The panel now scrolls (see
+ * `.candice-captions-text` in view.ts) and this ceiling exists only so a
+ * malformed or hostile question cannot push unbounded text into the DOM.
+ * It sits far above any real question in the registry (longest: 765). */
+export const CAPTIONS_MAX_CHARS = 20000;
 
 /** Text scale tiers (spec 9 "text size" preference consumed as a plain factor). */
 export const CAPTIONS_TEXT_SCALES = ['small', 'medium', 'large'] as const;

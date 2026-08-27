@@ -57,7 +57,21 @@ class FakeElement {
   readonly classes = new FakeClassList();
   readonly children: FakeElement[] = [];
   parent: FakeElement | null = null;
-  textContent = '';
+  #textContent = '';
+  /**
+   * Assigning textContent REPLACES all children in a real DOM. The plain
+   * field this used to be kept them, so a stale <span> from a previous
+   * sentence highlight survived in the fake tree and no test could see the
+   * difference between "cleared" and "cleared but still full of children".
+   * A fake DOM that is more forgiving than the real one hides exactly the
+   * bugs it is there to catch.
+   */
+  get textContent(): string { return this.#textContent; }
+  set textContent(value: string) {
+    this.#textContent = value;
+    for (const child of this.children) child.parent = null;
+    this.children.length = 0;
+  }
   id = '';
   hidden = false;
   readonly tagName: string;
@@ -121,18 +135,23 @@ test('E.1 WS-14: contract constants are the published values', () => {
   assert.equal(CAPTIONS_ROOT_CLASS, 'candice-captions');
   assert.equal(CAPTIONS_ROLE, 'status');
   assert.equal(CAPTIONS_LIVE, 'polite');
-  assert.equal(CAPTIONS_MAX_CHARS, 500);
+  assert.equal(CAPTIONS_MAX_CHARS, 20000);
   assert.deepEqual([...CAPTIONS_TEXT_SCALES], ['small', 'medium', 'large']);
   assert.equal(CAPTIONS_STYLE_ID, 'candice-captions-style');
 });
 
 test('clipCaption: bounded display copy, never mutates the source string', () => {
-  const long = 'a'.repeat(600);
+  const long = 'a'.repeat(CAPTIONS_MAX_CHARS + 100);
   const clipped = clipCaption(long);
   assert.ok(clipped.length <= CAPTIONS_MAX_CHARS);
   assert.ok(clipped.endsWith('…'));
   const short = 'Hello';
   assert.equal(clipCaption(short), short);
+  // The regression that started this: a real question must arrive WHOLE.
+  // 765 is the longest `spoken` text in the shipped registry (ENTRY_MODE).
+  const realQuestion = 'q'.repeat(765);
+  assert.equal(clipCaption(realQuestion), realQuestion,
+    'a real registry question must never be truncated for display');
 });
 
 test('captionFromEffect + isEmptyCaption: null/empty is the clear signal', () => {
@@ -260,6 +279,76 @@ test('createCaptionsView: empty caption clears to the reset state, never stale t
   assert.ok(captionTextOf(mount).includes('Old text'));
   view.show({ text: '', important: false, seq: 2 });
   assert.equal(captionTextOf(mount), 'Candice', 'cleared: only the static label remains');
+
+  // The DOM check above is not enough on its own. Clearing used to wipe the
+  // element but keep the highlight state, so the next setSpokenProgress(null)
+  // -- which the highlight driver emits on every speech drain -- took the
+  // "restore plain text" branch and wrote the answered question back into an
+  // aria-live region. Invisible (the empty class is opacity 0) and still
+  // re-announced by a screen reader.
+  view.setSpokenProgress(0.5);
+  view.setSpokenProgress(null);
+  assert.equal(
+    captionTextOf(mount),
+    'Candice',
+    'a cleared caption must stay cleared through a speech-progress tick',
+  );
+});
+
+test('createCaptionsView: highlight state does not leak from one question to the next', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  view.show({ text: 'First question. Second sentence.', important: true, seq: 1 });
+  view.setSpokenProgress(0.9);
+  view.show({ text: 'A different question.', important: true, seq: 2 });
+  view.setSpokenProgress(null);
+  const shown = captionTextOf(mount);
+  assert.ok(shown.includes('A different question.'), 'the new question is shown');
+  assert.ok(!shown.includes('First question.'), 'the previous question did not come back');
+});
+
+test('FIX-014 I-13: initialCaption shows at creation, important (never faded), before any machine effect', () => {
+  const machine = createCandiceStateMachine();
+  const { doc, mount } = fakeEnv();
+  // Kept in step with SETUP_CHECK_GREETING in src/runtime/composition.ts.
+  // This is a copy, not an import: the captions lane must not depend on the
+  // runtime composition. It is a fixture for "a real greeting renders at
+  // creation", so if the product greeting changes, update the copy here too
+  // rather than leaving two versions of Candice's voice in the repo.
+  const greeting =
+    "Hi, I'm Candice. Think of me as your fairy godmother for building things: you make a wish, I help make it real. Setting things up now.";
+  const ctrl = createCaptionsController({
+    machine,
+    mount: mount as unknown as HTMLElement,
+    doc: doc as unknown as Document,
+    initialCaption: greeting,
+  });
+  const root = mount.children[0];
+  assert.ok(captionTextOf(mount).includes('fairy godmother'), 'welcome visible at creation');
+  assert.ok(!root?.classes.contains('candice-captions-stale'), 'greeting is important, never faded');
+  assert.ok(!root?.classes.contains('candice-captions-empty'), 'greeting clears the empty state');
+  // A later machine caption replaces the greeting.
+  machine.transition({ type: 'session:begin' });
+  machine.transition({ type: 'question:received', question: 'What is your name?' });
+  ctrl.render();
+  assert.ok(captionTextOf(mount).includes('What is your name?'), 'machine caption replaces greeting');
+});
+
+test('FIX-014 I-13: null/empty initialCaption shows nothing until the first machine effect', () => {
+  const machine = createCandiceStateMachine();
+  const { doc, mount } = fakeEnv();
+  const ctrl = createCaptionsController({
+    machine,
+    mount: mount as unknown as HTMLElement,
+    doc: doc as unknown as Document,
+    initialCaption: null,
+  });
+  const root = mount.children[0];
+  assert.ok(root?.classes.contains('candice-captions-empty'), 'no initial caption: empty state');
+  machine.transition({ type: 'session:begin' });
+  machine.transition({ type: 'question:received', question: 'Later?' });
+  ctrl.render();
+  assert.ok(captionTextOf(mount).includes('Later?'), 'first machine caption still renders');
 });
 
 test('captions controller: machine null / mount null never throw (spec 20)', () => {
@@ -279,10 +368,95 @@ test('captions controller: machine null / mount null never throw (spec 20)', () 
   assert.doesNotThrow(() => ctrl2.destroy());
 });
 
-test('captions style text: no hex/rgba/url/background (WS-07 transparent invariant, spec 11)', () => {
+test('captions style text: token-only colors, no baked literals (WS-07 transparent invariant, spec 11)', () => {
+  // The invariant this protects is "bake nothing": no literal colors, no
+  // images, every color from the shared token set, so the window stays the
+  // transparent holographic surface the design depends on. Those checks are
+  // unchanged.
+  //
+  // The blanket `no background` clause was NARROWED for FIX-008. It was
+  // copied from the character-surface invariant (gesture.test.ts, where it
+  // still holds absolutely and is untouched), but the captions region is
+  // TEXT, not artwork. The window is `transparent: true` and alwaysOnTop, so
+  // a caption with no backdrop renders onto the user's desktop: the operator
+  // reported reading his terminal scrollback straight through the governed
+  // question. A token-based opaque scrim behind the text is now required —
+  // the transparency that matters, around the character, is unaffected.
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /#(?:[0-9a-fA-F]{3,8})/, 'no hex colors');
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /rgba?\(/i, 'no rgb/rgba colors');
   assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /url\(/i, 'no background images');
-  assert.doesNotMatch(CAPTIONS_STYLE_TEXT, /background/i, 'no background declarations');
+  const backgrounds = CAPTIONS_STYLE_TEXT.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^background(-color)?\s*:/.test(line));
+  assert.ok(backgrounds.length > 0, 'FIX-008: the caption text must paint an opaque backdrop');
+  for (const declaration of backgrounds) {
+    assert.match(
+      declaration,
+      /^background(-color)?\s*:\s*var\(--candice-[a-z-]+\)\s*;?$/,
+      `background must come from a shared token, never a baked value: ${declaration}`,
+    );
+  }
   assert.ok(CAPTIONS_STYLE_TEXT.includes('candice-reduced-motion'), 'consumes the shared reduced-motion class');
+});
+
+// ------------------------------- the live region must never latch OFF
+
+/**
+ * Sentence highlighting sets `aria-live: off` so the caption is not
+ * re-announced once per sentence over the speech it accompanies. The only
+ * code that turned it back on was `setSpokenProgress(null)` -- which
+ * returns early when `highlighted === -1`, and a freshly rendered caption
+ * sets exactly that.
+ *
+ * So one interrupted utterance latched the region off for the rest of the
+ * session, and every later caption -- including every later QUESTION --
+ * mutated a dead live region. There was no visible symptom, because
+ * sighted users could still read it. A screen-reader user simply stopped
+ * being told anything.
+ */
+test('a new caption re-arms the live region even if highlighting left it off', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  assert.ok(root !== null);
+
+  view.show({ text: 'First question. Second sentence.', important: true, seq: 1 });
+  // Highlighting begins: the region goes quiet on purpose.
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off', 'highlighting silences it, by design');
+
+  // The utterance is interrupted and a NEW caption arrives.
+  view.show({ text: 'A different question.', important: true, seq: 2 });
+  assert.equal(
+    root?.getAttribute('aria-live'),
+    CAPTIONS_LIVE,
+    'the new caption must be announceable, or a screen reader never hears it',
+  );
+
+  // The old drain still arrives afterwards and must not undo that.
+  view.setSpokenProgress(null);
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'a late drain leaves it live');
+});
+
+test('clearing the caption also leaves the region live for whatever comes next', () => {
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  view.show({ text: 'A question. And more.', important: true, seq: 1 });
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off');
+  view.show({ text: '', important: true, seq: 2 }); // clear
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'cleared, not muted');
+});
+
+test('CONTROL: highlighting really does set it off, so the tests above are not vacuous', () => {
+  // If `setSpokenProgress` never touched aria-live, every assertion above
+  // would pass trivially against a region that is always polite.
+  const { doc, mount } = fakeEnv();
+  const view = createCaptionsView(mount as unknown as HTMLElement, doc as unknown as Document);
+  const root = view.el as unknown as FakeElement | null;
+  assert.equal(root?.getAttribute('aria-live'), CAPTIONS_LIVE, 'starts live');
+  view.show({ text: 'One sentence. Two sentences.', important: true, seq: 1 });
+  view.setSpokenProgress(0.1);
+  assert.equal(root?.getAttribute('aria-live'), 'off', 'the off state is real');
 });

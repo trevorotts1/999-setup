@@ -6,6 +6,10 @@
  * the OS username, never logs stored content, and never stores secrets or
  * conversation content. Failure degrades to defaults (spec 20: a Candice error
  * never blocks the session).
+ *
+ * This is the ONLY prefs module that imports `node:fs` — the webview bundle
+ * must never import this module at boot. Pure profile logic (merge, normalize,
+ * migrate) lives in `profile.ts`, which is browser-safe.
  */
 
 import * as fs from 'node:fs';
@@ -17,7 +21,7 @@ import {
   PROFILE_DEFAULTS,
   type CandiceProfile,
 } from './schema.ts';
-import { defaultProfile, migrateProfile, normalizeProfile, prefsDirPath } from './profile.ts';
+import { defaultProfile, migrateProfile, prefsDirPath } from './profile.ts';
 
 /** Result of an attempted profile load. */
 export interface LoadResult {
@@ -168,28 +172,6 @@ export function saveProfile(profile: CandiceProfile, env: NodeJS.ProcessEnv = pr
     // in-memory-only, never blocks the session (spec 20).
     return false;
   }
-}
-
-/**
- * Normalize a partial patch against the current document, returning the merged
- * profile. Purely functional; does not touch disk.
- *
- * A future-version document (schemaVersion > LATEST_SCHEMA_VERSION) is handed
- * back untouched: normalization would stamp the version back down to LATEST
- * and drop fields this lane does not understand (spec 20: an older lane must
- * never destroy a newer lane's data). The patch is still applied in memory so
- * the session keeps working; saveProfile's own version guard refuses to
- * persist it, leaving the newer lane's file byte-identical on disk.
- */
-export function mergeProfile(current: CandiceProfile, patch: Partial<CandiceProfile>): CandiceProfile {
-  const merged = { ...current, ...patch } as unknown as Record<string, unknown>;
-  const version = typeof merged.schemaVersion === 'number' && Number.isInteger(merged.schemaVersion)
-    ? merged.schemaVersion
-    : 1;
-  if (version > LATEST_SCHEMA_VERSION) {
-    return { ...merged } as unknown as CandiceProfile;
-  }
-  return normalizeProfile(merged);
 }
 
 export { PROFILE_DEFAULTS };

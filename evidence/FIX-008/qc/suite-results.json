@@ -1,0 +1,84 @@
+{
+  "suite": "tests/a11y-matrix",
+  "candidate": "3bca501794d51cacbb3b8a05f8d68868d750120e",
+  "ranAt": "2026-08-23T17:58:33.125Z",
+  "skipLive": false,
+  "results": [
+    {
+      "label": "contrast.test.mjs (node --test)",
+      "ok": true,
+      "out": "✔ FIX-008 contrast: every dark-theme surface passes its WCAG threshold at every text scale (1.461958ms)\n✔ FIX-008 contrast: every dark-theme surface also meets AAA 7:1 (0.19075ms)\n✔ FIX-008 contrast: captions text/muted pass at every text scale (0.12775ms)\n✔ FIX-008 contrast: increase-contrast cells are color-neutral re-measures of the shipped tokens (0.361958ms)\n✔ FIX-008 contrast: light-theme cells are honest desktop-dependent records, never a fabricated palette (0.14525ms)\n✔ FIX-008 contrast: forced-colors block maps surfaces to system colors (0.124042ms)\n✔ FIX-008 contrast: report artifact is written deterministically (3.670833ms)\nℹ tests 7\nℹ suites 0\nℹ pass 7\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 48.705791\n"
+    },
+    {
+      "label": "motion-scale.test.mjs (node --test)",
+      "ok": true,
+      "out": "✔ FIX-008 motion matrix: os tier keeps the class live on OS flip (direct apply contract) (0.607292ms)\n✔ FIX-008 motion matrix: controller observation — creation applies the resolved concrete tier; OS flip re-resolves on re-apply (0.15625ms)\n✔ FIX-008 motion matrix: reduce tier forces the class regardless of OS (0.07925ms)\n✔ FIX-008 motion matrix: allow tier keeps the class off regardless of OS (0.070625ms)\n✔ FIX-008 motion matrix: preference re-apply flips the class live (os -> reduce -> allow) (0.071792ms)\n✔ FIX-008 text-scale matrix: 0.8 / 1.0 / 1.6 apply as CSS var + dataset (0.146834ms)\n✔ FIX-008 text-scale matrix: invalid values normalize safely (clamp or default) (0.071584ms)\n✔ FIX-008 text-scale matrix: bounds constants are the published values (0.046375ms)\n✔ FIX-008 text-scale matrix: setTextScale re-applies live and clamps (0.067875ms)\n✔ FIX-008 tab order: boot path mounts no visible interactive element (honest enumeration) (1.517292ms)\n✔ FIX-008 tab order: mounted answer controls carry keyboard-reachable elements with a11y names (0.466583ms)\n✔ FIX-008 captures: one deterministic snapshot per matrix cell (0.92625ms)\n✔ FIX-008 captures: os-tier capture reflects the live OS flip deterministically (0.076291ms)\n✔ FIX-008 human legs: real-OS legs are recorded as skipped, never claimed (0.044125ms)\nℹ tests 14\nℹ suites 0\nℹ pass 14\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 83.19725\n"
+    },
+    {
+      "label": "live-contrast.test.mjs (node --test)",
+      "ok": true,
+      "out": "✔ FIX-008 live contrast: real browser measures every theme x surface x scale cell (988.800083ms)\n✔ FIX-008 live contrast: report artifact re-reads with the stable shape (0.308875ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 1032.16025\n"
+    },
+    {
+      "label": "contrast-harness (run 1)",
+      "ok": true,
+      "out": "PASS tokens present — text=faf7ff muted=d7cfdf surface=171321 border=beb0ff focus=dfd7ff\nPASS text/surface >= 4.5:1 — 17.21:1\nPASS muted/surface >= 4.5:1 — 12.05:1\nPASS border/surface >= 3:1 — 9.42:1\nPASS focus-ring/surface >= 3:1 — 13.29:1\nPASS forced-colors block present\nPASS forced-colors covers .candice-status-surface\nPASS forced-colors covers .fallback-title\nPASS forced-colors covers .fallback-hint\nPASS forced-colors covers .candice-runtime-status\nPASS forced-colors uses system Canvas tokens\nPASS forced-colors focus outline uses Highlight\nPASS text-scale token declared — value=1\nPASS text-scale token consumed by visible surfaces — 3 uses\nPASS reduced-motion media query present\nPASS reduced-motion stops boot-glow animation\nPASS reduced-motion stops character animation\nPASS continuous CSS loops exist to be stopped — 1 keyframes\nPASS focus-visible outline declared\nPASS focus outline offset declared\nPASS body background transparent\n\nCONTRAST HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "contrast-harness (run 2)",
+      "ok": true,
+      "out": "PASS tokens present — text=faf7ff muted=d7cfdf surface=171321 border=beb0ff focus=dfd7ff\nPASS text/surface >= 4.5:1 — 17.21:1\nPASS muted/surface >= 4.5:1 — 12.05:1\nPASS border/surface >= 3:1 — 9.42:1\nPASS focus-ring/surface >= 3:1 — 13.29:1\nPASS forced-colors block present\nPASS forced-colors covers .candice-status-surface\nPASS forced-colors covers .fallback-title\nPASS forced-colors covers .fallback-hint\nPASS forced-colors covers .candice-runtime-status\nPASS forced-colors uses system Canvas tokens\nPASS forced-colors focus outline uses Highlight\nPASS text-scale token declared — value=1\nPASS text-scale token consumed by visible surfaces — 3 uses\nPASS reduced-motion media query present\nPASS reduced-motion stops boot-glow animation\nPASS reduced-motion stops character animation\nPASS continuous CSS loops exist to be stopped — 1 keyframes\nPASS focus-visible outline declared\nPASS focus outline offset declared\nPASS body background transparent\n\nCONTRAST HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "contrast-harness determinism",
+      "ok": true,
+      "out": "identical"
+    },
+    {
+      "label": "motion-harness (run 1)",
+      "ok": true,
+      "out": "PASS constants: default 1, min 0.8, max 1.6\nPASS normalizeTextScale(1) = 1\nPASS normalizeTextScale(0.8) = 0.8\nPASS normalizeTextScale(1.6) = 1.6\nPASS normalizeTextScale(0.5) clamps to 0.8\nPASS normalizeTextScale(2) clamps to 1.6\nPASS normalizeTextScale(-1) clamps to 0.8\nPASS normalizeTextScale(NaN) = 1\nPASS normalizeTextScale(Infinity) = 1\nPASS normalizeTextScale(\"1.2\") = 1 (string rejected)\nPASS normalizeTextScale(null) = 1\nPASS normalizeTextScale(undefined) = 1\nPASS runtime sets --candice-text-scale: 1\nPASS runtime sets data-candice-text-scale\nPASS runtime marks data-candice-a11y-runtime active\nPASS runtime textScale getter = 1\nPASS setTextScale(1.4) writes 1.4\nPASS setTextScale(99) clamps to 1.6\nPASS setTextScale(0.1) clamps to 0.8\nPASS dispose removes runtime marker\nPASS tierFromPreference(true) = reduce\nPASS tierFromPreference(false) = allow\nPASS tierFromPreference(null) = os\nPASS tierFromMedia(matches) = reduce + available\nPASS tierFromMedia(no match) = allow + available\nPASS tierFromMedia(absent) = os + unavailable (never throws)\nPASS tierFromMedia(throwing) = os + unavailable (never throws)\nPASS resolve: preference true wins over media\nPASS resolve: preference false wins over media\nPASS resolve: null follows OS media\nPASS apply reduce: class on\nPASS apply reduce: data attr reduce\nPASS apply allow: class off\nPASS apply allow: data attr allow\nPASS apply os + media reduce: class on\nPASS os listener: media flip removes class\nPASS os listener: media flip updates attr\nPASS os listener: media flip back re-adds class\nPASS detach: listener removed, class unchanged\nPASS applyForPreference(null, media off): reduced false, tier allow\nPASS applyReducedMotion(null root) never throws\nPASS controller: reduced true when OS says reduce\nPASS controller: tier reduce\nPASS controller: applyPreference(false) removes class\nPASS controller: applyPreference(true) re-adds class\nPASS controller: back to os follows media\nPASS controller: detach stops live updates\nPASS controller: headless (no doc) never throws, reduced false\nPASS state: initial tier os\nPASS state: setTier reduce notifies\nPASS state: same tier no duplicate notify\nPASS state: invalid tier ignored\nPASS state: unsubscribe stops notify\nPASS isReducedMotionTier: valid three\nPASS isReducedMotionTier: rejects junk\nPASS consumer ui/captions/view.ts references shared class\nPASS consumer ui/compact/config.ts references shared class\nPASS consumer ui/transcript/config.ts references shared class\nPASS consumer ui/answer-controls/config.ts references shared class\nPASS consumer ui/ptt/config.ts references shared class\nPASS consumer animation/gesture/config.ts references shared class\nPASS no second reduced-motion class name in candidate tree\n\nMOTION HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "motion-harness (run 2)",
+      "ok": true,
+      "out": "PASS constants: default 1, min 0.8, max 1.6\nPASS normalizeTextScale(1) = 1\nPASS normalizeTextScale(0.8) = 0.8\nPASS normalizeTextScale(1.6) = 1.6\nPASS normalizeTextScale(0.5) clamps to 0.8\nPASS normalizeTextScale(2) clamps to 1.6\nPASS normalizeTextScale(-1) clamps to 0.8\nPASS normalizeTextScale(NaN) = 1\nPASS normalizeTextScale(Infinity) = 1\nPASS normalizeTextScale(\"1.2\") = 1 (string rejected)\nPASS normalizeTextScale(null) = 1\nPASS normalizeTextScale(undefined) = 1\nPASS runtime sets --candice-text-scale: 1\nPASS runtime sets data-candice-text-scale\nPASS runtime marks data-candice-a11y-runtime active\nPASS runtime textScale getter = 1\nPASS setTextScale(1.4) writes 1.4\nPASS setTextScale(99) clamps to 1.6\nPASS setTextScale(0.1) clamps to 0.8\nPASS dispose removes runtime marker\nPASS tierFromPreference(true) = reduce\nPASS tierFromPreference(false) = allow\nPASS tierFromPreference(null) = os\nPASS tierFromMedia(matches) = reduce + available\nPASS tierFromMedia(no match) = allow + available\nPASS tierFromMedia(absent) = os + unavailable (never throws)\nPASS tierFromMedia(throwing) = os + unavailable (never throws)\nPASS resolve: preference true wins over media\nPASS resolve: preference false wins over media\nPASS resolve: null follows OS media\nPASS apply reduce: class on\nPASS apply reduce: data attr reduce\nPASS apply allow: class off\nPASS apply allow: data attr allow\nPASS apply os + media reduce: class on\nPASS os listener: media flip removes class\nPASS os listener: media flip updates attr\nPASS os listener: media flip back re-adds class\nPASS detach: listener removed, class unchanged\nPASS applyForPreference(null, media off): reduced false, tier allow\nPASS applyReducedMotion(null root) never throws\nPASS controller: reduced true when OS says reduce\nPASS controller: tier reduce\nPASS controller: applyPreference(false) removes class\nPASS controller: applyPreference(true) re-adds class\nPASS controller: back to os follows media\nPASS controller: detach stops live updates\nPASS controller: headless (no doc) never throws, reduced false\nPASS state: initial tier os\nPASS state: setTier reduce notifies\nPASS state: same tier no duplicate notify\nPASS state: invalid tier ignored\nPASS state: unsubscribe stops notify\nPASS isReducedMotionTier: valid three\nPASS isReducedMotionTier: rejects junk\nPASS consumer ui/captions/view.ts references shared class\nPASS consumer ui/compact/config.ts references shared class\nPASS consumer ui/transcript/config.ts references shared class\nPASS consumer ui/answer-controls/config.ts references shared class\nPASS consumer ui/ptt/config.ts references shared class\nPASS consumer animation/gesture/config.ts references shared class\nPASS no second reduced-motion class name in candidate tree\n\nMOTION HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "motion-harness determinism",
+      "ok": true,
+      "out": "identical"
+    },
+    {
+      "label": "input-policy-harness (run 1)",
+      "ok": true,
+      "out": "PASS initial mode pass-through\nPASS enablePassThrough returns true\nPASS enablePassThrough calls setIgnoreCursorEvents(true)\nPASS mode stays pass-through\nPASS enablePassThrough failure returns false\nPASS enablePassThrough failure mode unavailable\nPASS null window: unavailable, returns false\nPASS null adapter: returns false\nPASS null adapter: reasserts pass-through\nPASS null adapter: mode pass-through\nPASS empty regions: returns false\nPASS empty regions: reasserts pass-through\nPASS any invalid region: returns false\nPASS any invalid region: reasserts pass-through\nPASS any invalid region: mode pass-through\nPASS adapter returns false: policy returns false\nPASS adapter returns false: reasserts pass-through\nPASS adapter returns false: mode pass-through\nPASS adapter throws: returns false\nPASS adapter throws: reasserts pass-through\nPASS adapter throws: mode pass-through\nPASS valid regions + adapter success: returns true\nPASS valid regions + adapter success: mode partial-interactive\nPASS adapter received exact regions\nPASS no pass-through call on success\nPASS mode getter pass-through after enable\n\nINPUT-POLICY HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "input-policy-harness (run 2)",
+      "ok": true,
+      "out": "PASS initial mode pass-through\nPASS enablePassThrough returns true\nPASS enablePassThrough calls setIgnoreCursorEvents(true)\nPASS mode stays pass-through\nPASS enablePassThrough failure returns false\nPASS enablePassThrough failure mode unavailable\nPASS null window: unavailable, returns false\nPASS null adapter: returns false\nPASS null adapter: reasserts pass-through\nPASS null adapter: mode pass-through\nPASS empty regions: returns false\nPASS empty regions: reasserts pass-through\nPASS any invalid region: returns false\nPASS any invalid region: reasserts pass-through\nPASS any invalid region: mode pass-through\nPASS adapter returns false: policy returns false\nPASS adapter returns false: reasserts pass-through\nPASS adapter returns false: mode pass-through\nPASS adapter throws: returns false\nPASS adapter throws: reasserts pass-through\nPASS adapter throws: mode pass-through\nPASS valid regions + adapter success: returns true\nPASS valid regions + adapter success: mode partial-interactive\nPASS adapter received exact regions\nPASS no pass-through call on success\nPASS mode getter pass-through after enable\n\nINPUT-POLICY HARNESS ALL GREEN\n"
+    },
+    {
+      "label": "input-policy-harness determinism",
+      "ok": true,
+      "out": "identical"
+    },
+    {
+      "label": "ax-export",
+      "ok": false,
+      "out": "Command failed: python3 /private/tmp/candice-integration/tests/a11y-matrix/ax-export.py 41228 /private/tmp/candice-integration/evidence/FIX-008/qc/ax-export-run1.json\nFAIL no AX windows for pid 41228\n"
+    },
+    {
+      "label": "live-pass-through-grid",
+      "ok": false,
+      "out": "Command failed: python3 /private/tmp/candice-integration/tests/a11y-matrix/live-pass-through-grid.py 41228 Terminal"
+    },
+    {
+      "label": "live-appearance-captures",
+      "ok": false,
+      "out": "Command failed: python3 /private/tmp/candice-integration/tests/a11y-matrix/live-appearance-captures.py 41228 /private/tmp/candice-integration/evidence/FIX-008/qc/captures"
+    }
+  ],
+  "verdict": "FAIL"
+}

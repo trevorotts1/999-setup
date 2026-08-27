@@ -25,6 +25,7 @@ const assert = require('assert')
 const { DoubleCountGuard, validSessionId, validQuestionKey } = require('./double-count-guard')
 const { TerminalInputAdapter } = require('./terminal-input-adapter')
 const { FallbackCoordinator } = require('./fallback-coordinator')
+const { canonicalQuestion } = require('../../../packages/candice-protocol/question-registry')
 
 let failures = 0
 
@@ -63,7 +64,11 @@ function acceptAllRoute() {
   return routeStub(({ sessionId }) => ({ ok: true, routeTo: sessionId }))
 }
 
-const Q = { sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', text: 'Who is the application for?', counted: true }
+const Q = canonicalQuestion({
+  sessionId: 'sess-5-1',
+  questionKey: 'BUILD_TARGET',
+  skill: 'spec-protocol',
+}).question
 
 // ---------------------------------------------------------------------------
 // DoubleCountGuard — defer semantics
@@ -288,9 +293,9 @@ check('fallbackQuestion returns the same question prompt (no state loss)', () =>
   const r = c.fallbackQuestion(Q)
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.redelivered, false)
-  assert.strictEqual(r.counted, true)
-  assert.strictEqual(r.prompt.text, 'Who is the application for?')
-  assert.strictEqual(r.prompt.helpText, null)
+  assert.strictEqual(r.counted, Q.counted)
+  assert.strictEqual(r.prompt.text, Q.text)
+  assert.strictEqual(r.prompt.helpText, Q.helpText)
   assert.deepStrictEqual(r.prompt.allowedInputModes, ['voice', 'typed', 'terminal'])
 })
 
@@ -301,6 +306,16 @@ check('fallbackQuestion twice returns redelivered and keeps one slot', () => {
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.redelivered, true)
   assert.strictEqual(r.guardStatus.filter((g) => g.status === 'deferred').length, 1)
+})
+
+check('fallbackQuestion refuses unknown and retired keys before either terminal delivery or guard state', () => {
+  const c = new FallbackCoordinator()
+  for (const questionKey of ['NOT_REGISTERED', 'B3']) {
+    const r = c.fallbackQuestion({ ...Q, questionKey })
+    assert.strictEqual(r.ok, false)
+    assert.strictEqual(r.code, questionKey === 'B3' ? 'retired-governed-question' : 'unregistered-governed-question')
+  }
+  assert.deepStrictEqual(c.guard.status(), [], 'rejected keys never create a terminal fallback slot')
 })
 
 check('answerFromTerminal yields one answer-event with inputMode terminal, counted once', () => {
@@ -389,6 +404,151 @@ check('guard+lifecycle seam: terminal answer counts exactly once in the real lif
   const again = guard.reconcileTerminalAnswer({ sessionId: 'sess-real', questionKey: 'BUILD_TARGET' })
   assert.strictEqual(again.ok, false)
   assert.strictEqual(lifecycle.status({ sessionId: 'sess-real' }).questionCount, 1)
+})
+
+// ---------------------------------------------------------------------------
+// FIX-013 S3 — durable fallback handoff through the REAL lifecycle
+// ---------------------------------------------------------------------------
+
+function realLifecycleWithState() {
+  const os = require('os')
+  const fs = require('fs')
+  const path = require('path')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'candice-fallback-s3-'))
+  const { SessionLifecycle } = require('../session/session-lifecycle')
+  return { lifecycle: new SessionLifecycle({ stateDir: dir }), dir }
+}
+
+check('S3: timeout fallback atomically transfers displaying -> fallback-pending (same record, same operation)', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', text: Q.text, answerKind: 'free_text', counted: true })
+    const pending = lifecycle.getPendingOperation({ sessionId: 'sess-5-1' }).pending
+    assert.strictEqual(pending.durableState, 'displaying')
+    const coord = new FallbackCoordinator({ lifecycle })
+    const fb = coord.fallbackQuestion(Q, 'timeout', pending.operationId)
+    assert.strictEqual(fb.ok, true)
+    assert.strictEqual(fb.cause, 'timeout')
+    assert.strictEqual(fb.durableState, 'fallback-pending')
+    const after = lifecycle.getPendingOperation({ sessionId: 'sess-5-1' }).pending
+    assert.strictEqual(after.durableState, 'fallback-pending', 'the SAME record transferred, never a second record')
+    assert.strictEqual(after.operationId, pending.operationId, 'same operation identity end to end')
+    assert.strictEqual(after.questionKey, 'BUILD_TARGET')
+    // A restart can NEVER re-recover a fallback-owned question (F13-03).
+    const rec = lifecycle.recoverPendingQuestion({ sessionId: 'sess-5-1' })
+    assert.strictEqual(rec.ok, false)
+    assert.strictEqual(rec.code, 'fallback-owns-question')
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3: fail-before-persist fallback creates ONE record directly at fallback-pending', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    const coord = new FallbackCoordinator({ lifecycle })
+    const fb = coord.fallbackQuestion(Q, 'app-unavailable')
+    assert.strictEqual(fb.ok, true)
+    const got = lifecycle.getPendingOperation({ sessionId: 'sess-5-1' })
+    assert.strictEqual(got.ok, true)
+    assert.strictEqual(got.pending.durableState, 'fallback-pending')
+    assert.strictEqual(got.pending.counted, Q.counted)
+    assert.strictEqual(got.pending.text, Q.text, 'the exact question text is preserved for terminal re-ask')
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3: fallback of an already fallback-owned question is a REDELIVERY (one slot, one answer)', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    const coord = new FallbackCoordinator({ lifecycle })
+    const first = coord.fallbackQuestion(Q, 'timeout')
+    assert.strictEqual(first.ok, true)
+    assert.strictEqual(first.redelivered, false)
+    const second = coord.fallbackQuestion(Q, 'timeout')
+    assert.strictEqual(second.ok, true)
+    assert.strictEqual(second.redelivered, true, 'repeat handoff is a redelivery, never a second slot')
+    const answer = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'one answer' })
+    assert.strictEqual(answer.ok, true)
+    assert.strictEqual(answer.durableCommitOk, true)
+    const again = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'second try' })
+    assert.strictEqual(again.ok, false)
+    assert.strictEqual(again.code, 'already-answered')
+    const status = lifecycle.status({ sessionId: 'sess-5-1' })
+    assert.strictEqual(status.questionCount, 1, 'counted exactly once')
+    assert.strictEqual(status.hasPendingQuestion, false, 'record cleared by the one terminal commit')
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3: fallback refuses an operation under a recovery lease (recovery owns the question)', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', text: Q.text, answerKind: 'free_text', counted: true })
+    lifecycle.recoverPendingQuestion({ sessionId: 'sess-5-1' }) // durableState -> recovering + lease
+    const coord = new FallbackCoordinator({ lifecycle })
+    const fb = coord.fallbackQuestion(Q, 'timeout')
+    assert.strictEqual(fb.ok, false)
+    assert.strictEqual(fb.code, 'recovery-owns-question')
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3: terminal answer cannot complete a record still owned by the MCP/app path (fallback-not-owner)', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    lifecycle.setPendingQuestion({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', text: Q.text, answerKind: 'free_text', counted: true })
+    // durableState is 'displaying' — the MCP/app path owns it; a terminal
+    // answer must be refused (question-already-consumed), never a second count.
+    const coord = new FallbackCoordinator({ lifecycle })
+    const refused = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'MCP owns me' })
+    assert.strictEqual(refused.ok, false)
+    assert.strictEqual(refused.code, 'question-already-consumed')
+    assert.strictEqual(lifecycle.status({ sessionId: 'sess-5-1' }).questionCount, 0)
+    // After the atomic transfer to fallback-pending, the one terminal answer
+    // commits exactly once.
+    const fb = coord.fallbackQuestion(Q, 'timeout')
+    assert.strictEqual(fb.ok, true)
+    assert.strictEqual(fb.durableState, 'fallback-pending')
+    const rec = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'one answer' })
+    assert.strictEqual(rec.ok, true)
+    assert.strictEqual(lifecycle.status({ sessionId: 'sess-5-1' }).questionCount, 1)
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
+})
+
+check('S3: failed durable terminal commit retains exactly one recoverable record (retryable)', () => {
+  const { lifecycle, dir } = realLifecycleWithState()
+  try {
+    lifecycle.beginSession({ sessionId: 'sess-5-1', skill: 'spec-protocol' })
+    const coord = new FallbackCoordinator({ lifecycle })
+    coord.fallbackQuestion(Q, 'timeout') // fallback-pending record on disk
+    const manager = lifecycle.sessions
+    const originalSave = manager._save.bind(manager)
+    manager._save = () => ({ ok: false, code: 'store:write-failed', error: 'injected commit failure' })
+    const ans = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'retry me' })
+    assert.strictEqual(ans.ok, false)
+    assert.strictEqual(ans.code, 'durable-commit-failed')
+    const got = lifecycle.getPendingOperation({ sessionId: 'sess-5-1' })
+    assert.strictEqual(got.ok, true, 'exactly one recoverable record retained')
+    assert.strictEqual(got.pending.durableState, 'fallback-pending')
+    manager._save = originalSave
+    const retry = coord.answerFromTerminal({ sessionId: 'sess-5-1', questionKey: 'BUILD_TARGET', answerText: 'retry me' })
+    assert.strictEqual(retry.ok, true, 'the same operation id re-commits idempotently')
+    assert.strictEqual(retry.durableCommitOk, true)
+    assert.strictEqual(lifecycle.status({ sessionId: 'sess-5-1' }).questionCount, 1, 'counted exactly once across the retry')
+  } finally {
+    try { require('fs').rmSync(dir, { recursive: true, force: true }) } catch (_) {}
+  }
 })
 
 // ---------------------------------------------------------------------------

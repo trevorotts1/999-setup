@@ -27,6 +27,13 @@ pub fn accessibility_explanation() -> &'static str {
 /// is held, transcribed locally on your Mac, and deleted immediately
 /// (spec 8). Typing an answer always remains available.
 pub fn microphone_explanation() -> &'static str {
+    // "your Mac" is correct here: this crate is candice-macos-permissions
+    // and is macOS-only by name and purpose. It is NOT a dependency of the
+    // app crate and nothing in the repo links it -- verified against the
+    // app's Cargo.toml, a repo-wide reference search, and the fact that
+    // its `status` example is never invoked by any script. So these
+    // strings do not currently reach a user through the shipping app.
+    // Recorded in CONTROL/TODO.md rather than papered over here.
     "To answer by voice, Candice needs microphone access. The microphone \
      records only while you hold the talk button, the audio never leaves \
      your Mac, and it is discarded as soon as it is transcribed. You can \
@@ -38,8 +45,10 @@ pub fn microphone_explanation() -> &'static str {
 /// whether Candice can read window TITLES for better anchoring; matching
 /// by app name, position, and process ID works without it.
 pub fn screen_capture_explanation() -> &'static str {
-    "Candice can read the titles of your terminal windows, which helps it \
-     stay anchored to the right one. This is optional: without it, Candice \
+    // "helps it stay anchored" — she is "she" in every other string in
+    // this file and everywhere else in the product.
+    "Candice can read the titles of your terminal windows, which helps her \
+     stay next to the right one. This is optional: without it, Candice \
      still finds your terminal by its app, position, and size — titles are \
      just extra confirmation. To enable: System Settings → Privacy & \
      Security → Screen Recording."
@@ -49,11 +58,15 @@ pub fn screen_capture_explanation() -> &'static str {
 /// denied / not yet granted). Frames it as the designed fallback, never
 /// as an error, and points at the plain-language explanation.
 pub fn floating_mode_notice() -> &'static str {
-    "Candice is in floating mode — it stays near your terminal and follows \
-     none of your window movement automatically. Move it anywhere you like. \
-     If you want it to follow your terminal window, grant Accessibility: \
-     System Settings → Privacy & Security → Accessibility → tick Candice \
-     Companion. Everything else works the same in the meantime."
+    // Was: "it stays near your terminal and follows none of your window
+    // movement automatically. Move it anywhere you like." Three "it"s for
+    // a character who is "she" everywhere else, and a negation that takes
+    // three reads to parse into "she will not follow your window".
+    "Candice is in floating mode — she won\u{2019}t follow your terminal window \
+     around, but you can drag her anywhere you like. If you\u{2019}d like her to \
+     follow your terminal, turn on Accessibility for Candice Companion: \
+     System Settings → Privacy & Security → Accessibility. Everything else \
+     works the same in the meantime."
 }
 
 /// The copy pair for a permission row: a title plus the explanation.

@@ -188,8 +188,37 @@ test('eyeOpenRatio: open when outside the blink window, closed inside', () => {
   assert.equal(eyeOpenRatio(0), 1, 'fully open at rest');
   assert.equal(eyeOpenRatio(1), 0, 'fully closed inside the blink');
   assert.equal(eyeOpenRatio(2), 0, 'still closed beyond the window');
-  const mid = eyeOpenRatio(0.5);
-  assert.ok(mid > 0 && mid < 1, `mid blink must be between open and closed, got ${mid}`);
+
+  // 0.5 is the CLOSED point, not the halfway point: eyeOpenRatio is
+  // cos(u * PI), which reaches zero at u = 0.5. Asserting it explicitly so
+  // nobody reads 0.5 as "half closed" again.
+  assert.equal(
+    Number(eyeOpenRatio(0.5).toFixed(3)),
+    0,
+    'closedUnits 0.5 is fully closed, not half closed',
+  );
+
+  // This assertion used to read `eyeOpenRatio(0.5)` and require only
+  // `mid > 0 && mid < 1`. It passed on 6.123233995736766e-17 — the
+  // floating-point residue of cos(PI/2) — so it certified an eyelid ramp
+  // that did not exist while the driver rendered a 240ms hard cut. The
+  // bounds below are PERCEPTIBLE ones: no float epsilon can satisfy them,
+  // and they are sampled where the ramp actually lives, (0, 0.5).
+  const mid = eyeOpenRatio(0.25);
+  assert.ok(
+    mid > 0.2 && mid < 0.8,
+    `mid blink must be a visibly partial eyelid, got ${mid}`,
+  );
+
+  // A ramp is monotonic: sampling across the closing sweep must strictly
+  // decrease. A single mid-point cannot prove that on its own.
+  const sweep = [0, 0.1, 0.2, 0.3, 0.4, 0.5].map(eyeOpenRatio);
+  for (let i = 1; i < sweep.length; i += 1) {
+    assert.ok(
+      sweep[i]! < sweep[i - 1]!,
+      `eyelid must close monotonically; step ${i} went ${sweep[i - 1]} -> ${sweep[i]}`,
+    );
+  }
 });
 
 test('breathScale: bounded and centered on 1', () => {
@@ -430,3 +459,24 @@ function statusForGesture(id: string): Parameters<typeof gestureForStatus>[0] {
       return 'idle';
   }
 }
+
+test('breathScale: the idle breath is perceptible, not merely measurable', () => {
+  // Regression guard. The breath ran at 0.008 for the whole campaign: real
+  // enough to show up in a frame diff, far too small for a person to see, so
+  // the character read as a still image. A frame-diff test would have passed
+  // the entire time. Assert the amplitude a HUMAN needs, not the one a diff
+  // detects.
+  //
+  // The character renders ~500px tall and scales from the feet, so the delta
+  // lands at the head: 0.02 is ~10px of travel, around the floor of what
+  // reads as motion at a 3.2s period.
+  const max = GESTURE_TIMING.idleBreathScaleMax;
+  assert.ok(max >= 0.02, `idle breath ${max} is below the perceptibility floor of 0.02`);
+  // Upper bound: past ~0.04 a 3.2s scale cycle reads as a bounce, not breath.
+  assert.ok(max <= 0.04, `idle breath ${max} is large enough to read as a bounce`);
+  // The head travel that amplitude buys, stated explicitly so the intent
+  // survives a future edit of the number.
+  const characterHeightPx = 500;
+  const headTravelPx = characterHeightPx * max * 2;
+  assert.ok(headTravelPx >= 10, `only ${headTravelPx.toFixed(1)}px of head travel`);
+});

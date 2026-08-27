@@ -8,7 +8,7 @@
 
 import type { PhonemeTiming, RenderedSpeech, TtsErrorReason, VoiceSelection } from "./types.ts";
 import type { KokoroEngine } from "./index.ts";
-import { speakWithSystemTts } from "./fallback.ts";
+import { speakWithSystemTts, type SystemTtsProbe, type SystemTtsSpeaker } from "./fallback.ts";
 
 export interface RenderRequest {
   text: string;
@@ -16,6 +16,14 @@ export interface RenderRequest {
   withTimings: boolean;
   /** Abort when the user presses PTT while Candice speaks (WS-20). */
   signal?: AbortSignal;
+  /**
+   * FIX-015 FAIL-2 DI seam: injected system-TTS capability probe /
+   * speaker (tests, platform adapters). Defaults to the real macOS
+   * `say` check — deterministic suites inject false to pin the
+   * captions-only rung.
+   */
+  systemTtsProbe?: SystemTtsProbe;
+  systemTtsSpeaker?: SystemTtsSpeaker;
 }
 
 export interface RenderOutcome {
@@ -50,7 +58,10 @@ export async function renderSpeech(
     return { speech, rung: "kokoro" };
   } catch {
     // Kokoro unavailable -> system TTS fallback (never canonical voice).
-    const fallback = await speakWithSystemTts(request.text);
+    const fallback = await speakWithSystemTts(request.text, {
+      probe: request.systemTtsProbe,
+      speak: request.systemTtsSpeaker,
+    });
     if (fallback.ok) {
       return { speech: null, rung: "system-tts" };
     }

@@ -1,5 +1,10 @@
 # CHECKPOINT — WS-32 existing-user upgrade bootstrap
 
+> **Superseded historical checkpoint.** Earlier app-repair success claims are
+> not release authority. Current upgrade repair fails before all writes until
+> a release-authorized app candidate exists; local app bundles are untrusted
+> and never repaired or recorded as current.
+
 Lane: WR-017 / WS-32 (builder B-WR-017-WS-32, opus/max, W3-chained).
 Owned glob: `scripts/candice-upgrade/**` (PROJECT-MANIFEST 9.2 WR-017
 row line 278; CONTROL/task-graph-snapshot.json WS-32 owned_paths).

@@ -15,14 +15,14 @@
  * Windows (PowerShell/CMD) callers (spec 0.3 Windows parity).
  *
  * Usage:
- *   node download.mjs --id candice-companion --version 0.2.0 --platform darwin \
+ *   node download.mjs --id <non-app-component> --version <version> --platform <platform> \
  *     [--out <staging-path>] [--manifest <bundled-components.json>]
  *
  * Exit: 0 verified-and-staged; 1 checksum/source/size failure; 2 usage.
  */
 import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { resolveComponent, RELEASE_CHANNEL } from "../checksums/components.mjs";
+import { resolveComponent, RELEASE_CHANNEL, SECONDARY_ORIGINS } from "../checksums/components.mjs";
 
 const args = process.argv.slice(2);
 const readArg = (name) => {
@@ -44,6 +44,13 @@ async function main() {
 
   let record = resolveComponent(id, version, platform);
   if (manifestPath) {
+    // Application delivery is governed only by the in-repository release
+    // authority. A caller-controlled manifest must never resurrect a
+    // quarantined or withdrawn Candice Companion build.
+    if (id === "candice-companion") {
+      console.error("FAIL custom manifests cannot authorize candice-companion downloads — release authority required");
+      process.exit(1);
+    }
     try {
       const m = JSON.parse(await import("node:fs").then((fs) => fs.readFileSync(manifestPath, "utf8")));
       const byId = (m.components || {})[id] || [];
@@ -63,13 +70,18 @@ async function main() {
   }
   if (record.payload.sha256 === "0".repeat(64)) {
     console.error(
-      `FAIL placeholder checksum for ${id}@${version}@${platform} — recompute owed from integrated build — refusing download (fail closed)`,
+      `FAIL placeholder checksum for ${id}@${version}@${platform} — no authorized artifact checksum exists — refusing download (fail closed)`,
     );
     process.exit(1);
   }
 
   const url = record.payload.sourceUrl;
-  const allowed = url.startsWith(RELEASE_CHANNEL) || url.startsWith("https://github.com/") || url.startsWith("https://huggingface.co/");
+  // FIX-018 P0 allow-list: the operator release channel plus the immutable
+  // secondary origins declared in the registry — never a bare github.com or
+  // huggingface.co prefix. A record whose own declared sourceUrl matches a
+  // declared origin passes; any other host is refused before any fetch.
+  const allowed =
+    url.startsWith(RELEASE_CHANNEL) || SECONDARY_ORIGINS.some((origin) => url.startsWith(origin));
   if (!allowed) {
     console.error(`FAIL source not operator-controlled: ${url}`);
     process.exit(1);

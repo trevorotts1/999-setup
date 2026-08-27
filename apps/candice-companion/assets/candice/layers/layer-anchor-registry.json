@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "authority": "operator-originals",
+  "generatedAt": "2026-08-22T18:15:31Z",
+  "measuredWith": {
+    "tool": "measure-anchors.py",
+    "library": "Pillow 11.3.0"
+  },
+  "alphaThreshold": 128,
+  "reference": {
+    "stateId": "mouth-neutral-closed",
+    "sourceFile": "03-mouth-neutral-closed.png",
+    "sha256": "18b58e9fc40f3b39ee61b1cb83ea3bba61aacdf3860fd377012a0f47dbab2bd2",
+    "frameWidth": 1254,
+    "frameHeight": 1254
+  },
+  "driftPolicy": {
+    "maxDriftX": 0.04421,
+    "maxDriftY": 0.02334
+  },
+  "states": [
+    {
+      "stateId": "mouth-neutral-closed",
+      "group": "mouth",
+      "phonemes": [
+        "rest",
+        "idle"
+      ],
+      "sourceFile": "03-mouth-neutral-closed.png",
+      "sha256": "18b58e9fc40f3b39ee61b1cb83ea3bba61aacdf3860fd377012a0f47dbab2bd2",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.04147,
+      "anchorY": 0.01675,
+      "requiredScaleX": 1.0,
+      "requiredScaleY": 1.0,
+      "maxDriftX": 0.0,
+      "maxDriftY": 0.0
+    },
+    {
+      "stateId": "mouth-slight-open",
+      "group": "mouth",
+      "phonemes": [
+        "ai"
+      ],
+      "sourceFile": "04-mouth-slight-open.png",
+      "sha256": "e311fb3d13e99a20203612f3d4785b2f58da5688628df8aaabb15702073f93aa",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.03828,
+      "anchorY": 0.00159,
+      "requiredScaleX": 0.99477,
+      "requiredScaleY": 0.98315,
+      "maxDriftX": 0.00385,
+      "maxDriftY": 0.01801
+    },
+    {
+      "stateId": "mouth-medium-open",
+      "group": "mouth",
+      "phonemes": [
+        "oh"
+      ],
+      "sourceFile": "05-mouth-medium-open.png",
+      "sha256": "ac52f72aa66cf95c36dc7706e4006421e24b1d14a7fdcdda66f32354d493bc46",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.03828,
+      "anchorY": 0.01196,
+      "requiredScaleX": 0.98617,
+      "requiredScaleY": 0.9911,
+      "maxDriftX": 0.00166,
+      "maxDriftY": 0.00905
+    },
+    {
+      "stateId": "mouth-wide-open",
+      "group": "mouth",
+      "phonemes": [
+        "wide"
+      ],
+      "sourceFile": "06-mouth-wide-open.png",
+      "sha256": "9f4c28e095e5df0b833f18e941a89de6bf733fb7f8b8359f99cbac6f1653b388",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.03429,
+      "anchorY": 0.01356,
+      "requiredScaleX": 0.97856,
+      "requiredScaleY": 0.99675,
+      "maxDriftX": 0.01107,
+      "maxDriftY": 0.0045
+    },
+    {
+      "stateId": "mouth-smile-closed",
+      "group": "mouth",
+      "phonemes": [
+        "success"
+      ],
+      "sourceFile": "07-mouth-smile-closed.png",
+      "sha256": "cb4e740ba3401c2ecaae23a6cb2bdde4947f11ac6164653faea15941df6ef1a2",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.0303,
+      "anchorY": 0.00319,
+      "requiredScaleX": 0.96941,
+      "requiredScaleY": 0.98711,
+      "maxDriftX": 0.01253,
+      "maxDriftY": 0.01435
+    },
+    {
+      "stateId": "mouth-smile-open",
+      "group": "mouth",
+      "phonemes": [
+        "success-open"
+      ],
+      "sourceFile": "08-mouth-smile-open.png",
+      "sha256": "c47646fd71a4138c51ec9212c69bc9f51aab2c4fa27a18cc382c42ae010bfa6e",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.03907,
+      "anchorY": 0.00558,
+      "requiredScaleX": 0.99304,
+      "requiredScaleY": 0.98631,
+      "maxDriftX": 0.00256,
+      "maxDriftY": 0.01313
+    },
+    {
+      "stateId": "eye-open",
+      "group": "eye",
+      "phonemes": [
+        "open"
+      ],
+      "sourceFile": "09-eye-open.png",
+      "sha256": "223a45d9af8107f46d698d3a2b9b630d08351b0ff33bfd2fd400e38bb952ae36",
+      "frameWidth": 1254,
+      "frameHeight": 1254,
+      "anchorX": 0.04466,
+      "anchorY": 0.01037,
+      "requiredScaleX": 1.02793,
+      "requiredScaleY": 0.99432,
+      "maxDriftX": 0.0182,
+      "maxDriftY": 0.02334
+    },
+    {
+      "stateId": "eye-half-blink",
+      "group": "eye",
+      "phonemes": [
+        "half-blink"
+      ],
+      "sourceFile": "11-eye-half-blink.png",
+      "sha256": "ac492c82877a01bbf910f42f7c08fa2365c323f8014b662807b11569c76593a5",
+      "frameWidth": 1024,
+      "frameHeight": 1536,
+      "anchorX": 0.0166,
+      "anchorY": 0.02865,
+      "requiredScaleX": 1.14443,
+      "requiredScaleY": 0.83962,
+      "maxDriftX": 0.04421,
+      "maxDriftY": 0.01862
+    }
+  ]
+}

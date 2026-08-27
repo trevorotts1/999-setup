@@ -30,6 +30,7 @@
  */
 
 const SESSION_ID_RE = /^[\x21-\x7e]{1,128}$/ // printable ASCII, bounded — opaque ids only
+const { isValidOperationId } = require('../lifecycle-protocol')
 
 /** A window anchor is optional metadata. It NEVER becomes routing authority. */
 function sanitizeAnchor(anchor) {
@@ -76,16 +77,24 @@ class BindingBridge {
    * bind — associates a window anchor with a session for VISUAL anchoring only.
    * Returns ok:false when the session is not a live active session: binding to
    * a dead session would create an anchor without routing proof.
+   * The binding carries a `boundAt` bounded timestamp and the operation id
+   * (derived from the session when absent); a binding atomically created by
+   * the same operation identity is idempotent (FIX-013 S1).
    */
-  bind({ sessionId, windowAnchor }) {
+  bind({ sessionId, windowAnchor, operationId, boundAt }) {
     const id = this._requireSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     if (!this._sessionActive(id)) {
       return { ok: false, code: 'session-not-active', error: `session ${id} is not active; cannot bind` }
     }
+    if (operationId !== undefined && operationId !== null && !isValidOperationId(operationId)) {
+      return { ok: false, code: 'invalid-operation-id', error: 'operationId must be a bounded opaque id' }
+    }
     const anchor = sanitizeAnchor(windowAnchor)
-    this.bindings.set(id, { sessionId: id, windowAnchor: anchor, boundAt: null }) // boundAt filled by caller clock where needed
-    return { ok: true, binding: { sessionId: id, windowAnchor: anchor } }
+    const resolvedOperationId = operationId || `bind-${id}`
+    const now = boundAt || new Date().toISOString()
+    this.bindings.set(id, { sessionId: id, windowAnchor: anchor, boundAt: now, operationId: resolvedOperationId })
+    return { ok: true, binding: { sessionId: id, windowAnchor: anchor, boundAt: now, operationId: resolvedOperationId } }
   }
 
   /**
@@ -93,14 +102,20 @@ class BindingBridge {
    * moved the companion, terminal window moved, monitor changed). Session
    * identity never changes on rebind.
    */
-  rebind({ sessionId, windowAnchor }) {
+  rebind({ sessionId, windowAnchor, boundAt }) {
     const id = this._requireSessionId(sessionId)
     if (!id) return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     if (!this.bindings.has(id)) {
       return { ok: false, code: 'not-bound', error: `session ${id} has no binding; use bind first` }
     }
     const anchor = sanitizeAnchor(windowAnchor)
-    this.bindings.set(id, { sessionId: id, windowAnchor: anchor })
+    const existing = this.bindings.get(id)
+    this.bindings.set(id, {
+      sessionId: id,
+      windowAnchor: anchor,
+      boundAt: boundAt || existing.boundAt || new Date().toISOString(),
+      operationId: existing.operationId || `bind-${id}`, // rebind never changes session identity
+    })
     return { ok: true, binding: { sessionId: id, windowAnchor: anchor } }
   }
 

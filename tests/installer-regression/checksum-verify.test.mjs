@@ -98,8 +98,8 @@ test("download gate: unverifiable payload refused and nothing lands on disk", ()
   const root = freshRoot("gate-refuse-");
   try {
     const out = join(root, "x.bin");
-    // candice-companion@0.2.0@win32 carries a placeholder checksum (recompute
-    // owed from the integrated build) -> fail closed, nothing lands on disk.
+    // candice-companion@0.2.0@win32 is quarantined and has no active checksum
+    // record -> fail closed, nothing lands on disk.
     const r = run([DOWNLOAD, "--id", "candice-companion", "--version", "0.2.0", "--platform", "win32", "--out", out]);
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /FAIL|refusing|no checksum record/i);

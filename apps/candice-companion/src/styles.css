@@ -1,11 +1,40 @@
 /* Candice Companion — shell base styles (WS-06). */
 
+/*
+ * FIX-008 legibility invariant.
+ *
+ * The companion window is `transparent: true` and `alwaysOnTop`, so it floats
+ * over arbitrary content — a bright terminal, a white page, a photo. Text
+ * drawn straight onto that transparency has NO defined background and its
+ * contrast is whatever the desktop happens to be.
+ *
+ * Every text-bearing surface therefore paints `--candice-ui-surface`, the same
+ * opaque token the FIX-008 contrast matrix measures every ratio against.
+ * Opaque is the load-bearing property: an alpha scrim would put the effective
+ * ratio back at the mercy of the desktop. The transparency that the design
+ * actually depends on — around the character — is untouched, and `body` stays
+ * transparent (asserted by tests/a11y-matrix/contrast-harness.mjs).
+ */
 :root {
-  color-scheme: light dark;
+  /* The palette below is hardcoded dark. Declaring `light dark` let a
+     light-mode OS render the form controls, caret and scrollbars light --
+     against dark chips, on the one surface that has no light variant. */
+  color-scheme: dark;
   --candice-accent: #7c5cff;
-  --candice-surface: rgba(20, 20, 28, 0.92);
-  --candice-text: #eceaf3;
-  --candice-muted: #a8a3b8;
+  --candice-text: #faf7ff;
+  --candice-muted: #d7cfdf;
+  --candice-ui-surface: #171321;
+  --candice-ui-border: #beb0ff;
+  /*
+   * FIX-008: accent-as-TEXT. --candice-accent (#7c5cff) is 4.20:1 on the
+   * surface — below AA 4.5 and far below the 7:1 this gate holds dark-theme
+   * surfaces to. It stays the accent for borders, glows and drop-shadows,
+   * where the 3:1 UI-component threshold applies and it passes. Accent text
+   * uses this lighter tint of the same hue instead (8.78:1).
+   */
+  --candice-accent-text: #b9a8ff;
+  --candice-focus-ring: #dfd7ff;
+  --candice-text-scale: 1;
 }
 
 * {
@@ -25,16 +54,25 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
-  background: var(--candice-surface);
+  background: transparent;
   color: var(--candice-text);
   overflow: hidden;
-  user-select: none;
 }
 
 #app {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Safety valve. `body` clips (`overflow: hidden`) and every row except the
+     character refuses to shrink below its content, so in the worst case --
+     tall caption plus a wrapped options row plus the methods and footer rows
+     at a large text scale -- the bottom of the stack fell outside the 640px
+     window. Buttons that are offscreen are not just ugly, they are
+     unclickable, which is what "the options are hard to select" actually was.
+     Scrolling is the wrong look but the right failure: nothing becomes
+     unreachable. The floor above is what keeps it from being needed. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Boot surface (shown before src/main.ts first paint) */
@@ -45,8 +83,24 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  font-size: 14px;
+  font-size: calc(14px * var(--candice-text-scale));
   color: var(--candice-muted);
+}
+
+.candice-status-surface,
+.fallback-title,
+.fallback-hint,
+.candice-runtime-status {
+  width: fit-content;
+  max-width: min(92vw, 420px);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--candice-ui-border);
+  border-radius: 8px;
+  background: var(--candice-ui-surface);
+  color: var(--candice-text);
+  font-size: calc(1em * var(--candice-text-scale));
+  overflow-wrap: anywhere;
 }
 
 .boot-glow {
@@ -63,20 +117,92 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
+  /* A FLOOR, not a size. With `min-height: 0` the stage collapsed to nothing
+     the moment the caption grew -- a long question pushed Candice off the top
+     of the window entirely. She is the point of the window; the caption
+     scrolls instead of evicting her. */
+  min-height: 150px;
 }
 
-/* Dev placeholder ONLY — final artwork binds through the WR-013 asset
-   contract (spec 11). Never shipped as the character. */
-.candice-placeholder {
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #b9a8ff 0%, #5b45c8 55%, #241b52 100%);
-  box-shadow:
-    0 0 40px rgba(124, 92, 255, 0.45),
-    inset 0 -14px 30px rgba(0, 0, 0, 0.35);
+.candice-character-image {
+  display: block;
+  max-width: min(100%, 520px);
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(124, 92, 255, 0.42));
   animation: candice-breathe 3.2s ease-in-out infinite;
+}
+
+/*
+ * Gesture stage host (FIX-016, src/shell/gesture-stage.ts).
+ * The container is empty on first paint (index.html) and turns visible
+ * only when mountGestureStage has mounted canonical manifest layers.
+ * Only one gesture layer is ever visible (WS-13 layer-swap contract).
+ */
+.candice-character {
+  position: relative;
+  display: none; /* no placeholder art: visible only with mounted layers */
+}
+
+.candice-character[data-candice-gesture-mounted="true"] {
+  display: block;
+  flex: 1;
+  /* THE FLOOR THAT ACTUALLY APPLIES.
+     `#candice-stage` above carries the same floor, and it does nothing once
+     the gesture stage mounts: composition.ts removes that element outright
+     (`document.getElementById(VISUAL_STAGE_ID)?.remove()`). This container is
+     what holds Candice from then on, and with `min-height: 0` it was the only
+     row in the column allowed to shrink -- so a long caption squeezed her
+     toward nothing while every fixed row below kept its space. Same defect the
+     stage floor was written to fix, on the element that outlives it. */
+  min-height: 200px;
+}
+
+.candice-gesture-layer {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: min(100%, 520px);
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 22px rgba(124, 92, 255, 0.42));
+  /* Smooth state transitions: one discrete 180ms opacity cross-fade
+     (spec 10: opacity is the only transition primitive used). */
+  transition: opacity 180ms ease-out;
+}
+
+.candice-gesture-active {
+  opacity: 1;
+}
+
+.candice-gesture-inactive {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.candice-state-caption {
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--candice-ui-border);
+  border-radius: 8px;
+  background: var(--candice-ui-surface);
+  color: var(--candice-text);
+  font-size: calc(12px * var(--candice-text-scale));
+}
+
+.candice-state-caption[hidden] {
+  display: none;
+}
+
+.candice-runtime-status {
+  margin: 0;
+  padding: 8px 12px 12px;
+  text-align: center;
+  /* Same rule as line 102, which this used to override by being later
+     at equal specificity -- so degraded-mode guidance never scaled. */
+  font-size: calc(12px * var(--candice-text-scale, 1));
+  color: var(--candice-muted);
 }
 
 @keyframes candice-breathe {
@@ -106,13 +232,61 @@ body {
 }
 
 .fallback-hint {
-  font-size: 13px;
+  font-size: calc(13px * var(--candice-text-scale));
   color: var(--candice-muted);
+}
+
+:focus-visible {
+  outline: 3px solid var(--candice-focus-ring);
+  outline-offset: 3px;
+}
+
+@media (forced-colors: active) {
+  .candice-status-surface,
+  .fallback-title,
+  .fallback-hint,
+  .candice-runtime-status,
+  .candice-state-caption,
+  .candice-captions,
+  .candice-answer-controls,
+  .candice-ptt,
+  .candice-name-prompt,
+  button,
+  input,
+  textarea,
+  select {
+    forced-color-adjust: auto;
+    background: Canvas;
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .boot-glow,
-  .candice-placeholder {
+  .candice-character-image {
     animation: none;
   }
+
+  .candice-gesture-layer {
+    transition: none;
+  }
+}
+
+/*
+ * WS-14 applied class (FIX-016/F16-05): the reduced-motion authority is
+ * the class on <html>, not only the OS media query. Continuous CSS loops
+ * stop under both signals.
+ */
+html.candice-reduced-motion .boot-glow,
+html.candice-reduced-motion .candice-character-image {
+  animation: none;
+}
+
+html.candice-reduced-motion .candice-gesture-layer {
+  transition: none;
 }

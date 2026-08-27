@@ -15,7 +15,8 @@ a second AI conversation, and never maintains a competing project memory.
 | `status-event` | `schemas/status-event.schema.json` | Real session/skill state; progress is never invented |
 | `preferences` | `schemas/preferences.schema.json` | Local preference profile (spec 9); never project memory |
 | `event-envelope` | `schemas/common/event-envelope.schema.json` | Shared discriminators across all events |
-| `question-keys` | `schemas/question-keys.json` | Machine-enumerable stable question key registry (spec 14) |
+| `question-keys` | `schemas/question-keys.json` | Versioned governed-question authority registry (spec 14) |
+| `question-inventory` | `schemas/question-inventory.json` | Doctrine-to-key traceability, including reviewed zero-governed skills |
 
 `schemas/schema-index.json` enumerates the protocol schemas; the WS-41 contract suite
 validates against it.
@@ -32,6 +33,9 @@ validates against it.
   the user confirms it (USE ANSWER / EDIT / TRY AGAIN, spec 6).
 - **Secret questions are never read aloud** (`readAloud: false`, `sensitivity: "secret"`).
 - **Captions always shown** regardless of voice-output state (spec 5.2).
+- **Registry authority.** `question-registry.js` builds canonical events from
+  `question-keys.json`; arbitrary or retired keys, altered wording/options,
+  changed privacy, or changed count metadata fail closed before delivery.
 - **Stable question keys.** Keys are fixed for the life of the contract; a key is
   never re-asked once answered and never reused for a different question.
 - **Version discipline.** `schemaVersion` is `"1.0"` in this baseline. Consumers

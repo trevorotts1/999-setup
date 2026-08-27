@@ -146,10 +146,10 @@ check('registry: every secret-keyed question shapes to readAloud:false and valid
 // 3. WS-04 runtime gate accepts the conforming pair (read-only require)
 // ————————————————————————————————
 
-check('WS-04 validate.js accepts secret + readAloud:false (the contract-safe form)', () => {
+check('WS-04 validate.js rejects an unregistered secret even when readAloud:false', () => {
   const { validateQuestionEvent } = require(path.join(__dirname, '..', '..', 'plugins', 'candice-integration', 'mcp', 'ask-user', 'validate'))
   const r = validateQuestionEvent(secretQuestion())
-  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.ok, false)
 })
 
 // ————————————————————————————————

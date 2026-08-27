@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import { CANONICAL_VOICE_CANDIDATES, DEFAULT_CANONICAL_VOICE } from "../assets.ts";
 import {
   CANONICAL_VOICE,
+  VOICE_APPROVAL_EVIDENCE,
+  VOICE_APPROVAL_STATUS,
   VOICE_CATALOG,
   isKnownVoice,
   resolveVoiceSelection,
@@ -40,5 +42,19 @@ describe("canonical Candice voice catalog (WS-19)", () => {
     const resolved = resolveVoiceSelection("af_sky");
     assert.equal(resolved.voiceId, "af_sky");
     assert.equal(resolved.voicepackRelease, CANONICAL_VOICE.voicepackRelease);
+  });
+
+  it("FIX-015 FAIL-6: shipped approval status is honest — approved, and only because the record landed", () => {
+    // The operator record landed 2026-08-25: Trevor approved af_bella.
+    // The point of this assertion is that the shipped status matches
+    // reality, not that it is permanently pending — so it now pins the
+    // approved state AND the voice that was actually approved. It must
+    // also match the native boundary value in src-tauri/speech/mod.rs
+    // (canonical_voice_approval) and canonicalVoice in the bundled
+    // SPEECH-INVENTORY.json, which fails closed on disagreement.
+    assert.equal(VOICE_APPROVAL_STATUS, "approved");
+    assert.equal(DEFAULT_CANONICAL_VOICE, "af_bella");
+    assert.ok(isKnownVoice(DEFAULT_CANONICAL_VOICE));
+    assert.equal(VOICE_APPROVAL_EVIDENCE, "evidence/FIX-015/operator-review/VOICE-APPROVAL.md");
   });
 });

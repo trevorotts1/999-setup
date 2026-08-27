@@ -17,6 +17,7 @@ WS-13 (`src/animation/gesture/**`), and WS-19 (`src-tauri/tts/**`).
 | `mapping.ts` | Pure mapping: phoneme→viseme, timing→event, blend gating |
 | `scheduler.ts` | `VisemeScheduler` — the state machine |
 | `registration.ts` | Fail-closed face-state registration precondition |
+| `registry.ts` | FIX-005 layer anchor registry: canonical-hash-guaranteed per-state anchors/scales for mouth/eye layers |
 | `index.ts` | Public surface |
 
 ## Scheduler math (alignment design)

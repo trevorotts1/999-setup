@@ -13,14 +13,19 @@
  *   by the UI layer; this module exposes the stored value and the greeting).
  * - The user can change the stored name later via `setPreferredName`.
  *
- * Dismissal vs answer: an explicit user dismissal records `nameAskedAt`
+ * Dismissal vs answer: an explicit user dismissal records `nameAsked`
  * (the question WAS asked and declined); it does not permanently re-ask on
  * every future session. `setPreferredName('')` clears the stored name but the
  * question is not re-asked unless the user requests it.
+ *
+ * v3 shape (WS-34): the ask state is the object `nameAsked: { askedAt }`
+ * (null when never asked). This module imports `mergeProfile` from
+ * `profile.ts` — never from `store.ts` — so the webview bundle never pulls
+ * `node:fs` through the name flow.
  */
 
 import { type CandiceProfile } from './schema.ts';
-import { mergeProfile } from './store.ts';
+import { mergeProfile } from './profile.ts';
 
 /** Normalize an answer the user typed or dictated. */
 export function normalizeName(raw: string): string {
@@ -28,7 +33,7 @@ export function normalizeName(raw: string): string {
 }
 
 /** A name is usable when it has at least one non-whitespace character. */
-export function isUsableName(name: string | undefined): boolean {
+export function isUsableName(name: string | undefined | null): boolean {
   return typeof name === 'string' && name.trim().length > 0;
 }
 
@@ -37,7 +42,7 @@ export function isUsableName(name: string | undefined): boolean {
  * user: no usable stored name AND the question was never asked.
  */
 export function needsNameAsk(profile: CandiceProfile): boolean {
-  return !isUsableName(profile.preferredName) && profile.nameAskedAt === undefined;
+  return !isUsableName(profile.preferredName) && profile.nameAsked === null;
 }
 
 /**
@@ -46,7 +51,7 @@ export function needsNameAsk(profile: CandiceProfile): boolean {
  * except through the caller).
  */
 export function markNameAsked(profile: CandiceProfile, nowIso: string): CandiceProfile {
-  return mergeProfile(profile, { nameAskedAt: nowIso });
+  return mergeProfile(profile, { nameAsked: { askedAt: nowIso } });
 }
 
 /**
@@ -55,7 +60,7 @@ export function markNameAsked(profile: CandiceProfile, nowIso: string): CandiceP
  */
 export function setPreferredName(profile: CandiceProfile, rawName: string): CandiceProfile {
   const name = normalizeName(rawName);
-  return mergeProfile(profile, { preferredName: name.length > 0 ? name : undefined });
+  return mergeProfile(profile, { preferredName: name.length > 0 ? name : null });
 }
 
 /**

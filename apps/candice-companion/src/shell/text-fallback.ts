@@ -8,21 +8,30 @@
  * session and never accepts interview answers.
  */
 
-export function showTextFallback(root: HTMLElement): void {
+export function showTextFallback(root: HTMLElement | null, detail?: string): void {
+  if (!root) return;
   root.replaceChildren();
 
   const card = document.createElement('div');
   card.className = 'fallback';
+  card.setAttribute('role', 'status');
+  card.setAttribute('aria-live', 'polite');
 
   const title = document.createElement('p');
   title.className = 'fallback-title';
-  title.textContent = 'Candice companion unavailable';
+  title.textContent = 'Candice can’t start right now';
 
   const hint = document.createElement('p');
   hint.className = 'fallback-hint';
   hint.textContent =
-    'Continue in Claude text mode — your session is unaffected.';
+    'Keep going in the Claude window — nothing is lost.';
 
   card.append(title, hint);
+  if (detail) {
+    const reason = document.createElement('p');
+    reason.className = 'fallback-hint';
+    reason.textContent = detail;
+    card.append(reason);
+  }
   root.append(card);
 }

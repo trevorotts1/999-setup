@@ -21,5 +21,34 @@ fn main() {
         );
     }
 
+    // Mirror the PLATFORM OVERLAYS too, or they are silently not applied.
+    //
+    // Tauri merges `tauri.<platform>.conf.json` from the same directory as
+    // the base config (RFC 7396). Only `npm run tauri:build` staged them,
+    // via scripts/stage-tauri-config.mjs -- so a build invoked directly as
+    // `cargo tauri build` or `tauri build`, which is what a CI job or a
+    // fresh clone naturally does, succeeded with NO override at all. That
+    // is exactly how the Windows installer would go back to carrying 378 MB
+    // of macOS-arm64 Python: green build, right filename present in the
+    // repo, override never read. Failing in the SUCCESS direction is the
+    // worst shape a packaging bug can have.
+    for platform in ["windows", "macos", "linux"] {
+        let name = format!("tauri.{platform}.conf.json");
+        let source = manifest_dir.join("..").join(&name);
+        let mirrored = manifest_dir.join(&name);
+        println!("cargo:rerun-if-changed={}", source.display());
+        match std::fs::read(&source) {
+            Ok(bytes) => std::fs::write(&mirrored, bytes)
+                .unwrap_or_else(|e| panic!("failed to mirror {name}: {e}")),
+            // Absent is legitimate -- only a platform that needs an override
+            // has one. A STALE mirror is not: it would keep applying an
+            // override the source no longer carries, which is the same
+            // silent-wrong-config failure in the other direction.
+            Err(_) => {
+                let _ = std::fs::remove_file(&mirrored);
+            }
+        }
+    }
+
     tauri_build::build();
 }

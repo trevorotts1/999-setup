@@ -35,6 +35,12 @@ export interface CaptionsControllerOptions {
   textScale?: CaptionsTextScale;
   /** Document injection (tests); defaults to the real document. */
   doc?: Document | null;
+  /**
+   * First visible caption shown at creation (FIX-014 I-13: the exact
+   * setup-check greeting). Null/empty shows nothing until the first
+   * machine effect. Always important (never faded).
+   */
+  initialCaption?: string | null;
 }
 
 export interface CaptionsController {
@@ -44,6 +50,18 @@ export interface CaptionsController {
   render(): void;
   /** Set the display scale (spec 9). */
   setTextScale(scale: CaptionsTextScale): void;
+  /**
+   * Highlight the sentence being spoken; null clears it. Driven from the real
+   * Kokoro phoneme timings that arrive on `candice:speech-start`.
+   */
+  setSpokenProgress(fraction: number | null): void;
+  /**
+   * Show an explicit caption outside machine effects (FIX-014: the
+   * welcome-back greeting and the first-run name question). A later
+   * machine transition re-renders from real effects and replaces it —
+   * the machine stays the source of truth.
+   */
+  announce(text: string, important?: boolean): void;
   destroy(): void;
 }
 
@@ -60,9 +78,16 @@ function captionOf(effect: CandiceSideEffect): CaptionEntry | null {
 }
 
 export function createCaptionsController(options: CaptionsControllerOptions): CaptionsController {
-  const { machine, mount, textScale = 'medium', doc = null } = options;
+  const { machine, mount, textScale = 'medium', doc = null, initialCaption = null } = options;
   const view: CaptionsView = createCaptionsView(mount, doc);
   if (view.el !== null) view.setTextScale(textScale);
+
+  // FIX-014 (I-13): the setup-check greeting is the first visible caption,
+  // shown at creation before any machine effect exists. Always important
+  // (never faded); empty/null shows nothing until the first effect.
+  if (initialCaption !== null && initialCaption.length > 0) {
+    view.show({ text: clipCaption(initialCaption), important: true, seq: 0 });
+  }
 
   // Entry-importance classification: question/recovering/text-fallback
   // captions are important (never faded); status-only captions are not.
@@ -108,6 +133,14 @@ export function createCaptionsController(options: CaptionsControllerOptions): Ca
     setTextScale: (scale: CaptionsTextScale) => {
       if (!CAPTIONS_TEXT_SCALES.includes(scale)) return;
       view.setTextScale(scale);
+    },
+    setSpokenProgress: (fraction: number | null) => {
+      view.setSpokenProgress(fraction);
+    },
+    announce: (text: string, important = true) => {
+      const clipped = clipCaption(text);
+      if (clipped.length === 0) return;
+      view.show({ text: clipped, important, seq: 0 });
     },
     destroy: () => {
       view.destroy();

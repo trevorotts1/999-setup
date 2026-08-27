@@ -37,6 +37,7 @@
 const assert = require('assert')
 const path = require('path')
 const harness = require('./harness')
+const { canonicalQuestion } = require('../../packages/candice-protocol/question-registry')
 
 let failures = 0
 
@@ -78,6 +79,10 @@ const CLOCK = harness.fixedClock('2026-08-21T12:00:00.000Z')
 const SESSION = 'session-abc-42'
 const KEY = 'BUILD_TARGET'
 const QUESTION_TEXT = 'What are you building and for whom?'
+
+function governedQuestion(sessionId) {
+  return canonicalQuestion({ sessionId, questionKey: KEY, skill: 'spec-protocol' }).question
+}
 
 // ---------------------------------------------------------------------------
 // Leg 1 — every answer path keeps the SAME session id
@@ -130,13 +135,10 @@ check('typed answer returns to the same session id', () => {
 check('Answer-in-Claude terminal answer keeps the same session id', () => {
   const guard = new (deps.DoubleCountGuard)()
   const coordinator = new FallbackCoordinator({ guard })
-  const deferred = coordinator.fallbackQuestion({
-    sessionId: SESSION,
-    questionKey: KEY,
-    text: 'What does it do?',
-  })
+  const question = governedQuestion(SESSION)
+  const deferred = coordinator.fallbackQuestion(question)
   assert.strictEqual(deferred.ok, true)
-  assert.strictEqual(deferred.prompt.text, 'What does it do?', 'the SAME question text is asked in Claude')
+  assert.strictEqual(deferred.prompt.text, question.text, 'the SAME question text is asked in Claude')
   const answered = coordinator.answerFromTerminal({
     sessionId: SESSION,
     questionKey: KEY,
@@ -263,22 +265,7 @@ check('ask_user end-to-end: question and answer stay in ONE session, counted onc
 
   const result = await server.askUser({
     sessionId: SESSION,
-    question: {
-      schemaVersion: '1.0',
-      sessionId: SESSION,
-      skill: 'spec-protocol',
-      event: 'question',
-      questionKey: KEY,
-      text: 'What is your name?',
-      answerKind: 'free_text',
-      allowedInputModes: ['voice', 'typed', 'terminal'],
-      readAloud: true,
-      sensitivity: 'normal',
-      counted: true,
-      progress: null,
-      helpText: 'A sentence or two is plenty.',
-      canGoBack: true,
-    },
+    question: governedQuestion(SESSION),
   })
   assert.strictEqual(delivered.length, 1, 'exactly one question delivered')
   assert.strictEqual(delivered[0].sessionId, SESSION)
@@ -310,8 +297,11 @@ check('crash recovery re-asks the exact pending question in the same session, no
   assert.strictEqual(rec.recovered.questionKey, KEY)
   assert.strictEqual(rec.recovered.text, 'the exact pending text')
   assert.strictEqual(rec.recovered.counted, true, 'recovered question carries the counted flag')
+  assert.strictEqual(typeof rec.lease.leaseId, 'string', 'recovery claims a lease (FIX-013)')
+  assert.strictEqual(rec.recovered.operationId, lifecycle.sessions.getSession(SESSION).pendingQuestion.operationId)
   const again = lifecycle.recoverPendingQuestion({ sessionId: SESSION })
-  assert.strictEqual(again.recovered, null, 'handed off exactly once — a second recovery finds nothing')
+  assert.strictEqual(again.ok, false, 'a second recovery is refused while the lease is held')
+  assert.strictEqual(again.code, 'recovery-lease-held')
   assert.strictEqual(lifecycle.status({ sessionId: SESSION }).status, 'recovering')
   lifecycle.resumeSession({ sessionId: SESSION })
   assert.strictEqual(lifecycle.status({ sessionId: SESSION }).status, 'active')

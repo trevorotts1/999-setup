@@ -308,18 +308,20 @@ settings contents. The change applies to **new sessions**. Both installers
 
 ## Candice Companion — install
 
-Candice ships as a prebuilt Tauri 2 app (macOS Apple Silicon DMG, Windows x64 NSIS installer) from GitHub Releases. No Rust/Node/build toolchain on the customer machine.
+> **Release blocked:** no Candice application payload is currently authorized
+> for download or installation. The bootstrap intentionally fails closed until
+> a future signed candidate passes the immutable-manifest, hash/signature, and
+> independent release-authority gates.
 
-1. Install Claude Code (Step 1 above).
-2. Run the 999-setup bootstrap (WS-31): installs the five bundled skills, the candice-integration plugin, the companion app, pinned STT/TTS assets, and version/checksum metadata.
-3. Existing users: the updater detects newer Spec Protocol, self-updates, and installs missing/stale Candice components on next invocation (WS-32). Plain `claude` settings are untouched.
-4. Candice wakes on /spec-protocol, /kaizen, /eli5, /bro and raises within a few seconds, before preflight completes.
+Do not follow prior 0.2.0 installation or release instructions. A future
+authorized release will publish the exact installation procedure and immutable
+artifact manifest. Plain `claude` settings remain out of scope for the repair.
 
-### Release 0.2.0 notes
+### Historical 0.2.0 notes — quarantined
 
-- macOS: signed with Developer ID + notarized when production credentials are supplied; otherwise the missing-credential limitation is recorded and Gatekeeper is never disabled.
-- Windows: unsigned builds trigger SmartScreen ("Windows protected your PC") — expected and truthful; the installer is never misrepresented as trusted. See apps/candice-companion/scripts/package-windows/SIGNING-STATUS.md.
-- Speech is local and offline (whisper.cpp STT, Kokoro TTS); no per-use cloud cost.
+These historical notes are not authorization to download, install, or trust a
+Candice application artifact. The release-protection policy and control gate
+are the current source of truth.
 
 ## License
 

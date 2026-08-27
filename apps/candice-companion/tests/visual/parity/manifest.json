@@ -1,0 +1,84 @@
+{
+  "schema": "candice/parity-review@1",
+  "bar": "BAR-10",
+  "requiredStates": [
+    "idle-neutral",
+    "greeting",
+    "listening",
+    "speaking",
+    "thinking-processing",
+    "compact-idle",
+    "expressive-gesture"
+  ],
+  "stateRows": {
+    "idle-neutral": {
+      "label": "Idle / neutral",
+      "canonicalIds": ["01-fullbody-idle", "03-mouth-neutral-closed"],
+      "rows": ["face", "hair", "silhouette-body", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    },
+    "greeting": {
+      "label": "Greeting",
+      "canonicalIds": ["02-gesture-welcome"],
+      "rows": ["face", "hair", "gesture", "silhouette-body", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    },
+    "listening": {
+      "label": "Listening",
+      "canonicalIds": ["10-presenting-portrait-a", "12-presenting-fullbody-a", "13-multipose-sheet", "14-presenting-twohands", "15-presenting-standing-a", "16-presenting-standing-b"],
+      "rows": ["selected-source-approved", "face", "hair", "gesture-meaning", "silhouette-body", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    },
+    "speaking": {
+      "label": "Speaking",
+      "canonicalIds": ["03-mouth-neutral-closed", "04-mouth-slight-open", "05-mouth-medium-open", "06-mouth-wide-open"],
+      "rows": ["face-alignment", "mouth-change-credibility", "no-frame-pop", "hair", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    },
+    "thinking-processing": {
+      "label": "Thinking / processing",
+      "canonicalIds": ["10-presenting-portrait-a", "12-presenting-fullbody-a", "13-multipose-sheet", "14-presenting-twohands", "15-presenting-standing-a", "16-presenting-standing-b"],
+      "rows": ["selected-source-approved", "state-reads-as-thinking", "face", "hair", "silhouette-body", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    },
+    "compact-idle": {
+      "label": "Small progress companion",
+      "canonicalIds": ["03-mouth-neutral-closed", "09-eye-open"],
+      "rows": ["same-candice-small-scale", "face-recognizable", "no-opaque-circle-or-box", "hologram-palette", "readable-without-aliasing", "overall-likeness"]
+    },
+    "expressive-gesture": {
+      "label": "Expressive / gesture",
+      "canonicalIds": ["07-mouth-smile-closed", "08-mouth-smile-open", "10-presenting-portrait-a", "12-presenting-fullbody-a", "13-multipose-sheet", "14-presenting-twohands", "15-presenting-standing-a", "16-presenting-standing-b"],
+      "rows": ["selected-source-approved", "expression-fits-state", "identity", "hologram-palette", "transparency-no-box", "overall-likeness"]
+    }
+  },
+  "globalChecks": [
+    "capture-names-canonical-asset-and-sha",
+    "derivative-names-immutable-parent",
+    "no-placeholder-or-kie-in-bundle",
+    "identity-tracks-reference",
+    "palette-tracks-reference",
+    "alpha-preserved-light-and-dark",
+    "no-crop-alias-flicker-artifacts",
+    "placement-readable-not-obstructing",
+    "constrained-mode-preserves-identity",
+    "operator-signed-decisions"
+  ],
+  "animation": {
+    "bar": "BAR-10A",
+    "requiredStates": ["IDLE", "GREETING", "LISTENING", "SPEAKING", "THINKING_PROCESSING", "SUCCESS_CONFIRMATION", "PROGRESS_COMPANION_IDLE", "PROGRESS_COMPANION_ALERT"],
+    "items": [
+      "ANIM-01",
+      "ANIM-02",
+      "ANIM-03",
+      "ANIM-04",
+      "ANIM-05",
+      "ANIM-06",
+      "ANIM-07"
+    ],
+    "requiredEvidence": ["idle-loop", "speaking-loop", "listening-indication", "processing-indication", "reduced-companion"],
+    "technical": [
+      "mouth-visibly-updates-during-speech",
+      "no-frozen-speaking",
+      "no-random-gesture-state-mismatch",
+      "no-excessive-cpu-memory",
+      "no-heavyweight-3d-engine",
+      "animation-drive-documented"
+    ]
+  }
+}
