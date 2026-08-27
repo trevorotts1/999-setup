@@ -308,14 +308,37 @@ settings contents. The change applies to **new sessions**. Both installers
 
 ## Candice Companion — install
 
-> **Release blocked:** no Candice application payload is currently authorized
-> for download or installation. The bootstrap intentionally fails closed until
-> a future signed candidate passes the immutable-manifest, hash/signature, and
-> independent release-authority gates.
+One command installs everything this repository ships:
+
+```
+node scripts/candice-bootstrap/bootstrap.mjs install --mode release
+```
+
+That installs the bundled skills, the `candice-integration` Claude plugin,
+and the pinned speech assets (every payload sha256-verified before it lands).
+Re-run the same command to update. Client-facing instructions, in plain
+language, are in [`docs/client/INSTALL-MACOS.md`](docs/client/INSTALL-MACOS.md).
+
+**The application payload is the one part that is not published yet.** No
+signed Candice app candidate has passed the release authority
+(`scripts/candice-release/status.mjs`), so the bootstrap refuses to install
+one — it will never invent a candidate, and a tampered artifact still aborts
+the whole install and rolls it back.
+
+What it no longer does is refuse *everything else* because of that. The
+install completes, reports
+
+> bootstrap completed — APP NOT INSTALLED (no published Candice release for
+> this platform yet); skills, plugin and assets are installed and the plugin
+> runs in terminal-answer mode
+
+and the plugin answers questions in the terminal until an app is published.
+Before this, the app leg ran first and aborted the transaction, so installing
+from the repository installed nothing at all.
 
 Do not follow prior 0.2.0 installation or release instructions. A future
-authorized release will publish the exact installation procedure and immutable
-artifact manifest. Plain `claude` settings remain out of scope for the repair.
+authorized release publishes the app artifact and its immutable manifest
+record. Plain `claude` settings remain out of scope for the repair.
 
 ### Historical 0.2.0 notes — quarantined
 
