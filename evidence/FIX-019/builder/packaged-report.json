@@ -1,10 +1,10 @@
 {
   "reportSchema": "fix-019/1",
-  "generatedAt": "2026-08-27T16:05:48.950Z",
+  "generatedAt": "2026-08-27T16:18:39.081Z",
   "repo": "999-setup-audit",
   "commitSha": "packaged-suite-run",
-  "packagedBinarySha": "7fa3ebf61b69683853a91b71fe16810cd9d4e1b314220c1db058a4e327ce32e7",
-  "runId": "packaged-suite-1787846748950",
+  "packagedBinarySha": "0c9e091a31b5ecea041faa0e974afe838fed36f8f62b47bba371218a875c8494",
+  "runId": "packaged-suite-1787847519080",
   "launcher": "node tests/e2e-acceptance/packaged/suite.js",
   "verdict": "BLOCKED",
   "legs": [

@@ -105,14 +105,57 @@ if (!skipLive) {
   }
 }
 
+// The FIX-008 candidate is frozen ON PURPOSE: this QC runs against one named
+// commit, not against whatever is checked out. But the stamp was
+// unconditional, so a run made from any other tree still wrote
+// `candidate: 3bca5017…` into evidence and still exited 0. Evidence that
+// names a build it did not test is worse than no evidence, and this pack's
+// own rule is that a skip never hides behind a green exit.
+//
+// So the tree is measured and recorded beside the candidate, and a mismatch
+// BLOCKS (exit 2, the packaged suite's convention) instead of passing. The
+// frozen constant is untouched — the guard is about honesty over which tree
+// produced the numbers, not about moving the candidate.
+const CANDIDATE = '3bca501794d51cacbb3b8a05f8d68868d750120e';
+
+const gitOut = (args) => {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', cwd: join(here, '..', '..') }).trim();
+  } catch {
+    return null; // UNDETERMINED, never a confident answer
+  }
+};
+
+const treeCommit = gitOut(['rev-parse', 'HEAD']);
+const treeDirty = gitOut(['status', '--porcelain']);
+// CONTROL: if git cannot be read at all, say so rather than reporting a
+// clean match by accident. `null` is not "the same as the candidate".
+const treeKnown = treeCommit !== null && treeDirty !== null;
+const treeMatchesCandidate = treeKnown && treeCommit === CANDIDATE && treeDirty === '';
+
+let blockedReason = null;
+if (!treeKnown) {
+  blockedReason = 'could not read the working tree state from git, so which build produced these numbers is undetermined';
+} else if (treeCommit !== CANDIDATE) {
+  blockedReason = `working tree is at ${treeCommit}, not the frozen FIX-008 candidate ${CANDIDATE} — these results describe a different build`;
+} else if (treeDirty !== '') {
+  const n = treeDirty.split('\n').filter((l) => l.length > 0).length;
+  blockedReason = `working tree is at the candidate but carries ${n} uncommitted change(s) — these results describe a modified build`;
+}
+
 const report = {
   suite: 'tests/a11y-matrix',
-  candidate: '3bca501794d51cacbb3b8a05f8d68868d750120e',
+  candidate: CANDIDATE,
+  treeCommit,
+  treeClean: treeKnown ? treeDirty === '' : null,
+  treeMatchesCandidate,
+  blockedReason,
   ranAt: new Date().toISOString(),
   skipLive,
   results,
-  verdict: failed ? 'FAIL' : 'PASS',
+  verdict: blockedReason ? 'BLOCKED' : failed ? 'FAIL' : 'PASS',
 };
 writeFileSync(join(evidenceDir, 'suite-results.json'), JSON.stringify(report, null, 2));
+if (blockedReason) console.log(`\nBLOCKED - ${blockedReason}`);
 console.log(`\nSUITE VERDICT: ${report.verdict}`);
-process.exit(failed ? 1 : 0);
+process.exit(blockedReason ? 2 : failed ? 1 : 0);

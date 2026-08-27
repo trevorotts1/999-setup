@@ -54,6 +54,23 @@ case "$MODE" in
     ;;
 esac
 
+# Ad-hoc/unsigned modes are local smoke only: they must never reach a
+# distribution path (QC-FIX WS-23 2026-08-21 -- an ad-hoc/unsigned dmg would
+# look like a release).
+#
+# This check used to live further down, AFTER `rm -rf "$APP"` and after the
+# tree had been copied into dist/. It reads nothing but $1 and $2, so running
+# it late bought nothing and cost this: an invocation rejected for its
+# arguments still destroyed and half-rebuilt dist/ on its way out, leaving
+# files stamped newer than the built binary. The stale-tree guard below then
+# refused the NEXT, correct invocation -- blaming the source tree for
+# wreckage this script had just made. Argument validation belongs before any
+# filesystem work.
+if [[ "$MODE" != "prod" && "$WANT_DMG" == "dmg" ]]; then
+  echo "build-macos-bundle: dmg requires mode=prod (adhoc/unsigned are local smoke only, never distribution artifacts)" >&2
+  exit 1
+fi
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-macos-bundle: not a macOS host ($(uname -s)) — macOS bundling is not applicable here" >&2
   exit 2
@@ -120,7 +137,13 @@ while IFS= read -r candidate; do
     NEWER_SOURCE="$candidate"
     break
   fi
-done < <(find src src-tauri/src src-tauri/speech dist \
+# dist/ is NOT in this list. It is this script's own output -- the question
+# the guard asks is "was the bundle built after the SOURCES it claims to
+# contain", and a file this script itself copied into dist/ is not a source.
+# Including it meant every packaging run seeded the next one's tripwire, and
+# a run that died partway through left dist/ newer than the binary with
+# nothing to rebuild that would clear it.
+done < <(find src src-tauri/src src-tauri/speech \
   -type f \( -name '*.ts' -o -name '*.rs' -o -name '*.js' -o -name '*.css' -o -name '*.html' \) \
   -newer "$BUILT_BINARY" 2>/dev/null)
 
@@ -162,13 +185,9 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
-# Ad-hoc/unsigned modes are local smoke only: they must never be allowed to
-# reach any distribution path (QC-FIX WS-23 2026-08-21: dmg rejected for
-# non-prod modes — an ad-hoc/unsigned dmg would look like a release).
-if [[ "$MODE" != "prod" && "$WANT_DMG" == "dmg" ]]; then
-  echo "build-macos-bundle: dmg requires mode=prod (adhoc/unsigned are local smoke only, never distribution artifacts)" >&2
-  exit 1
-fi
+# (The dmg/mode compatibility check that used to sit here now runs with the
+# other argument validation, before any filesystem work. See the top of the
+# script -- the WS-23 rule it enforces is unchanged, only its position.)
 
 case "$MODE" in
   prod)

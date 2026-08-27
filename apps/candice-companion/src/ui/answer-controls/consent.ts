@@ -60,8 +60,17 @@ export const BLOCKED_EXPLANATIONS: Readonly<Record<string, string>> = {
   // process), and inventing a capability field to carry one is a larger
   // change than this copy is worth. Pointing at what every OS calls the
   // same thing is correct on both -- and shorter.
+  //
+  // Second pass on the opening clause: "I'm not allowed to use your
+  // microphone" was the last user-facing sentence still written at someone
+  // rather than to them, and it did not sound like the two refusals sitting
+  // beside it. All three now open the same way -- "I can't ..." -- and the
+  // instruction is an instruction ("Turn it on in") instead of a description
+  // of one ("You can turn it on in"). 145 characters to 130, and the three
+  // things the user needs are all still here: what happened, where to fix
+  // it, and what still works right now.
   denied:
-    'I’m not allowed to use your microphone. You can turn it on in your computer’s privacy settings, under Microphone. You can still type your answer.',
+    'I can’t use your microphone yet. Turn it on in your computer’s privacy settings, under Microphone. You can still type your answer.',
   'no-device':
     'I can’t find a microphone on this computer. You can still type your answer.',
   error:

@@ -1,11 +1,11 @@
 # FIX-019 e2e-acceptance report
 
 - Verdict: **BLOCKED**
-- Generated: 2026-08-27T16:05:48.950Z
+- Generated: 2026-08-27T16:18:39.081Z
 - Repository: 999-setup-audit
 - Commit SHA: packaged-suite-run
-- Packaged binary SHA-256: 7fa3ebf61b69683853a91b71fe16810cd9d4e1b314220c1db058a4e327ce32e7
-- Run id: packaged-suite-1787846748950
+- Packaged binary SHA-256: 0c9e091a31b5ecea041faa0e974afe838fed36f8f62b47bba371218a875c8494
+- Run id: packaged-suite-1787847519080
 - Launcher: node tests/e2e-acceptance/packaged/suite.js
 
 ## Tier verdicts
