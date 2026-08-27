@@ -58,6 +58,23 @@ test('checkThresholds — CPU runaway fails with named violation', () => {
   assert.ok(result.violations.some((v) => v.startsWith('listening cpuPercentMean')));
 });
 
+test('checkThresholds — speaking spike above new cap fails with named violation', () => {
+  // Recalibrated cap is 100; a regression-class spike above it must still trip.
+  const spike = windowOf(30, 120, 37);
+  const result = checkThresholds(spike, 'speaking');
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((v) => v.startsWith('speaking cpuPercentMax')));
+});
+
+test('checkThresholds — real say-engine spike (69.1%) passes recalibrated speaking cap', () => {
+  // The observed real-engine spike that flaked the old cap 60 (1 of 5 perf
+  // gate runs, 2026-08-21) must clear the recalibrated cap 100.
+  const realSpike = windowOf(14.1, 69.1, 37);
+  const result = checkThresholds(realSpike, 'speaking');
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.violations, []);
+});
+
 test('checkThresholds — boundary values are inclusive (at-limit passes)', () => {
   const atLimit = windowOf(REGRESSION_THRESHOLDS.idle.cpuMeanMax, REGRESSION_THRESHOLDS.idle.cpuMaxMax, REGRESSION_THRESHOLDS.idle.rssMiBMax);
   const result = checkThresholds(atLimit, 'idle');
@@ -89,7 +106,7 @@ test('machine-readable registry — matches in-code thresholds exactly', () => {
     platform: string;
     phases: typeof REGRESSION_THRESHOLDS;
   };
-  assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.schemaVersion, 3);
   assert.equal(parsed.platform, MEASURED_BASELINE_MACOS_AS_2026_08_21.platform);
   assert.deepEqual(parsed.phases, REGRESSION_THRESHOLDS);
 });

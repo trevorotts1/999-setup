@@ -50,7 +50,7 @@ then re-measures):
 | Phase | cpuMeanMax | cpuMaxMax | rssMiBMax |
 |---|---|---|---|
 | idle | 10 | 25 | 180 |
-| speaking | 25 | 60 | 220 |
+| speaking | 30 | 100 | 220 |
 | listening | 180 | 200 | 250 |
 
 A missing measurement window FAILS the gate (`verifyReport` treats a
