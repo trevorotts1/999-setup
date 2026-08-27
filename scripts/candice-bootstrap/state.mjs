@@ -122,6 +122,17 @@ export function writeState(root, state) {
 export function stateMatches(state, pins) {
   if (!state || !state.components) return false;
   for (const [id, version] of Object.entries(pins)) {
+    // An UNDETERMINED pin can never certify "up to date".
+    //
+    // SKILL_PINS is derived from each skill's VERSION file, and an
+    // unreadable one yields null. The installed record is written from the
+    // same pin, so it would be null too -- and `null !== null` is false,
+    // meaning this loop would sail past and report the component current
+    // when its version is not known at all. Before the pins were derived
+    // they were literals and could never be null, so this path did not
+    // exist; it arrived with the derivation and has to be closed here,
+    // where the comparison happens.
+    if (version === null || version === undefined || version === "") return false;
     const rec = state.components[id];
     if (!rec || rec.version !== version || rec.status !== "installed") return false;
   }

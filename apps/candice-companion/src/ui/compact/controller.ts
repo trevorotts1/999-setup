@@ -20,7 +20,7 @@
  */
 
 import type { CandiceEvent, CandiceStateMachine } from '../../state/machine.ts';
-import { BUSY_HINT_TEXT, CompactSubmitQueue, submissionMustWait } from './queue.ts';
+import { busyHintText, CompactSubmitQueue, submissionMustWait } from './queue.ts';
 import type { CompactSubmitEntry } from './queue.ts';
 import { compactStatusView } from './status.ts';
 import { createCompactView, type CompactView } from './view.ts';
@@ -145,7 +145,7 @@ export function createCompactController(options: CompactControllerOptions): Comp
     const result = machine.getState();
     const viewState = compactStatusView(result.status);
     view.setStatus(viewState);
-    view.setBusyHint(viewState.busy && queue.size > 0, BUSY_HINT_TEXT);
+    view.setBusyHint(viewState.busy && queue.size > 0, busyHintText());
     view.setPending(queue.pending());
   }
 

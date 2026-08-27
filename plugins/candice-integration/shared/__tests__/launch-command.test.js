@@ -27,6 +27,8 @@ const {
   DEFAULT_LAUNCH_COMMAND,
   resolveConfiguredLaunchCommand,
   resolveLaunchCommand,
+  pluginRoot,
+  companionSpawnEnv,
 } = require('../launch-command')
 
 let failures = 0
@@ -181,6 +183,52 @@ check('CONTROL: the probe is actually consulted, not bypassed', () => {
     },
   })
   assert.ok(asked >= 3, `expected several candidates to be probed, saw ${asked}`)
+})
+
+
+// ————————————————————————————————
+// 5. The plugin reports WHERE IT LIVES, and nothing more
+// ————————————————————————————————
+//
+// The companion read CLAUDE_CONFIG_DIR and fell back to CLAUDECODE. All four
+// SHIPPED launchers set the former ZERO times, and BOTH harnesses set the
+// latter, so users of the second harness were told to answer in a window
+// that was not on their screen.
+//
+// The fix hands the app this plugin's own path. It is NOT classified here:
+// WS-42 requires the shipped plugin to carry zero coupling to how the
+// session was launched, and an earlier cut of this fix classified in this
+// file and broke that invariant. tests/same-session caught it. Naming the
+// window is the app's job (src-tauri/src/harness.rs).
+
+check('pluginRoot is this module\'s parent, the installed plugin tree', () => {
+  assert.strictEqual(pluginRoot('/opt/x/.claude/plugins/p/shared'), '/opt/x/.claude/plugins/p')
+})
+
+check('the spawn env carries the plugin location', () => {
+  const spawned = companionSpawnEnv({ dir: '/Users/x/.claude/plugins/p/shared', env: { PATH: '/bin' } })
+  assert.strictEqual(spawned.CANDICE_PLUGIN_ROOT, '/Users/x/.claude/plugins/p')
+  assert.strictEqual(spawned.PATH, '/bin', 'the caller environment must survive')
+})
+
+check('the plugin does NOT branch on which harness it is under', () => {
+  // The invariant, asserted directly: identical shape in both worlds. The
+  // ONLY difference is the path itself, which the plugin never reads.
+  const nine = companionSpawnEnv({ dir: '/Users/x/.claude-nine/plugins/p/shared', env: {} })
+  const plain = companionSpawnEnv({ dir: '/Users/x/.claude/plugins/p/shared', env: {} })
+  assert.deepStrictEqual(
+    Object.keys(nine).sort(), Object.keys(plain).sort(),
+    'the environment handed to the app must have the same shape either way',
+  )
+  // And no verdict is computed here.
+  assert.ok(!('CANDICE_HARNESS' in nine), 'the plugin must not classify the harness')
+})
+
+check('CONTROL: the derivation reads dir, not a constant', () => {
+  assert.notStrictEqual(
+    pluginRoot('/x/a/shared'),
+    pluginRoot('/x/b/shared'),
+  )
 })
 
 if (failures > 0) {

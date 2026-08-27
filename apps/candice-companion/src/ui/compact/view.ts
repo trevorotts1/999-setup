@@ -33,6 +33,7 @@
  * @module
  */
 
+import { returnToHarnessLabel } from '../../harness/name.ts';
 import {
   COMPACT_EXPAND_MS,
   COMPACT_EXPANDED_CLASS,
@@ -359,7 +360,7 @@ export function createCompactView(
   const toClaude = d.createElement('button');
   toClaude.type = 'button';
   toClaude.className = 'candice-compact-btn';
-  toClaude.textContent = 'Return to Claude';
+  toClaude.textContent = returnToHarnessLabel();
   toClaude.addEventListener('click', () => handlers.onReturnToClaude());
 
   // Expansion was ONLY a click handler on the root div: not focusable, no

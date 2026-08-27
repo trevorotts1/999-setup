@@ -17,9 +17,9 @@ import { pathToFileURL } from 'node:url';
 
 // Shared with the MCP ask_user bridge so the two launch paths can never
 // resolve the companion differently (see shared/launch-command.js).
-import { resolveLaunchCommand } from '../shared/launch-command.js';
+import { resolveLaunchCommand, companionSpawnEnv } from '../shared/launch-command.js';
 
-export { resolveLaunchCommand };
+export { resolveLaunchCommand, companionSpawnEnv };
 
 export const SUPPORTED_COMMANDS = Object.freeze([
   '/spec-protocol',
@@ -92,6 +92,9 @@ export function buildWakeRequest(command, payload) {
 export function dispatchWake(request, {
   launchCommand = resolveLaunchCommand(),
   spawn = nodeSpawn,
+  // Injected so a test can assert what the child is told without reading
+  // the real environment.
+  spawnEnv = companionSpawnEnv(),
 } = {}) {
   if (!request.ok) return { outcome: 'ignored', code: request.code };
   try {
@@ -100,6 +103,11 @@ export function dispatchWake(request, {
       shell: false,
       stdio: 'ignore',
       windowsHide: true,
+      // Carries CANDICE_HARNESS so the app can name the window the user is
+      // actually looking at. Passing the environment explicitly is not a
+      // widening: with no `env` option Node inherits the parent's whole
+      // environment anyway, which is what this did before.
+      env: spawnEnv,
     });
     // A missing executable is reported asynchronously by Node. Consume that
     // event so it cannot turn an async Claude hook into an unhandled error.

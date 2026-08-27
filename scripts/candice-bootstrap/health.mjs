@@ -49,8 +49,29 @@ export function checkSkill(root, name, version) {
       installedVersion = null;
     }
   }
-  const ok = present && installedVersion === version;
-  return { name, present, version: installedVersion, expected: version, ok, ...(present && installedVersion !== version ? { detail: "stale version — upgrade lane (WS-32) applies" } : {}) };
+  // A null on EITHER side is a FAILURE, never a match.
+  //
+  // This was `installedVersion === version`, and both sides can legitimately
+  // be null. The expected pin is DERIVED from the bundled skill's own VERSION
+  // file (install.mjs readBundledSkillVersion), which returns null when that
+  // file is missing, unreadable or empty; the installed side returns null the
+  // same way. `null === null` is true, so a client whose checkout was missing
+  // a VERSION file installed the skill and this leg reported it HEALTHY with
+  // zero version verification -- exactly the case the leg exists to catch.
+  // The repo-side suite does catch a deletion, but a client machine never
+  // runs that suite, so the guard has to live here.
+  const known = typeof version === "string" && version !== "";
+  const ok = present && known && installedVersion === version;
+  const detail = !present
+    ? undefined
+    : !known
+      ? "no bundled version pin for this skill — the installer source is incomplete, so the installed copy cannot be verified"
+      : installedVersion === null
+        ? "installed skill has no readable VERSION — cannot be verified"
+        : installedVersion !== version
+          ? "stale version — upgrade lane (WS-32) applies"
+          : undefined;
+  return { name, present, version: installedVersion, expected: version, ok, ...(detail ? { detail } : {}) };
 }
 
 /** Health check the installed candice-integration plugin tree (tree presence only; registration is a separate leg). */
@@ -245,14 +266,31 @@ async function schemaHealthCheck(opts = {}) {
         const mcp = JSON.parse(readFileSync(mcpFile, "utf8"));
         const server = mcp.mcpServers && mcp.mcpServers.candice;
         const ready = server?.env?.CANDICE_COMPANION_READY === "1";
+        // CANDICE_COMPANION_READY is a CLAIM about the installed app, so the
+        // leg checks that the claim MATCHES reality rather than demanding it
+        // be true. With no app installed the plugin is supposed to run in
+        // terminal-answer mode, and marking that a failure meant a client
+        // who installed from the repository before any app was published had
+        // the whole install rolled back over a correctly-absent flag.
+        //
+        // This is strictly stricter than what it replaces, not looser: the
+        // old check could not see a plugin claiming a companion that is not
+        // installed. That case now FAILS, because a plugin that advertises a
+        // companion it cannot reach makes every ask_user hang to timeout.
+        const appInstalled = checkApp(root, platform).present === true;
+        const consistent = ready === appInstalled;
         set(
           "plugin-mcp",
-          server?.command && ready ? LEG_OK : LEG_FAIL,
+          server?.command && consistent ? LEG_OK : LEG_FAIL,
           !server?.command
             ? "candice MCP server missing"
-            : ready
+            : ready && appInstalled
               ? "candice MCP server declared and provisioned"
-              : "candice MCP server is not provisioned (CANDICE_COMPANION_READY=1 missing)",
+              : !ready && !appInstalled
+                ? "candice MCP server declared; companion not installed, so terminal-answer mode is correct"
+                : ready
+                  ? "candice MCP server claims CANDICE_COMPANION_READY=1 but no app is installed"
+                  : "candice MCP server is not provisioned (CANDICE_COMPANION_READY=1 missing) though the app IS installed",
         );
       } catch (e) {
         set("plugin-mcp", LEG_FAIL, `.mcp.json unreadable: ${e.message}`);

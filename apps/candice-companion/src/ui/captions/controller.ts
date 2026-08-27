@@ -21,6 +21,7 @@
  * @module
  */
 
+import { isAnswerElsewhereCaption } from '../../harness/name.ts';
 import type { CandiceStateMachine, CandiceSideEffect } from '../../state/machine.ts';
 import { CAPTIONS_TEXT_SCALES, type CaptionsTextScale } from './config.ts';
 import { captionFromEffect, clipCaption, type CaptionEntry } from './model.ts';
@@ -95,7 +96,7 @@ export function createCaptionsController(options: CaptionsControllerOptions): Ca
     const t = caption.toUpperCase();
     return (
       t.startsWith('RECOVERING') ||
-      caption === 'Answer in Claude instead' ||
+      isAnswerElsewhereCaption(caption) ||
       (t.length > 0 && !t.startsWith('LISTENING') && !t.startsWith('HERE IS WHAT'))
     );
   };

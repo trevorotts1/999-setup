@@ -2,9 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { win32 as pathWin32, posix as pathPosix } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+
+import { checkApp, checkSkill } from "../health.mjs";
 
 import {
   bootstrapRoot,
@@ -24,6 +27,8 @@ import {
   ttsModelPath,
 } from "../paths.mjs";
 import {
+  BUNDLED_SKILLS,
+  insideRoot,
   installAll,
   installSkills,
   installPlugin,
@@ -74,18 +79,128 @@ test("stateMatches detects full vs partial component sets", () => {
   const state = {
     schema: STATE_SCHEMA,
     platform: "darwin",
-    components: {
-      "nine-router-setup": { status: "installed", version: "1.17.0" },
-      "spec-protocol": { status: "installed", version: "1.17.0" },
-      kaizen: { status: "installed", version: "1.1.0" },
-      eli5: { status: "installed", version: "1.1.0" },
-      bro: { status: "installed", version: "1.1.0" },
-    },
+    // Built FROM the pins, not restated beside them. Restating them is what
+    // let this fixture rot to spec-protocol 1.17.0 while the repository moved
+    // to 1.17.4. The negative assertion below is what gives this test its
+    // teeth, and it does not depend on the numbers being spelled out here.
+    components: Object.fromEntries(
+      Object.entries(SKILL_PINS).map(([name, version]) => [name, { status: "installed", version }]),
+    ),
     assets: {},
     launch: {},
   };
   assert.equal(stateMatches(state, SKILL_PINS), true);
   assert.equal(stateMatches(state, { ...SKILL_PINS, kaizen: "9.9.9" }), false);
+});
+
+test("an undetermined pin never reports a component up to date", () => {
+  // Regression for a false PASS that arrived WITH the derived pins. An
+  // unreadable VERSION file yields a null pin; the installed record is
+  // written from that same pin, so it is null too; and `null !== null` is
+  // false, so the old loop sailed past and certified the component current
+  // when its version was not known at all.
+  //
+  // "Undetermined" must never read as "fine".
+  const state = {
+    schema: STATE_SCHEMA,
+    platform: "darwin",
+    components: { kaizen: { status: "installed", version: null } },
+    assets: {},
+    launch: {},
+  };
+  assert.equal(stateMatches(state, { kaizen: null }), false, "a null pin must not match a null record");
+  assert.equal(stateMatches(state, { kaizen: undefined }), false, "an undefined pin must not match");
+  assert.equal(stateMatches(state, { kaizen: "" }), false, "an empty pin must not match");
+
+  // CONTROL: the same shape with a REAL version must still match, or this
+  // test would pass against a stateMatches that simply always returns false.
+  const good = {
+    schema: STATE_SCHEMA,
+    platform: "darwin",
+    components: { kaizen: { status: "installed", version: "1.1.0" } },
+    assets: {},
+    launch: {},
+  };
+  assert.equal(stateMatches(good, { kaizen: "1.1.0" }), true, "a real matching pin must still match");
+});
+
+test("skill pins, the skills on disk, and the registry all agree", () => {
+  // THE BUG THIS EXISTS TO PREVENT: SKILL_PINS said spec-protocol 1.17.0
+  // while the skill in the repository was 1.17.3. installSkills copies the
+  // skill tree verbatim -- VERSION file included -- and checkSkill compares
+  // the installed VERSION against the pin, so the mismatch failed the
+  // skill-tree health leg on EVERY release install and rolled the whole
+  // install back. A stale number in a table made the product uninstallable,
+  // with no error naming the cause.
+  //
+  // Three documents have to agree: the pin table, the skill's own VERSION
+  // file, and the registry in CONTROL/bundled-components.json. Nothing kept
+  // them in sync, and two of the three had already drifted.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const registry = JSON.parse(
+    readFileSync(join(repoRoot, "CONTROL", "bundled-components.json"), "utf8"),
+  );
+
+  for (const name of BUNDLED_SKILLS) {
+    const onDisk = readFileSync(
+      join(repoRoot, ".claude", "skills", name, "VERSION"), "utf8",
+    ).trim();
+
+    assert.equal(
+      SKILL_PINS[name], onDisk,
+      `pin for ${name} (${SKILL_PINS[name]}) does not match its VERSION file (${onDisk})`,
+    );
+
+    const rows = registry.components[name];
+    assert.ok(
+      Array.isArray(rows) && rows.length === 1,
+      `${name} is bundled by the installer but has no single registry record`,
+    );
+    assert.equal(
+      rows[0].version, onDisk,
+      `registry records ${name} at ${rows[0].version}, but the skill is ${onDisk}`,
+    );
+  }
+
+  // CONTROL: the assertions above compare values that are all derived from
+  // the same file for the pin side, so prove the registry side is genuinely
+  // a SECOND source that could disagree -- by showing it does not simply
+  // echo the pins.
+  assert.ok(
+    Object.keys(registry.components).length > BUNDLED_SKILLS.length,
+    "registry should describe more components than the installer bundles",
+  );
+});
+
+test("launchCommand records a real path on every platform, and agrees with the health probe", () => {
+  // `state.launch.command` is READ by two things: the launch-command health
+  // leg (existsSync) and the bridge probe (which spawns it). On win32 this
+  // used to return the sentence "candice-companion.exe (placed by NSIS
+  // installer, WS-29)", so the leg would have tested a path that is English
+  // prose and the probe would have tried to execute one.
+  //
+  // Latent only because no Windows payload is published yet -- which is
+  // exactly why it needed fixing before one is, on the platform with no
+  // machine here to catch it.
+  const root = "/tmp/candice-launch-fixture";
+
+  const win = launchCommand(root, "win32");
+  assert.ok(!/\s\(/.test(win.path), `win32 launch path must be a path, not prose: ${win.path}`);
+  assert.ok(win.path.endsWith("candice-companion.exe"), win.path);
+
+  // It must be the SAME file the health probe looks for. The two disagreeing
+  // was the underlying defect, not the prose itself.
+  assert.equal(win.path, join(root, "app", "candice-companion.exe"));
+  assert.equal(checkApp(root, "win32").exe, win.path);
+
+  const mac = launchCommand(root, "darwin");
+  assert.equal(mac.path, checkApp(root, "darwin").exe, "darwin must agree too");
+
+  // Nothing is installed at the fixture root, so every platform reports
+  // ok:false. CONTROL: this proves `ok` tracks the filesystem rather than
+  // being hardcoded, which is what makes the assertions above meaningful.
+  assert.equal(win.ok, false);
+  assert.equal(mac.ok, false);
 });
 
 test("paths resolve inside the bootstrap root", () => {
@@ -287,4 +402,73 @@ test("healthCheck catches stale skill versions independently of the blocked app"
   assert.equal(h.ok, false);
   assert.match(h.legs["skill-tree"].detail, /bro/);
   rmSync(root, { recursive: true, force: true });
+});
+
+test("a null version pin is a FAILURE, not a null===null match", () => {
+  // The expected pin is DERIVED from the bundled skill's VERSION file, which
+  // yields null when that file is missing/unreadable/empty -- and the
+  // installed side yields null the same way. `null === null` is true, so a
+  // client checkout missing a VERSION installed the skill and this leg said
+  // HEALTHY with zero version verification: precisely what it exists to
+  // catch. The repo-side suite catches a deletion, but a client never runs
+  // the repo-side suite.
+  const root = mkdtempSync(join(tmpdir(), "candice-nullpin-"));
+  try {
+    const skill = join(root, "skills", "demo");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "# demo\n");
+
+    const bothNull = checkSkill(root, "demo", null);
+    assert.equal(bothNull.ok, false, "a null pin must never report healthy");
+    assert.match(bothNull.detail, /installer source is incomplete/);
+
+    // An installed VERSION with no bundled pin is still unverifiable.
+    writeFileSync(join(skill, "VERSION"), "1.2.3\n");
+    assert.equal(checkSkill(root, "demo", "").ok, false, "an empty pin is not a pin");
+
+    // CONTROLS: the leg must still discriminate normally, or the assertions
+    // above would be satisfied by a function that always returns false.
+    assert.equal(checkSkill(root, "demo", "1.2.3").ok, true, "a real match must pass");
+    assert.equal(checkSkill(root, "demo", "9.9.9").ok, false, "a real mismatch must fail");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the install-root escape check works on Windows paths too", () => {
+  // This check was `target.startsWith(resolve(root) + "/")`. path.win32
+  // emits BACKSLASHES, so on Windows it could never match: every app record
+  // was rejected as "escapes the install root", which is fail-closed but
+  // names the wrong cause and makes a win32 release install impossible.
+  // Injecting path.win32 is the only way to test that here -- asserting the
+  // Windows claim in a comment is what let the bug ship.
+  const win = pathWin32;
+  const root = "C:\\Users\\x\\AppData\\Local\\BlackCEO\\999";
+
+  assert.equal(
+    insideRoot(root, "C:\\Users\\x\\AppData\\Local\\BlackCEO\\999\\app\\candice-companion.exe", win),
+    true,
+    "a normal win32 executablePath must be accepted",
+  );
+  assert.equal(
+    insideRoot(root, "C:\\Users\\x\\AppData\\Local\\BlackCEO\\evil.exe", win),
+    false,
+    "a win32 escape must still be refused",
+  );
+  assert.equal(insideRoot(root, root, win), false, "the root itself is not an executable");
+  assert.equal(
+    insideRoot(root, "D:\\elsewhere\\candice.exe", win),
+    false,
+    "another volume is an escape",
+  );
+
+  // POSIX must keep behaving, including the "." case that used to be
+  // ALLOWED and then crashed cpSync(file -> dir) uncaught.
+  const posix = pathPosix;
+  const proot = "/Users/x/Library/Application Support/BlackCEO/999";
+  assert.equal(insideRoot(proot, `${proot}/app/candice-companion`, posix), true);
+  assert.equal(insideRoot(proot, `${proot}/../evil`, posix), false);
+  assert.equal(insideRoot(proot, proot, posix), false, "executablePath '.' must be refused");
+  // A file honestly named "..config" is not an escape.
+  assert.equal(insideRoot(proot, `${proot}/..config`, posix), true);
 });

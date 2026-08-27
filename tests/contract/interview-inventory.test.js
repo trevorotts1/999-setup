@@ -13,11 +13,18 @@ const active = inventory.records.filter((r) => r.status === 'active')
 const retired = inventory.records.filter((r) => r.status === 'retired')
 const zero = inventory.records.filter((r) => r.status === 'zero-governed')
 
-// Counts: 51 active, 15 retired, 2 zero-governed.
-assert.strictEqual(active.length, 51, 'active count')
+// Counts: 53 active, 15 retired, 2 zero-governed.
+//
+// 51 -> 53: SECRET_INPUT and PERSONAL_INPUT, the reserved exemplars of the
+// secret and personal sensitivity classes. They are sourced from the
+// final-boundary guard rather than a skill doctrine file, because they are
+// not interview questions -- they exist so the guard's classification is
+// exercisable at all. Before them the registry held ZERO secret rows, which
+// made every "no secret question is ever spoken" assertion vacuously true.
+assert.strictEqual(active.length, 53, 'active count')
 assert.strictEqual(retired.length, 15, 'retired count')
 assert.strictEqual(zero.length, 2, 'zero-governed count')
-assert.strictEqual(inventory.records.length, 68, 'total record count')
+assert.strictEqual(inventory.records.length, 70, 'total record count')
 assert.strictEqual(new Set(inventory.records.map((r) => r.key)).size, inventory.records.length, 'duplicate inventory key')
 
 // Bidirectional inventory <-> registry agreement.

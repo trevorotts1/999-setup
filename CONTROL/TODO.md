@@ -529,3 +529,62 @@ this file. Closing a gate requires `independentQc`, which this seat cannot
 run on its own work. Also outside this seat: macOS notarization (Apple
 Developer ID), Windows signing (certificate + Windows machine), and
 `cleanMachine` (a machine that has never had this app).
+
+---
+
+## Session 2026-08-27 — closed, and what it left open
+
+### Closed this session
+
+- **No off button.** `shell::cmd_quit_app` + `src/ui/power/` (352b627).
+- **Every string named Claude.** `src-tauri/src/harness.rs` measures the
+  harness; `src/harness/name.ts` owns the wording (352b627, a304fdc).
+- **A repo install installed nothing.** Availability separated from
+  integrity in the app leg; release mode now completes without a published
+  app (3fbe41d).
+- **Stale `spec-protocol` pin** breaking every release install. Pins now
+  derive from each skill's VERSION file, with a proven guard (08b99fb).
+- **`plugin-mcp` demanded a readiness flag unconditionally.** Now checks the
+  claim matches reality — stricter (3fbe41d).
+- **Stale bridge-leak test** failing on a 15s ceiling around a 20s budget.
+  Budget injected; discrimination re-proven (8186302).
+- **Placeholder install URL** (`https://YOUR-LINK-HERE/...`) in the client
+  docs. Both docs now lead with the real command (b70e561).
+
+### Open — needs the operator
+
+- **Windows signing.** `windowsSigningAndInteractiveSmoke` is an exact-match
+  `PASS` requirement with no ad-hoc alias, so a certificate and a Windows
+  machine are still required for a full authority pass. The operator has
+  declined the certificate cost; until that changes this gate cannot pass as
+  the schema is written.
+- **`independentQc`** cannot be run by the seat that did the work.
+- **`cleanMachine`** needs a machine that has never had this app.
+
+### Open — not blocked, just not done
+
+- **No app artifact is published.** The bootstrap installs everything except
+  the app, and says so. Publishing requires a built, signed artifact plus a
+  manifest record carrying an Ed25519 signature under the release-authority
+  key. Nothing in that chain needs a paid certificate (see the correction
+  below); it needs the 24 fix gates closed.
+- **The compact surface is dead code.** `ui/compact` has no importer outside
+  its own directory, so it is tree-shaken out of the bundle entirely —
+  "Hold to talk", `candice-compact-btn` and `setBusyHint` are all absent from
+  `src-tauri/dist/assets/`. The harness-aware `busyHintText()` and
+  `returnToHarnessLabel()` changes are correct but do not ship until the
+  FIX-014 appui lane lands.
+- **`speechStatusText` / `voiceApprovalStatusText`** carry the worst jargon in
+  the app and were deliberately NOT simplified: nothing renders them. Their
+  only references are their own definitions and their tests.
+
+### CORRECTION: macOS notarization is not a blocker
+
+Earlier entries in this file list "macOS notarization (Apple Developer ID)"
+among the things outside this seat. That is WRONG, and it has been repeated
+to the operator more than once after he had already ruled the cost out.
+
+`scripts/candice-release/status.mjs` (QFIX-adhoc, lines 280-317) accepts
+`macosSigningAdhoc` as an honest alias for `macosSigningAndNotarization`.
+Exactly one of the two must be recorded and PASS. An Apple Developer ID is
+not required by the release authority.

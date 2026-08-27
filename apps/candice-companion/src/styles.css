@@ -33,6 +33,18 @@
    * uses this lighter tint of the same hue instead (8.78:1).
    */
   --candice-accent-text: #b9a8ff;
+  /*
+   * The one control that ends the session. It sits directly beneath the
+   * animation toggle in a chip of identical geometry, and with no colour of
+   * its own the two read as one pair -- which is what made the operator
+   * unable to find the off switch at all.
+   *
+   * 8.04:1 on the surface, measured, not chosen by eye. The obvious #ff6b6b
+   * is 6.57:1 -- it clears AA 4.5 but misses the 7:1 this file holds dark
+   * surfaces to, so it is not used. Symmetric by construction: the hover
+   * state inverts to surface-on-danger, which is the same 8.04:1.
+   */
+  --candice-danger: #ff8a8a;
   --candice-focus-ring: #dfd7ff;
   --candice-text-scale: 1;
 }
@@ -142,6 +154,22 @@ body {
 .candice-character {
   position: relative;
   display: none; /* no placeholder art: visible only with mounted layers */
+}
+
+/*
+ * Hologram off: hide her image, keep her working.
+ *
+ * More specific than the mounted rule below rather than `!important` — that
+ * rule is what makes her visible at all, so this must outrank it by
+ * specificity (0,2,1 vs 0,1,1) or the setting would silently do nothing.
+ *
+ * `display: none`, not visibility/opacity: an invisible-but-present
+ * character still occupies the column and still animates, so the user would
+ * get a Candice-shaped hole plus the battery cost of a hologram they asked
+ * to turn off.
+ */
+.candice-hologram-hidden .candice-character[data-candice-gesture-mounted="true"] {
+  display: none;
 }
 
 .candice-character[data-candice-gesture-mounted="true"] {

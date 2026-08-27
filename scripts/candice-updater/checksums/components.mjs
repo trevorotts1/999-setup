@@ -24,6 +24,19 @@
  * payload — an unverifiable component is never accepted (fail closed).
  */
 
+import { readFileSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/**
+ * Repository root, resolved from THIS module's location rather than
+ * process.cwd(). The manifest builder and the regression tests are invoked
+ * from different working directories, and a cwd-relative read would resolve
+ * to a different tree depending on who called.
+ */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+
 /** Component identity used in downgrade/version comparisons. */
 export const COMPONENTS = {
   "nine-router-setup": { kind: "skill", sourceType: "repo-tree" },
@@ -187,12 +200,46 @@ export const PUBLISHED_PAYLOADS = {
  * for these by the version-and-integrity path, NOT by a download hash — the
  * install source is the repo tree itself.
  */
+/**
+ * Read a repo tree's own VERSION file. Returns null when there is none, so
+ * the caller can fall back to a declared version.
+ *
+ * Never throws: this module is imported by the manifest builder and by
+ * tests, and an unreadable VERSION must not take either of them down.
+ */
+function treeVersion(repoPath) {
+  try {
+    return readFileSync(join(REPO_ROOT, repoPath, "VERSION"), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Versions are DERIVED from each tree's own VERSION file, not restated here.
+ *
+ * They were restated, and they drifted: this table said spec-protocol 1.17.0
+ * while the skill was 1.17.4. That number is the source the manifest builder
+ * writes into CONTROL/bundled-components.json, so the stale value propagated
+ * into the generated registry as well -- and `update-detection.test.mjs`
+ * ("repo-tree pins are consistent with the actual tree VERSION files") had
+ * been failing on exactly that.
+ *
+ * The install source for these components IS the repo tree, so the tree's
+ * own VERSION file is the only defensible authority for their version. A
+ * second copy of it here could only ever agree or be wrong.
+ *
+ * `candice-integration` has no VERSION file -- its version lives in
+ * .claude-plugin/plugin.json -- so it keeps a declared value, and
+ * `treeVersion` returning null is what selects that path rather than an
+ * exception.
+ */
 export const REPO_TREE_COMPONENTS = {
-  "nine-router-setup": { id: "nine-router-setup", version: "1.17.0", repoPath: ".claude/skills/nine-router-setup" },
-  "spec-protocol": { id: "spec-protocol", version: "1.17.0", repoPath: ".claude/skills/spec-protocol" },
-  kaizen: { id: "kaizen", version: "1.1.0", repoPath: ".claude/skills/kaizen" },
-  eli5: { id: "eli5", version: "1.1.0", repoPath: ".claude/skills/eli5" },
-  bro: { id: "bro", version: "1.1.0", repoPath: ".claude/skills/bro" },
+  "nine-router-setup": { id: "nine-router-setup", version: treeVersion(".claude/skills/nine-router-setup"), repoPath: ".claude/skills/nine-router-setup" },
+  "spec-protocol": { id: "spec-protocol", version: treeVersion(".claude/skills/spec-protocol"), repoPath: ".claude/skills/spec-protocol" },
+  kaizen: { id: "kaizen", version: treeVersion(".claude/skills/kaizen"), repoPath: ".claude/skills/kaizen" },
+  eli5: { id: "eli5", version: treeVersion(".claude/skills/eli5"), repoPath: ".claude/skills/eli5" },
+  bro: { id: "bro", version: treeVersion(".claude/skills/bro"), repoPath: ".claude/skills/bro" },
   "candice-integration": {
     id: "candice-integration",
     version: "1.0.0",

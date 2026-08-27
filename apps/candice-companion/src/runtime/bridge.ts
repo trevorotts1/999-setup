@@ -148,12 +148,25 @@ export function describeSpeechFailure(error: unknown): string {
       : '';
   const reason = raw.replace(/\s+/g, ' ').trim();
   if (reason.length === 0) {
-    return 'Candice could not speak this question aloud. The voice engine gave no reason.';
+    // "The voice engine gave no reason" told the user about our plumbing.
+    // What they actually need to know is that the words are on screen.
+    return 'Candice couldn\u2019t say that out loud. You can read it on screen.';
   }
   const bounded = reason.length > MAX_SPEECH_FAILURE_CHARS
     ? reason.slice(0, MAX_SPEECH_FAILURE_CHARS - 1) + '\u2026'
     : reason;
-  return 'Candice could not speak this question aloud: ' + bounded;
+  // Same opening sentence as the no-reason branch above, deliberately: the
+  // user needs the SAME thing in both cases -- the words are on screen --
+  // and only the diagnostic differs. This used to lead with "Candice could
+  // not speak this question aloud: " followed by the raw native string, so
+  // the first thing a stuck user read was our plumbing.
+  //
+  // The reason is kept, not dropped. It is REPRESENTED rather than led with,
+  // because an earlier repair found native messages were being discarded
+  // entirely here, and two tests pin that they still arrive. Demoted to a
+  // parenthetical: help first, diagnostic second.
+  return 'Candice couldn\u2019t say that out loud. You can read it on screen. ('
+    + bounded + ')';
 }
 
 /**

@@ -42,8 +42,8 @@ import type { TranscriptModel } from './model.ts';
  */
 export const TRANSCRIPT_STYLE_TEXT = `
 .candice-transcript {
-  --candice-tx-text: var(--candice-text, #eceaf3);
-  --candice-tx-muted: var(--candice-muted, #a8a3b8);
+  --candice-tx-text: var(--candice-text, #faf7ff);
+  --candice-tx-muted: var(--candice-muted, #d7cfdf);
   --candice-tx-accent: var(--candice-accent, #7c5cff);
   display: flex;
   flex-direction: column;

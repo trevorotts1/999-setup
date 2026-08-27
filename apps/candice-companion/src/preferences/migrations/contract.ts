@@ -115,6 +115,13 @@ export const FIELD_RULES: Readonly<Record<number, Readonly<Record<string, FieldR
     lastUsedAnswerMethod: NULLABLE_ENUM(['voice', 'typed', 'terminal']),
     textSize: NULLABLE_ENUM(['small', 'medium', 'large']),
     reducedMotion: { types: ['boolean', 'null'] },
+    /* Hide her on-screen image while she keeps working. Distinct from
+       reducedMotion (which only calms her -- she stays visible) and from the
+       Turn off button (which ends the session). Added to v3 rather than
+       through a v4 step: it is a new OPTIONAL field with a default, so an
+       existing v3 document that lacks it stays valid and picks up the
+       default. There is nothing to migrate. */
+    characterHidden: { types: ['boolean'] },
     companionScreenPosition: {
       types: ['object', 'null'],
       props: {
@@ -156,5 +163,8 @@ export const FIELD_DEFAULTS: Readonly<Record<number, Readonly<Record<string, unk
     speechRate: 1,
     textSize: 'medium',
     reducedMotion: null,
+    /* Visible by default. A companion nobody can see is not the state to
+       boot a first-run user into. */
+    characterHidden: false,
   }),
 });

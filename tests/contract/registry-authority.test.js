@@ -12,7 +12,12 @@ for (const entry of registry.activeEntries()) {
     assert.strictEqual(registry.verifyQuestion(built.question).ok, true)
     for (const [field, value] of Object.entries({
       text: 'altered wording', answerKind: built.question.answerKind === 'yes_no' ? 'free_text' : 'yes_no', allowedInputModes: ['typed'],
-      readAloud: !built.question.readAloud, sensitivity: 'secret',
+      readAloud: !built.question.readAloud,
+      // Must differ from the entry's OWN value. Hardcoding 'secret' made
+      // this a no-op for a genuinely secret row -- the "mutated" question
+      // was byte-identical, so verifyQuestion rightly accepted it and the
+      // check failed. Latent until the first secret key existed.
+      sensitivity: built.question.sensitivity === 'secret' ? 'normal' : 'secret',
       counted: !built.question.counted, helpText: 'altered help', canGoBack: !built.question.canGoBack,
     })) {
       const changed = { ...built.question, [field]: value }

@@ -187,6 +187,24 @@ resolve() {
   SYSTEM_CONCURRENT_MAX=""; SYSTEM_CONCURRENT_MAX_SOURCE=""
 
   while IFS='=' read -r k v; do
+    # Strip CR and surrounding whitespace, matching the node parser's
+    # `split(/\r?\n/)` + `.trim()` exactly.
+    #
+    # Without this, an answers file with CRLF line endings left the carriage
+    # return on the VALUE, so HARNESS was "claude-nine\r" and the check below
+    # rejected it with a message whose closing paren landed on the next line:
+    #
+    #   ERROR: HARNESS must be claude-nine or regular (got: claude-nine
+    #   )
+    #
+    # That is not a Windows-CI curiosity. Git checks this repo out with CRLF
+    # on Windows, so the golden fixtures arrived that way and the WS-27
+    # parity guard failed there and only there -- node parsed the same file
+    # fine, which is exactly what "bash resolver failed" meant. A Windows
+    # user writing their own answers file in Notepad hits the identical wall.
+    k="${k%$'\r'}"; v="${v%$'\r'}"
+    k="${k#"${k%%[![:space:]]*}"}"; k="${k%"${k##*[![:space:]]}"}"
+    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     [[ -z "${k}" ]] && continue
     case "${k}" in
       \#*) continue ;;

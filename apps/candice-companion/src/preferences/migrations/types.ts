@@ -30,6 +30,8 @@ export interface ProfileV3 extends VersionDoc {
   lastUsedAnswerMethod: 'voice' | 'typed' | 'terminal' | null;
   textSize: 'small' | 'medium' | 'large' | null;
   reducedMotion: boolean | null;
+  /** Hide her image while she keeps working. See contract.ts. */
+  characterHidden: boolean;
   companionScreenPosition: {
     x: number;
     y: number;

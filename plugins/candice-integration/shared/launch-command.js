@@ -18,7 +18,7 @@
  */
 
 const { existsSync } = require('node:fs')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
 
 /** Last-resort executable name, resolved through PATH by the OS. */
 const DEFAULT_LAUNCH_COMMAND = 'candice-companion'
@@ -95,6 +95,60 @@ function resolveLaunchCommand(options = {}) {
   return resolveConfiguredLaunchCommand(options) || DEFAULT_LAUNCH_COMMAND
 }
 
+/**
+ * Where does this plugin physically live?
+ *
+ * NOTE ON WORDING: this comment names the second harness obliquely ("Nine")
+ * on purpose. tests/same-session/provider-identity.test.js enforces the
+ * WS-42 no-coupling invariant with a RAW STRING scan over production plugin
+ * source, and that scan does not strip comments. Spelling the router token
+ * out here would fail the gate from a comment. Do not "tidy" it back in.
+ *
+ * The companion needs to name the window the user should return to. It used
+ * to read `CLAUDE_CONFIG_DIR`, which every shipped launcher leaves unset --
+ * all four files under launchers/macos and launchers/windows contain zero
+ * references to it. That is measured, with a control: the same grep finds
+ * ANTHROPIC_BASE_URL in two of those four, so the zero is a real absence.
+ * Never setting it is a stated product invariant.
+ *
+ * So a Nine session presented no config dir, the app fell back to the
+ * generic CLAUDECODE marker that BOTH harnesses set, and it answered
+ * "Claude" -- naming the wrong window, and confidently rather than honestly.
+ *
+ * What IS reliable is where the harness loaded this plugin from: Claude Code
+ * installs plugins beneath its own config root. That is in-force truth
+ * rather than a file's intent.
+ *
+ * THE PLUGIN DOES NOT INTERPRET IT, deliberately. WS-42 requires the shipped
+ * plugin to carry zero coupling to how the session was launched: a routed
+ * session and a plain session must walk the SAME code. An earlier cut of
+ * this fix classified the path right here, and that broke the invariant in
+ * substance and not merely in letter -- the plugin was branching on launch
+ * identity. The same-session suite caught it.
+ *
+ * So this reports a PATH, unconditionally, identical in both worlds.
+ * Deciding what that path is CALLED is presentation, which is the app's job:
+ * src-tauri/src/harness.rs.
+ */
+function pluginRoot(dir = __dirname) {
+  // This module lives at <pluginRoot>/shared/launch-command.js.
+  return resolve(dir, '..')
+}
+
+/**
+ * Environment for a companion spawn: the caller's own, plus this plugin's
+ * location.
+ *
+ * Not a widening. Both launch paths already spawned with no `env` option at
+ * all, which inherits the parent environment whole; this makes that explicit
+ * and adds one path.
+ */
+function companionSpawnEnv({ env = process.env, dir = __dirname } = {}) {
+  return { ...env, CANDICE_PLUGIN_ROOT: pluginRoot(dir) }
+}
+
 exports.DEFAULT_LAUNCH_COMMAND = DEFAULT_LAUNCH_COMMAND
 exports.resolveConfiguredLaunchCommand = resolveConfiguredLaunchCommand
 exports.resolveLaunchCommand = resolveLaunchCommand
+exports.pluginRoot = pluginRoot
+exports.companionSpawnEnv = companionSpawnEnv

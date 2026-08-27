@@ -33,6 +33,14 @@ import {
   type InteractionComposition,
 } from './interaction-composition.ts';
 import { createAnimationToggle } from '../ui/animation-toggle/index.ts';
+import { probeHarnessName, harnessWindowPhrase } from '../harness/name.ts';
+import { createPowerOff } from '../ui/power/index.ts';
+import {
+  createSettingsToggle,
+  HOLOGRAM_TOGGLE,
+  VOICE_TOGGLE,
+  type SettingsToggleController,
+} from '../ui/settings-toggle/index.ts';
 import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime } from './speech-runtime.ts';
 import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
@@ -101,6 +109,11 @@ export async function initializeRuntimeComposition(
   options: RuntimeCompositionOptions = {},
 ): Promise<RuntimeCapabilities> {
   const capabilities = await probeRuntimeCapabilities(options.invokeAdapter);
+  // Ask native which harness launched us BEFORE any copy is rendered, so
+  // the status line and both fallback buttons name the right window on
+  // their first paint rather than correcting themselves. Never throws: not
+  // knowing the name costs a noun, never the boot (spec 20).
+  await probeHarnessName(options.invokeAdapter);
   // FIX-014 (I-08/I-11): the boot-loaded profile (main.ts loads it once via
   // the native seam). Absent options degrade truthfully to defaults with a
   // failed-load result — never a fabricated persisted preference.
@@ -229,7 +242,7 @@ export async function initializeRuntimeComposition(
       root.dataset.gestureStageError = error instanceof Error
         ? error.message
         : String(error);
-      captionsFailure = 'Candice\u2019s animation could not start. Everything else still works.';
+      captionsFailure = 'Candice can\u2019t move right now. Everything else works.';
     }
     // The face stage fails CLOSED to an inert host, so a bust that cannot
     // mount never throws and never reaches the catch above -- it records
@@ -242,7 +255,7 @@ export async function initializeRuntimeComposition(
     // the pixel capture that is now the only verification channel.
     const faceFailed = character.dataset.candiceFaceFailed;
     if (captionsFailure === null && faceFailed !== undefined && faceFailed !== '') {
-      captionsFailure = `Candice\u2019s face did not load (${faceFailed}). Everything else still works.`;
+      captionsFailure = `Candice\u2019s face didn\u2019t load (${faceFailed}). Everything else works.`;
     }
   }
 
@@ -271,7 +284,7 @@ export async function initializeRuntimeComposition(
   // take ownership of any later one.
   const announceSystemVoice = (): void => {
     captions.announce(
-      'I’m using your computer’s built-in voice — my own voice isn’t installed on this machine.',
+      'I’m using your computer’s voice — mine isn’t installed here.',
     );
   };
   if (pendingSystemVoiceNotice) announceSystemVoice();
@@ -329,6 +342,85 @@ export async function initializeRuntimeComposition(
   root.dataset.candiceAnimationToggle = animationToggle.element ? 'mounted' : 'absent';
   root.dataset.candiceAnimation = animationToggle.motionOff ? 'off' : 'on';
 
+  // Voice, at rest.
+  //
+  // A `Voice: ON/OFF` button already existed, but it belongs to the ANSWER
+  // SURFACE, which is created when a question arrives and destroyed when it
+  // closes. So the only moment you could mute her was while she was already
+  // talking at you; between questions there was no control at all. This row
+  // is always mounted, writes the same spec-9 `voiceOutputEnabled` field,
+  // and the two views are kept in step below so they can never disagree.
+  const voiceToggle: SettingsToggleController = createSettingsToggle({
+    mount: root,
+    id: VOICE_TOGGLE.id,
+    className: VOICE_TOGGLE.className,
+    label: VOICE_TOGGLE.label,
+    onHint: VOICE_TOGGLE.onHint,
+    offHint: VOICE_TOGGLE.offHint,
+    checked: interaction.profile.voiceOutputEnabled === true,
+    apply: (on) => {
+      // Turning voice OFF has to stop the voice that is playing NOW, not
+      // just the next one. The gate this field feeds is read when the next
+      // question is delivered, so without this she finishes the sentence
+      // while the control says OFF.
+      if (!on) orchestrator?.abortSpeech();
+    },
+    persist: (on) => interaction.persist({ voiceOutputEnabled: on }),
+    onLayoutChange: options.onLayoutChange,
+  });
+  root.dataset.candiceVoiceToggle = voiceToggle.element ? 'mounted' : 'absent';
+
+  // The hologram.
+  //
+  // "u have animation off, when i turn it off its suppose to turn candace
+  // off". Motion, presence and VISIBILITY are three different things and
+  // only the first two had controls: animation-off merely calms her, and
+  // Turn off ends the session. This hides her image while she keeps
+  // working -- questions, answers and captions all continue.
+  const hologramToggle: SettingsToggleController = createSettingsToggle({
+    mount: root,
+    id: HOLOGRAM_TOGGLE.id,
+    className: HOLOGRAM_TOGGLE.className,
+    label: HOLOGRAM_TOGGLE.label,
+    onHint: HOLOGRAM_TOGGLE.onHint,
+    offHint: HOLOGRAM_TOGGLE.offHint,
+    checked: interaction.profile.characterHidden !== true,
+    apply: (visible) => {
+      // The class goes on the documentElement, like the reduced-motion class
+      // the a11y lane owns, so one rule can reach the character wherever it
+      // sits in the column.
+      root.ownerDocument?.documentElement?.classList.toggle('candice-hologram-hidden', !visible);
+    },
+    persist: (visible) => interaction.persist({ characterHidden: !visible }),
+    onLayoutChange: options.onLayoutChange,
+  });
+  root.dataset.candiceHologramToggle = hologramToggle.element ? 'mounted' : 'absent';
+  root.dataset.candiceHologram = hologramToggle.isOn() ? 'on' : 'off';
+  // Paint the BOOT state: a stored `characterHidden: true` must be in force
+  // before the first frame, not only after the user touches the control.
+  root.ownerDocument?.documentElement?.classList.toggle(
+    'candice-hologram-hidden',
+    interaction.profile.characterHidden === true,
+  );
+
+  // The off button. It sits directly under the animation toggle because
+  // that toggle is what the operator kept pressing while trying to turn
+  // HER off -- "u have animation off, when i turn it off its suppose to
+  // turn candace off". Motion and presence are two different things, and
+  // until now only one of them had a control.
+  const powerOff = createPowerOff({
+    mount: root,
+    quit: async () => {
+      const bridge = options.invokeAdapter ?? (await import('@tauri-apps/api/core'));
+      return bridge.invoke('cmd_quit_app');
+    },
+    onLayoutChange: options.onLayoutChange,
+  });
+  // Evidence for QC and the packaged-bundle sentinel, same as the toggle
+  // above: an absent off button is the exact regression being fixed here,
+  // so it has to be observable from outside without a screenshot.
+  root.dataset.candicePowerOff = powerOff.element ? 'mounted' : 'absent';
+
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.
   // A connected transport does not by itself display controls or invent a
@@ -376,6 +468,11 @@ export async function initializeRuntimeComposition(
     announceCaptureBlocked: (explanation) => captions.announce(explanation),
     onVoiceToggleChange: (voiceEnabled) => {
       void interaction.persist({ voiceOutputEnabled: voiceEnabled });
+      // Two controls, one field. `set` repaints without re-persisting, so
+      // the at-rest row cannot sit at ON while the in-question button says
+      // OFF -- which would leave the user unable to tell what she will
+      // actually do next.
+      voiceToggle.set(voiceEnabled);
       // Turning voice OFF has to stop the voice.
       //
       // This handler used to persist the preference and nothing else, and the
@@ -445,15 +542,21 @@ export function runtimeStatusHealthy(capabilities: RuntimeCapabilities): boolean
  * exactly that, in words nobody needs this project explained to understand.
  */
 export function runtimeStatusText(capabilities: RuntimeCapabilities): string {
+  // Which window to send them to is not a constant. The operator runs
+  // claude-nine as well as claude, and this text used to say "the Claude
+  // window" unconditionally -- pointing a stuck user at a window that was
+  // not on their screen. `harnessWindowPhrase()` says "the Claude window",
+  // "the Claude-Nine window", or "your terminal" when we were not told.
+  const where = harnessWindowPhrase();
   if (capabilities.rejectedLaunchReason) {
-    return 'Candice could not start this time. Keep answering in the Claude window.';
+    return `Candice could not start this time. Keep answering in ${where}.`;
   }
   if (!capabilities.bridgeAvailable) {
-    return 'Candice cannot reach your session right now. Keep answering in the Claude window.';
+    return `Candice cannot reach your session right now. Keep answering in ${where}.`;
   }
   // This branch is deliberately defensive: the parser does not permit a
   // false-ready answer path to be inferred from a bridge alone.
   return capabilities.answerRoundTripAvailable
     ? 'Candice is ready.'
-    : 'Candice can show questions but cannot send answers yet. Answer in the Claude window.';
+    : `Candice can show questions but cannot send answers yet. Answer in ${where}.`;
 }

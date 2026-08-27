@@ -1157,3 +1157,198 @@ in HEAD, one public key tracked, no private-key header in any file touched
 by commit 00bc29f, each with a control proving the instrument fires. A
 full-history scan timed out on this 11 GB tree and was NOT completed — that
 broader claim is undetermined, not proven clean.
+
+---
+
+## 14. Session 2026-08-27 — the off button, the harness name, and an install that installed nothing
+
+Three operator complaints, all confirmed as real defects, all fixed and
+pushed (352b627, 3fbe41d, 08b99fb, b70e561, 8186302, a304fdc).
+
+### 14.1 There was no off button
+
+Confirmed by absence: `grep` for `Quit|Turn off|Close Candice|exit` across
+`apps/candice-companion/src/ui` returned nothing, and the command table in
+`lib.rs` had `cmd_hide_window` but no quit. The only power-shaped control on
+screen was the ANIMATION checkbox, so "I turned it off" and "she is still on
+my screen" were both true at once.
+
+Added `shell::cmd_quit_app` and `src/ui/power/`. Order of teardown: stop the
+voice first, then `cmd_end_bridge_lifecycle` so a waiting `ask_user` falls
+back to the terminal immediately instead of sitting out its full window
+against a process that is never coming back, then hide, then exit. Every step
+best-effort — a user who asked to be rid of her gets that even if a subsystem
+is wedged. No confirm dialog: she reopens on the next question, and the hint
+says so.
+
+### 14.2 Every string named Claude
+
+MEASURED from the launchers, not assumed: `claude-nine` and `claude-9` both
+export `CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"`,
+`claude-codex` execs `claude-nine`, and plain `claude` matches
+`*".claude-nine"*` and UNSETS it. The plain harness actively clearing the
+marker is what makes a set-and-matching value a positive statement rather
+than a leftover.
+
+`src-tauri/src/harness.rs` measures it; `src/harness/name.ts` owns the
+wording. Spec-pinned strings are PARAMETERISED, not rewritten — under the
+plain harness every label is byte-identical to spec 5.1, which is also what
+keeps the packaged accessibility driver (it finds that control by exact
+accessible name) working unchanged. Unknown stays unknown: a Dock launch says
+"your terminal" rather than guessing.
+
+Found while wiring it: `captions/controller.ts` classified the fallback
+caption by comparing against the literal `'Answer in Claude instead'`. Under
+claude-nine that comparison silently stops matching and the caption starts
+fading like a status line instead of holding like an instruction — a failure
+with no error message. Now prefix-matched through the shared owner.
+
+### 14.3 Installing from the repository installed NOTHING
+
+MEASURED, before:
+
+    $ node scripts/candice-bootstrap/bootstrap.mjs install --mode release --root <tmp>
+    EXIT=1
+    FAIL app install failed: app install refused: app record refused:
+         release authority refused the candidate (exit 1): NOT_RELEASE_READY
+
+The app leg runs first and aborted the whole transaction, so a missing app
+record also refused the skills, the plugin and the assets. Only a journal
+line was written.
+
+The fix separates AVAILABILITY from INTEGRITY. `unavailable` is set solely
+where the resolver reports no authorized candidate; every check that could
+indicate tampering (sha256, size, executablePath escape, failed download)
+returns without it and still aborts and rolls back. Scoped to release mode —
+the non-release modes keep their original fail-closed property, and the test
+that pins it passes unchanged.
+
+After: exit 0, five skills at pinned versions, the plugin tree, and 214MB of
+sha256-verified assets. The app directory correctly absent.
+
+### 14.4 Two bugs found while proving it
+
+**The `spec-protocol` pin was stale.** `SKILL_PINS` said 1.17.0; the skill in
+the repository was 1.17.3. `installSkills` copies the skill tree verbatim
+(VERSION file included) and `checkSkill` compares the installed VERSION
+against the pin, so the mismatch failed the skill-tree health leg on EVERY
+release install and rolled it back. A stale number in a table made the
+product uninstallable, silently, with no error naming the cause. A merge then
+landed mid-session bumping it to 1.17.4 and re-broke it within minutes, so
+`SKILL_PINS` is now DERIVED from each skill's own VERSION file, with a guard
+test proven to bite (set the registry back to 1.17.0 and the suite fails with
+"registry records spec-protocol at 1.17.0, but the skill is 1.17.4").
+
+**`plugin-mcp` demanded `CANDICE_COMPANION_READY=1` unconditionally.** That
+flag is a claim about the installed app, so the leg now checks the claim
+MATCHES reality. Stricter, not looser: the old check was blind to a plugin
+advertising a companion that is not installed — the case that makes every
+`ask_user` hang to its timeout. That now FAILS.
+
+### 14.5 A stale test, not a bug
+
+`fix018` "bridge seam: companion-ready-timeout leaves no live timer chain"
+was failing before any change this session — a clone of HEAD fails it
+identically, and fails one more besides. The ready budget was raised from 3s
+to 20s deliberately (3s expired mid-launch on a loaded machine and declared a
+working companion dead); the test still carried a 15000ms ceiling around an
+`ensureSession` that now takes 20006ms, so it failed on the timeout firing at
+all and never reached its assertion. It now injects `readyTimeoutMs: 500`.
+PROVEN to still discriminate: against a deliberately-leaking copy placed
+in-tree the child hangs (exit 124); against the shipped file it exits
+naturally (exit 0), with identical stdout.
+
+### 14.6 A live-config write, disclosed
+
+One test run registered the plugin into the live `~/.claude`: release mode
+targets the live discovered config root by design, and the run passed
+`--root` but no `configRoot`. The rollback's `deregisterAll` removed it.
+VERIFIED clean afterwards via `claude plugin list --json`: zero candice
+registrations against a control showing the filter matches context7, and
+`claude plugin marketplace list` showing no candice-marketplace. Later tests
+drove the module API with an injected `configRoot` instead.
+
+### 14.7 The macOS notarization blocker is STALE
+
+`scripts/candice-release/status.mjs` accepts `macosSigningAdhoc` as an honest
+alias for `macosSigningAndNotarization` (QFIX-adhoc, status.mjs:280-317).
+Exactly one of the two names must be present and PASS; both present is
+refused. **An Apple Developer ID is therefore NOT required by the release
+authority** — an honest ad-hoc-signed posture is accepted. Earlier notes in
+CHECKLIST.md and TODO.md listing macOS notarization among the things "no seat
+here can close" are wrong and are corrected there.
+
+`windowsSigningAndInteractiveSmoke` has NO such alias and is still an
+exact-match `PASS` requirement, so Windows signing remains a genuine blocker
+for a full authority pass.
+
+### 14.8 Self-audit of 14.3 — six more defects, five of them mine
+
+After shipping the install fix I went back over it asking one question of
+every change: what does this now TRUST that it did not trust before? That
+question found more than the original work did.
+
+**`unavailable` was far too broad** (c8b0945). `installApp` hardcoded it for
+every resolver failure. The resolver has fifteen; only four mean absence
+(unsupported platform, authority refused, no app record, no record for this
+platform/arch). The other eleven mean a record EXISTS and is malformed --
+placeholder or non-hex checksum, http source, stripped signature, stripped
+notarization posture, non-positive size, missing field -- or that the
+manifest is missing, unreadable or wrong-schema. No payload lands either way,
+but a tampered manifest must abort loudly rather than degrade into a friendly
+"APP NOT INSTALLED". The resolver now decides and installApp propagates.
+
+**The off button's row was not pointer-live** (10132ff). `.candice-power-off`
+was absent from CONTROL_SELECTOR, so only the inner `<button>` box was
+published to the native hit test -- roughly 26px, ~34px with REGION_PADDING,
+against the 44px the row's `min-height` builds. The control's own CSS comment
+asserted the row was the target, which was untrue. `.candice-animation-toggle`
+is in that list because the same defect was MEASURED there and fixed, and
+nothing guarded that fix either. Both are guarded now.
+
+**A null pin certified "up to date"** (bf21704). Deriving SKILL_PINS means an
+unreadable VERSION file yields null; the state record is written from the same
+pin, so it is null too; and `null !== null` is false, so `stateMatches` sailed
+past and reported the component current on no evidence. The path did not exist
+before the derivation. Undetermined now fails closed.
+
+**Two health legs were forgiven that do not need an app** (6ae73b8).
+`stt-runtime-capability` and `tts-runtime-capability` spawn the plugin's MCP
+SERVER and check it declares `ask_user`; they never touch the app binary, and
+both pass with no app installed. Forgiving them would have hidden a broken MCP
+server on every install where the app is unpublished -- which is every install
+today, and the worst moment to go quiet, since the MCP server is the only way
+questions reach the user without an app.
+
+**A fourth copy of the skill version** (383ea0a). Running the FULL
+installer-regression suite -- not the two files being run by habit -- surfaced
+`update-detection.test.mjs`, a test with the same intent as the guard added in
+08b99fb, already failing: "spec-protocol: pin 1.17.0 vs tree 1.17.4". The
+version lived in four places, and the fourth
+(`candice-updater/checksums/components.mjs`) is the GENERATOR for
+`CONTROL/bundled-components.json` -- so the earlier hand-edit of the registry
+was patching a generated artifact. Now derived at the source; all four
+verified in agreement for all five skills.
+
+**Windows recorded prose where a path belongs** (07c8d25).
+`launchCommand(root, "win32")` returned "candice-companion.exe (placed by NSIS
+installer, WS-29)", and `installAll` writes that into `state.launch.command`.
+The `launch-command` health leg passes that value to `existsSync` and the
+bridge probe SPAWNS it. Latent only because no Windows payload is published;
+the day one lands is the day it stops being latent, on the platform with no
+machine here to catch it. It now returns the same path `checkApp` probes --
+the two disagreeing was the real defect.
+
+**Not mine, but broken on main** (483e300). The contract suite was failing:
+commit 4cb0ec7 edited `spec-protocol/SKILL.md` without restamping the three
+content digests pinning it, ENTRY_MODE among them. All 51 pinned digests were
+audited (only those three were stale), all three anchors confirmed still
+present so restamping could not hide a removal, and the plugin's byte-identical
+vendored copy re-synced. 9/9.
+
+**Method note.** Every one of these was proven by breaking it deliberately and
+confirming the test fails with the right message, then restoring. Two claims
+were discarded along the way for being unproven: a leak-control copy placed
+outside the tree returned exit 1 from a module-resolution error rather than
+from the leak, and a `find` control used a maxdepth that could not reach its
+target. Neither was reported as a result.

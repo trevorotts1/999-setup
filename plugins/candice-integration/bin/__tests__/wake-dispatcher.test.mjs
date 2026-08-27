@@ -10,6 +10,7 @@ import {
   buildWakeRequest,
   commandFromHookPayload,
   dispatchWake,
+  companionSpawnEnv,
   isMainModule,
   parseHookPayload,
   resolveLaunchCommand,
@@ -126,6 +127,7 @@ test('FIX-010: visual wake does not forward unverified session or terminal ident
   const calls = [];
   const result = dispatchWake(request, {
     launchCommand: '/opt/Candice Companion',
+    spawnEnv: { PATH: '/bin' },
     spawn(command, args, options) {
       calls.push({ command, args, options });
       return { once() {}, unref() {} };
@@ -135,10 +137,37 @@ test('FIX-010: visual wake does not forward unverified session or terminal ident
   assert.deepEqual(calls, [{
     command: '/opt/Candice Companion',
     args: ['--wake', '/bro'],
-    options: { detached: true, shell: false, stdio: 'ignore', windowsHide: true },
+    options: {
+      detached: true, shell: false, stdio: 'ignore', windowsHide: true,
+      env: { PATH: '/bin' },
+    },
   }]);
   assert.equal(calls[0].args.includes('--session-id'), false);
   assert.equal(calls[0].args.includes('--host-window'), false);
+});
+
+test('the wake carries the plugin location in the environment, never in argv', () => {
+  // The app must be able to name the window the user is actually looking
+  // at, and the plugin's own location is what tells it. That travels as an
+  // environment variable specifically so the argv contract above -- no
+  // unverified identity on the command line -- is untouched.
+  const request = buildWakeRequest('/bro', parseHookPayload('{}'));
+  const calls = [];
+  dispatchWake(request, {
+    launchCommand: '/opt/Candice Companion',
+    spawnEnv: companionSpawnEnv({ dir: '/Users/x/.claude-nine/plugins/p/shared', env: { PATH: '/bin' } }),
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return { once() {}, unref() {} };
+    },
+  });
+  assert.equal(
+    calls[0].options.env.CANDICE_PLUGIN_ROOT,
+    '/Users/x/.claude-nine/plugins/p',
+    'the app must be told where the plugin lives',
+  );
+  assert.equal(calls[0].args.join(' ').includes('.claude'), false,
+    'the location must not reach argv');
 });
 
 test('FIX-010: shipped routed launchers remain independent of Candice wake dispatch', () => {

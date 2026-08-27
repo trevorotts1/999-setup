@@ -82,6 +82,23 @@ if [[ ! -x "$BUNDLE_ROOT/$APP_NAME.app/Contents/MacOS/candice-companion" ]]; the
   exit 1
 fi
 
+# --- refuse to package an app that cannot HEAR ---------------------------
+# Voice input on macOS is not downloaded by the installer the way it is on
+# Windows: the engine ships inside the .app. Those bytes are gitignored and
+# staged by scripts/relocate-whisper-macos.mjs, so on any machine where that
+# has not run the tree simply has no engine -- and nothing noticed. The
+# inventory generator records "absent" and exits 0, this script had no speech
+# check at all, and the DMG built, signed, notarized and installed perfectly.
+# The first symptom was a user pressing HOLD TO TALK.
+#
+# Same lesson as the stale-tree guard below: a build that ships something
+# broken must fail at the build, not at the user.
+if ! node "scripts/assert-speech-engine-macos.mjs" \
+     --bundle "$BUNDLE_ROOT/$APP_NAME.app"; then
+  echo "build-macos-bundle: refusing to package — macOS voice input would ship broken" >&2
+  exit 1
+fi
+
 # --- refuse to package a STALE tree --------------------------------------
 # This script does not build. It packages and signs whatever is already on
 # disk, and it exited 0 when that tree was older than the source -- so a

@@ -53,6 +53,91 @@ cost figure), and a `claude-fable-5[1m]` payload (cost now appears, both from
 See `.claude/skills/spec-protocol/references/progress-visibility.md` §4/§6 for the corrected
 cost rule and Project-bar walk-up.
 
+## [Candice 1.0.0-rc.2] — 2026-08-27 (release candidate, not a release)
+
+Still a candidate: the release authority reports nine required gates
+PENDING and no signed artifacts, so there is nothing published for a client
+to install yet. What changed is that several things that would have shipped
+broken now cannot.
+
+### Every user of the second harness was sent to the wrong window
+
+`harness.rs` read `CLAUDE_CONFIG_DIR` and fell back to `CLAUDECODE`. Its own
+comment called that "MEASURED from the launchers" — it was measured from the
+operator's personal launcher, not the four this repo ships, which reference
+that variable **zero** times (control: the same grep finds `ANTHROPIC_BASE_URL`
+in two of the four). `CLAUDECODE` is set by BOTH harnesses, so it can never
+tell them apart. Every client of the routed harness was told to answer in a
+window that was not on their screen — confidently wrong rather than honestly
+unknown. Now keyed on where the harness actually loaded the plugin from;
+unknown stays unknown and renders as "your terminal".
+
+The first cut of that fix classified inside the plugin and broke the WS-42
+no-coupling invariant. The plugin now reports a path and does not interpret
+it; the naming happens in the app, where presentation belongs.
+
+### Quit did not always quit
+
+- The farewell frame was written to the bridge socket with **no timeout**
+  anywhere in `src-tauri/src` (control: `try_clone` hits 3× in the same
+  file). A wedged peer hung quit forever at "Closing…". Bounded to 2s,
+  writes only — the reader must keep blocking for the next question.
+- `stop_system_voice` skipped a **poisoned** lock, so after any panic in the
+  playback lane the window vanished and `/usr/bin/say` kept talking. Both
+  sites now recover; fixing only one would have left the system voice
+  permanently dead after a single transient panic.
+
+### The switches you can actually reach
+
+- **Turn off** — distinguishable at last. It was a pixel-for-pixel twin of
+  the animation toggle 6px above it. Now carries a measured danger tint
+  (8.04:1; the obvious `#ff6b6b` is 6.57:1 and misses this project's own 7:1
+  bar), a real 32px activation target, and a wider gap.
+- **Voice** — now switchable AT REST. The existing `Voice: ON/OFF` button
+  belongs to the answer surface, which only exists while a question is on
+  screen, so between questions there was no way to mute her at all.
+- **Hologram** — new. Hides her image while she keeps working. Nothing could
+  do this before: "animation off" only reduces motion, and there was no
+  preference field for visibility among the eleven.
+
+### Installer
+
+- A **null** version pin reported HEALTHY (`null === null`), so a client
+  checkout missing a VERSION file verified nothing and said it had.
+- The install-root escape check hardcoded `/`, so on Windows every app record
+  was rejected as an escape — fail-closed, but naming the wrong cause and
+  making a win32 install impossible. Windows behaviour is now *tested*
+  (`path.win32`) rather than asserted in a comment.
+- `executablePath: "."` was explicitly permitted and then crashed `cpSync`
+  uncaught, with no journal entry and no rollback.
+
+### macOS voice input can no longer ship missing
+
+The engine ships inside the .app (Windows downloads its own). Those bytes are
+gitignored and staged from a Homebrew bottle, so on any machine where that
+staging never ran the tree simply had no engine — and the DMG built, signed,
+notarized and installed perfectly. The first symptom was a user pressing HOLD
+TO TALK. The build now refuses, checking the inventory, the bytes, that no
+Mach-O links to a path a client will not have, and that the engine actually
+executes.
+
+### The privacy gate was half-built
+
+`caption` was declared `{"const":"show"}` and the registry held **zero**
+secret rows, so the secret branch of the final-boundary guard was
+unreachable and every "no secret question is ever spoken" assertion was
+vacuously true. `caption` now permits `redact` (required for secret), and two
+reserved exemplars make the classification exercisable. No leak existed and
+none was fixed — an unreachable capability was made real. Privacy audit 3/7 →
+7/7 suites.
+
+### Copy
+
+Platform-neutral quit-failure hint (it named the Dock *and* Task Manager, one
+of which is always wrong); the speech-failure caption leads with what the user
+can do instead of the raw native error; the first-run name question mounts
+above the settings rows instead of last in tab order.
+
 ## [1.17.4] — 2026-08-27
 
 ### ENTRY-MODE: the gate was enforced but never written

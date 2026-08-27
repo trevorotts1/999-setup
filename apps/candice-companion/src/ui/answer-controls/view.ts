@@ -23,6 +23,7 @@
  * @module
  */
 
+import { answerElsewhereLabel } from '../../harness/name.ts';
 import {
   ANSWER_CONFIRM_CLASS,
   ANSWER_CONTROLS_LABELS,
@@ -39,8 +40,8 @@ import type { AnswerMethod } from './config.ts';
  */
 export const ANSWER_CONTROLS_STYLE_TEXT = `
 .candice-answer-controls {
-  --candice-ac-text: var(--candice-text, #eceaf3);
-  --candice-ac-muted: var(--candice-muted, #a8a3b8);
+  --candice-ac-text: var(--candice-text, #faf7ff);
+  --candice-ac-muted: var(--candice-muted, #d7cfdf);
   --candice-ac-accent: var(--candice-accent, #7c5cff);
   /* FIX-008: accent applied to TEXT needs the AAA-safe tint. */
   --candice-ac-accent-text: var(--candice-accent-text, #b9a8ff);
@@ -425,7 +426,11 @@ export function createAnswerControlsView(
   const delegate = document.createElement('button');
   delegate.type = 'button';
   delegate.className = 'candice-answer-link';
-  delegate.textContent = ANSWER_CONTROLS_LABELS.ANSWER_IN_CLAUDE;
+  // Harness-aware: "Answer in Claude instead" is spec 5.1's wording,
+  // but the operator also runs claude-nine, and naming the wrong
+  // window sends a stuck user to the wrong place. With the plain
+  // harness this is byte-identical to the constant below.
+  delegate.textContent = answerElsewhereLabel();
 
   const voice = document.createElement('button');
   voice.type = 'button';

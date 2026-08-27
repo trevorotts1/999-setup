@@ -5,6 +5,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   COMPONENTS,
   PUBLISHED_PAYLOADS,
@@ -53,13 +56,40 @@ test("every published payload has a 64-hex sha256 and operator-controlled source
 
 test("REPO_TREE components carry version pins for the 6 non-application tree components", () => {
   assert.equal(Object.keys(REPO_TREE_COMPONENTS).length, 6);
-  assert.equal(REPO_TREE_COMPONENTS["nine-router-setup"].version, "1.17.0");
-  assert.equal(REPO_TREE_COMPONENTS["spec-protocol"].version, "1.17.0");
-  assert.equal(REPO_TREE_COMPONENTS.kaizen.version, "1.1.0");
-  assert.equal(REPO_TREE_COMPONENTS.eli5.version, "1.1.0");
-  assert.equal(REPO_TREE_COMPONENTS.bro.version, "1.1.0");
+
+  // Versions are READ from each tree's VERSION file rather than restated
+  // here. Restating them is what let this test rot: it asserted
+  // spec-protocol 1.17.0 while the skill had moved to 1.17.4, so the test
+  // agreed with a stale table instead of with the repository -- which is
+  // the drift it was presumably meant to catch.
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+  for (const [id, rec] of Object.entries(REPO_TREE_COMPONENTS)) {
+    const versionFile = join(repoRoot, rec.repoPath, "VERSION");
+    if (!existsSync(versionFile)) continue;
+    assert.equal(
+      rec.version,
+      readFileSync(versionFile, "utf8").trim(),
+      `${id}: pin disagrees with its own VERSION file`,
+    );
+  }
+
+  // candice-integration has no VERSION file -- its version lives in
+  // .claude-plugin/plugin.json -- so it keeps a declared value, and the loop
+  // above skips it. Pin it explicitly so "no VERSION file" cannot quietly
+  // become "no assertion".
+  assert.equal(existsSync(join(repoRoot, "plugins", "candice-integration", "VERSION")), false);
   assert.equal(REPO_TREE_COMPONENTS["candice-integration"].version, "1.0.0");
+
+  // The one that matters most: there is deliberately NO app pin. A version
+  // string is not install authority, and the app is not a repo-tree install.
   assert.equal(REPO_TREE_COMPONENTS["candice-companion"], undefined);
+
+  // CONTROL: the loop above skips any component without a VERSION file, so
+  // prove it actually asserted something rather than skipping everything.
+  const checked = Object.values(REPO_TREE_COMPONENTS).filter((rec) =>
+    existsSync(join(repoRoot, rec.repoPath, "VERSION")),
+  );
+  assert.equal(checked.length, 5, "five skill trees must carry a VERSION file and be checked");
 });
 
 test("speech asset pins match WS-16/WS-19 verified records", () => {

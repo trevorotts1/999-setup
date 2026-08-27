@@ -263,3 +263,60 @@ ID), Windows signing (needs a certificate and a Windows machine), and
 `cleanMachine` (needs a machine that has never had this app). These are
 the reason `lifecycle=REPAIR_IN_PROGRESS open=24 complete=0` is unchanged
 at the top of this file.
+
+---
+
+## Evidence annex — session 2026-08-27
+
+| Claim | How it was proven |
+|---|---|
+| No off button existed | `grep Quit\|Turn off\|Close Candice\|exit` over `src/ui` returned nothing; `lib.rs` command table had `cmd_hide_window`, no quit |
+| Off button ships | "Turn off" and `candice-power-off` present in `src-tauri/dist/assets/index-*.js`, file proven to exist before grepping |
+| Harness marker is real | Read from the launchers: `claude-nine`/`claude-9` export `CLAUDE_CONFIG_DIR=$HOME/.claude-nine`; `claude-codex` execs `claude-nine`; plain `claude` matches `*".claude-nine"*` and unsets it |
+| Repo install installed nothing | Ran it: exit 1, `NOT_RELEASE_READY`, only a journal line written |
+| Repo install now works | Ran it: exit 0; 5 skills at pinned versions, plugin tree, 214MB of sha256-verified assets; app dir correctly absent |
+| `spec-protocol` pin was stale | Repo VERSION 1.17.3 vs `SKILL_PINS` 1.17.0; a mid-session merge then moved it to 1.17.4 |
+| Pin guard actually bites | Set registry back to 1.17.0 → suite fails "registry records spec-protocol at 1.17.0, but the skill is 1.17.4"; restored → 24/24 |
+| Bridge-leak test failure pre-dates this work | Clone of HEAD fails it identically, and fails one more besides |
+| Bridge-leak test still discriminates | Deliberately-leaking in-tree copy hangs (exit 124); shipped file exits naturally (exit 0); identical stdout |
+| Live config left clean | `claude plugin list --json` → 0 candice rows, control shows context7 matches; `marketplace list` shows no candice-marketplace |
+| Compact surface does not ship | `ui/compact` has no importer outside its own directory; "Hold to talk", `candice-compact-btn`, `setBusyHint` all absent from the bundle. Control: `ui/power` IS imported and its string IS present |
+| Speech status jargon not user-facing | Only references are their own definitions and their tests |
+
+Suites at the end of the session: 573 frontend, 85 Rust, bootstrap 24/24,
+fix018 17/17, register-plugin 8/8, ws33 4/4. `tsc --noEmit` clean, `vite
+build` clean.
+
+The full packaged suite was NOT re-run this pass. It launches sixteen
+Candice windows; the operator's objection to seeing them stands until he
+lifts it.
+
+### CORRECTION to "What no seat here can close"
+
+The section above listing macOS notarization among the unclosable gates is
+WRONG. `scripts/candice-release/status.mjs` accepts `macosSigningAdhoc` as
+an honest alias (QFIX-adhoc, lines 280-317); exactly one macOS signing name
+must be recorded and PASS. An Apple Developer ID is NOT required.
+
+Windows signing is unaffected — `windowsSigningAndInteractiveSmoke` has no
+alias and remains an exact-match `PASS` requirement.
+
+### Evidence annex — self-audit pass (same session)
+
+| Claim | How it was proven |
+|---|---|
+| Malformed manifest records still abort | 9 defect cases asserted individually (placeholder/non-hex sha256, http URL, stripped signature, stripped notarization, negative and zero size, missing field), each refused AND not flagged unavailable; control: a fully valid record still resolves |
+| Absence is survivable | 4 absence paths asserted flagged: unsupported platform, authority refused, no record, no record for this (platform, arch) |
+| Off button row is pointer-live | `.candice-power-off` in CONTROL_SELECTOR; guard fails with ".candice-power-off paints an opaque backdrop but is not in CONTROL_SELECTOR" when removed, 17/17 when restored; control proves the membership check can fail |
+| Null pin cannot certify "up to date" | Guard removed → "a null pin must not match a null record"; restored → 26/26; control asserts a real matching pin still matches |
+| Capability legs are not app-dependent | Both PASS with no app installed; end-to-end install still exits 0 after removing them from the tolerated set |
+| Windows launch path is a path, not prose | Old placeholder restored → "win32 launch path must be a path, not prose"; restored → 25/25; asserted equal to the path `checkApp` probes |
+| All four version sources agree | Read each of VERSION, SKILL_PINS, REPO_TREE_COMPONENTS and the registry for all five skills |
+| spec-protocol digests were not this session's doing | SKILL.md hashes 5a763d16 at 077481d, a3c45045 from 4cb0ec7 on; `git log` on the path shows no commit from this session |
+| Restamping hid no removal | All three anchors ("THE BUILD TARGET QUESTION", "The entry — interview me…", "17. **Determine GitHub.**…") still present in the new file |
+| Tauri needs no capability entry for the new commands | Control: every existing command is equally absent from capabilities/main.json and demonstrably works |
+
+Two controls were run, found INVALID, and discarded rather than reported: a
+leak-control copy outside the tree failed on a relative `require` and returned
+exit 1 from a module error, not from the leak; and a `find` control used a
+maxdepth that could not reach its own target. Both were redone.

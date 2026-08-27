@@ -130,6 +130,57 @@ pub fn cmd_hide_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
+/// Turn Candice off.
+///
+/// The operator asked what happened to the off button: there was none. The
+/// animation checkbox turns her MOTION off, which is a different thing, so
+/// the only way to actually dismiss her was to force-quit the process from
+/// the Dock or Task Manager.
+///
+/// Off means gone, not hidden. `cmd_hide_window` leaves the process running
+/// -- still holding the microphone grant, the TTS worker and the bridge
+/// lease -- and a user who says "off" means all of it, not just the pixels.
+///
+/// This needs no confirmation prompt, because it is not destructive: the
+/// next question from Claude wakes her again through the ordinary launch
+/// path, and a question in flight when she goes is handled by step 2 below.
+#[tauri::command]
+pub fn cmd_quit_app<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    // Order matters, and every step is best-effort. A user who asked to be
+    // rid of her must get that even if a subsystem is wedged, so nothing
+    // here may return early or panic before the exit call.
+
+    // 1. Go quiet FIRST. A voice that keeps talking through the shutdown is
+    //    the most alarming possible way to fail this button.
+    if let Some(state) = app.try_state::<crate::speech::SpeechState>() {
+        state.tts.stop();
+        state.tts.stop_system_voice();
+    }
+
+    // 2. Release the caller before dying, rather than letting it discover
+    //    the corpse. `cmd_end_bridge_lifecycle` clears the pending and
+    //    active question and writes `ended` to the bridge, so a waiting
+    //    `ask_user` falls back to the terminal IMMEDIATELY instead of
+    //    sitting out its full wait window against a process that is never
+    //    coming back.
+    if let Some(state) = app.try_state::<crate::runtime::RuntimeState>() {
+        let _ = crate::runtime::cmd_end_bridge_lifecycle(app.clone(), state);
+    }
+
+    // 3. Hide before exiting so the click feels instant. Teardown is not
+    //    free, and leaving her painted on screen through it reads as a
+    //    button that did not work -- which invites a second click.
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+
+    // 4. Exit. This raises `RunEvent::ExitRequested`/`Exit`, whose handler
+    //    in `lib.rs` performs the final system-voice kill (belt and braces
+    //    with step 1, since that handler is also the path for a Dock quit).
+    app.exit(0);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -50,7 +50,7 @@ import {
   createReadStream,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bootstrapRoot, readState, writeState, STATE_SCHEMA } from "./state.mjs";
 import { skillsDir, pluginDir, appBundlePath, appDir, assetsDir } from "./paths.mjs";
@@ -60,14 +60,95 @@ import { registerAll, verifyAll, deregisterAll } from "./register-plugin.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Non-application version pins mirror the active WS-33 registry. */
-export const SKILL_PINS = {
-  "nine-router-setup": "1.17.0",
-  "spec-protocol": "1.17.0",
-  kaizen: "1.1.0",
-  eli5: "1.1.0",
-  bro: "1.1.0",
-};
+/**
+ * The skills this bootstrap bundles. The SET is pinned here deliberately --
+ * adding a skill to the installer is a decision, not something a stray
+ * directory under `.claude/skills/` should be able to make.
+ */
+export const BUNDLED_SKILLS = Object.freeze([
+  "nine-router-setup",
+  "spec-protocol",
+  "kaizen",
+  "eli5",
+  "bro",
+]);
+
+/**
+ * Read a bundled skill's own VERSION file.
+ *
+ * Never throws: an unreadable VERSION yields null, which `checkSkill`
+ * reports as a mismatch rather than crashing the installer.
+ */
+/**
+ * Is `target` a path strictly INSIDE `root`?
+ *
+ * This replaced two hand-rolled checks of the form
+ * `target.startsWith(resolve(root) + "/")`, which carried two defects:
+ *
+ *  1. The separator was hardcoded. `path.win32.resolve` emits backslashes,
+ *     so on Windows the comparison could never succeed and every app record
+ *     was rejected as "escapes the install root" -- fail-closed, but with a
+ *     message that names the wrong cause, and it made a win32 release
+ *     install impossible rather than merely awkward.
+ *
+ *  2. One of the two sites explicitly ALLOWED `target === resolve(root)`,
+ *     i.e. an `executablePath` of ".". That is not a file, and the copy that
+ *     follows (`cpSync` of a file onto a directory) throws -- uncaught,
+ *     because installAll does not wrap installApp, so it would crash the
+ *     installer with no journal entry and no rollback instead of returning
+ *     a refusal.
+ *
+ * Comparing RELATIVE paths fixes both: `relative()` speaks whichever
+ * separator the platform uses, and the root itself relativises to "", which
+ * is rejected here alongside genuine escapes.
+ *
+ * The `path` implementation is injectable ONLY so the Windows behaviour can
+ * be tested from here. There is no Windows machine in this project, so the
+ * alternative was to assert the win32 claim in a comment and ship it
+ * unchecked -- which is how the hardcoded "/" survived in the first place.
+ */
+export function insideRoot(root, target, path = { resolve, relative, isAbsolute, sep }) {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  // "" is the root itself; an absolute result means a different volume.
+  if (rel === "" || path.isAbsolute(rel)) return false;
+  // Component compare, not startsWith(".."), so a file honestly named
+  // "..config" is not mistaken for an escape.
+  return rel.split(path.sep)[0] !== "..";
+}
+
+function readBundledSkillVersion(name) {
+  try {
+    return readFileSync(join(__dirname, "..", "..", ".claude", "skills", name, "VERSION"), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Version pins, DERIVED from each skill's own VERSION file rather than
+ * copied into a literal here.
+ *
+ * They used to be hand-maintained, and they drifted: the table said
+ * spec-protocol 1.17.0 while the skill in the repository was 1.17.3. Because
+ * `installSkills` copies the skill tree verbatim -- VERSION file included --
+ * and `checkSkill` compares the installed VERSION against this pin, the
+ * mismatch failed the skill-tree health leg on EVERY release install and
+ * rolled the whole thing back. A stale number in a table was enough to make
+ * the product uninstallable, silently, with no error naming the cause.
+ *
+ * Deriving costs nothing that mattered. The pin's real job is "the installed
+ * copy matches what this repository intends", which is exactly what this
+ * still checks: a partial copy, a corrupted tree, or a stale skill left by an
+ * earlier install all still mismatch and still fail the leg. What can no
+ * longer happen is the source of truth disagreeing with itself.
+ *
+ * The set is asserted against the registry document by
+ * `__tests__/bootstrap.test.mjs`, so adding a skill here without recording it
+ * in CONTROL/bundled-components.json fails the suite.
+ */
+export const SKILL_PINS = Object.freeze(
+  Object.fromEntries(BUNDLED_SKILLS.map((name) => [name, readBundledSkillVersion(name)])),
+);
 export const PLUGIN_PINS = { "candice-integration": "1.0.0" };
 // There is deliberately no app pin until a release-authorized candidate has
 // passed the release gate.  A historical version string is not install
@@ -274,11 +355,32 @@ export async function installApp(root, platform, opts = {}) {
       ...(opts.statusScript ? { statusScript: opts.statusScript } : {}),
       ...(opts.authority ? { authority: opts.authority } : {}),
     });
-    if (!resolved.ok) return result(false, `app install refused: ${resolved.message}`);
+    if (!resolved.ok) {
+      // UNAVAILABLE, not corrupt. There is no release-authorized app
+      // candidate for this platform yet -- the authority refused, or the
+      // manifest carries no record. That is a statement about what has been
+      // published, NOT about the integrity of something we were handed, and
+      // the two must not be conflated: `installAll` continues past an
+      // unavailable app so the skills, plugin and assets still land, but
+      // aborts on anything that smells like tampering (see the sha256, size
+      // and path-escape checks below, which stay fatal on purpose).
+      // PROPAGATE the resolver's judgement; do not assert one here. Only
+      // genuine absence (unsupported platform, authority refused, no record,
+      // no record for this platform/arch) carries `unavailable`. A record
+      // that exists but is malformed -- placeholder checksum, non-https
+      // source, missing signature -- does NOT, and still aborts the install
+      // below, because that is evidence of tampering rather than of nothing
+      // having been published yet.
+      const absent = resolved.unavailable === true;
+      return result(false, `app install refused: ${resolved.message}`, {
+        blocked: true,
+        ...(absent ? { unavailable: true, skipped: true } : {}),
+      });
+    }
     const rec = resolved.record;
     // Expected executable path is root-relative; never allow escapes.
     const exeTarget = resolve(root, rec.executablePath);
-    if (!exeTarget.startsWith(resolve(root) + "/") && exeTarget !== resolve(root)) {
+    if (!insideRoot(root, exeTarget)) {
       return result(false, `app record executablePath escapes the install root: ${rec.executablePath}`);
     }
     let artifactPath = opts.artifactPath;
@@ -330,7 +432,7 @@ export async function installApp(root, platform, opts = {}) {
   if (mode === "developer") {
     const fixture = opts.appFixture;
     if (!fixture) {
-      return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
+      return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true, unavailable: true, skipped: true });
     }
     if (fixture.signedBy !== INTERNAL_SIGNED_FIXTURE) {
       return result(false, "developer app fixture is not internally signed (signedBy must be scripts/candice-release/status.mjs)", { blocked: true });
@@ -346,7 +448,7 @@ export async function installApp(root, platform, opts = {}) {
       return result(false, `developer app fixture sha256 mismatch: got ${actual}, expected ${fixture.sha256}`);
     }
     const exeTarget = resolve(root, fixture.executablePath);
-    if (!exeTarget.startsWith(resolve(root) + "/")) {
+    if (!insideRoot(root, exeTarget)) {
       return result(false, `developer app fixture executablePath escapes the install root: ${fixture.executablePath}`);
     }
     mkdirSync(dirname(exeTarget), { recursive: true });
@@ -372,7 +474,7 @@ export async function installApp(root, platform, opts = {}) {
 
   // test-fixture (or any other validated future non-release mode):
   // never invent an app candidate.
-  return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
+  return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true, unavailable: true, skipped: true });
 }
 
 /** Load the WS-33 component registry module (source of truth for payloads). */
@@ -493,7 +595,29 @@ export function launchCommand(root, platform) {
     const exe = join(appBundlePath(root), "Contents", "MacOS", "candice-companion");
     return { ok: existsSync(exe), path: exe };
   }
-  return { ok: false, path: "candice-companion.exe (placed by NSIS installer, WS-29)" };
+  if (platform === "win32") {
+    // A real path, not prose. This used to return the sentence
+    // "candice-companion.exe (placed by NSIS installer, WS-29)", which was
+    // then written into `state.launch.command` as though it were a command.
+    // Two things read that field -- the `launch-command` health leg
+    // (existsSync) and the bridge probe (which spawns it) -- so on the first
+    // Windows install that actually carries an app payload, the leg would
+    // have failed against a path that is an English sentence and the probe
+    // would have tried to execute one.
+    //
+    // It is latent today only because no Windows app payload is published,
+    // and because an unavailable app makes both legs tolerated. That is a
+    // reason to fix it now rather than to leave it: the day the payload
+    // lands is the day it stops being latent, on the platform with no
+    // machine here to catch it.
+    //
+    // This is the SAME path `checkApp` probes in health.mjs
+    // (join(root, "app", "candice-companion.exe")); the two disagreeing was
+    // the underlying defect.
+    const exe = join(appDir(root), "candice-companion.exe");
+    return { ok: existsSync(exe), path: exe };
+  }
+  return { ok: false, path: "candice-companion" };
 }
 
 /**
@@ -555,9 +679,32 @@ export async function installAll(opts = {}) {
   restores.push(snapshotTarget(root, appDir(root), "app"));
   const appR = await installApp(root, platform, { ...opts, mode });
   results.app = appR;
-  if (!appR.ok) {
+  // An app that has not been PUBLISHED yet must not cancel the parts that
+  // have. This used to abort the whole install: the app leg runs first, so
+  // a missing app record meant the skills, the plugin and the assets were
+  // all refused too, and `install` reported failure having written nothing.
+  // Installing from the repository therefore installed NOTHING rather than
+  // everything -- which is the exact complaint this answers.
+  //
+  // The distinction is availability versus integrity, and it is not a
+  // softening of the gate. `unavailable` is set ONLY where the resolver
+  // says no authorized candidate exists. Every check that could indicate
+  // tampering -- sha256 mismatch, size mismatch, an executablePath that
+  // escapes the root, a failed download -- returns WITHOUT that flag and
+  // still aborts here, exactly as before.
+  // Scoped to RELEASE deliberately. Release is the mode a client actually
+  // installs the repository with, and it is the one where "the app has not
+  // been published yet" is a normal, expected state. The non-release modes
+  // keep their original fail-closed property -- with no authority they write
+  // nothing at all -- because there the absence of a candidate means the
+  // caller has not supplied one, not that none exists in the world.
+  const appUnavailable = release && !appR.ok && appR.unavailable === true;
+  if (!appR.ok && !appUnavailable) {
     journal(root, { step: "installAll.fail", leg: "app", reason: appR.message });
     return finish(root, platform, results, false, `app install failed: ${appR.message}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}`, [], { mode, notReleaseInstall: isNonRelease(mode) });
+  }
+  if (appUnavailable) {
+    journal(root, { step: "app.unavailable", reason: appR.message });
   }
   if (appR.provenance) journal(root, { step: "app.installed", provenance: appR.provenance.record });
 
@@ -573,7 +720,11 @@ export async function installAll(opts = {}) {
   restores.push(snapshotTarget(root, pluginDir(root), "plugin"));
   // The app leg has already passed. Mark only this provisioned installed copy
   // ready; the repo source remains fail-soft when installed without the app.
-  const pluginR = installPlugin(root, PLUGIN_PINS, { ...opts, companionReady: true });
+  // `companionReady` is a CLAIM about the installed app, so it tracks the
+  // app leg rather than being hardcoded true. With no app installed the
+  // plugin stays in its fail-soft terminal mode, which it already supports
+  // -- the MCP server simply never advertises a companion it cannot reach.
+  const pluginR = installPlugin(root, PLUGIN_PINS, { ...opts, companionReady: appR.ok === true });
   results.plugin = pluginR;
   if (!pluginR.ok) {
     const rb = rollback(`plugin failed: ${pluginR.message}`);
@@ -646,13 +797,50 @@ export async function installAll(opts = {}) {
     const health = await healthCheck({ root, platform, env, mode: "release", release: true, configRoot: opts.configRoot });
     results.health = health;
     if (!health.ok) {
-      await deregisterAll(env, pluginDir(root), regOpts);
-      const rb = rollback(`release health probes failed: ${health.missing.join(", ")}`);
-      return finish(root, platform, results, false, `release install failed health probes: ${health.missing.join(", ")}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, skipped, { mode, notReleaseInstall: false, rollback: rb, state });
+      // When the app was never published, the legs that probe THROUGH the
+      // app cannot pass, and failing the install on them would put us back
+      // where we started: nothing installed because one component does not
+      // exist yet. These, and ONLY these, are tolerated -- and only when
+      // the app leg reported itself unavailable rather than broken.
+      //
+      // Every other required leg still gates. A plugin that did not
+      // register, a skill tree that did not land, an asset whose hash does
+      // not match: all still roll the whole install back, exactly as before.
+      // Exactly the legs that cannot pass without an installed app, and no
+      // others. Each one either inspects the app binary (app-*,
+      // launch-command) or spawns it (bridge-ipc).
+      //
+      // stt-runtime-capability and tts-runtime-capability were in this list
+      // and have been REMOVED: `capabilityProbe` spawns the plugin's MCP
+      // SERVER and checks it declares the governed ask_user tool. It never
+      // touches the app binary, and both legs pass with no app installed.
+      // Forgiving them here would have meant a genuinely broken MCP server
+      // going unreported whenever the app happened to be unpublished --
+      // which is every install today.
+      const APP_DEPENDENT_LEGS = new Set([
+        "app-provenance",
+        "app-hash",
+        "app-executable",
+        "app-launch",
+        "bridge-ipc",
+        "launch-command",
+      ]);
+      const failedRequired = Object.values(health.legs || {})
+        .filter((leg) => leg.classification === "required" && leg.status !== "PASS")
+        .map((leg) => leg.leg);
+      const blocking = appUnavailable
+        ? failedRequired.filter((leg) => !APP_DEPENDENT_LEGS.has(leg))
+        : failedRequired;
+      if (blocking.length > 0) {
+        await deregisterAll(env, pluginDir(root), regOpts);
+        const rb = rollback(`release health probes failed: ${blocking.join(", ")}`);
+        return finish(root, platform, results, false, `release install failed health probes: ${blocking.join(", ")}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, skipped, { mode, notReleaseInstall: false, rollback: rb, state });
+      }
+      journal(root, { step: "health.appLegsTolerated", legs: failedRequired, reason: "no published app candidate" });
     }
   }
 
-  const message = `bootstrap completed${wrote ? "" : " (state write failed)"}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}${skipped.length ? `; unverifiable legs skipped: ${skipped.join(" | ")}` : ""}`;
+  const message = `bootstrap completed${wrote ? "" : " (state write failed)"}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}${appUnavailable ? " — APP NOT INSTALLED (no published Candice release for this platform yet); skills, plugin and assets are installed and the plugin runs in terminal-answer mode" : ""}${skipped.length ? `; unverifiable legs skipped: ${skipped.join(" | ")}` : ""}`;
   return finish(root, platform, results, true, message, skipped, { mode, notReleaseInstall: isNonRelease(mode), state });
 }
 

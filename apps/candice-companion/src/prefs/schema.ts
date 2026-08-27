@@ -40,6 +40,7 @@ export const PREFS_FIELD_NAMES = [
   'lastUsedAnswerMethod',
   'textSize',
   'reducedMotion',
+  'characterHidden',
   'companionScreenPosition',
   'lastUsedSkill',
   'nameAsked',
@@ -76,6 +77,9 @@ export const PROFILE_DEFAULTS: Readonly<CandiceProfile> = Object.freeze({
   schemaVersion: LATEST_SCHEMA_VERSION,
   preferredName: null,
   voiceOutputEnabled: true,
+  // Visible by default: a companion nobody can see is not the state to boot
+  // a first-run user into.
+  characterHidden: false,
   volume: 1,
   speechRate: 1,
   lastUsedAnswerMethod: null,

@@ -12,6 +12,7 @@
 //! presentation infrastructure: a failure here must never stop Claude
 //! (spec 20).
 
+mod harness;
 mod hit_test;
 mod proc;
 mod runtime;
@@ -135,6 +136,8 @@ pub fn run() {
             shell::cmd_get_shell_info,
             shell::cmd_show_window,
             shell::cmd_hide_window,
+            shell::cmd_quit_app,
+            harness::cmd_get_harness_name,
             runtime::cmd_get_runtime_capabilities,
             runtime::cmd_submit_bridge_answer,
             runtime::cmd_cancel_bridge_question,
