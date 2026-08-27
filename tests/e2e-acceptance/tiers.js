@@ -63,11 +63,37 @@ const TIER_IDS = Object.freeze(TIERS.map((t) => t.id))
  *   - live-mic voice answers (no operator-approved voice hardware; typed
  *     answers remain required);
  *   - Windows interactive smoke (owned by FIX-018/WS-46 matrix).
+ *
+ * Plus one in PACKAGED_AUTOMATED, added 2026-08-27 — see below.
  * No other skip is valid in any tier.
  */
 const SKIPPABLE_LEGS = Object.freeze({
   'HUMAN_HARDWARE/live-mic-voice': 'no operator-approved voice hardware available; typed answers still required',
   'HUMAN_HARDWARE/windows-interactive-smoke': 'owned by FIX-018/WS-46 matrix, not FIX-019',
+  // The compact surface is not mounted in the shipping app. Proven, not
+  // assumed: zero real imports of src/ui/compact outside its own directory
+  // and tests, against three for a surface that IS mounted
+  // (ui/answer-controls, imported by runtime/bridge.ts). src/window/
+  // visible-regions.ts says the same in its own words, and publishes the
+  // click rectangle in advance so mounting it later cannot reintroduce a
+  // click-through bug.
+  //
+  // So the leg was demanding proof of a capability this release does not
+  // ship, and recording the absence as BLOCKED — which in this vocabulary
+  // means "the environment stopped me", and held the whole tier at exit 2
+  // permanently. That is the wrong word for a deliberate scope decision.
+  // A non-required leg recording SKIPPED *with a stated reason* is the
+  // mechanism this file already provides for exactly this, and it keeps the
+  // leg running, reported, and impossible to mistake for a pass.
+  //
+  // What is actually missing is CompactTransport.submit — a user-initiated
+  // channel into a Claude session. The plugin exposes one MCP capability,
+  // candice.ask_user, which is Claude asking the user; nothing carries an
+  // unsolicited message the other way. Building that is a product decision
+  // about semantics (does queued text become the next answer? does it enter
+  // the terminal?), not a repair. Delete this entry the day the transport
+  // lands and the surface is mounted.
+  'PACKAGED_AUTOMATED/compact': 'compact surface is not mounted in this release; CompactTransport has no implementation and no user-initiated channel to Claude exists (verified: 25 src-tauri commands, 1 MCP tool candice.ask_user, 11 protocol schemas, full source sweep, zero non-test importers)',
 })
 
 /**

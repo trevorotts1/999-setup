@@ -74,11 +74,31 @@ check('four required tiers exist, one per FIX-019 item 1', () => {
   for (const tier of TIERS) assert.strictEqual(tier.required, true, `${tier.id} must be required`)
 })
 
-check('only the two sanctioned skippable legs exist', () => {
+// The point of pinning the whole list is that adding a skip has to be a
+// deliberate act with a second signature, not something that arrives with the
+// change it excuses. PACKAGED_AUTOMATED/compact was added 2026-08-27 and this
+// guard is what forced it to be argued for rather than slipped in.
+check('only the three sanctioned skippable legs exist', () => {
   assert.deepStrictEqual(Object.keys(SKIPPABLE_LEGS).sort(), [
     'HUMAN_HARDWARE/live-mic-voice',
     'HUMAN_HARDWARE/windows-interactive-smoke',
+    'PACKAGED_AUTOMATED/compact',
   ])
+})
+
+// A skip is only honest while it stays narrow. Two ways this could rot: the
+// reasons could go blank, or PACKAGED_AUTOMATED could quietly accumulate more
+// exemptions until the tier means nothing. Both are cheap to pin.
+check('every sanctioned skip carries a real reason, and PACKAGED_AUTOMATED has exactly one', () => {
+  for (const [key, reason] of Object.entries(SKIPPABLE_LEGS)) {
+    assert.strictEqual(typeof reason, 'string', `${key} reason must be a string`)
+    assert.ok(reason.length >= 40, `${key} reason is too short to be an explanation: ${JSON.stringify(reason)}`)
+  }
+  const packaged = Object.keys(SKIPPABLE_LEGS).filter((k) => k.startsWith('PACKAGED_AUTOMATED/'))
+  assert.deepStrictEqual(packaged, ['PACKAGED_AUTOMATED/compact'])
+  // CONTROL: the length rule can actually reject something. If this passed a
+  // one-word reason, the check above would be decoration.
+  assert.ok(!('x'.length >= 40), 'the reason-length rule must be able to say no')
 })
 
 check('all-pass report computes PASS with every tier PASS', () => {

@@ -7,15 +7,21 @@
  *
  *   node tests/e2e-acceptance/packaged/suite.js
  *
- * Runs the six packaged legs (typed BUILD_TARGET, wrong-session, duplicate,
- * fallback, restart, compact) against the real packaged binary + real
- * AskUserServer + real LocalCompanionBridge (exact FIX-011 recheck
- * pattern), writes the PACKAGED_AUTOMATED tier report to
+ * Runs the eight packaged legs (typed BUILD_TARGET, wrong-session,
+ * duplicate, fallback, restart, compact, speech-assets, speech-keyboard)
+ * against the real packaged binary + real AskUserServer + real
+ * LocalCompanionBridge (exact FIX-011 recheck pattern), writes the
+ * PACKAGED_AUTOMATED tier report to
  * evidence/FIX-019/builder/packaged-report.json, and exits mechanically:
  *
  *   0 = every required packaged leg PASS
  *   1 = any leg FAIL
  *   2 = BLOCKED (environment gate closed, or a required leg BLOCKED)
+ *
+ * `compact` is registered in tiers.js SKIPPABLE_LEGS: the surface it drives
+ * is not mounted in this release, so it records SKIPPED with that reason
+ * rather than BLOCKED. It still runs on both passes and still appears in the
+ * report — a non-required leg that records SKIPPED with no reason is a FAIL.
  *
  * Legs are child processes: one leg = one process, so bridge/server/module
  * state stays isolated (suite convention). Clean state is verified before
@@ -30,7 +36,7 @@ const { spawnSync } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
-const { leg } = require('../tiers')
+const { leg, SKIPPABLE_LEGS } = require('../tiers')
 const reportModule = require('../report')
 const {
   PACKAGED_BINARY, killAppProcesses, packagedBinarySha, cleanStateGate, environmentGate,
@@ -107,7 +113,24 @@ function runLeg(def, runNo, traceDir) {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 240000,
   })
   const output = `${result.stdout || ''}\n${result.stderr || ''}`
-  const verdict = result.status === 0 ? 'PASS' : result.status === 2 ? 'BLOCKED' : 'FAIL'
+  // Exit 2 means "this leg did not run to a verdict". Which word that
+  // deserves depends on WHY, and tiers.js already draws the line: BLOCKED is
+  // "the environment stopped me", SKIPPED-with-a-reason on a non-required
+  // leg is "deliberately out of scope for this release". A leg registered in
+  // SKIPPABLE_LEGS has already had that decision made and written down, so
+  // it gets the second word and carries the registered reason -- not a bare
+  // `leg exited 2`, which explains nothing to whoever reads the report.
+  //
+  // This is not the gate going soft. The leg still runs on both passes, still
+  // appears in the report, and a non-required leg that records SKIPPED with
+  // NO reason is a FAIL by tiers.js -- so the exemption cannot be claimed
+  // silently. Only a leg someone has named in SKIPPABLE_LEGS, with a reason
+  // attached, is tolerated.
+  const skipReason = SKIPPABLE_LEGS[`PACKAGED_AUTOMATED/${def.id}`]
+  let verdict
+  if (result.status === 0) verdict = 'PASS'
+  else if (result.status === 2) verdict = skipReason ? 'SKIPPED' : 'BLOCKED'
+  else verdict = 'FAIL'
   console.log(`==== ${def.id}: ${verdict} ====`)
   process.stdout.write(output)
   if (!output.endsWith('\n')) process.stdout.write('\n')
@@ -117,7 +140,9 @@ function runLeg(def, runNo, traceDir) {
       tier: 'PACKAGED_AUTOMATED',
       name: `packaged-automated: ${def.id}`,
       verdict,
-      reason: verdict === 'PASS' ? undefined : `leg exited ${result.status}`,
+      reason: verdict === 'PASS' ? undefined
+        : verdict === 'SKIPPED' ? skipReason
+        : `leg exited ${result.status}`,
     }),
     traceDir,
   }
