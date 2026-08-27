@@ -70,7 +70,12 @@ function injectStyle(doc: Document): void {
   margin: 0 auto 6px;
   /* Same geometry as the animation toggle it sits beside: the ROW is the
      target, and min-height carries it to the 44px minimum because the
-     native region padding only adds 4px. */
+     native region padding only adds 4px.
+
+     That is true only because .candice-power-off is listed in
+     CONTROL_SELECTOR (window/visible-regions.ts). Without it the hit test
+     publishes the inner <button> alone -- about 26px, ~34px with padding --
+     and this comment would be describing a target the pointer never sees. */
   padding: 6px 10px;
   min-height: 44px;
   width: fit-content;

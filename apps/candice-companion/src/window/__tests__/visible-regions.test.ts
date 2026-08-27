@@ -23,6 +23,8 @@ import {
   regionsDiffer,
 } from '../visible-regions.ts';
 import { CHARACTER_SELECTOR, CONTROL_SELECTOR } from '../visible-regions.ts';
+import { ANIMATION_TOGGLE_CLASS } from '../../ui/animation-toggle/config.ts';
+import { POWER_OFF_CLASS } from '../../ui/power/config.ts';
 
 // ------------------------------------------------------------------ fake DOM
 
@@ -100,6 +102,36 @@ function asElement(el: FakeElement): Element {
 }
 
 // --------------------------------------------------------------- visibility
+
+test('every control row that paints its own backdrop is published to the hit test', () => {
+  // The window is pointer-transparent OUTSIDE published rectangles, so a
+  // surface that paints an opaque background but is not published eats the
+  // click visually and then lets it fall through to the desktop behind
+  // Candice. The control looks live, IS live in the accessibility tree, and
+  // does nothing where a person aims.
+  //
+  // That already happened once: only the animation toggle's 14x14 checkbox
+  // was published, so the word "Animation" beside it -- which forwards
+  // clicks like any HTML label -- was dead. It was fixed by listing the
+  // whole row, and nothing guarded the fix.
+  //
+  // The off button had a milder version of the same defect: `button` matched
+  // it so it was never dead, but only the button's own ~26px box was
+  // published rather than the 44px row its min-height builds.
+  const selectors = CONTROL_SELECTOR.split(',').map((s) => s.trim());
+  for (const cls of [ANIMATION_TOGGLE_CLASS, POWER_OFF_CLASS]) {
+    assert.ok(
+      selectors.includes(`.${cls}`),
+      `.${cls} paints an opaque backdrop but is not in CONTROL_SELECTOR, so clicks on it fall through to the desktop`,
+    );
+  }
+  // CONTROL: a membership test that accepted anything would pass the loop
+  // above for free. Prove it discriminates.
+  assert.ok(
+    !selectors.includes('.candice-not-a-real-surface'),
+    'the membership check must be able to fail',
+  );
+});
 
 test('paintsPixels accepts a laid-out, opaque, visible element', () => {
   const view = new FakeView();

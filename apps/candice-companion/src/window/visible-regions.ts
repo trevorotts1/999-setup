@@ -69,6 +69,20 @@ export const CONTROL_SELECTOR = [
   // own rectangle left it at 1. The voice toggle, which is a <button> and
   // therefore matched whole, took the same synthesized click correctly.
   '.candice-animation-toggle',
+  // THE WHOLE off button row, for the same reason and by the same doctrine.
+  //
+  // `button` above already matches the button itself, so unlike the
+  // animation toggle this control was never dead -- but only the button's
+  // own ~26px box was published, not the 44px row the CSS builds. The row
+  // paints `--candice-ui-surface`, and this list's whole principle is that a
+  // surface which paints a background must be published, or clicks land on
+  // pixels the user can plainly see and fall through to the desktop behind
+  // Candice.
+  //
+  // It also restores the 44px target the row's `min-height` is there to
+  // provide: REGION_PADDING adds only 4px, so publishing the button alone
+  // gave roughly 34px, under the minimum.
+  '.candice-power-off',
   // The compact surface is not mounted today (CompactTransport has no
   // implementation), so this matches nothing. It is here because the
   // lane's expand affordance is otherwise outside every published
