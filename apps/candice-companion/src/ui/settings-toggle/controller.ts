@@ -28,6 +28,7 @@ import {
   SETTINGS_TOGGLE_HINT_CLASS,
   SETTINGS_TOGGLE_STYLE_ID,
 } from './config.ts';
+import { createSwitch } from '../switch/index.ts';
 
 export interface SettingsToggleOptions {
   mount: HTMLElement;
@@ -135,13 +136,11 @@ function injectStyle(doc: Document): void {
   border: 1px solid var(--candice-ui-edge, #3a3350);
   border-radius: var(--candice-panel-radius, 14px);
 }
-.${SETTINGS_TOGGLE_CLASS} input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--candice-accent, #7c5cff);
-  cursor: pointer;
-  flex: none;
-}
+/* NOTHING HERE STYLES THE CONTROL. It used to be a 16px accent checkbox
+   dressed by this module; it is now the shared sliding switch, dressed once
+   in src/styles.css by ui/switch. Three switches on one line have to be
+   identical, and the way to make that true rather than merely intended is
+   for exactly one rule to exist. */
 .${SETTINGS_TOGGLE_CLASS} label {
   cursor: pointer;
   /* Stretch so the WORDS activate the checkbox, not just the 16px box. */
@@ -193,9 +192,8 @@ export function createSettingsToggle(options: SettingsToggleOptions): SettingsTo
   const row = doc.createElement('div');
   row.className = `${SETTINGS_TOGGLE_CLASS} ${options.className}`;
 
-  const input = doc.createElement('input');
-  input.setAttribute('type', 'checkbox');
-  input.id = options.id;
+  const control = createSwitch(doc, options.id);
+  const input = control.input;
 
   const label = doc.createElement('label');
   label.setAttribute('for', options.id);
@@ -210,7 +208,7 @@ export function createSettingsToggle(options: SettingsToggleOptions): SettingsTo
   // NAME THEN SWITCH, in that order: "it should say voice and then an on and
   // off switch". The label keeps its `for`, so the association a screen
   // reader reads is unchanged by the visual order.
-  row.append(label, input, hint);
+  row.append(label, control.root, hint);
   options.mount.append(row);
 
   let on = options.checked === true;

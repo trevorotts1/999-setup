@@ -292,37 +292,76 @@ test('CONTROL: the quit callback is genuinely wired, not assumed', () => {
   assert.equal(quits, 0, 'mounting alone must never quit the app');
 });
 
-test('the Candice switch is visually distinct from the two beside it', () => {
-  // The operator could not find the off switch. Every control was a chip of
-  // identical geometry -- same surface, same lavender border, same radius,
-  // same type -- differing only in its inner content.
+test('the Candice switch is the SAME switch as the two beside it', () => {
+  // This reverses a rule that stood for weeks, so it is written down rather
+  // than quietly dropped.
   //
-  // That risk went UP, not down, when this became the third checkbox in a row
-  // of three checkboxes: geometry can no longer distinguish it at all, and
-  // the hairline that used to separate it is gone with the vertical stack. So
-  // colour is now the only signal, and it is load-bearing. This control gets
-  // --candice-danger; nothing else on the row does.
+  // The control that ends the session used to be deliberately unlike its
+  // neighbours -- a red-bordered pill, then a red checkbox -- because the
+  // operator once could not tell which chip turned Candice off. The operator
+  // then specified the row himself, twice, and specified it uniform: "slide
+  // to the left, red. Slide to the right, green." Red is now the OFF state of
+  // every switch on the row. A permanently-red Candice switch would read as
+  // permanently OFF, which is both false and a worse confusion than the one
+  // the tint was introduced to prevent.
+  //
+  // So the invariant flips: this control must be INDISTINGUISHABLE from the
+  // other two, and the way that is guaranteed is structural -- one builder,
+  // one stylesheet, no local styling of the control anywhere.
   const { doc } = mountPowerOff(async () => undefined);
   const css = doc.getElementById(POWER_OFF_STYLE_ID)?.textContent ?? '';
   assert.notEqual(css, '', 'CONTROL: the style must actually be injected, or this test is vacuous');
 
-  assert.match(
-    css, /accent-color: var\(--candice-danger/,
-    'the Candice switch must be tinted danger -- it is the only thing telling it apart',
-  );
-
-  // CONTROL: the two switches it sits beside must NOT carry that tint, or
-  // "distinct" is a claim about a colour everything shares.
+  const here = readFileSync(join(import.meta.dirname, '..', 'controller.ts'), 'utf8');
   const siblingCss = readFileSync(
     join(import.meta.dirname, '..', '..', 'settings-toggle', 'controller.ts'), 'utf8',
   );
+
+  // Same builder.
+  for (const [what, src] of [['the Candice switch', here], ['Voice and Hologram', siblingCss]] as const) {
+    assert.match(
+      src, /import \{ createSwitch \} from '\.\.\/switch\/index\.ts';/,
+      `${what} must be built by the shared ui/switch module`,
+    );
+    assert.match(src, /createSwitch\(/, `${what} must actually call it`);
+  }
+
+  // And no local dressing, in either module: a module that restyled its own
+  // input would make them differ again without either test noticing.
   assert.ok(
-    !/--candice-danger/.test(siblingCss),
-    'CONTROL: Voice and Hologram must not use the danger tint',
+    !/accent-color/.test(css),
+    'this module must not tint its own control -- ui/switch dresses all three',
   );
+  // The danger colour survives in exactly one place -- the failure message,
+  // which is red text and should be. What must be gone is danger on the
+  // CONTROL: red now means OFF, and this switch is normally ON, so a red
+  // Candice switch would read as permanently off.
+  // Comments stripped: this stylesheet EXPLAINS in prose why the danger tint
+  // was removed, and prose naming a token is not the token being used. The
+  // first draft of this check counted the explanation as a violation.
+  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.equal(
+    declarations.split('--candice-danger').length - 1, 1,
+    'the danger colour may appear exactly once, on the failure hint',
+  );
+  const dangerAt = declarations.indexOf('--candice-danger');
+  assert.notEqual(dangerAt, -1, 'CONTROL: the failure hint must still use it, or this proves nothing');
+  const head = declarations.slice(0, dangerAt);
+  const ruleStart = head.lastIndexOf('}');
+  const selector = head.slice(ruleStart + 1, head.indexOf('{', ruleStart));
   assert.match(
-    siblingCss, /accent-color: var\(--candice-accent/,
-    'CONTROL: ...and they must carry the ordinary accent, so the check compares two real values',
+    selector, /failed/,
+    'danger may only tint the failure hint, never the switch itself',
+  );
+  assert.ok(
+    !/accent-color/.test(siblingCss),
+    'CONTROL: the sibling module must not tint its controls either',
+  );
+  // CONTROL: the "no local dressing" checks must be capable of failing, so
+  // prove the string they hunt for is one these stylesheets could contain.
+  assert.ok(
+    /accent-color/.test('.x { accent-color: red; }'),
+    'CONTROL: the accent-color probe matches accent-color when it is present',
   );
 
   // The ROW still sits on the shared surface -- but that surface moved up one
@@ -387,5 +426,10 @@ test('the row stays a real pointer target, and cannot overflow', () => {
   // the label rule, or every assertion on `row` is reading the whole
   // stylesheet and proving nothing about which selector carries what.
   assert.ok(css.includes('label {'), 'CONTROL: the label rule must exist for the slice to bound');
-  assert.ok(!row.includes('accent-color'), 'CONTROL: the row slice must not reach the input rule');
+  assert.ok(
+    css.includes('cursor: pointer'), 'CONTROL: a later rule carries cursor: pointer...',
+  );
+  assert.ok(
+    !row.includes('cursor: pointer'), '...and the row slice must stop before reaching it',
+  );
 });

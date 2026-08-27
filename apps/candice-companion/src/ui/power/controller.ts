@@ -28,6 +28,7 @@ import {
   POWER_OFF_LABEL,
   POWER_OFF_STYLE_ID,
 } from './config.ts';
+import { createSwitch } from '../switch/index.ts';
 
 export interface PowerOffOptions {
   /** Element the control is appended to. */
@@ -125,27 +126,20 @@ function injectStyle(doc: Document): void {
   display: flex;
   align-items: center;
 }
-.${POWER_OFF_CLASS} input {
-  width: 16px;
-  height: 16px;
-  /* THE ONE THING ON THIS ROW THAT IS NOT LAVENDER.
-     This used to be a pill with a danger border, and the reason for the
-     danger tint has not changed: an identical silhouette beside the other
-     controls left the operator unable to tell which one ended the session.
-     Now that it is a checkbox in a row of checkboxes, the tint is the ONLY
-     thing distinguishing it, so it matters more than it did, not less.
-
-     8.04:1 on the surface; see --candice-danger in styles.css. accent-color
-     paints the checked box, which is the state this control spends all of
-     its visible life in -- Candice is on whenever you can see this. */
-  accent-color: var(--candice-danger, #ff8a8a);
-  cursor: pointer;
-  flex: none;
-}
-.${POWER_OFF_CLASS} input:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
+/* NO TINT OF ITS OWN, AND THAT IS A DELIBERATE REVERSAL.
+   This control carried --candice-danger from the day the operator could not
+   tell which chip ended the session -- first as a red-bordered pill, then as
+   a red checkbox. It does not any more, because the operator specified the
+   switch himself and specified it for all three alike: "slide to the left,
+   red. Slide to the right, green." Red now means OFF, on every switch on the
+   row. A permanently-red Candice switch would read as permanently off, which
+   is the opposite of true and a worse lie than the one the tint was added to
+   prevent.
+   So this control is dressed by ui/switch exactly like the other two, and
+   what distinguishes it is its NAME. Recorded plainly because it is a real
+   trade: the visual warning is gone. What it guards is small -- switching
+   Candice off closes her and she returns on the next question -- and the
+   operator asked for the uniform row twice. */
 /* HIDDEN AT REST, SHOWN WHEN IT MATTERS.
    Same live region as the other two switches, and hidden the same way and
    for the same reason -- the operator asked for switches "without all the
@@ -234,9 +228,8 @@ export function createPowerOff(options: PowerOffOptions): PowerOff {
     label.setAttribute('for', POWER_OFF_ID);
     label.textContent = POWER_OFF_LABEL;
 
-    toggle = doc.createElement('input');
-    toggle.setAttribute('type', 'checkbox');
-    toggle.id = POWER_OFF_ID;
+    const control = createSwitch(doc, POWER_OFF_ID);
+    toggle = control.input;
     // On, because she is: this control only exists while she is running.
     toggle.checked = true;
 
@@ -247,8 +240,9 @@ export function createPowerOff(options: PowerOffOptions): PowerOff {
     hint.setAttribute('role', 'status');
     hint.setAttribute('aria-live', 'polite');
 
-    // Name then switch, matching Voice and Hologram exactly.
-    root.append(label, toggle, hint);
+    // Name then switch, matching Voice and Hologram exactly -- the same
+    // builder, so "matching" is structural rather than a resemblance.
+    root.append(label, control.root, hint);
     options.mount.append(root);
   } catch {
     return inert;

@@ -99,6 +99,26 @@
      are pills, and were the one family already consistent with each other. */
   --candice-pill-radius: 999px;
   --candice-stack-gap: 8px;
+  /*
+   * SWITCH COLOURS -- the operator's own specification, verbatim: "slide to
+   * the left, red. Slide to the right, green. On, off."
+   *
+   * Both are UI components, which FIX-008 holds to the 3:1 threshold, and
+   * both clear it against --candice-ui-surface by a wide margin: the red is
+   * 8.04:1 (it is the same value as --candice-danger, already measured for
+   * the control that ends the session) and the green is 10.47:1. The knob is
+   * painted in the surface colour, so knob-against-track carries those same
+   * two ratios and the dot stays visible on either state.
+   *
+   * COLOUR IS NEVER THE ONLY SIGNAL. Red/green is precisely the pairing that
+   * red-green colour blindness collapses, and WCAG 1.4.1 forbids conveying
+   * state by colour alone. The knob's POSITION -- left for off, right for on
+   * -- carries the same information independently, and it is the part the
+   * operator actually asked to watch move. Neither signal may be removed
+   * without the other becoming a failure.
+   */
+  --candice-switch-off: #ff8a8a;
+  --candice-switch-on: #4ade80;
 }
 
 * {
@@ -312,6 +332,74 @@ body {
   color: var(--candice-muted);
 }
 
+/*
+ * THE SLIDING SWITCH (ui/switch/index.ts).
+ *
+ * Lives here rather than in a module stylesheet because Voice, Hologram and
+ * Candice share one line and must be indistinguishable from each other. One
+ * rule dressing one builder is what makes that true rather than asserted.
+ */
+.candice-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  width: 40px;
+  height: 22px;
+}
+.candice-switch input {
+  /* INVISIBLE, NOT ABSENT. This is the real checkbox: Space toggles it, Tab
+     reaches it, the OS draws the focus ring on it, and the checked state is
+     announced natively. `opacity: 0` and not display/visibility, because
+     those two take it out of the focus order and the accessibility tree --
+     the switch would be unreachable by keyboard and silent to a reader.
+     Stretched 11px past the track top and bottom so the ACTIVATION target is
+     44px tall, the Apple HIG minimum, while the drawn switch stays 22px. */
+  position: absolute;
+  top: -11px;
+  bottom: -11px;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.candice-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--candice-pill-radius);
+  background: var(--candice-switch-off);
+  transition: background-color 140ms ease;
+}
+.candice-switch input:checked + .candice-switch-track {
+  background: var(--candice-switch-on);
+}
+.candice-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  /* The surface colour, so the dot reads against red and green alike at the
+     two ratios recorded on the tokens above. */
+  background: var(--candice-ui-surface);
+  transition: transform 140ms ease;
+}
+.candice-switch input:checked + .candice-switch-track .candice-switch-knob {
+  /* 40 wide, 16 knob, 3 either side: 40 - 16 - 3 - 3 = 18. */
+  transform: translateX(18px);
+}
+.candice-switch input:disabled {
+  cursor: default;
+}
+.candice-switch input:disabled + .candice-switch-track {
+  opacity: 0.6;
+}
+
 @keyframes candice-breathe {
   0%,
   100% {
@@ -379,7 +467,12 @@ body {
     animation: none;
   }
 
-  .candice-gesture-layer {
+  .candice-gesture-layer,
+  .candice-switch-track,
+  .candice-switch-knob {
+    /* The knob still MOVES and the track still recolours -- reduced motion
+       removes the animation, never the information. It just arrives at the
+       new position instead of sliding to it. */
     transition: none;
   }
 }
@@ -394,6 +487,8 @@ html.candice-reduced-motion .candice-character-image {
   animation: none;
 }
 
-html.candice-reduced-motion .candice-gesture-layer {
+html.candice-reduced-motion .candice-gesture-layer,
+html.candice-reduced-motion .candice-switch-track,
+html.candice-reduced-motion .candice-switch-knob {
   transition: none;
 }
