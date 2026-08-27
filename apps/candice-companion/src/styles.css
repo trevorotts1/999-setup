@@ -33,6 +33,18 @@
    * uses this lighter tint of the same hue instead (8.78:1).
    */
   --candice-accent-text: #b9a8ff;
+  /*
+   * The one control that ends the session. It sits directly beneath the
+   * animation toggle in a chip of identical geometry, and with no colour of
+   * its own the two read as one pair -- which is what made the operator
+   * unable to find the off switch at all.
+   *
+   * 8.04:1 on the surface, measured, not chosen by eye. The obvious #ff6b6b
+   * is 6.57:1 -- it clears AA 4.5 but misses the 7:1 this file holds dark
+   * surfaces to, so it is not used. Symmetric by construction: the hover
+   * state inverts to surface-on-danger, which is the same 8.04:1.
+   */
+  --candice-danger: #ff8a8a;
   --candice-focus-ring: #dfd7ff;
   --candice-text-scale: 1;
 }

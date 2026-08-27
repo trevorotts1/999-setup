@@ -67,18 +67,35 @@ function injectStyle(doc: Document): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 auto 6px;
-  /* Same geometry as the animation toggle it sits beside: the ROW is the
-     target, and min-height carries it to the 44px minimum because the
-     native region padding only adds 4px.
+  /* 12px above, 6px below. The animation toggle sits directly on top with an
+     identical silhouette, and at a matching 6px gap the two scanned as one
+     grouped pair -- which is both why the off switch was hard to FIND and
+     why a miss aimed at the toggle could land on quit. */
+  margin: 12px auto 6px;
+  /* PUBLICATION and ACTIVATION are different things here, deliberately.
 
-     That is true only because .candice-power-off is listed in
-     CONTROL_SELECTOR (window/visible-regions.ts). Without it the hit test
-     publishes the inner <button> alone -- about 26px, ~34px with padding --
-     and this comment would be describing a target the pointer never sees. */
+     The ROW is what the native hit test publishes (.candice-power-off is
+     listed in CONTROL_SELECTOR, window/visible-regions.ts), so a near miss
+     lands inside Candice rather than passing through to the desktop. That
+     is what min-height 44px buys, and it is the whole reason the entry
+     exists -- without it the hit test would publish the inner <button>
+     alone, about 26px.
+
+     But the only click HANDLER is on the button, so the activation target
+     is the button, not the row. That is intentional: this is the one
+     control that ends the session, and a 44px activation strip directly
+     under a 44px toggle invites ending it by accident. The button is sized
+     below for a comfortable target without becoming that strip. Do not
+     "fix" this by moving the handler to the row. */
   padding: 6px 10px;
   min-height: 44px;
   width: fit-content;
+  /* At the Large text scale (1.2) the button plus the hint runs past the
+     420px window, and body{overflow:hidden} clips the tail rather than
+     scrolling it, so the row reads as broken. Wrap instead. */
+  max-width: min(92vw, 404px);
+  flex-wrap: wrap;
+  justify-content: center;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-text, #eceaf3);
@@ -92,16 +109,31 @@ function injectStyle(doc: Document): void {
   cursor: pointer;
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid var(--candice-ui-border, #beb0ff);
-  /* Deliberately NOT the accent colour. This is the one control on the
-     surface that ends the session; it should read as distinct from the
-     toggle beside it without shouting, because it is a normal thing to
-     want and pressing it costs nothing. */
+  /* Distinct from the toggle beside it, without shouting.
+
+     Transparent-with-the-same-lavender-border made this a visual twin of
+     the animation toggle, which is what left the operator unable to tell
+     which chip was the off switch. The danger tint is carried by colour and
+     border only -- NOT a filled red at rest, which would read as a warning
+     and invite mis-clicks on a control that is a perfectly normal thing to
+     want. Filled is the hover state, below.
+
+     8.04:1 on the surface; see --candice-danger in styles.css. */
+  border: 1px solid var(--candice-danger, #ff8a8a);
+  color: var(--candice-danger, #ff8a8a);
   background: transparent;
+  /* The activation target, as distinct from the published row above. 32px
+     clears the 24px minimum comfortably while staying visibly a small pill
+     inside the 44px row rather than a full-width quit strip. */
+  min-height: 32px;
+  min-width: 88px;
 }
 .${POWER_OFF_CLASS} button:hover:not(:disabled) {
-  background: var(--candice-ui-border, #beb0ff);
+  /* Inverted, and symmetric: surface-on-danger is the same measured 8.04:1
+     as danger-on-surface. */
+  background: var(--candice-danger, #ff8a8a);
   color: var(--candice-ui-surface, #171321);
+  border-color: var(--candice-danger, #ff8a8a);
 }
 .${POWER_OFF_CLASS} button:disabled {
   cursor: default;

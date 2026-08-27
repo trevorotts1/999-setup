@@ -22,6 +22,7 @@ import {
   POWER_OFF_HINT,
   POWER_OFF_ID,
   POWER_OFF_LABEL,
+  POWER_OFF_STYLE_ID,
 } from '../config.ts';
 
 // ------------------------------------------------------------- tiny fake DOM
@@ -230,4 +231,55 @@ test('CONTROL: the quit callback is genuinely wired, not assumed', () => {
     quits += 1;
   });
   assert.equal(quits, 0, 'mounting alone must never quit the app');
+});
+
+test('the off button is visually distinct from the toggle it sits beside', () => {
+  // The operator could not find the off switch. Both rows were chips of
+  // identical geometry -- same surface, same lavender border, same radius,
+  // same type -- 6px apart, differing only in their inner content. Presence
+  // alone did not solve it.
+  const { doc } = mountPowerOff(async () => undefined);
+  const css = doc.getElementById(POWER_OFF_STYLE_ID)?.textContent ?? '';
+  assert.notEqual(css, '', 'CONTROL: the style must actually be injected, or this test is vacuous');
+
+  assert.match(css, /border: 1px solid var\(--candice-danger/, 'the button must carry the danger border');
+  assert.match(css, /color: var\(--candice-danger/, 'the button must carry the danger colour');
+
+  // NOT filled at rest. A red-filled button reads as a warning and invites
+  // mis-clicks on a control that is a normal thing to want.
+  assert.match(css, /background: transparent;/, 'the button must not be filled at rest');
+  // ...but filled on hover, which is where the inversion lives.
+  assert.match(
+    css,
+    /button:hover:not\(:disabled\) \{[^}]*background: var\(--candice-danger/,
+    'hover must invert to the danger fill',
+  );
+
+  // The ROW keeps the shared surface: this is a tinted control inside the
+  // normal chrome, not a recoloured panel.
+  assert.match(css, /background: var\(--candice-ui-surface/, 'the row keeps the shared surface');
+});
+
+test('the button is a real activation target, and the row cannot overflow', () => {
+  // Publication and activation are different sizes here. The ROW is what the
+  // hit test publishes (44px, so a near miss does not fall through to the
+  // desktop); the BUTTON is what actually activates, and it was ~26px.
+  const { doc } = mountPowerOff(async () => undefined);
+  const css = doc.getElementById(POWER_OFF_STYLE_ID)?.textContent ?? '';
+
+  const button = css.slice(css.indexOf('button {'));
+  assert.match(button, /min-height: 32px;/, 'the activation target must clear the 24px minimum');
+  assert.match(button, /min-width: 88px;/);
+
+  // At the Large text scale the button plus hint runs past the 420px window,
+  // and body{overflow:hidden} clips rather than scrolls, so the row would
+  // read as broken. It must wrap.
+  assert.match(css, /flex-wrap: wrap;/, 'the row must wrap rather than be clipped');
+  assert.match(css, /max-width: min\(92vw, 404px\);/);
+
+  // CONTROL: the row itself must still carry the 44px publication height.
+  // If a later edit moved min-height onto the button and dropped it from the
+  // row, the pointer would start falling through to the desktop again.
+  const row = css.slice(0, css.indexOf('button {'));
+  assert.match(row, /min-height: 44px;/, 'the published row must stay 44px');
 });

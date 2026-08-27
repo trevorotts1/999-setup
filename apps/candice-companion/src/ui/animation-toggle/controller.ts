@@ -109,6 +109,13 @@ function injectStyle(doc: Document): void {
   padding: 6px 10px;
   min-height: 44px;
   width: fit-content;
+  /* This row carries the longest hint on the surface, so it is the first to
+     run past the 420px window at the Large text scale (1.2). body has
+     overflow:hidden, which CLIPS the tail rather than scrolling it, so the
+     row would read as broken rather than as too long. Wrap instead. */
+  max-width: min(92vw, 404px);
+  flex-wrap: wrap;
+  justify-content: center;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-text, #eceaf3);
