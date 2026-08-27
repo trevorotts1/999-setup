@@ -1157,3 +1157,127 @@ in HEAD, one public key tracked, no private-key header in any file touched
 by commit 00bc29f, each with a control proving the instrument fires. A
 full-history scan timed out on this 11 GB tree and was NOT completed — that
 broader claim is undetermined, not proven clean.
+
+---
+
+## 14. Session 2026-08-27 — the off button, the harness name, and an install that installed nothing
+
+Three operator complaints, all confirmed as real defects, all fixed and
+pushed (352b627, 3fbe41d, 08b99fb, b70e561, 8186302, a304fdc).
+
+### 14.1 There was no off button
+
+Confirmed by absence: `grep` for `Quit|Turn off|Close Candice|exit` across
+`apps/candice-companion/src/ui` returned nothing, and the command table in
+`lib.rs` had `cmd_hide_window` but no quit. The only power-shaped control on
+screen was the ANIMATION checkbox, so "I turned it off" and "she is still on
+my screen" were both true at once.
+
+Added `shell::cmd_quit_app` and `src/ui/power/`. Order of teardown: stop the
+voice first, then `cmd_end_bridge_lifecycle` so a waiting `ask_user` falls
+back to the terminal immediately instead of sitting out its full window
+against a process that is never coming back, then hide, then exit. Every step
+best-effort — a user who asked to be rid of her gets that even if a subsystem
+is wedged. No confirm dialog: she reopens on the next question, and the hint
+says so.
+
+### 14.2 Every string named Claude
+
+MEASURED from the launchers, not assumed: `claude-nine` and `claude-9` both
+export `CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"`,
+`claude-codex` execs `claude-nine`, and plain `claude` matches
+`*".claude-nine"*` and UNSETS it. The plain harness actively clearing the
+marker is what makes a set-and-matching value a positive statement rather
+than a leftover.
+
+`src-tauri/src/harness.rs` measures it; `src/harness/name.ts` owns the
+wording. Spec-pinned strings are PARAMETERISED, not rewritten — under the
+plain harness every label is byte-identical to spec 5.1, which is also what
+keeps the packaged accessibility driver (it finds that control by exact
+accessible name) working unchanged. Unknown stays unknown: a Dock launch says
+"your terminal" rather than guessing.
+
+Found while wiring it: `captions/controller.ts` classified the fallback
+caption by comparing against the literal `'Answer in Claude instead'`. Under
+claude-nine that comparison silently stops matching and the caption starts
+fading like a status line instead of holding like an instruction — a failure
+with no error message. Now prefix-matched through the shared owner.
+
+### 14.3 Installing from the repository installed NOTHING
+
+MEASURED, before:
+
+    $ node scripts/candice-bootstrap/bootstrap.mjs install --mode release --root <tmp>
+    EXIT=1
+    FAIL app install failed: app install refused: app record refused:
+         release authority refused the candidate (exit 1): NOT_RELEASE_READY
+
+The app leg runs first and aborted the whole transaction, so a missing app
+record also refused the skills, the plugin and the assets. Only a journal
+line was written.
+
+The fix separates AVAILABILITY from INTEGRITY. `unavailable` is set solely
+where the resolver reports no authorized candidate; every check that could
+indicate tampering (sha256, size, executablePath escape, failed download)
+returns without it and still aborts and rolls back. Scoped to release mode —
+the non-release modes keep their original fail-closed property, and the test
+that pins it passes unchanged.
+
+After: exit 0, five skills at pinned versions, the plugin tree, and 214MB of
+sha256-verified assets. The app directory correctly absent.
+
+### 14.4 Two bugs found while proving it
+
+**The `spec-protocol` pin was stale.** `SKILL_PINS` said 1.17.0; the skill in
+the repository was 1.17.3. `installSkills` copies the skill tree verbatim
+(VERSION file included) and `checkSkill` compares the installed VERSION
+against the pin, so the mismatch failed the skill-tree health leg on EVERY
+release install and rolled it back. A stale number in a table made the
+product uninstallable, silently, with no error naming the cause. A merge then
+landed mid-session bumping it to 1.17.4 and re-broke it within minutes, so
+`SKILL_PINS` is now DERIVED from each skill's own VERSION file, with a guard
+test proven to bite (set the registry back to 1.17.0 and the suite fails with
+"registry records spec-protocol at 1.17.0, but the skill is 1.17.4").
+
+**`plugin-mcp` demanded `CANDICE_COMPANION_READY=1` unconditionally.** That
+flag is a claim about the installed app, so the leg now checks the claim
+MATCHES reality. Stricter, not looser: the old check was blind to a plugin
+advertising a companion that is not installed — the case that makes every
+`ask_user` hang to its timeout. That now FAILS.
+
+### 14.5 A stale test, not a bug
+
+`fix018` "bridge seam: companion-ready-timeout leaves no live timer chain"
+was failing before any change this session — a clone of HEAD fails it
+identically, and fails one more besides. The ready budget was raised from 3s
+to 20s deliberately (3s expired mid-launch on a loaded machine and declared a
+working companion dead); the test still carried a 15000ms ceiling around an
+`ensureSession` that now takes 20006ms, so it failed on the timeout firing at
+all and never reached its assertion. It now injects `readyTimeoutMs: 500`.
+PROVEN to still discriminate: against a deliberately-leaking copy placed
+in-tree the child hangs (exit 124); against the shipped file it exits
+naturally (exit 0), with identical stdout.
+
+### 14.6 A live-config write, disclosed
+
+One test run registered the plugin into the live `~/.claude`: release mode
+targets the live discovered config root by design, and the run passed
+`--root` but no `configRoot`. The rollback's `deregisterAll` removed it.
+VERIFIED clean afterwards via `claude plugin list --json`: zero candice
+registrations against a control showing the filter matches context7, and
+`claude plugin marketplace list` showing no candice-marketplace. Later tests
+drove the module API with an injected `configRoot` instead.
+
+### 14.7 The macOS notarization blocker is STALE
+
+`scripts/candice-release/status.mjs` accepts `macosSigningAdhoc` as an honest
+alias for `macosSigningAndNotarization` (QFIX-adhoc, status.mjs:280-317).
+Exactly one of the two names must be present and PASS; both present is
+refused. **An Apple Developer ID is therefore NOT required by the release
+authority** — an honest ad-hoc-signed posture is accepted. Earlier notes in
+CHECKLIST.md and TODO.md listing macOS notarization among the things "no seat
+here can close" are wrong and are corrected there.
+
+`windowsSigningAndInteractiveSmoke` has NO such alias and is still an
+exact-match `PASS` requirement, so Windows signing remains a genuine blocker
+for a full authority pass.

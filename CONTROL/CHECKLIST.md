@@ -263,3 +263,40 @@ ID), Windows signing (needs a certificate and a Windows machine), and
 `cleanMachine` (needs a machine that has never had this app). These are
 the reason `lifecycle=REPAIR_IN_PROGRESS open=24 complete=0` is unchanged
 at the top of this file.
+
+---
+
+## Evidence annex — session 2026-08-27
+
+| Claim | How it was proven |
+|---|---|
+| No off button existed | `grep Quit\|Turn off\|Close Candice\|exit` over `src/ui` returned nothing; `lib.rs` command table had `cmd_hide_window`, no quit |
+| Off button ships | "Turn off" and `candice-power-off` present in `src-tauri/dist/assets/index-*.js`, file proven to exist before grepping |
+| Harness marker is real | Read from the launchers: `claude-nine`/`claude-9` export `CLAUDE_CONFIG_DIR=$HOME/.claude-nine`; `claude-codex` execs `claude-nine`; plain `claude` matches `*".claude-nine"*` and unsets it |
+| Repo install installed nothing | Ran it: exit 1, `NOT_RELEASE_READY`, only a journal line written |
+| Repo install now works | Ran it: exit 0; 5 skills at pinned versions, plugin tree, 214MB of sha256-verified assets; app dir correctly absent |
+| `spec-protocol` pin was stale | Repo VERSION 1.17.3 vs `SKILL_PINS` 1.17.0; a mid-session merge then moved it to 1.17.4 |
+| Pin guard actually bites | Set registry back to 1.17.0 → suite fails "registry records spec-protocol at 1.17.0, but the skill is 1.17.4"; restored → 24/24 |
+| Bridge-leak test failure pre-dates this work | Clone of HEAD fails it identically, and fails one more besides |
+| Bridge-leak test still discriminates | Deliberately-leaking in-tree copy hangs (exit 124); shipped file exits naturally (exit 0); identical stdout |
+| Live config left clean | `claude plugin list --json` → 0 candice rows, control shows context7 matches; `marketplace list` shows no candice-marketplace |
+| Compact surface does not ship | `ui/compact` has no importer outside its own directory; "Hold to talk", `candice-compact-btn`, `setBusyHint` all absent from the bundle. Control: `ui/power` IS imported and its string IS present |
+| Speech status jargon not user-facing | Only references are their own definitions and their tests |
+
+Suites at the end of the session: 573 frontend, 85 Rust, bootstrap 24/24,
+fix018 17/17, register-plugin 8/8, ws33 4/4. `tsc --noEmit` clean, `vite
+build` clean.
+
+The full packaged suite was NOT re-run this pass. It launches sixteen
+Candice windows; the operator's objection to seeing them stands until he
+lifts it.
+
+### CORRECTION to "What no seat here can close"
+
+The section above listing macOS notarization among the unclosable gates is
+WRONG. `scripts/candice-release/status.mjs` accepts `macosSigningAdhoc` as
+an honest alias (QFIX-adhoc, lines 280-317); exactly one macOS signing name
+must be recorded and PASS. An Apple Developer ID is NOT required.
+
+Windows signing is unaffected — `windowsSigningAndInteractiveSmoke` has no
+alias and remains an exact-match `PASS` requirement.
