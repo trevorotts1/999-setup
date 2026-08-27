@@ -25,7 +25,7 @@
  * @module
  */
 
-import { SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
+import { SETTINGS_PANEL_CLASS, SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
 import type { CandiceStateMachine } from '../state/machine.ts';
 import type { CaptionsController } from '../ui/captions/index.ts';
 import type { CandiceProfile } from '../prefs/schema.ts';
@@ -276,7 +276,13 @@ function mountNamePrompt(
   // silently reinstates the exact tab-order bug the comment above describes.
   // Every settings row carries SETTINGS_TOGGLE_CLASS, so this finds the first
   // one whatever it happens to be, and survives the next reordering too.
-  const settingsRow = root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
+  // Anchor on the PANEL, which is a direct child of root. The rows are now
+  // nested inside it, and `insertBefore` throws when the reference node is
+  // not a child of the parent -- so anchoring on a row would not merely miss,
+  // it would raise on every question. Fall back to the row for any caller or
+  // test that mounts a bare row with no panel around it.
+  const settingsRow = root.querySelector('.' + SETTINGS_PANEL_CLASS)
+    ?? root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
   if (settingsRow !== null) root.insertBefore(prompt, settingsRow);
   else root.append(prompt);
   if (announceQuestion) captions?.announce(NAME_QUESTION_TEXT);

@@ -30,6 +30,17 @@
 /** Shared row class, so one CSS block and one hit-test entry serve all rows. */
 export const SETTINGS_TOGGLE_CLASS = 'candice-settings-toggle';
 
+/**
+ * The single container that holds every settings row.
+ *
+ * Each row used to paint its own opaque background and border, because each
+ * has to stay readable over a transparent window with an arbitrary desktop
+ * behind it. Individually correct, collectively a stack of separate floating
+ * cards. The paint moves here: this container is opaque once, and the rows
+ * inside it are transparent.
+ */
+export const SETTINGS_PANEL_CLASS = 'candice-settings-panel';
+
 /** Style element id — injected once, however many rows mount. */
 export const SETTINGS_TOGGLE_STYLE_ID = 'candice-settings-toggle-style';
 

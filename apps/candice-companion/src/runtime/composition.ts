@@ -37,6 +37,7 @@ import { createPowerOff } from '../ui/power/index.ts';
 import {
   createSettingsToggle,
   HOLOGRAM_TOGGLE,
+  SETTINGS_PANEL_CLASS,
   VOICE_TOGGLE,
   type SettingsToggleController,
 } from '../ui/settings-toggle/index.ts';
@@ -350,6 +351,22 @@ export async function initializeRuntimeComposition(
 
   // Voice, at rest.
   //
+  // ONE PANEL, NOT THREE CARDS.
+  //
+  // Voice, Hologram and Turn-off each mounted straight onto `root`, and each
+  // painted its OWN opaque background, its own 1px border and its own rounded
+  // corners -- because each has to stay readable over whatever desktop is
+  // behind a transparent window. Correct individually, awful together: three
+  // separate floating cards stacked down her body, each with a hint line
+  // wrapped underneath it, which is what the operator saw and called ugly.
+  //
+  // The background has to live somewhere, so it moves up one level. This
+  // container paints once; the rows inside it go transparent and borderless
+  // and become a compact list. Same readability, one shape instead of three.
+  const settingsPanel = document.createElement('div');
+  settingsPanel.className = SETTINGS_PANEL_CLASS;
+  root.append(settingsPanel);
+
   // A `Voice: ON/OFF` button already existed, but it belongs to the ANSWER
   // SURFACE, which is created when a question arrives and destroyed when it
   // closes. So the only moment you could mute her was while she was already
@@ -357,7 +374,7 @@ export async function initializeRuntimeComposition(
   // is always mounted, writes the same spec-9 `voiceOutputEnabled` field,
   // and the two views are kept in step below so they can never disagree.
   const voiceToggle: SettingsToggleController = createSettingsToggle({
-    mount: root,
+    mount: settingsPanel,
     id: VOICE_TOGGLE.id,
     className: VOICE_TOGGLE.className,
     label: VOICE_TOGGLE.label,
@@ -384,7 +401,7 @@ export async function initializeRuntimeComposition(
   // Turn off ends the session. This hides her image while she keeps
   // working -- questions, answers and captions all continue.
   const hologramToggle: SettingsToggleController = createSettingsToggle({
-    mount: root,
+    mount: settingsPanel,
     id: HOLOGRAM_TOGGLE.id,
     className: HOLOGRAM_TOGGLE.className,
     label: HOLOGRAM_TOGGLE.label,
@@ -415,7 +432,7 @@ export async function initializeRuntimeComposition(
   // turn candace off". Motion and presence are two different things, and
   // until now only one of them had a control.
   const powerOff = createPowerOff({
-    mount: root,
+    mount: settingsPanel,
     quit: async () => {
       const bridge = options.invokeAdapter ?? (await import('@tauri-apps/api/core'));
       return bridge.invoke('cmd_quit_app');

@@ -13,6 +13,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createPowerOff } from '../controller.ts';
@@ -255,9 +257,33 @@ test('the off button is visually distinct from the toggle it sits beside', () =>
     'hover must invert to the danger fill',
   );
 
-  // The ROW keeps the shared surface: this is a tinted control inside the
-  // normal chrome, not a recoloured panel.
-  assert.match(css, /background: var\(--candice-ui-surface/, 'the row keeps the shared surface');
+  // The ROW still sits on the shared surface -- but that surface moved up one
+  // level. Voice, Hologram and Turn-off each painted their own opaque
+  // background, which is correct in isolation (a transparent window can have
+  // any desktop behind it) and awful together: three separate floating cards
+  // stacked down the character. The paint now happens once, on
+  // `.candice-settings-panel`, and the rows inside it are transparent.
+  //
+  // The claim this test defends is unchanged: this is a tinted control inside
+  // the normal chrome, not a recoloured panel. So the row must NOT paint.
+  assert.match(css, /background: transparent;\n  border: 0;/, 'the row must not paint its own surface');
+
+  // ...and the surface must still exist, or "the row inherits it" is a story
+  // rather than a fact. Read the module that owns the panel and require it to
+  // paint the shared surface there.
+  const panelCss = readFileSync(
+    join(import.meta.dirname, '..', '..', 'settings-toggle', 'controller.ts'), 'utf8',
+  );
+  assert.match(
+    panelCss, /\$\{SETTINGS_PANEL_CLASS\} \{[^}]*background: var\(--candice-ui-surface/,
+    'the settings panel must paint the shared surface the rows now inherit',
+  );
+  // CONTROL: that regex must be capable of failing. A pattern that matches any
+  // text would make the assertion above decorative.
+  assert.ok(
+    !/\$\{SETTINGS_PANEL_CLASS\} \{[^}]*background: var\(--candice-nonexistent/.test(panelCss),
+    'CONTROL: the panel-surface check can say no',
+  );
 });
 
 test('the button is a real activation target, and the row cannot overflow', () => {

@@ -23,6 +23,7 @@
  */
 
 import {
+  SETTINGS_PANEL_CLASS,
   SETTINGS_TOGGLE_CLASS,
   SETTINGS_TOGGLE_HINT_CLASS,
   SETTINGS_TOGGLE_STYLE_ID,
@@ -87,14 +88,34 @@ function injectStyle(doc: Document): void {
   /* Long hints must wrap rather than be clipped: body has overflow:hidden,
      so an overflowing row loses its tail and reads as broken. */
   max-width: min(92vw, 404px);
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-text, #faf7ff);
+  /* NO background, NO border, NO radius. the settings panel below
+     paints once for the whole group; a row that painted its own turned the
+     group into a stack of separate floating cards. */
+  background: transparent;
+  border: 0;
+}
+
+/* The one surface the settings group paints. Opaque for the same reason the
+   rows used to be: a transparent window can have any desktop behind it, and
+   unreadable controls are broken controls. */
+.${SETTINGS_PANEL_CLASS} {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: fit-content;
+  max-width: min(92vw, 404px);
+  margin: 0 auto 6px;
+  padding: 4px 12px;
+  color: var(--candice-text, #faf7ff);
   background: var(--candice-ui-surface, #171321);
   border: 1px solid var(--candice-ui-border, #beb0ff);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 .${SETTINGS_TOGGLE_CLASS} input {
   width: 16px;
@@ -113,8 +134,12 @@ function injectStyle(doc: Document): void {
 .${SETTINGS_TOGGLE_CLASS} .${SETTINGS_TOGGLE_HINT_CLASS} {
   color: var(--candice-muted, #d7cfdf);
   font-size: calc(11px * var(--candice-text-scale, 1));
-  width: 100%;
-  text-align: center;
+  /* INLINE. A width of 100% forced the hint onto its own line, which is what
+     turned every one-line control into a two-line block and doubled the
+     height of the whole group. */
+  width: auto;
+  text-align: left;
+  opacity: 0.72;
 }
 `;
   (doc.head ?? doc.documentElement).append(style);

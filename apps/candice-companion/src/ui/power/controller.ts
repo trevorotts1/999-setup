@@ -99,9 +99,11 @@ function injectStyle(doc: Document): void {
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-text, #faf7ff);
-  background: var(--candice-ui-surface, #171321);
-  border: 1px solid var(--candice-ui-border, #beb0ff);
-  border-radius: 8px;
+  /* Transparent: this row now sits inside the settings panel, which
+     paints the group's single opaque surface. Painting again here is what
+     made it a third floating card. */
+  background: transparent;
+  border: 0;
 }
 .${POWER_OFF_CLASS} button {
   font: inherit;

@@ -14,7 +14,7 @@
 
 import type { CandiceStateMachine } from '../state/machine.ts';
 import { createAnswerControlsController, type AnswerControlsController } from '../ui/answer-controls/index.ts';
-import { SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
+import { SETTINGS_PANEL_CLASS, SETTINGS_TOGGLE_CLASS } from '../ui/settings-toggle/index.ts';
 import type { AnswerMethod } from '../ui/answer-controls/config.ts';
 import type { CaptureConsent } from '../ui/answer-controls/consent.ts';
 import {
@@ -540,7 +540,13 @@ export async function initializeAuthenticatedBridge(
     // the animation toggle it used to name is no longer mounted, and falling
     // through to append() would drop the answer surface below the settings
     // rows, which is the bug this comment exists to prevent.
-    const settingsRow = root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
+    // Anchor on the PANEL, which is a direct child of root. The rows are now
+    // nested inside it, and `insertBefore` throws when the reference node is
+    // not a child of the parent -- so anchoring on a row would not merely miss,
+    // it would raise on every question. Fall back to the row for any caller or
+    // test that mounts a bare row with no panel around it.
+    const settingsRow = root.querySelector('.' + SETTINGS_PANEL_CLASS)
+      ?? root.querySelector('.' + SETTINGS_TOGGLE_CLASS);
     if (settingsRow !== null) root.insertBefore(controlsMount, settingsRow);
     else root.append(controlsMount);
     controls = createAnswerControlsController({
