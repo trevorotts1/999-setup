@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.17.4] — 2026-08-27
+
+### ENTRY-MODE: the gate was enforced but never written
+
+The master fix spec (Issue 3, item 2) requires every run to record its entry
+choice as an `ENTRY-MODE: interview|pointed` ledger line, and `tools/boss-cron`
+has enforced it since. But `ENTRY-MODE` appeared **zero times** in SKILL.md — the
+skill never wrote it. The enforcement half shipped and the writer half did not, so
+the gate could never go green on any run, ever. It had been firing continuously.
+
+- **SKILL.md now writes it**, in all three places that govern the flow: the entry
+  question section ("The entry — interview me, or here is the info"), step 3
+  (Offer entry modes), and step 20 (the self-audit now checks for the line).
+  Written through `tools/ledger.sh` the instant `CONTROL/` exists — the run's
+  first ledger line.
+- **Explicitly distinguished from `INTERVIEW-MODE: simple|advanced`** (step 6).
+  Two different gates: ENTRY-MODE records *how the client handed over material*,
+  INTERVIEW-MODE records *how much detail they want to decide*. Both lines exist
+  on every run and neither substitutes for the other — stated in the skill and
+  enforced by the checker.
+- **No backfilling.** Both the step-20 audit text and the skill say it outright:
+  a line reconstructed after the fact is a guess wearing a timestamp. A run whose
+  entry question was never asked reports as skipped, not as passed.
+- **`PROJECTS` is now env-overridable** via `BOSS_PROJECTS`, completing the 1.16.3
+  portability pattern that missed it. Without it the entry-mode and RESEARCH-READY
+  gates could not be tested without writing fixtures into the operator's real
+  `~/Downloads/projects`.
+
+Verified with a two-case fixture proving the gate discriminates: a project whose
+ledger carries `ENTRY-MODE: interview` in the real timestamped pipe-delimited
+format passes clean, while a project carrying `INTERVIEW-MODE: simple` but no
+ENTRY-MODE is still flagged — confirming the new writer format parses (it depends
+on the 1.17.3 pipe fix) and that the near-miss line does not satisfy the gate.
+
 ## [1.17.3] — 2026-08-27
 
 ### Boss gates could not parse the ledger format their own writer emits

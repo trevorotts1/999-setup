@@ -958,6 +958,17 @@ brainstorm's verbatim capture needs a durable home the moment it is spoken, not
 two phases later (Law 23 — write-through; a spoken word with no home is a word
 already lost, Law 25).
 
+**Then record the choice — `ENTRY-MODE: interview|pointed`.** The instant
+`CONTROL/` exists, write the run's FIRST ledger line through `tools/ledger.sh`:
+`interview` if they picked (1), `pointed` if they picked (2). This is the only
+durable proof of which entry the client was offered and chose, and both the
+step-20 self-audit and the boss cron reject a run whose ledger lacks it. Write it
+when the choice happens — a line reconstructed later is a guess wearing a
+timestamp. It is NOT the same as `INTERVIEW-MODE: simple|advanced` (step 6):
+that one records how much detail they want to decide, this one records how they
+handed over the material. Both lines exist on every run; neither substitutes for
+the other.
+
 **The folder's NAME (binding — the unnamed-app defect):** the slug is the
 kebab-case of the user's own name for the thing if one was spoken; otherwise
 `<target-word>-YYYY-MM-DD` (e.g. `mobile-app-2026-08-13`). NEVER `unnamed-app`,
@@ -1127,8 +1138,18 @@ When the operator provides a folder, that folder IS the project. Its documents A
    TARGET QUESTION (both above), then offer entry modes. "Interview me" or "Here
    is the info." **Create the project folder + `00-INPUT/` immediately after they
    choose** (Law 23 — the brainstorm's verbatim capture gets a durable home before
-   it is spoken, not two phases later). **The moment the Build Target is
-   confirmed, write the `BUILD-TARGET: <taxonomy>` ledger line to
+   it is spoken, not two phases later). **The moment the entry choice is made,
+   write the `ENTRY-MODE: interview|pointed` ledger line to
+   `<project>/CONTROL/LEDGER.md` through `tools/ledger.sh`** — `interview` for
+   "Interview me", `pointed` for "Here is the info". It is the run's FIRST ledger
+   line, written as soon as `CONTROL/` exists and before anything else runs. The
+   value records WHICH ENTRY THE CLIENT CHOSE and is never inferred later: a run
+   whose ledger lacks this line is one whose entry gate cannot be proven, and the
+   self-audit (step 20) and the boss cron both reject it. **Do not confuse it with
+   `INTERVIEW-MODE: simple|advanced`** (step 6) — that is how much detail they
+   want, this is how they supplied the material; both lines exist, they are not
+   substitutes, and writing one never satisfies the other. **The moment the Build
+   Target is confirmed, write the `BUILD-TARGET: <taxonomy>` ledger line to
    `<project>/CONTROL/LEDGER.md` through `tools/ledger.sh`** — the value is
    exactly one of `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE |
    WEBSITE | FUNNEL`, matching the confirmation; this line is the RESEARCH-READY
@@ -1503,6 +1524,15 @@ When the operator provides a folder, that folder IS the project. Its documents A
     ESCALATED outcome; enumerate the records with the census commands, prove the
     instrument on a known-positive first, and report each count — a verdict
     block with no record, or a record failing a check, is a defect. **Then the
+    entry-gate audit:** `CONTROL/LEDGER.md` must carry an
+    `ENTRY-MODE: interview|pointed` line (step 3) — the recorded proof of which
+    entry the client chose. Missing = the entry gate cannot be proven and the run
+    is rejected; the boss cron rejects it independently on the same rule. Check
+    for the line ITSELF, not for a plausible substitute: `INTERVIEW-MODE:` is a
+    different gate (simple vs advanced, step 6) and never satisfies this one.
+    Never backfill the line from memory or inference at audit time — if the entry
+    question was not asked and recorded when it happened, the honest finding is
+    that it was skipped. **Then the
     GL-001…GL-008 separation audit:** the
     three-part Gauntlet Loop block (Step 12.5) must show: exactly three labeled
     top-level parts exist, in order (THE TASK / THE BUILD METHOD / THE BAR TO

@@ -171,7 +171,10 @@ STOP = os.path.join(STATE_DIR, "stop-workstream")
 PIDS = os.path.join(STATE_DIR, "workflow-pids.json")
 PROJECT_STATE = os.path.join(STATE_DIR, "project_state.json")
 BOSS_EPOCH = os.path.join(STATE_DIR, "boss-cron-enforcement-epoch")
-PROJECTS = os.path.expanduser("~/Downloads/projects")
+# Env-overridable like the other paths (1.16.3 portability pattern) — this one
+# was missed, which left the entry-mode and RESEARCH-READY gates untestable
+# without writing fixtures into the operator's real projects folder.
+PROJECTS = os.environ.get("BOSS_PROJECTS") or os.path.expanduser("~/Downloads/projects")
 SETTINGS_STORES = [
     os.path.expanduser("~/.claude/settings.json"),
     os.path.expanduser("~/.claude-nine/settings.json"),
