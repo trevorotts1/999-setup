@@ -324,7 +324,24 @@ test('FIX-008 tab order: mounted answer controls carry keyboard-reachable elemen
   const viewTs = readFileSync(join(APP, 'ui', 'answer-controls', 'view.ts'), 'utf8');
   assert.ok(viewTs.includes("input.setAttribute('aria-label', ANSWER_CONTROLS_LABELS.TYPE)"));
   const buttons = viewTs.match(/createElement\('button'\)/g) ?? [];
-  assert.equal(buttons.length, 6, 'six buttons: submit, delegate, voice, use, edit, retry');
+  // Seven, not six. The seventh is the choice-option pill, added when choice
+  // questions were wired to render their registry values as tap targets
+  // instead of making the user type a value they had never been shown. This
+  // count had been stale ever since, so the leg failed for a control that is
+  // supposed to exist -- which is worse than not counting at all, because it
+  // trains a reader to ignore the failure.
+  assert.equal(
+    buttons.length, 7,
+    'seven buttons: submit, delegate, voice, use, edit, retry, choice-option',
+  );
+  // A count alone never proved anything about accessibility; it just noticed
+  // arithmetic. What actually matters for a screen reader is that every
+  // button has a NAME, and the option pill is the one built in a loop from
+  // registry data, so it is the one that could silently ship nameless.
+  assert.ok(
+    /b\.textContent = optionLabel\(value\)/.test(viewTs),
+    'the choice-option pill carries a text label, so it has an accessible name',
+  );
   assert.ok(viewTs.includes('use.disabled = true'), 'USE ANSWER starts disabled until a confirming transcript');
 });
 

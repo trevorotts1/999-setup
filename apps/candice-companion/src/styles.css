@@ -174,16 +174,28 @@ body {
 
 .candice-character[data-candice-gesture-mounted="true"] {
   display: block;
-  flex: 1;
-  /* THE FLOOR THAT ACTUALLY APPLIES.
-     `#candice-stage` above carries the same floor, and it does nothing once
-     the gesture stage mounts: composition.ts removes that element outright
+  /* A BAND, NOT A SPONGE.
+     This was `flex: 1`. In a column that means she absorbs every pixel the
+     rows below do not claim -- so the hologram grew to be the largest thing
+     on screen and the conversation got only its own intrinsic height, pushed
+     to the bottom edge. The operator's words: "the hologram is taking up more
+     space than the conversation box, focal point wrong". It was, and this is
+     why.
+     She is the presenter, not the subject. `flex: 0 0 auto` with an explicit
+     band takes her out of the growth competition entirely, so the space she
+     used to swallow goes to the question and the answer box.
+     THE FLOOR STILL APPLIES, and still matters.
+     `#candice-stage` above carries the same floor and does nothing once the
+     gesture stage mounts: composition.ts removes that element outright
      (`document.getElementById(VISUAL_STAGE_ID)?.remove()`). This container is
      what holds Candice from then on, and with `min-height: 0` it was the only
      row in the column allowed to shrink -- so a long caption squeezed her
-     toward nothing while every fixed row below kept its space. Same defect the
-     stage floor was written to fix, on the element that outlives it. */
-  min-height: 200px;
+     toward nothing while every fixed row below kept its space. A fixed band
+     fixes that case too: she can no longer be squeezed OR swell. */
+  flex: 0 0 auto;
+  height: 34vh;
+  min-height: 150px;
+  max-height: 240px;
 }
 
 .candice-gesture-layer {
