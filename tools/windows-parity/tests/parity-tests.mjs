@@ -9,7 +9,8 @@
 // Usage: node tests/parity-tests.mjs   (also: npm test)
 // Exit: 0 all green; 1 any failure.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -80,6 +81,40 @@ if (existsSync(bashResolver)) {
     let diffs = 0;
     for (let i = 0; i < max; i++) if ((b[i] ?? '') !== (n[i] ?? '')) diffs++;
     assert(diffs === 0, `${s}: bash card == node card (${b.length} lines)`, `${diffs} normalized line diff(s)`);
+  }
+  // CRLF regression (WS-27). Git checks this repo out with CRLF on Windows,
+  // so the golden fixtures ARRIVE that way there. The bash resolver's
+  // `while IFS='=' read -r k v` left the carriage return on the value, so
+  // HARNESS was "claude-nine\r" and it refused its own fixture with a
+  // message whose closing paren landed on the next line. node parsed the
+  // same bytes fine -- which is precisely what "bash resolver failed" meant,
+  // and why this guard was red on Windows and green everywhere else.
+  //
+  // A Windows user writing an answers file in Notepad hits the same wall, so
+  // this is a product fix, not a CI accommodation.
+  const crlfSource = path.join(here, 'golden', 'scenario-anthropic.answers');
+  if (existsSync(crlfSource)) {
+    const lf = readFileSync(crlfSource, 'utf8');
+    const crlfPath = path.join(tmpdir(), `ws27-crlf-${process.pid}.answers`);
+    writeFileSync(crlfPath, lf.replace(/\r?\n/g, '\r\n'), 'utf8');
+    try {
+      // CONTROL: the fixture must genuinely differ on disk, or converting it
+      // proved nothing and this test passes for free.
+      assert(
+        readFileSync(crlfPath, 'utf8') !== lf,
+        'CONTROL: the CRLF fixture differs from the LF original',
+      );
+      const fromCrlf = normalizeCard(run('bash', [bashResolver, crlfPath]));
+      const fromLf = normalizeCard(run('bash', [bashResolver, crlfSource]));
+      let diffs = 0;
+      const max = Math.max(fromCrlf.length, fromLf.length);
+      for (let i = 0; i < max; i++) if ((fromCrlf[i] ?? '') !== (fromLf[i] ?? '')) diffs++;
+      assert(diffs === 0, 'bash resolver: CRLF answers == LF answers', `${diffs} line diff(s)`);
+    } catch (e) {
+      assert(false, 'bash resolver: CRLF answers == LF answers', e.stderr || e.message);
+    } finally {
+      try { unlinkSync(crlfPath); } catch { /* best effort */ }
+    }
   }
 } else {
   assert(false, 'bash capacity-resolver.sh present', `not found at ${bashResolver}`);
