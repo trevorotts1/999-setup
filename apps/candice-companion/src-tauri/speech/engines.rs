@@ -996,15 +996,17 @@ impl TtsEngine {
         // Silence any previous child BEFORE publishing this one, or two
         // voices read two questions over each other.
         self.stop_system_voice();
-        match self.system_child.lock() {
-            Ok(mut held) => *held = Some(child),
-            Err(_) => {
-                return Err(
-                    "your computer's built-in voice could not start; captions remain available"
-                        .into(),
-                )
-            }
-        }
+        // Recovered for the same reason, and this one is not cosmetic:
+        // `into_inner` does NOT clear the poison flag, so refusing here
+        // meant one transient panic in the playback lane killed the system
+        // voice PERMANENTLY for the rest of the process -- every later
+        // utterance answering "could not start" while the real cause was an
+        // old panic the user never saw. Failing soft is right; failing soft
+        // forever is not.
+        *self
+            .system_child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(child);
         // The pipe is filled only AFTER the handle is published, so the
         // writer has something to kill if the write fails.
         if let Err(e) = self.pipe_utterance(stdin, text, Some(Arc::clone(&self.system_child))) {
@@ -1224,11 +1226,27 @@ impl TtsEngine {
     /// produces exactly one drain, and it arrives promptly instead of
     /// whenever the child would have reached the end of the sentence.
     pub fn stop_system_voice(&self) {
-        if let Ok(mut held) = self.system_child.lock() {
-            if let Some(mut child) = held.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+        // A poisoned lock is RECOVERED here, never skipped.
+        //
+        // This was `if let Ok(..)`, which silently did NOTHING when the mutex
+        // was poisoned -- and a panic anywhere in the playback lane poisons
+        // it. The consequence lands on the quit path: `cmd_quit_app` calls
+        // this first, so after such a panic the window vanished and
+        // `/usr/bin/say` kept talking, with no window left to stop it. A
+        // disembodied voice is the exact failure this function exists to
+        // prevent, so it must not be conditional on the lock being healthy.
+        //
+        // Recovery is safe because the guarded value is a child-process
+        // handle, not a multi-field invariant a panic could leave half
+        // written. The worst case is a handle whose process is already gone,
+        // and `kill`/`wait` both tolerate that.
+        let mut held = self
+            .system_child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(mut child) = held.take() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 
@@ -1965,6 +1983,44 @@ mod tests {
             "the handle must be taken, or the watcher never emits its drain"
         );
         assert!(!pid_is_alive(pid), "stop() left the voice process running");
+    }
+
+    /// A panic in the playback lane poisons the handle mutex. Quit calls
+    /// `stop_system_voice` FIRST, so if that skips a poisoned lock the window
+    /// disappears and the voice keeps talking with nothing left to stop it.
+    #[test]
+    fn a_poisoned_handle_still_kills_the_voice() {
+        let engine = super::TtsEngine::default();
+        let mut spawn = std::process::Command::new("/bin/sleep");
+        crate::proc::no_console(&mut spawn);
+        let child = spawn.arg("30").spawn().expect("spawn a stand-in for the voice");
+        let pid = child.id();
+        engine.system_child.lock().expect("handle").replace(child);
+        assert!(
+            pid_is_alive(pid),
+            "control failed: the stand-in was not running, so killing it proves nothing"
+        );
+
+        // Poison it exactly the way a panic in the playback lane would.
+        let handle = std::sync::Arc::clone(&engine.system_child);
+        let _ = std::thread::spawn(move || {
+            let _guard = handle.lock().expect("hold the handle");
+            panic!("simulated panic in the playback lane");
+        })
+        .join();
+        // CONTROL: without a genuinely poisoned mutex this test would pass
+        // through the ordinary healthy path and prove nothing.
+        assert!(
+            engine.system_child.is_poisoned(),
+            "control failed: the mutex was not poisoned"
+        );
+
+        engine.stop_system_voice();
+
+        assert!(
+            !pid_is_alive(pid),
+            "a poisoned handle left a disembodied voice talking after quit"
+        );
     }
 
     /// Idempotent, and safe when nothing is speaking.

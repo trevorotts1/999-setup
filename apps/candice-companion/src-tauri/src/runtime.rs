@@ -639,6 +639,7 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
                 std::thread::sleep(std::time::Duration::from_millis(200));
                 continue;
             };
+            bound_bridge_writes(&stream);
             if writeln!(stream, "{}", hello).is_err() {
                 std::thread::sleep(std::time::Duration::from_millis(200));
                 continue;
@@ -714,6 +715,35 @@ pub fn start_local_bridge<R: Runtime>(app: AppHandle<R>, launch: RuntimeLaunch) 
             });
         }
     });
+}
+
+/// How long a single bridge write may take before it is abandoned.
+pub(crate) const BRIDGE_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Bound every write on the bridge socket. WRITES ONLY -- never reads.
+///
+/// Quit calls `cmd_end_bridge_lifecycle`, which writes a small `ended` frame
+/// while holding the `bridge_writer` mutex. With no timeout that write is
+/// UNBOUNDED: an MCP peer that has wedged with a full receive buffer blocks
+/// it forever. The power button then sits at "Closing..." and never exits --
+/// exactly the dead-button feel the quit path was written to avoid -- and
+/// every later bridge command stacks up behind the same mutex.
+///
+/// The read side must NOT be bounded. The reader blocks waiting for the next
+/// question, which legitimately may not arrive for hours; a read timeout here
+/// would tear down healthy idle bridges. `SO_SNDTIMEO` does not affect reads,
+/// so this is safe. `try_clone` dups the descriptor and socket options are
+/// shared, so setting it once on the connected stream covers the writer clone
+/// that is handed to `bridge_writer`.
+///
+/// Frames are a few hundred bytes over loopback, so two seconds is far beyond
+/// any honest write; slower than that is a peer that is not coming back. The
+/// result is deliberately discarded -- a platform that refuses the option
+/// leaves behaviour exactly as it was before, which is not worth failing a
+/// connection over -- and every `writeln!` on this socket already discards
+/// its own `Result`, so a timeout degrades to "farewell not sent".
+pub(crate) fn bound_bridge_writes(stream: &TcpStream) {
+    let _ = stream.set_write_timeout(Some(BRIDGE_WRITE_TIMEOUT));
 }
 
 /// One authenticated connection's message loop. Returns `ConnectedOutcome`
@@ -1286,6 +1316,48 @@ pub fn cmd_save_profile(doc: Value) -> bool {
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod bridge_write_timeout_tests {
+    use super::{bound_bridge_writes, BRIDGE_WRITE_TIMEOUT};
+    use std::net::{TcpListener, TcpStream};
+
+    /// The quit path writes an `ended` frame under the writer mutex. If that
+    /// write cannot be abandoned, quit hangs at "Closing..." forever behind a
+    /// wedged peer. Prove the bound is really applied to a real socket -- not
+    /// asserted about a constant.
+    #[test]
+    fn writes_are_bounded_and_reads_are_not() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
+        let addr = listener.local_addr().expect("addr");
+        let stream = TcpStream::connect(addr).expect("connect");
+
+        // CONTROL: a fresh socket has NO write timeout. Without this, the
+        // assertion below could pass on a platform default and prove nothing
+        // about our call.
+        assert_eq!(
+            stream.write_timeout().expect("read the option"),
+            None,
+            "precondition: a fresh socket must be unbounded, or this test is vacuous"
+        );
+
+        bound_bridge_writes(&stream);
+
+        assert_eq!(
+            stream.write_timeout().expect("read the option"),
+            Some(BRIDGE_WRITE_TIMEOUT),
+            "the bridge write must be bounded"
+        );
+        // The reader blocks waiting for the next question, which may honestly
+        // be hours away. Bounding it would tear down healthy idle bridges.
+        assert_eq!(
+            stream.read_timeout().expect("read the option"),
+            None,
+            "reads must stay unbounded -- an idle bridge is not a broken one"
+        );
+        drop(listener);
+    }
 }
 
 #[cfg(test)]
