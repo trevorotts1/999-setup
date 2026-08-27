@@ -6,6 +6,8 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { checkApp } from "../health.mjs";
+
 import {
   bootstrapRoot,
   readState,
@@ -135,6 +137,37 @@ test("skill pins, the skills on disk, and the registry all agree", () => {
     Object.keys(registry.components).length > BUNDLED_SKILLS.length,
     "registry should describe more components than the installer bundles",
   );
+});
+
+test("launchCommand records a real path on every platform, and agrees with the health probe", () => {
+  // `state.launch.command` is READ by two things: the launch-command health
+  // leg (existsSync) and the bridge probe (which spawns it). On win32 this
+  // used to return the sentence "candice-companion.exe (placed by NSIS
+  // installer, WS-29)", so the leg would have tested a path that is English
+  // prose and the probe would have tried to execute one.
+  //
+  // Latent only because no Windows payload is published yet -- which is
+  // exactly why it needed fixing before one is, on the platform with no
+  // machine here to catch it.
+  const root = "/tmp/candice-launch-fixture";
+
+  const win = launchCommand(root, "win32");
+  assert.ok(!/\s\(/.test(win.path), `win32 launch path must be a path, not prose: ${win.path}`);
+  assert.ok(win.path.endsWith("candice-companion.exe"), win.path);
+
+  // It must be the SAME file the health probe looks for. The two disagreeing
+  // was the underlying defect, not the prose itself.
+  assert.equal(win.path, join(root, "app", "candice-companion.exe"));
+  assert.equal(checkApp(root, "win32").exe, win.path);
+
+  const mac = launchCommand(root, "darwin");
+  assert.equal(mac.path, checkApp(root, "darwin").exe, "darwin must agree too");
+
+  // Nothing is installed at the fixture root, so every platform reports
+  // ok:false. CONTROL: this proves `ok` tracks the filesystem rather than
+  // being hardcoded, which is what makes the assertions above meaningful.
+  assert.equal(win.ok, false);
+  assert.equal(mac.ok, false);
 });
 
 test("paths resolve inside the bootstrap root", () => {

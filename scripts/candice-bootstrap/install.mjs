@@ -558,7 +558,29 @@ export function launchCommand(root, platform) {
     const exe = join(appBundlePath(root), "Contents", "MacOS", "candice-companion");
     return { ok: existsSync(exe), path: exe };
   }
-  return { ok: false, path: "candice-companion.exe (placed by NSIS installer, WS-29)" };
+  if (platform === "win32") {
+    // A real path, not prose. This used to return the sentence
+    // "candice-companion.exe (placed by NSIS installer, WS-29)", which was
+    // then written into `state.launch.command` as though it were a command.
+    // Two things read that field -- the `launch-command` health leg
+    // (existsSync) and the bridge probe (which spawns it) -- so on the first
+    // Windows install that actually carries an app payload, the leg would
+    // have failed against a path that is an English sentence and the probe
+    // would have tried to execute one.
+    //
+    // It is latent today only because no Windows app payload is published,
+    // and because an unavailable app makes both legs tolerated. That is a
+    // reason to fix it now rather than to leave it: the day the payload
+    // lands is the day it stops being latent, on the platform with no
+    // machine here to catch it.
+    //
+    // This is the SAME path `checkApp` probes in health.mjs
+    // (join(root, "app", "candice-companion.exe")); the two disagreeing was
+    // the underlying defect.
+    const exe = join(appDir(root), "candice-companion.exe");
+    return { ok: existsSync(exe), path: exe };
+  }
+  return { ok: false, path: "candice-companion" };
 }
 
 /**
