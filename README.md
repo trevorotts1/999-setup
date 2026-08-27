@@ -204,7 +204,7 @@ the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) 
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.17.6,
+Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.17.7,
 `nine-router-setup` 1.17.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all five skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update

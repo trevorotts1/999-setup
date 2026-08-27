@@ -57,7 +57,7 @@ const UPGRADE_CLI = join(REPO, "scripts", "candice-upgrade", "upgrade.mjs");
 const SELF_UPDATE = join(REPO, ".claude", "skills", "spec-protocol", "tools", "self-update.sh");
 const ATOMIC_ENGINE = join(REPO, "scripts", "candice-updater", "rollback", "atomic-install.mjs");
 
-const PUBLISHED = "1.17.6";
+const PUBLISHED = "1.17.7";
 const OLD = "1.15.0";
 
 /** Fixture HOME — stands in for the live home directory; never the real one. */

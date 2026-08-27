@@ -91,7 +91,7 @@
     ],
     "spec-protocol": [
       {
-        "version": "1.17.6",
+        "version": "1.17.7",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/spec-protocol",
