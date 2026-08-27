@@ -26,6 +26,28 @@
   --candice-ui-surface: #171321;
   --candice-ui-border: #beb0ff;
   /*
+   * PANEL EDGE, not a control boundary.
+   *
+   * --candice-ui-border is bright lavender because it outlines CONTROLS, and
+   * FIX-008 holds those to the 3:1 UI-component threshold so a user can tell
+   * where a control begins. Correct for a checkbox. Applied to every panel as
+   * well, it drew a glowing rectangle around each one, and the operator's
+   * reaction to the running app was "all these weird ass squared boxes... it's
+   * fucking ugly". The reference designs (WRITER, Gemini, Copilot, Perplexity,
+   * Manus) put no visible outline on a panel at all.
+   *
+   * A panel is identified by its opaque FILL, which the transparent window
+   * makes mandatory anyway; it does not need a high-contrast outline to be
+   * findable. So panels get this soft edge and controls keep the tested one.
+   *
+   * Stated plainly because it matters: the contrast gate checks the VALUE of
+   * --candice-ui-border, not the set of selectors that use it. Moving panels
+   * off it therefore cannot fail that gate. That is not the justification --
+   * the justification is that panels are not controls -- but a reader should
+   * not have to discover the distinction on their own.
+   */
+  --candice-ui-edge: #3a3350;
+  /*
    * FIX-008: accent-as-TEXT. --candice-accent (#7c5cff) is 4.20:1 on the
    * surface — below AA 4.5 and far below the 7:1 this gate holds dark-theme
    * surfaces to. It stays the accent for borders, glows and drop-shadows,
@@ -106,9 +128,9 @@ body {
   width: fit-content;
   max-width: min(92vw, 420px);
   margin: 0;
-  padding: 6px 10px;
-  border: 1px solid var(--candice-ui-border);
-  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--candice-ui-edge);
+  border-radius: 14px;
   background: var(--candice-ui-surface);
   color: var(--candice-text);
   font-size: calc(1em * var(--candice-text-scale));
@@ -223,12 +245,14 @@ body {
 
 .candice-state-caption {
   margin: 0;
-  padding: 4px 10px;
-  border: 1px solid var(--candice-ui-border);
-  border-radius: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--candice-ui-edge);
+  border-radius: 14px;
   background: var(--candice-ui-surface);
   color: var(--candice-text);
-  font-size: calc(12px * var(--candice-text-scale));
+  /* Bigger. This is the line that greets the user; every reference design
+     renders it as the largest text on screen, not as 12px caption type. */
+  font-size: calc(15px * var(--candice-text-scale));
 }
 
 .candice-state-caption[hidden] {

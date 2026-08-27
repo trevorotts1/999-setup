@@ -61,7 +61,7 @@ export const CAPTIONS_STYLE_TEXT = `
      opaque backdrop or it renders straight onto the user's desktop. This is
      the same surface token the contrast matrix measures every ratio against. */
   background: var(--candice-ui-surface);
-  border: 1px solid var(--candice-ui-border);
+  border: 1px solid var(--candice-ui-edge);
   border-radius: 8px;
 }
 /* FIX-008: staleness dims the TEXT, never the backdrop. Fading the element

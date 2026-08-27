@@ -57,8 +57,11 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   color: var(--candice-ac-text);
   /* FIX-008: opaque backdrop over the transparent window. */
   background: var(--candice-ui-surface, #171321);
-  border: 1px solid var(--candice-ui-border, #beb0ff);
-  border-radius: 10px;
+  /* One soft card, the way every reference design draws it. The bright
+     lavender outline belongs on controls, not on the container holding
+     them. */
+  border: 1px solid var(--candice-ui-edge, #3a3350);
+  border-radius: 16px;
 }
 .candice-answer-methods {
   display: flex;
@@ -115,16 +118,27 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   color: var(--candice-ac-muted);
 }
 .candice-answer-submit {
-  border: 1px solid var(--candice-ac-accent);
+  border: 2px solid var(--candice-ac-accent);
   border-radius: 999px;
-  /* FIX-008: an opaque fill reads as an ENABLED control. Transparent over a
-     bright desktop read as a disabled ghost, which is a false affordance:
-     the model enables this button whenever delegate mode is inactive. */
+  /* PRIMARY, but not filled -- and the gate is why.
+     The reference designs all give the send action a solid accent fill, so I
+     tried one. The FIX-008 backdrop gate refused it, correctly: this app holds
+     text to AAA 7:1 against its own backdrop, and #7c5cff cannot carry 7:1
+     with type of ANY colour -- about 4.25:1 with the dark surface on top,
+     about 4.05:1 with white. That is the entire reason --candice-accent-text
+     exists in the palette. A filled accent button is incompatible with the
+     standard this app chose, so it does not get one.
+     Primary is expressed the way the palette does allow: the accent TINT for
+     the label (8.78:1), a 2px accent edge where every other control carries
+     1px, and the largest hit area on the panel. It stays the only control
+     drawn that way, which is what primary has to mean here.
+     The original FIX-008 point still holds: the opaque fill is what reads as
+     ENABLED. Transparent over a bright desktop read as a disabled ghost. */
   background: var(--candice-ui-surface, #171321);
-  color: inherit;
+  color: var(--candice-ac-accent-text);
   font: inherit;
-  font-weight: 600;
-  padding: 8px 16px;
+  font-weight: 700;
+  padding: 12px 20px;
   cursor: pointer;
 }
 .candice-answer-submit:focus-visible,

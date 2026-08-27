@@ -114,8 +114,8 @@ function injectStyle(doc: Document): void {
   padding: 4px 12px;
   color: var(--candice-text, #faf7ff);
   background: var(--candice-ui-surface, #171321);
-  border: 1px solid var(--candice-ui-border, #beb0ff);
-  border-radius: 12px;
+  border: 1px solid var(--candice-ui-edge, #3a3350);
+  border-radius: 14px;
 }
 .${SETTINGS_TOGGLE_CLASS} input {
   width: 16px;
