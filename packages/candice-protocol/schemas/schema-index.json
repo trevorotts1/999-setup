@@ -27,6 +27,12 @@
       "description": "Local preference profile; never project/conversation memory (spec 9)."
     },
     {
+      "name": "lifecycle-event",
+      "path": "lifecycle-event.schema.json",
+      "schemaVersion": "1.0",
+      "description": "Versioned lifecycle control envelope: activation, question, delivered, answer, cancel, fallback, reconnect, lease, lifecycle state (FIX-013)."
+    },
+    {
       "name": "event-envelope",
       "path": "common/event-envelope.schema.json",
       "schemaVersion": "1.0",
@@ -41,8 +47,20 @@
     {
       "name": "question-keys-registry",
       "path": "question-keys.json",
+      "schemaVersion": "2.0",
+      "description": "Versioned governed-question authority registry data (spec 14)."
+    },
+    {
+      "name": "question-inventory",
+      "path": "question-inventory.schema.json",
       "schemaVersion": "1.0",
-      "description": "Machine-enumerable stable question key registry data (spec 14)."
+      "description": "Schema for source doctrine to governed-key traceability."
+    },
+    {
+      "name": "question-inventory-data",
+      "path": "question-inventory.json",
+      "schemaVersion": "1.0",
+      "description": "Reviewed inventory of active, retired, and zero-governed questions."
     }
   ]
 }

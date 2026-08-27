@@ -1,0 +1,351 @@
+{
+  "generatedAt": "2026-08-25T19:39:48.979Z",
+  "cdpBase": "http://127.0.0.1:9223",
+  "sources": {
+    "styles": "/private/tmp/candice-integration/apps/candice-companion/src/styles.css",
+    "captionsView": "/private/tmp/candice-integration/apps/candice-companion/src/ui/captions/view.ts"
+  },
+  "thresholds": {
+    "normalText": 4.5,
+    "largeTextOrUi": 3,
+    "aaa": 7
+  },
+  "cells": [
+    {
+      "theme": "dark",
+      "textScale": 0.8,
+      "text": {
+        "surface": "text",
+        "role": "normal text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "normal text (muted)",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "UI component boundary",
+        "fg": "rgb(190, 176, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 9.42,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "focus": {
+        "surface": "focus",
+        "role": "focus indicator (token)",
+        "fg": "#dfd7ff",
+        "bg": "#171321",
+        "ratio": 13.29,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsText": {
+        "surface": "captions-text",
+        "role": "captions text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsLabel": {
+        "surface": "captions-label",
+        "role": "captions label",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "fontSizePx": "8.96px",
+      "textScaleToken": "0.8",
+      "glowAnimation": "candice-breathe"
+    },
+    {
+      "theme": "dark",
+      "textScale": 1,
+      "text": {
+        "surface": "text",
+        "role": "normal text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "normal text (muted)",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "UI component boundary",
+        "fg": "rgb(190, 176, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 9.42,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "focus": {
+        "surface": "focus",
+        "role": "focus indicator (token)",
+        "fg": "#dfd7ff",
+        "bg": "#171321",
+        "ratio": 13.29,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsText": {
+        "surface": "captions-text",
+        "role": "captions text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsLabel": {
+        "surface": "captions-label",
+        "role": "captions label",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "fontSizePx": "14px",
+      "textScaleToken": "1",
+      "glowAnimation": "candice-breathe"
+    },
+    {
+      "theme": "dark",
+      "textScale": 1.6,
+      "text": {
+        "surface": "text",
+        "role": "normal text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "normal text (muted)",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "UI component boundary",
+        "fg": "rgb(190, 176, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 9.42,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "focus": {
+        "surface": "focus",
+        "role": "focus indicator (token)",
+        "fg": "#dfd7ff",
+        "bg": "#171321",
+        "ratio": 13.29,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsText": {
+        "surface": "captions-text",
+        "role": "captions text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "captionsLabel": {
+        "surface": "captions-label",
+        "role": "captions label",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "fontSizePx": "35.84px",
+      "textScaleToken": "1.6",
+      "glowAnimation": "candice-breathe"
+    },
+    {
+      "theme": "light",
+      "textScale": 1,
+      "text": {
+        "surface": "text",
+        "role": "normal text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "normal text (muted)",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "UI component boundary",
+        "fg": "rgb(190, 176, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 9.42,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "focus": {
+        "surface": "focus",
+        "role": "focus indicator (token)",
+        "fg": "#dfd7ff",
+        "bg": "#171321",
+        "ratio": 13.29,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "note": "shipped tokens carry no light palette; measured values are the dark tokens under light emulation — effective contrast over a light desktop is desktop-dependent (human leg)"
+    },
+    {
+      "theme": "increase-contrast",
+      "textScale": 1,
+      "text": {
+        "surface": "text",
+        "role": "normal text",
+        "fg": "rgb(250, 247, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 17.21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "normal text (muted)",
+        "fg": "rgb(215, 207, 223)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 12.05,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "UI component boundary",
+        "fg": "rgb(190, 176, 255)",
+        "bg": "rgb(23, 19, 33)",
+        "ratio": 9.42,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "focus": {
+        "surface": "focus",
+        "role": "focus indicator (token)",
+        "fg": "#dfd7ff",
+        "bg": "#171321",
+        "ratio": 13.29,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "note": "macOS Increase Contrast does not alter webview CSS colors; re-measured under dark emulation (color-neutral)"
+    },
+    {
+      "theme": "forced-colors",
+      "textScale": 1,
+      "text": {
+        "surface": "text",
+        "role": "forced-colors CanvasText on Canvas",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(255, 255, 255)",
+        "ratio": 21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "muted": {
+        "surface": "muted",
+        "role": "forced-colors CanvasText on Canvas",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(255, 255, 255)",
+        "ratio": 21,
+        "threshold": 4.5,
+        "pass": true,
+        "aaa": true
+      },
+      "border": {
+        "surface": "border",
+        "role": "forced-colors CanvasText boundary",
+        "fg": "rgb(0, 0, 0)",
+        "bg": "rgb(255, 255, 255)",
+        "ratio": 21,
+        "threshold": 3,
+        "pass": true,
+        "aaa": true
+      },
+      "note": "measured with Emulation.setEmulatedMedia forced-colors: active"
+    }
+  ],
+  "motionCells": [
+    {
+      "os": "reduce",
+      "glowAnimation": "none"
+    },
+    {
+      "os": "allow",
+      "glowAnimation": "candice-breathe"
+    }
+  ]
+}

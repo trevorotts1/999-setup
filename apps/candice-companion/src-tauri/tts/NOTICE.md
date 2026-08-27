@@ -1,8 +1,9 @@
 # TTS Licensing Notices (WS-19) — Master Spec section 7 voice licensing gate
 
-Recorded 2026-08-21. Before production release, the release owner folds this
-into the root `THIRD_PARTY_NOTICES.md` (shared-file 9.4 class — this lane only
-proposes, never applies).
+Recorded 2026-08-21. Fold applied 2026-08-22 by the release owner (FIX-022):
+the facts below are folded into the root `THIRD_PARTY_NOTICES.md`, which ships
+inside the installers via `bundle.resources`. This file remains the
+component-level record.
 
 ## Kokoro model weights
 

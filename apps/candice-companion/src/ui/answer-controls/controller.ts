@@ -32,6 +32,11 @@ import type { CandiceEvent, CandiceStateMachine } from '../../state/machine.ts';
 import { answerControlsModel, type AnswerControlsModel } from './model.ts';
 import { createAnswerControlsView, type AnswerControlsView } from './view.ts';
 import { createPttView } from '../ptt/view.ts';
+import {
+  createCaptureConsentGate,
+  type CaptureConsent,
+  type CaptureConsentGate,
+} from './consent.ts';
 import type { AnswerMethod } from './config.ts';
 
 export interface AnswerControlsControllerOptions {
@@ -43,6 +48,26 @@ export interface AnswerControlsControllerOptions {
   lastUsedMethod?: AnswerMethod | null;
   /** Voice responses ON/OFF (spec 5.2). Defaults ON. */
   voiceEnabled?: boolean;
+  /**
+   * Is there a speech-to-text engine on this machine at all?
+   *
+   * This is the NATIVE fact (`SpeechHealth.stt_engine_ready`), not a user
+   * preference. The app was computing it, parsing it into
+   * `capabilities.sttEngineReady`, and then never reading it -- so HOLD TO
+   * TALK was offered on builds that ship no `whisper-cli`. Pressing it
+   * prompted for the microphone, recorded, and then showed "Answer in
+   * Claude instead", every single time, because the transcribe call had
+   * nothing to run.
+   *
+   * When this is false the PTT control is not created at all. A missing
+   * button is kinder than a dead one: the typed answer box is always
+   * present and always works, so the user simply types, and is never sent
+   * through a permission prompt to reach a dead end.
+   *
+   * Defaults to TRUE so existing callers and tests are unchanged; the real
+   * shell always passes the measured fact. Same posture as `voiceEnabled`.
+   */
+  sttAvailable?: boolean;
   /**
    * Transport: a confirmed answer handed to the session path (WS-03/WS-04
    * `answer` events / WS-05 fallback). One confirmed answer travels exactly
@@ -59,6 +84,17 @@ export interface AnswerControlsControllerOptions {
   /** Transport: the voice-toggle change (spec 5.2). The WS-40 profile
    * lane owns persistence; this lane only reports the change. */
   onVoiceToggleChange?: (voiceEnabled: boolean) => void;
+  /**
+   * FIX-015 FAIL-5 (plan 3D): capture consent gate. When absent, a press
+   * proceeds directly to the machine (legacy test wiring); the shell
+   * always supplies a real query, so capture is gated in production.
+   */
+  captureConsent?: {
+    /** Consult the native `cmd_speech_permissions` fact. Never throws. */
+    query: () => CaptureConsent | Promise<CaptureConsent>;
+    /** Called when a press was blocked (machine untouched; typing stays). */
+    onBlocked?: (consent: CaptureConsent, explanation: string) => void;
+  };
 }
 
 export interface AnswerControlsController {
@@ -84,6 +120,13 @@ export function createAnswerControlsController(
     onTypeAnswer: (text) => {
       machine.transition({ type: 'answer:confirmed', transcript: text });
       options.submitAnswer?.(text);
+      render();
+    },
+    onChooseOption: (value) => {
+      // A picked option is a confirmed answer: it came from the registry's own
+      // list, so there is nothing to transcribe and nothing to confirm.
+      machine.transition({ type: 'answer:confirmed', transcript: value });
+      options.submitAnswer?.(value);
       render();
     },
     onDelegateToClaude: () => {
@@ -121,20 +164,50 @@ export function createAnswerControlsController(
   });
 
   // Mount the PTT control into the answer surface (sibling WS-09 lane).
+  // FIX-015 FAIL-5: the press routes through the capture consent gate —
+  // the machine's `ptt:start` fires only on a cleared consent fact
+  // (granted, or not-determined so the OS prompt appears at the press).
+  // Blocked (denied / no-device / error / query failure) leaves the
+  // machine untouched: the typed-answer surface stays exactly as it was.
   let pttView: ReturnType<typeof createPttView> | null = null;
+  let consentGate: CaptureConsentGate | null = null;
+  const stopPtt = (): void => {
+    machine.transition({ type: 'ptt:stop' });
+    render();
+  };
   if (options.mount !== null && typeof document !== 'undefined') {
     const pttHost = document.createElement('div');
-    pttView = createPttView(pttHost, {
-      onTalkStart: () => {
-        machine.transition({ type: 'ptt:start' });
+    consentGate = createCaptureConsentGate({
+      query: options.captureConsent?.query
+        ?? (() => 'error'), // no query wired: fail closed, never open mic
+      onAllowed: () => {
+        // FIX-014 (I-04): a hold press while Candice is SPEAKING is an
+        // interrupt intent, not a new listen. `ptt:start` is rejected by
+        // the machine in that status; `speech:interrupted` produces
+        // `tts:stop` FIRST, then `mic:open` — the spec-6 duplex-safety
+        // ordering. Every other status keeps the plain start event.
+        if (machine.getState().status === 'speaking') {
+          machine.transition({ type: 'speech:interrupted' });
+        } else {
+          machine.transition({ type: 'ptt:start' });
+        }
         render();
+      },
+      onStopped: stopPtt,
+      onBlocked: options.captureConsent?.onBlocked,
+    });
+    // No engine on this machine: never build the control. See
+    // `sttAvailable` above -- offering it here is what produced the
+    // record-then-give-up loop.
+    pttView = options.sttAvailable === false ? null : createPttView(pttHost, {
+      onTalkStart: () => {
+        consentGate?.requestStart();
       },
       onTalkStop: () => {
-        machine.transition({ type: 'ptt:stop' });
-        render();
+        consentGate?.release();
       },
     });
-    if (pttView.el !== null) view.attachPtt(pttView.el);
+    if (pttView !== null && pttView.el !== null) view.attachPtt(pttView.el);
   }
 
   function render(): void {
@@ -144,10 +217,12 @@ export function createAnswerControlsController(
     // activates on the integrated surface, driven by the same reducer
     // the rest of the surface reads.
     if (pttView !== null) pttView.show(state.status);
+    view.showOptions(state.pendingOptions);
     view.setModel(
       answerControlsModel(state, {
         lastUsedMethod,
         voiceEnabled,
+        sttAvailable: options.sttAvailable,
       }),
     );
   }
@@ -166,6 +241,14 @@ export function createAnswerControlsController(
       if (prefs.voiceEnabled !== undefined) voiceEnabled = prefs.voiceEnabled;
       render();
     },
-    destroy: () => view.destroy(),
+    destroy: () => {
+      // pttView holds document-level release listeners and a possible live
+      // hold — its destroy() releases the hold and removes those listeners
+      // (I-06 teardown path) before the answer surface is removed.
+      pttView?.destroy();
+      consentGate?.destroy();
+      consentGate = null;
+      view.destroy();
+    },
   };
 }

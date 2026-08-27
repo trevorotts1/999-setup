@@ -133,7 +133,7 @@ check('surface-only: every question carries the skill wording, never a Candice r
 check('surface-only: unknown key is refused, never silently renumbered', () => {
   const built = questionEvent('NOT_A_KAIZEN_KEY', 'opaque-1')
   assert.strictEqual(built.ok, false)
-  assert.strictEqual(built.code, 'unknown-key')
+  assert.strictEqual(built.code, 'unregistered-governed-question')
 })
 
 // ————————————————————————————————————————————————

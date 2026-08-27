@@ -12,9 +12,17 @@
 //! presentation infrastructure: a failure here must never stop Claude
 //! (spec 20).
 
+mod hit_test;
+mod proc;
+mod runtime;
+mod single_instance;
 mod shell;
+mod speech_timing;
 
-use tauri::{Emitter, Manager};
+#[path = "../speech/mod.rs"]
+mod speech;
+
+use tauri::{Emitter, Manager, Runtime};
 
 /// generate_context!() resolves tauri.conf.json against the crate dir,
 /// i.e. the mirror the build script copies from the app-root config
@@ -30,31 +38,170 @@ fn generate_context() -> tauri::Context {
 /// full app instance.
 pub fn initialize_shell(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(shell::ShellState::default());
-    app.emit(shell::SHELL_READY_EVENT, shell::ShellReadyPayload::default())
-        .map_err(|e| tauri::Error::Anyhow(e.into()))
+    // The state latch and event describe the same completed shell
+    // initialization. The IPC health probe reads this fact; it must not be
+    // the operation that first mutates it.
+    app.state::<shell::ShellState>().mark_ready();
+    // Readiness is durable state, not a one-shot event. An event emitted
+    // before the WebView subscribes must never abort the native process.
+    let _ = app.emit(shell::SHELL_READY_EVENT, shell::ShellReadyPayload::default());
+    Ok(())
+}
+
+/// The main window starts hidden in configuration to prevent a blank first
+/// frame. Once native state exists it must be shown on *every* launch shape,
+/// including bare `--wake` and authenticated bridge launches.
+fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| tauri::Error::Anyhow(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "candice: main window missing",
+        ).into()))?;
+    // Pointer transparency is best-effort at startup and is the resting
+    // state for the whole session. Once the composition is ready the webview
+    // publishes its visible regions and `hit_test` becomes the single writer
+    // of this flag, lifting pass-through only while the cursor is over
+    // pixels the operator can actually see.
+    let _ = window.set_ignore_cursor_events(true);
+    if std::env::var_os("CANDICE_POINTER_TRACE").is_some() {
+        eprintln!("candice-pointer: startup pass-through asserted (ignore_cursor_events=true)");
+    }
+    window.show()
 }
 
 /// Tauri entry point (standard Tauri 2 shape). The builder registers
 /// plugins, creates the window, and hands over to the runtime.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The MCP bridge launches the companion with an exact opaque session id,
+    // endpoint and single-use capability token. `--wake` remains a separate
+    // non-binding visual wake request.
+    let launch = runtime::parse_runtime_launch(std::env::args().skip(1));
+
+    // A wake asks to SHOW Candice, not to create a second one.
+    //
+    // The operator hit the duplicate directly: a bridged companion was on
+    // screen, `/bro` fired the plugin wake hook, and a second window opened
+    // beside the first. Guard the wake-only case here, before any window
+    // exists, so the duplicate is never drawn rather than drawn and closed.
+    //
+    // Bridge launches are deliberately NOT guarded -- see single_instance's
+    // module docs. Their session binding cannot be handed to a process
+    // started for another session without becoming the cross-session leak
+    // the per-launch socket exists to prevent.
+    // EVERY launch registers, so a bridged companion on screen is visible to
+    // the next wake. Only a wake-only launch stands down when it finds one.
+    let stands_down = launch.wake_received() && launch.bridge_endpoint.is_none();
+    let _instance = match single_instance::acquire() {
+        single_instance::Outcome::AlreadyRunning { pid } if stands_down => {
+            single_instance::focus_existing();
+            eprintln!(
+                "candice: already running (pid {pid}); raised it instead of opening a second window"
+            );
+            return;
+        }
+        single_instance::Outcome::AlreadyRunning { pid } => {
+            // A bridge launch proceeds: its session binding cannot be handed
+            // to a process started for another session. Known remaining gap.
+            eprintln!("candice: another instance is running (pid {pid}); this bridge launch continues");
+            None
+        }
+        // Held for the life of the process; the guard releases the lock on
+        // drop so the next launch is not blocked by a corpse.
+        single_instance::Outcome::Primary(guard) => Some(guard),
+        // FAILS OPEN on purpose: a guard that could not run must never be
+        // the reason Candice does not appear. Say why, so a duplicate window
+        // in the field is diagnosable instead of mysterious.
+        single_instance::Outcome::Undetermined { reason } => {
+            if stands_down {
+                eprintln!("candice: single-instance check did not run ({reason}); continuing");
+            }
+            None
+        }
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // FIX-022: in-app updater (tauri-plugin-updater, spec 21). The plugin
+        // refuses non-https endpoints in release builds and verifies every
+        // downloaded payload against the pinned public key before install.
+        // Config (endpoints/pubkey/installMode) lives in tauri.conf.json; the
+        // build fails hard unless TAURI_SIGNING_PRIVATE_KEY matches that
+        // pubkey, so a keyless dev build must pass `--no-sign` explicitly —
+        // which tauri-bundler refuses when updater artifacts are requested.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             shell::cmd_get_shell_info,
             shell::cmd_show_window,
             shell::cmd_hide_window,
+            runtime::cmd_get_runtime_capabilities,
+            runtime::cmd_submit_bridge_answer,
+            runtime::cmd_cancel_bridge_question,
+            runtime::cmd_release_bridge_question,
+            runtime::cmd_set_answer_input_enabled,
+            runtime::cmd_take_pending_bridge_question,
+            runtime::cmd_load_profile,
+            runtime::cmd_save_profile,
+            hit_test::cmd_set_input_regions,
+            hit_test::cmd_get_pointer_policy,
+            speech_timing::cmd_speech_timing_start,
+            speech_timing::cmd_speech_timing_boundary,
+            speech_timing::cmd_speech_timing_drain,
+            speech::cmd_speech_health,
+            speech::cmd_speech_capture_start,
+            speech::cmd_speech_capture_stop,
+            speech::cmd_speech_transcribe,
+            speech::cmd_speech_speak,
+            speech::cmd_speech_stop,
+            speech::cmd_speech_permissions,
+            runtime::cmd_ack_replayed_question,
+            runtime::cmd_end_bridge_lifecycle,
         ])
         .setup(|app| {
+            // The front end's durable boot probe (`cmd_get_shell_info`)
+            // requires this managed state.  Initialize it before the webview
+            // is shown so a normal startup cannot be mistaken for a failed
+            // shell and replaced by the text fallback.
             initialize_shell(app.handle())?;
-            // Window starts hidden (tauri.conf.json); the session bridge
-            // raises it on the first candice event. Until the bridge lane
-            // lands, show on setup so the shell is visible and provable.
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-            }
+            // Pointer policy state must exist before the webview can publish
+            // its visible regions; the poll thread starts lazily on the first
+            // publish, so a shell that never publishes costs nothing.
+            app.manage(hit_test::HitTestState::default());
+            app.manage(speech::SpeechState::default());
+            runtime::initialize_runtime(app.handle(), launch.clone())?;
+            // `visible: false` prevents the blank native first frame; this
+            // explicit show is the required cold-start path for `--wake` and
+            // bridge-spawned processes.
+            show_main_window(app.handle())?;
+            // Startup recovery is bounded and fail-soft, but it can perform
+            // filesystem work. Run it off the setup thread so it cannot
+            // leave a wake-launched process alive yet windowless.
+            let recovery_launch = launch.clone();
+            std::thread::spawn(move || runtime::run_native_startup_recovery(&recovery_launch));
+            runtime::start_local_bridge(app.handle().clone(), launch);
             Ok(())
         })
-        .run(generate_context())
-        .expect("error while running Candice Companion");
+        .build(generate_context())
+        .expect("error while building Candice Companion")
+        .run(|app_handle, event| {
+            // The system voice is a CHILD PROCESS, so it outlives the
+            // window that started it: quitting mid-question left a
+            // disembodied voice finishing the sentence with nothing on
+            // screen. Kokoro cannot do this -- its playback is in-process
+            // and dies with the app -- so the fallback path is the only
+            // one that needs an explicit last word.
+            //
+            // ExitRequested fires before teardown and Exit after; both are
+            // handled because a platform that skips one still has to go
+            // quiet, and killing an already-reaped child is a no-op.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                if let Some(state) = app_handle.try_state::<speech::SpeechState>() {
+                    state.tts.stop_system_voice();
+                }
+            }
+        });
 }

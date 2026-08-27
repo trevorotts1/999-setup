@@ -237,9 +237,9 @@ this rule removes.)
 - **A4 (how many agents do you want) — deleted in default mode.** The run
   takes the measured maximum the Capacity Ledger allows and says so. Advanced
   mode may ask it, only with the plain explainer: "The work runs in workflows
-  — teams of helpers. On this machine each workflow holds up to <measured>
-  helpers at once, and up to <measured> workflows can run at the same time.
-  Use the maximum, or cap it?"
+  — teams of helpers — and this machine has a limit on how many can run at
+  once. The measured limits are on screen in the Claude window. Use the
+  maximum, or set a lower one?"
 - **A5 (which model plans / builds) — replaced by the THREE-SEAT statement.**
   The seats are planner, builder, AND checker (the QC / verifier / critic).
   Never present a two-seat picture — the checker seat is named every time.
@@ -292,9 +292,9 @@ this rule removes.)
 - **C4 (where does the project folder go) — defaulted** to
   `~/Downloads/projects/`, stated in the recap, asked only in advanced mode.
 - **C5 (how do you know it is done) — rewritten, not deleted.** The run
-  WRITES the done-condition from the brief and shows it: "Here is how I will
-  know it is finished: <the checkable list>. Does that match — yes, or tell
-  me what is missing?" One yes/no. Never an open essay question.
+  WRITES the done-condition from the brief and shows it: "I have written down how I
+  will know this is finished, and the list is on screen in the Claude window.
+  Does it match what you want — or tell me what is missing?" One yes/no. Never an open essay question.
 - **D3 (the 130 MB download) — detection first, consent once, remembered.**
   Before asking, CHECK the box for capture tooling already present (a
   Playwright install or MCP, agent-browser, a previously downloaded browser

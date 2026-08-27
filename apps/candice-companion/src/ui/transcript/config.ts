@@ -79,10 +79,10 @@ export const TRANSCRIPT_LABELS = {
   SAVE: 'SAVE',
   CANCEL: 'CANCEL',
   /** Editor hint (aria/visible aid, not a spec string). */
-  EDIT_HINT: 'Fix the transcript, then SAVE or USE ANSWER.',
+  EDIT_HINT: 'Fix what I heard, then press SAVE or USE ANSWER.',
   /** Confirming with no transcript (STT produced nothing). */
-  NOTHING_HEARD: 'Nothing was heard — TRY AGAIN or type your answer.',
+  NOTHING_HEARD: 'I didn’t hear anything — TRY AGAIN, or type your answer.',
   /** Edit validation failures (never submit an invalid answer, WS-01). */
-  EMPTY_ERROR: 'Your correction is empty.',
-  TOO_LONG_ERROR: 'Too long — 4096 characters maximum.',
+  EMPTY_ERROR: 'There’s nothing here yet — type your answer first.',
+  TOO_LONG_ERROR: 'That’s too long — please keep it under 4,096 characters.',
 } as const;

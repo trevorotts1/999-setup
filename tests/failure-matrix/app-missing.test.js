@@ -23,22 +23,9 @@ const FALLBACK = path.join(__dirname, '..', '..', 'plugins', 'candice-integratio
 
 const { AskUserServer } = require(path.join(MCP, 'server'))
 const { FallbackCoordinator } = require(path.join(FALLBACK, 'fallback-coordinator'))
+const { canonicalQuestion } = require(path.join(__dirname, '..', '..', 'packages', 'candice-protocol', 'question-registry'))
 
-const Q = {
-  schemaVersion: '1.0',
-  sessionId: 'sess-app-missing',
-  skill: 'spec-protocol',
-  event: 'question',
-  questionKey: 'BUILD_TARGET',
-  text: 'Who is the application for?',
-  answerKind: 'free_text',
-  allowedInputModes: ['voice', 'typed', 'terminal'],
-  readAloud: false,
-  sensitivity: 'normal',
-  counted: true,
-  progress: null,
-  canGoBack: false,
-}
+const Q = canonicalQuestion({ sessionId: 'sess-app-missing', questionKey: 'BUILD_TARGET', skill: 'spec-protocol' }).question
 
 async function main() {
   // -- App missing: no deliverer, no readiness flag (companion absent). --------
@@ -63,23 +50,24 @@ async function main() {
     const fallback = coord.fallbackQuestion({ ...Q })
     assert.equal(fallback.ok, true)
     assert.equal(fallback.redelivered, false)
-    assert.equal(fallback.counted, true)
+    assert.equal(fallback.counted, Q.counted)
     assert.equal(fallback.prompt.text, Q.text, 'the fallback prompt is the SAME question text')
     assert.equal(fallback.prompt.allowedInputModes.includes('terminal'), true)
     const row = coord.guard.status().find(
       (r) => r.sessionId === Q.sessionId && r.questionKey === Q.questionKey
     )
     assert.equal(row.status, 'deferred')
-    assert.equal(row.counted, true)
+    assert.equal(row.counted, Q.counted)
   })
 
   check('app missing while a second question waits: no cross-question mixing', () => {
     const coord = new FallbackCoordinator()
     coord.fallbackQuestion({ ...Q })
     const second = coord.fallbackQuestion({ ...Q, questionKey: 'DEPARTMENT', text: 'Which department?' })
-    assert.equal(second.ok, true)
+    assert.equal(second.ok, false)
+    assert.equal(second.code, 'unregistered-governed-question')
     const rows = coord.guard.status().filter((r) => r.sessionId === Q.sessionId)
-    assert.equal(rows.length, 2, 'each question keeps its own deferral row')
+    assert.equal(rows.length, 1, 'an unregistered question never creates a terminal deferral row')
   })
 
   // -- "app missing" must never throw out of the tool call (spec 20). ---------

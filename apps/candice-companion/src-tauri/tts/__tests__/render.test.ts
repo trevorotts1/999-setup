@@ -62,13 +62,38 @@ describe("TTS render orchestration (WS-19)", () => {
         throw new Error("boom");
       },
     });
+    // FIX-015 FAIL-2: inject a false system-TTS probe so the ladder rung
+    // is deterministic regardless of the host OS synthesizer.
     const outcome = await renderSpeech(engine, {
       text: "hello",
       selection: { voiceId: "af_heart", voicepackRelease: "model-files-v1.1", modelVariant: "fp16", speed: 1.0 },
       withTimings: false,
+      systemTtsProbe: () => false,
     });
     assert.equal(outcome.rung, "captions-only");
     assert.equal(outcome.speech, null);
+  });
+
+  it("falls to system-tts rung when the engine fails and the OS synthesizer is available", async () => {
+    const engine = fakeEngine({
+      synthesize: async () => {
+        throw new Error("boom");
+      },
+    });
+    let spoken: string | null = null;
+    const outcome = await renderSpeech(engine, {
+      text: "hello",
+      selection: { voiceId: "af_heart", voicepackRelease: "model-files-v1.1", modelVariant: "fp16", speed: 1.0 },
+      withTimings: false,
+      systemTtsProbe: () => true,
+      systemTtsSpeaker: async (text) => {
+        spoken = text;
+        return true;
+      },
+    });
+    assert.equal(outcome.rung, "system-tts");
+    assert.equal(outcome.speech, null);
+    assert.equal(spoken, "hello");
   });
 
   it("honors an aborted signal with interrupted reason", async () => {

@@ -38,6 +38,27 @@ export const CANONICAL_VOICE: VoiceSelection = {
   speed: 1.0,
 };
 
+/**
+ * FIX-015 FAIL-6: honest voicepack approval status. The operator evidence
+ * record (sample metadata, reproducible voicepack hash) landed on
+ * 2026-08-25 — Trevor approved `af_bella` after auditioning all 11
+ * CANONICAL_VOICE_CANDIDATES — so this constant now reads "approved" and
+ * names the record below. It stays the single write point: if the record
+ * is ever withdrawn, flip this back to "approval-pending" — nothing else.
+ */
+export const VOICE_APPROVAL_STATUS: "approved" | "approval-pending" = "approved";
+
+/**
+ * The operator approval record authorising VOICE_APPROVAL_STATUS above,
+ * relative to the campaign evidence root. Holds operator identity, date,
+ * the audition sample the decision was made on, and the reproducible
+ * voicepack + model SHA-256 hashes.
+ */
+export const VOICE_APPROVAL_EVIDENCE =
+  "evidence/FIX-015/operator-review/VOICE-APPROVAL.md";
+
+export type VoiceApprovalStatus = typeof VOICE_APPROVAL_STATUS;
+
 export function isKnownVoice(voiceId: string): boolean {
   return voiceId in VOICE_CATALOG;
 }

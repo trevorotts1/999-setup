@@ -40,13 +40,26 @@
 const assert = require('assert')
 const fs = require('fs')
 const harness = require('./harness')
+const { canonicalQuestion } = require('../../packages/candice-protocol/question-registry')
 
 let failures = 0
+const pending = []
 
 function check(name, fn) {
   try {
-    fn()
-    console.log(`ok - ${name}`)
+    const result = fn()
+    if (result && typeof result.then === 'function') {
+      pending.push(result.then(
+        () => console.log(`ok - ${name}`),
+        (err) => {
+          failures += 1
+          console.log(`FAIL - ${name}`)
+          console.log(`  ${err && err.message ? err.message : err}`)
+        },
+      ))
+    } else {
+      console.log(`ok - ${name}`)
+    }
   } catch (err) {
     failures += 1
     console.log(`FAIL - ${name}`)
@@ -88,16 +101,28 @@ check('plugin.json declares Candice is the interface, never a second brain', () 
 })
 
 check('wake hooks bind to the FOUR supported commands only, all async', () => {
-  const expansions = hooks.hooks.UserPromptExpansion
-  assert.ok(Array.isArray(expansions) && expansions.length === 4, 'exactly four UserPromptExpansion matchers')
-  const matchers = expansions.map((e) => e.matcher).sort()
-  assert.deepStrictEqual(matchers, ['bro', 'eli5', 'kaizen', 'spec-protocol'], 'the four supported slash commands only')
-  for (const e of expansions) {
-    for (const h of e.hooks) {
-      assert.strictEqual(h.async, true, 'hooks are async — never block the skill')
+  // Commit 0000aab moved the wake-up onto the REAL `UserPromptSubmit` hook
+  // event with a single handler, and derives the slash command from the
+  // submitted prompt instead of registering four matchers on a hook event that
+  // Claude Code does not emit. The "four commands only" invariant therefore now
+  // lives in the dispatcher's SUPPORTED_COMMANDS, and is asserted there.
+  const submit = hooks.hooks.UserPromptSubmit
+  assert.ok(Array.isArray(submit) && submit.length === 1,
+    'exactly one UserPromptSubmit handler is registered')
+  for (const entry of submit) {
+    for (const h of entry.hooks) {
+      assert.strictEqual(h.type, 'command', 'the wake hook is a command hook')
+      assert.ok(Number(h.timeout) > 0 && Number(h.timeout) <= 60,
+        'the wake hook is bounded — it can never hang the skill')
     }
   }
-  assert.ok(Array.isArray(hooks.hooks.SessionStart), 'SessionStart hook exists (bind on session start)')
+  // Non-blocking is a property of the spawn, not of a json flag: the companion
+  // is started detached and unref'd, so the hook returns without waiting on it.
+  const wakeSrc = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.mjs', 'utf8')
+  assert.ok(wakeSrc.includes('detached: true') && wakeSrc.includes('unref'),
+    'the companion is spawned detached and unref\'d — never blocks the skill')
+  assert.strictEqual(hooks.hooks.SessionStart, undefined,
+    'ordinary session start must not wake or claim a session binding')
 })
 
 // ---------------------------------------------------------------------------
@@ -127,29 +152,23 @@ check('fallback path carries no provider keys and no LLM call either', () => {
 
 check('fallbackQuestion redelivers the SAME text — no reword, no renumber', () => {
   const coordinator = new deps.FallbackCoordinator()
-  const deferred = coordinator.fallbackQuestion({
+  const question = canonicalQuestion({
     sessionId: 'session-x-1',
-    questionKey: 'A7',
-    text: 'Question number seven, exactly as governed.',
-    helpText: 'help',
-    allowedInputModes: ['voice', 'typed', 'terminal'],
-  })
+    questionKey: 'BUILD_TARGET',
+    skill: 'spec-protocol',
+  }).question
+  const deferred = coordinator.fallbackQuestion(question)
   assert.strictEqual(deferred.ok, true)
-  assert.strictEqual(deferred.prompt.text, 'Question number seven, exactly as governed.', 'the exact same question text')
-  assert.strictEqual(deferred.prompt.helpText, 'help', 'help text passes through untouched')
+  assert.strictEqual(deferred.prompt.text, question.text, 'the exact same question text')
+  assert.strictEqual(deferred.prompt.helpText, question.helpText, 'help text passes through untouched')
   assert.deepStrictEqual(deferred.prompt.allowedInputModes, ['voice', 'typed', 'terminal'], 'answer modes pass through untouched')
   assert.strictEqual(deferred.redelivered, false)
   // A repeat fallback of the same question is a redelivery, never a renumber
   // or a second slot (no double-count).
-  const again = coordinator.fallbackQuestion({
-    sessionId: 'session-x-1',
-    questionKey: 'A7',
-    text: 'Question number seven, exactly as governed.',
-    helpText: 'help',
-  })
+  const again = coordinator.fallbackQuestion(question)
   assert.strictEqual(again.ok, true)
   assert.strictEqual(again.redelivered, true, 'second display is a redelivery')
-  assert.strictEqual(again.prompt.text, 'Question number seven, exactly as governed.', 'the text is unchanged across redelivery')
+  assert.strictEqual(again.prompt.text, question.text, 'the text is unchanged across redelivery')
 })
 
 check('fallback routes to the owning session input, never its own conversation', () => {
@@ -173,22 +192,11 @@ check('MCP unavailable: the same question is asked in Claude normally, not a sec
   const server = new deps.AskUserServer({ isCompanionReady: () => false })
   const result = await server.askUser({
     sessionId: 'session-z-1',
-    question: {
-      schemaVersion: '1.0',
+    question: canonicalQuestion({
       sessionId: 'session-z-1',
-      skill: 'spec-protocol',
-      event: 'question',
       questionKey: 'BUILD_TARGET',
-      text: 'the governed question',
-      answerKind: 'free_text',
-      allowedInputModes: ['voice', 'typed', 'terminal'],
-      readAloud: true,
-      sensitivity: 'normal',
-      counted: true,
-      progress: null,
-      helpText: 'help',
-      canGoBack: true,
-    },
+      skill: 'spec-protocol',
+    }).question,
   })
   assert.strictEqual(result.result.isError, true)
   const text = result.result.content[0].text
@@ -201,17 +209,99 @@ check('MCP unavailable: the same question is asked in Claude normally, not a sec
 // provider conversation (the wake hook launches the companion UI only).
 // ---------------------------------------------------------------------------
 
-check('wake script launches the companion UI, never a model conversation', () => {
+check('wake dispatcher launches the companion UI, never a model conversation', () => {
   const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
-  assert.ok(wake.includes('--wake'), 'companion is launched with --wake only')
+  const dispatcher = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.mjs', 'utf8')
+  assert.ok(wake.includes('wake-candice.mjs'), 'legacy wrapper delegates to the Node dispatcher')
+  assert.ok(dispatcher.includes("['--wake', request.command]"), 'companion is launched with --wake only')
   // The wake handler resolves ONE launch command (the companion UI). It
   // contains no "claude" reference at all — it never starts a Claude process,
   // which is exactly the no-second-conversation proof.
-  assert.ok(!wake.includes('claude'), 'the wake handler never mentions, launches, or routes to Claude')
+  assert.ok(!dispatcher.includes("spawn('claude"), 'the dispatcher never launches a Claude process')
 })
 
-if (failures > 0) {
-  console.log(`\n${failures} CHECK(S) FAILED`)
-  process.exit(1)
+check('legacy wake wrapper remains an unbound visual-wake boundary', () => {
+  const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
+  assert.ok(wake.includes('legacy positional slash-command is translated'),
+    'the header must identify the compatibility-only wrapper contract')
+  assert.ok(wake.includes('never accepts or\n# forwards a session or host identity'),
+    'the wrapper must deny unverified Claude-session and host transport')
+  assert.ok(wake.includes('authenticated session activation belongs\n# to the MCP bridge'),
+    'the wrapper must keep authenticated routing in the bridge boundary')
+  assert.ok(!wake.includes('--session-id'), 'wake-only launch must not pass an unverified session id')
+  assert.ok(!wake.includes('--host-window'), 'wake-only launch must not pass host-window identity')
+})
+
+function assertWakeOnlyCapabilityContract(wake) {
+  const match = wake.match(/# FIX-009-CAPABILITIES-BEGIN\n([\s\S]*?)# FIX-009-CAPABILITIES-END/)
+  assert.ok(match, 'wake header must contain the bounded FIX-009 capability contract')
+  const expectedBlock = [
+    '# session-binding=false',
+    '# terminal-host-binding=false',
+    '# bridge-delivery=false',
+    '# answer-routing=false',
+    '# existing-instance-routing=false',
+    '',
+  ].join('\n')
+  assert.strictEqual(match[1], expectedBlock,
+    'the authoritative contract block must contain only the five explicit false capabilities')
+  const entries = match[1]
+    .split('\n')
+    .filter((line) => line.startsWith('# ') && line.includes('='))
+    .map((line) => line.slice(2).split('='))
+  const capabilities = Object.fromEntries(entries)
+  assert.deepStrictEqual(capabilities, {
+    'session-binding': 'false',
+    'terminal-host-binding': 'false',
+    'bridge-delivery': 'false',
+    'answer-routing': 'false',
+    'existing-instance-routing': 'false',
+  }, 'each pre-FIX-011 capability must be explicitly and exclusively false')
 }
-console.log('\nALL TESTS PASSED')
+
+check('wake header rejects every positive pre-FIX-011 capability claim', () => {
+  const wake = fs.readFileSync(harness.PLUGIN_ROOT + '/bin/wake-candice.sh', 'utf8')
+  assertWakeOnlyCapabilityContract(wake)
+
+  // Mutation proof: each prohibited positive claim turns the authoritative
+  // header contract invalid even if its natural-language denial remains.
+  for (const capability of [
+    'session-binding',
+    'terminal-host-binding',
+    'bridge-delivery',
+    'answer-routing',
+    'existing-instance-routing',
+  ]) {
+    const positiveClaim = wake.replace(`${capability}=false`, `${capability}=true`)
+    assert.throws(() => assertWakeOnlyCapabilityContract(positiveClaim),
+      `${capability}=true must fail before FIX-011 implements it`)
+  }
+
+  // These are the concrete false promises identified by independent QC. An
+  // added positive sentence inside the authoritative header contract must
+  // fail even if every existing `=false` line is retained.
+  for (const claim of [
+    'the hook binds the Claude session',
+    'the hook binds the terminal host',
+    'the bridge/MCP is available',
+    'questions and answers are routed',
+    'the hook raises the existing instance',
+  ]) {
+    const positiveClaim = wake.replace(
+      '# FIX-009-CAPABILITIES-END',
+      `# ${claim}\n# FIX-009-CAPABILITIES-END`,
+    )
+    assert.throws(() => assertWakeOnlyCapabilityContract(positiveClaim),
+      `positive claim must fail before FIX-011: ${claim}`)
+  }
+})
+
+function finish() {
+  if (failures > 0) {
+    console.log(`\n${failures} CHECK(S) FAILED`)
+    process.exit(1)
+  }
+  console.log('\nALL TESTS PASSED')
+}
+
+Promise.all(pending).then(finish)

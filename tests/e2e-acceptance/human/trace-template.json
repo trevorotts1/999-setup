@@ -1,0 +1,54 @@
+{
+  "$comment": "FIX-019 human/hardware event-trace template. Fill ONE template per run (one run = one launcher x one mode interview). Fields match the event-trace contract: { runId, launcher, sessionId, questionKey, inputMode, eventKind, ts }. questionKey comes ONLY from packages/candice-protocol/schemas/question-inventory.json active records (BUILD_TARGET, KAZEN_*, ELI5_REVIEWED_ZERO, BRO_REVIEWED_ZERO). Retired B3/C7/C8 exist in the inventory but are never used by a run. NEVER put question text, answer text, secrets, API keys, or raw audio in this file — keys and codes only (FIX-017 boundary).",
+  "runId": "human-<launcher>-<mode>-<YYYYMMDD-HHMMSS>",
+  "launcher": "claude | claude-nine",
+  "mode": "default | advanced",
+  "platform": "darwin",
+  "osVersion": "<sw_vers -productVersion>",
+  "terminalHost": "<hostname>",
+  "shell": "zsh",
+  "testDate": "<YYYY-MM-DD>",
+  "sessionId": "<real Claude session id>",
+  "packagedArtifact": "apps/candice-companion/dist/Candice Companion.app",
+  "packagedBinarySha": "<sha256 of Contents/MacOS/candice-companion>",
+  "commitSha": "<git rev-parse HEAD>",
+  "frames": [
+    {
+      "eventKind": "question-presented",
+      "questionKey": "BUILD_TARGET",
+      "inputMode": null,
+      "ts": "<ISO-8601>"
+    },
+    {
+      "eventKind": "answer-submitted",
+      "questionKey": "BUILD_TARGET",
+      "inputMode": "typed",
+      "ts": "<ISO-8601>"
+    },
+    {
+      "eventKind": "answer-returned",
+      "questionKey": "BUILD_TARGET",
+      "inputMode": "typed",
+      "ts": "<ISO-8601>"
+    },
+    {
+      "eventKind": "interview-complete",
+      "questionKey": null,
+      "inputMode": null,
+      "ts": "<ISO-8601>"
+    },
+    {
+      "eventKind": "write-through",
+      "questionKey": null,
+      "inputMode": null,
+      "ts": "<ISO-8601>"
+    }
+  ],
+  "countedSequence": [],
+  "$countedSequenceComment": "Ordered questionKey list of every counted question as asked, e.g. [\"BUILD_TARGET\", \"BUILD_TARGET\"] — one entry per counted occurrence including re-asks after restart (re-ask keeps counted:false per section 20, so record it only when the run's own numbering counted it). QC replays this sequence against the ceiling oracle (interview.md ceiling arithmetic + candice-question-contract.md). A mismatch is a tier FAIL.",
+  "finalWriteThrough": {
+    "documentPath": "<absolute path of the written spec document>",
+    "ledgerPath": "<absolute path of CONTROL/LEDGER.md when present>",
+    "verified": false
+  }
+}

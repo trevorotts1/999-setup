@@ -1,65 +1,13 @@
 {
-  "description": "Candice wake-up hooks. Fires on the four supported slash commands and on session start; launches or raises the Candice companion and binds it to the current Claude session and terminal window. Every handler is non-blocking, fails soft, and never stops the skill.",
+  "description": "Candice wake-up hook. It inspects only the submitted prompt's first token and wakes for the four supported slash commands. The dispatcher requests a fail-soft visual wake; it does not bind a Claude session or terminal host until an authenticated runtime boundary exists.",
   "hooks": {
-    "UserPromptExpansion": [
-      {
-        "matcher": "spec-protocol",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/spec-protocol"],
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "kaizen",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/kaizen"],
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "eli5",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/eli5"],
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "bro",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["/bro"],
-            "timeout": 30,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.sh",
-            "args": ["session-start"],
-            "timeout": 30,
-            "async": true
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/wake-candice.mjs\" --from-prompt",
+            "timeout": 30
           }
         ]
       }

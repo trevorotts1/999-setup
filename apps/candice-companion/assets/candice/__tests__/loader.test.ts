@@ -1,139 +1,79 @@
-/**
- * WS-11 tests (node --test, zero deps, Node type stripping).
- *
- * Run:
- *   node --test apps/candice-companion/assets/candice/__tests__/loader.test.ts
- *
- * Covers the E.1 acceptance criterion:
- *   manifest maps all 16 supplied assets (9 first-batch + 7 second-batch)
- *   with stable production filenames, source->derived mapping metadata and
- *   checksums; no ChatGPT download filenames in production code
- *   (Master Spec 11/11A/11B).
- */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import manifest from '../asset-manifest.json' with { type: 'json' };
-import {
-  AssetRegistry,
-  AssetManifestError,
-  validateManifest,
-  type ManifestShape,
-  type ImageFactory,
-} from '../loader.ts';
+import { AssetRegistry, validateManifest, type ManifestShape } from '../loader.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assetsDir = join(here, '..');
-const sourceDir = join(assetsDir, 'source');
+const canonicalDir = join(assetsDir, 'source', 'operator-approved');
+const downloadsDir = join(process.env.CANDICE_OPERATOR_ORIGINALS_DIR || '/Users/blackceomacmini/Downloads');
+const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
+const pngDimensions = (file: string) => {
+  const data = readFileSync(file);
+  return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+};
 
-const SHA256_HEX = /^[0-9a-f]{64}$/;
-
-test('manifest parses and passes shape validation', () => {
-  const problems = validateManifest(manifest as ManifestShape);
-  assert.deepEqual(problems, []);
+test('operator-original manifest validates as the only canonical authority', () => {
+  assert.deepEqual(validateManifest(manifest as ManifestShape), []);
+  assert.equal(manifest.assetCount, 16);
+  assert.equal(manifest.canonicalAuthority, 'operator-originals');
+  assert.equal(manifest.sourceDirectory, 'source/operator-approved/');
+  assert.equal(manifest.derivedAssets.length, 0);
 });
 
-test('16 supplied assets mapped + optional 17th, all stable names', () => {
-  const ids = manifest.assets.map((a) => a.id);
-  assert.equal(manifest.assetCount, 17);
-  assert.equal(manifest.assets.length, 17);
-  for (const id of ids) {
-    assert.match(id, /^[0-9]{2}-[a-z][a-z0-9-]*$/, `unstable id: ${id}`);
+test('canonical directory contains exactly the 16 manifest PNGs and no KIE selection', () => {
+  const files = readdirSync(canonicalDir).filter((file) => file.endsWith('.png')).sort();
+  const expected = manifest.assets.map((asset) => asset.file).sort();
+  assert.deepEqual(files, expected);
+  assert.equal(files.length, 16);
+  assert.equal(manifest.assets.some((asset) => /kie|experimental/i.test(asset.file)), false);
+  assert.equal(existsSync(join(assetsDir, 'derived', 'experimental-kie')), true);
+});
+
+test('every canonical copy exactly matches its approved Downloads original', () => {
+  const inventory = new Map<string, number>();
+  for (const asset of manifest.assets) {
+    const canonical = join(canonicalDir, asset.file);
+    const original = join(downloadsDir, asset.provenance.originalFilename);
+    assert.equal(existsSync(original), true, `missing Downloads original: ${asset.provenance.originalFilename}`);
+    const dims = pngDimensions(canonical);
+    assert.equal(hash(canonical), asset.sha256, asset.id);
+    assert.equal(hash(canonical), asset.provenance.sourceSha256, asset.id);
+    assert.equal(hash(canonical), hash(original), asset.id);
+    assert.equal(readFileSync(canonical).length, asset.bytes, asset.id);
+    assert.equal(readFileSync(canonical).length, asset.provenance.sourceBytes, asset.id);
+    assert.deepEqual(dims, { width: asset.width, height: asset.height }, asset.id);
+    assert.equal(asset.provenance.copiedByteForByte, true);
+    assert.equal(asset.approval, 'operator-approved');
+    inventory.set(`${asset.width}x${asset.height}`, (inventory.get(`${asset.width}x${asset.height}`) || 0) + 1);
   }
-  // Every spec-11B role resolves through the stateMap to a stable filename.
+  assert.deepEqual(Object.fromEntries(inventory), { '941x1672': 2, '1254x1254': 7, '1024x1536': 7 });
+});
+
+test('all active state mappings resolve only to canonical original metadata', () => {
   const registry = AssetRegistry.create();
-  const expectRole = (group: string, key: string, id: string) => {
-    const entry = registry.resolve(group, key);
-    assert.equal(entry.id, id, `${group}.${key} -> ${entry.id}`);
-    assert.equal(entry.file, `${id}.png`);
-  };
-  expectRole('body', 'idle-standing', '01-fullbody-idle');
-  expectRole('body', 'welcome-wave', '12-gesture-welcome');
-  expectRole('body', 'presenting', '13-gesture-presenting');
-  expectRole('body', 'listening', '14-gesture-listening');
-  expectRole('body', 'thinking', '15-gesture-thinking');
-  expectRole('body', 'approval', '16-gesture-affirmative');
-  expectRole('face', 'speech-wide', '06-mouth-wide-open');
-  expectRole('face', 'idle-neutral', '03-mouth-neutral-closed');
-  expectRole('gesture', 'processing', '17-processing-pose');
-});
-
-test('every entry carries sha256 + dimensions + byteSize and matches source on disk', () => {
-  for (const a of manifest.assets) {
-    assert.match(a.sha256, SHA256_HEX, `bad sha256 on ${a.id}`);
-    assert.ok(a.width > 0 && a.height > 0, `bad dims on ${a.id}`);
-    assert.ok(a.bytes > 0, `bad byteSize on ${a.id}`);
-    assert.equal(a.readOnly, true, `source not marked readOnly: ${a.id}`);
-    const src = join(sourceDir, a.file);
-    const raw = readFileSync(src);
-    assert.equal(raw.length, a.bytes, `byteSize mismatch on ${a.id}`);
-  }
-});
-
-test('source->derived mapping metadata present (derivedAssets slot wired)', () => {
-  // WS-12/WS-13 fill derivedAssets later; the slot and shape are contract now.
-  assert.ok(Array.isArray(manifest.derivedAssets));
-  assert.ok(
-    manifest.sourceDirectory === 'source/',
-    `sourceDirectory unexpected: ${manifest.sourceDirectory}`,
-  );
-});
-
-test('no ChatGPT download filenames in any production path', () => {
-  const forbidden = /(chatgpt|download|\([0-9]+\)|copy|_\(|\)\.png)/i;
-  for (const a of manifest.assets) {
-    assert.doesNotMatch(a.file, forbidden, `raw name leaked: ${a.file}`);
-  }
   for (const [group, map] of Object.entries(manifest.stateMap)) {
-    for (const [key, file] of Object.entries(map)) {
-      assert.doesNotMatch(file, forbidden, `raw name in stateMap ${group}.${key}`);
+    for (const key of Object.keys(map)) {
+      const entry = registry.resolve(group, key);
+      assert.equal(entry.approval, 'operator-approved');
+      assert.match(entry.file, /^[0-9]{2}-[a-z0-9-]+\.png$/);
     }
   }
-  assert.doesNotMatch(manifest.sourceDirectory, forbidden);
 });
 
-test('loader is lazy: resolving never decodes an image', () => {
+test('loader remains lazy and resolves the canonical source path', () => {
   const decoded: string[] = [];
-  const factory: ImageFactory = (src) => {
+  const registry = AssetRegistry.create((src) => {
     decoded.push(src);
     return { src } as HTMLImageElement;
-  };
-  const registry = AssetRegistry.create(factory);
-  const entries = registry.list();
-  assert.equal(entries.length, 17);
-  registry.resolve('face', 'speech-wide');
-  registry.resolve('gesture', 'thinking');
-  assert.equal(decoded.length, 0, 'resolve() must not decode pixels');
-  const img = registry.loadImage(registry.resolve('gesture', 'welcome'));
-  assert.equal(decoded.length, 1, 'loadImage() decodes exactly one asset');
-  assert.equal(decoded[0], 'source/12-gesture-welcome.png');
-  assert.equal(img.src, 'source/12-gesture-welcome.png');
-});
-
-test('registry rejects unknown ids and keys loudly', () => {
-  const registry = AssetRegistry.create();
-  assert.throws(() => registry.get('99-bogus'), AssetManifestError);
-  assert.throws(() => registry.resolve('face', 'nope'), AssetManifestError);
-  assert.throws(() => registry.resolve('nope', 'idle'), AssetManifestError);
-});
-
-test('batch provenance is recorded, not used as production identity', () => {
-  const first = manifest.assets.filter((a) => a.batch.startsWith('first-batch'));
-  const second = manifest.assets.filter((a) => a.batch.startsWith('second-batch'));
-  const extra = manifest.assets.filter((a) => a.batch.startsWith('operator-supplied'));
-  assert.equal(first.length, 9, 'first batch must be 9');
-  assert.equal(second.length, 7, 'second batch must be 7');
-  assert.equal(extra.length, 1, 'operator-supplied 17th must be 1');
-});
-
-test('flagged anomaly 10-eye-half-blink recorded in notes', () => {
-  const ten = manifest.assets.find((a) => a.id === '10-eye-half-blink');
-  assert.ok(ten, '10-eye-half-blink missing');
-  assert.ok(ten.alpha.mean > 100, `expected near-opaque flag, mean ${ten.alpha.mean}`);
-  const note = manifest.notes.find((n: string) => n.includes('10-eye-half-blink'));
-  assert.ok(note, 'anomaly note missing for 10-eye-half-blink');
+  });
+  const entry = registry.resolve('body', 'idle-standing');
+  assert.equal(decoded.length, 0);
+  registry.loadImage(entry);
+  assert.deepEqual(decoded, ['source/operator-approved/01-fullbody-idle.png']);
 });

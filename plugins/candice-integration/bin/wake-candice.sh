@@ -1,51 +1,33 @@
 #!/usr/bin/env bash
-# wake-candice.sh — Candice immediate wake-up handler (WS-02).
+# wake-candice.sh — legacy POSIX wrapper for the Node dispatcher.
 #
-# Registered from hooks/hooks.json on UserPromptExpansion (matchers:
-# spec-protocol, kaizen, eli5, bro) and on SessionStart. Invoked with one
-# argument: the triggering slash command ("/spec-protocol", "/kaizen",
-# "/eli5", "/bro") or "session-start".
+# Current packages register wake-candice.mjs directly, so native Windows hosts
+# do not depend on Bash, WSL, or Git Bash. This retained wrapper only keeps an
+# older package invocation fail-soft while it delegates to the same dispatcher.
 #
-# Contract (Master Spec section 13.1): be fast, launch/raise the app, bind
-# to the current Claude session identifier where available, bind to the
-# foreground command-window/terminal host, and never block skill execution
-# if Candice fails. Hook runs async (hooks.json "async": true): a nonzero
-# exit or a slow start must never block or delay Claude Code.
+# Current bounded contract: a legacy positional slash-command is translated to
+# the Node dispatcher's explicit --command form. This wrapper never accepts or
+# forwards a session or host identity; authenticated session activation belongs
+# to the MCP bridge and must be acknowledged by its bounded local protocol.
+# FIX-009-CAPABILITIES-BEGIN
+# session-binding=false
+# terminal-host-binding=false
+# bridge-delivery=false
+# answer-routing=false
+# existing-instance-routing=false
+# FIX-009-CAPABILITIES-END
 #
-# The companion binary is intentionally not a hard dependency of this
-# workstream. The launch command is resolved from the plugin environment;
-# when the app is not installed yet (fresh repo, pre-install), the handler
-# exits 0 silently so the skill proceeds normally and the bootstrap install
-# (WS-31) provisions the app.
-#
-# Master Spec sections 13/13.1: do NOT rename the slash commands; do NOT
-# inject hidden prompts; never message anyone; no secret values are read,
-# printed, or logged by this script.
-
 set -u
 
-COMMAND="${1:-session-start}"
-
-# Hook input arrives as JSON on stdin; ignore it. Drain stdin so the runner
-# does not wait on EOF before continuing.
-cat >/dev/null 2>&1 || true
-
-# Launch command resolution order (1 = explicit env, 2 = PATH shims, 3 = skip).
-LAUNCH_CMD=""
-if [ -n "${CANDICE_COMPANION_CMD:-}" ]; then
-  LAUNCH_CMD="$CANDICE_COMPANION_CMD"
-elif command -v candice-companion >/dev/null 2>&1; then
-  LAUNCH_CMD="$(command -v candice-companion)"
-fi
-
-if [ -z "$LAUNCH_CMD" ]; then
-  exit 0
-fi
-
-# Launch detached. Output is discarded: nothing from Candice wake-up is ever
-# attached to Claude's context, so a chatty companion cannot pollute the
-# session. Session/window binding is handled by the companion itself on
-# --wake (WS-03 bridge owns the binding contract).
-"$LAUNCH_CMD" --wake "$COMMAND" >/dev/null 2>&1 &
-
-exit 0
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)" || exit 0
+case "${1-}" in
+  /spec-protocol|/kaizen|/eli5|/bro)
+    # Older package registrations invoked `wake-candice.sh /bro` directly.
+    # Preserve that wire shape while the current native registration calls
+    # wake-candice.mjs --command /bro.
+    exec node "$SCRIPT_DIR/wake-candice.mjs" --command "$1" || exit 0
+    ;;
+  *)
+    exec node "$SCRIPT_DIR/wake-candice.mjs" "$@" || exit 0
+    ;;
+esac

@@ -3,7 +3,7 @@
 Owned glob: `scripts/candice-upgrade/**` (PROJECT-MANIFEST 9.2 WR-017;
 task-graph snapshot WS-32 owned_paths).
 
-Implements the **existing-user leg** of the Candice release (Master Spec
+Implements the **existing-user repair mechanism** (Master Spec
 section 21, E.1 WS-32): a machine that already has an older Spec Protocol
 moves forward safely —
 
@@ -11,11 +11,12 @@ moves forward safely —
 2. its existing `tools/self-update.sh` replaces the Spec Protocol skill tree,
 3. **on the next supported skill invocation, `candice-upgrade repair`
    checks the Candice components** (plugin, app, speech assets,
-   Kaizen/ELI5/Bro integrations) and installs/repairs whatever is missing or
-   stale,
+   Kaizen/ELI5/Bro integrations). It fails before any repair/state write
+   while the app has no release-authorized candidate; a local app is reported
+   untrusted rather than current or repairable,
 4. stale supported skills refresh through the deterministic bundle path,
 5. the user never copies files around,
-6. after successful repair, normal invocations run the **fast
+6. after a future fully authorized repair, normal invocations run the **fast
    health/version check only** (`--health`, spec 21 step 7).
 
 The fresh-install leg is WS-31 (`scripts/candice-bootstrap/**`); checksums,
@@ -27,7 +28,7 @@ re-implements checksumming, atomicity, or payload records.
 
 ```
 node scripts/candice-upgrade/upgrade.mjs check    # update detection (spec 21 step 1)
-node scripts/candice-upgrade/upgrade.mjs repair   # install/repair missing or stale components (steps 3-6)
+node scripts/candice-upgrade/upgrade.mjs repair   # currently fails closed: no authorized app candidate
 node scripts/candice-upgrade/upgrade.mjs --health # fast health/version check (step 7)
 ```
 
@@ -49,10 +50,10 @@ current (same contract as `tools/check-update.sh`).
 |---|---|
 | `upgrade.mjs` | CLI entry: `check` / `repair` / `--health`. |
 | `detect.mjs` | Update detection: installed spec-protocol VERSION(s) vs the published VERSION on the operator-controlled raw channel. Reads only, never writes. |
-| `repair.mjs` | Repair engine: enumerate installed components -> plan (install/upgrade/ahead/current) -> apply through the WS-31/WS-33 engines -> persist state + journal. |
+| `repair.mjs` | Repair engine: enumerate -> block untrusted/unavailable app before writes -> otherwise plan/apply through WS-31/WS-33 -> persist state + journal. |
 | `__tests__/detect.test.mjs` | 14 tests: version math, root discovery, live-channel stubs (update/current/ahead/unknown/undetermined). |
-| `__tests__/upgrade.test.mjs` | 14 tests: enumeration, planning, end-to-end repair (offline + atomic), idempotency, no-downgrade, win32 NSIS-owner, WS-33 rollback seam. |
-| `__tests__/cli.test.mjs` | 6 tests: exit codes 0/1/2, live channel check, simulate writes nothing. |
+| `__tests__/upgrade.test.mjs` | 8 tests: blocked/untrusted app enumeration, planning, direct repair refusal, and no partial state. |
+| `__tests__/cli.test.mjs` | 5 tests: exit codes, release-blocked repair/simulation, no writes, and health. |
 
 Run all tests:
 
@@ -69,8 +70,9 @@ node --test "scripts/candice-upgrade/__tests__/*.test.mjs"
 - `repair.mjs` imports the WS-31 install engine directly
   (`installSkills` / `installPlugin` / `installApp` / `installAssets`) —
   skills/plugin/integrations install from the repo checkout (spec 21 first
-  hop), app + speech assets go through the WS-33 download gate with SHA-256
-  verification.
+  hop), speech assets go through the WS-33 download gate with SHA-256
+  verification, and `installApp` refuses until a candidate has independent
+  release authority.
 - Skills/plugin installs run the WS-33 atomic engine (`atomic-install.mjs`):
   stage -> back up old -> atomic rename -> marker verify -> journal. A
   replaced tree's backup lives at `<target>/../.candice-backups/`, outside
@@ -79,13 +81,10 @@ node --test "scripts/candice-upgrade/__tests__/*.test.mjs"
   restored the exact old tree, exit 0).
 - The installed-tree state doc (`<root>/state/bootstrap-state.json`,
   schema `candice.bootstrap.state/v1`, written by the WS-31 state module)
-  records every repaired component version + asset sha256 + launch metadata.
+  records every fully authorized repaired component version + asset sha256 + launch metadata.
   This lane also appends `<root>/state/upgrade-journal.jsonl` per repair.
-- A leg with no verifiable record (e.g. the prebuilt app today —
-  `trevorotts1/999-setup` has zero releases) is **SKIPPED and reported**,
-  never invented (fail closed). The fast health check then honestly reports
-  the app missing until the operator publishes the payload (WS-33
-  CROSS-LANE-FINDING).
+- The quarantined app is a **hard repair block**, not a skipped leg. This
+  avoids a falsely successful partial repair or a caller-supplied bundle.
 
 ## Guarantees
 
@@ -101,3 +100,20 @@ node --test "scripts/candice-upgrade/__tests__/*.test.mjs"
 - Detection contacts ONLY the operator-controlled published VERSION
   (`raw.githubusercontent.com/trevorotts1/999-setup/main/...`); downloads
   only operator-controlled payloads with SHA-256 verification.
+
+## Hermetic vs live (FIX-021)
+
+The **release-blocking suite** is hermetic: `__tests__/*.test.mjs` and
+`tests/upgrade-fixtures/*.test.mjs` run against temp install roots and a
+pinned local channel fixture (`tests/upgrade-fixtures/fixtures/channel/VERSION`),
+never the runner's real HOME and never `raw.githubusercontent.com`.
+
+The **live channel** is an operations concern only:
+
+```
+node scripts/candice-ci/channel-monitor.mjs [--root <dir>] [--fail-on-stale]
+```
+
+Exit codes: 0 current / 1 stale / 2 undetermined. The monitor is not a step
+in any required CI job and its verdict never participates in a release
+decision.

@@ -67,6 +67,11 @@ export const TRANSCRIPT_STYLE_TEXT = `
   color: var(--candice-tx-muted);
   margin: 0;
 }
+/* The "display" in the rule below beats the user-agent [hidden] rule, so
+   setting .hidden = true alone cannot hide this element. */
+.candice-transcript-editor[hidden] {
+  display: none;
+}
 .candice-transcript-editor {
   display: flex;
   flex-direction: column;
@@ -91,6 +96,11 @@ export const TRANSCRIPT_STYLE_TEXT = `
 }
 .candice-transcript-input[data-invalid='true'] {
   border-color: var(--candice-danger, #e5484d);
+}
+/* The "display" in the rule below beats the user-agent [hidden] rule, so
+   setting .hidden = true alone cannot hide this element. */
+.candice-transcript-error[hidden] {
+  display: none;
 }
 .candice-transcript-error {
   color: var(--candice-danger, #e5484d);

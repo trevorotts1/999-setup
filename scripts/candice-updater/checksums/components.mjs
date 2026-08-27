@@ -5,7 +5,7 @@
  * The single source of truth for every component the updater knows about
  * (MASTER-SPEC section 21, E.1 WS-33):
  *
- *   - PUBLISHED_PAYLOADS: components installed from a downloadable release
+ *   - PUBLISHED_PAYLOADS: components installed from a currently downloadable release
  *     artifact. Every SHA-256 here was verified on 2026-08-21 by direct
  *     download from the recorded source URL, then shasum -a 256. Sources are
  *     operator-controlled release locations only (github.com/trevorotts1/
@@ -41,12 +41,25 @@ export const RELEASE_CHANNEL = "https://github.com/trevorotts1/999-setup/release
 export const MANIFEST_NAME = "bundled-components.json";
 
 /**
- * Placeholder for release-artifact checksums that cannot be computed on
- * this host. The darwin 0.2.0 DMG hash is now real (integrated build,
- * 2026-08-22); the win32 NSIS installer hash remains owed from a Windows
- * build. Entries carrying this hash are unverifiable by construction:
- * verify.mjs and download.mjs fail closed on them until the 9.4 release
- * owner computes and republishes the real hash.
+ * Immutable secondary origins the download gate accepts — the pinned
+ * upstream release locations recorded per-payload in PUBLISHED_PAYLOADS.
+ * An origin is accepted only as a URL PREFIX, and only when the resolved
+ * payload record's own sourceUrl starts with it (a record's declared origin
+ * cannot be swapped without a registry edit). The runtime never accepts a
+ * bare github.com/huggingface.co path (FIX-018 P0 allow-list).
+ */
+export const SECONDARY_ORIGINS = Object.freeze([
+  "https://github.com/ggml-org/whisper.cpp/releases/download/",
+  "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/",
+]);
+
+/**
+ * Placeholder for a future release artifact checksum.  Historical 0.2.0 app
+ * hash data is quarantined audit material, not a release artifact and not a
+ * verification basis. Entries carrying this placeholder are unverifiable by
+ * construction: verify.mjs and download.mjs fail closed until a future
+ * release owner publishes an independently authorized candidate.
  */
 export const PLACEHOLDER_SHA256 = "0".repeat(64);
 
@@ -64,56 +77,26 @@ export const PLACEHOLDER_SHA256 = "0".repeat(64);
 /**
  * Verified, downloadable payloads. Keyed by `<id>@<version>@<platform>`.
  *
- * Every entry verified live 2026-08-21:
+ * Every active entry verified live 2026-08-21:
  *  - ggml-tiny.en-q5_1.bin  sha256 c77c5766…66c7c2b   (direct download, shasum match)
  *  - whisper-bin-x64.zip    49dcc16d…4d674a           (direct download, shasum match)
  *  - whisper-bin-Win32.zip  de170719…a7cf8f22         (direct download, shasum match)
- *  - Candice Companion_0.2.0_aarch64.dmg  f24f4bcb…b0dbaf  (integrated 0.2.0 build, 2026-08-22: npx tauri build exit 0, shasum -a 256 on the produced DMG; 2,686,932 B)
  *  - kokoro-v1.0.fp16.onnx  f3a290d3…77ac96           (direct download, shasum match)
  *  - kokoro-v1.0.int8.onnx   ae315a79…70ee9c           (WS-19 verified record)
  *  - voices-v1.0.bin        bca610b8…f1fbf7d           (direct download, shasum match)
  *
- * The int8/v1.0.bin pair were recorded by the WS-19 lane with the same
+ * The 0.2.0 application records are deliberately excluded: they remain
+ * audit-only quarantine data and are neither resolver-visible nor
+ * downloadable. The int8/v1.0.bin pair were recorded by the WS-19 lane with the same
  * upstream source; the three largest payloads were re-verified byte-for-byte
  * by this lane's builder on the same date.
  *
  * @type {Record<string, PublishedEntry>}
  */
 export const PUBLISHED_PAYLOADS = {
-  // ------------------------------------------------------------------ app
-  "candice-companion@0.2.0@darwin": {
-    id: "candice-companion",
-    version: "0.2.0",
-    platform: "darwin",
-    kind: "app",
-    payload: {
-      file: "Candice Companion_0.2.0_aarch64.dmg",
-      // Real hash from the integrated 0.2.0 build (2026-08-22): npx tauri
-      // build exit 0 in worktrees/wr001-bootstrap, then shasum -a 256 on
-      // the produced DMG (2,686,932 B). Artifact unsigned/adhoc (WS-23:
-      // zero Developer ID identities on the build host).
-      sha256: "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf",
-      sizeBytes: 2686932,
-      sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_aarch64.dmg`,
-    },
-  },
-  "candice-companion@0.2.0@win32": {
-    id: "candice-companion",
-    version: "0.2.0",
-    platform: "win32",
-    kind: "app",
-    payload: {
-      file: "Candice Companion_0.2.0_x64-setup.exe",
-      // NSIS hash owed from Windows build — the NSIS installer cannot be
-      // built on this macOS host (recorded limitation). UNSIGNED — recorded
-      // limitation (WS-29): the installer is never misrepresented as
-      // trusted. Fail-closed until the 9.4 release owner computes the real
-      // hash from the Windows CI build.
-      sha256: PLACEHOLDER_SHA256,
-      sizeBytes: 0,
-      sourceUrl: `${RELEASE_CHANNEL}/download/v0.2.0/Candice%20Companion_0.2.0_x64-setup.exe`,
-    },
-  },
+  // App records are intentionally absent until FIX-022 creates an approved
+  // signed release candidate and the release authority passes. See
+  // QUARANTINED_PAYLOADS for the historical 0.2.0 records.
 
   // ------------------------------------------------------------ stt assets
   "stt-assets@whisper-1.9.2@darwin": {
@@ -215,7 +198,6 @@ export const REPO_TREE_COMPONENTS = {
     version: "1.0.0",
     repoPath: "plugins/candice-integration",
   },
-  "candice-companion": { id: "candice-companion", version: "0.2.0", repoPath: "apps/candice-companion" },
 };
 
 /** Runtime pins carried alongside components (spec 21 — the manifest knows the runtime versions too). */

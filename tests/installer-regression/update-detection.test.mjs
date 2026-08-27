@@ -52,12 +52,13 @@ test("health check reports stale version as stale (WS-31 checkSkill detail)", as
     // Install one skill at an OLDER version than pinned -> stale, not missing.
     tree(join(root, "skills", "kaizen"), { "SKILL.md": "# kaizen\n", VERSION: "0.9.0\n" });
     const { healthCheck } = await load("scripts/candice-bootstrap/health.mjs");
-    const h = healthCheck({ root, platform: "darwin" });
-    const kaizen = h.components.find((c) => c.name === "kaizen");
-    assert.ok(kaizen, "kaizen row present");
-    assert.equal(kaizen.present, true);
-    assert.equal(kaizen.ok, false, "stale version must not be ok");
-    assert.match(kaizen.detail || "", /stale/i);
+    const h = await healthCheck({ root, platform: "darwin", mode: "test-fixture" });
+    const leg = h.legs["skill-tree"];
+    assert.ok(leg, "skill-tree leg present");
+    assert.equal(leg.status, "FAIL");
+    // The stale kaizen version is named in the detail (schema leg, not a
+    // per-component row — the schema report carries one leg per subsystem).
+    assert.match(leg.detail || "", /kaizen/);
     // The rest are missing -> overall health not ok (regression: never a false healthy)
     assert.equal(h.ok, false);
   } finally {
@@ -69,10 +70,10 @@ test("health check: missing component reported in missing list", async () => {
   const root = freshRoot("health-miss-");
   try {
     const { healthCheck } = await load("scripts/candice-bootstrap/health.mjs");
-    const h = healthCheck({ root, platform: "darwin" });
+    const h = await healthCheck({ root, platform: "darwin", mode: "test-fixture" });
     assert.equal(h.ok, false);
     assert.ok(h.missing.length > 0);
-    assert.ok(h.missing.includes("nine-router-setup"));
+    assert.ok(h.missing.includes("skill-tree"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

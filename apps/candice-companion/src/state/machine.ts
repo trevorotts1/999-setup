@@ -59,6 +59,14 @@ export interface CandiceState {
   transcript: string | null;
   /** The pending question, recovered verbatim across `recovering` (spec 20). */
   pendingQuestion: string | null;
+  /**
+   * Registry `options` for the pending question, when it is a choice question.
+   *
+   * These are the exact answer values the protocol expects -- they are not
+   * display copy and are never invented here. Null means "not a choice
+   * question", which is different from an empty list.
+   */
+  pendingOptions: readonly string[] | null;
   /** Voice responses ON/OFF (spec 5.2). Never inferred; always explicit. */
   voiceEnabled: boolean;
   /** TTS degraded to system speech (clearly fallback, never canonical). */
@@ -79,6 +87,8 @@ export interface CandiceEvent {
   readonly transcript?: string;
   /** Present on `question:received` / `question:recovered`. */
   readonly question?: string;
+  /** Choice options for `question:received`, straight from the registry. */
+  readonly options?: readonly string[];
   /** Present on `speech:tts`. */
   readonly ttsFallback?: boolean;
 }
@@ -92,12 +102,15 @@ export type CandiceEventType =
   | 'answer:confirmed'
   | 'speech:transcript'
   | 'speech:tts'
+  | 'speech:ended'
   | 'speech:interrupted'
   | 'ptt:start'
   | 'ptt:stop'
   | 'error'
   | 'bridge:unavailable'
   | 'bridge:restored'
+  /** Authenticated server cancellation/timeout of the exact active question. */
+  | 'bridge:cancelled'
   | 'fallback:text'
   | 'compact:enter'
   | 'compact:exit'
@@ -134,6 +147,7 @@ export const INITIAL_STATE: CandiceState = {
   status: 'idle',
   transcript: null,
   pendingQuestion: null,
+  pendingOptions: null,
   voiceEnabled: true,
   ttsFallbackActive: false,
   bridgeUnavailable: false,
@@ -149,7 +163,12 @@ const CAPTIONS: Record<CandiceStatus, string> = {
   thinking: '',
   speaking: '',
   compact: '',
-  recovering: 'RECOVERING - restoring your question',
+  recovering: 'One moment — bringing your question back…',
+  // NOT reworded, deliberately. This caption duplicates the spec-5.1
+  // button label, and captions.test.ts asserts it renders "the exact
+  // spec-5.1 label" verbatim. A caption that names a button rather than
+  // speaking to the user is worth revisiting -- but that is a spec
+  // decision, not a repair-pass one. Raised in CONTROL/TODO.md.
   'text-fallback': 'Answer in Claude instead',
   building: '',
   'quality-checking': '',
@@ -238,7 +257,18 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           event.question ??
           (event.type === 'question:recovered' ? state.pendingQuestion : null);
         if (question == null) return null;
-        state = { ...state, pendingQuestion: question, status: 'thinking' };
+        // A recovered question keeps the options it was delivered with: the
+        // recovery event carries no registry payload, and dropping them would
+        // silently downgrade a choice question to a text box after a crash.
+        const options =
+          event.options ??
+          (event.type === 'question:recovered' ? state.pendingOptions : null);
+        state = {
+          ...state,
+          pendingQuestion: question,
+          pendingOptions: options ?? null,
+          status: 'thinking',
+        };
         lastEffects.push({ type: 'captions:show', caption: question });
         return state;
       }
@@ -251,6 +281,7 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           ...state,
           transcript,
           pendingQuestion: null,
+          pendingOptions: null,
           status: 'thinking',
         };
         return state;
@@ -272,6 +303,33 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
           ttsFallbackActive: event.ttsFallback === true,
         };
         lastEffects.push({ type: 'tts:speak', caption: state.pendingQuestion });
+        return state;
+      }
+
+      case 'speech:ended': {
+        // NATURAL completion of an utterance: the audio finished, or the
+        // engine refused it. This is NOT `speech:interrupted` — that is a
+        // barge-in, and it pushes `tts:stop` (stopping audio that already
+        // stopped) plus `mic:open` (opening the mic is the USER's decision,
+        // spec 6). Using it for completion would mean a stop for speech that
+        // already ended and a mic she never asked to open.
+        //
+        // Without this event `speaking` is a TERMINAL status: the only way
+        // out is `speech:interrupted`, and nothing dispatches that when an
+        // utterance simply ends. Because `ptt:start` refuses while speaking,
+        // making `speech:tts` reachable WITHOUT this would leave HOLD TO TALK
+        // permanently dead — a worse regression than the unreachable
+        // `speaking` status it was fixing.
+        //
+        // She rests where the delivered question already sat (`thinking`), so
+        // the user can answer the moment she stops talking. No effects: the
+        // caption is already correct and nothing needs stopping.
+        if (state.status !== 'speaking') return null;
+        state = {
+          ...state,
+          status: state.pendingQuestion === null ? 'idle' : 'thinking',
+          ttsFallbackActive: false,
+        };
         return state;
       }
 
@@ -335,6 +393,22 @@ export function createCandiceStateMachine(initial: CandiceState = INITIAL_STATE)
 
       case 'bridge:restored': {
         state = { ...state, bridgeUnavailable: false };
+        return state;
+      }
+
+      case 'bridge:cancelled': {
+        // The authenticated bridge has closed the exact answer slot (for
+        // example because the caller's wait window elapsed). Its controls
+        // must not remain a false live-answer surface.
+        lastEffects.push({ type: 'tts:stop', caption: null });
+        lastEffects.push({ type: 'mic:close', caption: null });
+        state = {
+          ...state,
+          pendingQuestion: null,
+          pendingOptions: null,
+          transcript: null,
+          status: 'idle',
+        };
         return state;
       }
 
@@ -412,12 +486,24 @@ function isCandiceErrorCode(value: unknown): value is CandiceErrorCode {
   return typeof value === 'string' && (Object.values(CANDICE_ERRORS) as string[]).includes(value);
 }
 
+/** Options compare by CONTENT: a re-parsed wire payload is a new array every
+ *  time, so reference equality would report a change on every transition. */
+function sameOptions(
+  a: readonly string[] | null,
+  b: readonly string[] | null,
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 function sameState(a: CandiceState, b: CandiceState): boolean {
   return (
     a.phase === b.phase &&
     a.status === b.status &&
     a.transcript === b.transcript &&
     a.pendingQuestion === b.pendingQuestion &&
+    sameOptions(a.pendingOptions, b.pendingOptions) &&
     a.voiceEnabled === b.voiceEnabled &&
     a.ttsFallbackActive === b.ttsFallbackActive &&
     a.bridgeUnavailable === b.bridgeUnavailable &&

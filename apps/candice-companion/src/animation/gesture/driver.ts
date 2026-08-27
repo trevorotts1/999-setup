@@ -27,7 +27,6 @@
 
 import type { CandiceStatus } from '../../state/status.ts';
 import {
-  CONTINUOUS_STATES,
   GESTURE_ACTIVE_CLASS,
   GESTURE_INACTIVE_CLASS,
   GESTURE_STAGE_ATTR,
@@ -43,6 +42,9 @@ import {
 import { createGestureRegistry } from './gestures.ts';
 import type { GestureLayer } from './gestures.ts';
 import {
+  blinkClosedUnits,
+  blinkIntervalMs,
+  blinkSpanMs,
   breathScale,
   glowIntensity,
   headDriftPx,
@@ -91,12 +93,17 @@ export function createGestureDriver(): GestureDriver {
   let currentStatus: CandiceStatus = FALLBACK_STATUS;
   let detached = true;
   let loops: LoopSet = { ...EMPTY_LOOPS };
+  let motionWatcher: MutationObserver | null = null;
 
   // Phase accumulators (per loop, from real elapsed deltas).
   let breathPhase = 0;
   let driftPhase = 0;
   let glowPhase = 0;
   let blinkElapsed = 0;
+  /** Which blink is next; drives the deterministic irregular gap. */
+  let blinkIndex = 0;
+  /** Elapsed-time mark at which the next blink starts closing. */
+  let nextBlinkAt = blinkIntervalMs(0);
 
   function queryStage(root: HTMLElement | null): HTMLElement | null {
     if (!root) return null;
@@ -145,20 +152,58 @@ export function createGestureDriver(): GestureDriver {
     }
   }
 
+  /**
+   * Statuses that hold a STILL pose. Everything else animates.
+   *
+   * This used to test the incoming status against `CONTINUOUS_STATES`, and
+   * that comparison could never match at rest. `CONTINUOUS_STATES` is this
+   * lane's own vocabulary — `blinking`, `idling`, `listening`, `thinking` —
+   * while `setStatus()` is handed a WS-08 `CandiceStatus`, whose values are
+   * `idle | listening | transcribing | confirming | thinking | speaking |
+   * compact | recovering | text-fallback` (`src/state/status.ts`). Only
+   * `listening` and `thinking` appear in both lists. `'idle'` never equals
+   * `'idling'`, so `startContinuous()` never ran in the state the companion
+   * actually sits in — `src/shell/gesture-stage.ts` calls `setStatus('idle')`
+   * at mount — and the character was a still image no matter how large
+   * `GESTURE_TIMING.idleBreathScaleMax` was set. `speaking` was missing for
+   * the same reason, so nothing animated while she talked either.
+   *
+   * Inverting the test is deliberate: a status this lane has not heard of
+   * should breathe, not freeze. The still list is short and each entry earns
+   * its place — a transient round trip, or a surface where the driver no
+   * longer owns the character.
+   */
+  const STILL_STATUSES: readonly CandiceStatus[] = [
+    // Sub-second round trips; motion here reads as a twitch, and the WS-13
+    // acceptance suite pins `confirming` as static.
+    'transcribing',
+    'confirming',
+    // The shell is repairing itself; the layer under us may be swapped.
+    'recovering',
+    // The character is detached entirely (spec 20 text mode).
+    'text-fallback',
+  ];
+
   function continuousStatus(status: CandiceStatus): boolean {
-    return (CONTINUOUS_STATES as readonly string[]).includes(status);
+    return !STILL_STATUSES.includes(status);
   }
 
   function startBlinkLoop(): void {
     loops.blink = scheduleLoop(16, (elapsed) => {
       if (!stage) return;
       blinkElapsed += elapsed;
-      const period = GESTURE_TIMING.blinkPeriodMs;
-      const closed = GESTURE_TIMING.blinkClosedMs;
-      const inCycle = blinkElapsed % period;
-      const closedUnits =
-        inCycle < closed ? 1 : (inCycle - closed) < closed ? 0.5 : 0;
-      const ratio = eyeOpenRatio(closedUnits);
+      // Time since the current blink was due. Negative means the eye is
+      // resting between blinks; past the span means this blink is over and
+      // the next gap is drawn.
+      const sinceDue = blinkElapsed - nextBlinkAt;
+      if (sinceDue >= blinkSpanMs()) {
+        blinkIndex += 1;
+        nextBlinkAt = blinkElapsed + blinkIntervalMs(blinkIndex);
+      }
+      const ratio =
+        sinceDue < 0 || sinceDue >= blinkSpanMs()
+          ? 1
+          : eyeOpenRatio(blinkClosedUnits(sinceDue));
       for (const eye of Array.from(
         stage.querySelectorAll<HTMLElement>('[data-candice-eye]'),
       )) {
@@ -218,6 +263,7 @@ export function createGestureDriver(): GestureDriver {
   function startContinuous(): void {
     if (!stage || detached) return;
     if (reducedMotion()) {
+      restToNeutral();
       applyGlow(currentStatus, REDUCED_MOTION_GLOW_CAP);
       return;
     }
@@ -225,6 +271,90 @@ export function createGestureDriver(): GestureDriver {
     startIdleLoop();
     startHeadLoop();
     startGlowLoop();
+  }
+
+  /**
+   * Return every motion target to its rest pose.
+   *
+   * Cancelling the loops alone is not enough: the LAST value each loop wrote
+   * stays on the element, so the character freezes wherever the breath
+   * happened to be — mid-inhale at `scale(1.02)`, or worse, mid-blink with a
+   * squashed eye. Reduced motion is supposed to leave the approved idle pose,
+   * not an arbitrary frame of an animation that is no longer running.
+   */
+  function restToNeutral(): void {
+    if (!stage) return;
+    for (const body of Array.from(
+      stage.querySelectorAll<HTMLElement>('[data-candice-body]'),
+    )) {
+      body.style.transform = 'scale(1)';
+    }
+    for (const head of Array.from(
+      stage.querySelectorAll<HTMLElement>('[data-candice-head]'),
+    )) {
+      head.style.transform = 'translateX(0px)';
+    }
+    for (const eye of Array.from(
+      stage.querySelectorAll<HTMLElement>('[data-candice-eye]'),
+    )) {
+      eye.style.transform = 'scaleY(1)';
+      eye.style.opacity = '1';
+    }
+  }
+
+  /**
+   * Re-evaluate motion because the reduced-motion CLASS changed, not because
+   * the status did.
+   *
+   * `startContinuous()` samples `reducedMotion()` once, at start. Nothing
+   * re-sampled it afterwards, so a preference that flipped while the loops
+   * were already running had no effect until the next status change — the
+   * animation-off toggle set the class and the character kept breathing, and
+   * the OS `prefers-reduced-motion` listener in the WS-14 lane had the same
+   * blind spot. This is the missing subscription.
+   */
+  function reapplyMotionPreference(): void {
+    if (!stage || detached) return;
+    if (!continuousStatus(currentStatus)) return;
+    const wantStill = reducedMotion();
+    const running = loops.blink !== null || loops.idle !== null
+      || loops.head !== null || loops.glow !== null;
+    if (wantStill === !running) return; // already in the requested state
+    stopContinuous();
+    startContinuous();
+  }
+
+  /**
+   * Watch `<html>` for the shared reduced-motion class. The WS-14 a11y lane
+   * remains the only WRITER of that class; this is a read-only subscription
+   * so the driver notices a change it did not cause. Absent MutationObserver
+   * (or a DOM at all) the driver simply keeps its start-time behavior.
+   */
+  function watchMotionPreference(): void {
+    unwatchMotionPreference();
+    try {
+      const root = stage?.ownerDocument?.documentElement;
+      const view = stage?.ownerDocument?.defaultView as
+        | { MutationObserver?: typeof MutationObserver }
+        | null
+        | undefined;
+      const Observer = view?.MutationObserver
+        ?? (typeof MutationObserver !== 'undefined' ? MutationObserver : null);
+      if (!root || !Observer) return;
+      motionWatcher = new Observer(() => reapplyMotionPreference());
+      motionWatcher.observe(root, { attributes: true, attributeFilter: ['class'] });
+    } catch {
+      motionWatcher = null; // never throw from attach (spec 20)
+    }
+  }
+
+  function unwatchMotionPreference(): void {
+    try {
+      motionWatcher?.disconnect();
+    } catch {
+      // best-effort teardown
+    }
+    motionWatcher = null;
   }
 
   function intensityFor(status: CandiceStatus): number {
@@ -269,11 +399,13 @@ export function createGestureDriver(): GestureDriver {
       glowStage = queryGlow(root);
       detached = stage === null;
       if (!stage) return;
+      watchMotionPreference();
       applyLayerSwap(currentStatus);
       if (continuousStatus(currentStatus)) startContinuous();
     },
     detach(): void {
       stopAllLoops();
+      unwatchMotionPreference();
       stage = null;
       glowStage = null;
       detached = true;

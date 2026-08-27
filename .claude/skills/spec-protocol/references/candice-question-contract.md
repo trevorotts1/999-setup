@@ -18,7 +18,7 @@ doctrine stays readable where it already lives.
 | answer-event schema | `packages/candice-protocol/schemas/answer-event.schema.json` | WS-01 |
 | status-event schema | `packages/candice-protocol/schemas/status-event.schema.json` | WS-01 |
 | preferences schema | `packages/candice-protocol/schemas/preferences.schema.json` | WS-01 |
-| stable key registry | `packages/candice-protocol/schemas/question-keys.json` (+ `question-keys.schema.json`) | WS-01 |
+| governed-question registry | `packages/candice-protocol/schemas/question-keys.json` (+ `question-registry.js`) | WS-01 |
 | schema index | `packages/candice-protocol/schemas/schema-index.json` | WS-01 |
 | contract test suite | `tests/contract/**` | WS-41 |
 | MCP tool | `candice.ask_user` — `plugins/candice-integration/mcp/ask-user/server.js` | WS-04 |
@@ -110,8 +110,8 @@ Raw audio is never part of the response contract.
 
 ## 4. Stable question keys (registry)
 
-`packages/candice-protocol/schemas/question-keys.json` is the machine-
-enumerable registry — the mechanical source for stable keys, display/spoken
+`packages/candice-protocol/schemas/question-keys.json` is the immutable,
+versioned authority registry — the mechanical source for stable keys, display/spoken
 wording, counted vs uncounted, conditions, read-aloud safety, validation,
 never-re-ask, and resume behavior (spec 14). Seeded key: `BUILD_TARGET`
 (spec-protocol). The registry is extended by the owning skill lane only —
@@ -123,9 +123,15 @@ Rules:
 - A key is never re-sent to the same session once answered (never-re-ask).
 - A key's `counted` flag is fixed for the life of the contract.
 - Keys are upper-snake (`^[A-Z][A-Z0-9_-]*$`).
-- Key additions are version-safe: consumers must treat unknown keys as
-  valid-but-unseen (never crash), while the contract suite (WS-41) enforces
-  byte-stability of the registry.
+- Unknown and retired keys are refused before bridge delivery. Producers must
+  call `question-registry.js` to construct canonical events; text, options,
+  validation, count, privacy, retry, resume, and declarative conditions cannot
+  be supplied ad hoc. Conditions are data-only expression trees over named
+  facts; executable JavaScript and prose-only conditions are invalid.
+- A secret entry requires `readAloud:false`; a personal entry requires an
+  explicit opt-in. Template context is allow-listed and never carries raw
+  secrets. Pending recovery allows only the same key once; answered keys are
+  never re-asked.
 
 ## 5. Status events (progress)
 

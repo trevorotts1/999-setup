@@ -647,18 +647,27 @@ is generic across `/spec-protocol`, `/kaizen`, `/eli5`, `/bro`; do not rename
 those commands.
 
 **Activation:** the plugin wakes Candice on the slash command before preflight
-completes (spec 13.1) and shows the setup-check message
-("Hi, I'm Candice. Give me just a moment..."). She is a progress surface for
-the preflight — she never decides whether setup passes; you still run and
-report the checks yourself.
+completes (spec 13.1) and immediately shows her welcome: "Hi, I'm Candice.
+I'm here to help you build the app, the software, or the thing you've always
+dreamed about. Think of me as your fairy godmother: you make a wish, and I
+help make it real." This welcome is a presentation-only progress surface for
+the preflight — it is not a question, does not alter question order or counts,
+and she never decides whether setup passes; you still run and report the
+checks yourself.
 
-**Companion availability check (environment-driven, no self-probe):**
+**Companion availability check (environment-driven, no filesystem self-probe):**
 1. Plugin registered → hooks fired → Candice wakes. Absent → she never wakes;
    every question is asked normally in Claude.
-2. `CANDICE_COMPANION_READY=1` in the `candice` MCP env
-   (`plugins/candice-integration/.mcp.json`) = companion provisioned; the
+2. The installed plugin's `candice` MCP server receives
+   `CANDICE_COMPANION_READY=1` only after the companion app is provisioned; the
    `ask_user` tool fails soft otherwise. The flag is flipped by the
    bootstrap/updater lanes, never by this skill.
+3. Never run Bash, `grep`, `find`, or any guessed `~/.claude`/
+   `~/.claude-nine` path check to decide whether Candice is installed. Plugin
+   cache locations are implementation details and can differ from the active
+   configuration. Use the loaded Candice MCP tool surface and its fail-soft
+   result. Never report "Candice is not installed" solely because a guessed
+   filesystem path or readiness file is absent.
 
 **Structured bridge (governed questions, spec 13.2):** deliver each governed
 question as a question event through `candice.ask_user`; the tool blocks until

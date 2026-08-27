@@ -42,6 +42,40 @@ The fp16 model is the canonical pin for both macOS and Windows. The int8 model i
 the verified fallback for very low-end CPUs (Windows x64 non-AVX2 boxes) and is
 kept version-locked to the same release.
 
+### Reproducible Python environment (FIX-023)
+
+The worker's Python dependencies are pinned with per-wheel sha256 hashes in
+`scripts/requirements.lock`, generated from `scripts/requirements.txt` by
+`uv pip compile`. Install is hash-verified and network-free after wheel
+download:
+
+```sh
+# macOS (from src-tauri/tts/)
+python3.12 -m venv .venv
+.venv/bin/pip install --require-hashes -r scripts/requirements.lock
+```
+
+```powershell
+# Windows (from src-tauri/tts/)
+py -3.12 -m venv .venv
+.venv\Scripts\pip install --require-hashes -r scripts\requirements.lock
+```
+
+`pip install --require-hashes` refuses any wheel whose sha256 is absent from
+the lockfile or mismatches — a moved or tampered package fails the install
+instead of silently changing the runtime.
+
+Regenerate the lockfile only from the sibling pins file (uv >= 0.11):
+
+```sh
+uv pip compile scripts/requirements.txt --universal --generate-hashes \
+    --python-version 3.12 -o scripts/requirements.lock
+```
+
+The regeneration must be byte-identical to the committed file (uv pip compile
+is deterministic for a fixed index state); any diff means the resolution moved
+and the pins must be re-verified against `NOTICE.md` before commit.
+
 ### Runtime notes (measured on Apple Silicon, Python 3.12, CPU provider)
 
 - fp16: ~0.17 RTF (4.65 s audio in 0.80 s), ~787 MB RSS peak (includes model load)

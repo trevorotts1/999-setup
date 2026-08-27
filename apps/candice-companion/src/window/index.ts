@@ -35,7 +35,26 @@ export {
 } from './behavior.ts';
 
 export { createDragSurface } from './dragging.ts';
+export {
+  CHARACTER_SELECTOR,
+  CONTROL_SELECTOR,
+  REGION_PADDING,
+  collectVisibleSurfaces,
+  measureVisibleRegions,
+  paintedRect,
+  paintsPixels,
+  regionsDiffer,
+} from './visible-regions.ts';
+export {
+  GET_POINTER_POLICY_COMMAND,
+  POINTER_POLICY_EVENT,
+  SET_INPUT_REGIONS_COMMAND,
+  createInputRegionController,
+  createNativeInputRegionAdapter,
+  defaultRegionInvoke,
+} from './native-input-regions.ts';
 export { applyWindowStyles, WINDOW_STYLE_TEXT } from './style.ts';
+export { createWindowInputPolicy } from './input-policy.ts';
 
 export type {
   WindowAppearanceConfig,
@@ -43,3 +62,16 @@ export type {
   WindowLike,
 } from './behavior.ts';
 export type { DragSurfaceController, DraggableWindowLike } from './dragging.ts';
+export type { VisibleSurface } from './visible-regions.ts';
+export type {
+  InputRegionController,
+  InputRegionControllerOptions,
+  RegionInvoke,
+} from './native-input-regions.ts';
+export type {
+  CursorEventsWindowLike,
+  InputPolicyMode,
+  InputRegion,
+  PartialInputRegionAdapter,
+  WindowInputPolicy,
+} from './input-policy.ts';

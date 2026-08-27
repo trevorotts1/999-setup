@@ -14,8 +14,9 @@ rewrites question order or skill rules.
 | Path | Responsibility | Owner (manifest 9.2) |
 |---|---|---|
 | `.claude-plugin/plugin.json` | Plugin manifest (name `candice-integration`, version 1.0.0) | WS-02 |
-| `hooks/hooks.json` | Wake-up hooks for `/spec-protocol`, `/kaizen`, `/eli5`, `/bro` + `SessionStart` | WS-02 |
-| `bin/wake-candice.sh` | Non-blocking wake handler; fails soft when the companion is absent | WS-02 |
+| `hooks/hooks.json` | Wake-up hooks for `/spec-protocol`, `/kaizen`, `/eli5`, and `/bro` only — no ordinary-session wake | WS-02 |
+| `bin/wake-candice.mjs` | Cross-platform non-blocking visual-wake dispatcher; fails soft when the companion is absent | WS-02 |
+| `bin/wake-candice.sh` | Legacy POSIX wrapper retained for older package calls; current registration uses Node directly | WS-02 |
 | `session/**` | Session lifecycle + binding bridge; session ID is the routing authority | WS-03 |
 | `mcp/**` | Structured `ask_user` MCP path (created by WS-04) | WS-04 |
 | `fallback/**` | Same-session terminal fallback adapter — "Answer in Claude instead", no double-count | WS-05 |
@@ -23,8 +24,10 @@ rewrites question order or skill rules.
 
 ## How the pieces fit
 
-1. A supported slash command fires the wake-up hook (WS-02); the companion
-   app is launched/raised and bound to the current Claude session (WS-03).
+1. A supported slash command fires the wake-up hook (WS-02); it requests a
+   visual wake without inventing a session or terminal binding. The current
+   runtime correctly reports that authenticated binding/bridge capabilities
+   are unavailable until their owning transport is implemented.
 2. Structured questions travel over the MCP contract `candice.ask_user`
    (WS-04), and answers return to the same MCP tool call in the same session.
 3. If the companion/MCP path is unavailable, the question falls back to the

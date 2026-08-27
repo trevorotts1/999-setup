@@ -58,3 +58,12 @@ export const COMPACT_STATUS_ATTR = 'data-candice-compact-status';
 
 /** One interactive element type per input surface. */
 export const COMPACT_EXPAND_BUTTON_ROLE = 'button';
+
+/**
+ * Accessible name of the compact message input.
+ *
+ * Deliberately not the placeholder. The packaged accessibility suite finds
+ * this field by label; when the label WAS the placeholder, rewording the
+ * placeholder for users broke a ship gate with no test naming the cause.
+ */
+export const COMPACT_INPUT_LABEL = 'Compact message input';

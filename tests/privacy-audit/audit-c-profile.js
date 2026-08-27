@@ -54,15 +54,37 @@ const c1 = {
   const schema = readRel('apps/candice-companion/src/prefs/schema.ts') || ''
   const m = schema.match(/PREFS_FIELD_NAMES = \[([^\]]*)\]/)
   const fields = m ? m[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean) : []
-  const allowed = new Set([
-    'schemaVersion', 'preferredName', 'voiceOutputEnabled', 'volume', 'speechRate',
-    'lastAnswerMethod', 'textScale', 'reducedMotion', 'companionPosition',
-    'lastUsedSkill', 'nameAskedAt',
-  ])
+  // N3 fix (fan-in): the v2 literal allowlist went stale when the WS-34
+  // rename landed. The single sources of truth are (a) the protocol
+  // contract (packages/candice-protocol/schemas/preferences.schema.json)
+  // and (b) the app's own v3 migration proposal, which carries the v3
+  // `nameAsked` structure ahead of the next protocol bump. The union is
+  // the allowed set; every PREFS_FIELD_NAMES entry must come from it.
+  let protoFields = []
+  let proposalFields = []
+  try {
+    const proto = JSON.parse(readRel('packages/candice-protocol/schemas/preferences.schema.json') || '{}')
+    protoFields = Object.keys(proto.properties || {})
+  } catch { /* parse failure handled by the set-equality check below */ }
+  try {
+    const prop = JSON.parse(readRel('apps/candice-companion/src/preferences/migrations/schemas/preferences-v3.proposal.json') || '{}')
+    const props = prop.properties || prop
+    proposalFields = Object.keys(props || {})
+  } catch { /* optional input — absence just shrinks the allowed set */ }
+  const allowed = new Set([...protoFields, ...proposalFields])
   const unknown = fields.filter((f) => !allowed.has(f))
-  c1.ok = fields.length > 0 && unknown.length === 0
-  c1.evidence = [{ file: 'apps/candice-companion/src/prefs/schema.ts', line: 0, text: 'allowlisted fields (' + fields.length + '): ' + fields.join(', ') }]
-  if (unknown.length) c1.notes = 'non-spec-9 fields present: ' + unknown.join(', ')
+  c1.ok = fields.length > 0 && protoFields.length > 0 && unknown.length === 0
+  c1.evidence = [
+    { file: 'packages/candice-protocol/schemas/preferences.schema.json', line: 0, text: 'contract fields (' + protoFields.length + '): ' + protoFields.sort().join(', ') },
+    { file: 'apps/candice-companion/src/preferences/migrations/schemas/preferences-v3.proposal.json', line: 0, text: 'v3 proposal fields (' + proposalFields.length + ')' },
+    { file: 'apps/candice-companion/src/prefs/schema.ts', line: 0, text: 'PREFS_FIELD_NAMES (' + fields.length + '): ' + fields.join(', ') },
+  ]
+  if (!c1.ok) {
+    const parts = []
+    if (unknown.length) parts.push('fields not in the protocol contract or v3 proposal: ' + unknown.join(', '))
+    if (!protoFields.length) parts.push('preferences.schema.json unreadable or empty')
+    c1.notes = parts.join('; ')
+  }
 }
 results.push(c1)
 

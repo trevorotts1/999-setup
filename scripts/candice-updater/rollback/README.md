@@ -23,8 +23,8 @@ Implements the spec 21 install contract legs for this glob:
 ## Usage
 
 ```bash
-# stage a verified payload
-node download.mjs --id candice-companion --version 0.2.0 --platform darwin --out ./staged/app
+# stage a verified non-application payload
+node download.mjs --id stt-assets --version whisper-1.9.2 --platform darwin --out ./staged/ggml-tiny.en-q5_1.bin
 
 # atomic install (backs up existing tree first)
 node atomic-install.mjs install --from ./staged/app --to ~/.candice/app

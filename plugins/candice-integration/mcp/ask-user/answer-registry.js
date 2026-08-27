@@ -27,6 +27,7 @@
  */
 
 const { validateAnswerEvent } = require('./validate')
+const { deriveOperationId, isValidOperationId } = require('../../session/lifecycle-protocol')
 
 const MAX_WAIT_MS = 10 * 60 * 1000 // one governed question, one sitting; owner may abort
 
@@ -49,14 +50,20 @@ class AnswerSlotRegistry {
   /**
    * open — declare the pending answer slot for a delivered question.
    * Refuses a second open for the same (sessionId, questionKey) so a
-   * delivered question has exactly one answer surface (spec 14).
+   * delivered question has exactly one answer surface (spec 14). The slot
+   * carries the operation identity `(sessionId, questionKey, operationId)`
+   * with a bounded `at` timestamp (FIX-013 S1).
    */
-  open({ sessionId, questionKey }) {
+  open({ sessionId, questionKey, operationId }) {
     if (!validSessionId(sessionId)) {
       return { ok: false, code: 'invalid-session-id', error: 'invalid sessionId' }
     }
     if (typeof questionKey !== 'string' || !/^[A-Z][A-Z0-9_-]*$/.test(questionKey)) {
       return { ok: false, code: 'invalid-question-key', error: 'questionKey must match ^[A-Z][A-Z0-9_-]*$' }
+    }
+    const resolvedOperationId = operationId || deriveOperationId({ sessionId, questionKey })
+    if (!isValidOperationId(resolvedOperationId)) {
+      return { ok: false, code: 'invalid-operation-id', error: 'operationId must be a bounded opaque id' }
     }
     const key = this._key(sessionId, questionKey)
     if (this.slots.has(key)) {
@@ -66,7 +73,7 @@ class AnswerSlotRegistry {
         error: `question ${questionKey} already has an open answer slot in session ${sessionId}`,
       }
     }
-    this.slots.set(key, { status: 'waiting', at: this.clock().toISOString(), answer: null })
+    this.slots.set(key, { status: 'waiting', at: this.clock().toISOString(), answer: null, operationId: resolvedOperationId })
     return { ok: true }
   }
 
@@ -74,9 +81,11 @@ class AnswerSlotRegistry {
    * put — the user's approved answer for the pending question arrives from the
    * companion surface. Validated against answer-event.schema.json before
    * anything is recorded. A put for a session different from the one that
-   * opened the slot is refused (spec 17 session mismatch, never re-routed).
+   * opened the slot is refused (spec 17 session mismatch, never re-routed);
+   * the operation identity is enforced against the slot (replay of a
+   * different operation fails closed).
    */
-  put({ sessionId, questionKey, answer }) {
+  put({ sessionId, questionKey, answer, operationId }) {
     const key = this._key(sessionId, questionKey)
     const slot = this.slots.get(key)
     if (!slot) {
@@ -101,9 +110,17 @@ class AnswerSlotRegistry {
         error: `answer questionKey ${answer.questionKey} does not match ${questionKey}`,
       }
     }
+    if (operationId !== undefined && operationId !== null && operationId !== slot.operationId) {
+      return {
+        ok: false,
+        code: 'operation-id-mismatch',
+        error: 'answer operation id does not match the open slot operation id',
+      }
+    }
     slot.status = 'answered'
     slot.answer = check.answer
     slot.at = this.clock().toISOString()
+    slot.answeredAt = slot.at
     this._armTimeout(key)
     return { ok: true }
   }

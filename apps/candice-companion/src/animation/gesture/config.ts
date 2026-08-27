@@ -70,16 +70,90 @@ export type ContinuousState = (typeof CONTINUOUS_STATES)[number];
  * (spec 24: negligible idle resource use; timers cleared on detach).
  */
 export const GESTURE_TIMING = {
-  /** Full blink period. */
+  /**
+   * Nominal blink period. Retained as the reference period for
+   * `staggerPhase`, which offsets when a loop STARTS. It is no longer the
+   * gap between blinks — see `blinkIntervalMinMs`/`blinkIntervalMaxMs`.
+   */
   blinkPeriodMs: 4_000,
   /** Closed-eye hold inside a blink. */
   blinkClosedMs: 120,
+  /**
+   * Eyelid close and open ramps.
+   *
+   * These existed only implicitly before, and wrongly: the driver fed
+   * `eyeOpenRatio` three quantized values `{1, 0.5, 0}`, and because
+   * `cos(0.5 * PI)` is 0, BOTH `1` and `0.5` rendered fully closed. The
+   * result was a 240ms hard cut with no ramp in either direction — a
+   * flicker, not a blink. The eyelid now sweeps continuously across these
+   * two ramps, so the cosine shoulder is actually exercised.
+   *
+   * Deliberately ASYMMETRIC. A real eyelid snaps down and drifts back up,
+   * and the reopen is the half a viewer actually watches. It also decides
+   * smoothness: the driver ticks at 16ms, so a 60ms reopen is sampled only
+   * ~4 times and the cosine dumps 19.4pt of a 47.8pt travel into a single
+   * frame — perceptible, but as a stutter. At 140ms it is sampled ~9 times
+   * and the worst frame moves 8.5pt. Total blink 320ms, inside the real
+   * human 300-400ms range.
+   *
+   * Amplitude is emphatically NOT the risk here, unlike the breath: the eye
+   * band renders ~47.8pt (96 device px) tall, so a full close travels ~34x
+   * the 2.8px that made the breath invisible.
+   */
+  blinkCloseMs: 60,
+  blinkOpenMs: 140,
+  /**
+   * Gap between blinks, sampled per blink.
+   *
+   * A fixed period made her blink on an exact 4.000s metronome, which reads
+   * as mechanical — real blinking is irregular. Each gap is drawn
+   * deterministically from this range (see `blinkIntervalMs`), so the
+   * rhythm is lifelike but still exactly reproducible in a test.
+   */
+  blinkIntervalMinMs: 3_000,
+  blinkIntervalMaxMs: 6_000,
   /** Idle breathing period (scale). */
   idleBreathPeriodMs: 3_200,
-  /** Maximum idle scale delta either side of 1. */
-  idleBreathScaleMax: 0.008,
-  /** Maximum head-motion delta (px) either side of rest. */
-  headDriftPxMax: 2,
+  /**
+   * Maximum idle scale delta either side of 1.
+   *
+   * This was 0.008. On the ~500px-tall character that is a 4px total travel
+   * over 3.2s — measurable in a frame diff and invisible to a person, which
+   * is why the operator read her as a still image. The layers scale from
+   * `transform-origin: 50% 100%` (the feet), so the delta lands at the head
+   * where it reads as breathing. 0.025 gives roughly 12px of head travel:
+   * clearly alive, and still well under the 0.03 the old CSS breathe used,
+   * so it cannot read as a bounce.
+   */
+  idleBreathScaleMax: 0.025,
+  /**
+   * Maximum head-motion delta (px) either side of rest.
+   *
+   * SUSPECTED BELOW THE PERCEPTIBILITY FLOOR — deliberately NOT changed
+   * yet, because it has never been seen on screen.
+   *
+   * Calibration: the breath was `0.008`, which on a ~350px-tall render is
+   * ~2.8px of peak travel, and that was confirmed invisible — it is why the
+   * operator read her as a still image. 2px of `translateX` sits at or below
+   * that same threshold, so this is likely wrong by the standard already
+   * established for the breath. But `[data-candice-head]` has never been
+   * created by any mount path, so this value has never actually rendered
+   * and the claim is unproven. Check it visually once the head layer exists,
+   * then set it deliberately rather than guessing a second time.
+   *
+   * RESOLVED by arithmetic against a MEASURED reference, not by eye. Idle
+   * breath moves the head 56 device px (28 pt) peak-to-peak, and that was
+   * captured on video and reads clearly. `headDriftPxMax: 2` is 4 pt
+   * peak-to-peak -- 7x smaller than a motion now proven visible, on a
+   * HORIZONTAL axis, with no supporting landmark movement, while that
+   * 7x-larger vertical motion runs simultaneously on the same element. It
+   * cannot register. Raised to 4 (8 pt peak-to-peak, roughly a third of
+   * breath): a living sway that reads without competing with the breathing.
+   * Note the two are not comparable by capture -- breath is `scale`
+   * (vertical), drift is `translateX` (horizontal), so the breath travel
+   * numbers say nothing about drift either way.
+   */
+  headDriftPxMax: 4,
   /** Glow pulse period for active statuses. */
   glowPulsePeriodMs: 2_200,
 } as const;

@@ -11,9 +11,13 @@
 #                 (or APPLE_DEVELOPER_IDENTITY), hardened runtime on,
 #                 entitlements applied. For notarization run
 #                 scripts/package-macos/notarize.sh afterwards.
-#   mode=adhoc    codesign --force --deep -s - (local smoke only; NOT a
-#                 distribution artifact — Gatekeeper will reject it).
-#   mode=unsigned no signing pass at all.
+#   mode=adhoc    RELEASE posture (QFIX-adhoc 2026-08-23, operator decision):
+#                 codesign --force --options runtime --entitlements <plist>
+#                 -s - (ad-hoc identity). Hardened runtime + entitlement
+#                 baseline applied. Gatekeeper cannot accept an ad-hoc
+#                 signature so spctl is NOT a gate; clients bypass it once at
+#                 first launch. codesign --verify is the fail-closed gate.
+#   mode=unsigned no signing pass at all (local test artifact only).
 #
 # Exit codes:
 #   0  bundle built (+ signed when a mode was applied) and spctl --assess
@@ -76,6 +80,48 @@ if [[ ! -x "$BUNDLE_ROOT/$APP_NAME.app/Contents/MacOS/candice-companion" ]]; the
   echo "build-macos-bundle: Tauri bundle incomplete at $BUNDLE_ROOT/$APP_NAME.app (binary missing/not executable)" >&2
   echo "  run first: npm run tauri build" >&2
   exit 1
+fi
+
+# --- refuse to package a STALE tree --------------------------------------
+# This script does not build. It packages and signs whatever is already on
+# disk, and it exited 0 when that tree was older than the source -- so a
+# "fix" was once packaged, signed, installed and reported as shipped while
+# containing none of the fixes. It was caught only because the resulting
+# SHA was byte-identical to the build it was supposed to replace. Nothing
+# in the script noticed, because from its point of view everything worked.
+#
+# The guard is a timestamp comparison, not a hash: the question is not
+# "does the bundle differ" but "was it built AFTER the sources it claims to
+# contain". Set CANDICE_ALLOW_STALE_BUNDLE=1 to package deliberately (a
+# re-sign of an unchanged tree is a legitimate thing to want); it prints
+# what it is overriding, so the choice cannot be silent.
+BUILT_APP="$BUNDLE_ROOT/$APP_NAME.app"
+BUILT_BINARY="$BUILT_APP/Contents/MacOS/candice-companion"
+NEWER_SOURCE=""
+while IFS= read -r candidate; do
+  if [[ -n "$candidate" && "$candidate" -nt "$BUILT_BINARY" ]]; then
+    NEWER_SOURCE="$candidate"
+    break
+  fi
+done < <(find src src-tauri/src src-tauri/speech dist \
+  -type f \( -name '*.ts' -o -name '*.rs' -o -name '*.js' -o -name '*.css' -o -name '*.html' \) \
+  -newer "$BUILT_BINARY" 2>/dev/null)
+
+if [[ -n "$NEWER_SOURCE" ]]; then
+  if [[ "${CANDICE_ALLOW_STALE_BUNDLE:-0}" == "1" ]]; then
+    echo "build-macos-bundle: WARNING - packaging a stale bundle on purpose" >&2
+    echo "  newer than the built binary: $NEWER_SOURCE" >&2
+  else
+    echo "build-macos-bundle: REFUSING to package a stale bundle." >&2
+    echo "  newer than the built binary: $NEWER_SOURCE" >&2
+    echo "  built binary: $BUILT_BINARY" >&2
+    echo "" >&2
+    echo "  This script packages and signs; it does not build. Packaging now" >&2
+    echo "  would ship an app that does not contain the change you just made." >&2
+    echo "  run first: npm run tauri:build" >&2
+    echo "  (or set CANDICE_ALLOW_STALE_BUNDLE=1 to re-sign the existing tree)" >&2
+    exit 1
+  fi
 fi
 
 rm -rf "$APP"
@@ -154,16 +200,41 @@ case "$MODE" in
     ;;
 
   adhoc)
-    # Local smoke only. Deliberately NOT Gatekeeper-accepted; never ship.
-    codesign --force --deep -s - "$APP" || {
+    # QFIX-adhoc 2026-08-23: ad-hoc is now the RELEASE posture (operator
+    # decision — no Developer ID cert, no notarization; clients bypass
+    # Gatekeeper once at first launch). Signed with hardened runtime and the
+    # entitlement baseline so the artifact keeps the same runtime posture a
+    # Developer ID build would have. spctl is deliberately NOT required here:
+    # Gatekeeper can never accept an ad-hoc signature. The gate that remains
+    # fail-closed is codesign --verify.
+    ADHOC_ARGS=(--force --options runtime)
+    [[ -f "$ENTITLEMENTS" ]] && ADHOC_ARGS+=(--entitlements "$ENTITLEMENTS")
+
+    # Binary first, nested helpers (deepest-first safety net), then the outer
+    # bundle — mirrors the prod pass so the layout stays identical.
+    codesign "${ADHOC_ARGS[@]}" -s - "$BIN" || {
+      echo "build-macos-bundle: ad-hoc codesign failed on $BIN" >&2
+      exit 1
+    }
+    find "$APP/Contents" -type f -perm -111 -not -path "*/MacOS/*" -print0 \
+      | while IFS= read -r -d '' f; do
+          codesign "${ADHOC_ARGS[@]}" -s - "$f" || {
+            echo "build-macos-bundle: ad-hoc codesign failed on nested executable $f" >&2
+            exit 1
+          }
+        done
+    codesign "${ADHOC_ARGS[@]}" -s - "$APP" || {
       echo "build-macos-bundle: ad-hoc codesign failed on $APP" >&2
       exit 1
     }
-    codesign --verify --deep --strict "$APP" || {
-      echo "build-macos-bundle: ad-hoc verify failed on $APP" >&2
+
+    # THE gate under adhoc posture: signature must verify. Tampered or broken
+    # artifacts still exit nonzero here.
+    codesign --verify --deep --strict --verbose=2 "$APP" || {
+      echo "build-macos-bundle: ad-hoc verify failed on $APP (tampered or broken signature)" >&2
       exit 1
     }
-    echo "ADHOC-SIGNED $APP (local smoke only — NOT Gatekeeper-accepted, NOT a distribution artifact)"
+    echo "ADHOC-SIGNED $APP (release posture: ad-hoc per operator decision 2026-08-23 — valid ad-hoc signature required, Gatekeeper bypassed once by clients at first launch)"
     ;;
 
   unsigned)

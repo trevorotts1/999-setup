@@ -27,7 +27,19 @@ html.candice-window-ready body {
   background: transparent !important;
 }
 html.candice-window-ready body {
-  color-scheme: light dark;
+  /* Was 'light dark', which silently undid the fix recorded in
+     styles.css:18 -- "Declaring light dark let a light-mode OS render the
+     form controls, caret and scrollbars light, against dark chips, on the
+     one surface that has no light variant."
+
+     styles.css sets color-scheme on :root; this sets it DIRECTLY on body,
+     and a direct declaration beats an inherited one. And the
+     candice-window-ready class is only ever added by readyWindowAppearance
+     in the real native window -- never in the dev browser. So the fix held
+     everywhere it was tested and was undone everywhere it shipped. On a
+     light-mode Mac the animation checkbox draws as a white box on a dark
+     chip. The palette here has no light variant to switch to. */
+  color-scheme: dark;
 }
 `;
 

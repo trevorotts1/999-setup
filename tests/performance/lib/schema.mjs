@@ -63,6 +63,13 @@ export function createReport(platforms) {
       ok: null, // boolean when finalized
       failures: [],
       skippedReasons: [],
+      // FIX-021: required tiers that cannot run on this host class are
+      // BLOCKED (recorded with a reason), never skipped. The release gate
+      // refuses evidence that does not carry the expected BLOCKED rows, so
+      // a blocked required check can never look like a verified one.
+      blockedReasons: [],
     },
+    // FIX-021: --require-bundle records the measured release artifact.
+    bundle: null, // { path, sha256 } | null
   };
 }

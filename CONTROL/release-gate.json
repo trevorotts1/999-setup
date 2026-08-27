@@ -1,0 +1,32 @@
+{
+  "schema": "candice/release-gate@1",
+  "lifecycle": "REPAIR_IN_PROGRESS",
+  "audit": {
+    "date": "2026-08-22",
+    "baselineCommit": "414e46f031ecf65d10745b4c12e9f3f10438ad43",
+    "reason": "Prior release-ready claim was unsupported; publication is blocked pending the 24-item repair plan and independent QC."
+  },
+  "openFixIds": [
+    "FIX-001", "FIX-002", "FIX-003", "FIX-004", "FIX-005", "FIX-006",
+    "FIX-007", "FIX-008", "FIX-009", "FIX-010", "FIX-011", "FIX-012",
+    "FIX-013", "FIX-014", "FIX-015", "FIX-016", "FIX-017", "FIX-018",
+    "FIX-019", "FIX-020", "FIX-021", "FIX-022", "FIX-023", "FIX-024"
+  ],
+  "requiredGates": {
+    "independentQc": "PENDING",
+    "packagedEndToEnd": "PENDING",
+    "privacy": "PENDING",
+    "visualParity": "PENDING",
+    "cleanMachine": "PENDING",
+    "macosSigningAndNotarization": "PENDING",
+    "windowsSigningAndInteractiveSmoke": "PENDING",
+    "ciRequiredChecks": "PENDING",
+    "supplyChain": "PENDING"
+  },
+  "checklist": {
+    "requiredUnchecked": 24,
+    "authority": "Operator Downloads/CANDACE FIXES/CHECKLIST.md"
+  },
+  "candidate": null,
+  "artifacts": []
+}

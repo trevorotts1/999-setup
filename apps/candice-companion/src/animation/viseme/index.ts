@@ -13,6 +13,9 @@ export { VisemeScheduler, type SchedulerOptions } from "./scheduler.ts";
 export {
   phonemeToViseme,
   timingToVisemeEvent,
+  isCarryPhoneme,
+  visemeEventsFromTimings,
+  visemeTableCoverage,
   shouldBlend,
   idleViseme,
 } from "./mapping.ts";
@@ -31,3 +34,31 @@ export {
   assertRegistrationMeasured,
   recordRegistrationMeasured,
 } from "./registration.ts";
+export {
+  LAYER_REGISTRATION,
+  VISEME_LAYER_FILES,
+  assertRectUnchanged,
+  eyeLayerFile,
+  eyeRect,
+  mouthRect,
+} from "./layers.ts";
+export type {
+  EyeState,
+  LayerRect,
+  LayerRegistration,
+  MouthState,
+} from "./layers.ts";
+export {
+  CANONICAL_SOURCE_SHA256,
+  EYE_STATES,
+  assertValidLayerRegistry,
+  loadLayerRegistry,
+  resolveLayerState,
+  stateForBlink,
+  stateForViseme,
+  validateLayerRegistry,
+} from "./registry.ts";
+export type {
+  LayerAnchorRegistry,
+  LayerAnchorState,
+} from "./registry.ts";

@@ -1,0 +1,731 @@
+{
+  "reportSchema": "fix-019/1",
+  "generatedAt": "2026-08-23T12:09:35.540Z",
+  "repo": "999-setup-audit",
+  "commitSha": "recorded-at-run-time",
+  "packagedBinarySha": null,
+  "runId": "suite-1787486975540",
+  "launcher": "node tests/e2e-acceptance/suite.js",
+  "verdict": "FAIL",
+  "legs": [
+    {
+      "id": "contract-schema",
+      "tier": "UNIT",
+      "name": "unit suite: contract/schema",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "contract-keys",
+      "tier": "UNIT",
+      "name": "unit suite: contract/keys",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "contract-registry-authority",
+      "tier": "UNIT",
+      "name": "unit suite: contract/registry-authority",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "contract-interview-inventory",
+      "tier": "UNIT",
+      "name": "unit suite: contract/interview-inventory",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "contract-exactly-one",
+      "tier": "UNIT",
+      "name": "unit suite: contract/exactly-one",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "contract-secret",
+      "tier": "UNIT",
+      "name": "unit suite: contract/secret",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "same-session-no-second-ai",
+      "tier": "UNIT",
+      "name": "unit suite: same-session/no-second-ai",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "same-session-provider-identity",
+      "tier": "UNIT",
+      "name": "unit suite: same-session/provider-identity",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "test file failed or exited nonzero"
+    },
+    {
+      "id": "same-session-same-session",
+      "tier": "UNIT",
+      "name": "unit suite: same-session/same-session",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "same-session-session-authority",
+      "tier": "UNIT",
+      "name": "unit suite: same-session/session-authority",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-app-crash",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/app-crash",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-app-missing",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/app-missing",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-claude-busy",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/claude-busy",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-corrupt-checksum",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/corrupt-checksum",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-mcp-unavailable",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/mcp-unavailable",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-mic-denied",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/mic-denied",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-no-device",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/no-device",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-plugin-missing",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/plugin-missing",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-speech-model-missing",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/speech-model-missing",
+      "verdict": "FAIL",
+      "required": true,
+      "skippableReason": null,
+      "reason": "test file failed or exited nonzero"
+    },
+    {
+      "id": "failure-matrix-temp-unwritable",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/temp-unwritable",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "failure-matrix-wrong-session",
+      "tier": "UNIT",
+      "name": "unit suite: failure-matrix/wrong-session",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "tier-self-test",
+      "tier": "UNIT",
+      "name": "unit: tier framework fail-closed self-test",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy1-first-run-name-ask",
+      "tier": "INTEGRATION",
+      "name": "integration: happy1-first-run-name-ask",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy2-answer-surfaces",
+      "tier": "INTEGRATION",
+      "name": "integration: happy2-answer-surfaces",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy3-captions-voice-toggle",
+      "tier": "INTEGRATION",
+      "name": "integration: happy3-captions-voice-toggle",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy4-local-audio-privacy",
+      "tier": "INTEGRATION",
+      "name": "integration: happy4-local-audio-privacy",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy5-no-second-ai-same-session",
+      "tier": "INTEGRATION",
+      "name": "integration: happy5-no-second-ai-same-session",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "happy6-fresh-user-runs-skill",
+      "tier": "INTEGRATION",
+      "name": "integration: happy6-fresh-user-runs-skill",
+      "verdict": "PASS",
+      "required": true,
+      "skippableReason": null,
+      "reason": null
+    },
+    {
+      "id": "typed-build-target",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: typed-build-target",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "wrong-session",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: wrong-session",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "duplicate",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: duplicate",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "fallback",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: fallback",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "restart",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: restart",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "compact",
+      "tier": "PACKAGED_AUTOMATED",
+      "name": "packaged-automated: compact",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+    },
+    {
+      "id": "default-mode-claude",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: default-mode-claude interview",
+      "verdict": "SKIPPED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no filled trace template supplied for default-mode-claude"
+    },
+    {
+      "id": "default-mode-claude-nine",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: default-mode-claude-nine interview",
+      "verdict": "SKIPPED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no filled trace template supplied for default-mode-claude-nine"
+    },
+    {
+      "id": "advanced-mode-claude",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: advanced-mode-claude interview",
+      "verdict": "SKIPPED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no filled trace template supplied for advanced-mode-claude"
+    },
+    {
+      "id": "advanced-mode-claude-nine",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: advanced-mode-claude-nine interview",
+      "verdict": "SKIPPED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no filled trace template supplied for advanced-mode-claude-nine"
+    },
+    {
+      "id": "clarification-loop",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: clarification round trip returns to the pending governed question (spec 15)",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
+    },
+    {
+      "id": "ceiling-count",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: counted sequence respects the mode wall and R1-first order",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
+    },
+    {
+      "id": "input-mode-per-question",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: one input mode per question, recorded per answer",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
+    },
+    {
+      "id": "final-write-through",
+      "tier": "HUMAN_HARDWARE",
+      "name": "human/hardware: final write-through document exists and was verified",
+      "verdict": "BLOCKED",
+      "required": true,
+      "skippableReason": null,
+      "reason": "no interview runs supplied — no evidence for cross-run checks"
+    }
+  ],
+  "tiers": [
+    {
+      "tier": "UNIT",
+      "required": true,
+      "verdict": "FAIL",
+      "legs": [
+        {
+          "id": "contract-schema",
+          "name": "unit suite: contract/schema",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "contract-keys",
+          "name": "unit suite: contract/keys",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "contract-registry-authority",
+          "name": "unit suite: contract/registry-authority",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "contract-interview-inventory",
+          "name": "unit suite: contract/interview-inventory",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "contract-exactly-one",
+          "name": "unit suite: contract/exactly-one",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "contract-secret",
+          "name": "unit suite: contract/secret",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "same-session-no-second-ai",
+          "name": "unit suite: same-session/no-second-ai",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "same-session-provider-identity",
+          "name": "unit suite: same-session/provider-identity",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "test file failed or exited nonzero"
+        },
+        {
+          "id": "same-session-same-session",
+          "name": "unit suite: same-session/same-session",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "same-session-session-authority",
+          "name": "unit suite: same-session/session-authority",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-app-crash",
+          "name": "unit suite: failure-matrix/app-crash",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-app-missing",
+          "name": "unit suite: failure-matrix/app-missing",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-claude-busy",
+          "name": "unit suite: failure-matrix/claude-busy",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-corrupt-checksum",
+          "name": "unit suite: failure-matrix/corrupt-checksum",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-mcp-unavailable",
+          "name": "unit suite: failure-matrix/mcp-unavailable",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-mic-denied",
+          "name": "unit suite: failure-matrix/mic-denied",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-no-device",
+          "name": "unit suite: failure-matrix/no-device",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-plugin-missing",
+          "name": "unit suite: failure-matrix/plugin-missing",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-speech-model-missing",
+          "name": "unit suite: failure-matrix/speech-model-missing",
+          "verdict": "FAIL",
+          "required": true,
+          "reason": "test file failed or exited nonzero"
+        },
+        {
+          "id": "failure-matrix-temp-unwritable",
+          "name": "unit suite: failure-matrix/temp-unwritable",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "failure-matrix-wrong-session",
+          "name": "unit suite: failure-matrix/wrong-session",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "tier-self-test",
+          "name": "unit: tier framework fail-closed self-test",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "tier": "INTEGRATION",
+      "required": true,
+      "verdict": "PASS",
+      "legs": [
+        {
+          "id": "happy1-first-run-name-ask",
+          "name": "integration: happy1-first-run-name-ask",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "happy2-answer-surfaces",
+          "name": "integration: happy2-answer-surfaces",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "happy3-captions-voice-toggle",
+          "name": "integration: happy3-captions-voice-toggle",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "happy4-local-audio-privacy",
+          "name": "integration: happy4-local-audio-privacy",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "happy5-no-second-ai-same-session",
+          "name": "integration: happy5-no-second-ai-same-session",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        },
+        {
+          "id": "happy6-fresh-user-runs-skill",
+          "name": "integration: happy6-fresh-user-runs-skill",
+          "verdict": "PASS",
+          "required": true,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "tier": "PACKAGED_AUTOMATED",
+      "required": true,
+      "verdict": "BLOCKED",
+      "legs": [
+        {
+          "id": "typed-build-target",
+          "name": "packaged-automated: typed-build-target",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "wrong-session",
+          "name": "packaged-automated: wrong-session",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "duplicate",
+          "name": "packaged-automated: duplicate",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "fallback",
+          "name": "packaged-automated: fallback",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "restart",
+          "name": "packaged-automated: restart",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        },
+        {
+          "id": "compact",
+          "name": "packaged-automated: compact",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "screen is locked (CGSSessionScreenIsLocked=1) — macOS degrades AX window enumeration box-wide while locked; unlock the screen and rerun"
+        }
+      ]
+    },
+    {
+      "tier": "HUMAN_HARDWARE",
+      "required": true,
+      "verdict": "BLOCKED",
+      "legs": [
+        {
+          "id": "default-mode-claude",
+          "name": "human/hardware: default-mode-claude interview",
+          "verdict": "SKIPPED",
+          "required": true,
+          "reason": "no filled trace template supplied for default-mode-claude"
+        },
+        {
+          "id": "default-mode-claude-nine",
+          "name": "human/hardware: default-mode-claude-nine interview",
+          "verdict": "SKIPPED",
+          "required": true,
+          "reason": "no filled trace template supplied for default-mode-claude-nine"
+        },
+        {
+          "id": "advanced-mode-claude",
+          "name": "human/hardware: advanced-mode-claude interview",
+          "verdict": "SKIPPED",
+          "required": true,
+          "reason": "no filled trace template supplied for advanced-mode-claude"
+        },
+        {
+          "id": "advanced-mode-claude-nine",
+          "name": "human/hardware: advanced-mode-claude-nine interview",
+          "verdict": "SKIPPED",
+          "required": true,
+          "reason": "no filled trace template supplied for advanced-mode-claude-nine"
+        },
+        {
+          "id": "clarification-loop",
+          "name": "human/hardware: clarification round trip returns to the pending governed question (spec 15)",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
+        },
+        {
+          "id": "ceiling-count",
+          "name": "human/hardware: counted sequence respects the mode wall and R1-first order",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
+        },
+        {
+          "id": "input-mode-per-question",
+          "name": "human/hardware: one input mode per question, recorded per answer",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
+        },
+        {
+          "id": "final-write-through",
+          "name": "human/hardware: final write-through document exists and was verified",
+          "verdict": "BLOCKED",
+          "required": true,
+          "reason": "no interview runs supplied — no evidence for cross-run checks"
+        }
+      ]
+    }
+  ],
+  "blockedLines": [
+    "BLOCKED PACKAGED_AUTOMATED - typed-build-target",
+    "BLOCKED PACKAGED_AUTOMATED - wrong-session",
+    "BLOCKED PACKAGED_AUTOMATED - duplicate",
+    "BLOCKED PACKAGED_AUTOMATED - fallback",
+    "BLOCKED PACKAGED_AUTOMATED - restart",
+    "BLOCKED PACKAGED_AUTOMATED - compact",
+    "BLOCKED HUMAN_HARDWARE - default-mode-claude",
+    "BLOCKED HUMAN_HARDWARE - default-mode-claude-nine",
+    "BLOCKED HUMAN_HARDWARE - advanced-mode-claude",
+    "BLOCKED HUMAN_HARDWARE - advanced-mode-claude-nine",
+    "BLOCKED HUMAN_HARDWARE - clarification-loop",
+    "BLOCKED HUMAN_HARDWARE - ceiling-count",
+    "BLOCKED HUMAN_HARDWARE - input-mode-per-question",
+    "BLOCKED HUMAN_HARDWARE - final-write-through"
+  ],
+  "notes": "Aggregating suite run. commitSha recorded-at-run-time: the packaged runner pins the built binary SHA."
+}

@@ -17,95 +17,87 @@
  *   Claude — spec 20).
  * - Reads tolerate corruption by backing up the bad file and starting fresh
  *   from defaults (degrade to text, never fail the session).
+ *
+ * Migration authority: the versioned schema and the migration chain are owned
+ * by the WS-34 lane (`src/preferences/migrations/`). This module CONSUMES
+ * `runMigrations` / `normalizeVersionedDoc` / `parseDocVersion` and never
+ * duplicates migration logic. This module is browser-safe (no `node:fs`): the
+ * filesystem store (`store.ts`) is the only module that imports Node built-ins,
+ * so the webview bundle can import this module without pulling in `node:fs`.
  */
 
 import {
   PROFILE_DEFAULTS,
-  MIGRATIONS,
   LATEST_SCHEMA_VERSION,
   PREFS_FILENAME,
   PREFS_LOCK_SUFFIX,
   PREFS_DIR_OVERRIDE_ENV,
   type CandiceProfile,
 } from './schema.ts';
+import {
+  runMigrations,
+  normalizeVersionedDoc,
+  parseDocVersion,
+  CURRENT_SCHEMA_VERSION,
+  type Violation,
+} from '../preferences/migrations/index.ts';
 
 /**
  * Version-gated document upgrade (CHECKLIST WS-34: versioned schema + migration
- * tests). Applies MIGRATIONS step by step, then validates the result's shape.
+ * tests). Delegates to the WS-34 migration chain: integer versions run as-is,
+ * protocol string "N.0" resolves to integer N+1, missing/garbage resolves to 1.
  * A document with a FUTURE version is preserved at its own version (spec 20:
  * an older lane must never silently downgrade a newer lane's document); the
  * store refuses to persist it and the caller decides how to surface it.
  */
-export function migrateProfile(doc: Record<string, unknown>): { profile: CandiceProfile; migrated: boolean } {
-  const rawVersion = doc.schemaVersion;
-  const startVersion = typeof rawVersion === 'number' && Number.isInteger(rawVersion) && rawVersion >= 1 ? rawVersion : 1;
-  if (startVersion > LATEST_SCHEMA_VERSION) {
-    // Future document: keep its own version and fields in memory untouched.
-    const future = { ...doc, schemaVersion: startVersion };
-    return { profile: future as unknown as CandiceProfile, migrated: false };
-  }
-  let current: Record<string, unknown> = { ...doc };
-  let migrated = false;
-  let version = startVersion;
-  const maxSteps = 64; // bounded; a migration loop can never spin forever
-  for (let i = 0; i < maxSteps && MIGRATIONS[version]; i += 1) {
-    current = MIGRATIONS[version](current);
-    version = (typeof current.schemaVersion === 'number' ? current.schemaVersion : version) + 1;
-    migrated = true;
-  }
+export function migrateProfile(doc: Record<string, unknown>): {
+  profile: CandiceProfile;
+  migrated: boolean;
+  startVersion: number;
+  endVersion: number;
+  violations: Violation[];
+} {
+  const result = runMigrations(doc);
   return {
-    profile: normalizeProfile(current),
-    migrated,
+    profile: result.profile as CandiceProfile,
+    migrated: result.migrated,
+    startVersion: result.startVersion,
+    endVersion: result.endVersion,
+    violations: result.violations,
   };
 }
 
 /**
- * Shape-normalize an arbitrary document into a CandiceProfile, applying
- * defaults per field and rejecting values that cannot be typed. Never throws.
+ * Shape-normalize an arbitrary document into a CandiceProfile at the CURRENT
+ * schema version, applying defaults per field and rejecting values that cannot
+ * be typed. Never throws. Delegates to the WS-34 normalizer so the repair
+ * rules (wrong type -> default/null, bad enum -> null, out-of-range -> default,
+ * unknown field -> dropped, absent nullable -> null) live in one authority.
  */
 export function normalizeProfile(doc: Record<string, unknown>): CandiceProfile {
-  const out: CandiceProfile = { schemaVersion: 1 };
-  const asStr = (v: unknown): string | undefined =>
-    typeof v === 'string' && v.length > 0 ? v : undefined;
-  const asBool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
-  const asNum = (v: unknown, min: number, max: number, fallback: number): number =>
-    typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : fallback;
-  const method = doc.lastAnswerMethod;
-  if (method === 'voice' || method === 'typed' || method === 'terminal') {
-    out.lastAnswerMethod = method;
+  return normalizeVersionedDoc(doc, CURRENT_SCHEMA_VERSION) as CandiceProfile;
+}
+
+/**
+ * Normalize a partial patch against the current document, returning the merged
+ * profile. Purely functional; does not touch disk. Lives here (not in
+ * `store.ts`) so browser-side consumers (name flow, UI wiring) never pull
+ * `node:fs` into the webview bundle.
+ *
+ * A future-version document (schemaVersion > LATEST_SCHEMA_VERSION) is handed
+ * back untouched: normalization would stamp the version back down to LATEST
+ * and drop fields this lane does not understand (spec 20: an older lane must
+ * never destroy a newer lane's data). The patch is still applied in memory so
+ * the session keeps working; saveProfile's own version guard refuses to
+ * persist it, leaving the newer lane's file byte-identical on disk.
+ */
+export function mergeProfile(current: CandiceProfile, patch: Partial<CandiceProfile>): CandiceProfile {
+  const merged = { ...current, ...patch } as unknown as Record<string, unknown>;
+  const version = parseDocVersion(merged);
+  if (version > LATEST_SCHEMA_VERSION) {
+    return { ...merged } as unknown as CandiceProfile;
   }
-  const rawVersion = doc.schemaVersion;
-  if (typeof rawVersion === 'number' && Number.isInteger(rawVersion) && rawVersion >= 1 && rawVersion <= LATEST_SCHEMA_VERSION) {
-    out.schemaVersion = rawVersion;
-  }
-  const name = asStr(doc.preferredName);
-  if (name !== undefined) out.preferredName = name;
-  const vOut = asBool(doc.voiceOutputEnabled, PROFILE_DEFAULTS.voiceOutputEnabled ?? true);
-  out.voiceOutputEnabled = vOut;
-  const vol = asNum(doc.volume, 0, 1, PROFILE_DEFAULTS.volume ?? 1);
-  out.volume = vol;
-  const rate = asNum(doc.speechRate, 0.5, 2, PROFILE_DEFAULTS.speechRate ?? 1);
-  out.speechRate = rate;
-  const scale = asNum(doc.textScale, 0.8, 1.6, PROFILE_DEFAULTS.textScale ?? 1);
-  out.textScale = scale;
-  const motion = asBool(doc.reducedMotion, PROFILE_DEFAULTS.reducedMotion ?? false);
-  out.reducedMotion = motion;
-  const pos = doc.companionPosition;
-  if (
-    pos !== null &&
-    typeof pos === 'object' &&
-    typeof (pos as { left?: unknown }).left === 'number' &&
-    typeof (pos as { top?: unknown }).top === 'number' &&
-    Number.isFinite((pos as { left: number }).left) &&
-    Number.isFinite((pos as { top: number }).top)
-  ) {
-    out.companionPosition = { left: (pos as { left: number }).left, top: (pos as { top: number }).top };
-  }
-  const skill = asStr(doc.lastUsedSkill);
-  if (skill !== undefined) out.lastUsedSkill = skill;
-  const asked = asStr(doc.nameAskedAt);
-  if (asked !== undefined) out.nameAskedAt = asked;
-  return out;
+  return normalizeProfile(merged);
 }
 
 /**
@@ -138,7 +130,11 @@ export function prefsDirPath(env: NodeJS.ProcessEnv = process.env, platform: Nod
 
 /**
  * The default profile, as a plain object the store writes for a brand-new user.
+ * v3 defaults: nullable fields are null (never invented), textSize 'medium',
+ * reducedMotion null (follow the OS — I-10 fix).
  */
 export function defaultProfile(): CandiceProfile {
-  return { ...PROFILE_DEFAULTS, schemaVersion: 1 } as CandiceProfile;
+  return { ...PROFILE_DEFAULTS } as CandiceProfile;
 }
+
+export { PREFS_FILENAME, PREFS_LOCK_SUFFIX };

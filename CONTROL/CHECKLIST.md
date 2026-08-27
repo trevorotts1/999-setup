@@ -1,5 +1,12 @@
 # CONTROL / CHECKLIST — Binary Proven-Done Boxes
 
+<!-- CANDICE_RELEASE_REPAIR_STATUS: lifecycle=REPAIR_IN_PROGRESS open=24 complete=0 -->
+
+> **FIX-001 release-truth override (2026-08-22):** The historical WS boxes
+> below are not release authorization. Current Candice repair state is 24 open
+> fixes and zero completed fixes. Only `CONTROL/release-gate.json` plus a zero
+> exit from `scripts/candice-release/status.mjs` can authorize distribution.
+
 Project: Candice Companion AI (spec-protocol build, 999-setup repo)
 Canonical Master Spec: /Users/blackceomacmini/Downloads/CANDICE_COMPANION_AI_IMPLEMENTATION_SPEC_V6_FINAL_LOCKED.md (canonicalized as SPEC/MASTER-SPEC-2026-08-21.md)
 Created: 2026-08-21 (pre-dispatch baseline). Refreshed 2026-08-21 (planning recheck): gates A and B (all five B gates) flipped from primary-source evidence; prebuild truth gate fresh independent sonnet/max recheck PASSED (SESSION-LOG 2026-08-21). Refreshed 2026-08-21 (acceptance-criteria QC-FIX — post TRUTH CONTRADICTION RESOLUTION): gate counts re-derived from the reconciled machine truth (23 intended handles, max agents per workflow 10) and the run-ID rekeying to snapshot slice IDs (WR-008/WR-009/WR-012 launch IDs; next free WR-033+). Refreshed 2026-08-21 (acceptance-criteria FRESH FIXER — post fresh-recheck FAIL on record-staleness, 0.1 override 2): run-liveness counts re-derived from live machine truth — 24 run dirs, 23 terminal records (21 completed, 2 killed), 0 active, 0 live. Nothing is implemented yet — every E box remains UNCHECKED.
@@ -181,3 +188,78 @@ Every criterion is binary: PASS only when the stated evidence exists and the sta
 - [ ] 17-document apparatus without duplicates: no duplicate root TODO/CHECKLIST/LEDGER/SESSION files; canonical carriers carry the state (spec 0J).
 - [ ] Reconciliation heartbeat ran at every trigger (before first dispatch; after each launch batch; after meaningful fan-in; before/after compaction or epoch rollover; before changing dependency wave; before final integration; before release stamp; after merge) (spec 0J).
 - [ ] Gate 0H gate-set discipline: A/B gates above re-verified at every dispatch point; a CHECKLIST/QC mismatch reopens the item (spec 0J reconciliation repairs).
+
+
+---
+
+## EVIDENCE ANNEX — 2026-08-26 "finish everything" pass
+
+**No box above is flipped by this pass, and that is deliberate.** The
+box-flip rule requires five things; this seat can satisfy at most three of
+them (deliverable exists, required tests pass, primary-source evidence
+exists). It cannot satisfy `independent QC passes`, because independent QC
+of my own work by me is not independent. The annex therefore records
+evidence AGAINST named boxes so a QC seat can flip them from it, and states
+plainly where the evidence stops.
+
+### Boxes with evidence now standing
+
+**E.2 "Kokoro canonical voice pinned + license gate" — partial evidence,
+one clause only.** The clause "system TTS is used only as clearly-marked
+fallback" is now implemented and enforced: `speak` falls back to the system
+synthesizer only when the bundled engine is absent, and the fallback
+announces itself once per session in the user's hearing ("I'm using your
+computer's built-in voice — my own voice isn't installed on this machine").
+Commit `423c940`. The rest of the box — runtime/model/voicepack version
+pins, licence recording, redistributability confirmation, macOS/Windows
+voice identity — is UNTOUCHED and still unmet. **Do not flip this box on
+this evidence.**
+
+**E.2 "Captions always" — supporting evidence.** Blocked-microphone states
+now reach the caption lane instead of failing silently: `announceCaptureBlocked`
+is supplied by composition and threaded through `BridgeSpeechHooks`
+(`4789ae1`). This closes a hole where a denied microphone produced no
+visible or audible explanation at all.
+
+**E.2 "HOLD-TO-TALK + TYPE-ANSWER: both controls are available on every
+question"** — this box is now KNOWN TO BE FALSE on the shipped build, and
+knowing it is the progress. `whisper-cli` is `sha256Status: absent` on all
+three platform rows, so HOLD TO TALK never worked on any build. It is now
+gated on the measured `stt_engine_ready` fact rather than mounting a dead
+control. **The box stays unchecked and should stay unchecked until an STT
+payload actually ships.** Recording it here so nobody flips it from "the
+control renders".
+
+**E.1 WS-46 / E.2 "Interactive Windows smoke" / E.3 Windows parity rows —
+no movement, and no claim of movement.** Windows now has a speech-output
+path (`423c940`) and no longer receives 378 MB of macOS-arm64 Python in its
+installer (`8e3eb0e`). Neither has been observed on Windows. There is no
+Windows machine in this project. Cross-compilation was attempted and
+failed: `cargo check --target x86_64-pc-windows-msvc` dies in `ring`'s
+build script for want of an MSVC toolchain and never reaches this code.
+**Every Windows box above remains correctly unchecked.**
+
+### Test state at the close of this pass
+
+TypeScript 552/552 · Rust 75/75 (main crate) · `candice-macos-permissions`
+20/20 **under its own manifest** · contract suite green across 8 files
+including the new `tests/contract/speakable.test.js` · e2e happy legs 1–6
+PASS · plugin launch-command PASS.
+
+**A caveat that belongs on the number, not in a footnote:** the headline
+"75/75" has never included the permissions crate — `cargo test
+--manifest-path src-tauri/Cargo.toml` does not reach it. Any prior reading
+of 75/75 as whole-project coverage was overstating. It is now measured
+separately and reported separately.
+
+The full packaged suite was NOT re-run this pass. It launches sixteen
+Candice windows; the operator objected to seeing them, and that objection
+stands until he lifts it.
+
+### What no seat here can close
+
+`independentQc` (FIX-024), macOS notarization (needs an Apple Developer
+ID), Windows signing (needs a certificate and a Windows machine), and
+`cleanMachine` (needs a machine that has never had this app). These are
+the reason `lifecycle=REPAIR_IN_PROGRESS open=24 complete=0` is unchanged
+at the top of this file.

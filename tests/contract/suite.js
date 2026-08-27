@@ -19,8 +19,13 @@ const path = require('path')
 const FILES = [
   'schema.test.js',
   'keys.test.js',
+  'registry-authority.test.js',
+  'vendored-parity.test.js',
+  'interview-inventory.test.js',
   'exactly-one.test.js',
   'secret.test.js',
+  'speakable.test.js',
+  'tauri-platform-config.test.js',
 ]
 
 let failures = 0

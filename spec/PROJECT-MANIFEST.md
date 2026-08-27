@@ -1,10 +1,10 @@
 # Candice Companion — Project Manifest
 
-**Canonical source of truth:** `SPEC/MASTER-SPEC-2026-08-21.md` (V6 FINAL LOCKED, verbatim copy of the operator's supplied file; SHA-256 `dbc14f54b86ca7fb1ba27a5aa846b41e23ac14ebba283be22d0cd91e4e031d53` — re-verified 2026-08-21, matches).
+**Canonical source of truth:** `SPEC/MASTER-SPEC-2026-08-21.md` (V6 FINAL LOCKED, verbatim copy of the operator's supplied file; SHA-256 `dbc14f54b86ca7fb1ba27a5aa846b41e23ac14ebba283be22d0cd91e4e031d53` — re-verified 2026-08-21, matches), as amended only where stated by `SPEC/OPERATOR-AMENDMENT-2026-08-25-CANDICE-WELCOME.md`.
 **Baseline:** `999-setup` main `6bb00ec70af69510fab5a9c2ef332751e260d036` (2026-08-21 planning snapshot; re-fetch `main` before execution). Worktree HEAD `aa23ed9bf253c0f422e0a2f8b25b4e468d49f943` (branch `candice/wr001-bootstrap`).
 **Status:** PLANNING. Not EXECUTING until the Section 29B bootstrap gates pass. Live board: `CONTROL/EXECUTION-PLAN.md` section 1 (board runs WR-001..WR-008; W1 launch IDs = snapshot slice IDs WR-008/WR-009/WR-012; WR-030..WR-032 RETIRED by the ID-collision correction).
 
-This manifest is a structured index of the Master Spec — architecture summary, task graph outline, workflow definitions, ownership map, model seats. It is not a second spec and must not drift from the Master Spec. The Master Spec is the authority on every rule; the native task graph snapshot (`CONTROL/task-graph-snapshot.json`, 50 nodes, 116 edges, base `6bb00ec`) is the authority on workstream levels, dependencies, and owned paths.
+This manifest is a structured index of the Master Spec — architecture summary, task graph outline, workflow definitions, ownership map, model seats. It is not a second spec and must not drift from the Master Spec. The Master Spec is the authority on every rule except a narrower dated operator amendment explicitly named above; the native task graph snapshot (`CONTROL/task-graph-snapshot.json`, 50 nodes, 116 edges, base `6bb00ec`) is the authority on workstream levels, dependencies, and owned paths.
 
 ---
 

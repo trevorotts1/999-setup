@@ -6,7 +6,7 @@
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
     "operatorControlledOnly": true,
-    "note": "GitHub Releases in trevorotts1/999-setup is the default channel (spec 21). Documented limit is 2 GiB per release asset (verified 2026-08-21): the speech model payloads fit, but are distributed from their pinned upstream release tags (operator-approved immutable locations, spec 21) until the operator publishes them as 999-setup release assets. Verified 2026-08-21: trevorotts1/999-setup currently has zero releases; release-tarball checksums for repo-tree components are added by the 9.4 release owner at publish time."
+    "note": "GitHub Releases in trevorotts1/999-setup is the default channel (spec 21). The 0.2.0 Candice Companion records were quarantined by FIX-001 and are intentionally absent from active components. A new application payload may be added only after scripts/candice-release/status.mjs accepts the exact candidate."
   },
   "runtimePins": {
     "whisperCpp": "1.9.2",
@@ -16,30 +16,6 @@
     "python": "3.12"
   },
   "components": {
-    "candice-companion": [
-      {
-        "version": "0.2.0",
-        "platform": "darwin",
-        "installFrom": "release",
-        "file": "Candice Companion_0.2.0_aarch64.dmg",
-        "sha256": "f24f4bcb9a267129c856e333c3bb79c687ec4dc11b47558b301f1f0cf6b0dbaf",
-        "sizeBytes": 2686932,
-        "sourceUrl": "https://github.com/trevorotts1/999-setup/releases/download/v0.2.0/Candice%20Companion_0.2.0_aarch64.dmg",
-        "license": "MIT (repo license)",
-        "note": "sha256 computed 2026-08-22 from the integrated 0.2.0 build artifact apps/candice-companion/src-tauri/target/release/bundle/dmg/Candice Companion_0.2.0_aarch64.dmg (npx tauri build, exit 0, 'Finished 2 bundles'; app CFBundleShortVersionString 0.2.0, Mach-O arm64). Artifact is unsigned/adhoc (WS-23: zero Developer ID identities on build host) — distribution signing remains the 9.4 release owner's step."
-      },
-      {
-        "version": "0.2.0",
-        "platform": "win32",
-        "installFrom": "release",
-        "file": "Candice Companion_0.2.0_x64-setup.exe",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-        "sizeBytes": 0,
-        "sourceUrl": "https://github.com/trevorotts1/999-setup/releases/download/v0.2.0/Candice%20Companion_0.2.0_x64-setup.exe",
-        "license": "MIT (repo license)",
-        "note": "NSIS hash owed from Windows build — the NSIS installer cannot be built on this macOS host (recorded limitation). Placeholder sha256 kept fail-closed: verify.mjs and download.mjs refuse it until the 9.4 release owner computes the real hash from the Windows CI build."
-      }
-    ],
     "stt-assets": [
       {
         "version": "whisper-1.9.2",

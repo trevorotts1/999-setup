@@ -1,0 +1,9 @@
+{
+  "note": "FIX-021 CI fixture state for verify-macos.sh --ci-root check 6 (route-state file mode 600). Not a live router session: the verifier checks permissions only, never contents.",
+  "routes": {
+    "fable": "fixture",
+    "opus": "fixture",
+    "sonnet": "fixture",
+    "haiku": "fixture"
+  }
+}
