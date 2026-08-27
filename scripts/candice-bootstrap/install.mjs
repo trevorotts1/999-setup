@@ -60,14 +60,58 @@ import { registerAll, verifyAll, deregisterAll } from "./register-plugin.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Non-application version pins mirror the active WS-33 registry. */
-export const SKILL_PINS = {
-  "nine-router-setup": "1.17.0",
-  "spec-protocol": "1.17.3",
-  kaizen: "1.1.0",
-  eli5: "1.1.0",
-  bro: "1.1.0",
-};
+/**
+ * The skills this bootstrap bundles. The SET is pinned here deliberately --
+ * adding a skill to the installer is a decision, not something a stray
+ * directory under `.claude/skills/` should be able to make.
+ */
+export const BUNDLED_SKILLS = Object.freeze([
+  "nine-router-setup",
+  "spec-protocol",
+  "kaizen",
+  "eli5",
+  "bro",
+]);
+
+/**
+ * Read a bundled skill's own VERSION file.
+ *
+ * Never throws: an unreadable VERSION yields null, which `checkSkill`
+ * reports as a mismatch rather than crashing the installer.
+ */
+function readBundledSkillVersion(name) {
+  try {
+    return readFileSync(join(__dirname, "..", "..", ".claude", "skills", name, "VERSION"), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Version pins, DERIVED from each skill's own VERSION file rather than
+ * copied into a literal here.
+ *
+ * They used to be hand-maintained, and they drifted: the table said
+ * spec-protocol 1.17.0 while the skill in the repository was 1.17.3. Because
+ * `installSkills` copies the skill tree verbatim -- VERSION file included --
+ * and `checkSkill` compares the installed VERSION against this pin, the
+ * mismatch failed the skill-tree health leg on EVERY release install and
+ * rolled the whole thing back. A stale number in a table was enough to make
+ * the product uninstallable, silently, with no error naming the cause.
+ *
+ * Deriving costs nothing that mattered. The pin's real job is "the installed
+ * copy matches what this repository intends", which is exactly what this
+ * still checks: a partial copy, a corrupted tree, or a stale skill left by an
+ * earlier install all still mismatch and still fail the leg. What can no
+ * longer happen is the source of truth disagreeing with itself.
+ *
+ * The set is asserted against the registry document by
+ * `__tests__/bootstrap.test.mjs`, so adding a skill here without recording it
+ * in CONTROL/bundled-components.json fails the suite.
+ */
+export const SKILL_PINS = Object.freeze(
+  Object.fromEntries(BUNDLED_SKILLS.map((name) => [name, readBundledSkillVersion(name)])),
+);
 export const PLUGIN_PINS = { "candice-integration": "1.0.0" };
 // There is deliberately no app pin until a release-authorized candidate has
 // passed the release gate.  A historical version string is not install

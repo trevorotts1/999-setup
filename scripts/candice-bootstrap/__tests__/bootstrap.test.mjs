@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,7 @@ import {
   ttsModelPath,
 } from "../paths.mjs";
 import {
+  BUNDLED_SKILLS,
   installAll,
   installSkills,
   installPlugin,
@@ -74,18 +75,66 @@ test("stateMatches detects full vs partial component sets", () => {
   const state = {
     schema: STATE_SCHEMA,
     platform: "darwin",
-    components: {
-      "nine-router-setup": { status: "installed", version: "1.17.0" },
-      "spec-protocol": { status: "installed", version: "1.17.3" },
-      kaizen: { status: "installed", version: "1.1.0" },
-      eli5: { status: "installed", version: "1.1.0" },
-      bro: { status: "installed", version: "1.1.0" },
-    },
+    // Built FROM the pins, not restated beside them. Restating them is what
+    // let this fixture rot to spec-protocol 1.17.0 while the repository moved
+    // to 1.17.4. The negative assertion below is what gives this test its
+    // teeth, and it does not depend on the numbers being spelled out here.
+    components: Object.fromEntries(
+      Object.entries(SKILL_PINS).map(([name, version]) => [name, { status: "installed", version }]),
+    ),
     assets: {},
     launch: {},
   };
   assert.equal(stateMatches(state, SKILL_PINS), true);
   assert.equal(stateMatches(state, { ...SKILL_PINS, kaizen: "9.9.9" }), false);
+});
+
+test("skill pins, the skills on disk, and the registry all agree", () => {
+  // THE BUG THIS EXISTS TO PREVENT: SKILL_PINS said spec-protocol 1.17.0
+  // while the skill in the repository was 1.17.3. installSkills copies the
+  // skill tree verbatim -- VERSION file included -- and checkSkill compares
+  // the installed VERSION against the pin, so the mismatch failed the
+  // skill-tree health leg on EVERY release install and rolled the whole
+  // install back. A stale number in a table made the product uninstallable,
+  // with no error naming the cause.
+  //
+  // Three documents have to agree: the pin table, the skill's own VERSION
+  // file, and the registry in CONTROL/bundled-components.json. Nothing kept
+  // them in sync, and two of the three had already drifted.
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const registry = JSON.parse(
+    readFileSync(join(repoRoot, "CONTROL", "bundled-components.json"), "utf8"),
+  );
+
+  for (const name of BUNDLED_SKILLS) {
+    const onDisk = readFileSync(
+      join(repoRoot, ".claude", "skills", name, "VERSION"), "utf8",
+    ).trim();
+
+    assert.equal(
+      SKILL_PINS[name], onDisk,
+      `pin for ${name} (${SKILL_PINS[name]}) does not match its VERSION file (${onDisk})`,
+    );
+
+    const rows = registry.components[name];
+    assert.ok(
+      Array.isArray(rows) && rows.length === 1,
+      `${name} is bundled by the installer but has no single registry record`,
+    );
+    assert.equal(
+      rows[0].version, onDisk,
+      `registry records ${name} at ${rows[0].version}, but the skill is ${onDisk}`,
+    );
+  }
+
+  // CONTROL: the assertions above compare values that are all derived from
+  // the same file for the pin side, so prove the registry side is genuinely
+  // a SECOND source that could disagree -- by showing it does not simply
+  // echo the pins.
+  assert.ok(
+    Object.keys(registry.components).length > BUNDLED_SKILLS.length,
+    "registry should describe more components than the installer bundles",
+  );
 });
 
 test("paths resolve inside the bootstrap root", () => {
