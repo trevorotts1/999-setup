@@ -7,17 +7,24 @@
 # (operator order 2026-08-16) is: model, session cost (derived), git
 # branch/status, Project progress, Wave progress — what truly matters.
 # Context usage and 5h/7d rates are INTERNAL doctrine (agent behavior
-# thresholds), never client display. Session cost is REQUIRED on the bar.
-# Primary source: stdin `cost.total_cost_usd` — Claude Code's own tracked
-# total for this session (proven present in the installed CLI's payload-
-# construction code; no state file, no delta math, no cross-harness double-
-# counting). Fallback (older CC builds without that field): cumulative
-# session token counts from `context_window.total_input_tokens` /
-# `.total_output_tokens` times published per-model pricing. Either way the
-# figure is displayed with a ~ marker, and a model that doesn't match a known
-# Anthropic family (including anything shaped like a 9Router chain id) never
-# gets an Anthropic-priced number — the cost segment is omitted, never
-# guessed and never mis-attributed to routed traffic.
+# thresholds), never client display. Session cost is REQUIRED on the bar,
+# for a PLAIN session only.
+# Routed detection is keyed on `model.id`, NEVER `model.display_name` — a
+# claude-nine/9Router session's `model.id` is the raw chain id it was asked
+# for (e.g. "opus-chain") but `model.display_name` resolves to a normal-
+# looking Anthropic name ("Opus 5"), proven live 2026-08-27. A routed session
+# NEVER shows `cost.total_cost_usd` or a price-table figure — captured proof
+# that field prices routed traffic at Anthropic rates for tokens Anthropic
+# never served (real leg: Ollama Cloud, near-zero marginal cost) — the cost
+# segment is omitted for it instead.
+# Plain sessions: primary source is stdin `cost.total_cost_usd` — Claude
+# Code's own tracked total for this session (proven present and correct-by-
+# construction in the installed CLI's payload; no state file, no delta math,
+# no cross-harness double-counting). Fallback (older CC builds without that
+# field): cumulative session token counts from `context_window.total_input_tokens`
+# / `.total_output_tokens` times published per-model pricing. Either way the
+# figure is displayed with a ~ marker; a model absent from the pricing table
+# -> the cost segment is omitted, never guessed.
 #
 # Never prints API keys or any secret value. Name-only output.
 set -uo pipefail
@@ -149,64 +156,80 @@ if [ -z "$json" ]; then exit 0; fi
 
 jqget() { printf '%s' "$json" | jq -r "$1" 2>/dev/null || true; }
 
+model_id="$(jqget '.model.id // empty')"
 model="$(jqget '.model.display_name // empty')"
 total_in="$(jqget '.context_window.total_input_tokens // empty')"
 total_out="$(jqget '.context_window.total_output_tokens // empty')"
 cwd_path="$(jqget '.cwd // empty')"
 
 # --- session cost: ~-labeled, never guessed ---------------------------------
-# Primary source: stdin `cost.total_cost_usd` — Claude Code's own running
-# total for THIS session (confirmed present in the installed CLI's payload-
-# construction code). It is already cumulative, so no state file, no
-# per-refresh delta math, and no double-counting when both `claude` and
-# `claude-nine` happen to share a state directory (that whole class of bug
-# is eliminated by not keeping cost state at all).
+# ROUTED DETECTION — keyed on `model.id`, NEVER `model.display_name`. Live
+# capture 2026-08-27 (both classes, same instrument, both directions proven):
+# a claude-nine/9Router session sends id="opus-chain" (the raw chain id the
+# router was asked for) but display_name resolves to "Opus 5" — a normal-
+# looking Anthropic name. An earlier version of this script gated on
+# display_name shape (`*-chain`/`fusion-*`); that gate could never fire,
+# because the chain id never reaches display_name. `model.id` always starts
+# with "claude-" on a plain (non-routed) session (captured: "claude-haiku-4-5")
+# and never does on a routed one — that prefix is the real signal.
+is_routed=0
+case "$model_id" in
+  claude-*) ;;                # plain Claude Code session
+  *)        is_routed=1 ;;    # routed chain id, or unknown/absent -> never guess, treat as routed-safe
+esac
+
+# Routed sessions: NEVER use `cost.total_cost_usd`, NEVER use the price table.
+# Proven wrong, not just untrusted: captured routed payload had
+# total_input_tokens=46536, total_cost_usd=0.235748 — the harness priced that
+# turn at (roughly) the real Anthropic Opus-5 input rate ($5/MTok), while
+# 9Router's own request records show it was actually served by Ollama Cloud
+# glm-5.3-flash (opus-chain leg 1), flat-subscription traffic with near-zero
+# marginal cost. Router-side per-request cost lookup (`requestDetails` table)
+# is stale (capped at 1000 rows, 8+ days old) and not a live source either.
+# Omit is the only provable-correct behavior for a routed session — an
+# omitted number beats a fabricated one.
 #
-# Fallback (older Claude Code builds that don't yet emit `cost`): derive from
-# `context_window.total_input_tokens` / `.total_output_tokens` — these are
-# already whole-session cumulative totals per Claude Code's own stdin
-# contract, so the fallback needs no delta math either.
+# Plain sessions — primary source: stdin `cost.total_cost_usd` — Claude
+# Code's own running total for THIS session (confirmed present and correct-
+# by-construction: captured $0 pre-turn, $0.0554... after one turn). Already
+# cumulative, so no state file, no per-refresh delta math, and no double-
+# counting when `~/.claude` and `~/.claude-nine` happen to share a state
+# directory (that whole class of bug is eliminated by keeping no cost state
+# at all). Used directly — never re-priced through the table, regardless of
+# which Claude family it is; being non-routed is what makes it trustworthy.
 #
-# Routed sessions (claude-nine / 9Router): `model.display_name` is the raw
-# chain id the router was asked for (e.g. "opus-chain", "fusion-coding"),
-# not an Anthropic model — chains blend cheap providers and are edited live,
-# so no static price is ever honest for one, and "opus-chain" would silently
-# match a naive *opus* glob. price_for() therefore refuses anything shaped
-# like a chain id BEFORE testing the Anthropic family globs, in both the
-# primary and fallback paths, so a routed session never shows an
-# Anthropic-priced number — cost is omitted for it instead.
-#
-# Published pricing, USD per 1M tokens (input / output). Plain `case` —
-# no associative arrays. Order fable before opus/sonnet/haiku on general
-# principle (no actual substring overlap among these four, but a later
-# family glob must never be able to shadow an earlier one).
+# Fallback (only when `total_cost_usd` is absent/null — older Claude Code
+# builds that don't yet emit `cost`): derive from
+# `context_window.total_input_tokens` / `.total_output_tokens` — whole-session
+# cumulative totals per the stdin contract, so still no delta math — times
+# PUBLISHED per-model pricing, matched from `model.display_name`. Plain
+# `case` — no associative arrays. A model absent from the table -> omitted,
+# never guessed.
 price_for() {
   local display="$1" lower
   lower="$(printf '%s' "$display" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
-    *-chain|fusion-*) printf '' ;;                    # routed chain id — never Anthropic-priced
-    *fable*)          printf '%s %s' "10.00" "50.00" ;;
-    *opus*)           printf '%s %s' "5.00" "25.00" ;;
-    *sonnet*)         printf '%s %s' "3.00" "15.00" ;;
-    *haiku*)          printf '%s %s' "1.00" "5.00" ;;
-    *)                printf '' ;;
+    *fable*)  printf '%s %s' "10.00" "50.00" ;;
+    *opus*)   printf '%s %s' "5.00" "25.00" ;;
+    *sonnet*) printf '%s %s' "3.00" "15.00" ;;
+    *haiku*)  printf '%s %s' "1.00" "5.00" ;;
+    *)        printf '' ;;
   esac
 }
 
 cost=""
-cost_usd="$(jqget '.cost.total_cost_usd // empty')"
-if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
-  prices="$(price_for "$model")"
-  if [ -n "$prices" ]; then
+if [ "$is_routed" = 0 ]; then
+  cost_usd="$(jqget '.cost.total_cost_usd // empty')"
+  if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
     cost="$(awk -v c="$cost_usd" 'BEGIN { printf "~$%.2f", c }')"
-  fi
-elif [ -n "$total_in" ] && [ -n "$total_out" ] \
-   && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
-  prices="$(price_for "$model")"
-  if [ -n "$prices" ]; then
-    pin="${prices%% *}"; pout="${prices##* }"
-    cost="$(awk -v ti="$total_in" -v to="$total_out" -v pi="$pin" -v po="$pout" \
-      'BEGIN { printf "~$%.2f", (ti*pi + to*po)/1000000 }')"
+  elif [ -n "$total_in" ] && [ -n "$total_out" ] \
+     && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
+    prices="$(price_for "$model")"
+    if [ -n "$prices" ]; then
+      pin="${prices%% *}"; pout="${prices##* }"
+      cost="$(awk -v ti="$total_in" -v to="$total_out" -v pi="$pin" -v po="$pout" \
+        'BEGIN { printf "~$%.2f", (ti*pi + to*po)/1000000 }')"
+    fi
   fi
 fi
 
@@ -376,7 +399,7 @@ say "Press Ctrl+T inside Claude Code to view or hide task progress."
 say ""
 say "Metric report (supported metrics were configured; unsupported ones omitted — never faked):"
 say "  Model: Supported"
-say "  Session cost: ~-labeled — Claude Code's own tracked session total when available, else derived from cumulative token counts × published pricing; omitted for routed (9Router) models"
+say "  Session cost: ~-labeled — plain sessions use Claude Code's own tracked session total when available, else cumulative token counts × published pricing; ALWAYS omitted for routed (claude-nine/9Router) sessions, detected via model.id, never display_name"
 say "  Session duration: Not exposed by this Claude Code version"
 say "  Git branch/status: Supported inside Git repositories"
 say "  Project bar: Supported inside Spec Protocol projects (walks up from cwd to \$HOME looking for CONTROL/project_state.json; omitted until the plan exists)"

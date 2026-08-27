@@ -130,30 +130,44 @@ The statusLine command receives JSON on stdin. Fields that matter here:
 | 5-hour / 7-day usage | INTERNAL ONLY — never client display (operator order 2026-08-16) | stdin `rate_limits.*` — subscribers only, absent under 9Router; never rendered |
 
 **The cost rule (operator order 2026-08-16 — cost goes ON the bar).** Cost IS exposed in the
-stdin schema — corrected 2026-08-27: `cost.total_cost_usd` was proven present (object-literal
-construction site in the installed 2.1.227 binary, `cost:{total_cost_usd:...}`), reversing the
-earlier "not exposed" finding above. Two-tier derivation, binding:
+stdin schema — corrected 2026-08-27: `cost.total_cost_usd` was proven present, both by finding
+the object-literal construction site in the installed 2.1.227 binary and, later the same day,
+by live stdin capture from a running session (`$0` pre-turn, `$0.0554999...` after one turn),
+reversing the earlier "not exposed" finding above. Binding, in this order:
 
-- **Primary:** read `cost.total_cost_usd` from stdin directly — Claude Code's own running
-  total for the session. Already cumulative; no state file, no per-refresh delta math, and
-  no double-counting from `~/.claude` and `~/.claude-nine` sharing a state directory (that
-  whole class of bug is eliminated by keeping no cost state at all — the old delta-vs-state-file
-  design is retired; see the two defects note below).
-- **Fallback** (older Claude Code builds that don't yet emit `cost`): derive from
-  `context_window.total_input_tokens` / `.total_output_tokens` — already whole-session
-  cumulative totals per the stdin contract, so this needs no delta math either.
-- Either path: multiply by PUBLISHED per-model pricing, matched from `model.display_name`
-  (fallback path only — the primary path uses Claude Code's own dollar figure directly).
+- **Routed-session gate runs FIRST, keyed on `model.id`, NEVER `model.display_name`.** Live
+  capture 2026-08-27 (both classes, same instrument): a claude-nine/9Router session sends
+  `model.id = "opus-chain"` (the raw chain id the router was asked for) but
+  `model.display_name = "Opus 5"` — a normal-looking Anthropic name. An earlier version of
+  this rule (and an earlier version of the script) gated on `display_name` shape
+  (`*-chain`/`fusion-*`); that gate could never fire, because the chain id never reaches
+  `display_name` — it was a dead check. `model.id` always starts with `claude-` on a plain
+  session (captured: `claude-haiku-4-5`) and never does on a routed one; that prefix is the
+  real signal. An absent/unrecognized `model.id` is treated as routed-safe (cost omitted) —
+  never guess in the direction of showing a price.
+- **A routed session NEVER shows `cost.total_cost_usd` and NEVER gets a price-table figure.**
+  Proven wrong, not just untrusted: the captured routed payload had
+  `total_input_tokens = 46536`, `total_cost_usd = 0.235748` — the harness priced that turn at
+  roughly the real Anthropic Opus-5 input rate ($5/MTok), while 9Router's own request records
+  show it was actually served by Ollama Cloud `glm-5.3-flash` (`opus-chain` leg 1),
+  flat-subscription traffic with near-zero marginal cost. (The router's per-request cost
+  lookup, the `requestDetails` table, is not a viable live substitute either — capped at 1000
+  rows, 8+ days stale at last check.) Omit is the only provable-correct behavior — an omitted
+  number beats a fabricated one.
+- **Plain-session primary:** read `cost.total_cost_usd` from stdin directly and use it
+  as-is — Claude Code's own running total for the session, already cumulative. No state file,
+  no per-refresh delta math, and no double-counting from `~/.claude` and `~/.claude-nine`
+  sharing a state directory (that whole class of bug is eliminated by keeping no cost state at
+  all — the old delta-vs-state-file design is retired; see the two defects note below). Used
+  directly, never re-priced through the table — being non-routed is what makes the figure
+  trustworthy, regardless of which Claude family it names.
+- **Plain-session fallback** (only when `total_cost_usd` is absent/null — older Claude Code
+  builds that don't yet emit `cost`): derive from `context_window.total_input_tokens` /
+  `.total_output_tokens` — already whole-session cumulative totals per the stdin contract, so
+  this needs no delta math either — times PUBLISHED per-model pricing, matched from
+  `model.display_name`.
 - Display with a `~` marker: computed estimate from real data. Never an invented number.
 - A model with no published pricing in the table → the cost segment is OMITTED, not guessed.
-- **Routed sessions never get an Anthropic-priced number.** `model.display_name` on a
-  claude-nine/9Router session is the raw chain id (`opus-chain`, `fusion-coding`, …) — a
-  live-edited, multi-provider fallback list, not an Anthropic model. `opus-chain` would
-  silently match a naive `*opus*` glob, so the price lookup refuses anything shaped like a
-  chain id (`*-chain`, `fusion-*`) BEFORE testing the Anthropic family globs, in both the
-  primary and fallback paths. The routed-session env-var detector a prior review assumed
-  existed was checked and is UNDETERMINED (inconclusive in the minified binary) — this
-  shape-based exclusion does not depend on it.
 - Published pricing, USD per 1M tokens (input / output): fable 10.00/50.00, opus 5.00/25.00,
   sonnet 3.00/15.00, haiku 1.00/5.00. (Corrected 2026-08-27 — the table previously read
   opus 15.00/75.00, sonnet 3.00/15.00, haiku 0.80/4.00, with no fable entry at all: opus was
@@ -167,8 +181,9 @@ installation never fails over a missing metric. Report per metric:
 
 ```text
 Model: Supported
-Session cost: ~-labeled — Claude Code's own tracked session total when available, else derived
-  from cumulative token counts × published pricing; omitted for routed (9Router) models
+Session cost: ~-labeled — plain sessions use Claude Code's own tracked session total when
+  available, else derived from cumulative token counts × published pricing; ALWAYS omitted for
+  routed (claude-nine/9Router) sessions, detected via model.id, never display_name
 Session duration: Not exposed by this Claude Code version
 Context usage: INTERNAL — tracked and acted on, never displayed (operator order 2026-08-16)
 5-hour / 7-day usage: INTERNAL — never displayed (operator order 2026-08-16)
@@ -356,9 +371,10 @@ Claude-nine
 [ ] Existing Claude settings remain intact
 [ ] Status line appears
 [ ] Active model is displayed
-[ ] Session cost displayed in BOTH launch paths (labeled estimate; Claude Code's own tracked
-    total when available, else derived from real token counts × published pricing; omitted,
-    never Anthropic-priced, for routed/9Router chain-id models)
+[ ] Session cost displayed in BOTH launch paths (labeled estimate; plain sessions use Claude
+    Code's own tracked total when available, else real token counts × published pricing;
+    ALWAYS omitted, never Anthropic-priced, for routed/9Router sessions — gate on model.id,
+    never display_name, which resolves to a normal Anthropic-looking name even when routed)
 [ ] Session duration works when supported
 [ ] Git branch/status works inside Git repositories
 [ ] Project progress visible and derived from CONTROL/project_state.json
@@ -382,7 +398,7 @@ Do not claim a metric works unless it was actually observed.
 | Status line missing everywhere | `disableAllHooks` set | remove it — it also kills the boss cron and every governance hook (PART 4 hook-protection clause) |
 | Only the managed line shows in safe mode | safe mode displays policy statusLine only | exit safe mode |
 | 5h/7d segments absent | not a subscriber / first API response not yet seen / 9Router session | omit is correct behavior, not a fault |
-| Cost segment absent | model not in the pricing table, OR a routed/9Router chain-id model (`*-chain`, `fusion-*`) | omit is correct — never guess a price, never show an Anthropic price on routed traffic |
+| Cost segment absent | model not in the pricing table (fallback path only), OR a routed/9Router session (`model.id` doesn't start with `claude-`) | omit is correct — never guess a price, never show an Anthropic price on routed traffic. Note the bar's Model segment still shows a normal-looking name (e.g. "Opus 5") on a routed session — that is `display_name`, not the routing signal; don't mistake it for a plain session |
 | `git` segments blank | not inside a git repository | omit branch/status outside repos |
 | Project segment absent below the project root | `CONTROL/project_state.json` not found anywhere from `$cwd` up to `$HOME` | omit is correct if truly outside a Spec Protocol project; if inside one, confirm the walk reached the directory that holds `CONTROL/` |
 

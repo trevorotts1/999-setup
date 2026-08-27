@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.17.6] — 2026-08-27
+
+### Statusline: routed-cost defect was still live — the gate in 1.17.5 keyed on the wrong field
+
+1.17.5 gated the routed-session cost exclusion on `model.display_name` shape (`*-chain`,
+`fusion-*`). Live stdin capture the same day proved that gate could never fire: a
+claude-nine/9Router session sends `model.id = "opus-chain"` (the raw chain id) but
+`model.display_name = "Opus 5"` — a normal-looking Anthropic name that matches the `*opus*`
+price glob same as a real Opus session. Captured proof of the live consequence: a routed
+turn with `total_input_tokens = 46536` reported `cost.total_cost_usd = 0.235748` — priced at
+roughly the real Anthropic Opus-5 input rate — while 9Router's own request records show that
+turn was actually served by Ollama Cloud `glm-5.3-flash` (`opus-chain` leg 1), flat-subscription
+traffic with near-zero marginal cost.
+
+- **Routed detection now keys on `model.id`, never `model.display_name`.** `model.id` starts
+  with `claude-` on every plain session (captured: `claude-haiku-4-5`) and never does on a
+  routed one (captured: `opus-chain`) — that prefix is the real, live-proven signal. An
+  absent/unrecognized `model.id` defaults to routed-safe (cost omitted), never to showing a
+  price.
+- **Removed the dead `*-chain`/`fusion-*` glob from `price_for()`** — it could never match,
+  since the chain id never reaches `display_name`.
+- **Plain-session cost now uses `cost.total_cost_usd` directly, unconditionally** (previously
+  gated behind a `price_for(display_name)` match even on the primary path, which was
+  unnecessary once the routed check runs first — non-routed is what makes the harness's own
+  figure trustworthy, regardless of which Claude family it names).
+- Fallback (token counts × price table) is unchanged and still applies only when
+  `total_cost_usd` is absent/null.
+
+Both claims were independently re-verified against the raw captured payloads (not taken on a
+report's word) before this fix was written: `stdin-1787842192834505000.json` (routed,
+`id=opus-chain`/`display_name=Opus 5`/`total_cost_usd=0.235748`), `stdin-1787842000536608000.json`
+(plain, `id=claude-haiku-4-5`/`total_cost_usd=0.055459`), and the paired `env-*.txt` captures
+confirming `CLAUDE_CONFIG_DIR`/`ANTHROPIC_BASE_URL` are set only in the routed child process —
+corroborating evidence, not the detection mechanism itself.
+
+Re-tested under system bash 3.2.57 and Homebrew bash 5.3.12 on the real captured payloads:
+routed post-turn and pre-turn payloads both show no cost figure; plain post-turn payload shows
+`~$0.06` (from `total_cost_usd` directly, not re-priced); plain pre-turn payload
+(`total_cost_usd: 0`, `current_usage: null`) renders `~$0.00` without crashing. All prior
+1.17.5/1.17.4 regression tests (Project-bar walk-up, corrupted state file, Fable pricing) re-run
+clean on both shells.
+
+Deployed `~/.claude/statusline-command.sh` regenerated from the updated heredoc and proven
+byte-identical (md5 `5a8827290fea1ef013952330b52dec17`).
+
 ## [1.17.5] — 2026-08-27
 
 ### Statusline: five defects fixed (Project bar vanish, wrong prices, no Fable price, routed
