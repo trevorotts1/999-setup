@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { win32 as pathWin32, posix as pathPosix } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { checkApp } from "../health.mjs";
+import { checkApp, checkSkill } from "../health.mjs";
 
 import {
   bootstrapRoot,
@@ -27,6 +28,7 @@ import {
 } from "../paths.mjs";
 import {
   BUNDLED_SKILLS,
+  insideRoot,
   installAll,
   installSkills,
   installPlugin,
@@ -400,4 +402,73 @@ test("healthCheck catches stale skill versions independently of the blocked app"
   assert.equal(h.ok, false);
   assert.match(h.legs["skill-tree"].detail, /bro/);
   rmSync(root, { recursive: true, force: true });
+});
+
+test("a null version pin is a FAILURE, not a null===null match", () => {
+  // The expected pin is DERIVED from the bundled skill's VERSION file, which
+  // yields null when that file is missing/unreadable/empty -- and the
+  // installed side yields null the same way. `null === null` is true, so a
+  // client checkout missing a VERSION installed the skill and this leg said
+  // HEALTHY with zero version verification: precisely what it exists to
+  // catch. The repo-side suite catches a deletion, but a client never runs
+  // the repo-side suite.
+  const root = mkdtempSync(join(tmpdir(), "candice-nullpin-"));
+  try {
+    const skill = join(root, "skills", "demo");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "# demo\n");
+
+    const bothNull = checkSkill(root, "demo", null);
+    assert.equal(bothNull.ok, false, "a null pin must never report healthy");
+    assert.match(bothNull.detail, /installer source is incomplete/);
+
+    // An installed VERSION with no bundled pin is still unverifiable.
+    writeFileSync(join(skill, "VERSION"), "1.2.3\n");
+    assert.equal(checkSkill(root, "demo", "").ok, false, "an empty pin is not a pin");
+
+    // CONTROLS: the leg must still discriminate normally, or the assertions
+    // above would be satisfied by a function that always returns false.
+    assert.equal(checkSkill(root, "demo", "1.2.3").ok, true, "a real match must pass");
+    assert.equal(checkSkill(root, "demo", "9.9.9").ok, false, "a real mismatch must fail");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the install-root escape check works on Windows paths too", () => {
+  // This check was `target.startsWith(resolve(root) + "/")`. path.win32
+  // emits BACKSLASHES, so on Windows it could never match: every app record
+  // was rejected as "escapes the install root", which is fail-closed but
+  // names the wrong cause and makes a win32 release install impossible.
+  // Injecting path.win32 is the only way to test that here -- asserting the
+  // Windows claim in a comment is what let the bug ship.
+  const win = pathWin32;
+  const root = "C:\\Users\\x\\AppData\\Local\\BlackCEO\\999";
+
+  assert.equal(
+    insideRoot(root, "C:\\Users\\x\\AppData\\Local\\BlackCEO\\999\\app\\candice-companion.exe", win),
+    true,
+    "a normal win32 executablePath must be accepted",
+  );
+  assert.equal(
+    insideRoot(root, "C:\\Users\\x\\AppData\\Local\\BlackCEO\\evil.exe", win),
+    false,
+    "a win32 escape must still be refused",
+  );
+  assert.equal(insideRoot(root, root, win), false, "the root itself is not an executable");
+  assert.equal(
+    insideRoot(root, "D:\\elsewhere\\candice.exe", win),
+    false,
+    "another volume is an escape",
+  );
+
+  // POSIX must keep behaving, including the "." case that used to be
+  // ALLOWED and then crashed cpSync(file -> dir) uncaught.
+  const posix = pathPosix;
+  const proot = "/Users/x/Library/Application Support/BlackCEO/999";
+  assert.equal(insideRoot(proot, `${proot}/app/candice-companion`, posix), true);
+  assert.equal(insideRoot(proot, `${proot}/../evil`, posix), false);
+  assert.equal(insideRoot(proot, proot, posix), false, "executablePath '.' must be refused");
+  // A file honestly named "..config" is not an escape.
+  assert.equal(insideRoot(proot, `${proot}/..config`, posix), true);
 });

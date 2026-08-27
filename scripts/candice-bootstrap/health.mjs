@@ -49,8 +49,29 @@ export function checkSkill(root, name, version) {
       installedVersion = null;
     }
   }
-  const ok = present && installedVersion === version;
-  return { name, present, version: installedVersion, expected: version, ok, ...(present && installedVersion !== version ? { detail: "stale version — upgrade lane (WS-32) applies" } : {}) };
+  // A null on EITHER side is a FAILURE, never a match.
+  //
+  // This was `installedVersion === version`, and both sides can legitimately
+  // be null. The expected pin is DERIVED from the bundled skill's own VERSION
+  // file (install.mjs readBundledSkillVersion), which returns null when that
+  // file is missing, unreadable or empty; the installed side returns null the
+  // same way. `null === null` is true, so a client whose checkout was missing
+  // a VERSION file installed the skill and this leg reported it HEALTHY with
+  // zero version verification -- exactly the case the leg exists to catch.
+  // The repo-side suite does catch a deletion, but a client machine never
+  // runs that suite, so the guard has to live here.
+  const known = typeof version === "string" && version !== "";
+  const ok = present && known && installedVersion === version;
+  const detail = !present
+    ? undefined
+    : !known
+      ? "no bundled version pin for this skill — the installer source is incomplete, so the installed copy cannot be verified"
+      : installedVersion === null
+        ? "installed skill has no readable VERSION — cannot be verified"
+        : installedVersion !== version
+          ? "stale version — upgrade lane (WS-32) applies"
+          : undefined;
+  return { name, present, version: installedVersion, expected: version, ok, ...(detail ? { detail } : {}) };
 }
 
 /** Health check the installed candice-integration plugin tree (tree presence only; registration is a separate leg). */

@@ -50,7 +50,7 @@ import {
   createReadStream,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bootstrapRoot, readState, writeState, STATE_SCHEMA } from "./state.mjs";
 import { skillsDir, pluginDir, appBundlePath, appDir, assetsDir } from "./paths.mjs";
@@ -79,6 +79,43 @@ export const BUNDLED_SKILLS = Object.freeze([
  * Never throws: an unreadable VERSION yields null, which `checkSkill`
  * reports as a mismatch rather than crashing the installer.
  */
+/**
+ * Is `target` a path strictly INSIDE `root`?
+ *
+ * This replaced two hand-rolled checks of the form
+ * `target.startsWith(resolve(root) + "/")`, which carried two defects:
+ *
+ *  1. The separator was hardcoded. `path.win32.resolve` emits backslashes,
+ *     so on Windows the comparison could never succeed and every app record
+ *     was rejected as "escapes the install root" -- fail-closed, but with a
+ *     message that names the wrong cause, and it made a win32 release
+ *     install impossible rather than merely awkward.
+ *
+ *  2. One of the two sites explicitly ALLOWED `target === resolve(root)`,
+ *     i.e. an `executablePath` of ".". That is not a file, and the copy that
+ *     follows (`cpSync` of a file onto a directory) throws -- uncaught,
+ *     because installAll does not wrap installApp, so it would crash the
+ *     installer with no journal entry and no rollback instead of returning
+ *     a refusal.
+ *
+ * Comparing RELATIVE paths fixes both: `relative()` speaks whichever
+ * separator the platform uses, and the root itself relativises to "", which
+ * is rejected here alongside genuine escapes.
+ *
+ * The `path` implementation is injectable ONLY so the Windows behaviour can
+ * be tested from here. There is no Windows machine in this project, so the
+ * alternative was to assert the win32 claim in a comment and ship it
+ * unchecked -- which is how the hardcoded "/" survived in the first place.
+ */
+export function insideRoot(root, target, path = { resolve, relative, isAbsolute, sep }) {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  // "" is the root itself; an absolute result means a different volume.
+  if (rel === "" || path.isAbsolute(rel)) return false;
+  // Component compare, not startsWith(".."), so a file honestly named
+  // "..config" is not mistaken for an escape.
+  return rel.split(path.sep)[0] !== "..";
+}
+
 function readBundledSkillVersion(name) {
   try {
     return readFileSync(join(__dirname, "..", "..", ".claude", "skills", name, "VERSION"), "utf8").trim() || null;
@@ -343,7 +380,7 @@ export async function installApp(root, platform, opts = {}) {
     const rec = resolved.record;
     // Expected executable path is root-relative; never allow escapes.
     const exeTarget = resolve(root, rec.executablePath);
-    if (!exeTarget.startsWith(resolve(root) + "/") && exeTarget !== resolve(root)) {
+    if (!insideRoot(root, exeTarget)) {
       return result(false, `app record executablePath escapes the install root: ${rec.executablePath}`);
     }
     let artifactPath = opts.artifactPath;
@@ -411,7 +448,7 @@ export async function installApp(root, platform, opts = {}) {
       return result(false, `developer app fixture sha256 mismatch: got ${actual}, expected ${fixture.sha256}`);
     }
     const exeTarget = resolve(root, fixture.executablePath);
-    if (!exeTarget.startsWith(resolve(root) + "/")) {
+    if (!insideRoot(root, exeTarget)) {
       return result(false, `developer app fixture executablePath escapes the install root: ${fixture.executablePath}`);
     }
     mkdirSync(dirname(exeTarget), { recursive: true });
