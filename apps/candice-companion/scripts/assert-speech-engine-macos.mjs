@@ -98,9 +98,27 @@ if (!byId.has('stt-model')) {
 // The macOS voice-input closure: the engine, the model it reads, and every
 // library the engine was relocated against.
 const required = ['stt-model', 'stt-binary-macos',
-  ...entries.map((e) => e.id).filter((id) => id.startsWith('stt-lib-macos-'))];
+  ...entries.map((e) => e.id).filter((id) => id.startsWith('stt-lib-macos-')),
+  // The dlopen'd compute backends belong here too. Leaving them out is how
+  // an engine with no backend passed every presence, bytes and linkage check
+  // in this file while aborting on a client machine.
+  ...entries.map((e) => e.id).filter((id) => id.startsWith('stt-backend-macos-'))];
 if (required.length < 3) {
   FAIL('no stt-lib-macos-* rows found; the dependency closure was never staged');
+}
+
+const backendRows = required.filter((id) => id.startsWith('stt-backend-macos-'));
+if (backendRows.length === 0) {
+  FAIL('no stt-backend-macos-* rows in the inventory — ggml dlopen\'s its compute\n'
+    + '  backends at run time, and with none staged the engine calls ggml_abort()\n'
+    + '  inside whisper_init on any machine without Homebrew. Run:\n'
+    + '    node scripts/relocate-whisper-macos.mjs && node scripts/generate-speech-inventory.mjs');
+}
+// A BLAS or Metal backend alone cannot run the model. Require a CPU one.
+if (!backendRows.some((id) => id.includes('cpu'))) {
+  FAIL(`no CPU compute backend staged (found: ${backendRows.join(', ')}).\n`
+    + '  BLAS and Metal are accelerators, not a fallback — without a CPU backend the\n'
+    + '  engine has no device to register on a machine where the others do not load.');
 }
 
 const missing = required.filter((id) => {
@@ -219,6 +237,7 @@ try {
 }
 
 const windowsRows = entries.filter((e) => e.id.startsWith('stt-binary-windows-'));
-console.log(`SPEECH-ENGINE PASS: macOS voice input ships — engine, model and ${machO.length - 1} libraries present, `
+console.log(`SPEECH-ENGINE PASS: macOS voice input ships — engine, model, ${machO.length - 1 - backendRows.length} libraries `
+  + `and ${backendRows.length} compute backends present, transcription verified with /opt/homebrew denied, `
   + 'no Homebrew linkage, engine executes.');
 console.log(`  (${windowsRows.length} Windows engine rows absent, as designed — the Windows installer downloads those.)`);
