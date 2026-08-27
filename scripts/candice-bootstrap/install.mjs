@@ -769,6 +769,17 @@ export async function installAll(opts = {}) {
       // Every other required leg still gates. A plugin that did not
       // register, a skill tree that did not land, an asset whose hash does
       // not match: all still roll the whole install back, exactly as before.
+      // Exactly the legs that cannot pass without an installed app, and no
+      // others. Each one either inspects the app binary (app-*,
+      // launch-command) or spawns it (bridge-ipc).
+      //
+      // stt-runtime-capability and tts-runtime-capability were in this list
+      // and have been REMOVED: `capabilityProbe` spawns the plugin's MCP
+      // SERVER and checks it declares the governed ask_user tool. It never
+      // touches the app binary, and both legs pass with no app installed.
+      // Forgiving them here would have meant a genuinely broken MCP server
+      // going unreported whenever the app happened to be unpublished --
+      // which is every install today.
       const APP_DEPENDENT_LEGS = new Set([
         "app-provenance",
         "app-hash",
@@ -776,8 +787,6 @@ export async function installAll(opts = {}) {
         "app-launch",
         "bridge-ipc",
         "launch-command",
-        "stt-runtime-capability",
-        "tts-runtime-capability",
       ]);
       const failedRequired = Object.values(health.legs || {})
         .filter((leg) => leg.classification === "required" && leg.status !== "PASS")
