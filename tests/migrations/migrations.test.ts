@@ -86,6 +86,26 @@ const assertDocEqual = (actual: Record<string, unknown>, expected: Record<string
   assert.deepEqual(strip(actual), strip(expected), label);
 };
 
+/**
+ * The expectation for a RAW STEP, as opposed to a fully migrated document.
+ *
+ * A migration step renames and passes through; it does not invent a field the
+ * target version introduced. That is this chain's stated rule -- `migrateV2toV3`
+ * says "absent stays absent", and the one default a step does write
+ * (`anchor: 'floating'` in v1 -> v2) is the reshaping of a field that WAS
+ * present, not the invention of one that was not.
+ *
+ * So a v3 field with no v2 ancestor -- `characterHidden`, the hologram off
+ * switch's stored state -- is filled by normalization against FIELD_DEFAULTS[3],
+ * which runs inside `runMigrations` and not inside a step. Both are correct at
+ * their own layer, and this makes the difference explicit rather than letting
+ * one fixture quietly stand for two different things.
+ */
+const asStepOutput = (expected: Record<string, unknown>): Record<string, unknown> => {
+  const { characterHidden: _filledByNormalization, ...step } = expected;
+  return step;
+};
+
 test('chain shape and bounds', async (t) => {
   await t.test('registry has a step for every integer version below CURRENT', () => {
     for (let v = MIN_SCHEMA_VERSION; v < CURRENT_SCHEMA_VERSION; v += 1) {
@@ -176,14 +196,14 @@ test('migration steps — per-field pinned (data loss = test failure)', async (t
 
   await t.test('v2 real fixture -> v3: nameAskedAt string -> nameAsked object, rest byte-exact', () => {
     const out = migrateV2toV3(FIXTURE_V2_FULL as unknown as VersionDoc);
-    assertDocEqual(out, EXPECTED_V3_FROM_V2_FULL, 'v2 full -> v3 full');
+    assertDocEqual(out, asStepOutput(EXPECTED_V3_FROM_V2_FULL), 'v2 full -> v3 full');
     // the flat field is gone
     assert.equal('nameAskedAt' in out, false);
   });
 
   await t.test('v2 partial (nameAskedAt null) -> v3: nameAsked null', () => {
     const out = migrateV2toV3(FIXTURE_V2_PARTIAL as unknown as VersionDoc);
-    assertDocEqual(out, EXPECTED_V3_FROM_V2_PARTIAL, 'v2 partial -> v3 partial');
+    assertDocEqual(out, asStepOutput(EXPECTED_V3_FROM_V2_PARTIAL), 'v2 partial -> v3 partial');
     assert.equal(out.nameAsked, null);
   });
 

@@ -131,6 +131,61 @@ test("npm install fails", () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+test("a global npm install pinned to an exact version is allowed", () => {
+  // The lockfile rule protects PROJECT dependencies. A global tool install has
+  // no lockfile to come from, so it is judged by the property the lockfile was
+  // giving us -- determinism -- and an exact version supplies that.
+  const root = fixture({
+    "candice-ci.yml": CLEAN.replace(
+      "          npm ci\n",
+      "          npm ci\n          npm install -g @anthropic-ai/claude-code@2.1.227\n",
+    ),
+  });
+  const r = checkWorkflows(root);
+  assert.ok(
+    !r.errors.some((e) => e.includes("npm install")),
+    `a pinned global install must be accepted, got: ${r.errors.join("; ")}`,
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a global npm install without an exact version still fails", () => {
+  // CONTROL for the test above. If the exception were blanket rather than
+  // "pinned only", this would pass and the rule would have no teeth left.
+  const root = fixture({
+    "candice-ci.yml": CLEAN.replace(
+      "          npm ci\n",
+      "          npm ci\n          npm install -g @anthropic-ai/claude-code\n",
+    ),
+  });
+  const r = checkWorkflows(root);
+  assert.equal(r.ok, false);
+  assert.ok(
+    r.errors.some((e) => e.includes("without an exact version")),
+    `expected an unpinned-global error, got: ${r.errors.join("; ")}`,
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a scoped package's @scope is not mistaken for its version", () => {
+  // `@anthropic-ai/claude-code` has an `@` at index 0. Reading the FIRST `@`
+  // would see "anthropic-ai/claude-code" as the version, fail the digit check,
+  // and reject a correctly pinned install -- or, with a looser check, accept an
+  // unpinned one. The version is the LAST `@`.
+  const root = fixture({
+    "candice-ci.yml": CLEAN.replace(
+      "          npm ci\n",
+      "          npm ci\n          npm install --global @scope/pkg@0.1.2\n",
+    ),
+  });
+  const r = checkWorkflows(root);
+  assert.ok(
+    !r.errors.some((e) => e.includes("npm install")),
+    `scoped + pinned must be accepted, got: ${r.errors.join("; ")}`,
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("perf before bundle build fails", () => {
   const bundleStep = `      - name: Q-10 smoke posture gate (no updater content, real pubkey)
         run: node scripts/candice-release/updater-sign.mjs --posture smoke --config apps/candice-companion/tauri.conf.json

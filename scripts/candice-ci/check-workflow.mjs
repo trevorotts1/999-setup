@@ -94,8 +94,39 @@ export function checkWorkflows(root = scriptRoot) {
         }
       }
       // 3. npm install
-      if (/npm install\b/.test(block)) {
-        errors.push(`${file}: job ${jobName} uses npm install (use npm ci against the committed lockfile)`);
+      //
+      // The rule protects PROJECT dependencies: they must come from the
+      // committed lockfile, so a build cannot silently float. A GLOBAL tool
+      // install has no lockfile to come from, so the same rule cannot apply --
+      // but "no lockfile" must not become "unpinned". A global install is
+      // allowed only when every package it names carries an exact version,
+      // which gives the same determinism the lockfile gives.
+      //
+      // `@scope/name@1.2.3` -- the version is the LAST `@`, not the scope's.
+      for (const m of block.matchAll(/npm install\b([^\n]*)/g)) {
+        const rest = m[1];
+        const isGlobal = /(^|\s)(-g|--global)(\s|$)/.test(rest);
+        if (!isGlobal) {
+          errors.push(`${file}: job ${jobName} uses npm install (use npm ci against the committed lockfile)`);
+          continue;
+        }
+        const specs = rest
+          .split(/\s+/)
+          .filter((t) => t && !t.startsWith("-"));
+        if (specs.length === 0) {
+          errors.push(`${file}: job ${jobName} runs a global npm install naming no package`);
+          continue;
+        }
+        for (const spec of specs) {
+          const at = spec.lastIndexOf("@");
+          const version = at > 0 ? spec.slice(at + 1) : "";
+          if (!/^\d+\.\d+\.\d+/.test(version)) {
+            errors.push(
+              `${file}: job ${jobName} installs ${spec} globally without an exact version ` +
+                `(pin it, e.g. name@1.2.3 — a global install has no lockfile to hold it still)`,
+            );
+          }
+        }
       }
       // 4. perf step must require the built bundle when a bundle step exists
       const hasBundleStep = /tauri:build|tauri build/.test(block);

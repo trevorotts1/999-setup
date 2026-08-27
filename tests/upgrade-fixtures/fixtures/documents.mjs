@@ -102,6 +102,7 @@ export const EXPECTED_V3_FROM_V2 = {
   lastUsedAnswerMethod: 'voice',
   textSize: 'large',
   reducedMotion: true,
+  characterHidden: false,
   companionScreenPosition: { x: 12, y: 34, anchor: 'right' },
   lastUsedSkill: 'kaizen',
   nameAsked: { askedAt: '2026-08-20T10:00:00.000Z' },

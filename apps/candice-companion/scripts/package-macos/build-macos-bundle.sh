@@ -198,6 +198,16 @@ case "$MODE" in
             exit 1
           }
         done
+
+    # codesign rewrote every Mach-O it just touched, so the speech manifest's
+    # own-tree measurements now describe bytes that no longer exist. Correct
+    # them BEFORE the outer bundle is signed, so the app signature covers the
+    # corrected manifest. Pinned upstream hashes are never rewritten -- the
+    # script fails instead. See scripts/restamp-speech-inventory.mjs.
+    node "scripts/restamp-speech-inventory.mjs" --bundle "$APP" || {
+      echo "build-macos-bundle: speech inventory restamp failed" >&2
+      exit 1
+    }
     codesign "${CODESIGN_ARGS[@]}" -s "$IDENTITY" "$APP" || {
       echo "build-macos-bundle: codesign failed on $APP" >&2
       exit 1
@@ -240,6 +250,16 @@ case "$MODE" in
             exit 1
           }
         done
+
+    # codesign rewrote every Mach-O it just touched, so the speech manifest's
+    # own-tree measurements now describe bytes that no longer exist. Correct
+    # them BEFORE the outer bundle is signed, so the app signature covers the
+    # corrected manifest. Pinned upstream hashes are never rewritten -- the
+    # script fails instead. See scripts/restamp-speech-inventory.mjs.
+    node "scripts/restamp-speech-inventory.mjs" --bundle "$APP" || {
+      echo "build-macos-bundle: speech inventory restamp failed" >&2
+      exit 1
+    }
     codesign "${ADHOC_ARGS[@]}" -s - "$APP" || {
       echo "build-macos-bundle: ad-hoc codesign failed on $APP" >&2
       exit 1

@@ -222,6 +222,21 @@ case "focus":
     print("focused")
     exit(0)
 
+case "press-contains":
+    // Same as `press`, but the accessible name need only CONTAIN the
+    // substring. Required for controls whose label is parameterised at
+    // runtime -- "Answer in Claude instead" / "Answer in Claude-Nine
+    // instead" / "Answer in your terminal instead" are one control whose
+    // name varies with the harness the app was launched from. Pressing it
+    // by an exact string only works on one of the three.
+    guard argv.count >= 5 else { fail("press-contains needs <role> <substring>", 2) }
+    guard let el = find(app, role: argv[3] == "*" ? nil : argv[3], label: argv[4], exact: false)
+    else { print("absent"); exit(1) }
+    let pcerr = AXUIElementPerformAction(el, kAXPressAction as CFString)
+    if pcerr != .success { fail("AXPress failed: \(pcerr.rawValue)", 2) }
+    print("pressed")
+    exit(0)
+
 case "press":
     guard argv.count >= 5 else { fail("press needs <role> <label>", 2) }
     // The role matters here. The answer surface carries BOTH a text field and

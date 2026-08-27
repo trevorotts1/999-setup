@@ -53,7 +53,26 @@ const APP_PROCESS = 'candice-companion'
 // Stable a11y labels (FIX-014 answer-controls contract; do not rephrase).
 const LABELS = Object.freeze({
   TYPE_INPUT: 'TYPE ANSWER',
-  ANSWER_IN_CLAUDE: 'Answer in Claude instead',
+  // NOT an exact string. This control's accessible name is built at runtime
+  // from the harness the app was launched with (src/harness/name.ts):
+  //
+  //   "Answer in Claude instead"        launched from claude
+  //   "Answer in Claude-Nine instead"   launched from claude-nine
+  //   "Answer in your terminal instead" launched with no harness env — which
+  //                                     is what happens when this suite starts
+  //                                     the .app directly, and what a user gets
+  //                                     opening Candice from the Dock
+  //
+  // Pinning the first spelling made every leg fail with "saw the input, but
+  // not its buttons": the app was correct and the locator was looking for a
+  // name that only exists under one launch. The app must NOT fabricate
+  // "Claude" when nobody told it the harness — that is the fabrication the
+  // harness module exists to remove — so the locator matches the family.
+  ANSWER_ELSEWHERE_PREFIX: 'Answer in ',
+  // Matched together with the prefix so the family match stays tight: every
+  // legitimate spelling is "Answer in <name> instead". Prefix alone would also
+  // accept a future control merely starting with those words.
+  ANSWER_ELSEWHERE_SUFFIX: ' instead',
   // The compact field's aria-label (src/ui/compact/config.ts
   // COMPACT_INPUT_LABEL), NOT its placeholder. It was the placeholder, so
   // rewording user-visible copy silently broke this locator.
@@ -363,14 +382,17 @@ function answerSurfaceVisible(procName) {
   void procName
   return axExists('AXTextField', LABELS.TYPE_INPUT)
     && axExists('AXButton', LABELS.TYPE_INPUT)
-    && axExists('AXButton', LABELS.ANSWER_IN_CLAUDE)
+    && axContains('AXButton', LABELS.ANSWER_ELSEWHERE_PREFIX)
+    && axContains('AXButton', LABELS.ANSWER_ELSEWHERE_SUFFIX)
 }
 
 /** Clicks Answer in Claude instead. */
 function clickAnswerInClaude(procName) {
   void procName
-  const pressed = ax('press', 'AXButton', LABELS.ANSWER_IN_CLAUDE)
-  if (pressed.rc !== 0) throw new Error(`could not press "${LABELS.ANSWER_IN_CLAUDE}": ${pressed.out}`)
+  const pressed = ax('press-contains', 'AXButton', LABELS.ANSWER_ELSEWHERE_PREFIX)
+  if (pressed.rc !== 0) {
+    throw new Error(`could not press the "${LABELS.ANSWER_ELSEWHERE_PREFIX}..." button: ${pressed.out}`)
+  }
   return pressed.out
 }
 
