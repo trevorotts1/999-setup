@@ -22,10 +22,34 @@ const {
  */
 const UNCONFIGURED = Object.freeze({ launchCommand: null })
 
+/**
+ * BUILD_TARGET question text taken FROM the registry, not restated.
+ *
+ * The registry's copy was rewritten shorter while this fixture kept the
+ * older, wordier version. `verifyQuestion` compares delivered text against
+ * the registry with equal(), so every question built here was refused
+ * `question-authority-mismatch` — and the failures surfaced far from the
+ * cause, as `result.result.ok` being undefined in the deliver/answer tests.
+ * Same drift, same fix, as mcp.test.js.
+ */
+const CANONICAL_BUILD_TARGET_TEXT = (() => {
+  const built = require('../../packages/candice-protocol/question-registry').canonicalQuestion({
+    sessionId: 'session-a',
+    questionKey: 'BUILD_TARGET',
+    skill: 'spec-protocol',
+    progress: null,
+  })
+  const q = built.question || built
+  if (!q || typeof q.text !== 'string' || q.text.length === 0) {
+    throw new Error('registry did not yield a BUILD_TARGET question text')
+  }
+  return q.text
+})()
+
 function question(sessionId = 'session-a', questionKey = 'BUILD_TARGET') {
   return {
     schemaVersion: '1.0', sessionId, skill: 'spec-protocol', event: 'question', questionKey,
-    text: 'First question, and it is an easy one, because you already know the answer — it is your idea. Tell me about it in your own words: what is it, and who is it for? A sentence or two is plenty, and describing it the way you would describe it to a friend is exactly right. There are no special words to know. I will tell you what I heard, and you tell me if I got it right.', answerKind: 'free_text', allowedInputModes: ['voice', 'typed', 'terminal'],
+    text: CANONICAL_BUILD_TARGET_TEXT, answerKind: 'free_text', allowedInputModes: ['voice', 'typed', 'terminal'],
     readAloud: true, sensitivity: 'normal', counted: false, progress: null,
     helpText: 'A sentence or two is plenty.', canGoBack: true,
   }
