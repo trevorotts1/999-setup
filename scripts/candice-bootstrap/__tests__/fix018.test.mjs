@@ -395,14 +395,23 @@ test("bounded probe: nonzero exit is FAIL with output; timeout bound enforced", 
 });
 
 test("bridge seam: companion-ready-timeout leaves no live timer chain (host process exits naturally)", () => {
-  // Regression for the FIX-011 seam poll-loop leak: after the 3000ms
+  // Regression for the FIX-011 seam poll-loop leak: after the
   // companion-ready-timeout fired, the ensureSession poll chain kept
   // re-arming setTimeout(poll, 25) forever, so a FAILed bridge probe hung
   // the host process. A fail-closed probe must never keep the loop alive.
+  //
+  // The ready budget is INJECTED here rather than waited out. It was raised
+  // from 3s to 20s deliberately -- 3s expired mid-launch on a loaded machine
+  // and declared a working companion dead -- and this test still carried the
+  // old assumption in a 15s spawn ceiling, so it failed on the timeout
+  // firing at 20s rather than on the leak it exists to catch. Waiting 20s to
+  // learn nothing extra is also just a slow suite: the property under test is
+  // "the poll chain stops when the budget expires", and that is the same
+  // property whatever the budget is.
   const bridgePath = resolve(here, "../../../plugins/candice-integration/mcp/ask-user/local-companion-bridge.js");
   const script = `
     const { LocalCompanionBridge } = require(process.env.BRIDGE_PATH)
-    const bridge = new LocalCompanionBridge({ launchCommand: process.execPath })
+    const bridge = new LocalCompanionBridge({ launchCommand: process.execPath, readyTimeoutMs: 500 })
     ;(async () => {
       await bridge.start()
       const r = await bridge.ensureSession('session-a')
