@@ -76,7 +76,7 @@ test("stateMatches detects full vs partial component sets", () => {
     platform: "darwin",
     components: {
       "nine-router-setup": { status: "installed", version: "1.17.0" },
-      "spec-protocol": { status: "installed", version: "1.17.0" },
+      "spec-protocol": { status: "installed", version: "1.17.3" },
       kaizen: { status: "installed", version: "1.1.0" },
       eli5: { status: "installed", version: "1.1.0" },
       bro: { status: "installed", version: "1.1.0" },

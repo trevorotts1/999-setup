@@ -245,14 +245,31 @@ async function schemaHealthCheck(opts = {}) {
         const mcp = JSON.parse(readFileSync(mcpFile, "utf8"));
         const server = mcp.mcpServers && mcp.mcpServers.candice;
         const ready = server?.env?.CANDICE_COMPANION_READY === "1";
+        // CANDICE_COMPANION_READY is a CLAIM about the installed app, so the
+        // leg checks that the claim MATCHES reality rather than demanding it
+        // be true. With no app installed the plugin is supposed to run in
+        // terminal-answer mode, and marking that a failure meant a client
+        // who installed from the repository before any app was published had
+        // the whole install rolled back over a correctly-absent flag.
+        //
+        // This is strictly stricter than what it replaces, not looser: the
+        // old check could not see a plugin claiming a companion that is not
+        // installed. That case now FAILS, because a plugin that advertises a
+        // companion it cannot reach makes every ask_user hang to timeout.
+        const appInstalled = checkApp(root, platform).present === true;
+        const consistent = ready === appInstalled;
         set(
           "plugin-mcp",
-          server?.command && ready ? LEG_OK : LEG_FAIL,
+          server?.command && consistent ? LEG_OK : LEG_FAIL,
           !server?.command
             ? "candice MCP server missing"
-            : ready
+            : ready && appInstalled
               ? "candice MCP server declared and provisioned"
-              : "candice MCP server is not provisioned (CANDICE_COMPANION_READY=1 missing)",
+              : !ready && !appInstalled
+                ? "candice MCP server declared; companion not installed, so terminal-answer mode is correct"
+                : ready
+                  ? "candice MCP server claims CANDICE_COMPANION_READY=1 but no app is installed"
+                  : "candice MCP server is not provisioned (CANDICE_COMPANION_READY=1 missing) though the app IS installed",
         );
       } catch (e) {
         set("plugin-mcp", LEG_FAIL, `.mcp.json unreadable: ${e.message}`);

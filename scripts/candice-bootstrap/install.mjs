@@ -63,7 +63,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Non-application version pins mirror the active WS-33 registry. */
 export const SKILL_PINS = {
   "nine-router-setup": "1.17.0",
-  "spec-protocol": "1.17.0",
+  "spec-protocol": "1.17.3",
   kaizen: "1.1.0",
   eli5: "1.1.0",
   bro: "1.1.0",
@@ -274,7 +274,21 @@ export async function installApp(root, platform, opts = {}) {
       ...(opts.statusScript ? { statusScript: opts.statusScript } : {}),
       ...(opts.authority ? { authority: opts.authority } : {}),
     });
-    if (!resolved.ok) return result(false, `app install refused: ${resolved.message}`);
+    if (!resolved.ok) {
+      // UNAVAILABLE, not corrupt. There is no release-authorized app
+      // candidate for this platform yet -- the authority refused, or the
+      // manifest carries no record. That is a statement about what has been
+      // published, NOT about the integrity of something we were handed, and
+      // the two must not be conflated: `installAll` continues past an
+      // unavailable app so the skills, plugin and assets still land, but
+      // aborts on anything that smells like tampering (see the sha256, size
+      // and path-escape checks below, which stay fatal on purpose).
+      return result(false, `app install refused: ${resolved.message}`, {
+        blocked: true,
+        unavailable: true,
+        skipped: true,
+      });
+    }
     const rec = resolved.record;
     // Expected executable path is root-relative; never allow escapes.
     const exeTarget = resolve(root, rec.executablePath);
@@ -330,7 +344,7 @@ export async function installApp(root, platform, opts = {}) {
   if (mode === "developer") {
     const fixture = opts.appFixture;
     if (!fixture) {
-      return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
+      return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true, unavailable: true, skipped: true });
     }
     if (fixture.signedBy !== INTERNAL_SIGNED_FIXTURE) {
       return result(false, "developer app fixture is not internally signed (signedBy must be scripts/candice-release/status.mjs)", { blocked: true });
@@ -372,7 +386,7 @@ export async function installApp(root, platform, opts = {}) {
 
   // test-fixture (or any other validated future non-release mode):
   // never invent an app candidate.
-  return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true });
+  return result(false, "no release-authorized Candice app candidate is available; refusing app installation", { blocked: true, unavailable: true, skipped: true });
 }
 
 /** Load the WS-33 component registry module (source of truth for payloads). */
@@ -555,9 +569,32 @@ export async function installAll(opts = {}) {
   restores.push(snapshotTarget(root, appDir(root), "app"));
   const appR = await installApp(root, platform, { ...opts, mode });
   results.app = appR;
-  if (!appR.ok) {
+  // An app that has not been PUBLISHED yet must not cancel the parts that
+  // have. This used to abort the whole install: the app leg runs first, so
+  // a missing app record meant the skills, the plugin and the assets were
+  // all refused too, and `install` reported failure having written nothing.
+  // Installing from the repository therefore installed NOTHING rather than
+  // everything -- which is the exact complaint this answers.
+  //
+  // The distinction is availability versus integrity, and it is not a
+  // softening of the gate. `unavailable` is set ONLY where the resolver
+  // says no authorized candidate exists. Every check that could indicate
+  // tampering -- sha256 mismatch, size mismatch, an executablePath that
+  // escapes the root, a failed download -- returns WITHOUT that flag and
+  // still aborts here, exactly as before.
+  // Scoped to RELEASE deliberately. Release is the mode a client actually
+  // installs the repository with, and it is the one where "the app has not
+  // been published yet" is a normal, expected state. The non-release modes
+  // keep their original fail-closed property -- with no authority they write
+  // nothing at all -- because there the absence of a candidate means the
+  // caller has not supplied one, not that none exists in the world.
+  const appUnavailable = release && !appR.ok && appR.unavailable === true;
+  if (!appR.ok && !appUnavailable) {
     journal(root, { step: "installAll.fail", leg: "app", reason: appR.message });
     return finish(root, platform, results, false, `app install failed: ${appR.message}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}`, [], { mode, notReleaseInstall: isNonRelease(mode) });
+  }
+  if (appUnavailable) {
+    journal(root, { step: "app.unavailable", reason: appR.message });
   }
   if (appR.provenance) journal(root, { step: "app.installed", provenance: appR.provenance.record });
 
@@ -573,7 +610,11 @@ export async function installAll(opts = {}) {
   restores.push(snapshotTarget(root, pluginDir(root), "plugin"));
   // The app leg has already passed. Mark only this provisioned installed copy
   // ready; the repo source remains fail-soft when installed without the app.
-  const pluginR = installPlugin(root, PLUGIN_PINS, { ...opts, companionReady: true });
+  // `companionReady` is a CLAIM about the installed app, so it tracks the
+  // app leg rather than being hardcoded true. With no app installed the
+  // plugin stays in its fail-soft terminal mode, which it already supports
+  // -- the MCP server simply never advertises a companion it cannot reach.
+  const pluginR = installPlugin(root, PLUGIN_PINS, { ...opts, companionReady: appR.ok === true });
   results.plugin = pluginR;
   if (!pluginR.ok) {
     const rb = rollback(`plugin failed: ${pluginR.message}`);
@@ -646,13 +687,41 @@ export async function installAll(opts = {}) {
     const health = await healthCheck({ root, platform, env, mode: "release", release: true, configRoot: opts.configRoot });
     results.health = health;
     if (!health.ok) {
-      await deregisterAll(env, pluginDir(root), regOpts);
-      const rb = rollback(`release health probes failed: ${health.missing.join(", ")}`);
-      return finish(root, platform, results, false, `release install failed health probes: ${health.missing.join(", ")}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, skipped, { mode, notReleaseInstall: false, rollback: rb, state });
+      // When the app was never published, the legs that probe THROUGH the
+      // app cannot pass, and failing the install on them would put us back
+      // where we started: nothing installed because one component does not
+      // exist yet. These, and ONLY these, are tolerated -- and only when
+      // the app leg reported itself unavailable rather than broken.
+      //
+      // Every other required leg still gates. A plugin that did not
+      // register, a skill tree that did not land, an asset whose hash does
+      // not match: all still roll the whole install back, exactly as before.
+      const APP_DEPENDENT_LEGS = new Set([
+        "app-provenance",
+        "app-hash",
+        "app-executable",
+        "app-launch",
+        "bridge-ipc",
+        "launch-command",
+        "stt-runtime-capability",
+        "tts-runtime-capability",
+      ]);
+      const failedRequired = Object.values(health.legs || {})
+        .filter((leg) => leg.classification === "required" && leg.status !== "PASS")
+        .map((leg) => leg.leg);
+      const blocking = appUnavailable
+        ? failedRequired.filter((leg) => !APP_DEPENDENT_LEGS.has(leg))
+        : failedRequired;
+      if (blocking.length > 0) {
+        await deregisterAll(env, pluginDir(root), regOpts);
+        const rb = rollback(`release health probes failed: ${blocking.join(", ")}`);
+        return finish(root, platform, results, false, `release install failed health probes: ${blocking.join(", ")}; rollback ${rb.restored ? "restored" : "INCOMPLETE"}`, skipped, { mode, notReleaseInstall: false, rollback: rb, state });
+      }
+      journal(root, { step: "health.appLegsTolerated", legs: failedRequired, reason: "no published app candidate" });
     }
   }
 
-  const message = `bootstrap completed${wrote ? "" : " (state write failed)"}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}${skipped.length ? `; unverifiable legs skipped: ${skipped.join(" | ")}` : ""}`;
+  const message = `bootstrap completed${wrote ? "" : " (state write failed)"}${isNonRelease(mode) ? " — NOT_RELEASE_INSTALL" : ""}${appUnavailable ? " — APP NOT INSTALLED (no published Candice release for this platform yet); skills, plugin and assets are installed and the plugin runs in terminal-answer mode" : ""}${skipped.length ? `; unverifiable legs skipped: ${skipped.join(" | ")}` : ""}`;
   return finish(root, platform, results, true, message, skipped, { mode, notReleaseInstall: isNonRelease(mode), state });
 }
 
