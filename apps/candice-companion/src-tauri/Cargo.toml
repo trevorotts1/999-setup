@@ -1,6 +1,6 @@
 [package]
 name = "candice-companion"
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 description = "Candice Companion — local visual and voice companion for Claude Code skills"
 authors = ["BlackCEO"]
 edition = "2021"
