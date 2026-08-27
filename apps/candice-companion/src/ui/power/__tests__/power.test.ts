@@ -301,7 +301,23 @@ test('the button is a real activation target, and the row cannot overflow', () =
   // and body{overflow:hidden} clips rather than scrolls, so the row would
   // read as broken. It must wrap.
   assert.match(css, /flex-wrap: wrap;/, 'the row must wrap rather than be clipped');
-  assert.match(css, /max-width: min\(92vw, 404px\);/);
+  // The row no longer carries a width of its own. It used to pin
+  // `max-width: min(92vw, 404px)` while the panel it sits in pinned a
+  // different number and the status line above pinned 420px -- three
+  // surfaces, three widths, which is exactly what "the boxes are all
+  // mismatched" was. The panel owns the column (--candice-col) now and the
+  // row fills it, so what must be asserted is that the row takes the width
+  // it is given and never exceeds it.
+  assert.match(css, /width: 100%;/, 'the row must fill the panel column');
+  assert.match(css, /max-width: 100%;/, 'the row must never exceed its panel');
+  assert.ok(
+    !/max-width: min\(/.test(css),
+    'the row must not reintroduce a width of its own -- the panel owns the column',
+  );
+  // Separated from the toggles above by a rule rather than by floating
+  // margin: the anti-misclick separation is load-bearing (see the row
+  // comment) and must survive the move into the shared panel.
+  assert.match(css, /border-top: 1px solid var\(--candice-ui-edge/, 'the off row must stay visibly separated');
 
   // CONTROL: the row itself must still carry the 44px publication height.
   // If a later edit moved min-height onto the button and dropped it from the

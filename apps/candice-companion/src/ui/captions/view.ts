@@ -50,8 +50,13 @@ export const CAPTIONS_STYLE_TEXT = `
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  max-width: 420px;
-  padding: 8px 12px;
+  /* One column, same as every other panel -- see --candice-col in styles.css.
+     This box used to be 420px and shrink-wrapped, so it was a different width
+     from the status line above it and the answer card below it. */
+  width: var(--candice-col);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   font-size: 14px;
   line-height: 1.35;
   color: var(--candice-cap-text);
@@ -62,7 +67,7 @@ export const CAPTIONS_STYLE_TEXT = `
      the same surface token the contrast matrix measures every ratio against. */
   background: var(--candice-ui-surface);
   border: 1px solid var(--candice-ui-edge);
-  border-radius: 8px;
+  border-radius: var(--candice-panel-radius);
 }
 /* FIX-008: staleness dims the TEXT, never the backdrop. Fading the element
    fades the scrim with it and hands the effective contrast back to whatever

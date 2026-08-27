@@ -69,6 +69,36 @@
   --candice-danger: #ff8a8a;
   --candice-focus-ring: #dfd7ff;
   --candice-text-scale: 1;
+  /*
+   * ONE COLUMN -- the shared layout vocabulary.
+   *
+   * Every surface used to size itself with `width: fit-content`, so each box
+   * was exactly as wide as the words inside it: the runtime status wide, the
+   * greeting narrower, each toggle narrower still, the off switch wider than
+   * both. Five boxes, five widths, no two edges aligned. The operator's words
+   * on seeing it running: "the boxes are all weirdly shaped, mismatched, some
+   * boxes bigger than others... it looks like three separate systems".
+   *
+   * It WAS separate systems. This file and five per-module stylesheets each
+   * picked their own width (420px here, 404px there), their own radius (3, 4,
+   * 6, 8, 10, 14 and 16px were all in use at once) and their own margins, and
+   * shared no vocabulary at all. These tokens are that vocabulary. Every panel
+   * is now one width, one radius, one padding; #app supplies the one gap
+   * between them. A module that needs a different value must add a token here
+   * so the difference is deliberate and visible, not incidental.
+   *
+   * The window is 420px wide, so 92vw resolves to 386px and this lands on
+   * 380px -- a 20px margin either side. It stays a `min()` so a user-resized
+   * or scaled window narrows the column instead of clipping it.
+   */
+  --candice-col: min(92vw, 380px);
+  --candice-panel-radius: 14px;
+  --candice-panel-pad: 12px 14px;
+  --candice-control-radius: 10px;
+  /* Fully round: the action buttons (submit, choice pills, voice toggle, off)
+     are pills, and were the one family already consistent with each other. */
+  --candice-pill-radius: 999px;
+  --candice-stack-gap: 8px;
 }
 
 * {
@@ -107,6 +137,17 @@ body {
      unreachable. The floor above is what keeps it from being needed. */
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* ONE RHYTHM. Each surface used to bring its own margin -- 0 here, 6px
+     there, 12px above the off switch -- so the vertical gaps were as
+     mismatched as the widths were. The gap belongs to the stack, not to its
+     members; the surfaces below no longer carry margins that can disagree
+     with each other.
+     NOT `align-items: center`: the gesture stage holds absolutely-positioned
+     layers (inset: 0), so a shrink-to-fit column would collapse it to zero
+     width and Candice would vanish. The panels centre on their own auto
+     margins instead, which leaves the stage stretching as it must. */
+  gap: var(--candice-stack-gap);
+  padding: 8px 0 12px;
 }
 
 /* Boot surface (shown before src/main.ts first paint) */
@@ -125,12 +166,12 @@ body {
 .fallback-title,
 .fallback-hint,
 .candice-runtime-status {
-  width: fit-content;
-  max-width: min(92vw, 420px);
-  margin: 0;
-  padding: 10px 14px;
+  width: var(--candice-col);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   border: 1px solid var(--candice-ui-edge);
-  border-radius: 14px;
+  border-radius: var(--candice-panel-radius);
   background: var(--candice-ui-surface);
   color: var(--candice-text);
   font-size: calc(1em * var(--candice-text-scale));
@@ -244,10 +285,12 @@ body {
 }
 
 .candice-state-caption {
-  margin: 0;
-  padding: 10px 16px;
+  width: var(--candice-col);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   border: 1px solid var(--candice-ui-edge);
-  border-radius: 14px;
+  border-radius: var(--candice-panel-radius);
   background: var(--candice-ui-surface);
   color: var(--candice-text);
   /* Bigger. This is the line that greets the user; every reference design
@@ -260,8 +303,8 @@ body {
 }
 
 .candice-runtime-status {
-  margin: 0;
-  padding: 8px 12px 12px;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   text-align: center;
   /* Same rule as line 102, which this used to override by being later
      at equal specificity -- so degraded-mode guidance never scaled. */

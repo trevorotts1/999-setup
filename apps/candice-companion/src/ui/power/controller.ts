@@ -71,7 +71,16 @@ function injectStyle(doc: Document): void {
      identical silhouette, and at a matching 6px gap the two scanned as one
      grouped pair -- which is both why the off switch was hard to FIND and
      why a miss aimed at the toggle could land on quit. */
-  margin: 12px auto 6px;
+  /* SEPARATED BY A RULE, NOT BY A GAP.
+     This was margin 12px auto 6px -- floating space above the row, back
+     when the row was its own card. Inside the shared panel that gap just
+     re-created the "unrelated widget" look the panel exists to end. The
+     separation itself still matters and is kept: the reason for it was that
+     an identical silhouette directly under the toggles made the off switch
+     both hard to find and easy to hit by accident. A hairline says "different
+     kind of thing" more clearly than empty space did, and costs no width. */
+  margin: 6px 0 0;
+  border-top: 1px solid var(--candice-ui-edge, #3a3350);
   /* PUBLICATION and ACTIVATION are different things here, deliberately.
 
      The ROW is what the native hit test publishes (.candice-power-off is
@@ -87,15 +96,17 @@ function injectStyle(doc: Document): void {
      under a 44px toggle invites ending it by accident. The button is sized
      below for a comfortable target without becoming that strip. Do not
      "fix" this by moving the handler to the row. */
-  padding: 6px 10px;
+  padding: 10px 0 2px;
   min-height: 44px;
-  width: fit-content;
+  width: 100%;
   /* At the Large text scale (1.2) the button plus the hint runs past the
      420px window, and body{overflow:hidden} clips the tail rather than
      scrolling it, so the row reads as broken. Wrap instead. */
-  max-width: min(92vw, 404px);
+  max-width: 100%;
   flex-wrap: wrap;
-  justify-content: center;
+  /* Left, like the toggles above it. Centring this one row was part of why
+     the group read as unrelated parts: three rows, two alignments. */
+  justify-content: flex-start;
   font-size: calc(12px * var(--candice-text-scale, 1));
   line-height: 1.3;
   color: var(--candice-text, #faf7ff);
@@ -109,8 +120,10 @@ function injectStyle(doc: Document): void {
   font: inherit;
   color: inherit;
   cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 6px 14px;
+  /* A pill, like the submit button and the choice options. It was the only
+     6px-cornered control in a UI whose other buttons are all fully round. */
+  border-radius: var(--candice-pill-radius, 999px);
   /* Distinct from the toggle beside it, without shouting.
 
      Transparent-with-the-same-lavender-border made this a visual twin of

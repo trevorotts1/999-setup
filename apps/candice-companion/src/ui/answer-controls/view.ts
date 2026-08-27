@@ -49,8 +49,11 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  max-width: 420px;
-  padding: 12px 16px;
+  /* One column, same token as every other panel. */
+  width: var(--candice-col);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   /* FIX-014: consume the a11y text-scale token (spec 9 text size). */
   font-size: calc(14px * var(--candice-text-scale, 1));
   line-height: 1.35;
@@ -61,7 +64,7 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
      lavender outline belongs on controls, not on the container holding
      them. */
   border: 1px solid var(--candice-ui-edge, #3a3350);
-  border-radius: 16px;
+  border-radius: var(--candice-panel-radius, 14px);
 }
 .candice-answer-methods {
   display: flex;
@@ -103,7 +106,7 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   /* 220px, not 160px, and the row above gives it the width to use it. */
   min-width: 220px;
   border: 1px solid var(--candice-ac-muted);
-  border-radius: 10px;
+  border-radius: var(--candice-control-radius, 10px);
   /* FIX-008: opaque so the typed answer is readable over any desktop. */
   background: var(--candice-ui-surface, #171321);
   color: inherit;
@@ -153,7 +156,7 @@ export const ANSWER_CONTROLS_STYLE_TEXT = `
   color: var(--candice-ac-muted);
   font: inherit;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: var(--candice-control-radius, 10px);
   cursor: pointer;
 }
 .candice-answer-link:hover {

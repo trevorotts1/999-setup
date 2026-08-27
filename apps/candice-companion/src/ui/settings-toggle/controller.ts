@@ -77,17 +77,20 @@ function injectStyle(doc: Document): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 auto 6px;
-  padding: 6px 10px;
+  /* No margin and no width of its own: the row is a member of the panel
+     below, and the panel owns the column. A row that sized itself was a
+     box of its own width floating beside boxes of other widths. */
+  margin: 0;
+  padding: 2px 0;
   /* The ROW is the click target, not the 16px box inside it: outside a
      published rectangle the window is pointer-transparent, so a near miss
      goes through Candice to the desktop. min-height carries it to the 44px
      minimum; the native region padding adds only 4px. */
   min-height: 44px;
-  width: fit-content;
+  width: 100%;
   /* Long hints must wrap rather than be clipped: body has overflow:hidden,
      so an overflowing row loses its tail and reads as broken. */
-  max-width: min(92vw, 404px);
+  max-width: 100%;
   flex-wrap: nowrap;
   justify-content: flex-start;
   font-size: calc(12px * var(--candice-text-scale, 1));
@@ -108,14 +111,15 @@ function injectStyle(doc: Document): void {
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  width: fit-content;
-  max-width: min(92vw, 404px);
-  margin: 0 auto 6px;
-  padding: 4px 12px;
+  /* One column, same token as every other panel (styles.css). */
+  width: var(--candice-col);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--candice-panel-pad);
   color: var(--candice-text, #faf7ff);
   background: var(--candice-ui-surface, #171321);
   border: 1px solid var(--candice-ui-edge, #3a3350);
-  border-radius: 14px;
+  border-radius: var(--candice-panel-radius, 14px);
 }
 .${SETTINGS_TOGGLE_CLASS} input {
   width: 16px;
