@@ -356,16 +356,31 @@ body {
      Stretched 11px past the track top and bottom so the ACTIVATION target is
      44px tall, the Apple HIG minimum, while the drawn switch stays 22px. */
   position: absolute;
-  top: -11px;
-  bottom: -11px;
+  /* EXPLICIT BOX, NOT auto WITH OPPOSING OFFSETS.
+     This was `left/right/top/bottom: 0` with `width: auto`, and it did not
+     work: a checkbox is a REPLACED element, so `auto` resolves to the
+     widget's intrinsic size rather than stretching between the offsets, and
+     the over-constrained box collapses back to the left edge. The control was
+     therefore a small square somewhere inside a 40px track, and a click
+     anywhere else in the switch hit nothing. Measured against the running
+     app: clicking the word "Voice" flipped it 1 -> 0, clicking the switch
+     itself left it at 1.
+     `appearance: none` is part of the same fix -- it stops the engine
+     imposing the native checkbox metrics on a box we are sizing ourselves. */
+  appearance: none;
+  -webkit-appearance: none;
   left: 0;
-  right: 0;
-  width: auto;
-  height: auto;
+  top: -11px;
+  width: 100%;
+  /* 22px track plus 11px above and below: a 44px activation target, the
+     Apple HIG minimum, while the drawn switch stays 22px. */
+  height: 44px;
   margin: 0;
+  padding: 0;
+  border: 0;
   opacity: 0;
   cursor: pointer;
-  z-index: 1;
+  z-index: 2;
 }
 .candice-switch-track {
   position: absolute;
@@ -373,6 +388,12 @@ body {
   border-radius: var(--candice-pill-radius);
   background: var(--candice-switch-off);
   transition: background-color 140ms ease;
+  /* DECORATION MUST NOT EAT CLICKS. The track and knob are painted layers;
+     the control is the input beneath them. Leaving them in the hit test made
+     the outcome depend on stacking order, which is exactly the kind of thing
+     that works on one engine and fails on another -- and this ships to both
+     WKWebView and WebView2. */
+  pointer-events: none;
 }
 .candice-switch input:checked + .candice-switch-track {
   background: var(--candice-switch-on);
@@ -388,6 +409,7 @@ body {
      two ratios recorded on the tokens above. */
   background: var(--candice-ui-surface);
   transition: transform 140ms ease;
+  pointer-events: none;
 }
 .candice-switch input:checked + .candice-switch-track .candice-switch-knob {
   /* 40 wide, 16 knob, 3 either side: 40 - 16 - 3 - 3 = 18. */

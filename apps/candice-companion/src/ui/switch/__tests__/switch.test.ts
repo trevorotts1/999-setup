@@ -164,8 +164,81 @@ test('the checkbox is invisible but still focusable and still announced', () => 
   assert.ok(!/display: none/.test(block), 'display:none would unfocus it');
   assert.ok(!/visibility: hidden/.test(block), 'visibility:hidden would unfocus it');
   // 22px track stretched to a 44px activation target (Apple HIG minimum).
+  // Expressed as an offset plus an explicit height, NOT as opposing offsets:
+  // see 'the whole switch is clickable' below for why `bottom` cannot do this
+  // job on a replaced element.
   assert.match(block, /top: -11px;/);
-  assert.match(block, /bottom: -11px;/);
+  assert.match(block, /height: 44px;/);
+});
+
+test('the whole switch is clickable, not a small box inside it', () => {
+  // THE BUG THIS EXISTS TO PREVENT, in the operator's words: "I see the
+  // toggle green on, but the toggle off, the toggle doesn't work."
+  //
+  // The input was positioned with `left/right/top/bottom` and `width: auto`,
+  // which reads as "stretch to fill" and is not what happens: a checkbox is a
+  // REPLACED element, so `auto` resolves to the widget's intrinsic size and
+  // the over-constrained box collapses to the left edge. The control became a
+  // small square somewhere inside a 40px track and every click outside it hit
+  // nothing at all.
+  //
+  // Measured against the running app before the fix: clicking the word
+  // "Voice" flipped it 1 -> 0; clicking the switch itself left it at 1. After:
+  // left edge, centre and right edge each toggle.
+  const block = STYLES.slice(
+    STYLES.indexOf('.candice-switch input {'),
+    STYLES.indexOf('}', STYLES.indexOf('.candice-switch input {')),
+  );
+  assert.notEqual(block, '', 'CONTROL: the rule must exist for this to mean anything');
+
+  assert.match(block, /width: 100%;/, 'the input must span the whole track');
+  assert.match(block, /height: 44px;/, 'and carry the 44px activation height explicitly');
+  // `auto` on a replaced element is the trap. Named explicitly so a future
+  // edit reintroducing it fails here rather than on a user's screen.
+  assert.ok(
+    !/width: auto/.test(block),
+    'width:auto on a replaced element resolves to its intrinsic size, not the track',
+  );
+  assert.ok(
+    !/height: auto/.test(block),
+    'height:auto has the same trap',
+  );
+  assert.ok(
+    !/right: 0/.test(block) && !/bottom: 0/.test(block),
+    'opposing offsets do not stretch a replaced element — size it explicitly instead',
+  );
+  // appearance:none stops the engine imposing native checkbox metrics on a
+  // box we are sizing ourselves.
+  assert.match(block, /appearance: none;/, 'the native widget metrics must be off');
+});
+
+test('the painted layers never eat the click', () => {
+  // The track and knob sit over the input. Whether a click reaches the
+  // control then depends on stacking order, which is exactly the kind of
+  // thing that works in one engine and fails in another — and this ships to
+  // WKWebView and WebView2 both. Decoration is taken out of the hit test so
+  // the outcome does not depend on getting z-index right.
+  for (const selector of ['.candice-switch-track {', '.candice-switch-knob {']) {
+    const block = STYLES.slice(
+      STYLES.indexOf(selector), STYLES.indexOf('}', STYLES.indexOf(selector)),
+    );
+    assert.notEqual(block, '', `CONTROL: ${selector} must exist`);
+    assert.match(
+      block, /pointer-events: none;/,
+      `${selector} is decoration and must not receive pointer events`,
+    );
+  }
+  // CONTROL: the input itself must NOT be excluded — it is the control, and
+  // a blanket pointer-events:none would make the switch permanently dead
+  // while passing every other assertion in this file.
+  const inputBlock = STYLES.slice(
+    STYLES.indexOf('.candice-switch input {'),
+    STYLES.indexOf('}', STYLES.indexOf('.candice-switch input {')),
+  );
+  assert.ok(
+    !/pointer-events: none/.test(inputBlock),
+    'CONTROL: the input must stay in the hit test',
+  );
 });
 
 test('reduced motion stops the slide without stopping the state change', () => {
