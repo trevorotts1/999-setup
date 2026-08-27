@@ -1090,10 +1090,7 @@ def check_entry_mode():
         with open(ledger_path, "r", encoding="utf-8") as fh:
             found = False
             for ln in fh:
-                stripped = ln.strip()
-                if stripped.startswith("- `") and stripped.endswith("`"):
-                    stripped = stripped[3:-1]
-                if entry_re.match(stripped):
+                if any(entry_re.match(c) for c in ledger_candidates(ln)):
                     found = True
                     break
             if not found:
@@ -1123,15 +1120,39 @@ def research_dispatch_rows(dl_text):
             rows.append(ln)
     return rows
 
+def ledger_candidates(line):
+    """Every form of a raw ledger line a gate regex may legitimately match.
+
+    Ledger lines occur in three shapes and the gates must read all three:
+      1. bare                  `BUILD-TARGET: WEBSITE`
+      2. markdown list + ticks `- ``BUILD-TARGET: WEBSITE``​`
+      3. timestamped pipe row  `2026-08-24T12:00:18Z | BUILD-TARGET: WEBSITE | user words: ...`
+
+    Shape 3 is what live projects actually carry — the gate lines sit as ONE
+    pipe-delimited field among several, never alone on the line. Before
+    2026-08-26 only shapes 1 and 2 were parsed, and because the gate regexes are
+    anchored ^...$ the RESEARCH-READY gate reported BOTH ledger lines missing on
+    a project whose ledger carried them correctly, every cycle, forever. A gate
+    that cannot parse the format its own writer emits is a false alarm, not a
+    finding.
+    """
+    stripped = line.strip()
+    if stripped.startswith("- `") and stripped.endswith("`"):
+        stripped = stripped[3:-1]
+    forms = [stripped]
+    if "|" in stripped:
+        forms.extend(part.strip() for part in stripped.split("|"))
+    return forms
+
+
 def ledger_line_value(ledger_text, line_re):
-    """Return the value of the FIRST ledger line matching line_re, or None. Handles
-    plain lines and backtick-wrapped markdown list lines ('- `LINE`')."""
+    """Return the value of the FIRST ledger line matching line_re, or None.
+
+    Matches across all three ledger shapes — see ledger_candidates()."""
     for ln in ledger_text.splitlines():
-        stripped = ln.strip()
-        if stripped.startswith("- `") and stripped.endswith("`"):
-            stripped = stripped[3:-1]
-        if line_re.match(stripped):
-            return stripped
+        for cand in ledger_candidates(ln):
+            if line_re.match(cand):
+                return cand
     return None
 
 def check_research_ready():
