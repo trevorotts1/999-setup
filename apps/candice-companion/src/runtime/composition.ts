@@ -236,7 +236,7 @@ export async function initializeRuntimeComposition(
       root.dataset.gestureStageError = error instanceof Error
         ? error.message
         : String(error);
-      captionsFailure = 'Candice\u2019s animation could not start. Everything else still works.';
+      captionsFailure = 'Candice can\u2019t move right now. Everything else works.';
     }
     // The face stage fails CLOSED to an inert host, so a bust that cannot
     // mount never throws and never reaches the catch above -- it records
@@ -249,7 +249,7 @@ export async function initializeRuntimeComposition(
     // the pixel capture that is now the only verification channel.
     const faceFailed = character.dataset.candiceFaceFailed;
     if (captionsFailure === null && faceFailed !== undefined && faceFailed !== '') {
-      captionsFailure = `Candice\u2019s face did not load (${faceFailed}). Everything else still works.`;
+      captionsFailure = `Candice\u2019s face didn\u2019t load (${faceFailed}). Everything else works.`;
     }
   }
 
@@ -278,7 +278,7 @@ export async function initializeRuntimeComposition(
   // take ownership of any later one.
   const announceSystemVoice = (): void => {
     captions.announce(
-      'I’m using your computer’s built-in voice — my own voice isn’t installed on this machine.',
+      'I’m using your computer’s voice — mine isn’t installed here.',
     );
   };
   if (pendingSystemVoiceNotice) announceSystemVoice();

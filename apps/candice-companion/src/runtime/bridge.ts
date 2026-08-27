@@ -148,7 +148,9 @@ export function describeSpeechFailure(error: unknown): string {
       : '';
   const reason = raw.replace(/\s+/g, ' ').trim();
   if (reason.length === 0) {
-    return 'Candice could not speak this question aloud. The voice engine gave no reason.';
+    // "The voice engine gave no reason" told the user about our plumbing.
+    // What they actually need to know is that the words are on screen.
+    return 'Candice couldn\u2019t say that out loud. You can read it on screen.';
   }
   const bounded = reason.length > MAX_SPEECH_FAILURE_CHARS
     ? reason.slice(0, MAX_SPEECH_FAILURE_CHARS - 1) + '\u2026'

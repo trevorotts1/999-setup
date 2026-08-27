@@ -20,6 +20,7 @@
  * @module
  */
 
+import { harnessName } from '../../harness/name.ts';
 import type { CandiceStatus } from '../../state/status.ts';
 
 export interface CompactSubmitEntry {
@@ -110,6 +111,13 @@ export function submissionMustWait(status: CandiceStatus): boolean {
   return QUIET_STATUSES.has(status);
 }
 
-/** Canonical offline hint text (spec 13.3) — exported for tests. */
-export const BUSY_HINT_TEXT =
-  "Claude is working. I’ll send that as soon as it’s ready.";
+/**
+ * Canonical offline hint text (spec 13.3).
+ *
+ * Harness-aware: this named Claude unconditionally, so a claude-nine user
+ * was told a window that was not on their screen was busy. See
+ * `src/harness/name.ts`; with the plain harness the wording is unchanged.
+ */
+export function busyHintText(): string {
+  return `${harnessName() ?? 'Your terminal'} is working. I’ll send that as soon as it’s ready.`;
+}

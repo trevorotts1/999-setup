@@ -20,11 +20,12 @@
  * DOM degrades without throwing (spec 20).
  */
 
+import { setHarnessName, resetHarnessNameForTest } from '../../../harness/name.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  BUSY_HINT_TEXT,
+  busyHintText,
   COMPACT_CONTRACT_VERSION,
   COMPACT_EXPANDED_CLASS,
   COMPACT_PROGRESS_STATUSES,
@@ -390,7 +391,14 @@ test('spec 13.3: entries wait while busy then drain at the safe point', () => {
 
 test('spec 13.3: offline hint text is the canonical string', () => {
   // Spec 13.3 verbatim, including the typographic apostrophes (U+2019).
-  assert.equal(BUSY_HINT_TEXT, "Claude is working. I’ll send that as soon as it’s ready.");
+  // Harness-aware now. With the plain harness the wording is unchanged;
+  // under claude-nine it names that window instead of the wrong one.
+  setHarnessName('Claude');
+  assert.equal(busyHintText(), "Claude is working. I’ll send that as soon as it’s ready.");
+  setHarnessName('Claude-Nine');
+  assert.equal(busyHintText(), "Claude-Nine is working. I’ll send that as soon as it’s ready.");
+  resetHarnessNameForTest();
+  assert.equal(busyHintText(), "Your terminal is working. I’ll send that as soon as it’s ready.");
 });
 
 // ---------------------------------------------------------------- degrade

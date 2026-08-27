@@ -131,7 +131,11 @@ test('a rejection that carries no usable reason still says something, never sile
     reportSpeechFailure(empty, (t) => announced.push(t));
     assert.equal(announced.length, 1);
     assert.ok(announced[0].length > 0, 'never an empty announcement');
-    assert.match(announced[0], /gave no reason/);
+    // The copy used to end "The voice engine gave no reason", which told the
+    // user about our plumbing. What they need is that the words are on
+    // screen. Still pinned to a specific phrase so this keeps discriminating
+    // -- a generic non-empty check would pass on any string at all.
+    assert.match(announced[0], /You can read it on screen/);
   }
 });
 

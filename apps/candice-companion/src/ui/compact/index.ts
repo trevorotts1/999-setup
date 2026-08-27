@@ -28,7 +28,7 @@ export {
 } from './status.ts';
 export type { CompactFamily, CompactProgressStatus, CompactStatusView } from './status.ts';
 
-export { BUSY_HINT_TEXT, CompactSubmitQueue, submissionMustWait } from './queue.ts';
+export { busyHintText, CompactSubmitQueue, submissionMustWait } from './queue.ts';
 export type { CompactSubmitEntry } from './queue.ts';
 
 export { COMPACT_STYLE_TEXT, createCompactView, mountCompactStyle } from './view.ts';
