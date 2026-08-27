@@ -52,16 +52,27 @@ import { SpeechOrchestrator } from './speech-orchestrator.ts';
  * Keep it SHORT. This is the very first thing a new user sees, it is read
  * aloud, and it lands in a 420px column while they are waiting for setup to
  * finish -- so every extra word is a second of someone waiting on a
- * paragraph before anything happens. The previous version ran 228
- * characters across four sentences; most of that was one idea said three
- * ways ("the app, the software, or the thing you've always dreamed about")
- * plus a sentence of framing before the metaphor it was framing.
+ * paragraph before anything happens. The first version ran 228 characters
+ * across four sentences; most of that was one idea said three ways ("the
+ * app, the software, or the thing you've always dreamed about") plus a
+ * sentence of framing before the metaphor it was framing.
+ *
+ * Cut again at 134 characters, this time for plainness rather than length:
+ *   - "Think of me as your fairy godmother" -> "your fairy godmother". The
+ *     instruction to imagine something is longer than the image itself, and
+ *     spoken aloud it delays the only word that carries the idea.
+ *   - "you make a wish, I help make it real" -> "make a wish, I'll make it
+ *     real". Direct address, and "help make" hedges the promise in the one
+ *     line meant to land it.
+ *   - "Setting things up now" -> "Setting up now". "Things" names nothing.
+ * Now 107 characters, two sentences and a fragment, no word above two
+ * syllables except her own name.
  *
  * What must survive any rewrite: she says her name, the fairy-godmother
  * idea with its wish/real pairing, and a reason the user is waiting.
  */
 const SETUP_CHECK_GREETING =
-  "Hi, I'm Candice. Think of me as your fairy godmother for building things: you make a wish, I help make it real. Setting things up now.";
+  "Hi, I'm Candice — your fairy godmother for building things. Make a wish, I'll make it real. Setting up now.";
 
 export interface RuntimeCompositionOptions {
   invokeAdapter?: RuntimeInvokeAdapter;

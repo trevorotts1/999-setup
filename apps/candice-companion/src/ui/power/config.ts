@@ -56,4 +56,4 @@ export const POWER_OFF_BUSY_HINT = 'Closing…';
  * than this one sentence is worth. Saying what is true on both is correct
  * everywhere -- and shorter.
  */
-export const POWER_OFF_FAILED_HINT = 'Could not close her. You can quit Candice the way you quit any other app on this computer.';
+export const POWER_OFF_FAILED_HINT = 'Could not close her. Quit Candice like any other app on this computer.';

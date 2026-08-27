@@ -316,7 +316,7 @@ test('FIX-014 I-13: initialCaption shows at creation, important (never faded), b
   // creation", so if the product greeting changes, update the copy here too
   // rather than leaving two versions of Candice's voice in the repo.
   const greeting =
-    "Hi, I'm Candice. Think of me as your fairy godmother for building things: you make a wish, I help make it real. Setting things up now.";
+    "Hi, I'm Candice — your fairy godmother for building things. Make a wish, I'll make it real. Setting up now.";
   const ctrl = createCaptionsController({
     machine,
     mount: mount as unknown as HTMLElement,
