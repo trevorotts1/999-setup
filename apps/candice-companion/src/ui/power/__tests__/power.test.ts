@@ -1,9 +1,14 @@
 /**
  * Turn-off control acceptance tests.
  *
- *   PASS: there IS an off button, pressing it asks native to close the app,
- *         and a wedged native boundary tells the truth instead of pretending
- *         it worked.
+ *   PASS: there IS a Candice switch, switching it off asks native to close
+ *         the app, and a wedged native boundary tells the truth instead of
+ *         pretending it worked.
+ *
+ * It was a button until the operator asked for a row of switches -- "then by
+ * next one that says Candice and that has an on and off switch" -- so these
+ * now drive a checkbox with a change event rather than a button with a
+ * click. What is asserted is unchanged: the outcome, never reachability.
  *
  * OUTCOME tests: they assert what the control did, never that a function was
  * reachable. Run with:
@@ -40,6 +45,7 @@ class FakeElement {
   id = '';
   type = '';
   disabled = false;
+  checked = false;
   tagName: string;
 
   constructor(tagName: string) {
@@ -74,6 +80,15 @@ class FakeElement {
     if (this.id === id) return this;
     for (const child of this.children) {
       const hit = child.findById(id);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  /** Depth-first search by tag, so the label can be read beside its input. */
+  findByTag(tag: string): FakeElement | null {
+    if (this.tagName === tag) return this;
+    for (const child of this.children) {
+      const hit = child.findByTag(tag);
       if (hit) return hit;
     }
     return null;
@@ -124,86 +139,128 @@ function mountPowerOff(quit: () => Promise<unknown> | unknown) {
       layoutRefreshes += 1;
     },
   });
-  const button = doc.getElementById(POWER_OFF_ID);
+  const toggle = doc.getElementById(POWER_OFF_ID);
+  const label = (control.element as unknown as FakeElement | null)?.findByTag('label');
   const hint = (control.element as unknown as FakeElement | null)?.findByClass(
     'candice-power-off-hint',
   );
-  return { doc, mount, control, button, hint, layout: () => layoutRefreshes };
+  return { doc, mount, control, toggle, label, hint, layout: () => layoutRefreshes };
+}
+
+/**
+ * Switch Candice OFF the way a user does: move the checkbox, then let the
+ * browser fire change. Setting `checked` without the event would test the
+ * listener's absence, not its presence.
+ */
+function switchOff(toggle: FakeElement | null | undefined): void {
+  if (!toggle) return;
+  toggle.checked = false;
+  toggle.fire('change');
 }
 
 // ------------------------------------------------------------------- tests
 
-test('the off button exists and says what it does', () => {
-  const { control, button, hint } = mountPowerOff(async () => undefined);
+test('the Candice switch exists, is named, and starts on', () => {
+  const { control, toggle, label, hint } = mountPowerOff(async () => undefined);
   assert.notEqual(control.element, null, 'the control must mount');
-  assert.notEqual(button, null, 'there must be an off button in the tree');
-  assert.equal(button?.tagName, 'button');
-  assert.equal(button?.textContent, POWER_OFF_LABEL);
-  // The reassurance is what replaces a confirm dialog.
+  assert.notEqual(toggle, null, 'there must be a Candice switch in the tree');
+  assert.equal(toggle?.tagName, 'input');
+  assert.equal(toggle?.getAttribute('type'), 'checkbox');
+  // ON at mount, because she is: this control only exists while she runs. A
+  // switch that reads OFF beside a visibly running Candice is the animation
+  // toggle's old lie in a new place.
+  assert.equal(toggle?.checked, true, 'the switch must start on');
+  // The name is on the label, not the control, and the label points at it --
+  // which is what gives the checkbox an accessible name at all.
+  assert.equal(label?.textContent, POWER_OFF_LABEL);
+  assert.equal(label?.getAttribute('for'), POWER_OFF_ID);
+  // The reassurance is what replaces a confirm dialog. It is no longer drawn
+  // (the operator asked for switches "without all the fucking words") but it
+  // is still in the tree, because it is the live region a screen reader uses.
   assert.equal(hint?.textContent, POWER_OFF_HINT);
-  // It is an action, not a two-state control: a verb cannot report pressed.
-  assert.equal(button?.getAttribute('aria-pressed'), null);
+  assert.equal(hint?.getAttribute('role'), 'status');
+  assert.equal(hint?.getAttribute('aria-live'), 'polite');
+  // No aria-pressed invented on top of the native checked state.
+  assert.equal(toggle?.getAttribute('aria-pressed'), null);
 });
 
-test('pressing it asks native to close the app', () => {
+test('switching it off asks native to close the app', () => {
   let quits = 0;
-  const { control, button } = mountPowerOff(async () => {
+  const { control, toggle } = mountPowerOff(async () => {
     quits += 1;
   });
-  button?.fire('click');
-  assert.equal(quits, 1, 'a click must reach native');
+  switchOff(toggle);
+  assert.equal(quits, 1, 'switching off must reach native');
   assert.equal(control.closing, true);
-  assert.equal(button?.disabled, true, 'the button disarms while closing');
+  assert.equal(toggle?.disabled, true, 'the switch disarms while closing');
 });
 
-test('a second click does not fire a second quit', () => {
+test('switching it back ON does not fire a quit', () => {
+  // Only OFF is an action. After a failed close the control re-checks itself
+  // (see fail()), which fires a change event -- if ON also quit, that would
+  // loop straight back into another attempt.
   let quits = 0;
-  const { button } = mountPowerOff(async () => {
+  const { toggle } = mountPowerOff(async () => {
     quits += 1;
   });
-  button?.fire('click');
-  button?.fire('click');
-  button?.fire('click');
+  if (toggle) {
+    toggle.checked = true;
+    toggle.fire('change');
+  }
+  assert.equal(quits, 0, 'switching on must never ask native to quit');
+});
+
+test('a second flick does not fire a second quit', () => {
+  let quits = 0;
+  const { toggle } = mountPowerOff(async () => {
+    quits += 1;
+  });
+  switchOff(toggle);
+  switchOff(toggle);
+  switchOff(toggle);
   assert.equal(quits, 1, 'single-flight: the process is already leaving');
 });
 
 test('the hint reports the in-flight state', () => {
-  const { button, hint, control } = mountPowerOff(() => new Promise(() => {}));
-  button?.fire('click');
+  const { toggle, hint, control } = mountPowerOff(() => new Promise(() => {}));
+  switchOff(toggle);
   assert.equal(hint?.textContent, POWER_OFF_BUSY_HINT);
   assert.equal(control.element?.getAttribute('data-candice-power'), 'closing');
 });
 
 test('a native boundary that rejects says so instead of pretending', async () => {
-  const { button, hint, control } = mountPowerOff(async () => {
+  const { toggle, hint, control } = mountPowerOff(async () => {
     throw new Error('no native boundary');
   });
-  button?.fire('click');
+  switchOff(toggle);
   await new Promise((r) => setImmediate(r));
   assert.equal(hint?.textContent, POWER_OFF_FAILED_HINT);
-  assert.equal(control.closing, false, 'a failed close must re-arm the button');
-  assert.equal(button?.disabled, false);
+  assert.equal(control.closing, false, 'a failed close must re-arm the switch');
+  assert.equal(toggle?.disabled, false);
+  // AND the switch goes back ON, because Candice is still running. Leaving it
+  // OFF beside a visibly-present Candice is a control lying about its subject.
+  assert.equal(toggle?.checked, true, 'a failed close must restore the ON state');
   assert.equal(control.element?.getAttribute('data-candice-power'), 'failed');
 });
 
 test('an explicit false from native is a failure, not a success', async () => {
-  const { button, hint } = mountPowerOff(async () => false);
-  button?.fire('click');
+  const { toggle, hint } = mountPowerOff(async () => false);
+  switchOff(toggle);
   await new Promise((r) => setImmediate(r));
   assert.equal(hint?.textContent, POWER_OFF_FAILED_HINT);
 });
 
 test('the control publishes its box so the window lets the pointer through', () => {
-  const { button, layout } = mountPowerOff(async () => undefined);
+  const { toggle, layout } = mountPowerOff(async () => undefined);
   // The window is pointer-transparent outside published regions, so a
   // control that never triggers a refresh is drawn but not clickable.
   const afterMount = layout();
   assert.ok(afterMount >= 1, 'mounting must refresh the input regions');
-  button?.fire('click');
+  switchOff(toggle);
   assert.ok(layout() > afterMount, 'a state change must refresh them again');
 });
 
-test('mounting twice keeps one button', () => {
+test('mounting twice keeps one switch', () => {
   const { doc, mount, control } = mountPowerOff(async () => undefined);
   const second = createPowerOff({
     mount: mount as unknown as HTMLElement,
@@ -225,9 +282,9 @@ test('an unusable DOM degrades instead of throwing (spec 20)', () => {
 });
 
 test('CONTROL: the quit callback is genuinely wired, not assumed', () => {
-  // If the click listener were never attached, "pressing it asks native to
-  // close" would pass vacuously only if quits stayed 0 — so prove the
-  // inverse too: with no click, native is never asked.
+  // If the change listener were never attached, "switching it off asks
+  // native to close" would pass vacuously only if quits stayed 0 — so prove
+  // the inverse too: with no flick, native is never asked.
   let quits = 0;
   mountPowerOff(async () => {
     quits += 1;
@@ -235,26 +292,37 @@ test('CONTROL: the quit callback is genuinely wired, not assumed', () => {
   assert.equal(quits, 0, 'mounting alone must never quit the app');
 });
 
-test('the off button is visually distinct from the toggle it sits beside', () => {
-  // The operator could not find the off switch. Both rows were chips of
+test('the Candice switch is visually distinct from the two beside it', () => {
+  // The operator could not find the off switch. Every control was a chip of
   // identical geometry -- same surface, same lavender border, same radius,
-  // same type -- 6px apart, differing only in their inner content. Presence
-  // alone did not solve it.
+  // same type -- differing only in its inner content.
+  //
+  // That risk went UP, not down, when this became the third checkbox in a row
+  // of three checkboxes: geometry can no longer distinguish it at all, and
+  // the hairline that used to separate it is gone with the vertical stack. So
+  // colour is now the only signal, and it is load-bearing. This control gets
+  // --candice-danger; nothing else on the row does.
   const { doc } = mountPowerOff(async () => undefined);
   const css = doc.getElementById(POWER_OFF_STYLE_ID)?.textContent ?? '';
   assert.notEqual(css, '', 'CONTROL: the style must actually be injected, or this test is vacuous');
 
-  assert.match(css, /border: 1px solid var\(--candice-danger/, 'the button must carry the danger border');
-  assert.match(css, /color: var\(--candice-danger/, 'the button must carry the danger colour');
-
-  // NOT filled at rest. A red-filled button reads as a warning and invites
-  // mis-clicks on a control that is a normal thing to want.
-  assert.match(css, /background: transparent;/, 'the button must not be filled at rest');
-  // ...but filled on hover, which is where the inversion lives.
   assert.match(
-    css,
-    /button:hover:not\(:disabled\) \{[^}]*background: var\(--candice-danger/,
-    'hover must invert to the danger fill',
+    css, /accent-color: var\(--candice-danger/,
+    'the Candice switch must be tinted danger -- it is the only thing telling it apart',
+  );
+
+  // CONTROL: the two switches it sits beside must NOT carry that tint, or
+  // "distinct" is a claim about a colour everything shares.
+  const siblingCss = readFileSync(
+    join(import.meta.dirname, '..', '..', 'settings-toggle', 'controller.ts'), 'utf8',
+  );
+  assert.ok(
+    !/--candice-danger/.test(siblingCss),
+    'CONTROL: Voice and Hologram must not use the danger tint',
+  );
+  assert.match(
+    siblingCss, /accent-color: var\(--candice-accent/,
+    'CONTROL: ...and they must carry the ordinary accent, so the check compares two real values',
   );
 
   // The ROW still sits on the shared surface -- but that surface moved up one
@@ -286,42 +354,38 @@ test('the off button is visually distinct from the toggle it sits beside', () =>
   );
 });
 
-test('the button is a real activation target, and the row cannot overflow', () => {
-  // Publication and activation are different sizes here. The ROW is what the
-  // hit test publishes (44px, so a near miss does not fall through to the
-  // desktop); the BUTTON is what actually activates, and it was ~26px.
+test('the row stays a real pointer target, and cannot overflow', () => {
+  // PUBLICATION, not activation. The window is pointer-transparent outside
+  // published rectangles, and what the hit test publishes is the ROW -- so a
+  // near miss aimed at a 16px checkbox lands inside Candice rather than
+  // passing through to the desktop. That is what the 44px buys, and it is the
+  // whole reason .candice-power-off is in CONTROL_SELECTOR.
   const { doc } = mountPowerOff(async () => undefined);
   const css = doc.getElementById(POWER_OFF_STYLE_ID)?.textContent ?? '';
 
-  const button = css.slice(css.indexOf('button {'));
-  assert.match(button, /min-height: 32px;/, 'the activation target must clear the 24px minimum');
-  assert.match(button, /min-width: 88px;/);
+  const row = css.slice(0, css.indexOf('label {'));
+  assert.match(row, /min-height: 44px;/, 'the published row must stay 44px');
 
-  // At the Large text scale the button plus hint runs past the 420px window,
-  // and body{overflow:hidden} clips rather than scrolls, so the row would
-  // read as broken. It must wrap.
+  // At the Large text scale three names plus three checkboxes exceed the
+  // column, and body{overflow:hidden} clips rather than scrolls, so an
+  // unwrapped row would lose its tail.
   assert.match(css, /flex-wrap: wrap;/, 'the row must wrap rather than be clipped');
-  // The row no longer carries a width of its own. It used to pin
-  // `max-width: min(92vw, 404px)` while the panel it sits in pinned a
-  // different number and the status line above pinned 420px -- three
-  // surfaces, three widths, which is exactly what "the boxes are all
-  // mismatched" was. The panel owns the column (--candice-col) now and the
-  // row fills it, so what must be asserted is that the row takes the width
-  // it is given and never exceeds it.
-  assert.match(css, /width: 100%;/, 'the row must fill the panel column');
-  assert.match(css, /max-width: 100%;/, 'the row must never exceed its panel');
+
+  // The row carries no width of its own -- in either direction. It used to
+  // pin `max-width: min(92vw, 404px)` while the panel pinned a different
+  // number and the status line above pinned 420px: three surfaces, three
+  // widths, which is what "the boxes are all mismatched" was. Now it is one
+  // of three items sharing a line, so it is sized by its contents and the
+  // PANEL owns the column.
+  assert.match(row, /width: auto;/, 'the row must size to its contents, not to a column');
   assert.ok(
     !/max-width: min\(/.test(css),
     'the row must not reintroduce a width of its own -- the panel owns the column',
   );
-  // Separated from the toggles above by a rule rather than by floating
-  // margin: the anti-misclick separation is load-bearing (see the row
-  // comment) and must survive the move into the shared panel.
-  assert.match(css, /border-top: 1px solid var\(--candice-ui-edge/, 'the off row must stay visibly separated');
 
-  // CONTROL: the row itself must still carry the 44px publication height.
-  // If a later edit moved min-height onto the button and dropped it from the
-  // row, the pointer would start falling through to the desktop again.
-  const row = css.slice(0, css.indexOf('button {'));
-  assert.match(row, /min-height: 44px;/, 'the published row must stay 44px');
+  // CONTROL: the slice above must actually contain the row and stop before
+  // the label rule, or every assertion on `row` is reading the whole
+  // stylesheet and proving nothing about which selector carries what.
+  assert.ok(css.includes('label {'), 'CONTROL: the label rule must exist for the slice to bound');
+  assert.ok(!row.includes('accent-color'), 'CONTROL: the row slice must not reach the input rule');
 });

@@ -74,22 +74,31 @@ function injectStyle(doc: Document): void {
   // rows read as one column rather than as three unrelated widgets.
   style.textContent = `
 .${SETTINGS_TOGGLE_CLASS} {
-  display: flex;
+  /* INLINE, NOT A LINE OF ITS OWN.
+     Each setting used to take a full row with a sentence of explanation
+     under it, so two switches plus the off control ran to roughly 160px of
+     a 640px window. The operator: "why does voice have to be on its own
+     line and hologram be on its own line... it should say voice and then an
+     on and off switch and then right next to it is hologram". They are one
+     line now: name, switch, name, switch, name, switch. */
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   /* No margin and no width of its own: the row is a member of the panel
-     below, and the panel owns the column. A row that sized itself was a
-     box of its own width floating beside boxes of other widths. */
+     below, and the panel owns the column. */
   margin: 0;
+  flex: 0 0 auto;
   padding: 2px 0;
   /* The ROW is the click target, not the 16px box inside it: outside a
      published rectangle the window is pointer-transparent, so a near miss
      goes through Candice to the desktop. min-height carries it to the 44px
      minimum; the native region padding adds only 4px. */
   min-height: 44px;
-  width: 100%;
-  /* Long hints must wrap rather than be clipped: body has overflow:hidden,
-     so an overflowing row loses its tail and reads as broken. */
+  /* Sized by its own contents now -- a name and a checkbox -- because three
+     of these share one line. This is not the shrink-wrapping the layout
+     contract forbids: that rule is about PANELS, which must all be the same
+     width. An item inside a row is the case where intrinsic width is right. */
+  width: auto;
   max-width: 100%;
   flex-wrap: nowrap;
   justify-content: flex-start;
@@ -108,9 +117,14 @@ function injectStyle(doc: Document): void {
    unreadable controls are broken controls. */
 .${SETTINGS_PANEL_CLASS} {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
+  /* One line, and it wraps rather than clips: at the Large text scale three
+     names plus three checkboxes can exceed the column, and body has
+     overflow:hidden, so an unwrapped row would lose its tail. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 10px;
   /* One column, same token as every other panel (styles.css). */
   width: var(--candice-col);
   max-width: 100%;
@@ -135,15 +149,33 @@ function injectStyle(doc: Document): void {
   display: flex;
   align-items: center;
 }
+/* HEARD, NOT SEEN.
+   "Candice reads questions out loud." and "Candice is visible." were a
+   sentence per control, and the operator's instruction was a switch "without
+   all the fucking words". They are not deleted, because they are not
+   decoration: this is a role="status" live region, and it is how a screen
+   reader learns the switch changed state at all -- a checkbox announces
+   checked/unchecked, not what was turned on. Taking the text out of the DOM
+   would take that announcement with it.
+   So it stops being drawn and keeps being announced. The colour and size
+   below never render now; they stay so that the failure hint pattern in
+   ui/power/controller.ts, which DOES reveal its hint, has one styling rule
+   to reuse rather than inventing a second. */
 .${SETTINGS_TOGGLE_CLASS} .${SETTINGS_TOGGLE_HINT_CLASS} {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  /* Both forms: clip-path is the modern one, clip is what older WebKit
+     honours, and this ships to WKWebView and WebView2 alike. */
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
   color: var(--candice-muted, #d7cfdf);
   font-size: calc(11px * var(--candice-text-scale, 1));
-  /* INLINE. A width of 100% forced the hint onto its own line, which is what
-     turned every one-line control into a two-line block and doubled the
-     height of the whole group. */
-  width: auto;
-  text-align: left;
-  opacity: 0.72;
 }
 `;
   (doc.head ?? doc.documentElement).append(style);
@@ -175,7 +207,10 @@ export function createSettingsToggle(options: SettingsToggleOptions): SettingsTo
   hint.setAttribute('role', 'status');
   hint.setAttribute('aria-live', 'polite');
 
-  row.append(input, label, hint);
+  // NAME THEN SWITCH, in that order: "it should say voice and then an on and
+  // off switch". The label keeps its `for`, so the association a screen
+  // reader reads is unchanged by the visual order.
+  row.append(label, input, hint);
   options.mount.append(row);
 
   let on = options.checked === true;

@@ -24,11 +24,18 @@ export const POWER_OFF_STYLE_ID = 'candice-power-off-style';
 /**
  * Visible label.
  *
- * "Turn off", not "Quit" or "Exit": the operator's own word for what he
- * wanted was "turn candice off", and the control beside it says "Animation",
- * so the pair now reads as motion versus Candice herself.
+ * "Candice", not "Turn off" -- and the change of part of speech is the point.
+ * This was a verb on a button because it was an action. The operator asked
+ * for it to become the third switch on a row of switches: "then by next one
+ * that says Candice and that has an on and off switch". A switch is named
+ * for the thing it controls, the way the two beside it are named Voice and
+ * Hologram, so the label is now the noun and the ON/OFF state carries the
+ * verb. The row reads: Voice [x] Hologram [x] Candice [x].
+ *
+ * What it does is unchanged -- switching Candice off closes her, and she
+ * opens again on the next question.
  */
-export const POWER_OFF_LABEL = 'Turn off';
+export const POWER_OFF_LABEL = 'Candice';
 
 /**
  * The reassurance, which is the whole reason this needs no confirm dialog.

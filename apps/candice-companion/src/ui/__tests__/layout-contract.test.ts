@@ -79,7 +79,14 @@ const PANELS: Array<{ what: string; file: string; header: string }> = [
   { what: 'settings panel', file: 'ui/settings-toggle/controller.ts', header: '.${SETTINGS_PANEL_CLASS} {' },
 ];
 
-/** Rows that live INSIDE a panel: they fill it and never paint their own. */
+/**
+ * Items that live INSIDE a panel. They are sized by their own contents --
+ * three of them share one line -- and they never paint their own surface.
+ *
+ * Intrinsic width here is not the shrink-wrapping the panel rule forbids.
+ * That rule exists because PANELS of different widths make a ragged column;
+ * an item inside a row is exactly the case where sizing to content is right.
+ */
 const ROWS: Array<{ what: string; file: string; header: string }> = [
   { what: 'settings row', file: 'ui/settings-toggle/controller.ts', header: '.${SETTINGS_TOGGLE_CLASS} {' },
   { what: 'power off row', file: 'ui/power/controller.ts', header: '.${POWER_OFF_CLASS} {' },
@@ -117,16 +124,21 @@ describe('layout contract: one column', () => {
   }
 
   for (const row of ROWS) {
-    it(`${row.what} fills its panel instead of sizing itself`, () => {
+    it(`${row.what} sizes to its contents and never paints`, () => {
       const css = block(read(row.file), row.header);
-      assert.match(css, /width: 100%/, `${row.what} must fill the panel column`);
-      assert.ok(
-        !/width: fit-content/.test(css),
-        `${row.what} must not shrink-wrap inside the panel`,
-      );
+      assert.match(css, /width: auto/, `${row.what} must size to its contents`);
       assert.ok(
         !/max-width: min\(92vw/.test(css),
         `${row.what} must not carry a column width of its own — the panel owns it`,
+      );
+      // Three on one line only works if none of them claims the line.
+      assert.match(
+        css, /display: inline-flex/,
+        `${row.what} must be an inline item, not a row of its own`,
+      );
+      assert.match(
+        css, /flex: 0 0 auto/,
+        `${row.what} must neither grow nor shrink — that is what keeps three on one line`,
       );
       // A row that paints is a card, and three cards in a row is the exact
       // look this contract exists to end. The panel paints once for the group.
@@ -136,6 +148,45 @@ describe('layout contract: one column', () => {
       );
     });
   }
+
+  it('the settings panel lays its switches out on one line', () => {
+    const css = block(read('ui/settings-toggle/controller.ts'), '.${SETTINGS_PANEL_CLASS} {');
+    // "why does voice have to be on its own line and hologram be on its own
+    // line... it should say voice and then an on and off switch and then
+    // right next to it is hologram".
+    assert.match(css, /flex-direction: row/, 'the panel must lay its switches out in a row');
+    // ...and wrap, because at the Large text scale three names plus three
+    // checkboxes exceed the column and body{overflow:hidden} clips.
+    assert.match(css, /flex-wrap: wrap/, 'the row must wrap rather than clip');
+    assert.ok(
+      !/flex-direction: column/.test(css),
+      'CONTROL: the panel must not still be a column',
+    );
+  });
+
+  it('the switch hints are hidden from sight but not from a screen reader', () => {
+    // The operator asked for switches "without all the fucking words". The
+    // hint is a role="status" live region, and it is how a screen reader
+    // learns WHAT was turned on -- a checkbox announces checked, not
+    // "Candice reads questions out loud". Deleting the text would delete the
+    // announcement, so it is hidden visually and kept in the tree.
+    const css = block(
+      read('ui/settings-toggle/controller.ts'),
+      '.${SETTINGS_TOGGLE_CLASS} .${SETTINGS_TOGGLE_HINT_CLASS} {',
+    );
+    assert.match(css, /clip-path: inset\(50%\)/, 'the hint must be visually hidden');
+    assert.ok(
+      !/display: none/.test(css),
+      'display:none would take it out of the accessibility tree, not just out of sight',
+    );
+    // CONTROL: the text must still be set on the element, or "kept in the
+    // tree" is a claim about CSS with nothing behind it.
+    const src = read('ui/settings-toggle/controller.ts');
+    assert.match(
+      src, /hint\.textContent = on \? options\.onHint : options\.offHint/,
+      'CONTROL: the hint text must still be written to the live region',
+    );
+  });
 
   it('the tokens the whole contract rests on are actually declared', () => {
     const root = block(read('styles.css'), ':root {');
