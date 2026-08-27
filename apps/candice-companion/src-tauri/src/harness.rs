@@ -127,6 +127,29 @@ mod tests {
     }
 
     #[test]
+    fn windows_paths_are_recognised_too() {
+        // UNVERIFIED on a real Windows machine -- there is none in this
+        // project -- but the mechanism is checked here rather than assumed.
+        // The check is a SUBSTRING test, so it is separator-agnostic by
+        // construction: a backslash path carries the same `.claude-nine`
+        // marker as a POSIX one. A test that split on '/' would have been a
+        // silent Windows-only failure.
+        assert_eq!(
+            resolve_harness_name(Some(r"C:\Users\trevor\.claude-nine"), true),
+            Some(HARNESS_NINE)
+        );
+        assert_eq!(
+            resolve_harness_name(Some(r"C:\Users\trevor\.claude"), true),
+            Some(HARNESS_CLAUDE)
+        );
+        // A UNC path is still just a path.
+        assert_eq!(
+            resolve_harness_name(Some(r"\\server\share\.claude-nine"), true),
+            Some(HARNESS_NINE)
+        );
+    }
+
+    #[test]
     fn control_the_marker_is_actually_read() {
         // CONTROL: if the config-dir argument were ignored, every assertion
         // above would still pass through the `claude_code` fallback. Prove
