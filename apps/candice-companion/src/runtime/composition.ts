@@ -33,6 +33,8 @@ import {
   type InteractionComposition,
 } from './interaction-composition.ts';
 import { createAnimationToggle } from '../ui/animation-toggle/index.ts';
+import { probeHarnessName, harnessWindowPhrase } from '../harness/name.ts';
+import { createPowerOff } from '../ui/power/index.ts';
 import { initializeSpeechRuntime, defaultSpeechInvokeAdapter, type SpeechRuntime } from './speech-runtime.ts';
 import { SpeechOrchestrator } from './speech-orchestrator.ts';
 
@@ -101,6 +103,11 @@ export async function initializeRuntimeComposition(
   options: RuntimeCompositionOptions = {},
 ): Promise<RuntimeCapabilities> {
   const capabilities = await probeRuntimeCapabilities(options.invokeAdapter);
+  // Ask native which harness launched us BEFORE any copy is rendered, so
+  // the status line and both fallback buttons name the right window on
+  // their first paint rather than correcting themselves. Never throws: not
+  // knowing the name costs a noun, never the boot (spec 20).
+  await probeHarnessName(options.invokeAdapter);
   // FIX-014 (I-08/I-11): the boot-loaded profile (main.ts loads it once via
   // the native seam). Absent options degrade truthfully to defaults with a
   // failed-load result — never a fabricated persisted preference.
@@ -329,6 +336,24 @@ export async function initializeRuntimeComposition(
   root.dataset.candiceAnimationToggle = animationToggle.element ? 'mounted' : 'absent';
   root.dataset.candiceAnimation = animationToggle.motionOff ? 'off' : 'on';
 
+  // The off button. It sits directly under the animation toggle because
+  // that toggle is what the operator kept pressing while trying to turn
+  // HER off -- "u have animation off, when i turn it off its suppose to
+  // turn candace off". Motion and presence are two different things, and
+  // until now only one of them had a control.
+  const powerOff = createPowerOff({
+    mount: root,
+    quit: async () => {
+      const bridge = options.invokeAdapter ?? (await import('@tauri-apps/api/core'));
+      return bridge.invoke('cmd_quit_app');
+    },
+    onLayoutChange: options.onLayoutChange,
+  });
+  // Evidence for QC and the packaged-bundle sentinel, same as the toggle
+  // above: an absent off button is the exact regression being fixed here,
+  // so it has to be observable from outside without a screenshot.
+  root.dataset.candicePowerOff = powerOff.element ? 'mounted' : 'absent';
+
   // The event listener itself is inert until native has authenticated the
   // local launch token and the MCP server delivers a validated question.
   // A connected transport does not by itself display controls or invent a
@@ -445,15 +470,21 @@ export function runtimeStatusHealthy(capabilities: RuntimeCapabilities): boolean
  * exactly that, in words nobody needs this project explained to understand.
  */
 export function runtimeStatusText(capabilities: RuntimeCapabilities): string {
+  // Which window to send them to is not a constant. The operator runs
+  // claude-nine as well as claude, and this text used to say "the Claude
+  // window" unconditionally -- pointing a stuck user at a window that was
+  // not on their screen. `harnessWindowPhrase()` says "the Claude window",
+  // "the Claude-Nine window", or "your terminal" when we were not told.
+  const where = harnessWindowPhrase();
   if (capabilities.rejectedLaunchReason) {
-    return 'Candice could not start this time. Keep answering in the Claude window.';
+    return `Candice could not start this time. Keep answering in ${where}.`;
   }
   if (!capabilities.bridgeAvailable) {
-    return 'Candice cannot reach your session right now. Keep answering in the Claude window.';
+    return `Candice cannot reach your session right now. Keep answering in ${where}.`;
   }
   // This branch is deliberately defensive: the parser does not permit a
   // false-ready answer path to be inferred from a bridge alone.
   return capabilities.answerRoundTripAvailable
     ? 'Candice is ready.'
-    : 'Candice can show questions but cannot send answers yet. Answer in the Claude window.';
+    : `Candice can show questions but cannot send answers yet. Answer in ${where}.`;
 }
