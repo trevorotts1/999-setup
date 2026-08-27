@@ -328,6 +328,84 @@ function writeManifest(dir, entries) {
   return path;
 }
 
+test("resolver: `unavailable` marks ABSENCE only, never a malformed record", () => {
+  // This is the security-critical distinction behind letting a repo install
+  // continue without an app. `unavailable` tells the bootstrap "nothing has
+  // been published for this target, carry on and install everything else".
+  // If it were ever set for a record that EXISTS but is wrong -- placeholder
+  // checksum, http source, stripped signature -- then evidence of tampering
+  // would degrade quietly into "not published yet" instead of aborting.
+  //
+  // No payload lands either way, because a refused record is never
+  // installed. The point is that a tampered manifest must be LOUD.
+  const dir = freshRoot();
+  const resolveWith = (entries) =>
+    resolveAppRecord({
+      platform: "darwin",
+      arch: "arm64",
+      authority: fakeAuthority(),
+      manifestPath: writeManifest(dir, entries),
+      repoRoot: dir,
+    });
+
+  // --- ABSENCE: survivable, the install may continue without an app.
+  assert.equal(resolveWith([]).unavailable, true, "no app record at all is absence");
+  assert.equal(
+    resolveWith([validAppRecord({ arch: "x64" })]).unavailable, true,
+    "no record for THIS platform/arch is absence",
+  );
+  assert.equal(
+    resolveAppRecord({
+      platform: "linux", arch: "x64", authority: fakeAuthority(),
+      manifestPath: writeManifest(dir, [validAppRecord()]), repoRoot: dir,
+    }).unavailable,
+    true,
+    "an unsupported platform can have no record by construction",
+  );
+  assert.equal(
+    resolveAppRecord({
+      platform: "darwin", arch: "arm64",
+      authority: { ok: false, message: "refused" },
+      manifestPath: writeManifest(dir, [validAppRecord()]), repoRoot: dir,
+    }).unavailable,
+    true,
+    "an authority that refused the candidate means nothing is published",
+  );
+
+  // --- MALFORMED: fatal. A record exists and is wrong.
+  const tampered = {
+    "placeholder sha256": { sha256: PLACEHOLDER_SHA256 },
+    "sha256 not hex": { sha256: "z".repeat(64) },
+    "http, not https": { sourceUrl: "http://evil.example.com/candice.dmg" },
+    "signature stripped": { signature: "" },
+    "notarization stripped": { notarization: "" },
+    "sizeBytes negative": { sizeBytes: -1 },
+    "sizeBytes zero": { sizeBytes: 0 },
+  };
+  for (const [label, override] of Object.entries(tampered)) {
+    const r = resolveWith([validAppRecord(override)]);
+    assert.equal(r.ok, false, `${label} must be refused`);
+    assert.notEqual(
+      r.unavailable, true,
+      `${label} is a malformed record, not an absent one — it must abort the install, not be skipped`,
+    );
+  }
+  // A required field simply missing is also malformed, not absent.
+  const incomplete = validAppRecord();
+  delete incomplete.executablePath;
+  const missing = resolveWith([incomplete]);
+  assert.equal(missing.ok, false);
+  assert.notEqual(missing.unavailable, true, "an incomplete record must abort, not be skipped");
+
+  // CONTROL: every assertion above is about a REFUSAL, so prove the checks
+  // are reachable at all -- a fully valid record must still resolve here.
+  // Without this the whole test could pass against a resolver that refused
+  // everything unconditionally.
+  const valid = resolveWith([validAppRecord()]);
+  assert.equal(valid.ok, true, `valid record must resolve: ${valid.message}`);
+  assert.notEqual(valid.unavailable, true, "a resolved record is not 'unavailable'");
+});
+
 test("resolver: valid record resolves; every defect fails closed", () => {
   const dir = freshRoot();
   const ok = resolveAppRecord({

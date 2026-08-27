@@ -13,6 +13,21 @@
  * this lane consumes only what the authority accepts — it never invents a
  * candidate.
  *
+ * ## `unavailable` marks ABSENCE, never corruption
+ *
+ * Four failures mean "nothing has been published for this target": an
+ * unsupported platform, an authority that refused the candidate, a manifest
+ * with no app record at all, and a manifest with no record for this exact
+ * (platform, arch). Those carry `unavailable: true`, and the bootstrap is
+ * allowed to install everything ELSE and report the app as not installed.
+ *
+ * Every other failure means a record EXISTS and is wrong -- missing required
+ * fields, a placeholder checksum, a non-https source, no signature, no
+ * notarization posture -- or that the manifest itself is missing, unreadable
+ * or the wrong schema. Those deliberately do NOT carry the flag. No payload
+ * would land either way, but a malformed record is evidence of tampering and
+ * has to be loud rather than degrade quietly into "not published yet".
+ *
  * The resolver returns the exact per-(platform, arch) app record or fails
  * closed. A missing, malformed, or placeholder record is a hard failure in
  * release mode, never a skipped leg.
@@ -91,13 +106,13 @@ export function resolveAppRecord(opts = {}) {
   const platform = opts.platform || process.platform;
   const arch = opts.arch || process.arch;
   if (platform !== "darwin" && platform !== "win32") {
-    return result(false, `unsupported platform ${platform} — no release-authorized app record exists`);
+    return result(false, `unsupported platform ${platform} — no release-authorized app record exists`, { unavailable: true });
   }
 
   // 1. Release authority must accept the exact candidate first.
   const authority = opts.authority || runReleaseAuthority(opts);
   if (!authority.ok) {
-    return result(false, `app record refused: ${authority.message}`, { authority });
+    return result(false, `app record refused: ${authority.message}`, { authority, unavailable: true });
   }
 
   // 2. The record comes only from the in-repository manifest.
@@ -108,13 +123,13 @@ export function resolveAppRecord(opts = {}) {
   const components = manifest.doc.components || {};
   const appEntries = components[APP_ID];
   if (!Array.isArray(appEntries) || appEntries.length === 0) {
-    return result(false, `no ${APP_ID} record in the release manifest — refusing app install (fail closed)`, { authority });
+    return result(false, `no ${APP_ID} record in the release manifest — refusing app install (fail closed)`, { authority, unavailable: true });
   }
 
   // 3. Exact (platform, arch) match only. "any" is not a valid app platform.
   const hit = appEntries.find((c) => c.platform === platform && c.arch === arch);
   if (!hit) {
-    return result(false, `no ${APP_ID} record for platform=${platform} arch=${arch} — refusing app install (fail closed)`, { authority });
+    return result(false, `no ${APP_ID} record for platform=${platform} arch=${arch} — refusing app install (fail closed)`, { authority, unavailable: true });
   }
 
   // 4. Every required provenance field must be present and non-placeholder.

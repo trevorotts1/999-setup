@@ -327,10 +327,17 @@ export async function installApp(root, platform, opts = {}) {
       // unavailable app so the skills, plugin and assets still land, but
       // aborts on anything that smells like tampering (see the sha256, size
       // and path-escape checks below, which stay fatal on purpose).
+      // PROPAGATE the resolver's judgement; do not assert one here. Only
+      // genuine absence (unsupported platform, authority refused, no record,
+      // no record for this platform/arch) carries `unavailable`. A record
+      // that exists but is malformed -- placeholder checksum, non-https
+      // source, missing signature -- does NOT, and still aborts the install
+      // below, because that is evidence of tampering rather than of nothing
+      // having been published yet.
+      const absent = resolved.unavailable === true;
       return result(false, `app install refused: ${resolved.message}`, {
         blocked: true,
-        unavailable: true,
-        skipped: true,
+        ...(absent ? { unavailable: true, skipped: true } : {}),
       });
     }
     const rec = resolved.record;
