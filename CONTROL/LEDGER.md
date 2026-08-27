@@ -1281,3 +1281,74 @@ here can close" are wrong and are corrected there.
 `windowsSigningAndInteractiveSmoke` has NO such alias and is still an
 exact-match `PASS` requirement, so Windows signing remains a genuine blocker
 for a full authority pass.
+
+### 14.8 Self-audit of 14.3 — six more defects, five of them mine
+
+After shipping the install fix I went back over it asking one question of
+every change: what does this now TRUST that it did not trust before? That
+question found more than the original work did.
+
+**`unavailable` was far too broad** (c8b0945). `installApp` hardcoded it for
+every resolver failure. The resolver has fifteen; only four mean absence
+(unsupported platform, authority refused, no app record, no record for this
+platform/arch). The other eleven mean a record EXISTS and is malformed --
+placeholder or non-hex checksum, http source, stripped signature, stripped
+notarization posture, non-positive size, missing field -- or that the
+manifest is missing, unreadable or wrong-schema. No payload lands either way,
+but a tampered manifest must abort loudly rather than degrade into a friendly
+"APP NOT INSTALLED". The resolver now decides and installApp propagates.
+
+**The off button's row was not pointer-live** (10132ff). `.candice-power-off`
+was absent from CONTROL_SELECTOR, so only the inner `<button>` box was
+published to the native hit test -- roughly 26px, ~34px with REGION_PADDING,
+against the 44px the row's `min-height` builds. The control's own CSS comment
+asserted the row was the target, which was untrue. `.candice-animation-toggle`
+is in that list because the same defect was MEASURED there and fixed, and
+nothing guarded that fix either. Both are guarded now.
+
+**A null pin certified "up to date"** (bf21704). Deriving SKILL_PINS means an
+unreadable VERSION file yields null; the state record is written from the same
+pin, so it is null too; and `null !== null` is false, so `stateMatches` sailed
+past and reported the component current on no evidence. The path did not exist
+before the derivation. Undetermined now fails closed.
+
+**Two health legs were forgiven that do not need an app** (6ae73b8).
+`stt-runtime-capability` and `tts-runtime-capability` spawn the plugin's MCP
+SERVER and check it declares `ask_user`; they never touch the app binary, and
+both pass with no app installed. Forgiving them would have hidden a broken MCP
+server on every install where the app is unpublished -- which is every install
+today, and the worst moment to go quiet, since the MCP server is the only way
+questions reach the user without an app.
+
+**A fourth copy of the skill version** (383ea0a). Running the FULL
+installer-regression suite -- not the two files being run by habit -- surfaced
+`update-detection.test.mjs`, a test with the same intent as the guard added in
+08b99fb, already failing: "spec-protocol: pin 1.17.0 vs tree 1.17.4". The
+version lived in four places, and the fourth
+(`candice-updater/checksums/components.mjs`) is the GENERATOR for
+`CONTROL/bundled-components.json` -- so the earlier hand-edit of the registry
+was patching a generated artifact. Now derived at the source; all four
+verified in agreement for all five skills.
+
+**Windows recorded prose where a path belongs** (07c8d25).
+`launchCommand(root, "win32")` returned "candice-companion.exe (placed by NSIS
+installer, WS-29)", and `installAll` writes that into `state.launch.command`.
+The `launch-command` health leg passes that value to `existsSync` and the
+bridge probe SPAWNS it. Latent only because no Windows payload is published;
+the day one lands is the day it stops being latent, on the platform with no
+machine here to catch it. It now returns the same path `checkApp` probes --
+the two disagreeing was the real defect.
+
+**Not mine, but broken on main** (483e300). The contract suite was failing:
+commit 4cb0ec7 edited `spec-protocol/SKILL.md` without restamping the three
+content digests pinning it, ENTRY_MODE among them. All 51 pinned digests were
+audited (only those three were stale), all three anchors confirmed still
+present so restamping could not hide a removal, and the plugin's byte-identical
+vendored copy re-synced. 9/9.
+
+**Method note.** Every one of these was proven by breaking it deliberately and
+confirming the test fails with the right message, then restoring. Two claims
+were discarded along the way for being unproven: a leak-control copy placed
+outside the tree returned exit 1 from a module-resolution error rather than
+from the leak, and a `find` control used a maxdepth that could not reach its
+target. Neither was reported as a result.
