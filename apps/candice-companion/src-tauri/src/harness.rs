@@ -11,24 +11,34 @@
 //!
 //! ## How the harness is identified
 //!
-//! `CLAUDE_CONFIG_DIR`, and this is MEASURED from the launchers themselves,
-//! not assumed:
+//! `CANDICE_HARNESS`, set by the plugin at the moment it spawns this app.
 //!
-//!   - `claude-nine` and `claude-9` both do
-//!     `export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"`.
-//!   - `claude-codex` execs `claude-nine`, so it inherits the same value.
-//!   - `claude` does the opposite on purpose: it matches
-//!     `*".claude-nine"*` and UNSETS the variable, precisely so a shell
-//!     spawned from inside a Claude-Nine session does not drag the wrong
-//!     config into a plain Claude run.
+//! This used to read `CLAUDE_CONFIG_DIR`, and the comment here claimed that
+//! was "MEASURED from the launchers". It was measured from the operator's
+//! own personal launcher, NOT from the launchers this repo ships. All four
+//! shipped launchers -- `launchers/macos/claude-nine`,
+//! `launchers/macos/claude-codex`, `launchers/windows/claude-nine.cmd` and
+//! `launchers/windows/claude-nine.ps1` -- contain zero references to that
+//! variable, and never setting it is a stated product invariant. So on every
+//! client machine a Claude-Nine session presented no config dir at all, only
+//! the generic `CLAUDECODE` marker, and this module answered "Claude": the
+//! precise wrong-window failure it exists to prevent, and confidently wrong
+//! rather than honestly unknown.
 //!
-//! That last one is what makes this reliable rather than a guess: the plain
-//! harness actively clears the marker, so a set-and-matching value is a
-//! positive statement, not a leftover.
+//! The plugin can answer this and the app cannot, because the plugin knows
+//! where the harness loaded it FROM -- Claude Code installs plugins beneath
+//! its own config root, so the plugin's own path sits under `.claude-nine/`
+//! or `.claude/`. That is in-force truth rather than a file's intent. See
+//! `plugins/candice-integration/shared/launch-command.js`, which owns the
+//! derivation for both launch paths.
 //!
-//! The value reaches this process because `wake-candice.mjs` spawns the app
-//! with no `env:` option, so the child inherits the harness environment
-//! whole.
+//! `CLAUDE_CONFIG_DIR` is still honoured as a second signal, because the
+//! operator's own boxes DO set it and it is correct where present. It is no
+//! longer the only one.
+//!
+//! `CLAUDECODE` is deliberately NOT consulted. Both harnesses are the same
+//! binary and both set it, so it can never tell them apart. Reading a name
+//! out of it was the bug.
 //!
 //! ## What this deliberately does NOT do
 //!
@@ -47,19 +57,42 @@
 ///
 /// Split from the environment read so it can be tested without mutating
 /// process-global state, which is not safe under a parallel test runner.
-pub fn resolve_harness_name(config_dir: Option<&str>, claude_code: bool) -> Option<&'static str> {
+pub fn resolve_harness_name(
+    explicit: Option<&str>,
+    config_dir: Option<&str>,
+) -> Option<&'static str> {
+    // Stated outright by the plugin. The only signal that is a positive
+    // claim rather than an inference.
+    match explicit {
+        Some(HARNESS_NINE) => return Some(HARNESS_NINE),
+        Some(HARNESS_CLAUDE) => return Some(HARNESS_CLAUDE),
+        // An unrecognised value is discarded rather than echoed. This
+        // command's contract is a known harness or nothing.
+        _ => {}
+    }
     if let Some(dir) = config_dir {
-        // Substring, not equality: the launchers default to
-        // `$HOME/.claude-nine` but honour a pre-set value, so the path can
-        // legitimately be somewhere else and still be a Nine config.
-        if dir.contains(".claude-nine") {
+        return harness_from_path(dir);
+    }
+    None
+}
+
+/// The config root named by a path, by EXACT component match.
+///
+/// Not a substring test: `".claude-nine"` contains `".claude"`, so a
+/// substring check is correct only for as long as someone keeps the two
+/// arms in the right order, and `".claude-nineteen"` would read as Nine.
+/// Splitting on both separators keeps one code path correct on Windows.
+fn harness_from_path(dir: &str) -> Option<&'static str> {
+    let mut saw_claude = false;
+    for part in dir.split(['/', '\\']).filter(|p| !p.is_empty()) {
+        if part == ".claude-nine" {
             return Some(HARNESS_NINE);
         }
+        if part == ".claude" {
+            saw_claude = true;
+        }
     }
-    // No Nine marker but demonstrably inside a harness: plain Claude. This
-    // ordering matters -- `CLAUDECODE` is set by BOTH harnesses (same
-    // binary), so it can only ever be the fallback, never the test.
-    if claude_code {
+    if saw_claude {
         return Some(HARNESS_CLAUDE);
     }
     None
@@ -74,10 +107,12 @@ pub const HARNESS_NINE: &str = "Claude-Nine";
 /// front end renders as "your terminal".
 #[tauri::command]
 pub fn cmd_get_harness_name() -> Result<Option<String>, String> {
+    let explicit = std::env::var("CANDICE_HARNESS").ok();
     let config_dir = std::env::var("CLAUDE_CONFIG_DIR").ok();
-    let claude_code = std::env::var("CLAUDECODE").is_ok()
-        || std::env::var("CLAUDE_CODE_ENTRYPOINT").is_ok();
-    Ok(resolve_harness_name(config_dir.as_deref(), claude_code).map(|s| s.to_string()))
+    Ok(
+        resolve_harness_name(explicit.as_deref(), config_dir.as_deref())
+            .map(|s| s.to_string()),
+    )
 }
 
 #[cfg(test)]
@@ -85,43 +120,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nine_config_dir_names_the_nine_harness() {
-        assert_eq!(
-            resolve_harness_name(Some("/Users/x/.claude-nine"), true),
-            Some(HARNESS_NINE)
-        );
-        // A relocated Nine config is still Nine.
-        assert_eq!(
-            resolve_harness_name(Some("/opt/shared/.claude-nine"), true),
-            Some(HARNESS_NINE)
-        );
+    fn the_plugins_explicit_answer_is_taken() {
+        assert_eq!(resolve_harness_name(Some("Claude-Nine"), None), Some(HARNESS_NINE));
+        assert_eq!(resolve_harness_name(Some("Claude"), None), Some(HARNESS_CLAUDE));
     }
 
     #[test]
-    fn plain_claude_is_named_claude() {
-        // `claude` unsets the variable, so this is the shape it presents.
-        assert_eq!(resolve_harness_name(None, true), Some(HARNESS_CLAUDE));
-        // A non-Nine config dir is still plain Claude.
+    fn the_explicit_answer_beats_a_stale_config_dir() {
+        // A shell opened from inside one harness can carry the other's
+        // CLAUDE_CONFIG_DIR. What launched THIS app wins.
         assert_eq!(
-            resolve_harness_name(Some("/Users/x/.claude"), true),
+            resolve_harness_name(Some("Claude"), Some("/Users/x/.claude-nine")),
             Some(HARNESS_CLAUDE)
         );
     }
 
     #[test]
-    fn no_harness_reports_unknown_rather_than_guessing() {
-        // A Dock launch. Saying "Claude" here would be a fabrication, and
-        // the whole point of this module is to stop naming the wrong window.
-        assert_eq!(resolve_harness_name(None, false), None);
+    fn an_unrecognised_explicit_value_is_discarded_not_echoed() {
+        // Never render an arbitrary string into "answer in <x>".
+        assert_eq!(resolve_harness_name(Some("Cursor"), None), None);
+        assert_eq!(resolve_harness_name(Some(""), None), None);
+        // ...but it must not poison a config dir that DOES know.
+        assert_eq!(
+            resolve_harness_name(Some("Cursor"), Some("/Users/x/.claude-nine")),
+            Some(HARNESS_NINE)
+        );
     }
 
     #[test]
-    fn nine_wins_even_without_the_claudecode_marker() {
-        // CONTROL: the Nine test must not be reachable only through the
-        // `claude_code` branch, or a harness that stopped exporting
-        // CLAUDECODE would silently start reporting the wrong name.
+    fn config_dir_still_answers_on_boxes_that_set_it() {
+        assert_eq!(resolve_harness_name(None, Some("/Users/x/.claude-nine")), Some(HARNESS_NINE));
+        assert_eq!(resolve_harness_name(None, Some("/Users/x/.claude")), Some(HARNESS_CLAUDE));
+    }
+
+    #[test]
+    fn nothing_known_reports_unknown_rather_than_guessing() {
+        // THE REGRESSION THIS MODULE WAS REWRITTEN FOR. Every shipped
+        // launcher leaves CLAUDE_CONFIG_DIR unset, so this is the exact
+        // shape a client machine presents. It used to answer "Claude" off
+        // the CLAUDECODE marker -- which BOTH harnesses set -- and so named
+        // the wrong window to every Claude-Nine user. Unknown renders as
+        // "your terminal", which is true.
+        assert_eq!(resolve_harness_name(None, None), None);
+        // A path that is under neither config root says nothing.
+        assert_eq!(resolve_harness_name(None, Some("/opt/somewhere")), None);
+    }
+
+    #[test]
+    fn nine_is_not_matched_by_substring() {
+        // `.claude-nine` contains `.claude`, and `.claude-nineteen`
+        // contains `.claude-nine`. Component matching settles both.
+        assert_eq!(resolve_harness_name(None, Some("/Users/x/.claude-nineteen")), None);
         assert_eq!(
-            resolve_harness_name(Some("/Users/x/.claude-nine"), false),
+            resolve_harness_name(None, Some("/Users/x/.claude-nine/plugins")),
             Some(HARNESS_NINE)
         );
     }
@@ -129,33 +180,34 @@ mod tests {
     #[test]
     fn windows_paths_are_recognised_too() {
         // UNVERIFIED on a real Windows machine -- there is none in this
-        // project -- but the mechanism is checked here rather than assumed.
-        // The check is a SUBSTRING test, so it is separator-agnostic by
-        // construction: a backslash path carries the same `.claude-nine`
-        // marker as a POSIX one. A test that split on '/' would have been a
-        // silent Windows-only failure.
+        // project -- but the mechanism is checked rather than assumed.
         assert_eq!(
-            resolve_harness_name(Some(r"C:\Users\trevor\.claude-nine"), true),
+            resolve_harness_name(None, Some(r"C:\Users\trevor\.claude-nine")),
             Some(HARNESS_NINE)
         );
         assert_eq!(
-            resolve_harness_name(Some(r"C:\Users\trevor\.claude"), true),
+            resolve_harness_name(None, Some(r"C:\Users\trevor\.claude")),
             Some(HARNESS_CLAUDE)
         );
-        // A UNC path is still just a path.
         assert_eq!(
-            resolve_harness_name(Some(r"\\server\share\.claude-nine"), true),
+            resolve_harness_name(None, Some(r"\\server\share\.claude-nine")),
             Some(HARNESS_NINE)
         );
     }
 
     #[test]
-    fn control_the_marker_is_actually_read() {
-        // CONTROL: if the config-dir argument were ignored, every assertion
-        // above would still pass through the `claude_code` fallback. Prove
-        // the two inputs produce DIFFERENT answers for the same second arg.
-        let nine = resolve_harness_name(Some("/Users/x/.claude-nine"), true);
-        let plain = resolve_harness_name(Some("/Users/x/.claude"), true);
-        assert_ne!(nine, plain, "the config dir must change the answer");
+    fn control_each_signal_independently_changes_the_answer() {
+        // CONTROL: if either argument were ignored, assertions above would
+        // pass vacuously through the other. Vary exactly one at a time.
+        assert_ne!(
+            resolve_harness_name(Some("Claude-Nine"), None),
+            resolve_harness_name(Some("Claude"), None),
+            "the explicit signal must change the answer"
+        );
+        assert_ne!(
+            resolve_harness_name(None, Some("/x/.claude-nine")),
+            resolve_harness_name(None, Some("/x/.claude")),
+            "the config dir must change the answer"
+        );
     }
 }

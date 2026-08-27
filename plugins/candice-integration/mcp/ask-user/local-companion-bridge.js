@@ -14,7 +14,7 @@ const os = require('os')
 const path = require('path')
 const { spawn } = require('child_process')
 const { deriveOperationId, isValidOperationId } = require('../../session/lifecycle-protocol')
-const { resolveConfiguredLaunchCommand } = require('../../shared/launch-command')
+const { resolveConfiguredLaunchCommand, companionSpawnEnv } = require('../../shared/launch-command')
 
 const BRIDGE_PROTOCOL_VERSION = '1.0'
 const MAX_FRAME_BYTES = 64 * 1024
@@ -205,7 +205,7 @@ class LocalCompanionBridge {
         '--session-id', activation.sessionId,
         '--activation-id', activation.activationId,
         '--activation-issued-at', String(activation.issuedAt),
-      ], { detached: true, stdio: 'ignore' })
+      ], { detached: true, stdio: 'ignore', env: companionSpawnEnv() })
       // MANDATORY, not defensive style. `spawn` reports ENOENT/EACCES
       // ASYNCHRONOUSLY through 'error', so the catch below never sees them —
       // and an 'error' event with NO listener is an uncaught exception that

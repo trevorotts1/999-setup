@@ -27,6 +27,8 @@ const {
   DEFAULT_LAUNCH_COMMAND,
   resolveConfiguredLaunchCommand,
   resolveLaunchCommand,
+  resolveHarnessName,
+  companionSpawnEnv,
 } = require('../launch-command')
 
 let failures = 0
@@ -181,6 +183,84 @@ check('CONTROL: the probe is actually consulted, not bypassed', () => {
     },
   })
   assert.ok(asked >= 3, `expected several candidates to be probed, saw ${asked}`)
+})
+
+
+// ————————————————————————————————
+// 5. Which harness is this? (wrong-window regression)
+// ————————————————————————————————
+//
+// The companion read CLAUDE_CONFIG_DIR and fell back to CLAUDECODE. All four
+// SHIPPED launchers set the former ZERO times, and BOTH harnesses set the
+// latter, so every Claude-Nine client was told to answer "in the Claude
+// window" -- naming a window that was not on their screen.
+
+check('the harness is read from where the plugin was installed', () => {
+  assert.strictEqual(
+    resolveHarnessName({ dir: '/Users/x/.claude-nine/plugins/repos/bc/candice/shared', env: {} }),
+    'Claude-Nine',
+  )
+  assert.strictEqual(
+    resolveHarnessName({ dir: '/Users/x/.claude/plugins/repos/bc/candice/shared', env: {} }),
+    'Claude',
+  )
+})
+
+check('CLAUDECODE alone reports unknown, never a guess', () => {
+  // THE REGRESSION. Both harnesses set CLAUDECODE, so it cannot tell them
+  // apart; answering "Claude" from it was the wrong-window bug.
+  assert.strictEqual(resolveHarnessName({ dir: '/opt/elsewhere', env: { CLAUDECODE: '1' } }), null)
+})
+
+check('a loopback ANTHROPIC_BASE_URL is NOT treated as Claude-Nine', () => {
+  // The shipped Nine launcher does export one, but so does any other local
+  // proxy. Inferring Nine from it would misname a LiteLLM user.
+  assert.strictEqual(
+    resolveHarnessName({ dir: '/opt/elsewhere', env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:8787/v1' } }),
+    null,
+  )
+})
+
+check('Nine is matched as a path component, not a substring', () => {
+  assert.strictEqual(resolveHarnessName({ dir: '/Users/x/.claude-nineteen/plugins', env: {} }), null)
+  assert.strictEqual(
+    resolveHarnessName({ dir: 'C:\\Users\\t\\.claude-nine\\plugins', env: {} }),
+    'Claude-Nine',
+  )
+})
+
+check('an explicit CANDICE_HARNESS wins, and junk is discarded', () => {
+  assert.strictEqual(
+    resolveHarnessName({ dir: '/Users/x/.claude-nine/plugins', env: { CANDICE_HARNESS: 'Claude' } }),
+    'Claude',
+  )
+  // An unrecognised value must not be echoed into "answer in <x>", and must
+  // not suppress a layout that does know.
+  assert.strictEqual(
+    resolveHarnessName({ dir: '/Users/x/.claude-nine/plugins', env: { CANDICE_HARNESS: 'Cursor' } }),
+    'Claude-Nine',
+  )
+})
+
+check('the spawn env carries the name, and omits it when unknown', () => {
+  const known = companionSpawnEnv({ dir: '/Users/x/.claude-nine/p', env: { PATH: '/bin' } })
+  assert.strictEqual(known.CANDICE_HARNESS, 'Claude-Nine')
+  assert.strictEqual(known.PATH, '/bin', 'the caller environment must survive')
+
+  const unknown = companionSpawnEnv({ dir: '/opt/elsewhere', env: { PATH: '/bin' } })
+  assert.ok(
+    !Object.hasOwn(unknown, 'CANDICE_HARNESS'),
+    'unknown must leave the variable ABSENT, not set to a placeholder',
+  )
+})
+
+check('CONTROL: the derivation reads dir, not a constant', () => {
+  // If `dir` were ignored, every assertion above would pass through one
+  // fixed answer. Prove two dirs give two different answers.
+  assert.notStrictEqual(
+    resolveHarnessName({ dir: '/x/.claude-nine/p', env: {} }),
+    resolveHarnessName({ dir: '/x/.claude/p', env: {} }),
+  )
 })
 
 if (failures > 0) {
