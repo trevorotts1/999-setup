@@ -1,89 +1,100 @@
-# Installing Candice on your Mac
+# Installing Candice
 
-This takes about two minutes. You only do it once.
+Two minutes, once. **You should not see any security warning.**
 
 ---
 
-## 1. Open the download
+## The short version
 
-Double-click the file you were sent — **Candice Companion.dmg**.
+You'll be given either a link or a file. Either way, run the installer — it
+puts Candice in your Applications folder and checks she arrived undamaged.
 
-A window opens with Candice's icon on the left and a folder called
-**Applications** on the right.
+**If you were given a link**, paste this one line into the same terminal
+window where you run Claude, replacing the address with the one you were
+sent:
 
-## 2. Drag Candice into Applications
+```
+curl -fsSL https://YOUR-LINK-HERE/install-candice-macos.sh | bash -s -- https://YOUR-LINK-HERE/candice.zip
+```
 
-Drag the Candice icon onto the Applications folder. That copies her onto
-your Mac.
+**If you were given a file** (on a USB stick, or copied to your Mac), open
+the folder it's in and run:
 
-When it finishes, close the window. You can drag the Candice Companion disk
-image icon on your desktop to the Trash — that's just the installer, not the
-app.
+```
+./install-candice-macos.sh
+```
 
-## 3. The first time you open her, your Mac will stop you
+It will say **"Done. Candice is in your Applications folder."** Open her the
+normal way — from Applications, or however you'd open any app.
 
-**This is expected, and it is not a virus warning.**
+---
 
-Open your **Applications** folder and double-click **Candice Companion**.
-Your Mac will show a message like:
+## Why there's no warning, and why that's safe
 
-> *"Apple could not verify 'Candice Companion' is free of malware..."*
+macOS shows *"Apple could not verify this app"* when a file carries a
+**quarantine flag**. That flag is written by whatever **downloaded** the
+file — Safari, Chrome, Mail, Messages. It is not part of the app, and it
+says nothing about whether the app is safe.
 
-Click **Done**. Nothing is broken. macOS shows this for any app that wasn't
-downloaded from the App Store, and it only asks once.
+The installer removes that one flag from this one app, which is exactly what
+the old right-click → **Open** trick did before macOS 15 took it away.
 
-Now do this:
+It does **not** turn off your Mac's protection. Nothing else on your machine
+is affected, and every other app is still checked exactly as before. If
+that's ever not what you want, you can delete Candice by dragging her to the
+Trash and nothing is left behind.
 
-1. Open **System Settings** (the grey gear icon).
-2. Click **Privacy & Security** in the sidebar.
-3. Scroll down. You'll see a line that says *"Candice Companion was blocked"*
-   with a button next to it: **Open Anyway**.
-4. Click **Open Anyway**, then confirm with your password or Touch ID.
+The installer also checks Candice's signature before finishing. If she was
+damaged or altered on the way to you, it refuses to install her and tells
+you to ask for a fresh copy.
 
-Candice opens. **You will never see that message again.**
+---
 
-> **On an older Mac?** If your Mac is on macOS 14 or earlier, there's a
-> shortcut: right-click (or Control-click) the Candice icon and choose
-> **Open** from the menu, then click **Open** in the box that appears. If you
-> don't see an **Open** option in that box, use the System Settings steps
-> above instead.
+## Let her hear you (optional)
 
-## 4. Let her hear you (optional)
+The first time you hold the talk button, your Mac asks permission to use the
+microphone. Click **OK**.
 
-The first time you hold the talk button, your Mac asks for permission to use
-the microphone. Click **OK**.
+Clicked "Don't Allow" by mistake? Turn it back on in **System Settings →
+Privacy & Security → Microphone**.
 
-If you click "Don't Allow" by mistake, you can turn it back on later in
-**System Settings → Privacy & Security → Microphone**.
-
-You don't have to use the microphone at all — you can always type your
-answers instead.
+You never have to use the microphone. You can always type your answers
+instead.
 
 ---
 
 ## If something goes wrong
 
-**Candice doesn't appear when I run a command.**
-Quit Candice completely and open her once from the Applications folder, then
-try again.
+**I double-clicked the app before running the installer, and got a warning.**
+Click **Done**, then run the installer. It fixes it. You won't be asked
+again.
 
-**I dragged her somewhere other than Applications.**
-That's fine, but move her into Applications if you can — it's where she
-looks for herself.
+**Candice doesn't appear when I run a command.**
+Quit her completely, open her once from Applications, then try again.
 
 **She opens but doesn't speak.**
-She'll show everything she says on screen as text, so you won't miss
-anything. If she can't use her own voice, she'll tell you and use your Mac's
-built-in voice instead.
+Everything she says is also shown on screen, so you won't miss anything. If
+she can't use her own voice, she'll say so and use your Mac's built-in voice
+instead.
 
 **The window is in my way.**
-Drag her anywhere on screen. She remembers where you put her.
+Drag her anywhere. She remembers where you put her.
 
 ---
 
 ## What she does with your information
 
-Everything she hears stays on your Mac. Your voice is never uploaded
-anywhere, never sent to a speech service on the internet, and never kept
-after she's turned it into text. The microphone is only ever live while you
-are holding the talk button down.
+Everything she hears stays on your Mac. Your voice is never uploaded, never
+sent to a speech service on the internet, and never kept after she's turned
+it into text. The microphone is only ever live while you hold the talk
+button down.
+
+---
+
+## Windows
+
+Windows hasn't shipped yet. When it does, the same idea applies: Windows
+marks downloaded files with a flag called *Mark of the Web*, and SmartScreen
+reacts to that flag, not to the app. Files delivered by the installer or on
+a USB stick don't carry it. If you ever do see a SmartScreen box, choose
+**More info → Run anyway** once.
