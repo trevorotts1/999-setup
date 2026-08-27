@@ -129,19 +129,35 @@ The statusLine command receives JSON on stdin. Fields that matter here:
 | Session duration | UNDETERMINED | not in stdin; script-side start-time file is the permitted DIY extension |
 | 5-hour / 7-day usage | INTERNAL ONLY — never client display (operator order 2026-08-16) | stdin `rate_limits.*` — subscribers only, absent under 9Router; never rendered |
 
-**The cost rule (operator order 2026-08-16 — cost goes ON the bar).** Cost is NOT exposed
-in the stdin schema — verified: the 2.1.227 binary's internal `costUSD` accumulator, the
-`totalCostUSD` session field, and the `/api/oauth/usage` subscriber endpoint all exist, but
-none are wired into the statusLine stdin. Derivation, binding:
+**The cost rule (operator order 2026-08-16 — cost goes ON the bar).** Cost IS exposed in the
+stdin schema — corrected 2026-08-27: `cost.total_cost_usd` was proven present (object-literal
+construction site in the installed 2.1.227 binary, `cost:{total_cost_usd:...}`), reversing the
+earlier "not exposed" finding above. Two-tier derivation, binding:
 
-- The script accumulates the REAL per-invocation token counts stdin exposes
-  (`context_window.total_input_tokens` / `total_output_tokens` — deltas per refresh, kept
-  in a session state file).
-- Multiply by PUBLISHED per-model pricing, matched from `model.display_name`.
+- **Primary:** read `cost.total_cost_usd` from stdin directly — Claude Code's own running
+  total for the session. Already cumulative; no state file, no per-refresh delta math, and
+  no double-counting from `~/.claude` and `~/.claude-nine` sharing a state directory (that
+  whole class of bug is eliminated by keeping no cost state at all — the old delta-vs-state-file
+  design is retired; see the two defects note below).
+- **Fallback** (older Claude Code builds that don't yet emit `cost`): derive from
+  `context_window.total_input_tokens` / `.total_output_tokens` — already whole-session
+  cumulative totals per the stdin contract, so this needs no delta math either.
+- Either path: multiply by PUBLISHED per-model pricing, matched from `model.display_name`
+  (fallback path only — the primary path uses Claude Code's own dollar figure directly).
 - Display with a `~` marker: computed estimate from real data. Never an invented number.
 - A model with no published pricing in the table → the cost segment is OMITTED, not guessed.
-- Wave 6 acceptance: the derivation must be proven live in BOTH launch paths before cost is
-  reported as displayed.
+- **Routed sessions never get an Anthropic-priced number.** `model.display_name` on a
+  claude-nine/9Router session is the raw chain id (`opus-chain`, `fusion-coding`, …) — a
+  live-edited, multi-provider fallback list, not an Anthropic model. `opus-chain` would
+  silently match a naive `*opus*` glob, so the price lookup refuses anything shaped like a
+  chain id (`*-chain`, `fusion-*`) BEFORE testing the Anthropic family globs, in both the
+  primary and fallback paths. The routed-session env-var detector a prior review assumed
+  existed was checked and is UNDETERMINED (inconclusive in the minified binary) — this
+  shape-based exclusion does not depend on it.
+- Published pricing, USD per 1M tokens (input / output): fable 10.00/50.00, opus 5.00/25.00,
+  sonnet 3.00/15.00, haiku 1.00/5.00. (Corrected 2026-08-27 — the table previously read
+  opus 15.00/75.00, sonnet 3.00/15.00, haiku 0.80/4.00, with no fable entry at all: opus was
+  3x too high, haiku too low, and every Fable session showed no cost.)
 
 **Fallback law.** Version-detect at install time. Never hard-code an implementation that
 assumes `/statusline`, specific JSON fields, or rate-limit properties stay identical across
@@ -151,7 +167,8 @@ installation never fails over a missing metric. Report per metric:
 
 ```text
 Model: Supported
-Session cost: Derived (real token counts × published pricing, ~-labeled)
+Session cost: ~-labeled — Claude Code's own tracked session total when available, else derived
+  from cumulative token counts × published pricing; omitted for routed (9Router) models
 Session duration: Not exposed by this Claude Code version
 Context usage: INTERNAL — tracked and acted on, never displayed (operator order 2026-08-16)
 5-hour / 7-day usage: INTERNAL — never displayed (operator order 2026-08-16)
@@ -218,16 +235,26 @@ Claude Opus | ~$1.38 | main ✓ | Project ████░░░░░░ 40% | W
 ```
 
 **Derivation — disk truth only, never conversation memory.** The statusline script reads
-`$cwd/CONTROL/project_state.json` (schema `spec-protocol/project-state@1`,
+`CONTROL/project_state.json` (schema `spec-protocol/project-state@1`,
 references/documents.md). Percent = `tasks.counts.completed / (pending + in_progress +
 completed)`, the SAME counts the reconciler audits. The script is a reader; it never
 invents numbers and never trusts a stale memory of progress.
 
+**Lookup is a bounded upward walk, not a single check (corrected 2026-08-27).** Spec Protocol
+projects are not git repositories, so this cannot use `git rev-parse --show-toplevel` the way
+the wave bar does. The script starts at `$cwd` and checks `CONTROL/project_state.json` there,
+then walks up one directory at a time, stopping the instant a hit is found. The walk is bounded
+at `$HOME` (checked, then stop) with `/` as a hard safety floor for a `$cwd` outside `$HOME`
+entirely. Without this walk the Project segment renders correctly from the project root and
+then silently vanishes the moment you `cd` into a subdirectory two levels down — the confirmed
+defect this fixes; a single `$cwd`-only check is not sufficient.
+
 **Guardrails (binding):**
 
-- No `project_state.json` in the project → the segment is OMITTED (the plan does not exist
-  yet; showing 0% before the plan exists is fake progress). Appears from the moment step
-  16.6 initializes the state file.
+- No `project_state.json` found anywhere on the walk → the segment is OMITTED (the plan does
+  not exist yet; showing 0% before the plan exists is fake progress). Appears from the moment
+  step 16.6 initializes the state file. A malformed/corrupt `project_state.json` behaves the
+  same way — the Project segment drops, the rest of the bar (model, cost, git) still renders.
 - Blocked tasks count in the total. A blocked task is unfinished work; hiding it inflates
   the percent.
 - `✓` only after validation, so the bar moves on VALIDATION, never on code generation —
@@ -329,7 +356,9 @@ Claude-nine
 [ ] Existing Claude settings remain intact
 [ ] Status line appears
 [ ] Active model is displayed
-[ ] Session cost displayed and computed from real token counts in BOTH launch paths (labeled estimate)
+[ ] Session cost displayed in BOTH launch paths (labeled estimate; Claude Code's own tracked
+    total when available, else derived from real token counts × published pricing; omitted,
+    never Anthropic-priced, for routed/9Router chain-id models)
 [ ] Session duration works when supported
 [ ] Git branch/status works inside Git repositories
 [ ] Project progress visible and derived from CONTROL/project_state.json
@@ -353,8 +382,9 @@ Do not claim a metric works unless it was actually observed.
 | Status line missing everywhere | `disableAllHooks` set | remove it — it also kills the boss cron and every governance hook (PART 4 hook-protection clause) |
 | Only the managed line shows in safe mode | safe mode displays policy statusLine only | exit safe mode |
 | 5h/7d segments absent | not a subscriber / first API response not yet seen / 9Router session | omit is correct behavior, not a fault |
-| Cost segment absent | model not in the pricing table | omit is correct — never guess a price |
+| Cost segment absent | model not in the pricing table, OR a routed/9Router chain-id model (`*-chain`, `fusion-*`) | omit is correct — never guess a price, never show an Anthropic price on routed traffic |
 | `git` segments blank | not inside a git repository | omit branch/status outside repos |
+| Project segment absent below the project root | `CONTROL/project_state.json` not found anywhere from `$cwd` up to `$HOME` | omit is correct if truly outside a Spec Protocol project; if inside one, confirm the walk reached the directory that holds `CONTROL/` |
 
 ## 10. How to disable / restore
 

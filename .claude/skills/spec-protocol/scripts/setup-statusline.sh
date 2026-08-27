@@ -7,10 +7,17 @@
 # (operator order 2026-08-16) is: model, session cost (derived), git
 # branch/status, Project progress, Wave progress — what truly matters.
 # Context usage and 5h/7d rates are INTERNAL doctrine (agent behavior
-# thresholds), never client display. Session cost is REQUIRED on the bar and
-# is DERIVED: real token counts from the stdin JSON multiplied by published
-# per-model pricing, displayed with a ~ marker. A model absent from the
-# pricing table -> the cost segment is omitted, never guessed.
+# thresholds), never client display. Session cost is REQUIRED on the bar.
+# Primary source: stdin `cost.total_cost_usd` — Claude Code's own tracked
+# total for this session (proven present in the installed CLI's payload-
+# construction code; no state file, no delta math, no cross-harness double-
+# counting). Fallback (older CC builds without that field): cumulative
+# session token counts from `context_window.total_input_tokens` /
+# `.total_output_tokens` times published per-model pricing. Either way the
+# figure is displayed with a ~ marker, and a model that doesn't match a known
+# Anthropic family (including anything shaped like a 9Router chain id) never
+# gets an Anthropic-priced number — the cost segment is omitted, never
+# guessed and never mis-attributed to routed traffic.
 #
 # Never prints API keys or any secret value. Name-only output.
 set -uo pipefail
@@ -131,9 +138,10 @@ cat > "$STATUSLINE_SCRIPT" <<'STATUSLINE_EOF'
 # SPEC-PROTOCOL-STATUSLINE — Spec Protocol status line.
 # CLIENT-FACING display (operator order 2026-08-16): model, derived session
 # cost, git branch/status, Project progress, Wave progress. Context usage
-# and 5h/7d rates are INTERNAL doctrine, never client display — the token
-# counts are still read here to derive the cost. Never invents a number;
-# never prints secrets.
+# and 5h/7d rates are INTERNAL doctrine, never client display. Never invents
+# a number; never prints secrets. bash 3.2 compatible — no associative
+# arrays (stock macOS ships bash 3.2; `declare -A` there blanks the whole
+# bar under `set -u`).
 set -uo pipefail
 
 json="$(cat)"
@@ -146,66 +154,88 @@ total_in="$(jqget '.context_window.total_input_tokens // empty')"
 total_out="$(jqget '.context_window.total_output_tokens // empty')"
 cwd_path="$(jqget '.cwd // empty')"
 
-# --- session cost: derived, ~-labeled. REAL token counts from stdin
-#     multiplied by published per-model pricing (USD per million tokens).
-#     A model absent from the table -> cost segment omitted, never guessed.
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/spec-protocol-statusline"
-STATE_FILE="$STATE_DIR/$(printf '%s' "$(jqget '.session_id // "unknown"')" | tr -cd 'A-Za-z0-9_-')"
-mkdir -p "$STATE_DIR"
-# Prune state files untouched for 7 days — sessions never return, and one
-# file per session_id otherwise accumulates unbounded.
-find "$STATE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
-
-declare -A PRICE_IN
-declare -A PRICE_OUT
-# Published pricing, USD per 1M tokens (input / output). Update on price
-# changes; a new model without an entry is omitted, not estimated.
-PRICE_IN[opus]=15.00;      PRICE_OUT[opus]=75.00
-PRICE_IN[sonnet]=3.00;     PRICE_OUT[sonnet]=15.00
-PRICE_IN[haiku]=0.80;      PRICE_OUT[haiku]=4.00
-
+# --- session cost: ~-labeled, never guessed ---------------------------------
+# Primary source: stdin `cost.total_cost_usd` — Claude Code's own running
+# total for THIS session (confirmed present in the installed CLI's payload-
+# construction code). It is already cumulative, so no state file, no
+# per-refresh delta math, and no double-counting when both `claude` and
+# `claude-nine` happen to share a state directory (that whole class of bug
+# is eliminated by not keeping cost state at all).
+#
+# Fallback (older Claude Code builds that don't yet emit `cost`): derive from
+# `context_window.total_input_tokens` / `.total_output_tokens` — these are
+# already whole-session cumulative totals per Claude Code's own stdin
+# contract, so the fallback needs no delta math either.
+#
+# Routed sessions (claude-nine / 9Router): `model.display_name` is the raw
+# chain id the router was asked for (e.g. "opus-chain", "fusion-coding"),
+# not an Anthropic model — chains blend cheap providers and are edited live,
+# so no static price is ever honest for one, and "opus-chain" would silently
+# match a naive *opus* glob. price_for() therefore refuses anything shaped
+# like a chain id BEFORE testing the Anthropic family globs, in both the
+# primary and fallback paths, so a routed session never shows an
+# Anthropic-priced number — cost is omitted for it instead.
+#
+# Published pricing, USD per 1M tokens (input / output). Plain `case` —
+# no associative arrays. Order fable before opus/sonnet/haiku on general
+# principle (no actual substring overlap among these four, but a later
+# family glob must never be able to shadow an earlier one).
 price_for() {
   local display="$1" lower
   lower="$(printf '%s' "$display" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in
-    *opus*)   printf '%s %s' "${PRICE_IN[opus]}" "${PRICE_OUT[opus]}" ;;
-    *sonnet*) printf '%s %s' "${PRICE_IN[sonnet]}" "${PRICE_OUT[sonnet]}" ;;
-    *haiku*)  printf '%s %s' "${PRICE_IN[haiku]}" "${PRICE_OUT[haiku]}" ;;
-    *)        printf '' ;;
+    *-chain|fusion-*) printf '' ;;                    # routed chain id — never Anthropic-priced
+    *fable*)          printf '%s %s' "10.00" "50.00" ;;
+    *opus*)           printf '%s %s' "5.00" "25.00" ;;
+    *sonnet*)         printf '%s %s' "3.00" "15.00" ;;
+    *haiku*)          printf '%s %s' "1.00" "5.00" ;;
+    *)                printf '' ;;
   esac
 }
 
 cost=""
-if [ -n "$total_in" ] && [ -n "$total_out" ] \
-   && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
-  if [ -f "$STATE_FILE" ]; then
-    prev="$(cat "$STATE_FILE")"
-    prev_in="${prev%% *}"; prev_out="${prev##* }"
-    delta_in=$(( total_in - prev_in )); delta_out=$(( total_out - prev_out ))
-    # Clamp: a smaller total is a context reset (compaction) or a small
-    # output-only turn — never a negative cost. The state file is rewritten
-    # below, so the next refresh rebases on the current totals.
-    [ "$delta_in" -lt 0 ] && delta_in=0
-    [ "$delta_out" -lt 0 ] && delta_out=0
-  else
-    delta_in=$total_in; delta_out=$total_out
+cost_usd="$(jqget '.cost.total_cost_usd // empty')"
+if [ -n "$cost_usd" ] && [ "$cost_usd" != "null" ]; then
+  prices="$(price_for "$model")"
+  if [ -n "$prices" ]; then
+    cost="$(awk -v c="$cost_usd" 'BEGIN { printf "~$%.2f", c }')"
   fi
+elif [ -n "$total_in" ] && [ -n "$total_out" ] \
+   && [ "$total_in" != "null" ] && [ "$total_out" != "null" ]; then
   prices="$(price_for "$model")"
   if [ -n "$prices" ]; then
     pin="${prices%% *}"; pout="${prices##* }"
-    cost="$(awk -v di="$delta_in" -v dout="$delta_out" -v pi="$pin" -v po="$pout" \
-      'BEGIN { printf "~$%.2f", (di*pi + dout*po)/1000000 }')"
+    cost="$(awk -v ti="$total_in" -v to="$total_out" -v pi="$pin" -v po="$pout" \
+      'BEGIN { printf "~$%.2f", (ti*pi + to*po)/1000000 }')"
   fi
-  printf '%s %s\n' "$total_in" "$total_out" > "$STATE_FILE"
 fi
 
 # --- project completion bar (THE MAIN METRIC) ------------------------------
-# Disk truth only: reads $cwd/CONTROL/project_state.json. Percent = completed /
+# Disk truth only: reads CONTROL/project_state.json. Percent = completed /
 # (pending + in_progress + completed). No state file -> segment omitted (the
 # plan does not exist yet; showing 0% before the plan exists is fake progress).
+# BOUNDED UPWARD WALK — spec-protocol projects are not git repos, so this
+# cannot use `git rev-parse --show-toplevel`. From $cwd, check each directory
+# for CONTROL/project_state.json, walking up one level at a time, stopping the
+# moment $HOME (or, as a hard safety bound for a $cwd outside $HOME entirely,
+# the filesystem root) has been checked. Without this walk, the Project
+# segment renders from the project root and then silently vanishes the moment
+# you `cd` into a subdirectory — the confirmed defect this fixes.
 projseg=""
-state_file="$cwd_path/CONTROL/project_state.json"
-if [ -n "$cwd_path" ] && [ -f "$state_file" ]; then
+state_file=""
+if [ -n "$cwd_path" ]; then
+  walk_dir="$cwd_path"
+  while [ -n "$walk_dir" ]; do
+    if [ -f "$walk_dir/CONTROL/project_state.json" ]; then
+      state_file="$walk_dir/CONTROL/project_state.json"
+      break
+    fi
+    [ "$walk_dir" = "$HOME" ] && break
+    [ "$walk_dir" = "/" ] && break
+    walk_dir="$(dirname "$walk_dir")"
+  done
+fi
+if [ -n "$state_file" ] && [ -f "$state_file" ]; then
   pcounts="$(jq -r '.tasks.counts // empty | "\(.pending // 0) \(.in_progress // 0) \(.completed // 0)"' "$state_file" 2>/dev/null || true)"
   pstatus="$(jq -r '.run_status // empty' "$state_file" 2>/dev/null || true)"
   if [ -n "$pcounts" ]; then
@@ -346,10 +376,10 @@ say "Press Ctrl+T inside Claude Code to view or hide task progress."
 say ""
 say "Metric report (supported metrics were configured; unsupported ones omitted — never faked):"
 say "  Model: Supported"
-say "  Session cost: Derived (real token counts × published pricing, ~-labeled)"
+say "  Session cost: ~-labeled — Claude Code's own tracked session total when available, else derived from cumulative token counts × published pricing; omitted for routed (9Router) models"
 say "  Session duration: Not exposed by this Claude Code version"
 say "  Git branch/status: Supported inside Git repositories"
-say "  Project bar: Supported inside Spec Protocol projects (reads CONTROL/project_state.json; omitted until the plan exists)"
+say "  Project bar: Supported inside Spec Protocol projects (walks up from cwd to \$HOME looking for CONTROL/project_state.json; omitted until the plan exists)"
 say "  Wave bar: Supported for wave-shaped runs (reads FIX-LEDGER.md; omitted when no wave lines exist)"
 say "  Context usage: INTERNAL doctrine — tracked and acted on by the agent (thresholds 70/85/95), never shown to the client (operator order 2026-08-16)"
 say "  5-hour / 7-day usage: INTERNAL doctrine — never shown to the client (operator order 2026-08-16)"

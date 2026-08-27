@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.17.5] — 2026-08-27
+
+### Statusline: five defects fixed (Project bar vanish, wrong prices, no Fable price, routed
+### sessions mis-priced, bash 3.2 blank-bar risk)
+
+`setup-statusline.sh` and its deployed `~/.claude/statusline-command.sh` carried five
+independent defects, all fixed together and proven byte-identical after regeneration
+(md5 `092f35e19e0c7450c24ae96d41b688e4`):
+
+- **Project bar vanished outside the project root.** The lookup checked only
+  `$cwd/CONTROL/project_state.json`. Spec Protocol projects are not git repos (no
+  `git rev-parse --show-toplevel` available), so `cd`-ing one directory down made the
+  segment disappear. Fixed with a bounded upward walk from `$cwd` to `$HOME` (hard floor
+  `/`), stopping at the first `CONTROL/project_state.json` found.
+- **Price table was wrong on three counts, with no Fable entry at all.** Deployed table read
+  opus 15.00/75.00, sonnet 3.00/15.00, haiku 0.80/4.00 — opus 3x too high, haiku too low, and
+  `price_for()`'s globs (`*opus*`/`*sonnet*`/`*haiku*`) had no `*fable*` branch, so every
+  Fable session showed no cost. Corrected to fable 10.00/50.00, opus 5.00/25.00,
+  sonnet 3.00/15.00, haiku 1.00/5.00.
+- **Routed (claude-nine/9Router) sessions could show an Anthropic-priced number.**
+  `model.display_name` on a routed session is a raw chain id (`opus-chain`, `fusion-coding`,
+  …) — a live-edited, multi-provider fallback list, not a real Anthropic model — and
+  `opus-chain` would silently match the naive `*opus*` glob. `price_for()` now refuses
+  anything shaped like a chain id (`*-chain`, `fusion-*`) before testing any Anthropic family
+  glob, so a routed session omits cost instead of lying about it.
+- **Session cost no longer needs state-file delta math.** Proven (via the installed CLI's own
+  payload-construction code) that stdin already carries `cost.total_cost_usd`, cumulative for
+  the session. The script now reads it directly; falls back to
+  `context_window.total_input_tokens`/`.total_output_tokens` × published pricing only on older
+  Claude Code builds that don't yet emit `cost`. This retires the old state-file/delta design
+  entirely, closing two live bugs: a corrupted state file used to blank the ENTIRE bar under
+  `set -u`, and `~/.claude`/`~/.claude-nine` sharing one state directory (both symlink to the
+  same `projects/`, `XDG_STATE_HOME` unset in both) used to double-bill a session that touched
+  both harnesses.
+- **`declare -A` blanked the whole bar on stock macOS bash.** macOS ships bash 3.2, which has
+  no associative arrays; `declare -A` under `set -u` errored out the whole script. Replaced
+  with a plain `case` statement — no associative arrays anywhere in the script now.
+
+The routed-session env-var detector a prior review assumed existed (to distinguish a
+claude-nine child process from plain claude) was checked directly in the installed CLI binary
+and is **UNDETERMINED** — inconclusive due to minified-identifier collisions across bundle
+scopes. Nothing shipped depends on it; the chain-id shape exclusion above needs no such
+detector.
+
+Tested under both system bash (3.2.57, macOS default) and Homebrew bash (5.3.12): Project bar
+from project root and from a subdirectory two levels deep, a corrupted `project_state.json`
+(bar still renders minus the Project segment), an `opus-chain`/`fusion-coding` payload (no
+cost figure), and a `claude-fable-5[1m]` payload (cost now appears, both from
+`cost.total_cost_usd` and from the token-count fallback).
+
+See `.claude/skills/spec-protocol/references/progress-visibility.md` §4/§6 for the corrected
+cost rule and Project-bar walk-up.
+
 ## [1.17.4] — 2026-08-27
 
 ### ENTRY-MODE: the gate was enforced but never written
