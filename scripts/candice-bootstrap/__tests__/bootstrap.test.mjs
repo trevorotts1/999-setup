@@ -91,6 +91,37 @@ test("stateMatches detects full vs partial component sets", () => {
   assert.equal(stateMatches(state, { ...SKILL_PINS, kaizen: "9.9.9" }), false);
 });
 
+test("an undetermined pin never reports a component up to date", () => {
+  // Regression for a false PASS that arrived WITH the derived pins. An
+  // unreadable VERSION file yields a null pin; the installed record is
+  // written from that same pin, so it is null too; and `null !== null` is
+  // false, so the old loop sailed past and certified the component current
+  // when its version was not known at all.
+  //
+  // "Undetermined" must never read as "fine".
+  const state = {
+    schema: STATE_SCHEMA,
+    platform: "darwin",
+    components: { kaizen: { status: "installed", version: null } },
+    assets: {},
+    launch: {},
+  };
+  assert.equal(stateMatches(state, { kaizen: null }), false, "a null pin must not match a null record");
+  assert.equal(stateMatches(state, { kaizen: undefined }), false, "an undefined pin must not match");
+  assert.equal(stateMatches(state, { kaizen: "" }), false, "an empty pin must not match");
+
+  // CONTROL: the same shape with a REAL version must still match, or this
+  // test would pass against a stateMatches that simply always returns false.
+  const good = {
+    schema: STATE_SCHEMA,
+    platform: "darwin",
+    components: { kaizen: { status: "installed", version: "1.1.0" } },
+    assets: {},
+    launch: {},
+  };
+  assert.equal(stateMatches(good, { kaizen: "1.1.0" }), true, "a real matching pin must still match");
+});
+
 test("skill pins, the skills on disk, and the registry all agree", () => {
   // THE BUG THIS EXISTS TO PREVENT: SKILL_PINS said spec-protocol 1.17.0
   // while the skill in the repository was 1.17.3. installSkills copies the
