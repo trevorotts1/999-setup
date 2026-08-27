@@ -26,9 +26,37 @@ const FILES = [
   'secret.test.js',
   'speakable.test.js',
   'tauri-platform-config.test.js',
+  'release-version-parity.test.js',
 ]
 
 let failures = 0
+
+// A hand-maintained list only runs what someone remembered to add to it. A
+// contract test added to this directory and left off FILES passes CI by never
+// running -- silently, and looking green. Require the list to match the
+// directory, so forgetting is a loud failure rather than an invisible gap.
+const onDisk = require('fs')
+  .readdirSync(__dirname)
+  .filter((f) => f.endsWith('.test.js'))
+  .sort()
+const unlisted = onDisk.filter((f) => !FILES.includes(f))
+const missing = FILES.filter((f) => !onDisk.includes(f))
+if (unlisted.length > 0 || missing.length > 0) {
+  console.log('==== suite-coverage: FAIL ====')
+  if (unlisted.length > 0) {
+    console.log(`contract tests on disk but not in FILES (they never run): ${unlisted.join(', ')}`)
+  }
+  if (missing.length > 0) {
+    console.log(`FILES names tests that are not on disk: ${missing.join(', ')}`)
+  }
+  process.exit(1)
+}
+// CONTROL: if the directory read returned nothing, the check above would pass
+// for free and so would an empty run.
+if (onDisk.length < FILES.length) {
+  console.log('==== suite-coverage: FAIL ==== the directory walk is not reaching the tests')
+  process.exit(1)
+}
 
 for (const file of FILES) {
   const label = file.replace(/\.test\.js$/, '')

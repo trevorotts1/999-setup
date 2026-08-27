@@ -92,20 +92,34 @@ if (existsSync(bashResolver)) {
   //
   // A Windows user writing an answers file in Notepad hits the same wall, so
   // this is a product fix, not a CI accommodation.
+  //
+  // Both variants are BUILT here rather than read from the tree. The golden
+  // fixture's line endings on disk are whatever git's autocrlf handed this
+  // runner -- CRLF on Windows, LF elsewhere -- so "convert the checked-out
+  // file and compare it to itself" is a no-op on exactly the platform this
+  // guard exists for. Normalize to a known base, then emit both endings from
+  // it, and the comparison means the same thing on every runner.
   const crlfSource = path.join(here, 'golden', 'scenario-anthropic.answers');
   if (existsSync(crlfSource)) {
-    const lf = readFileSync(crlfSource, 'utf8');
+    const base = readFileSync(crlfSource, 'utf8').replace(/\r\n/g, '\n');
+    const lfPath = path.join(tmpdir(), `ws27-lf-${process.pid}.answers`);
     const crlfPath = path.join(tmpdir(), `ws27-crlf-${process.pid}.answers`);
-    writeFileSync(crlfPath, lf.replace(/\r?\n/g, '\r\n'), 'utf8');
+    writeFileSync(lfPath, base, 'utf8');
+    writeFileSync(crlfPath, base.replace(/\n/g, '\r\n'), 'utf8');
     try {
-      // CONTROL: the fixture must genuinely differ on disk, or converting it
-      // proved nothing and this test passes for free.
+      // CONTROL: the two files must genuinely differ in bytes on disk. If they
+      // do not, nothing was converted and the comparison below passes for free
+      // -- which is exactly how this check went green on macOS while the bug
+      // it guards was live on Windows.
+      const lfBytes = readFileSync(lfPath);
+      const crlfBytes = readFileSync(crlfPath);
       assert(
-        readFileSync(crlfPath, 'utf8') !== lf,
+        !lfBytes.equals(crlfBytes) && crlfBytes.includes(0x0d) && !lfBytes.includes(0x0d),
         'CONTROL: the CRLF fixture differs from the LF original',
+        `lf=${lfBytes.length}B crlf=${crlfBytes.length}B`,
       );
       const fromCrlf = normalizeCard(run('bash', [bashResolver, crlfPath]));
-      const fromLf = normalizeCard(run('bash', [bashResolver, crlfSource]));
+      const fromLf = normalizeCard(run('bash', [bashResolver, lfPath]));
       let diffs = 0;
       const max = Math.max(fromCrlf.length, fromLf.length);
       for (let i = 0; i < max; i++) if ((fromCrlf[i] ?? '') !== (fromLf[i] ?? '')) diffs++;
@@ -113,7 +127,9 @@ if (existsSync(bashResolver)) {
     } catch (e) {
       assert(false, 'bash resolver: CRLF answers == LF answers', e.stderr || e.message);
     } finally {
-      try { unlinkSync(crlfPath); } catch { /* best effort */ }
+      for (const f of [lfPath, crlfPath]) {
+        try { unlinkSync(f); } catch { /* best effort */ }
+      }
     }
   }
 } else {

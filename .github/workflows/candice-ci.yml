@@ -177,6 +177,29 @@ jobs:
           bash tests/macos/verify-macos.sh --ci-root "$RUNNER_TEMP/candice-verify-home" > verifier-macos.log 2>&1
           cat verifier-macos.log
 
+      # The WS-31 bootstrap suite drives the REAL `claude` CLI against a
+      # hermetic temp config root (CLAUDE_CONFIG_DIR), because plugin
+      # registration is the path a client actually installs through and a
+      # stubbed CLI would prove nothing about it. The runner has no `claude`,
+      # so six of those tests were failing with `spawnSync claude ENOENT` --
+      # an environment gap reported as a product failure. Pinned, because an
+      # unpinned CLI would silently change the surface under test.
+      - name: Install the Claude CLI (WS-31 registration tests drive it for real)
+        run: npm install -g @anthropic-ai/claude-code@2.1.227
+
+      - name: CONTROL — the CLI must actually run before its tests mean anything
+        run: |
+          set -euo pipefail
+          # `command -v` proves a NAME resolves, not that the program runs, so
+          # execute it and require real output. Without this, a broken install
+          # would surface as six confusing product failures further down.
+          claude --version
+          probe="$(mktemp -d)"
+          CLAUDE_CONFIG_DIR="$probe" claude plugin list > /tmp/claude-plugin-probe.txt 2>&1
+          cat /tmp/claude-plugin-probe.txt
+          test -s /tmp/claude-plugin-probe.txt \
+            || { echo 'CONTROL FAILED: `claude plugin list` produced no output at all'; exit 1; }
+
       # --- 14 Candice test suites (plain node, zero deps) ---
       - name: WS-41 contract suite
         run: node tests/contract/suite.js
@@ -374,29 +397,22 @@ jobs:
           Write-Host 'staged overlay present:'
           Get-Content 'src-tauri/tauri.windows.conf.json'
 
-      - name: Load the merged Windows config
+      # `npx tauri info` used to stand in for "the merged config parses", with a
+      # control that injected `$comment` and required the CLI to reject it.
+      # That control failed, and it was right to: measured 2026-08-27, with
+      # `$comment` injected into the config, `tauri info` exits 0 and prints its
+      # usual environment report. It does not validate the config at all, so the
+      # step proved nothing and only the control was honest about it.
+      #
+      # The authoritative instrument is the schema the CLI ships, generated from
+      # the same Rust `Config` struct the build deserializes, whose root sets
+      # additionalProperties:false. The validator below merges the overlay by
+      # RFC 7396 exactly as Tauri does, validates against that schema, and its
+      # --prove-can-fail mode re-runs the real defect through the same call that
+      # just accepted the real config.
+      - name: Validate the merged Windows config against the CLI's own schema
         working-directory: apps/candice-companion
-        run: npx tauri info
-
-      - name: Prove this check can fail
-        shell: pwsh
-        working-directory: apps/candice-companion
-        run: |
-          # Inject the exact defect that shipped, confirm the CLI rejects it,
-          # then restore. Without this, a `tauri info` that stopped reading
-          # the overlay would leave the job green forever.
-          $path = 'src-tauri/tauri.windows.conf.json'
-          $original = Get-Content $path -Raw
-          $bad = $original | ConvertFrom-Json
-          $bad | Add-Member -NotePropertyName '$comment' -NotePropertyValue @('probe')
-          $bad | ConvertTo-Json -Depth 20 | Set-Content $path
-          npx tauri info 2>&1 | Out-String | Tee-Object -Variable out | Out-Null
-          Set-Content $path $original -NoNewline
-          if ($out -notmatch 'was unexpected') {
-            Write-Error 'CONTROL FAILED: the CLI accepted an unknown config key, so this job cannot catch the defect it exists for'
-            exit 1
-          }
-          Write-Host 'control passed: the CLI rejects an unknown config key'
+        run: node scripts/validate-tauri-config.mjs --prove-can-fail
 
   # ---------------------------------------------------------------------------
   # Windows x64 — WASAPI capture build + parity + shell-compat
