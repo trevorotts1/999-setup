@@ -40,7 +40,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const APP_ROOT = resolve(import.meta.dirname, '..');
@@ -151,6 +152,70 @@ try {
   execFileSync(engine, ['-h'], { stdio: 'ignore' });
 } catch (err) {
   FAIL(`the staged engine does not execute (dyld closure incomplete): ${err.message}`);
+}
+
+// And does it actually TRANSCRIBE on a machine that is not this one?
+//
+// Everything above passed while voice input was broken for every client. `-h`
+// prints usage without ever initialising a compute backend, and `otool -L`
+// sees link-time dependencies only. In ggml 0.19 the backends are dlopen'd at
+// run time from a path baked in at build time -- /opt/homebrew/Cellar/ggml/
+// <version>/libexec for a Homebrew bottle. A developer Mac has that directory.
+// A client Mac does not, and there `whisper_init_from_file_with_params` hits
+// ggml_backend_dev_init with no device registered and calls ggml_abort:
+// SIGABRT, exit 134, no transcript, on the user's first push-to-talk.
+//
+// So this runs the real engine over real audio with /opt/homebrew denied, and
+// that is the only check here that could have caught it. sandbox-exec denies
+// the path without touching anything on disk.
+const sandboxProfile = join(tmpdir(), `candice-speech-nohb-${process.pid}.sb`);
+const probeWav = join(tmpdir(), `candice-speech-probe-${process.pid}.wav`);
+const SPOKEN = 'build me a website for my coaching business';
+try {
+  writeFileSync(sandboxProfile, '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/homebrew"))\n', 'utf8');
+  execFileSync('say', ['-o', probeWav, '--data-format=LEI16@16000', SPOKEN], { stdio: 'ignore' });
+
+  const model = join(ASSETS, ...String(byId.get('stt-model').installPath).split('/'));
+  const run = (profile) => {
+    try {
+      const out = execFileSync(
+        'sandbox-exec',
+        ['-f', profile, engine, '-m', model, '-f', probeWav, '-nt'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 120000 },
+      );
+      return { ok: true, text: String(out).trim().toLowerCase() };
+    } catch (err) {
+      return { ok: false, text: '', status: err.status, signal: err.signal };
+    }
+  };
+
+  const denied = run(sandboxProfile);
+
+  if (!denied.ok || !denied.text.includes('coaching business')) {
+    // CONTROL: prove it is the DENIAL that broke it, not sandbox-exec itself.
+    // Without this, a sandbox that refused to run anything would look exactly
+    // like a missing backend, and the build would be blocked for the wrong
+    // reason -- or, worse, this check would be deleted as flaky.
+    const controlProfile = join(tmpdir(), `candice-speech-control-${process.pid}.sb`);
+    writeFileSync(controlProfile, '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/candice-not-a-real-path"))\n', 'utf8');
+    const control = run(controlProfile);
+    try { unlinkSync(controlProfile); } catch { /* best effort */ }
+
+    if (!control.ok || !control.text.includes('coaching business')) {
+      FAIL('the transcription control did not pass either — this check is broken, not the engine.\n'
+        + `    control exit=${control.status ?? 'ok'} signal=${control.signal ?? 'none'} text="${control.text}"`);
+    }
+    FAIL('the staged engine cannot transcribe on a machine without Homebrew.\n'
+      + `    exit=${denied.status ?? 'ok'} signal=${denied.signal ?? 'none'} transcript="${denied.text}"\n`
+      + '    The same audio transcribes when an irrelevant path is denied instead, so the\n'
+      + '    engine is missing its ggml backend plugins (libggml-*.so). They are dlopen\'d at\n'
+      + '    run time and are invisible to otool, so nothing else here can see this.\n'
+      + '    Fix: node scripts/relocate-whisper-macos.mjs stages them beside the engine.');
+  }
+} finally {
+  for (const f of [sandboxProfile, probeWav]) {
+    try { unlinkSync(f); } catch { /* best effort */ }
+  }
 }
 
 const windowsRows = entries.filter((e) => e.id.startsWith('stt-binary-windows-'));

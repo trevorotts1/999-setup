@@ -154,8 +154,45 @@ async function main() {
       // not have to reproduce. Searched at any depth: the previous query
       // required the button to be a direct child of the window's first group,
       // and it never has been -- the UI is web content inside an AXScrollArea.
-      if (!axContains('AXButton', 'HOLD TO TALK')) {
-        throw new Error('PTT control (HOLD TO TALK) absent from the packaged a11y tree')
+      //
+      // The PTT control does NOT arrive with the rest of the surface. It is
+      // built only once the speech runtime has answered whether this machine
+      // has an STT engine (controller.ts: `options.sttAvailable === false ?
+      // null : createPttView(...)`), and that health probe hashes the model
+      // and the binary and then runs a bounded `--version` on it. That work
+      // finishes AFTER the answer controls have already rendered, so probing
+      // the instant the surface appeared measured a moment when the control
+      // legitimately did not exist yet.
+      //
+      // Bounded, and still a real failure if it never arrives: this build
+      // ships the engine inside the bundle and assert-speech-engine-macos.mjs
+      // proves it executes before packaging, so PTT MUST appear.
+      const pttStart = Date.now()
+      const pttDeadline = pttStart + 20000
+      let pttFound = axContains('AXButton', 'HOLD TO TALK')
+      while (!pttFound && Date.now() < pttDeadline) {
+        await run.probe.sleep(250)
+        pttFound = axContains('AXButton', 'HOLD TO TALK')
+      }
+      // Record HOW LATE it was, not just that it arrived. If this number is
+      // large the user watches a control pop into a surface they are already
+      // reading, and that is a real finding even though the leg passes.
+      const pttWaitMs = Date.now() - pttStart
+      fs.writeFileSync(path.join(TRACE_DIR, 'ptt-wait-ms.txt'), `${pttWaitMs}\n`, 'utf8')
+      if (!pttFound) {
+        // Say what the tree DID contain. "absent" alone cannot distinguish a
+        // renamed label from a control the app decided not to build, and that
+        // difference is the whole diagnosis.
+        const dump = ax('dump')
+        const buttons = String(dump.out || '')
+          .split('\n')
+          .filter((line) => line.includes('AXButton'))
+          .map((line) => line.trim())
+        fs.writeFileSync(path.join(TRACE_DIR, 'ptt-absent-ax-buttons.txt'), `${buttons.join('\n')}\n`, 'utf8')
+        throw new Error(
+          `PTT control (HOLD TO TALK) absent from the packaged a11y tree after 20000ms. `
+          + `Buttons present: ${buttons.length === 0 ? '(none)' : buttons.join(' | ')}`,
+        )
       }
       pttSeen = true
       fs.writeFileSync(path.join(TRACE_DIR, 'ptt-present'), 'true\n', 'utf8')

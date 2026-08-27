@@ -64,6 +64,11 @@ apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli
 # names to @loader_path, so the engine loads its libraries from its own
 # directory instead of /opt/homebrew, which no client has.
 apps/candice-companion/src-tauri/speech-assets/stt/*.dylib
+# ggml's compute backends. Same rule as the dylibs beside them: staged from
+# the Homebrew bottle by scripts/relocate-whisper-macos.mjs, never committed.
+# They are dlopen'd at run time rather than linked, which is exactly why they
+# were missing from the bundle until 2026-08-27.
+apps/candice-companion/src-tauri/speech-assets/stt/*.so
 apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli.exe
 apps/candice-companion/src-tauri/speech-assets/stt/whisper-cli-win32/
 apps/candice-companion/src-tauri/speech-assets/tts/runtime/kokoro-v1.0.fp16.onnx

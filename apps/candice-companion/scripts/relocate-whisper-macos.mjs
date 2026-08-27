@@ -116,6 +116,58 @@ for (const [file, name] of staged) {
   fs.chmodSync(target, 0o755)
 }
 
+// ---- 2b. stage the RUNTIME backend plugins --------------------------------
+//
+// The dependency closure above is the LINK-TIME closure, and it is complete.
+// It is also not enough, which is the whole lesson of this section.
+//
+// In ggml 0.19 the compute backends are not linked -- they are dlopen'd at
+// run time from a directory baked in at build time, which for a Homebrew
+// bottle is /opt/homebrew/Cellar/ggml/<version>/libexec. `otool -L` cannot
+// see a dlopen, so an engine that passes every link-time check still had NO
+// backend at all on a machine without Homebrew. Measured, with the bundle's
+// own engine and /opt/homebrew denied via sandbox-exec:
+//
+//   ggml_backend_dev_init -> ggml_abort, SIGABRT, exit 134, no transcript
+//
+// and with an irrelevant path denied instead, the same command exits 0 and
+// transcribes -- so it was the missing backends, not the sandbox. Staging
+// these five files and rewriting them the same way makes that same command
+// exit 0 with /opt/homebrew still denied, loading BLAS, CPU and Metal from
+// inside the bundle.
+//
+// Every client Mac is a machine without Homebrew. This is the difference
+// between voice input working and the engine crashing on first use.
+const backendDir = (() => {
+  const base = resolveDep('@rpath/libggml-base.0.dylib')
+  if (base === null) return null
+  const candidate = path.resolve(path.dirname(base), '..', 'libexec')
+  return fs.existsSync(candidate) ? candidate : null
+})()
+
+if (backendDir === null) {
+  console.error('relocate-whisper: could not locate the ggml backend plugin directory')
+  console.error('  without it the engine ships with no compute backend and aborts on first use')
+  process.exit(1)
+}
+
+const backendFiles = fs.readdirSync(backendDir).filter((f) => f.endsWith('.so')).sort()
+if (backendFiles.length === 0) {
+  // Refusing beats staging an engine that cannot compute. An empty read here
+  // would otherwise sail through every later check: nothing to copy, nothing
+  // to rewrite, nothing to leak.
+  console.error(`relocate-whisper: no backend plugins in ${backendDir}`)
+  process.exit(1)
+}
+
+for (const name of backendFiles) {
+  const target = path.join(DEST, name)
+  fs.copyFileSync(path.join(backendDir, name), target)
+  fs.chmodSync(target, 0o755)
+  staged.set(path.join(backendDir, name), name)
+  closure.set(path.join(backendDir, name), otoolDeps(target))
+}
+
 // ---- 3. rewrite every install name to @loader_path ------------------------
 const byBasename = new Map()
 for (const [file, name] of staged) byBasename.set(path.basename(file), name)

@@ -94,6 +94,31 @@ const ENTRIES = [
       role: `speech-to-text runtime library (${name}), loaded via @loader_path`,
     }),
   ),
+  // The ggml COMPUTE BACKENDS. These are not linked -- ggml dlopen's them at
+  // run time -- so they never appeared in the dependency closure and were
+  // never staged. Without them the engine registers no compute device and
+  // ggml_abort()s inside whisper_init: SIGABRT on the user's first
+  // push-to-talk, on every machine that does not happen to have Homebrew's
+  // ggml installed. Measured, not inferred; see
+  // scripts/assert-speech-engine-macos.mjs, which now transcribes real audio
+  // with /opt/homebrew denied and fails the build if it cannot.
+  ...[
+    'libggml-cpu-apple_m1.so',
+    'libggml-cpu-apple_m2_m3.so',
+    'libggml-cpu-apple_m4.so',
+    'libggml-blas.so',
+    'libggml-metal.so',
+  ].map((name) => ({
+    id: `stt-backend-macos-${name.replace(/\.so$/, '').replace(/^libggml-/, '').replace(/[._]/g, '-')}`,
+    filename: name,
+    path: ['stt', name],
+    version: STT_RUNTIME.version,
+    license: 'MIT',
+    arch: 'aarch64-apple-darwin',
+    sha256: null,
+    sourceUrl: 'relocated from the Homebrew bottle by scripts/relocate-whisper-macos.mjs',
+    role: `speech-to-text compute backend (${name}), dlopen'd at run time from the engine's own directory`,
+  })),
   {
     id: 'stt-binary-windows-x64',
     filename: 'whisper-cli.exe',
