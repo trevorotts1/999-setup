@@ -146,11 +146,11 @@ test('FIX-010: visual wake does not forward unverified session or terminal ident
   assert.equal(calls[0].args.includes('--host-window'), false);
 });
 
-test('the wake carries the harness name in the environment, never in argv', () => {
+test('the wake carries the plugin location in the environment, never in argv', () => {
   // The app must be able to name the window the user is actually looking
-  // at. It travels as an environment variable specifically so the argv
-  // contract above -- no unverified identity on the command line -- is
-  // untouched.
+  // at, and the plugin's own location is what tells it. That travels as an
+  // environment variable specifically so the argv contract above -- no
+  // unverified identity on the command line -- is untouched.
   const request = buildWakeRequest('/bro', parseHookPayload('{}'));
   const calls = [];
   dispatchWake(request, {
@@ -161,9 +161,13 @@ test('the wake carries the harness name in the environment, never in argv', () =
       return { once() {}, unref() {} };
     },
   });
-  assert.equal(calls[0].options.env.CANDICE_HARNESS, 'Claude-Nine');
-  assert.equal(calls[0].args.join(' ').includes('Claude-Nine'), false,
-    'the harness name must not reach argv');
+  assert.equal(
+    calls[0].options.env.CANDICE_PLUGIN_ROOT,
+    '/Users/x/.claude-nine/plugins/p',
+    'the app must be told where the plugin lives',
+  );
+  assert.equal(calls[0].args.join(' ').includes('.claude'), false,
+    'the location must not reach argv');
 });
 
 test('FIX-010: shipped routed launchers remain independent of Candice wake dispatch', () => {

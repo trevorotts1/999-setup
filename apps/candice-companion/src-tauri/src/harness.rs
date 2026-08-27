@@ -11,30 +11,41 @@
 //!
 //! ## How the harness is identified
 //!
-//! `CANDICE_HARNESS`, set by the plugin at the moment it spawns this app.
+//! `CANDICE_PLUGIN_ROOT` -- the plugin's own location, handed over by the
+//! plugin at the moment it spawns this app.
 //!
 //! This used to read `CLAUDE_CONFIG_DIR`, and the comment here claimed that
 //! was "MEASURED from the launchers". It was measured from the operator's
 //! own personal launcher, NOT from the launchers this repo ships. All four
-//! shipped launchers -- `launchers/macos/claude-nine`,
-//! `launchers/macos/claude-codex`, `launchers/windows/claude-nine.cmd` and
-//! `launchers/windows/claude-nine.ps1` -- contain zero references to that
-//! variable, and never setting it is a stated product invariant. So on every
-//! client machine a Claude-Nine session presented no config dir at all, only
-//! the generic `CLAUDECODE` marker, and this module answered "Claude": the
-//! precise wrong-window failure it exists to prevent, and confidently wrong
-//! rather than honestly unknown.
+//! shipped launcher files under `launchers/macos` and `launchers/windows`
+//! contain zero references to that variable -- measured, with a control:
+//! the same grep finds `ANTHROPIC_BASE_URL` in two of the four, so the zero
+//! is a real absence. Never setting it is a stated product invariant.
 //!
-//! The plugin can answer this and the app cannot, because the plugin knows
-//! where the harness loaded it FROM -- Claude Code installs plugins beneath
-//! its own config root, so the plugin's own path sits under `.claude-nine/`
-//! or `.claude/`. That is in-force truth rather than a file's intent. See
-//! `plugins/candice-integration/shared/launch-command.js`, which owns the
-//! derivation for both launch paths.
+//! So on every client machine the second harness presented no config dir at
+//! all, only the generic `CLAUDECODE` marker, and this module answered
+//! "Claude": the precise wrong-window failure it exists to prevent, and
+//! confidently wrong rather than honestly unknown.
+//!
+//! The plugin can answer what the app cannot, because it knows where the
+//! harness loaded it FROM -- Claude Code installs plugins beneath its own
+//! config root, so the plugin's path sits under one config directory or the
+//! other. That is in-force truth rather than a file's intent.
+//!
+//! ## Why the CLASSIFYING happens here and not there
+//!
+//! The plugin hands over a PATH and does not interpret it. WS-42 requires
+//! the shipped plugin to carry zero coupling to how the session was
+//! launched: a routed session and a plain session must walk the same code.
+//! An earlier cut of this fix classified inside the plugin, which broke that
+//! invariant in substance, and `tests/same-session` caught it.
+//!
+//! Naming a window is presentation, and presentation is what this app IS.
+//! So the plugin reports where it lives, unconditionally and identically in
+//! both worlds, and the decision lands here.
 //!
 //! `CLAUDE_CONFIG_DIR` is still honoured as a second signal, because the
-//! operator's own boxes DO set it and it is correct where present. It is no
-//! longer the only one.
+//! operator's own boxes DO set it and it is correct where present.
 //!
 //! `CLAUDECODE` is deliberately NOT consulted. Both harnesses are the same
 //! binary and both set it, so it can never tell them apart. Reading a name
@@ -58,17 +69,16 @@
 /// Split from the environment read so it can be tested without mutating
 /// process-global state, which is not safe under a parallel test runner.
 pub fn resolve_harness_name(
-    explicit: Option<&str>,
+    plugin_root: Option<&str>,
     config_dir: Option<&str>,
 ) -> Option<&'static str> {
-    // Stated outright by the plugin. The only signal that is a positive
-    // claim rather than an inference.
-    match explicit {
-        Some(HARNESS_NINE) => return Some(HARNESS_NINE),
-        Some(HARNESS_CLAUDE) => return Some(HARNESS_CLAUDE),
-        // An unrecognised value is discarded rather than echoed. This
-        // command's contract is a known harness or nothing.
-        _ => {}
+    // Where the running harness actually loaded the plugin from. Checked
+    // first because it reflects THIS launch, while a config dir can be
+    // inherited from a shell opened inside the other harness.
+    if let Some(root) = plugin_root {
+        if let Some(name) = harness_from_path(root) {
+            return Some(name);
+        }
     }
     if let Some(dir) = config_dir {
         return harness_from_path(dir);
@@ -107,10 +117,10 @@ pub const HARNESS_NINE: &str = "Claude-Nine";
 /// front end renders as "your terminal".
 #[tauri::command]
 pub fn cmd_get_harness_name() -> Result<Option<String>, String> {
-    let explicit = std::env::var("CANDICE_HARNESS").ok();
+    let plugin_root = std::env::var("CANDICE_PLUGIN_ROOT").ok();
     let config_dir = std::env::var("CLAUDE_CONFIG_DIR").ok();
     Ok(
-        resolve_harness_name(explicit.as_deref(), config_dir.as_deref())
+        resolve_harness_name(plugin_root.as_deref(), config_dir.as_deref())
             .map(|s| s.to_string()),
     )
 }
@@ -119,30 +129,31 @@ pub fn cmd_get_harness_name() -> Result<Option<String>, String> {
 mod tests {
     use super::*;
 
+    const NINE_PLUGIN: &str = "/Users/x/.claude-nine/plugins/repos/bc/candice-integration";
+    const PLAIN_PLUGIN: &str = "/Users/x/.claude/plugins/repos/bc/candice-integration";
+
     #[test]
-    fn the_plugins_explicit_answer_is_taken() {
-        assert_eq!(resolve_harness_name(Some("Claude-Nine"), None), Some(HARNESS_NINE));
-        assert_eq!(resolve_harness_name(Some("Claude"), None), Some(HARNESS_CLAUDE));
+    fn the_plugins_location_names_the_harness() {
+        assert_eq!(resolve_harness_name(Some(NINE_PLUGIN), None), Some(HARNESS_NINE));
+        assert_eq!(resolve_harness_name(Some(PLAIN_PLUGIN), None), Some(HARNESS_CLAUDE));
     }
 
     #[test]
-    fn the_explicit_answer_beats_a_stale_config_dir() {
+    fn the_plugin_location_beats_an_inherited_config_dir() {
         // A shell opened from inside one harness can carry the other's
-        // CLAUDE_CONFIG_DIR. What launched THIS app wins.
+        // CLAUDE_CONFIG_DIR. Where THIS launch loaded the plugin from wins.
         assert_eq!(
-            resolve_harness_name(Some("Claude"), Some("/Users/x/.claude-nine")),
+            resolve_harness_name(Some(PLAIN_PLUGIN), Some("/Users/x/.claude-nine")),
             Some(HARNESS_CLAUDE)
         );
     }
 
     #[test]
-    fn an_unrecognised_explicit_value_is_discarded_not_echoed() {
-        // Never render an arbitrary string into "answer in <x>".
-        assert_eq!(resolve_harness_name(Some("Cursor"), None), None);
-        assert_eq!(resolve_harness_name(Some(""), None), None);
-        // ...but it must not poison a config dir that DOES know.
+    fn an_uninformative_plugin_path_falls_through_to_the_config_dir() {
+        // A dev checkout is under neither config root. It must not veto a
+        // config dir that does know.
         assert_eq!(
-            resolve_harness_name(Some("Cursor"), Some("/Users/x/.claude-nine")),
+            resolve_harness_name(Some("/Users/x/candice-integration/plugins/candice-integration"), Some("/Users/x/.claude-nine")),
             Some(HARNESS_NINE)
         );
     }
@@ -157,13 +168,12 @@ mod tests {
     fn nothing_known_reports_unknown_rather_than_guessing() {
         // THE REGRESSION THIS MODULE WAS REWRITTEN FOR. Every shipped
         // launcher leaves CLAUDE_CONFIG_DIR unset, so this is the exact
-        // shape a client machine presents. It used to answer "Claude" off
+        // shape a client machine presented. It used to answer "Claude" off
         // the CLAUDECODE marker -- which BOTH harnesses set -- and so named
-        // the wrong window to every Claude-Nine user. Unknown renders as
-        // "your terminal", which is true.
+        // the wrong window to every user of the other harness. Unknown
+        // renders as "your terminal", which is true.
         assert_eq!(resolve_harness_name(None, None), None);
-        // A path that is under neither config root says nothing.
-        assert_eq!(resolve_harness_name(None, Some("/opt/somewhere")), None);
+        assert_eq!(resolve_harness_name(Some("/opt/somewhere"), None), None);
     }
 
     #[test]
@@ -172,7 +182,7 @@ mod tests {
         // contains `.claude-nine`. Component matching settles both.
         assert_eq!(resolve_harness_name(None, Some("/Users/x/.claude-nineteen")), None);
         assert_eq!(
-            resolve_harness_name(None, Some("/Users/x/.claude-nine/plugins")),
+            resolve_harness_name(Some("/Users/x/.claude-nine/plugins"), None),
             Some(HARNESS_NINE)
         );
     }
@@ -182,11 +192,11 @@ mod tests {
         // UNVERIFIED on a real Windows machine -- there is none in this
         // project -- but the mechanism is checked rather than assumed.
         assert_eq!(
-            resolve_harness_name(None, Some(r"C:\Users\trevor\.claude-nine")),
+            resolve_harness_name(Some(r"C:\Users\trevor\.claude-nine\plugins\p"), None),
             Some(HARNESS_NINE)
         );
         assert_eq!(
-            resolve_harness_name(None, Some(r"C:\Users\trevor\.claude")),
+            resolve_harness_name(Some(r"C:\Users\trevor\.claude\plugins\p"), None),
             Some(HARNESS_CLAUDE)
         );
         assert_eq!(
@@ -200,9 +210,9 @@ mod tests {
         // CONTROL: if either argument were ignored, assertions above would
         // pass vacuously through the other. Vary exactly one at a time.
         assert_ne!(
-            resolve_harness_name(Some("Claude-Nine"), None),
-            resolve_harness_name(Some("Claude"), None),
-            "the explicit signal must change the answer"
+            resolve_harness_name(Some(NINE_PLUGIN), None),
+            resolve_harness_name(Some(PLAIN_PLUGIN), None),
+            "the plugin location must change the answer"
         );
         assert_ne!(
             resolve_harness_name(None, Some("/x/.claude-nine")),
