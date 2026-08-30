@@ -1,5 +1,0 @@
-{
-  "lane": "WS-27",
-  "purpose": "matrix-golden.json records the last native Windows shell-matrix run (written only by verify-windows-shell-compat.ps1 on Windows). Placeholder file: proves the fixture path exists and is writable by the verifier. macOS cannot produce a real Windows matrix result; the offline parity proof lives in tools/windows-parity/tests/parity-tests.mjs.",
-  "note": "Windows-only runtime data — see README.md in this directory."
-}

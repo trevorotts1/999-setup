@@ -1,8 +1,0 @@
-HARNESS=claude-nine
-LAUNCHER=claude-nine
-BUILDER_PROVIDER=deepseek-direct
-DEEPSEEK_TIER=flash
-SYSTEM_CONCURRENT_MAX=10
-RESERVE_PCT=25
-PROJECT=windows-shell-compat
-DEEPSEEK_TIER_SOURCE=recalled-confirmed:answered=2026-08-01

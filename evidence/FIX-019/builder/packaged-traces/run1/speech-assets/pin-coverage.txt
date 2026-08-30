@@ -1,2 +1,0 @@
-bundled=15 absent=2
-absent rows: stt-binary-windows-x64, stt-binary-windows-win32

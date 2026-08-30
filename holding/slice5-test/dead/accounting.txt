@@ -1,5 +1,0 @@
-manifest-rows=0
-result-records=0
-image-files=0
-orphan-images=0
-generated-captured-missing-file=0

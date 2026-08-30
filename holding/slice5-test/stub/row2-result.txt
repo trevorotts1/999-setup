@@ -1,1 +1,0 @@
-status=GENERATED-CAPTURED file=stub/row2-body-feature.png bytes=      69 magic=89504e470d0a1a0a sha256=fce481932ea5d07a91c7991c09fdadb4bf78f9b4cc8f927188384231f9d12679

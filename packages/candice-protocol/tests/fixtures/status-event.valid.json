@@ -1,9 +1,0 @@
-{
-  "schemaVersion": "1.0",
-  "sessionId": "opaque-session-id",
-  "event": "status",
-  "phase": "CHECKING_SETUP",
-  "message": "Hi, I'm Candice. I'm here to help you build the app, the software, or the thing you've always dreamed about. Think of me as your fairy godmother: you make a wish, and I help make it real. I'm getting everything ready for us now.",
-  "captions": true,
-  "timestamp": "2026-08-21T12:00:00Z"
-}
