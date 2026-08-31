@@ -1,85 +1,15 @@
 {
-  "schema": "candice.bundled-components/v1",
-  "generatedBy": "scripts/candice-updater/checksums/build-manifest.mjs (WS-33 lane)",
+  "schema": "bundled-components@1",
+  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (nine-router-setup, spec-protocol, kaizen, eli5, bro)",
   "generatedAt": "2026-08-22T02:39:33.300Z",
   "channel": {
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
     "operatorControlledOnly": true,
-    "note": "GitHub Releases in trevorotts1/999-setup is the default channel (spec 21). The 0.2.0 Candice Companion records were quarantined by FIX-001 and are intentionally absent from active components. A new application payload may be added only after scripts/candice-release/status.mjs accepts the exact candidate."
+    "note": "GitHub Releases in trevorotts1/999-setup is the default channel. Active components are the bundled skills registry (CONTROL/bundled-skills.txt); repo-tree skill entries must stay in lockstep with bundled-skills.txt. A new component is added only by a signed release-manifest build."
   },
-  "runtimePins": {
-    "whisperCpp": "1.9.2",
-    "kokoroOnnx": "0.6.1",
-    "onnxruntime": "1.29.0",
-    "espeakngLoader": "0.2.4",
-    "python": "3.12"
-  },
+  "runtimePins": {},
   "components": {
-    "stt-assets": [
-      {
-        "version": "whisper-1.9.2",
-        "platform": "darwin",
-        "installFrom": "release",
-        "file": "ggml-tiny.en-q5_1.bin",
-        "sha256": "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b",
-        "sizeBytes": 32166155,
-        "sourceUrl": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin",
-        "license": "whisper.cpp MIT; ggml-tiny.en-q5_1 MIT (whisper.cpp repo)"
-      },
-      {
-        "version": "whisper-1.9.2",
-        "platform": "win32",
-        "installFrom": "release",
-        "file": "whisper-bin-x64.zip",
-        "sha256": "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a",
-        "sizeBytes": 8194445,
-        "sourceUrl": "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip",
-        "license": "whisper.cpp MIT; ggml-tiny.en-q5_1 MIT (whisper.cpp repo)"
-      },
-      {
-        "version": "whisper-1.9.2",
-        "platform": "win32-x86",
-        "installFrom": "release",
-        "file": "whisper-bin-Win32.zip",
-        "sha256": "de170719aebcb4794d695d449e179002db1fe03b862f21f5c34b2909a7cf8f22",
-        "sizeBytes": 5189502,
-        "sourceUrl": "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-Win32.zip",
-        "license": "whisper.cpp MIT; ggml-tiny.en-q5_1 MIT (whisper.cpp repo)"
-      }
-    ],
-    "tts-assets": [
-      {
-        "version": "kokoro-model-files-v1.1",
-        "platform": "any",
-        "installFrom": "release",
-        "file": "kokoro-v1.0.fp16.onnx",
-        "sha256": "f3a290d384fbb27966d462905c71a46cef9e5fd00516b40df32a0b4afe77ac96",
-        "sizeBytes": 163527961,
-        "sourceUrl": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.fp16.onnx",
-        "license": "Kokoro weights Apache-2.0; kokoro-onnx MIT; onnxruntime MIT; phonemizer GPL-3.0 (worker process only)"
-      },
-      {
-        "version": "kokoro-model-files-v1.1",
-        "platform": "int8",
-        "installFrom": "release",
-        "file": "kokoro-v1.0.int8.onnx",
-        "sha256": "ae315a79b623f244700e4afb9246c46a26066782e049ba174bf3ba433970ee9c",
-        "sizeBytes": 114119327,
-        "sourceUrl": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.int8.onnx",
-        "license": "Kokoro weights Apache-2.0; kokoro-onnx MIT; onnxruntime MIT; phonemizer GPL-3.0 (worker process only)"
-      },
-      {
-        "version": "kokoro-model-files-v1.1",
-        "platform": "voicepack",
-        "installFrom": "release",
-        "file": "voices-v1.0.bin",
-        "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
-        "sizeBytes": 28214398,
-        "sourceUrl": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
-        "license": "Kokoro weights Apache-2.0; kokoro-onnx MIT; onnxruntime MIT; phonemizer GPL-3.0 (worker process only)"
-      }
-    ],
     "nine-router-setup": [
       {
         "version": "1.17.0",
@@ -123,15 +53,6 @@
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/bro",
         "license": "MIT (repo license)"
-      }
-    ],
-    "candice-integration": [
-      {
-        "version": "1.0.0",
-        "platform": "any",
-        "installFrom": "repo-tree",
-        "repoPath": "plugins/candice-integration",
-        "license": "MIT (plugin.json)"
       }
     ]
   }

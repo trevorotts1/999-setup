@@ -129,7 +129,7 @@ import time
 REPO_ROOT = os.environ.get("BOSS_REPO_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR = os.environ.get("BOSS_STATE_DIR") or os.path.join(REPO_ROOT, "CONTROL")
 
-# SINGLETON GUARD (added 2026-08-21, Candice Companion V8 watchdog requirement):
+# SINGLETON GUARD (added 2026-08-21):
 # an flock-based overlap guard, so even a double invocation (launchd tick + a
 # manual run, two terminals, a missed interval that the operator re-triggers)
 # can never run two boss cycles at once. The lock is advisory POSIX flock on a

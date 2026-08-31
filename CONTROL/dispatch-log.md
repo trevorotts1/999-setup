@@ -7,7 +7,7 @@ Record every dispatch before it is sent. Each entry: run, workflow, units, epoch
 ## Entry 1 — 2026-08-21 (UTC ~13:31)
 
 - Run: WR-002
-- Workflow: candice-apparatus-baseline
+- Workflow: apparatus-baseline
 - Units: master-spec-canonical, execution-plan, todo-checklist, ledger-session, worktree-baseline
 - Epoch: 0 / Wave: pre-dispatch (wave 0)
 - Integration SHA at dispatch: `6bb00ec70af69510fab5a9c2ef332751e260d036`

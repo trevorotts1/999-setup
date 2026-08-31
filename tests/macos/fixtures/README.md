@@ -17,7 +17,4 @@ Layout the verifier provisions under `<ci-root>`:
 Checks that cannot be verified in CI (Keychain token, login-shell PATH,
 shell-startup-file scan of a real provisioned home) exit 0 as `BLOCKED` with
 a machine-readable reason; they are required on a real provisioned Mac and
-fail the job there. The release gate (`scripts/candice-release/status.mjs`)
-refuses any release evidence that is missing this verifier's BLOCKED rows,
-so a runner that cannot run a required check can never look like a runner
-that verified it.
+fail the job there.

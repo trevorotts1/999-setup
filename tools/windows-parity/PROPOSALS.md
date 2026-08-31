@@ -1,6 +1,6 @@
 # PROPOSALS.md — deterministic-tool parity fixes (WS-27 → WR-019 lane)
 
-WS-27 owns `tools/windows-parity/**` + `apps/candice-companion/tests/windows-shell-compat/**` only.
+WS-27 owns `tools/windows-parity/**` only.
 The Bash originals under `.claude/skills/spec-protocol/tools/*.sh` are WR-019-lane
 (WS-36) owned (PROJECT-MANIFEST 9.2, 9.4 item 5). Per the cross-lane rule these
 are **proposals**: exact, staged, schema-preserving — never applied by this lane.
@@ -85,7 +85,7 @@ reference on pinned answers).
 
 ## Acceptance note (CHECKLIST E.1 WS-27, E.2 native launch parity)
 
-Every item above keeps the release gate: **no mandatory Spec Protocol/Candice
+Every item above keeps the release gate: **no mandatory Spec Protocol
 runtime path depends exclusively on Bash** once the WR-019 lane applies the
 delegation. The parity toolset ships and proves equivalences now; the .sh
 delegation edits are proposals to WR-019 per the ownership map.

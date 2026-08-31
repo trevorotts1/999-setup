@@ -54,11 +54,6 @@ Windows where the native probes take the PowerShell path.
 
 `shell-matrix/verify-shell-matrix.ps1` proves the native matrix (PS 5.1,
 PS 7 where installed, CMD; `Get-Command`/`where`; parity shim invocation).
-The app-level suite `apps/candice-companion/tests/windows-shell-compat/` runs
-the same matrix from the Candice test tree and records
-`fixtures/matrix-golden.json`. The interactive desktop gate (tabs/panes
-isolation, anchoring, mic, PTT, transparency, install/update/uninstall) is the
-WS-46 gate — see `apps/candice-companion/tests/windows-shell-compat/INTERACTIVE-WINDOWS-SMOKE.md`.
 
 ## Boundary
 

@@ -306,46 +306,6 @@ settings contents. The change applies to **new sessions**. Both installers
 (`setup-macos.sh`, `setup-windows.ps1`) run it during setup, and the spec-protocol
 (step 2.6) and kaizen onboarding first-run steps apply it too.
 
-## Candice Companion — install
-
-One command installs everything this repository ships:
-
-```
-node scripts/candice-bootstrap/bootstrap.mjs install --mode release
-```
-
-That installs the bundled skills, the `candice-integration` Claude plugin,
-and the pinned speech assets (every payload sha256-verified before it lands).
-Re-run the same command to update. Client-facing instructions, in plain
-language, are in [`docs/client/INSTALL-MACOS.md`](docs/client/INSTALL-MACOS.md).
-
-**The application payload is the one part that is not published yet.** No
-signed Candice app candidate has passed the release authority
-(`scripts/candice-release/status.mjs`), so the bootstrap refuses to install
-one — it will never invent a candidate, and a tampered artifact still aborts
-the whole install and rolls it back.
-
-What it no longer does is refuse *everything else* because of that. The
-install completes, reports
-
-> bootstrap completed — APP NOT INSTALLED (no published Candice release for
-> this platform yet); skills, plugin and assets are installed and the plugin
-> runs in terminal-answer mode
-
-and the plugin answers questions in the terminal until an app is published.
-Before this, the app leg ran first and aborted the transaction, so installing
-from the repository installed nothing at all.
-
-Do not follow prior 0.2.0 installation or release instructions. A future
-authorized release publishes the app artifact and its immutable manifest
-record. Plain `claude` settings remain out of scope for the repair.
-
-### Historical 0.2.0 notes — quarantined
-
-These historical notes are not authorization to download, install, or trust a
-Candice application artifact. The release-protection policy and control gate
-are the current source of truth.
-
 ## License
 
 MIT — see `LICENSE`.
