@@ -1,9 +1,10 @@
-# PROPOSALS.md — deterministic-tool parity fixes (WS-27 → WR-019 lane)
+# PROPOSALS.md — deterministic-tool parity fixes
 
-WS-27 owns `tools/windows-parity/**` only.
-The Bash originals under `.claude/skills/spec-protocol/tools/*.sh` are WR-019-lane
-(WS-36) owned (PROJECT-MANIFEST 9.2, 9.4 item 5). Per the cross-lane rule these
-are **proposals**: exact, staged, schema-preserving — never applied by this lane.
+`tools/windows-parity/**` and its tests (`tools/windows-parity/tests/`,
+run via `tests/windows/`) are owned by this toolset. The Bash originals under
+`.claude/skills/spec-protocol/tools/*.sh` belong to the spec-protocol skill,
+so parity fixes for them are staged here as **proposals**: exact, staged,
+schema-preserving — never applied by this toolset.
 
 All proposals preserve the identical input/output schemas and exit-code
 semantics proven by `tests/parity-tests.mjs` (byte-identical cards vs the Bash
@@ -12,7 +13,8 @@ reference on pinned answers).
 ## P1 — `capacity-resolver.sh` `measure_cores()`: native Windows instrument
 
 - **File:** `.claude/skills/spec-protocol/tools/capacity-resolver.sh`
-- **Now:** `sysctl -n hw.ncpu`, else `nproc`, else UNDETERMINED (spec 0.3 P0 flags this).
+- **Now:** `sysctl -n hw.ncpu`, else `nproc`, else UNDETERMINED — no Windows-native
+  instrument, so Windows hosts cannot produce a measured-core ledger card.
 - **Proposal:** before the sysctl branch, when the host is Windows-native
   (`uname -s` is `MINGW*`/`MSYS*`/`CYGWIN*`, or `$OS == 'Windows_NT'`), run:
 
@@ -78,14 +80,14 @@ reference on pinned answers).
 
 ## P7. watchdog/heartbeat
 
-- **File:** `tools/anti-stall-watchdog.sh` (fork-specific) — WS-48/operator
-  class. WS-27 provides the generic `watchdog.mjs tick` with heartbeat upsert
+- **File:** `tools/anti-stall-watchdog.sh` (fork-specific). This toolset
+  provides the generic `watchdog.mjs tick` with heartbeat upsert
   + stall ALERT + ESCALATION (exit 3) for Windows schedules. Not a
   `.claude/skills` edit; noted here for the fan-in integration owner.
 
-## Acceptance note (CHECKLIST E.1 WS-27, E.2 native launch parity)
+## Acceptance note (native launch parity)
 
 Every item above keeps the release gate: **no mandatory Spec Protocol
-runtime path depends exclusively on Bash** once the WR-019 lane applies the
-delegation. The parity toolset ships and proves equivalences now; the .sh
-delegation edits are proposals to WR-019 per the ownership map.
+runtime path depends exclusively on Bash** once the .sh delegation edits are
+applied. The parity toolset ships and proves equivalences now; the .sh
+delegation edits remain staged as proposals in this file.

@@ -5,15 +5,16 @@ with **identical input/output schemas and exit-code semantics**, plus native
 Windows probes and the CMD entry point. Zero dependencies; Node >= 18 (the 999
 setup already installs/manages Node).
 
-## Why this exists (spec 0.3 P0)
+## Why this exists
 
 The Spec Protocol deterministic toolset is heavily Bash-based and the capacity
 resolver's core probe uses `sysctl`/`nproc`. Windows support is NOT complete
 merely because `claude-nine.cmd` launches. The mandatory runtime tools must
 work without Git Bash or WSL, with native Windows probes, and golden fixtures
-must prove macOS/Windows semantic equivalence. This lane ships that proof and
-the native implementation; parity edits to the Bash originals are proposals to
-the WR-019 lane (`PROPOSALS.md`) per the ownership map.
+must prove macOS/Windows semantic equivalence — no mandatory Spec Protocol
+runtime path may depend exclusively on Bash. This toolset ships that proof and
+the native implementation; parity edits to the Bash originals are staged as
+proposals in `PROPOSALS.md` — never applied directly by this toolset.
 
 ## Tools
 
@@ -59,6 +60,8 @@ PS 7 where installed, CMD; `Get-Command`/`where`; parity shim invocation).
 
 - Writes only inside this directory.
 - Never edits `.claude/skills/spec-protocol/tools/*.sh` — proposals only
-  (`PROPOSALS.md`), per PROJECT-MANIFEST 9.2/9.4.
+  (`PROPOSALS.md`). Those scripts belong to the spec-protocol skill; this
+  toolset stages exact, schema-preserving fixes for them and never applies
+  them itself.
 - Never reads or prints secret values (key names/status only).
 - Windows-native paths via Known Folders; never hardcoded `C:\Users\*`.

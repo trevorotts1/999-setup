@@ -24,3 +24,12 @@ Project: 9Router + claude-nine provisioning. Latest progress only; history lives
 - Board: WR-001/WR-002 completed; WR-003/WR-004/WR-005 in flight; this run (wf_edc5ea4c-947) STOPPED-then-repair.
 - Next: capacity run (WR-004) -> CAPACITY-LEDGER -> safe live width; then WR-003 planning / WR-005 setup-CI-fix completion.
 - Blockers: none. Pending handoffs: none. Pending rechecks: none.
+
+## 2026-08-31T00:36Z (campaign closed — Candice Companion eradication COMPLETE)
+
+- Candice Companion eradication campaign is COMPLETE. Wave 1 `b38e139` (trees deleted), wave 2 `c197876` (surviving files purged), both landed 2026-08-30 on `main`; HEAD is `c197876`.
+- No active Candice campaign, no active repair, no in-flight waves or workflow runs. The old wave-3/4/5 and 999-master-fix repair state in the entries above is closed history, not current work.
+- Surviving charter: 9Router + claude-nine provisioning (repo rules 1-17 in CLAUDE.md). All live work targets that charter only.
+- Control truth reconciled 2026-08-31T00:36Z: `CONTROL/project_state.json` -> run_status PASS, phase complete, task counts zeroed; EXECUTION-PLAN board/DAG/QC sections removed 2026-08-30; TODO live inventory and 50-item workstream queue removed; CHECKLIST per-workstream/product criteria and evidence annexes removed.
+- Next: no dispatch pending. Next campaign (if any) is charter work — 9Router/claude-nine provisioning/setup — and starts from the pre-dispatch gates in CONTROL/CHECKLIST.md.
+- Blockers: none. Pending handoffs: none. Pending rechecks: none.

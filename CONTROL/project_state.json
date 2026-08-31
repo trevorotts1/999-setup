@@ -1,11 +1,11 @@
 {
  "schema": "spec-protocol/project-state@1",
  "project": "999-master-fix",
- "updated": "2026-08-22T11:43:34Z",
- "updated_by": "FIX-001 release-truth repair",
- "run_status": "REPAIR_IN_PROGRESS",
+ "updated": "2026-08-31T00:36:15Z",
+ "updated_by": "eradication truth reconciliation — Candice Companion campaign COMPLETE (wave 1 b38e139, wave 2 c197876, 2026-08-30); charter (9Router/claude-nine provisioning) survives",
+ "run_status": "PASS",
  "round": 0,
- "phase": "wave-5",
+ "phase": "complete",
  "scores": {
   "current": 0.0,
   "best": 0.0,
@@ -28,13 +28,11 @@
   "commanders": []
  },
  "workstreams": {
-  "passed": [
-   "wf-1a",
-   "wf-1b"
-  ],
+  "passed": [],
   "failed": [],
   "in_repair": []
  },
+ "campaign_note": "Candice Companion eradication campaign COMPLETE 2026-08-30 (commits b38e139, c197876). No active repair, no in-flight waves. wf-1a/wf-1b were campaign workstreams, closed with the campaign.",
  "locked": [],
  "defects_open": [],
  "tests": {
@@ -45,11 +43,11 @@
   }
  },
  "tasks": {
-  "snapshot_ts": "2026-08-16T14:02:00Z",
+  "snapshot_ts": "2026-08-31T00:36:15Z",
   "counts": {
-   "pending": 5,
-   "in_progress": 1,
-   "completed": 1
+   "pending": 0,
+   "in_progress": 0,
+   "completed": 0
   },
   "last_reconcile": {
    "ts": "",
@@ -77,7 +75,7 @@
   "condition": "council 4/4 AND B2H success rule"
  },
  "stall": {
-  "last_state_delta_ts": "2026-08-16T09:05:48Z",
+  "last_state_delta_ts": "2026-08-31T00:36:15Z",
   "no_delta_reconciles": 0,
   "terminal_after": 6
  }

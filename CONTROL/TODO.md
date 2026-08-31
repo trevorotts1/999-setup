@@ -37,3 +37,12 @@ LIVE INVENTORY ADDENDUM and all later repair-session sections removed 2026-08-30
 every appended entry (2026-08-26 defect-repair, speech, compact, UI passes; 2026-08-27 session) inventoried
 defects of the removed app. The 50-item workstream queue likewise removed — all 50 were build
 workstreams for the removed app.
+
+---
+
+## LIVE INVENTORY (charter — 9Router/claude-nine provisioning; Candice Companion eradicated 2026-08-30)
+
+- [x] Candice Companion eradication campaign — COMPLETE 2026-08-30 (wave 1 `b38e139`, wave 2 `c197876`); control truth reconciled 2026-08-31.
+- [ ] Keep platform setup scripts (`setup-windows.ps1` / `setup-macos.sh`, `scripts/`) aligned with the repository rules in CLAUDE.md (platform detection, no secrets, live provider discovery, optional OpenRouter).
+- [ ] Maintain the bundled-skills baseline (`CONTROL/bundled-skills.txt`) and component manifest (`CONTROL/bundled-components.json`) with versions + checksums.
+- [ ] Keep shared smoke tests passing (`tests/`, `verification-test/`) per repository rule 13 — setup is not complete until they pass.

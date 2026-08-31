@@ -157,7 +157,10 @@ def _acquire_singleton_lock():
     _lock_fh.flush()
 
 
-_acquire_singleton_lock()
+# Acquisition is DEFERRED to the live run path in main(): --check is a
+# read-only audit by contract and must not create or hold the lock file. (The
+# old module-load acquisition made a supposedly read-only --check write
+# CONTROL/.boss-cron.lock.) Live cycles acquire exactly as before.
 
 LEDGER = os.environ.get("BOSS_LEDGER") or os.path.join(REPO_ROOT, "FIX-LEDGER.md")
 # The per-cycle BOSSCYCLE-* liveness marker is TELEMETRY, not a work record.
@@ -1351,6 +1354,11 @@ def send_heartbeat_alert(msg):
 
 def main():
     dry = "--check" in sys.argv
+    if not dry:
+        # Live watchdog cycle only: take the singleton lock AFTER argument
+        # parsing, so --check never creates or holds CONTROL/.boss-cron.lock.
+        # Semantics for the real run path are unchanged (exit 0 on overlap).
+        _acquire_singleton_lock()
     violations = []
     text = read_ledger()
     if text is None:
