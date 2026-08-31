@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.18.0] — 2026-08-30
+
+### Candice Companion removed entirely — eradication campaign
+
+The Candice Companion desktop experiment is over. After two weeks of iteration the
+operator ruled (2026-08-30): **NO floating companion AT ALL** — no app, no image, no
+hologram, no audio, none of it. The failed experiment is gone root and branch; the
+repository returns to its charter: provisioning the local 9Router gateway and the
+`claude-nine` command on native Windows and macOS.
+
+Removed (1,262 files, ~203k lines deleted across three commits):
+
+- **Wave 1 `b38e139`** — wholesale trees: `apps/candice-companion/` (the Tauri
+  desktop app and its `src-tauri` speech/hologram machinery), `plugins/candice-integration/`
+  (the MCP plugin), `packages/candice-protocol/`, six `scripts/candice-*` trees
+  (bootstrap, release, updater, upgrade, ci, visual), `spec/` (MASTER-SPEC,
+  PROJECT-MANIFEST, CANDICE-WELCOME amendment), 12 Candice test suites,
+  `.github/workflows/candice-{ci,release}.yml`, `evidence/`, `holding/`,
+  `deny.toml` (cargo-deny whose only subject was the companion crates),
+  `CAPACITY-LEDGER.md`, campaign docs.
+- **Wave 2 `c197876`** — surviving files: README install section,
+  CHANGELOG Candice release entries, THIRD_PARTY_NOTICES speech-runtime section,
+  `.gitignore` Candice block, all CONTROL machine-truth Candice fields,
+  `scripts/excellence-gate/` (campaign gate with no non-Candice subject),
+  the CANDICE section of the spec-protocol skill (its generic
+  ask-in-terminal fallback doctrine survives), `tools/boss-cron` comment
+  provenance, windows-parity references.
+- **Wave 3 `7e3fe57`** — independent Codex gap-review fixes: CONTROL truth
+  reconciled to campaign-complete, the windows-parity `env-sweep` self-test
+  sandboxed so it can never overwrite the real `~/.env`, `boss-cron --check`
+  made genuinely read-only (no singleton lock), the watchdog census fixture's
+  broken `OLD_BOSS` path fixed, dangling spec references rewritten
+  self-contained.
+
+Verified after removal: a repo-wide census for `candice`, `hologram`, `kokoro`,
+`whisper`, `speech-assets` and `ask_user` returns zero real residue (remaining
+matches are the literal `tts` inside the `trevorotts1` remote URL and
+"companion skills" doctrine meaning the vendored eli5/bro skills, which are
+charter-protected). The five bundled skills, four launchers, platform setup
+scripts and `tests/{macos,windows,interview}` suites are intact, with skill
+versions in lockstep with `CONTROL/bundled-components.json`. The
+`candice/*` branches and `candice-v*` release tags were deleted from the
+origin remote. Release tags resume at `v1.18.0`.
+
 ## [1.17.7] — 2026-08-27
 
 ### Statusline: session cost relabelled `≈$N api-equiv` — it is not a bill
