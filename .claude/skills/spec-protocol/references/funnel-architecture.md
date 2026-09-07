@@ -592,7 +592,13 @@ env-store resolution order live in `references/environment-sweep.md`). Output:
 one ledger line per integration point
 `FUNNEL-INTEGRATION-<name>: <GHL|n8n> <what posts where>`.
 
-- Form submissions post to GHL.
+- Form submissions post to GHL. **The destination is a ledger line before the
+  build, and a proven arrival before the ship:**
+  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one line per form.
+  This is not a funnel-only contract — it is the same line every target writes
+  (`references/ship-checks.md` section 3), and instrument 6 of
+  `STAGE-SHIP-CHECKS` submits one real entry, proves it arrived, then deletes
+  it and proves the deletion.
 - The email sequence runs in GHL automations.
 - n8n is used ONLY where an external trigger exists — never as a default
   middleman.
@@ -614,7 +620,11 @@ line `FUNNEL-TRACKING: <events>`.
 Named events per page: pageview, submit, purchase, email-open, email-click.
 
 Acceptance: the tracking plan is a named list in the execution plan, not
-invented at build time.
+invented at build time — AND the tag is proven to fire before publish: instrument
+7 of `STAGE-SHIP-CHECKS` requires at least one request per page to the named
+analytics endpoint in the Playwright network log, with a 2xx or 204 response
+(`references/ship-checks.md` section 2). A named list that never fires is a
+plan, not tracking.
 
 ### Stage 6 — PIPELINE + IMAGE LANE
 
@@ -647,3 +657,10 @@ Input: design brief. Output: ledger line
 
 Acceptance: every page has a named live destination; unnamed = gated (built,
 not live).
+
+Hosting names the destination; `STAGE-PUBLISH` makes it answer. After
+`STAGE-SHIP-CHECKS` passes, `references/publish.md` runs for funnel pages the
+same as for every other target: publish (through Convert and Flow (GoHighLevel,
+GHL) for GHL-hosted pages, Vercel through its MCP for self-hosted ones), prove
+200, ask the domain question, hand over the two records, poll until the address
+answers, and write `PUBLISHED: <url> domain=<name|none>`.

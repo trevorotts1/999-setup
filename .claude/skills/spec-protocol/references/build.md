@@ -80,6 +80,13 @@ Mechanical, never a hope — three check groups:
    `references/scaffolding.md` section 2.4), keyboard-only focus order through
    the page (the wireframe's accessibility skeleton,
    `references/wireframes.md` section 2 item 5), alt text on every media slot.
+   The two instruments that decide this group are named, never left to an eye:
+   **axe-core** (zero violations of `critical` or `serious` impact) and a
+   **scripted Tab-walk** whose recorded order is compared to that wireframe
+   focus order. Both run in full at `STAGE-SHIP-CHECKS` with their commands,
+   JSON reports, and thresholds (`references/ship-checks.md` section 2, rows 2
+   and 10); the build runs them against its own pages before it claims this
+   group.
 
 **Output:** the built pages — one file per brief page
 (`templates/scaffolding/FILE-STRUCTURE.md` rule 1), each referencing the
@@ -90,6 +97,26 @@ scaffold (rule 2), the placed images (rule 3), and the processed logo
 **Fail-closed:** a page that fails any check group is BLOCKED at this stage,
 never shipped. The failing check is named and surfaced; a silent build is a
 defect (a page nobody can verify is not a built page).
+
+**Every form's destination is declared BEFORE this stage opens, for EVERY
+target** — `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one
+ledger line per form on any page or screen (`references/ship-checks.md`
+section 3; the funnel wiring at `references/funnel-architecture.md` Stage 4
+generalized). A contact form on a website and a sign-up form in an app carry
+the same contract as a funnel's opt-in: a named destination before a single
+field is built, and a proven arrival before it ships.
+
+**What follows the build — BUILD-FINAL → SHIP-CHECKS → PUBLISH.** This stage's
+pass bar is a BUILD bar, not the ship bar, and passing it is not the finish
+line. When the build passes, `STAGE-SHIP-CHECKS` runs
+(`references/ship-checks.md`: Lighthouse CI mobile, axe-core, the HTML meta
+checker, the link crawler, console capture, the form probe, the analytics
+request, the token census, the content-fact check, and the Tab-walk — each with
+its command, its JSON report, and its threshold), and then `STAGE-PUBLISH`
+(`references/publish.md`: deploy, prove 200, the domain question, the two
+records, the poll). Nothing is published until
+`SHIP-CHECKS: pass=<n>/<n>` is in the ledger with both numbers equal, and the
+run is not done until `PUBLISHED: <url> domain=<name|none>` is.
 
 ---
 
@@ -304,6 +331,14 @@ order mechanically:
   44px), accessibility (WCAG AA contrast, keyboard-only focus order, alt
   text). A stage line naming pages that fail any check group is not a pass and
   does not open `STAGE-LOGO`.
+- A page carrying a form opens only when that form's
+  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>` line already exists
+  — a form with no named destination is not built (`references/ship-checks.md`
+  section 3).
+- The gate does not end here: `STAGE-SHIP-CHECKS` opens only after
+  `STAGE-BUILD` passes, and `STAGE-PUBLISH` opens only after
+  `SHIP-CHECKS: pass=<n>/<n>` is written with both numbers equal
+  (`references/ship-checks.md`, `references/publish.md`).
 - A brief change after a stage passes re-opens the stage (the same rule every
   staged-pipeline reference carries — `references/scaffolding.md` section 4).
 
