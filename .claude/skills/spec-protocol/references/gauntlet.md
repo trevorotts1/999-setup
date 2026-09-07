@@ -904,8 +904,10 @@ come FIRST; verified platform syntax is attached per harness.
   prompt on an interval; it does not judge. The judging stays in the critic
   (`references/loops.md` owns the scheduler; this file owns the verdict).
 - **Scheduled prompts cannot start workflows via the ultracode keyword** (Claude
-  Code ≥ 2.1.210): a cron tick must invoke a SAVED workflow command by name
-  (`run /<name>`) — `references/anti-drift.md` carries the cron-tick contract.
+  Code ≥ 2.1.210): a cron tick launches by ABSOLUTE PATH —
+  `Workflow({ scriptPath: "<HOME>/.claude/workflows/<script>.js" })`, or
+  `<HOME>/.claude-nine/workflows/` under claude-nine — never by saved name; the
+  five-minute reconcile is `tools/watch-tick.sh` (`references/anti-drift.md` §9).
 - **`ultracode` is a harness mode (GATE 0).** In Claude Code it is a real, verified
   effort level — `/effort ultracode` sets it session-wide (xhigh plus dynamic
   workflow orchestration), and including the word `ultracode` in a message enables
@@ -1421,16 +1423,18 @@ back, and every one of those ticks looked like activity.
 operator doctrine 2026-08-16).** A cron or loop prompt is one line:
 
 ```
-run /<saved-workflow-name>
+Workflow({ scriptPath: "<HOME>/.claude/workflows/<script>.js" })
 ```
 
-plus at most the anti-drift trailer (`tools/anchor.sh --mode reconcile
-<home> <unit-or-IDLE>`); it never re-plans, never free-form-thinks, and never
-relies on the `ultracode` keyword — scheduled prompts do not fire workflows from
-the keyword (Claude Code ≥ 2.1.210; `references/anti-drift.md` §9 and
-`references/workflows.md` §7 carry the same contract). A free-form tick
-re-derives the plan from decayed memory — the mechanism the 139-tick tail
-documents.
+with the path written EXPANDED, and `<HOME>/.claude-nine/workflows/` when the
+launcher is claude-nine — never a saved workflow name, which the session-start
+registry snapshot cannot resolve. Plus at most the anti-drift trailer
+(`tools/anchor.sh --mode reconcile <home> <unit-or-IDLE>`); it never re-plans,
+never free-form-thinks, and never relies on the `ultracode` keyword — scheduled
+prompts do not fire workflows from the keyword (Claude Code ≥ 2.1.210;
+`references/anti-drift.md` §9 and `references/workflows.md` §7 carry the same
+contract). A free-form tick re-derives the plan from decayed memory — the
+mechanism the 139-tick tail documents.
 
 **The wave plan is read from the locked table, never re-derived (Issue 15 items
 1 and 3).** A tick that reads "waves" reads the execution plan's wave table
