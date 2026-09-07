@@ -67,7 +67,9 @@
 #   ANCHOR_INTENT_K=5              repeated-intent window size
 #   ANCHOR_INTENT_OVERLAP_PCT=60   repeated-intent core-share threshold
 #   ANCHOR_CENSUS_DEPTH=6          filesystem census depth under repos/
-#   ANCHOR_HARD_CAP=200            class 6 hard agent-execution cap (STOPPED_CAP)
+#   ANCHOR_HARD_CAP=200            class 6 pause-line FALLBACK when the state file
+#                                  carries no agents.first_pause (PAUSED_CAP)
+#   ANCHOR_CEILING=2000            class 6 absolute per-project ceiling (STOPPED_CAP)
 #   ANCHOR_BUDGET_TOL=5            class 6 claimed-vs-dispatched tolerance
 #   ANCHOR_CLAIM_UNPAIRED_TOL=3    class 7 unpaired-claim tolerance (0 = strict)
 #   ANCHOR_SELFTEST_BREAK_PATTERN=1  sabotage the tick pattern (selftest only)
@@ -109,6 +111,7 @@ INTENT_K="${ANCHOR_INTENT_K:-5}"
 INTENT_PCT="${ANCHOR_INTENT_OVERLAP_PCT:-60}"
 CENSUS_DEPTH="${ANCHOR_CENSUS_DEPTH:-6}"
 HARD_CAP="${ANCHOR_HARD_CAP:-200}"
+CEILING="${ANCHOR_CEILING:-2000}"
 BUDGET_TOL="${ANCHOR_BUDGET_TOL:-5}"
 CLAIM_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 
@@ -252,9 +255,9 @@ CLAIM_UNPAIRED_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 # runnable work exists must still walk into TERMINAL-DRIFT, or the freshness
 # machinery becomes a new way to look alive while doing nothing — the exact
 # disease anti-drift.md section 1 documents.
-# BUDGET-CAP is this script's own class-6 line and is excluded on the same
-# self-authored ground as the rest.
-SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP)'
+# BUDGET-CAP and BUDGET-PAUSE are this script's own class-6 lines and are
+# excluded on the same self-authored ground as the rest.
+SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP|BUDGET-PAUSE)'
 
 if [[ "${ANCHOR_SELFTEST_BREAK_PATTERN:-0}" == "1" ]]; then
   # Deliberate sabotage: swap the robust marker for the brittle literal that
@@ -446,6 +449,7 @@ esac
 # cap of 0 that stops every run. A knob that silently becomes zero is a lying
 # instrument, so it is rejected loudly instead.
 [[ "$HARD_CAP"   =~ ^[0-9]+$ ]] || die_tool "ANCHOR_HARD_CAP must be a non-negative integer (got: ${HARD_CAP})"
+[[ "$CEILING"    =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CEILING must be a non-negative integer (got: ${CEILING})"
 [[ "$BUDGET_TOL" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_BUDGET_TOL must be a non-negative integer (got: ${BUDGET_TOL})"
 [[ "$CLAIM_TOL"  =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CLAIM_UNPAIRED_TOL must be a non-negative integer (got: ${CLAIM_TOL})"
 
@@ -593,10 +597,13 @@ run_anchor() {
   #          remaining) vs the CONTROL/dispatch-log.md census. Divergence past
   #          ANCHOR_BUDGET_TOL is DRIFT — the scoreboard and the write-ahead
   #          log disagree about how much was spent.
-  #     (ii) agents.executions_total against the hard cap. Reaching a cap is
-  #          NOT drift: it is a legitimate, declared stop. It exits 3 (so the
-  #          conductor stops dispatching) and emits set-run-status|STOPPED_CAP
-  #          rather than exit 4, which is reserved for the stall.
+  #     (ii) agents.executions_total against TWO lines. Reaching either is NOT
+  #          drift: both are legitimate, declared events, and both exit 3 (so
+  #          the conductor acts) rather than exit 4, which is reserved for the
+  #          stall. The PAUSE line (agents.first_pause × blocks+1) emits
+  #          pause-and-ask + set-run-status|PAUSED_CAP with the best stable
+  #          build deployed; only the per-project CEILING (agents.ceiling,
+  #          2,000) emits stop-dispatching + set-run-status|STOPPED_CAP.
   #
   #   FAIL-CLOSED EVERYWHERE. An absent field, an absent dispatch log, or a
   #   dispatch log with content but no parseable row is UNDETERMINED and says
@@ -642,12 +649,15 @@ run_anchor() {
       return 0
     fi
 
-    local init rem exec_t warn_at cap_state
+    local init rem exec_t warn_at cap_state pause_state ceil_state blocks
     init="$(jnum   "$flat" 'budget_initial'           || true)"
     rem="$(jnum    "$flat" 'session_budget_remaining' || true)"
     exec_t="$(jnum "$flat" 'executions_total'         || true)"
     warn_at="$(jnum "$flat" 'warn_at'                 || true)"
     cap_state="$(jnum "$flat" 'hard_stop_at'          || true)"
+    pause_state="$(jnum "$flat" 'first_pause'          || true)"
+    ceil_state="$(jnum  "$flat" 'ceiling'              || true)"
+    blocks="$(jnum      "$flat" 'pause_blocks_granted' || true)"
 
     if [[ -z "$init" && -z "$rem" && -z "$exec_t" ]]; then
       BUDGET_NOTE="budget-undetermined(no-budget-fields)"
@@ -655,21 +665,49 @@ run_anchor() {
       return 0
     fi
 
-    # --- (ii) the caps. Independent of the dispatch log; run first so a run
-    #     that is over the cap stops even when the census is undetermined.
-    local CAP="$HARD_CAP" WARN capnote=""
-    if [[ -n "$cap_state" ]] && (( cap_state < CAP )); then CAP="$cap_state"; fi
+    # --- (ii) the two lines. Independent of the dispatch log; run first so a
+    #     run that is over a line acts even when the census is undetermined.
+    #
+    #     TWO numbers, never one (operator decision 2026-09-07, finding G6):
+    #
+    #       CEIL  = agents.ceiling, else ANCHOR_CEILING (2,000 per PROJECT).
+    #               The only hard stop. STOPPED_CAP lives here and nowhere else.
+    #       PAUSE = agents.first_pause × (agents.pause_blocks_granted + 1),
+    #               falling back to a legacy agents.hard_stop_at and then to
+    #               ANCHOR_HARD_CAP (200). Each "keep going" the client gives
+    #               increments pause_blocks_granted, so the line walks up by one
+    #               block at a time and is clamped at CEIL.
+    #
+    #     The ceiling is tested FIRST. Order is the whole point: a run at 2,000
+    #     is also past its pause line, and reporting that as a pause would leave
+    #     a project able to answer "keep going" past the absolute ceiling. A run
+    #     BELOW the ceiling is never STOPPED_CAP — it has budget left, so it
+    #     pauses with its best build live and asks one question instead.
+    local CEIL="$CEILING" PAUSE WARN capnote=""
+    if [[ -n "$ceil_state" ]] && (( ceil_state < CEIL )); then CEIL="$ceil_state"; fi
+    if   [[ -n "$pause_state" ]]; then PAUSE="$pause_state"
+    elif [[ -n "$cap_state"   ]]; then PAUSE="$cap_state"
+    else                               PAUSE="$HARD_CAP"; fi
+    PAUSE=$(( PAUSE * ( ${blocks:-0} + 1 ) ))
+    if (( PAUSE > CEIL )); then PAUSE="$CEIL"; fi
     WARN="${warn_at:-150}"
-    if [[ -n "$exec_t" ]] && (( exec_t >= CAP )); then
+    if [[ -n "$exec_t" ]] && (( exec_t >= CEIL )); then
       local bts; bts="$(iso_now)"
-      ledger_write "CONTROL/LEDGER.md" "${bts} | BUDGET-CAP | executions=${exec_t} | cap=${CAP} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=STOPPED_CAP; stop dispatching; preserve the best stable build; produce the blocker report"
-      action "stop-dispatching" "$UNIT" "hard cap reached: executions=${exec_t} >= cap=${CAP}"
-      action "set-run-status" "STOPPED_CAP" "executions=${exec_t} >= cap=${CAP}; preserve the best stable build and produce the blocker report. A cap is a LIMIT REACHED stop, never a PASS and never drift."
+      ledger_write "CONTROL/LEDGER.md" "${bts} | BUDGET-CAP | executions=${exec_t} | cap=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=STOPPED_CAP; stop dispatching; preserve the best stable build; produce the blocker report"
+      action "stop-dispatching" "$UNIT" "absolute per-project ceiling reached: executions=${exec_t} >= ceiling=${CEIL}"
+      action "set-run-status" "STOPPED_CAP" "executions=${exec_t} >= ceiling=${CEIL}; preserve the best stable build and produce the blocker report. The ceiling is a LIMIT REACHED stop, never a PASS and never drift, and it is never crossed without the operator."
       if (( SEVERITY < 3 )); then SEVERITY=3; fi
-      capnote="budget-cap(executions=${exec_t}/cap=${CAP})"
+      capnote="budget-cap(executions=${exec_t}/ceiling=${CEIL})"
+    elif [[ -n "$exec_t" ]] && (( exec_t >= PAUSE )); then
+      local pts; pts="$(iso_now)"
+      ledger_write "CONTROL/LEDGER.md" "${pts} | BUDGET-PAUSE | executions=${exec_t} | pause_at=${PAUSE} | ceiling=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'"
+      action "pause-and-ask" "$UNIT" "pause line reached: executions=${exec_t} >= pause_at=${PAUSE} (ceiling=${CEIL}). Deploy the best stable build, write the plain report, then ask the one question. Each 'keep going' increments agents.pause_blocks_granted and the run resumes at full width."
+      action "set-run-status" "PAUSED_CAP" "executions=${exec_t} >= pause_at=${PAUSE}; ceiling=${CEIL} is not reached, so this is a PAUSE and the run has not stopped. The build is live and the run resumes on one word."
+      if (( SEVERITY < 3 )); then SEVERITY=3; fi
+      capnote="budget-pause(executions=${exec_t}/pause_at=${PAUSE}/ceiling=${CEIL})"
     elif [[ -n "$exec_t" ]] && (( exec_t >= WARN )); then
       if (( BUDGET_ADVISED == 0 )); then
-        action "review-budget" "$UNIT" "advisory (emitted once): executions=${exec_t} crossed the review threshold ${WARN}; hard cap ${CAP}"
+        action "review-budget" "$UNIT" "advisory (emitted once): executions=${exec_t} crossed the review threshold ${WARN}; pause line ${PAUSE}; ceiling ${CEIL}"
         BUDGET_ADVISED=1
       fi
       capnote="budget-warn(executions=${exec_t}/warn=${WARN})"
@@ -1144,9 +1182,13 @@ intent_stall() {
 #         (positive: only capacity events => the no-delta counter still
 #         climbs; negative control: a real state line still resets it)
 #   9-12  CLASS 6 BUDGET AUDIT, the first four controls: agree (must NOT fire),
-#         diverge past tolerance (MUST fire), hard cap (MUST emit BUDGET-CAP
-#         and both ACTIONs at exit 3, not 4), fields absent (MUST report
-#         undetermined and MUST NOT alarm)
+#         diverge past tolerance (MUST fire), the FIRST PAUSE (MUST emit
+#         BUDGET-PAUSE, pause-and-ask and PAUSED_CAP at exit 3, not 4, and MUST
+#         NOT emit STOPPED_CAP), fields absent (MUST report undetermined and
+#         MUST NOT alarm)
+#   15    CLASS 6 BUDGET AUDIT, the per-project CEILING at 2,000 (MUST emit
+#         BUDGET-CAP and STOPPED_CAP, and MUST NOT pause — the ceiling is
+#         tested before the pause line so granted blocks cannot launder it)
 #   13    CLASS 6 BUDGET AUDIT, negative claimed spend (MUST alarm as
 #         budget-negative-spend — never laundered into budget-ok by the
 #         tolerance, never downgraded to budget-undetermined by an absent
@@ -1339,9 +1381,12 @@ EOF
       i=$(( i + 1 ))
     done
   }
-  mk_state_budget() {  # mk_state_budget <home> <initial> <remaining> <executions>
-    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":%s,"budget_initial":%s,"session_budget_remaining":%s,"warn_at":150,"hard_stop_at":200},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' \
-      "$4" "$2" "$3" > "$1/CONTROL/project_state.json"
+  # mk_state_budget <home> <initial> <remaining> <executions> [first_pause] [ceiling] [blocks]
+  # The three optional fields default to the doctrine's numbers: a 200 first
+  # pause, the 2,000 per-project ceiling, and no granted blocks.
+  mk_state_budget() {
+    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":%s,"budget_initial":%s,"session_budget_remaining":%s,"warn_at":150,"first_pause":%s,"ceiling":%s,"pause_blocks_granted":%s},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' \
+      "$4" "$2" "$3" "${5:-200}" "${6:-2000}" "${7:-0}" > "$1/CONTROL/project_state.json"
   }
   mk_home "$T/c9"
   printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c9/CONTROL/task-graph-snapshot.json"
@@ -1371,26 +1416,58 @@ EOF
   report 10 "budget-mismatch" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=100 dispatched=3 written; ACTION|reconcile-budget|100/3 emitted"
 
   #--------------------------------------------------------------------------
-  # --- CLASS 6, control C (case 11): the HARD CAP. Reaching the cap is a
-  #     legitimate declared stop, so it exits 3 (stop dispatching) and asks
-  #     the conductor for run_status=STOPPED_CAP — never exit 4, which belongs
-  #     to the stall, and never a DRIFT-ALARM, which would call a policy stop
-  #     a defect. Claimed and dispatched AGREE here so the case can only be
-  #     firing on the cap.
+  # --- CLASS 6, control C (case 11): the FIRST PAUSE. executions_total has
+  #     reached agents.first_pause exactly, and the per-project ceiling (2,000)
+  #     is nowhere near. The decided behaviour (finding G6, 2026-09-07) is
+  #     PAUSE AND ASK — deploy the best stable build, write the plain report,
+  #     set run_status=PAUSED_CAP, ask "Keep going?" — so the case asserts
+  #     ACTION|pause-and-ask and, as the negative control that matters most,
+  #     that STOPPED_CAP is NOT emitted: a run with ceiling left has not
+  #     stopped, and reporting it as stopped is the failure this replaced.
+  #     Exit is 3 (the conductor must act), never 4 (the stall), and no
+  #     DRIFT-ALARM: a declared pause is not a defect. Claimed and dispatched
+  #     AGREE here so the case can only be firing on the pause line.
   #--------------------------------------------------------------------------
   mk_home "$T/c11"
   printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c11/CONTROL/task-graph-snapshot.json"
-  mk_state_budget "$T/c11" 1000 800 200
+  mk_state_budget "$T/c11" 1000 800 200 200 2000 0
   mk_dispatch_log "$T/c11" 200
   runa "$T/c11" "U-02" --mode reconcile --tasks "$T/c11/CONTROL/task-graph-snapshot.json" --state "$T/c11/CONTROL/project_state.json"
   ok=0
   if (( RC == 3 )) \
-     && "$GREP" -qE '\| BUDGET-CAP \| executions=200 \| cap=200 \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|stop-dispatching|U-02|hard cap' \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|STOPPED_CAP|' \
+     && "$GREP" -qE '\| BUDGET-PAUSE \| executions=200 \| pause_at=200 \| ceiling=2000 \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|pause-and-ask|U-02|pause line reached' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|PAUSED_CAP|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'STOPPED_CAP' \
+     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
      && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
      && [[ ! -f "$T/c11/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok=1; fi
-  report 11 "budget-hard-cap" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-CAP line written through ledger.sh; ACTION|stop-dispatching and ACTION|set-run-status|STOPPED_CAP emitted; no budget-mismatch; no TERMINAL-DRIFT.flag"
+  report 11 "budget-first-pause" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-PAUSE | executions=200 | pause_at=200 | ceiling=2000 written through ledger.sh; ACTION|pause-and-ask and ACTION|set-run-status|PAUSED_CAP emitted; STOPPED_CAP and BUDGET-CAP both ABSENT (the negative control: a run under the ceiling never stops); no budget-mismatch; no TERMINAL-DRIFT.flag"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control C2 (case 15): the CEILING. 2,000 executions per
+  #     project is the one hard stop, and it is tested BEFORE the pause line
+  #     on purpose: a run at 2,000 is also past its pause line, and calling
+  #     that a pause would let a project answer "keep going" past the absolute
+  #     ceiling. The granted blocks are deliberately generous here (9 blocks ×
+  #     200 = 1,800 < 2,000) so the case proves the ORDER, not an accident of
+  #     arithmetic. Claimed and dispatched AGREE so nothing else can fire.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c15"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c15/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c15" 3000 1000 2000 200 2000 9
+  mk_dispatch_log "$T/c15" 2000
+  runa "$T/c15" "U-02" --mode reconcile --tasks "$T/c15/CONTROL/task-graph-snapshot.json" --state "$T/c15/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| BUDGET-CAP \| executions=2000 \| cap=2000 \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|stop-dispatching|U-02|absolute per-project ceiling reached' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|STOPPED_CAP|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'PAUSED_CAP' \
+     && ! "$GREP" -qE '\| BUDGET-PAUSE \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ ! -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok=1; fi
+  report 15 "budget-ceiling" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-CAP | executions=2000 | cap=2000 written through ledger.sh; ACTION|stop-dispatching and ACTION|set-run-status|STOPPED_CAP emitted; PAUSED_CAP and BUDGET-PAUSE both ABSENT (the ceiling is tested first, so nine granted blocks cannot launder it into a pause); no budget-mismatch; no TERMINAL-DRIFT.flag"
 
   #--------------------------------------------------------------------------
   # --- CLASS 6, control D (case 12): the budget fields are ABSENT. The audit
@@ -1502,7 +1579,7 @@ EOF
   if (( ok_base == 1 && ok_tol == 1 && ok_strict == 1 && ok_pair == 1 )); then ok=1; fi
   report 14 "ledger-provenance" "$ok" "baseline rc=${rc_base} (want 0; RECONCILE carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)); tolerated rc=${rc_tol} (want 0; unpaired=1 reported but under tol=3); strict rc=${rc_strict} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0; DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted); paired rc=${rc_pair} (want 0; claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm — the negative control)"
 
-  printf 'SELFTEST COMPLETE | %s of 14 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  printf 'SELFTEST COMPLETE | %s of 15 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

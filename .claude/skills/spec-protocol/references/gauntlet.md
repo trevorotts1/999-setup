@@ -961,28 +961,53 @@ where the answer is written down.
 
 ### 13.2 The agent budget
 
+**The budget SCALES with the project, and the cap PAUSES — it never stops the run
+on its own** (operator decision, 2026-09-07). 200 was the reference game's number:
+a five-page site never reaches it, and a forty-unit web app crosses it legitimately
+and used to die there as `STOPPED_CAP`. Two numbers replace the one, both derived
+from the project's own size and both written into the Capacity Ledger's budget
+declaration BEFORE the first dispatch:
+
 | Quantity | Value | Obligation |
 |---|---|---|
-| Expected initial gauntlet run | **52** agent executions (8+16+16+8+4) | The declared baseline in the Capacity Ledger. |
-| Expected normal complete project | **75–125** | The soft budget band, scaled to this project's task graph. |
-| Warning threshold | **150** | The orchestrator MUST analyze whether measurable progress is still occurring — and record the analysis. |
-| Hard project cap | **200** | **STOP.** Spawn no additional agents. |
+| `initial` | **`WF01 + units × 3 + 4`** — the WF01 planner agents, three executions per unit (build, blind visual judge, technical judge), and the four release-council judges | The declared baseline, written to `agents.initial`. The reference shape's own figure is **52** (8+16+16+8+4) and a normal complete project has historically landed in the **75–125** band; both are expectations, never limits. |
+| `warn` | **`max(150, 3 × initial)`** | The orchestrator MUST analyze whether measurable progress is still occurring — and record the analysis. Written to `agents.warn_at`. |
+| `first_pause` | **`max(200, 4 × initial)`** | **PAUSE and ask — never stop.** Written to `agents.first_pause`. |
+| `ceiling` | **2,000 agent executions per project** | **STOP.** `run_status = STOPPED_CAP`. Never crossed without the operator. Written to `agents.ceiling`. |
 
-At **200 executions: STOP.** Do not spawn additional agents. **Preserve the best
-stable build.** Produce a blocker report explaining why the Gauntlet has failed
-to reach the BAR. This is a **LIMIT REACHED** non-success state (Section 9) —
-**never relabeled PASS**; the machine-readable exit is `run_status =
-STOPPED_CAP`. The three named exits of a gauntlet run are **PASS** (the council
-returns 4 OUT OF 4 and the B2H successful stop rule is satisfied), **STOPPED_CAP**
-(the hard cap, above), and **stop-and-diagnose** (`STOPPED_STALL` on
+At **`first_pause`: PAUSE.** In this order, the run (1) **deploys the best stable
+build**, so the client has something live to look at; (2) writes the plain report;
+(3) sets `run_status = PAUSED_CAP`; and (4) asks exactly one question, in these
+words:
+
+> I've done a lot of work and your <target> is live at <URL>. I've reached the point where I check in before spending more. Here's where it stands: <two lines>. Keep going?
+
+Each **"keep going" adds one more block of `first_pause` executions** —
+`agents.pause_blocks_granted` increments and the next pause line becomes
+`first_pause × (blocks + 1)` — and the run resumes at FULL width, not throttled. A
+five-page site pauses near 200; a forty-unit app pauses near 530; nothing runs past
+2,000. `PAUSED_CAP` is **not** a non-success state and is never reported as a
+failure: the build is live, the report is written, and the only thing missing is
+the client's answer.
+
+At **2,000 executions per project: STOP.** Do not spawn additional agents.
+**Preserve the best stable build.** Produce a blocker report explaining why the
+Gauntlet has failed to reach the BAR. This is a **LIMIT REACHED** non-success state
+(Section 9) — **never relabeled PASS**; the machine-readable exit is `run_status =
+STOPPED_CAP`. The named exits of a gauntlet run are **PASS** (the council returns
+4 OUT OF 4 and the B2H successful stop rule is satisfied), **PAUSED_CAP** (the
+pause above — a checkpoint with the build live, resumable on one word),
+**STOPPED_CAP** (the 2,000 ceiling), and **stop-and-diagnose** (`STOPPED_STALL` on
 TERMINAL-DRIFT, `references/anti-drift.md`; `BLOCKED_HUMAN` when the Named Stops
 exhaust unblocked work). Every one of them carries the obligations Section 9
 already assigns to its state.
 
-These figures count **workflow agent executions**. They are not the same counter
-as the harness's per-session subagent budget (1,000 per session) or the
-per-workflow concurrency width — the Capacity Ledger records all three separately
-and never conflates them (`references/capacity.md`).
+These figures count **workflow agent executions**. They are not the same counter as
+the operator's 1,000-execution budget — which is counted **per PROJECT** in
+`CONTROL/project_state.json` and never per session, or the 2,000 ceiling above it
+could never be reached — nor the harness's own 1,000-agents-lifetime cap per
+workflow RUN, nor the per-workflow concurrency width. The Capacity Ledger records
+them separately and never conflates them (`references/capacity.md`).
 
 ### 13.3 THE IMPORTANT CAPACITY RULE (verbatim — the operator's own words)
 
@@ -1080,7 +1105,8 @@ build.** A checkpoint is taken at each of the seven named moments: the first
 functional MVP; major milestone completion; the first complete integration; a new
 highest quality score; a zero-critical-defect state; the release candidate; the
 final release. The best stable build is preserved across every repair wave and is
-what the 200-execution stop hands back. The checkpoint and restore mechanism
+what the budget pause deploys and what the 2,000 ceiling hands back (§13.2). The
+checkpoint and restore mechanism
 itself lives in `references/pipeline.md` and `CONTROL/project_state.json`
 (`references/execution-architecture.md`); this file's rule is the one above — a
 repair wave may never leave the run with nothing to fall back to.
@@ -1159,7 +1185,7 @@ order, one loop in both modes.
 | 16 | RECONCILE NATIVE TASKS | lead runs tools/anchor.sh --mode reconcile; executes its ACTIONS | RECONCILE TASKS NOW (references/anti-drift.md) |
 | 17 | MARK TASK COMPLETE ONLY IF PASSED — then LOCK | lead (TaskUpdate) — gated by the six-condition completion law; passing components locked | execution-architecture.md; pipeline.md locks |
 | 18 | UNBLOCK DEPENDENCIES | the graph's edges release dependents | never a merge gate (D11 cut) |
-| 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; at ≥150 executions the lead ANALYZES whether measurable progress is still occurring (compare the state-delta fingerprint, the workstream pass/fail counts, and the last checkpoint against the spend — `references/anti-drift.md` class 6) and RECORDS the analysis in the ledger before any further dispatch; ≥200 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
+| 19 | CHECK RELEASE / STOP → SELECT NEXT READY TASK | lead | council 4/4 + B2H success → PASS; at ≥`warn` executions the lead ANALYZES whether measurable progress is still occurring (compare the state-delta fingerprint, the workstream pass/fail counts, and the last checkpoint against the spend — `references/anti-drift.md` class 6) and RECORDS the analysis in the ledger before any further dispatch; ≥ the current pause line → deploy the best stable build, `PAUSED_CAP`, and ask the one question (§13.2); ≥2,000 executions → STOPPED_CAP; TERMINAL-DRIFT → STOPPED_STALL; else the wrap-around: station 4 |
 
 **The five phases — the human's handle on nineteen rows.** The table above is the
 MACHINE's checklist: nineteen discrete stations, each with an owner and a carrier,
