@@ -92,8 +92,8 @@ machine, and nothing writes 1,000 as a width.
 Block D: D1 = "the recipe cards on pinch-of-yum look right to me" → bar candidates
 researched → the user picks **the frozen snapshot of pinchofyum.com's recipe index**
 (captured via Playwright, 1440×900 + 390×844, 2026-08-12, the snapshot IS the bar);
-D2 = wins-or-ties; D3 = yes (~130 MB download consented, probe screenshot proven
-non-empty); D4 = "no ads, no life-story paragraphs above the recipe." Feature list
+D2 = wins-or-ties (defaulted, never asked); the screenshot tool installed silently
+at step 9, one sentence spoken, probe screenshot proven non-empty; D4 = "no ads, no life-story paragraphs above the recipe." Feature list
 confirmed: add-recipe form, card grid, ingredient search, phone-usable. Decisions
 closed. Seventeen documents written; the dependency sort returns 9/9 units, no cycles.
 
