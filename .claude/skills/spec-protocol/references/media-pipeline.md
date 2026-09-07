@@ -643,12 +643,18 @@ character-count gate BEFORE any paid API call:**
 - **MAXIMUM: 18,000 stripped characters.** Above 18,000 → rejected.
 
 **Stripped** means whitespace and blank lines are removed before counting. **The
-count is measured by a deterministic script — never by eye.** The script ships
-with this skill: `tools/prompt-band.sh <prompt-file>` strips, counts, and exits
+count is measured by a deterministic command — never by eye.** No prompt-band
+checker ships in this skill's `tools/` in this version. Until one lands, the
+conductor takes the count with a scripted command it writes into the run log
+(strip whitespace and blank lines, count characters, compare against 5,000 and
+18,000) and records the number and the verdict beside the prompt, so anyone can
+reproduce it by re-running the same command. **Planned, not yet on disk:** one
+shipped gate, `tools/prompt-band.sh <prompt-file>`, to strip, count, and exit
 nonzero on a prompt outside the band, printing the count and which edge it
-missed. It is the ONE gate for every provider — Agnes, Kie.ai, and anything
-resolved later — so no provider gets its own band and no fleet script is
-required. A media work item whose gate has not run is not complete.
+missed — the ONE gate for every provider (Agnes, Kie.ai, and anything resolved
+later), so no provider gets its own band and no fleet script is required. **Do
+not cite it as an instrument until `ls tools/prompt-band.sh` succeeds.** A media
+work item whose count has not been taken and recorded is not complete.
 
 **RECORDED RESEARCH NOTE — read it, do not act on it.**
 
@@ -676,7 +682,7 @@ is the tightest of the three and therefore the binding one:
 | Limit | Value | Relationship |
 |---|---|---|
 | This skill's band ceiling | **18,000** | Binding — the tightest, so a prompt that passes here passes everywhere below |
-| The shipped gate (`tools/prompt-band.sh`) | 5,000–18,000 | The instrument that enforces the band — it IS this row, so the two can never disagree |
+| The band gate, once it ships (`tools/prompt-band.sh` — **planned, not on disk in this version**) | 5,000–18,000 | Will enforce this row exactly, so the two can never disagree. Until it lands, the scripted count in section 4 is the instrument |
 | The resolved kie model's documented prompt maximum (exhibits 2026-08-12: gpt-image-2 **and** nano-banana-2 both document 20,000) | 20,000 characters | Sourced; 18,000 leaves 2,000 characters of headroom. **The band needs no per-model fork** — both the primary and the fallback family fit under it. Read the resolved member's own page each run. |
 
 An older internal note put the API capacity at roughly 25,000 characters. **That

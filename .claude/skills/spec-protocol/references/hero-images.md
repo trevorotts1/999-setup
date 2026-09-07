@@ -46,17 +46,21 @@ as the final reference.
 ### 1.1 Hero video — the video lane, or an honest gap
 
 A brief that asks for a hero video is answered by the video lane, not by a
-refusal. The video lane lives in its own file, `references/media-video.md`
-(provider, API contract, manifest row type `VIDEO`, upload path, expiry, and
-the per-generation cost consent), and it is read ONLY when the plan includes
-video — an image-only run never loads it.
+refusal. In this version the lane is section 6 of
+`references/media-pipeline.md` (provider, API contract, manifest row type
+`VIDEO`, upload path, expiry, and the per-generation cost consent), and it is
+read ONLY when the plan includes video — an image-only run never loads it.
+**Planned, not yet on disk:** that lane splits into its own file,
+`references/media-video.md`. Read whichever of the two exists at run time, and
+do not cite the split file until `ls references/media-video.md` succeeds.
 
 **Mechanics:**
 
 1. If the run planned video (the media questions in `interview.md` §5 recorded
    a video slot and its consent), the hero video slot is a `VIDEO` manifest row
-   built by `media-video.md`'s lane, placed and referenced exactly like an
-   image hero: permanent URL, never the provider's temporary one.
+   built by the video lane (`media-pipeline.md` section 6), placed and
+   referenced exactly like an image hero: permanent URL, never the provider's
+   temporary one.
 2. If the run did NOT plan video, or the video lane has no reachable provider,
    the slot is marked in the MEDIA-GAPS manifest (`interview.md` §5;
    `media-pipeline.md` §9.3) with the reason and the fully-prepared generation
@@ -132,6 +136,7 @@ order mechanically:
 The hero and image rows are derived from the image manifest and the design
 brief at build time, per run. The provider contract, the model choice, and the
 cost figures come from `references/media-pipeline.md` (live research at run
-time — never from memory, Law 14). Video rows come from
-`references/media-video.md`, loaded only when the plan includes video; this
-file never promises a video the lane has not proven it can make.
+time — never from memory, Law 14). Video rows come from the video lane in
+`references/media-pipeline.md` section 6 — moving to `references/media-video.md`
+when that split lands — loaded only when the plan includes video; this file
+never promises a video the lane has not proven it can make.

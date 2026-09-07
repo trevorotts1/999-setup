@@ -109,9 +109,13 @@ CSS custom properties on `:root`, grouped by domain:
   visitor whose system is set to dark.
 - **No unfilled token ships.** After instantiation, no `#FILL-FROM-BRIEF` (or
   any other placeholder) may remain in any scaffolded file. This is a
-  ship-check, not a hope: `STAGE-SHIP-CHECKS` (`references/ship-checks.md`)
-  fails the build if a placeholder token reaches a built page, the same way it
-  fails a business fact that is not in the content inventory.
+  mechanical check, not a hope: `STAGE-SCAFFOLDING`'s acceptance bar (section 1
+  — "the four files exist in the project folder with the brief's values filled
+  in") is failed by any surviving placeholder, so the stage gate never opens
+  `STAGE-HERO`. **Planned, not yet on disk:** `STAGE-SHIP-CHECKS`
+  (`references/ship-checks.md`) takes this check over at ship time, alongside
+  the business-fact check against the content inventory — cite it only once
+  `ls references/ship-checks.md` succeeds.
 
 ---
 

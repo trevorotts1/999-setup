@@ -6,9 +6,11 @@
 
    TWO RULES FOR INSTANTIATING THIS FILE:
    1. No placeholder may ship. After STAGE-SCAFFOLDING every FILL-FROM-BRIEF
-      slot in the project's copy carries a real value from the brief.
-      STAGE-SHIP-CHECKS (references/ship-checks.md) fails the build if a
-      placeholder token reaches a built page.
+      slot in the project's copy carries a real value from the brief — a
+      surviving placeholder fails STAGE-SCAFFOLDING's acceptance bar, so the
+      stage gate never opens STAGE-HERO. Planned, not yet on disk:
+      STAGE-SHIP-CHECKS (references/ship-checks.md) takes that check over at
+      ship time when it lands.
    2. The dark block below is CONDITIONAL. Keep it only when the brief names a
       dark palette, and fill it with the brief's dark values. When the brief
       names no dark palette, DELETE the whole @media (prefers-color-scheme:
