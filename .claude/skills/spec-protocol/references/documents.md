@@ -382,6 +382,19 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Shape:** the honest close. What was built, what landed, what is blocked, what
   questions need answers, what the next steps are. No green lies. "Still broken"
   beats a false green. Written in plain language (see `audience.md`).
+- **The opening — the live address first, verbatim.** The report's FIRST line is
+  the address the client can type, never a summary of the night's work:
+
+  > Your <target word> is live at <URL> and a safe copy is saved on GitHub.
+  > Here's what got built, what I checked, and the one or two things only you can
+  > decide.
+
+  `<URL>` is read from the `PUBLISHED: <url> domain=<name|none>` ledger line
+  written by `STAGE-PUBLISH` (`references/publish.md`), never retyped from
+  memory, and it is the custom domain when one answers. When the run has no
+  `PUBLISHED:` line, the opening says so in the same plain voice — what is
+  built, and the one thing that stopped it going live — and never implies an
+  address that does not answer.
 - **The score curve, one line per unit — the section every morning report
   carries.** Under a heading the client can read, the report prints ONE line per
   unit: the piece in the client's own words, its score at every round in order,
