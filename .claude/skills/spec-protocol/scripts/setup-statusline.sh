@@ -276,32 +276,69 @@ if [ -n "$proj_home" ] && [ -f "$proj_home/CONTROL/HEARTBEAT.md" ]; then
 fi
 
 # --- 2. Now: <plain name> --------------------------------------------------
-# The newest IN_PROGRESS unit's PLAIN NAME — "the booking page", never
-# "U042" (references/audience.md, the naming convention). Read from
-# CONTROL/project_state.json: any object carrying an IN_PROGRESS status and a
-# name, newest by its own timestamp field, falling back to document order.
-# The reader is deliberately shape-tolerant — it is a reader, and a state
-# file that has not yet grown a unit list drops the segment rather than
-# inventing one.
+# What the run is on RIGHT NOW, in plain words. Read from documents a
+# spec-protocol project actually writes — no other shape is looked for:
+#
+#   CONTROL/project_state.json -> `.phase`, "<current task id>" in the
+#     project-state@1 schema (references/documents.md); the conductor writes
+#     it at station 15 of every revolution, and references/worked-example.md
+#     carries real values ("phase": "T-07", "phase": "T-03").
+#   CONTROL/CHECKLIST.md (document 2, the planner) then CONTROL/TODO.md
+#     (document 3, the orchestrator) -> the line where that same id sits next
+#     to the sentence a person would say out loud.
+#
+# The id is looked up and the SENTENCE is what gets shown — "the booking
+# page", never "T-07" (references/audience.md, the naming convention).
+# `phase` is a free-text string, so a phase that is already plain words is
+# shown as it stands. Nothing resolvable -> the segment is OMITTED: a bare
+# identifier never reaches the bar, and a name is never manufactured from a
+# file path or a heading.
 nowseg=""
+now_phase=""
 if [ -n "$state_file" ]; then
-  now_unit="$(jq -r '
-    [ ..
-      | objects
-      | select( ((.status? // .state? // "")
-                 | if type == "string" then (ascii_upcase | gsub("[-_ ]+"; "_")) else "" end
-                ) == "IN_PROGRESS" )
-      | select( (.plain_name? // .plain? // .name? // .title? // .unit?) != null )
-    ]
-    | sort_by(.updated? // .updated_at? // .started_at? // .started? // .ts? // "")
-    | last
-    | if . == null then empty
-      else (.plain_name // .plain // .name // .title // .unit) end
-  ' "$state_file" 2>/dev/null || true)"
-  now_unit="$(oneline "$now_unit")"
-  if [ -n "$now_unit" ] && [ "$now_unit" != "null" ]; then
-    nowseg="Now: $now_unit"
+  now_phase="$(jq -r '.phase // empty' "$state_file" 2>/dev/null || true)"
+  case "$now_phase" in null) now_phase="" ;; esac
+  now_phase="$(oneline "$now_phase")"
+fi
+
+# name_for_id <file> <id> — the plain words on the line that carries the id.
+# An OPEN box wins over any other line; a closed one still names the work.
+# -F matches the id LITERALLY, so an id carrying a regex metacharacter can
+# never turn into a pattern.
+name_for_id() {
+  local f="$1" id="$2" line text
+  [ -f "$f" ] || return 0
+  line="$(grep -F -- "$id" "$f" 2>/dev/null \
+          | grep -m1 -E '^[[:space:]]*[-*][[:space:]]*\[[[:space:]]*\]' || true)"
+  [ -n "$line" ] || line="$(grep -m1 -F -- "$id" "$f" 2>/dev/null || true)"
+  [ -n "$line" ] || return 0
+  # Drop the list marker and the box, then the id itself (removed literally by
+  # the shell — no regex escaping), then the punctuation that joined the two.
+  # Byte-wise classes only: that separator is usually an em dash and this bar
+  # often runs under a C locale.
+  text="$(printf '%s' "$line" \
+          | sed -e 's/^[[:space:]]*[-*][[:space:]]*//' \
+                -e 's/^\[[[:space:]xX]\][[:space:]]*//')"
+  text="${text/"$id"/}"
+  text="$(printf '%s' "$text" | sed -e 's/^[^[:alnum:]]*//' -e 's/[[:space:]]*$//')"
+  printf '%s' "$text"
+}
+
+now_unit=""
+if [ -n "$now_phase" ]; then
+  if [ -n "$proj_home" ]; then
+    now_unit="$(name_for_id "$proj_home/CONTROL/CHECKLIST.md" "$now_phase")"
+    [ -n "$now_unit" ] || now_unit="$(name_for_id "$proj_home/CONTROL/TODO.md" "$now_phase")"
   fi
+  # No line names it: show the phase only when it is already a phrase a
+  # person would say. A bare id stays off the bar.
+  if [ -z "$now_unit" ]; then
+    case "$now_phase" in *\ *) now_unit="$now_phase" ;; esac
+  fi
+fi
+now_unit="$(oneline "$now_unit")"
+if [ -n "$now_unit" ]; then
+  nowseg="Now: $now_unit"
 fi
 
 # --- 3. n of N pieces (p%)  /  Getting ready: step n of 9 ------------------
@@ -465,7 +502,7 @@ say "Before the plan exists it reads \"Getting ready: step 4 of 9\" instead of t
 say ""
 say "Metric report (supported metrics were configured; unsupported ones omitted — never faked):"
 say "  Working ✓ Nm ago: Supported — the age of the newest line in CONTROL/HEARTBEAT.md (file modification time when no line carries a stamp); omitted when nothing has reported work"
-say "  Now: <piece>: Supported — the newest IN_PROGRESS unit's plain name in CONTROL/project_state.json; omitted when nothing is in progress"
+say "  Now: <piece>: Supported — CONTROL/project_state.json .phase, named through CONTROL/CHECKLIST.md then CONTROL/TODO.md (a phase already in plain words is shown as it stands); omitted when nothing names it"
 say "  n of N pieces (p%): Supported — CONTROL/project_state.json tasks.counts (completed of pending + in_progress + completed); omitted until the plan exists"
 say "  Getting ready: step n of 9: Supported — CONTROL/setup_progress.json, shown only before the plan exists"
 say "  Needs you: Supported — open OPERATOR-ESCALATION and question items in CONTROL/TODO.md; reads \"nothing\" at zero; omitted when there is no TODO.md"

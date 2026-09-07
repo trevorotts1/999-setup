@@ -134,7 +134,7 @@ The statusLine command receives JSON on stdin. Fields that matter here:
 | Metric | Verdict | How |
 |---|---|---|
 | **Working ✓ Nm ago** | **DISPLAYED** | age of the newest line in `CONTROL/HEARTBEAT.md` (§6) |
-| **Now: `<piece>`** | **DISPLAYED** | newest IN_PROGRESS unit's plain name in `CONTROL/project_state.json` (§6) |
+| **Now: `<piece>`** | **DISPLAYED** | `CONTROL/project_state.json` `.phase`, named through `CONTROL/CHECKLIST.md` then `CONTROL/TODO.md` (§6) |
 | **n of N pieces (p%)** | **DISPLAYED** | `CONTROL/project_state.json` `tasks.counts` (§6) |
 | **Getting ready: step n of 9** | **DISPLAYED before the plan exists** | `CONTROL/setup_progress.json` (§6) |
 | **Needs you: k \| nothing** | **DISPLAYED** | open OPERATOR-ESCALATION and question items in `CONTROL/TODO.md` (§6) |
@@ -167,8 +167,9 @@ installation never fails over a missing metric. Report per metric:
 Working ✓ Nm ago: Supported — age of the newest line in CONTROL/HEARTBEAT.md (the file's
   modification time when no line carries a parseable stamp); omitted when nothing has
   reported work yet
-Now: <piece>: Supported — the newest IN_PROGRESS unit's plain name in
-  CONTROL/project_state.json; omitted when nothing is in progress
+Now: <piece>: Supported — CONTROL/project_state.json .phase, resolved to its plain-words
+  line in CONTROL/CHECKLIST.md then CONTROL/TODO.md (a phase already in plain words is
+  shown as it stands); omitted when nothing names it
 n of N pieces (p%): Supported — CONTROL/project_state.json tasks.counts; omitted until the
   plan exists
 Getting ready: step n of 9: Supported — CONTROL/setup_progress.json, shown only before the
@@ -266,18 +267,62 @@ Newest = the highest stamp, which for a fixed-width ISO stamp is the lexicograph
 
 ### Segment 2 — `Now: <the piece>`
 
-The newest IN_PROGRESS unit's PLAIN NAME from `CONTROL/project_state.json` — "the booking
-page", never `U042` (`references/audience.md`, the naming convention). The reader selects
-objects carrying an IN_PROGRESS status and a name, newest by the object's own timestamp
-field, falling back to document order.
+What the run is on right now, in plain words — "the booking page", never `T-07`
+(`references/audience.md`, the naming convention). It is read from **documents a
+spec-protocol project actually writes**, and from no other shape:
+
+1. `CONTROL/project_state.json` → `.phase`. In the `spec-protocol/project-state@1` schema
+   (`references/documents.md`) that field is `"<current task id>"`, written by the conductor
+   at station 15 of every revolution; `references/worked-example.md` carries real values
+   (`"phase": "T-07"`, `"phase": "T-03"`).
+2. `CONTROL/CHECKLIST.md` (document 2, the planner), then `CONTROL/TODO.md` (document 3, the
+   orchestrator) → the line where that same id sits next to the sentence a person would say
+   out loud. The reader takes the first line carrying the id with an OPEN box (`- [ ]`), else
+   any line carrying it, strips the list marker, the box, the id itself, and the punctuation
+   that joined them, and shows what is left.
+
+`phase` is a free-text string, so a phase that is already a plain phrase is shown as it
+stands and no lookup is needed.
+
+**Why it is written this way (1.18.0).** The first 1.18.0 draft of this segment searched
+`project_state.json` for any nested object carrying a `plain_name`/`name`/`title` plus an
+`IN_PROGRESS` status. No writer in the skill produces that shape — it is not in the
+`project-state@1` schema, not in `anchor.sh`, not in the worked example — so the segment
+could only ever render against a fixture built to match the reader. That is the same defect
+class as the pre-1.18.0 Wave bar reading `FIX-LEDGER.md` (§4G E5), and it is not repeated:
+every source named above is a real document with a named writer in
+`references/documents.md`, and the fixture test below is built to the documented schema
+rather than to the reader.
 
 **Guardrails (binding):**
 
-- Nothing in progress, no state file, or no unit list yet → the segment is OMITTED. The
-  reader is deliberately shape-tolerant and deliberately silent: it never manufactures a
-  piece name from a phase, a file path, or an identifier.
-- The name shown is the one a person would use out loud. A unit whose only name is an
-  identifier is a naming-convention defect upstream, not something to render.
+- No state file, no `phase`, and no line in `CHECKLIST.md` or `TODO.md` naming it → the
+  segment is OMITTED. A name is never manufactured from a file path or a heading, and the
+  head of `CONTROL/TODO.md` is never shown on its own — that is what comes NEXT, not what is
+  happening now; `TODO.md` is consulted only to put words to the id `phase` already names.
+- A bare identifier never reaches the bar. If `phase` names a task neither document carries,
+  and the phase is not itself plain words, the segment stays off — an unnamed unit is a
+  naming-convention defect upstream, not something to render. A project always has
+  `CHECKLIST.md` (document 2 is written by the planner before the first task runs), so this
+  is the empty-project case, not the normal one.
+- The id is matched literally (`grep -F`) and removed literally, so an id carrying a regex
+  metacharacter can never turn into a pattern.
+- Byte-wise character classes only when trimming: the separator between id and name is
+  usually an em dash, and this bar often runs under a C locale.
+
+**The fixture test (built to the documented schema, never to the reader).** A `CONTROL/`
+holding a `project_state.json` that conforms to `project-state@1` with `"run_status":
+"RUNNING"`, `"phase": "T-07"` and `tasks.counts` `{pending:20, in_progress:6, completed:14}`,
+a `CHECKLIST.md` carrying `- [ ] T-07 — the booking page`, a `TODO.md` with no open question
+or escalation, and a `HEARTBEAT.md` stamped two minutes ago, renders exactly:
+
+```text
+Working ✓ 2m ago | Now: the booking page | 14 of 40 pieces (35%) | Needs you: nothing
+```
+
+Point `phase` at a task neither `CHECKLIST.md` nor `TODO.md` carries and the same bar comes
+back WITHOUT the `Now:` segment, every other segment still standing — that is the guardrail
+working, and it is what proves the test discriminates rather than always passing.
 
 ### Segment 3 — `n of N pieces (p%)`, and `Getting ready: step n of 9` before it
 
