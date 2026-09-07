@@ -336,9 +336,86 @@ open Gate-1 findings**, the arbitration rule in `references/pipeline.md` (Stage
 2, "Arbitration when Gate 1 and Gate 3 both fail at once") governs the order:
 Gate-1 fixes land first, and this gap re-checks only after.
 
+**A NEW judge instance for every re-judge — never the same one twice.** When a
+BAR verdict sends the unit back and the builder returns it, the re-judge is a
+**NEW judge agent: the same SEAT (the same resolved model and role) with a
+FRESH CONTEXT, and the previous verdict is not in its prompt.** It receives
+exactly what the first critic received — the Task requirement, the frozen
+dimensions, the two artifacts, labels stripped, order randomized — and nothing
+from the earlier round travels with the package: not the verdict, not the gap,
+not the score, not the round number (Law 49; never reuse the previous verifier's
+judgment). A judge shown its own prior verdict anchors on it instead of
+re-judging, which is how a loop convinces itself. `references/pipeline.md`
+Stage 3 states the same rule for the fix loop's re-judge; the two sentences
+must never drift apart.
+
 **Dissent recorded.** The critic's verdict and its evidence are recorded in the
 ledger (`references/documents.md`, document 6) regardless of outcome. A dissent
 is data, not noise.
+
+**SCORE — one line per verdict, every round, trend only.** Every judge verdict —
+the blind visual verdict here, and the technical verdict at
+`references/pipeline.md` Stage 2 — writes ONE score line through
+`tools/ledger.sh` into the live ledger (document 6) the moment the verdict is
+reached, beside the QC RECORD:
+
+```
+SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>
+```
+
+- `unit` — the unit id this verdict is about.
+- `round` — this unit's round number, counting from 1.
+- `score` — this round's 0-10 score across the ten categories, one decimal.
+- `best` — the best score this unit has reached in any round, this one included.
+- `delta` — how far `best` rose since the previous round, one decimal, `0.0` on
+  round 1 and never negative: a worse round cannot lower the best.
+
+**The score decides nothing.** The binary verdict against the frozen
+relationship decides, and the 0-10 score is recorded for trend only
+(`references/pipeline.md` Stage 2). The line exists so the trend is READABLE:
+the plateau rule below, the `warn` progress analysis (Section 13.2), and the
+per-unit curve in the morning report (`references/documents.md`, document 14)
+are computed from these lines and from nothing else — never from memory, never
+from a judge's impression of whether things are getting better.
+`tools/ledger.sh` knows this line class: a SCORE line missing a field, or
+carrying a non-numeric `round`, `score`, `best` or `delta`, is REFUSED (exit 2)
+and never written, because a hole in the curve is worse than a loud refusal.
+`bash tools/ledger.sh --selftest` proves both halves — the well-formed line
+accepted, the malformed one refused and absent from the file.
+
+**The plateau rule — three flat rounds end the unit honestly.** A unit whose
+`best` rises by **less than 0.3 for three consecutive rounds** has PLATEAUED:
+the loop for that unit ENDS at that round, without a twentieth cycle and
+without an escalation. The arithmetic is read straight off the SCORE lines —
+three consecutive rounds with `delta < 0.3`, counted from round 2 onward (round
+1 has no previous best, so the earliest a unit can plateau is round 4). On a
+plateau, in this order:
+
+1. **Preserve the best checkpoint.** The build that scored `best` is the unit's
+   deliverable — its checkpoint commit is what `best_stable_build` names
+   (`references/documents.md`, the state schema) and nothing regresses it. The
+   unit ships its best round, never its last round.
+2. **Write the honest one-gap line** in the client's own words, the promise at
+   `SKILL.md` lines 75-80: **"not yet as good as the example you picked — here
+   is the one gap"** — that single largest gap, named, and nothing else.
+3. **Record it.** The last judge's QC RECORD stands as written (a FAIL that
+   LOOPED); the plateau stop is the conductor's, written on the unit's ledger
+   entry with its full SCORE curve and its one gap. `verdict=` stays FAIL — the
+   frozen relationship was not met and Law 50 still owns the record. Only the
+   client's own answer later writes `outcome=CLIENT-ACCEPTED gap=<the one gap>`;
+   no judge may write it (`references/pipeline.md` Stage 2, check 5).
+4. **Move on.** The next unit dispatches immediately. A plateaued unit never
+   holds the queue, never waits up for the client, and never converts into a
+   twenty-cycle escalation.
+
+The client keeps the three choices the promise gives them — accept it as it is,
+ask for one more round on just that one gap, or pick an easier example to
+measure against. A plateau is an HONEST STOP: not a pass, not a failure (Section
+9 gives it its obligations). It exists to replace most twenty-cycle escalations
+with a four-round truthful answer. The reference run this method comes from
+climbed for five rounds and then said plainly that the bar might be unrealistic
+and that the scores would plateau; saying the same thing at round four is the
+same honesty, bought four rounds earlier and for a fraction of the budget.
 
 **Close calls get a second critic.** When the verdict is INDETERMINATE, when the
 single gap is thin, OR when the deliverable is high-value, highly subjective, or
@@ -702,6 +779,35 @@ selected (`references/pipeline.md`, the comparative sub-stage). A starved empty 
 LIMIT REACHED / USER STOPPED** — it is reissued. A judge lane producing repeated
 empties is diagnosed budget-before-model.
 
+**A sixth thing, and the only one that is good news: the PLATEAU stop.** A unit
+whose best score rose by less than 0.3 for three consecutive rounds has
+plateaued, and the loop for that unit ends there (Section 5 owns the arithmetic
+and the SCORE lines it is read from). A plateau is **not** BLOCKED, INFEASIBLE,
+LIMIT REACHED or USER STOPPED: nothing is broken, no limit was hit, no human
+stopped anything, and the work is real — the unit simply stopped improving
+against the bar it was measured by. It is also **not PASS**: the frozen
+relationship was not met, `verdict=` stays FAIL, and Law 50 still owns the
+record. It is its own ending — an honest one — and its obligations are these:
+
+- **Preserve the best checkpoint and deploy it** with the rest of the build. A
+  plateaued unit ships its best round, never its last round.
+- **Say the one gap, once, plainly** — the promise at `SKILL.md` lines 75-80:
+  "not yet as good as the example you picked — here is the one gap." One gap,
+  named. Never a list, never a hedge, never a silence.
+- **Print the curve** in the morning report so the client can see the shape of
+  the climb and where it flattened (`references/documents.md`, document 14).
+- **Move on immediately.** The next unit dispatches; the plateau never holds the
+  queue and never becomes a twenty-cycle escalation.
+- **Wait for the client on the record, never on the run.** The three choices
+  belong to the client — accept it, one more round on that one gap, or an easier
+  example to measure against — and only the client's answer writes
+  `outcome=CLIENT-ACCEPTED gap=<the one gap>` (`references/pipeline.md` Stage 2).
+  The run does not sit waiting for it.
+
+Reported to the client, a plateaued unit reads "as good as I could get it
+against that example" with its one gap — never as a pass, and never as a
+failure. A plateau recorded as either is the same lie in two directions.
+
 ---
 
 ## 10. ADAPTER RULES
@@ -1008,6 +1114,25 @@ the operator's 1,000-execution budget — which is counted **per PROJECT** in
 could never be reached — nor the harness's own 1,000-agents-lifetime cap per
 workflow RUN, nor the per-workflow concurrency width. The Capacity Ledger records
 them separately and never conflates them (`references/capacity.md`).
+
+**The plateau rule is what keeps the budget off flat rounds.** The `warn` row's
+obligation — "is measurable progress still occurring" — is not a judgement call
+and never was: it is read off the SCORE lines every judge verdict writes
+(Section 5), `SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> |
+delta=<d>`, through `tools/ledger.sh`. Per unit, three consecutive rounds with
+`delta < 0.3` is a PLATEAU: that unit's loop ends there, its best checkpoint is
+preserved, its one honest gap is written (Section 9), and the budget goes to the
+next unit instead of to rounds five through twenty of a climb that has stopped
+climbing. At the `warn` line the orchestrator records the analysis AS the
+per-unit curves and their deltas — the answer to "is progress still occurring"
+is arithmetic, quoted from the ledger, never an impression. The arithmetic
+matters to the budget as much as to the client: `initial` assumes three
+executions per unit, a unit that plateaus at round four has spent about twelve,
+and the same unit run to the twenty-cycle fix cap would have spent several times
+that for a build that was already as good as it was going to get. The plateau
+rule is therefore a BUDGET mechanism as much as an honesty one — it is what
+keeps `first_pause` a real checkpoint instead of a wall the run hits after a
+long tail of flat rounds.
 
 ### 13.3 THE IMPORTANT CAPACITY RULE (verbatim — the operator's own words)
 

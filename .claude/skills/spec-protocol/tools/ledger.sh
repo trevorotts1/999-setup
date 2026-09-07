@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ledger.sh — atomic, LOCKED write primitive for all project MD files
 # Usage: ledger.sh <home> <file> <line> [upsert-key]
+#        ledger.sh --selftest
 #
 # Appends <line> to <home>/<file> via .tmp + rename, with the whole
 # read-modify-write wrapped in a lock. Copy-append-rename alone is NOT
@@ -34,6 +35,30 @@
 # --intents; before this, nothing wrote it and class 5 was undetermined on
 # every run. See the block at the bottom of this file.
 #
+# THE SCORE LINE CLASS (references/gauntlet.md section 5 — the per-round score
+# and the plateau rule). Every judge verdict writes ONE line of this shape:
+#
+#   SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>
+#
+# optionally carrying the usual "<ISO8601Z> | " prefix every other ledger line
+# carries. `score` is that round's 0-10 trend score, `best` is the best score
+# the unit has reached in any round, and `delta` is how far `best` rose since
+# the previous round (0.0 on round 1) — the number the plateau rule reads.
+# The class is CHECKED HERE, before the lock is taken: a line that opens the
+# SCORE class but does not carry all five fields in that order, with a numeric
+# round, score, best and delta, is REFUSED with exit 2 and never written. A
+# malformed SCORE line is a silent hole in the curve that the plateau rule
+# (gauntlet.md sections 5 and 9), the `warn` progress analysis (gauntlet.md
+# 13.2) and the morning report's per-unit curve (documents.md, document 14) are
+# all computed from — a loud refusal is the cheaper failure. Nothing else about
+# the line is judged, and NO OTHER line class is shape-checked here.
+#
+# --selftest proves both halves of that: the SCORE class (a well-formed line
+# accepted and written, a malformed one refused and NOT written) and the
+# CLAIM / RESULT shapes of references/anti-drift.md section 8, including that a
+# CLAIM extends CONTROL/last-intents.txt and a RESULT does not. It writes only
+# into a temporary directory it creates and removes.
+#
 # Includes iCloud pin-local mitigation for ~/Downloads.
 #
 # Forked from skill-warfix/tools/ledger.sh (that copy is untouched — this
@@ -41,10 +66,175 @@
 
 set -euo pipefail
 
+# ============================================================================
+# grep resolution — resolved ONCE, here, because two things need it: the SCORE
+# class check (which runs before the lock is taken) and the CLAIM writer at the
+# bottom of this file. An empty LGREP is never treated as "no match": it means
+# the class of a line is UNKNOWN, and both readers say so out loud.
+# ============================================================================
+LGREP="/usr/bin/grep"
+if [[ ! -x "${LGREP}" ]]; then
+  if [[ -x /bin/grep ]]; then LGREP="/bin/grep"; else LGREP="$(command -v grep 2>/dev/null || true)"; fi
+fi
+
+# The SCORE line class (references/gauntlet.md section 5). Two expressions: one
+# that says "this line is OF the SCORE class", one that says "and it is well
+# formed". A line matching the first and failing the second is the only thing
+# this script ever refuses on shape.
+SCORE_CLASS_RE='(^|[|])[[:space:]]*SCORE[[:space:]]*[|]'
+SCORE_SHAPE_RE='^([^|]*[|][[:space:]]*)?SCORE[[:space:]]*[|][[:space:]]*unit=[^|]+[|][[:space:]]*round=[0-9]+[[:space:]]*[|][[:space:]]*score=-?[0-9]+(\.[0-9]+)?[[:space:]]*[|][[:space:]]*best=-?[0-9]+(\.[0-9]+)?[[:space:]]*[|][[:space:]]*delta=-?[0-9]+(\.[0-9]+)?[[:space:]]*$'
+
+is_score_line()  { printf '%s' "$1" | "${LGREP}" -qE "${SCORE_CLASS_RE}"; }
+score_shape_ok() { printf '%s' "$1" | "${LGREP}" -qE "${SCORE_SHAPE_RE}"; }
+
+# ============================================================================
+# --selftest — the instrument proves itself before anyone trusts a line it
+# wrote. Every case runs THE REAL WRITER, recursively, exactly as a caller
+# would: no case asserts against a regex in isolation, because a shape checker
+# that is never driven through the writer proves nothing about the writer.
+#
+# The accept cases are also the CONTROL for the refuse cases: a checker that
+# refused everything, or accepted everything, fails this set as a whole. A
+# refusal that is not accompanied by proof the line was NOT written is not a
+# refusal, so every refuse case re-reads the file.
+# ============================================================================
+ST_PASSES=0
+ST_FAILS=0
+ST_HOME=""
+ST_SELF=""
+ST_RC=0
+ST_ERR=""
+
+st_ok()   { printf 'PASS | %s\n' "$1"; ST_PASSES=$((ST_PASSES + 1)); }
+st_bad()  { printf 'FAIL | %s | %s\n' "$1" "$2"; ST_FAILS=$((ST_FAILS + 1)); }
+
+st_write() {
+  set +e
+  ST_ERR="$(bash "${ST_SELF}" "${ST_HOME}" "$@" 2>&1 >/dev/null)"
+  ST_RC=$?
+  set -e
+}
+
+st_last() { tail -n 1 "${ST_HOME}/$1" 2>/dev/null || true; }
+st_lines() { if [[ -f "${ST_HOME}/$1" ]]; then wc -l < "${ST_HOME}/$1" | tr -d ' '; else printf '0'; fi; }
+
+run_selftest() {
+  ST_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  ST_HOME="$(mktemp -d "${TMPDIR:-/tmp}/ledger-selftest.XXXXXX")"
+  trap 'rm -rf "${ST_HOME}"' EXIT
+  printf 'ledger.sh --selftest | self=%s | home=%s\n' "${ST_SELF}" "${ST_HOME}"
+
+  local L LEDGER INTENTS_BEFORE INTENTS_AFTER GUARD
+  LEDGER="CONTROL/LEDGER.md"
+
+  # --- 1. SCORE, well formed, bare — the exact shape gauntlet.md section 5 writes
+  L='SCORE | unit=U1 | round=2 | score=7.1 | best=7.1 | delta=1.3'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 0 )) && [[ "$(st_last "${LEDGER}")" == "${L}" ]]; then
+    st_ok "SCORE class accepted and written: ${L}"
+  else
+    st_bad "SCORE class accepted and written" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] err=${ST_ERR}"
+  fi
+
+  # --- 2. SCORE with the ISO8601Z prefix every other ledger line carries
+  L='2026-09-07T04:11:00Z | SCORE | unit=U1 | round=3 | score=8.2 | best=8.2 | delta=1.1'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 0 )) && [[ "$(st_last "${LEDGER}")" == "${L}" ]]; then
+    st_ok "SCORE class accepted with a timestamp prefix"
+  else
+    st_bad "SCORE class accepted with a timestamp prefix" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] err=${ST_ERR}"
+  fi
+
+  # --- 3. SCORE missing a field — REFUSED, exit 2, and NOT written
+  GUARD="$(st_last "${LEDGER}")"
+  L='SCORE | unit=U1 | round=4 | score=8.4 | best=8.4'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 2 )) && [[ "$(st_last "${LEDGER}")" == "${GUARD}" ]]; then
+    st_ok "malformed SCORE (no delta=) refused with exit 2 and not written"
+  else
+    st_bad "malformed SCORE (no delta=) refused" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] err=${ST_ERR}"
+  fi
+
+  # --- 4. SCORE with a non-numeric score — REFUSED, exit 2, and NOT written
+  L='SCORE | unit=U1 | round=4 | score=high | best=8.4 | delta=0.2'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 2 )) && [[ "$(st_last "${LEDGER}")" == "${GUARD}" ]]; then
+    st_ok "malformed SCORE (score=high) refused with exit 2 and not written"
+  else
+    st_bad "malformed SCORE (score=high) refused" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] err=${ST_ERR}"
+  fi
+
+  # --- 5. the CLAIM shape (anti-drift.md section 8) — written, and its plan= lands
+  #        in CONTROL/last-intents.txt, which is class 5's only input
+  L='2026-09-07T04:12:00Z | CLAIM | unit=U1 | agent=builder-a | model=builder | plan=build the home page'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 0 )) && [[ "$(st_last "${LEDGER}")" == "${L}" ]] \
+     && [[ "$(st_last CONTROL/last-intents.txt)" == "build the home page" ]]; then
+    st_ok "CLAIM shape written and its plan= appended to CONTROL/last-intents.txt"
+  else
+    st_bad "CLAIM shape written and intent appended" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] intent=[$(st_last CONTROL/last-intents.txt)] err=${ST_ERR}"
+  fi
+
+  # --- 6. the RESULT shape — written, and it does NOT extend the intent window
+  #        (the discrimination control for case 5: a writer that appended for
+  #        every line would pass case 5 and fail here)
+  INTENTS_BEFORE="$(st_lines CONTROL/last-intents.txt)"
+  L='2026-09-07T04:20:00Z | RESULT | unit=U1 | PASS | evidence=CONTROL/LEDGER.md'
+  st_write "${LEDGER}" "${L}"
+  INTENTS_AFTER="$(st_lines CONTROL/last-intents.txt)"
+  if (( ST_RC == 0 )) && [[ "$(st_last "${LEDGER}")" == "${L}" ]] \
+     && [[ "${INTENTS_BEFORE}" == "${INTENTS_AFTER}" ]]; then
+    st_ok "RESULT shape written and the intent window left alone (${INTENTS_BEFORE} lines)"
+  else
+    st_bad "RESULT shape written, intent window unchanged" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] before=${INTENTS_BEFORE} after=${INTENTS_AFTER} err=${ST_ERR}"
+  fi
+
+  # --- 7. the control that keeps the SCORE check honest: an ordinary line of no
+  #        class at all is written untouched
+  L='2026-09-07T04:21:00Z | NOTE | unit=U1 | a line of no class at all'
+  st_write "${LEDGER}" "${L}"
+  if (( ST_RC == 0 )) && [[ "$(st_last "${LEDGER}")" == "${L}" ]]; then
+    st_ok "control: an unclassed line is written untouched (the SCORE check is class-specific)"
+  else
+    st_bad "control: an unclassed line is written untouched" "rc=${ST_RC} last=[$(st_last "${LEDGER}")] err=${ST_ERR}"
+  fi
+
+  # --- 8. upsert mode still holds one line per key (HEARTBEAT's contract)
+  st_write "CONTROL/HEARTBEAT.md" '2026-09-07T04:22:00Z | builder-a | U1 | build' 'builder-a'
+  st_write "CONTROL/HEARTBEAT.md" '2026-09-07T04:27:00Z | builder-a | U1 | judge' 'builder-a'
+  if (( ST_RC == 0 )) && [[ "$(st_lines CONTROL/HEARTBEAT.md)" == "1" ]]; then
+    st_ok "upsert mode keeps exactly one line per key"
+  else
+    st_bad "upsert mode keeps one line per key" "rc=${ST_RC} lines=$(st_lines CONTROL/HEARTBEAT.md) err=${ST_ERR}"
+  fi
+
+  printf 'ledger.sh --selftest | passes=%d fails=%d\n' "${ST_PASSES}" "${ST_FAILS}"
+  if (( ST_FAILS > 0 )); then return 1; fi
+  return 0
+}
+
+if [[ "${1:-}" == "--selftest" ]]; then
+  if run_selftest; then exit 0; else exit 1; fi
+fi
+
 HOME_DIR="${1:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 FILE="${2:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 LINE="${3:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 UPSERT_KEY="${4:-}"
+
+# ============================================================================
+# The SCORE class gate — runs BEFORE the lock and before any file is touched,
+# so a refused line leaves nothing behind. See the header for the shape and for
+# why a malformed SCORE line is refused rather than written.
+# ============================================================================
+if [[ -z "${LGREP}" ]]; then
+  echo "WARNING: ledger.sh found no usable grep (/usr/bin/grep, /bin/grep, PATH), so it could NOT check whether this line is of the SCORE class; the line is being written unchecked and any SCORE curve read from this ledger is UNDETERMINED until this is fixed" >&2
+elif is_score_line "${LINE}"; then
+  if ! score_shape_ok "${LINE}"; then
+    echo "ERROR: ledger.sh refused a malformed SCORE line and wrote NOTHING. The class requires all five fields, in order, with numeric round/score/best/delta: SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d> (an ISO8601Z prefix is allowed). Got: ${LINE}" >&2
+    exit 2
+  fi
+fi
 
 TARGET="${HOME_DIR}/${FILE}"
 TMP="${TARGET}.tmp.$$"
@@ -242,10 +432,8 @@ fi
 # concurrent CLAIM writers to the same ledger are serialized here exactly as
 # they are for the ledger itself.
 # ============================================================================
-LGREP="/usr/bin/grep"
-if [[ ! -x "${LGREP}" ]]; then
-  if [[ -x /bin/grep ]]; then LGREP="/bin/grep"; else LGREP="$(command -v grep 2>/dev/null || true)"; fi
-fi
+# LGREP was resolved at the top of this file (the SCORE class gate needs it
+# before the lock); it is the same grep this block uses.
 
 append_intent() {
   local intents_file="${HOME_DIR}/CONTROL/last-intents.txt"
