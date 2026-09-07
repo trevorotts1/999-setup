@@ -965,3 +965,49 @@ python3 tools/hooks/dispatch-gate.py --check <script.js>   # the shape check, by
 
 A gate whose selftest fails is a BROKEN INSTRUMENT: do the width arithmetic by
 hand, say so in the ledger, and never read its silence as a pass.
+
+---
+
+## 14. Parser safety — every script and prompt this skill generates
+
+Any workflow script or agent prompt this skill generates must follow the
+parser-safety rules:
+
+1. Build prompts with backtick template literals, not single quotes. Backticks
+   tolerate apostrophes.
+2. Never put apostrophes inside single-quoted strings.
+3. Interpolate only where the variable is in scope.
+4. Never nest backticks inside a backtick template literal.
+5. Escape inner backticks with a backslash only as a last resort.
+
+---
+
+## 15. Fable, Sonnet, Haiku, Opus are router aliases — what a seat name means in a dispatch
+
+On Claude-Nine, these are 9router aliases, not fixed models. The operator
+repoints them independently and has done so more than once. The alias is
+authoritative; any underlying-model name written near one is illustration, not
+fact. When this skill says "the Sonnet judge," it means "the judge seat driven by
+whatever the Sonnet alias currently resolves to." On regular Claude Code, they are
+the built-in Anthropic model tiers. `Fable` is a lane name in this list and
+nothing more — it is not a seat anywhere in this skill (`references/capacity.md`
+§11).
+
+**The aliases are DEFAULT LANES over the router's full model pool, not the pool
+itself.** Under Claude-Nine the addressable pool is the router's live model list
+(`GET /v1/models` through the session's own gateway and auth), discovered every
+run — hundreds of models no alias touches, including custom-provider nodes and
+combos. An unqualified role name resolves through its alias; a seat may equally
+be a DIRECTLY-ADDRESSED pool model, recorded in the Capacity Ledger. On regular
+Claude Code the pool is the built-in Anthropic tiers, and this section's scarcity
+does still apply there.
+
+**"Aliases are authoritative" — restated precisely, because it is not weakened
+by the above.** The rule's target is BYPASSING THE ROUTER: calling a provider
+directly on its own key, or silently re-pointing what an alias means. So:
+(a) never reroute or reinterpret an alias — resolution RECORDS, it never
+reroutes; (b) never go around the router to a provider; (c) naming a listed pool
+model in a dispatch, through the router's own gateway, same auth, same
+transport, IS the configured routing — the router serves that list on purpose —
+and violates nothing. The alias lanes appear IN the pool list themselves; a lane
+is a pool member, not a fence around it.
