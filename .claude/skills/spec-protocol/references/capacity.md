@@ -106,7 +106,7 @@ queueing — so the ceiling arithmetic is provider-side plus the Claude Code
 product caps: 16 concurrent agents / 1,000 total per workflow run,
 **HARD-CODED — no setting raises them** (section 3, AXIS 1 and 2). A raw
 DeepSeek ceiling is therefore never the governing number on its own: the
-harness or the operator cap almost always binds first (section 3, worked
+harness almost always binds first (section 3, worked
 scenarios section 5).
 
 **The OpenRouter row's amendment (sanctioned 2026-08-12, after the live pool
@@ -278,42 +278,43 @@ probe proves otherwise (section 12).
 
 ### AXIS 3 — POLICY (per provider class)
 
-- **Anthropic-billed Claude Code:** the operator's standing **20-agents-per-wave**
-  cap governs total concurrency. This is an OPERATOR policy, not a platform
-  limit — do not confuse the two, and do not go looking for a documented "20" to
-  justify it. The operator set it; it binds on Anthropic paths. (The platform's OWN
-  default of 20 concurrent subagents is a different 20, and it is **not in force
-  here**: the documentation exempts ultracode sessions from it, and GATE 0
-  requires ultracode. In a spec-protocol run the operator's cap is the only 20
-  that binds — which is exactly why this paragraph never rested on the
-  platform's.)
+- **Anthropic-billed Claude Code: NO wave cap.** Width is the harness number —
+  workflows-in-flight × clientCap — and nothing in this skill narrows it. The
+  operator's standing ruling (2026-08-16) is that there are no caps beyond the
+  harness. The **burn governor** (section 6) is the only limiter on a
+  subscription account: the account is window-metered and opaque, so the runtime
+  rate-limit response IS the meter — park on 429s and resume (Loop 6), never
+  hammer, and never pre-shrink a wave against a number nobody measured. (The
+  platform's own default limit of 20 simultaneous subagents is **not in force
+  here** either: the documentation exempts ultracode sessions from it, and
+  GATE 0 requires ultracode.)
 - **9Router paths on the user's own provider keys:** provider ceiling minus the
-  reserve, from section 2. No operator cap beyond the reserve.
+  reserve, from section 2. No policy cap beyond the reserve.
 - **Agnes AI:** request rate is a SEPARATE burn budget, counted per 5-hour
   window — not a concurrency number at all (section 6).
 
 ### The reconciliation rule (state this verbatim wherever wave width is computed)
 
-> *"The wave width is the SMALLEST of three numbers: (1) the harness delivery
+> *"The wave width is the SMALLER of two numbers: (1) the harness delivery
 > capacity — workflows-in-flight × clientCap, capped at 50 workflows, where
 > clientCap = min(systemConcurrentMax, cores−2) (Issue 19 FIX step 6 —
 > systemConcurrentMax is the operator's declared max, 10 on the operator's
 > machine; an environment read is REPORTING ONLY, never for computing; an
 > UNDETERMINED systemConcurrentMax = the run refuses to plan, it never defaults
 > to 16);
-> (2) the operator cap for the provider class — 20 concurrent agents per wave on
-> Anthropic-billed Claude Code, no operator cap on the user's own 9Router
-> provider keys beyond the reserve; (3) the provider ceiling minus the reserve
-> (Law 44). The smallest number always governs, and the Capacity Ledger records
-> all three with the winner marked."*
+> (2) the provider ceiling minus the reserve (Law 44) — and on a metered
+> Anthropic subscription there is no such figure to compute, so the harness
+> governs and the burn governor holds the run inside the window. There is NO
+> policy wave cap on any path. The smaller number always governs, and the
+> Capacity Ledger records both with the winner marked."*
 
-On Anthropic Claude Code the 20-agents-per-wave doctrine governs total
-concurrency (2 workflows × clientCap 10 = 20 on this machine hits it exactly).
-On 9Router + DeepSeek direct, the harness (50 × clientCap 10 = 500) governs
-long before the provider (1,875).
+On Anthropic Claude Code the harness governs: workflows-in-flight × clientCap,
+with the burn governor parking on 429s and resuming — that is the only limiter
+on a subscription account. On 9Router + DeepSeek direct, the harness
+(50 × clientCap 10 = 500) governs long before the provider (1,875).
 
-**Governing width and total spend are different questions.** The smallest of
-{harness width, operator wave cap, provider ceiling − reserve} governs WIDTH.
+**Governing width and total spend are different questions.** The smaller of
+{harness width, provider ceiling − reserve} governs WIDTH.
 1,000 governs TOTAL SPEND, as a decrementing budget. Neither answers the other.
 
 ---
@@ -394,7 +395,7 @@ MEDIA | provider=<kie|agnes> | family=<…> | resolved-model=<id from the smoke 
   sized conservatively, exactly as everywhere else.
 Per-provider ceiling | reserve | usable:   <one line per provider in play>
   source: [researched <url> <date>] | [operator doctrine fallback — research failed: <error>]
-Governing number: harness=<a> operator-cap=<b> provider-usable=<c> → GOVERNS: <min> (<which>)
+Governing number: harness=<a> provider-usable=<b> → GOVERNS: <min> (<which>)
 AGENT TEAM: mode=<team|single-session|refused-by-arithmetic|declined|probe-failed:<stage>>
   commanders=<n> (recommended band 3–5; a Gauntlet software build uses 4)
   persistent slots consumed = lead + commanders = <n+1>, deducted BEFORE workflow width
@@ -472,9 +473,11 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
    line; fall back to section 2 only on a failed research attempt, and say so.
 5. **Apply the reserve.** 25% by default, two free slots as the floor on small
    plans. Usable = ceiling − reserve.
-6. **Compute the governing number.** Write all three candidates —
-   harness = workflows × k (≤50 workflows), operator cap for the provider class,
-   provider usable — and mark the winner. The smallest governs.
+6. **Compute the governing number.** Write both candidates —
+   harness = workflows × k (≤50 workflows) and provider usable — and mark the
+   winner. The smaller governs. There is no policy wave cap on any path, and on
+   a metered Anthropic subscription there is no provider figure either, so the
+   harness governs and the burn governor holds the window.
 7. **Deduct the persistent occupants.** Lead + N commanders = N+1 slots, taken
    off the governing number BEFORE any workflow width is allocated (section 12).
 8. **Derive WAVE SIZE, WORKFLOW COUNT, AGENTS PER WORKFLOW** from what remains.
@@ -501,23 +504,30 @@ Copy the arithmetic; never copy the answers into a different machine's plan.
 
 Client probe: cores 12 [MEASURED]; systemConcurrentMax 10 (declared — the
 operator's doctrine); clientCap = min(10, 12−2) = 10. Per-workflow = clientCap
-= 10. Operator cap 20/wave. Provider ceiling: subscription-metered and opaque —
-the runtime rate-limit response is the meter.
+= 10. No policy wave cap. Provider ceiling: subscription-metered and opaque —
+the runtime rate-limit response is the meter, so there is no provider figure to
+put in the arithmetic.
 
-**Governing number: 20 (operator cap).** → wave size 20, **2 workflows × 10
-agents**; extra workflows queue.
+**Governing number: harness (workflows × clientCap).** → the wave is every
+dispatchable unit, laid out as workflows × 10 agents up to the 50-workflow
+doctrine; a five-stream build on this machine is 5 workflows × 10 = 50
+concurrent, and extra streams buy width by adding workflows, never by queueing
+behind a policy number.
 
-Burn governor: watch for 429/limit responses; on limit, park-and-resume
-(`references/loops.md`, Loop 6) — never hammer.
+Burn governor: **the only limiter on a subscription account.** Watch for
+429/limit responses; on limit, park-and-resume (`references/loops.md`, Loop 6) —
+never hammer, and never pre-shrink the wave in anticipation of one.
 
-**Agent Team line:** lead + 4 commanders = 5 of the 20-cap → **15 slots remain
-for workflow width** (for example WF02 at 10 + WF03 streaming at 4 + the merge
-train at 1).
+**Agent Team line:** lead + 4 commanders = 5 persistent occupants, deducted from
+the harness width BEFORE workflow width is allocated (section 12) — at two
+workflows in flight that leaves **15 slots** (for example WF02 at 10 + WF03
+streaming at 4 + the merge train at 1); more streams simply add more
+workflows.
 
 ### Scenario (b) — 9Router + DeepSeek v4 Flash direct, 12-core machine
 
 Provider 2,500 − 25% reserve = 1,875 usable. Harness: 50 workflows × 10 = **500**.
-Operator cap: none for the user's own keys.
+Policy cap: none — there is none on any path.
 
 **Governing number: 500 (harness).** → wave size 500, **50 workflows × 10
 agents**; the provider never notices.

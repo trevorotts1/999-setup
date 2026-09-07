@@ -1031,10 +1031,13 @@ any capacity; only the widths shrink**, per the Capacity Ledger:
   operator's declared max — authoritative for computing; an environment read is
   REPORTING ONLY, never for computing; an UNDETERMINED systemConcurrentMax =
   the run refuses to plan, it never defaults to 16.
-- On Anthropic-billed Claude Code the operator's standing **20-agents-per-wave**
-  cap governs total width, and when an Agent Team is active the lead plus each
-  commander occupy persistent slots INSIDE that cap before any workflow width is
-  allocated (lead + 4 commanders = 5 occupants; 15 slots remain).
+- On Anthropic-billed Claude Code there is **no wave cap**: total width is the
+  harness number, workflows-in-flight × clientCap, and the burn governor
+  (`references/capacity.md` §6) is the only limiter on a subscription account —
+  it parks on 429s and resumes, it never pre-shrinks a wave. When an Agent Team
+  is active the lead plus each commander occupy persistent slots INSIDE that
+  harness width before any workflow width is allocated (lead + 4 commanders = 5
+  occupants, deducted first).
 
 **The six-phase ORDER is the invariant; the widths are derived. THE BAR never
 shrinks with the machine — only the width does.**

@@ -99,7 +99,9 @@ collide, because they act on different quantities and in a fixed order:
 1. **CEILING ARITHMETIC (Law 44, the reserve — unchanged and not superseded).** Take the
    provider's cap, subtract the reserve, and that remainder is the USABLE number. The
    derivation lives in `references/capacity.md` §2/§5 and the governing width is the
-   SMALLEST of {harness delivery capacity, operator wave cap, usable}. Every dispatch
+   SMALLER of {harness delivery capacity, usable}. There is NO policy wave cap on any
+   path — on a metered Anthropic subscription there is no `usable` figure either, so
+   the harness governs and the burn governor is the only limiter. Every dispatch
    cites the Capacity Ledger's computed number — never a raw provider cap.
 2. **DISPATCH (this rule).** Inside that usable number, never dispatch fewer streams than
    the work allows. No artificial gate, no timid fixed figure, no capacity sitting idle
@@ -374,7 +376,7 @@ and record it in the Capacity Ledger — the budget math differs:
 
 | Launcher | How to detect | What changes |
 |---|---|---|
-| `claude` | Regular-Claude-Code mode per the table above | Anthropic tiers; the operator cap of 20 concurrent agents per wave governs width. |
+| `claude` | Regular-Claude-Code mode per the table above | Anthropic tiers; no policy wave cap — width is workflows × clientCap, and the burn governor (`references/capacity.md` §6) is the only limiter on a subscription account. |
 | `claude-nine` | Claude-Nine mode per the table above; session model is a router alias or provider-prefixed id | Provider ceilings minus reserve govern width; run the capacity interview. Resolve every role's alias to its ACTUAL model (references/capacity.md §11) — resolve on the MACHINE YOU ARE ON, never from an example. *(Dated example of the trap, from one box on one day — never a fact about this run's machine: an alias resolved to a Codex-family model whose real context ceiling was 372K despite the profile declaring 900K. What travels is the lesson — a profile's declared ceiling is not the delivered one — not the names or the figures.)* |
 | `claude-codex` | Claude-Nine mode AND the session model id starts with `cx/` (it is claude-nine pinned to `cx/gpt-5.6-sol(high)` with `--autocompact 350k`) | Context ceiling is ~372K, NOT the profile's 900K — budget context accordingly; the session model is PINNED for the launch, so alias-repointing advice does not apply to the conductor's own seat. Subagent routing still follows the router. |
 
@@ -474,10 +476,12 @@ delivers min(16, cores−2) truly-concurrent subagents PER WORKFLOW (measure cor
 `sysctl -n hw.ncpu` — on a 12-core machine that is 10; re-measure on every machine,
 never inherit a number), more workflows in flight to scale past it, and a
 machine-doctrine ceiling of 50 workflows (operator doctrine, not a product
-limit). On Anthropic Claude Code the operator cap of 20 concurrent
-agents per wave governs total width — and when an Agent Team is active, the lead
-plus each commander occupy persistent slots inside that cap before any workflow
-width is allocated. The Capacity Ledger (step 6.5, `references/capacity.md`)
+limit). On Anthropic Claude Code there is NO wave cap: total width is
+workflows × clientCap, and the burn governor is the only limiter on a
+subscription account — it parks on 429/limit responses and resumes, and it never
+pre-shrinks a wave. When an Agent Team is active, the lead plus each commander
+occupy persistent slots inside that harness width before any workflow width is
+allocated. The Capacity Ledger (step 6.5, `references/capacity.md`)
 records the measured numbers.
 
 **The four questions no default can answer.** Even on the defaults path, four
@@ -1170,8 +1174,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
     and launcher; the RESOLVED role→alias→model map (references/capacity.md §11 —
     three hops, resolved from the live config, with each resolved model's provider
     ceiling AND real context ceiling per role); per-provider ceiling; the
-    reserve applied; the governing number (harness vs operator cap vs provider,
-    with the reconciliation shown); the resulting WAVE SIZE, WORKFLOW COUNT, and
+    reserve applied; the governing number (harness vs provider, with the
+    reconciliation shown — no policy cap is a candidate on any path); the resulting WAVE SIZE, WORKFLOW COUNT, and
     AGENTS-PER-WORKFLOW (clientCap); the AGENT BUDGET DECLARATION (all eight §17 quantities —
     references/capacity.md §10); the Agent Team line (enabled/disabled/probed,
     commander count, and the N+1 persistent slots they occupy); and the REQUEST
@@ -1812,7 +1816,7 @@ See `references/audience.md` for the full audience UX rules.
 | Project folder root | `~/Downloads/projects/<project-slug>/` | v4 Part 13 layout |
 | Quality gate | 8.5 of 10 (ten categories, each 1–10) | The fleet standard. It does not move. |
 | Capacity defaults (WIDTH) | SUPERSEDED by the operator's MAXIMUM-PARALLELISM DOCTRINE (see OPERATOR RULES): max workflows/sub-agents in parallel wherever it makes sense, auto-adapting, no gating, no idle capacity while runnable work waits. This is **width versus work** only. | The operator doctrine overrides the conservative WIDTH caps (20 workflows x 16 subagents, per-provider builder caps, QC 5x5). |
-| Provider reserve (CEILING ARITHMETIC) | **NOT superseded.** Law 44 stands: usable = provider ceiling − reserve, and the governing width is the smallest of {harness, operator wave cap, usable}. "Max parallel" means max *within* the usable number — never a raw provider ceiling. | A reserve is not a width cap, so the maximum-parallelism doctrine never reaches it. Never consume 100% of a provider's headroom; the client's own tooling shares those accounts. The arithmetic and every worked derivation live at `references/capacity.md` §2/§5, and each dispatch cites the Capacity Ledger's computed number. |
+| Provider reserve (CEILING ARITHMETIC) | **NOT superseded.** Law 44 stands: usable = provider ceiling − reserve, and the governing width is the smaller of {harness, usable} — no policy wave cap is a candidate. "Max parallel" means max *within* the usable number — never a raw provider ceiling. | A reserve is not a width cap, so the maximum-parallelism doctrine never reaches it. Never consume 100% of a provider's headroom; the client's own tooling shares those accounts. The arithmetic and every worked derivation live at `references/capacity.md` §2/§5, and each dispatch cites the Capacity Ledger's computed number. |
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |

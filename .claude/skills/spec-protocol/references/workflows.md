@@ -213,8 +213,9 @@ costs the whole set the tail of its slowest member.
 - **50 workflow runs in flight is the hard session ceiling** (operator doctrine,
   2026-08-16, superseding the 30-workflow figure — not a product limit; no
   product cap exists on concurrent workflow runs). On this 12-core
-  machine that is 50 × 10 = 500 truly-concurrent agents — before the operator cap and
-  the provider ceiling are applied. The smallest of the three always governs.
+  machine that is 50 × 10 = 500 truly-concurrent agents. No policy cap narrows it on
+  any path; only the provider ceiling minus its reserve can, and the smaller of the
+  two always governs.
 
 ---
 
