@@ -152,6 +152,76 @@ Kie.ai. Choose between Kie.ai and Agnes by project needs, available models,
 pricing, speed, existing client credentials, and output requirements. Do not
 require both providers. Do not create a paid subscription automatically.
 
+## 5b. The OpenClaw knowledge pack — the funnel, Kie.ai, and Agnes dependency
+
+- Canonical repository: https://github.com/trevorotts1/openclaw-onboarding
+- Machine-readable manifest: `references/knowledge-pack.json` (this section and
+  that file must always agree; the JSON is what the installer reads)
+- Pin: the tag recorded in the manifest's `pin` field, set at release and
+  written into the Capacity Ledger for the run
+
+Purpose: this is where the funnel path's real knowledge lives. The Convert and
+Flow (GoHighLevel, GHL) API cannot build pages, and it cannot build workflows or
+automations at all — the pages are built inside the page builder through a real
+browser, and the workflows the same way. There is no browser-free path. **These
+thirteen folders ARE the registered source for that knowledge**, and they
+replace the previously unlisted references this registry did not carry —
+Skill 6, Skill 44, Skill 38, `funnel_matcher_cli.py`, and
+`v2-autonomous-build-sop.md`, all cited in `funnel-architecture.md` §9b, §10,
+and §11. A reference cited by the funnel path and not registered here is a
+defect in this file, not a licence to search GitHub.
+
+**Convert and Flow (GoHighLevel, GHL) — six folders:**
+
+| Folder | What it carries |
+|---|---|
+| `06-ghl-install-pages` | Page building, browser-driven (the page path) |
+| `44-convert-and-flow-operator` | Workflows and automations |
+| `38-conversational-ai-system` | Email and text copy (the conversation playbook) |
+| `29-ghl-convert-and-flow` | Account setup and the credential model |
+| `05-ghl-setup` | Account setup and the credential model |
+| `36-ghl-mcp-setup` | The GHL lookup SOP and the MCP wiring |
+
+**Kie.ai — five folders:** `07-kie-setup`, `66-kie-image`, `67-kie-video`,
+`68-kie-audio`, `46-kie-callback-relay`. These are the source the media path's
+model and price rules are read from; section 4 above still governs Kie.ai's
+status as PRIMARY, and the media file's own model and price rules are unchanged.
+
+**Agnes — two folders:** `63-agnes-image` (which carries
+`prove_agnes_image_prompt_floor.py`, the gate `media-pipeline.md` already cites)
+and `64-agnes-video`. Section 5 above still governs Agnes's status as the
+APPROVED ALTERNATIVE.
+
+**Excluded until it is in the repo:** `blackceo-ghl-agency-api`. It exists in the
+operator's installed OpenClaw but NOT in the onboarding repository, so a client
+cannot pull it. It is not a source; do not substitute anything for it.
+
+**Lookup order, per folder** (the manifest's order, and the order
+`scripts/bootstrap-companions.sh` group 5 follows):
+
+1. `~/.openclaw/skills/<folder>` — when the box already has OpenClaw installed.
+2. `<local checkout>/<folder>` — a local checkout of the repository
+   (`~/openclaw-onboarding` by default).
+3. `github:<folder>@<pin>` — only those folders, pinned to the tag. **The pull
+   runs only when the GitHub token the skill already holds for the client's own
+   repository is present**; with no token the group reports `pull-required` with
+   the GitHub path and the pin, and never guesses.
+
+**Cache:** `<skill>/companions/openclaw-skills/<folder>/`. The source and the tag
+for every folder are printed in the installation report and the tag is recorded
+in the Capacity Ledger.
+
+**Reading list, per folder:** `SKILL.md`, `INSTRUCTIONS.md`, `INSTALL.md`,
+`PREREQS.json`, `models.json` (where present), and `QC.md`. `PREREQS.json` is
+checked BEFORE the folder's knowledge is used; the folder's own `qc-*.sh` is the
+acceptance check AFTER.
+
+**The client does not need OpenClaw running and never touches their VPS.** What
+Claude Code or claude-nine needs is the knowledge in these folders, the three
+Convert and Flow (GoHighLevel, GHL) keys, and a browser on the machine running
+the build. The skill reads and executes; it never asks OpenClaw's agent to run
+anything.
+
 ## 6. Higgsfield POLICY
 
 Higgsfield is NOT a mandatory dependency. Do not install it automatically, do not
@@ -266,6 +336,9 @@ At the end of every Spec Protocol bootstrap, report:
 9. Supabase authentication status.
 10. Kie.ai configuration status.
 11. Agnes AI configuration status.
+11b. OpenClaw knowledge pack status — per folder, the SOURCE it resolved from
+     (`openclaw-install`, `local-checkout`, `github@<pin>`, or `pull-required`)
+     and the TAG.
 12. Anything requiring manual client action.
 
 Every installed third-party dependency MUST include its exact source URL in the

@@ -359,6 +359,66 @@ limits; Growthable on tags and delivery windows — 2026-08-10 research pass.)
 
 ---
 
+## 9b. The knowledge pack — where the funnel skills come from, and how they are used
+
+**The facts that decide this.** The Convert and Flow (GoHighLevel, GHL) API
+cannot build pages, and it cannot build workflows or automations at all. Skill 6
+builds pages inside the page builder through a real browser; Skill 44 builds the
+workflows and automations the same way. **There is no browser-free path.** A
+client does not need OpenClaw running and does not need to touch their VPS: what
+Claude Code or claude-nine needs is the KNOWLEDGE in those skills, the three
+Convert and Flow (GoHighLevel, GHL) keys, and a browser on the machine running
+the build.
+
+**Where the knowledge comes from.** `references/knowledge-pack.json` is the
+manifest — thirteen folders named exactly as they exist in the onboarding
+repository (`github.com/trevorotts1/openclaw-onboarding`) and in an installed
+OpenClaw (`~/.openclaw/skills/`): six Convert and Flow folders
+(`06-ghl-install-pages` pages, `44-convert-and-flow-operator` workflows and
+automations, `38-conversational-ai-system` email and text copy,
+`29-ghl-convert-and-flow` and `05-ghl-setup` account setup and the credential
+model, `36-ghl-mcp-setup` the lookup SOP and the MCP wiring), five Kie.ai
+folders, and two Agnes folders. Lookup order per folder:
+`~/.openclaw/skills/<folder>` when the box has OpenClaw; else a local checkout of
+the repository; else a pull of only those folders from GitHub, pinned to a tag,
+into `<skill>/companions/openclaw-skills/<folder>/`, with the tag recorded in the
+Capacity Ledger. `scripts/bootstrap-companions.sh` runs this as its fifth group,
+`openclaw-skills`; the GitHub token the skill already needs for the client's own
+repository is the one that pulls, and with no token the group reports
+`pull-required` with the GitHub path and the pin rather than guessing. The
+registry entry is `references/dependency-sources.md` §5b.
+`blackceo-ghl-agency-api` is excluded until it is in the repo — it exists in the
+operator's installed OpenClaw but not in the onboarding repository, so a client
+cannot pull it.
+
+**The mechanism: the skill learns by reading, then executes itself.**
+
+1. For each folder the pack resolved, the conductor READS that folder's own
+   `SKILL.md`, `INSTRUCTIONS.md`, `INSTALL.md`, `PREREQS.json`, `models.json`
+   (where present), and `QC.md`.
+2. `PREREQS.json` is checked BEFORE the folder's knowledge is used. An
+   unsatisfied prerequisite is a Named Stop, said plainly — never something to
+   build around.
+3. The conductor then FOLLOWS THE STEPS ITSELF, with its own tools: its own
+   browser, its own file writes, its own API calls. **It never asks OpenClaw's
+   agent to run anything**, never messages an OpenClaw box, and never depends on
+   OpenClaw being installed or running anywhere.
+4. The folder's own `qc-*.sh` is the ACCEPTANCE CHECK for work done from that
+   folder's knowledge. It runs, and its result is the pass or the fail — never
+   the conductor's opinion of its own work.
+5. The media path's model and price rules stay exactly as they are
+   (`references/media-pipeline.md`). The pack only adds the source they are read
+   from.
+
+**What this replaces.** Every reference in §10, §11, and §13 to Skill 44,
+Skill 6, Skill 38, `funnel_matcher_cli.py`, and `v2-autonomous-build-sop.md`
+means *the corresponding folder of the knowledge pack, read and executed by this
+skill*. It never means handing the work to another agent, and it is no longer an
+unlisted dependency: all thirteen folders are registered in
+`references/dependency-sources.md` §5b.
+
+---
+
 ## 10. Skill 44 integration contract (convert-and-flow-operator)
 
 Skill 44 builds the GHL automations. **It needs zero changes for this
@@ -441,6 +501,13 @@ job**: it is an edit to Skill 6 — a different skill, with fleet-wide scope and
 its own approval. It is recorded here so it is not lost, and it needs the
 operator's own GO before anyone builds it. Until then the limitation stands as
 written above.
+
+**The open item, recorded (decision 5, 2026-09-07): headless page-building on a
+VPS is UNTESTED.** Nobody has proven whether Skill 6 can drive the Convert and
+Flow page builder headless on a VPS. Until it is proven, the funnel gate
+(`references/interview.md`, Step 1c) says **a Mac is preferred** for funnel
+builds, and this file claims nothing in either direction. An untested capability
+is not a capability (Law 14), and an untested failure is not a fact either.
 
 ---
 
@@ -566,24 +633,53 @@ trace sentences exist before the page is built.
 
 ### Stage 3 — EMAIL-SEQUENCE
 
-Input: funnel type. Output: named count per funnel type and one ledger line
-per email `FUNNEL-EMAIL-N: purpose=<…>; subject=<pattern>; body=<purpose>;
-timing=<immediate|delay>`.
+Input: funnel type. Output: one ledger line naming the derivation,
+`FUNNEL-EMAIL-PLAN: type=<funnel type>; rows=<n>; derived-from=§5+§6+§8`, and
+one ledger line per email `FUNNEL-EMAIL-N: purpose=<…>; subject=<pattern>;
+body=<purpose>; timing=<immediate|delay>`.
 
-Default per type (overridable ONLY by an explicit client decision recorded
-as a ledger line):
+**One email plan per funnel type, DERIVED — never a flat table.** The rows come
+from this file's own matrices, walked for the type in hand. A fixed count that
+gave every funnel type the same sequence used to sit here; it is deleted,
+because it contradicted §5, §6, and §8 and gave a lead-magnet funnel
+cart-abandonment mail it has no cart for.
 
-| Funnel type | Email count | Purposes (one ledger line each; each line names subject-pattern, body-purpose, timing) |
-|---|---|---|
-| lead-magnet | 5 | confirmation, value, pitch, close, follow-up |
-| VSL | 5 | confirmation, value, pitch, close, follow-up |
-| webinar | 5 | confirmation, value, pitch, close, follow-up |
-| tripwire | 5 | confirmation, value, pitch, close, follow-up |
-| launch | 5 | confirmation, value, pitch, close, follow-up |
+The derivation, in order:
 
-Acceptance: every email listed in the ledger as a line; count matches the
-type's named count; every purpose line names subject-pattern, body-purpose,
-and timing.
+1. **Walk §5, the email decision matrix (eleven rows), and mark each row in or
+   out for this type.** A row is IN when the funnel actually has the transition
+   point that triggers it, and OUT when it does not. lead-magnet has no
+   checkout, so rows 5–11 are out unless the offer adds one; VSL, tripwire, and
+   launch all have a checkout, so rows 5, 9, 10 and 11 `[R]` are in; webinar
+   carries the opt-in rows plus whatever its checkout adds; every type with
+   upsells adds rows 6 and 7. Each surviving row keeps its own trigger,
+   recipient, timing, and the benchmark behind it.
+2. **Walk §6, the SMS decision matrix (five rows), for the same type**, so the
+   email rows and the text rows are planned together rather than duplicating
+   each other — "email nurtures, SMS converts" (§6, channel doctrine). Every
+   surviving SMS row carries the PEWC dependency edge from §7 and is BLOCKED
+   until that item passes.
+3. **Lay the surviving rows onto §8, the 14-day GHL follow-up template**, which
+   is the proven default cadence and the placement rule: SMS at Day 0 for
+   speed-to-lead, the lead magnet by email 30 minutes later, the offer at Day 7,
+   objections at Day 10, the low-pressure touch at Day 14. Rows the type does
+   not have simply do not appear.
+4. **Cadence doctrine (§5) governs anything the matrices do not cover:** 4–6
+   emails over 2–3 weeks with widening gaps, a breakup email after 7–10 silent
+   touches, sends restricted to 6am–9pm, branch on the previous message's
+   engagement rather than blasting.
+5. **Emails are copy, not skeletons** (§15, THE COPY QUALITY FLOOR, item 4):
+   every derived row ships subject line, preview text, body, and CTA, each
+   traced to the copy bar's construction or a named, sourced pattern. A
+   placeholder body is a defect.
+
+Overridable ONLY by an explicit client decision recorded as a ledger line.
+
+Acceptance: `FUNNEL-EMAIL-PLAN` names the type, the derived row count, and the
+matrix rows the count came from; every derived row is one `FUNNEL-EMAIL-N`
+ledger line naming subject-pattern, body-purpose, and timing; the count matches
+the derivation and no count is asserted without the walk that produced it
+(Law 14); every SMS row derived alongside carries its PEWC edge.
 
 ### Stage 4 — INTEGRATION
 
@@ -626,15 +722,40 @@ analytics endpoint in the Playwright network log, with a 2xx or 204 response
 (`references/ship-checks.md` section 2). A named list that never fires is a
 plan, not tracking.
 
-### Stage 6 — PIPELINE + IMAGE LANE
+### Stage 6 — PIPELINE + IMAGE LANE, and the page-path split
 
-Input: the staged-pipeline, image-lane, GHL-media, and credential contracts
-(`references/pipeline.md`, `references/media-pipeline.md`, and the GHL media
-rules). Output: each page's images as GHL media URLs.
+Input: the hosting answer from the design brief (the same answer Stage 7 records
+as `FUNNEL-HOSTING`), plus the staged-pipeline, image-lane, GHL-media, and
+credential contracts (`references/pipeline.md`,
+`references/media-pipeline.md`, and the GHL media rules). Output: ledger line
+`FUNNEL-PAGE-PATH: <ghl-hosted|self-hosted>`, written BEFORE the first page
+build, and each page's images as GHL media URLs.
+
+**The split is decided by hosting.** This file used to carry two incompatible
+ways to build the same page: the six HTML stages, which link `tokens.css` from
+the page's `<head>`, and Skill 6 building pages inside the Convert and Flow
+(GoHighLevel, GHL) page builder, which cannot link a CSS file at all. Only one
+of them can be right for a given page, and hosting is what decides which.
+
+- **GHL-hosted pages → the Skill 6 path.** The pages are built inside the page
+  builder through a real browser, per §11 and the knowledge pack (§9b). The
+  scaffold's tokens are NOT a linked stylesheet: **the scaffold tokens become
+  the GHL theme settings** — the type scale, the color roles, and the spacing
+  rhythm are entered as the funnel's theme and global settings, and every
+  section is built against them. **Acceptance is screenshots**: each page
+  captured at 375, 1024, and 1440 and compared against the frozen bar package.
+  Never a `<head>` link check — there is no `<head>` of ours to check, and a
+  check that cannot run is not a check.
+- **Self-hosted pages → the static path.** The page is a file this skill writes,
+  and ALL six stages (`STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, `STAGE-HERO`,
+  `STAGE-IMAGES`, `STAGE-BUILD`, `STAGE-LOGO`) apply exactly as they do for a
+  website, with `tokens.css` linked from the page's `<head>`. Acceptance is the
+  ordinary build checks plus the same screenshot set.
+
+Both paths share the rest:
 
 - The funnel uses the SAME staged pipeline and the SAME image lane as every
   other build — no per-page exceptions.
-- ALL eleven stages apply to every funnel page, in the order below.
 - Build order when a project ships funnel + website together: funnel pages
   first (the conversion path is the revenue path), then the site's remaining
   pages; the manifest is shared; each page's ledger lines name which page each
@@ -644,11 +765,11 @@ rules). Output: each page's images as GHL media URLs.
 
 DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → BUILD-DRAFT → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
 
-Every stage applies to every funnel page and every website page — same
-pipeline, no per-page exceptions (Issue 6, FIX step 6).
-
-Acceptance: GHL media URLs per page; every funnel page passes all eleven
-stages; the shared manifest names the page each asset serves.
+Acceptance: `FUNNEL-PAGE-PATH` exists as a ledger line before the first page
+build and agrees with Stage 7's `FUNNEL-HOSTING`; GHL media URLs per page; on
+the GHL-hosted path, the theme settings are recorded and every page carries its
+three screenshots; on the self-hosted path, every page passes all six stages
+with `tokens.css` linked; the shared manifest names the page each asset serves.
 
 ### Stage 7 — FUNNEL-HOSTING
 

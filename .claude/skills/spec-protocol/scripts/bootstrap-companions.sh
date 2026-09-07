@@ -11,6 +11,22 @@
 # Never prints API keys or any secret value.
 set -uo pipefail
 
+# --- arguments --------------------------------------------------------
+# --selftest runs ONLY the knowledge-pack resolver against fixture
+# directories and exits; it installs nothing and touches no real store.
+KP_SELFTEST=0
+while [ $# -gt 0 ]; do
+  case "${1:-}" in
+    --selftest) KP_SELFTEST=1 ;;
+    -h|--help)
+      printf '%s\n' "usage: bootstrap-companions.sh [--selftest]"
+      printf '%s\n' "  --selftest  resolve every knowledge-pack folder against fixtures; install nothing"
+      exit 0 ;;
+    *) printf '%s\n' "unknown argument: ${1:-}" >&2; exit 2 ;;
+  esac
+  shift
+done
+
 CLAUDE_CONFIG_DIR_ACTUAL="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # The shared-vs-separate comparison is ALWAYS $HOME/.claude vs the claude-nine
 # dir — comparing CLAUDE_CONFIG_DIR (an env var the caller may inherit) against
@@ -118,6 +134,305 @@ mcp_url_in_any_store() {
   return 1
 }
 
+# --- the knowledge pack (group 5: openclaw-skills) --------------------
+#
+# The manifest is references/knowledge-pack.json. It names the folders as
+# they exist in the onboarding repository and in an installed OpenClaw, and
+# it names the lookup order this resolver follows, per folder, in the
+# manifest's own order:
+#
+#   1. ~/.openclaw/skills/<folder>   — the box already has OpenClaw
+#   2. <local checkout>/<folder>     — ~/openclaw-onboarding by default
+#   3. github:<folder>@<pin>         — reported as pull-required, and pulled
+#                                      ONLY when the GitHub token the skill
+#                                      already holds for the client's own
+#                                      repository is present
+#
+# Anything resolved is cached at <skill>/companions/openclaw-skills/<folder>/
+# and every folder's SOURCE and TAG go into the installation report.
+#
+# The skill READS these folders (SKILL.md, INSTRUCTIONS.md, INSTALL.md,
+# PREREQS.json, models.json, QC.md) and follows the steps with its own tools.
+# It never asks OpenClaw's agent to run anything. The folder's own qc-*.sh is
+# the acceptance check.
+
+SKILL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)"
+KP_MANIFEST="${KP_MANIFEST:-$SKILL_ROOT/references/knowledge-pack.json}"
+KP_OPENCLAW_SKILLS_DIR="${KP_OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}"
+KP_CHECKOUT_DIR="${KP_CHECKOUT_DIR:-$HOME/openclaw-onboarding}"
+KP_CACHE_DIR="${KP_CACHE_DIR:-$SKILL_ROOT/companions/openclaw-skills}"
+
+KP_TOTAL=0
+KP_OK=0
+KP_PULL=0
+KP_REPORT=""
+
+# Read a top-level scalar from the manifest. jq first, python3 second; a box
+# with neither gets a named failure, never a guessed folder list.
+kp_get() {
+  local k="$1"
+  [ -f "$KP_MANIFEST" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg k "$k" '.[$k] // empty' "$KP_MANIFEST"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' \
+      "$KP_MANIFEST" "$k"
+  else
+    return 2
+  fi
+}
+
+# Every folder in the manifest, in the manifest's order, one per line.
+kp_folders() {
+  [ -f "$KP_MANIFEST" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.folders | to_entries[] | .value[]' "$KP_MANIFEST"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+for group in d["folders"].values():
+    for folder in group:
+        print(folder)' "$KP_MANIFEST"
+  else
+    return 2
+  fi
+}
+
+KP_SOURCE="$(kp_get source 2>/dev/null || true)"
+[ -n "$KP_SOURCE" ] || KP_SOURCE="https://github.com/trevorotts1/openclaw-onboarding"
+KP_PIN="$(kp_get pin 2>/dev/null || true)"
+[ -n "$KP_PIN" ] || KP_PIN="unset"
+
+# The token value NEVER reaches stdout of this script: it is captured into a
+# local and handed to git through a credential helper that reads it from the
+# environment, so it never appears in an argument list either.
+kp_token_value() {
+  [ "${KP_FORCE_NO_TOKEN:-0}" = "1" ] && return 1
+  [ -n "${GITHUB_TOKEN:-}" ] && { printf '%s' "$GITHUB_TOKEN"; return 0; }
+  [ -n "${GH_TOKEN:-}" ]     && { printf '%s' "$GH_TOKEN"; return 0; }
+  [ -n "${GITHUB_PAT:-}" ]   && { printf '%s' "$GITHUB_PAT"; return 0; }
+  if command -v gh >/dev/null 2>&1; then
+    local t
+    t="$(gh auth token 2>/dev/null || true)"
+    [ -n "$t" ] && { printf '%s' "$t"; return 0; }
+  fi
+  return 1
+}
+
+kp_token_present() { kp_token_value >/dev/null 2>&1; }
+
+# Prints "<source>|<path>". Returns 0 when the folder is on disk, 1 when a
+# pull is required.
+kp_resolve() {
+  local folder="$1"
+  if [ -d "$KP_OPENCLAW_SKILLS_DIR/$folder" ]; then
+    printf 'openclaw-install|%s\n' "$KP_OPENCLAW_SKILLS_DIR/$folder"; return 0
+  fi
+  if [ -d "$KP_CHECKOUT_DIR/$folder" ]; then
+    printf 'local-checkout|%s\n' "$KP_CHECKOUT_DIR/$folder"; return 0
+  fi
+  if [ -d "$KP_CACHE_DIR/$folder" ]; then
+    printf 'cache|%s\n' "$KP_CACHE_DIR/$folder"; return 0
+  fi
+  printf 'pull-required|%s/tree/%s/%s\n' "$KP_SOURCE" "$KP_PIN" "$folder"; return 1
+}
+
+kp_cache_folder() {
+  local folder="$1" src="$2"
+  [ -d "$src" ] || return 1
+  [ -d "$KP_CACHE_DIR/$folder" ] && return 0
+  mkdir -p "$KP_CACHE_DIR/$folder" 2>/dev/null || return 1
+  cp -R "$src/." "$KP_CACHE_DIR/$folder/" 2>/dev/null || return 1
+  return 0
+}
+
+# The pull. Runs ONLY when kp_token_present said yes.
+kp_pull_folder() {
+  local folder="$1" tag="$2" tok work
+  tok="$(kp_token_value)" || return 1
+  command -v git >/dev/null 2>&1 || return 1
+  [ "$tag" = "unset" ] && return 1
+  work="$(mktemp -d "${TMPDIR:-/tmp}/spec-protocol-kp.XXXXXX")" || return 1
+  KP_GH_TOKEN="$tok" GIT_TERMINAL_PROMPT=0 git \
+    -c credential.helper='!f(){ printf "username=x-access-token\npassword=%s\n" "$KP_GH_TOKEN"; }; f' \
+    -c advice.detachedHead=false \
+    clone --depth 1 --branch "$tag" --filter=blob:none --sparse \
+    "$KP_SOURCE.git" "$work/repo" >/dev/null 2>&1 || { rm -rf "$work"; return 1; }
+  git -C "$work/repo" sparse-checkout set "$folder" >/dev/null 2>&1 || { rm -rf "$work"; return 1; }
+  if [ ! -d "$work/repo/$folder" ]; then rm -rf "$work"; return 1; fi
+  mkdir -p "$KP_CACHE_DIR/$folder" 2>/dev/null || { rm -rf "$work"; return 1; }
+  cp -R "$work/repo/$folder/." "$KP_CACHE_DIR/$folder/" 2>/dev/null || { rm -rf "$work"; return 1; }
+  rm -rf "$work"
+  return 0
+}
+
+kp_run_group() {
+  local folders folder line src path
+  folders="$(kp_folders 2>/dev/null || true)"
+  if [ -z "$folders" ]; then
+    bad "Knowledge pack: could not read $KP_MANIFEST (tried jq, then python3). Source: $KP_SOURCE — report this failure; never guess the folder list."
+    return 1
+  fi
+  KP_TOTAL=0; KP_OK=0; KP_PULL=0; KP_REPORT=""
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    KP_TOTAL=$((KP_TOTAL + 1))
+    line="$(kp_resolve "$folder")"
+    src="${line%%|*}"
+    path="${line#*|}"
+    case "$src" in
+      openclaw-install|local-checkout)
+        kp_cache_folder "$folder" "$path" || warn "$folder resolved at $path but could not be cached into $KP_CACHE_DIR/$folder"
+        ;;
+      pull-required)
+        if kp_token_present; then
+          if kp_pull_folder "$folder" "$KP_PIN"; then
+            src="github@$KP_PIN"
+            path="$KP_CACHE_DIR/$folder"
+          else
+            src="pull-failed"
+          fi
+        fi
+        ;;
+    esac
+    case "$src" in
+      pull-required)
+        KP_PULL=$((KP_PULL + 1))
+        warn "$folder: pull-required — $path (pin $KP_PIN). No GitHub token present, so no pull was attempted."
+        ;;
+      pull-failed)
+        bad "$folder: pull failed from $KP_SOURCE at pin $KP_PIN — report this failure; do not substitute another repository."
+        ;;
+      *)
+        KP_OK=$((KP_OK + 1))
+        ok "$folder: source=$src tag=$KP_PIN"
+        ;;
+    esac
+    KP_REPORT="${KP_REPORT}    $folder: source=$src tag=$KP_PIN path=$path
+"
+  done <<< "$folders"
+  return 0
+}
+
+# --- selftest ---------------------------------------------------------
+# Three phases against fixture directories: the OpenClaw install first, a
+# local checkout second, neither (and no token) third. Installs nothing,
+# writes nothing outside its own temp directory.
+kp_selftest() {
+  local tmp folders folder line src rc=0 n=0 phase_fail
+  folders="$(kp_folders 2>/dev/null || true)"
+  if [ -z "$folders" ]; then
+    printf '✗ selftest: could not read %s (tried jq, then python3)\n' "$KP_MANIFEST"
+    return 1
+  fi
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/spec-protocol-kp-selftest.XXXXXX")" || {
+    printf '✗ selftest: mktemp failed\n'; return 1; }
+
+  KP_OPENCLAW_SKILLS_DIR="$tmp/openclaw/skills"
+  KP_CHECKOUT_DIR="$tmp/checkout"
+  KP_CACHE_DIR="$tmp/cache"
+  KP_FORCE_NO_TOKEN=1
+  mkdir -p "$KP_OPENCLAW_SKILLS_DIR" "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+
+  # A fixture folder carries the reading list and its own acceptance script.
+  kp_fixture() {
+    local root="$1" f="$2"
+    mkdir -p "$root/$f"
+    printf '# %s (fixture)\n' "$f" > "$root/$f/SKILL.md"
+    printf '{"fixture": true}\n' > "$root/$f/PREREQS.json"
+    printf '# QC (fixture)\n' > "$root/$f/QC.md"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$root/$f/qc-fixture.sh"
+  }
+
+  printf '\n===== knowledge-pack selftest: %s =====\n' "$KP_MANIFEST"
+  printf 'folders in manifest: %s\n' "$(printf '%s\n' "$folders" | grep -c .)"
+
+  # ---- phase 1: the OpenClaw install ----
+  n=0; phase_fail=0
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    kp_fixture "$KP_OPENCLAW_SKILLS_DIR" "$folder"
+  done <<< "$folders"
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "openclaw-install" ]; then
+      printf '✗ phase 1 %s: expected openclaw-install, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    kp_cache_folder "$folder" "${line#*|}" || { printf '✗ phase 1 %s: cache write failed\n' "$folder"; phase_fail=1; }
+    [ -f "$KP_CACHE_DIR/$folder/SKILL.md" ] || { printf '✗ phase 1 %s: not cached\n' "$folder"; phase_fail=1; }
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 1: %s/%s folders resolved from the fixture ~/.openclaw/skills, all cached\n' "$n" "$n"
+  else
+    rc=1
+  fi
+
+  # ---- phase 2: the local checkout ----
+  rm -rf "$KP_OPENCLAW_SKILLS_DIR" "$KP_CACHE_DIR"
+  mkdir -p "$KP_OPENCLAW_SKILLS_DIR" "$KP_CACHE_DIR"
+  n=0; phase_fail=0
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    kp_fixture "$KP_CHECKOUT_DIR" "$folder"
+  done <<< "$folders"
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "local-checkout" ]; then
+      printf '✗ phase 2 %s: expected local-checkout, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    kp_cache_folder "$folder" "${line#*|}" || { printf '✗ phase 2 %s: cache write failed\n' "$folder"; phase_fail=1; }
+    [ -f "$KP_CACHE_DIR/$folder/SKILL.md" ] || { printf '✗ phase 2 %s: not cached\n' "$folder"; phase_fail=1; }
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 2: %s/%s folders resolved from the fixture local checkout, all cached\n' "$n" "$n"
+  else
+    rc=1
+  fi
+
+  # ---- phase 3: neither, and no token ----
+  rm -rf "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+  mkdir -p "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+  n=0; phase_fail=0
+  if kp_token_present; then
+    printf '✗ phase 3: KP_FORCE_NO_TOKEN=1 but a token still reported present\n'; phase_fail=1
+  fi
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "pull-required" ]; then
+      printf '✗ phase 3 %s: expected pull-required, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    case "${line#*|}" in
+      "$KP_SOURCE/tree/$KP_PIN/$folder") : ;;
+      *) printf '✗ phase 3 %s: pull-required path did not name the GitHub path and pin\n' "$folder"; phase_fail=1 ;;
+    esac
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 3: %s/%s folders reported pull-required at %s/tree/%s/<folder>, no pull attempted\n' \
+      "$n" "$n" "$KP_SOURCE" "$KP_PIN"
+  else
+    rc=1
+  fi
+
+  rm -rf "$tmp"
+  if [ "$rc" -eq 0 ]; then
+    printf '\nselftest: PASS (3 phases, %s folders each)\n' "$n"
+  else
+    printf '\nselftest: FAIL\n'
+  fi
+  return "$rc"
+}
+
+if [ "$KP_SELFTEST" -eq 1 ]; then
+  kp_selftest
+  exit $?
+fi
+
 # --- report -----------------------------------------------------------
 
 report() {
@@ -136,6 +451,8 @@ report() {
   say "9. Supabase authentication status: see Supabase section."
   say "10. Kie.ai configuration status: Kie.ai is PRIMARY and already implemented inside Spec Protocol — preserved, not reinstalled (see references/dependency-sources.md section 4)."
   say "11. Agnes AI configuration status: Agnes is the APPROVED ALTERNATIVE — configured only when the project chooses it; never required, never auto-subscribed."
+  say "11b. OpenClaw knowledge pack (group 5, openclaw-skills): ${KP_OK:-0} of ${KP_TOTAL:-0} folders resolved, ${KP_PULL:-0} pull-required. Manifest: references/knowledge-pack.json. Source: $KP_SOURCE (pin $KP_PIN). Cache: $KP_CACHE_DIR/<folder>/. Per-folder source and tag:"
+  if [ -n "${KP_REPORT:-}" ]; then printf '%s' "$KP_REPORT"; else say "    (group not run)"; fi
   say "12. Manual client action: Supabase account/dashboard onboarding when the client lacks one (https://supabase.com/dashboard); browser OAuth for Supabase MCP and for any MCP server that requires it."
   say ""
   say "Result: $PASS ok, $FAIL failed, $WARN warnings."
@@ -364,6 +681,19 @@ say ""
 say "Checking Agnes AI (APPROVED ALTERNATIVE)..."
 say "Source: https://agnes-ai.com/ (API base: https://apihub.agnes-ai.com/v1)"
 say "Status: ALTERNATIVE — configure only when the project chooses Agnes over Kie.ai. Never require both providers. Never create a paid subscription automatically."
+
+# =====================================================================
+# 5b. OPENCLAW-SKILLS — the knowledge pack. THIS IS THE FIFTH GROUP.
+#     Source: https://github.com/trevorotts1/openclaw-onboarding
+#     Manifest: references/knowledge-pack.json (thirteen folders)
+# =====================================================================
+say ""
+say "Checking the OpenClaw knowledge pack (group 5: openclaw-skills)..."
+say "Manifest: $KP_MANIFEST"
+say "Source: $KP_SOURCE (pin: $KP_PIN)"
+say "Lookup order per folder: $KP_OPENCLAW_SKILLS_DIR/<folder>, then $KP_CHECKOUT_DIR/<folder>, then github:<folder>@$KP_PIN."
+say "Cache: $KP_CACHE_DIR/<folder>/. Reading list per folder: SKILL.md, INSTRUCTIONS.md, INSTALL.md, PREREQS.json, models.json, QC.md. Acceptance: the folder's own qc-*.sh."
+kp_run_group
 
 # =====================================================================
 # 6. HIGGSFIELD POLICY
