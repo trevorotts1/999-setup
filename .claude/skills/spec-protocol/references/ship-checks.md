@@ -25,8 +25,20 @@ whenever the build re-opens (the freshness rule every staged-pipeline
 reference carries — `references/build.md` section 5).
 
 **Inputs:**
-- the built pages or screens, served at the draft address (`DRAFT-LIVE: <url>`)
-  — the instruments measure a running site, never a folder of files;
+- the built pages or screens **served at a running address** — deployed to a
+  draft deployment or served locally, the mechanism this skill already names:
+  "the moment the site's pages are served (deployed or locally served)"
+  (`references/pipeline.md`, Stage 4, the media-lane completion gate). The
+  instruments measure a running site, never a folder of files. That address is
+  NOT the published one — `STAGE-PUBLISH` opens only after this stage passes
+  (section 6), so publish can never be this stage's input; when nothing is
+  serving the built output yet, the run serves it itself and records the
+  address it used in every instrument's JSON report. (A forward reference,
+  hedged the way BUILD-FINAL is hedged above: when the `BUILD-DRAFT` stage
+  lands — SPEC 8.4.5's stage order, not in this tree yet — its
+  `DRAFT-LIVE: <url>` ledger line names that same address and this stage reads
+  it instead of standing one up. No stage writes `DRAFT-LIVE:` today, so this
+  stage never waits on it.)
 - each page's wireframe focus order (`references/wireframes.md` section 2 item
   5, the accessibility skeleton) — the Tab-walk's expected order;
 - `00-INPUT/CONTENT.md` — the client's own business facts
@@ -57,8 +69,8 @@ a FAIL, never a skip.
 
 ## 2. The instruments — command, report, threshold
 
-Run them against the draft address, page by page (`<url>` is the page's live
-draft URL, `<page>` its brief page name). Every command writes JSON; the judge
+Run them against that served address, page by page (`<url>` is the page's live
+served URL, `<page>` its brief page name). Every command writes JSON; the judge
 reads the JSON, not the terminal.
 
 | # | Instrument | Command | JSON report | Threshold |
@@ -70,7 +82,7 @@ reads the JSON, not the terminal.
 | 5 | Playwright console capture | a Playwright pass over every page that records `console` messages of type `error` and every `pageerror`, then repeats the pass while walking the page's primary interaction | `ship-checks/console.json` | **zero** errors; warnings are recorded and do not gate |
 | 6 | Form probe | one real submission per form, proven to arrive at its `FORM-DESTINATION`, then deleted and the deletion proven (2.2) | `ship-checks/form-probe.json` | **every** form row `arrived=true` AND `deleted=true`, each with its proof command and output; an unprovable arrival is UNDETERMINED and fails |
 | 7 | Analytics | the same Playwright pass records the network log and filters it to the tracking plan's named endpoint | `ship-checks/analytics.json` | **at least one** request per page to the named analytics endpoint, with a 2xx or 204 response; a tag that never fires is a FAIL |
-| 8 | `FILL-FROM-BRIEF` census | `/usr/bin/grep -rc -- 'FILL-FROM-BRIEF' <build-dir>` over the built output AND over every served HTML/CSS/JS asset fetched from the draft address | `ship-checks/token-census.json` | **0** occurrences — a shipped scaffold token (`templates/scaffolding/colors.css`) is a defect, not a placeholder |
+| 8 | `FILL-FROM-BRIEF` census | `/usr/bin/grep -rc -- 'FILL-FROM-BRIEF' <build-dir>` over the built output AND over every served HTML/CSS/JS asset fetched from that served address | `ship-checks/token-census.json` | **0** occurrences — a shipped scaffold token (`templates/scaffolding/colors.css`) is a defect, not a placeholder |
 | 9 | Content-fact check | every business fact rendered on a page matched against `00-INPUT/CONTENT.md` (2.3) | `ship-checks/content-facts.json` | **zero** unsourced facts — a fact absent from `CONTENT.md` fails unless the page marks it a draft |
 | 10 | Tab-walk | a scripted keyboard traversal per page, compared to the wireframe's focus order (2.4) | `ship-checks/tab-walk-<page>.json` | `matched=true` — the actual Tab order equals the wireframe's focus order, every stop shows a visible focus indicator, every interactive element is reachable, and no stop traps the keyboard |
 
