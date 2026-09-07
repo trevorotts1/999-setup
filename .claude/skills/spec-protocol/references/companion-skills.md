@@ -24,6 +24,36 @@ fork picking, no "find a similar skill" fallback.
    optional), **Vercel MCP** (`https://mcp.vercel.com`, via
    `vercel mcp --clients "Claude Code"` or the `vercel/vercel-plugin`).
 
+## Where the companions are INVOKED (W6 — installed is not used)
+
+Installing a companion and never calling it is the defect this section closes.
+These are the named invocation points; each one is checkable in the ledger or
+in a prompt.
+
+| Invocation point | Companion | What runs there | Recorded as |
+|---|---|---|---|
+| `STAGE-DESIGN-BRIEF` (`references/design-brief.md` §6) | frontend-design, then ui-ux-pro-max | Both skills are read before the brief is written; the brief names which output fed each of its six items | `DESIGN-BRIEF: sources=… companions=frontend-design,ui-ux-pro-max` |
+| `STAGE-DESIGN-DIRECTION` (`references/design-direction.md` §3) | UI/UX Pro Max CLI | `uipro` is RUN against the brief to generate the design-system candidates the three variants are rendered from | `DESIGN-LOCK: variant=<n> score=<x>` (plus `uipro=absent (<reason>)` when it genuinely is) |
+| Every builder prompt, every target | frontend-design, then ui-ux-pro-max | The prompt's required-reads line | The prompt text itself |
+| Every fixer prompt, every target | frontend-design, then ui-ux-pro-max | The same required-reads line, so a fix never drifts off the direction | The prompt text itself |
+| `STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, `STAGE-BUILD` | frontend-design, then ui-ux-pro-max | The same line in each stage's builder and fixer prompts (`wireframes.md`, `scaffolding.md`, `build.md` headers) | The prompt text itself |
+
+**The prompt sentence is fixed, and it is copied verbatim into every builder and
+fixer prompt on every target:**
+
+`Required reads: Skill: frontend-design, then ui-ux-pro-max.`
+
+The order is load-bearing: frontend-design carries the aesthetic direction,
+ui-ux-pro-max carries the design-system structure, and reading them the other way
+round produces a system with no point of view.
+
+**Hand-writing what a companion generates is a defect.** The design-system
+candidates come from `uipro`, not from a pattern list typed out by the
+conductor. When a companion is genuinely unavailable — detection reported Failed
+and the install could not be completed — the run names it and says what it used
+instead, in the brief and in the ledger line. An unproven "used the companions"
+claim is a lie (Law 14); a named absence is honest.
+
 ## Detection (ALWAYS BEFORE INSTALL)
 
 The bootstrap runs detection first, for every dependency, in this order:
