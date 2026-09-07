@@ -266,9 +266,9 @@ integration branch, or on their pushed branches), its surface is code (or the
 buildable part of live), and any decision gate is ratified. TRUNK ANCESTRY IS A
 RELEASE CONDITION, NOT A DISPATCH CONDITION — a dependent unit never waits for
 the merge train (operator instruction, 2026-08-11: "IT SHOULD NOT WAIT FOR A
-GITHUB MERGE"; and the operator's own earlier ruling in
-SPEC-PROTOCOL-SWARM-FIX §3.1, which this restores: a dependent item "waits for
-Wave 1 to land on the integration branch — never for Wave 1 to merge to trunk").
+GITHUB MERGE"; and the operator's own earlier ruling, which this restores: a
+dependent item waits for Wave 1 to land on the integration branch — never for
+Wave 1 to merge to trunk).
 The one exception must be earned in writing: a dispatch that genuinely requires
 the MERGED trunk artifact carries a MERGE-EDGE-JUSTIFIED note naming why the
 landed artifact cannot serve; without the note, waiting on a merge is a defect.
@@ -303,7 +303,7 @@ with the comparison evidence quoted in the verdict; only BAR — the bar clearly
 ahead — is a FAIL, and the single largest gap is what returns to the builder.
 "Meets the bar exactly" IS a pass under this relationship and is never sent
 back to "exceed it". Under **meet-all-requirements** the bar is an answer-key
-(no existing product serves as the bar — PART 1 item 4) and the pass standard
+(used when no existing product can serve as the bar) and the pass standard
 is the answer-key's binary PASS: every requirement checked passes. The
 objectivity guard stands under both: an answer-key line the judge cannot run
 to pass/fail is BLOCKED (Law 50) and rewritten by the lead before the build.
@@ -332,8 +332,8 @@ reached (Law 2 — write the verdict the instant it is judged). A judge that
 returns a verdict without writing the record has not produced a verdict.**
 
 A QC RECORD has EXACTLY six fields, one line each, in this order — the six
-things the Issue 17 bar checks (spec: every QC record shows a blind critic, a
-named bar, a binary verdict, and the loop-or-pass outcome; zero self-QC):
+things the bar checks, namely that every QC record shows a blind critic, a
+named bar, a binary verdict, and the loop-or-pass outcome, with zero self-QC:
 
 ```
 QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
@@ -365,7 +365,7 @@ run against a QC RECORD without judging anything:
 5. **`outcome=` must be PASSED, CLIENT-ACCEPTED with a `gap=`, LOOPED
    `cycle n of 20`, ESCALATED, or one of ESCALATED-BLOCKED /
    ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the fix
-   loop's cap, Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14;
+   loop's cap — 20 cycles per finding, operator ruling 2026-08-14;
    a 21st pass carries ESCALATED with the full finding history) — a FAIL
    verdict with no LOOPED outcome line, an ESCALATED line with no finding
    history attached, or a Law-50 verdict (BLOCKED / INFEASIBLE /
@@ -404,11 +404,11 @@ send it back; do not invent a generic check and call it the card's rubric.
 
 ### The ONE way — a blind critic, a binary verdict
 
-QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS = the
+QC is ONE way: a blind critic reviews the work; PASS = the
 frozen bar relationship met (wins-or-ties → OURS or TIE passes;
 meet-all-requirements → every requirement checked passes); FAIL = looped to
 the builder with the exact finding, max 20 fix-loop cycles per finding, then
-escalation to the operator with the full finding history (Rule 3.22, operator
+escalation to the operator with the full finding history (operator
 ruling 2026-08-14). **The verdict is binary — there is no numeric pass lane,
 no "at or above a score" pass; the binary verdict decides and the 0–10 score
 is recorded for trend only and never decides.** The non-success states
@@ -589,7 +589,7 @@ decides which drives:
    dispatches its own fixer, in parallel, exactly as this stage already runs.
 2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
    single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME per-finding 20-cycle cap (Rule 3.22). It is
+   same fix list, under the SAME per-finding 20-cycle cap. It is
    one more row in the fix list, never a second, competing cycle counter.
 3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
    correctness is the floor; re-judging a comparison against a build that has
@@ -597,7 +597,7 @@ decides which drives:
    always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
 
 Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their OWN 20-cycle counter (Rule 3.22),
+Gate-3 largest-gap finding each carry their OWN 20-cycle counter,
 because they are different findings, not because they are different gates.
 
 ---
@@ -608,7 +608,7 @@ because they are different findings, not because they are different gates.
 dispatched concurrently (Law 32). The attempt bound is per finding, not per work
 item.
 
-### The fix loop (Rule 3.22 — bounded and recorded)
+### The fix loop (bounded at 20 cycles per finding, and recorded)
 
 On FAIL: write the six-part finding — (1) which category and the finding, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
@@ -617,7 +617,7 @@ it is fixed (the command and expected result), (6) what a naive fix would break
 (Law 31). **The finding IS the loop-back payload:** the item returns to the
 builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
 summarized, never stripped of its evidence — and the builder fixes exactly that
-finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
+finding, never a different problem (the fix-versus-finding rule below). Re-dispatch a fixer (never the
 judge). **A NEW judge agent — the same SEAT, a FRESH CONTEXT — re-judges, and
 the previous verdict is not in its prompt.** It works from fresh proof and a
 fresh break-it pass, and it receives exactly what the first judge received:
@@ -649,7 +649,7 @@ twentieth cycle.
   **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
   non-success state that ends the item NOT PASSED, never PASS.
 
-### Rule 3.34 — a finding is proved by running
+### A finding is proved by running
 
 A finding is proved by running, and a fix that does not match its finding is itself
 a finding. A defect found by reading is a suspicion; a defect found by running is a
@@ -676,7 +676,7 @@ reviewers. Self-repair: if the reviewer rejects, a higher-reasoning model confir
 ## Stage 4 — HOLDING PEN (finished work waits in a named place)
 
 Passing work does NOT go straight to main. It stages in the holding pen / landing
-queue, published in the execution plan as two tables (Rule 3.26):
+queue, published in the execution plan as two tables — never held in a head:
 
 - **The holding pen** — work items whose change is not a diff in any repository
   (work that changes only running systems — Law 21). They wait for a human. Status
@@ -702,7 +702,7 @@ builder's pass is a claim, the critic's fetch is the proof.
 The pen lives in the execution plan as a table, not as a file (Law 39 — the
 17-document list is closed).
 
-### Rule 3.21 — the batch size is derived
+### The batch size is derived
 
 The batch size is a derived quantity, stated with its reasoning. It is a drain
 THRESHOLD, never a cap: RULE 2 removed the 10-merge count cap, so whatever is
@@ -712,7 +712,7 @@ independent triggers on every tick: has 15 minutes passed since the last drain
 or above the derived batch size; is the wave closed? If none fired, the loop does
 nothing and sleeps — the correct, cheap outcome.
 
-### Rule 3.32 — the landing queue is not safe until its failure path and freshness rule are written down
+### The landing queue is not safe until its failure path and freshness rule are written down
 
 1. **The failure path** — what happens when a batch lands together and the suite
    goes red. Three legitimate answers: bisect (the default), land one at a time on
@@ -815,7 +815,7 @@ loop:
   # THREE independent drain triggers (any one fires; RULE 2 governs the first):
   #   (1) the operator's TIME trigger — 15 minutes since the last drain, whatever
   #       is ready merges as ONE batch, NO count cap (SKILL.md RULE 2);
-  #   (2) the queue has reached the derived batch size (Rule 3.21);
+  #   (2) the queue has reached the derived batch size;
   #   (3) the wave closed.
   if no trigger fired: write heartbeat; sleep; continue
   for each ready item (ONE AT A TIME, oldest first):
@@ -955,7 +955,7 @@ There is NO MERGE-LOG.md. Each batch appends ONE merge record to the live ledger
 verdict/merge-record section (document 6 — the merge-writer already owns appending
 there; use `tools/ledger.sh` for the atomic append). An earlier draft wrote these to
 a `CONTROL/MERGE-LOG.md`; that was an extra document the v4 never sanctioned and the
-Rule 3.28 ask was never run, so its content folds into the ledger, which already
+added-document ask was never run, so its content folds into the ledger, which already
 holds merge records. Record shape:
 
 ```
@@ -1065,7 +1065,7 @@ autonomously and recorded.
    operator-provided remote — so it is never a Named Stop at merge time** (Stage 5,
    "GitHub is arranged at MINUTE ONE"). The stop covers access the skill has no way
    to arrange, not access it simply had not got round to arranging.
-8. **Twenty failed fix loops on the same finding** (Rule 3.22 — 20 cycles per
+8. **Twenty failed fix loops on the same finding** (20 cycles per
    finding, operator ruling 2026-08-14). Not because the agent gave up — because
    twenty independent attempts failing is information the human needs. The stop
    escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and

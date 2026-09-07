@@ -43,31 +43,27 @@ upload are ONE pipeline step (Issue 7, FIX step 5 / Issue 9, FIX step 4): the
 temp URL never survives past the step and is never written into the manifest
 as the final reference.
 
-### 1.1 VID-V1 — Hero video: NOT YET WIRED (binding)
+### 1.1 Hero video — the video lane, or an honest gap
 
-The spec (Issue 8, FIX step 1, `STAGE-HERO`) is explicit:
+A brief that asks for a hero video is answered by the video lane, not by a
+refusal. The video lane lives in its own file, `references/media-video.md`
+(provider, API contract, manifest row type `VIDEO`, upload path, expiry, and
+the per-generation cost consent), and it is read ONLY when the plan includes
+video — an image-only run never loads it.
 
-> VID-V1: Hero video: NOT YET WIRED — no video generation API contract exists
-> in this document. If the brief demands hero video, the run marks the slot
-> MEDIA-GAPS with the reason 'video lane not wired' and ships the image hero.
-> The video lane gets its own contract (provider + API + manifest row type
-> VIDEO + upload path + expiry) before any video is promised.
+**Mechanics:**
 
-**Mechanics, exactly as written:**
-
-1. A brief that demands hero video does NOT block the build and does NOT
-   promise a video. The hero slot is marked in the MEDIA-GAPS manifest
-   (interview.md lines 902-912; media-pipeline.md section 9.3) with the
-   reason **`video lane not wired`** — the exact phrase — plus the slot's
-   page/location, size and aspect, and the fully-prepared generation prompt,
-   so the slot is fillable the moment a video contract exists.
-2. The run ships the IMAGE hero for that slot instead: the manifest row is
-   generated, placed, and referenced exactly as section 1 above.
-3. NO video generation is attempted, promised, or priced. A video model name
-   is never put in front of the client for a hero slot while VID-V1 stands.
-4. The video lane gets its own contract — provider + API + manifest row type
-   `VIDEO` + upload path + expiry — BEFORE any video is promised. Until that
-   contract exists, VID-V1 is in force and this section governs.
+1. If the run planned video (the media questions in `interview.md` §5 recorded
+   a video slot and its consent), the hero video slot is a `VIDEO` manifest row
+   built by `media-video.md`'s lane, placed and referenced exactly like an
+   image hero: permanent URL, never the provider's temporary one.
+2. If the run did NOT plan video, or the video lane has no reachable provider,
+   the slot is marked in the MEDIA-GAPS manifest (`interview.md` §5;
+   `media-pipeline.md` §9.3) with the reason and the fully-prepared generation
+   prompt, so it is fillable later, and the run ships the IMAGE hero for that
+   slot per section 1 above. The build never blocks on it.
+3. No video model name and no video price is put in front of the client unless
+   the video lane is loaded and its provider is proven reachable.
 
 ### 1.2 Fail-closed (Issue 7, FIX step 4 — inherited)
 
@@ -136,5 +132,6 @@ order mechanically:
 The hero and image rows are derived from the image manifest and the design
 brief at build time, per run. The provider contract, the model choice, and the
 cost figures come from `references/media-pipeline.md` (live research at run
-time — never from memory, Law 14). VID-V1 stays in force until a video
-contract exists in the spec; this file never promises one.
+time — never from memory, Law 14). Video rows come from
+`references/media-video.md`, loaded only when the plan includes video; this
+file never promises a video the lane has not proven it can make.

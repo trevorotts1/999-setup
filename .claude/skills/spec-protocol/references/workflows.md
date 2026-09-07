@@ -712,7 +712,7 @@ references/pipeline.md Stage 2): your judge seat label in judge=, the bar you
 judged against - NAMED - in bar=, how you obtained the bar (URL / capture path /
 file path / answer-key reference) in bar_fetch, the verdict in verdict=, the
 outcome in outcome= (PASSED on PASS; LOOPED cycle n of 20 on FAIL - the loop cap
-is 20 cycles per finding, Rule 3.22; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
+is 20 cycles per finding; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
 ESCALATED-LIMIT-REACHED with reason= on the three Law-50 non-success verdicts),
 and provenance in provenance= (STRIPPED -
 the package you received carried no timestamps, authorship, history, builder

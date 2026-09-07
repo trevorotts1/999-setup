@@ -1517,9 +1517,15 @@ selftest() {
   # available and require it to agree with the strict anchored control on the
   # contentless count, and to spare every state-carrying heartbeat. A corpus
   # that is present but disagrees FAILS the case — it never passes quietly.
-  local CORPUS="${ANCHOR_SELFTEST_REAL_LEDGER:-$HOME/Downloads/GAUNTLET-LOOP-WORK/LEDGER.md}"
-  local corpus_note="real-ledger corpus not present — corpus check SKIPPED, not passed"
-  if [[ -f "$CORPUS" ]]; then
+  # The corpus is named by the environment or it is not run: there is NO default
+  # path. A path baked in here would point at one operator's machine, and an
+  # absent file there would masquerade as a clean corpus check.
+  local CORPUS="${ANCHOR_SELFTEST_REAL_LEDGER:-}"
+  local corpus_note="ANCHOR_SELFTEST_REAL_LEDGER unset — corpus check SKIPPED, not passed"
+  if [[ -n "$CORPUS" && ! -f "$CORPUS" ]]; then
+    corpus_note="ANCHOR_SELFTEST_REAL_LEDGER names a path that does not exist (${CORPUS}) — corpus check SKIPPED, not passed"
+  fi
+  if [[ -n "$CORPUS" && -f "$CORPUS" ]]; then
     local strict cls c_tick c_full c_state brittle
     strict="$("$GREP" -c '^- heartbeat .*(ledger auto-tick)$' "$CORPUS" || true)"
     cls="$(classify_file "$CORPUS")"

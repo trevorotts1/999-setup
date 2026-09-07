@@ -28,7 +28,7 @@ contradicts the brief is a defect, not a design decision.
 | File structure | `templates/scaffolding/FILE-STRUCTURE.md` | The project folder tree the build instantiates |
 | Design tokens | `templates/scaffolding/tokens.css` | Spacing, radii, shadows, borders, breakpoints, motion, z-index |
 | Type scale | `templates/scaffolding/type-scale.css` | Font families, modular scale, weights, line heights, text styles |
-| Color system | `templates/scaffolding/colors.css` | Semantic color roles, WCAG AA contrast pairs, dark-mode tokens |
+| Color system | `templates/scaffolding/colors.css` | Semantic color roles, WCAG AA contrast pairs, conditional dark-mode tokens |
 
 **Acceptance (the pass bar):** token/type/color files present AND referenced by
 the build. "Present" = the four files exist in the project folder with the
@@ -88,15 +88,30 @@ CSS custom properties on `:root`, grouped by domain:
 
 - **Semantic roles, never raw hex in the build:** `--color-brand`,
   `--color-brand-strong`, `--color-accent`, `--color-bg`, `--color-surface`,
-  `--color-text`, `--color-text-muted`, `--color-border`, plus status roles
-  `--color-success/warning/danger/info`.
+  `--color-text`, `--color-text-muted`, `--color-text-on-brand`,
+  `--color-border`, plus status roles `--color-success/warning/danger/info`.
+  `--color-text-on-brand` is the text color that sits on a brand-colored
+  surface — buttons, badges, the CTA bar — and it carries its own AA pair
+  against `--color-brand`, which `--color-text` cannot supply.
 - **WCAG AA contrast pairs** — every text color carries its pair:
   `--color-text` on `--color-bg` ≥ 4.5:1 (normal text), ≥ 3:1 (large text and
-  UI components). The pairs are written into the scaffold, and the
-  `STAGE-BUILD` accessibility check (WCAG AA contrast) verifies them.
-- **Dark mode** — the same roles re-declared under
-  `@media (prefers-color-scheme: dark)`, so the build never hard-codes a
-  light-only palette.
+  UI components), and `--color-text-on-brand` on `--color-brand` ≥ 4.5:1. The
+  pairs are written into the scaffold, and the `STAGE-BUILD` accessibility
+  check (WCAG AA contrast) verifies them.
+- **Dark mode is conditional.** The dark block in `colors.css` is instantiated
+  ONLY when the design brief names a dark palette (a second set of role values
+  for a dark background). When the brief names one, every role is re-declared
+  under `@media (prefers-color-scheme: dark)` with the brief's dark values, and
+  the AA pairs are re-checked against the dark background. When the brief does
+  not name one, the whole `@media (prefers-color-scheme: dark)` block is
+  DELETED from the instantiated file — an empty dark block full of unfilled
+  slots is worse than no dark mode, because it ships a broken palette to every
+  visitor whose system is set to dark.
+- **No unfilled token ships.** After instantiation, no `#FILL-FROM-BRIEF` (or
+  any other placeholder) may remain in any scaffolded file. This is a
+  ship-check, not a hope: `STAGE-SHIP-CHECKS` (`references/ship-checks.md`)
+  fails the build if a placeholder token reaches a built page, the same way it
+  fails a business fact that is not in the content inventory.
 
 ---
 

@@ -3,11 +3,11 @@
 This is the complete, closed manifest. A spec-protocol project creates these
 seventeen documents and nothing else. Not sixteen, not eighteen. An eighteenth
 requires asking the user first, in plain words, naming what it is for, what it
-would hold that none of the seventeen can, and what it will cost to keep current
-(Rule 3.28). You do not create it and report it afterwards — a yes is recorded in
+would hold that none of the seventeen can, and what it will cost to keep
+current. You do not create it and report it afterwards — a yes is recorded in
 the decision register; no yes, no file.
-The list moved from sixteen to seventeen on 2026-08-11, through Rule 3.28's own
-gate, not around it: the operator's binding doctrine is the recorded yes — "For
+The list moved from sixteen to seventeen on 2026-08-11, through that same ask,
+not around it: the operator's binding doctrine is the recorded yes — "For
 substantial applications, create or recommend a project manifest that acts as
 the durable architectural source of truth" — naming what it is for (how the
 project is supposed to operate), what it holds that the sixteen cannot (the
@@ -78,12 +78,12 @@ MERGE-LOG.md anywhere — its content is a section of the ledger (document 6).
 ### U<NNN> · <surface: code|live|decision> · <priority> · <one-line goal in plain words>
 
 **Depends on:**      <unit numbers that must land first, or "nothing">
-**Same commit as:**  <unit numbers that must land together, or "none">        ← Rule 3.8
+**Same commit as:**  <unit numbers that must land together, or "none">        ← named here, never discovered at merge time
 **Lane:**            <which lane, or "holding pen">                          ← Law 21
-**Tree:**            <which copy of the codebase, which branch>              ← Rule 3.2
+**Tree:**            <which copy of the codebase, which branch>              ← every unit names its tree and branch
 **Touches:**         <exact paths, one per line; mark NEW files>
-**Reserved slot:**   <the assigned number, or "none needed">                 ← Rule 3.9
-**My region only:**  <the region of each shared artifact this unit may edit> ← Rule 3.10
+**Reserved slot:**   <the assigned number, or "none needed">                 ← assigned up front, never invented mid-run
+**My region only:**  <the region of each shared artifact this unit may edit> ← a shared file is edited only inside this region
 **Est. size:**       <1-line | small | medium | large | ops-procedure | manual-diff>
 
 **CURRENT STATE — verified on disk**
@@ -97,7 +97,7 @@ it was executed, and the result is here.>
 **VERIFY — the builder runs this**
 <exact commands>
 Expected: <exact output or exit code>
-If you see instead: <the likely wrong output> → <what it means and what to do>   ← Rule 3.6
+If you see instead: <the likely wrong output> → <what it means and what to do>   ← the wrong output is named before the agent runs
 
 **QC — a DIFFERENT agent runs this, without trusting the builder (Law 29)**
 <Exact commands, INDEPENDENT of VERIFY — a different command reaching the same truth
@@ -186,7 +186,7 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Shape:** append-only narrative — what happened, what was decided, why. History
   is never edited. Three sections: the story, the errata (this project's own
   corrected errors, dated), and the corrections (every spoken correction, verbatim,
-  the moment it is spoken — Rule 3.20).
+  the moment it is spoken).
 - **What makes it wrong:** an entry edited after it was written; a correction
   paraphrased instead of recorded verbatim.
 
@@ -214,7 +214,7 @@ FAIL if: <exact condition> → incomplete because <reason>
   verbatim with real paths; this is where the refused resume playbook lives).
   **Every verdict block records the per-finding cycle count AND the finding's
   full history** — which cycle this finding is on, of the 20-cycle fix cap
-  (Rule 3.22; `references/pipeline.md`), as "cycle count: n of 20", plus every
+  (`references/pipeline.md`), as "cycle count: n of 20", plus every
   prior cycle's exact finding, fix applied (commit/branch), and re-judge
   result, appended as the loop runs — so a session resuming cold after a crash
   or a compaction reads which cycle a finding is on AND what has already been
@@ -244,9 +244,9 @@ FAIL if: <exact condition> → incomplete because <reason>
   reconciliation (every pen item for the repo appears as landed, blocked-with-reason,
   or ALARM). This is where the fleet's "MERGE-LOG.md" content lives — the ledger
   is its owner. There is no MERGE-LOG.md file: it was an extra document the v4
-  never sanctioned, and Rule 3.28's ask was never run and never recorded, so the
-  content folds into document 6 (which already holds merge records) and no
-  permission is needed.
+  never sanctioned, and the ask an added document requires was never run and
+  never recorded, so the content folds into document 6 (which already holds
+  merge records) and no permission is needed.
 - **What makes it wrong:** a hand-edited entry; a verdict without quoted proof; a
   verdict block with no cycle count, or a cycle count that disagrees with the
   number of prior verdict blocks for that same finding; a
@@ -347,7 +347,7 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Shape:** one line per dispatch, written BEFORE each agent fires:
   `timestamp | work item | stage | full label | run id`. Must stay small.
 - **What makes it wrong:** a dispatch that is not in the log but left artifacts on
-  disk; a log line written after the dispatch rather than before (Rule 3.14).
+  disk; a log line written after the dispatch rather than before.
 
 ### Document 13 — Heartbeat
 - **Path:** `CONTROL/HEARTBEAT.md`
@@ -361,7 +361,8 @@ FAIL if: <exact condition> → incomplete because <reason>
   race the same way the plain-append primitive used to (see document 6's ledger,
   and `tools/ledger.sh`'s own header comment, for the concurrent-writer bug this
   closes).
-- **Readers:** the stall-detection loop; the watchdog
+- **Readers:** the stall-detection loop; `tools/watch-tick.sh` (S6 reads each
+  agent's heartbeat age and S13 reaps a finished-but-still-stamping agent)
 - **Shape:** one line per live agent, overwritten on every real progress step:
   `timestamp | agent label | work item | stage`. Must stay small.
 - **What makes it wrong:** a heartbeat driven by a timer rather than progress; an
@@ -477,11 +478,11 @@ FAIL if: <exact condition> → incomplete because <reason>
   is written only after the provider-reachability gate passes
   (interview.md, PROVIDER-READY); on a gate fail the run takes the
   without-media path (media-pipeline.md section 9.3) and no manifest rows are
-  written as generation-eligible. The per-cycle orphan sweep (S19,
-  Issue 10) reads THIS section: generated = manifest = uploaded = referenced,
-  zero orphans.
-- **THE ANSWER KEY (the QC protocol's bar-when-no-product-exists — Issue 17,
-  PART 1 item 4; folds into document 16; never a new file).** When no existing
+  written as generation-eligible. The orphan sweep (S19) the conductor runs on
+  `tools/watch-tick.sh`'s five-minute cycle reads THIS section:
+  generated = manifest = uploaded = referenced, zero orphans.
+- **THE ANSWER KEY (the QC protocol's bar-when-no-product-exists; folds into
+  document 16; never a new file).** When no existing
   product can serve as the bar, the bar = the locked spec's acceptance matrix
   rendered as BINARY pass/fail answer-key lines. WHO/WHEN: the lead agent
   writes the answer key at spec-lock, BEFORE any build dispatch, and it locks
@@ -574,7 +575,7 @@ per-file instruction anywhere.
 ## Infrastructure that is NOT one of the seventeen documents
 
 Some files the protocol creates are infrastructure, not project documents — they do
-not count against the closed seventeen and never need a Rule 3.28 ask:
+not count against the closed seventeen and never need the added-document ask:
 
 - **00-INPUT/** — the human's raw material, brainstorm capture, research findings.
 - **repos/** — the persistent working copies.
@@ -711,7 +712,7 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
 
 ## File ownership rule
 
-One writer per document is absolute (Rule 3.18). Where two roles touch the same
+One writer per document is absolute. Where two roles touch the same
 document — the judge writes verdict blocks into the ledger; the merge-writer
 appends the merge record — the document's opening header says so and the boundaries
 are explicit. No role ever edits another role's section.
@@ -730,7 +731,7 @@ exactly this — F1/F2 were stale counts — which is why the census is mandator
 F=<the generated file>                    # run the whole block once per file
 S=<a scratch file OUTSIDE the deliverable>  # Law 13 — no scaffolding in the artifact
 
-# (a) PROVE THE INSTRUMENT FIRST (Rule 3.11). One pattern you know is present,
+# (a) PROVE THE INSTRUMENT FIRST. One pattern you know is present,
 #     one you know is absent.
 grep -acE '<a pattern that MUST be there>' "$F"     # must be greater than 0
 grep -acE '<a pattern that CANNOT be there>' "$F"   # must be 0
@@ -750,12 +751,12 @@ awk 'NR==1{p=$1;next}{if($1!=p+1)print "GAP between "p" and "$1;p=$1}' "$S"
 grep -anE -i '<number words>|[0-9]+ (laws|rules|units|waves|files|rows|entries)' "$F"
 # Compare every hit to (b) by hand. Any disagreement BLOCKS the hand-over.
 
-# (d) VERIFY THE PARTS, NOT ONLY THE TOTAL (Rule 3.12). Count each part with its
+# (d) VERIFY THE PARTS, NOT ONLY THE TOTAL. Count each part with its
 #     own command, add them yourself, compare with the published total.
 ```
 
 **A self-audit with no command output is not a self-audit.** Report the numbers
-the commands returned, not the fact that you ran them (Rule 3.7 — a relayed number
+the commands returned, not the fact that you ran them (a relayed number
 is an unmeasured number). A mandated check with no command is the defect this
 protocol exists to remove: it gets recorded as done and never runs.
 
@@ -769,8 +770,8 @@ into documents that a resuming agent would need to read in full.
 ## There is no MERGE-LOG.md — the ledger owns the merge records
 
 Earlier drafts added a `CONTROL/MERGE-LOG.md`. That was an extra document the v4
-never sanctioned — it appears zero times in the v4 manifest, and the Rule 3.28
-ask (name it, say what it holds that none of the closed list can, wait for a
+never sanctioned — it appears zero times in the v4 manifest, and the
+added-document ask (name it, say what it holds that none of the closed list can, wait for a
 recorded yes) was never run. So it does not exist. Its content — one backward-looking proof-of-
 landing entry per batch, with the nothing-dropped reconciliation — is a section
 of the live ledger's verdict/merge-record section (document 6), which already

@@ -110,7 +110,7 @@ Read them in that order and there is only ever one width. Consuming 100% of a pr
 is a Law 44 violation; leaving dispatchable work undispatched inside the usable number is
 a violation of this rule. **Neither one buys the other any slack.**
 
-**THE FORCED-WIDTH RULE (binding, 2026-08-15 — Issue 14, FIX step 2).** Inside the usable
+**THE FORCED-WIDTH RULE (binding, 2026-08-15).** Inside the usable
 number, dispatch width is FORCED to the work: never dispatch fewer streams than the work
 allows, and never pad either. The rule's two forbidden defects are TIMIDITY (sizing below
 what the work supports — 3 agents while 13 more had independent work waiting) and PADDING
@@ -1172,7 +1172,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
    exactly one of `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE |
    WEBSITE | FUNNEL`, matching the confirmation; this line is the RESEARCH-READY
    gate's first precondition (step 3.5). Then:
-3.5. **Just-in-Time research (Step 1c-bis, BOTH modes) — the RESEARCH-READY gate.** Research may not run until BOTH are true: (a) the build target is NAMED — exactly one of the six-way taxonomy `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`, confirmed in prose through the Build Target exchange above, never rendered as a menu; and (b) the material is CAPTURED — the brainstorm written verbatim into `00-INPUT/` on the interview path (step 4), or the provided material copied into `00-INPUT/` untouched and the one-paragraph understanding confirmed on the pointed path (a provided folder is never copied — RULE 1; its documents ARE the apparatus, so the confirmation alone satisfies capture). The conditions are recorded as ledger lines `BUILD-TARGET: <taxonomy>` (written at the Build Target confirmation, step 3) and `INPUT-CAPTURED: <path>` (written the moment capture completes: after the brainstorm's verbatim capture lands in `00-INPUT/` with the reflection confirmed on the interview path, or after the provided material is in `00-INPUT/` with the one-paragraph understanding confirmed on the pointed path — the `<path>` value is the relative path under the project, e.g. `00-INPUT/` or `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`), both through `tools/ledger.sh`. While either line is missing, NO research dispatch — a refused dispatch names the missing condition(s). The gate blocks the DISPATCH only, never the flow: on the interview path the run continues into the brainstorm (step 4) and the dispatch fires the moment the capture lands in `00-INPUT/` (Step 1c-bis — before the target-specific questions); on the pointed path the capture completes at step 3, so both lines already exist here and the dispatch fires immediately. Once both exist, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background while the interview continues. Every research dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing (Rule 3.14, document 12), in the exact format `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>` — the trailing two citation fields ARE those ledger lines copied verbatim, byte-for-byte. A research row without both citations, or whose citations do not match the ledger's current `BUILD-TARGET:` and `INPUT-CAPTURED:` lines, is a violation: the dispatch is refused until the row cites both ledger lines byte-for-byte.
+3.5. **Just-in-Time research (Step 1c-bis, BOTH modes) — the RESEARCH-READY gate.** Research may not run until BOTH are true: (a) the build target is NAMED — exactly one of the six-way taxonomy `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`, confirmed in prose through the Build Target exchange above, never rendered as a menu; and (b) the material is CAPTURED — the brainstorm written verbatim into `00-INPUT/` on the interview path (step 4), or the provided material copied into `00-INPUT/` untouched and the one-paragraph understanding confirmed on the pointed path (a provided folder is never copied — RULE 1; its documents ARE the apparatus, so the confirmation alone satisfies capture). The conditions are recorded as ledger lines `BUILD-TARGET: <taxonomy>` (written at the Build Target confirmation, step 3) and `INPUT-CAPTURED: <path>` (written the moment capture completes: after the brainstorm's verbatim capture lands in `00-INPUT/` with the reflection confirmed on the interview path, or after the provided material is in `00-INPUT/` with the one-paragraph understanding confirmed on the pointed path — the `<path>` value is the relative path under the project, e.g. `00-INPUT/` or `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`), both through `tools/ledger.sh`. While either line is missing, NO research dispatch — a refused dispatch names the missing condition(s). The gate blocks the DISPATCH only, never the flow: on the interview path the run continues into the brainstorm (step 4) and the dispatch fires the moment the capture lands in `00-INPUT/` (Step 1c-bis — before the target-specific questions); on the pointed path the capture completes at step 3, so both lines already exist here and the dispatch fires immediately. Once both exist, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background while the interview continues. Every research dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing (document 12 — the row is written before the agent is sent, never after), in the exact format `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>` — the trailing two citation fields ARE those ledger lines copied verbatim, byte-for-byte. A research row without both citations, or whose citations do not match the ledger's current `BUILD-TARGET:` and `INPUT-CAPTURED:` lines, is a violation: the dispatch is refused until the row cites both ledger lines byte-for-byte.
 4. **Brainstorm (if interview mode).** Fifteen minutes, their own words, no
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
@@ -1445,7 +1445,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     (the scope fence — see `references/pipeline.md`).
 16. **Write the execution plan.** Waves (derived from the dependency graph, never
     chosen — Law 18), lanes (one per repository), the holding pen + landing queue
-    tables (Rule 3.26), the loop register (Rule 3.24), the budget (the 9.4
+    tables (both published IN the plan, never held in a head), the loop register (Rule 3.24), the budget (the 9.4
     quantities + the spend-per-window inequality + one worked example — carried in
     `references/loops.md`). **When the build generates images, the execution
     plan ALSO carries the IMAGE-MANIFEST section** (documents.md, document 16):
@@ -1654,7 +1654,7 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    (2) what to improve + how; then fixes. **Every FAIL loops back to the
    builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
    stripped of its evidence — and the builder fixes exactly that finding. The
-   loop is bounded (max 20 cycles per finding, Rule 3.22 — operator ruling
+   loop is bounded (max 20 cycles per finding — operator ruling
    2026-08-14) and recorded (every cycle appends the finding, the fix, and the
    re-judge result to the finding's verdict block in the live ledger). After
    the 20th failed loop: escalate to the operator WITH THE FULL FINDING
@@ -1733,7 +1733,7 @@ which is a fact about the project rather than a fact about who is watching.
 
 The project folder holds exactly seventeen documents. Not sixteen, not eighteen.
 The list is closed (Law 39) — and it moved from sixteen to seventeen through its
-own gate, not around it: Rule 3.28's recorded yes is the operator's 2026-08-11
+own gate, not around it: the recorded yes an added document requires is the operator's 2026-08-11
 doctrine ("create or recommend a project manifest that acts as the durable
 architectural source of truth"), which names the manifest, what it holds that the
 sixteen cannot, and the duty to keep it current. PROJECT-MANIFEST.md is document
@@ -1947,7 +1947,7 @@ See `references/audience.md` for the full audience UX rules.
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
 | Builder/judge heartbeat staleness | 10 minutes | Dead, not slow — no third category. |
 | Batch size (landing queue) | Time-triggered: every 15 minutes, whatever is ready merges as ONE batch — NO count cap | SUPERSEDED by the OPERATOR RULES maximum-parallelism doctrine (RULE 2); the 10-merge count cap is gone, one atomic stamp per batch. |
-| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | Rule 3.22. After twenty, mark blocked-repeated-fail, escalate with the full finding history. Hitting the cap is LIMIT REACHED — a non-success state, never relabeled PASS (Law 50). |
+| Fix loop cap | 20 cycles per finding (operator ruling, 2026-08-14) | After twenty, mark blocked-repeated-fail, escalate with the full finding history. Hitting the cap is LIMIT REACHED — a non-success state, never relabeled PASS (Law 50). |
 | Launch command body | under 3,900 characters | Chat inputs truncate long pastes silently. Measured on the fence contents only. |
 | Date format (filenames) | YYYY-MM-DD | |
 | Timestamp format (inside files) | ISO 8601 with trailing Z (UTC) | |

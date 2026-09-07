@@ -643,10 +643,12 @@ character-count gate BEFORE any paid API call:**
 - **MAXIMUM: 18,000 stripped characters.** Above 18,000 → rejected.
 
 **Stripped** means whitespace and blank lines are removed before counting. **The
-count is measured by a deterministic script — never by eye.** For Agnes, the
-existing gate is `63-agnes-image/prove_agnes_image_prompt_floor.py`. For Kie.ai,
-an equivalent gate runs at the build phase; a media work item whose gate has not
-run is not complete.
+count is measured by a deterministic script — never by eye.** The script ships
+with this skill: `tools/prompt-band.sh <prompt-file>` strips, counts, and exits
+nonzero on a prompt outside the band, printing the count and which edge it
+missed. It is the ONE gate for every provider — Agnes, Kie.ai, and anything
+resolved later — so no provider gets its own band and no fleet script is
+required. A media work item whose gate has not run is not complete.
 
 **RECORDED RESEARCH NOTE — read it, do not act on it.**
 
@@ -674,7 +676,7 @@ is the tightest of the three and therefore the binding one:
 | Limit | Value | Relationship |
 |---|---|---|
 | This skill's band ceiling | **18,000** | Binding — the tightest, so a prompt that passes here passes everywhere below |
-| The shipped Agnes gate (`prove_agnes_image_prompt_floor.py`, verified on disk) | 5,000–19,000 | Not modified by this skill (a different skill, its own approval); 18,000 < 19,000, so this gate is always satisfied |
+| The shipped gate (`tools/prompt-band.sh`) | 5,000–18,000 | The instrument that enforces the band — it IS this row, so the two can never disagree |
 | The resolved kie model's documented prompt maximum (exhibits 2026-08-12: gpt-image-2 **and** nano-banana-2 both document 20,000) | 20,000 characters | Sourced; 18,000 leaves 2,000 characters of headroom. **The band needs no per-model fork** — both the primary and the fallback family fit under it. Read the resolved member's own page each run. |
 
 An older internal note put the API capacity at roughly 25,000 characters. **That
@@ -1587,9 +1589,9 @@ When the client declines, has no key, or Branch 5 rests at UNDETERMINED:
 ### 9.4 THE UNATTENDED CASE — pre-declared, never asked at 3am
 
 A set-and-forget run cannot ask. The policy is already DEFAULTED and stated in
-the recap, because C6 (overnight-policy question) is DELETED as a question (R2,
-Issue 12 FIX step 4). Its artwork clauses became their recorded defaults on the
-deletion:
+the recap, because C6 (overnight-policy question) is DELETED as a question
+(`interview.md`'s decided-and-reported rule; Issue 12 FIX step 4). Its artwork
+clauses became their recorded defaults on the deletion:
 
 > **Default `MEDIA_UNATTENDED_POLICY = placeholders-and-manifest`** — delivers
 > the most finished value overnight; the MEDIA-GAPS manifest IS the parked work
@@ -1730,7 +1732,7 @@ media lane (section 13.6, section 13.10).
 | **Provider URL expired AND no local copy AND recovery failed or absent** | **ASSET-LOST-PAID**: recorded with the taskId, `creditsConsumed`, and every attempt made; surfaced in the completion report as **a real loss in credits and dollars**; regeneration ONLY on the client's word (attended) or parked with the morning note (unattended) | **Never silently regenerate — that is a second real charge.** Never bury the loss in a log nobody reads |
 | **The loss ladder, rung 1 — RE-FETCH** (any lost asset, any cause, kie paths) | **Automatic, always, no consent needed — it spends NOTHING.** `recordInfo` (the taskId is durable) → `POST /api/v1/common/download-url` → **fetch and VERIFY the bytes.** Bounded at 3 attempts per recovery pass, each proven by magic bytes and plausible size, every attempt logged. On kie this runs on ANY loss — including a crash recovered days later — **before anything else is even considered.** **⛔ The mint step does NOT discriminate** (section 2): a successful mint proves nothing, and **only fetched, verified bytes prove recovery** | Never treat a 200 from the mint endpoint as a recovered asset; never skip rung 1 to go straight to a re-spend; **never run rung 1 on Agnes video and report it as attempted — that path has no rung 1 at all** |
 | **The loss ladder, rung 2 — RE-SPEND on a GATED family** | **A fresh explicit yes, every time, no exceptions.** The original yes bought the original generation and nothing more. Unattended → the item PARKS with the morning note, exactly as the gate already demands | **NEVER auto-remade, under any loss policy** — the gate is spend authority, and a loss policy never grants spend authority |
-| **The loss ladder, rung 2 — RE-SPEND on a NON-GATED family** | **ONE automatic resubmit is authorized if and only if ALL FOUR hold:** **(a)** the re-spend fits inside the batch estimate the client already consented to, reserve included — the original consent covered a TOTAL, and a redo inside that total is the consented arithmetic, not new spending authority; **(b)** the meter allows it (on Agnes: remaining budgeted video-seconds ≥ the clip's seconds); **(c)** it is the FIRST resubmit for this item — never a loop; **(d)** it is ANNOUNCED — attended in the moment, unattended in the morning report, **both charges shown side by side** with their taskIds and timestamps. This is governed by `MEDIA_LOSS_POLICY` (R2 — C6 DELETED as question, policy defaulted: `remake-once-within-budget`): `remake-once-within-budget` (default) or `note-and-wait`. **Any condition failing → no automatic resubmit:** attended, one plain question naming both charges and the alternative; unattended, rung 3 plus the note. **The same reasoning already ships one row below as the Agnes SUBMITTED-NO-RESPONSE rule — check the meter before deciding a retry is free** | Never a second automatic redo; never a redo that exceeds the consented envelope; never a silent charge — **a redo the client never hears about is indistinguishable from a double-spend** |
+| **The loss ladder, rung 2 — RE-SPEND on a NON-GATED family** | **ONE automatic resubmit is authorized if and only if ALL FOUR hold:** **(a)** the re-spend fits inside the batch estimate the client already consented to, reserve included — the original consent covered a TOTAL, and a redo inside that total is the consented arithmetic, not new spending authority; **(b)** the meter allows it (on Agnes: remaining budgeted video-seconds ≥ the clip's seconds); **(c)** it is the FIRST resubmit for this item — never a loop; **(d)** it is ANNOUNCED — attended in the moment, unattended in the morning report, **both charges shown side by side** with their taskIds and timestamps. This is governed by `MEDIA_LOSS_POLICY` (`interview.md`'s decided-and-reported rule — C6 DELETED as question, policy defaulted: `remake-once-within-budget`): `remake-once-within-budget` (default) or `note-and-wait`. **Any condition failing → no automatic resubmit:** attended, one plain question naming both charges and the alternative; unattended, rung 3 plus the note. **The same reasoning already ships one row below as the Agnes SUBMITTED-NO-RESPONSE rule — check the meter before deciding a retry is free** | Never a second automatic redo; never a redo that exceeds the consented envelope; never a silent charge — **a redo the client never hears about is indistinguishable from a double-spend** |
 | **The loss ladder, rung 2 — CROSS-PROVIDER re-make** (e.g. a lost Agnes clip re-made on kie) | **Legitimate and sometimes right** — kie's recoverability means the REDO cannot suffer the same loss, which is worth real money on a twice-burned item. But it is a fallback-family swap AND a re-spend: it re-runs the FULL selection (duration fit first — a lost 15s Agnes clip does **not** fit non-gated kie in one clip, so it lands on decomposition or a gated ask), it re-validates stitch consistency where the clip has already-generated siblings (**a kie redo among Agnes siblings makes MIXED audio the expected case** — section 6d), and it obeys the same conditions (a)–(d), with the gate firing if selection lands gated. **Recorded as a swap** | Never silent; never assumed to fit the same duration; never allowed to skip the gate because "it is only a replacement" |
 | **The loss ladder, rung 3 — MEDIA-GAP** (always available, never a stall) | The slot enters the manifest with its prepared prompt, its parameters, and the **BILLED** cost of the redo; the build continues; filling it later is one resumable batch. **The completion report still carries the ASSET-LOST-PAID line in credits and dollars** | Never a stall; **never a neatly parked slot reported as if nothing was lost** — a loss is reported as a loss even when the slot is tidy |
 | **Phase B upload fails** (GHL 5xx/timeout), local copy safe | Retry 3× with backoff; still failing → **PERSIST-PENDING**: the item enters the MEDIA-GAPS manifest's PERSIST-PENDING section and **the build continues** — the asset is captured and safe | Never stall generation on a warehouse outage; **never mark the item DONE while the push is pending** |

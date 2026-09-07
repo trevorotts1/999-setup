@@ -14,8 +14,7 @@ the artifacts on disk.
 
 ## 1. The disease, named and measured
 
-Censused first-hand on the operator's real run, `GAUNTLET-LOOP-WORK/LEDGER.md`,
-2026-08-12:
+Censused first-hand on a real operator run's ledger, 2026-08-12:
 
 | Measurement | Value |
 |---|---|
@@ -27,87 +26,9 @@ Censused first-hand on the operator's real run, `GAUNTLET-LOOP-WORK/LEDGER.md`,
 | Where that run ends | **line 2,338 of 2,366** |
 | The file's final line | a contentless tick |
 
-Read the last two rows together, because they are the whole diagnosis. The
-longest drift run **is the tail**. The run did not drift and recover. It
-drifted and never came back. A stale "44 active / 16 stalled" count survived
-inside it until a watchdog corrected it, and the conductor re-planned from
-decayed context on every cron tick until only the metronome was left.
-
-**Drift is an ABSORBING state, not a transient.** Every design decision below
-follows from that one fact. A detector that merely appends an alarm line would
-have written alarm number 140 into the same dead tail and changed nothing. The
-stop must therefore be a gate that sits OUTSIDE the captured reasoning, and it
-must be a file, not a thought.
-
-And the second fact, equally load-bearing. The obvious literal pattern
-
-```
-heartbeat (ledger auto-tick)
-```
-
-matches **ZERO** of those lines, because the timestamp sits between the words:
-
-```
-- heartbeat 2026-08-06T20:10:38Z (ledger auto-tick)
-```
-
-A brittle pattern reported "no drift found" on a ledger that is 31.3% drift.
-That is not a near miss; it is a clean bill of health issued by an instrument
-that could not have found anything. Hence the standing rule of this file: a
-detector must prove itself on a known-positive before it is permitted to say
-"clean," and a detector that matches nothing reports **BROKEN INSTRUMENT**,
-never ALL CLEAR.
-
-### The two kinds of heartbeat — and why loosening the pattern is the other way to be wrong
-
-The obvious repair for a too-narrow pattern is a wider one. On this same file a
-wide pattern is wrong in the direction that matters more, because it condemns
-the cure.
-
-Measured on the same file, with the instrument proven first (`ledger` returns
-893, a nonsense token returns 0 with rc 1):
-
-| Class | Count | Verdict |
-|---|---|---|
-| **BANNED — contentless tick:** `- heartbeat <ISO8601Z> (ledger auto-tick)`, a timestamp and nothing else | as above | drift |
-| **REQUIRED — the same marker, carrying state:** `- heartbeat <ts> (ledger auto-tick) — E2E driver solving standard-intake (GATE 0)…; transcript 981KB/238 lines, progressing` | 140 | **not drift** |
-| **REQUIRED — a stateful watchdog heartbeat:** `- WATCHDOG <ts> — **Heartbeat: 0 active / 0 stalled.** All 68 workflow records in terminal states… The earlier '44 active / 16 stalled' line was a stale count from pre-teardown transcripts — corrected here.` | 4 | **not drift** |
-
-(Loose counts on this file must always carry their case-sensitivity or be
-omitted: a case-insensitive `heartbeat` matches 895 lines, case-sensitive 890.
-The five-line gap is FOUR capitalized watchdog lines (the last row) plus ONE
-line that is not a heartbeat at all — a slash-separated document-name list,
-`AGENTS/DREAMS/HEARTBEAT/MEMORY/USER`, at line 376. Re-measured 2026-08-12
-against the same file: `Heartbeat:` returns 4 (lines 1989, 2006, 2025, 2051);
-all-caps `HEARTBEAT` returns that single doc-list line. **The gap arithmetic
-and the class are not the same number** — an earlier reading of this exhibit
-assumed they were, which is the very substitution this file exists to forbid:
-a count that matches is not a class that matches until the lines are read.
-The strict anchored figures in the table above — the contentless count, 31.3%,
-and a 139-long run ending at the tail — are the unambiguous ones, confirmed by
-three independent measurements, and are the ones to quote.)
-
-The last row is not merely tolerable. It is the worked positive example of what
-this whole file is trying to install: a tick that carries counts, identifiers,
-and — in that very line — **a correction of a stale count**, which is
-reconciliation happening in public. **A detector that flags those lines as
-drift is broken, and broken in the direction that punishes the behaviour we
-want.** It would teach a run to stop writing the only heartbeats worth having.
-
-So the detector is TWO stages, and both are load-bearing:
-
-1. **The marker**, robust to timestamp position and format: `heartbeat` and
-   `auto-tick` on one line, either order, any case, anything between them,
-   hyphen or space or underscore.
-2. **The residue**: strip the timestamp, the marker words, and all punctuation.
-   **Nothing left → contentless tick, the banned write. Anything left → a real
-   heartbeat that carries state, and it is NOT drift.**
-
-Run over the real file, the two stages together reproduce the strict anchored
-control's contentless count EXACTLY, to the line, while sparing all 144
-state-carrying lines (140 + the 4 watchdog lines). Neither stage alone can do
-both: stage 1 without stage 2 condemns 144 good lines, and stage 2 without
-stage 1 has nothing to examine.
+The last two rows are the diagnosis: the longest drift run IS the tail, so drift
+is an ABSORBING state and the stop must be a file outside the captured reasoning.
+Prove the detector first: run `tools/anchor.sh --selftest`; **BROKEN INSTRUMENT is never ALL CLEAR**.
 
 ---
 
@@ -585,71 +506,35 @@ something can pay.
 
 ## 7. The detector proves itself on EVERY invocation
 
-`anchor.sh` carries embedded fixtures and asserts all of them before it is
-permitted to reach a verdict:
-
-- a **positive fixture** in the real format — `- heartbeat 2026-08-06T20:10:38Z
-  (ledger auto-tick)` — which the tick pattern MUST match;
-- a **format-drifted positive** with the timestamp in a different position and
-  different punctuation, which it must ALSO match;
-- **three known-negative controls, two of them lifted verbatim from the same
-  real ledger** — a contentful `(ledger auto-tick)` line, a WATCHDOG
-  `Heartbeat:` line that corrects a stale count, and a state-carrying RECONCILE
-  line. Flagging any of the three is a BROKEN INSTRUMENT failure, because a
-  detector that cannot tell the banned write from the required one would punish
-  the cure;
-- the **brittle literal** `heartbeat (ledger auto-tick)`, kept live as a
-  control, which must NOT match the positive fixture. If it ever does, the
-  exhibit is wrong and the tool refuses to report at all;
-- a **known-good control on the instrument itself** — a grep and an awk with
-  known non-empty answers, on the same binaries, checked for both output and
-  exit code.
-
-Any failure prints **BROKEN INSTRUMENT** and exits 2. Not "clean". Not a
-warning. The whole run stops on a detector that cannot prove it discriminates,
+`anchor.sh` asserts its embedded fixtures before it is permitted to reach a
+verdict: a positive in the real format and a format-drifted positive it must
+also match; known-negative controls lifted verbatim from a real ledger (a
+contentful `(ledger auto-tick)` line, a WATCHDOG line that corrects a stale
+count, a state-carrying RECONCILE line) which it must NOT flag, because a
+detector that cannot tell the banned write from the required one would punish
+the cure; the brittle literal kept live as a control that must NOT match; and a
+known-good control on `grep` and `awk` themselves, checked for output and exit
+code. Any failure prints **BROKEN INSTRUMENT** and exits 2 — not "clean", not a
+warning. The run stops on a detector that cannot prove it discriminates,
 because **BROKEN INSTRUMENT is never ALL CLEAR**.
 
 The tick pattern is robust to timestamp position and format by construction:
 case-insensitive, `heartbeat` and `auto-tick` in either order with anything
-between them, and tolerant of `auto tick` / `auto_tick`. Never re-narrow it to
-a literal.
+between them, tolerant of `auto tick` / `auto_tick`. Never re-narrow it to a
+literal.
 
-`anchor.sh --selftest` proves the tool still discriminates: its full case list
-runs in a temporary home — the tool's own `SELFTEST COMPLETE` line states the
-total, and that printed total is the only count to trust; never restate it here.
-The cases: clean anchor (which also asserts NO alarm fires),
-unit-not-in-plan, missing file, sabotaged fixture, false-complete,
-terminal-drift with the counter primed to N−1, the repeated-intent
-signature with its own known-negative control window, and the class-7
-ledger-provenance case (baseline with an existing empty ledger must report
-`ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)`; one unpaired RESULT unit
-under the default tolerance must stay clean while reporting `unpaired=1`;
-the same unit at `ANCHOR_CLAIM_UNPAIRED_TOL=0` MUST alarm
-`DRIFT-ALARM | unpaired-claim` at exit 3 with `ACTION|write-missing-claims`;
-and a CLAIM added for that unit MUST clear the alarm with
-`ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/…)`); then the
-`CAPACITY-EVENT` exclusion (a ledger receiving ONLY capacity events between
-reconciles must still increment the no-delta counter, with the other-direction
-control that a real state-carrying line still resets it — an exclusion that
-blinded the fingerprint would pass the first half and fail the second); and
-finally the class-6 budget controls: claimed == dispatched must NOT fire,
-a divergence past tolerance MUST fire, the hard cap MUST emit `BUDGET-CAP` plus
-both ACTIONs at exit 3 (never 4), absent budget fields MUST report
-undetermined and MUST NOT alarm, and a NEGATIVE claimed spend MUST alarm as
-`budget-negative-spend` — never laundered into `budget-ok` by the tolerance, and
-never downgraded to `budget-undetermined` by an absent dispatch log. It prints
-one PASS line per case and exits
-nonzero if any case fails. Run it after any edit to the tool, and whenever a
-result surprises you.
-
-The sabotage case also runs a **real-corpus check** when a real ledger is
-available (`ANCHOR_SELFTEST_REAL_LEDGER`, defaulting to the operator's
-`GAUNTLET-LOOP-WORK/LEDGER.md`): the classifier's contentless count must equal
-the strict anchored control on the same file, at least one state-carrying
-auto-tick must be spared, and the brittle literal must still return zero. A
-corpus that is present and disagrees FAILS the case. A corpus that is absent is
-reported as SKIPPED — never as passed. Point it at any ledger you like; the
-assertions are about agreement between instruments, not about one file.
+Run `tools/anchor.sh --selftest` after any edit to the tool, and whenever a
+result surprises you. It runs its full case list in a temporary home, prints one
+PASS line per case, states its own case total in `SELFTEST COMPLETE` (that
+printed total is the only count to trust — never restate it here), and exits
+nonzero if any case fails. The real-corpus check runs only when
+`ANCHOR_SELFTEST_REAL_LEDGER` names a ledger; there is no default path, and with
+the variable unset the case is reported SKIPPED, never passed. When a corpus is
+given, the classifier's contentless count must equal the strict anchored control
+on that same file, at least one state-carrying auto-tick must be spared, and the
+brittle literal must still return zero — a corpus that is present and disagrees
+FAILS the case. The assertions are about agreement between instruments, not
+about one file.
 
 Every `grep` in the tool runs through `/usr/bin/grep`, captures stderr, and
 checks `$?`: rc 0 is a match, rc 1 is no match, and **rc ≥ 2 is an ERROR, not

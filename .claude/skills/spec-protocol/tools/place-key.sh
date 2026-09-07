@@ -7,8 +7,8 @@
 #   place-key.sh --selftest
 #
 # THE FLOW THIS REPLACES. The skill used to hand a non-technical client a
-# terminal chore ("open a NEW terminal window, paste this line, replace
-# PASTE-YOUR-KEY-HERE with your key") or, worse, ask them to paste the key into
+# terminal chore ("open a NEW terminal window, paste this line, and swap the
+# placeholder in it for your key") or, worse, ask them to paste the key into
 # the chat. A pasted key lands in the transcript, in the session history, in
 # every ledger the run writes, and possibly in a commit — and it cannot be
 # un-leaked. The client-facing sentence is now one line, and this script does
