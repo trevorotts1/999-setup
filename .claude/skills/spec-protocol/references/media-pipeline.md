@@ -548,6 +548,11 @@ delete, rename, move, or overwrite ANYTHING in the client's media library; this 
 EXISTING alias tables in `references/environment-sweep.md`** from the client's own secrets environment. **This file never carries a second alias table and never a second store table.** The Firebase refresh token is **not** needed here. **Presence is MEASURED EVERY RUN and never remembered**, and key VALUES never move: the token rides in the executing process's Authorization header, **never in
 logged command text.**
 
+**⛔ THE SHIPPED INSTRUMENT — these calls are NOT hand-rolled.** The conductor runs **`scripts/ghl-media-upload.sh <local-file> <project-slug> [item-id]`** (usage line, verbatim) once per asset for Phase B: it does the folder LIST → folder CREATE-or-REUSE → multipart upload → read-back as ONE sequence, resolves the token and Location ID from the client's own
+environment through the alias tables in `references/environment-sweep.md`, and feeds every header into `curl --config -` on STDIN so the value never reaches a command line (that file's RULE 1). It prints ONE JSON line — `fileId`, `url`, `folderId`, `folderName`, `folderStatus` (`created`|`reused`, 13.5's `created`/`reused-existing`), `status` — and **its exit code IS the
+persist-proof**: `0` uploaded and read back; `1`/`2` never reached the API (credentials, unreadable input); `3`/`4` folder or upload failed; `5` read-back found nothing; `6` read-back UNDETERMINED — *a statement about the checker, never about the upload*. **The three shapes below are what the script already implements — kept as reference, never as a hand-rolling recipe.** It has **no
+standalone smoke and no folder-only mode**, so THE SMOKE below and 13.5's media-planning folder creation are still their own `GET /medias/files` call.
+
 **The three calls** — base `https://services.leadconnectorhq.com`, headers `Authorization: Bearer <token>` plus `Version:`. **⛔ The `Version` header VALUE is VERIFY-LIVE at implementation and never guessed** (one doc excerpt said `v3` while this API family historically uses date versions such as `2021-07-28`; the two claims conflict, so the value comes from the live doc page and from a request the
 API actually accepted):
 
