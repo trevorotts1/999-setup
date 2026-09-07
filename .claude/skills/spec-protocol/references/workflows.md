@@ -255,22 +255,6 @@ A script with an unjustified barrier or an unjustified top-level chain **FAILS
 dispatch QC.** Fix it or justify it in writing. `pipeline()` needs no justification;
 it is the default.
 
-### Forbidden shapes
-
-Four shapes are refused outright. Each one is a script that draws a full tree and
-then runs a fraction of the machine; each has one correct rewrite.
-
-| # | Forbidden shape | What it costs | The fix |
-|---|---|---|---|
-| F1 | `parallel(build)` followed by `parallel(qc)` | Every judge waits for the SLOWEST builder before any judging starts, and during the QC phase most slots idle. | `pipeline(units, build, qc)` — one chain per unit, no barrier, judging starts the instant that unit's build lands. |
-| F2 | A judge phase with FEWER judges than landed units | Judging becomes the serial tail of a parallel build; one judge reading eight units is a queue wearing a tree's clothes. | One judge per landed unit, as its own stage of the same pipeline. |
-| F3 | A tree that passes FEWER units than the dispatchable set allows, with no `dep=` reason named | This is the under-width defect itself — the "3 agents when 10 were possible" shape. | Pass every dispatchable unit in one call; the harness queues the excess. If a unit is genuinely blocked, name the blocker as `dep=<unit>` in the dispatch row. |
-| F4 | A merge agent INSIDE a build tree | The merge writer holds a build slot for the whole run, and one writer per repo (Law 3) means it cannot be parallelised to earn that slot back. | The merge writer runs OUTSIDE the tree, serial, after the tree returns. |
-
-The dispatch gate (`tools/dispatch-check.sh`, wired as a PreToolUse hook on
-`Workflow`) refuses all four mechanically. §5 is the parse gate; this is the shape
-gate; they are separate checks and both must pass before a launch.
-
 ---
 
 ## 5. Pre-dispatch script validation (fail-closed)
