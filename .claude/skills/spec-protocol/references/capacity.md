@@ -519,10 +519,9 @@ Burn governor: **the only limiter on a subscription account.** Watch for
 never hammer, and never pre-shrink the wave in anticipation of one.
 
 **Agent Team line:** lead + 4 commanders = 5 persistent occupants, deducted from
-the harness width BEFORE workflow width is allocated (section 12) — at two
-workflows in flight that leaves **15 slots** (for example WF02 at 10 + WF03
-streaming at 4 + the merge train at 1); more streams simply add more
-workflows.
+the harness width BEFORE workflow width is allocated (section 12) — 500 − 5 =
+**495 slots remain** (for example WF02 at 10 + WF03 streaming at 4 + the merge
+train at 1); more streams simply add more workflows.
 
 ### Scenario (b) — 9Router + DeepSeek v4 Flash direct, 12-core machine
 
@@ -1144,8 +1143,8 @@ like one.
 occupants of the governing number, deducted BEFORE any workflow width is
 allocated.**
 
-- **Scenario (a)** (Anthropic, cap 20): lead + 4 commanders = 5 → 15 slots remain
-  for workflow width.
+- **Scenario (a)** (Anthropic, harness governs at 500): lead + 4 commanders = 5
+  → 500 − 5 = 495 slots remain for workflow width.
 - **Scenario (b)** (harness 500): 5 persistent occupants are noise — the full
   shape is unchanged.
 - **Scenario (c)** (Ollama $20, 2 slots): the arithmetic **REFUSES** Agent-Team
