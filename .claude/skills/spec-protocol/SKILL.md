@@ -1434,8 +1434,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
     is NEVER handed a terminal chore either way.
 17. **Determine GitHub.** New repo or pre-existing? Ask. Smoke-test the token.
     Create or use existing.
-18. **Derive the loops (if unattended).** Run the shape test. If C0 = once, zero
-    loops. If C0 = repeatedly, derive the loop set. See `references/loops.md`.
+18. **Derive the loops.** Run the shape test — it has one input, continuous until
+    done, and always runs the full derivation. See `references/loops.md`.
 19. **Write the launch command — and the run plan for the sessions the SKILL will
     drive.** Document 11 stays the paste-able restart command (the crash-recovery
     path). The live handover itself assigns the client NOTHING: in Agent-Team mode
@@ -1509,7 +1509,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
 Once the apparatus is built and the loops are started, the pipeline runs
 unattended. The conductor does not perform the work (Law 41) — subagents do. Full
 mechanics in `references/pipeline.md`. Before the first builder dispatches, the
-**over-engineering check** runs once (Law 42): the spec must build EXACTLY what
+**over-engineering check** fires once (Law 42): the spec must build EXACTLY what
 the user asked — not more, not less. The user's brainstorm and the confirmed
 feature list are the source of truth for scope; a spec that adds features the
 user did not ask for is corrected before any builder fires. The full check and
@@ -1586,19 +1586,21 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
 
 ## Loop engineering — Laws 35 to 38
 
-If the project runs unattended (the C0 answer is "repeatedly" or "overnight"), set
-up loops. If C0 is "once, and somebody is watching," ZERO loops — a launch command
-is enough. Adding loops to a one-shot is the bloat the protocol forbids (Law 39).
+Every project runs unattended — continuous until done is the promise, and the shape
+test has one input. So every project has loops, and nothing anywhere switches them
+off.
 
-For unattended runs: the four core loops (spec, build, review, gate) + one
-merge-train loop per repository + the five survival loops (stall detection,
-session-limit park-and-resume, compaction checkpoint, budget watch, swarm watch) —
-ten in a one-lane project, and the count is derived, never assumed. Each loop has
-a row in the loop register (a section of the execution plan): Loop, Trigger,
-Interval, Owns-this-transition, Stop-condition. The minimum viable set for a first
-project is three loops: build, review (carrying the gate), and the merge train.
-See `references/loops.md` for the full engineering — the register, the shape test,
-the loop-file shape, the skip conditions, and the C0 zero-loops case.
+The set: the four core loops (spec, build, review, gate) + one merge-train loop per
+repository + the five survival loops (stall detection, session-limit
+park-and-resume, compaction checkpoint, budget watch, swarm watch) — ten in a
+one-lane project, and the count is derived, never assumed. Each loop has a row in
+the loop register (a section of the execution plan): Loop, Trigger, Interval,
+Owns-this-transition, Stop-condition. The minimum viable set for a first project is
+five loops: build, review (carrying the gate), the merge train, stall detection, and
+swarm watch — the last two are never skipped, because every run dispatches work no
+person is reading. See `references/loops.md` for the full engineering — the
+register, the shape test, the loop-file shape, and the skip conditions, every one of
+which is a fact about the project rather than a fact about who is watching.
 
 ---
 
@@ -1687,7 +1689,7 @@ lives in `references/pipeline.md`.
 | 15 — Read what you modify | A fix is a hypothesis until you have read the whole thing it changes and confirmed it exists, in that session. Reading proves shape; running proves behaviour — where the target can be run cheaply, run it. (The fleet's "scope fence" is a separate practice — see pipeline.md, not this number.) |
 | 18 — Waves come from the graph | A wave is the largest set of units that could be worked at the same moment. Every wave boundary is a named dependency, or it is a defect. Computed, never chosen. |
 | 19 — The two brakes | A dependency creates waves; a shared file creates merge order only. Never confuse them. A shared artifact stops parallel landing, never parallel building. |
-| 20 — Serialize merges, batch verifications | Merges stay one-at-a-time; the expensive verification runs once per batch. One frozen base per wave per lane; nobody rebases mid-wave; merge into an integration branch; fast-forward the trunk once. |
+| 20 — Serialize merges, batch verifications | Merges stay one-at-a-time; the expensive verification happens once per batch. One frozen base per wave per lane; nobody rebases mid-wave; merge into an integration branch; fast-forward the trunk once. |
 | 21 — Lane or pen | Every unit is in exactly one lane, or in the holding pen. Nothing in both; nothing in neither. Work that changes only running systems lives in the pen, which has no writer. |
 | 23 — Write through, never batch | Write each artifact to disk the moment it is finished, before starting the next. The disk is the record; the transcript is not. |
 | 25 — Nothing that matters lives only in context | Decisions, corrections, measurements → durable files the instant they exist. |
@@ -1698,7 +1700,7 @@ lives in `references/pipeline.md`.
 | 32 — Fixes run in parallel | One fixer per finding, dispatched concurrently. The attempt bound is per finding, not per work item. |
 | 33 — Fix it, do not report it | Hand over fixed problems, not problems. Housekeeping is never escalated. |
 | 34 — The gate is document completeness | "Ready to start?" is forbidden. 90% is not done. Measure completeness; do not ask about it. |
-| 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. (Or zero loops if C0 = once.) |
+| 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. |
 | 36 — Loops never talk to each other | Every state transition is owned by exactly one loop. Loops coordinate through the tracker only. |
 | 37 — A hosted remote is mandatory | Local-only is not a project. Every project has a version-control remote that accepts branches, holds a trunk, and resolves annotated tags. |
 | 38 — Nobody's capacity is assumed | Every rate in the plan (interval, agent ceiling, model split) is derived from the capacity you actually have, never copied from another project. A stronger model plans; a cheaper model executes. |

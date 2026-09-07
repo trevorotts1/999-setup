@@ -701,7 +701,7 @@ protocol never forgives. Two writers on two DIFFERENT repos is expected and corr
 
 ### Law 20 — serialize the merges, batch the verifications
 
-Merges stay one-at-a-time (they must); the expensive verification runs once per
+Merges stay one-at-a-time (they must); the expensive verification happens once per
 batch. The mechanics:
 1. One frozen base per wave per lane — every unit cuts its branch from the same
    commit, frozen for the whole wave.
@@ -763,7 +763,7 @@ pass with 3. An empty pen is the only reason to wait.
 ### The B2H regression gate — the batch's whole suite is the guarantee that no previously passed requirement regresses
 
 Name the existing per-batch checks as what they already are: a regression gate. When
-a batch's full suite runs once on the integration branch, when the post-merge
+a batch's full suite executes once on the integration branch, when the post-merge
 artifact check verifies every key artifact at HEAD, and when the nothing-dropped
 reconciliation proves every pen item is landed, blocked-with-reason, or ALARM — these
 three together ARE the **B2H regression gate**: *no previously passed requirement
