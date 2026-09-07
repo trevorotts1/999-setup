@@ -28,6 +28,12 @@
 # fails LOUDLY, naming the exact lock path, rather than proceeding unlocked
 # and risking a lost line.
 #
+# Every line matching the `| CLAIM |` marker ALSO has its `plan=` field
+# appended to <home>/CONTROL/last-intents.txt, rolling, last 20. That file is
+# the input anchor.sh's class 5 (repeated-intent stall) reads through
+# --intents; before this, nothing wrote it and class 5 was undetermined on
+# every run. See the block at the bottom of this file.
+#
 # Includes iCloud pin-local mitigation for ~/Downloads.
 #
 # Forked from skill-warfix/tools/ledger.sh (that copy is untouched — this
@@ -212,6 +218,69 @@ fi
 if [[ "$(tail -n 1 "${TARGET}")" != "${LINE}" ]]; then
   echo "ERROR: ledger write verification failed — last line of ${TARGET} is not the line just written" >&2
   exit 1
+fi
+
+# ============================================================================
+# CLASS 5's INPUT — the rolling stated-intent window.
+#
+# references/anti-drift.md section 3 hands anchor.sh CONTROL/last-intents.txt
+# as its --intents input, and section 4's class 5 (the repeated-intent stall —
+# the "let me find the endpoint" signature) is what reads it. Nothing in the
+# skill ever WROTE that file, so class 5 was UNDETERMINED on every run of every
+# project — a detector with no input.
+#
+# Every CLAIM line already carries the unit's stated plan, which IS the
+# intent the detector needs, and every CLAIM line comes through here. So the
+# writer belongs here: one line per CLAIM, rolling, the last 20.
+#
+# It runs AFTER the verified write of the real line, and it can never fail
+# that write: a problem updating the derived file is a loud warning on stderr,
+# never a non-zero exit that would make the caller (anchor.sh's ledger_write)
+# report a TOOLING FAILURE for a line that actually landed.
+#
+# The whole read-modify-write below still holds this TARGET's lock, so
+# concurrent CLAIM writers to the same ledger are serialized here exactly as
+# they are for the ledger itself.
+# ============================================================================
+LGREP="/usr/bin/grep"
+if [[ ! -x "${LGREP}" ]]; then
+  if [[ -x /bin/grep ]]; then LGREP="/bin/grep"; else LGREP="$(command -v grep 2>/dev/null || true)"; fi
+fi
+
+append_intent() {
+  local intents_file="${HOME_DIR}/CONTROL/last-intents.txt"
+  local itmp="${intents_file}.tmp.$$"
+  local plan
+  # plan=<...> up to the next field separator. A CLAIM with no plan= field is
+  # a malformed claim, not a reason to write nothing: the line still gets an
+  # entry, marked, so the window keeps one entry per claim and the defect is
+  # visible instead of silently shortening the window.
+  plan="$(printf '%s' "${LINE}" | sed -n 's/.*[|][[:space:]]*plan=//p' | sed 's/[[:space:]]*[|].*$//')"
+  if [[ -z "${plan}" ]]; then
+    plan="(no plan= field) $(printf '%s' "${LINE}" | sed 's/^[^|]*[|]//')"
+  fi
+  plan="$(printf '%s' "${plan}" | tr -d '\n\r' | cut -c1-300)"
+  mkdir -p "$(dirname "${intents_file}")" || return 1
+  : > "${itmp}" || return 1
+  if [[ -f "${intents_file}" ]]; then
+    tail -n 19 "${intents_file}" >> "${itmp}" || return 1
+  fi
+  printf '%s\n' "${plan}" >> "${itmp}" || return 1
+  mv "${itmp}" "${intents_file}" || return 1
+  return 0
+}
+
+if [[ "${FILE}" != *last-intents.txt ]]; then
+  if [[ -z "${LGREP}" ]]; then
+    # No usable grep means this line's class is UNKNOWN, not "not a CLAIM".
+    # Say so rather than skipping in silence and leaving class 5 quietly blind.
+    echo "WARNING: ledger.sh found no usable grep (/usr/bin/grep, /bin/grep, PATH), so it could not tell whether this was a CLAIM line; ${HOME_DIR}/CONTROL/last-intents.txt was NOT updated and anchor.sh's class 5 (repeated-intent) will be undetermined" >&2
+  elif printf '%s' "${LINE}" | "${LGREP}" -qE '[|][[:space:]]*CLAIM[[:space:]]*[|]'; then
+    if ! append_intent; then
+      rm -f "${HOME_DIR}/CONTROL/last-intents.txt.tmp.$$" 2>/dev/null || true
+      echo "WARNING: ledger.sh wrote ${TARGET} but could not update ${HOME_DIR}/CONTROL/last-intents.txt — anchor.sh's class 5 (repeated-intent) will be undetermined until this is fixed" >&2
+    fi
+  fi
 fi
 
 exit 0
