@@ -48,7 +48,7 @@ const results = await pipeline(units,
 return results
 ```
 
-Agent count = units × 2, capped at clientCap = min(systemConcurrentMax, cores−2) — 10 on the operator's machine (hence 5 units); the six gauntlet workflows (step 12.7) carry SLICE counts batched at clientCap instead.
+Agent count = units × 2, capped at the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) — 10 on this 12-core, 24 GB machine (hence 5 units); the six gauntlet workflows (step 12.7) carry SLICE counts, every slice passed to one `pipeline()` call instead.
 The width gate (SKILL.md) rejects a script that plans below its arithmetic
 without a named reason.
 

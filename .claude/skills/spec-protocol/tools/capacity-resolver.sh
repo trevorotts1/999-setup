@@ -18,16 +18,11 @@
 #   MODE=team|single                      (default single — Agent Teams off until probed + consented)
 #   COMMANDERS=<n>                        (default 4 when MODE=team: BUILD, VISUAL QA, TECHNICAL QA, RELEASE/INTEGRATION)
 #   CORES=<n>                             (default: MEASURED at run time — never inherited)
-#   SYSTEM_CONCURRENT_MAX=<n>             (the operator's DECLARED max concurrent
-#                                          workflow agents for THIS machine — 10 on
-#                                          the operator's machine. Issue 19 FIX step 6:
-#                                          authoritative for computing clientCap; an
-#                                          environment read (e.g.
-#                                          CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) is
-#                                          REPORTING ONLY, never for computing; if the
-#                                          probe cannot determine it the value is
-#                                          UNDETERMINED and the run refuses to plan —
-#                                          it never defaults to 16.)
+#   RAM_GB=<n>                            (default: MEASURED at run time — never inherited.
+#                                          Cores and RAM are the ONLY width inputs: the
+#                                          width is computed from the machine, never
+#                                          declared by anybody and never asked of the
+#                                          client.)
 #   PROJECT=<name>                        (cosmetic — names the ledger)
 #   ROLE_BUILDER=<alias>→<resolved model>  (and ROLE_RESEARCHER / ROLE_VISUAL /
 #                                          ROLE_TECHNICAL / ROLE_SECURITY / ROLE_RELEASE —
@@ -62,14 +57,18 @@
 # interview; the skill presents the results in plain English.
 #
 # THE THREE AXES, NEVER CONFLATED:
-#   AXIS 1 WIDTH  — clientCap = min(systemConcurrentMax, cores−2) (Issue 19 FIX
-#                   step 6); systemConcurrentMax = the operator's DECLARED max
-#                   (10 on the operator's machine), authoritative for computing,
-#                   never an env read (env reads are REPORTING ONLY); cores
-#                   MEASURED at run time; UNDETERMINED systemConcurrentMax = the
-#                   run refuses to plan, never defaults to 16; hard ceiling of
-#                   50 workflows per session (2026-08-16 operator doctrine,
-#                   supersedes the 30-workflow figure).
+#   AXIS 1 WIDTH  — the MEASURED formula (S1, 2026-09-07):
+#                       harness_cap = min(16, cores − 2)
+#                       ram_cap     = floor((ram_gb − 6) / 1.5)
+#                       clientCap   = max(2, min(harness_cap, ram_cap))
+#                   Cores and RAM are MEASURED at run time on the machine the
+#                   build runs on; nothing is declared and nothing is asked. The
+#                   harness owns the CEILING (it queues everything above
+#                   min(16, cores−2)); this skill enforces only the FLOOR. If
+#                   cores cannot be measured, clientCap falls back to 4, the card
+#                   says so with an [ASSUMED …] mark, and the run KEEPS GOING.
+#                   Hard ceiling of 50 workflows per session (2026-08-16 operator
+#                   doctrine, supersedes the 30-workflow figure).
 #   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
 #                   budget of 1,000 — a spend POLICY, NOT a platform limit (the
 #                   platform documents no total-per-session limit; its 20-concurrent
@@ -125,14 +124,61 @@ measure_cores() {
   echo "${n} ${instrument}"
 }
 
-per_workflow_width() {
-  # cores−2 raw. NO hard 16 clamp: per-workflow concurrency = clientCap =
-  # min(systemConcurrentMax, cores−2) — the width is whatever the machine
-  # yields under that rule. THE BAR NEVER SHRINKS; only the width does.
+# --- Measure RAM in whole GB. Never inherit a number. -------------------------
+# Prints "<gb> <instrument>", same contract as measure_cores: the instrument
+# names itself so the ledger's [MEASURED …] mark can say which one answered.
+measure_ram_gb() {
+  local bytes="" kb="" gb="" instrument=""
+  if command -v sysctl >/dev/null 2>&1; then
+    bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
+    if [[ "${bytes}" =~ ^[0-9]+$ ]]; then
+      gb=$(( bytes / 1073741824 )); instrument="sysctl-hw.memsize"
+    fi
+  fi
+  if [[ -z "${gb}" && -r /proc/meminfo ]]; then
+    kb="$(awk '/^MemTotal:/{print $2; exit}' /proc/meminfo 2>/dev/null || true)"
+    if [[ "${kb}" =~ ^[0-9]+$ ]]; then
+      gb=$(( kb / 1048576 )); instrument="proc-meminfo-MemTotal"
+    fi
+  fi
+  if [[ -z "${gb}" ]]; then
+    echo ""    # UNDETERMINED is a correct answer — the harness cap then governs alone
+    return 1
+  fi
+  echo "${gb} ${instrument}"
+}
+
+# --- THE WIDTH FORMULA (S1) ---------------------------------------------------
+# harness_cap = min(16, cores − 2)          the Workflow tool's own limit; it
+#                                           queues everything above this itself
+# ram_cap     = floor((ram_gb − 6) / 1.5)   ~1.5 GB per live agent after 6 GB for
+#                                           the OS, the browser, and Claude
+# clientCap   = max(2, min(harness_cap, ram_cap))
+# An unmeasurable RAM figure drops ram_cap from the min() and says so — it never
+# invents one. THE BAR NEVER SHRINKS; only the width does.
+harness_cap_of() {
   local cores="$1" w
   w=$(( cores - 2 ))
-  if (( w < 1 )); then w=1; fi
+  (( w > 16 )) && w=16
+  (( w < 1 )) && w=1
   echo "${w}"
+}
+
+ram_cap_of() {
+  # floor((ram_gb − 6) / 1.5) in integer arithmetic: ((ram_gb − 6) * 2) / 3
+  local ram_gb="$1" r
+  if (( ram_gb <= 6 )); then echo 0; return 0; fi
+  r=$(( ( (ram_gb - 6) * 2 ) / 3 ))
+  echo "${r}"
+}
+
+client_cap_of() {
+  # client_cap_of <harness_cap> [<ram_cap|"">]  — an empty ram_cap means
+  # UNDETERMINED RAM: the harness cap governs alone.
+  local h="$1" r="${2:-}" c="$1"
+  if [[ -n "${r}" ]] && (( r < c )); then c="${r}"; fi
+  (( c < 2 )) && c=2
+  echo "${c}"
 }
 
 # --- Provenance marks (references/capacity.md section 13.2) -------------------
@@ -178,13 +224,12 @@ resolve() {
 
   HARNESS=""; LAUNCHER=""; BUILDER_PROVIDER=""; DEEPSEEK_TIER=""
   OLLAMA_PLAN=""; AGNES_PLAN=""; THROTTLE=""; RESERVE_PCT=""
-  MODE=""; COMMANDERS=""; CORES=""; PROJECT=""
+  MODE=""; COMMANDERS=""; CORES=""; RAM_GB=""; PROJECT=""
   ROLE_BUILDER=""; ROLE_RESEARCHER=""; ROLE_VISUAL=""
   ROLE_TECHNICAL=""; ROLE_SECURITY=""; ROLE_RELEASE=""
-  CONFIG_FP=""; CORES_SOURCE=""; RESERVE_PCT_SOURCE=""
+  CONFIG_FP=""; CORES_SOURCE=""; RAM_GB_SOURCE=""; RESERVE_PCT_SOURCE=""
   OLLAMA_PLAN_SOURCE=""; AGNES_PLAN_SOURCE=""; DEEPSEEK_TIER_SOURCE=""
   BUILDER_PROVIDER_SOURCE=""
-  SYSTEM_CONCURRENT_MAX=""; SYSTEM_CONCURRENT_MAX_SOURCE=""
 
   while IFS='=' read -r k v; do
     # Strip CR and surrounding whitespace, matching the node parser's
@@ -219,6 +264,7 @@ resolve() {
       MODE) MODE="${v}" ;;
       COMMANDERS) COMMANDERS="${v}" ;;
       CORES) CORES="${v}" ;;
+      RAM_GB) RAM_GB="${v}" ;;
       PROJECT) PROJECT="${v}" ;;
       ROLE_BUILDER) ROLE_BUILDER="${v}" ;;
       ROLE_RESEARCHER) ROLE_RESEARCHER="${v}" ;;
@@ -228,13 +274,12 @@ resolve() {
       ROLE_RELEASE) ROLE_RELEASE="${v}" ;;
       CONFIG_FP) CONFIG_FP="${v}" ;;
       CORES_SOURCE) CORES_SOURCE="${v}" ;;
+      RAM_GB_SOURCE) RAM_GB_SOURCE="${v}" ;;
       RESERVE_PCT_SOURCE) RESERVE_PCT_SOURCE="${v}" ;;
       OLLAMA_PLAN_SOURCE) OLLAMA_PLAN_SOURCE="${v}" ;;
       AGNES_PLAN_SOURCE) AGNES_PLAN_SOURCE="${v}" ;;
       DEEPSEEK_TIER_SOURCE) DEEPSEEK_TIER_SOURCE="${v}" ;;
       BUILDER_PROVIDER_SOURCE) BUILDER_PROVIDER_SOURCE="${v}" ;;
-      SYSTEM_CONCURRENT_MAX) SYSTEM_CONCURRENT_MAX="${v}" ;;
-      SYSTEM_CONCURRENT_MAX_SOURCE) SYSTEM_CONCURRENT_MAX_SOURCE="${v}" ;;
     esac
   done < "${ANSWERS}"
 
@@ -266,17 +311,21 @@ resolve() {
     return 2
   fi
 
-  # --- AXIS 1: WIDTH ---------------------------------------------------------
+  # --- AXIS 1: WIDTH — MEASURED, never declared (S1) --------------------------
   local cores_source="MEASURED" cores_instrument="" measured=""
+  local CORES_UNMEASURABLE=0
   if [[ -z "${CORES}" ]]; then
     measured="$(measure_cores)" || true
     CORES="${measured%% *}"
     cores_instrument="${measured##* }"
     if [[ -z "${CORES}" ]]; then
-      echo "ERROR: could not measure cores (sysctl/nproc both unavailable)." >&2
-      echo "       UNDETERMINED — ASK the operator for the core count and rerun" >&2
-      echo "       with CORES=<n> in the answers file. Never assume a width." >&2
-      return 3
+      # A broken shell is not a reason to stall an overnight build, and it is
+      # never a reason to ask a client how many agents their computer supports.
+      CORES_UNMEASURABLE=1
+      cores_source="UNMEASURABLE"
+      cores_instrument="none (sysctl and nproc both unavailable)"
+      echo "NOTE: cores could not be measured (sysctl and nproc both unavailable)." >&2
+      echo "      clientCap falls back to 4, the card says so, and the run keeps going." >&2
     fi
   else
     if [[ ! "${CORES}" =~ ^[0-9]+$ ]] || (( CORES < 1 )); then
@@ -285,34 +334,46 @@ resolve() {
     fi
     cores_source="SUPPLIED"
   fi
-  # --- CLIENT CAP (Issue 19 FIX step 6 — clientCap = min(systemConcurrentMax,
-  # cores−2); systemConcurrentMax is the operator's DECLARED max — 10 on the
-  # operator's machine — authoritative for computing; an environment read is
-  # REPORTING ONLY, never for computing; UNDETERMINED → the run refuses to plan,
-  # it never defaults to 16. The product's own 16-concurrent workflow cap also
-  # shrinks with fewer CPUs — the cores−2 half encodes that.)
-  local CLIENT_CAP=""
-  if [[ -z "${SYSTEM_CONCURRENT_MAX}" ]]; then
-    echo "ERROR: systemConcurrentMax UNDETERMINED — no declared SYSTEM_CONCURRENT_MAX" >&2
-    echo "       supplied. The run refuses to plan (it never defaults to 16)." >&2
-    echo "       Ask one plain question for the machine's declared max and rerun." >&2
-    return 3
+
+  local ram_source="MEASURED" ram_instrument="" ram_measured=""
+  local RAM_UNMEASURABLE=0
+  if [[ -z "${RAM_GB}" ]]; then
+    ram_measured="$(measure_ram_gb)" || true
+    RAM_GB="${ram_measured%% *}"
+    ram_instrument="${ram_measured##* }"
+    if [[ -z "${RAM_GB}" ]]; then
+      RAM_UNMEASURABLE=1
+      ram_source="UNMEASURABLE"
+      ram_instrument="none (hw.memsize and /proc/meminfo both unavailable)"
+    fi
+  else
+    if [[ ! "${RAM_GB}" =~ ^[0-9]+$ ]] || (( RAM_GB < 1 )); then
+      echo "ERROR: RAM_GB must be a positive whole number of GB (got: ${RAM_GB})" >&2
+      return 3
+    fi
+    ram_source="SUPPLIED"
   fi
-  if [[ ! "${SYSTEM_CONCURRENT_MAX}" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: SYSTEM_CONCURRENT_MAX must be a whole number (got: ${SYSTEM_CONCURRENT_MAX})" >&2
-    return 2
+
+  # --- THE WIDTH FORMULA (S1) ------------------------------------------------
+  #   harness_cap = min(16, cores − 2)
+  #   ram_cap     = floor((ram_gb − 6) / 1.5)
+  #   clientCap   = max(2, min(harness_cap, ram_cap))
+  # Measured from THIS machine. Nothing declared, nothing asked, no env read.
+  local CLIENT_CAP="" HARNESS_CAP_D="" RAM_CAP_D=""
+  if (( CORES_UNMEASURABLE == 1 )); then
+    CLIENT_CAP=4
+    HARNESS_CAP_D="UNDETERMINED"
+    RAM_CAP_D="n/a (cores unmeasurable)"
+  else
+    HARNESS_CAP_D="$(harness_cap_of "${CORES}")"
+    if (( RAM_UNMEASURABLE == 1 )); then
+      RAM_CAP_D="UNDETERMINED (harness cap governs alone)"
+      CLIENT_CAP="$(client_cap_of "${HARNESS_CAP_D}" "")"
+    else
+      RAM_CAP_D="$(ram_cap_of "${RAM_GB}")"
+      CLIENT_CAP="$(client_cap_of "${HARNESS_CAP_D}" "${RAM_CAP_D}")"
+    fi
   fi
-  if (( SYSTEM_CONCURRENT_MAX < 1 )); then
-    echo "ERROR: SYSTEM_CONCURRENT_MAX must be a positive whole number (got: ${SYSTEM_CONCURRENT_MAX}) — refusing to plan" >&2
-    return 3
-  fi
-  # clientCap = min(systemConcurrentMax, cores−2). systemConcurrentMax is the
-  # DECLARED concurrency (10 on the operator's machine) — NOT cores-derived;
-  # only the cores−2 half encodes the machine's CPU reality.
-  local cores_minus_2=$(( CORES - 2 ))
-  (( cores_minus_2 < 1 )) && cores_minus_2=1
-  CLIENT_CAP="${SYSTEM_CONCURRENT_MAX}"
-  (( CLIENT_CAP > cores_minus_2 )) && CLIENT_CAP="${cores_minus_2}"
   local PER_WORKFLOW HARNESS_MAX
   PER_WORKFLOW="${CLIENT_CAP}"
   HARNESS_MAX=$(( WORKFLOW_CEILING * PER_WORKFLOW ))
@@ -422,8 +483,8 @@ resolve() {
 
   # --- THE RECONCILIATION RULE ----------------------------------------------
   # The wave width is the SMALLEST of three numbers: (1) the harness delivery
-  # capacity — workflows-in-flight × clientCap (min(systemConcurrentMax,
-  # cores−2), Issue 19 FIX step 6), capped at 50 workflows; (2) the operator cap
+  # capacity — workflows-in-flight × clientCap (the MEASURED width of AXIS 1),
+  # capped at 50 workflows; (2) the operator cap
   # for the provider class — 20 concurrent agents per wave on Anthropic-billed
   # Claude Code, no operator cap on the user's own 9Router provider keys beyond
   # the reserve; (3) the provider ceiling minus the reserve (Law 44). The
@@ -473,21 +534,32 @@ resolve() {
   # Cores are MEASURED by this instrument when this instrument measured them; a
   # SUPPLIED core count is only ever as good as the source the caller names for
   # it, and an unnamed source is ASSUMED.
-  local CORES_MARK RESERVE_MARK PLAN_MARK FP_LINE SCM_MARK
+  local CORES_MARK RAM_MARK CAP_MARK RESERVE_MARK PLAN_MARK FP_LINE NOW_UTC
+  NOW_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   if [[ "${cores_source}" == "MEASURED" ]]; then
-    CORES_MARK="[MEASURED ${cores_instrument} $(date -u '+%Y-%m-%dT%H:%M:%SZ')]"
+    CORES_MARK="[MEASURED ${cores_instrument} ${NOW_UTC}]"
+  elif [[ "${cores_source}" == "UNMEASURABLE" ]]; then
+    CORES_MARK="[UNDETERMINED ${cores_instrument}]"
   else
     CORES_MARK="$(provenance_mark "${CORES_SOURCE}")"
   fi
-  # systemConcurrentMax is a DECLARED doctrine constant per machine — the
-  # provenance mark names who declared it when a source is supplied; a missing
-  # source still prints the declared value (the value is the declaration), but
-  # the mark falls back to ASSUMED so a value nobody can trace is sized
-  # conservatively.
-  if [[ -n "${SYSTEM_CONCURRENT_MAX_SOURCE}" ]]; then
-    SCM_MARK="$(provenance_mark "${SYSTEM_CONCURRENT_MAX_SOURCE}")"
+  if [[ "${ram_source}" == "MEASURED" ]]; then
+    RAM_MARK="[MEASURED ${ram_instrument} ${NOW_UTC}]"
+  elif [[ "${ram_source}" == "UNMEASURABLE" ]]; then
+    RAM_MARK="[UNDETERMINED ${ram_instrument}]"
   else
-    SCM_MARK="[ASSUMED no-source-given]"
+    RAM_MARK="$(provenance_mark "${RAM_GB_SOURCE}")"
+  fi
+  # The cap carries its OWN mark: it is only as measured as its two inputs, and
+  # the no-instrument fallback must never read as a measurement.
+  if (( CORES_UNMEASURABLE == 1 )); then
+    CAP_MARK="[ASSUMED no-instrument — cores unmeasurable, clientCap fallback 4]"
+  elif [[ "${cores_source}" == "MEASURED" && "${ram_source}" == "MEASURED" ]]; then
+    CAP_MARK="[MEASURED ${cores_instrument}+${ram_instrument} ${NOW_UTC}]"
+  elif [[ "${cores_source}" == "MEASURED" && "${RAM_UNMEASURABLE}" == "1" ]]; then
+    CAP_MARK="[MEASURED ${cores_instrument} ${NOW_UTC}; ram UNDETERMINED — harness cap governs]"
+  else
+    CAP_MARK="[DERIVED cores=${cores_source} ram=${ram_source} ${NOW_UTC}]"
   fi
   RESERVE_MARK="$(provenance_mark "${RESERVE_PCT_SOURCE}")"
   case "${BUILDER_PROVIDER}" in
@@ -507,8 +579,12 @@ resolve() {
 # CAPACITY LEDGER — ${PROJECT} — $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 Launcher: ${LAUNCHER}      Harness mode: ${HARNESS}
 ${FP_LINE}
-Cores: ${CORES} (${cores_source}) → clientCap = min(systemConcurrentMax, cores−2) = ${CLIENT_CAP}
-  clientCap provenance: systemConcurrentMax=${SYSTEM_CONCURRENT_MAX} (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [${SCM_MARK}]; cores ${CORES_MARK}
+Cores: ${CORES:-UNDETERMINED} (${cores_source}) · RAM: ${RAM_GB:-UNDETERMINED} GB (${ram_source})
+clientCap = max(2, min(harness_cap, ram_cap)) = ${CLIENT_CAP}   ${CAP_MARK}
+  width formula (S1): harness_cap = min(16, cores−2) = ${HARNESS_CAP_D}; ram_cap = floor((ram_gb−6)/1.5) = ${RAM_CAP_D}
+  inputs: cores ${CORES_MARK}; ram ${RAM_MARK}
+  MEASURED on this machine — never declared, never asked, never an environment read
+  (unmeasurable cores → clientCap 4, marked ASSUMED, and the run keeps going)
   per-workflow concurrency = clientCap = ${CLIENT_CAP}
 Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on \`cx/\` = ~372K real, NOT the profile's 900K)
 ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
@@ -549,9 +625,13 @@ CARD
 
   cat <<CARD
 WAVE SIZE: ${WIDTH}$( [[ "${MODE}" == "team" && "${TEAM_REFUSED}" -eq 0 ]] && echo " (workflow width) + ${PERSISTENT} persistent = ${GOVERNING}" )    WORKFLOW COUNT: ${WORKFLOWS}    AGENTS PER WORKFLOW: ≤${AGENTS_PER_WF} (= clientCap ${CLIENT_CAP})
-BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, \`references/gauntlet.md\` §13):
-  batch size = clientCap (${CLIENT_CAP}); batches = ceil(slice count / clientCap); wave count unchanged.
-  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → $(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )) batch$( n=$(( (16 + CLIENT_CAP - 1) / CLIENT_CAP )); [[ "${n}" -gt 1 ]] && echo "es" ) ($( n=16; cap=${CLIENT_CAP}; parts=""; while (( n > 0 )); do take=$(( n < cap ? n : cap )); [[ -n "${parts}" ]] && parts="${parts} + "; parts="${parts}${take}"; n=$(( n - take )); done; echo "${parts}" )). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+DISPATCH SHAPE (S2 — the six gauntlet workflows, \`references/gauntlet.md\` §13):
+  every slice of a workflow is passed to a SINGLE pipeline() call; the harness runs
+  clientCap (${CLIENT_CAP}) of them at once and queues the rest as a rolling window.
+  Never split a workflow's slices into sequential batches by hand.
+  Worked example: 16 builder slices at clientCap ${CLIENT_CAP} → ONE pipeline() call of 16 items,
+  ${CLIENT_CAP} live and $(( 16 - CLIENT_CAP > 0 ? 16 - CLIENT_CAP : 0 )) queued, each queued item starting the instant a slot frees.
+  THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (all eight §17 quantities):
   1. number of workflows: ${WORKFLOWS}
   2. agents per workflow: ≤${AGENTS_PER_WF}
@@ -640,22 +720,27 @@ LAUNCHER=claude-nine
 BUILDER_PROVIDER=deepseek-direct
 DEEPSEEK_TIER=flash
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=single
 PROJECT=selftest-b
 EOF
   resolve "${tmp}/b.answers" > "${tmp}/b.out" 2>"${tmp}/b.err"
   echo "SCENARIO (b) — deepseek-direct, 12 cores, single session"
-  _assert "clientCap = min(10, 12−2) = 10" "clientCap = min(systemConcurrentMax, cores−2) = 10" "${tmp}/b.out"
-  _assert "clientCap provenance declares systemConcurrentMax" "systemConcurrentMax=10 (declared, authoritative" "${tmp}/b.out"
+  _assert "clientCap = max(2, min(10, 12)) = 10" "clientCap = max(2, min(harness_cap, ram_cap)) = 10" "${tmp}/b.out"
+  _assert "both halves of the width formula are shown" "harness_cap = min(16, cores−2) = 10; ram_cap = floor((ram_gb−6)/1.5) = 12" "${tmp}/b.out"
+  _assert "width is measured, never declared" "MEASURED on this machine — never declared, never asked" "${tmp}/b.out"
   _assert "per-workflow = clientCap 10" "per-workflow concurrency = clientCap = 10" "${tmp}/b.out"
   _assert "harness 50×10=500" "harness 50×10=500" "${tmp}/b.out"
   _assert "provider usable 1875 of 2500" "provider usable 1875 of 2500" "${tmp}/b.out"
   _assert "GOVERNS: 500 (harness)" "GOVERNS: 500 (harness)" "${tmp}/b.out"
   _assert "WAVE SIZE 500 / WORKFLOW COUNT 50 / ≤10" "WAVE SIZE: 500    WORKFLOW COUNT: 50    AGENTS PER WORKFLOW: ≤10" "${tmp}/b.out"
-  # The batch-scaling line must survive intact — a heredoc that eats its own
-  # backticks corrupts exactly this line (BATCH SCALING header + gauntlet ref).
-  _assert "batch decomposition 2 batches (10 + 6)" "16 builder slices at clientCap 10 → 2 batches (10 + 6)" "${tmp}/b.out"
+  # The dispatch-shape line must survive intact — a heredoc that eats its own
+  # backticks corrupts exactly this line (DISPATCH SHAPE header + gauntlet ref).
+  _assert "one pipeline() call, never batches" "16 builder slices at clientCap 10 → ONE pipeline() call of 16 items" "${tmp}/b.out"
+  _assert "10 live and 6 queued as a rolling window" "10 live and 6 queued, each queued item starting the instant a slot frees" "${tmp}/b.out"
+  # The needle is BUILT, never written literally, so this file's own census of
+  # the retired batch arithmetic stays at zero.
+  _refute "no hand-made batch arithmetic survives" "$(printf 'batches = %s' 'ceil')" "${tmp}/b.out"
   _assert "gauntlet citation survives heredoc" "references/gauntlet.md" "${tmp}/b.out"
   # The needle is BUILT, never written literally: the dead "20 x 16" promise
   # must not survive anywhere in this file either.
@@ -672,7 +757,7 @@ HARNESS=regular
 LAUNCHER=claude
 BUILDER_PROVIDER=anthropic
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=team
 COMMANDERS=4
 PROJECT=selftest-a
@@ -690,7 +775,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=20
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=team
 COMMANDERS=4
 PROJECT=selftest-c
@@ -707,7 +792,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=100
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=single
 PROJECT=selftest-d
 EOF
@@ -721,7 +806,7 @@ HARNESS=claude-nine
 BUILDER_PROVIDER=agnes
 AGNES_PLAN=40
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=single
 PROJECT=selftest-d2
 EOF
@@ -742,8 +827,8 @@ RESERVE_PCT=25
 RESERVE_PCT_SOURCE=default-confirmed:2026-08-12T14:05:00Z
 CORES=12
 CORES_SOURCE=measured:sysctl-hw.ncpu 2026-08-12T14:02:11Z
-SYSTEM_CONCURRENT_MAX=10
-SYSTEM_CONCURRENT_MAX_SOURCE=recalled-confirmed:answered=2026-08-01 confirmed=2026-08-12T14:05:00Z
+RAM_GB=24
+RAM_GB_SOURCE=measured:sysctl-hw.memsize 2026-08-12T14:02:11Z
 CONFIG_FP=a1b2c3d4
 MODE=single
 PROJECT=selftest-p
@@ -766,7 +851,7 @@ EOF
 HARNESS=regular
 BUILDER_PROVIDER=not-a-real-provider
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 EOF
   if resolve "${tmp}/bad.answers" > "${tmp}/bad.out" 2>"${tmp}/bad.err"; then
     echo "  [FAIL] known-bad provider was ACCEPTED — this checker cannot be trusted"
@@ -794,7 +879,7 @@ EOF
 HARNESS=claude-nine
 BUILDER_PROVIDER=deepseek-direct
 CORES=abc
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 EOF
   if resolve "${tmp}/badcores.answers" > "${tmp}/badcores.out" 2>"${tmp}/badcores.err"; then
     echo "  [FAIL] non-numeric CORES was ACCEPTED — arithmetic on it is a shell crash"
@@ -812,7 +897,7 @@ BUILDER_PROVIDER=ollama-cloud
 OLLAMA_PLAN=100
 OLLAMA_PLAN_SOURCE=wishful-thinking:2026-08-12
 CORES=12
-SYSTEM_CONCURRENT_MAX=10
+RAM_GB=24
 MODE=single
 PROJECT=selftest-badmark
 EOF
@@ -825,58 +910,89 @@ EOF
   cat > "${tmp}/live.answers" <<'EOF'
 HARNESS=regular
 BUILDER_PROVIDER=anthropic
-SYSTEM_CONCURRENT_MAX=10
 MODE=single
 PROJECT=selftest-live
 EOF
   if resolve "${tmp}/live.answers" > "${tmp}/live.out" 2>"${tmp}/live.err"; then
-    local lc lw
+    local lc lr lw
     lc="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk '{print $2}')"
-    # "Cores: 12 (...) → clientCap = min(systemConcurrentMax, cores−2) = 10"
-    lw="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk -F'= ' '{print $NF}')"
-    local width_raw cap_expected
-    width_raw="$(per_workflow_width "${lc}")"
-    cap_expected=$(( width_raw < 10 ? width_raw : 10 ))
-    if [[ "${lw}" == "${cap_expected}" ]]; then
-      echo "  [PASS] measured cores=${lc} → clientCap=${lw} = min(10, ${lc}−2)"
+    lr="$(/usr/bin/grep -m1 '^Cores: ' "${tmp}/live.out" | awk -F'RAM: ' '{print $2}' | awk '{print $1}')"
+    # "clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED …]"
+    lw="$(/usr/bin/grep -m1 '^clientCap = ' "${tmp}/live.out" | awk -F'= ' '{print $3}' | awk '{print $1}')"
+    local h_expected r_expected cap_expected
+    h_expected="$(harness_cap_of "${lc}")"
+    if [[ "${lr}" == "UNDETERMINED" ]]; then
+      cap_expected="$(client_cap_of "${h_expected}" "")"
     else
-      echo "  [FAIL] measured cores=${lc} gave clientCap=${lw}, formula says ${cap_expected}"
+      r_expected="$(ram_cap_of "${lr}")"
+      cap_expected="$(client_cap_of "${h_expected}" "${r_expected}")"
+    fi
+    if [[ "${lw}" == "${cap_expected}" ]]; then
+      echo "  [PASS] measured cores=${lc}, ram=${lr}GB → clientCap=${lw} = max(2, min(16, ${lc}−2, floor((${lr}−6)/1.5)))"
+    else
+      echo "  [FAIL] measured cores=${lc}, ram=${lr}GB gave clientCap=${lw}, formula says ${cap_expected}"
       fails=$(( fails + 1 ))
     fi
     _assert "MEASURED, not inherited" "(MEASURED)" "${tmp}/live.out"
+    _assert "the clientCap line carries a MEASURED mark" "[MEASURED " "${tmp}/live.out"
   else
     echo "  [FAIL] live run did not resolve (see ${tmp}/live.err)"
     fails=$(( fails + 1 ))
   fi
 
-  # --- FAIL-CLOSED: an UNDETERMINED systemConcurrentMax REFUSES to plan -------
-  echo "FAIL-CLOSED — no declared SYSTEM_CONCURRENT_MAX = refuse to plan, never 16"
-  cat > "${tmp}/undet.answers" <<'EOF'
+  # --- THE WIDTH FORMULA on three machines (S1's own worked values) ---------
+  echo "WIDTH FORMULA — measured cores + RAM, three machines"
+  _width_case() {  # _width_case <label> <cores> <ram_gb> <expected>
+    local label="$1" c="$2" r="$3" want="$4" got
+    cat > "${tmp}/w.answers" <<EOF
 HARNESS=claude-nine
 BUILDER_PROVIDER=deepseek-direct
 DEEPSEEK_TIER=flash
-CORES=12
+CORES=${c}
+RAM_GB=${r}
 MODE=single
-PROJECT=selftest-undet
+PROJECT=selftest-width
 EOF
-  if resolve "${tmp}/undet.answers" > "${tmp}/undet.out" 2>"${tmp}/undet.err"; then
-    echo "  [FAIL] missing systemConcurrentMax was ACCEPTED — it must refuse to plan"
-    fails=$(( fails + 1 ))
+    if ! resolve "${tmp}/w.answers" > "${tmp}/w.out" 2>"${tmp}/w.err"; then
+      echo "  [FAIL] ${label} — resolver exited non-zero"
+      fails=$(( fails + 1 ))
+      return 0
+    fi
+    got="$(/usr/bin/grep -m1 '^clientCap = ' "${tmp}/w.out" | awk -F'= ' '{print $3}' | awk '{print $1}')"
+    if [[ "${got}" == "${want}" ]]; then
+      echo "  [PASS] ${label}: ${c} cores, ${r} GB → clientCap ${got}"
+    else
+      echo "  [FAIL] ${label}: ${c} cores, ${r} GB → clientCap ${got}, expected ${want}"
+      fails=$(( fails + 1 ))
+    fi
+  }
+  _width_case "operator Mac mini" 12 24 10
+  _width_case "8-core, 16 GB laptop" 8 16 6
+  _width_case "24-core, 64 GB Studio" 24 64 16
+  _width_case "tiny box floors at 2" 2 8 2
+
+  # --- NO INSTRUMENT: the run KEEPS GOING at clientCap 4, and says so --------
+  # The control is the same call with the instrument present (every scenario
+  # above): a checker that cannot tell the two apart proves nothing.
+  echo "NO INSTRUMENT — unmeasurable cores fall back to 4 and the run keeps going"
+  cat > "${tmp}/noinst.answers" <<'EOF'
+HARNESS=claude-nine
+BUILDER_PROVIDER=deepseek-direct
+DEEPSEEK_TIER=flash
+MODE=single
+PROJECT=selftest-noinstrument
+EOF
+  if ( measure_cores() { echo ""; return 1; }
+       measure_ram_gb() { echo ""; return 1; }
+       resolve "${tmp}/noinst.answers" ) > "${tmp}/noinst.out" 2>"${tmp}/noinst.err"; then
+    echo "  [PASS] a machine with no instrument still planned (never a stall)"
   else
-    echo "  [PASS] missing systemConcurrentMax refused to plan (exit $?)"
-  fi
-  if /usr/bin/grep -q "never defaults to 16" "${tmp}/undet.err"; then
-    echo "  [PASS] refusal names the never-16 rule"
-  else
-    echo "  [FAIL] refusal must name the never-16 rule"
+    echo "  [FAIL] a machine with no instrument refused to plan — it must fall back to 4 and keep going"
     fails=$(( fails + 1 ))
   fi
-  if /usr/bin/grep -q "refuses to plan" "${tmp}/undet.err"; then
-    echo "  [PASS] refusal names refuse-to-plan"
-  else
-    echo "  [FAIL] refusal must name refuse-to-plan"
-    fails=$(( fails + 1 ))
-  fi
+  _assert "fallback width is 4" "clientCap = max(2, min(harness_cap, ram_cap)) = 4" "${tmp}/noinst.out"
+  _assert "the fallback is marked ASSUMED, never MEASURED" "[ASSUMED no-instrument — cores unmeasurable, clientCap fallback 4]" "${tmp}/noinst.out"
+  _refute "an unmeasurable box never claims a measurement" "[MEASURED sysctl" "${tmp}/noinst.out"
 
   rm -rf "${tmp}"
   echo

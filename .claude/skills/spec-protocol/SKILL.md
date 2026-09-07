@@ -118,6 +118,30 @@ dispatch is padded when an agent cannot be given the four properties below. Both
 violations of this rule, and the boss cron's width check (PART 4 check 4) stops both:
 fan-out below scripted width without a recorded dependency line, and padding past the work.
 
+**THE MEASURED WIDTH (S1 — binding, 2026-09-07; it supersedes every declared
+number).** Width is MEASURED on the machine the build runs on, at
+Capacity-Ledger time (step 6.5), and written into the ledger with a `[MEASURED]`
+mark. Nobody is ever asked how many concurrent agents their computer supports:
+
+```
+cores   = sysctl -n hw.ncpu (macOS) | nproc (Linux) | $env:NUMBER_OF_PROCESSORS (Windows)
+ram_gb  = sysctl -n hw.memsize / 2^30 | /proc/meminfo MemTotal | (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+harness_cap = min(16, cores − 2)              # the Workflow tool's own limit; it queues the rest automatically
+ram_cap     = floor((ram_gb − 6) / 1.5)       # ~1.5 GB per live agent after 6 GB for the OS, the browser, and Claude itself
+clientCap   = max(2, min(harness_cap, ram_cap))
+```
+
+Worked values: a 12-core, 24 GB Mac mini → min(10, 12) = **10**; a 16 GB, 8-core
+laptop → min(6, 6) = **6**; a 24-core, 64 GB Studio → min(16, 38) = **16**. If
+cores cannot be measured (a broken shell), fall back to 4, say so in the ledger,
+and keep going. **The BAR never changes with the machine — only the width does.**
+
+**THE FLOOR IS WHAT THIS SKILL ENFORCES (S4).** The harness enforces the ceiling
+(`min(16, cores−2)` per workflow). This skill enforces the floor: every dispatch
+passes every dispatchable unit, and a tree is under-width when the dispatchable
+set is larger than the items passed. Width is checked by counting items in the
+script, not agents on screen.
+
 **THE FOUR PROPERTIES — every spawned agent (binding, the CAPACITY RULE from
 `references/gauntlet.md` §13.3).** Provider capacity is permission, never instruction.
 Every spawned agent MUST carry all four: **(1) unique responsibility** — the agent owns a
@@ -131,7 +155,7 @@ four (gauntlet.md §13.3). Width arithmetic that counts agents beyond the
 four-property test is padding, regardless of how much capacity exists.
 
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
-- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — the live-at-once dispatch width (clientCap on the operator's machine), never the slice count: the six gauntlet workflows (step 12.7, references/gauntlet.md §13.1) carry SLICE counts above 10 (16-seat PRIMARY BUILD, 16-seat BLIND VISUAL GAUNTLET) executed in sequential batches of at most clientCap — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — the live-at-once dispatch width (clientCap on the operator's machine), never the slice count: the six gauntlet workflows (step 12.7, references/gauntlet.md §13.1) carry SLICE counts above 10 (16-seat PRIMARY BUILD, 16-seat BLIND VISUAL GAUNTLET) passed to a SINGLE `pipeline()` call — the harness runs clientCap of them at once and queues the rest as a rolling window, never a hand-made batch — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
 - SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
@@ -150,10 +174,11 @@ run and is retired).** One workflow tree = one independent stream carrying UP
 TO 5 units, and every unit inside it is a PAIR: a builder agent and its paired
 judge agent, both seat-pinned (SEAT PINNING above), dispatched as pipeline
 stages so the judge fires the instant its own unit's build lands. A tree's
-agent count = its units × 2, capped at clientCap = min(systemConcurrentMax,
-cores−2) (10 on the operator's machine) — which is exactly why 5 units is the
+agent count = its units × 2, capped at the MEASURED clientCap =
+max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) (10 on this 12-core, 24 GB machine —
+RULE 2's formula) — which is exactly why 5 units is the
 chunk size (5 × 2 = 10). The six gauntlet workflows of step 12.7 carry SLICE
-counts instead — 8/16/16/8/4/1-max12 seats batched at clientCap
+counts instead — 8/16/16/8/4/1-max12 seats passed to one `pipeline()` call
 (references/gauntlet.md §13.1), never pair arithmetic. Streams larger than 5
 units chunk into multiple trees; N streams = N trees launched simultaneously, each visible in
 `/workflows` with its `[MODEL xN]` prefix. A single tree containing all the
@@ -183,8 +208,8 @@ dispatch on top of an unreconciled alarm, or while
 
 **THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
 dispatch-log row states the width arithmetic: units in this tree, × 2 for the
-pairing, clientCap = min(systemConcurrentMax, cores−2) as the cap (10 on the
-operator's machine), and the Capacity Ledger line it cites. A script whose
+pairing, the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) as the cap
+(10 on this 12-core, 24 GB machine), and the Capacity Ledger line it cites. A script whose
 agent plan falls below that arithmetic without a named reason is REJECTED and
 re-authored — up to 3 authoring attempts, then fail-soft: dispatch at the best
 achieved width with the shortfall named in the ledger, because an overnight
@@ -229,11 +254,11 @@ terminal" is a floor, never a ceiling.
      than streams. Never one workflow for all streams.
   5. Each workflow carries the [MODEL xN] prefix, owns its items through the
      full lifecycle (build → QC → fix → stage for merge), and runs at
-     clientCap = min(systemConcurrentMax, cores−2) sub-agents (10 on the
-     operator's machine — the DECLARED max; an environment read is reporting-only,
-     never for computing) for its work; min(16, cores−2) is the EXECUTION clamp
-     only — how many of those run in the same instant, the rest queue
-     automatically the moment a slot frees.
+     the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))
+     sub-agents (10 on this 12-core, 24 GB machine — RULE 2's formula, measured
+     at step 6.5, never asked and never declared) for its work; the harness runs
+     that many in the same instant and queues the rest automatically the moment
+     a slot frees.
   6. Every dispatch decision CITES the Capacity Ledger and the Parallelism Plan
      by name (see `references/capacity.md` and step 12.7). A dispatch with no
      cited ledger is a defect.
@@ -259,7 +284,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S1 — Workflow count** | Number of running workflows ≥ number of independent streams with runnable work | Launch missing workflows immediately |
 | **S2 — Zero-workflow** | Runnable work exists AND zero workflows running | EMERGENCY — dispatch all runnable work in the same turn |
 | **S3 — Prefix visibility** | Every running workflow carries a visible [MODEL xN] prefix | Kill and re-launch without prefix |
-| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the operator's declared systemConcurrentMax per workflow (10 on the operator's machine — clientCap = min(systemConcurrentMax, cores−2), computed by the CLIENT-MACHINE PROBE at step 6.5); min(16, cores−2) is the execution clamp, never the sizing | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
+| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the MEASURED clientCap per workflow (10 on this 12-core, 24 GB machine — clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), computed by the CLIENT-MACHINE PROBE at step 6.5); the harness owns the ceiling, this check owns the floor — count the items passed in the script, never agents on screen | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
 | **S5 — Idle capacity** | No capacity sits idle while dispatchable work exists | Dispatch immediately |
 | **S6 — Heartbeat freshness** | Every running workflow's heartbeat is fresh (≤10 min for build/QC, ≤20 for merge) | Kill stale, re-dispatch from slice |
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
@@ -512,7 +537,7 @@ actually resolved to.
 
 | Role | Requirement — resolved per run (default lane) | Why / caps |
 |------|---------------|------------|
-| App builder | **REQUIREMENT: the strongest available lane** — the operator's decided law, stated verbatim: "strongest available lane; on [the operator's] wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = clientCap = min(systemConcurrentMax, cores−2) per workflow, MEASURED at run time by the CLIENT-MACHINE PROBE; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
+| App builder | **REQUIREMENT: the strongest available lane** — the operator's decided law, stated verbatim: "strongest available lane; on [the operator's] wiring the `Opus` lane (v4 Flash, thinking max); **v4 Flash outranks v4 Pro**." The rig-fitness check (R1, `references/capacity.md` §13) CHECKS the resolved model each run — it never re-derives the assignment, and the builder lane is never re-pointed without an explicit yes. Needs a HIGH-CEILING provider node and a real context ceiling that fits the build's prompts. Default lane: `Opus`. | Ceiling = the RESOLVED model's provider ceiling, less the 25% reserve — read it off the seat's resolved model, never off the lane's name. Do NOT multiply a workflow count by a fixed 16 — width, budget, and policy are three separate numbers (`references/capacity.md` §3): AXIS 1 WIDTH = clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) per workflow, MEASURED at run time by the CLIENT-MACHINE PROBE; AXIS 2 BUDGET = **the operator's session budget, 1,000 subagent executions per session** — a lifetime count, never a width, and **an OPERATOR POLICY, not a platform limit**: the platform documents NO total-per-session subagent cap, and its default 20-concurrent limiter is exempt in ultracode sessions, which GATE 0 already requires. (The separate 1,000-agents-lifetime cap on a WORKFLOW RUN is a different meter, correctly attributed.) AXIS 3 POLICY = this provider's ceiling minus reserve. The Capacity Ledger computes the governing number and every dispatch cites it. Recommend DeepSeek direct ($20+) for the swarm. |
 | Technical + release judge | **REQUIREMENT:** rubric-depth verdict capability, and it MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder — by the FAMILY RULE: strip the provider prefix and the thinking/pricing/version suffixes, then compare base ids; same-base lanes differing only in thinking level are ONE model. Default lane: `Sonnet`. | Enough concurrency for the judge seats (8 technical + 4 release judges, `references/gauntlet.md` §13.1), less the 25% reserve. **Read the CEILING CLASS off the RESOLVED model, never off the lane** — a DeepSeek node bills a concurrency ceiling, an Agnes node bills a requests-per-5-hours window, an OpenRouter node bills token balance. Wrong model ⇒ wrong ceiling CLASS ⇒ wrong burn budget. Different alias names prove nothing. |
 | QC + fixer | **REQUIREMENT:** strong enough to find gaps, defects, blockers and improvements AND to fix them; where this seat also serves as a review seat, it inherits that seat's independence constraint. Default lane: `Fable`. | 5×5 = 25 concurrent. Finds gaps, defects, blockers, improvements; lists (1) what is wrong + how to fix, (2) what to improve + how; then fixes. |
 | Merger | **REQUIREMENT:** reliable at low concurrency on mechanical work; no independence constraint. Default lane: `Haiku`. | Low load, fine at 8–10 concurrent. |
@@ -1154,17 +1179,20 @@ When the operator provides a folder, that folder IS the project. Its documents A
     SCOPE.md — not one of the seventeen documents). **THE CLIENT-MACHINE PROBE
     (Issue 19 FIX step 6) runs HERE, at Capacity-Ledger time — never before,
     never later:** probe cores, RAM, free disk, and network (instruments and
-    their gated things in references/capacity.md §3 AXIS 1: cores → clientCap;
-    RAM → browser-agent count; free disk → the MEDIA-GAPS threshold — below it
+    their gated things in references/capacity.md §3 AXIS 1: cores and RAM →
+    clientCap; RAM also → browser-agent count; free disk → the MEDIA-GAPS threshold — below it
     the media lane takes the without-media path; network → provider-reachability
-    gating). Compute `clientCap = min(systemConcurrentMax, cores−2)` —
-    systemConcurrentMax is the operator's DECLARED max (10 on the operator's
-    machine), authoritative for computing; an environment read (e.g.
-    `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) is REPORTING ONLY, never for
-    computing. **If the probe cannot determine systemConcurrentMax, the value is
-    UNDETERMINED and the run refuses to plan — it never defaults to 16.** The
-    scaling consequence (references/gauntlet.md §13, §13.4): batch size =
-    clientCap; batches = ceil(slice count / clientCap); wave count unchanged.
+    gating). Compute the MEASURED width (RULE 2's formula; the full derivation
+    is `references/capacity.md` §3 AXIS 1): `harness_cap = min(16, cores − 2)`,
+    `ram_cap = floor((ram_gb − 6) / 1.5)`, and
+    `clientCap = max(2, min(harness_cap, ram_cap))` — every input measured on
+    THIS machine and written with its `[MEASURED <instrument> <ISO8601>]` mark.
+    **Nobody is ever asked how many concurrent agents their computer supports.**
+    If cores cannot be measured (a broken shell), fall back to 4, say so in the
+    ledger, and keep going. The dispatch consequence
+    (references/gauntlet.md §13, §13.4): every slice of a workflow is passed to a
+    single `pipeline()` call; the harness runs clientCap at once and queues the
+    rest as a rolling window; wave count unchanged.
     **The BAR never shrinks with the machine — only the width does.** It records:
     detected harness
     and launcher; the RESOLVED role→alias→model map (references/capacity.md §11 —
@@ -1300,26 +1328,25 @@ When the operator provides a folder, that folder IS the project. Its documents A
     MVP spec, workstream boundaries, acceptance matrix, evidence + regression
     requirements; single batch, 8 ≤ clientCap); WORKFLOW 02 PRIMARY BUILD = 16
     builder-seat agents (one slice each, explicit ownership, no uncontrolled
-    overlapping edits; sequential batches of at most clientCap — 2 batches
-    (10 + 6) at clientCap 10); WORKFLOW 03 BLIND VISUAL GAUNTLET = 16
+    overlapping edits; all 16 passed to ONE `pipeline()` call — the harness runs
+    clientCap at once and queues the rest); WORKFLOW 03 BLIND VISUAL GAUNTLET = 16
     blind-visual-judge seats (rendered evidence only, never builder reasoning;
-    same batching as WORKFLOW 02 — 2 batches (10 + 6) at clientCap 10);
+    dispatched exactly as WORKFLOW 02 — one `pipeline()` call, never hand-made
+    batches);
     WORKFLOW 04 TECHNICAL GAUNTLET = 8 technical-judge seats (single batch,
     8 ≤ clientCap); WORKFLOW 05 FINAL RELEASE COUNCIL = 4 council-judge seats,
     independent, RELEASE REQUIRES 4/4 = PASS, a FAIL or UNVERIFIED from any
     judge prevents release (single batch, 4 ≤ clientCap); WORKFLOW 06 SELECTIVE
     REPAIR LOOP = 1 repair seat per failed workstream, MAX 12 per repair wave
-    (repair seats capped at clientCap per wave, remainder batched sequentially;
+    (every repair seat of a wave passed to one `pipeline()` call;
     one NEW blind visual verifier per repaired visual workstream — never reuse
     the previous verifier's judgment; only affected technical judges re-run;
     ALWAYS rerun the 4-seat release council after all failures clear).
-    clientCap = min(systemConcurrentMax, cores−2) where systemConcurrentMax is
-    the operator's DECLARED max (10 on the operator's machine) — authoritative
-    for computing the cap; an environment read is permitted for REPORTING only,
-    never for computing. Counts are slices, never concurrency — every workflow's
-    agents execute in sequential batches of at most clientCap, never all at
-    once; scaling formula: batch size = clientCap, batches = ceil(slice count /
-    clientCap), wave count unchanged. THE BAR NEVER SHRINKS WITH THE MACHINE —
+    clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), MEASURED at
+    step 6.5 (RULE 2). Counts are slices, and every slice of a workflow is
+    passed to a SINGLE `pipeline()` call: the harness runs clientCap of them at
+    once and queues the rest — the queue is a rolling window, never a batch.
+    Never split a workflow's slices into sequential batches by hand. THE BAR NEVER SHRINKS WITH THE MACHINE —
     only the width does; a weak machine runs narrower and longer, never to a
     lower standard.** **No Parallelism Plan, no dispatch** — the self-audit
     (step 20) and the swarm watch (RULE 5) both check for it; a dispatch that is
