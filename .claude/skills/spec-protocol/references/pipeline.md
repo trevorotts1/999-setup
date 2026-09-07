@@ -269,26 +269,33 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
-**PASS = completely exceeds expectation — the ONE pass standard (Issue 17,
-PART 1 item 5; binding on every verdict in this pipeline).** The single pass
-standard is "completely exceeds expectation" — never "acceptable", never
-"meets spec", never "good enough". The judge compares the work against the
+**PASS at Gate 3 is decided by the bar's declared relationship, frozen at
+selection: wins-or-ties → OURS or TIE passes; meet-all-requirements → every
+requirement checked passes. The judge never raises the relationship.** The
+relationship is the client's own D1/D2 answers (`references/interview.md`
+Block D — the example the client would be happy matching, and whether the
+standard is "shoulder to shoulder" or the rulebook), frozen with the bar
+package at selection and binding on every verdict in this pipeline.
+
+Under **wins-or-ties** (the default) the judge compares the work against the
 item's bar (Law 48 — the named, fetchable bar on the build card's QC section
-or the B2H) the way a customer would, and the work must clearly and
-demonstrably exceed what the bar demands, with the exceeding evidence quoted
-in the verdict. Where the bar is an answer-key (no existing product serves as
-the bar — PART 1 item 4), the pass standard is the answer-key's binary PASS,
-which is what "completely exceeds expectation" means when the comparison
-surface is a checkable line, and the objectivity guard stands: an answer-key
-line the judge cannot run to pass/fail is BLOCKED (Law 50) and rewritten by
-the lead before the build. A verdict of "meets the bar exactly" is NOT a
-pass — it is ITERATE, and the gap returned to the builder is "the bar is
-matched, not exceeded — exceed it". The client's own D1/D2 answers
-(`references/interview.md` Block D — the example the client would be happy
-matching, and the relationship "shoulder to shoulder" vs "rulebook") seed the
-bar; the judge's standard is set by the bar, never lowered by any client
-answer (Law 43 — only the client lowers their own standard, and "shoulder to
-shoulder" IS the bar, not a pass below it).
+or the B2H) the way a customer would, and a verdict of OURS or TIE is a PASS,
+with the comparison evidence quoted in the verdict; only BAR — the bar clearly
+ahead — is a FAIL, and the single largest gap is what returns to the builder.
+"Meets the bar exactly" IS a pass under this relationship and is never sent
+back to "exceed it". Under **meet-all-requirements** the bar is an answer-key
+(no existing product serves as the bar — PART 1 item 4) and the pass standard
+is the answer-key's binary PASS: every requirement checked passes. The
+objectivity guard stands under both: an answer-key line the judge cannot run
+to pass/fail is BLOCKED (Law 50) and rewritten by the lead before the build.
+
+**One verdict type — the binary verdict decides, and the 0–10 score is
+recorded for trend only and never decides.** Every verdict also carries a
+0–10 score across the ten categories, written to the ledger as trend data; no
+score, at any value, passes or fails an item. PASS/FAIL is set by the frozen
+relationship above and by nothing else, and no client answer lowers the
+judge's standard (Law 43) — the client's own acceptance has its own outcome,
+`CLIENT-ACCEPTED`, in the QC RECORD below.
 
 **Model:** the QC model from the capacity interview. The default LANE on
 Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
@@ -313,7 +320,7 @@ QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
 bar-fetch=<how the bar was obtained: URL | capture path | file path | the
 answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
-outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
+outcome=<PASSED|CLIENT-ACCEPTED gap=<the one named gap>|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
@@ -335,13 +342,20 @@ run against a QC RECORD without judging anything:
 4. **`verdict=` must be exactly one of PASS, FAIL, BLOCKED, INFEASIBLE,
    LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
    else, and the non-success states are never relabeled PASS (Law 50).
-5. **`outcome=` must be PASSED, LOOPED `cycle n of 20`, ESCALATED, or one of
-   ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a
-   reason=** (the fix loop's cap, Rule 3.22 — 20 cycles per finding, operator
-   ruling 2026-08-14; a 21st pass carries ESCALATED with the full finding
-   history) — a FAIL verdict with no LOOPED outcome line, an ESCALATED line
-   with no finding history attached, or a Law-50 verdict (BLOCKED /
-   INFEASIBLE / LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a
+5. **`outcome=` must be PASSED, CLIENT-ACCEPTED with a `gap=`, LOOPED
+   `cycle n of 20`, ESCALATED, or one of ESCALATED-BLOCKED /
+   ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the fix
+   loop's cap, Rule 3.22 — 20 cycles per finding, operator ruling 2026-08-14;
+   a 21st pass carries ESCALATED with the full finding history) — a FAIL
+   verdict with no LOOPED outcome line, an ESCALATED line with no finding
+   history attached, or a Law-50 verdict (BLOCKED / INFEASIBLE /
+   LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a broken record.
+   **CLIENT-ACCEPTED** is the client's own acceptance of a unit that did not
+   meet the frozen relationship — the promise at the top of SKILL.md, "not yet
+   as good as the example you picked — here is the one gap". It is written
+   only after the client has been asked and has said to keep it, it carries
+   that one named gap in `gap=`, its `verdict=` stays FAIL, and no judge may
+   write it: a CLIENT-ACCEPTED record with no client answer behind it is a
    broken record.
 6. **`provenance=` must be STRIPPED** (Law 49 — the critic sees the work,
    never the effort). The critic's received package is stripped of timestamps,
@@ -370,18 +384,20 @@ send it back; do not invent a generic check and call it the card's rubric.
 
 ### The ONE way — a blind critic, a binary verdict
 
-QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS =
-completely exceeds expectation; FAIL = looped to the builder with the exact
-finding, max 20 fix-loop cycles per finding, then escalation to the operator
-with the full finding history (Rule 3.22, operator ruling 2026-08-14). **The
-verdict is binary — there is no numeric pass lane, no "at or above a score"
-pass.** The non-success states BLOCKED / INFEASIBLE / LIMIT REACHED are never
-relabeled PASS (Law 50).
+QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS = the
+frozen bar relationship met (wins-or-ties → OURS or TIE passes;
+meet-all-requirements → every requirement checked passes); FAIL = looped to
+the builder with the exact finding, max 20 fix-loop cycles per finding, then
+escalation to the operator with the full finding history (Rule 3.22, operator
+ruling 2026-08-14). **The verdict is binary — there is no numeric pass lane,
+no "at or above a score" pass; the binary verdict decides and the 0–10 score
+is recorded for trend only and never decides.** The non-success states
+BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
 
 The ten categories below are the critic's rubric surface — quoted proof
 beside every judgement. Each category's judgement maps to the binary verdict:
-any category that does not completely exceed its bar is a FAIL, and its exact
-finding loops the item to the builder. The categories (from
+any category that fails the frozen relationship against its bar is a FAIL,
+and its exact finding loops the item to the builder. The categories (from
 PROMPT-QC-INSTRUCTIONS.md):
 
 1. Does it actually work?

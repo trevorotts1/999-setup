@@ -582,7 +582,7 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
     "run_status": "RUNNING|PASS|STOPPED_CAP|STOPPED_STALL|STOPPED_USER|BLOCKED_HUMAN",
     "round": <int>,
     "phase": "<current task id>",
-    "scores": { "current": <float>, "best": <float>, "gate": 8.5,
+    "scores": { "current": <float>, "best": <float>, "trend_only": true,
                 "history": [ {"round":<int>,"score":<float>,"ts":"<ISO>"} ] },
     "best_stable_build": { "checkpoint": "checkpoint/<slug>-<NNN>",
                            "commit": "<sha>", "score": <float>, "ts": "<ISO>" },
@@ -596,7 +596,7 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
     "locked": [ {"component":"<id>","files":["<path>"],"locked_at":"<ISO>",
                  "evidence":"<ledger anchor>","reopen_requires":
                  "dependency-change|proven-regression|approved-architecture-change"} ],
-    "defects_open": [ {"id":"<F-n>","unit":"<id>","cycle":"<n> of 3","summary":"<one line>"} ],
+    "defects_open": [ {"id":"<F-n>","unit":"<id>","cycle":"<n> of 20","summary":"<one line>"} ],
     "tests": { "last_suite": {"ts":"<ISO>","result":"PASS|FAIL","failed":["<name>"]} },
     "tasks": { "snapshot_ts": "<ISO>",
                "counts": {"pending":<int>,"in_progress":<int>,"completed":<int>},
@@ -618,6 +618,10 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
                "terminal_after": 6 }
   }
   ```
+
+  `scores` is trend data only: the binary PASS/FAIL verdict against the frozen
+  bar relationship decides every gate, and the 0–10 score recorded here is
+  recorded for trend only and never decides (`references/pipeline.md` Stage 2).
 
   The twelve doctrine questions map onto it directly: round → round; current
   score → scores.current; best score → scores.best; best stable build →
@@ -656,7 +660,7 @@ are explicit. No role ever edits another role's section.
 
 ## The by-command census (v4 5.7 step 10) — part of the self-audit
 
-The self-audit (SKILL.md step 20) is not finished at the 8.5 grade. It runs the
+The self-audit (SKILL.md step 20) is not finished at a PASS verdict. It runs the
 census BY COMMAND, not by reading — against every generated file, with the output
 pasted into the handover report, never into the file (Law 13). These are censuses,
 not content verdicts, so Law 12 permits them. The v4's own QC report failed on

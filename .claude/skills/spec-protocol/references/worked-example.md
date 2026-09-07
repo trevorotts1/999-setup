@@ -544,7 +544,7 @@ reconciler reads and emits actions. This file is what a cold session reads first
   "run_status": "PASS",
   "round": 2,
   "phase": "T-07",
-  "scores": { "current": 8.8, "best": 8.8, "gate": 8.5,
+  "scores": { "current": 8.8, "best": 8.8, "trend_only": true,
               "history": [ {"round":1,"score":7.9,"ts":"2026-08-12T15:41:02Z"},
                            {"round":2,"score":8.8,"ts":"2026-08-12T16:20:33Z"} ] },
   "best_stable_build": { "checkpoint": "checkpoint/recipe-box-003",
