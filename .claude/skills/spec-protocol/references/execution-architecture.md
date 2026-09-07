@@ -73,11 +73,6 @@ dependency edges, it cannot survive compaction as machine state, and it cannot
 say how the project is supposed to operate. So every tick re-derived the plan from
 decayed context until only the metronome was left.
 
-Independent evidence that explicit state layers are load-bearing rather than paperwork: Magentic-One's two-ledger architecture (a durable task ledger plus a progress ledger) lost roughly 31% of its task success when the ledgers were ablated.
-
-That 31% is a different figure from the 31% contentless-tick share measured in the
-operator's real ledger (`references/anti-drift.md` §1). Do not conflate them.
-
 | Layer | Artifact | The question it answers | Writer |
 |---|---|---|---|
 | 1. PROJECT MANIFEST | `SPEC/PROJECT-MANIFEST.md` (document 17) | How is this project SUPPOSED to operate? | The planner, once; amended only through the decision register |
@@ -90,10 +85,10 @@ honest layer among three, no longer impersonating all of them.
 
 **Layer 1 — what the manifest must contain (the eighteen contents).** PROJECT
 PURPOSE; PRODUCT REQUIREMENTS; ARCHITECTURE; MAJOR COMPONENTS; TASK GRAPH; TASK
-DEPENDENCIES; WORKFLOW DEFINITIONS; AGENT ROLES; MODEL ROLE MAPPINGS; CONCURRENCY
-LIMITS; OWNERSHIP RULES; ACCEPTANCE CRITERIA; TESTING STRATEGY; VERIFICATION
-STRATEGY; REPAIR STRATEGY; CHECKPOINT RULES; RELEASE CONDITIONS; STOP CONDITIONS.
-Measured count: 18. The full document entry, path, writer, readers, and
+DEPENDENCIES; WORKFLOW DEFINITIONS; AGENT ROLES; MODEL ROLE MAPPINGS;
+CONCURRENCY LIMITS; OWNERSHIP RULES; ACCEPTANCE CRITERIA; TESTING STRATEGY;
+VERIFICATION STRATEGY; REPAIR STRATEGY; CHECKPOINT RULES; RELEASE CONDITIONS;
+STOP CONDITIONS. The full document entry, path, writer, readers, and
 what-makes-it-wrong list live in `references/documents.md`, Document 17. **The
 manifest CITES the operational carriers — the Capacity Ledger for numbers, the
 spec for requirements, the execution plan for the run-scaled instantiation. It
@@ -149,8 +144,7 @@ top-level task defines all eleven of these fields:
 | 10 | VERIFICATION REQUIREMENT | Who proves it, with what evidence, and that the verifier is independent |
 | 11 | COMPLETION CONDITION | The six-condition law (Section 5), stated for this task |
 
-Measured count: 11 (Law 14 — the enumeration governs any remembered count). In
-Agent-Team mode each task block carries one further annotation, RESPONSIBLE
+In Agent-Team mode each task block carries one further annotation, RESPONSIBLE
 COMMANDER, naming which commander owns the task's domain; it is an annotation on
 the eleven, never a twelfth doctrine field.
 
@@ -230,11 +224,11 @@ COMPLETE
 - **E.** ACCEPTANCE CRITERIA ARE SATISFIED
 - **F.** REQUIRED PROJECT STATE WAS UPDATED
 
-**If any required condition is false, THE TASK IS NOT COMPLETE.** Measured count:
-6. "The agent returned successfully" is none of the six. A quality score alone is
-none of the six either: passing the 8.5 gate feeds the landing queue, but no task
-and no checklist box flips to COMPLETE on a score
-(`references/pipeline.md`, the 8.5 gate).
+**If any required condition is false, THE TASK IS NOT COMPLETE.** "The agent
+returned successfully" is none of the six. A quality score alone is none of the
+six either: passing the 8.5 gate feeds the landing queue, but no task and no
+checklist box flips to COMPLETE on a score (`references/pipeline.md`, the 8.5
+gate).
 
 Condition F is not an afterthought. Updating `CONTROL/project_state.json` is PART
 of completing the task, in the same turn, before the task is marked COMPLETED.
@@ -260,18 +254,19 @@ validation, the degradation path — live in `references/workflows.md` §0. This
 section states only what a SPECIFICATION owes them.
 
 **When a task needs a dynamic workflow (eleven triggers, verbatim).** Not every
-task requires a workflow; a simple sequential task may be handled directly, and its
-WORKFLOW REQUIREMENT field says `DIRECT`. Use a dynamic workflow when the task
-benefits from: PARALLEL AGENTS; MULTIPLE SPECIALISTS; FAN-OUT / FAN-IN; BUILDER +
-VERIFIER PATTERNS; LOOPS; BRANCHING; MULTIPLE EVALUATION PASSES; SELECTIVE REPAIR;
-LARGE-SCALE RESEARCH; CROSS-CHECKING; MULTI-MODEL ORCHESTRATION. Measured count: 11.
+task requires a workflow; a simple sequential task may be handled directly, and
+its WORKFLOW REQUIREMENT field says `DIRECT`. Use a dynamic workflow when the
+task benefits from: PARALLEL AGENTS; MULTIPLE SPECIALISTS; FAN-OUT / FAN-IN;
+BUILDER + VERIFIER PATTERNS; LOOPS; BRANCHING; MULTIPLE EVALUATION PASSES;
+SELECTIVE REPAIR; LARGE-SCALE RESEARCH; CROSS-CHECKING; MULTI-MODEL
+ORCHESTRATION.
 
 **What every workflow must declare (fourteen fields, verbatim).** WORKFLOW ID;
-PARENT TASK; PURPOSE; INPUTS; OUTPUTS; AGENT COUNT; MODEL ROLE; CONCURRENCY; AGENT
-OWNERSHIP; DEPENDENCIES; EVIDENCE PRODUCED; VERIFICATION METHOD; FAILURE BEHAVIOR;
-STOP CONDITION. Measured count: 14. The declaration lives in PROJECT-MANIFEST.md
-(workflow definitions) and is instantiated, run-scaled, in the Parallelism Plan
-(SKILL.md step 12.7, a named section of the execution plan).
+PARENT TASK; PURPOSE; INPUTS; OUTPUTS; AGENT COUNT; MODEL ROLE; CONCURRENCY;
+AGENT OWNERSHIP; DEPENDENCIES; EVIDENCE PRODUCED; VERIFICATION METHOD; FAILURE
+BEHAVIOR; STOP CONDITION. The declaration lives in PROJECT-MANIFEST.md (workflow
+definitions) and is instantiated, run-scaled, in the Parallelism Plan (SKILL.md
+step 12.7, a named section of the execution plan).
 
 **Never write vague instructions such as "Fan out some agents."** Write something
 measurable: "Spawn exactly 12 builder agents." "Spawn exactly one fresh verifier
@@ -282,10 +277,10 @@ the cores MEASURED at run time (10 on the operator's 12-core machine; re-measure
 per machine, never inherit the number), the governing number, and the agent-budget
 declaration (`references/capacity.md`).
 
-**What every subagent class must declare (ten ownership fields, verbatim).** AGENT
-NAME / NUMBER; MODEL ROLE; RESPONSIBILITY; SCOPE OF OWNERSHIP; INPUTS; DELIVERABLE;
-ACCEPTANCE CRITERIA; FILES OR COMPONENTS OWNED; CAN MODIFY CODE: YES / NO; CAN
-VERIFY ITS OWN WORK: YES / NO. Measured count: 10.
+**What every subagent class must declare (ten ownership fields, verbatim).**
+AGENT NAME / NUMBER; MODEL ROLE; RESPONSIBILITY; SCOPE OF OWNERSHIP; INPUTS;
+DELIVERABLE; ACCEPTANCE CRITERIA; FILES OR COMPONENTS OWNED; CAN MODIFY CODE:
+YES / NO; CAN VERIFY ITS OWN WORK: YES / NO.
 
 Do not add agents merely because Claude Code can run many agents. Every subagent
 must have a distinct reason to exist. Parallel coding agents get explicit ownership
@@ -315,9 +310,9 @@ implementation begins.
 
 **The evidence type is named per task, in advance, from the twelve.** AUTOMATED
 TEST RESULTS; SCREENSHOTS; BROWSER TESTS; VIDEO; CONSOLE LOGS; PERFORMANCE
-METRICS; API RESPONSES; DATABASE CHECKS; VISUAL COMPARISONS; ACCESSIBILITY CHECKS;
-SECURITY CHECKS; REGRESSION TESTS. Measured count: 12. "We will check it looks
-right" is not an evidence type.
+METRICS; API RESPONSES; DATABASE CHECKS; VISUAL COMPARISONS; ACCESSIBILITY
+CHECKS; SECURITY CHECKS; REGRESSION TESTS. "We will check it looks right" is not
+an evidence type.
 
 **The verifier is INDEPENDENT.** Do not allow verification to become "The builder
 says this is fixed." The formula, verbatim:
@@ -430,18 +425,18 @@ all.
 **Checkpoints (seven moments).** For long autonomous builds, preserve stable
 checkpoints at: FIRST FUNCTIONAL MVP; MAJOR MILESTONE COMPLETION; FIRST COMPLETE
 INTEGRATION; NEW HIGHEST QUALITY SCORE; ZERO-CRITICAL-DEFECT STATE; RELEASE
-CANDIDATE; FINAL RELEASE. Measured count: 7. **Never allow a broken iteration to
-destroy the best known stable build.** The mechanism — the annotated
-`checkpoint/<slug>-<NNN>` tag on the integration branch, the `checkpoints[]` record
-and `best_stable_build` pointer in `CONTROL/project_state.json`, and the restore
-procedure via a fresh worktree off the tag, re-verified before anything trusts it —
-is in `references/pipeline.md`, the Checkpoints section.
+CANDIDATE; FINAL RELEASE. **Never allow a broken iteration to destroy the best
+known stable build.** The mechanism — the annotated `checkpoint/<slug>-<NNN>`
+tag on the integration branch, the `checkpoints[]` record and
+`best_stable_build` pointer in `CONTROL/project_state.json`, and the restore
+procedure via a fresh worktree off the tag, re-verified before anything trusts
+it — is in `references/pipeline.md`, the Checkpoints section.
 
 **Locks (three reopen conditions).** When a component has passed its acceptance
-criteria, treat it as stable and do not allow unrelated agents to casually rewrite
-it. A passing component is reopened only when: A REQUIRED DEPENDENCY CHANGES; OR A
-REGRESSION TEST PROVES IT BROKE; OR AN APPROVED ARCHITECTURAL CHANGE REQUIRES IT.
-Measured count: 3. This reduces agents fixing one problem while breaking three
+criteria, treat it as stable and do not allow unrelated agents to casually
+rewrite it. A passing component is reopened only when: A REQUIRED DEPENDENCY
+CHANGES; OR A REGRESSION TEST PROVES IT BROKE; OR AN APPROVED ARCHITECTURAL
+CHANGE REQUIRES IT. This reduces agents fixing one problem while breaking three
 things that were already correct. The mechanism — the `locked[]` record with its
 `reopen_requires` field, the SCOPE.md fence, and the dispatch-time intersection
 check — is in `references/pipeline.md`, the Locking section.
@@ -486,7 +481,7 @@ without a cited reopen condition is a lock violation (Section 11).
 
 For every iterative workflow, define all six: SUCCESS CONDITION; MAXIMUM ROUNDS;
 MAXIMUM AGENT EXECUTIONS; STALL CONDITION; NO-PROGRESS CONDITION; ESCALATION
-CONDITION. Measured count: 6. **Do not blindly burn agents forever.**
+CONDITION. **Do not blindly burn agents forever.**
 
 Each exit has a NAME, recorded in `run_status` in `CONTROL/project_state.json`:
 
@@ -512,14 +507,14 @@ an outcome to dress up.
 
 ## 14. Agent counts and model roles are decided, not discovered
 
-**Agent counts (eight quantities, declared before dispatch).** NUMBER OF WORKFLOWS;
-NUMBER OF AGENTS PER WORKFLOW; MAXIMUM CONCURRENCY; WHICH MODEL ROLE EACH WORKFLOW
-USES; EXPECTED TOTAL AGENT EXECUTIONS; SELECTIVE REPAIR AGENT FORMULA; SOFT BUDGET;
-HARD SAFETY CAP. Measured count: 8. All eight are computed FROM the Capacity Ledger
-and written into it as the AGENT BUDGET DECLARATION before anything dispatches
-(`references/capacity.md` §10); the gauntlet's execution budget — the initial-run
-shape, the analyse-progress threshold, and the hard stop that exits `STOPPED_CAP` —
-is in `references/gauntlet.md` §13.
+**Agent counts (eight quantities, declared before dispatch).** NUMBER OF
+WORKFLOWS; NUMBER OF AGENTS PER WORKFLOW; MAXIMUM CONCURRENCY; WHICH MODEL ROLE
+EACH WORKFLOW USES; EXPECTED TOTAL AGENT EXECUTIONS; SELECTIVE REPAIR AGENT
+FORMULA; SOFT BUDGET; HARD SAFETY CAP. All eight are computed FROM the Capacity
+Ledger and written into it as the AGENT BUDGET DECLARATION before anything
+dispatches (`references/capacity.md` §10); the gauntlet's execution budget — the
+initial-run shape, the analyse-progress threshold, and the hard stop that exits
+`STOPPED_CAP` — is in `references/gauntlet.md` §13.
 
 Do not assume MORE AGENTS = BETTER RESULT. Use additional agents only when work can
 be decomposed into genuinely independent responsibilities. Provider capacity is not
@@ -527,9 +522,9 @@ an instruction to maximize agent count: every spawned agent must have a unique
 responsibility, evidence to inspect or work to perform, an explicit deliverable, and
 an acceptance criterion. Quality per agent matters more than raw agent count.
 
-**Model roles (seven, assigned deliberately).** ORCHESTRATOR; BUILDER; RESEARCHER;
-VISUAL VERIFIER; TECHNICAL JUDGE; SECURITY JUDGE; RELEASE JUDGE. Measured count: 7.
-If the project has configured model aliases or multiple models, do not treat every
+**Model roles (seven, assigned deliberately).** ORCHESTRATOR; BUILDER;
+RESEARCHER; VISUAL VERIFIER; TECHNICAL JUDGE; SECURITY JUDGE; RELEASE JUDGE. If
+the project has configured model aliases or multiple models, do not treat every
 model as interchangeable.
 
 **The specification refers to the ALIASES configured in the environment, and does
@@ -573,9 +568,9 @@ The twelve questions the specification must consider, verbatim:
 11. WHAT IS THE RELEASE CONDITION?
 12. WHEN MUST THE AUTONOMOUS SYSTEM STOP?
 
-Measured count: 12. **The skill answers these itself, in writing, at manifest time.
-The client is never asked about task graphs, commanders, or workflows** — the
-interview asks about the product and the bar (`references/interview.md`).
+**The skill answers these itself, in writing, at manifest time. The client is
+never asked about task graphs, commanders, or workflows** — the interview asks
+about the product and the bar (`references/interview.md`).
 
 **The required section.** For any sufficiently complex Claude Code project, the
 specification includes a dedicated section titled, literally, **EXECUTION
@@ -599,12 +594,11 @@ ARCHITECTURE**, carrying all seventeen of these contents:
 16. RELEASE CONDITION
 17. STOP CONDITION
 
-Measured count: 17. It carries them compactly, with POINTERS into
-PROJECT-MANIFEST.md for the full field blocks — pointers, never copies. It also
-carries the written answer to the three-question core rule of Section 1 (subagents
-only? a dynamic workflow? an Agent Team?). Every count in it is an exact integer
-citing its Capacity Ledger line. The section's template is owned by
-`references/documents.md`, Document 1.
+It carries them compactly, with POINTERS into PROJECT-MANIFEST.md for the full
+field blocks — pointers, never copies. It also carries the written answer to the
+three-question core rule of Section 1 (subagents only? a dynamic workflow? an
+Agent Team?). Every count in it is an exact integer citing its Capacity Ledger
+line. The section's template is owned by `references/documents.md`, Document 1.
 
 **Do not leave Claude Code to invent this architecture from scratch when the
 specification can define it intentionally.**

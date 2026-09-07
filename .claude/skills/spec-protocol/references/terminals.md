@@ -117,7 +117,7 @@ model; use that section's commands exactly as written there.
 If the project has one repository, there is one merge train = one merge terminal.
 Two repositories = two merge terminals (one per repo, each pointed at its own loop
 file). No project gets zero seats: every run is continuous-until-done (C0 is
-DELETED as a question R2 — the run decides), so every run has loops and every run
+DELETED as a question — `interview.md`'s decided-and-reported rule, the run decides), so every run has loops and every run
 has these seats. The launch command (document 11) stays what it always was — the
 paste-able restart path, never a substitute for the loops.
 
@@ -205,8 +205,8 @@ instead of the human opening three independent windows. That capability is
 real and present on both harnesses:
 
 - **The Agent/Task tool (subagent dispatch).** Present in every Claude Code and
-  Claude-Nine session — the same mechanism SKILL.md step 41 already uses to fan
-  out builders. The current session can dispatch the build, QC+fix, and merge
+  Claude-Nine session — the same mechanism SKILL.md step 21 already uses to fan
+  out builders (dispatching per the Parallelism Plan written at step 12.7). The current session can dispatch the build, QC+fix, and merge
   roles as its own subagents, in parallel.
 - **The Workflow tool (dependency-aware multi-agent orchestration).** Fires only
   when the user has opted into multi-agent orchestration (`ultracode`, GATE 0).

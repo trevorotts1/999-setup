@@ -607,7 +607,11 @@ decision recorded as a ledger line):
 | VSL | VSL page, checkout, thank-you, upsell |
 | webinar | registration, thank-you, replay, checkout, upsell |
 | tripwire | opt-in, tripwire offer, checkout, thank-you, upsell |
-| launch | landing, waitlist, cart, checkout, thank-you, order bump |
+| launch | landing, waitlist, cart, checkout, thank-you |
+
+An order bump is NOT a page in any set: section 3 defines it as page-type 6, a
+one-click add-on ON the checkout page. It is built as an element of that page,
+and only its confirmation (page-type 8) is a page of its own.
 
 Acceptance: every named page appears as a ledger line; no unnamed page is
 built; a set other than the type's default exists only when a client-decision

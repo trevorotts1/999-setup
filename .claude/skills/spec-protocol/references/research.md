@@ -57,6 +57,10 @@ and a blind question makes the user do the conductor's homework.
 - **Focused on patterns and benchmarks that shape the QUESTIONS** — similar
   apps and their features, typical page structures, stage counts, cadence and
   conversion benchmarks. Not the deep pass.
+- **On a WEBSITE it is not a separate pass.** The build target `WEBSITE` folds
+  this pass and Step 1's four topics into ONE dispatch against the cached
+  site-type table in Step 1 — one reader, one brief, one set of findings that
+  serves both the interview and the spec.
 
 **Distinct from the deeper research below.** The Just-in-Time pass informs the
 interview. Steps 1 and 2 below run after the interview and before the
@@ -121,6 +125,40 @@ web-researches itself (Law 12).
    builders of this kind of app get wrong most often? What will this app need
    that beginners forget (accounts, storage limits, error messages, mobile
    layout)?
+
+### On a WEBSITE the four topics are ONE dispatch, against a cached table
+
+**Rule.** When the build target is `WEBSITE`, topics 1–4 above are ONE brief to
+ONE reader, and the Just-in-Time pass folds into the same dispatch. A brochure
+or marketing site's domain vocabulary, page set, stack and pitfalls do not
+change from client to client, so four readers would return four versions of the
+same paragraph and cost four dispatches to do it. The one reader's job is
+narrower and sharper: CONFIRM OR CORRECT the cached table below for this
+client's site type, and return the specifics only this client's business has
+(their service area, their competitors' page sets, anything their trade
+regulates — hours, licences, allergen or pricing disclosure).
+
+**The cache, dated.** These are the skill's standing site-type findings. They
+are the reader's starting point, never the run's final answer, and never
+quoted to a client as fresh research:
+
+| Site type | The pages it carries | What every page of it must carry |
+|---|---|---|
+| Local service business (trades, cleaning, repair) | home, services, service area, about, reviews, contact | phone as a tap-to-call link, service area named, one clear "get a quote" action per page |
+| Professional practice (legal, medical, accounting, coaching) | home, each service, about/team, credentials, contact, booking | credentials and registration numbers, a booking path, plain-language description of what happens next |
+| Restaurant, café, food | home, menu, hours and location, order/reserve, about | hours, address with a map link, a current menu that is text (never only a photo of one) |
+| Portfolio or creative | home, work/gallery, about, contact | the work first and large, one contact path, fast images |
+| Small e-commerce | home, catalogue, product, cart, checkout, shipping and returns, contact | prices, shipping cost before checkout, a returns statement, a real contact route |
+| Community, church, nonprofit | home, what we do, events, give/volunteer, about, contact | the next event with its date, one giving or volunteering action, who to call |
+
+**Cache discipline.** The table carries the date it was last confirmed:
+**confirmed 2026-09-07**. The single reader re-confirms it in the same
+dispatch; anything it corrects is returned WITH its source URL and the table's
+row is treated as corrected for this run. The run writes one ledger line —
+`RESEARCH-CACHE: website type=<site type> confirmed=<ISO date> corrections=<n>`
+— so the next reader (and the morning report) can see whether the cache was
+trusted or overridden. A cache older than the run may be used; a cache quoted
+without its date may not.
 
 **Where the findings go** — all three, with sources:
 

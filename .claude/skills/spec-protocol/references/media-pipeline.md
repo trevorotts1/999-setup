@@ -167,7 +167,7 @@ doctrine. RATE LIMITS AND ALLOWANCES ARE VERIFY-LIVE — RE-RESEARCH EACH RUN** 
 never by eye.**
 
 **⛔ THE CHECKER THIS SKILL SHIPS IS `tools/prompt-band.sh`.** It strips whitespace, counts, applies the floor and the maximum, prints the count and the verdict, and **exits 1 on reject** so a build step cannot ignore it. `tools/prompt-band.sh --selftest` proves the instrument on known-positive and known-negative fixtures before any verdict is believed. It runs for BOTH providers, and **a media
-work item whose gate has not run is not complete** — the recorded count is work-item field 2. (The Agnes fleet skill's own `prove_agnes_image_prompt_floor.py` is another skill's file, unmodified by this one and not a dependency of it.)
+work item whose gate has not run is not complete** — the recorded count is work-item field 2.
 
 **RECORDED RESEARCH NOTE — read it, do not act on it.** The 2026-08-10 pass found no external evidence for the floor as a quality mechanism and proposed an alternative tuning (floor 2,000–3,000, target 3,000–5,000, ceiling 18,000). **The band above is the operator's standing rule and SHIPS AS IS**; the finding sits in the decision register, its citations in `references/media-research-log.md`.
 **Ceiling arithmetic:** 18,000 is the tightest known limit and therefore binding — the shipped Agnes gate accepts 5,000–19,000 and the resolved kie models document 20,000, so **the band needs no per-model fork.**

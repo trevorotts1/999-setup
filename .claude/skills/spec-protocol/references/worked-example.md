@@ -368,8 +368,9 @@ the broken run's real format:
 - heartbeat 2026-08-12T15:02:00Z (ledger auto-tick)
 ```
 
-That format is not invented. The operator's real ledger
-(`GAUNTLET-LOOP-WORK/LEDGER.md`, censused 2026-08-12) is **2,366 lines** and
+That format is not invented. The operator's real ledger from the failed run
+(censused 2026-08-12, the census in `references/anti-drift.md` §1) is **2,366
+lines** and
 accumulated **740** such lines — **31.3% of the file** — at a **3-minute** cadence.
 Its longest consecutive run was **139 ticks, about 6.95 hours**, and that run
 **ends at line 2,338 of 2,366**: the drift streak IS the tail. The run did not drift

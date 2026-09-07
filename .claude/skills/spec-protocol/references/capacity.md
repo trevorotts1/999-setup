@@ -91,8 +91,7 @@ rows below standing unchanged as the fallback when research fails.
 **The supersession, stated so it can never drift back:** an earlier build
 resolved Flash to 25; the operator's 2026-08-11 ruling is 2,500 and governs.
 
-**CEILINGS ARE CEILINGS, NEVER TARGETS (BINDING — 2026-08-16, Issue 14 FIX
-step 4).** A ceiling names what the provider ALLOWS, never what a dispatch
+**CEILINGS ARE CEILINGS, NEVER TARGETS (BINDING — 2026-08-16).** A ceiling names what the provider ALLOWS, never what a dispatch
 should CONSUME. Exceeding it returns HTTP 429 — verbatim from the DeepSeek
 docs: *"when the concurrency limit is exceeded, you will receive an HTTP 429
 error code"* — and a plan that treats a ceiling as a fill-line is a violation
@@ -172,7 +171,7 @@ clientCap   = max(2, min(harness_cap, ram_cap))
 Every input is written into the Capacity Ledger with its own
 `[MEASURED <instrument> <ISO8601>]` mark, and so is the result. The Claude Code
 product's **hard-coded per-workflow concurrent-agent cap of 16 — no setting
-raises it** (Issue 14 FIX step 4; the `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` env
+raises it** (the `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` env
 var changes the SESSION-subagent limiter, which ultracode exempts anyway — it
 never moves the workflow-run cap) is the `harness_cap` half of the formula: the
 harness owns the CEILING and queues everything above it, and this skill enforces

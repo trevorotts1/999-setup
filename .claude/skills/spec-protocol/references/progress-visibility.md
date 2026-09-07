@@ -2,8 +2,8 @@
 
 The persistent status line and the live task list. This reference is the
 full capability contract; SKILL.md carries only the operational requirement (step 2.10 and
-the compact threshold table). Spec: operator capability spec 2026-08-16 (17 sections,
-captured verbatim at `/tmp/progress-visibility-spec-20260816.md`).
+the compact threshold table). This file IS the capability contract — there is no
+second copy of it to consult.
 
 The swarm must be watchable. This is the watchability layer.
 

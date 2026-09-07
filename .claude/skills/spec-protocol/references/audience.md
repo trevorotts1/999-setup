@@ -119,9 +119,9 @@ answer the user has given lives in the project's answers file
 ANSWERED, and asking it again — in the same run, or after a compaction or a
 resume — is the canary defect. Before ANY question, the conductor re-reads the
 brief and the answers file; after a compaction or a resume, it re-reads them
-again (the mechanical mechanism is `interview.md` R5.1, the four rules: the
-named answers file, stable question keys, the pre-question check, and the
-session-log ask line). When the check finds the answer, the conductor states it
+again (the mechanical mechanism is the never-re-ask law in `interview.md`'s
+opening rules, in four parts: the named answers file, stable question keys, the
+pre-question check, and the session-log ask line). When the check finds the answer, the conductor states it
 back in one line — "you already told me <their words>; if anything changed, tell
 me" — and never re-asks. A question key asked twice in the session log is a violation:
 the pre-question check above is what prevents it, and the session log is where it
