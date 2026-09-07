@@ -280,9 +280,10 @@ header reads as a halt, and that reading is the reporter's defect. Token
 counters are reported honestly: the session's bottom-bar token figure is the
 WHOLE session's total, never one agent's — never present it otherwise.
 **THE COMPLETION CONTRACT:** the handover fires only when all four stop
-conditions hold — every unit at HEAD, zero build errors, QC ≥ 8.5 by an
-independent judge, and the deployed URL answering 200. Until then, RUNNING is
-the default state to report.
+conditions hold — every unit at HEAD, zero build errors, a PASS verdict from
+an independent judge (the binary verdict decides; the 0–10 score is recorded
+for trend only and never decides), and the deployed URL answering 200. Until
+then, RUNNING is the default state to report.
 | **S14 — Repeated intent** | No agent is announcing repeatedly while progressing never: K consecutive stated-intent lines (default `ANCHOR_INTENT_K=5`) whose shared token core is ≥60% of the average line, with no new named artifact, no finding, and an unchanged state fingerprint (tools/anchor.sh, exit 3) | `DRIFT-ALARM \| REPEATED-INTENT` — same escalation path as a terminal stall; the agent is stopped and re-dispatched with a concrete next artifact, never left to re-announce (references/anti-drift.md) |
 | **S15 — Ledger provenance** | Every Capacity Ledger value carries a provenance mark with a timestamp | Log the bare value as a defect; treat it as ASSUMED until marked |
 | **S16 — Media spend gate** | Every gated-family media generation has a matching MEDIA-CONSENT line BEFORE dispatch, and every media batch has a MEDIA ledger line with a cost estimate (references/media-pipeline.md, references/capacity.md 13.8) | A gated dispatch without consent is a defect of the highest class — stop the media lane, report; an unestimated batch is dispatched only after its estimate is written |
@@ -1272,8 +1273,9 @@ When the operator provides a folder, that folder IS the project. Its documents A
     build card's bar slice; the templates in `references/gauntlet.md` §6 are the
     shape of that one block, not a template repeated per unit. See
     `references/gauntlet.md` for the full template, the GL-001…GL-008 validation
-    rules, and the three-gate stack (8.5 = hard, GOAL.md fidelity = on-brief,
-    B2H = comparative). The block lives in the execution plan (document 16) and
+    rules, and the three-gate stack (the binary verdict = hard, GOAL.md
+    fidelity = on-brief, B2H = comparative). The block lives in the execution
+    plan (document 16) and
     is referenced by pointer from the launch command (document 11) per v4 7.2
     clause 4 ("pointers, never inlining") — never inlined past the 3,900-character
     fence.
@@ -1489,7 +1491,9 @@ When the operator provides a folder, that folder IS the project. Its documents A
     `/usr/bin/grep` explicitly — some machines shadow `grep` with a broken shim;
     prove the instrument on a known-positive first (see the by-command census,
     `references/documents.md`).
-    Anything below 8.5 → fix, re-grade, repeat. Hand over only at 8.5+.
+    Any FAIL → fix, re-judge, repeat. Hand over only on a PASS verdict: the
+    binary verdict decides and the 0–10 score is recorded for trend only and
+    never decides.
 21. **Hand over and start.** Tell the user, plainly, that the build now runs
     itself and they can walk away. The only paste-in command they ever receive is
     the single restart command for after a crash (document 11) — never a set of
@@ -1522,8 +1526,9 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    merges when IT passes.
 
 2. **QC + fix** — the QC model (a DIFFERENT model from the builder, Law 7) reviews
-   streaming as features land. Uses the QC rulebook — the 8.5 gate, separate judge,
-   adversarial break-it pass, mutation proof, fail-closed rules — and each unit's
+   streaming as features land. Uses the QC rulebook — the binary verdict against
+   the frozen bar relationship, separate judge, adversarial break-it pass,
+   mutation proof, fail-closed rules — and each unit's
    OWN rubric (Law 29): the judge scores the ten categories PLUS the per-card QC
    section, an independent command that names the wrong outcome. Identifies
    gaps/defects/blockers + improvements; lists (1) what is wrong + how to fix,
@@ -1546,10 +1551,11 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
    differing from the unit's builder seat and `provenance=STRIPPED` — zero
    self-QC), a named bar with its fetch proof, a binary verdict (PASS vs
    everything else — FAIL, BLOCKED, INFEASIBLE, LIMIT-REACHED, Law 50), and
-   the loop-or-pass outcome (PASSED / LOOPED cycle n of 20 / ESCALATED after
-   20 / ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED
-   with reason=). The six mechanical checks and the fail-closed rule for
-   defective records live in `references/pipeline.md` Stage 2.
+   the loop-or-pass outcome (PASSED / CLIENT-ACCEPTED with the one named gap /
+   LOOPED cycle n of 20 / ESCALATED after 20 / ESCALATED-BLOCKED /
+   ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with reason=). The six
+   mechanical checks and the fail-closed rule for defective records live in
+   `references/pipeline.md` Stage 2.
    **Law 50 — the bar wins by default:** a comparison that cannot run is BLOCKED,
    never passed; BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED are
    non-success states, never relabeled PASS.
@@ -1676,7 +1682,7 @@ lives in `references/pipeline.md`.
 | 4 — Pipeline, not barrier | Each unit is judged when IT finishes, lands when IT passes. Waves cap how many run at once; they never synchronize completion. |
 | 5 — Slice the specification | Builders read spec-common + their own slice only, never the master spec (~91% token cut). Caching will not rescue a fan-out. |
 | 6 — Foreground gates with timeout | All tests/builds/checks run foreground with an explicit timeout. Never background a gate. On timeout: mark blocked-timeout, move on. |
-| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. 8.5 gate. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. Every verdict is written as a QC RECORD (`QC-RECORD unit judge bar bar-fetch verdict outcome blind model-independence self-qc provenance` — the format in `references/pipeline.md` Stage 2), and the record's `judge=` seat must differ from the unit's builder seat with `provenance=STRIPPED`: zero self-QC. |
+| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. Binary verdict against the frozen bar relationship. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. Every verdict is written as a QC RECORD (`QC-RECORD unit judge bar bar-fetch verdict outcome blind model-independence self-qc provenance` — the format in `references/pipeline.md` Stage 2), and the record's `judge=` seat must differ from the unit's builder seat with `provenance=STRIPPED`: zero self-QC. |
 | 8 — Never quit | On any death, crash, rate limit, session limit: re-derive state from the primary source, re-fire, resume at the first unfinished item. The run ends two ways only: finished, or the human stops it. |
 | 9 — Decide autonomously; Named Stops only | Only the Named Stops ask a human. A stop blocks ONLY its own unit. Everything else is decided and recorded. |
 | 10 — Batch the ripple | One version bump + one changelog entry + one annotated tag per batch, and every other downstream artifact the batch touched. Never per unit. |
@@ -1776,7 +1782,8 @@ See `references/audience.md` for the full audience UX rules.
 - Never report something as done without independent proof. A subagent's claim is
   a claim, not evidence (Law 1, Law 14).
 - Never assert a number that was not measured by a command actually run (Law 14).
-- Never lower the quality gate. 8.5 is fixed. Never suggest lowering it (Law 43).
+- Never lower the quality gate. The frozen bar relationship is fixed. Never
+  suggest lowering it (Law 43).
 - Never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS.
   The bar wins by default (Law 50): a comparison that cannot run is BLOCKED,
   not passed; an operational limit ends the item NOT PASSED, never PASS.
@@ -1810,7 +1817,7 @@ See `references/audience.md` for the full audience UX rules.
 | Setting | Default | Why |
 |---------|---------|-----|
 | Project folder root | `~/Downloads/projects/<project-slug>/` | v4 Part 13 layout |
-| Quality gate | 8.5 of 10 (ten categories, each 1–10) | The fleet standard. It does not move. |
+| Quality gate | The binary PASS/FAIL verdict against the frozen bar relationship (wins-or-ties → OURS or TIE passes; meet-all-requirements → every requirement checked passes) | The fleet standard. It does not move, and the judge never raises the relationship. The 0–10 score across the ten categories (8.5 was the old numeric gate) is recorded for trend only and never decides. |
 | Capacity defaults (WIDTH) | SUPERSEDED by the operator's MAXIMUM-PARALLELISM DOCTRINE (see OPERATOR RULES): max workflows/sub-agents in parallel wherever it makes sense, auto-adapting, no gating, no idle capacity while runnable work waits. This is **width versus work** only. | The operator doctrine overrides the conservative WIDTH caps (20 workflows x 16 subagents, per-provider builder caps, QC 5x5). |
 | Provider reserve (CEILING ARITHMETIC) | **NOT superseded.** Law 44 stands: usable = provider ceiling − reserve, and the governing width is the smallest of {harness, operator wave cap, usable}. "Max parallel" means max *within* the usable number — never a raw provider ceiling. | A reserve is not a width cap, so the maximum-parallelism doctrine never reaches it. Never consume 100% of a provider's headroom; the client's own tooling shares those accounts. The arithmetic and every worked derivation live at `references/capacity.md` §2/§5, and each dispatch cites the Capacity Ledger's computed number. |
 | Merge-writer liveness | 20 minutes (heartbeat or push) | A writer resolving conflicts is legitimately quiet longer. |
