@@ -187,9 +187,7 @@ defect in this file, not a licence to search GitHub.
 model and price rules are read from; section 4 above still governs Kie.ai's
 status as PRIMARY, and the media file's own model and price rules are unchanged.
 
-**Agnes — two folders:** `63-agnes-image` (which carries
-`prove_agnes_image_prompt_floor.py`, the gate `media-pipeline.md` already cites)
-and `64-agnes-video`. Section 5 above still governs Agnes's status as the
+**Agnes — two folders:** `63-agnes-image` and `64-agnes-video`. Section 5 above still governs Agnes's status as the
 APPROVED ALTERNATIVE.
 
 **Excluded until it is in the repo:** `blackceo-ghl-agency-api`. It exists in the

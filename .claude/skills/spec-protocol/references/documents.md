@@ -597,7 +597,7 @@ not count against the closed seventeen and never need the added-document ask:
   (`references/interview.md` section 3) and written the moment each answer is
   given. RATIFIED as INFRASTRUCTURE, not one of the seventeen documents — it is
   raw material inside `00-INPUT/`, like the brainstorm capture, so it needs no
-  Rule 3.28 ask. Its writer is the conductor asking the questions; every later
+  new-document ratification. Its writer is the conductor asking the questions; every later
   reader (the design brief, the builders, the ship check) reads it and never
   edits it. Its shape is fixed — one heading per item, in this order:
 
