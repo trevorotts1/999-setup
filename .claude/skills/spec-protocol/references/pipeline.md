@@ -98,7 +98,7 @@ supplied by this page.
 |---|---|---|
 | Per workflow | min(16, cores−2) truly concurrent (10 on a 12-core machine — measured, re-measure per machine) | Measured — the harness runtime cap |
 | Per session | ≤ 50 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
-| Anthropic Claude Code | ≤ 20 concurrent agents per wave (operator cap); in Agent-Team mode the lead + commanders occupy persistent slots inside it first | Operator doctrine |
+| Anthropic Claude Code | **No wave cap.** Width is workflows × clientCap, exactly as on every other path; the burn governor (`references/capacity.md` §6) is the only limiter on a subscription account — it parks on 429s and resumes. In Agent-Team mode the lead + commanders occupy persistent slots inside the harness width first. | Operator ruling 2026-08-16 — no caps beyond the harness |
 | Provider (9Router paths) | ceiling − reserve, per `references/capacity.md` (DeepSeek v4 Flash 2,500 / Pro 500 / Ollama $20 use 2 / $100 use 8 / Agnes verify-live) | Capacity Ledger |
 
 The governing number is the SMALLEST across layers; the project's CAPACITY-LEDGER.md
@@ -198,13 +198,17 @@ Workflow [Haiku ×1] merge-train — drains the pen on the 15-minute batch trigg
 Five trees running SIMULTANEOUSLY. Wall-clock: the slowest single item's full
 lifecycle, not the sum of all stages.
 
-**Scenario (a) — plain Claude Code on Anthropic, the same 24 items.** Of the three
-numbers the Capacity Ledger records, the operator cap of 20 concurrent agents per
-wave is the smallest, so it governs: wave size 20, **2 workflows × 10 agents**, and
-extra workflows queue. Same topology, smaller wave — the arithmetic changes, the
-shape does not. Queuing is not stalling: a queued workflow starts the instant a
-slot frees, and no builder ever waits on the merge train for a slot it has not
-already released.
+**Scenario (a) — plain Claude Code on Anthropic, the same 24 items.** The shape
+AND the arithmetic are unchanged. A metered subscription publishes no
+concurrency figure, so there is no provider number to compete with the harness
+and no policy cap to shrink the wave: the harness governs, all 24 items fit in
+one wave, and the same three build streams plus the QC stream and the merge
+train dispatch together. The only difference is which instrument holds the
+run — the burn governor (`references/capacity.md` §6) watches for 429/limit
+responses and parks-and-resumes (Loop 6) if the window tightens, and it is the
+ONLY thing that ever narrows an Anthropic run. Queuing, where the harness does
+queue, is not stalling: a queued agent starts the instant a slot frees, and no
+builder ever waits on the merge train for a slot it has not already released.
 
 The operator sees five trees in `/workflows` (scenario (b)):
 

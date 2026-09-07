@@ -1030,10 +1030,13 @@ any capacity; only the widths shrink**, per the Capacity Ledger:
   that every dispatchable unit is passed. Never inherit that 10 as a constant
   and never write "×16" as a promise. Nothing here is declared or asked, and
   unmeasurable cores fall back to 4 with the ledger saying so.
-- On Anthropic-billed Claude Code the operator's standing **20-agents-per-wave**
-  cap governs total width, and when an Agent Team is active the lead plus each
-  commander occupy persistent slots INSIDE that cap before any workflow width is
-  allocated (lead + 4 commanders = 5 occupants; 15 slots remain).
+- On Anthropic-billed Claude Code there is **no wave cap**: total width is the
+  harness number, workflows-in-flight × clientCap, and the burn governor
+  (`references/capacity.md` §6) is the only limiter on a subscription account —
+  it parks on 429s and resumes, it never pre-shrinks a wave. When an Agent Team
+  is active the lead plus each commander occupy persistent slots INSIDE that
+  harness width before any workflow width is allocated (lead + 4 commanders = 5
+  occupants, deducted first).
 
 **The six-phase ORDER is the invariant; the widths are derived. THE BAR never
 shrinks with the machine — only the width does.**

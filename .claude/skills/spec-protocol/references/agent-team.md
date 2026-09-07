@@ -1280,10 +1280,13 @@ workflow width allowed = GOVERNING NUMBER − (N + 1)
 Worked, with the canon's numbers:
 
 **(a) Anthropic-billed Claude Code, 12-core machine.** Per-workflow width
-min(16, 12−2) = 10; operator cap 20 per wave GOVERNS.
-`lead + 4 commanders = 5 persistent occupants` → **20 − 5 = 15 slots remain for
-workflow width** (for example WF02 at 10 + WF03 streaming at 4 + the merge train at
-1). Team mode is affordable; the shape is written into the ledger.
+min(16, 12−2) = 10; the HARNESS governs — 50 workflows × 10 = 500 — because no
+policy wave cap exists on any path and a metered subscription publishes no
+provider figure (the burn governor is its only limiter).
+`lead + 4 commanders = 5 persistent occupants` → **500 − 5 = 495 slots remain for
+workflow width**, so a build dispatching WF02 at 10 + WF03 streaming at 4 + the
+merge train at 1 is nowhere near the edge. Team mode is affordable; the shape is
+written into the ledger.
 
 **(b) 9Router + DeepSeek v4 Flash direct, 12-core machine.** Harness governs:
 50 workflows × 10 = 500. Five persistent occupants are noise → 495 remain; the

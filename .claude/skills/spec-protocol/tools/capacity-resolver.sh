@@ -74,10 +74,13 @@
 #                   platform documents no total-per-session limit; its 20-concurrent
 #                   default is exempted for ultracode sessions, and GATE 0 requires
 #                   ultracode). A decrementing count, never a simultaneity limit.
-#   AXIS 3 POLICY — the operator cap (20 concurrent agents per wave on
-#                   Anthropic-billed Claude Code) and the provider ceiling
-#                   minus its reserve.
-# The wave width is the SMALLEST of the three; this script shows all three
+#   AXIS 3 POLICY — the provider ceiling minus its reserve. There is NO wave cap
+#                   on any path (operator ruling: no caps beyond the harness).
+#                   On an Anthropic-billed subscription there is no provider
+#                   figure either — the account is window-metered and opaque, so
+#                   the harness governs and the burn governor is the only
+#                   limiter.
+# The wave width is the SMALLER of AXIS 1 and AXIS 3; this script shows both
 # with the winner marked.
 #
 # The concurrency numbers below are the operator's live-account DOCTRINE and stay
@@ -91,7 +94,6 @@ set -u
 WORKFLOW_CEILING=50          # the operator's explicit rule: 50 workflows per session, hard
                              # (2026-08-16 operator doctrine, supersedes the
                              # 30-workflow figure)
-OPERATOR_WAVE_CAP=20         # standing operator doctrine, Anthropic-billed Claude Code
 SESSION_AGENT_BUDGET=1000    # the OPERATOR's session budget — a POLICY, a LIFETIME
                              # COUNT. The settings key CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION
                              # is undocumented upstream and treated as INERT; this
@@ -476,24 +478,16 @@ resolve() {
       ;;
   esac
 
-  # The operator cap applies to the Anthropic-billed path only. On the user's
-  # own 9Router provider keys there is no operator cap beyond the reserve.
-  local OPERATOR_APPLIES=0
-  if [[ "${BUILDER_PROVIDER}" == "anthropic" ]]; then OPERATOR_APPLIES=1; fi
-
   # --- THE RECONCILIATION RULE ----------------------------------------------
-  # The wave width is the SMALLEST of three numbers: (1) the harness delivery
+  # The wave width is the SMALLER of two numbers: (1) the harness delivery
   # capacity — workflows-in-flight × clientCap (the MEASURED width of AXIS 1),
-  # capped at 50 workflows; (2) the operator cap
-  # for the provider class — 20 concurrent agents per wave on Anthropic-billed
-  # Claude Code, no operator cap on the user's own 9Router provider keys beyond
-  # the reserve; (3) the provider ceiling minus the reserve (Law 44). The
-  # smallest number always governs, and the Capacity Ledger records all three
-  # with the winner marked.
+  # capped at 50 workflows; (2) the provider ceiling minus the reserve (Law 44).
+  # There is NO policy wave cap on any path.
+  # On an Anthropic-billed subscription PROVIDER_APPLIES is 0 — the account
+  # publishes no concurrency figure — so the harness governs outright and the
+  # burn governor is the only limiter. The smaller number always governs, and
+  # the Capacity Ledger records both with the winner marked.
   local GOVERNING="${HARNESS_MAX}" GOVERN_SRC="harness"
-  if (( OPERATOR_APPLIES == 1 )) && (( OPERATOR_WAVE_CAP < GOVERNING )); then
-    GOVERNING="${OPERATOR_WAVE_CAP}"; GOVERN_SRC="operator cap"
-  fi
   if (( PROVIDER_APPLIES == 1 )) && (( PROVIDER_USABLE < GOVERNING )); then
     GOVERNING="${PROVIDER_USABLE}"; GOVERN_SRC="provider ceiling − reserve"
   fi
@@ -595,9 +589,9 @@ ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved mod
   technical-judge=$(role_or_unresolved "${ROLE_TECHNICAL}")
   security-judge=$(role_or_unresolved "${ROLE_SECURITY}")
   release-judge=$(role_or_unresolved "${ROLE_RELEASE}")
-Ceilings: ${PROVIDER_LABEL} | operator cap $( (( OPERATOR_APPLIES == 1 )) && echo "${OPERATOR_WAVE_CAP}/wave" || echo "n/a (own provider keys)" )   ${PLAN_MARK}
+Ceilings: ${PROVIDER_LABEL} | no policy wave cap on any path   ${PLAN_MARK}
 Reserve applied: ${RESERVE_PCT}%$( (( PROVIDER_APPLIES == 1 )) && echo " → provider usable ${PROVIDER_USABLE} of ${PROVIDER_CEILING}" || echo " (no numeric provider ceiling to reserve against)" )   ${RESERVE_MARK}
-Governing number: harness ${WORKFLOW_CEILING}×${PER_WORKFLOW}=${HARNESS_MAX} | operator-cap $( (( OPERATOR_APPLIES == 1 )) && echo "${OPERATOR_WAVE_CAP}" || echo "n/a" ) | provider $( (( PROVIDER_APPLIES == 1 )) && echo "${PROVIDER_USABLE}" || echo "n/a" ) → GOVERNS: ${GOVERNING} (${GOVERN_SRC})
+Governing number: harness ${WORKFLOW_CEILING}×${PER_WORKFLOW}=${HARNESS_MAX} | provider $( (( PROVIDER_APPLIES == 1 )) && echo "${PROVIDER_USABLE}" || echo "n/a (subscription-metered — the burn governor is the only limiter)" ) → GOVERNS: ${GOVERNING} (${GOVERN_SRC})
 CARD
 
   if [[ "${MODE}" == "team" ]]; then
@@ -764,10 +758,20 @@ PROJECT=selftest-a
 EOF
   resolve "${tmp}/a.answers" > "${tmp}/a.out" 2>"${tmp}/a.err"
   echo "SCENARIO (a) — Anthropic, 12 cores, Agent Team with 4 commanders"
-  _assert "GOVERNS: 20 (operator cap)" "GOVERNS: 20 (operator cap)" "${tmp}/a.out"
-  _assert "lead+4 = 5 persistent → 15 remain" "commanders=4 → persistent slots = lead+4 = 5 → 15 remain for workflow width" "${tmp}/a.out"
-  _assert "wave 15 + 5 persistent = 20" "WAVE SIZE: 15 (workflow width) + 5 persistent = 20" "${tmp}/a.out"
-  _assert "WORKFLOW COUNT: 2" "WORKFLOW COUNT: 2    AGENTS PER WORKFLOW: ≤10" "${tmp}/a.out"
+  # No wave cap exists on any path, and a metered subscription publishes no
+  # provider figure, so the HARNESS governs outright: 50 workflows × clientCap 10.
+  _assert "scenario (a) GOVERNS: harness" "GOVERNS: 500 (harness)" "${tmp}/a.out"
+  _assert "lead+4 = 5 persistent → 495 remain" "commanders=4 → persistent slots = lead+4 = 5 → 495 remain for workflow width" "${tmp}/a.out"
+  _assert "wave 495 + 5 persistent = 500" "WAVE SIZE: 495 (workflow width) + 5 persistent = 500" "${tmp}/a.out"
+  _assert "WORKFLOW COUNT: 50" "WORKFLOW COUNT: 50    AGENTS PER WORKFLOW: ≤10" "${tmp}/a.out"
+  # The burn governor is the ONLY limiter on a subscription account, and it is
+  # named on the card so a conductor cannot mistake the harness for a rate limit.
+  _assert "burn governor named on the Anthropic card" "429/limit" "${tmp}/a.out"
+  # Anti-regression: the deleted 20-per-wave cap must not come back in any form.
+  # The needles are BUILT, never written literally, so the skill-wide census for
+  # the deleted cap cannot be tripped by this file's own check for its absence.
+  _refute "no operator wave cap on the card" "$(printf 'operator %s' cap)" "${tmp}/a.out"
+  _refute "no operator-cap field on the card" "$(printf 'operator-%s' cap)" "${tmp}/a.out"
 
   # --- Scenario (c): Ollama Cloud $20 — the arithmetic REFUSES team mode -----
   cat > "${tmp}/c.answers" <<'EOF'

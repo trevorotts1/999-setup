@@ -72,7 +72,7 @@ effort inside the session instead — never hand over an unverified flag.
 
 | Launcher | Write the command as | Notes |
 |---|---|---|
-| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; the 20-per-wave operator cap governs width. |
+| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; no policy wave cap — width is workflows × clientCap, and the burn governor is the only limiter on a subscription account. |
 | Claude-Nine | `claude-nine --model sonnet …` | Aliases route per 9Router; the Capacity Ledger's provider math governs — and the resolved model per alias is recorded there. Aliases are per-machine wiring, so RESOLVE THEM ON THE MACHINE YOU ARE ON and record what you read; never carry a resolution over from another box. (Dated example, authority expired — on one authoring machine `fable` resolved to the 372K Codex model. An example of the shape of the answer, never the answer.) |
 | Claude-Codex | `claude-codex …` (never pass `--model` — the launcher pins `cx/gpt-5.6-sol(high)` and `--autocompact 350k` itself) | 372K context ceiling; long conductor sessions compact at 350K by design. Use it for the CONDUCTOR seat only when the operator says so; subagent routing still follows the router. |
 
