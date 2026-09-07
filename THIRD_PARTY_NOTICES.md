@@ -1,11 +1,9 @@
 # Third-Party Notices
 
-This repository bundles third-party skills and speech runtime components under
+This repository bundles third-party skills under
 their respective licenses. Each vendored component folder carries a full copy
 of its upstream license; this file records the upstream source and the exact
-version/commit vendored, so licensing stays traceable. This file is bundled
-inside the Candice Companion installers (macOS DMG and Windows NSIS) via
-`bundle.resources` in `apps/candice-companion/tauri.conf.json`.
+version/commit vendored, so licensing stays traceable.
 
 ## Vendored skills
 
@@ -35,55 +33,3 @@ Files covered:
 
 All other skills in this repository (`nine-router-setup`, `spec-protocol`, `kaizen`) are
 original to this repository and covered by the repository `LICENSE` (MIT).
-
-## Candice Companion — speech runtime components
-
-Folded into this root notices file at release stamp (2026-08-22) from
-`apps/candice-companion/src-tauri/tts/NOTICE.md` (WS-19) and the license facts in
-`apps/candice-companion/src-tauri/stt/README.md` (WS-16). The TTS `NOTICE.md` header
-required this fold before production release; it is now applied. The per-directory
-files remain in place as the component-level records.
-
-### Text-to-speech (Kokoro)
-
-Model weights:
-
-- Kokoro-82M, version 1.0 (`kokoro-v1.0.fp16.onnx`, `kokoro-v1.0.int8.onnx`)
-- Upstream: https://huggingface.co/hexgrad/Kokoro-82M
-- License: Apache-2.0 (`license:apache-2.0` on the HF model card)
-- Redistribution: permitted under Apache-2.0, including the 54-voice pack
-  (`voices-v1.0.bin`). No voice clone is used; no unverified recordings.
-
-Runtime:
-
-- `kokoro-onnx` 0.6.1 (https://github.com/thewh1teagle/kokoro-onnx) — MIT
-- `onnxruntime` 1.29.0 (Microsoft) — MIT
-
-Phonemization (GPL components — separate worker process):
-
-- `phonemizer-fork` (bundled as a `kokoro-onnx` dependency) — GPL-3.0
-- `espeakng-loader` 0.2.4 — bundles `libespeak-ng` 1.52.0 + `espeak-ng-data` — GPL-3.0+
-
-These GPL-3.0 components run as a separate worker process
-(`apps/candice-companion/src-tauri/tts/scripts/runtime.py`) invoked by the app; they
-are not linked into the app binary. The distribution model for these components is
-recorded here as stated by WS-19; final verification is owed to the WS-44
-privacy/security/secrets audit before production release.
-
-Canonical voice gate (status at release stamp):
-
-No final canonical voice is claimed yet. The default (`af_heart`) and the comparison
-set (11 female American English voices) all come from the Apache-2.0
-`voices-v1.0.bin` pack, so operator approval of any candidate does not introduce a
-new license obligation. If a custom voice is ever trained, rights to every training
-recording must be confirmed before use.
-
-### Speech-to-text (whisper.cpp)
-
-- Runtime: whisper.cpp 1.9.2 (pinned; macOS Apple Silicon bottle and Windows x64 /
-  Win32 release archives) — MIT
-- Model: `ggml-tiny.en-q5_1` (production pin) — MIT (whisper.cpp model files are
-  MIT-licensed, same as the repo)
-- Sources and SHA-256 pins: `apps/candice-companion/src-tauri/stt/README.md` (pin
-  record 2026-08-21) and
-  `apps/candice-companion/src-tauri/stt/runtime/manifests/`

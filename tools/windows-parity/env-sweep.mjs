@@ -9,6 +9,9 @@
 //
 // Usage: env-sweep.mjs [--target app|website|funnel]
 //        env-sweep.mjs --selftest
+// Sandbox: PARITY_ENVSWEEP_HOME=<dir> resolves every home-relative store
+// under <dir> instead of the real home. The selftest ALWAYS sets it, so the
+// selftest can never read or write the real ~/.env or any real store.
 // Exit: 0 sweep completed (report printed; MISSING keys are a report, not a
 // failure — the report's exit tells the caller what the sweep FOUND, and the
 // caller decides); 2 usage/instrument errors.
@@ -32,7 +35,10 @@ function docsDir() {
 }
 
 function envStores() {
-  const h = homeDir();
+  // Sandbox override: when set (selftest always sets it), every
+  // home-relative store resolves under the sandbox root instead of the real
+  // home — the real ~/.openclaw, ~/.env and ~/.9router are never touched.
+  const h = process.env.PARITY_ENVSWEEP_HOME || homeDir();
   const stores = [];
   stores.push({ name: '~/.openclaw/secrets/.env', path: path.join(h, '.openclaw', 'secrets', '.env') });
   stores.push({ name: '~/.openclaw/.env', path: path.join(h, '.openclaw', '.env') });
@@ -100,9 +106,14 @@ function sweepEnv(target) {
 }
 
 // ---------------------------------------------------------------- selftest
-// Known-positive control, known-negative control, a ~/.env store control, and
-// a leak proof: a sentinel value is planted in every checked variable and must
-// appear ZERO times in the output.
+// Known-positive control, known-negative control, a sandbox ~/.env store
+// control, and a leak proof: a sentinel value is planted in every checked
+// variable and must appear ZERO times in the output.
+//
+// SAFETY: the selftest runs entirely inside a sandbox home. It never reads or
+// writes the real ~/.env or any real store. The previous save/rewrite of the
+// real ~/.env was removed — a crash between save and restore could destroy
+// operator credentials, and npm test invokes this selftest automatically.
 function selftest() {
   const failures = [];
   const assert = (ok, name, extra) => {
@@ -113,17 +124,35 @@ function selftest() {
   try { rmrf(tmp); } catch { /* ignore */ }
   mkdirp(tmp);
 
-  const home = homeDir();
-  // Save/restore the real ~/.env so the control proves the store is read.
-  const realUserEnv = path.join(home, '.env');
-  let saved = null;
-  if (existsSync(realUserEnv)) saved = readFileSync(realUserEnv, 'utf8');
+  const realHome = homeDir(); // captured BEFORE the sandbox pins below
+  const realUserEnv = path.join(realHome, '.env');
+  const realEnvExisted = existsSync(realUserEnv);
+
+  // Pin EVERY home resolution to the sandbox for the duration of the run:
+  // envStores() honors PARITY_ENVSWEEP_HOME; userPath()/homeDir() honor
+  // HOME/USERPROFILE. All three are restored in finally.
+  const sandbox = path.join(tmp, 'home');
+  mkdirp(sandbox);
+  const prevHome = process.env.HOME;
+  const prevUserProfile = process.env.USERPROFILE;
+  const prevSandboxHome = process.env.PARITY_ENVSWEEP_HOME;
+  process.env.HOME = sandbox;
+  process.env.USERPROFILE = sandbox;
+  process.env.PARITY_ENVSWEEP_HOME = sandbox;
 
   const sentinel = `SENTINEL_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
   try {
-    writeFileSync(realUserEnv, `DEEPSEEK_API_KEY=${sentinel}\n`, 'utf8');
+    // Sandbox control: the store the sweep reads is the SANDBOX ~/.env —
+    // the real ~/.env is never created, read, or written.
+    const sandboxUserEnv = path.join(sandbox, '.env');
+    writeFileSync(sandboxUserEnv, `DEEPSEEK_API_KEY=${sentinel}\n`, 'utf8');
 
     process.stdout.write('SELFTEST — env-sweep.mjs (windows-parity)\n\n');
+
+    assert(
+      envStores().every((s) => s.path.startsWith(sandbox + path.sep)),
+      'SANDBOX PROOF: every store path resolves inside the sandbox, never the real home',
+    );
 
     const report = sweepEnv('app');
     assert(report.text.includes('DEEPSEEK_API_KEY'), 'known-positive control: DEEPSEEK_API_KEY is in the report');
@@ -136,9 +165,13 @@ function selftest() {
 
     const extra = sweepEnv('website');
     assert(extra.text.includes('CLOUDFLARE_API_KEY') || extra.text.includes('DOMAIN_API_KEY') || extra.text.includes('DEEPSEEK_API_KEY'), 'target selection works (website set searched)');
+
+    // The real ~/.env must be exactly as it was: created by nothing here.
+    assert(existsSync(realUserEnv) === realEnvExisted, 'REAL HOME UNTOUCHED: real ~/.env existence unchanged by the selftest');
   } finally {
-    if (saved !== null) writeFileSync(realUserEnv, saved, 'utf8');
-    else { try { rmSync(realUserEnv, { force: true }); } catch { /* ignore */ } }
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevUserProfile;
+    if (prevSandboxHome === undefined) delete process.env.PARITY_ENVSWEEP_HOME; else process.env.PARITY_ENVSWEEP_HOME = prevSandboxHome;
     rmrf(tmp);
   }
   process.stdout.write('\n');

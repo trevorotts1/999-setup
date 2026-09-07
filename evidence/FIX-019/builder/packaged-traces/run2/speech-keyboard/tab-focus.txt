@@ -1,1 +1,0 @@
-role=AXButton desc=unnamed

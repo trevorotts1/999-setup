@@ -1,9 +1,0 @@
-{
-  "tier": "reduce",
-  "textScale": 0.8,
-  "reducedClassOn": true,
-  "dataReducedMotion": "reduce",
-  "dataTextScale": "0.8",
-  "cssTextScale": "0.8",
-  "dataA11yRuntime": "active"
-}

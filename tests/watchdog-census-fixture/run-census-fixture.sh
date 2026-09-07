@@ -42,7 +42,12 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WT="$(cd "$HERE/../.." && pwd)"                       # worktree root
 FIXED_BOSS="${BOSS_CENSUS_SCRIPT:-$WT/tools/boss-cron}"
-OLD_BOSS="$(cd "$WT/../.." && pwd)/tools/boss-cron"   # base (pre-fix) boss-cron
+# Base (pre-fix) boss-cron: extracted below into the scratch dir ($WORK) — the
+# census under test and this fixture landed in the same commit, so the old
+# implementation only exists in git history (parent of the commit that added the
+# fixture). The in-tree tools/boss-cron is the FIXED census; running it here
+# would make the regression gate (assertion 3) fail by construction. Extracted
+# to scratch so the repo tree is never written.
 PY=/usr/bin/python3
 
 # ---- fixture parameters (synthetic; tunable, never the assertion logic)
@@ -61,6 +66,24 @@ SESSION="$WORK/session-store/-Users-blackceomacmini"
 ROOT="$SESSION/subagents/workflows"
 RECORDS="$SESSION/workflows"       # harness run records live one level up
 mkdir -p "$ROOT" "$RECORDS" "$WORK/state" "$WORK/ledger"
+
+OLD_BOSS="$WORK/old-boss-cron.base"
+# Extract the pre-fix census from git (the commit that introduced the fixture's
+# parent fix carried both; its parent still counts every journal agent). Fail
+# closed: a missing base instrument must abort, not silently weaken the gate.
+if [ -z "${OLD_BOSS_SOURCE:-}" ]; then
+    BASE_COMMIT="$(git -C "$WT" log --diff-filter=A --format=%H -1 -- tests/watchdog-census-fixture/run-census-fixture.sh)"
+    if [ -n "$BASE_COMMIT" ] && git -C "$WT" cat-file -e "$BASE_COMMIT^:tools/boss-cron" 2>/dev/null; then
+        git -C "$WT" show "$BASE_COMMIT^:tools/boss-cron" > "$OLD_BOSS" || OLD_BOSS=""
+    fi
+else
+    cp "$OLD_BOSS_SOURCE" "$OLD_BOSS" || OLD_BOSS=""
+fi
+if [ ! -s "$OLD_BOSS" ]; then
+    echo "FAIL: cannot produce the base (pre-fix) boss-cron for the regression gate"
+    echo "      (git history unavailable and OLD_BOSS_SOURCE unset or unusable)"
+    exit 1
+fi
 
 echo "== watchdog census fixture =="
 echo "   stale run dirs:  $N_STALE x $STALE_AGENTS_PER_RUN agents (no records, journals ancient)"

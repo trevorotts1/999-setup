@@ -1,1 +1,0 @@
-/Users/blackceomacmini/work-999-setup-fix/WF-5B/.claude/skills/spec-protocol/tools/capacity-resolver.sh: line 512: references/gauntlet.md: No such file or directory

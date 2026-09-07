@@ -1,5 +1,0 @@
-=== S4-undoc7-committed6: exit=2 VIOLATION-STOP=1
-   VIO: - `VIOLATION-STOP 2026-08-16T20:54:55Z: lock-table: wave 7 in ledger not in locked table and no NEW-WAVE-7 dependency line: - `WAVE 7 DISPATCH 2026-08
-=== S5-doc7-committed6: exit=0 VIOLATION-STOP=0
-=== S6-literal-form: exit=2 VIOLATION-STOP=1
-   VIO: - `VIOLATION-STOP 2026-08-16T20:54:55Z: lock-table: wave 7 in ledger not in locked table and no NEW-WAVE-7 dependency line: - `WAVE 7 DISPATCH 2026-08

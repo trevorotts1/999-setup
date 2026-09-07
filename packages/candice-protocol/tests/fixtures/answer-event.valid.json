@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "1.0",
-  "sessionId": "opaque-session-id",
-  "questionKey": "BUILD_TARGET",
-  "answerText": "I want a booking tool for local barbers.",
-  "inputMode": "voice",
-  "userConfirmedTranscript": true
-}
