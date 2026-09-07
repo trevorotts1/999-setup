@@ -279,9 +279,15 @@ Run these checks against the saved script before any `Workflow({scriptPath})` la
 A failing script is **NOT dispatched.**
 
 **Check (a) is a real parse, and greps cannot do it.** Note first what does not work:
-**plain `node --check script.js` FALSE-PASSES a workflow script.** It parses the file
-as CommonJS while the runtime parses it as an ES module, so genuine syntax errors
-survive the check and only surface at launch. Parse it the way the runtime does:
+**plain `node --check script.js` FALSE-FAILS a workflow script.** Node auto-detects the
+leading `export const meta` and parses the file as an ES module, and in a module a
+top-level `return` is illegal — so the early-exit pattern this section's own examples
+use (a bare `return` at column 0) comes back as `SyntaxError: Illegal return statement`
+on a script the runtime executes without complaint (measured on node v26.8.1: bare exit
+1, wrapped exit 0, same file). A genuine error — an unclosed brace, an unterminated
+template — is caught either way, so the wrap exists to kill the false alarm, not to
+catch something the bare check misses; and a check that cries wolf on good code is a
+check authors learn to skip. Parse it the way the runtime does:
 
 1. **De-export** — rewrite the leading `export const meta` as `const meta`.
 2. **Wrap** the whole body in `async function __wf__(){ … }`, so top-level `await`
