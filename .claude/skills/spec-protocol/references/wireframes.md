@@ -60,7 +60,7 @@ design brief with named sections." Mechanical, never a hope:
    rule 5).
 
 **No code before the skeleton:** a page is not dispatched for building until
-its `STAGE-WIREFRAMES-<page>` line exists. The boss cron gate (section 3)
+its `STAGE-WIREFRAMES-<page>` line exists. The stage gate (section 3)
 enforces the ordering mechanically.
 
 ---
@@ -98,9 +98,9 @@ silent wireframe is a defect (a skeleton nobody can verify is not a skeleton).
 
 ---
 
-## 3. The boss cron gate (Issue 8, FIX step 2)
+## 3. The stage gate (Issue 8, FIX step 2)
 
-Each stage's output is the next stage's input, and the boss cron enforces the
+Each stage's output is the next stage's input, and the stage gate enforces the
 order mechanically:
 
 - `STAGE-SCAFFOLDING` does not open until every `STAGE-WIREFRAMES-<page>` line
@@ -110,7 +110,7 @@ order mechanically:
   `STAGE-WIREFRAMES` first among them (and `STAGE-SCAFFOLDING`,
   `STAGE-HERO`, `STAGE-IMAGES`, `STAGE-LOGO` where they apply). Lacking any
   prior stage line, the build does not open.
-- The boss cron checks each stage's acceptance bar before admitting the next
+- The stage gate checks each stage's acceptance bar before admitting the next
   stage — stage N must pass before stage N+1 is opened.
 - `STAGE-WIREFRAMES`'s pass bar is section 1's: every brief page has a
   wireframe whose named sections trace to the brief. A stage line naming pages

@@ -345,7 +345,7 @@ blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
 
-Mechanical checkability — the six checks any cold agent or the boss cron can
+Mechanical checkability — the six checks any cold agent or reviewer can
 run against a QC RECORD without judging anything:
 
 1. **`judge=` must NOT equal the builder's seat label** for that unit (Law 7 —
@@ -645,7 +645,7 @@ twentieth cycle.
   finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
   FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
   relabeled pass, never a silent move-on. Escalation feeds the Named Stops
-  (stop 8) and the boss-cron restart from the last clean checkpoint.
+  (stop 8) and the restart from the last clean checkpoint.
   **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
   non-success state that ends the item NOT PASSED, never PASS.
 

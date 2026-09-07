@@ -477,8 +477,8 @@ FAIL if: <exact condition> → incomplete because <reason>
   is written only after the provider-reachability gate passes
   (interview.md, PROVIDER-READY); on a gate fail the run takes the
   without-media path (media-pipeline.md section 9.3) and no manifest rows are
-  written as generation-eligible. The boss cron's per-cycle orphan sweep
-  (Issue 10) reads THIS section: generated = manifest = uploaded = referenced,
+  written as generation-eligible. The per-cycle orphan sweep (S19,
+  Issue 10) reads THIS section: generated = manifest = uploaded = referenced,
   zero orphans.
 - **THE ANSWER KEY (the QC protocol's bar-when-no-product-exists — Issue 17,
   PART 1 item 4; folds into document 16; never a new file).** When no existing

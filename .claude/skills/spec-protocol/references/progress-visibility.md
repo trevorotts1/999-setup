@@ -66,8 +66,8 @@ data derived from what it exposes (the cost rule, §4).
 - Convention: one shared script at `~/.claude/statusline-command.sh` referenced from both
   stores. If `~/.claude/settings.json` is a symlink, update the target file instead.
 - The statusLine command is **silently skipped** when workspace trust is not accepted, and
-  **disabled by `disableAllHooks`** (never set on the operator box — the boss cron lives in
-  hooks). Safe mode shows only the managed/policy status line.
+  **disabled by `disableAllHooks`** (never set on the operator box — every governance
+  hook lives there). Safe mode shows only the managed/policy status line.
 
 ## 3. Detection-first — never destroy an existing status line
 
@@ -400,7 +400,7 @@ Do not claim a metric works unless it was actually observed.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Status line missing in a trusted workspace | workspace trust not accepted | accept trust (`/trust` or the prompt); statusLine is skipped silently otherwise |
-| Status line missing everywhere | `disableAllHooks` set | remove it — it also kills the boss cron and every governance hook (PART 4 hook-protection clause) |
+| Status line missing everywhere | `disableAllHooks` set | remove it — it also kills every governance hook (PART 4 hook-protection clause) |
 | Only the managed line shows in safe mode | safe mode displays policy statusLine only | exit safe mode |
 | 5h/7d segments absent | not a subscriber / first API response not yet seen / 9Router session | omit is correct behavior, not a fault |
 | Cost segment absent | model not in the pricing table (fallback path only), OR a routed/9Router session (`model.id` doesn't start with `claude-`) | omit is correct — never guess a price, never show an Anthropic price on routed traffic. Note the bar's Model segment still shows a normal-looking name (e.g. "Opus 5") on a routed session — that is `display_name`, not the routing signal; don't mistake it for a plain session |

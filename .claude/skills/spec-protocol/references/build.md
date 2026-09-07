@@ -208,9 +208,9 @@ opted in — the honest absence, never a skipped check).
 
 ---
 
-## 4. The boss cron gate (Issue 8, FIX step 2)
+## 4. The stage gate (Issue 8, FIX step 2)
 
-Each stage's output is the next stage's input, and the boss cron enforces the
+Each stage's output is the next stage's input, and the stage gate enforces the
 order mechanically:
 
 - A `STAGE-BUILD` ledger line is REJECTED unless the prior stage lines exist —
@@ -218,7 +218,7 @@ order mechanically:
   `STAGE-SCAFFOLDING`, `STAGE-HERO`, `STAGE-IMAGES` among them (and
   `STAGE-LOGO` where a client logo exists). Lacking any prior stage line, the
   build does not open.
-- The boss cron checks each stage's acceptance bar before admitting the next
+- The stage gate checks each stage's acceptance bar before admitting the next
   stage — stage N must pass before stage N+1 is opened. `STAGE-BUILD` opens
   only after `STAGE-IMAGES` passes — and after `STAGE-LOGO` passes when a
   client logo exists (the tool's `stages` check requires `STAGE-LOGO` before
