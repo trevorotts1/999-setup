@@ -116,9 +116,10 @@ model; use that section's commands exactly as written there.
 
 If the project has one repository, there is one merge train = one merge terminal.
 Two repositories = two merge terminals (one per repo, each pointed at its own loop
-file). A zero-loops project (C0 answer DECIDED by the run — C0 is DELETED as a
-question R2; continuous-until-done is the promise) gets NO terminals — the
-launch command (document 11) is the whole mechanism.
+file). No project gets zero seats: every run is continuous-until-done (C0 is
+DELETED as a question R2 — the run decides), so every run has loops and every run
+has these seats. The launch command (document 11) stays what it always was — the
+paste-able restart path, never a substitute for the loops.
 
 ---
 

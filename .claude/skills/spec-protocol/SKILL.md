@@ -1167,7 +1167,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
    not in the R6 list. The Step 1d branch runs BEFORE the lettered blocks
    (archetype → mode question → Step 1d branch, THEN the lettered A–D blocks
    and R7 items).
-   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
+   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C1–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
@@ -1467,8 +1467,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
     is NEVER handed a terminal chore either way.
 17. **Determine GitHub.** New repo or pre-existing? Ask. Smoke-test the token.
     Create or use existing.
-18. **Derive the loops (if unattended).** Run the shape test. If C0 = once, zero
-    loops. If C0 = repeatedly, derive the loop set. See `references/loops.md`.
+18. **Derive the loops.** Run the shape test — it has one input, continuous until
+    done, and always runs the full derivation. See `references/loops.md`.
 19. **Write the launch command — and the run plan for the sessions the SKILL will
     drive.** Document 11 stays the paste-able restart command (the crash-recovery
     path). The live handover itself assigns the client NOTHING: in Agent-Team mode
@@ -1544,7 +1544,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
 Once the apparatus is built and the loops are started, the pipeline runs
 unattended. The conductor does not perform the work (Law 41) — subagents do. Full
 mechanics in `references/pipeline.md`. Before the first builder dispatches, the
-**over-engineering check** runs once (Law 42): the spec must build EXACTLY what
+**over-engineering check** fires once (Law 42): the spec must build EXACTLY what
 the user asked — not more, not less. The user's brainstorm and the confirmed
 feature list are the source of truth for scope; a spec that adds features the
 user did not ask for is corrected before any builder fires. The full check and
@@ -1623,19 +1623,21 @@ its QC-gate rule live in `references/pipeline.md`. In summary:
 
 ## Loop engineering — Laws 35 to 38
 
-If the project runs unattended (the C0 answer is "repeatedly" or "overnight"), set
-up loops. If C0 is "once, and somebody is watching," ZERO loops — a launch command
-is enough. Adding loops to a one-shot is the bloat the protocol forbids (Law 39).
+Every project runs unattended — continuous until done is the promise, and the shape
+test has one input. So every project has loops, and nothing anywhere switches them
+off.
 
-For unattended runs: the four core loops (spec, build, review, gate) + one
-merge-train loop per repository + the five survival loops (stall detection,
-session-limit park-and-resume, compaction checkpoint, budget watch, swarm watch) —
-ten in a one-lane project, and the count is derived, never assumed. Each loop has
-a row in the loop register (a section of the execution plan): Loop, Trigger,
-Interval, Owns-this-transition, Stop-condition. The minimum viable set for a first
-project is three loops: build, review (carrying the gate), and the merge train.
-See `references/loops.md` for the full engineering — the register, the shape test,
-the loop-file shape, the skip conditions, and the C0 zero-loops case.
+The set: the four core loops (spec, build, review, gate) + one merge-train loop per
+repository + the five survival loops (stall detection, session-limit
+park-and-resume, compaction checkpoint, budget watch, swarm watch) — ten in a
+one-lane project, and the count is derived, never assumed. Each loop has a row in
+the loop register (a section of the execution plan): Loop, Trigger, Interval,
+Owns-this-transition, Stop-condition. The minimum viable set for a first project is
+five loops: build, review (carrying the gate), the merge train, stall detection, and
+swarm watch — the last two are never skipped, because every run dispatches work no
+person is reading. See `references/loops.md` for the full engineering — the
+register, the shape test, the loop-file shape, and the skip conditions, every one of
+which is a fact about the project rather than a fact about who is watching.
 
 ---
 
@@ -1724,7 +1726,7 @@ lives in `references/pipeline.md`.
 | 15 — Read what you modify | A fix is a hypothesis until you have read the whole thing it changes and confirmed it exists, in that session. Reading proves shape; running proves behaviour — where the target can be run cheaply, run it. (The fleet's "scope fence" is a separate practice — see pipeline.md, not this number.) |
 | 18 — Waves come from the graph | A wave is the largest set of units that could be worked at the same moment. Every wave boundary is a named dependency, or it is a defect. Computed, never chosen. |
 | 19 — The two brakes | A dependency creates waves; a shared file creates merge order only. Never confuse them. A shared artifact stops parallel landing, never parallel building. |
-| 20 — Serialize merges, batch verifications | Merges stay one-at-a-time; the expensive verification runs once per batch. One frozen base per wave per lane; nobody rebases mid-wave; merge into an integration branch; fast-forward the trunk once. |
+| 20 — Serialize merges, batch verifications | Merges stay one-at-a-time; the expensive verification happens once per batch. One frozen base per wave per lane; nobody rebases mid-wave; merge into an integration branch; fast-forward the trunk once. |
 | 21 — Lane or pen | Every unit is in exactly one lane, or in the holding pen. Nothing in both; nothing in neither. Work that changes only running systems lives in the pen, which has no writer. |
 | 23 — Write through, never batch | Write each artifact to disk the moment it is finished, before starting the next. The disk is the record; the transcript is not. |
 | 25 — Nothing that matters lives only in context | Decisions, corrections, measurements → durable files the instant they exist. |
@@ -1735,7 +1737,7 @@ lives in `references/pipeline.md`.
 | 32 — Fixes run in parallel | One fixer per finding, dispatched concurrently. The attempt bound is per finding, not per work item. |
 | 33 — Fix it, do not report it | Hand over fixed problems, not problems. Housekeeping is never escalated. |
 | 34 — The gate is document completeness | "Ready to start?" is forbidden. 90% is not done. Measure completeness; do not ask about it. |
-| 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. (Or zero loops if C0 = once.) |
+| 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. |
 | 36 — Loops never talk to each other | Every state transition is owned by exactly one loop. Loops coordinate through the tracker only. |
 | 37 — A hosted remote is mandatory | Local-only is not a project. Every project has a version-control remote that accepts branches, holds a trunk, and resolves annotated tags. |
 | 38 — Nobody's capacity is assumed | Every rate in the plan (interval, agent ceiling, model split) is derived from the capacity you actually have, never copied from another project. A stronger model plans; a cheaper model executes. |
@@ -2034,7 +2036,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 4. `references/documents.md` — the 17-document closed list, each one's shape, the 9 refused artifacts, the census commands (Steps 10–13, 20)
 5. `references/gauntlet.md` — the three-part Gauntlet Loop block (THE TASK / THE BUILD METHOD / THE BAR TO HIT), the three-gate stack, the GL-001…GL-008 validation rules, the blind A/B protocol, the frozen reference package, the non-success states (Steps 12.5, 20 — and throughout the QC pipeline)
 6. `references/pipeline.md` — build→QC→pen→batched-merge, the scope fence, the post-merge artifact check, Land/Merged, the 8 Named Stops, Law 29's per-card rubric, version-surfaces, clean commits (Steps 13–21)
-7. `references/loops.md` — loop engineering, the loop register, 4 core + 5 survival loops, the C0 zero-loops case, the 9.4 budget derivation (Steps 16–18)
+7. `references/loops.md` — loop engineering, the loop register, 4 core + 5 survival loops, the no-zero-loop-branch rule, the 9.4 budget derivation (Steps 16–18)
 8. `references/terminals.md` — THE HANDOVER RULE (the skill drives; the client consents once), the three SEATS, and the labeled last-resort three-window rung: Rules 3.36/3.37, the pasted-and-runnable launch commands, plain-English one-command-at-a-time (Step 19)
 9. `references/audience.md` — the ~68-year-old non-technical UX rules (all steps)
 10. `references/capacity.md` — the capacity doctrine, the Capacity Ledger, the agent-budget declaration, the role→alias→model resolution, commander accounting, the four worked scenarios, the burn-rate governor, the fallback table (Steps 6, 6.5)

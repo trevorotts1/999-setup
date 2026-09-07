@@ -1489,10 +1489,9 @@ Collapse each to its default and ask for ONE yes/no confirmation per block:
 B1, B2 and B4 collapse to: one repository, branch "main", no forbidden push
 targets. (The merge cadence is NOT among them — the standard drain timer is a
 standing default now, applied silently and reported; B3 was retired, above.)
-C0→C5 collapse to: runs once while you
-watch (unless they said otherwise), the live ledger holds state, merges happen on
-their own, overnight, folder in `~/Downloads/projects/`, and "done" is the app
-live at its URL. A yes records the whole block as defaults (each marked
+C1→C5 collapse to: the live ledger holds state, merges happen on their own,
+overnight, folder in `~/Downloads/projects/`, and "done" is the app live at its
+URL. A yes records the whole block as defaults (each marked
 "default — confirmed yes/no" rather than "their answer"). A no re-opens the
 block question by question. The collapse is the reason a tiny plan lands well
 under its ceiling — and each collapse yes is a fast-path yes, so the
@@ -1550,18 +1549,15 @@ defaulted; C5 becomes the written done-condition shown for one yes/no.**
 
 | # | The question (plain) | What it sets |
 |---|---|---|
-| **C0** | **Does this project run once while you are watching, or does it keep running on its own until it is done?** Answer in your own words: "it runs once and I will be watching" — or "it runs by itself, overnight, while I am asleep." | Whether this project has loops at all. This is the question that decides between a scheduler and a payload. The shape test acts on the answer, not on anybody's judgement. |
 | **C1** | **Which file holds the state that the loops read?** Usually the live ledger — I will point to it. | The one place every loop reads and writes. Exactly one thing is the tracker. |
 | **C2** | **Do you want to approve merges, or should the loop merge on its own?** If you want to approve, your approval will be a mark on the tracker, not a message — the loop watches for it just like it watches for anything else. | Where the autonomy line falls (Rule 3.23). Human approval is a state on the tracker, not a message (Law 36). |
 | **C3** | **How long does it run without you?** Overnight (8–12 hours), a full working day, or continuously. | Whether the five survival loops are sized for one window or many. |
 | **C4** | **Where should I put the project folder?** Usually `~/Downloads/projects/`. | The workspace root. If they name a path, check if it exists; if it does, do not re-ask. |
 | **C5** | **How do you know it is done?** Not "when it works" — something a command can check. For example: "the app is live at the URL," or "all the tests pass and the deploy went through." | The stop condition every loop needs (Law 35, clause 4). Turn this into the binary boxes of the completion definition. |
-| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **The SAME question grows one further clause — still no new question number — covering what happens when a finished asset is LOST before it can be saved:** **"…And the last piece: once in a while a finished picture or clip can get lost before I manage to save it — the service throws it away very fast. If that happens overnight and remaking it still fits the budget we already agreed, may I remake it once on my own and show you both charges in the morning — or would you rather I always leave it for you to decide?"** **Asked ONLY when C0 says the project runs on its own** — a watched run has somebody there to ask in the moment, so the question has no work to do. | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. The loss clause additionally records `MEDIA_LOSS_POLICY` = remake-once-within-budget \| note-and-wait, defaulting to **remake-once-within-budget** marked as a default they confirmed — it delivers the finished build and **cannot exceed what was already consented**, while `note-and-wait` is the cautious override for a cost-sensitive client. **Binding floors regardless of which they pick:** the gated premium tier NEVER auto-remakes — it parks, because that gate is spend authority and a loss policy never grants spend authority; the four conditions on an automatic redo (inside the consented envelope, meter permitting, first redo only, and announced with both charges shown) bind even under remake-once-within-budget; and the run never stalls on a question nobody is awake to answer (`references/media-pipeline.md` section 11's loss ladder). |
+| **C6** | **"While this runs on its own, it might hit a limit on one of your AI accounts — like getting a busy signal. If that happens in the middle of the night, what should it do: slow down and keep working, take a break until the limit resets, or stop completely and wait for you? If you're not sure, I'll have it slow down and then take a break when it must — it will never just quit without leaving you a note."** **When the build also generates artwork, this SAME question grows one clause — no new question number is spent:** **"…And one more piece of the same question: if this build needs artwork but the key for it turns out to be missing — or stops working partway through — what should it do on its own? I can build everything with neatly marked picture spaces plus a shopping list of every image needed, so we fill them in together later; or skip the artwork entirely and note it; or set just the picture work aside and finish everything else. If you're not sure, I'll do the marked-spaces-and-list one and leave you a note."** **The SAME question grows one further clause — still no new question number — covering what happens when a finished asset is LOST before it can be saved:** **"…And the last piece: once in a while a finished picture or clip can get lost before I manage to save it — the service throws it away very fast. If that happens overnight and remaking it still fits the budget we already agreed, may I remake it once on my own and show you both charges in the morning — or would you rather I always leave it for you to decide?"** | What happens when capacity SHRINKS mid-run (`references/capacity.md` §13's response ladder): throttle and keep going, park until the limit resets, or stop and wait for them. It is their call, not this skill's taste. "I am not sure" records the DEFAULT — throttle first, then park and resume, never abandon — marked as a default, not as their answer. The artwork clause additionally records `MEDIA_UNATTENDED_POLICY` = placeholders-and-manifest \| skip-and-note \| park-media-lane, defaulting to **placeholders-and-manifest** marked as a default they confirmed — it delivers the most finished work by morning and it subsumes parking, because the shopping list IS the parked work with the scaffolding already built. The loss clause additionally records `MEDIA_LOSS_POLICY` = remake-once-within-budget \| note-and-wait, defaulting to **remake-once-within-budget** marked as a default they confirmed — it delivers the finished build and **cannot exceed what was already consented**, while `note-and-wait` is the cautious override for a cost-sensitive client. **Binding floors regardless of which they pick:** the gated premium tier NEVER auto-remakes — it parks, because that gate is spend authority and a loss policy never grants spend authority; the four conditions on an automatic redo (inside the consented envelope, meter permitting, first redo only, and announced with both charges shown) bind even under remake-once-within-budget; and the run never stalls on a question nobody is awake to answer (`references/media-pipeline.md` section 11's loss ladder). |
 
-**C0 is numbered zero because it is asked before C1 and because nothing above it
-was renumbered to make room.** Every question under it assumes an answer to it.
-**C6 is numbered last for the same reason** — it was added after C0 to C5 existed,
-and none of them moved to make room (the rule that placed A7, A8, and D1 to D4).
+**C6 is numbered last because it was added after C1 to C5 already existed, and
+none of them moved to make room** (the rule that placed A7, A8, and D1 to D4).
 **The artwork clause is a CLAUSE of C6, not a C7** — the answer is collected
 before they walk away precisely because a run that cannot ask must never stop to
 ask. Whichever of the three they choose, the binding floor is the same: the build
@@ -1572,25 +1568,13 @@ video engines stay parked regardless of the answer** — this clause governs the
 missing-key case, never spending authority, which is asked one generation at a
 time or not at all.
 
-**Say the consequence of C0 out loud, because both answers are allowed:**
-
-- **"It runs once, and somebody is watching it."** → A launch command is enough.
-  This project has no loops, and that is a legitimate answer rather than a
-  shortfall. Every law still binds — a different agent still judges (Laws 7, 30),
-  one writer still owns each lane (Law 3), merges are still serialized and
-  verifications still batched (Law 20), and *merged* still means the ancestry check
-  passed (Law 1). What is absent is only the scheduler. Adding loops to a project
-  that runs once is precisely the bloat the protocol forbids (Law 39). Record the
-  answer, then run the shape test, which returns a loop count of zero and stops.
-
-- **"It runs repeatedly, or unattended, or overnight."** → This project has loops.
-  Run the full derivation in `loops.md`, and the launch command's content becomes
-  the loop definition's instructions rather than being thrown away. C1 to C5 are
-  then live questions and every one of them must be answered.
-
-**"Some of both" is not a third answer.** It is the first answer for one phase and
-the second for another — answer it per phase, never by running both against one
-session.
+**Say the shape out loud, because it is decided rather than asked:** this project
+runs by itself, continuously, until it is done. That is the promise of the skill,
+so it is recorded as the standing answer and the shape test consumes it — there is
+no second answer to weigh, and no path anywhere that ends in a project without
+loops. Run the full derivation in `loops.md`, and the launch command's content
+becomes the loop definition's instructions rather than being thrown away. C1 to C5
+are live questions and every one of them must be answered.
 
 **C5 is the question people skip and the one that costs the most.** Without it a
 loop runs forever — it wakes, finds nothing to do, sleeps, and repeats until the
@@ -1634,9 +1618,10 @@ measured. Then run the budget derivation (9.4) and record its output in the same
 file — the interval, the agent ceiling, and the model split, each with the
 arithmetic beside it.
 
-C0's answer is recorded whichever way it went, in the decision register, in the
-words it was given in. The shape test reads it; a shape test with no recorded input
-is a judgement wearing a derivation's clothes.
+The run's standing shape — continuous until done — is recorded in the decision
+register in those words, marked as decided rather than asked. The shape test reads
+it; a shape test with no recorded input is a judgement wearing a derivation's
+clothes.
 
 Block D's four answers go to the decision register verbatim; D1 seeds the
 bar-candidates step in `research.md`, and D3 gates the step 9 capture download.
