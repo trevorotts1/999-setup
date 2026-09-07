@@ -1,4 +1,4 @@
-# Wireframes — STAGE-WIREFRAMES (Issue 8, FIX step 1, stage 1 of the staged pipeline)
+# Wireframes — STAGE-WIREFRAMES (Issue 8, FIX step 1 — the layout stage of the staged pipeline)
 
 **When this file applies:** every target — the staged pipeline runs for all
 targets (WEBSITE, FUNNEL, WEB_APP, MOBILE_APP, MOBILE_AND_WEB,
@@ -11,6 +11,15 @@ as its input, `references/scaffolding.md`). Its inputs are the design brief (the
 variant (the `DESIGN-LOCK` ledger line); its output is one layout skeleton per
 page or screen, with named sections taken from the brief and structured from the
 lock.
+
+**The stage order — written identically in every stage file, all targets:**
+
+DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → BUILD-DRAFT → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
+
+The wireframes are drawn from the locked direction, and the layout they fix is
+what `STAGE-BUILD-DRAFT` renders as declared placeholder slots — the paid image
+stages (`STAGE-HERO`, `STAGE-IMAGES`) come after that draft is live, never
+before it.
 
 **"Page" on an app target means a primary screen.** For WEB_APP, MOBILE_APP,
 MOBILE_AND_WEB, and DESKTOP_SOFTWARE the page inventory is the primary screens —

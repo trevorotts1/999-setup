@@ -624,15 +624,21 @@ rules). Output: each page's images as GHL media URLs.
 
 - The funnel uses the SAME staged pipeline and the SAME image lane as every
   other build — no per-page exceptions.
-- ALL six stages (`STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, `STAGE-HERO`,
-  `STAGE-IMAGES`, `STAGE-BUILD`, `STAGE-LOGO`) apply to every funnel page.
+- ALL eleven stages apply to every funnel page, in the order below.
 - Build order when a project ships funnel + website together: funnel pages
   first (the conversion path is the revenue path), then the site's remaining
   pages; the manifest is shared; each page's ledger lines name which page each
   asset serves.
 
-Acceptance: GHL media URLs per page; every funnel page passes all six stages;
-the shared manifest names the page each asset serves.
+**The stage order — written identically in every stage file, all targets:**
+
+DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → BUILD-DRAFT → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
+
+Every stage applies to every funnel page and every website page — same
+pipeline, no per-page exceptions (Issue 6, FIX step 6).
+
+Acceptance: GHL media URLs per page; every funnel page passes all eleven
+stages; the shared manifest names the page each asset serves.
 
 ### Stage 7 — FUNNEL-HOSTING
 

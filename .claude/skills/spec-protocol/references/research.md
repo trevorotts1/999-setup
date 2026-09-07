@@ -220,6 +220,11 @@ open and the builder can reach), and (3) compare the user's app against it. If
 the agent cannot obtain the reference, it hallucinates the comparison and
 approves everything — a bar that approves everything is not a bar.
 
+**Fetchable means CAPTURABLE.** A candidate the run cannot screenshot today is
+not fetchable, because what gets judged is the frozen screenshot package, never
+the live URL (`references/gauntlet.md` section 4). The capture happens at
+selection, in the same breath as the pick — see "Freezing the bar" below.
+
 **One user question, in plain language** (the audience rules — one question at a
 time, no jargon — one question presenting the candidates, never a menu):
 
@@ -236,7 +241,8 @@ today, so I cannot honestly compare against it") and present the ones that
 passed.
 
 - **If the user selects one**, it becomes the frozen bar — captured into the
-  current-state document (document 15), next to the survey itself.
+  current-state document (document 15), next to the survey itself, and frozen
+  as screenshots in the same moment (below).
   Freeze D2 and D4 beside it, in the same breath: the D2 relationship ("wins
   or ties" or "meet all requirements") and the D4 avoid-that items (merged
   with the survey's AVOID THAT findings) are ratified into the decision
@@ -255,6 +261,39 @@ bar does not change the modeling purpose: the reference apps remain material to
 study and mirror first, and the bar is a quality target the user's own app must
 reach on its own merits. Inspiration and compliance are separate — mirror what
 they got right, never copy what they built.
+
+### Freezing the bar at selection — screenshots and a page map, never a live URL
+
+**The moment the user picks, the bar is CAPTURED, not bookmarked.** This runs
+at bar selection, before the specification is written, and it is the whole
+reason the pick has to be openable today:
+
+1. **Screenshot the bar at 375, 1024, and 1440** — the three viewports —
+   for **every page mapped to one of ours**, plus the **section crops** of each
+   mapped page: hero, proof, CTA, footer.
+2. **Write the shots into `00-INPUT/bar/`**, one folder per mapped page, file
+   names carrying the page and the viewport (`home/1024.png`,
+   `home/crop-hero-1024.png`). Labels stripped — no browser chrome, no URL bar,
+   nothing that says whose page this is.
+3. **Write the page-mapping table beside them** in `00-INPUT/bar/PAGE-MAP.md`:
+   one row per pair, their page ↔ our page (their home ↔ our home, their
+   pricing ↔ our services), with the bar page's URL recorded as the SOURCE of
+   the capture. A page of ours with no counterpart is a row with `none` and a
+   one-line reason; the critic is never asked to compare it.
+4. **Ledger line:** `BAR-FROZEN: pages=<n> shots=<n>` — the number of mapped
+   pages and the number of image files actually on disk, counted, not intended.
+
+**The critic never receives a URL.** It receives OUR shots and the BAR's shots
+at the same viewport, labels stripped, and nothing else — no page names, no
+source, no builder reasoning (`references/gauntlet.md` section 4, and the blind
+A/B protocol in section 5). A comparison run against a live page is not a
+comparison: the page can change between two verdicts, and then nobody knows
+what was judged.
+
+**A bar that cannot be captured is not a bar.** If the shots cannot be taken —
+the site blocks automation, the page needs a login — say so plainly and re-do
+the selection with the remaining candidates (Law 50, fail-closed). Never
+substitute a description of the page for the page.
 
 ---
 

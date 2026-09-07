@@ -433,6 +433,15 @@ page stays the bar for the whole build; changing it mid-build re-opens bar
 selection and is announced. The bar is then **frozen as screenshots with a page
 map** — the critic receives the frozen package, never the live URL.
 
+**And in that same moment the bar is FROZEN as screenshots, never held as a
+URL:** 375, 1024, and 1440 for every mapped page, plus the section crops
+(hero, proof, CTA, footer), into `00-INPUT/bar/`, with the page-mapping table
+(their home ↔ our home) beside them and the ledger line
+`BAR-FROZEN: pages=<n> shots=<n>`. The procedure is written once in
+`references/research.md` ("Freezing the bar at selection") and this file
+follows it — the frozen shots are the copy bar for the rest of the run, and
+the URL is only where they came from.
+
 **When Mobbin is configured, the Mobbin top-3 winner is an INPUT to the
 bar.** The bar is never picked blind to it: the MOBBIN-CHECK top-3 / best-of-3
 selection (section 3) feeds the copy-bar pick — the winner's headline, subhead,
