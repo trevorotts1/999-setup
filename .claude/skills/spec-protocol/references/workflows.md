@@ -34,21 +34,25 @@ observations and is REFUTED — the instrument was never given an override to
 ignore.) Consequence worth building on: builders and their paired checkers can
 run inside ONE workflow on different brains — pin each half to its seat.
 
-**The canonical paired tree (2026-08-14 — the dispatch template):** up to 8
-units per tree, every unit a builder+judge pair, judge firing the instant its
-own build lands (pipeline has no barrier between stages):
+**The canonical Unit Gauntlet tree (the dispatch template — S3, 2026-09-07,
+`references/gauntlet.md` §13.1):** `clientCap` UNITS per tree, each unit flowing
+through its own build, its own blind visual judge and its own technical judge as
+PIPELINE STAGES of that unit, every stage seat-pinned, each stage firing the
+instant that unit's previous stage lands (pipeline has no barrier between
+stages):
 
 ```js
-export const meta = { name: 'pages-a', description: 'build+judge 8 pages',
-  phases: [{ title: 'Build' }, { title: 'Judge' }] }
+export const meta = { name: 'pages-a', description: 'unit gauntlet: 10 pages',
+  phases: [{ title: 'Build' }, { title: 'Visual' }, { title: 'Technical' }] }
 const results = await pipeline(units,
-  (u)        => agent(buildPrompt(u),        {model: 'opus',   phase: 'Build', label: `build:${u.name}`}),
-  (built, u) => agent(judgePrompt(u, built), {model: 'sonnet', phase: 'Judge', label: `judge:${u.name}`})
+  (u)          => agent(buildPrompt(u),          {model: 'opus',   phase: 'Build',     label: `build:${u.name}`}),
+  (built, u)   => agent(visualPrompt(u, built),  {model: 'sonnet', phase: 'Visual',    label: `visual:${u.name}`}),
+  (visual, u)  => agent(techPrompt(u, visual),   {model: 'sonnet', phase: 'Technical', label: `tech:${u.name}`})
 )
 return results
 ```
 
-Agent count = units × 2, capped at the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) — 10 on this 12-core, 24 GB machine (hence 5 units); the six gauntlet workflows (step 12.7) carry SLICE counts, every slice passed to one `pipeline()` call instead.
+Item count = the UNITS passed, never pairs: a tree carries up to the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) units — 10 on this 12-core, 24 GB machine, so TEN units, not five. The harness fills every slot with builders at the start and back-fills judges as builds land; the five gauntlet workflow types (step 12.7) carry SLICE counts, every slice passed to one `pipeline()` call.
 The width gate (SKILL.md) rejects a script that plans below its arithmetic
 without a named reason.
 
@@ -255,6 +259,26 @@ artifact, because the line costs one comment and proves the author thought about
 A script with an unjustified barrier or an unjustified top-level chain **FAILS
 dispatch QC.** Fix it or justify it in writing. `pipeline()` needs no justification;
 it is the default.
+
+### Forbidden shapes
+
+Four shapes are named as forbidden by the one swarm shape
+(`references/gauntlet.md` §13, §13.1) and quoted here verbatim, each with the
+fix that replaces it. **The dispatch gate refuses all four** — a script carrying
+one is rejected before any agent spawns, and the rejection names the shape and
+its fix.
+
+| # | Forbidden shape (verbatim, `references/gauntlet.md` §13.1) | The fix |
+|---|---|---|
+| a | **`parallel(build)` followed by `parallel(qc)`** | `pipeline(units, build, qc)` — one chain per unit, no barrier between the stages, so a landed unit is judged while other units are still building. The two-barrier form idles the whole set twice: once at the slowest builder, once at the slowest judge. |
+| b | **a judge phase with fewer judges than landed units** | ONE judge per unit — the judge is a STAGE of its own unit's chain, so the judge count follows the unit count by construction. A "QC phase" of 2 agents over 10 landed units is this defect with eight slots idle. |
+| c | **any tree that passes fewer units than the dispatchable set allows without a `dep=` reason** | Pass every dispatchable unit up to `clientCap`, and launch the remainder as MORE TREES in the same turn. A smaller tree is legal only with the `dep=<unit-id>` reason written in the dispatch-log row naming the dependency that holds the rest back. |
+| d | **a merge agent inside a build tree** | The merge writer runs OUTSIDE every build tree, on its own trigger (Law 3 — one writer per repo). Inside the tree it holds a build slot while it waits, and while it runs one agent works and the rest of the width idles. |
+
+Shapes (a) and (b) are also rejected mechanically by the width gate
+(`tools/dispatch-check.sh` and the `Workflow` PreToolUse hook), which parses the
+script's `pipeline(`/`parallel(` item counts and labels; (c) is the floor rule of
+SKILL.md RULE 2 and RULE 3; (d) is Law 3.
 
 ---
 

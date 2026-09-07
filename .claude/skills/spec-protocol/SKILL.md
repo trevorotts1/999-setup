@@ -157,8 +157,8 @@ four (gauntlet.md §13.3). Width arithmetic that counts agents beyond the
 four-property test is padding, regardless of how much capacity exists.
 
 The skill's conservative WIDTH defaults (20 workflows x 16 subagents, 10-merge batches) are SUPERSEDED by the operator's doctrine. **The provider reserve is NOT among them** — it is ceiling arithmetic, not a width cap:
-- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO 10 sub-agents per workflow — max 5 builders + 5 blind critics = pairs of five, the operator's machine doctrine (2026-08-16, superseding the 16-sub-agent ruling of 2026-08-14) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — the live-at-once dispatch width (clientCap on the operator's machine), never the slice count: the six gauntlet workflows (step 12.7, references/gauntlet.md §13.1) carry SLICE counts above 10 (16-seat PRIMARY BUILD, 16-seat BLIND VISUAL GAUNTLET) passed to a SINGLE `pipeline()` call — the harness runs clientCap of them at once and queues the rest as a rolling window, never a hand-made batch — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
-- SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, both halves of a wave — builders and their paired checkers (the pairing doctrine) — run inside ONE workflow on different brains.
+- Use the MAXIMUM amount of workflows and sub-agents in parallel wherever it makes sense: **UP TO clientCap UNITS per workflow tree — the MEASURED width, never pairs (S3, 2026-09-07 — the one swarm shape: units per tree = clientCap, and a unit's build, blind visual judge and technical judge are PIPELINE STAGES of that unit, never a second half of the width) — sized to the work with intelligence:** each dispatch carries as many agents as genuinely raise productivity, capped at 10 — the live-at-once dispatch width (clientCap on the operator's machine), never the slice count: the five gauntlet workflow types (step 12.7, references/gauntlet.md §13.1) carry SLICE counts above 10 (a 16-unit Unit Gauntlet, a 16-judge Integrated Visual Gauntlet) passed to a SINGLE `pipeline()` call — the harness runs clientCap of them at once and queues the rest as a rolling window, never a hand-made batch — a one-unit job gets one agent, ten independent units get ten. Two defects, equally forbidden: TIMIDITY (sizing below what the work supports — 3 agents while 7 more had independent work waiting) and PADDING (inventing agents to hit a number). min(16, cores−2), MEASURED at run time, is the harness EXECUTION clamp — how many of the 10 run in the same instant while the rest queue automatically the moment a slot frees — and it is NEVER a reason to dispatch fewer, never presented back to the operator as a correction of his number. Up to 50 workflows in parallel when the work allows (the operator's machine doctrine, not a product limit — no product cap exists on concurrent workflow runs), up to the provider's parallel ceiling LESS Law 44's reserve (e.g. DeepSeek v4 Flash bills a 2,500 parallel ceiling; the figure the ledger carries and every dispatch cites is that ceiling with the reserve already taken off — `references/capacity.md` §2). Additional waves ONLY on a documented dependency — a `NEW-WAVE-N` ledger line naming which wave's output the new wave consumes (Issue 15).
+- SEAT PINNING (binding, 2026-08-14): every `agent()` call in every workflow script carries an explicit `model:` pin for its seat — builders on the builder seat, judges on the judge seat, NEVER a bare `agent()`. A bare agent inherits the SESSION's model: builders land on the conductor's brain and judges land on the builder's brain, which voids judge independence (Law 7/30). PROVEN on the operator's box, 2026-08-14: workflow pins are honored across three distinct lanes (sonnet, haiku, and opus each resolved to their own chains) — the claim that the Workflow tool ignores the pin came from bare-agent observations and is REFUTED; the same day's canary ran 19 build workflows and its first 5 QC verdicts bare, and every one landed on the session model. With pins, a unit's build stage and its judge stages run inside ONE workflow on different brains (references/gauntlet.md §13.1, the Unit Gauntlet).
 - AUTO-ADAPT: waves are sequential ONLY where a dependency requires it. Independent work fans out at full width — never gated, never self-limited, never held below what the work needs. "Full width" means the full USABLE width the Capacity Ledger computed (ceiling − reserve), not the provider's raw ceiling.
 - A SECONDARY CRON LOOP (the watch-loop) enforces this every 5 minutes: checks that workflows are running (never inline), that each carries the [MODEL xN] prefix, that no capacity sits idle while work waits, and that heartbeats are fresh. Violations are logged and auto-corrected.
 - Batch merging: time-triggered (every 15 minutes, whatever is ready merges as ONE batch with one atomic stamp: version + tag + changelog + README + update-script). NO count cap. Never piecemeal merges.
@@ -170,38 +170,45 @@ ONE work item, not the execution order of ALL work items. The orchestrator's
 job is to decompose work into the maximum number of INDEPENDENT STREAMS and
 launch each as its OWN workflow, all in the same turn.
 
-**Parallelism = multiple PAIRED TREES (revised 2026-08-14 — the old
-"one item, one tree" reading produced thirty single-agent trees on the canary
-run and is retired).** One workflow tree = one independent stream carrying UP
-TO 5 units, and every unit inside it is a PAIR: a builder agent and its paired
-judge agent, both seat-pinned (SEAT PINNING above), dispatched as pipeline
-stages so the judge fires the instant its own unit's build lands. A tree's
-agent count = its units × 2, capped at the MEASURED clientCap =
-max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) (10 on this 12-core, 24 GB machine —
-RULE 2's formula) — which is exactly why 5 units is the
-chunk size (5 × 2 = 10). The six gauntlet workflows of step 12.7 carry SLICE
-counts instead — 8/16/16/8/4/1-max12 seats passed to one `pipeline()` call
-(references/gauntlet.md §13.1), never pair arithmetic. Streams larger than 5
-units chunk into multiple trees; N streams = N trees launched simultaneously, each visible in
+**Parallelism = multiple UNIT-GAUNTLET TREES (S3, 2026-09-07 — the one swarm
+shape of `references/gauntlet.md` §13.1; it retires BOTH the old
+builder-plus-checker pairing arithmetic that chunked a tree at five units and
+the older "one item, one tree" reading that produced thirty single-agent trees
+on the canary run).** One workflow tree = one
+independent stream carrying UP TO `clientCap` UNITS — the MEASURED clientCap =
+max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) (10 on this 12-core, 24 GB
+machine — RULE 2's formula). **A unit is not a pair.** Its builder, its blind
+visual judge and its technical judge are PIPELINE STAGES of that same unit —
+`pipeline(units, build, blindVisualJudge, technicalJudge, fixLoop)`, every stage
+seat-pinned (SEAT PINNING above), each stage firing the instant that unit's
+previous stage lands, with no barrier between stages. The tree's item count is
+its UNITS, so a tree at clientCap 10 carries TEN units, not five: the harness
+fills every slot with builders at the start and back-fills judges as builds
+land. The five gauntlet workflow types of step 12.7 carry SLICE counts —
+8 / 16 / 16 / 4 / ≤12 seats passed to one `pipeline()` call
+(references/gauntlet.md §13.1), never pair arithmetic. Streams larger than
+clientCap units chunk into multiple trees; N streams = N trees launched
+simultaneously, each visible in
 `/workflows` with its `[MODEL xN]` prefix. A single tree containing all the
 work is a VIOLATION; so is a flock of one-agent trees where units were
 independent — both are logged and corrected by the watch-loop.
 
 **The lifecycle is per-item, not per-stage.** When item 1 finishes building,
-its paired judge runs IMMEDIATELY — stage 2 of the same tree, no barrier — it
-does not wait for items 2 through N. Items flow through the lifecycle
+its own judge stages run IMMEDIATELY — stages 2 and 3 of the same tree, no
+barrier — they do not wait for items 2 through N. Items flow through the lifecycle
 independently, in parallel, at their own speed, and the QC lane is visible in
 the same tree as the build it judges.
 
-**The dependency graph determines the stream count; the pairing determines the
-width.** Before every dispatch: run `tools/anchor.sh <home> <unit-or-IDLE>
+**The dependency graph determines the stream count; the MEASURED width
+determines the units per tree.** Before every dispatch: run `tools/anchor.sh <home> <unit-or-IDLE>
 --mode reconcile` first (with `--tasks CONTROL/task-graph-snapshot.json
 --state CONTROL/project_state.json`), execute any RECONCILE-ACTIONS it emits
 and re-run until clean, then the topological sort's largest
-zero-incomplete-dependency set gives the streams; chunk each stream at ≤5
-units (units × 2 ≤ 10 = clientCap on the operator's machine); each tree
-dispatches units × 2 agents (builder + judge, both pinned) — except the six
-gauntlet workflows (step 12.7), whose SLICE counts batch at clientCap.
+zero-incomplete-dependency set gives the streams; chunk each stream at
+≤ clientCap units (10 on the operator's machine); each tree passes those units
+to ONE `pipeline()` call whose stages are build → blind visual judge →
+technical judge → fix loop, every stage pinned — except the five gauntlet
+workflow types (step 12.7), whose SLICE counts go in one call each.
 min(16, cores−2) is the EXECUTION clamp (how many run in the same instant —
 the rest queue), never the sizing. Launch all N trees in the same turn. A
 dispatch on top of an unreconciled alarm, or while
@@ -209,8 +216,8 @@ dispatch on top of an unreconciled alarm, or while
 `references/anti-drift.md`).
 
 **THE WIDTH GATE (fail-closed, 2026-08-14).** Before any tree launches, its
-dispatch-log row states the width arithmetic: units in this tree, × 2 for the
-pairing, the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) as the cap
+dispatch-log row states the width arithmetic: the UNITS passed in this tree
+(never pairs), the MEASURED clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) as the cap
 (10 on this 12-core, 24 GB machine), and the Capacity Ledger line it cites. A script whose
 agent plan falls below that arithmetic without a named reason is REJECTED and
 re-authored — up to 3 authoring attempts, then fail-soft: dispatch at the best
@@ -220,13 +227,13 @@ run never stalls on a gate. S4 enforces the same arithmetic every 5 minutes.
 **DISPATCH INTELLIGENCE (2026-08-14) — the three judgments, made at every
 dispatch and re-made by the watch-loop every 5 minutes:**
 
-1. **SIZE DOWN when the work is small.** The arithmetic is units × 2, never a
-   quota: 3 units dispatch 6 agents; one trivial check dispatches ONE agent in
-   one tree. Padding a dispatch to reach the ceiling is the same violation as
+1. **SIZE DOWN when the work is small.** The arithmetic is the UNITS passed,
+   never a quota: 3 units dispatch a 3-unit tree; one trivial check dispatches
+   ONE unit in one tree. Padding a dispatch to reach the ceiling is the same violation as
    timidity — S4 checks the ARITHMETIC, not the ceiling.
 2. **SCALE UP the instant work unblocks.** The dispatchable set is recomputed
    at every unit completion and every watch-loop tick; a stream that just
-   became runnable launches as a new paired tree IMMEDIATELY, in the same turn
+   became runnable launches as a new unit-gauntlet tree IMMEDIATELY, in the same turn
    it became runnable (S1, S2, S5 enforce this). Maximum productivity has one
    definition: no runnable unit waiting while capacity exists.
 3. **HOLD what is blocked — by not launching it.** A tree whose units'
@@ -286,7 +293,7 @@ Every dispatch is QC'd by the watch-loop every 5 minutes:
 | **S1 — Workflow count** | Number of running workflows ≥ number of independent streams with runnable work | Launch missing workflows immediately |
 | **S2 — Zero-workflow** | Runnable work exists AND zero workflows running | EMERGENCY — dispatch all runnable work in the same turn |
 | **S3 — Prefix visibility** | Every running workflow carries a visible [MODEL xN] prefix | Kill and re-launch without prefix |
-| **S4 — Width arithmetic (fail-closed, 2026-08-14)** | Each running tree's dispatched agent count equals its dispatch-log arithmetic: units × 2 (builder + paired judge, both seat-pinned), up to the MEASURED clientCap per workflow (10 on this 12-core, 24 GB machine — clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), computed by the CLIENT-MACHINE PROBE at step 6.5); the harness owns the ceiling, this check owns the floor — count the items passed in the script, never agents on screen | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
+| **S4 — Width arithmetic (fail-closed, 2026-08-14; units, not pairs, since S3 2026-09-07)** | Each running tree's item count equals its dispatch-log arithmetic: the UNITS passed to the tree's `pipeline()` call (the build and judge stages are stages of the SAME unit, never a second half of the width), up to the MEASURED clientCap per workflow (10 on this 12-core, 24 GB machine — clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), computed by the CLIENT-MACHINE PROBE at step 6.5); the harness owns the ceiling, this check owns the floor — count the items passed in the script, never agents on screen | VIOLATION — the next dispatch for that stream is re-authored to the arithmetic; repeated under-width is logged with the ledger line cited |
 | **S5 — Idle capacity** | No capacity sits idle while dispatchable work exists | Dispatch immediately |
 | **S6 — Heartbeat freshness** | Every running workflow's heartbeat is fresh (≤10 min for build/QC, ≤20 for merge) | Kill stale, re-dispatch from slice |
 | **S7 — One-tree check** | If ≥2 independent streams exist and only 1 workflow tree is visible | VIOLATION — decompose and re-dispatch as N workflows |
@@ -1303,7 +1310,23 @@ When the operator provides a folder, that folder IS the project. Its documents A
     project with no comparable bar is INFEASIBLE, never bar-less.** The project
     emits ONE three-part block (document 16). Per-unit comparison runs from each
     build card's bar slice; the templates in `references/gauntlet.md` §6 are the
-    shape of that one block, not a template repeated per unit. See
+    shape of that one block, not a template repeated per unit.
+    **THE PER-STREAM BLOCK IS DERIVED FROM IT (G7, 2026-09-07).** The project
+    block is the PARENT and is never handed to a builder or a judge (Law 5). The
+    Parallelism Plan (step 12.7) derives ONE three-part block per Unit Gauntlet
+    stream and the workflow script interpolates it into its stage prompts:
+    **THE TASK** = that stream's units only (their deliverables, requirements,
+    exclusions, completion package, lifted from those units' build cards);
+    **THE BUILD METHOD** = the unit gauntlet itself (build → blind visual judge →
+    technical judge → fix loop, one largest gap back to a NEW builder, a new
+    judge instance per re-judge, evidence from the harness only); **THE BAR TO
+    HIT** = the bar slice for those units — the frozen reference package narrowed
+    to the pages or screens this stream owns, carrying the page mapping (our unit
+    → the bar's matching page or screen at the matched viewport) and the same
+    binary decision rule. **GL-001…GL-008 run on every DERIVED block too**
+    (`references/gauntlet.md` §6, §7): a derived block that fails a GL rule is
+    re-authored before its tree dispatches, and a script that interpolates the
+    project block instead of its derived block is a Law 5 violation. See
     `references/gauntlet.md` for the full template, the GL-001…GL-008 validation
     rules, and the three-gate stack (the binary verdict = hard, GOAL.md
     fidelity = on-brief, B2H = comparative). The block lives in the execution
@@ -1326,29 +1349,39 @@ When the operator provides a folder, that folder IS the project. Its documents A
     or work to perform, an explicit deliverable, and an acceptance criterion —
     an agent that cannot be given all four is NOT planned, and a plan row that
     names only a count is padding, not a plan.** The gauntlet workflow
-    topology (`references/gauntlet.md`, Section 13) is the default shape, scaled
-    by the Capacity Ledger. **The Parallelism Plan carries the six gauntlet
-    workflows BY NAME with their EXACT agent counts (SLICES, never concurrency —
-    `references/gauntlet.md` §13.1): WORKFLOW 01 BLUEPRINT LOCK = 8 planner-seat
-    agents (no production coding — outputs synthesized into locked architecture,
-    MVP spec, workstream boundaries, acceptance matrix, evidence + regression
-    requirements; single batch, 8 ≤ clientCap); WORKFLOW 02 PRIMARY BUILD = 16
-    builder-seat agents (one slice each, explicit ownership, no uncontrolled
-    overlapping edits; all 16 passed to ONE `pipeline()` call — the harness runs
-    clientCap at once and queues the rest); WORKFLOW 03 BLIND VISUAL GAUNTLET = 16
-    blind-visual-judge seats (rendered evidence only, never builder reasoning;
-    dispatched exactly as WORKFLOW 02 — one `pipeline()` call, never hand-made
-    batches);
-    WORKFLOW 04 TECHNICAL GAUNTLET = 8 technical-judge seats (single batch,
-    8 ≤ clientCap); WORKFLOW 05 FINAL RELEASE COUNCIL = 4 council-judge seats,
-    independent, RELEASE REQUIRES 4/4 = PASS, a FAIL or UNVERIFIED from any
-    judge prevents release (single batch, 4 ≤ clientCap); WORKFLOW 06 SELECTIVE
-    REPAIR LOOP = 1 repair seat per failed workstream, MAX 12 per repair wave
-    (every repair seat of a wave passed to one `pipeline()` call;
-    one NEW blind visual verifier per repaired visual workstream — never reuse
-    the previous verifier's judgment; only affected technical judges re-run;
-    ALWAYS rerun the 4-seat release council after all failures clear).
-    clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), MEASURED at
+    topology (`references/gauntlet.md`, Section 13 — **the ONE swarm shape: five
+    workflow types and no others**, S3 2026-09-07) is the default shape, scaled
+    by the Capacity Ledger. **The Parallelism Plan carries the five gauntlet
+    workflow types BY NAME with their EXACT counts (SLICES, never concurrency —
+    `references/gauntlet.md` §13.1): WF01 BLUEPRINT LOCK = 8 planner-seat agents
+    in ONE workflow, `parallel()` (the one justified barrier — the synthesis needs
+    every plan), no production coding, outputs synthesized into locked
+    architecture, MVP spec, workstream boundaries, acceptance matrix, evidence +
+    regression requirements, and the EVIDENCE HARNESS spec; THE UNIT GAUNTLET =
+    one workflow PER INDEPENDENT STREAM, `pipeline(units, build,
+    blindVisualJudge, technicalJudge, fixLoop)`, every stage seat-pinned and no
+    barrier between stages, passing `clientCap` UNITS per tree (never pairs, and
+    never fewer than the dispatchable set allows) with more streams launching as
+    more trees in the SAME turn — the first unit of the first tree is the
+    evidence harness and page or screen units dispatch only after
+    `HARNESS-READY:` is in the ledger; THE INTEGRATED VISUAL GAUNTLET = one
+    workflow after the units integrate, one blind visual judge per whole page or
+    whole screen at every viewport plus the global blind benchmark judge (the
+    product-level look the per-unit judges cannot take); WF05 RELEASE COUNCIL = 4
+    release-judge seats in ONE workflow, `parallel()` (barrier justified: each
+    sees the complete build), RELEASE REQUIRES 4/4 = PASS, a FAIL or UNVERIFIED
+    from any judge prevents release; WF06 SELECTIVE REPAIR = one workflow per
+    repair wave, `pipeline(failedWorkstreams, repair, newBlindVerifier,
+    affectedTechnicalJudge)`, at most 12 failed workstreams per wave, then the
+    council again — passing workstreams are LOCKED and never rerun, and a new
+    blind verifier judges every repaired visual workstream (never reuse the
+    previous verifier's judgment). The FORBIDDEN shapes — `parallel(build)` then
+    `parallel(qc)`, a judge phase with fewer judges than landed units, a tree
+    passing fewer units than the dispatchable set allows without a `dep=` reason,
+    and a merge agent inside a build tree — are refused by the dispatch gate
+    (`references/gauntlet.md` §13.1; `references/workflows.md`, "Forbidden
+    shapes"). Each stream also carries its DERIVED three-part block (step 12.5,
+    G7). clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), MEASURED at
     step 6.5 (RULE 2). Counts are slices, and every slice of a workflow is
     passed to a SINGLE `pipeline()` call: the harness runs clientCap of them at
     once and queues the rest — the queue is a rolling window, never a batch.
