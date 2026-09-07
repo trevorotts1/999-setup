@@ -36,6 +36,7 @@ MERGE-LOG.md anywhere — its content is a section of the ledger (document 6).
 ```
 ~/Downloads/projects/<project-slug>/
 ├── 00-INPUT/                              # human's raw material + brainstorm capture + research findings — untouched, NOT one of the seventeen
+│   └── CONTENT.md                         # the client's own business facts — INFRASTRUCTURE, not one of the seventeen
 ├── SPEC/
 │   ├── MASTER-SPEC-YYYY-MM-DD.md          # 1 — the full specification
 │   ├── PROJECT-MANIFEST.md                # 17 — how the project operates (the manifest)
@@ -577,6 +578,34 @@ Some files the protocol creates are infrastructure, not project documents — th
 not count against the closed seventeen and never need a Rule 3.28 ask:
 
 - **00-INPUT/** — the human's raw material, brainstorm capture, research findings.
+- **00-INPUT/CONTENT.md** — the content inventory: the client's OWN facts about
+  their business, captured by the interview's content questions 7–12
+  (`references/interview.md` section 3) and written the moment each answer is
+  given. RATIFIED as INFRASTRUCTURE, not one of the seventeen documents — it is
+  raw material inside `00-INPUT/`, like the brainstorm capture, so it needs no
+  Rule 3.28 ask. Its writer is the conductor asking the questions; every later
+  reader (the design brief, the builders, the ship check) reads it and never
+  edits it. Its shape is fixed — one heading per item, in this order:
+
+  ```
+  # CONTENT — <project-slug>
+  ## Business name
+  ## Tagline
+  ## Offers and prices
+  ## Contact and hours          # phone, email, address, opening hours
+  ## Logo and photo locations   # file paths on this machine, or "none"
+  ## Testimonials               # real words from real customers, or "none"
+  ## Existing domain            # yourbusiness.com, or "none"
+  ```
+
+  **Every item the client did not answer is written as `DRAFT — write one`**,
+  with the drafted text underneath that marker, so a draft can never be mistaken
+  for something they said. "I don't know" is a real answer here and earns exactly
+  that: a marked draft, never a blank line and never an invented fact. The marker
+  is what the ship check reads — a business fact on a built page that is neither
+  in this file nor marked `DRAFT` here FAILS the ship check
+  (`references/build.md` section 6), and every drafted fact is listed in the
+  morning report for the client to confirm or correct.
 - **repos/** — the persistent working copies.
 - **SCOPE.md** — the scope fence's file (`references/pipeline.md`). RATIFIED as
   INFRASTRUCTURE, not one of the seventeen documents. It lists the in-scope set,

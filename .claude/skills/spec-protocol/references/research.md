@@ -159,6 +159,22 @@ app:
 - **The current-state document** — the survey itself, as a measured finding with
   sources.
 
+**Reference research is the outside world's facts; the content inventory is the
+client's own.** This survey gathers what OTHER people built — features, flows,
+patterns, prices, the bar. It never supplies one fact about the client's own
+business. Those come from the content inventory, the interview's questions 7–12,
+written to `00-INPUT/CONTENT.md` as each answer is given
+(`references/interview.md` section 3): business name and tagline, offers and
+prices, contact and hours, logo and photo locations, testimonials, an existing
+domain. The two are counterparts and neither substitutes for the other — a
+competitor's testimonial is not the client's testimonial, and a price found in
+this survey is research, never their price. A business fact that reached a built
+page from this survey instead of from `00-INPUT/CONTENT.md` is an invented fact,
+and the ship check fails it (`references/build.md` section 6). Where this survey
+leaves a gap in the client's own facts, the gap is marked `DRAFT — write one` in
+`00-INPUT/CONTENT.md` and asked about in the morning report — it is never filled
+from a reference app.
+
 **Present to the user as REFERENCE MATERIAL — empowering, warm, concrete:**
 
 > I looked at three apps that do something like yours. You are going to build

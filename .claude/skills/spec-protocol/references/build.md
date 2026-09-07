@@ -250,3 +250,50 @@ sub-process decisions (1.8.1-1.8.8) are re-checked against the changed brief
 the same way — a decision line that no longer matches the brief is re-opened,
 never silently kept. The stage order itself never changes — it is the spec's
 contract (Issue 8, FIX step 1).
+
+---
+
+## 6. The content-truth rule — a business fact not in CONTENT.md fails the ship check
+
+**The rule, one sentence:** any page carrying a business fact that is not in
+`00-INPUT/CONTENT.md`, and not marked as a draft there, FAILS the ship check.
+
+This is a SHIP-CHECK rule, not a fourth `STAGE-BUILD` check group — section 1's
+pass bar stays the spec's three groups, verbatim. It runs after the build is
+final and before anything is published, and it is fail-closed: one unmatched
+fact blocks the publish.
+
+**What counts as a business fact.** Anything a reader would take as true about
+the client's real business: the business name, the tagline, an offer or a price,
+a phone number, an email address, a street address, opening hours, a testimonial
+or the person credited with it, a domain name, a founding date, a staff count,
+an award or certification, and any logo or photograph presented as theirs.
+
+**Why it is fail-closed.** An invented testimonial, a made-up address, or a
+placeholder price is the first defect the client finds, and it makes the whole
+build look fake. A page MAY carry a drafted fact — that is exactly what "I don't
+know is fine, I'll write a draft you can change" buys (`references/interview.md`
+section 3, questions 7–12) — but only when `00-INPUT/CONTENT.md` carries
+`DRAFT — write one` above that item. A drafted fact is honest; an unsourced fact
+is invented, and inventing one is the defect.
+
+**How it is checked — a command, never eyes** (the same rule section 1 carries).
+For every built page, enumerate the business facts it renders, and for each one
+either match it to its entry in `00-INPUT/CONTENT.md` or match it to that item's
+`DRAFT — write one` marker. The result is one ledger line through
+`tools/ledger.sh`:
+
+```
+CONTENT-TRUTH: facts=<n> matched=<n> drafted=<n> unmatched=<n>
+```
+
+`unmatched` must be `0`. A missing `00-INPUT/CONTENT.md` is not a pass by
+default — it is the check's own failure, and it blocks the same way (a negative
+carries a claim's burden; an absent file proves nothing about the page).
+Every fact counted in `drafted` is listed in the morning report for the client
+to confirm or correct.
+
+**⛔ One line for WI-21:** when `references/ship-checks.md` is created, it lists
+this rule as a named `STAGE-SHIP-CHECKS` instrument ("no business fact absent
+from `00-INPUT/CONTENT.md` unless marked draft") and CITES this section for its
+words — the rule is written once, here, and never restated.
