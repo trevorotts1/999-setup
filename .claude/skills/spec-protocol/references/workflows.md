@@ -851,3 +851,116 @@ defect as a frozen counter.
 budget, it reports real partial state: "N of M complete, 0 failures at last
 look." An honest partial beats a hang. Blocked-timeout + move on + report
 partial state is a PASSING answer.
+
+---
+
+## 13. The dispatch gate — the second PreToolUse hook on `Workflow`
+
+§5's gate answers one question: *will this script parse?* It says nothing about
+the SHAPE of the tree, so a script that parses perfectly and dispatches three
+agents where ten were possible sails straight through it. That is the defect
+this second hook closes. Two hooks, same matcher, different questions:
+
+| Hook | Question | Blocks on |
+|---|---|---|
+| `workflow-syntax-gate.py` (§5) | will it parse? | a real `node --check` failure |
+| `dispatch-gate.py` (this section) | is the shape allowed? | the five forbidden shapes below |
+
+**The five shapes it refuses, with the fix it prints for each.**
+
+1. `parallel(build)` followed by `parallel(qc)` → `pipeline(units, build, qc)`.
+2. A judge stage passing fewer items than the build stage → one judge per landed unit.
+3. A bare `agent()` with no `model:` → pin the seat (§0.0).
+4. A widest stage below `min(dispatchable, CLIENT_CAP)`, when a `CAPACITY-LEDGER.md`
+   is found upward from the working directory and the script carries no `dep=`
+   comment → pass every dispatchable unit to one `pipeline()` call.
+5. A merge agent inside a build tree → Law 3's single writer runs OUTSIDE the tree,
+   so it never holds a build slot.
+
+**It fails open, exactly like the syntax gate.** An unreadable input, an
+unparseable script, an item count it cannot determine statically (`pipeline(args,
+…)` is the normal case), any exception at all → exit 0 and the launch proceeds.
+Two consequences the conductor owns, the same two §5 names: **"the dispatch gate
+did not block" is never evidence that a tree is wide enough**, and a launch by
+saved NAME has no local file to read, so it passes unexamined — one more reason
+§7 launches by `scriptPath`.
+
+### Installing it (the operator or the installer does this once, never the skill silently)
+
+```bash
+cp .claude/skills/spec-protocol/tools/hooks/dispatch-gate.py ~/.claude/hooks/dispatch-gate.py
+chmod +x ~/.claude/hooks/dispatch-gate.py
+python3 ~/.claude/hooks/dispatch-gate.py --selftest    # must print ALL PASS before it is wired
+```
+
+Then add the hook to the **`Workflow`** matcher in **both** settings stores —
+`~/.claude/settings.json` and `~/.claude-nine/settings.json`. Both stores point at
+the same `~/.claude/hooks/` path; claude-nine does not carry its own copy. Each
+store already has a `Workflow` matcher holding the syntax gate, so the dispatch
+gate is **appended to that matcher's `hooks` array**, syntax first:
+
+```json
+{
+  "PreToolUse": [
+    {
+      "matcher": "Workflow",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python3 /Users/<you>/.claude/hooks/workflow-syntax-gate.py",
+          "timeout": 30
+        },
+        {
+          "type": "command",
+          "command": "python3 /Users/<you>/.claude/hooks/dispatch-gate.py",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
+}
+```
+
+If a store has no `Workflow` matcher yet, add the whole block above. Use the
+ABSOLUTE path — `~` does not expand in a hook command. Order matters only for
+which message the model reads first: a script that neither parses nor dispatches
+wide enough should hear about the parse error first, because fixing it changes
+the shape the second gate sees.
+
+### The command-line half — `tools/dispatch-check.sh`
+
+The hook reads a script; the CLI gate reads the ARITHMETIC, and it is what
+records the dispatch. Called once per wave, before the tree fires:
+
+```bash
+tools/dispatch-check.sh <project> <units> <agents> "[<Model> x<N>] <what>" [dep=<reason>]
+```
+
+| Exit | Meaning |
+|---|---|
+| 0 | PASS — the dispatch-log row is written through `ledger.sh` and `agents.executions_total` in `CONTROL/project_state.json` is incremented by `<agents>`, atomically |
+| 2 | TOOLING FAILURE — the gate could not run, with the exact path named. UNDETERMINED, never a verdict |
+| 3 | UNDER-WIDTH — `agents < min(units, CLIENT_CAP)` with no `dep=` reason |
+| 4 | REFUSED — the label carries no `[<model> x<N>]`, or `CONTROL/EXECUTION-PLAN.md` has no "Parallelism Plan" heading (no plan, no dispatch) |
+| 5 | PADDED — `agents > units × stages` (stages default 4) |
+
+`CLIENT_CAP` is read from `<project>/CAPACITY-LEDGER.md` and nowhere else — never
+declared, never asked, never taken from the environment. Two line shapes parse:
+`CLIENT_CAP=10` (what `tools/width.sh` prints) and the ledger's own
+`clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED …]`. Anything
+else, an unfilled template placeholder included, is UNDETERMINED and exits 2.
+
+`scripts/common/dispatch-check.mjs` is the Node twin for boxes without Git Bash;
+it answers with the same exit code for the same inputs and writes the same row.
+
+**Prove both instruments before believing either:**
+
+```bash
+bash tools/dispatch-check.sh --selftest        # 15 checks, must print ALL PASS
+node scripts/common/dispatch-check.mjs --selftest   # the same 14 numbered cases
+python3 tools/hooks/dispatch-gate.py --selftest     # 13 checks, must print ALL PASS
+python3 tools/hooks/dispatch-gate.py --check <script.js>   # the shape check, by hand
+```
+
+A gate whose selftest fails is a BROKEN INSTRUMENT: do the width arithmetic by
+hand, say so in the ledger, and never read its silence as a pass.
