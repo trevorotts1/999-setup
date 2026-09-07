@@ -261,6 +261,61 @@ Fetchable).
 
 **Viewports follow the Build Target** (`references/interview.md` Step 1c): `MOBILE_APP` is captured and judged at the mobile viewport; `WEB_APP`, `WEBSITE`, and desktop `DESKTOP_SOFTWARE` at desktop AND mobile; `MOBILE_AND_WEB` at BOTH viewports per surface. The comparison-conditions table records the exact sizes per run.
 
+**On a website or funnel the package is frozen at BAR SELECTION**, not at first
+judgment: 375, 1024, and 1440 for every mapped page plus the section crops
+(hero, proof, CTA, footer) into `00-INPUT/bar/`, a page-mapping table beside
+them, and the ledger line `BAR-FROZEN: pages=<n> shots=<n>`. The procedure is
+written once in `references/research.md` ("Freezing the bar at selection"); the
+`captures/<unit-id>/` rule above governs the run's own shots.
+
+---
+
+### 4.1 THE EVIDENCE HARNESS — built before the first page, and the only thing a judge ever sees
+
+A judge that reads code, or opens a live URL, is judging something nobody
+froze. Every verdict in this file is passed on RENDERED EVIDENCE, and the
+evidence is produced by one harness the run builds for itself, before it builds
+anything for the client.
+
+**Who specifies it, who builds it.** WF01 Blueprint Lock emits the EVIDENCE
+HARNESS spec as one of its synthesized outputs (§13.1 — the evidence-harness
+planner sits in that `parallel()`). **The first unit of the first Unit Gauntlet
+tree BUILDS it**, as a unit like any other, with its own build → judge → fix
+stages. No page or screen unit is dispatched until it lands.
+
+| Instrument | What it does | What the judge receives |
+|---|---|---|
+| `capture.mjs` | Screenshots every page or screen at 375, 1024, and 1440, viewport-pinned and deterministic (fixed test data, animations settled, no clock in frame), labels and chrome stripped | The PNGs |
+| `compose.mjs` | Pairs one of ours with the bar's shot at the MATCHED viewport, side by side, order randomized per pair, neither side labeled | The composed pair |
+| `crawl.mjs` | Walks every link on every page | The list of URLs with status codes — the pass line is zero 4xx and zero 5xx |
+| `probe-form.mjs` | Submits one real entry to the declared `FORM-DESTINATION`, proves it arrived (a row, an email, a contact), then deletes it | The arrival proof and the delete confirmation |
+| Lighthouse CI runner | Runs Lighthouse on mobile emulation | The JSON report (Performance, Accessibility, SEO, Best Practices) |
+| axe-core runner | Runs axe-core over every page | The JSON violation list, by impact |
+| Console capture | Records the browser console through a full page walk | The captured log — the pass line is zero errors |
+
+Each instrument writes JSON or image files to disk under the run's
+`captures/` tree; each is runnable by a cold session from the command written
+into the execution plan, and each is proved by one real run before the gate
+line is written.
+
+**Judges receive harness output and nothing else** — no source, no builder
+reasoning, no live URL, no file the harness did not produce. That is what makes
+the blind A/B protocol (§5) mechanical rather than a promise, and it is why the
+harness is built first: a judging method that arrives after the build is a
+method the build has already shaped.
+
+**The gate.** When every instrument above has run once for real, the ledger
+carries:
+
+`HARNESS-READY: <tools>`
+
+— naming each instrument that actually ran, e.g.
+`HARNESS-READY: capture.mjs, compose.mjs, crawl.mjs, probe-form.mjs, lighthouse, axe, console`.
+**The first page or screen dispatch is refused until that line exists.** An
+instrument that could not be built is named in the line as missing with its
+reason, and every check that depended on it is reported UNVERIFIED, never
+passed by eye (Law 50).
+
 ---
 
 ## 5. THE BLIND A/B PROTOCOL

@@ -784,6 +784,15 @@ re-does with the remaining candidates; a broken bar is never silently
 exchanged for a phrase. The picked page stays the bar for the whole build;
 changing it mid-build re-opens bar selection and is announced.
 
+**And in that same moment the bar is FROZEN as screenshots, never held as a
+URL:** 375, 1024, and 1440 for every mapped page, plus the section crops
+(hero, proof, CTA, footer), into `00-INPUT/bar/`, with the page-mapping table
+(their home ↔ our home) beside them and the ledger line
+`BAR-FROZEN: pages=<n> shots=<n>`. The procedure is written once in
+`references/research.md` ("Freezing the bar at selection") and this file
+follows it — the frozen shots are the copy bar for the rest of the run, and
+the URL is only where they came from.
+
 **When Mobbin is configured, the Mobbin top-3 winner is an INPUT to the
 bar.** The bar is never picked blind to it: the MOBBIN-CHECK top-3 / best-of-3
 selection (above) feeds the copy-bar pick — the winner's headline, subhead,
@@ -827,8 +836,10 @@ defect — same as a layout that ignores the brief.
 **Where the copy bar is consumed.** Stage 2 of the funnel process (§16)
 writes per-page structure against this bar; STAGE-WIREFRAMES and
 STAGE-BUILD (pipeline stages) read the bar for hero and CTA placement; the
-blind critic judging the built pages receives the bar's URL alongside the
-pages and compares copy the same way it compares layout.
+blind critic judging the built pages receives **our shots and the bar's shots
+at the same viewport, labels stripped, and nothing else** — never the bar's
+URL, never a live page (`references/gauntlet.md` section 4). It compares copy
+from the frozen crops exactly the way it compares layout.
 
 ### THE COPY QUALITY FLOOR — pages, funnels, emails (binding, no exceptions)
 
