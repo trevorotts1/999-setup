@@ -117,8 +117,10 @@ what the work supports — 3 agents while 13 more had independent work waiting) 
 (inventing agents to hit a number) — the same two defects the 2026-08-14 ruling names below.
 A dispatch is under-width when any dispatchable unit waits while capacity sits idle; a
 dispatch is padded when an agent cannot be given the four properties below. Both are
-violations of this rule, and the boss cron's width check (PART 4 check 4) stops both:
-fan-out below scripted width without a recorded dependency line, and padding past the work.
+violations of this rule. The five-minute tick's idle-capacity check (S5,
+`tools/watch-tick.sh`) catches the first — fan-out below scripted width without a
+recorded dependency line — and the pre-dispatch gate refuses the second, padding
+past the work.
 
 **THE MEASURED WIDTH (S1 — binding, 2026-09-07; it supersedes every declared
 number).** Width is MEASURED on the machine the build runs on, at
@@ -279,7 +281,47 @@ terminal" is a floor, never a ceiling.
   the defect.
 
 ### RULE 5 — SWARM QC STANDARD (self-enforcement)
-Every dispatch is QC'd by the watch-loop every 5 minutes:
+Every dispatch is QC'd every 5 minutes, by an INSTRUMENT and never by memory.
+
+**THE INSTRUMENT — `tools/watch-tick.sh <project>`.** It runs
+`tools/anchor.sh --mode reconcile` (S10, S14, the recovery ladder, the
+capture-proof stop), then counts runnable units — open `CONTROL/CHECKLIST.md`
+boxes with no open dispatch row — and open dispatch rows — a
+`CONTROL/dispatch-log.md` row with no `RESULT` for its unit — and checks the
+standards below that a script can check: **S2** (runnable > 0 and open == 0 →
+`ACTION|dispatch-now`), **S3** (an open row with no `[<model> x<N>]` label →
+`ACTION|relabel-and-redispatch`), **S5** (open rows < `CLIENT_CAP` × running
+trees while runnable > 0 → `ACTION|widen`), **S6** (a row whose
+`CONTROL/HEARTBEAT.md` line is older than 10 minutes, 20 for a merge stage →
+`ACTION|reap-and-redispatch`), **S13** (a `RESULT` on the ledger while the
+heartbeat is still fresh → `ACTION|reap`). Clean is exit 0 and one
+`S-CHECK | violations=0 | runnable=<n> open=<n> trees=<n>` line through
+`tools/ledger.sh`; a finding is exit 3 with its `ACTION|` lines on stdout;
+`CONTROL/TERMINAL-DRIFT.flag` is exit 4 and nothing dispatches; a broken control
+is exit 2 and never an all-clear. A zero it cannot prove — no dispatch log, no
+width in the Capacity Ledger, an unparseable heartbeat — is written as
+UNDETERMINED, never as a pass. `bash tools/watch-tick.sh --selftest` proves it
+against ten fixtures; `node scripts/common/watch-tick.mjs` is the same tick
+where bash is absent. The standards it cannot check mechanically — S1, S4, S7,
+S8, S9, S11, S12, S15–S19 — are the conductor's, walked by hand on the same
+cadence; this table is their only roster.
+
+**IT HAS TWO HALVES, AND ONLY ONE OF THEM IS THE MODEL.**
+- **The cron half never depends on the model.** Step 21 writes and announces one
+  crontab line —
+  `*/5 * * * * bash <skill>/tools/watch-tick.sh <project> >> <project>/CONTROL/watch-tick.log 2>&1`
+  — and it keeps ticking through a compaction, a crashed session, a context
+  reset and a sleeping operator. It never dispatches: a script cannot call
+  session tools. It proves the state and writes it down.
+- **The model half is the conductor's in-session `/loop 5m`,** on the same
+  command, reading the `ACTION|` lines the tick printed (they are in
+  `CONTROL/watch-tick.log` too) and doing the dispatching. Command-shaped, never
+  free-form.
+
+Either half alone is a partial machine: a tick nobody reads changes nothing, and
+a conductor with no tick is the run that drifted. `references/loops.md` Loop 9
+owns the loop; this table owns the roster.
+
 
 | Standard | Check | Violation response |
 |---|---|---|
@@ -322,28 +364,35 @@ then, RUNNING is the default state to report.
 
 ## GATE 0 — Ultracode hard stop (RUN FIRST)
 
-**GATE 0b — THE BOSS IS ARMED (WAVE 0 BOOTSTRAP).**
-Every run opens with the enforcer already in place: the boss cron
-(`tools/boss-cron` in this repo's checkout)
-runs every 5 minutes via crontab (`*/5 * * * *`), reads the live ledger at the
-repo root (`FIX-LEDGER.md`), and enforces from minute
-one: concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence,
-heartbeat (a `BOSSCYCLE-CLEAN` line within the last 2 cycles), the stop file
-(`CONTROL/stop-workstream`), and stop-and-rerun kill: the boss writes the stop
-file naming workstream + checkpoint + loop bound, and the conductor reads it at
-every dispatch point and MUST TaskStop the named workstream —
-`CONTROL/workflow-pids.json` applies to out-of-process runs only.
-On violation it writes `VIOLATION-STOP` lines with the exact finding and exits 2
-(governance-exit contract). On clean it appends one `BOSSCYCLE-CLEAN` line with
-the checks run. `boss-cron --check` runs exactly one cycle read-only and prints
-the verdict. Its log is `CONTROL/boss-cron.log`. The full 16-check build is
-LIVE: caps, census, width, wavelock, claims, beat, stop, scope, kill,
-count, drift, orphan, stages, entry-mode, statusline, research — plus the
-Telegram heartbeat alert on its own 2-minute cycle. The hook-protection clause
-(PART 4) binds: `disableAllHooks` is never set on the operator box — it kills the
-boss cron and every governance hook. This skill's runs are governed by the same
-boss; a run that violates the ledger classes, the wave lock, or the width doctrine
-is stopped and re-dispatched from its last clean checkpoint.
+**GATE 0b — THE TICK IS ARMED (WAVE 0 BOOTSTRAP).**
+Every run opens with the enforcer already in place: the five-minute tick
+(`tools/watch-tick.sh <project>`) runs every 5 minutes via crontab
+(`*/5 * * * *`, the line step 21 writes and announces), reads the project's own
+live documents — `CONTROL/CHECKLIST.md`, `CONTROL/dispatch-log.md`,
+`CONTROL/LEDGER.md`, `CONTROL/HEARTBEAT.md`, `CAPACITY-LEDGER.md` — and enforces
+from minute one: first the three-way reconcile (`tools/anchor.sh --mode
+reconcile` — drift classes 1–7, the repeated-intent alarm, the budget audit, the
+recovery ladder), then S2 zero-workflow, S3 the `[<model> x<N>]` label, S5 idle
+capacity, S6 heartbeat freshness (10 minutes, 20 for merge) and S13
+finished-but-alive. On violation it prints one
+`ACTION|<verb>|<target>|<evidence>` line per finding and exits 3; the conductor
+reads those at every dispatch point and MUST TaskStop the named workstream —
+`CONTROL/workflow-pids.json` applies to out-of-process runs only. On clean it
+appends one `S-CHECK | violations=0 | runnable=<n> open=<n> trees=<n>` line
+through `tools/ledger.sh` and exits 0 — the count is written even when it is
+zero, because a watch that writes contentless ticks is itself the disease
+(`references/anti-drift.md`). A zero it cannot prove is UNDETERMINED in writing,
+never a pass. While `CONTROL/TERMINAL-DRIFT.flag` exists it exits 4 and nothing
+dispatches. Its log is `CONTROL/watch-tick.log`. `bash tools/watch-tick.sh
+--selftest` runs its ten fixtures read-only and prints the verdict, and
+`node scripts/common/watch-tick.mjs` is the same tick, same checks, same exit
+codes, where bash is absent. THE TICK IS ONE OF TWO HALVES: the crontab line
+never depends on the model, and the conductor's in-session `/loop 5m` reading
+its ACTION lines is the half that dispatches (RULE 5, `references/loops.md`
+Loop 9). The hook-protection clause (PART 4) binds: `disableAllHooks` is never
+set on the operator box — it kills the tick and every governance hook. A run
+that violates the ledger classes, the wave lock, or the width doctrine is
+stopped and re-dispatched from its last clean checkpoint.
 
 This skill runs on workflows and subagents — it cannot run inline. Before
 anything else, check whether ultracode is ON. A system-reminder in this turn
@@ -933,8 +982,8 @@ already lost, Law 25).
 **Then record the choice — `ENTRY-MODE: interview|pointed`.** The instant
 `CONTROL/` exists, write the run's FIRST ledger line through `tools/ledger.sh`:
 `interview` if they picked (1), `pointed` if they picked (2). This is the only
-durable proof of which entry the client was offered and chose, and both the
-step-20 self-audit and the boss cron reject a run whose ledger lacks it. Write it
+durable proof of which entry the client was offered and chose, and the
+step-20 self-audit rejects a run whose ledger lacks it. Write it
 when the choice happens — a line reconstructed later is a guess wearing a
 timestamp. It is NOT the same as `INTERVIEW-MODE: simple|advanced` (step 6):
 that one records how much detail they want to decide, this one records how they
@@ -1117,7 +1166,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
    line, written as soon as `CONTROL/` exists and before anything else runs. The
    value records WHICH ENTRY THE CLIENT CHOSE and is never inferred later: a run
    whose ledger lacks this line is one whose entry gate cannot be proven, and the
-   self-audit (step 20) and the boss cron both reject it. **Do not confuse it with
+   self-audit (step 20) rejects it. **Do not confuse it with
    `INTERVIEW-MODE: simple|advanced`** (step 6) — that is how much detail they
    want, this is how they supplied the material; both lines exist, they are not
    substitutes, and writing one never satisfies the other. **The moment the Build
@@ -1125,8 +1174,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    `<project>/CONTROL/LEDGER.md` through `tools/ledger.sh`** — the value is
    exactly one of `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE |
    WEBSITE | FUNNEL`, matching the confirmation; this line is the RESEARCH-READY
-   gate's first precondition (step 3.5) and the boss cron's check. Then:
-3.5. **Just-in-Time research (Step 1c-bis, BOTH modes) — the RESEARCH-READY gate.** Research may not run until BOTH are true: (a) the build target is NAMED — exactly one of the six-way taxonomy `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`, confirmed in prose through the Build Target exchange above, never rendered as a menu; and (b) the material is CAPTURED — the brainstorm written verbatim into `00-INPUT/` on the interview path (step 4), or the provided material copied into `00-INPUT/` untouched and the one-paragraph understanding confirmed on the pointed path (a provided folder is never copied — RULE 1; its documents ARE the apparatus, so the confirmation alone satisfies capture). The conditions are recorded as ledger lines `BUILD-TARGET: <taxonomy>` (written at the Build Target confirmation, step 3) and `INPUT-CAPTURED: <path>` (written the moment capture completes: after the brainstorm's verbatim capture lands in `00-INPUT/` with the reflection confirmed on the interview path, or after the provided material is in `00-INPUT/` with the one-paragraph understanding confirmed on the pointed path — the `<path>` value is the relative path under the project, e.g. `00-INPUT/` or `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`), both through `tools/ledger.sh`. While either line is missing, NO research dispatch — a refused dispatch names the missing condition(s). The gate blocks the DISPATCH only, never the flow: on the interview path the run continues into the brainstorm (step 4) and the dispatch fires the moment the capture lands in `00-INPUT/` (Step 1c-bis — before the target-specific questions); on the pointed path the capture completes at step 3, so both lines already exist here and the dispatch fires immediately. Once both exist, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background while the interview continues. Every research dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing (Rule 3.14, document 12), in the exact format `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>` — the trailing two citation fields ARE those ledger lines copied verbatim, byte-for-byte. A research row without both citations, or whose citations do not match the ledger's current `BUILD-TARGET:` and `INPUT-CAPTURED:` lines, is a violation the boss cron stops.
+   gate's first precondition (step 3.5). Then:
+3.5. **Just-in-Time research (Step 1c-bis, BOTH modes) — the RESEARCH-READY gate.** Research may not run until BOTH are true: (a) the build target is NAMED — exactly one of the six-way taxonomy `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`, confirmed in prose through the Build Target exchange above, never rendered as a menu; and (b) the material is CAPTURED — the brainstorm written verbatim into `00-INPUT/` on the interview path (step 4), or the provided material copied into `00-INPUT/` untouched and the one-paragraph understanding confirmed on the pointed path (a provided folder is never copied — RULE 1; its documents ARE the apparatus, so the confirmation alone satisfies capture). The conditions are recorded as ledger lines `BUILD-TARGET: <taxonomy>` (written at the Build Target confirmation, step 3) and `INPUT-CAPTURED: <path>` (written the moment capture completes: after the brainstorm's verbatim capture lands in `00-INPUT/` with the reflection confirmed on the interview path, or after the provided material is in `00-INPUT/` with the one-paragraph understanding confirmed on the pointed path — the `<path>` value is the relative path under the project, e.g. `00-INPUT/` or `00-INPUT/BRAINSTORM-YYYY-MM-DD.md`), both through `tools/ledger.sh`. While either line is missing, NO research dispatch — a refused dispatch names the missing condition(s). The gate blocks the DISPATCH only, never the flow: on the interview path the run continues into the brainstorm (step 4) and the dispatch fires the moment the capture lands in `00-INPUT/` (Step 1c-bis — before the target-specific questions); on the pointed path the capture completes at step 3, so both lines already exist here and the dispatch fires immediately. Once both exist, dispatch the reader (references/interview.md Step 1c-bis) — it runs in the background while the interview continues. Every research dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing (Rule 3.14, document 12), in the exact format `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>` — the trailing two citation fields ARE those ledger lines copied verbatim, byte-for-byte. A research row without both citations, or whose citations do not match the ledger's current `BUILD-TARGET:` and `INPUT-CAPTURED:` lines, is a violation: the dispatch is refused until the row cites both ledger lines byte-for-byte.
 4. **Brainstorm (if interview mode).** Fifteen minutes, their own words, no
    structure — with the open probes and the reflection prompt. The verbatim
    capture is written to `00-INPUT/` as it is said, and seeds GOAL.md. See
@@ -1151,8 +1200,8 @@ When the operator provides a folder, that folder IS the project. Its documents A
    choice as DEFAULT MODE (Simple) or ADVANCED MODE, and record the
    choice as the ledger line `INTERVIEW-MODE: simple|advanced` BEFORE the
    next question is asked (the live ledger via `tools/ledger.sh`, write-before
-   the anti-drift contract — the boss cron's allowlist in the master fix
-   spec carries `INTERVIEW-MODE` as a sanctioned line class). In DEFAULT MODE
+   the anti-drift contract — `INTERVIEW-MODE` is a sanctioned ledger
+   line class). In DEFAULT MODE
    the whole interview is the R6 list — about nine questions, usually fewer.
    ADVANCED MODE adds the R7 list. Everything else is DECIDED by the run and
    REPORTED as statements in the recap — never asked. The mode question is
@@ -1502,7 +1551,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
     entry-gate audit:** `CONTROL/LEDGER.md` must carry an
     `ENTRY-MODE: interview|pointed` line (step 3) — the recorded proof of which
     entry the client chose. Missing = the entry gate cannot be proven and the run
-    is rejected; the boss cron rejects it independently on the same rule. Check
+    is rejected. Check
     for the line ITSELF, not for a plausible substitute: `INTERVIEW-MODE:` is a
     different gate (simple vs advanced, step 6) and never satisfies this one.
     Never backfill the line from memory or inference at audit time — if the entry
@@ -1528,7 +1577,26 @@ When the operator provides a folder, that folder IS the project. Its documents A
 21. **Hand over and start.** Tell the user, plainly, that the build now runs
     itself and they can walk away. The only paste-in command they ever receive is
     the single restart command for after a crash (document 11) — never a set of
-    windows to open. The pipeline runs. The build's first action is one revolution
+    windows to open.
+    **Arm the five-minute tick FIRST, then say so.** Before the first dispatch,
+    install the cron half of Loop 9 — `tools/watch-tick.sh <project> --cron-line`
+    prints the exact line, and it is added idempotently so a re-run never
+    duplicates it:
+    `L="$(bash <skill>/tools/watch-tick.sh <project> --cron-line)"; crontab -l 2>/dev/null | grep -qF watch-tick.sh || { crontab -l 2>/dev/null; echo "$L"; } | crontab -`
+    which installs
+    `*/5 * * * * bash <skill>/tools/watch-tick.sh <project> >> <project>/CONTROL/watch-tick.log 2>&1`.
+    Prove it landed (`crontab -l | grep watch-tick.sh` prints the row) and
+    announce it in ONE plain sentence, in the client's language, not the tool's:
+    "A checker now runs every five minutes on its own, whether or not I'm awake —
+    it writes down what it finds, and I read it every time I check in." Then start
+    the model half in the same breath: the conductor's own `/loop 5m` on the same
+    command, reading the tick's `ACTION|` lines and dispatching from them (RULE 5,
+    references/loops.md Loop 9). The cron half never depends on the model; the
+    model half is the one that acts. Where `crontab` is unavailable (a
+    PowerShell-only box, a locked-down machine), the degradation is NAMED, never
+    silent: say "the checker runs whenever I check in, rather than on its own,"
+    write that fact to the ledger, and run the `/loop 5m` half alone.
+    The pipeline runs. The build's first action is one revolution
     of the operating loop (references/gauntlet.md §14): reconcile, mark the first
     ready task IN PROGRESS, dispatch per the Parallelism Plan. Steps 1–16.9 ARE
     the doctrine's ten-step startup order — the mapping table lives in
@@ -1956,35 +2024,41 @@ keyword does NOT start workflows from scheduled-task prompts (Claude Code ≥
 2.1.210) — the saved-command form is the only reliable spell from a cron. Every
 loop's precondition #0 checks `CONTROL/TERMINAL-DRIFT.flag`: while it exists,
 nothing dispatches — the flag is the capture-proof stop a drifted conductor
-cannot tick through. The boss cron (PART 4) compares the live ledger against
-the script on every cycle. A violation stops the violating workstream the same
-cycle: the ledger gains a `VIOLATION-STOP` line carrying the exact finding, and
+cannot tick through. The five-minute tick (`tools/watch-tick.sh`, PART 4)
+reconciles the live ledger against the plan on every cycle. A violation stops the
+violating workstream the same cycle: the tick prints one
+`ACTION|<verb>|<target>|<evidence>` line carrying the exact finding, exits 3, and
 the workstream restarts from its last clean checkpoint — the checkpoint rules
 in `CONTROL/project_state.json` (the seven moments, the
 `checkpoint/<slug>-<NNN>` tag scheme, and the `best_stable_build` pointer;
 `references/pipeline.md` Checkpoints, `references/execution-architecture.md`
-§11). One cycle, one outcome: `VIOLATION-STOP` plus checkpoint restart, or
-`BOSSCYCLE-CLEAN`. The conductor reads the stop file at every dispatch point
-and TaskStops the named workstream, then re-dispatches it from the checkpoint
-the right way — never a silent re-plan. `CONTROL/TERMINAL-DRIFT.flag` remains
-the capture-proof stop: while the flag exists, nothing dispatches, and no
-restart happens — a stop is lifted only by naming the blocker and removing the
-flag (references/anti-drift.md §6).
+§11). One cycle, one outcome: an ACTION list plus checkpoint restart, or
+`S-CHECK | violations=0`. The conductor reads the ACTION lines at every dispatch
+point and TaskStops the named workstream, then re-dispatches it from the
+checkpoint the right way — never a silent re-plan.
+`CONTROL/TERMINAL-DRIFT.flag` remains the capture-proof stop: while the flag
+exists the tick exits 4, nothing dispatches, and no restart happens — a stop is
+lifted only by naming the blocker in `CONTROL/TODO.md`, which clears the flag on
+the next reconcile (references/anti-drift.md §6).
 
-**The boss cron enforces all of it (WAVE 0 BOOTSTRAP).**
-The interim boss (`tools/boss-cron` in this repo's checkout, crontab `*/5 * * * *`,
-log `CONTROL/boss-cron.log`) compares the live ledger against the script every
-cycle and holds stop/restart authority: on violation it writes `VIOLATION-STOP`
-lines naming the workstream and the exact finding, writes/updates the stop file
-`CONTROL/stop-workstream`, and exits 2; the conductor reads the stop file at every
-dispatch point and MUST stop the named workstream, then re-dispatch it from its
-last clean checkpoint the right way. `CONTROL/workflow-pids.json` remains for
-out-of-process runs. On clean it appends one `BOSSCYCLE-CLEAN` line with the
-checks run and the timestamp. A missing `BOSSCYCLE-CLEAN` within two intervals
-(10 minutes) fires the heartbeat alert — the boss is itself governed.
-`boss-cron --check` runs one cycle on demand. The hook-protection clause (PART 4) binds: this skill never
-removes, disables, or weakens the boss cron entry or any governance hook, and
-`disableAllHooks` is never set on the operator box.
+**The five-minute tick enforces all of it (WAVE 0 BOOTSTRAP).**
+The instrument is `tools/watch-tick.sh <project>` (crontab `*/5 * * * *`, log
+`CONTROL/watch-tick.log`, installed and announced at step 21). It reconciles the
+live ledger against the plan every cycle and holds stop/restart authority: on
+violation it prints one `ACTION|<verb>|<target>|<evidence>` line naming the
+workstream and the exact finding, and exits 3; the conductor reads those lines at
+every dispatch point and MUST stop the named workstream, then re-dispatch it from
+its last clean checkpoint the right way. `CONTROL/workflow-pids.json` remains for
+out-of-process runs. On clean it appends one
+`S-CHECK | violations=0 | runnable=<n> open=<n> trees=<n>` line through
+`tools/ledger.sh` — every pass carries the count, even when it is zero. A missing
+`S-CHECK` line within two intervals (10 minutes) means the tick itself stopped —
+the tick is itself governed, and its absence is a finding. `bash
+tools/watch-tick.sh --selftest` runs its ten fixtures on demand and refuses to
+report clean when its own controls fail (exit 2, BROKEN INSTRUMENT). The
+hook-protection clause (PART 4) binds: this skill never removes, disables, or
+weakens the tick's crontab entry or any governance hook, and `disableAllHooks` is
+never set on the operator box.
 
 ---
 
@@ -2052,4 +2126,4 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 20. `references/command-center-integration.md` — **CONDITIONAL: funnel builds only** (reached from `references/funnel-architecture.md`). The SWARM Projects card, the six-state lifecycle, the per-step activity feed, the evidence standard, and the FAIL-SOFT rule — Command Center visibility never gates a build.
 21. `references/openclaw-ingest.md` — OpenClaw detection, content ingestion, precedence, question-shrink (Step 2.8 and the opening script; the secrets half stays owned by environment-sweep.md)
 22. `references/progress-visibility.md` — the persistent status line + task progress: the statusLine settings key, the both-stores rule, the client-facing display (model | cost | git | Project | Wave — context and 5h/7d usage are INTERNAL doctrine, never client display), the metric support matrix (cost is REQUIRED and derived — real token counts × published pricing, `~`-labeled), the Project completion bar (THE MAIN METRIC — reads CONTROL/project_state.json, disk truth only) and the Wave bar (reads FIX-LEDGER.md), the context-health thresholds, task-truthfulness (✓ only after validation), Ctrl+T, claude-nine live-proof acceptance, troubleshooting, disable/restore (Step 2.10 and every checkpoint)
-23. `tools/boss-cron` — the boss cron (PART 4 enforcement): the 5-minute cycle that compares the live ledger (`FIX-LEDGER.md` at the repo root) against the script (concurrency caps, dispatch census, PART 4 width, wave lock, claim-vs-evidence, heartbeat, stop file, stop-and-rerun kill via `CONTROL/workflow-pids.json`), writes `VIOLATION-STOP` on violation with the exact finding and `BOSSCYCLE-CLEAN` on clean, exits 2 on violation (governance-exit contract), `--check` runs one cycle read-only, log `CONTROL/boss-cron.log`, cron entry `*/5 * * * *`, heartbeat alert if no `BOSSCYCLE-CLEAN` within two intervals (the boss is governed too), hook-protection clause intact (GATE 0b and the anti-drift contract above)
+23. `tools/watch-tick.sh` — the five-minute tick (PART 4 enforcement): runs `tools/anchor.sh --mode reconcile`, then counts runnable units (open `CONTROL/CHECKLIST.md` boxes with no open dispatch row) and open dispatch rows (no `RESULT` for the unit) and checks S2 zero-workflow, S3 the `[<model> x<N>]` label, S5 idle capacity (open rows < `CLIENT_CAP` × running trees while runnable work waits), S6 heartbeat freshness (10 minutes, 20 for merge) and S13 finished-but-alive; one `ACTION|<verb>|<target>|<evidence>` line per finding and exit 3, one `S-CHECK | violations=<n> | runnable=<n> open=<n> trees=<n>` line through `tools/ledger.sh` on every pass, exit 4 while `CONTROL/TERMINAL-DRIFT.flag` exists, exit 2 for a broken instrument (never an all-clear), an unprovable zero written as UNDETERMINED and never as a pass; `--selftest` runs ten fixtures read-only, `--cron-line` prints the crontab entry step 21 writes and announces, log `CONTROL/watch-tick.log`, cron entry `*/5 * * * *`, Node twin `scripts/common/watch-tick.mjs` for machines without bash, hook-protection clause intact (GATE 0b and the anti-drift contract above)

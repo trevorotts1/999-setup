@@ -380,8 +380,9 @@ Every RECONCILE line carries the verdict in its own field —
 `ledger=ledger-ok(claimed=<n>/resulted=<n>/unpaired=<n>/tol=<t>)`,
 `ledger=unpaired-claim(<n> of <m> RESULT units / tol=<t>)`, or
 `ledger=ledger-undetermined(<reason>)` — so the contract's state is visible
-on every tick without a second read, and the boss cron (PART 4) can check the
-field mechanically.
+on every tick without a second read; the five-minute tick
+(`tools/watch-tick.sh`, PART 4) runs that reconcile and carries its verdict into
+its own `S-CHECK` line as `anchor=<…>`.
 
 ---
 

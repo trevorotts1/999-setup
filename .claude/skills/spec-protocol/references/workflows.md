@@ -399,9 +399,10 @@ schedule, nothing dispatches, and the ledger goes quiet while every clock looks 
   Code ≥ 2.1.210). Never rely on it from a cron.
 - **Precondition #0 of every tick:** `CONTROL/TERMINAL-DRIFT.flag` is absent. If the
   flag exists, the tick stops and surfaces — nothing dispatches while it is there.
-- **The boss compares every cycle:** the boss cron (spec PART 4) reads the live
-  ledger against the script every 5 minutes. A violation stops the violating
-  workstream the same cycle — `VIOLATION-STOP` ledger line with the exact finding,
+- **The tick compares every cycle:** `tools/watch-tick.sh <project>` (spec PART 4)
+  reconciles the live ledger against the plan every 5 minutes. A violation stops the
+  violating workstream the same cycle — one `ACTION|<verb>|<target>|<evidence>` line
+  and exit 3, with the count carried in its `S-CHECK | violations=<n>` ledger line,
   restart from the last clean checkpoint in `CONTROL/project_state.json`
   (`references/pipeline.md` Checkpoints; `references/execution-architecture.md`
   §11). The conductor reads the stop file at every dispatch point and TaskStops

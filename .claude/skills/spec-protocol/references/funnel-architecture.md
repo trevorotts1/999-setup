@@ -580,7 +580,7 @@ decides.
 ### PRIMARY USE CASE: claude-nine
 
 This spec-protocol skill's PRIMARY use case is claude-nine (Claude Code routed
-through 9Router). Every step in this document (pipeline stages, boss cron,
+through 9Router). Every step in this document (pipeline stages, the five-minute tick,
 Gauntlet weave, MCP checks, image lane, GHL lane) runs through claude-nine and
 must be verified in a claude-nine session. Plain claude is supported but not
 the primary target. The 9Router transcript in this document is adapted for

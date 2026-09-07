@@ -123,8 +123,9 @@ again (the mechanical mechanism is `interview.md` R5.1, the four rules: the
 named answers file, stable question keys, the pre-question check, and the
 session-log ask line). When the check finds the answer, the conductor states it
 back in one line — "you already told me <their words>; if anything changed, tell
-me" — and never re-asks. The boss cron flags a question key asked twice in the
-session log as a violation (PART 4 / `tools/boss-cron`).
+me" — and never re-asks. A question key asked twice in the session log is a violation:
+the pre-question check above is what prevents it, and the session log is where it
+is proven.
 
 ---
 

@@ -109,9 +109,9 @@ and does not close the stage.
 
 ---
 
-## 4. The boss cron gate (Issue 8, FIX step 2)
+## 4. The stage gate (Issue 8, FIX step 2)
 
-The boss cron's stage-ordering check treats `STAGE-LOGO` as follows:
+The stage gate's ordering check treats `STAGE-LOGO` as follows:
 
 - A `STAGE-BUILD` ledger line is REJECTED unless the prior stage lines exist —
   `STAGE-WIREFRAMES` (any per-page `STAGE-WIREFRAMES-<page>` line counts),
@@ -128,9 +128,9 @@ The boss cron's stage-ordering check treats `STAGE-LOGO` as follows:
   `STAGE-IMAGES`). A `STAGE-LOGO` line that names an output file whose
   transparency check failed is not a pass and does not close the stage.
 
-The ordering check lives in `tools/boss-cron` (check `stages`): it parses the
-live ledger's `STAGE-*` lines, verifies the sequence order, and fires a
-`VIOLATION-STOP` for any `STAGE-BUILD` that opened without its prior stages.
+The ordering check runs at every stage boundary, before the next stage opens: it
+parses the live ledger's `STAGE-*` lines, verifies the sequence order, and
+refuses any `STAGE-BUILD` that opened without its prior stages.
 
 ---
 

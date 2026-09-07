@@ -37,7 +37,7 @@ imports the scaffolded files (the reference contract in section 3), and the
 build's own CSS uses the token variables rather than hard-coded values. A page
 that hard-codes a color or a font size that a token exists for is a defect.
 
-**The boss cron gate (Issue 8, FIX step 2):** a `STAGE-BUILD` ledger line is
+**The stage gate (Issue 8, FIX step 2):** a `STAGE-BUILD` ledger line is
 rejected unless the prior stage lines exist — `STAGE-SCAFFOLDING` among them.
 The stage's acceptance bar is checked before the next stage opens.
 
@@ -122,6 +122,6 @@ brief-filled files in the project folder are.
 ## 4. Freshness rule
 
 The scaffold is derived from the design brief at build time, per run. A brief
-change after `STAGE-SCAFFOLDING` passes re-opens the stage (the boss cron's
-stage-gate rule, Issue 8 FIX step 2). The templates themselves change only
+change after `STAGE-SCAFFOLDING` passes re-opens the stage (the stage gate's
+ordering rule, Issue 8 FIX step 2). The templates themselves change only
 through this skill's normal update path — never edited mid-run.
