@@ -239,24 +239,25 @@ re-spawned a live commander on top of itself and put two writers on one domain.
 ## Step 4 — PARALLELISM PLAN (a section of CONTROL/EXECUTION-PLAN.md)
 
 ```
-Topology: gauntlet six-workflow shape (references/gauntlet.md §13), sized by the dispatchable set (495 workflow slots available).
-WF01 blueprint-lock   [opus ×4]   parent T-01; units: architecture, data model, UX plan, test plan  (pipeline)
-WF02 primary-build    [sonnet ×10] parent T-03; units U1–U9 + integration        (pipeline; width 10)
-WF03 visual-gauntlet  [fable ×4]  parent T-04; blind card-grid/mobile/search/add-form judges (pipeline; launches on first landed unit)
-WF04 tech-gauntlet    [fable ×3]  parent T-05; logic / regression / release-blocker judges   (pipeline)
-WF05 release-council  [opus ×4]   parent T-07; 4/4 to pass  (parallel — BARRIER-JUSTIFIED: each judge must see the COMPLETE integrated build, and the council verdict needs all four)
-WF06 repair-loop      [sonnet ×N] parent T-06; one per failed workstream, ≤12/wave  (pipeline; entry: failures>0)
-Merge train           [haiku ×1]  15-minute trigger, wave close always — CONCURRENT, never a station
-Concurrent at peak: lead+4 commanders (5) + WF02(10) + train(1) + watch as lead duty = 16 ≤ 500 ✓ (ledger line: GOVERNS 500 harness)
-Widest moment: 5 persistent + WF02(10) + WF03(4) + train(1) = 20, far inside the harness's 500 ✓
+Topology: the ONE swarm shape (references/gauntlet.md §13.1) — five workflow types and no others — sized by the dispatchable set (495 workflow slots available).
+Full-capacity shape (§13.1): WF01 8 / Unit Gauntlet 16 / Integrated Visual 16 / Council 4 / Repair ≤12. This run's derived widths follow.
+WF01 blueprint-lock        [opus ×8]   parent T-01; 8 planner slices: architecture, domain, the two personalization planners, visual world, UX/feel, testing-privacy-performance, evidence-harness  (parallel — BARRIER-JUSTIFIED: the synthesis needs every plan)
+Unit Gauntlet A            [opus ×10]  parent T-03; units U1–U9 + integration = 10 UNIT slices in ONE pipeline() call. Stages per unit, all seat-pinned, no barrier between them: build (builder seat) → blind visual judge (vision-proven seat) → technical judge (judge seat) → fix loop. Unit 1 is the evidence harness; page units dispatch only after HARNESS-READY:
+Integrated Visual Gauntlet [sonnet ×5] parent T-04; after the units integrate: one blind judge per whole page/screen at every viewport (card-grid, mobile, search, add-form) + the global blind benchmark judge
+WF05 release-council       [sonnet ×4] parent T-07; 4/4 to pass  (parallel — BARRIER-JUSTIFIED: each judge must see the COMPLETE integrated build, and the council verdict needs all four)
+WF06 selective-repair      [opus ×N]   parent T-06; one repair seat per failed workstream, ≤12 per wave, then the council again  (pipeline; entry: failures>0; passing workstreams are LOCKED and never rerun)
+Merge train                [haiku ×1]  15-minute trigger, wave close always — CONCURRENT, OUTSIDE every build tree (a merge agent inside a build tree is a forbidden shape), never a station
+Concurrent at peak: lead+4 commanders (5) + Unit Gauntlet A (10) + train(1) + watch as lead duty = 16 ≤ 500 ✓ (ledger line: GOVERNS 500 harness)
+Widest moment: 5 persistent + Unit Gauntlet A (10) + Integrated Visual (5) + train(1) = 21, far inside the harness's 500 ✓
   (the wave is sized by this project's dispatchable set and the per-workflow width — never by a policy number)
+Naming note: WF02 / WF03 / WF04 where they appear later in this example are the three STAGES of the Unit Gauntlet — build, blind visual judge, technical judge — never three separate trees.
 ```
 
 Where each number came from:
 
 | Number | Source |
 |---|---|
-| WF02 width 10 | `min(16, cores−2)` with cores measured at 12 — Capacity Ledger line `Cores:` |
+| Unit Gauntlet A width 10 | `min(16, cores−2)` with cores measured at 12 — Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
 | 5 persistent slots | lead + 4 commanders = N+1, deducted BEFORE workflow width — ledger line `AGENT TEAM:` |
 | 495 workflow slots | 500 − 5 persistent — ledger line `WAVE SIZE:` (this build dispatches 15 of them) |
 | 500 governs | the harness — 50 workflows × clientCap 10; the only candidate that exists here, since no policy cap applies on any path and the subscription publishes no provider figure — ledger line `Governing number:` |

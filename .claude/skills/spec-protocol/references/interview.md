@@ -327,16 +327,18 @@ this rule removes.)
 - **D1 (an example you'd be happy matching) and D4 (what you do NOT want):**
   kept, both modes, as written.
 
-### R4. The pairing doctrine (recorded operator ruling, 2026-08-14)
+### R4. The swarm shape (cited, never restated here)
 
-For every builder there is a paired checker. Build capacity and QC capacity
-are planned as EQUAL HALVES: a wave of 8 builder-agents implies 8
-checker-agents — the mirrored half of the same workflow or a paired QC
-workflow — and the Capacity Ledger's width arithmetic counts BOTH halves.
-QC is never an afterthought bolted onto leftover capacity. No question exists
-about this; it is structure, not preference. (The mechanical wiring inside
-the gauntlet loop is owned by `references/gauntlet.md`; this file owns the
-interview consequence only.)
+The shape of every dispatch is the ONE swarm shape — five workflow types and
+no others — owned by `references/gauntlet.md` §13.1 and cited from SKILL.md
+RULE 3 and step 12.7. Its interview consequence is the only thing this file
+owns: **no question exists about it.** QC is structure, not preference, and it
+is never an afterthought bolted onto leftover capacity — the judging stages
+live inside each unit's own tree — so nobody is asked about builders, checkers,
+widths, or trees. (The 2026-08-14 pairing ruling that made QC an equal half of
+every dispatch is HONORED by that shape and superseded in its arithmetic by S3,
+2026-09-07: a tree carries `clientCap` UNITS, and each unit's judges are stages
+of that unit.)
 
 ### R5. The language law and the never-re-ask law
 

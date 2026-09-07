@@ -359,6 +359,29 @@ document 16); per-unit comparison runs from each build card's bar slice, and
 the templates below are the shape of that one block — never a separate
 gauntlet prompt repeated per unit.
 
+**THE PER-STREAM BLOCK IS DERIVED FROM THE PROJECT BLOCK (G7, 2026-09-07).**
+The project block is the PARENT, never the thing a builder or a judge reads:
+Law 5 forbids handing an agent the whole project block. The Parallelism Plan
+(`SKILL.md` step 12.7) DERIVES one three-part block per Unit Gauntlet stream
+from the project block, and the workflow script interpolates that derived block
+into its stage prompts:
+
+- **THE TASK** = that stream's units only — their deliverables, requirements,
+  exclusions, and completion package, lifted from the build cards of the units
+  this tree carries. No other stream's units appear.
+- **THE BUILD METHOD** = the unit gauntlet itself (§13.1): build, blind visual
+  judge, technical judge, fix loop, one largest gap back to a NEW builder, a new
+  judge instance per re-judge, evidence from the harness only.
+- **THE BAR TO HIT** = the BAR SLICE for those units — the frozen reference
+  package (§4) narrowed to the pages or screens this stream owns, carrying the
+  page mapping (our unit → the bar's matching page or screen at the matched
+  viewport) and the same binary decision rule.
+
+**GL-001…GL-008 (§7) run on every DERIVED block, not only on the project
+block.** A derived block that fails a GL rule is re-authored before its tree
+dispatches; a stream whose script interpolates the project block instead of its
+derived block is a Law 5 violation and is re-authored.
+
 ### 6a. Implementation-grade template (all required elements)
 
 ```
@@ -800,11 +823,11 @@ why, in the execution plan (document 16).
 
 ---
 
-## 13. THE GAUNTLET WORKFLOW TOPOLOGY (the six-workflow architecture — the operator's canonical shape)
+## 13. THE GAUNTLET WORKFLOW TOPOLOGY (the ONE SWARM SHAPE — five workflow types, the operator's canonical shape)
 
-The operator's own Gauntlet architecture defines **SIX workflow types and no
-others.** Do not invent additional workflow stages unless a documented dependency
-makes one necessary. The six TYPES are canon; the tasks that carry them are
+The operator's own Gauntlet architecture defines **FIVE workflow types and no
+others** (S3, decided 2026-09-07 — the one swarm shape, §13.1). Do not invent
+additional workflow stages unless a documented dependency makes one necessary. The five TYPES are canon; the tasks that carry them are
 derived per project (Section 13.5).
 
 Every workflow declares its model seat **by ROLE, resolved per run — never by a
@@ -820,7 +843,7 @@ role → alias → resolved model, the three hops; or role → selected pool mod
 probed callable; resolution RECORDS, it never reroutes).
 
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
-are derived (Section 13.4) — **the six-phase ORDER is the invariant.**
+are derived (Section 13.4) — **the five-type ORDER is the invariant.**
 
 **clientCap is MEASURED (S1, 2026-09-07).** clientCap =
 max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), computed by the CLIENT-MACHINE PROBE at
@@ -842,92 +865,59 @@ hand** — a hand-made batch adds a barrier at the slowest agent of the round, a
 the harness already starts the next queued agent the instant a slot frees.
 **No model name appears in any declaration in this section.**
 
-### 13.1 The six workflows
+### 13.1 The one swarm shape — five workflow types and no others
 
-**Each workflow below declares its seat by REQUIREMENT — never by a model name.**
-The requirement is the doctrine: the capability the seat must have, the
-independence it must hold against the builder, and the obligation to record what
-it actually resolved to. **No model name appears in the six declarations.** The
-operator's own wiring on one day is quarantined in the dated exhibit at the END of
-this section (13.1e), and **that exhibit's authority has expired** — it is kept
-for what it teaches about the shape of a declaration, not for what it names.
+**The gauntlet runs as five workflow types and no others.** Widths are the
+machine's, measured by `tools/width.sh` into the Capacity Ledger as
+`clientCap = min(16, cores−2)` bounded by RAM; the bar never changes with the
+machine, only the width.
 
-The live config read plus pool discovery (`references/capacity.md` §11) is the
-ONLY source of a seat's resolved model, and the run's Capacity Ledger is the only
-place a resolved model id is written down. What is binding here is the SHAPE of
-the declaration — role, requirement, subagent count, and the obligation to record
-the resolved model. Any model name you find anywhere in this file is an
-illustration to be resolved live, never a constant to be obeyed.
+**WF01 Blueprint Lock.** One workflow. `parallel()` over the planner agents
+(architecture, domain, the two personalization planners, visual world, UX and
+feel, testing/privacy/performance, and the evidence-harness planner), planner
+seat pinned. A barrier is correct here: the synthesis needs every plan. Output:
+locked architecture, MVP specification, workstream boundaries, acceptance
+matrix, evidence and regression requirements, and the EVIDENCE HARNESS spec. No
+production code.
 
-**WF01 — BLUEPRINT LOCK.** Planner seat — **REQUIREMENT: a lane with the context
-headroom to hold the whole plan and the reasoning depth to lock an architecture;
-thinking set to the highest level the seated model actually supports.** Resolved
-live, recorded in the Capacity Ledger. **Exact
-subagents: 8** — the architecture planner, the domain/mechanics planner, the two
-personalization planners, the visual-world planner, the UX / feel planner, and
-the testing / privacy / performance planner. **These agents DO NOT independently
-begin production coding.** Their outputs are synthesized into: locked
-architecture; MVP specification; workstream boundaries; acceptance matrix;
-evidence requirements; regression requirements. **Total agent executions: 8.**
+**Unit Gauntlet (the fused primary build, blind visual gauntlet, and technical
+gauntlet).** One workflow per independent stream from the dependency graph.
+`pipeline(units, build, blindVisualJudge, technicalJudge, fixLoop)`, every stage
+seat-pinned (builder seat; blind visual judge seat, vision proven by probe;
+technical judge seat), no barrier between stages. Pass `clientCap` units per
+tree; more streams launch as more trees in the same turn. The first unit of the
+first tree is the evidence harness; page and screen units dispatch only after
+`HARNESS-READY:` is in the ledger. Every judge receives rendered evidence from
+the harness and the frozen bar package, labels stripped, order randomized; never
+builder reasoning. A FAIL returns the exact finding and one largest gap to a new
+builder; a new judge instance re-judges; `SCORE` lines are written every round
+and the plateau rule ends a unit honestly.
 
-**WF02 — PRIMARY BUILD.** Builder seat — **REQUIREMENT: the STRONGEST AVAILABLE
-LANE on this machine** (`references/capacity.md` §11, builder row), on a
-high-ceiling provider node; **this seat sets the run's governing number, and every
-other seat's independence is measured AGAINST it.** Resolved live, recorded in the
-Capacity Ledger. **Exact subagents: 16.** Each builder receives
-EXPLICIT OWNERSHIP; **uncontrolled overlapping edits are not permitted.** The ten
-subagent-ownership fields — agent name/number, model role, responsibility, scope
-of ownership, inputs, deliverable, acceptance criteria, FILES OR COMPONENTS
-OWNED, CAN MODIFY CODE Y/N, CAN VERIFY ITS OWN WORK Y/N — are declared per
-builder in the Parallelism Plan (`SKILL.md` step 12.7,
-`references/workflows.md`). **Total agent executions: 16.**
+**Integrated Visual Gauntlet.** After the units integrate, one workflow of blind
+visual judges over whole-page or whole-screen evidence at every viewport, one
+judge per page or screen plus the global blind benchmark judge. This is the
+product-level look the per-unit judges cannot take.
 
-**WF03 — BLIND VISUAL GAUNTLET.** Blind-judge seat — **REQUIREMENT: a
-VISION-capable lane whose vision is PROVEN BY PROBE before the first visual
-verdict** (§5 — a text-only model handed an image does not error, it invents),
-resolving to a DIFFERENT UNDERLYING MODEL than the builder by the family rule.
-Resolved live, recorded in the Capacity Ledger. **Exact
-subagents: 16 blind judges.** These judges receive RENDERED EVIDENCE. **They do
-NOT receive builder reasoning.** Section 5's blind protocol governs every one of
-them: fresh context, a different resolved model from the builder, labels
-stripped, order randomized, and vision proven before the first visual verdict.
-**Total agent executions: 16.**
+**WF05 Release Council.** One workflow, `parallel()` over four release judges
+(product, technical/stability, privacy/performance, adversarial overall),
+release seat pinned. Barrier justified: each sees the complete build. Release
+requires 4 of 4 PASS; FAIL or UNVERIFIED from any judge prevents release.
 
-**WF04 — TECHNICAL GAUNTLET.** Technical-judge seat — **REQUIREMENT:
-rubric-depth verdict capability, resolving to a DIFFERENT UNDERLYING MODEL than
-the builder** (family rule, `references/capacity.md` §11), with the per-verdict
-headroom floor `max_tokens ≥ max(4000, 4 × expected verdict length)` read off the
-RESOLVED model rather than the lane. Resolved live, recorded in the Capacity
-Ledger. **Exact subagents: 8** — logic;
-domain behaviour / AI; architecture / state; the asset or data pipeline;
-performance / memory; security / privacy / upload; automated regression;
-integration / release-blocker. **Total agent executions: 8.**
+**WF06 Selective Repair.** One workflow per repair wave,
+`pipeline(failedWorkstreams, repair, newBlindVerifier, affectedTechnicalJudge)`,
+at most twelve failed workstreams per wave, then the council again. Passing
+workstreams are locked and never rerun.
 
-**WF05 — FINAL RELEASE COUNCIL.** Release-judge seat — **REQUIREMENT: the same
-verdict-depth and builder-independence requirements as the technical judge**, with
-context sized to the whole-product view rather than one unit. Resolved live,
-recorded in the Capacity Ledger. **Exact subagents: 4** — the product / domain release
-judge; the technical / stability release judge; the privacy / performance release
-judge; the adversarial overall release judge. **All four judges evaluate
-independently. RELEASE REQUIRES 4 OUT OF 4 = PASS. A FAIL or UNVERIFIED from ANY
-release judge prevents release.** **Total agent executions: 4.**
+**Forbidden shapes.** `parallel(build)` followed by `parallel(qc)`; a judge
+phase with fewer judges than landed units; any tree that passes fewer units than
+the dispatchable set allows without a `dep=` reason; a merge agent inside a
+build tree. The dispatch gate refuses all four. The four shapes are written out
+with the fix for each in `references/workflows.md`, "Forbidden shapes".
 
-**WF06 — SELECTIVE REPAIR LOOP.** A REUSABLE DYNAMIC WORKFLOW. **Do NOT rerun
-every previous agent.** Let **N = the number of FAILED workstreams**:
-
-- **REPAIR BUILD.** Spawn exactly ONE repair agent (builder seat) for each failed
-  workstream — `REPAIR_COUNT = N`. **Maximum per repair wave: 12.** If N > 12,
-  split the failed workstreams into additional repair waves.
-- **VISUAL RE-VERIFICATION.** For each repaired workstream requiring visual
-  verification, spawn exactly ONE NEW blind verifier. **Never reuse the previous
-  verifier's judgment.** `REVERIFY_COUNT = the number of repaired visual
-  workstreams` (slice count, at most the WF03 total); execution is batched at
-  clientCap per Section 13.4.
-- **TECHNICAL RE-VERIFICATION.** Spawn only the technical judges whose domains
-  could have been affected by the repairs. **Do not rerun unrelated technical
-  judges.**
-- **FINAL RECHECK.** After all failed workstreams have cleared, **ALWAYS rerun
-  the 4 Final Release Council judges.**
+**Seats are declared by ROLE and resolved live.** No model name is hardcoded for
+a seat anywhere in this file: the seat table is `references/capacity.md` §11, the
+resolved model id is written into the run's Capacity Ledger at run time, and
+§13.1e below is a dated exhibit of one machine on one day — never an input.
 
 ### 13.1e The seat wirings as they stood on ONE machine on ONE day — EXPIRED EXHIBIT, never an input
 
@@ -1029,20 +1019,20 @@ The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
 clientCap = 50 × max(2, min(16, cores−2, floor((ram_gb−6)/1.5))). **The topology survives at
 any capacity; only the widths shrink**, per the Capacity Ledger:
 
-- At wave size W, WF02 runs `min(clientCap, W_builder)` builders and stages the
-  rest through `pipeline()` — the phase still completes, it simply takes more
-  passes.
+- At wave size W, a Unit Gauntlet tree passes `min(clientCap, W_units)` units and
+  more streams launch as more trees in the same turn — the type still completes,
+  it simply takes more trees or more passes.
 - **ONE CALL PER WORKFLOW (S2).** Pass every slice of a workflow to a single
   `pipeline()` call. The harness runs clientCap of them at once and queues the
   rest; the queue is a rolling window, never a batch. Never split a workflow's
-  slices into sequential batches by hand. Worked example at clientCap 10: WF02's
-  16 builder slices go in ONE call — 10 run, 6 queue, and each queued slice
-  starts the instant a slot frees, with no barrier at the slowest of the first
-  ten; WF03's 16 judges dispatch identically; WF01 (8), WF04 (8) and WF05 (4)
-  are one call each; WF06's repair seats are capped at 12 per wave (13.1) and go
-  in one call per wave.
+  slices into sequential batches by hand. Worked example at clientCap 10: a Unit
+  Gauntlet tree's 16 unit slices go in ONE call — 10 run, 6 queue, and each
+  queued slice starts the instant a slot frees, with no barrier at the slowest of
+  the first ten; the Integrated Visual Gauntlet's 16 judges dispatch identically;
+  WF01 (8) and WF05 (4) are one call each; WF06's repair seats are capped at 12
+  per wave (13.1) and go in one call per wave.
 - On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
-  reserve), the same six phases run at width 1–2, and the run says so plainly up
+  reserve), the same five workflow types run at width 1–2, and the run says so plainly up
   front: this will take longer.
 - Per-workflow width is **clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))** —
   MEASURED at run time by the CLIENT-MACHINE PROBE (`sysctl -n hw.ncpu` on
@@ -1063,12 +1053,12 @@ any capacity; only the widths shrink**, per the Capacity Ledger:
   harness width before any workflow width is allocated (lead + 4 commanders = 5
   occupants, deducted first).
 
-**The six-phase ORDER is the invariant; the widths are derived. THE BAR never
+**The five-type ORDER is the invariant; the widths are derived. THE BAR never
 shrinks with the machine — only the width does.**
 
 ### 13.5 The tasks that carry these workflows are DERIVED per project
 
-The six workflow TYPES are canon. The task names, the workstream boundaries, and
+The five workflow TYPES are canon. The task names, the workstream boundaries, and
 the subagent lists are **this project's own**, derived from this project's task
 graph — never copied. The illustrative subagent lists above belong to a
 Pac-Man-style game build; they are **exhibits, never templates.** A build that
@@ -1115,7 +1105,7 @@ repair wave may never leave the run with nothing to fall back to.
 
 ### 13.7 Loop engineering is a decided step, never an accident
 
-Step 12.7's Parallelism Plan names WHICH of the six workflows this project
+Step 12.7's Parallelism Plan names WHICH of the five workflow types this project
 instantiates, each mapped to its register row in `references/loops.md` when the
 run is unattended. **WF06 is the standing example of a loop engineered on
 purpose:** a re-entrant repair workflow with a written entry condition (failed
@@ -1123,22 +1113,6 @@ workstreams > 0), a width rule (N ≤ 12 per wave), and a stop condition (the
 council returns 4/4) — never an accidental while-loop.
 
 ---
-
-## 13.8 THE PAIRING DOCTRINE — builders and checkers are equal halves (operator ruling R4, 2026-08-14)
-
-For every builder there is a paired checker, and the pair lives INSIDE the
-same workflow tree: build is stage 1, the judge is stage 2 of the same
-pipeline, each pinned to its own seat (`references/workflows.md` §0.0 — the
-canonical paired tree). A wave of 8 builders IS 16 agents, and the Capacity
-Ledger's width arithmetic counts both halves — QC capacity is planned as an
-equal half of every dispatch, never bolted onto leftover capacity. The judge
-fires the instant its own unit's build lands (no barrier), which preserves
-Rule 2's instant-dispatch promise while keeping the whole lane visible in
-`/workflows` and to the watch-loop (S12). Independence is carried by the PIN
-(Law 7/30 — the judge's resolved base model differs from the builder's),
-never by the dispatch mechanism. A FAIL verdict spawns a fixer + re-judge
-pair under the fix cap (Rule 3.22 — 20 cycles). Raw Agent-tool judges are the
-named fallback only, dispatch-logged with a reap deadline.
 
 ## 14. THE CANONICAL OPERATING LOOP (one loop — the doctrine's 16 steps, the six workflows, and the Agent-Team control flow, fused)
 

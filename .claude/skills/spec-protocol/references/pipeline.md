@@ -162,68 +162,88 @@ files), on the operator's 12-core machine. Per-workflow width is min(16, cores�
 = 10 — measured at run time (`sysctl -n hw.ncpu` → 12), never inherited from
 another machine's number.
 
+**The shape is the ONE swarm shape** (`references/gauntlet.md` §13.1, S3
+2026-09-07 — five workflow types and no others). The 24 items are UNITS, and a
+Unit Gauntlet tree carries `clientCap` UNITS: build, blind visual judge and
+technical judge are pipeline STAGES of the same unit, never a separate QC tree
+and never a pair that halves the tree's width.
+
 **WRONG (pipeline-as-phases — the old default):**
 ONE workflow named `wave-1` building items 1–16. When wave-1 finishes, ONE
 workflow named `wave-2` building items 17–24. Then ONE workflow for QC, then ONE
 for fixes. Four trees, strictly sequential. Wall-clock: the sum of all stages.
 
-**RIGHT (swarm) — scenario (b), 9Router + DeepSeek v4 Flash direct:**
+**ALSO WRONG (the split QC tree — retired 2026-09-07):** ten builders in one
+tree and five judges in a separate QC tree. It is a forbidden shape twice over —
+a judge phase with fewer judges than landed units, and a barrier where the unit
+gauntlet has none — and the dispatch gate refuses it
+(`references/workflows.md`, "Forbidden shapes").
+
+**RIGHT (the Unit Gauntlet) — scenario (b), 9Router + DeepSeek v4 Flash direct:**
 The topological sort returns all 24 items with zero incomplete dependencies, so
-N = 24 streams are available. The governing number comes from the Capacity Ledger,
-never from ambition: harness delivery is 50 workflows × 10 = 500, and the provider
-ceiling minus its reserve sits far above that, so the harness governs and all 24
-items fit in one wave, grouped to the measured per-workflow width:
+N = 24 units are dispatchable. The governing number comes from the Capacity
+Ledger, never from ambition: harness delivery is 50 workflows × 10 = 500, and the
+provider ceiling minus its reserve sits far above that, so the harness governs
+and all 24 units fit in one wave, grouped into Unit Gauntlet trees at the
+measured per-workflow width:
 
 ```
-Workflow [v4-Flash ×10] stream-a — items 1–10  (full per-item lifecycle)
-Workflow [v4-Flash ×10] stream-b — items 11–20 (full per-item lifecycle)
-Workflow [v4-Flash ×4]  stream-c — items 21–24 (full per-item lifecycle)
+Workflow [v4-Flash ×10] unit-gauntlet-a — units 1–10  (pipeline: build → blind visual judge → technical judge → fix loop)
+Workflow [v4-Flash ×10] unit-gauntlet-b — units 11–20 (same four stages, seat-pinned per stage)
+Workflow [v4-Flash ×4]  unit-gauntlet-c — units 21–24 (same four stages, seat-pinned per stage)
 ```
 
-All three are dispatched with `pipeline()` — the default. `parallel()` is a
-BARRIER and would need a written BARRIER-JUSTIFIED note; nothing here earns one.
+All three are dispatched with `pipeline()` — the default, and the only shape the
+unit gauntlet accepts. `parallel()` is a BARRIER and would need a written
+BARRIER-JUSTIFIED note; nothing here earns one. Each unit's judge stages fire the
+instant THAT unit's build lands, so the QC lane is inside the same tree as the
+build it judges — there is no separate QC tree to launch and nothing waits for
+the slowest builder of the round.
 
-PLUS, the moment item 1 finishes building in stream-a (not when stream-a finishes):
+PLUS, after the units integrate, the Integrated Visual Gauntlet runs the
+product-level look the per-unit judges cannot take:
 
 ```
-Workflow [Fable ×5] qc-stream-a — QC for completed items, streaming
+Workflow [judge-seat ×N] integrated-visual — one blind judge per whole page or screen at every viewport, plus the global blind benchmark judge
 ```
 
-PLUS, the merge train runs continuously and OFF the critical path:
+PLUS, the merge train runs continuously and OFF the critical path, OUTSIDE every
+build tree (Law 3: one writer per repo; a merge agent inside a build tree is a
+forbidden shape because it holds a build slot):
 
 ```
-Workflow [Haiku ×1] merge-train — drains the pen on the 15-minute batch trigger
+Workflow [reader-seat ×1] merge-train — drains the pen on the 15-minute batch trigger
 ```
 
-Five trees running SIMULTANEOUSLY. Wall-clock: the slowest single item's full
-lifecycle, not the sum of all stages.
+Four trees running SIMULTANEOUSLY during the build. Wall-clock: the slowest
+single item's full lifecycle, not the sum of all stages.
 
 **Scenario (a) — plain Claude Code on Anthropic, the same 24 items.** The shape
 AND the arithmetic are unchanged. A metered subscription publishes no
 concurrency figure, so there is no provider number to compete with the harness
-and no policy cap to shrink the wave: the harness governs, all 24 items fit in
-one wave, and the same three build streams plus the QC stream and the merge
-train dispatch together. The only difference is which instrument holds the
+and no policy cap to shrink the wave: the harness governs, all 24 units fit in
+one wave, and the same three Unit Gauntlet trees plus the merge train dispatch
+together. The only difference is which instrument holds the
 run — the burn governor (`references/capacity.md` §6) watches for 429/limit
 responses and parks-and-resumes (Loop 6) if the window tightens, and it is the
 ONLY thing that ever narrows an Anthropic run. Queuing, where the harness does
 queue, is not stalling: a queued agent starts the instant a slot frees, and no
 builder ever waits on the merge train for a slot it has not already released.
 
-The operator sees five trees in `/workflows` (scenario (b)):
+The operator sees four trees in `/workflows` (scenario (b)):
 
 ```
-[v4-Flash ×10] stream-a      ████████░░░░ 10/10 built, 3 QC'd, 1 merged
-[v4-Flash ×10] stream-b      ████████████ 10/10 built, 5 QC'd
-[v4-Flash ×4]  stream-c      ██████░░░░░░  3/4 built
-[Fable ×5] qc-stream-a       ████░░░░░░░░  3 items reviewed
-[Haiku ×1] merge-train       ██░░░░░░░░░░  2 batches merged
+[v4-Flash ×10] unit-gauntlet-a   ████████░░░░ 10/10 built, 3 judged, 1 merged
+[v4-Flash ×10] unit-gauntlet-b   ████████████ 10/10 built, 5 judged
+[v4-Flash ×4]  unit-gauntlet-c   ██████░░░░░░  3/4 built
+[reader-seat ×1] merge-train     ██░░░░░░░░░░  2 batches merged
 ```
 
-THIS is the visual contract: five trees, five prefixes, all running at once. Note
-what the picture does NOT show — no tree is waiting on the merge train. stream-b
-keeps building while merge-train drains, qc-stream-a keeps judging, and a merge
-that fails parks its own unit without touching the other four trees.
+THIS is the visual contract: four trees, four prefixes, all running at once. Note
+what the picture does NOT show — no tree is waiting on the merge train, and no
+tree is waiting on a QC phase. unit-gauntlet-b keeps building while merge-train
+drains, every landed unit is being judged inside its own tree, and a merge that
+fails parks its own unit without touching the other trees.
 
 ### Per-builder mechanics
 
