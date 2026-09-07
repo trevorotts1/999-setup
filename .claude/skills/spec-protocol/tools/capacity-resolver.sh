@@ -105,83 +105,34 @@ GAUNTLET_REVIEW=150          # at 150: analyze whether measurable progress still
 GAUNTLET_HARD_STOP=200       # HARD STOP — preserve the best stable build, blocker report
 REPAIR_WAVE_CAP=12           # selective repair: N = failed workstreams, one repairer each, ≤12/wave
 
-# --- Measure cores. Never inherit a number. -----------------------------------
-# Prints "<n> <instrument>" — the instrument NAMES itself so the ledger's
-# [MEASURED …] mark can say which one answered (section 13.2). A silent number
-# is a number nobody can defend.
-measure_cores() {
-  local n="" instrument=""
-  if command -v sysctl >/dev/null 2>&1; then
-    n="$(sysctl -n hw.ncpu 2>/dev/null || true)"
-    [[ -n "${n}" ]] && instrument="sysctl-hw.ncpu"
-  fi
-  if [[ -z "${n}" ]] && command -v nproc >/dev/null 2>&1; then
-    n="$(nproc 2>/dev/null || true)"
-    [[ -n "${n}" ]] && instrument="nproc"
-  fi
-  if [[ -z "${n}" ]]; then
-    echo ""    # UNDETERMINED is a correct answer — the caller must ask
-    return 1
-  fi
-  echo "${n} ${instrument}"
-}
-
-# --- Measure RAM in whole GB. Never inherit a number. -------------------------
-# Prints "<gb> <instrument>", same contract as measure_cores: the instrument
-# names itself so the ledger's [MEASURED …] mark can say which one answered.
-measure_ram_gb() {
-  local bytes="" kb="" gb="" instrument=""
-  if command -v sysctl >/dev/null 2>&1; then
-    bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
-    if [[ "${bytes}" =~ ^[0-9]+$ ]]; then
-      gb=$(( bytes / 1073741824 )); instrument="sysctl-hw.memsize"
-    fi
-  fi
-  if [[ -z "${gb}" && -r /proc/meminfo ]]; then
-    kb="$(awk '/^MemTotal:/{print $2; exit}' /proc/meminfo 2>/dev/null || true)"
-    if [[ "${kb}" =~ ^[0-9]+$ ]]; then
-      gb=$(( kb / 1048576 )); instrument="proc-meminfo-MemTotal"
-    fi
-  fi
-  if [[ -z "${gb}" ]]; then
-    echo ""    # UNDETERMINED is a correct answer — the harness cap then governs alone
-    return 1
-  fi
-  echo "${gb} ${instrument}"
-}
-
-# --- THE WIDTH FORMULA (S1) ---------------------------------------------------
-# harness_cap = min(16, cores − 2)          the Workflow tool's own limit; it
-#                                           queues everything above this itself
-# ram_cap     = floor((ram_gb − 6) / 1.5)   ~1.5 GB per live agent after 6 GB for
-#                                           the OS, the browser, and Claude
-# clientCap   = max(2, min(harness_cap, ram_cap))
-# An unmeasurable RAM figure drops ram_cap from the min() and says so — it never
-# invents one. THE BAR NEVER SHRINKS; only the width does.
-harness_cap_of() {
-  local cores="$1" w
-  w=$(( cores - 2 ))
-  (( w > 16 )) && w=16
-  (( w < 1 )) && w=1
-  echo "${w}"
-}
-
-ram_cap_of() {
-  # floor((ram_gb − 6) / 1.5) in integer arithmetic: ((ram_gb − 6) * 2) / 3
-  local ram_gb="$1" r
-  if (( ram_gb <= 6 )); then echo 0; return 0; fi
-  r=$(( ( (ram_gb - 6) * 2 ) / 3 ))
-  echo "${r}"
-}
-
-client_cap_of() {
-  # client_cap_of <harness_cap> [<ram_cap|"">]  — an empty ram_cap means
-  # UNDETERMINED RAM: the harness cap governs alone.
-  local h="$1" r="${2:-}" c="$1"
-  if [[ -n "${r}" ]] && (( r < c )); then c="${r}"; fi
-  (( c < 2 )) && c=2
-  echo "${c}"
-}
+# --- THE WIDTH INSTRUMENT (E1) -----------------------------------------------
+# The instruments and the width formula live in ONE place — tools/width.sh — and
+# this resolver SOURCES that file instead of carrying a second copy. One formula,
+# one arithmetic, in the whole skill: a drift between the two is not possible
+# because there is only one of them. Sourcing defines
+#
+#   measure_cores   → "<n> <instrument>"   sysctl -n hw.ncpu | nproc | Windows
+#   measure_ram_gb  → "<gb> <instrument>"  sysctl -n hw.memsize | /proc/meminfo | Windows
+#   harness_cap_of  → min(16, cores − 2)
+#   ram_cap_of      → floor((ram_gb − 6) / 1.5)
+#   client_cap_of   → max(2, min(harness_cap, ram_cap))
+#   browser_cap_of  → floor((ram_gb − 6) / 1.5)   (each blind visual judge holds a Chromium)
+#
+# and PRINTS NOTHING when sourced. width.sh's WIDTH_FIXTURE_* test door is read
+# only by width.sh's own reporting layer, never by these functions, so no
+# environment read can reach the width this resolver computes (S1: measured on
+# this machine — never declared, never asked, never an environment read).
+# Run `tools/width.sh` on its own to see CLIENT_CAP / BROWSER_CAP / WORKFLOW_CEILING
+# with their marks; run `tools/width.sh --selftest` for the three fixtures and the
+# no-instrument case.
+WIDTH_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/width.sh"
+if [[ ! -r "${WIDTH_SH}" ]]; then
+  echo "ERROR: the width instrument is missing or unreadable: ${WIDTH_SH}" >&2
+  echo "       A missing instrument is never a width. Restore tools/width.sh and rerun." >&2
+  exit 2
+fi
+# shellcheck source=./width.sh
+. "${WIDTH_SH}"
 
 # --- Provenance marks (references/capacity.md section 13.2) -------------------
 # Renders "<kind>[:<detail>]" as the bracketed mark the Capacity Ledger requires.
