@@ -11,38 +11,51 @@ The swarm must be watchable. This is the watchability layer.
 
 Claude Code supports a configurable persistent status line — one line rendered beneath the
 input box, refreshed on events (and optionally on an interval). Spec Protocol installs it
-so the user can glance at the terminal and answer twelve questions without reading the
-conversation:
+so the owner of the project can glance at the terminal and answer four questions without
+reading the conversation:
 
-1. What model am I using?
-2. What has this session cost?
-3. What git branch am I on?
-4. What part of the project is currently being built?
-5. What has already been completed?
-6. What is still left?
-7. How close is the project to being DONE?
-8. How close is the current wave to being done (wave-shaped runs)?
-9. Is anything blocked?
-10. Is the work clean in git?
+1. Is it still working, and when did it last do something?
+2. What piece is it on right now?
+3. How many pieces are done, out of how many?
+4. Is anything waiting on me?
 
-Context usage and 5h/7d usage rates are deliberately NOT on this list — internal
-doctrine, never client display (operator order 2026-08-16).
+Two conditional segments answer a fifth and a sixth: before the plan exists, how far
+through getting ready it is; and on a wave-shaped run, how close the current wave is to
+being done.
 
-Preferred display, adapted to what the installed version actually exposes (priority order
-per spec §1):
+Deliberately NOT on this list: the model name, the session cost, the git branch, context
+usage, and the 5h/7d usage rates. The first three were on the bar until 1.18.0 and were
+removed — none of them answers a question the owner asked, and the cost figure priced the
+session at list rates a subscriber never pays (§4). Context usage and the usage rates
+remain INTERNAL doctrine, never client display (operator order 2026-08-16).
+
+The client bar, exactly:
 
 ```text
-Claude Opus | ≈$1.38 api-equiv | main ✓ | Project ████░░░░░░ 40% | Wave 2 ██████░░░░ 60%
+Working ✓ 2m ago | Now: the booking page | 14 of 40 pieces (35%) | Needs you: nothing
 ```
 
-**The client-facing display (operator order 2026-08-16): what truly matters — model, cost,
-git, Project progress, Wave progress. Context usage and 5h/7d usage rates are INTERNAL
-doctrine (agent behavior thresholds, §5), never client display.** The Project segment is
-THE MAIN METRIC: how close the project is to being done. Full derivation and guardrails
-in §6.
+Before the plan exists the third segment is replaced:
 
-Do not fake unavailable information. Only display data Claude Code actually exposes — or
-data derived from what it exposes (the cost rule, §4).
+```text
+Getting ready: step 4 of 9
+```
+
+A wave-shaped run adds one segment on the end:
+
+```text
+… | Wave 2 ██████░░░░ 60%
+```
+
+**The client-facing display (operator order 2026-08-16, narrowed 1.18.0): what truly
+matters — is it working, what is it on, how far along, does it need me.** Every segment is
+a plain-words answer written for a non-technical adult: the piece is "the booking page",
+never `U042` (`references/audience.md`, the naming convention). Full derivation and
+guardrails, segment by segment, in §6.
+
+Do not fake unavailable information. Only display data Claude Code actually exposes, or
+data read from the project's own files on disk (§6). A source that is missing, unreadable,
+or malformed drops its OWN segment and leaves the rest of the bar standing.
 
 ## 2. Version facts (verified 2026-08-16, operator Mac Mini)
 
@@ -120,58 +133,29 @@ The statusLine command receives JSON on stdin. Fields that matter here:
 
 | Metric | Verdict | How |
 |---|---|---|
-| Active model | DISPLAYED | stdin `model.display_name` |
-| **Session cost** | **DISPLAYED — derived, never read from stdin** | see the cost rule below |
-| Git branch/status | DISPLAYED | via shell from `cwd` (stdin workspace has no branch field): `git rev-parse --abbrev-ref HEAD`, `git status --porcelain`; skip optional locks |
-| Project progress | DISPLAYED — THE MAIN METRIC | derived from `$cwd/CONTROL/project_state.json` (§6) |
-| Wave progress | DISPLAYED (wave-shaped runs) | derived from `FIX-LEDGER.md` (§6) |
-| Context % / context bar | INTERNAL ONLY — never client display (operator order 2026-08-16) | stdin `context_window.used_percentage` — still READ (token counts feed the cost derivation) and ACTED ON per the thresholds (§5); never rendered |
+| **Working ✓ Nm ago** | **DISPLAYED** | age of the newest line in `CONTROL/HEARTBEAT.md` (§6) |
+| **Now: `<piece>`** | **DISPLAYED** | newest IN_PROGRESS unit's plain name in `CONTROL/project_state.json` (§6) |
+| **n of N pieces (p%)** | **DISPLAYED** | `CONTROL/project_state.json` `tasks.counts` (§6) |
+| **Getting ready: step n of 9** | **DISPLAYED before the plan exists** | `CONTROL/setup_progress.json` (§6) |
+| **Needs you: k \| nothing** | **DISPLAYED** | open OPERATOR-ESCALATION and question items in `CONTROL/TODO.md` (§6) |
+| Wave progress | DISPLAYED (wave-shaped runs) | derived from `CONTROL/LEDGER.md` (§6) |
+| Active model | NOT DISPLAYED (removed 1.18.0) | stdin `model.display_name` — read by nothing; the owner did not ask which model |
+| Session cost | NOT DISPLAYED (removed 1.18.0) | no money figure is computed anywhere; see the note below |
+| Git branch/status | NOT DISPLAYED (removed 1.18.0) | a branch name is not a plain-words answer to any of the four questions |
+| Context % / context bar | INTERNAL ONLY — never client display (operator order 2026-08-16) | stdin `context_window.used_percentage` — ACTED ON per the thresholds (§5); never rendered |
 | Session duration | UNDETERMINED | not in stdin; script-side start-time file is the permitted DIY extension |
 | 5-hour / 7-day usage | INTERNAL ONLY — never client display (operator order 2026-08-16) | stdin `rate_limits.*` — subscribers only, absent under 9Router; never rendered |
 
-**The cost rule (operator order 2026-08-16 — cost goes ON the bar).** Cost IS exposed in the
-stdin schema — corrected 2026-08-27: `cost.total_cost_usd` was proven present, both by finding
-the object-literal construction site in the installed 2.1.227 binary and, later the same day,
-by live stdin capture from a running session (`$0` pre-turn, `$0.0554999...` after one turn),
-reversing the earlier "not exposed" finding above. Binding, in this order:
-
-- **Routed-session gate runs FIRST, keyed on `model.id`, NEVER `model.display_name`.** Live
-  capture 2026-08-27 (both classes, same instrument): a claude-nine/9Router session sends
-  `model.id = "opus-chain"` (the raw chain id the router was asked for) but
-  `model.display_name = "Opus 5"` — a normal-looking Anthropic name. An earlier version of
-  this rule (and an earlier version of the script) gated on `display_name` shape
-  (`*-chain`/`fusion-*`); that gate could never fire, because the chain id never reaches
-  `display_name` — it was a dead check. `model.id` always starts with `claude-` on a plain
-  session (captured: `claude-haiku-4-5`) and never does on a routed one; that prefix is the
-  real signal. An absent/unrecognized `model.id` is treated as routed-safe (cost omitted) —
-  never guess in the direction of showing a price.
-- **A routed session NEVER shows `cost.total_cost_usd` and NEVER gets a price-table figure.**
-  Proven wrong, not just untrusted: the captured routed payload had
-  `total_input_tokens = 46536`, `total_cost_usd = 0.235748` — the harness priced that turn at
-  roughly the real Anthropic Opus-5 input rate ($5/MTok), while 9Router's own request records
-  show it was actually served by Ollama Cloud `glm-5.3-flash` (`opus-chain` leg 1),
-  flat-subscription traffic with near-zero marginal cost. (The router's per-request cost
-  lookup, the `requestDetails` table, is not a viable live substitute either — capped at 1000
-  rows, 8+ days stale at last check.) Omit is the only provable-correct behavior — an omitted
-  number beats a fabricated one.
-- **Plain-session primary:** read `cost.total_cost_usd` from stdin directly and use it
-  as-is — Claude Code's own running total for the session, already cumulative. No state file,
-  no per-refresh delta math, and no double-counting from `~/.claude` and `~/.claude-nine`
-  sharing a state directory (that whole class of bug is eliminated by keeping no cost state at
-  all — the old delta-vs-state-file design is retired; see the two defects note below). Used
-  directly, never re-priced through the table — being non-routed is what makes the figure
-  trustworthy, regardless of which Claude family it names.
-- **Plain-session fallback** (only when `total_cost_usd` is absent/null — older Claude Code
-  builds that don't yet emit `cost`): derive from `context_window.total_input_tokens` /
-  `.total_output_tokens` — already whole-session cumulative totals per the stdin contract, so
-  this needs no delta math either — times PUBLISHED per-model pricing, matched from
-  `model.display_name`.
-- Display with a `~` marker: computed estimate from real data. Never an invented number.
-- A model with no published pricing in the table → the cost segment is OMITTED, not guessed.
-- Published pricing, USD per 1M tokens (input / output): fable 10.00/50.00, opus 5.00/25.00,
-  sonnet 3.00/15.00, haiku 1.00/5.00. (Corrected 2026-08-27 — the table previously read
-  opus 15.00/75.00, sonnet 3.00/15.00, haiku 0.80/4.00, with no fable entry at all: opus was
-  3x too high, haiku too low, and every Fable session showed no cost.)
+**The cost rule is retired (1.18.0).** There is no cost segment, and no money figure is
+computed anywhere in the status line. `cost.total_cost_usd` is present in the stdin schema
+and is deliberately not read: it prices the session's tokens at Anthropic pay-per-call list
+rates, while an operator on a subscription pays $0 marginal for them, so any figure derived
+from it reads as a charge that was never incurred (operator ruling 2026-08-27). On a routed
+(claude-nine/9Router) session it was worse than misleading — a captured routed payload
+priced 46,536 input tokens at roughly the Anthropic Opus-5 rate for a leg 9Router's own
+records show was served by Ollama Cloud. Neither the field, nor a price table, nor the
+routed-session gate that used to guard them survives in the script. The bar carries no
+number the owner did not ask for.
 
 **Fallback law.** Version-detect at install time. Never hard-code an implementation that
 assumes `/statusline`, specific JSON fields, or rate-limit properties stay identical across
@@ -180,15 +164,19 @@ unavailable is OMITTED — the status line still installs with the supported met
 installation never fails over a missing metric. Report per metric:
 
 ```text
-Model: Supported
-Session cost: rendered `≈$N api-equiv` — API-EQUIVALENT, NOT A BILL. Plain sessions use Claude
-  Code's own tracked session total when available, else derived from cumulative token counts ×
-  published pricing; ALWAYS omitted for routed (claude-nine/9Router) sessions, detected via
-  model.id, never display_name. The `api-equiv` suffix is REQUIRED: that total prices the
-  session's tokens at Anthropic pay-per-call list rates, but an operator on a Claude
-  subscription pays $0 marginal for them, so a bare `~$N` reads as a charge never incurred
-  (operator ruling 2026-08-27). Keep the number — it is a real usage meter, dominated by cache
-  reads on long sessions — but never present it as money owed.
+Working ✓ Nm ago: Supported — age of the newest line in CONTROL/HEARTBEAT.md (the file's
+  modification time when no line carries a parseable stamp); omitted when nothing has
+  reported work yet
+Now: <piece>: Supported — the newest IN_PROGRESS unit's plain name in
+  CONTROL/project_state.json; omitted when nothing is in progress
+n of N pieces (p%): Supported — CONTROL/project_state.json tasks.counts; omitted until the
+  plan exists
+Getting ready: step n of 9: Supported — CONTROL/setup_progress.json, shown only before the
+  plan exists
+Needs you: Supported — open OPERATOR-ESCALATION and question items in CONTROL/TODO.md;
+  reads "nothing" at zero; omitted when the project has no TODO.md
+Wave bar: Supported for wave-shaped runs — CONTROL/LEDGER.md; omitted when no wave lines exist
+Model name / session cost / git branch: NOT displayed — removed from the client bar in 1.18.0
 Session duration: Not exposed by this Claude Code version
 Context usage: INTERNAL — tracked and acted on, never displayed (operator order 2026-08-16)
 5-hour / 7-day usage: INTERNAL — never displayed (operator order 2026-08-16)
@@ -196,10 +184,11 @@ Context usage: INTERNAL — tracked and acted on, never displayed (operator orde
 
 ## 5. Context health thresholds — INTERNAL doctrine, never client display
 
-Context usage is NOT shown to the client (operator order 2026-08-16 — the client sees
-what truly matters: model, cost, git, Project progress, Wave progress). Context thresholds
-remain binding on the AGENT: the statusline script still reads the token counts (they feed
-the cost derivation) and the agent acts per level:
+Context usage is NOT shown to the client (operator order 2026-08-16 — the client sees what
+truly matters: is it working, what is it on, how far along, does it need me). Context
+thresholds remain binding on the AGENT, which reads them from its own statusLine stdin —
+the script itself no longer reads the token counts at all, because nothing on the bar is
+derived from them — and the agent acts per level:
 
 | Level | Range | Agent behavior |
 |---|---|---|
@@ -236,45 +225,90 @@ this order kills the display, not the awareness.
   it to the client in plain English during setup:
 
 ```text
-Spec Protocol has enabled Claude Code's progress-tracking workflow.
-
-Your persistent status line shows your active model, session cost, Git information, and — the main thing — how close your project is to being DONE.
-
-For larger builds, Claude will also maintain a task list.
-
-Press Ctrl+T inside Claude Code to view or hide task progress when supported by your installed version.
+At the bottom of the window you'll see a bar with how close your project is to done. Press Ctrl and T together to see the list of pieces and which are finished.
 ```
 
-### The project completion bar (THE MAIN METRIC — operator order 2026-08-16)
+That is the whole explanation, verbatim (the client-facing texts, 1.18.0). It is two
+sentences because the person reading it did not ask for a status system; they asked for a
+website. Nothing about models, costs, branches, or "progress-tracking workflows" is said
+out loud.
 
-The status line carries a project segment: how close the project is to being DONE. This is
-the main thing the bar exists to show — not just session health.
+### Finding the project — the bounded upward walk
 
-```text
-Claude Opus | ≈$1.38 api-equiv | main ✓ | Project ████░░░░░░ 40% | Wave 3 ██░░░░░░░░ 20%
-```
-
-**Derivation — disk truth only, never conversation memory.** The statusline script reads
-`CONTROL/project_state.json` (schema `spec-protocol/project-state@1`,
-references/documents.md). Percent = `tasks.counts.completed / (pending + in_progress +
-completed)`, the SAME counts the reconciler audits. The script is a reader; it never
-invents numbers and never trusts a stale memory of progress.
+Every segment below except the wave bar reads a file under the project's own `CONTROL/`
+directory, so the script has to find that directory first.
 
 **Lookup is a bounded upward walk, not a single check (corrected 2026-08-27).** Spec Protocol
 projects are not git repositories, so this cannot use `git rev-parse --show-toplevel` the way
-the wave bar does. The script starts at `$cwd` and checks `CONTROL/project_state.json` there,
-then walks up one directory at a time, stopping the instant a hit is found. The walk is bounded
+the wave bar does. The script starts at `$cwd`, checks for a `CONTROL/` directory there, then
+walks up one directory at a time, stopping the instant a hit is found. The walk is bounded
 at `$HOME` (checked, then stop) with `/` as a hard safety floor for a `$cwd` outside `$HOME`
-entirely. Without this walk the Project segment renders correctly from the project root and
-then silently vanishes the moment you `cd` into a subdirectory two levels down — the confirmed
-defect this fixes; a single `$cwd`-only check is not sufficient.
+entirely. Without this walk the segments render correctly from the project root and then
+silently vanish the moment you `cd` into a subdirectory two levels down — the confirmed
+defect this fixes; a single `$cwd`-only check is not sufficient. The walk keys on `CONTROL/`
+rather than on `project_state.json` (as it did before 1.18.0) because `Getting ready` has to
+render BEFORE the state file exists.
+
+### Segment 1 — `Working ✓ Nm ago`
+
+The age of the NEWEST line in `CONTROL/HEARTBEAT.md` (document 13: one line per live agent,
+`<ISO8601Z> | agent label | work item | stage`, rewritten on every real progress step).
+Newest = the highest stamp, which for a fixed-width ISO stamp is the lexicographic maximum.
 
 **Guardrails (binding):**
 
-- No `project_state.json` found anywhere on the walk → the segment is OMITTED (the plan does
-  not exist yet; showing 0% before the plan exists is fake progress). Appears from the moment
-  step 16.6 initializes the state file. A malformed/corrupt `project_state.json` behaves the
-  same way — the Project segment drops, the rest of the bar (model, cost, git) still renders.
+- No `CONTROL/HEARTBEAT.md` → the segment is OMITTED. Nothing has reported work; a cheerful
+  "Working" with no agent behind it is the exact lie this bar exists to not tell.
+- A heartbeat file whose lines carry no parseable stamp → the file's own modification time
+  is used instead. Still disk truth, never a guess; the metric report says so.
+- The number goes UP when work stalls, and that is the point: a client who sees `47m ago`
+  has the information the five-minute tick (`tools/watch-tick.sh`) acts on.
+
+### Segment 2 — `Now: <the piece>`
+
+The newest IN_PROGRESS unit's PLAIN NAME from `CONTROL/project_state.json` — "the booking
+page", never `U042` (`references/audience.md`, the naming convention). The reader selects
+objects carrying an IN_PROGRESS status and a name, newest by the object's own timestamp
+field, falling back to document order.
+
+**Guardrails (binding):**
+
+- Nothing in progress, no state file, or no unit list yet → the segment is OMITTED. The
+  reader is deliberately shape-tolerant and deliberately silent: it never manufactures a
+  piece name from a phase, a file path, or an identifier.
+- The name shown is the one a person would use out loud. A unit whose only name is an
+  identifier is a naming-convention defect upstream, not something to render.
+
+### Segment 3 — `n of N pieces (p%)`, and `Getting ready: step n of 9` before it
+
+**Derivation — disk truth only, never conversation memory.** The statusline script reads
+`CONTROL/project_state.json` (schema `spec-protocol/project-state@1`,
+references/documents.md). `n` = `tasks.counts.completed`; `N` = `pending + in_progress +
+completed`; `p` = `n × 100 / N`, integer — the SAME counts the reconciler audits. The script
+is a reader; it never invents numbers and never trusts a stale memory of progress.
+
+**Before the plan exists** there is nothing to count, and `0%` would be a lie about a
+project that has not been planned yet. The conductor writes `CONTROL/setup_progress.json`
+at each step of the nine-step setup flow, and this segment reads that instead. One line,
+exactly this shape:
+
+```json
+{"step":4,"of":9}
+```
+
+Both fields are integers; `of` defaults to 9 if absent or non-numeric. The file is written
+by the conductor as it enters each step, is never read back by anything but the bar, and is
+simply left behind when the plan lands — from the moment `project_state.json` exists the
+pieces count wins and `setup_progress.json` is not consulted again.
+
+**Guardrails (binding):**
+
+- No `project_state.json` found anywhere on the walk → the pieces segment is OMITTED and
+  `Getting ready: step n of 9` renders in its place when `setup_progress.json` is there.
+  Neither file → both are omitted; showing 0% before the plan exists is fake progress. The
+  pieces segment appears from the moment step 16.6 initializes the state file. A
+  malformed/corrupt `project_state.json` behaves the same way — that segment drops and the
+  rest of the bar still renders.
 - Blocked tasks count in the total. A blocked task is unfinished work; hiding it inflates
   the percent.
 - `✓` only after validation, so the bar moves on VALIDATION, never on code generation —
@@ -289,19 +323,45 @@ defect this fixes; a single `$cwd`-only check is not sufficient.
 - 100% does not mean shipped. Shipped = merged at HEAD and verified there (the completion
   law). The bar is a progress instrument, not the delivery claim.
 
+### Segment 4 — `Needs you: k` / `Needs you: nothing`
+
+The count of open items in `CONTROL/TODO.md` that are waiting on a person: the reconciler's
+`OPERATOR-ESCALATION` rows and the questions the orchestrator parked for a human (document
+3 — "the questions waiting on a human with your recommendation"). An UNCHECKED box that
+names `OPERATOR-ESCALATION` or `QUESTION`, or asks something with a question mark, counts.
+
+**Guardrails (binding):**
+
+- A checked box never counts. An answered question is history, not a demand on the client.
+- Zero waiting items renders the word `nothing`, spelled out — the answer to "is anything
+  waiting on me" is a word, not a bare `0` the reader has to interpret.
+- No `CONTROL/TODO.md` → the segment is OMITTED, never a cheerful zero. A missing to-do
+  list is not proof that nothing needs the client.
+- This segment is the client's half of the escalation path. The other half — the ledger
+  row, the flag file, the tick's exit code — belongs to `references/anti-drift.md`; the bar
+  only counts.
+
 ### The wave bar (fix executions and wave-shaped runs)
 
 When a wave-shaped run is in progress — the fix execution of the master spec, or any run
 whose ledger carries wave lines — the status line adds a wave segment:
 
 ```text
-... | Wave 3 ██░░░░░░░░ 20%
+… | Wave 3 ██░░░░░░░░ 20%
 ```
 
-**Derivation.** The script looks for `FIX-LEDGER.md` at `$cwd/FIX-LEDGER.md` first, then at
-the **git repo root of `$cwd`**. It NEVER falls back to a hardcoded absolute path to a named
-project — a ledger outside the project you are in is ANOTHER project's status, and rendering
-it here is a false report.
+**Derivation.** The script looks for `CONTROL/LEDGER.md` at `$cwd/CONTROL/LEDGER.md` first,
+then at the **git repo root of `$cwd`**. That is the ledger spec-protocol projects actually
+write (document 6). Before 1.18.0 it read a fix-execution ledger no project ever writes, so
+this segment could never render for a client — the fix is the filename, and the census that
+guards it is a count of the old name in the installer, which must be zero. It NEVER falls
+back to a hardcoded absolute path to a named project — a ledger outside the project you are
+in is ANOTHER project's status, and rendering it here is a false report.
+
+**The ten-block bar is eleven prebuilt literals, printed whole.** It is never built by
+translating spaces into block characters with `tr`: that pipeline maps a byte at a time and
+corrupts a multi-byte block character under a C locale, which is a locale a status line
+often runs in. A literal string printed with `%s` is locale-proof.
 
 Current wave = **the highest `WAVE <n>` that has NO `WAVE <n> CLOSED` line.** A closed wave is
 history, not status. If every wave is closed there is no wave running and the segment is
@@ -316,7 +376,7 @@ that merely MENTION a wave id are never counted as workflows. No wave or workflo
 **Two defects this derivation exists to prevent** (both live on the operator box, 2026-08-26,
 in BOTH config stores):
 
-1. *The bar that could never clear.* The old hardcoded `$HOME/work-999-setup/FIX-LEDGER.md`
+1. *The bar that could never clear.* The old hardcoded `$HOME/work-999-setup/` ledger
    fallback meant every session in every directory rendered that one project's wave. Wave 6
    there closed 2026-08-16 and the bar still read `Wave 6 ██░░░░░░░░ 20%` ten days later.
    **Rule: every bar must have a reachable condition under which it disappears.**
@@ -336,8 +396,8 @@ verification (the boss enforces claim-vs-ledger). A workflow line without a PASS
 marker counts as not done. A `VIOLATION-STOP` or re-opened workflow drops the percent —
 again, correct.
 
-The wave bar and the project bar coexist: the wave bar answers "how long until THIS wave
-is done", the project bar answers "how long until THE PROJECT is done".
+The wave bar and the pieces segment coexist: the wave bar answers "how long until THIS wave
+is done", the pieces segment answers "how long until THE PROJECT is done".
 
 ## 7. Claude-nine compatibility
 
@@ -358,13 +418,15 @@ Expected validation outcome (spec §10):
 ```text
 Standard Claude Code
 ✓ Status line visible
-✓ Project progress visible
+✓ Working / Now / pieces segments visible
+✓ Needs you visible
 ✓ Wave progress visible (wave-shaped runs)
 ✓ Task tracking available
 
 Claude-nine
 ✓ Status line visible
-✓ Project progress visible
+✓ Working / Now / pieces segments visible
+✓ Needs you visible
 ✓ Wave progress visible (wave-shaped runs)
 ✓ Task tracking available
 ```
@@ -375,17 +437,16 @@ Claude-nine
 [ ] Claude Code launches successfully
 [ ] Existing Claude settings remain intact
 [ ] Status line appears
-[ ] Active model is displayed
-[ ] Session cost displayed in BOTH launch paths (labeled estimate; plain sessions use Claude
-    Code's own tracked total when available, else real token counts × published pricing;
-    ALWAYS omitted, never Anthropic-priced, for routed/9Router sessions — gate on model.id,
-    never display_name, which resolves to a normal Anthropic-looking name even when routed)
-[ ] Session duration works when supported
-[ ] Git branch/status works inside Git repositories
-[ ] Project progress visible and derived from CONTROL/project_state.json
-[ ] Wave progress visible when wave lines exist (wave-shaped runs)
+[ ] Working ✓ Nm ago tracks the newest line in CONTROL/HEARTBEAT.md
+[ ] Now: <piece> names the in-progress unit in PLAIN WORDS, never an identifier
+[ ] n of N pieces (p%) matches CONTROL/project_state.json tasks.counts
+[ ] Getting ready: step n of 9 renders BEFORE the state file exists
+[ ] Needs you reads a count, or the word "nothing" at zero
+[ ] Wave progress visible when wave lines exist (wave-shaped runs), read from CONTROL/LEDGER.md
+[ ] NO model name, NO cost figure, NO git branch anywhere on the bar
 [ ] Context usage NOT displayed to the client (internal doctrine only — operator order 2026-08-16)
 [ ] 5h/7d usage NOT displayed to the client (internal doctrine only)
+[ ] A heredoc-extract diff between the installer and the deployed script is empty
 [ ] Task tracking is available
 [ ] Standard Claude Code works
 [ ] Claude-nine works
@@ -403,9 +464,13 @@ Do not claim a metric works unless it was actually observed.
 | Status line missing everywhere | `disableAllHooks` set | remove it — it also kills every governance hook (PART 4 hook-protection clause) |
 | Only the managed line shows in safe mode | safe mode displays policy statusLine only | exit safe mode |
 | 5h/7d segments absent | not a subscriber / first API response not yet seen / 9Router session | omit is correct behavior, not a fault |
-| Cost segment absent | model not in the pricing table (fallback path only), OR a routed/9Router session (`model.id` doesn't start with `claude-`) | omit is correct — never guess a price, never show an Anthropic price on routed traffic. Note the bar's Model segment still shows a normal-looking name (e.g. "Opus 5") on a routed session — that is `display_name`, not the routing signal; don't mistake it for a plain session |
-| `git` segments blank | not inside a git repository | omit branch/status outside repos |
-| Project segment absent below the project root | `CONTROL/project_state.json` not found anywhere from `$cwd` up to `$HOME` | omit is correct if truly outside a Spec Protocol project; if inside one, confirm the walk reached the directory that holds `CONTROL/` |
+| Model, cost or git segment expected but absent | all three were removed from the client bar in 1.18.0 | absence is correct; there is nothing to restore, and no money figure is computed at all |
+| Bar blank everywhere | `jq` not on PATH | the deployed script prints nothing rather than a wrong bar; install `jq` and re-run the installer, which refuses with one plain sentence and exit 2 without it |
+| Every segment absent below the project root | no `CONTROL/` directory found anywhere from `$cwd` up to `$HOME` | omit is correct if truly outside a Spec Protocol project; if inside one, confirm the walk reached the directory that holds `CONTROL/` |
+| `Working` absent while agents are running | no `CONTROL/HEARTBEAT.md`, or agents append instead of upserting through `ledger.sh` | fix the writers (document 13); the bar never invents a heartbeat |
+| `Now` absent while a unit is in progress | no unit in `project_state.json` carries an IN_PROGRESS status with a name | the bar never manufactures a piece name; give the unit its plain name |
+| `Getting ready` never appears | the conductor is not writing `CONTROL/setup_progress.json` at each flow step | one line, `{"step":n,"of":9}`, written on entering each step |
+| Blocks render as `?` or mojibake | a terminal or font without the block glyphs | the bar itself is locale-proof (eleven prebuilt literals); this is a font problem, not a script one |
 
 ## 10. How to disable / restore
 
