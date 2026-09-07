@@ -618,8 +618,19 @@ it is fixed (the command and expected result), (6) what a naive fix would break
 builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
 summarized, never stripped of its evidence — and the builder fixes exactly that
 finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
-judge). The judge re-judges from scratch with fresh proof and a fresh break-it
-pass. Earlier verdicts never carry.
+judge). **A NEW judge agent — the same SEAT, a FRESH CONTEXT — re-judges, and
+the previous verdict is not in its prompt.** It works from fresh proof and a
+fresh break-it pass, and it receives exactly what the first judge received:
+never the earlier verdict, never the earlier gap, never the earlier score,
+never the round number (`references/gauntlet.md` Section 5 — never reuse the
+previous verifier's judgment; a judge shown its own prior verdict anchors on it
+instead of re-judging). Earlier verdicts never carry. Every re-judge writes its
+own `SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>` line
+through `tools/ledger.sh` (`references/gauntlet.md` Section 5, the score is
+trend only and decides nothing), and three consecutive rounds whose `best` rose
+by less than 0.3 end the unit on the plateau rule — honestly, with its best
+checkpoint preserved and its one gap named — instead of running to the
+twentieth cycle.
 
 **The loop is bounded and recorded (binding):**
 - **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).

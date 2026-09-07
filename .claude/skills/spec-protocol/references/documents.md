@@ -382,8 +382,36 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Shape:** the honest close. What was built, what landed, what is blocked, what
   questions need answers, what the next steps are. No green lies. "Still broken"
   beats a false green. Written in plain language (see `audience.md`).
+- **The score curve, one line per unit — the section every morning report
+  carries.** Under a heading the client can read, the report prints ONE line per
+  unit: the piece in the client's own words, its score at every round in order,
+  and how it ended. The curve is read straight off the
+  `SCORE | unit=… | round=… | score=… | best=… | delta=…` lines in the live
+  ledger (document 6) — written by every judge verdict through `tools/ledger.sh`
+  (`references/gauntlet.md` Section 5) — never retyped from memory and never
+  rounded to flatter the run. A unit ended by the **plateau rule** (three
+  consecutive rounds whose best rose by less than 0.3 — `references/gauntlet.md`
+  Sections 5 and 9) prints its stop reason and its ONE gap in the promise's own
+  words (`SKILL.md` lines 75–80); a unit that passed prints its curve too:
+
+  ```
+  How each piece improved
+
+  Home page: 5.8 → 7.1 → 8.2 → 8.4 → 8.4, stopped: as good as I could get it against that example; one gap: …
+  Sign-up page: 6.4 → 8.1, passed: as good as the example on every point I measured.
+  ```
+
+  The numbers are trend data and decide nothing (`references/pipeline.md` Stage 2
+  — the binary verdict decides and the 0–10 score is recorded for trend only).
+  The curve is there so the client can SEE the climb and where it flattened, and
+  decide for themselves whether to accept the piece as it is, ask for one more
+  round on that one gap, or pick an easier example to measure against — the three
+  choices the promise at `SKILL.md` lines 75–80 gives them.
 - **What makes it wrong:** a claim that something is done when it is not; a blocked
-  item with no reason stated.
+  item with no reason stated; a report with no score curve, or a curve that
+  disagrees with the SCORE lines in the ledger; a plateaued unit reported as
+  passed, or reported as failed, instead of "as good as I could get it against
+  that example" with its one gap named.
 
 ### Document 15 — Current state
 - **Path:** `SPEC/CURRENT-STATE-YYYY-MM-DD.md`
