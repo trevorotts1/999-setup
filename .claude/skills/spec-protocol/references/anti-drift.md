@@ -721,11 +721,14 @@ silence heartbeats; it is to make each one say something.
 
 ## 9. The cron-tick contract
 
-Scheduled prompts are **command-shaped**, one line:
+Scheduled prompts are **command-shaped**, one line, and that line names the
+script by its ABSOLUTE PATH:
 
 ```
-run /<saved-workflow-name>
+Workflow({ scriptPath: "<HOME>/.claude/workflows/<script>.js" })
 ```
+
+Write the path EXPANDED — a literal `~` is not resolved when the tick is read.
 
 plus at most the anti-drift trailer:
 
@@ -735,7 +738,7 @@ Then run tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile
 do not re-plan; do not use the Agent tool for builders.
 ```
 
-Three rules bind every tick:
+Four rules bind every tick:
 
 1. **Precondition #0:** `CONTROL/TERMINAL-DRIFT.flag` must be absent. If it
    exists, write one line naming the flag and do nothing else this tick.
@@ -744,6 +747,14 @@ Three rules bind every tick:
    tail.
 3. **The `ultracode` keyword does not fire workflows from scheduled prompts**
    (harness ≥ 2.1.210) — never rely on it from a cron.
+4. **Launch by `scriptPath`, never by saved name, and prove the launch by its
+   `runId`.** The two launchers read different registries —
+   `~/.claude/workflows` for regular Claude Code, `~/.claude-nine/workflows` for
+   claude-nine — and each session's registry is a snapshot taken at session
+   start, so a script saved during this run is not findable by name at all. If
+   the `Workflow` result carries no `runId`, the tick dispatched nothing: write
+   `DRIFT-ALARM | tick-noop` to the ledger and re-launch by `scriptPath`. The
+   full form, with the `args` rule, is `references/workflows.md` §7.
 
 This section and `references/workflows.md` §7 state the same contract; they must
 never disagree.

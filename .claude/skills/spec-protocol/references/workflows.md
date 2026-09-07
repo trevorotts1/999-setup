@@ -168,14 +168,31 @@ always defeats the wish.)
 
 ## 2. The primitives and their contract
 
+This table is the harness's own contract, not a paraphrase of it. Where any older
+prose in this skill describes a different signature, this table governs (Law 14).
+
 | Primitive | Contract |
 |---|---|
-| `agent(prompt, options)` | Spawns one subagent. **Resolves `null`** on stop or unrecoverable error — a null is not a failure report, it is an absence. **Always `.filter(Boolean)` the results** and report the dropped count; never treat a shorter array as a smaller job. Options carry `label` (what the tree shows), `phase`, and `schema` (a JSON schema that forces a structured return). |
-| `pipeline(items, fn)` | **THE DEFAULT.** Runs `fn` over every item concurrently up to the width cap, with **no barrier between stages**: item A can be in stage 3 while item B is still in stage 1. Wall-clock is the slowest SINGLE-ITEM chain, not the sum of the stages. Up to **4,096** items per call. |
-| `parallel(agentFns)` | **A BARRIER.** Takes an array of thunks, runs them, and resolves only when ALL of them resolve. Correct ONLY when stage N genuinely needs cross-item context from ALL of stage N−1 — a dedup or merge across the full set, an early-exit on zero results, a judge whose prompt references the other findings. Requires a written `// BARRIER-JUSTIFIED:` comment (§4). Same 4,096-item ceiling. |
-| `phase(title, detail)` | Declares a stage in the tree. Declare the stages in `meta` and label each call with the `phase:` option — with a pipeline the stages OVERLAP, so there is no moment at which the whole run is "in stage 2." |
-| `workflow()` | Nests **ONE level only.** A workflow inside a workflow inside a workflow does not run. |
-| `meta` | `{ name, description, phases }`. The `name` becomes a `/command` — that is how a cron tick fires the script (§7). |
+| `agent(prompt, options)` | Spawns one subagent. Without `schema` it returns the agent's final text as a string; with `schema` (a JSON Schema whose root is `{type:'object', properties:{…}}` and whose `required` is a subset of `properties`) the agent is forced through a StructuredOutput call and `agent()` returns the validated object — no parsing. **Resolves `null`** when the user skips the agent mid-run or the subagent dies on a terminal API error after retries — a null is an absence, not a failure report. **Always `.filter(Boolean)` the results** and report the dropped count; never treat a shorter array as a smaller job. The options, all seven: **`label`** (what the tree shows), **`phase`** (the progress group this call joins — set it explicitly on every call inside a `pipeline()` or `parallel()` stage, because the global `phase()` state races), **`schema`**, **`model`** (the seat pin — §0.0, never omitted in this skill), **`effort`** (`'low'`, `'medium'`, `'high'`, `'xhigh'`, `'max'`; the cheap lever between seats — `'low'` for mechanical reader and census seats, a higher tier only for the hardest judge and repair seats; omitted, it inherits the session's effort), **`isolation: 'worktree'`** (runs the agent in a fresh git worktree, auto-removed if unchanged — expensive at ~200–500 ms plus disk per agent, so only when agents mutate the same files in parallel), and **`agentType`** (a custom subagent type resolved from the same registry the Agent tool reads, e.g. `'general-purpose'`; it composes with `schema`). |
+| `pipeline(items, stage1, stage2, …)` | **THE DEFAULT.** Stages are **variadic** — pass one callback per step the item takes, not one callback that does everything. Each item runs its whole chain independently with **no barrier between stages**: item A can be in stage 3 while item B is still in stage 1. Every stage callback receives **`(prevResult, originalItem, index)`** — later stages read the original item and its index directly instead of threading context through stage 1's return value. A stage that throws drops THAT item to `null` and skips its remaining stages; the call itself does not reject. Wall-clock is the slowest SINGLE-ITEM chain, never the sum of the stages. Up to **4,096** items per call. |
+| `parallel(thunks)` | **A BARRIER.** Takes an array of thunks, runs them, and resolves only when ALL of them resolve; a thunk that throws resolves to `null` rather than rejecting the call, so `.filter(Boolean)` here too. Correct ONLY when stage N genuinely needs cross-item context from ALL of stage N−1 — a dedup or merge across the full set, an early-exit on zero results, a judge whose prompt references the other findings. Requires a written `// BARRIER-JUSTIFIED:` comment (§4). Same 4,096-item ceiling. |
+| `phase(title)` | Declares a stage in the tree — **the title and nothing else.** The description lives in `meta.phases` as `{ title, detail }` and is matched to the call by EXACT title; a `phase()` with no matching `meta` entry simply gets its own group box. With a pipeline the stages OVERLAP, so there is no moment at which the whole run is "in stage 2" — which is why each `agent()` carries its own `phase:` option. |
+| `log(message)` | Emits one narrator line above the progress tree. Every milestone gets one (§12). |
+| `workflow(nameOrRef, args)` | Runs another workflow inline and returns its result. `nameOrRef` is a saved workflow's name or `{ scriptPath }` (§7). The child shares this run's concurrency cap, agent counter, and abort signal. Nests **ONE level only** — a `workflow()` call inside a child throws. |
+| `args` | The launch's `args` value, verbatim — pass real JSON values, never a JSON-encoded string (a stringified list arrives as one string and `args.map` throws). This is how the conductor hands a script its slice, its run stamp, and its seat table. |
+| `meta` | A **PURE LITERAL** read before the script executes: no variables, no calls, no spreads, no interpolation. `name` and `description` are required; `whenToUse` and `phases` are optional. The `name` is how a SAVED workflow is invoked by name in a LATER session — it is not a launch path for a script written this session (§7). |
+
+**The limits the harness enforces for you.** Concurrent `agent()` calls are capped at
+**`min(16, cores − 2)` per workflow run**, and the excess **queues automatically**,
+starting the instant a slot frees. Pass every item of a slice to one call and let the
+rolling window drain it; hand-batching only adds a barrier the harness never had. A
+run's **lifetime** agent count is capped at **1,000** — a runaway backstop set far above
+any real workflow, never a work budget. A single `pipeline()` or `parallel()` call takes
+at most **4,096** items; more is an explicit error, never a silent truncation. And
+**`Date.now()`, `Math.random()`, and argless `new Date()` throw** — resume replays the
+longest unchanged prefix of `agent()` calls and those three would break the replay. Pass
+timestamps in through `args`, stamp results after the run returns, and derive any needed
+variation from the item's `index`, which is identical across a resume.
 
 **What does NOT justify `parallel()`:** "I need to flatten or map or filter the
 results first" (do that inside the item's own chain, or after the pipeline resolves).
@@ -243,27 +260,68 @@ it is the default.
 
 ## 5. Pre-dispatch script validation (fail-closed)
 
-Run all four checks against the saved script before any `Workflow({scriptPath})`
-launch. A failing script is **NOT dispatched.**
+Run these checks against the saved script before any `Workflow({scriptPath})` launch.
+A failing script is **NOT dispatched.**
 
-| # | Check | Rule |
-|---|---|---|
-| a | Even backtick count | The number of backtick characters in the file must be EVEN. An odd count is an unterminated template literal, and the parse error it produces names the wrong line. |
-| b | Python-idiom scan | No `.lower()`, no slice colon after an open bracket, no f-string quote, no bare `None` / `True` / `False`, no `.startswith(`. Every hit is a probable parse error written by a model that slipped languages. |
-| c | Determinism bans | Zero hits for `Date.now`, `Math.random`, or an argless `new Date()`. |
-| d | Barrier accounting | The count of `parallel(` equals the count of `BARRIER-JUSTIFIED`. |
+**Check (a) is a real parse, and greps cannot do it.** Note first what does not work:
+**plain `node --check script.js` FALSE-FAILS a workflow script.** Node auto-detects the
+leading `export const meta` and parses the file as an ES module, and in a module a
+top-level `return` is illegal — so the early-exit pattern this section's own examples
+use (a bare `return` at column 0) comes back as `SyntaxError: Illegal return statement`
+on a script the runtime executes without complaint (measured on node v26.8.1: bare exit
+1, wrapped exit 0, same file). A genuine error — an unclosed brace, an unterminated
+template — is caught either way, so the wrap exists to kill the false alarm, not to
+catch something the bare check misses; and a check that cries wolf on good code is a
+check authors learn to skip. Parse it the way the runtime does:
 
-Run them as one block (the backtick and the idiom patterns are supplied through
-variables so the commands survive being copied into any shell):
+1. **De-export** — rewrite the leading `export const meta` as `const meta`.
+2. **Wrap** the whole body in `async function __wf__(){ … }`, so top-level `await`
+   and `return` are legal.
+3. Write that transformed copy to a temporary **`.mjs`** file.
+4. Run **`node --check`** on the copy.
+5. **Subtract one line** from every line number node reports — the wrapper adds
+   exactly one line above the body.
 
 ```bash
 S=script.js
-BT=$(printf '\140')
-echo "a: backticks = $(/usr/bin/tr -cd "$BT" < "$S" | /usr/bin/wc -c)   # must be even"
-echo "b: python idioms ="; /usr/bin/grep -nE "\.lower\(\)|\[:|f'|\bNone\b|\bTrue\b|\bFalse\b|\.startswith\(" "$S"; echo "   (no lines = pass)"
-echo "c: determinism  = $(/usr/bin/grep -cE 'Date\.now|Math\.random|new Date\(\)' "$S")   # must be 0"
-echo "d: parallel=$(/usr/bin/grep -c 'parallel(' "$S")  justified=$(/usr/bin/grep -c 'BARRIER-JUSTIFIED' "$S")   # must be equal"
+T="${TMPDIR:-/tmp}/wf-syntax-check.mjs"
+{ printf 'async function __wf__(){\n'
+  /usr/bin/sed -E 's/^[[:space:]]*export[[:space:]]+(const[[:space:]]+meta)/\1/' "$S"
+  printf '\n}\n'
+} > "$T"
+node --check "$T"; echo "a: exit=$?   # 0 = parses. Any line node names is ONE MORE than the line in $S"
+rm -f "$T"
 ```
+
+Two more checks the parser cannot make, because both forms parse cleanly and fail
+later:
+
+| # | Check | Rule |
+|---|---|---|
+| b | Determinism bans | Zero hits for `Date.now`, `Math.random`, or an argless `new Date()`. They parse, then throw at run time and break resume (§2). |
+| c | Barrier accounting | The count of `parallel(` equals the count of `BARRIER-JUSTIFIED` (§4). |
+
+```bash
+echo "b: determinism = $(/usr/bin/grep -cE 'Date\.now|Math\.random|new Date\(\)' "$S")   # must be 0"
+echo "c: parallel=$(/usr/bin/grep -c 'parallel(' "$S")  justified=$(/usr/bin/grep -c 'BARRIER-JUSTIFIED' "$S")   # must be equal"
+```
+
+Check (a) subsumes the backtick-parity and Python-idiom greps this section used to
+carry: an unterminated template literal and a stray `.lower()` are both parse errors,
+and the parser names the line instead of guessing at it.
+
+**The gate is already installed — and it fails open.**
+`~/.claude/hooks/workflow-syntax-gate.py` is wired as a PreToolUse hook on `Workflow`
+in BOTH settings stores (`~/.claude/settings.json` and `~/.claude-nine/settings.json`)
+and runs exactly the transform above on every launch, inline `script` or `scriptPath`
+alike. On a genuine parse error it exits 2, blocks the launch, and hands node's error
+back with the line numbers already mapped onto the original file. On anything
+ambiguous — node missing, a timeout, an unreadable path, an error its own wrapper
+caused — it exits 0 and allows the call, by design: a broken gate must never become a
+broken harness. Two consequences the conductor owns: **"the hook did not block" is
+never evidence that a script is correct**, and a launch by saved NAME has no local
+file to check, so it passes the gate unexamined — one more reason §7 launches by
+`scriptPath`.
 
 Prove the instrument before trusting a zero: run one known-positive pattern against
 the same file with the same grep. A detector that returns zero on a pattern it has
@@ -299,11 +357,14 @@ without anyone noticing.
 ## 7. The cron-tick contract
 
 A scheduled prompt is a PAYLOAD, not a planning session. It is command-shaped and one
-line:
+line, and that line names the script by its ABSOLUTE PATH:
 
 ```
-run /<saved-workflow-name>
+Workflow({ scriptPath: "<HOME>/.claude/workflows/<script>.js" })
 ```
+
+Write the path EXPANDED — a literal `~` is not resolved when the tick is read, and
+an unresolved path is checked as absent, then launched as nothing.
 
 plus at most the anti-drift trailer:
 
@@ -311,6 +372,28 @@ plus at most the anti-drift trailer:
 Then run tools/anchor.sh --mode reconcile <home> <unit>; do not re-plan; do not use
 the Agent tool for builders.
 ```
+
+**Never fire a tick by saved workflow NAME.** Three proven traps, any one of which
+turns the tick into a silent no-op:
+
+- **Two registries, one per launcher.** Regular Claude Code reads `~/.claude/workflows`;
+  claude-nine reads `~/.claude-nine/workflows`. Same binary, different directory. A
+  script saved into one is invisible to the other, and a tick that names it reports
+  "not found" — on a cron, to nobody.
+- **The registry is a SESSION-START SNAPSHOT.** The list of saved workflows is read
+  when the session starts. A script written DURING this session is not in that
+  session's registry however correctly it was saved: by name it does not exist, by
+  `scriptPath` it runs. Every script this skill authors mid-run is in exactly that
+  position, so `scriptPath` is not a preference here, it is the only working form.
+- **`args` reaches the script verbatim.** Pass the slice, the run stamp, and the seat
+  table as real JSON values in `args` (§2) — never a JSON-encoded string, never a
+  side-channel file the tick has to go find.
+
+**The liveness line, on every tick:** a launch that returns no `runId` did not start.
+**If the `Workflow` result carries no `runId`, write `DRIFT-ALARM | tick-noop` to the
+ledger and re-launch by `scriptPath`.** A tick that reports itself fired without a
+`runId` is precisely the failure this section exists to prevent: the cron runs on
+schedule, nothing dispatches, and the ledger goes quiet while every clock looks right.
 
 - The `ultracode` keyword **does not fire workflows from scheduled prompts** (Claude
   Code ≥ 2.1.210). Never rely on it from a cron.
@@ -467,10 +550,16 @@ const qc     = await agent(`QC the app ...`)       // one agent alive, only afte
 Splitting a serial chain across twelve files does not parallelise it. Twelve workflows
 times one agent is one agent.
 
-**The correct shape.** ONE build workflow whose `pipeline(units, ...)` carries each
-unit through build → self-check as that unit's own chain, and a SECOND workflow that
-streams QC — launched the moment the first unit lands, not after the build finishes.
-Stages are ROLES, not GATES.
+**The correct shape.** ONE build workflow whose `pipeline(units, build, selfCheck)`
+carries each unit through TWO STAGES — `pipeline()` is variadic, so a stage per step
+is the shape, never one callback doing both jobs — and a SECOND workflow that streams
+QC, launched the moment the first unit lands, not after the build finishes. Stages are
+ROLES, not GATES.
+
+Why the stage split matters beyond tidiness: each stage is its own group in
+`/workflows`, so the tree shows how many units are building and how many are
+self-checking at this second. One fused callback renders as a single undifferentiated
+box, and the under-width defect hides inside it.
 
 ```js
 export const meta = {
@@ -494,11 +583,16 @@ const SEATED = UNITS.map((u, i) => ({ id: u.id, files: u.files, seat: i, port: 4
 
 // One phase() opens the tree. Every call is labelled by its own phase: option,
 // because with a pipeline the stages OVERLAP - unit 7 can be self-checking while
-// unit 2 is still building.
+// unit 2 is still building, so the global phase() state would race.
 phase('Build')
 
-const carried = await pipeline(SEATED, async (u) => {
-  const built = await agent(
+// TWO STAGES, passed as two callbacks. Stage 2 receives (prevResult, originalItem,
+// index), so it reads the unit from `u` directly instead of making stage 1 thread it
+// through its return value. No barrier between them: a unit enters Self-check the
+// instant ITS build lands, not when the slowest build lands.
+const carried = await pipeline(
+  SEATED,
+  (u) => agent(
     `BUILD unit ${u.id}. Run stamp: ${RUN_STAMP}.
 
 OWNERSHIP: you own exactly these files and no others: ${u.files.join(', ')}.
@@ -520,33 +614,34 @@ named honestly is worth more than a claim.`,
         },
         required: ['unit', 'branch'],
       } }
-  )
-  if (!built) return null
+  ),
+  async (built, u) => {
+    // Stage 1 returned null for this unit (skipped, or a terminal error): there is
+    // nothing to check, so drop it here rather than judging an absence.
+    if (!built) return null
 
-  // COUPLED-JUSTIFIED: the self-check reads the working tree the builder just wrote
-  // for THIS unit. The shared artifact is the unit's own branch, the chain is the
-  // item's own chain, and no other unit waits on it.
-  const checked = await agent(
-    `SELF-CHECK unit ${u.id} on branch ${built.branch}. Run stamp: ${RUN_STAMP}.
+    const checked = await agent(
+      `SELF-CHECK unit ${u.id} on branch ${built.branch}. Run stamp: ${RUN_STAMP}.
 
 Run the unit's own gates - build, lint, type-check, unit tests - and report each one
 with its real command, its exit code, and the tail of its output. Do NOT fix anything;
 this seat only measures. A gate you could not run is reported as not-run, never as
 passing. Prove every negative: name what you ran and what you did not run.`,
-    { label: 'check:' + u.id, phase: 'Self-check', schema: {
-        type: 'object',
-        properties: {
-          unit: { type: 'string' },
-          gates_pass: { type: 'boolean' },
-          gates: { type: 'array', items: { type: 'string' } },
-          not_run: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['unit', 'gates_pass'],
-      } }
-  )
-  if (!checked) return null
-  return { unit: u.id, branch: built.branch, gates_pass: checked.gates_pass, checked }
-})
+      { label: 'check:' + u.id, phase: 'Self-check', schema: {
+          type: 'object',
+          properties: {
+            unit: { type: 'string' },
+            gates_pass: { type: 'boolean' },
+            gates: { type: 'array', items: { type: 'string' } },
+            not_run: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['unit', 'gates_pass'],
+        } }
+    )
+    if (!checked) return null
+    return { unit: u.id, branch: built.branch, gates_pass: checked.gates_pass, checked }
+  }
+)
 
 const landed = carried.filter(Boolean)
 return {
@@ -683,7 +778,7 @@ probed, and how the four commander stations collapse onto the lead when it is no
 
 ---
 
-## 8. The transcript-alive rule — why the counter must always move
+## 12. The transcript-alive rule — why the counter must always move
 
 **The proven fact.** The progress counter (N/M done) and the token figure are
 TRANSCRIPT indicators, never liveness meters. They render from the workflow's
