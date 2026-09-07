@@ -215,14 +215,11 @@ This is a genuinely different mechanism from three terminals, not a drop-in
 replacement for them: subagents dispatched by one orchestrating session share
 that session's own context and turn budget, while three independent terminals
 are three fully separate processes that can each run unattended, in parallel,
-for as long as their own session lasts. State the result plainly, naming which
-mechanism is actually available this session — never the retired file check:
+for as long as their own session lasts. Record which mechanism is actually
+available this session in the Capacity Ledger — never the retired file check —
+and say only this to the client, verbatim:
 
-> I am running the building, the checking and fixing, and the merging for you
-> myself. You do not need to open anything or start anything. I am using
-> [Agent Teams | the Workflow tool, because ultracode is on | the Agent/Task
-> tool] — here is what that looks like, and here is where your report will be
-> when it is finished.
+> I'm running the building, checking and fixing myself. You open nothing.
 
 Only if the client asks, unprompted, for separate windows of their own does the
 last-resort rung at the bottom of this file come into play — and then only when
@@ -253,8 +250,9 @@ template handed over with a placeholder still in it is not pasted-and-runnable.
 
 > This is Terminal 1. It builds your app.
 >
-> Open the Terminal app on your Mac. (Press Command + Space, type "Terminal", press
-> Return.)
+> Open the <Terminal app | PowerShell> on your computer. (<On a Mac: hold Command
+> and press the space bar, type "Terminal" | On Windows: press the Windows key,
+> type "PowerShell">, then press Return.)
 >
 > Copy everything inside the fence below — nothing else — and paste it into
 > Terminal 1. Then press Return.
@@ -284,7 +282,8 @@ pins its own model. Use the spelling the Capacity Ledger names for this seat.)
 > This is Terminal 2. It checks the work and fixes anything that is not good enough
 > yet.
 >
-> Open another Terminal window. (Press Command + N, or go to Shell > New Window.)
+> Open a second <Terminal | PowerShell> window. (<On a Mac: hold Command and
+> press N | On Windows: press Ctrl and N>.)
 >
 > Copy everything inside the fence below and paste it into Terminal 2. Then press
 > Return.
@@ -368,20 +367,25 @@ to merge.)
 
 ## If the user asks "what if something goes wrong"
 
-> If a terminal crashes, or your Mac restarts, or a session runs out: the work that
-> was finished is safe. Each piece was saved the moment it finished. To restart,
-> just paste the same command into the same terminal again. It will pick up where it
-> left off — it will not redo finished work.
+The work that was finished is safe — each piece was saved the moment it
+finished — and there is ONE sentence for coming back, the same string used in
+SKILL.md's opening, in `audience.md`, and in `if-the-power-goes-out.md`:
+
+> If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
 This is the never-quit promise (Law 8) in plain language.
 
 **The full crash-recovery guide for the client is in `references/if-the-power-goes-out.md`.**
 Write a copy of that file into the project folder as `IF-THE-POWER-GOES-OUT.md`
-(beside `LAUNCH-COMMAND.md`) when you hand the folder over, so the client can find
-it without opening the skill's internals. Add a one-line pointer at the top of
-`LAUNCH-COMMAND.md` itself:
-> **If your computer crashed, just paste this same command again. It will pick up
-> where it left off. See `IF-THE-POWER-GOES-OUT.md` if you are nervous.**
+(beside `CONTROL/LAUNCH-COMMAND.md`) when you hand the folder over, so the client
+can find it without opening the skill's internals — and fill its two
+interpolations as you write it: `<launcher>` from the detected launcher
+(`claude`, `claude-nine`, or `claude-codex`) and `<Terminal app | PowerShell>`
+from the detected platform (`platform.md`). A client copy handed over with a
+placeholder still in it is not finished. Put the SAME sentence — no second
+wording — at the top of `CONTROL/LAUNCH-COMMAND.md`, above the fence, and point
+at the guide in the line under it: "The longer version is in
+`IF-THE-POWER-GOES-OUT.md` if you are nervous."
 
 ---
 

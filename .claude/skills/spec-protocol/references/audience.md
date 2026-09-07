@@ -70,7 +70,7 @@ becomes "repository (your code folder on GitHub)."
 | "work item" / "unit" | "one piece of the project" |
 | "wave" | "a group of pieces that can be built at the same time" |
 | "subagent" | "a helper that does one specific job" |
-| "terminal" | "the Terminal app on your Mac — press Command + Space, type Terminal, press Return" |
+| "terminal" | "the <Terminal app \| PowerShell> on your computer — the place it types commands" |
 | "model" | "the AI that does the thinking. Different models are good at different things, like different tradespeople" |
 
 Use everyday comparisons:
@@ -129,73 +129,35 @@ is proven.
 
 ---
 
-## 4. Spell it out.
+## 4. The one thing the client ever pastes.
 
-Assume the user does NOT know:
-- What a terminal is. Say "the Terminal app on your Mac."
-- That three lines means three commands. Say "copy everything inside the box and
-  paste it in. That is one command, even though it has several lines."
-- That a line longer than their screen will break. Use short lines.
-- What "Enter" means. Say "press the Return key."
-- What a path is. Say "the folder on your Mac where the work lives."
-- What GitHub is. Say "GitHub is a website where code is stored safely. Your app
-  will live there when it is done."
-
-When giving a path, use the shorter form: `~/Downloads/projects/...` not
-`/Users/yourname/Downloads/projects/...`. The shorter form is what the
-terminal accepts and what the user can type if they need to.
+There is exactly ONE line the client is ever given: the restart sentence in
+section 5 below — the same string in `terminals.md`, in
+`if-the-power-goes-out.md`, in SKILL.md's opening, and in the morning report,
+with the launcher and the platform's own word filled in at run time. Nothing
+else in this skill hands the client a command, a code block, a keystroke, a box
+to copy out of, or a window to open; the old rules for writing those
+instructions are gone because those instructions are gone. If a step needs a
+command run, the skill runs it and says so in one plain sentence. When the
+client does need that one line — after a crash, a restart, or a dropped
+connection — give the sentence whole, put nothing technical around it, and tell
+them the finished work is safe.
 
 ---
 
-## 5. "Paste" means paste.
-
-Do not assume the user knows what to do with a code block. Say:
-
-> Copy the text inside the box below and paste it into the terminal, then press
-> Return.
-
-For the launch command: "Copy everything inside the box — just what is INSIDE the
-lines — and paste it."
-
----
-
-## 6. Stated waits.
-
-When something takes time, say so and give a rough sense:
-
-> This will take a few minutes. You will see progress messages as it works. If you
-> see "..." that means it is still going — do not close the window.
-
----
-
-## 7. Every step has a reason.
-
-> "Type this and press Return. The reason is that this tells your terminal where
-> your project lives."
-
-A reason attached to a step is remembered. A bare command is just noise.
-
----
-
-## 8. Reassure on errors.
-
-> If you see [error message]: that means [plain explanation]. Here is what to do:
-> [one-sentence fix].
-
-Never leave the user staring at an error message with no idea what to do. Never show
-a raw error message without a plain-English explanation.
-
----
-
-## 9. The morning promise.
+## 5. The morning promise.
 
 **The skill runs its own sessions. The user opens nothing.** The building, the
 checking and fixing, and the putting-on-GitHub are seats this skill spawns and
 drives itself — never chores handed to the user as windows to open. That is THE
 HANDOVER RULE (`terminals.md`, binding), and S11 (SKILL.md RULE 5) makes any
 user-facing text that assigns the user a terminal window a failable violation.
-The only thing the user is ever asked to paste is the one restart command in
-`LAUNCH-COMMAND.md` (document 11), and only if their computer crashed.
+The only line the user is ever given is the restart sentence — one string, used
+here, in `terminals.md`, in `if-the-power-goes-out.md`, in SKILL.md's opening,
+and in the morning report, and written into `CONTROL/LAUNCH-COMMAND.md`
+(document 11) — and only if their computer restarted or the connection dropped:
+
+> If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
 At the end of the launch instructions:
 
@@ -213,7 +175,7 @@ then every rule on this page still governs how those instructions are written.
 
 ---
 
-## 10. The voice — warm, plain, confident.
+## 6. The voice — warm, plain, confident.
 
 Not robotic. Not chirpy. Not condescending. Warm, plain, and confident:
 
@@ -248,9 +210,11 @@ Write it in plain language:
 ```
 # Morning Report — <project name> — <date>
 
+Your <target word> is live at <URL> and a safe copy is saved on GitHub. Here's
+what got built, what I checked, and the one or two things only you can decide.
+
 ## What was built
 
-Your app is built and live on GitHub. Here is what it does:
 [one-paragraph plain-English summary]
 
 ## What is working
