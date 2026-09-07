@@ -280,9 +280,8 @@ proven — never silently skip, never pass unproven. D3 unasked (older project)
    non-empty is success; a nonzero exit, a missing file, or a zero-byte file is
    a real failure to report.
 3. If step 2's proof succeeds: Playwright (Chromium) is now the DEFAULT
-   capture tool. Record that the install happened, its approximate download
-   size (e.g. "~130 MB"), and the probe screenshot's path and byte size as the
-   proof.
+   capture tool. Record that the install happened, and the probe
+   screenshot's path and byte size as the proof.
 
 **Step 3 — only if installation genuinely failed, fall back to reporting the
 gap.** If `npx playwright install chromium` (or the proof screenshot after it)
@@ -867,7 +866,7 @@ under a "Credentials and Environment" section:
 | GitHub auth | `gh auth status` | SET | exit 0 |
 | N8N_API_KEY | ~/.claude.json MCP env | SET | n8n MCP tools reachable |
 | VERCEL_TOKEN | `~/.env` | NOT SET | — |
-| Capture tool (Gate 3 visual bars) | Playwright (Chromium) | INSTALLED (was missing, installed via `npx playwright install chromium`, ~130 MB download) | real probe screenshot `capture-probe.png`: exit 0, file present and non-empty |
+| Capture tool (Gate 3 visual bars) | Playwright (Chromium) | INSTALLED (was missing, installed via `npx playwright install chromium`) | real probe screenshot `capture-probe.png`: exit 0, file present and non-empty |
 | Vision-capable critic (Gate 3 visual verdicts) | the alias/tier that will judge | PROVEN — critic named a concrete visible detail from `capture-probe.png` | send the probe screenshot to that exact alias/tier BEFORE the first visual verdict; if it cannot describe the probe, route to a vision-capable alias (9router vision adapter, if wired) or record the seat BLOCKED — never let a critic judge screenshots it was never proven to see (`references/gauntlet.md`, Section 5) |
 
 This is data for the specification, not a finding to act on. The ask-the-user
