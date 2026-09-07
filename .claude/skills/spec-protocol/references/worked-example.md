@@ -45,10 +45,11 @@ Cores are MEASURED, never inherited. 10 is this machine's value, not a constant:
 Launcher: claude (regular Claude Code)      Harness mode: regular
 Cores: 12 → per-workflow concurrency min(16,12−2) = 10
 Context ceiling (session): default (Anthropic)
-ROLE RESOLUTION: orchestrator=lead  builder=sonnet→sonnet  researcher=haiku→haiku
-  visual-verifier=fable→fable  technical-judge=fable→fable  security-judge=fable→fable
-  release-judge=opus→opus   (no alias overrides in this profile — resolved = alias;
-  builder/judge/critic are three different tiers — verified different)
+ROLE RESOLUTION: per the seat table (references/capacity.md §11) — conductor=session
+  opus; WF01 planners + builders + repair=opus→opus; blind visual judges, technical
+  judges, release council=sonnet→sonnet; readers + merge writer=haiku→haiku
+  (no alias overrides in this profile — resolved = alias; builder and judges are
+  different tiers — verified different by the family rule)
 Ceilings: Anthropic subscription (window-metered, opaque) | no policy cap on any path
 Governing number: harness 50×10=500 | provider n/a → GOVERNS: 500 (harness)
 AGENT TEAM: mode=team (probe PASS after consent; enablement written 14:02, backup
@@ -61,7 +62,9 @@ Request budget per 5h window: not window-metered — governed by rate-limit resp
   on 429/limit → park-and-resume (Loop 6), never retry-hammer.
 Burn governor: subscription; commanders counted at full session rate (pessimistic
   shared bucket); watch limits.
-Fallback: builder sonnet→opus | qc fable→opus | merger haiku→sonnet | critic opus→fable
+Fallback (seat table, references/capacity.md §11): builder opus→sonnet | judges
+  sonnet→opus | readers + merger haiku→sonnet — independence re-checked after any
+  fallback
 ```
 
 *(Scenario-b variant: the SAME GOVERNS: 500 (harness). The only difference is the
@@ -325,7 +328,7 @@ Why this script is shaped the way it is:
 The ledger during the run — every line carries state:
 
 ```
-2026-08-12T14:22:03Z | CLAIM  | unit=U3 | agent=[sonnet x10] build:U3
+2026-08-12T14:22:03Z | CLAIM  | unit=U3 | agent=[opus x10] build:U3
 2026-08-12T14:31:40Z | RESULT | unit=U3 | PASS | evidence=branch u3-search pushed, verify exit 0
 2026-08-12T14:35:00Z | RECONCILE | clean | anchor=9f31c2ab | unit=U5 | next=U7 card grid mobile | counts=4/2/0/1/0/0 | tasks=3/3/1
 2026-08-12T14:40:00Z | S-CHECK | violations=0 | trees=4 | prefixes=4 | widths ok vs ledger

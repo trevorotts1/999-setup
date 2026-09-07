@@ -1,7 +1,7 @@
 # The Build → QC → Fix → Pen → Batched-Merge Pipeline
 
 This is the CLEAN version of the batched merge — not one-at-a-time, not the mess.
-It inherits the battle-tested parts of skill-warfix (Sonnet fixer waves, Fable
+It inherits the battle-tested parts of skill-warfix (parallel fixer waves,
 streaming review, holding pen, merge trains, batched GitHub upload, the batch
 merge record with its nothing-dropped reconciliation — written into the ledger,
 NOT a MERGE-LOG.md file — version-surfaces inventory, the post-merge artifact
@@ -86,11 +86,10 @@ brainstorm and the confirmed feature list are the source of truth.
 
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
 
-**Model:** the app-builder model from the capacity interview. The default LANE is
-`Opus` on Claude-Nine, `Sonnet` on regular Claude Code if available — **a lane, not
-a model.** What either lane resolves to is a per-machine fact read live at run time
-(`references/capacity.md` §11) and recorded in the Capacity Ledger; no model id is
-supplied by this page.
+**Model:** the builder seat from the seat table (`references/capacity.md` §11 —
+the one place seats are written). What that seat resolves to is a per-machine fact
+read live at run time and recorded in the Capacity Ledger; no seat, lane, or model
+id is supplied by this page.
 
 ### Concurrency caps — READ THE CAPACITY LEDGER, do not re-derive here
 
@@ -317,11 +316,12 @@ relationship above and by nothing else, and no client answer lowers the
 judge's standard (Law 43) — the client's own acceptance has its own outcome,
 `CLIENT-ACCEPTED`, in the QC RECORD below.
 
-**Model:** the QC model from the capacity interview. The default LANE on
-Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
-named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
-(Law 7 — one model's blind spot cannot bless itself). Review streams as features
-land — not in a batch at the end (inherit warfix streaming review).
+**Model:** the technical-judge seat from the seat table (`references/capacity.md`
+§11 — the one place seats are written), resolved live and recorded in the Capacity
+Ledger, never named by this page. It must be a DIFFERENT model from the builder
+(Law 7 — one model's blind spot cannot bless itself); the table's independence
+rule is the authority. Review streams as features land — not in a batch at the end
+(inherit warfix streaming review).
 
 ### The QC record — the one format every item's verdict is written in
 
@@ -731,10 +731,9 @@ couple two lanes that the schedule went to some trouble to keep apart.
 
 ## Stage 5 — BATCHED GITHUB MERGE (one train per repo, drain in batches)
 
-**Model:** the merger model from the capacity interview. The default LANE is
-`Haiku` on both harnesses — a lane, not a model; what it resolves to is read live
-(`references/capacity.md` §11) and recorded in the Capacity Ledger. One merger per
-repository.
+**Model:** the merge-writer seat from the seat table (`references/capacity.md`
+§11 — the one place seats are written), resolved live and recorded in the Capacity
+Ledger. One merger per repository.
 
 ### GitHub is arranged at MINUTE ONE, never at merge time
 

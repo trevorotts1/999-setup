@@ -1021,39 +1021,26 @@ build tree. The dispatch gate refuses all four. The four shapes are written out
 with the fix for each in `references/workflows.md`, "Forbidden shapes".
 
 **Seats are declared by ROLE and resolved live.** No model name is hardcoded for
-a seat anywhere in this file: the seat table is `references/capacity.md` §11, the
-resolved model id is written into the run's Capacity Ledger at run time, and
-§13.1e below is a dated exhibit of one machine on one day — never an input.
+a seat anywhere in this file, and no seat table is repeated here: the seat table
+is `references/capacity.md` §11 — the one place the seats are written — and the
+resolved model id is written into the run's Capacity Ledger at run time. The dated
+wiring exhibit lives beside that table; nothing in this file restates it.
 
-### 13.1e The seat wirings as they stood on ONE machine on ONE day — EXPIRED EXHIBIT, never an input
+### 13.1e Seats — see the seat table, not this file
 
-**Nothing in this block is a default for anyone, and its authority has already
-expired.** It records what the six seats happened to resolve to on the operator's
-box on **2026-08-12** — the least representative machine in the fleet — and it
-will go stale, because the operator rewires between projects. That is the point.
-No run reads it as data. When this exhibit and the live read disagree, **the live
-read wins and this exhibit is simply out of date** — that is not a conflict to
-resolve, it is the definition of an exhibit. Three of the four alias lanes on a
-freshly installed box already resolve differently from the names below
-(`SKILL.md`'s wiring exhibit), so an agent that recites this block is telling a
-client false facts about their own machine.
+The seat table is `references/capacity.md` §11 and it is written there once:
+conductor and builders Opus, every judging seat Sonnet, readers and the merge
+writer Haiku, Fable not used. The dated per-machine wiring exhibit sits beside it.
+Nothing about seats is restated here, because two copies of a seat table is how
+they came to disagree.
 
-| Seat | Requirement (the doctrine — never expires) | What it resolved to that day (expired) |
-|---|---|---|
-| WF01 planner | Plan-wide context + architecture-locking depth | the `OPUS` alias → DeepSeek V4 Flash, thinking MAX |
-| WF02 builder | The strongest available lane; sets the governing ceiling | the `OPUS` alias → DeepSeek V4 Flash, thinking MAX |
-| WF03 blind judge | Vision PROVEN by probe; different model from the builder | the `HAIKU` alias → MiniMax 3, thinking HIGH |
-| WF04 technical judge | Rubric-depth verdict; different model from the builder | the `SONNET` alias → DeepSeek V4 Pro, thinking MAX |
-| WF05 release judge | Verdict depth + independence, whole-product context | the `SONNET` alias → DeepSeek V4 Pro, thinking MAX |
-| WF06 repair | Inherits WF02's builder requirement per repair agent | inherited the builder seat above |
-
-**The lesson that does not expire even after every id above does:** a role word is
-not a model. Two different seats can collapse onto the SAME resolved model on a
-given box — as the planner and builder seats did that day, and as the technical
-and release seats did — which silently voids the independence the blind protocol
-and Laws 7 and 30 rest on. **Only a live read can tell you whether that has
-happened on the machine you are actually on**, and the run's Capacity Ledger is
-where the answer is written down.
+**The lesson that block existed to teach, kept because it does not expire:** a
+role word is not a model. Two different seats can collapse onto the SAME resolved
+model on a given box — a planner and a builder, a technical judge and a release
+judge — which silently voids the independence the blind protocol and Laws 7 and 30
+rest on. **Only a live read can tell you whether that has happened on the machine
+you are actually on**, and the run's Capacity Ledger is where the answer is
+written down.
 
 ### 13.2 The agent budget
 
