@@ -256,8 +256,18 @@ Record every branch answer in their own words. A branch answer the
 pre-statement reads already settled is stated back, never asked.
 
 **7–12. The content inventory.** Each is prefaced with "I don't know is fine,
-I'll write a draft you can change", and the answers are written to
-`00-INPUT/CONTENT.md`:
+I'll write a draft you can change". **Each answer is written to
+`00-INPUT/CONTENT.md` the moment it is given** — under its own heading, in their
+own words, before the next question is spoken; an answer that lives only in the
+conversation is an answer a compaction or a restart loses. An "I don't know" is
+written too, as `DRAFT — write one` above the drafted text, so a draft can never
+be mistaken for something they said. (`references/documents.md`, the
+infrastructure list, owns the file's shape and headings.) These are the client's
+OWN facts — the counterpart of the outside-world reference research,
+`references/research.md` Step 2 — and the ship check FAILS any page carrying a
+business fact that is not in `00-INPUT/CONTENT.md` and not marked there as a
+draft (`references/build.md` section 6). That is why "I don't know" must reach
+the file as a marked draft and never as a blank:
 
 7. "What is the business or project called, and is there a line you say under the name?"
 8. "What do you offer, and at what prices, if you're happy to share them?"
