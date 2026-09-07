@@ -491,10 +491,11 @@ headless invocation; verdict UNDETERMINED"* — never *"teams are off"*.
      > is therefore **DEMOTED from census authority**. It may CONFIRM a teammate.
      > It may **never** be the instrument that declares one absent, and a
      > `ListAgents` non-listing alone is **not** the silent no-op.
-   - The **silent no-op** verdict (feature not active) now requires the PRIMARY
-     instrument to be negative: the Agent call returned normally AND no inbox artifact
-     appeared under any enumerated root AND (in split-pane mode) the pane count did not
-     move. Only then is stage C a FAIL.
+   - The **silent no-op** verdict (feature not active) requires the PRIMARY
+     instrument to be negative: the Agent call returned normally AND §10's transcript
+     procedure found no transcript for the probe name after its control passed AND no
+     inbox artifact appeared under any enumerated root AND (in split-pane mode) the pane
+     count did not move. Only then is stage C a FAIL.
    - `ListAgents` itself raised an error → BROKEN INSTRUMENT, not FAIL. Say so.
    - Control: the census must not list — and the filesystem must not show — a name
      never spawned. Checking for a known-negative such as `probe-nonexistent` proves
@@ -567,8 +568,9 @@ All three stages pass → record in the Capacity Ledger with its evidence:
 
 ```
 AGENT TEAM: probe=PASS  version=2.1.227  flag=1  teammateMode=tmux
-  live: spawn(probe-echo) — PRIMARY census (a) inbox artifact present on disk
-        [+ PRIMARY census (b) tmux list-panes count incremented, split-pane mode only]
+  live: spawn(probe-echo) — PRIMARY census (a) transcript found for the probe name
+        [+ corroborators: inbox artifact on disk; tmux list-panes count incremented,
+           split-pane mode only]
         + SendMessage(round-trip) OK
         corroboration only: ListAgents(listed) — never required for a PASS, and its
         silence would not have withheld one
