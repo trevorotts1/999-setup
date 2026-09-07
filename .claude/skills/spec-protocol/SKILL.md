@@ -1137,7 +1137,7 @@ When the operator provides a folder, that folder IS the project. Its documents A
    not in the R6 list. The Step 1d branch runs BEFORE the lettered blocks
    (archetype → mode question → Step 1d branch, THEN the lettered A–D blocks
    and R7 items).
-   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C0–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
+   Next, in ADVANCED MODE only, the lettered questions in four blocks (capacity, repositories, loop shape, the measuring stick) — A1–A8, B1/B2/B4 (B3 retired 2026-08-12), C1–C6, D1–D4. One at a time, with the expected count computed and stated up front and every question numbered per the per-question counter — references/interview.md owns every count claim; take the number from there, never from this page. The two fast paths can shrink it: the mode question (fast path 1 — its yes IS the defaults acceptance) and the
    small-plan collapse — block D never collapses. Measure what you can (on the detected-harness path, A1 is
    measured, never asked); ask only what no command can reveal. On a repeat
    project, the capacity profile (`references/capacity.md` §13) turns the
@@ -1998,7 +1998,7 @@ No arguments. The skill asks the one entry-mode question, then proceeds.
 4. `references/documents.md` — the 17-document closed list, each one's shape, the 9 refused artifacts, the census commands (Steps 10–13, 20)
 5. `references/gauntlet.md` — the three-part Gauntlet Loop block (THE TASK / THE BUILD METHOD / THE BAR TO HIT), the three-gate stack, the GL-001…GL-008 validation rules, the blind A/B protocol, the frozen reference package, the non-success states (Steps 12.5, 20 — and throughout the QC pipeline)
 6. `references/pipeline.md` — build→QC→pen→batched-merge, the scope fence, the post-merge artifact check, Land/Merged, the 8 Named Stops, Law 29's per-card rubric, version-surfaces, clean commits (Steps 13–21)
-7. `references/loops.md` — loop engineering, the loop register, 4 core + 5 survival loops, the C0 zero-loops case, the 9.4 budget derivation (Steps 16–18)
+7. `references/loops.md` — loop engineering, the loop register, 4 core + 5 survival loops, the no-zero-loop-branch rule, the 9.4 budget derivation (Steps 16–18)
 8. `references/terminals.md` — THE HANDOVER RULE (the skill drives; the client consents once), the three SEATS, and the labeled last-resort three-window rung: Rules 3.36/3.37, the pasted-and-runnable launch commands, plain-English one-command-at-a-time (Step 19)
 9. `references/audience.md` — the ~68-year-old non-technical UX rules (all steps)
 10. `references/capacity.md` — the capacity doctrine, the Capacity Ledger, the agent-budget declaration, the role→alias→model resolution, commander accounting, the four worked scenarios, the burn-rate governor, the fallback table (Steps 6, 6.5)
