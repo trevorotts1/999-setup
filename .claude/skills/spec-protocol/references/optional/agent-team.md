@@ -1012,12 +1012,14 @@ iTerm2 with `it2` proven present**. The trigger is the CONTEXT the launch lands 
 §5.1 is the SINGLE OWNER of the per-OS and per-box rule that decides this; cite it,
 and do not restate its logic here.
 
-> *"That is turned on. When you are ready, open a new terminal window and paste this
-> one line — everything picks up where it left off."*
->
-> ```
-> claude --teammate-mode tmux
-> ```
+> *"That is turned on. I'm starting the fresh session myself — the work picks up
+> where it stopped, side by side. Nothing for you to open or type."*
+
+The run launches it; the client never types it:
+
+```
+claude --teammate-mode tmux
+```
 
 **Why the trigger is the CONTEXT and never "the host exists."** Printing
 `--teammate-mode tmux` merely because a split-pane host was found on the box hands the
@@ -1058,12 +1060,14 @@ while hiding the client's team. The client gets the plain launcher command for t
 root that was enabled — `claude`, or `claude-nine` where that is the launcher this
 project runs under:
 
-> *"That is turned on. When you are ready, open a new terminal window and paste this
-> one line — everything picks up where it left off."*
->
-> ```
-> claude
-> ```
+> *"That is turned on. I'm starting the fresh session myself — the work picks up
+> where it stopped, right here. Nothing for you to open or type."*
+
+The run launches it; the client never types it:
+
+```
+claude
+```
 
 Branch B is **not** a lesser build and is never described as one. Teams run in the
 documented in-process display mode — full function, different display — and the

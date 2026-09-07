@@ -485,7 +485,7 @@ non-empty URL and non-zero size, **never assumed from a 200**; and **(e)** the c
 **Upload is part of the generation step, not a later cleanup pass. A provider URL is NEVER written into a deliverable, a spec document, or generated code** — the permanent URL goes into the build, enforced fail-closed by **the media-persistence check** (SKILL.md RULE 5, `S17 — Media persistence`).
 
 **⛔ THE PIPELINE STEP IS ONE UNIT, NEVER SPLIT — the time-bounded ordering contract: generate → poll to `state=success` → parse `resultUrls` → download → upload to GHL (13.7) → read-back → ledger line.** The expiry windows make the split the token-waste mechanism (measured URL death under one hour, files 14 days, fresh links 20 minutes); **the GHL upload is the ONLY step that turns a temporary URL
-into a permanent asset**, and **an item left at "generated, URL in ledger" with the upload deferred is fail-closed STOPPED on that item.** The critic step (e) is NOT inside this unit — it runs once the consuming page exists and races no clock, its input being the persisted asset.
+into a permanent asset**, and **an item left at "generated, URL in ledger" with the upload deferred is fail-closed STOPPED on that item.** The critic step (e) is NOT inside this unit — it runs after the consuming page exists and races no clock, its input being the persisted asset.
 
 ### 13.2 Three phases, because only ONE races a clock
 
