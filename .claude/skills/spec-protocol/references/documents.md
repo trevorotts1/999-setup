@@ -777,3 +777,120 @@ of the live ledger's verdict/merge-record section (document 6), which already
 holds merge records and whose writer contract the merge-writer already owns.
 `pipeline.md` writes batch records there. Do not create a MERGE-LOG.md under any
 name; a refused artifact does not return under a new name (Law 39, clause 2).
+
+---
+
+## The laws that bind this role
+
+The v4 super-spec carries 50 laws. This table distills the ones every
+spec-protocol run obeys, with their real v4 numbers.
+
+**One naming note, stated up front (the QC-report lesson — two right-looking facts
+that cannot both be true):** the fleet's working skills (skill-warfix,
+merge-writer) label the post-merge artifact check "Law 14" and the scope fence
+"Law 15." In the v4 super-spec those NUMBERS are different laws — Law 14 is "count
+with a tool," Law 15 is "read what you modify." This skill uses the real v4
+numbers in the table and names the two fleet practices by their full name —
+**"the post-merge artifact check (done means MERGED — trunk ancestry — AND
+verified at HEAD)"** and **"the scope fence (stay in scope, reject drift)"** — so
+nothing is misnumbered. Both practices are carried in full in
+`references/pipeline.md`.
+
+**And two terms that must never blur — "Land" and "Merged":** a unit that has
+LANDED is merged into the INTEGRATION branch only — it is not on the trunk yet.
+A unit is MERGED only when its merge commit is a proven ancestor of the TRUNK
+(remote main). "Landed" is never reported as "merged," in prose or in state.
+Done means MERGED (trunk ancestry) AND verified at HEAD — the full disambiguation
+lives in `references/pipeline.md`.
+
+| Law | Requirement |
+|-----|-------------|
+| 1 — The primary source is truth | A claim is true when the thing itself says so. For code: the merge commit is a proven ancestor of the remote trunk AND the batch tag resolves on the remote. Prose never overrides the primary source. |
+| 2 — Persist per unit | Push the branch the instant it is built; write the verdict the instant it is judged. Disk AND a remote. Update the ledger per unit, never per wave. |
+| 3 — One writer per lane | Two writers on one trunk corrupt each other, always, eventually. One merge-writer per repository. Builds parallelize; merges do not. The holding pen has no writer. |
+| 4 — Pipeline, not barrier | Each unit is judged when IT finishes, lands when IT passes. Waves cap how many run at once; they never synchronize completion. |
+| 5 — Slice the specification | Builders read spec-common + their own slice only, never the master spec (~91% token cut). Caching will not rescue a fan-out. |
+| 6 — Foreground gates with timeout | All tests/builds/checks run foreground with an explicit timeout. Never background a gate. On timeout: mark blocked-timeout, move on. |
+| 7 — Judge never built it; fail closed; mutation proof; a finding gets a refuter | Separate judge, a different model where the platform allows. Binary verdict against the frozen bar relationship. Adversarial break-it pass. Mutation proof. Anything unverifiable fails. A finding survives only if a refuter cannot kill it. Every verdict is written as a QC RECORD (`QC-RECORD unit judge bar bar-fetch verdict outcome blind model-independence self-qc provenance` — the format in `references/pipeline.md` Stage 2), and the record's `judge=` seat must differ from the unit's builder seat with `provenance=STRIPPED`: zero self-QC. |
+| 8 — Never quit | On any death, crash, rate limit, session limit: re-derive state from the primary source, re-fire, resume at the first unfinished item. The run ends two ways only: finished, or the human stops it. |
+| 9 — Decide autonomously; Named Stops only | Only the Named Stops ask a human. A stop blocks ONLY its own unit. Everything else is decided and recorded. |
+| 10 — Batch the ripple | One version bump + one changelog entry + one annotated tag per batch, and every other downstream artifact the batch touched. Never per unit. |
+| 11 — Label everything | Full label on every subagent: [Model ×count] what it builds, in plain words. Same label in ledger, dispatch log, heartbeat, session log. |
+| 12 — Never grep | Structured query → Read → a cheap reader agent. Never grep for content or verdicts. Listing filenames with find/ls is fine. |
+| 13 — Deliverable purity | A deliverable contains ONLY the deliverable. No sentinels, self-checks, counts, notes-to-self, or live command tokens. A paste-able command lives inside a fence under a "copy everything INSIDE the fence" header. |
+| 14 — Count with a tool | A number you did not measure is a rumour. No number from memory, by eye, or by relay. Every number appearing twice must agree. A count with no denominator is an alarm. (The fleet's "post-merge artifact check" is a separate practice — see pipeline.md, not this number.) |
+| 15 — Read what you modify | A fix is a hypothesis until you have read the whole thing it changes and confirmed it exists, in that session. Reading proves shape; running proves behaviour — where the target can be run cheaply, run it. (The fleet's "scope fence" is a separate practice — see pipeline.md, not this number.) |
+| 18 — Waves come from the graph | A wave is the largest set of units that could be worked at the same moment. Every wave boundary is a named dependency, or it is a defect. Computed, never chosen. |
+| 19 — The two brakes | A dependency creates waves; a shared file creates merge order only. Never confuse them. A shared artifact stops parallel landing, never parallel building. |
+| 20 — Serialize merges, batch verifications | Merges stay one-at-a-time; the expensive verification happens once per batch. One frozen base per wave per lane; nobody rebases mid-wave; merge into an integration branch; fast-forward the trunk once. |
+| 21 — Lane or pen | Every unit is in exactly one lane, or in the holding pen. Nothing in both; nothing in neither. Work that changes only running systems lives in the pen, which has no writer. |
+| 23 — Write through, never batch | Write each artifact to disk the moment it is finished, before starting the next. The disk is the record; the transcript is not. |
+| 25 — Nothing that matters lives only in context | Decisions, corrections, measurements → durable files the instant they exist. |
+| 26 — Plain words | No jargon, no undefined term, no unspelled short form. "Policy" is banned — say "rule." Every trade-off gets an everyday comparison. |
+| 28 — Current state before specification | Measure the real system before writing a single unit. A specification written from inference is a list of guesses. |
+| 29 — Every task carries its own rubric | The check travels with the work. Each unit's build card carries its OWN quality check — written by the card's author, who just read the target and knows what "working" means for this change. Two properties make it real: it is INDEPENDENT of the builder's own verify step (a different command reaching the same truth by a different route — if the judge merely re-runs the builder's test, nothing was checked), and it tests OBSERVABLE BEHAVIOUR, never the presence of the edit ("the line is there" is not a check). It also names what must NOT change — the author knows what sits beside it; a cold judge does not. Carried in the build card's QC section (`references/documents.md`) and judged per card (`references/pipeline.md`). |
+| 30 — The apparatus QCs itself before the human sees it | A different agent (never the author) grades the whole folder against the rubric, fixes below the gate, re-grades. Hunts specifically for two files that disagree — the most common defect is two right-looking facts that cannot both be true. |
+| 32 — Fixes run in parallel | One fixer per finding, dispatched concurrently. The attempt bound is per finding, not per work item. |
+| 33 — Fix it, do not report it | Hand over fixed problems, not problems. Housekeeping is never escalated. |
+| 34 — The gate is document completeness | "Ready to start?" is forbidden. 90% is not done. Measure completeness; do not ask about it. |
+| 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. |
+| 36 — Loops never talk to each other | Every state transition is owned by exactly one loop. Loops coordinate through the tracker only. |
+| 37 — A hosted remote is mandatory | Local-only is not a project. Every project has a version-control remote that accepts branches, holds a trunk, and resolves annotated tags. |
+| 38 — Nobody's capacity is assumed | Every rate in the plan (interval, agent ceiling, model split) is derived from the capacity you actually have, never copied from another project. A stronger model plans; a cheaper model executes. |
+| 39 — The document list is closed at seventeen | Creating an eighteenth requires permission first (the seventeenth, PROJECT-MANIFEST.md, was ratified through this same gate on 2026-08-11). A refused artifact does not return under a new name. Work items are sections, never files. Never cite a document you wrote as authority. |
+| 40 — Never use persuasion on the client | Present options, evidence, and a recommendation, then stop. No manufactured urgency, scarcity, or flattery. This holds even when your recommendation is correct. |
+| 41 — The orchestrator dispatches, does not perform | Subagents do all work (money AND throughput). Never send a subagent out with partial context — a failed subagent is the dispatcher's defect first. The one narrow exception: a single command to verify one subagent claim before repeating it. |
+| 42 — Execute the instruction as stated | The instruction is executed as it was stated. Never changed, reinterpreted, diluted, or re-scoped. What the client asked for is what gets done — at the size they asked for it. Not the version you think is better. Not the version that is more thorough. Not the version that also covers the adjacent thing you noticed. If you believe the instruction is wrong, say so in one sentence, then do what was asked. Doing MORE than asked is not a safe error — it is the same defect as doing less, it is harder to detect, and it costs more. |
+| 43 — The gate and irreversible actions belong to the client | Only the client lowers their own standard. Never lower it, never suggest lowering it. Explicit permission for each irreversible action, every time. If unsure whether it is reversible, it is irreversible. |
+| 44 — Hold a reserve back from any provider's cap | Take the provider's cap, subtract the reserve, and the remainder enters every derivation. Default: a quarter of the cap or two free slots, whichever is larger — a default the operator's answer replaces. |
+| 45 — Width from the dependency graph | Width is set by the graph; the cap can only lower it. Surplus capacity buys depth (more judgment per item), never width. |
+| 46 — Every human decision closed before the spec is written | The decision register proves nothing is open. The build asks nobody. An open decision found during a build is a defect in the spec, not a reason to stop. |
+| 47 — A step nobody has taken yet is not a limitation | Ask "undone, or impossible?" before writing that something cannot be done. |
+| 48 — The bar is concrete, not abstract | A quality bar for any work item must be a named, fetchable, comparable artifact. "Good UX" is not a bar; a URL is. No work item is exempt. |
+| 49 — The critic sees the work, never the effort | The critic receives both comparison artifacts (the bar's and the builder's) with all provenance stripped — no timestamps, no authorship, no history, no builder identity — and makes a binary pick without knowing which is the agent's. |
+| 50 — The bar wins by default | If the blind comparison cannot run (bar unreachable, format mismatch, critic cannot render both), the item is BLOCKED, not passed. "Could not compare" is a fail, not a pass. An operational limit is never relabeled as PASS. |
+
+**The three bans (Laws 39, 40, 41) are one family:** each is the agent quietly
+arranging things so the client pays more — Law 39 with paperwork, Law 40 with
+language, Law 41 with model choice. Law 42 is the fourth variant, already
+named: the agent quietly builds MORE than was asked, and the client pays in
+days and money for a bigger thing than they ordered. The over-engineering
+check (`references/pipeline.md`) is that ban applied to the build.
+
+---
+
+## Storage layout
+
+Aligned with v4 Part 13.1 — GOAL.md lives under SPEC/ (it states the objective,
+like the other SPEC/ documents), and LOOPS/ is top-level (document 9 is one
+document per loop that runs, not a CONTROL artifact). Every other path matches
+v4 exactly. `00-INPUT/` additionally holds the brainstorm's verbatim capture and
+the research findings (it is the human's-and-inputs folder, not one of the
+seventeen).
+
+```
+~/Downloads/projects/<project-slug>/
+├── 00-INPUT/                              # raw material, brainstorm capture, research findings — untouched
+├── SPEC/
+│   ├── MASTER-SPEC-YYYY-MM-DD.md          # master specification (document 1)
+│   ├── DECISIONS.md                       # decision register (document 10)
+│   ├── CURRENT-STATE-YYYY-MM-DD.md        # current state (document 15)
+│   ├── GOAL.md                            # the goal (document 8) — seeded verbatim from the brainstorm
+│   └── PROJECT-MANIFEST.md                # 17 — how the project operates (the manifest)
+├── LOOPS/                                 # one file per loop that runs (document 9)
+├── QUALITY-CONTROL/
+│   └── QUALITY-CONTROL-RULEBOOK.md        # QC rulebook (document 7)
+├── CONTROL/
+│   ├── EXECUTION-PLAN.md                  # waves, lanes, pen, queue, register, budget (document 16)
+│   ├── LEDGER.md                          # live state + verdicts + merge records + restart steps (document 6)
+│   ├── project_state.json                 # machine state — infrastructure, not one of the seventeen
+│   ├── CHECKLIST.md                       # binary done boxes (document 2)
+│   ├── TODO.md                            # what to do next (document 3)
+│   ├── SESSION-LOG.md                     # append-only narrative (document 4)
+│   ├── CHANGELOG.md                       # per-batch ripple entries (document 5)
+│   ├── LAUNCH-COMMAND.md                  # paste-able block (document 11)
+│   ├── dispatch-log.md                    # write-ahead dispatch record (document 12)
+│   └── HEARTBEAT.md                       # per-agent liveness stamps (document 13)
+├── repos/<repository-name>/               # persistent working copies
+└── MORNING-REPORT-YYYY-MM-DD.md           # honest close (document 14)
+```
