@@ -222,13 +222,21 @@ no filesystem or shell access inside a workflow. Width above
 `clientCap` is bought by the conductor dispatching several workflows together,
 never by a script spawning more of itself. See `references/workflows.md`.
 
-### AXIS 2 — BUDGET (how many run EVER, per session)
+### AXIS 2 — BUDGET (how many run EVER, per project)
 
-**THE OPERATOR'S SESSION BUDGET: 1,000 agent executions — the operator, verbatim: "it
+**THE OPERATOR'S PROJECT BUDGET: 1,000 agent executions — the operator, verbatim: "it
 allows for up to 1000 subagents max."** The number is the operator's and it binds. What it
 is NOT is a platform fact: **1,000 is the operator's chosen spend governor, a
 POLICY.** The arithmetic, the ledger lines, and the enforcement below are
 unchanged by that correction — only the attribution stops being false.
+
+**The 1,000 is counted PER PROJECT** (operator decision, 2026-09-07). The counter
+lives in `CONTROL/project_state.json` and belongs to the project, so a run that is
+resumed in a fresh window — after a restart, a compaction, or a night — reads the
+remaining figure and continues decrementing it; it never resets to 1,000 because a
+new window opened. A counter that reset at every session boundary would put the
+2,000-per-project ceiling of section 10 out of reach by construction, and would let
+a project spend without limit simply by restarting.
 
 **What the platform actually documents** (code.claude.com/docs/en/sub-agents,
 fetched 2026-08-12 — `[RESEARCHED]`, re-verified per section 13's freshness
@@ -260,20 +268,24 @@ it ever needed.
 **1,000 is a lifetime COUNT, not a simultaneity limit.** Binding consequences:
 
 - It is tracked as a **decrementing budget** in `CONTROL/project_state.json`
-  (`agents.session_budget_remaining`).
-- The soft budget and hard safety cap of section 10 are derived BENEATH it.
+  (`agents.session_budget_remaining` — the field name is historical; the counter
+  is the PROJECT's and survives every session boundary, never reset on resume).
+- The soft budget, the pause line, and the 2,000 ceiling of section 10 are
+  derived BENEATH it.
 - Every workflow's declared AGENT COUNT plus the selective-repair formula must
   **SUM against it BEFORE dispatch** — the Capacity Ledger shows that arithmetic
   (allocated per phase, spent, remaining). Never discovered at exhaustion.
 - The reconciler (`references/anti-drift.md`) audits the ledger's claimed spend
   against actual executions; a wrong budget silently caps a run late.
-- Approaching the ceiling exits with the named status **STOPPED_CAP**, never a
-  silent stall.
+- Reaching the project's computed pause line **pauses and asks** with the best
+  stable build deployed (`run_status = PAUSED_CAP`, section 10 and
+  `references/gauntlet.md` §13.2); only the 2,000-per-project ceiling exits with
+  the named status **STOPPED_CAP**. Neither is ever a silent stall.
 
-**Two counters, not one.** The OPERATOR's session budget counts this session's
-spawns; the Workflow tool's 1,000-agents-lifetime cap counts per-workflow-run
-executions. They are different meters that happen to share a number. The ledger
-records BOTH.
+**Two counters, not one.** The OPERATOR's budget counts this PROJECT's executions,
+whichever session spawned them; the Workflow tool's 1,000-agents-lifetime cap
+counts per-workflow-run executions. They are different meters that happen to share
+a number. The ledger records BOTH.
 
 **Honesty note on the settings key:** the presence of
 `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` in a settings file is a configuration
@@ -282,8 +294,11 @@ sub-agents documentation. It is **treated as INERT**. That changes nothing
 operationally — the ledger tracks the operator's budget as its own decrementing
 count either way, and that count is the only enforcement this skill relies on.
 
-**Commander sessions** are separate Claude Code processes. Whether they draw from
-the same 1,000 is UNDETERMINED; **budget pessimistically as if they do** until a
+**Commander sessions** are separate Claude Code processes, and their executions
+count against the SAME project budget — that is what per-project counting settles:
+the meter belongs to `CONTROL/project_state.json`, not to a window. Whether the
+platform's own undocumented per-session key would also see them is UNDETERMINED
+and irrelevant to this budget; **budget pessimistically as if it does** until a
 probe proves otherwise (section 12).
 
 ### AXIS 3 — POLICY (per provider class)
@@ -422,7 +437,10 @@ AGENT BUDGET DECLARATION (§17 — computed FROM this ledger, before dispatch):
   workflows=<n>  agents-per-workflow=<per WF>  max-concurrency=<w>
   model-role-per-workflow=<map>  expected-total-executions=<n>
   selective-repair formula: N = failed workstreams, one repairer each, ≤12/wave
-  SOFT BUDGET=<the 75–125 band scaled to this task graph>  HARD SAFETY CAP=200
+  SOFT BUDGET=<the 75–125 band scaled to this task graph>
+  initial=<WF01 + units × 3 + 4>  warn=<max(150, 3 × initial)>
+  first_pause=<max(200, 4 × initial)> (PAUSE and ask — never a stop)
+  ceiling=2000 (per PROJECT; the only hard stop; never crossed without the operator)
 Request budget per 5h window: <n or "not window-metered — token/balance governed">
   [RESEARCHED <url> <date>] | [operator doctrine fallback — research failed: <error>]
 Plan membership (the only remembered inputs — section 13):
@@ -879,27 +897,34 @@ Before dispatch, the ledger DECLARES all eight quantities:
 | 4 | Model role per workflow | From the resolved role map (section 11) — by ROLE AND ALIAS, with the resolved model cited |
 | 5 | Expected total agent executions | Summed across the declared workflows and the repair reserve |
 | 6 | Selective-repair agent formula | N = failed workstreams, one repairer each, ≤12 per wave |
-| 7 | Soft budget | The 75–125 band scaled to THIS project's task graph |
-| 8 | Hard safety cap | 200 executions, or lower where the ledger's own arithmetic binds first |
+| 7 | Soft budget | `initial = WF01 + units × 3 + 4`, with the warn line at `warn = max(150, 3 × initial)`; the 75–125 band is the historical expectation, not the limit |
+| 8 | Pause line and ceiling | `first_pause = max(200, 4 × initial)` — PAUSE and ask, never stop; **ceiling = 2,000 executions per project** — the only hard stop. Each "keep going" grants one more block of `first_pause` |
 
-### The session-budget arithmetic that accompanies the declaration
+### The project-budget arithmetic that accompanies the declaration
 
 AXIS 2 requires the ledger to SHOW the sum, not merely assert it: for each phase,
 the agents ALLOCATED, the agents SPENT, and the budget REMAINING against the
-1,000-per-session count. The remaining figure mirrors
+1,000-per-project count. The remaining figure mirrors
 `CONTROL/project_state.json` → `agents.session_budget_remaining`; the reconciler
 audits the ledger's claimed spend against the actual executions. Exhaustion is
 predicted here, in writing, before dispatch — never discovered at the wall.
 
 ### The gauntlet stations (operator's PDF, pages 29–33 — also in gauntlet.md §13)
 
-- Expected initial gauntlet run: **52 agent executions** (8+16+16+8+4).
-- Normal complete project: **75–125**.
-- At **150**: the orchestrator must analyze whether measurable progress is still
-  occurring.
-- At **200 executions: HARD STOP.** Preserve the best stable build, produce a
-  blocker report, and exit with `run_status=STOPPED_CAP` — a LIMIT REACHED
-  non-success, never relabelled as a pass.
+- Expected initial gauntlet run: **52 agent executions** (8+16+16+8+4) on the
+  reference shape; the declared `initial` for THIS project is
+  `WF01 + units × 3 + 4`.
+- Normal complete project: **75–125** — the historical expectation, not a limit.
+- At **`warn = max(150, 3 × initial)`**: the orchestrator must analyze whether
+  measurable progress is still occurring.
+- At **`first_pause = max(200, 4 × initial)`: PAUSE, never stop.** Deploy the best
+  stable build, write the plain report, set `run_status=PAUSED_CAP`, and ask the
+  one question (`references/gauntlet.md` §13.2). Each "keep going" grants another
+  block of the same size and the run resumes at full width.
+- At **2,000 executions per project: HARD STOP.** Preserve the best stable build,
+  produce a blocker report, and exit with `run_status=STOPPED_CAP` — a LIMIT
+  REACHED non-success, never relabelled as a pass. The ceiling is never crossed
+  without the operator.
 
 **MORE AGENTS ≠ BETTER.** The IMPORTANT CAPACITY RULE of section 2 governs the
 declaration: capacity is permission to decompose work that genuinely decomposes,
@@ -1169,7 +1194,8 @@ allocated.**
 under the pessimistic shared-bucket assumption (section 6).
 
 **Executions:** commander sessions are NOT "agent executions" against the
-52/150/200 gauntlet budget — that budget counts workflow executions. Their burn
+gauntlet agent budget of section 10 — that budget counts workflow executions.
+Their burn
 IS budgeted, and their liveness IS part of the reconciler's state-delta
 fingerprint (`references/anti-drift.md`).
 

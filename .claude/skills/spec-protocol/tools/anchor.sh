@@ -89,7 +89,9 @@
 #   ANCHOR_INTENT_K=5              repeated-intent window size
 #   ANCHOR_INTENT_OVERLAP_PCT=60   repeated-intent core-share threshold
 #   ANCHOR_CENSUS_DEPTH=6          filesystem census depth under repos/
-#   ANCHOR_HARD_CAP=200            class 6 hard agent-execution cap (STOPPED_CAP)
+#   ANCHOR_HARD_CAP=200            class 6 pause-line FALLBACK when the state file
+#                                  carries no agents.first_pause (PAUSED_CAP)
+#   ANCHOR_CEILING=2000            class 6 absolute per-project ceiling (STOPPED_CAP)
 #   ANCHOR_BUDGET_TOL=5            class 6 claimed-vs-dispatched tolerance
 #   ANCHOR_CLAIM_UNPAIRED_TOL=3    class 7 unpaired-claim tolerance (0 = strict)
 #   ANCHOR_SELFTEST_BREAK_PATTERN=1  sabotage the tick pattern (selftest only)
@@ -133,6 +135,7 @@ INTENT_K="${ANCHOR_INTENT_K:-5}"
 INTENT_PCT="${ANCHOR_INTENT_OVERLAP_PCT:-60}"
 CENSUS_DEPTH="${ANCHOR_CENSUS_DEPTH:-6}"
 HARD_CAP="${ANCHOR_HARD_CAP:-200}"
+CEILING="${ANCHOR_CEILING:-2000}"
 BUDGET_TOL="${ANCHOR_BUDGET_TOL:-5}"
 CLAIM_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 
@@ -285,12 +288,13 @@ CLAIM_UNPAIRED_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 # runnable work exists must still walk into TERMINAL-DRIFT, or the freshness
 # machinery becomes a new way to look alive while doing nothing — the exact
 # disease anti-drift.md section 1 documents.
-# BUDGET-CAP is this script's own class-6 line and is excluded on the same
-# self-authored ground as the rest, and so is RECOVERY-LADDER: the rungs this
-# script climbs before the flag are its OWN writes. A ladder line that moved
-# the fingerprint would reset the very counter that produced it, and the run
-# would climb rung 1 forever without ever reaching the flag.
-SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|RECOVERY-LADDER|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP)'
+# BUDGET-CAP and BUDGET-PAUSE are this script's own class-6 lines and are
+# excluded on the same self-authored ground as the rest, and so is
+# RECOVERY-LADDER: the rungs this script climbs before the flag are its OWN
+# writes. A ladder line that moved the fingerprint would reset the very counter
+# that produced it, and the run would climb rung 1 forever without ever
+# reaching the flag.
+SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|RECOVERY-LADDER|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP|BUDGET-PAUSE)'
 
 if [[ "${ANCHOR_SELFTEST_BREAK_PATTERN:-0}" == "1" ]]; then
   # Deliberate sabotage: swap the robust marker for the brittle literal that
@@ -482,6 +486,7 @@ esac
 # cap of 0 that stops every run. A knob that silently becomes zero is a lying
 # instrument, so it is rejected loudly instead.
 [[ "$HARD_CAP"   =~ ^[0-9]+$ ]] || die_tool "ANCHOR_HARD_CAP must be a non-negative integer (got: ${HARD_CAP})"
+[[ "$CEILING"    =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CEILING must be a non-negative integer (got: ${CEILING})"
 [[ "$BUDGET_TOL" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_BUDGET_TOL must be a non-negative integer (got: ${BUDGET_TOL})"
 [[ "$CLAIM_TOL"  =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CLAIM_UNPAIRED_TOL must be a non-negative integer (got: ${CLAIM_TOL})"
 [[ "$TERMINAL_N" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_TERMINAL_N must be a non-negative integer (got: ${TERMINAL_N})"
@@ -683,10 +688,13 @@ run_anchor() {
   #          remaining) vs the CONTROL/dispatch-log.md census. Divergence past
   #          ANCHOR_BUDGET_TOL is DRIFT — the scoreboard and the write-ahead
   #          log disagree about how much was spent.
-  #     (ii) agents.executions_total against the hard cap. Reaching a cap is
-  #          NOT drift: it is a legitimate, declared stop. It exits 3 (so the
-  #          conductor stops dispatching) and emits set-run-status|STOPPED_CAP
-  #          rather than exit 4, which is reserved for the stall.
+  #     (ii) agents.executions_total against TWO lines. Reaching either is NOT
+  #          drift: both are legitimate, declared events, and both exit 3 (so
+  #          the conductor acts) rather than exit 4, which is reserved for the
+  #          stall. The PAUSE line (agents.first_pause × blocks+1) emits
+  #          pause-and-ask + set-run-status|PAUSED_CAP with the best stable
+  #          build deployed; only the per-project CEILING (agents.ceiling,
+  #          2,000) emits stop-dispatching + set-run-status|STOPPED_CAP.
   #
   #   FAIL-CLOSED EVERYWHERE. An absent field, an absent dispatch log, or a
   #   dispatch log with content but no parseable row is UNDETERMINED and says
@@ -804,12 +812,15 @@ run_anchor() {
       return 0
     fi
 
-    local init rem exec_t warn_at cap_state
+    local init rem exec_t warn_at cap_state pause_state ceil_state blocks
     init="$(jnum   "$flat" 'budget_initial'           || true)"
     rem="$(jnum    "$flat" 'session_budget_remaining' || true)"
     exec_t="$(jnum "$flat" 'executions_total'         || true)"
     warn_at="$(jnum "$flat" 'warn_at'                 || true)"
     cap_state="$(jnum "$flat" 'hard_stop_at'          || true)"
+    pause_state="$(jnum "$flat" 'first_pause'          || true)"
+    ceil_state="$(jnum  "$flat" 'ceiling'              || true)"
+    blocks="$(jnum      "$flat" 'pause_blocks_granted' || true)"
 
     if [[ -z "$init" && -z "$rem" && -z "$exec_t" ]]; then
       BUDGET_NOTE="budget-undetermined(no-budget-fields)"
@@ -817,21 +828,49 @@ run_anchor() {
       return 0
     fi
 
-    # --- (ii) the caps. Independent of the dispatch log; run first so a run
-    #     that is over the cap stops even when the census is undetermined.
-    local CAP="$HARD_CAP" WARN capnote=""
-    if [[ -n "$cap_state" ]] && (( cap_state < CAP )); then CAP="$cap_state"; fi
+    # --- (ii) the two lines. Independent of the dispatch log; run first so a
+    #     run that is over a line acts even when the census is undetermined.
+    #
+    #     TWO numbers, never one (operator decision 2026-09-07, finding G6):
+    #
+    #       CEIL  = agents.ceiling, else ANCHOR_CEILING (2,000 per PROJECT).
+    #               The only hard stop. STOPPED_CAP lives here and nowhere else.
+    #       PAUSE = agents.first_pause × (agents.pause_blocks_granted + 1),
+    #               falling back to a legacy agents.hard_stop_at and then to
+    #               ANCHOR_HARD_CAP (200). Each "keep going" the client gives
+    #               increments pause_blocks_granted, so the line walks up by one
+    #               block at a time and is clamped at CEIL.
+    #
+    #     The ceiling is tested FIRST. Order is the whole point: a run at 2,000
+    #     is also past its pause line, and reporting that as a pause would leave
+    #     a project able to answer "keep going" past the absolute ceiling. A run
+    #     BELOW the ceiling is never STOPPED_CAP — it has budget left, so it
+    #     pauses with its best build live and asks one question instead.
+    local CEIL="$CEILING" PAUSE WARN capnote=""
+    if [[ -n "$ceil_state" ]] && (( ceil_state < CEIL )); then CEIL="$ceil_state"; fi
+    if   [[ -n "$pause_state" ]]; then PAUSE="$pause_state"
+    elif [[ -n "$cap_state"   ]]; then PAUSE="$cap_state"
+    else                               PAUSE="$HARD_CAP"; fi
+    PAUSE=$(( PAUSE * ( ${blocks:-0} + 1 ) ))
+    if (( PAUSE > CEIL )); then PAUSE="$CEIL"; fi
     WARN="${warn_at:-150}"
-    if [[ -n "$exec_t" ]] && (( exec_t >= CAP )); then
+    if [[ -n "$exec_t" ]] && (( exec_t >= CEIL )); then
       local bts; bts="$(iso_now)"
-      ledger_write "CONTROL/LEDGER.md" "${bts} | BUDGET-CAP | executions=${exec_t} | cap=${CAP} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=STOPPED_CAP; stop dispatching; preserve the best stable build; produce the blocker report"
-      action "stop-dispatching" "$UNIT" "hard cap reached: executions=${exec_t} >= cap=${CAP}"
-      action "set-run-status" "STOPPED_CAP" "executions=${exec_t} >= cap=${CAP}; preserve the best stable build and produce the blocker report. A cap is a LIMIT REACHED stop, never a PASS and never drift."
+      ledger_write "CONTROL/LEDGER.md" "${bts} | BUDGET-CAP | executions=${exec_t} | cap=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=STOPPED_CAP; stop dispatching; preserve the best stable build; produce the blocker report"
+      action "stop-dispatching" "$UNIT" "absolute per-project ceiling reached: executions=${exec_t} >= ceiling=${CEIL}"
+      action "set-run-status" "STOPPED_CAP" "executions=${exec_t} >= ceiling=${CEIL}; preserve the best stable build and produce the blocker report. The ceiling is a LIMIT REACHED stop, never a PASS and never drift, and it is never crossed without the operator."
       if (( SEVERITY < 3 )); then SEVERITY=3; fi
-      capnote="budget-cap(executions=${exec_t}/cap=${CAP})"
+      capnote="budget-cap(executions=${exec_t}/ceiling=${CEIL})"
+    elif [[ -n "$exec_t" ]] && (( exec_t >= PAUSE )); then
+      local pts; pts="$(iso_now)"
+      ledger_write "CONTROL/LEDGER.md" "${pts} | BUDGET-PAUSE | executions=${exec_t} | pause_at=${PAUSE} | ceiling=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'"
+      action "pause-and-ask" "$UNIT" "pause line reached: executions=${exec_t} >= pause_at=${PAUSE} (ceiling=${CEIL}). Deploy the best stable build, write the plain report, then ask the one question. Each 'keep going' increments agents.pause_blocks_granted and the run resumes at full width."
+      action "set-run-status" "PAUSED_CAP" "executions=${exec_t} >= pause_at=${PAUSE}; ceiling=${CEIL} is not reached, so this is a PAUSE and the run has not stopped. The build is live and the run resumes on one word."
+      if (( SEVERITY < 3 )); then SEVERITY=3; fi
+      capnote="budget-pause(executions=${exec_t}/pause_at=${PAUSE}/ceiling=${CEIL})"
     elif [[ -n "$exec_t" ]] && (( exec_t >= WARN )); then
       if (( BUDGET_ADVISED == 0 )); then
-        action "review-budget" "$UNIT" "advisory (emitted once): executions=${exec_t} crossed the review threshold ${WARN}; hard cap ${CAP}"
+        action "review-budget" "$UNIT" "advisory (emitted once): executions=${exec_t} crossed the review threshold ${WARN}; pause line ${PAUSE}; ceiling ${CEIL}"
         BUDGET_ADVISED=1
       fi
       capnote="budget-warn(executions=${exec_t}/warn=${WARN})"
@@ -1396,9 +1435,13 @@ intent_stall() {
 #         (positive: only capacity events => the no-delta counter still
 #         climbs; negative control: a real state line still resets it)
 #   9-12  CLASS 6 BUDGET AUDIT, the first four controls: agree (must NOT fire),
-#         diverge past tolerance (MUST fire), hard cap (MUST emit BUDGET-CAP
-#         and both ACTIONs at exit 3, not 4), fields absent (MUST report
-#         undetermined and MUST NOT alarm)
+#         diverge past tolerance (MUST fire), the FIRST PAUSE (MUST emit
+#         BUDGET-PAUSE, pause-and-ask and PAUSED_CAP at exit 3, not 4, and MUST
+#         NOT emit STOPPED_CAP), fields absent (MUST report undetermined and
+#         MUST NOT alarm)
+#   15    CLASS 6 BUDGET AUDIT, the per-project CEILING at 2,000 (MUST emit
+#         BUDGET-CAP and STOPPED_CAP, and MUST NOT pause — the ceiling is
+#         tested before the pause line so granted blocks cannot launder it)
 #   13    CLASS 6 BUDGET AUDIT, negative claimed spend (MUST alarm as
 #         budget-negative-spend — never laundered into budget-ok by the
 #         tolerance, never downgraded to budget-undetermined by an absent
@@ -1631,9 +1674,12 @@ EOF
       i=$(( i + 1 ))
     done
   }
-  mk_state_budget() {  # mk_state_budget <home> <initial> <remaining> <executions>
-    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":%s,"budget_initial":%s,"session_budget_remaining":%s,"warn_at":150,"hard_stop_at":200},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' \
-      "$4" "$2" "$3" > "$1/CONTROL/project_state.json"
+  # mk_state_budget <home> <initial> <remaining> <executions> [first_pause] [ceiling] [blocks]
+  # The three optional fields default to the doctrine's numbers: a 200 first
+  # pause, the 2,000 per-project ceiling, and no granted blocks.
+  mk_state_budget() {
+    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":%s,"budget_initial":%s,"session_budget_remaining":%s,"warn_at":150,"first_pause":%s,"ceiling":%s,"pause_blocks_granted":%s},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' \
+      "$4" "$2" "$3" "${5:-200}" "${6:-2000}" "${7:-0}" > "$1/CONTROL/project_state.json"
   }
   mk_home "$T/c9"
   printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c9/CONTROL/task-graph-snapshot.json"
@@ -1663,26 +1709,58 @@ EOF
   report 10 "budget-mismatch" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=100 dispatched=3 written; ACTION|reconcile-budget|100/3 emitted"
 
   #--------------------------------------------------------------------------
-  # --- CLASS 6, control C (case 11): the HARD CAP. Reaching the cap is a
-  #     legitimate declared stop, so it exits 3 (stop dispatching) and asks
-  #     the conductor for run_status=STOPPED_CAP — never exit 4, which belongs
-  #     to the stall, and never a DRIFT-ALARM, which would call a policy stop
-  #     a defect. Claimed and dispatched AGREE here so the case can only be
-  #     firing on the cap.
+  # --- CLASS 6, control C (case 11): the FIRST PAUSE. executions_total has
+  #     reached agents.first_pause exactly, and the per-project ceiling (2,000)
+  #     is nowhere near. The decided behaviour (finding G6, 2026-09-07) is
+  #     PAUSE AND ASK — deploy the best stable build, write the plain report,
+  #     set run_status=PAUSED_CAP, ask "Keep going?" — so the case asserts
+  #     ACTION|pause-and-ask and, as the negative control that matters most,
+  #     that STOPPED_CAP is NOT emitted: a run with ceiling left has not
+  #     stopped, and reporting it as stopped is the failure this replaced.
+  #     Exit is 3 (the conductor must act), never 4 (the stall), and no
+  #     DRIFT-ALARM: a declared pause is not a defect. Claimed and dispatched
+  #     AGREE here so the case can only be firing on the pause line.
   #--------------------------------------------------------------------------
   mk_home "$T/c11"
   printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c11/CONTROL/task-graph-snapshot.json"
-  mk_state_budget "$T/c11" 1000 800 200
+  mk_state_budget "$T/c11" 1000 800 200 200 2000 0
   mk_dispatch_log "$T/c11" 200
   runa "$T/c11" "U-02" --mode reconcile --tasks "$T/c11/CONTROL/task-graph-snapshot.json" --state "$T/c11/CONTROL/project_state.json"
   ok=0
   if (( RC == 3 )) \
-     && "$GREP" -qE '\| BUDGET-CAP \| executions=200 \| cap=200 \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|stop-dispatching|U-02|hard cap' \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|STOPPED_CAP|' \
+     && "$GREP" -qE '\| BUDGET-PAUSE \| executions=200 \| pause_at=200 \| ceiling=2000 \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|pause-and-ask|U-02|pause line reached' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|PAUSED_CAP|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'STOPPED_CAP' \
+     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
      && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c11/CONTROL/LEDGER.md" 2>/dev/null \
      && [[ ! -f "$T/c11/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok=1; fi
-  report 11 "budget-hard-cap" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-CAP line written through ledger.sh; ACTION|stop-dispatching and ACTION|set-run-status|STOPPED_CAP emitted; no budget-mismatch; no TERMINAL-DRIFT.flag"
+  report 11 "budget-first-pause" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-PAUSE | executions=200 | pause_at=200 | ceiling=2000 written through ledger.sh; ACTION|pause-and-ask and ACTION|set-run-status|PAUSED_CAP emitted; STOPPED_CAP and BUDGET-CAP both ABSENT (the negative control: a run under the ceiling never stops); no budget-mismatch; no TERMINAL-DRIFT.flag"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control C2 (case 15): the CEILING. 2,000 executions per
+  #     project is the one hard stop, and it is tested BEFORE the pause line
+  #     on purpose: a run at 2,000 is also past its pause line, and calling
+  #     that a pause would let a project answer "keep going" past the absolute
+  #     ceiling. The granted blocks are deliberately generous here (9 blocks ×
+  #     200 = 1,800 < 2,000) so the case proves the ORDER, not an accident of
+  #     arithmetic. Claimed and dispatched AGREE so nothing else can fire.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c15"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c15/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c15" 3000 1000 2000 200 2000 9
+  mk_dispatch_log "$T/c15" 2000
+  runa "$T/c15" "U-02" --mode reconcile --tasks "$T/c15/CONTROL/task-graph-snapshot.json" --state "$T/c15/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| BUDGET-CAP \| executions=2000 \| cap=2000 \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|stop-dispatching|U-02|absolute per-project ceiling reached' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|set-run-status|STOPPED_CAP|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'PAUSED_CAP' \
+     && ! "$GREP" -qE '\| BUDGET-PAUSE \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ ! -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok=1; fi
+  report 15 "budget-ceiling" "$ok" "rc=${RC} (want 3, NOT 4); BUDGET-CAP | executions=2000 | cap=2000 written through ledger.sh; ACTION|stop-dispatching and ACTION|set-run-status|STOPPED_CAP emitted; PAUSED_CAP and BUDGET-PAUSE both ABSENT (the ceiling is tested first, so nine granted blocks cannot launder it into a pause); no budget-mismatch; no TERMINAL-DRIFT.flag"
 
   #--------------------------------------------------------------------------
   # --- CLASS 6, control D (case 12): the budget fields are ABSENT. The audit
@@ -1795,7 +1873,7 @@ EOF
   report 14 "ledger-provenance" "$ok" "baseline rc=${rc_base} (want 0; RECONCILE carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)); tolerated rc=${rc_tol} (want 0; unpaired=1 reported but under tol=3); strict rc=${rc_strict} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0; DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted); paired rc=${rc_pair} (want 0; claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm — the negative control)"
 
   #--------------------------------------------------------------------------
-  # --- case 15: THE RECOVERY LADDER, rung 2 — the CAPACITY-EVENT grace.
+  # --- case 16: THE RECOVERY LADDER, rung 2 — the CAPACITY-EVENT grace.
   #     R2 of the review: "a thirty-minute provider outage or a 429 cluster
   #     becomes a permanent stop." Six no-delta reconciles whose last recorded
   #     state change is a capacity event must NOT write the flag inside two
@@ -1811,52 +1889,52 @@ EOF
   #     ends the grace, because the capacity event is then no longer the last
   #     thing that happened.
   #--------------------------------------------------------------------------
-  mk_home "$T/c15"
-  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c15/CONTROL/task-graph-snapshot.json"
-  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c15/CONTROL/project_state.json"
-  local c15args=( "$T/c15" "U-02" --mode reconcile --tasks "$T/c15/CONTROL/task-graph-snapshot.json" --state "$T/c15/CONTROL/project_state.json" )
-  runa "${c15args[@]}"                            # establish the fingerprint
-  "$SCRIPT_DIR/ledger.sh" "$T/c15" "CONTROL/LEDGER.md" \
+  mk_home "$T/c16"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c16/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c16/CONTROL/project_state.json"
+  local c16args=( "$T/c16" "U-02" --mode reconcile --tasks "$T/c16/CONTROL/task-graph-snapshot.json" --state "$T/c16/CONTROL/project_state.json" )
+  runa "${c16args[@]}"                            # establish the fingerprint
+  "$SCRIPT_DIR/ledger.sh" "$T/c16" "CONTROL/LEDGER.md" \
     "2026-08-12T02:14:00Z | CAPACITY-EVENT | provider=deepseek | event=429-cluster | evidence=rc429x4/1tick | response=throttle" >/dev/null 2>&1
-  runa "${c15args[@]}"                            # the capacity event is now the last state change
-  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c15/CONTROL/.anchor-fingerprint" > "$T/c15/CONTROL/.anchor-fingerprint.new"
-  mv "$T/c15/CONTROL/.anchor-fingerprint.new" "$T/c15/CONTROL/.anchor-fingerprint"
-  local c15_i=1 c15_flag=0 c15_rc=0
-  while (( c15_i <= 6 )); do
-    runa "${c15args[@]}"
-    c15_rc="$RC"
-    if [[ -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]]; then c15_flag=1; break; fi
-    c15_i=$(( c15_i + 1 ))
+  runa "${c16args[@]}"                            # the capacity event is now the last state change
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c16/CONTROL/.anchor-fingerprint" > "$T/c16/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c16/CONTROL/.anchor-fingerprint.new" "$T/c16/CONTROL/.anchor-fingerprint"
+  local c16_i=1 c16_flag=0 c16_rc=0
+  while (( c16_i <= 6 )); do
+    runa "${c16args[@]}"
+    c16_rc="$RC"
+    if [[ -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]]; then c16_flag=1; break; fi
+    c16_i=$(( c16_i + 1 ))
   done
-  local c15_count c15_win
-  c15_count="$(sed -n 's/^count=//p' "$T/c15/CONTROL/.anchor-fingerprint" | head -1)"
-  c15_win="$("$GREP" -oE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds\([^)]*\)' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null | tail -1 || true)"
+  local c16_count c16_win
+  c16_count="$(sed -n 's/^count=//p' "$T/c16/CONTROL/.anchor-fingerprint" | head -1)"
+  c16_win="$("$GREP" -oE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds\([^)]*\)' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null | tail -1 || true)"
   local ok15a=0
-  if (( c15_flag == 0 )) && (( c15_rc != 4 )) && [[ -n "$c15_count" ]] && (( c15_count > TERMINAL_N )) \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
-     && ! "$GREP" -qE '\| TERMINAL-DRIFT \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
-     && ! "$GREP" -qE 'rung=3/4' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null; then ok15a=1; fi
+  if (( c16_flag == 0 )) && (( c16_rc != 4 )) && [[ -n "$c16_count" ]] && (( c16_count > TERMINAL_N )) \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE '\| TERMINAL-DRIFT \|' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE 'rung=3/4' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null; then ok15a=1; fi
   # The in-case control: real state after the capacity event ends the grace,
   # and the ladder resumes at rung 3 on the way to the flag.
-  "$SCRIPT_DIR/ledger.sh" "$T/c15" "CONTROL/LEDGER.md" \
+  "$SCRIPT_DIR/ledger.sh" "$T/c16" "CONTROL/LEDGER.md" \
     "2026-08-12T03:00:00Z | RESULT | unit=U-09 | verdict=8.6 | artifact=repos/app/src/api.ts" >/dev/null 2>&1
-  runa "${c15args[@]}"                            # the state moved: counter resets to 0
-  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c15/CONTROL/.anchor-fingerprint" > "$T/c15/CONTROL/.anchor-fingerprint.new"
-  mv "$T/c15/CONTROL/.anchor-fingerprint.new" "$T/c15/CONTROL/.anchor-fingerprint"
-  runa "${c15args[@]}"                            # rung 1 again (the ladder restarted)
-  runa "${c15args[@]}"                            # grace is over -> rung 3, not rung 2
-  local c15_rc3="$RC" ok15b=0
-  if (( RC == 3 )) && [[ ! -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]] \
+  runa "${c16args[@]}"                            # the state moved: counter resets to 0
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c16/CONTROL/.anchor-fingerprint" > "$T/c16/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c16/CONTROL/.anchor-fingerprint.new" "$T/c16/CONTROL/.anchor-fingerprint"
+  runa "${c16args[@]}"                            # rung 1 again (the ladder restarted)
+  runa "${c16args[@]}"                            # grace is over -> rung 3, not rung 2
+  local c16_rc3="$RC" ok15b=0
+  if (( RC == 3 )) && [[ ! -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]] \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|switch-to-fallback-seats|U-02|' \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=3/4 \| action=switch-to-fallback-seats \| grace=no\(' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null; then ok15b=1; fi
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=3/4 \| action=switch-to-fallback-seats \| grace=no\(' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null; then ok15b=1; fi
   ok=0
   if (( ok15a == 1 && ok15b == 1 )); then ok=1; fi
-  report 15 "capacity-event-grace" "$ok" \
-    "6 no-delta reconciles past N with a capacity event as the last state change: flag written=${c15_flag} (must be 0), last rc=${c15_rc} (must not be 4), counter=${c15_count} (past N=${TERMINAL_N}, held under N=${CAPACITY_N} for ${CAPACITY_GRACE_MIN}min); rung 2 held [${c15_win}] and rung 3 was never reached; then a real state line after the capacity event ended the grace and the ladder resumed at rung 3 with rc=${c15_rc3} (want 3) — the grace is bounded, not blind. Negative control: case 6, same fixtures with no capacity event, reaches the flag on the third crossing."
+  report 16 "capacity-event-grace" "$ok" \
+    "6 no-delta reconciles past N with a capacity event as the last state change: flag written=${c16_flag} (must be 0), last rc=${c16_rc} (must not be 4), counter=${c16_count} (past N=${TERMINAL_N}, held under N=${CAPACITY_N} for ${CAPACITY_GRACE_MIN}min); rung 2 held [${c16_win}] and rung 3 was never reached; then a real state line after the capacity event ended the grace and the ladder resumed at rung 3 with rc=${c16_rc3} (want 3) — the grace is bounded, not blind. Negative control: case 6, same fixtures with no capacity event, reaches the flag on the third crossing."
 
   #--------------------------------------------------------------------------
-  # --- case 16: THE FRESH-SESSION CLEAR. R2's second half: a file called
+  # --- case 17: THE FRESH-SESSION CLEAR. R2's second half: a file called
   #     TERMINAL-DRIFT.flag "is not something a sixty-year-old will find and
   #     delete", so the flag must be clearable by the run itself once the one
   #     thing it holds out for — the blocker, NAMED IN WRITING — exists.
@@ -1874,41 +1952,41 @@ EOF
   #     flag on the very next tick with nobody naming anything. Step (ii)
   #     proves it does not.
   #--------------------------------------------------------------------------
-  mk_home "$T/c16"
-  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c16/CONTROL/task-graph-snapshot.json"
-  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c16/CONTROL/project_state.json"
-  local c16args=( "$T/c16" "U-02" --mode reconcile --tasks "$T/c16/CONTROL/task-graph-snapshot.json" --state "$T/c16/CONTROL/project_state.json" )
-  runa "${c16args[@]}"
-  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c16/CONTROL/.anchor-fingerprint" > "$T/c16/CONTROL/.anchor-fingerprint.new"
-  mv "$T/c16/CONTROL/.anchor-fingerprint.new" "$T/c16/CONTROL/.anchor-fingerprint"
-  runa "${c16args[@]}"    # rung 1
-  runa "${c16args[@]}"    # rung 3
-  runa "${c16args[@]}"    # rung 4: the flag
+  mk_home "$T/c17"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c17/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c17/CONTROL/project_state.json"
+  local c17args=( "$T/c17" "U-02" --mode reconcile --tasks "$T/c17/CONTROL/task-graph-snapshot.json" --state "$T/c17/CONTROL/project_state.json" )
+  runa "${c17args[@]}"
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c17/CONTROL/.anchor-fingerprint" > "$T/c17/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c17/CONTROL/.anchor-fingerprint.new" "$T/c17/CONTROL/.anchor-fingerprint"
+  runa "${c17args[@]}"    # rung 1
+  runa "${c17args[@]}"    # rung 3
+  runa "${c17args[@]}"    # rung 4: the flag
   local ok16a=0
-  if (( RC == 4 )) && [[ -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok16a=1; fi
+  if (( RC == 4 )) && [[ -f "$T/c17/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok16a=1; fi
   # (ii) the stop holds while nothing is named — including against this
   #      script's own OPERATOR-ESCALATION line, which is already in the file.
-  runa "${c16args[@]}"
-  local c16_rc_hold="$RC" ok16b=0
-  if (( RC == 4 )) && [[ -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]] \
+  runa "${c17args[@]}"
+  local c17_rc_hold="$RC" ok16b=0
+  if (( RC == 4 )) && [[ -f "$T/c17/CONTROL/TERMINAL-DRIFT.flag" ]] \
      && printf '%s' "$OUT" | "$GREP" -q 'BLOCKER-NAMED' \
-     && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c16/CONTROL/TODO.md" 2>/dev/null; then ok16b=1; fi
+     && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c17/CONTROL/TODO.md" 2>/dev/null; then ok16b=1; fi
   # (iii) the fresh session names the blocker and the flag clears itself.
-  "$SCRIPT_DIR/ledger.sh" "$T/c16" "CONTROL/TODO.md" \
+  "$SCRIPT_DIR/ledger.sh" "$T/c17" "CONTROL/TODO.md" \
     "- [x] BLOCKER-NAMED | the deepseek seat stopped answering at 02:14 and both fallbacks were rate-limited | session=fresh-2026-08-12T04:00Z" >/dev/null 2>&1
-  runa "${c16args[@]}"
-  local c16_rc_clear="$RC" c16_rung ok16c=0
-  c16_rung="$(sed -n 's/^recovery_rung=//p' "$T/c16/CONTROL/.anchor-fingerprint" | head -1)"
-  if (( RC != 4 )) && [[ ! -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]] \
-     && "$GREP" -qE '\| TERMINAL-DRIFT-CLEARED \| cleared-by=fresh-session \|' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
-     && "$GREP" -q 'the deepseek seat stopped answering' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
-     && [[ "${c16_rung:-9}" == "0" ]]; then ok16c=1; fi
+  runa "${c17args[@]}"
+  local c17_rc_clear="$RC" c17_rung ok16c=0
+  c17_rung="$(sed -n 's/^recovery_rung=//p' "$T/c17/CONTROL/.anchor-fingerprint" | head -1)"
+  if (( RC != 4 )) && [[ ! -f "$T/c17/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && "$GREP" -qE '\| TERMINAL-DRIFT-CLEARED \| cleared-by=fresh-session \|' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -q 'the deepseek seat stopped answering' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ "${c17_rung:-9}" == "0" ]]; then ok16c=1; fi
   ok=0
   if (( ok16a == 1 && ok16b == 1 && ok16c == 1 )); then ok=1; fi
-  report 16 "fresh-session-clears-the-flag" "$ok" \
-    "ladder climbed to the flag (rc=4, flag present)=${ok16a}; with no named blocker the stop HELD across another reconcile (rc=${c16_rc_hold}, want 4, flag survived, and the script's own OPERATOR-ESCALATION line did not satisfy the marker)=${ok16b}; after a '- [x] BLOCKER-NAMED | … | session=…' row landed on CONTROL/TODO.md the reconcile cleared the flag itself (rc=${c16_rc_clear}, want not-4; TERMINAL-DRIFT-CLEARED written through ledger.sh naming the blocker; recovery_rung reset to ${c16_rung})=${ok16c}"
+  report 17 "fresh-session-clears-the-flag" "$ok" \
+    "ladder climbed to the flag (rc=4, flag present)=${ok16a}; with no named blocker the stop HELD across another reconcile (rc=${c17_rc_hold}, want 4, flag survived, and the script's own OPERATOR-ESCALATION line did not satisfy the marker)=${ok16b}; after a '- [x] BLOCKER-NAMED | … | session=…' row landed on CONTROL/TODO.md the reconcile cleared the flag itself (rc=${c17_rc_clear}, want not-4; TERMINAL-DRIFT-CLEARED written through ledger.sh naming the blocker; recovery_rung reset to ${c17_rung})=${ok16c}"
 
-  printf 'SELFTEST COMPLETE | %s of 16 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  printf 'SELFTEST COMPLETE | %s of 17 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

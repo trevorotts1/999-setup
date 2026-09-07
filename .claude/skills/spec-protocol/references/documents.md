@@ -579,7 +579,7 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
     "schema": "spec-protocol/project-state@1",
     "project": "<slug>",
     "updated": "<ISO8601Z>", "updated_by": "<role/label>",
-    "run_status": "RUNNING|PASS|STOPPED_CAP|STOPPED_STALL|STOPPED_USER|BLOCKED_HUMAN",
+    "run_status": "RUNNING|PASS|PAUSED_CAP|STOPPED_CAP|STOPPED_STALL|STOPPED_USER|BLOCKED_HUMAN",
     "round": <int>,
     "phase": "<current task id>",
     "scores": { "current": <float>, "best": <float>, "trend_only": true,
@@ -588,7 +588,9 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
                            "commit": "<sha>", "score": <float>, "ts": "<ISO>" },
     "agents": { "executions_total": <int>, "budget_initial": <int>,
                 "session_budget_remaining": <int>,
-                "warn_at": 150, "hard_stop_at": 200,
+                "initial": <int>, "warn_at": <int>,
+                "first_pause": <int>, "pause_blocks_granted": <int>,
+                "ceiling": 2000,
                 "by_workflow": { "<wf-name>": <int> },
                 "commanders": [ {"name":"<ascii>","domain":"build|visual-qa|technical-qa|release",
                                   "spawned_at":"<ISO>","last_report":"<ISO>"} ] },
@@ -623,11 +625,41 @@ not count against the closed seventeen and never need a Rule 3.28 ask:
   bar relationship decides every gate, and the 0–10 score recorded here is
   recorded for trend only and never decides (`references/pipeline.md` Stage 2).
 
+  **The budget block, in full** (`references/gauntlet.md` §13.2,
+  `references/capacity.md` §3 AXIS 2 and §10 — the operator's decision of
+  2026-09-07). Five fields, all written before the first dispatch, none of them
+  recited from a remembered number:
+
+  - `agents.initial` = `WF01 + units × 3 + 4` — the planner agents, three
+    executions per unit (build, blind visual judge, technical judge), and the
+    four release-council judges.
+  - `agents.warn_at` = `max(150, 3 × initial)` — the review threshold; the
+    orchestrator analyses whether measurable progress is still occurring and
+    records the analysis.
+  - `agents.first_pause` = `max(200, 4 × initial)` — the PAUSE line. At or past
+    it the run **deploys the best stable build**, writes the plain report, sets
+    `run_status = PAUSED_CAP`, and asks one question ("Keep going?"). It never
+    stops there.
+  - `agents.pause_blocks_granted` — starts at 0 and increments once per "keep
+    going". The live pause line is `first_pause × (pause_blocks_granted + 1)`,
+    so each yes buys one more block of the same size and the run resumes at full
+    width.
+  - `agents.ceiling` = **2000** — the absolute per-project ceiling, and the only
+    hard stop: `run_status = STOPPED_CAP`, never crossed without the operator.
+
+  **The 1,000 is counted PER PROJECT, never per session.** `budget_initial`,
+  `session_budget_remaining` and `executions_total` belong to this file, so they
+  survive every session boundary: a run resumed after a restart or a night reads
+  the remaining figure and keeps decrementing it, and never resets to 1,000
+  because a new window opened. (The `session_` in the field name is historical —
+  renaming it would break every reader; the counter's owner is the project.) A
+  per-session count would put the 2,000 ceiling out of reach by construction.
+
   The twelve doctrine questions map onto it directly: round → round; current
   score → scores.current; best score → scores.best; best stable build →
   best_stable_build; agents run → agents.executions_total (and its complement
-  `agents.session_budget_remaining` — the AXIS 2 per-session budget of 1,000,
-  tracked DECREMENTING, `references/capacity.md` §2; the Capacity Ledger's
+  `agents.session_budget_remaining` — the AXIS 2 budget of 1,000, tracked
+  DECREMENTING, `references/capacity.md` §2; the Capacity Ledger's
   remaining figure mirrors this field and the reconciler audits the ledger's
   claimed spend against it); failed / passed
   workstreams → workstreams; locked components → locked; defects remaining →

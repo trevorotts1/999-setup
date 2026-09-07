@@ -315,18 +315,30 @@ into one word:
   ahead of the dispatch census on purpose — the impossibility is provable from
   the state file alone, so a missing or unparseable dispatch log must not be
   able to downgrade a proven corruption into `budget-undetermined`.
-- **Executions vs the cap.** `agents.executions_total` against
-  `ANCHOR_HARD_CAP` (default 200, lowered automatically when the state file's
-  own `hard_stop_at` is smaller — the Capacity Ledger's arithmetic binds first).
-  At or past the cap the tool writes `BUDGET-CAP | executions=<n> | cap=<c> | …`
-  through `ledger.sh` and emits `ACTION|stop-dispatching|…` and
-  `ACTION|set-run-status|STOPPED_CAP|…`. **Reaching a declared cap is a
-  legitimate stop, not a defect**, so it exits **3**, not 4 — 4 belongs to the
-  stall — and it raises no DRIFT-ALARM. The conductor performs the status
-  change, preserving the detect/execute split. Crossing the review threshold
-  (`agents.warn_at`, default 150) emits `ACTION|review-budget|…` **once** per
-  run; the once-flag rides in `CONTROL/.anchor-fingerprint`, so no fourth
-  self-written file appears.
+- **Executions vs the pause line and the ceiling — two numbers, not one.**
+  `agents.executions_total` is tested against the project's own thresholds
+  (`references/gauntlet.md` §13.2, `references/capacity.md` §10):
+  - **The ceiling, tested first.** `agents.ceiling` (default `ANCHOR_CEILING`,
+    2,000 per project). At or past it the tool writes
+    `BUDGET-CAP | executions=<n> | cap=<c> | …` through `ledger.sh` and emits
+    `ACTION|stop-dispatching|…` and `ACTION|set-run-status|STOPPED_CAP|…`.
+  - **The pause line, tested second.** `agents.first_pause` (falling back to a
+    legacy `hard_stop_at`, then to `ANCHOR_HARD_CAP`, default 200), multiplied
+    by `agents.pause_blocks_granted + 1` so that each "keep going" moves the
+    line up by one block and never past the ceiling. At or past it the tool
+    writes `BUDGET-PAUSE | executions=<n> | pause_at=<p> | …` and emits
+    `ACTION|pause-and-ask|…` and `ACTION|set-run-status|PAUSED_CAP|…`. The
+    conductor's obligations in that order: deploy the best stable build, write
+    the plain report, set the status, ask the one question. **A pause is never
+    `STOPPED_CAP`** — a run that still has ceiling left has not stopped.
+  - **Reaching either line is a legitimate, declared event, not a defect**, so
+    both exit **3**, not 4 — 4 belongs to the stall — and neither raises a
+    DRIFT-ALARM. The conductor performs the status change, preserving the
+    detect/execute split.
+
+  Crossing the review threshold (`agents.warn_at`, default 150) emits
+  `ACTION|review-budget|…` **once** per run; the once-flag rides in
+  `CONTROL/.anchor-fingerprint`, so no fourth self-written file appears.
 
 **Class 6 fails closed everywhere.** A state file with none of the three budget
 fields reports `classes=…,budget-undetermined(no-budget-fields)` and names the

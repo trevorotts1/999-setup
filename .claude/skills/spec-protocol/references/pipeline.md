@@ -705,11 +705,32 @@ couple two lanes that the schedule went to some trouble to keep apart.
 (`references/capacity.md` §11) and recorded in the Capacity Ledger. One merger per
 repository.
 
+### GitHub is arranged at MINUTE ONE, never at merge time
+
+**Before the first dispatch — not here, and not when the pen is full — the skill
+arranges the safe place to keep the work.** A client who has never had a GitHub
+account is the most likely client this skill has; discovering that at merge time
+fills the pen and never closes delivery. So the arrangement happens at the top of
+the run, in one plain sentence and one click:
+
+> I need a safe place on the internet to keep your work. I will open a page; sign in or create a free account and click Allow.
+
+The skill then drives `gh auth login --web` itself — it reads the one-time code
+aloud, opens the page, and waits. The client never types a token, never opens a
+terminal, and never sees a credential. `gh auth status` proves the result before
+the first builder is dispatched, and the proof is recorded in the ledger.
+
+**If the client declines, that is a DEFAULT, not a stop.** Record
+`GITHUB: operator-provided remote (client declined own account)` in the ledger,
+use the operator-provided remote, and carry on. The run never blocks on this and
+never asks twice.
+
 ### GitHub repo — new or pre-existing?
 
 Before any merge runs, determine: NEW GitHub repo or pre-existing? Ask plainly: "Do
 you want me to create a GitHub repo for this project?" Tell the theorized name,
-confirm the smoke-tested token works (`gh auth status`), create or use existing.
+confirm the smoke-tested token works (`gh auth status` — already proven at minute
+one; this is the re-check, not the arrangement), create or use existing.
 
 ### Law 3 — one merge-writer per repo
 
@@ -1008,7 +1029,12 @@ autonomously and recorded.
    opened and read. This stop must be explicit: an unproven backup is no backup, and
    writing to the store is the moment it matters.
 7. **A missing credential or access the agent does not hold.** It cannot be derived.
-   Asking is the only path, and guessing here is worse than waiting.
+   Asking is the only path, and guessing here is worse than waiting. **GitHub is
+   excluded from this stop: it is arranged at minute one through `gh auth login
+   --web` driven by the skill, and a refusal is recorded as a DEFAULT — the
+   operator-provided remote — so it is never a Named Stop at merge time** (Stage 5,
+   "GitHub is arranged at MINUTE ONE"). The stop covers access the skill has no way
+   to arrange, not access it simply had not got round to arranging.
 8. **Twenty failed fix loops on the same finding** (Rule 3.22 — 20 cycles per
    finding, operator ruling 2026-08-14). Not because the agent gave up — because
    twenty independent attempts failing is information the human needs. The stop
