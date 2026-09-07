@@ -429,6 +429,40 @@ confirms ultracode's state when it is on.
 
    No degraded inline run. No partial run. No "let me try anyway." Hard stop.
 
+**GATE 0c — GIT BASH ON WINDOWS (WINDOWS ONLY; skipped with a named reason
+everywhere else).** Detect the platform first (`references/platform.md` §1 —
+never infer the OS from the current shell). **If the platform is Windows**, RUN
+`bash --version` and read `$LASTEXITCODE` — `Get-Command bash` proves only that a
+NAME resolves, never that the program runs (`platform.md` §3).
+
+1. **rc=0 with a version string** → Git Bash is present. Record it in the
+   Capacity Ledger beside the `Platform:` line and continue.
+2. **Anything else** → Git Bash is a **hard prerequisite on Windows**
+   (`platform.md` §2, row 1); it is installed once by `nine-router-setup`'s
+   `setup-windows.ps1`. Say exactly one sentence, then the one click:
+
+   > One small helper program needs installing first. It takes two minutes; here
+   > is the one thing to click.
+
+   Then name the single step — the Git for Windows installer at
+   `https://git-scm.com/download/win`, or `winget install Git.Git` where `winget`
+   is proven present by running `winget --version`. Never bootstrap a package
+   manager to get there. When it is installed, re-run the check and continue.
+3. **If the client cannot install it now**, the run does NOT pretend the checks
+   ran. The four Node twins (`scripts/common/width.mjs`,
+   `scripts/common/dispatch-check.mjs`, `scripts/common/watch-tick.mjs`,
+   `scripts/common/ledger.mjs` — `platform.md` §2.1) carry the width gate, the
+   dispatch gate, the five-minute tick and the ledger; every other bash-tool
+   verdict is **UNDETERMINED**, written as a PLATFORM-SKIP with its reason
+   (`platform.md` §4.1), and the client hears the §4.4 sentence, once, in these
+   words:
+
+   > On this computer I can't run my safety checks, so I'll build more slowly and
+   > carefully, and I'll say so in the morning report.
+
+**On macOS and Linux this gate is a PLATFORM-SKIP with the reason named** — it is
+never run, and never reported as passed.
+
 ---
 
 ## The harness auto-detect — one skill, two modes, three launchers
@@ -1850,8 +1884,11 @@ business or project. Every user-facing prompt, question, and instruction must be
   keep going overnight." "If something needs your decision, I will write it down
   for you — it will not wait up."
 - **Spelled out.** Assume they do not know that three lines means three commands.
-  Assume they do not know what a terminal is. Say "open the Terminal app," not
-  "open a terminal."
+  Assume they do not know what a terminal is. Name the app, never the category:
+  say "open the <Terminal app | PowerShell>," not "open a terminal." The
+  interpolation is filled from the platform line the Capacity Ledger already
+  records (`references/platform.md` §1.2), so a Windows client is never sent
+  looking for a Mac app, and only the branch for THIS machine is ever spoken.
 
 See `references/audience.md` for the full audience UX rules.
 

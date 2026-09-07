@@ -126,9 +126,11 @@ paste-able restart path, never a substitute for the loops.
 ## The audience — spell it out
 
 The user is a non-technical adult, often sixty or older. They may not know what a
-terminal is — say "open the Terminal app," not "open a terminal." They may not
-know that three lines means three commands. They may not know that a line longer
-than their terminal width breaks. See `audience.md` for the full rules. Every instruction must:
+terminal is — say "open the <Terminal app | PowerShell>," not "open a terminal,"
+filling the interpolation from the platform line the Capacity Ledger already
+records (`references/platform.md` §1.2). They may not know that three lines means
+three commands. They may not know that a line longer than their terminal width
+breaks. See `audience.md` for the full rules. Every instruction must:
 
 - Be one paste per session, with every setting already applied.
 - Have short lines a narrow 80-column terminal cannot break.
@@ -257,6 +259,9 @@ template handed over with a placeholder still in it is not pasted-and-runnable.
 > Copy everything inside the fence below — nothing else — and paste it into
 > Terminal 1. Then press Return.
 
+Only the branch for THIS machine's platform is ever spoken — `references/platform.md`
+§1 has already decided which, and the client never hears the other one.
+
 ```
 cd ~/Downloads/projects/<project-slug>
 claude --model sonnet --effort high --name build \
@@ -282,7 +287,7 @@ pins its own model. Use the spelling the Capacity Ledger names for this seat.)
 > This is Terminal 2. It checks the work and fixes anything that is not good enough
 > yet.
 >
-> Open a second <Terminal | PowerShell> window. (<On a Mac: hold Command and
+> Open a second <Terminal app | PowerShell> window. (<On a Mac: hold Command and
 > press N | On Windows: press Ctrl and N>.)
 >
 > Copy everything inside the fence below and paste it into Terminal 2. Then press
@@ -325,7 +330,8 @@ obey:
 
 > This is Terminal 3. It merges the finished, checked work to GitHub.
 >
-> Open another Terminal window.
+> Open a third <Terminal app | PowerShell> window, the same way you opened the
+> second one.
 >
 > Copy everything inside the fence below and paste it into Terminal 3. Then press
 > Return.
