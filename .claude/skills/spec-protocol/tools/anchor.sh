@@ -33,6 +33,26 @@
 #   Exit 2 is never "no drift". A detector that cannot prove itself reports
 #   BROKEN INSTRUMENT. UNDETERMINED is a correct answer; a false all-clear is not.
 #
+# THE RECOVERY LADDER (references/anti-drift.md section 6)
+#   Exit 4 is the LAST rung, never the first. When the no-delta counter reaches
+#   N the script climbs, one rung per reconcile, and each rung is a thing the
+#   run can do for itself while the client sleeps:
+#     rung 1  ACTION|redispatch-from-checkpoint for every in-flight unit (a
+#             dispatch-log row with no RESULT line) — TaskStop it, then re-fire
+#             it from its last checkpoint;
+#     rung 2  if the last recorded state change was a CAPACITY-EVENT, the
+#             counter does NOT count toward drift for up to two hours: N rises
+#             to max(ANCHOR_TERMINAL_N, ceil(120min / cadence)) while the grace
+#             holds. A provider outage is the world moving, not a captured run;
+#     rung 3  ACTION|switch-to-fallback-seats — the fallback table in
+#             references/capacity.md, before any escalation;
+#     rung 4  only now CONTROL/TERMINAL-DRIFT.flag, exit 4.
+#   And the flag is not a dead end: a fresh session that writes the NAMED
+#   blocker into CONTROL/TODO.md as
+#       - [x] BLOCKER-NAMED | <the blocker, one line> | session=<this session>
+#   clears the flag on its next reconcile, here, without a human. Recovery is
+#   no longer a human act only.
+#
 # THE EMBEDDED FIXTURES (why they exist)
 #   The real ledger this tool was designed against carries 740 contentless
 #   ticks in 2,366 lines. The obvious literal pattern
@@ -62,7 +82,9 @@
 #
 # ENVIRONMENT KNOBS (all optional; defaults are the doctrine's numbers)
 #   ANCHOR_MAX_AGE_MIN=35          stale-anchor threshold, minutes
-#   ANCHOR_TERMINAL_N=6            consecutive no-delta reconciles => TERMINAL-DRIFT
+#   ANCHOR_TERMINAL_N=6            consecutive no-delta reconciles => the ladder
+#   ANCHOR_RECONCILE_CADENCE_MIN=5 the reconcile cadence the ladder assumes
+#   ANCHOR_CAPACITY_GRACE_MIN=120  capacity-event grace window, minutes (rung 2)
 #   ANCHOR_STALE_MIN=10            liveness threshold for a running task, minutes
 #   ANCHOR_INTENT_K=5              repeated-intent window size
 #   ANCHOR_INTENT_OVERLAP_PCT=60   repeated-intent core-share threshold
@@ -104,6 +126,8 @@ DO_SELFTEST=0
 
 MAX_AGE_MIN="${ANCHOR_MAX_AGE_MIN:-35}"
 TERMINAL_N="${ANCHOR_TERMINAL_N:-6}"
+CADENCE_MIN="${ANCHOR_RECONCILE_CADENCE_MIN:-5}"
+CAPACITY_GRACE_MIN="${ANCHOR_CAPACITY_GRACE_MIN:-120}"
 STALE_MIN="${ANCHOR_STALE_MIN:-10}"
 INTENT_K="${ANCHOR_INTENT_K:-5}"
 INTENT_PCT="${ANCHOR_INTENT_OVERLAP_PCT:-60}"
@@ -238,6 +262,15 @@ STATE_RE='(counts=|tasks=|violations=|RECONCILE|RE-ANCHOR|CLAIM|RESULT|VERDICT|M
 # IDLE lines: an IDLE reconcile is a non-unit tick and claims nothing. The
 # [|] form is BSD-awk-safe (a backslash-pipe is an illegal regex there).
 LEDGER_CLAIM_RE='[|][[:space:]]*CLAIM[[:space:]]*[|]'
+# The capacity-event marker for rung 2 of the recovery ladder. It is the
+# pipe-DELIMITED field form (`ts | CAPACITY-EVENT | provider=… `,
+# references/capacity.md section 6.2), never the bare word, for the same
+# reason the CLAIM marker is: this script's own RECOVERY-LADDER lines name the
+# marker in their evidence text, and a bare-word search matched THOSE — the
+# grace then found its own writing and held forever, one reconcile after the
+# ladder said the grace did not apply. A detector that can match its own
+# output is not a detector.
+LEDGER_CAPACITY_RE='[|][[:space:]]*CAPACITY-EVENT[[:space:]]*[|]'
 LEDGER_RESULT_RE='[|][[:space:]]*RESULT[[:space:]]*[|]'
 LEDGER_UNIT_RE='(^|[[:space:]|])unit=([^[:space:]|]+)'
 CLAIM_UNPAIRED_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
@@ -253,8 +286,11 @@ CLAIM_UNPAIRED_TOL="${ANCHOR_CLAIM_UNPAIRED_TOL:-3}"
 # machinery becomes a new way to look alive while doing nothing — the exact
 # disease anti-drift.md section 1 documents.
 # BUDGET-CAP is this script's own class-6 line and is excluded on the same
-# self-authored ground as the rest.
-SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP)'
+# self-authored ground as the rest, and so is RECOVERY-LADDER: the rungs this
+# script climbs before the flag are its OWN writes. A ladder line that moved
+# the fingerprint would reset the very counter that produced it, and the run
+# would climb rung 1 forever without ever reaching the flag.
+SELF_AUTHORED_RE='(RE-ANCHOR|RECONCILE|DRIFT-ALARM|TERMINAL-DRIFT|RECOVERY-LADDER|S-CHECK|OPERATOR-ESCALATION|CAPACITY-EVENT|BUDGET-CAP)'
 
 if [[ "${ANCHOR_SELFTEST_BREAK_PATTERN:-0}" == "1" ]]; then
   # Deliberate sabotage: swap the robust marker for the brittle literal that
@@ -413,7 +449,7 @@ ledger_write() {  # ledger_write <relative-file> <line>
 # 5. Usage
 #------------------------------------------------------------------------------
 usage() {
-  sed -n '2,80p' "$SELF" | sed 's/^# \{0,1\}//'
+  sed -n '2,95p' "$SELF" | sed 's/^# \{0,1\}//'
 }
 
 #==============================================================================
@@ -448,6 +484,22 @@ esac
 [[ "$HARD_CAP"   =~ ^[0-9]+$ ]] || die_tool "ANCHOR_HARD_CAP must be a non-negative integer (got: ${HARD_CAP})"
 [[ "$BUDGET_TOL" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_BUDGET_TOL must be a non-negative integer (got: ${BUDGET_TOL})"
 [[ "$CLAIM_TOL"  =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CLAIM_UNPAIRED_TOL must be a non-negative integer (got: ${CLAIM_TOL})"
+[[ "$TERMINAL_N" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_TERMINAL_N must be a non-negative integer (got: ${TERMINAL_N})"
+[[ "$CAPACITY_GRACE_MIN" =~ ^[0-9]+$ ]] || die_tool "ANCHOR_CAPACITY_GRACE_MIN must be a non-negative integer (got: ${CAPACITY_GRACE_MIN})"
+# The cadence DIVIDES. A zero or non-numeric value would abort the shell inside
+# (( )) or silently produce a nonsense threshold, so it is rejected loudly.
+[[ "$CADENCE_MIN" =~ ^[0-9]+$ ]] && (( CADENCE_MIN >= 1 )) \
+  || die_tool "ANCHOR_RECONCILE_CADENCE_MIN must be an integer >= 1 minute (got: ${CADENCE_MIN})"
+
+# THE CAPACITY-EVENT THRESHOLD (rung 2 of the recovery ladder). When the last
+# recorded state change is a CAPACITY-EVENT, the no-delta counter must be
+# allowed to run for two hours before it means anything: a 429 cluster or a
+# dead provider is the world moving under the run, not the run capturing
+# itself. N = max(ANCHOR_TERMINAL_N, ceil(120 min / cadence)) — 24 at the
+# 5-minute cadence. The grace is bounded twice, by this count AND by the
+# wall-clock window, so a slower cadence cannot buy an unlimited stall.
+CAPACITY_N=$(( (CAPACITY_GRACE_MIN + CADENCE_MIN - 1) / CADENCE_MIN ))
+if (( CAPACITY_N < TERMINAL_N )); then CAPACITY_N="$TERMINAL_N"; fi
 
 #==============================================================================
 # THE MAIN RUN
@@ -471,11 +523,49 @@ run_anchor() {
   FPFILE="$HOME_DIR/CONTROL/.anchor-fingerprint"
 
   # --- precondition 0: the stop gate. It sits OUTSIDE the captured reasoning.
+  #
+  #     The flag is a stop, not a grave. It holds out for exactly one thing —
+  #     the blocker NAMED IN WRITING — and a fresh session can supply that as
+  #     well as a person can. So the gate has two doors: with the named blocker
+  #     on CONTROL/TODO.md the flag clears itself here and the run continues;
+  #     without it, nothing dispatches, exactly as before.
+  #
+  #     The token is a CHECKLIST ROW whose first field is BLOCKER-NAMED:
+  #       - [x] BLOCKER-NAMED | <the blocker, one line> | session=<this session>
+  #     Anchored to the row start on purpose. An unanchored marker would match
+  #     this script's own OPERATOR-ESCALATION item — the instruction to write
+  #     the line would satisfy itself, and the stop would clear on the next
+  #     tick without anyone naming anything.
   if [[ -f "$FLAG" ]]; then
-    printf 'TERMINAL-DRIFT | flag present: %s\n' "$FLAG"
-    printf 'TERMINAL-DRIFT | nothing dispatches while this file exists. Name the blocker, then remove it.\n'
-    if [[ -r "$FLAG" ]]; then sed -n '1,20p' "$FLAG"; fi
-    exit 4
+    local BLOCKER="" brc=0
+    if [[ -f "$TODO" ]]; then
+      set +e
+      BLOCKER="$("$GREP" -m1 -E '^[[:space:]]*-[[:space:]]*\[[ xX]\][[:space:]]*BLOCKER-NAMED[[:space:]]*\|[[:space:]]*[^|[:space:]]' "$TODO" 2>&1)"; brc=$?
+      set -e
+      if (( brc >= 2 )); then die_tool "grep rc=${brc} reading ${TODO} for the fresh-session blocker line: ${BLOCKER}"; fi
+      (( brc == 0 )) || BLOCKER=""
+    fi
+    if [[ -n "$BLOCKER" ]]; then
+      rm -f "$FLAG" || die_tool "the named blocker is on ${TODO} but ${FLAG} could not be removed"
+      # Reset the counter and the ladder with it. Leaving them at the top rung
+      # would re-fire the flag on the next tick and make the clear cosmetic.
+      if [[ -f "$FPFILE" ]]; then
+        local _fp _ba
+        _fp="$(sed -n 's/^fp=//p' "$FPFILE" | head -1)"
+        _ba="$(sed -n 's/^budget_advisory=//p' "$FPFILE" | head -1)"
+        printf 'fp=%s\ncount=0\nsince=%s\nts=%s\nbudget_advisory=%s\nrecovery_rung=0\n' \
+          "${_fp}" "$(iso_now)" "$(iso_now)" "${_ba:-0}" > "${FPFILE}.tmp.$$"
+        mv "${FPFILE}.tmp.$$" "$FPFILE"
+      fi
+      ledger_write "CONTROL/LEDGER.md" "$(iso_now) | TERMINAL-DRIFT-CLEARED | cleared-by=fresh-session | unit=${UNIT} | blocker=$(sanitize "$BLOCKER") | flag=CONTROL/TERMINAL-DRIFT.flag removed | counter=reset | note=the blocker is named in CONTROL/TODO.md; dispatch may resume"
+      printf 'TERMINAL-DRIFT-CLEARED | the blocker is named on %s | %s\n' "$TODO" "$(sanitize "$BLOCKER")"
+      printf 'TERMINAL-DRIFT-CLEARED | flag removed, no-delta counter reset; dispatch may resume.\n'
+    else
+      printf 'TERMINAL-DRIFT | flag present: %s\n' "$FLAG"
+      printf 'TERMINAL-DRIFT | nothing dispatches while this file exists. Name the blocker in %s as a row starting "- [x] BLOCKER-NAMED | <the blocker> | session=<this session>" and the next reconcile clears the flag itself; a person may also remove it by hand.\n' "$TODO"
+      if [[ -r "$FLAG" ]]; then sed -n '1,24p' "$FLAG"; fi
+      exit 4
+    fi
   fi
 
   # --- required inputs. A missing one is exit 2 NAMING THE PATH — never a verdict.
@@ -629,6 +719,78 @@ run_anchor() {
     # Content but no parseable row is a PARSE FAILURE, not an empty log.
     if (( content > 0 )); then return 0; fi
     DISPATCH_ROWS="0"                       # genuinely empty: a PROVEN zero
+    return 0
+  }
+
+  #--------------------------------------------------------------------------
+  # THE RECOVERY LADDER's two inputs (references/anti-drift.md section 6).
+  #--------------------------------------------------------------------------
+  # inflight_units — every unit with a dispatch-log row and no RESULT line in
+  # the ledger. This is the SAME definition references/resume.md step 4 uses
+  # for what to TaskStop: workflow agents and subagents are not OS processes,
+  # so the dispatch log paired against the ledger is the only census of what is
+  # still in flight. An absent or unparseable dispatch log prints NOTHING —
+  # never a fabricated zero — and the caller says which path it read.
+  inflight_units() {
+    [[ -f "$DL" ]] || return 0
+    local dispatched
+    dispatched="$("$AWK" '
+      /^[[:space:]]*(- )?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/ {
+        u = ""
+        if (match($0, /(^|[ \t|])unit=[^ \t|]+/)) {
+          u = substr($0, RSTART, RLENGTH); sub(/^[^=]*=/, "", u)
+        } else {
+          n = split($0, f, "|")
+          if (n >= 2) { u = f[2]; gsub(/^[ \t]+/, "", u); gsub(/[ \t]+$/, "", u) }
+        }
+        if (u != "" && !seen[u]++) print u
+      }' "$DL")"
+    [[ -n "$dispatched" ]] || return 0
+    local resulted
+    resulted="$(ledger.cmd "$LED" "$LEDGER_RESULT_RE" "$LEDGER_UNIT_RE")"
+    comm -23 <(printf '%s\n' "$dispatched" | "$GREP" -v '^[[:space:]]*$' | LC_ALL=C sort -u) \
+             <(printf '%s\n' "$resulted"   | "$GREP" -v '^[[:space:]]*$' | LC_ALL=C sort -u)
+    return 0
+  }
+
+  # capacity_grace_holds — rc 0 when the LAST recorded state change is a
+  # CAPACITY-EVENT and the grace has not run out. Two independent bounds, and
+  # both must hold: the no-delta count under CAPACITY_N, and the wall-clock
+  # window under ANCHOR_CAPACITY_GRACE_MIN. Sets CAPACITY_GRACE_NOTE either way
+  # so the ledger line says WHY the grace did or did not apply — a grace that
+  # cannot explain itself is indistinguishable from a broken counter.
+  capacity_grace_holds() {  # capacity_grace_holds <no-delta-count> <window-min>
+    local n="$1" win="$2" cap_ln="" after_state=0 rc
+    # NOTE: every note below says "capacity event" in lowercase prose on
+    # purpose. The uppercase marker must never appear in a line this script
+    # writes to the ledger, or the next pass finds its own text.
+    CAPACITY_GRACE_NOTE="grace=n/a(no capacity event recorded in ${LED})"
+    [[ -f "$LED" ]] || { CAPACITY_GRACE_NOTE="grace=n/a(no ledger at ${LED})"; return 1; }
+    set +e
+    cap_ln="$("$GREP" -nE "$LEDGER_CAPACITY_RE" "$LED" 2>&1 | tail -n 1 | cut -d: -f1)"; rc=$?
+    set -e
+    if (( rc >= 2 )); then die_tool "grep rc=${rc} scanning ${LED} for capacity-event lines: ${cap_ln}"; fi
+    [[ -n "$cap_ln" && "$cap_ln" =~ ^[0-9]+$ ]] || return 1
+    # Anything state-carrying AFTER that line means the world moved on and the
+    # capacity event is no longer the last thing that happened.
+    tail -n "+$(( cap_ln + 1 ))" "$LED" > "$WORKDIR/after-capacity.txt" 2>/dev/null || : > "$WORKDIR/after-capacity.txt"
+    set +e
+    after_state="$(state_lines "$WORKDIR/after-capacity.txt" 2>/dev/null | "$GREP" -cvE "$SELF_AUTHORED_RE" 2>/dev/null)"
+    set -e
+    [[ "$after_state" =~ ^[0-9]+$ ]] || after_state=0
+    if (( after_state > 0 )); then
+      CAPACITY_GRACE_NOTE="grace=no(${after_state} state line(s) after the last capacity event)"
+      return 1
+    fi
+    if (( win >= CAPACITY_GRACE_MIN )); then
+      CAPACITY_GRACE_NOTE="grace=expired(window=${win}min >= ${CAPACITY_GRACE_MIN}min)"
+      return 1
+    fi
+    if (( n >= CAPACITY_N )); then
+      CAPACITY_GRACE_NOTE="grace=expired(no-delta=${n} >= N=${CAPACITY_N} at cadence ${CADENCE_MIN}min)"
+      return 1
+    fi
+    CAPACITY_GRACE_NOTE="grace=holds(no-delta=${n}/N=${CAPACITY_N}, window=${win}min/${CAPACITY_GRACE_MIN}min, last state change was a capacity event at ${LED}:${cap_ln})"
     return 0
   }
 
@@ -980,12 +1142,14 @@ run_anchor() {
     } > "$WORKDIR/fp.in" 2>/dev/null || true
     FP="$(sha_stdin < "$WORKDIR/fp.in" | cut -c1-8)"
 
-    local PREV_FP="" PREV_N=0 PREV_SINCE=""
+    local PREV_FP="" PREV_N=0 PREV_SINCE="" PREV_RUNG=0
     if [[ -f "$FPFILE" ]]; then
       PREV_FP="$(sed -n 's/^fp=//p' "$FPFILE" | head -1)"
       PREV_N="$(sed -n 's/^count=//p' "$FPFILE" | head -1)"
       PREV_SINCE="$(sed -n 's/^since=//p' "$FPFILE" | head -1)"
+      PREV_RUNG="$(sed -n 's/^recovery_rung=//p' "$FPFILE" | head -1)"
       [[ -n "$PREV_N" ]] || PREV_N=0
+      [[ "$PREV_RUNG" =~ ^[0-9]+$ ]] || PREV_RUNG=0
     fi
 
     local NEWN=0
@@ -1002,9 +1166,12 @@ run_anchor() {
       NEWN=0; SINCE="$(iso_now)"          # real state moved: the run is alive
     fi
 
-    printf 'fp=%s\ncount=%s\nsince=%s\nts=%s\nbudget_advisory=%s\n' \
-      "$FP" "$NEWN" "$SINCE" "$(iso_now)" "$BUDGET_ADVISED" > "${FPFILE}.tmp.$$"
-    mv "${FPFILE}.tmp.$$" "$FPFILE"
+    # The ladder's own state. It rides in CONTROL/.anchor-fingerprint, the file
+    # this script already owns, and it is RESET the moment real state moves —
+    # a run that started progressing again must start the ladder from the
+    # bottom, never resume mid-climb toward a stop it has left behind.
+    local RUNG="$PREV_RUNG"
+    if (( NEWN == 0 )); then RUNG=0; fi
     NODELTA="${NEWN}/${TERMINAL_N}"
 
     if [[ -n "$SINCE" ]]; then
@@ -1030,31 +1197,115 @@ run_anchor() {
       esac
     fi
 
+    #------------------------------------------------------------------------
+    # THE RECOVERY LADDER, then the flag (references/anti-drift.md section 6).
+    #
+    # The old behaviour was one rung: count to N, write a file only a human
+    # removes. For a client asleep at 3 a.m. that turned a thirty-minute
+    # provider outage into a permanent stop, which is the opposite of "runs
+    # until done". The stop stays — it is what makes the machinery
+    # capture-proof — but it is now the LAST thing tried, not the first.
+    # One rung per reconcile, each one a thing the run can do for itself:
+    #
+    #   rung 1  re-dispatch every in-flight unit from its last checkpoint
+    #   rung 2  hold, without counting toward drift, while a CAPACITY-EVENT is
+    #           the last recorded state change (up to two hours)
+    #   rung 3  switch the affected seats to their named fallback
+    #   rung 4  the flag
+    #
+    # The rungs are recorded through ledger.sh as RECOVERY-LADDER lines, which
+    # are excluded from the fingerprint like every other line this script
+    # authors, so climbing the ladder can never look like progress.
+    #------------------------------------------------------------------------
+    CAPACITY_GRACE_NOTE="grace=not-evaluated"
     if (( NEWN >= TERMINAL_N )); then
       local ts; ts="$(iso_now)"
-      {
-        printf 'TERMINAL-DRIFT\n'
-        printf 'created=%s\n' "$ts"
-        printf 'no-delta-reconciles=%s\n' "$NEWN"
-        printf 'window-minutes=%s\n' "$WINDOW_MIN"
-        printf 'fingerprint=%s\n' "$FP"
-        printf 'unit=%s\n' "$UNIT"
-        printf 'next=%s\n' "$NEXT"
-        printf 'counts=%s\n' "$COUNTS"
-        printf 'tasks=%s\n' "$TASKSTR"
-        printf 'contentless-ticks-in-ledger=%s (banned writes)\n' "$TICKS"
-        printf 'stateful-heartbeats-in-ledger=%s (the required kind — not drift)\n' "$TICKS_FULL"
-        printf 'REQUIRED: set run_status=STOPPED_STALL, stop dispatching, produce the\n'
-        printf 'diagnose-the-blocker report (what was in flight, what each of the three\n'
-        printf 'layers claims, where they disagree, the last real state change), then a\n'
-        printf 'human removes this file. Nothing dispatches while it exists.\n'
-      } > "$FLAG"
-      ledger_write "CONTROL/LEDGER.md" "${ts} | TERMINAL-DRIFT | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | tasks=${TASKSTR} | counts=${COUNTS} | flag=CONTROL/TERMINAL-DRIFT.flag"
-      ledger_write "CONTROL/TODO.md" "- [ ] OPERATOR-ESCALATION | TERMINAL-DRIFT after ${NEWN} no-delta reconciles (${WINDOW_MIN} min) | unit=${UNIT} | remove CONTROL/TERMINAL-DRIFT.flag only after the blocker is named"
-      printf 'ACTION|stop-dispatching|%s|TERMINAL-DRIFT after %s no-delta reconciles (%s min)\n' "$UNIT" "$NEWN" "$WINDOW_MIN"
-      printf 'ACTION|escalate-to-operator|%s|CONTROL/TERMINAL-DRIFT.flag created; run_status=STOPPED_STALL\n' "$UNIT"
-      SEVERITY=4
+      if (( RUNG < 1 )); then
+        # --- RUNG 1: TaskStop and re-fire what is in flight.
+        local inf n_inf=0 u shown=0 dl_note
+        if [[ -f "$DL" ]]; then dl_note="${DL}"; else dl_note="${DL} (absent — no in-flight census was possible)"; fi
+        inf="$(inflight_units)"
+        if [[ -n "$inf" ]]; then
+          set +e
+          n_inf="$(printf '%s\n' "$inf" | "$GREP" -c '[^[:space:]]')"
+          set -e
+          [[ "$n_inf" =~ ^[0-9]+$ ]] || n_inf=0
+        fi
+        if (( n_inf > 0 )); then
+          while IFS= read -r u; do
+            [[ -n "$u" ]] || continue
+            shown=$(( shown + 1 ))
+            if (( shown > 20 )); then break; fi
+            action "redispatch-from-checkpoint" "$u" "in flight: a row in ${DL} with no RESULT line in ${LED}. TaskStop it, then re-dispatch it from its last checkpoint. This is rung 1 of the recovery ladder — it runs BEFORE any escalation."
+          done <<< "$inf"
+          if (( n_inf > shown )); then
+            action "redispatch-from-checkpoint" "+$(( n_inf - shown )) more" "the in-flight list was truncated at ${shown} ACTION lines; the full census is ${DL} rows with no RESULT line in ${LED}"
+          fi
+        else
+          action "redispatch-from-checkpoint" "$UNIT" "no dispatch row is missing its RESULT line (census read: ${dl_note}). Re-dispatch the current unit from its last checkpoint anyway — rung 1 runs before any escalation."
+        fi
+        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=1/4 | action=redispatch-from-checkpoint | in-flight=${n_inf} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=capacity-grace-then-fallback-seats-then-flag"
+        RUNG=1
+        if (( SEVERITY < 3 )); then SEVERITY=3; fi
+      elif capacity_grace_holds "$NEWN" "$WINDOW_MIN"; then
+        # --- RUNG 2: the capacity grace. NOT drift, on purpose — the counter
+        #     keeps climbing (observation is still not progress) but it does
+        #     not mean anything until the grace runs out, by count or by clock.
+        #     Severity is deliberately left alone: a provider outage is not a
+        #     captured conductor, and calling it one trains the operator to
+        #     ignore the alarm that matters.
+        action "wait-for-capacity" "$UNIT" "recovery ladder rung 2: ${CAPACITY_GRACE_NOTE}. Back off and re-check on the next tick; the fallback table in references/capacity.md is rung 3 when the grace runs out."
+        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=2/4 | action=capacity-grace | ${CAPACITY_GRACE_NOTE} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | note=a capacity event is the world moving, not a captured run; it does not count toward drift inside the grace"
+        RUNG=2
+      elif (( RUNG < 3 )); then
+        # --- RUNG 3: the named fallback seats.
+        action "switch-to-fallback-seats" "$UNIT" "recovery ladder rung 3: re-dispatching from checkpoint did not move the state (${CAPACITY_GRACE_NOTE}). Move the affected seats to their named fallback (references/capacity.md fallback table, Loop 8 throttle order) and re-dispatch there before any escalation."
+        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=3/4 | action=switch-to-fallback-seats | ${CAPACITY_GRACE_NOTE} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=flag"
+        RUNG=3
+        if (( SEVERITY < 3 )); then SEVERITY=3; fi
+      else
+        # --- RUNG 4: the flag. Every rung below it has been climbed and the
+        #     state still has not moved.
+        local CAPEV=0
+        CAPEV="$(g_count "$LEDGER_CAPACITY_RE" "$LED")"
+        {
+          printf 'TERMINAL-DRIFT\n'
+          printf 'created=%s\n' "$ts"
+          printf 'no-delta-reconciles=%s\n' "$NEWN"
+          printf 'window-minutes=%s\n' "$WINDOW_MIN"
+          printf 'fingerprint=%s\n' "$FP"
+          printf 'unit=%s\n' "$UNIT"
+          printf 'next=%s\n' "$NEXT"
+          printf 'counts=%s\n' "$COUNTS"
+          printf 'tasks=%s\n' "$TASKSTR"
+          printf 'contentless-ticks-in-ledger=%s (banned writes)\n' "$TICKS"
+          printf 'stateful-heartbeats-in-ledger=%s (the required kind — not drift)\n' "$TICKS_FULL"
+          printf 'capacity-events-in-ledger=%s\n' "$CAPEV"
+          printf 'recovery-ladder=rung 1 redispatch-from-checkpoint CLIMBED; rung 2 capacity-grace %s; rung 3 switch-to-fallback-seats CLIMBED; rung 4 this flag\n' "$CAPACITY_GRACE_NOTE"
+          printf 'REQUIRED: set run_status=STOPPED_STALL, stop dispatching, produce the\n'
+          printf 'diagnose-the-blocker report (what was in flight, what each of the three\n'
+          printf 'layers claims, where they disagree, the last real state change, and the\n'
+          printf 'capacity events above), then write the blocker into CONTROL/TODO.md as a\n'
+          printf 'row of exactly this shape:\n'
+          printf '  - [x] BLOCKER-NAMED | <the blocker, one line> | session=<this session>\n'
+          printf 'The next reconcile clears this flag itself once that row exists — a fresh\n'
+          printf 'session can do it, a person can do it, and a person may also just delete\n'
+          printf 'this file. Nothing dispatches while it exists.\n'
+        } > "$FLAG"
+        ledger_write "CONTROL/LEDGER.md" "${ts} | TERMINAL-DRIFT | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | tasks=${TASKSTR} | counts=${COUNTS} | ladder=rungs 1-3 climbed | capacity-events=${CAPEV} | flag=CONTROL/TERMINAL-DRIFT.flag"
+        ledger_write "CONTROL/TODO.md" "- [ ] OPERATOR-ESCALATION | TERMINAL-DRIFT after ${NEWN} no-delta reconciles (${WINDOW_MIN} min) | unit=${UNIT} | the recovery ladder was climbed first (re-dispatch, capacity grace, fallback seats) | name the blocker here in the row shape CONTROL/TERMINAL-DRIFT.flag prints, and the next reconcile clears the flag itself"
+        printf 'ACTION|stop-dispatching|%s|TERMINAL-DRIFT after %s no-delta reconciles (%s min); the recovery ladder was climbed first\n' "$UNIT" "$NEWN" "$WINDOW_MIN"
+        printf 'ACTION|escalate-to-operator|%s|CONTROL/TERMINAL-DRIFT.flag created; run_status=STOPPED_STALL; name the blocker in CONTROL/TODO.md and the next reconcile clears the flag itself\n' "$UNIT"
+        RUNG=4
+        SEVERITY=4
+      fi
     fi
+
+    # The fingerprint file is written LAST, so it carries the rung this pass
+    # actually reached rather than the one it intended to reach.
+    printf 'fp=%s\ncount=%s\nsince=%s\nts=%s\nbudget_advisory=%s\nrecovery_rung=%s\n' \
+      "$FP" "$NEWN" "$SINCE" "$(iso_now)" "$BUDGET_ADVISED" "$RUNG" > "${FPFILE}.tmp.$$"
+    mv "${FPFILE}.tmp.$$" "$FPFILE"
   fi
 
   #--------------------------------------------------------------------------
@@ -1069,7 +1320,7 @@ run_anchor() {
     elif (( ACTIONS > 0 ));   then result="actions:${ACTIONS}"
     elif (( SEVERITY == 3 )); then result="alarm"
     else result="clean"; fi
-    LINE="${ts} | RECONCILE | anchor=${ANCHOR} | unit=${UNIT} | result=${result} | tasks=${TASKSTR} | counts=${COUNTS} | classes=${CLASSES} | ledger=${CLAIM_NOTE:-skipped(unit=IDLE)} | intents=${INTENT_VERDICT:-n/a} | ticks=${TICKS} | stateful-heartbeats=${TICKS_FULL} | fp=${FP} | nodelta=${NODELTA} | age=${STALENESS} | next=${NEXT}"
+    LINE="${ts} | RECONCILE | anchor=${ANCHOR} | unit=${UNIT} | result=${result} | tasks=${TASKSTR} | counts=${COUNTS} | classes=${CLASSES} | ledger=${CLAIM_NOTE:-skipped(unit=IDLE)} | intents=${INTENT_VERDICT:-n/a} | ticks=${TICKS} | stateful-heartbeats=${TICKS_FULL} | fp=${FP} | nodelta=${NODELTA} | rung=${RUNG:-0}/4 | age=${STALENESS} | next=${NEXT}"
   fi
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
@@ -1091,6 +1342,7 @@ run_anchor() {
 #------------------------------------------------------------------------------
 INTENT_SCORE=""
 DISPATCH_ROWS=""
+CAPACITY_GRACE_NOTE="grace=not-evaluated"
 intent_stall() {
   local f="$1" unchanged="$2"
   (( unchanged == 1 )) || return 1
@@ -1154,6 +1406,14 @@ intent_stall() {
 #   14    CLASS 7 LEDGER PROVENANCE — RESULT without a prior CLAIM MUST alarm
 #         (unpaired-claim, exit 3), a CLAIM+RESULT pair MUST NOT, and the
 #         pair's RECONCILE line carries ledger=ledger-ok(...)
+#   15    THE RECOVERY LADDER, rung 2 — six no-delta reconciles whose last
+#         recorded state change is a capacity event do NOT write the flag
+#         inside two hours (case 6 is the negative control: the same fixtures
+#         with no capacity event reach the flag on the third crossing), and a
+#         real state line after the capacity event ends the grace
+#   16    THE FRESH-SESSION CLEAR — the flag holds while nothing is named
+#         (including against this script's own escalation line), and clears
+#         itself once the BLOCKER-NAMED row is on CONTROL/TODO.md
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -1244,20 +1504,52 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|revert-to-pending'; then ok=1; fi
   report 5 "false-complete" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | false-complete written; ACTION|revert-to-pending emitted"
 
-  # --- case 6: TERMINAL-DRIFT with the counter primed to N-1
+  # --- case 6: TERMINAL-DRIFT with the counter primed to N-1 — and the
+  #     RECOVERY LADDER that now runs before it, IN ORDER. The flag is the
+  #     LAST rung, never the first: crossing N emits
+  #     ACTION|redispatch-from-checkpoint (rung 1), the next no-delta pass
+  #     emits ACTION|switch-to-fallback-seats (rung 3 — rung 2, the capacity
+  #     grace, does not apply here because this ledger carries no
+  #     CAPACITY-EVENT), and only the pass after that writes the flag. Each
+  #     rung asserts BOTH what fired and that the flag did NOT yet exist, so a
+  #     ladder that silently collapsed back into "flag immediately" fails here.
   mk_home "$T/c6"
   printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c6/CONTROL/task-graph-snapshot.json"
   printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c6/CONTROL/project_state.json"
-  runa "$T/c6" "U-02" --mode reconcile --tasks "$T/c6/CONTROL/task-graph-snapshot.json" --state "$T/c6/CONTROL/project_state.json"
+  # two dispatched units, neither carrying a RESULT line: the in-flight census
+  # rung 1 reads. (Written literally — mk_dispatch_log is defined further down,
+  # with case 9, and a function is not defined until its definition is reached.)
+  {
+    printf '# Dispatch log\n\n'
+    printf '2026-08-12T01:01:00Z | U-001 | build | builder-1 | run-000001\n'
+    printf '2026-08-12T02:02:00Z | U-002 | build | builder-2 | run-000002\n'
+  } > "$T/c6/CONTROL/dispatch-log.md"
+  local c6args=( "$T/c6" "U-02" --mode reconcile --tasks "$T/c6/CONTROL/task-graph-snapshot.json" --state "$T/c6/CONTROL/project_state.json" )
+  runa "${c6args[@]}"
   local primed=$(( TERMINAL_N - 1 ))
   sed -e "s/^count=.*/count=${primed}/" "$T/c6/CONTROL/.anchor-fingerprint" > "$T/c6/CONTROL/.anchor-fingerprint.new"
   mv "$T/c6/CONTROL/.anchor-fingerprint.new" "$T/c6/CONTROL/.anchor-fingerprint"
-  runa "$T/c6" "U-02" --mode reconcile --tasks "$T/c6/CONTROL/task-graph-snapshot.json" --state "$T/c6/CONTROL/project_state.json"
+
+  runa "${c6args[@]}"                     # crossing N -> rung 1
+  local rc_r1="$RC" ok_r1=0
+  if (( RC == 3 )) && [[ ! -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-001|' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=2 \|' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null; then ok_r1=1; fi
+
+  runa "${c6args[@]}"                     # still nothing moved -> rung 3
+  local rc_r3="$RC" ok_r3=0
+  if (( RC == 3 )) && [[ ! -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|switch-to-fallback-seats|U-02|' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=3/4 \| action=switch-to-fallback-seats \|' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null; then ok_r3=1; fi
+
+  runa "${c6args[@]}"                     # the ladder is exhausted -> the flag
   ok=0
-  if (( RC == 4 )) && [[ -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
+  if (( RC == 4 )) && (( ok_r1 == 1 )) && (( ok_r3 == 1 )) \
+     && [[ -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
      && "$GREP" -qE '\| TERMINAL-DRIFT \| no-delta-reconciles=' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null \
-     && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c6/CONTROL/TODO.md" 2>/dev/null; then ok=1; fi
-  report 6 "terminal-drift" "$ok" "rc=${RC} (want 4); CONTROL/TERMINAL-DRIFT.flag created; escalation in LEDGER.md and TODO.md"
+     && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c6/CONTROL/TODO.md" 2>/dev/null \
+     && "$GREP" -q 'recovery-ladder=rung 1 redispatch-from-checkpoint CLIMBED' "$T/c6/CONTROL/TERMINAL-DRIFT.flag" 2>/dev/null; then ok=1; fi
+  report 6 "terminal-drift-after-the-ladder" "$ok" "rung 1 rc=${rc_r1} (want 3, no flag, ACTION|redispatch-from-checkpoint for the 2 in-flight dispatch rows); rung 3 rc=${rc_r3} (want 3, no flag, ACTION|switch-to-fallback-seats); rung 4 rc=${RC} (want 4); flag created only on the third crossing and it records the ladder it climbed; escalation in LEDGER.md and TODO.md"
 
   # --- case 7: repeated-intent stall, WITH its known-negative control
   mk_home "$T/c7"
@@ -1502,7 +1794,121 @@ EOF
   if (( ok_base == 1 && ok_tol == 1 && ok_strict == 1 && ok_pair == 1 )); then ok=1; fi
   report 14 "ledger-provenance" "$ok" "baseline rc=${rc_base} (want 0; RECONCILE carries ledger=ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)); tolerated rc=${rc_tol} (want 0; unpaired=1 reported but under tol=3); strict rc=${rc_strict} (want 3 at ANCHOR_CLAIM_UNPAIRED_TOL=0; DRIFT-ALARM | unpaired-claim written; ACTION|write-missing-claims emitted); paired rc=${rc_pair} (want 0; claimed=1/resulted=1/unpaired=0; no unpaired-claim alarm — the negative control)"
 
-  printf 'SELFTEST COMPLETE | %s of 14 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- case 15: THE RECOVERY LADDER, rung 2 — the CAPACITY-EVENT grace.
+  #     R2 of the review: "a thirty-minute provider outage or a 429 cluster
+  #     becomes a permanent stop." Six no-delta reconciles whose last recorded
+  #     state change is a capacity event must NOT write the flag inside two
+  #     hours; N rises to max(ANCHOR_TERMINAL_N, ceil(120min/cadence)) = 24 at
+  #     the 5-minute cadence, and the counter goes on climbing (case 8's rule
+  #     is untouched: observation is still not progress).
+  #
+  #     Its negative control is case 6, run on the same fixtures with no
+  #     capacity event in the ledger: THAT run reaches the flag on its third
+  #     crossing. Same counter, same cadence, one difference — so this case
+  #     proves a grace, not a blinded detector. The in-case control is the
+  #     second half below: a real state line written after the capacity event
+  #     ends the grace, because the capacity event is then no longer the last
+  #     thing that happened.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c15"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c15/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c15/CONTROL/project_state.json"
+  local c15args=( "$T/c15" "U-02" --mode reconcile --tasks "$T/c15/CONTROL/task-graph-snapshot.json" --state "$T/c15/CONTROL/project_state.json" )
+  runa "${c15args[@]}"                            # establish the fingerprint
+  "$SCRIPT_DIR/ledger.sh" "$T/c15" "CONTROL/LEDGER.md" \
+    "2026-08-12T02:14:00Z | CAPACITY-EVENT | provider=deepseek | event=429-cluster | evidence=rc429x4/1tick | response=throttle" >/dev/null 2>&1
+  runa "${c15args[@]}"                            # the capacity event is now the last state change
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c15/CONTROL/.anchor-fingerprint" > "$T/c15/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c15/CONTROL/.anchor-fingerprint.new" "$T/c15/CONTROL/.anchor-fingerprint"
+  local c15_i=1 c15_flag=0 c15_rc=0
+  while (( c15_i <= 6 )); do
+    runa "${c15args[@]}"
+    c15_rc="$RC"
+    if [[ -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]]; then c15_flag=1; break; fi
+    c15_i=$(( c15_i + 1 ))
+  done
+  local c15_count c15_win
+  c15_count="$(sed -n 's/^count=//p' "$T/c15/CONTROL/.anchor-fingerprint" | head -1)"
+  c15_win="$("$GREP" -oE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds\([^)]*\)' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null | tail -1 || true)"
+  local ok15a=0
+  if (( c15_flag == 0 )) && (( c15_rc != 4 )) && [[ -n "$c15_count" ]] && (( c15_count > TERMINAL_N )) \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE '\| TERMINAL-DRIFT \|' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE 'rung=3/4' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null; then ok15a=1; fi
+  # The in-case control: real state after the capacity event ends the grace,
+  # and the ladder resumes at rung 3 on the way to the flag.
+  "$SCRIPT_DIR/ledger.sh" "$T/c15" "CONTROL/LEDGER.md" \
+    "2026-08-12T03:00:00Z | RESULT | unit=U-09 | verdict=8.6 | artifact=repos/app/src/api.ts" >/dev/null 2>&1
+  runa "${c15args[@]}"                            # the state moved: counter resets to 0
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c15/CONTROL/.anchor-fingerprint" > "$T/c15/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c15/CONTROL/.anchor-fingerprint.new" "$T/c15/CONTROL/.anchor-fingerprint"
+  runa "${c15args[@]}"                            # rung 1 again (the ladder restarted)
+  runa "${c15args[@]}"                            # grace is over -> rung 3, not rung 2
+  local c15_rc3="$RC" ok15b=0
+  if (( RC == 3 )) && [[ ! -f "$T/c15/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|switch-to-fallback-seats|U-02|' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=3/4 \| action=switch-to-fallback-seats \| grace=no\(' "$T/c15/CONTROL/LEDGER.md" 2>/dev/null; then ok15b=1; fi
+  ok=0
+  if (( ok15a == 1 && ok15b == 1 )); then ok=1; fi
+  report 15 "capacity-event-grace" "$ok" \
+    "6 no-delta reconciles past N with a capacity event as the last state change: flag written=${c15_flag} (must be 0), last rc=${c15_rc} (must not be 4), counter=${c15_count} (past N=${TERMINAL_N}, held under N=${CAPACITY_N} for ${CAPACITY_GRACE_MIN}min); rung 2 held [${c15_win}] and rung 3 was never reached; then a real state line after the capacity event ended the grace and the ladder resumed at rung 3 with rc=${c15_rc3} (want 3) — the grace is bounded, not blind. Negative control: case 6, same fixtures with no capacity event, reaches the flag on the third crossing."
+
+  #--------------------------------------------------------------------------
+  # --- case 16: THE FRESH-SESSION CLEAR. R2's second half: a file called
+  #     TERMINAL-DRIFT.flag "is not something a sixty-year-old will find and
+  #     delete", so the flag must be clearable by the run itself once the one
+  #     thing it holds out for — the blocker, NAMED IN WRITING — exists.
+  #     Three controls, all in one case:
+  #       (i)   the ladder is climbed to the flag (rungs 1, 3, then 4);
+  #       (ii)  with the flag present and NO named blocker, every reconcile
+  #             still exits 4 and the flag survives — the stop is real;
+  #       (iii) with the BLOCKER-NAMED row on CONTROL/TODO.md, the next
+  #             reconcile removes the flag itself, writes TERMINAL-DRIFT-
+  #             CLEARED through ledger.sh, resets the counter and the ladder,
+  #             and the run continues.
+  #     Control (iv) is the one that keeps (iii) honest: this script's own
+  #     OPERATOR-ESCALATION line is already sitting in that TODO file and
+  #     talks ABOUT the blocker row, so a sloppy marker would have cleared the
+  #     flag on the very next tick with nobody naming anything. Step (ii)
+  #     proves it does not.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c16"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c16/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c16/CONTROL/project_state.json"
+  local c16args=( "$T/c16" "U-02" --mode reconcile --tasks "$T/c16/CONTROL/task-graph-snapshot.json" --state "$T/c16/CONTROL/project_state.json" )
+  runa "${c16args[@]}"
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c16/CONTROL/.anchor-fingerprint" > "$T/c16/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c16/CONTROL/.anchor-fingerprint.new" "$T/c16/CONTROL/.anchor-fingerprint"
+  runa "${c16args[@]}"    # rung 1
+  runa "${c16args[@]}"    # rung 3
+  runa "${c16args[@]}"    # rung 4: the flag
+  local ok16a=0
+  if (( RC == 4 )) && [[ -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]]; then ok16a=1; fi
+  # (ii) the stop holds while nothing is named — including against this
+  #      script's own OPERATOR-ESCALATION line, which is already in the file.
+  runa "${c16args[@]}"
+  local c16_rc_hold="$RC" ok16b=0
+  if (( RC == 4 )) && [[ -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'BLOCKER-NAMED' \
+     && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c16/CONTROL/TODO.md" 2>/dev/null; then ok16b=1; fi
+  # (iii) the fresh session names the blocker and the flag clears itself.
+  "$SCRIPT_DIR/ledger.sh" "$T/c16" "CONTROL/TODO.md" \
+    "- [x] BLOCKER-NAMED | the deepseek seat stopped answering at 02:14 and both fallbacks were rate-limited | session=fresh-2026-08-12T04:00Z" >/dev/null 2>&1
+  runa "${c16args[@]}"
+  local c16_rc_clear="$RC" c16_rung ok16c=0
+  c16_rung="$(sed -n 's/^recovery_rung=//p' "$T/c16/CONTROL/.anchor-fingerprint" | head -1)"
+  if (( RC != 4 )) && [[ ! -f "$T/c16/CONTROL/TERMINAL-DRIFT.flag" ]] \
+     && "$GREP" -qE '\| TERMINAL-DRIFT-CLEARED \| cleared-by=fresh-session \|' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -q 'the deepseek seat stopped answering' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ "${c16_rung:-9}" == "0" ]]; then ok16c=1; fi
+  ok=0
+  if (( ok16a == 1 && ok16b == 1 && ok16c == 1 )); then ok=1; fi
+  report 16 "fresh-session-clears-the-flag" "$ok" \
+    "ladder climbed to the flag (rc=4, flag present)=${ok16a}; with no named blocker the stop HELD across another reconcile (rc=${c16_rc_hold}, want 4, flag survived, and the script's own OPERATOR-ESCALATION line did not satisfy the marker)=${ok16b}; after a '- [x] BLOCKER-NAMED | … | session=…' row landed on CONTROL/TODO.md the reconcile cleared the flag itself (rc=${c16_rc_clear}, want not-4; TERMINAL-DRIFT-CLEARED written through ledger.sh naming the blocker; recovery_rung reset to ${c16_rung})=${ok16c}"
+
+  printf 'SELFTEST COMPLETE | %s of 16 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

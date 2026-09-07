@@ -131,9 +131,11 @@ verdicts, never trusted as state.
 
 4. DETECT THE HUNG AND THE DEAD. A heartbeat line stale per the thresholds
    (10 minutes builder/judge, 20 minutes merge-writer) = dead. Dispatched
-   with no heartbeat line at all = died at launch (see step 2). Kill
-   lingering processes by run id with pgrep — never ps piped into a
-   matcher. Note each in the session log.
+   with no heartbeat line at all = died at launch (see step 2). Workflow
+   agents and subagents are NOT operating-system processes, so a process
+   matcher finds nothing and a session that trusts it reports "swept" having
+   killed nothing: TaskStop every dispatch-log row that has no RESULT line;
+   record each stop in the session log.
    In Agent-Team mode both of those readings are a HYPOTHESIS about a
    teammate, not a verdict: the heartbeat is an application-level artifact,
    and a commander can be alive and working while writing nothing to it.

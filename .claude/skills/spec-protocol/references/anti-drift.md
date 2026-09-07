@@ -176,6 +176,15 @@ tools/anchor.sh <project-home> <current-unit-or-IDLE> --mode reconcile \
   [--intents CONTROL/last-intents.txt]
 ```
 
+**`CONTROL/last-intents.txt` has a writer: `tools/ledger.sh`.** Every line
+carrying the `| CLAIM |` marker has its `plan=` field appended there, rolling,
+the last 20 — so the file exists from the first claimed unit onward and class 5
+(the repeated-intent stall, §4) has a real input instead of reporting
+undetermined on every run of every project, which is what it did while nothing
+wrote the file at all. Pass `--intents` on every reconcile once the first CLAIM
+has been written; before that the file does not exist yet, and `anchor.sh`
+refuses a path it cannot read rather than inventing an empty window.
+
 **(c) `anchor.sh` DETECTS and LOGS. It never mutates task state.** It emits a
 RECONCILE-ACTIONS list on stdout, one line each:
 
@@ -412,8 +421,8 @@ is: a run working on something nobody wrote down.
 Three exclusions are load-bearing and are stated here so nobody "fixes" them
 later. The ledger's contentless tick lines are excluded; so is every line this
 reconciler itself authors (RE-ANCHOR, RECONCILE, DRIFT-ALARM, TERMINAL-DRIFT,
-S-CHECK, OPERATOR-ESCALATION, BUDGET-CAP); and so is every `CAPACITY-EVENT`
-line. **"No state delta" is measured against the three layers plus disk — never
+RECOVERY-LADDER, S-CHECK, OPERATOR-ESCALATION, BUDGET-CAP); and so is every
+`CAPACITY-EVENT` line. **"No state delta" is measured against the three layers plus disk — never
 against "a line got appended," because appending lines is precisely what the
 captured system kept doing.** A fingerprint that counted its own writes could
 never fire, which is the same class of self-defeating instrument as the brittle
@@ -433,11 +442,31 @@ parallel. What it adds is that the blocker report now contains the capacity
 events, so the 7 a.m. diagnosis reads "capacity collapsed at 02:14, here is the
 ladder we descended" instead of a mystery stall.
 
+It walks in **more slowly**, though, and that is rung 2 of the ladder below.
+The exclusion is about the FINGERPRINT — a capacity event is not a state delta
+and never resets the counter. The THRESHOLD is a separate question, and a
+provider outage is the one quiet period this skill did not have a number for: a
+thirty-minute 429 cluster used to become a permanent stop while the client
+slept. So when the last recorded state change **is** a capacity event, the
+counter is not read as drift for up to two hours.
+
 **The rule: N consecutive reconciles with an UNCHANGED fingerprint, while
-runnable work exists (an open TODO item or a PENDING task), is TERMINAL-DRIFT.**
+runnable work exists (an open TODO item or a PENDING task), starts the recovery
+ladder, and the last rung of that ladder is TERMINAL-DRIFT.**
 
 `N = max(3, ceil(30 min / reconcile cadence))`. At the 5-minute reconcile
 cadence, **N = 6, which is 30 minutes** (`ANCHOR_TERMINAL_N`, default 6).
+
+**When the last recorded state change is a `CAPACITY-EVENT`, N instead is
+`max(6, ceil(120 min / reconcile cadence))` — 24 at the 5-minute cadence, two
+hours** (`ANCHOR_CAPACITY_GRACE_MIN`, default 120; `ANCHOR_RECONCILE_CADENCE_MIN`,
+default 5). The grace is bounded twice, by that count AND by the wall clock, so
+a slower cadence cannot buy an unlimited stall; and it ends the moment any
+state-carrying line lands after the capacity event, because the capacity event
+is then no longer the last thing that happened. Two hours is the number because
+it covers the longest provider incident the fallback table is written for while
+still being shorter than a night: a run that has been dead since 02:14 is
+reported at 04:14, not at 07:00.
 
 Why 30 minutes, stated so it is never re-litigated from taste:
 
@@ -450,20 +479,53 @@ Why 30 minutes, stated so it is never re-litigated from taste:
 - and the measured alternative is N = infinity, which is what the failed run
   had. It produced 139 consecutive proof-free ticks and fired nothing.
 
-**On fire.** `anchor.sh` exits 4 and, in one pass:
+**THE RECOVERY LADDER — what happens when the counter reaches N.** Reaching N
+does not write the flag. It starts a climb, one rung per reconcile, and every
+rung below the top is something the run does FOR ITSELF while the client
+sleeps. Law 8 says never quit — re-fire, resume — and a stop that fires before
+anything has been re-fired is that law broken by the instrument meant to
+enforce it.
 
-1. creates `CONTROL/TERMINAL-DRIFT.flag` containing the count, the window in
-   minutes, the fingerprint, the unit, the next open item, the counts, and the
-   required operator actions;
-2. appends `TERMINAL-DRIFT | no-delta-reconciles=<n> | window=<min> | …` to the
-   ledger through `ledger.sh`;
-3. appends an `OPERATOR-ESCALATION` item to `CONTROL/TODO.md` through
-   `ledger.sh`;
-4. emits `ACTION|stop-dispatching|…` and `ACTION|escalate-to-operator|…`.
+1. **`ACTION|redispatch-from-checkpoint`, for every unit still in flight.**
+   In flight means: a row in `CONTROL/dispatch-log.md` with no `RESULT` line
+   in the ledger — the same census `references/resume.md` step 4 uses. The
+   conductor TaskStops each one and re-dispatches it from its last checkpoint.
+   Most stalls are one dead agent, and this rung ends them.
+2. **The capacity grace.** If the last recorded state change is a
+   `CAPACITY-EVENT`, the counter does not count toward drift until N rises to
+   `max(6, ceil(120 min / cadence))` or two hours of wall clock pass, whichever
+   comes first. The reconciler writes a `RECOVERY-LADDER | rung=2/4 |
+   action=capacity-grace | grace=holds(…)` line and emits
+   `ACTION|wait-for-capacity`; it does NOT alarm, because a provider outage is
+   not a captured conductor and calling it one trains the operator to ignore
+   the alarm that matters.
+3. **`ACTION|switch-to-fallback-seats`.** The grace is over or never applied
+   and re-dispatching did not move the state, so the affected seats move to
+   their named fallback (`references/capacity.md` fallback table, the Loop 8
+   throttle order) and the work is re-dispatched there.
+4. **Only now, the flag.** `anchor.sh` exits 4 and, in one pass:
+   - creates `CONTROL/TERMINAL-DRIFT.flag` containing the count, the window in
+     minutes, the fingerprint, the unit, the next open item, the counts, the
+     capacity events, the rungs already climbed, and the required actions;
+   - appends `TERMINAL-DRIFT | no-delta-reconciles=<n> | window=<min> | …` to
+     the ledger through `ledger.sh`;
+   - appends an `OPERATOR-ESCALATION` item to `CONTROL/TODO.md` through
+     `ledger.sh`;
+   - emits `ACTION|stop-dispatching|…` and `ACTION|escalate-to-operator|…`.
+
+Each rung is recorded as a `RECOVERY-LADDER` line through `ledger.sh`, and
+`RECOVERY-LADDER` is one of the self-authored classes excluded from the
+fingerprint. That exclusion is load-bearing in the same way as the others: a
+ladder line that moved the fingerprint would reset the counter that produced
+it, and the run would climb rung 1 forever without ever reaching the flag. The
+rung also rides in `CONTROL/.anchor-fingerprint` as `recovery_rung=`, and it is
+reset to 0 the moment real state moves — a run that has started progressing
+again begins any future climb from the bottom.
 
 The conductor must then set `run_status=STOPPED_STALL`, stop dispatching, and
 produce the diagnose-the-blocker report: what was in flight, what each of the
-three layers claims, where they disagree, and the last real state change.
+three layers claims, where they disagree, the last real state change, and the
+capacity events inside the window.
 
 **Precondition #0 of every loop, every cron tick, and every dispatch is a test
 for `CONTROL/TERMINAL-DRIFT.flag`. While that file exists, nothing dispatches.**
@@ -472,10 +534,39 @@ This is what makes the stop capture-proof: the check is a file test in the loop
 preamble, outside the captured reasoning. A conductor that has stopped thinking
 can still not tick past a file that exists.
 
-**Recovery** is a human act. A person — or a fresh, reconciled session on that
-person's word — removes the flag once the blocker has been named. Nothing in
-this skill removes it automatically, because a system that can clear its own
-stop does not have one.
+**Recovery.** The flag holds out for exactly one thing: **the blocker, named in
+writing.** A person can supply that, and so can a fresh, reconciled session —
+the one the client starts by pasting the restart command — and the flag does
+not care which of them did it. So the gate has two doors, and `anchor.sh` tests
+both before it does anything else:
+
+- **No named blocker** → nothing dispatches. The script prints the flag and
+  exits 4, exactly as before. This is what keeps the stop capture-proof: a
+  conductor that has stopped thinking cannot tick past a file that exists.
+- **The named blocker is on `CONTROL/TODO.md`** → the reconcile removes the
+  flag itself, writes `TERMINAL-DRIFT-CLEARED | cleared-by=fresh-session |
+  blocker=…` through `ledger.sh`, resets the no-delta counter and the ladder
+  rung, and the run continues.
+
+The token is a checklist row on `CONTROL/TODO.md` whose first field is
+`BLOCKER-NAMED`:
+
+```
+- [x] BLOCKER-NAMED | <the blocker, one line> | session=<this session>
+```
+
+It is anchored to the start of the row on purpose. An unanchored marker would
+match the reconciler's own `OPERATOR-ESCALATION` item — the instruction to
+write the row would satisfy itself, and the stop would clear on the next tick
+with nobody having named anything.
+
+**A system that can clear its own stop still has one, as long as clearing it
+costs a diagnosis.** The old rule — a human, always, and nothing in this skill
+removes it automatically — bought that guarantee with the client's whole night:
+`TERMINAL-DRIFT.flag` is not a filename a sixty-year-old will find and delete,
+so a 429 cluster at 02:14 meant a dead run at 07:00. The blocker line is the
+price instead, and it is a price only a session that actually diagnosed
+something can pay.
 
 ---
 
