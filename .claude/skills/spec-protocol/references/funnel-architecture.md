@@ -1,7 +1,9 @@
 # Funnel Architecture — Page Types, Decision Matrices, GHL Wiring
 
-**When this file applies:** the build target answered at Step 1c is "sales funnel."
-Nothing in this file runs for an app or a website build.
+**When this file applies:** the build target answered at Step 1c is "sales
+funnel" — funnel builds only; the design brief is in design-brief.md
+(`references/design-brief.md`), and it runs for every target: websites, funnels,
+web apps, mobile apps, mobile-and-web, and desktop software.
 
 **What it is for:** when the target is a funnel, the specification must account for
 every page the funnel needs, every message it sends, and every automation that
@@ -483,393 +485,35 @@ no number at all. Research empowers the build; it never gates it (see
 
 ---
 
-## 15. Design Brief and Mobbin Check — the DESIGN-BRIEF step, first action after the RESEARCH-READY gate
-
-**When this step runs:** on the website/funnel branch, after the RESEARCH-READY
-gate (SKILL.md step 3.5) has written both its ledger lines and before ANY page
-build dispatches. It is the first step of the design brief; nothing about a
-website or funnel page is built until this step has run.
-
-### MOBBIN-CHECK — numbered, ordered (first action after the RESEARCH-READY gate)
-
-**1. DETECT.** Input: the client's box. Check `~/.claude-nine/.claude.json`
-mcpServers AND `~/.claude.json` mcpServers AND the project `.mcp.json`.
-Real file check, never an assumption — open each file that exists and look for
-a `mobbin` entry under `mcpServers` (or the project `.mcp.json` equivalent).
-Output: `MOBBIN-CHECK: configured = yes|no`. Acceptance: the check names the
-file(s) it read (`~/.claude-nine/.claude.json`, `~/.claude.json`, project
-`.mcp.json`) — never a bare "not found".
-
-**USAGE.** When configured, the run uses the Mobbin MCP server (mobbin,
-Streamable HTTP https://api.mobbin.com/mcp, OAuth-authenticated by the client)
-for design reference search; when not configured, usage is the referral-link
-website as browser reference (the client's account), never MCP tools.
-Reference search MUST cover BOTH channels:
-- **VISUAL patterns** — layout, hero, carousel, palette, type scale (search
-  screens / sections for the target product class, cite `mobbin_url` per
-  reference).
-- **COPY / MESSAGING patterns** — headline + subhead structures, section
-  intros, pricing framing, CTA phrasing (search screens for the target class,
-  extract copy skeletons, cite `mobbin_url` per reference). Never write site
-  copy from a bare brief when Mobbin messaging references are available —
-  sparse, invented copy is a defect.
-
-**MOBBIN-COPY-REF.** Output: ledger `MOBBIN-COPY-REF: <n>` where `<n>` is the
-count of cited copy-pattern references feeding the copy brief; acceptance: the
-design brief names each copy reference (mobbin_url + the copy element it
-informed: hero headline, section intro, pricing line, CTA). Zero copy refs on
-a configured run is a flag — the run must explain why (e.g. product class has
-no copy-messaging screens on Mobbin).
-
-**2. IF CONFIGURED — skip the offer entirely** (do not ask someone who already
-has it). The brief MAY use Mobbin for reference research (named, credited
-inspiration). Output: ledger `MOBBIN-CHECK: configured`. Acceptance: no
-purchase offer is spoken.
-
-**MOBBIN IS PART OF THE BAR.** On a configured run, the reference research
-MUST find **the top 3 candidate screens matched to the TYPE of site being
-built** (the site type named in the brief — a dentist's brochure site, a
-coaching funnel, a SaaS landing, each its own search), then **SELECT THE BEST
-of the 3** as the reference the brief is written against. Selection is a
-judged choice, not the first hit: score the 3 candidates against the site
-type's researched conversion patterns (hero structure, headline construction,
-CTA hierarchy, social-proof placement) and name the winner and why. Output:
-ledger `MOBBIN-CHECK: top3=<mobbin_url of each candidate, comma-separated>,
-best=<mobbin_url of the winner>`. Acceptance: the design brief cites the
-winner's URL and states the reason it beat the other two. The winner is
-admissible as the copy bar itself or as a named input to it (see The COPY
-BAR); a configured run that produces no top-3 selection is a defect — the
-bar is incomplete without it.
-
-**When NOT configured** (no MCP): the referral-link website is the browser
-reference (the client's account) — never MCP tools; the same top-3 / best-of-3
-selection applies to the researched reference pages found by the reader
-agents.
-
-**Operator-sanctioned exception to Law 40 (2026-09-07): this recommendation
-stays, with its link; no audit removes it.** It is a strong recommendation
-carrying a referral link inside the interview, which Law 40 as written would
-forbid — the operator sanctioned it in writing on 2026-09-07, so no self-audit,
-QC pass, or cleanup sweep strips the recommendation, softens it, or drops the
-link. **One offer per run:** it is made once, the client's answer is recorded in
-the decision register as `MOBBIN-CHECK: offered|declined`, and it is never
-re-raised in the same run.
-
-**3. IF NOT CONFIGURED — HIGHLY RECOMMEND as an OPTIONAL purchase** (paid
-product; the client buys a plan). Recommend it strongly: it is the reference
-library that gets clients the best visually stunning apps and sites. Use THIS
-link when recommending: https://mobbin.com/?referrer_workspace_id=2d31c114-f56e-47c3-9f6a-4743b1dd67c3 .
-State the value: UI/UX reference library the agent can pull from instead of
-inventing layout. Never quote a price without a live check (instrument:
-WebFetch https://mobbin.com/pricing in the same session the price is quoted).
-Never install, never buy, never configure without the client's explicit GO.
-Output: ledger `MOBBIN-CHECK: offered`. Acceptance: the offer is optional; no
-install/buy/configure happened.
-
-**4. IF DECLINED — proceed without Mobbin** (named free references still
-allowed). Output: ledger `MOBBIN-CHECK: declined`. Acceptance: brief
-continues; no Mobbin dependency.
-
-**Ledger vocabulary:** `MOBBIN-CHECK: configured|offered|declined` — exactly
-one of the three, written through `tools/ledger.sh` at the moment the branch
-resolves.
-
----
-
-### NEVER CHANGE A PERSON'S 9ROUTER SETTINGS
-
-A client's existing 9Router setup (providers, models, combos, lanes) is never
-modified without their explicit permission. The design brief and the Mobbin
-check READ config, they never write it. If a design need appears to require a
-9Router change, the run records a RECOMMENDATION line and stops — the client
-decides.
-
----
-
-### PRIMARY USE CASE: claude-nine
-
-This spec-protocol skill's PRIMARY use case is claude-nine (Claude Code routed
-through 9Router). Every step in this document (pipeline stages, the five-minute tick,
-Gauntlet weave, MCP checks, image lane, GHL lane) runs through claude-nine and
-must be verified in a claude-nine session. Plain claude is supported but not
-the primary target. The 9Router transcript in this document is adapted for
-claude-nine and nine-router.
-
----
-
-### Dispatch reader agents for site-type best practice
-
-Dispatch reader agents to research current best practice FOR THE SPECIFIC SITE
-TYPE (a dentist's brochure site, a coaching funnel, a SaaS landing — each its
-own research), with sources cited. Cover: hero structure, layout systems,
-typography scale, color systems, conversion patterns, mobile behavior,
-accessibility (WCAG contrast, focus order, alt text). One reader per site
-type, cheap-tier, self-contained brief, "return findings with the source URL
-beside every claim" (references/research.md Step 1). When Mobbin is
-configured (MOBBIN-CHECK: configured), the brief MAY pull named, credited
-inspiration screens from it; the referral-link website is the browser
-reference when it is not.
-
-**The researched defaults below are the starting points the reader agents
-confirm or correct at run time** — they are the named, cited baseline the
-brief is written against, never a substitute for the live pass. Every claim
-in a written brief carries its source; an unsourced claim in a brief is a
-rumour (Law 14, references/research.md).
-
----
-
-#### A. Dentist / medical-practice brochure site (each its own research when the site type differs)
-
-**Hero structure.** Practice name plus a one-line promise (the patient's
-outcome, not the service), the appointment CTA above the fold, a warm real
-photo of the team, the office, or a patient smile (never stock-y), and a
-trust strip directly under — insurance accepted, years in practice, rating.
-Mobbin reference screens in this family: Fresha, Heidi, Care.com (web).
-
-**Layout systems.** Single column with a fixed section rhythm: hero →
-services → about/team → testimonials → contact/map → footer. One primary
-action per page. Sticky phone/appointment bar on mobile so the booking action
-never scrolls out of reach.
-
-**Typography scale.** Warm humanist serif or large humanist sans for display
-headings; body 16-18px at 1.5-1.6 line-height; 1.25 ratio type ladder
-(16/20/25/31/39/49) so hierarchy survives mobile.
-
-**Color systems.** Clean medical neutrals (whites, soft blues, teals) with
-ONE accent color reserved for the appointment CTA — a single contrasting
-action color concentrates the eye (goodui: "More Contrast", "Attention
-Grabs"). Never more than one saturated CTA color.
-
-**Conversion patterns.** One action per page — book / call / request
-callback. Form fields minimized (name + phone/email + preferred time);
-every extra field is a conversion tax (goodui: "Fewer Form Fields"; HubSpot
-landing-page practice). Trust signals next to the CTA: credentials,
-insurance list, reviews. Benefit-labeled button ("Book my appointment")
-beats a bare verb (goodui: "Benefit Buttons").
-
-**Mobile behavior.** Tap targets ≥ 44px; no horizontal scroll; thumb-reach
-forms; sticky booking CTA (goodui Test #665: sticky bottom CTA pattern);
-test on a real device, never a preview tool.
-
-**Accessibility.** WCAG AA: 4.5:1 body text, 3:1 large text (24px/18.5pt+)
-and UI components — re-verify ratios against the current WCAG understanding
-documents at run time (the standing freshness rule, §14 of this file).
-Keyboard-only focus order with a visible focus ring and a skip-to-content
-link; alt text on every image including before/after pairs; form labels
-attached to fields, never placeholders.
-
----
-
-#### B. Coaching / service funnel landing page
-
-**Hero structure.** Benefit-first headline naming a specific outcome
-("generic = death" — HubSpot), sub-headline stating who it is for and what
-they get, an outcome-focused hero image (lifestyle if tangible, mockup if
-abstract), CTA visible above the fold, no nav menu, no footer links, one
-path only (HubSpot landing-page best practices).
-
-**Layout systems.** headline → image → bullets → CTA/form → social proof
-(HubSpot's proven structure). One CTA, repeated where natural, never
-competing. White space around the CTA is the spotlight — burying it
-bounces visitors. 5-second skim test: the value is understood instantly.
-
-**Typography scale.** Bold headers, scannable bullets, short paragraphs
-(HubSpot). No awkward breaks on mobile — real-device test mandatory.
-
-**Color systems.** ONE accent color for CTAs; contrast is what commands
-attention; too many colors dilute focus and cost conversions (HubSpot
-color psychology). Low contrast = lost conversions.
-
-**Conversion patterns.** Name + email only at the top of the funnel; phone
-is friction (HubSpot). "Get the guide" beats "Learn more"; pain-point
-headlines ("Tired of [specific struggle]?") beat generic statements
-(HubSpot headline patterns). Click-trigger microcopy under the CTA: "Free
-download", "Only takes 30 sec", "No credit card required". The thank-you
-page is a second conversion opportunity, never a dead end. Personalized
-CTAs convert 202% better than default (HubSpot). One CTA per page converts
-13.5% vs 10.5% at five or more (funnel-architecture.md §2, Unbounce
-2026-08-10 pass). No autoplay video above the fold (HubSpot/GameBoost:
-autoplay hurts engagement).
-
-**Mobile behavior.** Mobile is >50% of traffic — optimize there first;
-CTA tappable and visible without scroll; cut heavy images and endless
-stacked sections; test on real phone, laptop, tablet (HubSpot).
-
-**Accessibility.** Same WCAG AA bar as A: 4.5:1 body / 3:1 large text and
-UI components (re-verified at run time per §14); keyboard-only focus
-order; alt text on every image; form labels, not placeholders.
-
----
-
-#### C. SaaS / software landing page
-
-**Hero structure.** One-line value proposition naming the product, the
-audience, and the differentiator; a product screenshot or mockup (the
-product IS the hero image — never abstract art); a primary CTA with a
-benefit-labeled button and a secondary "see how it works" link; social
-proof (customer logos, rating) beside or below the hero. Mobbin reference
-screens in this family: StackAI, Langdock, Laravel Cloud, Airtable,
-Customer.io (web).
-
-**Layout systems.** One-column narrative: hero → customer logos →
-problem/benefit sections → how it works → feature grid → testimonials →
-pricing → FAQ → final CTA. Visual hierarchy by size, contrast, and
-proximity; few borders — spacing and alignment do the grouping (goodui:
-"One Column Layout", "Fewer Borders", "Visual Hierarchy"). Limit links
-above the primary CTA (goodui: "Keeping Focus").
-
-**Typography scale.** 1.25 (major third) type ladder from 16px body:
-16/20/25/31/39/49. Max measure ~65-75 characters; body line-height 1.5.
-Display sizes only for the hero headline — never for body content.
-
-**Color systems.** Neutral base (white/light gray) plus ONE brand accent
-for CTAs; a distinct style for clickable elements so interactivity is
-unmistakable (goodui: "Distinct Clickable/Selected Styles"). Contrast:
-4.5:1 body, 3:1 large text and UI components (WCAG AA, re-verified per
-§14).
-
-**Conversion patterns.** Benefit-labeled buttons ("Start free trial — no
-card required" rather than "Sign up"); fewer form fields (goodui: each
-field risks drop-off); social proof next to the CTA; a highlighted
-"recommended" plan in the pricing table (goodui: "Recommending" defeats
-analysis paralysis); friendly comparison table with one attribute per
-column (goodui: "Friendly Comparisons"). Free-tier transparency — never a
-hidden paywall.
-
-**Mobile behavior.** Sticky bottom CTA (goodui Test #665); tap targets ≥
-44px; no horizontal scroll; the hero headline and CTA must both fit above
-the fold at 375px width; icons carry labels (goodui: "Icon Labels").
-
-**Accessibility.** Same WCAG AA bar as A and B (4.5:1 / 3:1, re-verified
-per §14); keyboard-only focus order with visible focus; alt text on the
-product screenshot and every image; form labels not placeholders.
-
----
-
-#### The brief itself — what the written section must carry
-
-Every written brief is a named section of the master spec's conventions
-(document 1, Law 39) and carries, at minimum:
-
-1. **The site type and its researched patterns** — the confirmed/corrected
-   version of the relevant default block above, every claim with its source
-   URL.
-2. **The named example page** — the copy bar (Law 48), picked at bar
-   selection, real and fetchable: the bar the copy and the layout are
-   judged against, never "make it punchy".
-3. **The design tokens** — the type scale, color system, and spacing rhythm
-   the build stages consume (STAGE-SCAFFOLDING reads them from the brief).
-4. **The DESIGN-BRIEF ledger line citing the sources** — written when the
-   brief lands: `DESIGN-BRIEF: <sources>`. The ledger line names what was
-   actually read, with URLs, so a critic can re-check.
-
----
-
-### The COPY BAR — every headline, subhead, and CTA is written against it
-
-**The rule (Issue 6 FIX step 2, binding):** every headline, subhead, and
-call-to-action on every page is written against the researched conversion
-patterns for that site type, and the bar is a NAMED, FETCHABLE example page
-(Law 48) picked at bar selection — never "make it punchy". A page's copy is
-judged against the bar exactly like its layout: the bar's own headline,
-subhead, and CTA construction is the measurable comparison.
-
-**How the bar is picked.** The copy bar is the user's bar pick from SKILL.md
-step 8's reference-app candidates (seeded by interview.md D1): for a
-website/funnel build, the user's pick IS the copy bar. It is recorded in the
-decision register, named in the brief's item 2, and carried by the
-`DESIGN-BRIEF: <sources>` ledger line. At pick time the URL is opened — a
-page that cannot be fetched today is BLOCKED (Law 50) and the selection
-re-does with the remaining candidates; a broken bar is never silently
-exchanged for a phrase. The picked page stays the bar for the whole build;
-changing it mid-build re-opens bar selection and is announced.
-
-**When Mobbin is configured, the Mobbin top-3 winner is an INPUT to the
-bar.** The bar is never picked blind to it: the MOBBIN-CHECK top-3 / best-of-3
-selection (above) feeds the copy-bar pick — the winner's headline, subhead,
-and CTA construction is compared against the user's bar candidate, and the
-stronger construction wins that element. The bar's four copy elements (below)
-are judged against BOTH the user's bar page AND the Mobbin winner where they
-differ; the ledger records which source won each element
-(`COPY-BAR-SOURCE: user=<url>, mobbin=<url>`). A build that skips the Mobbin
-comparison on a configured run is a defect.
-
-**What the bar must show — the four copy elements.** If the picked page
-lacks one of these, the missing element is recorded as a gap and that
-element's copy follows the site-type pattern block (A/B/C above) instead:
-
-1. **Headline construction** — how the bar's headline is built: the exact
-   benefit it names, whose problem it states, whether it names the product
-   and audience, and its length (words). E.g. "the bar's headline is 7 words,
-   names the audience and the outcome, no product name".
-2. **Subhead construction** — what the subhead adds: the who-it-is-for
-   clarification, the mechanism, or the proof; its length; how it
-   complements rather than repeats the headline.
-3. **CTA construction** — the exact button text, whether it is
-   benefit-labeled (action + outcome, e.g. "Start my free trial" rather
-   than "Sign up"), its length (words), and the microcopy directly under it
-   (click-triggers: "No credit card required", "Free download").
-4. **Tone and register** — first/second person, formal or conversational,
-   sentence length, and how social proof is worded (numbers, named
-   customers, ratings).
-
-**The per-element copy mechanism — one sentence per element.** For every
-headline, subhead, and CTA on every page, the brief (or the page's own
-ledger line) states ONE sentence of the form: "This headline follows the
-bar's headline pattern — <the pattern in plain words> — plus the
-site-type rule <named rule from the A/B/C block, with its source>."
-Example: "This headline follows the bar's headline pattern — 7 words,
-audience + outcome, no product name — plus the site-type rule: pain-point
-headlines beat generic statements (HubSpot)." A copy line that cannot be
-traced to the bar's construction or to a named, sourced site-type rule is a
-defect — same as a layout that ignores the brief.
-
-**Where the copy bar is consumed.** Stage 2 of the funnel process (§16)
-writes per-page structure against this bar; STAGE-WIREFRAMES and
-STAGE-BUILD (pipeline stages) read the bar for hero and CTA placement; the
-blind critic judging the built pages receives the bar's URL alongside the
-pages and compares copy the same way it compares layout.
-
-### THE COPY QUALITY FLOOR — pages, funnels, emails (binding, no exceptions)
-
-The copy bar is the ceiling; this floor is the minimum every deliverable
-clears. Sparse or invented copy is a defect at every stage — the same class
-of defect as a layout that ignores the brief. The floor applies to **pages,
-funnels, and emails** alike:
-
-1. **Every headline, subhead, and CTA traces to a named source** — the
-   bar's construction, the Mobbin winner's construction, or a named,
-   sourced site-type rule (A/B/C pattern blocks above, with its citation).
-   A copy line that cannot be traced is a defect (re-stated from the bar
-   mechanism — it is the floor, not the ceiling).
-2. **No bare briefs.** Copy is never written from a bare idea ("make it
-   punchy", "about us") — it is written against the bar or a sourced
-   pattern. A page, funnel, or email whose copy has no named reference is
-   rejected at the gate, not fixed post-hoc.
-3. **Minimum element coverage.** Every deliverable carries the four copy
-   elements the bar must show (headline construction, subhead
-   construction, CTA construction, tone/register) — recorded per element
-   with its source. A deliverable missing an element records the gap and
-   follows the site-type pattern block, exactly as the bar's own gaps are
-   handled.
-4. **Emails are copy, not skeletons.** An email-sequence stage (Stage 3,
-   §16) ships complete copy for every message — subject line, preview
-   text, body, CTA — each traced to the bar's CTA/tone construction or a
-   named, sourced pattern. A placeholder body ("[insert value prop]") is a
-   defect; the 14-day follow-up template (§8) is the proven default
-   structure, not a permission to ship placeholders.
-5. **The blind critic checks the floor too.** The critic that judges the
-   built pages against the bar also checks floor compliance: any headline,
-   subhead, CTA, or email line without a traceable source fails the page
-   regardless of layout quality.
-
----
-
-### The brief is written into the project
-
-The brief is written to the project as a named section of the master spec's
-conventions (not a new document — Law 39's closed list stands; it rides in
-document 1), with its own ledger line `DESIGN-BRIEF: <sources>`.
+## 15. Design brief — MOVED to `references/design-brief.md` (pointer only)
+
+**The design brief no longer lives here.** It was section 15 of this file, where
+the website and app branches were told not to read it (W1, W2). On 2026-09-07 it
+moved, whole, to `references/design-brief.md`, and it now runs for **every
+target** — websites, funnels, web apps, mobile apps, mobile-and-web, and desktop
+software. Nothing was copied: read it there.
+
+What moved: the MOBBIN-CHECK sequence and its ledger vocabulary; the
+never-change-a-person's-9Router rule; the reader-agent dispatch and the A/B/C
+site-type pattern blocks (plus a D block for app targets); the copy bar and its
+four copy elements; the copy quality floor; and the rule that the brief is
+written as a named section of the master spec's conventions.
+
+What the funnel branch still owes it: nothing about a funnel page is built until
+`DESIGN-BRIEF:` and then `DESIGN-LOCK:` are in the ledger
+(`references/design-brief.md` section 10, `references/design-direction.md`).
+Section 16 below — the seven-stage funnel process — opens only after both lines
+exist and the copy bar is named.
+
+**The Mobbin recommendation is unchanged and still binding.** It carries the
+operator's referral link
+(`https://mobbin.com/?referrer_workspace_id=2d31c114-f56e-47c3-9f6a-4743b1dd67c3`)
+and stands as an **Operator-sanctioned exception to Law 40 (2026-09-07)** — no
+self-audit, QC pass, or cleanup sweep strips the recommendation, softens it, or
+drops the link. It is made once per run and recorded as
+`MOBBIN-CHECK: offered|declined`. The text that governs it is
+`references/design-brief.md` section 3; this paragraph is a pointer to it, never
+a second copy of the rule.
 
 ---
 
@@ -910,7 +554,8 @@ Input: `FUNNEL-PAGES` list + copy bar. Output: per page, ledger line
 **Per-page copy rule (Issue 6 FIX step 2):** each page's copy is written
 AGAINST the copy bar — the page's headline, subhead, and CTA each carry one
 trace sentence back to the bar's construction or to a named, sourced
-site-type rule (the mechanism in §15, The COPY BAR). The trace sentences
+site-type rule (the mechanism in `references/design-brief.md` section 8, The
+COPY BAR). The trace sentences
 are recorded in the execution plan beside the page's ledger line. A copy
 line that cannot be traced is a defect, and the page is not dispatched to
 STAGE-BUILD until the trace exists.
