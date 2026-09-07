@@ -98,6 +98,25 @@ web-researches itself (Law 12).
    now, and what does each one cost in complexity? Prefer boring and
    well-documented over clever and new — the user is learning, and the app must
    be maintainable by whoever reads it next.
+
+   **There is a declared default stack per target, so this reader CONFIRMS
+   instead of re-deciding.** The stack is already chosen before the reader goes
+   out; its job is to check the choice against what is current and say so:
+
+   | Build target | Default stack |
+   |---|---|
+   | `WEBSITE` | Static HTML/CSS/JS from the shipped template (`templates/scaffolding/`) |
+   | `WEB_APP` | Next.js + Supabase + Vercel |
+   | `MOBILE_AND_WEB` | Next.js + Supabase + Vercel |
+   | `MOBILE_APP` | Expo |
+   | `DESKTOP_SOFTWARE` | Tauri |
+
+   **Research MAY override a default — with a stated reason.** An override is a
+   RATIFIED decision in the decision register (document 10) naming what the
+   research found, which source proved it, and why the default does not fit this
+   build. An override with no stated reason is not an override; the default
+   stands. Silence from the reader is a confirmation, not a licence to invent a
+   different stack at build time.
 4. **Common pitfalls.** What breaks first in apps like this? What do first-time
    builders of this kind of app get wrong most often? What will this app need
    that beginners forget (accounts, storage limits, error messages, mobile

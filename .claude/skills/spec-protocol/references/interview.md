@@ -51,7 +51,7 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    menu.** SKILL.md owns the spoken wording (THE BUILD TARGET QUESTION); this
    section owns the taxonomy, the routing, and the gates.
 4. **The funnel gate**, when and only when the confirmed target is `FUNNEL` —
-   the placeholder below.
+   the gate written out below.
 5. **The entry-mode question** — SKILL.md owns the words. Its answer creates
    the project folder and `00-INPUT/` immediately.
 
@@ -89,18 +89,88 @@ it to the Convert and Flow credential check and carry on. Never ask which
 platform they mean: asking a person to disambiguate six names for one product
 is a jargon test, and they did not sign up for one.
 
-### The funnel gate — where it is spoken
+### The funnel gate — the words, and the three checks behind them
 
-⛔ **PLACEHOLDER — the gate speech itself is WI-23's deliverable, and it goes
-exactly here.** The moment classify-and-confirm returns `FUNNEL` — whether they
-said the word "funnel" or only described an offer with automatic follow-ups —
-the run speaks the gate BEFORE any counted question, then checks the knowledge
-pack, the three Convert and Flow keys, and the page-building browser, and
-reports what is missing in one plain sentence each. Say it once, warmly, then
-wait: it is a fact about what the tool can do, never a judgement about the
-person, and it is said before the questions so that nobody answers a list about
-a funnel that cannot be built today. Keys are placed through
-`tools/place-key.sh` and never pasted into the conversation.
+The moment classify-and-confirm returns `FUNNEL` — whether they said the word
+"funnel" or only described an offer with automatic follow-ups — the run speaks
+the gate BEFORE any counted question. Say it once, warmly, then wait: it is a
+fact about what the tool can do, never a judgement about the person, and it is
+said before the questions so that nobody answers a list about a funnel that
+cannot be built today.
+
+**The gate speech, verbatim:**
+
+> Funnels are built inside your Convert and Flow (GoHighLevel, GHL) account.
+> I'll need three keys from it and my page-building tools on this computer. Let
+> me check what's here.
+
+Then three checks run, in this order. Each miss is reported in **one plain
+sentence** — never a list of technical reasons, never a stack trace, never a
+question the person cannot answer.
+
+**Check 1 — the knowledge pack.** Resolve the thirteen folders of
+`references/knowledge-pack.json` before anything else, because they carry how
+the pages, the automations, and the copy are actually built. The resolver is
+`scripts/bootstrap-companions.sh`, group 5, `openclaw-skills`: an installed
+OpenClaw at `~/.openclaw/skills/<folder>` first, a local checkout second, a
+pull of only those folders from GitHub at the pinned tag third — and the pull
+runs only when the GitHub token the skill already holds is present. The source
+and the tag for every folder are recorded, and the tag goes into the Capacity
+Ledger. The skill READS those folders and follows the steps itself; it never
+asks OpenClaw's agent to run anything, and the client never touches a VPS
+(`funnel-architecture.md` §9b). The miss, said plainly: "I'm missing the
+instructions I build funnels from, and I couldn't fetch them from here — I can
+tell you exactly which ones, and we can get them, or I can build this as a
+website instead."
+
+**Check 2 — the three keys, one at a time, in this exact wording.** Never two in
+one message, never a list, never a paste into the conversation. Each key is
+copied by the person, placed by `tools/place-key.sh`, and re-detected BY NAME;
+the only thing this run ever learns about a key is "present" or "absent". Ask
+for them in this order:
+
+> I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token.
+> Copy it, then say ready, and I'll file it without ever reading it out loud.
+
+> I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Copy
+> it, then say ready, and I'll file it without ever reading it out loud.
+
+> I need your Convert and Flow (GoHighLevel, GHL) Location ID. Copy it, then say
+> ready, and I'll file it without ever reading it out loud.
+
+Wait for "ready" after each one, place it, re-detect it by name, say only that
+it landed, and then ask for the next. The never-paste rule is universal: it
+holds for these three exactly as it holds for every media key
+(`media-pipeline.md` §9, `environment-sweep.md`). A key that is present in the
+environment already is stated back, not re-asked (Law 28). Where each key comes
+from and how it is stored is `environment-sweep.md`'s to own; this file only
+owns the words.
+
+**Check 3 — the browser, proven with one real screenshot, before any funnel
+question.** The page builder is driven by a real browser; the Convert and Flow
+(GoHighLevel, GHL) API cannot build pages or automations at all, so there is no
+browser-free path. On a Mac the run installs or verifies the page-building
+browser tool the way the pack's `06-ghl-install-pages` folder pins it, then
+**proves it by taking one real screenshot of a real page and reading the image
+file back**. Installed is not proven; a version string is not proven; one
+screenshot on disk is proven. If it cannot be proven, say this and nothing more:
+
+> Funnels need a page-building tool I couldn't set up on this computer. A Mac is
+> the best place for this; or we can build the pages as a website for now.
+
+**The open item, stated at the gate: a Mac is preferred.** Whether the page
+builder can be driven headless on a VPS is UNTESTED — nobody has proven it
+either way (`funnel-architecture.md` §12). So the gate prefers a Mac rather than
+claiming a VPS cannot do it: on anything that is not a Mac, the browser proof
+above is what decides, and the person is told plainly that a Mac is the place
+this is known to work. An untested capability is not a capability, and an
+untested failure is not a fact.
+
+**What the gate does with a miss.** It reports, it does not abandon. The three
+misses each have a real next step — get the missing folders, get the missing
+key, or build the pages as a website for now — and the person chooses. Nothing
+about a funnel is counted, so none of this consumes a question number
+(section 6, rule 8).
 
 ### Step 1c-bis — the research dispatch (background, never a question)
 
