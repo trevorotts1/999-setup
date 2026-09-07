@@ -1455,23 +1455,34 @@ shell rc files. The consequences are load-bearing:
   all, the whole branch is UNDETERMINED-with-named-reason** (section 12,
   item 11) — never a guess.
 
-**Branch 1 — has a key, not yet placed → guided placement → re-detect:**
+**Branch 1 — has a key, not yet placed → clipboard placement → re-detect:**
 
-> *"Easy — two minutes. Open a NEW terminal window (not this one — that matters),
-> paste in this line, then replace the words PASTE-YOUR-KEY-HERE with your actual
-> key, and press return:*
->
-> ```
-> echo 'KIE_API_KEY=PASTE-YOUR-KEY-HERE' >> ~/.env
-> ```
->
-> *Then close that window, come back here, and just tell me 'done'. I'll check
-> again — by name only, like before."*
+> *"Easy — about ten seconds, and you don't have to type anything. Copy the key
+> so it's on your clipboard, then just say ready. I'll file it without ever
+> reading it out loud."*
 
-On "done" → **re-run the sweep** (the file is sourced fresh). **FOUND** → confirm
-the NAME only — *"Got it — I can see a Kie.ai key is in place now. I still
-haven't read it, and I never will."* — write the ledger mark and continue.
-**NOT FOUND** → Branch 5.
+On "ready", the run executes `tools/place-key.sh KIE_API_KEY <store>` — the
+store being the one the sweep's own "Searched:" line reported. The script reads
+the clipboard (`pbpaste` on macOS, `xclip -o` or `wl-paste` on Linux,
+`Get-Clipboard` on Windows Git Bash), writes `KIE_API_KEY=<value>` into that
+store — replacing the line if the name is already there, appending it if not —
+**never echoes the value**, sets the store to mode 600, and re-detects by name
+through `tools/env-sweep.sh`. It prints `present` or `absent` and nothing else;
+an empty clipboard exits 2 and changes nothing, so a missed copy is a retry,
+never a wiped key.
+
+**⛔ THE CLIENT NEVER OPENS A TERMINAL AND NEVER TYPES A LINE.** This branch
+used to hand them a shell command with a shouty placeholder to overtype, which
+broke the terminal-chore ban (S11) at the one moment a client touches a secret
+and invited them to file the placeholder itself, verbatim, believing they had
+done it right. The never-paste rule is universal and is stated once, in
+`references/environment-sweep.md` RULE 1.
+
+The re-detect is `place-key`'s own last step — the sweep runs as its child and
+reads the store fresh, so there is no session restart and nothing further to
+run. **`present`** → confirm the NAME only — *"Got it — I can see a Kie.ai key
+is in place now. I still haven't read it, and I never will."* — write the
+ledger mark and continue. **`absent` or `UNDETERMINED`** → Branch 5.
 
 **Branch 2 — has an account but never made a key:**
 
@@ -1511,20 +1522,30 @@ they will and will not get.
 case, and **the client is NOT told they are wrong.** Negative-result discipline,
 in their voice:
 
-> *"It's not showing up yet — and that may well be on my end, not yours. Here's
-> exactly what I checked: the names KIE_API_KEY and KIE_AI_API_KEY, in the keys
-> file at ~/.env and in this session's environment. To make sure my checker
-> itself works, I re-checked a key I already know is there — \<it showed up / it
-> did NOT show up\>."*
+> *"It's not showing up yet — that may be on my end, not yours. Let me try one
+> thing."*
 
-- **Control passes, target absent** → **exactly one** concrete next step:
-  *"The likeliest hiccup is that the line ended up in a different file, or has a
-  space around the = sign. Could you open ~/.env — it's a plain text file — and
-  check the line starts exactly with KIE_API_KEY= with no spaces? Then tell me
-  and I'll look again."* **A second failure ends the round-trips** — no third:
-  *"Let's not let this hold your build hostage — I'll build everything with the
-  marked spaces and the list, and the moment the key shows up, filling them in is
-  one command."* → 9.3.
+**THE EVIDENCE GOES TO THE LEDGER, NOT TO THE CLIENT.** The names searched, the
+stores read by path, what was not read and why, and the control result are
+written as a `KEY-PLACEMENT` line in the Capacity Ledger and the session log —
+in full, because RULE 2 still binds every negative. What the client hears is
+one short sentence, because a wall of paths and variable names reads to a
+non-technical adult as *you did it wrong*, and they did not: `place-key` did the
+filing, so any failure here is the machine's. The full evidence is one ledger
+line away for anyone who needs it.
+
+- **Control passes, target absent** → **exactly one** concrete next step, and
+  it is the machine's step, not theirs: run `tools/place-key.sh` again from the
+  clipboard, saying only *"One more go — copy it again and say ready."* (The
+  likeliest cause is that the copy took something other than the key; a
+  trailing space is NOT a cause — `place-key` trims the value and takes only
+  the first line, and an empty clipboard exits 2 without writing. Its own
+  absent report names the other candidate: a store later in precedence holding
+  the same name with an empty value.) **A second failure ends the
+  round-trips** — no third: *"Let's not let this hold your build hostage — I'll
+  build everything with the marked spaces and the list, and the moment the key
+  shows up, filling them in is one command."* → 9.3. **Never ask the client to
+  open a dotfile, inspect a line, or check for spaces around an `=`.**
 - **The control ALSO fails** → **the instrument is broken, not the client.**
   Say so — *"my checker isn't reading that file at all right now — that's my
   problem, not yours"* — record BROKEN INSTRUMENT, and proceed per 9.3 with the

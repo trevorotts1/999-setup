@@ -392,7 +392,7 @@ interpolate a credential VALUE into any command line, message, finding, or debug
 output. **Log the credential NAMES and their SET / NOT SET status; NEVER the
 values.** The value is never even copied into a shell variable — the resolver
 below tests each name in place and carries only the NAME forward. Three standing
-prohibitions come with this rule:
+prohibitions come with this rule, and the never-paste rule follows them:
 
 - **Never run `ps eww` (or any whole-environment dump) against any process.** It
   prints every secret that process holds, to stdout, into the transcript.
@@ -403,7 +403,33 @@ prohibitions come with this rule:
   A value on a command line is visible in the process table and in the
   transcript, and a value containing quotes or backticks can execute. Pass
   secrets by NAME to the environment of the process that needs them, never by
-  value into text you emit.
+  value into text you emit. Where a credential must reach `curl`, the header
+  goes in on STDIN through `--config -` (`tools/env-sweep.sh`
+  `curl_bearer_status`, and `scripts/ghl-media-upload.sh` `ghl_header_config`).
+
+**⛔ THE NEVER-PASTE RULE — universal, every platform, every credential, no
+exception.** This is the one statement of the rule in this skill; everything
+else cites it. **Never ask anyone to paste a key, a token, or an ID into the
+conversation, and never accept one that arrives that way.** A pasted secret
+lands in the transcript, in the session history, in every ledger the run
+writes, and possibly in a commit — and **it cannot be un-leaked.** There is
+exactly one placement flow, and it is the same on every platform:
+
+> The client copies the key so it is on their clipboard and says "ready".
+> `tools/place-key.sh <NAME> <store>` reads it **from the clipboard** into the
+> store this sweep reported, **never echoes it**, sets the store to mode 600,
+> then **re-detects by NAME through `tools/env-sweep.sh`** and prints
+> `present` or `absent` — nothing else. An empty clipboard exits 2 and changes
+> nothing.
+
+The client-facing sentence, one per key: *"I need your <credential>. Copy it,
+then say ready, and I'll file it without ever reading it out loud."* The
+clipboard instrument is `pbpaste` on macOS, `xclip -o` or `wl-paste` on Linux,
+and `Get-Clipboard` on Windows Git Bash; the script's header carries the
+PowerShell-only equivalent for a box with no Git Bash, where the re-detect half
+is UNDETERMINED with that reason named until Git Bash is installed. **No branch
+of any gate in this file may improvise a paste flow, a terminal chore, or a
+"just type this line" instruction to get a key into a store.**
 
 **RULE 2 — a negative is a claim, and carries a claim's burden.** "Key not
 found" is the finding that stops the build and hands work back to the user, so
@@ -539,13 +565,18 @@ on a VPS) and said so by path.
 - **VPS users:** the Firebase token lives in the Docker environment. Search
   `docker-compose.yml` `env_file` references and the container's own
   environment.
-- **Windows users:** manual ask — "I need your Convert and Flow Firebase refresh
-  token. Open the Token Grabber Chrome extension provided by Black CEO, click
-  'Grab the token', then 'Copy the token', and paste it here."
+- **Windows users:** manual ask, **through the clipboard, never a paste** —
+  "I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Open
+  the Token Grabber Chrome extension provided by Black CEO, click 'Grab the
+  token', then 'Copy the token', then say ready, and I'll file it without ever
+  reading it out loud." On "ready", run
+  `tools/place-key.sh GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN <store>` — under Git
+  Bash it reads the clipboard with `Get-Clipboard` and re-detects by name.
 
-When a token is pasted into the conversation, it goes straight into the env file
-by name and is never repeated back, never quoted in a summary, and never written
-into any project document.
+The value never enters the conversation at all: `place-key` moves it from the
+clipboard into the store, and the only thing anyone sees is `present` or
+`absent`. It is never repeated back, never quoted in a summary, and never
+written into any project document.
 
 **Gate behavior.**
 
@@ -559,7 +590,8 @@ into any project document.
     Convert and Flow settings under Business Profile."
   - **Firebase Token:** "I need your Convert and Flow secure connection token.
     Open the Token Grabber Chrome extension — the one Black CEO gave you — click
-    'Grab the token,' copy it, and paste it here."
+    'Grab the token,' copy it, then say ready, and I'll file it without ever
+    reading it out loud."
 - **Do NOT proceed with a partial credential set.** A funnel with no automation
   wiring is not a funnel.
 
@@ -784,16 +816,17 @@ location, a credential the project NEEDS is missing:
 2. Tell the user plainly:
 
    > I need a [KEY_NAME] to [do the thing the project needs it for]. I checked
-   > [list of locations, by name] and did not find it. Here is where to put it:
-   >
-   > [path to the env file]
-   >
-   > Add this line to that file:
-   >
-   > [KEY_NAME]=your-key-here
-   >
-   > Then tell me you have added it and I will re-check (or run `/spec-protocol`
-   > again).
+   > [list of locations, by name] and did not find it. Copy it so it's on your
+   > clipboard, then say ready, and I'll file it without ever reading it out
+   > loud.
+
+   On "ready", run `tools/place-key.sh [KEY_NAME] [path to the env file]`. It
+   takes the key from the clipboard, files it under that name, never echoes it,
+   and re-detects through this sweep — you say `present` or `absent` and
+   nothing else. **Never hand the client the file to edit and never hand them a
+   line to type: that is the terminal chore this flow exists to remove, and it
+   is where a placeholder like `your-key-here` gets committed verbatim by
+   someone who did their best.**
 
    **Which path to name.** If a canonical fleet path already exists on this
    machine (any of the Mac or VPS paths above), name that one — do not invent a
