@@ -1,8 +1,8 @@
-# Audience UX Rules — Writing for a Non-Technical ~68-Year-Old
+# Audience UX Rules — Writing for a Non-Technical Adult, Often Sixty or Older
 
-The user is around sixty-eight years old, non-technical, building something for a
-class. They ran one command. They will answer plain questions, one at a time, and
-then walk away. They come back to a finished app.
+The user is a non-technical adult, often sixty or older, building for their own
+business or project. They ran one command. They will answer plain questions, one
+at a time, and then walk away. They come back to a finished app.
 
 These rules govern every user-facing prompt, question, instruction, and report this
 skill emits. SKILL.md is read by Claude (the conductor) and can be precise; but

@@ -125,10 +125,10 @@ paste-able restart path, never a substitute for the loops.
 
 ## The audience — spell it out
 
-The user is around sixty-eight, non-technical. They may not know what a terminal is
-— say "open the Terminal app," not "open a terminal." They may not know that three
-lines means three commands. They may not know that a line longer than their terminal
-width breaks. See `audience.md` for the full rules. Every instruction must:
+The user is a non-technical adult, often sixty or older. They may not know what a
+terminal is — say "open the Terminal app," not "open a terminal." They may not
+know that three lines means three commands. They may not know that a line longer
+than their terminal width breaks. See `audience.md` for the full rules. Every instruction must:
 
 - Be one paste per session, with every setting already applied.
 - Have short lines a narrow 80-column terminal cannot break.

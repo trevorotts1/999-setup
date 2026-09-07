@@ -100,37 +100,41 @@ for claude-nine + 9Router. Sub-items of STAGE-BUILD, numbered 1.8.1-1.8.8 (not
 a parallel sequence — this list lives INSIDE item 1); ordered; each step names
 input / output / acceptance.
 
-### 3.1 1.8.1 CLIENT OPTION FIRST
+### 3.1 1.8.1 DECIDED FROM THE BRAINSTORM — NEVER ASKED
 
-**Input:** design-brief interview. The client is GIVEN AN OPTION whether they
-want a 3JS site. Ask a smart optional-upgrade question at the design-brief
-step (never a menu; prose): a plain site is the default; the 3JS upgrade is
-offered as a premium option with its cost/time implication stated plainly. If
-the client declines or says nothing, NO 3D is built.
+**Input:** the client's own brainstorm answers (C10, decided 2026-09-07). **The
+client is never asked about 3D or 3JS.** "3JS" is jargon, and the decision table
+below already defaults to never for brochure sites and funnels, so the question
+buys nothing and costs the client a technical decision they did not sign up for.
+The conductor decides it from what the client already said: if the brainstorm
+mentions 3D, a showcase or portfolio of things to look at, or visualising a
+product, the run OFFERS 3D in the design brief; otherwise the answer is never and
+no 3D is built.
 
-**Output:** ledger line `3JS-OPTION: yes|no` with the client's words.
+**Output:** ledger line `3JS-DECISION: never|offered`, quoting the brainstorm
+words that decided it (or naming their absence).
 
-**Acceptance:** an explicit interview answer is recorded; never ask again once
-answered.
+**Acceptance:** the line exists before `STAGE-BUILD` starts, and no 3JS question
+was put to the client at any point in the run.
 
 ### 3.2 1.8.2 DECISION TABLE (replaces "where the brief calls for it")
 
-**Input:** `3JS-OPTION` line + brief's 3D goals. Write into the brief, never
-decide at build time:
+**Input:** the `3JS-DECISION` line + the brief's 3D goals. Write into the brief,
+never decide at build time:
 
 | Decision | Condition |
 |---|---|
-| 3D REQUIRED | client opted in AND brief names 3D goals (showcase/portfolio/product hero) |
-| OPTIONAL | client opted in but brief does not demand it (designer may use sparingly) |
-| NEVER | client declined or did not opt in, brochure/funnel default, or the brief is silent |
+| OFFERED | the brainstorm names 3D, a showcase or portfolio, or product visualisation — the designer may use 3D where the brief's goals call for it |
+| NEVER | the brainstorm names none of those, or the target is a brochure site or a funnel (the standing default), or the brief is silent |
 
-**Output:** ledger line `3JS-DECISION: required|optional|never`.
+**Output:** the `3JS-DECISION: never|offered` line above, written through
+`tools/ledger.sh`.
 
 **Acceptance:** the table is in the brief before `STAGE-BUILD` starts.
 
 ### 3.3 1.8.3 3D-ASSET pipeline
 
-**Input:** `3JS-DECISION` is required or optional. Model format GLTF (glb);
+**Input:** `3JS-DECISION` is `offered`. Model format GLTF (glb);
 texture generation via the image lane (Issues 7/9/10) — textures, transparent
 PNGs for foreground layers; lighting/weather rig (time-of-day, rain, wind —
 weather effects, lighting states, orbit, parallax, multi-scene scroll); scene

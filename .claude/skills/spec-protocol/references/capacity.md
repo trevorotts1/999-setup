@@ -1059,30 +1059,43 @@ Detection and response are section 6.2's BUDGET-STARVED path.
 | Seat smoke test: error / no model after the headroom retry | That MODEL is not callable now — select the next candidate; record which ids were tried | Never generalise one dead node to "no independent model" |
 | Admin API unreachable | Combo membership UNDETERMINED → independent seats avoid combos; prefixes taken from `/v1/models` | Never block the run on the richer instrument |
 
-### The seven doctrine roles (addendum §18), reconciled with the team example
+### THE SEAT TABLE (decided 2026-09-07) — written ONCE here, cited everywhere else
 
-Each row states REQUIREMENTS, resolved per run against the discovered pool (§11's
-DIRECT path or its LANE path). **No row names a model**, for the reason §11 and
-`SKILL.md`'s role table already carry: a pin goes stale on the next rewire, a
-requirement cannot, and this table must be true on every box in a fleet where
-every box is wired differently. The "default lane" is the alias used when the
-pool is undiscoverable — plain `claude`, or the router down — never a claim about
-what the lane resolves to.
+**This is the only seat table in the skill.** SKILL.md, `references/pipeline.md`,
+`references/worked-example.md`, and `references/gauntlet.md` §13.1 cite this table
+in one line and never restate it; four disagreeing role tables used to live in
+those files and they are gone. Fable is not a seat: it is a router alias name and
+nothing more (cost decision, 2026-09-07). The conductor is Opus — it plans,
+dispatches, and builds; Sonnet does all the judging; Haiku reads and merges.
+Opus building with Sonnet judging satisfies Law 7 (the judge never built it)
+without any extra arrangement.
 
-| Doctrine role | What it does | REQUIREMENT — resolved per run (default lane) |
-|---|---|---|
-| orchestrator | The lead seat — orchestrates, never implements | Capability to hold the whole plan and dispatch against it; context floor sized to the plan documents, not to one unit. No independence constraint. **Default lane: the conductor's own session** — this seat is never separately dispatched. |
-| builder | Writes the actual implementation | The strongest available lane, per the operator's decided law (§11, and `SKILL.md`'s App-builder row). Needs a HIGH-CEILING provider node — this seat sets the run's governing number. Every other seat's independence is measured AGAINST this one. Default lane: `Opus`. |
-| researcher | The reader — gathers, never decides | Long-context reading; low concurrency; no verdict authority, so no independence constraint. Context floor is the largest single document it must read whole. Default lane: the reader tier. |
-| visual verifier | Looks at the actual output against the reference and the bar | **VISION modality — PROVEN before the first visual verdict, never assumed** (a text-only model handed an image does not error, it stalls or invents: `references/gauntlet.md` §5's probe). If the probe fails, route to a vision-capable seat or record the seat BLOCKED. Default lane: `Haiku`. |
-| technical judge | Correctness, structure, tests | Rubric-depth verdict capability. MUST resolve to a DIFFERENT UNDERLYING MODEL than the builder by the FAMILY RULE (§11). Headroom floor per verdict-shaped call: `max_tokens ≥ max(4000, 4 × expected verdict length)`. Read the CEILING CLASS off the RESOLVED model, never off the lane. Default lane: `Sonnet`. |
-| security judge | The security seat of the technical gauntlet | Same requirements as the technical judge, plus the concurrency to run its seats alongside them. Default lane: `Sonnet`. |
-| release judge | Whole-product readiness | Same verdict-depth and independence requirements as the technical judge; context floor sized to the whole-product view rather than one unit. Default lane: `Sonnet`. |
+| Seat | Regular Claude Code | claude-nine (alias, resolved live and recorded) | Independence rule |
+|---|---|---|---|
+| Conductor (plans, dispatches, judges evidence, merges decisions) | Opus — the session model; the launcher starts the session on Opus and the skill reports if it is not | `opus` alias | none |
+| WF01 planners | Opus | `opus` alias | none |
+| Builders and repair agents | Opus (the strongest lane) | `opus` alias (DeepSeek V4 Flash on the operator's box) | sets the governing number |
+| Blind visual judges (unit and integrated) | Sonnet | `haiku` alias where it resolves to a vision-proven model (MiniMax on the operator's box), else `sonnet` alias | must differ from the builder by the family rule; vision proven by probe before the first verdict |
+| Technical judges | Sonnet | `sonnet` alias (DeepSeek V4 Pro on the operator's box) | must differ from the builder by the family rule |
+| Release council | Sonnet | `sonnet` alias | must differ from the builder |
+| Readers, researchers, merge writer | Haiku | `haiku` alias | none |
+| Fable | not used (cost) | not used | — |
 
-The default-lane column is doctrine #2's EXAMPLE mapping, not a model assignment.
-Every row resolves through the live config plus pool discovery before it means
-anything, and the run's own Capacity Ledger — never this table — names the seated
-model id.
+Every `agent()` call carries `model:`; a bare call is a defect the dispatch gate
+refuses.
+
+**The alias column is a lane, never a model id.** The parenthesised model names
+are what those aliases happened to resolve to on the operator's box and are
+illustration, not fact: every seat resolves through the live config read plus pool
+discovery (the procedure above), and the run's own Capacity Ledger — never this
+table — names the seated model id. The FAMILY RULE governs every "must differ"
+cell: strip the provider prefix and the thinking/pricing/version suffixes, then
+compare base ids; same-base lanes differing only in thinking level are ONE model.
+The vision seat is PROVEN by probe before its first verdict, never assumed — a
+text-only model handed an image does not error, it stalls or invents
+(`references/gauntlet.md` §5). Headroom floor per verdict-shaped call:
+`max_tokens ≥ max(4000, 4 × expected verdict length)`. Read the CEILING CLASS off
+the RESOLVED model, never off the lane.
 
 ### A worked example from ONE machine on ONE day (2026-08-12) — HISTORICAL EXHIBIT, never an input
 

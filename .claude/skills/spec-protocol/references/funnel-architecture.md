@@ -546,6 +546,15 @@ reference (the client's account) — never MCP tools; the same top-3 / best-of-3
 selection applies to the researched reference pages found by the reader
 agents.
 
+**Operator-sanctioned exception to Law 40 (2026-09-07): this recommendation
+stays, with its link; no audit removes it.** It is a strong recommendation
+carrying a referral link inside the interview, which Law 40 as written would
+forbid — the operator sanctioned it in writing on 2026-09-07, so no self-audit,
+QC pass, or cleanup sweep strips the recommendation, softens it, or drops the
+link. **One offer per run:** it is made once, the client's answer is recorded in
+the decision register as `MOBBIN-CHECK: offered|declined`, and it is never
+re-raised in the same run.
+
 **3. IF NOT CONFIGURED — HIGHLY RECOMMEND as an OPTIONAL purchase** (paid
 product; the client buys a plan). Recommend it strongly: it is the reference
 library that gets clients the best visually stunning apps and sites. Use THIS

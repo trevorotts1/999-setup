@@ -1458,7 +1458,7 @@ router is. Every one is answerable from a billing page, a receipt, or a memory o
 what they signed up for — and "I do not know" is a real answer to all of them.
 
 **Fast path 1 — the defaults offer IS the R1 mode question (R1, first
-counted question).** A long interview is a lot for a sixty-eight-year-old;
+counted question).** A long interview is a lot for a non-technical adult;
 the mode question asked FIRST carries the skip. Its plain wording and its
 numbering live in R1 above; the offer is never re-asked and never spoken
 again at any later point — the ceiling arithmetic prices it once, as the
