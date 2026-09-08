@@ -767,6 +767,64 @@ A gauntlet prompt that fails any GL rule is not dispatched. Fix the prompt, then
 dispatch. GL rules are machine-checkable — run them as commands/structural scans,
 never as vibes (Law 14).
 
+## 7.1 SEVERITY CLASSES FOR THE STEP-20 APPARATUS AUDIT
+
+The step-20 self-audit (SKILL.md step 20) is BOUNDED: one fix pass, one
+re-judge, two cycles at most. What makes a bound safe is triage — the audit
+must be able to say which findings stop a builder and which travel with it.
+Every finding the auditor writes therefore opens with its class, and
+`tools/audit-gate.sh <project>` counts the classes and returns the verdict.
+The finding line's shape is the gate's input and is fixed:
+
+```
+HALT  | <unit or document> | <what is wrong, in one sentence>
+HARM  | <unit or document> | <the exposure>
+SCOPE | <unit or document> | <the unratified feature>
+CARRY | <unit or document> | <the defect, and which unit will absorb it>
+```
+
+**HALT — the apparatus cannot produce the right artifact.** A path
+contradiction between units (two units naming different paths for one
+deliverable), a missing `FORM-DESTINATION:` line, a dependency graph with a
+cycle in it, or an enforcement input a shipped script reads that does not
+exist on disk. These are not opinions about paperwork: each one means a
+builder given this apparatus builds the wrong thing, builds nothing, or
+builds something the gate cannot check. Every HALT must clear before a
+builder runs.
+
+**HARM — a client-facing or third-party exposure.** A form destination
+bound to a mailbox the client does not own, a credential or an evidence tree
+placed under the deploy root, a live registration made on someone else's
+behalf, anything a stranger could reach on the published origin that the
+client never agreed to publish. Harm is measured by who is exposed, never by
+how likely it is. Every HARM must clear before a builder runs.
+
+**SCOPE — an unratified feature (Law 42, Law 46).** A capability in the
+apparatus that the client did not ask for and did not ratify. It clears by
+REMOVAL and never by justification: a paragraph explaining why the extra
+layer is a good idea is the defect, not the remedy. Deleting the unratified
+unit, its acceptance tests and its manifest rows is the only fix that counts.
+Every SCOPE must clear before a builder runs.
+
+**CARRY — everything else, literal document shape included.** A section that
+carries its mandated content under a different heading, a count that disagrees
+with its enumeration, a manifest content satisfied by a row instead of a
+section, a missing field on a card whose file has one writer, a loop file that
+shares a document with its sibling. Each is logged as a `CARRY:` line through
+`tools/ledger.sh` and enters the build as a named work item, fixed by the unit
+that next touches that document — never by a dedicated audit cycle. **A
+CARRY-only audit is a PASS.** The gate exits 0 with the carry count on its
+ledger line and the findings still open; refusing hand-over over document
+shape is the failure this section exists to prevent, and thirteen of the
+seventeen blockers that stopped the 1.19.0 canary before its first builder
+were exactly this class.
+
+**The ceiling.** Two cycles. If HALT, HARM or SCOPE findings are still open
+when a third cycle is attempted, `audit-gate.sh` returns CEILING, the run
+proceeds with its full CARRY list, and the open blocking findings are
+escalated in writing with their history — an operational limit is never a
+PASS (GL-007, Law 50).
+
 ---
 
 ## 8. TRACEABILITY
