@@ -102,9 +102,14 @@ no, record the declined offer and never raise it again (Law 46). A failed update
 finding, never a stopped build.
 
 **Auto-compaction (step 2.6) and OpenClaw (step 2.8).** Ensure `autoCompactEnabled:
-true` and `autoCompactWindow: 500000` in each config root's `settings.json` — back the
+true` and `autoCompactWindow` per launcher in each config root's `settings.json` — back the
 file up first, preserve every other key, refuse on invalid JSON, never print its
-contents; one line, never a gate. Then detect OpenClaw from file evidence only
+contents; one line, never a gate. The window is 500000 on `claude`; on `claude-nine` and
+`claude-codex` it is the smaller of 500000 and the resolved seat's measured context
+ceiling, recorded with its provenance mark (`references/capacity.md` §11). Report to the
+client only what `tools/compact-check.sh <config-root>` read from the live
+`<config-root>/settings.json`, named with that path — never a sibling `.bak`, and rc 2
+is UNDETERMINED, never a number. Then detect OpenClaw from file evidence only
 (`references/openclaw-ingest.md`): nothing is read and nothing written until the
 paragraph in section 3 is spoken and the project folder exists.
 
@@ -643,6 +648,7 @@ prove. These are the ones no script can refuse for you:
 
 - Never proceed past GATE 0 without ultracode ON. Hard stop.
 - Never do the work in the main loop; subagents do all work (Law 41) — the one exception is a single command to verify one subagent claim before repeating it — and never send one out with partial context, because a failed subagent is the dispatcher's defect first.
+- Never read a project document, an audit report or a ledger in full in the main loop; dispatch a Haiku reader for the extract you need. The conductor holds the ledger's last line, the gate verdict and the counts — nothing longer.
 - Never report something as done without independent proof; a subagent's claim is a claim (Laws 1, 14), and a number no command measured is a rumour.
 - Never lower the quality gate or suggest lowering it (Law 43) — only the client lowers their own standard, for their own build — and never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS (Law 50).
 - Never create an eighteenth document, never bring a refused artifact back under a new name, and never cite a document you wrote as authority (Law 39).

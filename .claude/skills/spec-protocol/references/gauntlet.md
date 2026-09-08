@@ -1129,6 +1129,19 @@ requires 4 of 4 PASS; FAIL or UNVERIFIED from any judge prevents release.
 at most twelve failed workstreams per wave, then the council again. Passing
 workstreams are locked and never rerun.
 
+**WF06-FIX Apparatus Fix Pass — a NAMED VARIANT of WF06, not a sixth type.**
+The step-20 audit's ONE fix pass (SKILL.md step 20) runs in this shape and
+never in the main loop: `pipeline(findings, fix, reJudge)`, ONE fixer agent
+per HALT, HARM or SCOPE finding, each dispatched with its own finding line and
+the ONE document that finding touches — never the audit body, never the whole
+apparatus. CARRY findings get no fixer; they travel into the build as work
+items (§7.1). The conductor reads the auditor's counts and the
+`tools/audit-gate.sh` verdict only: 454,686 bytes of audit prose read four
+times into one window is how the canary run died of context exhaustion. A fix
+pass recorded in the ledger with no `run=wf-fix-*` row in
+`CONTROL/dispatch-log.md` is the conductor fixing in its own context, and the
+gate refuses it (exit 9).
+
 **Forbidden shapes.** `parallel(build)` followed by `parallel(qc)`; a judge
 phase with fewer judges than landed units; any tree that passes fewer units than
 the dispatchable set allows without a `dep=` reason; a merge agent inside a
