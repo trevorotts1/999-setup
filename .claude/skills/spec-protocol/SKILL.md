@@ -615,6 +615,8 @@ A second line follows only when there is genuinely something for them; nothing e
 spoken as status — no lanes, no ledger lines, no token counters
 (`references/progress-visibility.md`).
 
+No part of a client message ever carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name. There is no operator channel in the client's transcript; operator detail goes to `CONTROL/SESSION-LOG.md`. A status message that would repeat the previous message's counts unchanged is not sent — the next thing the client hears is either a changed count or the one question, and three consecutive unchanged counts is a stall raised through the tick, never narrated.
+
 **The morning report (step 22, document 14)** is the honest close, and it opens with the
 live thing, not with the work:
 

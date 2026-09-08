@@ -186,6 +186,40 @@ Not robotic. Not chirpy. Not condescending. Warm, plain, and confident:
 
 ---
 
+## 7. No operator aside in the client's transcript.
+
+**BINDING — the client-speech rule (the 2026-09-07 canary fix).** No part of a
+client message ever carries a file path, a document name, a workflow id, a rule
+number, a count of findings, a trend, a cost or a model name. There is no
+operator channel in the client's transcript: a heading that opens an aside "for
+the operator", followed by the run's internals, is a defect however honest its
+contents. Operator detail goes to `CONTROL/SESSION-LOG.md`, where the person
+who wants it can read it. A status message that would repeat the previous
+message's counts unchanged is not sent — the next thing the client hears is
+either a changed count or the one question, and three consecutive unchanged
+counts is a stall, raised through the tick, never narrated.
+
+**Why, from the canary.** Two of the sentences that reached a bakery owner were
+true, and neither was hers to hold. She was told that her contact form would
+have sent her neighbours' messages to a stranger — a fault found and fixed
+before a single page was published, so what actually reached her was alarm with
+no decision attached to it. And she was shown a checker's own line, quoted in
+capitals, saying the conductor had made things worse during the very inspection
+that caught it — a confession she could do nothing with. Both belonged in the
+session log. The client hears what CHANGED and what they must DECIDE; the
+reasoning, the counts and the self-criticism are the apparatus talking to
+itself.
+
+**The check that runs.** `tools/speech-check.sh <file>` lints a drafted client
+message and exits 3 naming each banned class it finds — path, workflow-id,
+law-number, md-filename, trend, money, model-id, operator-heading — and records
+`SPEECH-CHECK: clean` or that list through `tools/ledger.sh`. Its `--selftest`
+proves it discriminates rather than merely refuses: the sanctioned status
+sentence of SKILL.md section 12 passes, and so does the word "operator" used in
+ordinary prose. A checker that catches every fixture is broken, not strict.
+
+---
+
 ## What never to do with the user
 
 - Never show them the full specification unless they ask. It is long and technical.
