@@ -393,6 +393,22 @@ wording — at the top of `CONTROL/LAUNCH-COMMAND.md`, above the fence, and poin
 at the guide in the line under it: "The longer version is in
 `IF-THE-POWER-GOES-OUT.md` if you are nervous."
 
+**`RESUME-INVOCATION:` — the same restart, written for an operator or a headless
+driver.** Document 11 carries one machine-readable line under the client's sentence,
+never spoken to anyone:
+
+```
+RESUME-INVOCATION: <launcher> --resume   (first message: ultracode continue)
+```
+
+Same two interpolations, filled the same way. The keyword is in the first message
+because `--effort ultracode` on the command line is not a signal GATE 0 can read
+(SKILL.md section 2), and a driver resuming headlessly has no other way to answer the
+gate. The client's sentence above is unchanged and stays unchanged: their plain
+`<launcher> --resume` passes on GATE 0's third signal — the `CONTROL/.gate0-proven`
+marker `tools/gate0.sh --record` wrote in this project folder when the run's first
+turn passed the gate — so the client is never asked to carry a technical word.
+
 ---
 
 ## The fence and the header
