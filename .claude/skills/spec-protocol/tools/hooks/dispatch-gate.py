@@ -7,7 +7,7 @@ were prose. A conductor that resolved the ambiguity conservatively dispatched
 says no, at launch, in the one place the model cannot talk its way past.
 
 It reads the script the launch is about to run (inline `script` or `scriptPath`)
-and blocks (exit 2) six shapes, naming the fix for each:
+and blocks (exit 2) seven shapes, naming the fix for each:
 
   1. parallel(build) followed by parallel(qc)      -> pipeline(units, build, qc)
   2. a judge stage with fewer items than the build stage  -> one judge per unit
@@ -19,6 +19,11 @@ and blocks (exit 2) six shapes, naming the fix for each:
      says the run is at or past its pause line or its ceiling -> the budget wall,
      the same arithmetic and the same message tools/dispatch-check.sh prints at
      exit 7 and exit 8. Shape 6 is not about the tree: it is about the RUN.
+  7. any launch whose DECLARED agent count, summed across every stage, is not
+     booked by a CONTROL/dispatch-log.md row written within the last 120
+     seconds -> the write-ahead rule of SKILL.md section 5, made mechanical.
+     The message names both numbers: `declared=<n> booked=<n>`, or
+     `booked=none` when nothing booked it at all.
 
 FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
 unreadable input, an unparseable script, an undetermined item count, a state
@@ -32,12 +37,14 @@ gate unexamined.
   --selftest   proves the instrument: the four fixtures the work item names.
   --check FILE runs the same evaluation against a script file, for a human.
 """
+import calendar
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
 
 MAX_SCRIPT_BYTES = 2_000_000
 
@@ -86,6 +93,33 @@ FIX_6_CEILING = (
     "  a pause would leave a project able to answer 'keep going' past a line it can never\n"
     "  cross."
 )
+
+FIX_7 = (
+    "FIX: book the tree BEFORE you launch it. Run\n"
+    "    bash tools/dispatch-check.sh <project> <units> <agents> \"[<Model> xN] <what>\"\n"
+    "  with <agents> at least the declared count above -- one call books the WHOLE tree,\n"
+    "  writing the CONTROL/dispatch-log.md row and incrementing agents.executions_total by\n"
+    "  that count in the same step, and rolling the increment back if the row fails to land\n"
+    "  -- then launch again within the window. This is SKILL.md section 5's write-ahead rule\n"
+    "  (EVERY dispatch, research or build) with a wall behind it.\n"
+    "  WHY: on 2026-09-07 ten stage-2 verifiers fired with NO dispatch-log row at all, so\n"
+    "  agents.executions_total read 6 while 17 agents had run and the pause line was short by\n"
+    "  whole trees. The counter was never the defect -- nothing forced the call that moves it.\n"
+    "  RESIDUAL LIMIT (references/enforcement.md 1): this books a tree's DECLARED width at\n"
+    "  launch. A PreToolUse hook fires once per launch, so an agent an already-running\n"
+    "  workflow spawns internally is invisible here; tools/anchor.sh's dispatch-log census is\n"
+    "  the cross-check, and a divergence between the two is a finding, never a rounding error."
+)
+
+# SHAPE 7's booking window. A row older than this booked a tree that has already
+# fired, so it is not a booking for THIS launch. Two minutes is the same order as
+# the step it enforces: write the row, then launch.
+BOOKING_WINDOW_SECONDS = 120
+
+# A dispatch-log row as tools/dispatch-check.sh writes it:
+#   <ISO8601Z> | <unit> | dispatch | <label> | run=… | units=… | agents=<n> | …
+ROW_TS = re.compile(r"(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})")
+ROW_AGENTS = re.compile(r"(?<![A-Za-z0-9_-])agents\s*=\s*(\d+)")
 
 # The absolute per-project ceiling. A state file may lower it and may never
 # raise it, which is why the state value is taken only when it is SMALLER --
@@ -238,6 +272,55 @@ def count_items(args, code):
     return None
 
 
+def call_span(code, start, args):
+    """(open_offset, close_offset) of the call whose name begins at `start`.
+
+    find_calls() already matched the balanced parens to slice `args`, so the
+    closing offset is arithmetic rather than a second scan. SHAPE 7 needs it to
+    say which agent() calls belong to which stage.
+    """
+    open_idx = code.find("(", start)
+    if open_idx < 0:
+        return None
+    return open_idx, open_idx + 1 + len(args)
+
+
+def declared_agents(code, stages):
+    """Every agent() this script declares, across ALL stages. None = UNDETERMINED.
+
+    It reuses the per-stage item counts SHAPE 2 and SHAPE 4 already computed
+    rather than parsing the script a second time: a stage that passes N items and
+    runs K agent() calls per item declares N x K agents, so a three-stage
+    pipeline over ten units is thirty, not ten. agent() calls that sit outside
+    every stage -- a lone judge, a merge writer -- count once each.
+
+    Every fail-open rule of this file applies. A stage whose item count could not
+    be resolved makes the whole total unknowable and the answer is None. A stage
+    whose fan-out lives in a named helper contributes only the agent() calls this
+    parser can actually see, which UNDER-counts rather than over-counts: a gate
+    that guessed high would block a launch that was booked correctly, and the
+    count it prints has to be one the conductor can act on.
+    """
+    agent_starts = [start for start, _args in find_calls(code, "agent")]
+    if not agent_starts:
+        return None
+    spanned = [s for s in stages if s.get("span")]
+    total, covered = 0, set()
+    for s in spanned:
+        lo, hi = s["span"]
+        if any(o["span"][0] < lo and hi <= o["span"][1] for o in spanned if o is not s):
+            continue  # nested inside another stage: the outer call already counts it
+        inside = [start for start in agent_starts if lo < start < hi]
+        if not inside:
+            continue  # the fan-out is in a helper: only what is visible is counted
+        covered.update(inside)
+        if s["items"] is None:
+            return None
+        total += s["items"] * len(inside)
+    total += len([start for start in agent_starts if start not in covered])
+    return total or None
+
+
 def has_any(text, words):
     low = text.lower()
     return any(w in low for w in words)
@@ -355,6 +438,75 @@ def budget_state(cwd):
     return path, execs, pause, ceil
 
 
+def find_control_dir(start_dir):
+    """The project's CONTROL/ directory, searched upward from cwd like the ledger.
+
+    Its presence is what tells SHAPE 7 it is inside a spec-protocol project at
+    all. Outside one there is no write-ahead rule to enforce and no log to read,
+    so the answer is None and the launch proceeds unexamined.
+    """
+    d = os.path.abspath(start_dir)
+    seen = 0
+    while seen < 40:
+        p = os.path.join(d, "CONTROL")
+        if os.path.isdir(p):
+            return p
+        nd = os.path.dirname(d)
+        if nd == d:
+            return None
+        d, seen = nd, seen + 1
+    return None
+
+
+def dispatch_log_booking(control_dir, now):
+    """(booked, rows, newest_age) from CONTROL/dispatch-log.md, or None.
+
+    `booked` is the largest `agents=` field on a row whose timestamp is inside
+    BOOKING_WINDOW_SECONDS -- the row this launch should have been written ahead
+    of -- and None when no such row exists. `rows` and `newest_age` are for the
+    message only.
+
+    None (the whole return) is UNDETERMINED: a log that cannot be READ says
+    nothing and the launch proceeds. A log that is simply ABSENT is a different
+    answer, not the same one -- the project has a CONTROL/ directory and no row
+    in it, which is exactly the unbooked launch this shape exists to refuse -- so
+    it answers (None, 0, None) and prints booked=none.
+    """
+    path = os.path.join(control_dir, "dispatch-log.md")
+    if not os.path.exists(path):
+        return None, 0, None
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except Exception:
+        return None
+    booked, rows, newest = None, 0, None
+    for line in text.splitlines():
+        m = ROW_TS.search(line)
+        a = ROW_AGENTS.search(line)
+        if not m or not a:
+            continue
+        try:
+            when = calendar.timegm(
+                (int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                 int(m.group(4)), int(m.group(5)), int(m.group(6)), 0, 1, -1)
+            )
+        except Exception:
+            continue
+        rows += 1
+        age = now - when
+        if newest is None or age < newest:
+            newest = age
+        if abs(age) > BOOKING_WINDOW_SECONDS:
+            continue
+        n = int(a.group(1))
+        if booked is None or n > booked:
+            booked = n
+    return booked, rows, newest
+
+
 # ---------------------------------------------------------------------------
 # The evaluation. Returns a list of findings; an empty list means "allow".
 # ---------------------------------------------------------------------------
@@ -386,6 +538,7 @@ def evaluate(script, cwd=None):
                 {
                     "kind": kind,
                     "start": start,
+                    "span": call_span(code, start, args),
                     "args": args,
                     "class": classify(args),
                     "items": count_items(args, code),
@@ -464,6 +617,37 @@ def evaluate(script, cwd=None):
                 "SHAPE 6 -- DISPATCH-CHECK PAUSED | executions=%d | pause_at=%d | ceiling=%d\n"
                 "  (read: %s)\n%s" % (execs, pause, ceil, path, FIX_6_PAUSE)
             )
+
+    # --- 7. the write-ahead rule: a tree that was never booked ---------------
+    # tools/dispatch-check.sh books the WHOLE tree write-ahead and rolls the
+    # booking back when the row fails to land, so agents.executions_total is
+    # exact for every dispatch that CALLS it. On 2026-09-07 ten stage-2
+    # verifiers fired without calling it at all -- no dispatch-log row, no
+    # increment -- and the pause line was short by whole trees. SKILL.md
+    # section 5 now binds EVERY dispatch, research or build, to book before it
+    # fires; this is the half that holds when the conductor forgets.
+    control = find_control_dir(cwd or os.getcwd())
+    if control:
+        declared = declared_agents(code, stages)
+        if declared:
+            log = dispatch_log_booking(control, time.time())
+            if log is not None:
+                booked, rows, newest = log
+                if booked is None or booked < declared:
+                    if rows == 0:
+                        detail = "no row carries both a timestamp and an agents= field"
+                    else:
+                        detail = "%d booking row%s, newest %s old" % (
+                            rows, "" if rows == 1 else "s",
+                            "unknown age" if newest is None else "%ds" % int(newest),
+                        )
+                    findings.append(
+                        "SHAPE 7 -- DISPATCH-LOG UNBOOKED | declared=%d booked=%s | window=%ds\n"
+                        "  (read: %s -- %s)\n%s"
+                        % (declared, "none" if booked is None else booked,
+                           BOOKING_WINDOW_SECONDS,
+                           os.path.join(control, "dispatch-log.md"), detail, FIX_7)
+                    )
     return findings
 
 
@@ -546,6 +730,20 @@ const results = await pipeline(
   },
 )
 return results.filter(Boolean)
+"""
+
+FIXTURE_THREE_STAGE = """export const meta = { name: 'three-stage', description: 'ten units, three stages' }
+const UNITS = [
+  { id: 'u01' }, { id: 'u02' }, { id: 'u03' }, { id: 'u04' }, { id: 'u05' },
+  { id: 'u06' }, { id: 'u07' }, { id: 'u08' }, { id: 'u09' }, { id: 'u10' },
+]
+const done = await pipeline(
+  UNITS,
+  (u) => agent('build ' + u.id, { label: `[Opus x1] build ${u.id}`, phase: 'Build', model: 'opus' }),
+  (built, u) => agent('judge ' + u.id, { label: `[Sonnet x1] judge ${u.id}`, phase: 'Judge', model: 'sonnet' }),
+  (judged, u) => agent('pen ' + u.id, { label: `[Sonnet x1] pen ${u.id}`, phase: 'Pen', model: 'sonnet' }),
+)
+return done
 """
 
 
@@ -731,10 +929,59 @@ def selftest():
            "with exit 2 naming tools/state-check.sh -- that is the gate that refuses, and the "
            "conductor owns the difference" % rc_nb)
 
+    # 10 -- SHAPE 7, the write-ahead rule: ONE fixture, three answers. Three
+    #       stages over ten units declares thirty agents. Booked at thirty it is
+    #       allowed; booked at ten it is blocked naming both numbers; booked
+    #       nowhere it is blocked naming booked=none. If all three returned the
+    #       same code the TEST would be broken, not the target -- which is why
+    #       the allowed case is the first of the three and asserted first.
+    def log_dir(name, agents, age_seconds=0, write_log=True):
+        d = tempfile.mkdtemp(prefix="dispatch-gate-%s." % name, dir=sandbox)
+        os.makedirs(os.path.join(d, "CONTROL"), exist_ok=True)
+        if write_log:
+            ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_seconds))
+            with open(os.path.join(d, "CONTROL", "dispatch-log.md"), "w", encoding="utf-8") as fh:
+                fh.write(
+                    "# dispatch log\n\n"
+                    "%s | u01-u10 | dispatch | [Opus x10] wave 1 | run=selftest | units=10 | "
+                    "agents=%d | cap=10 | floor=10 | stages=3 | dep=none | executions_total=%d\n"
+                    % (ts, agents, agents)
+                )
+        return d
+
+    booked_full = log_dir("booked30", 30)
+    rc_ok, out_ok = _run_child(payload(FIXTURE_THREE_STAGE), booked_full)
+    report(17, "booked-tree-allowed", rc_ok == 0,
+           "rc=%d (want 0): 10 units x 3 stages = 30 declared, and a fresh row books 30%s"
+           % (rc_ok, "" if rc_ok == 0 else " -- output: " + out_ok.strip()[:400]))
+
+    booked_short = log_dir("booked10", 10)
+    rc_short, out_short = _run_child(payload(FIXTURE_THREE_STAGE), booked_short)
+    ok = rc_short == 2 and "SHAPE 7" in out_short and "declared=30 booked=10" in out_short
+    report(18, "under-booked-blocked", ok,
+           "the SAME script with a row booking 10 -> rc=%d (want 2), naming "
+           "declared=30 booked=10: %s"
+           % (rc_short, "yes" if "declared=30 booked=10" in out_short else "NO"))
+
+    unbooked = log_dir("unbooked", 0, write_log=False)
+    rc_none, out_none = _run_child(payload(FIXTURE_THREE_STAGE), unbooked)
+    ok = rc_none == 2 and "SHAPE 7" in out_none and "booked=none" in out_none
+    report(19, "unbooked-blocked", ok,
+           "the SAME script with no dispatch-log row at all -> rc=%d (want 2), naming "
+           "booked=none: %s" % (rc_none, "yes" if "booked=none" in out_none else "NO"))
+
+    stale = log_dir("stale", 30, age_seconds=600)
+    rc_stale, out_stale = _run_child(payload(FIXTURE_THREE_STAGE), stale)
+    ok = rc_stale == 2 and "booked=none" in out_stale
+    report(20, "stale-row-is-not-a-booking", ok,
+           "a row booking 30 but written 600s ago -> rc=%d (want 2) and booked=none: it "
+           "booked a tree that already fired; without this case the %ds window is untested "
+           "code" % (rc_stale, BOOKING_WINDOW_SECONDS))
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (17 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (21 checks)")
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)
