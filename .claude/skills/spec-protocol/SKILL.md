@@ -51,7 +51,7 @@ the word `ultracode` in front of the command — type `ultracode /spec-protocol`
 covers just that one message." No degraded run, no partial run, no "let me try anyway."
 
 **GATE 0b — the tick is armed.** Every run opens with its enforcer in place: the
-five-minute tick `tools/watch-tick.sh <project>` on a crontab line (step 21),
+five-minute tick `tools/watch-tick.sh <project>` on a crontab line (step 3, the moment `CONTROL/` exists),
 reconciling through `tools/anchor.sh --mode reconcile` and checking S2, S3, S5, S6 and
 S13 from minute one (`references/enforcement.md`). Nothing in this skill ever removes,
 disables or weakens a governance hook, and `disableAllHooks` is never set.
@@ -252,7 +252,8 @@ the real name; a folder the client PROVIDED is never renamed (RULE 1). The insta
 `ENTRY-MODE: interview|pointed` — the only durable proof of which entry was offered and
 chosen, without which the step-20 self-audit rejects the run, and never confused with
 `INTERVIEW-MODE: simple|advanced` (step 6); both lines exist on every run and neither
-substitutes for the other.
+substitutes for the other. Arm the tick in the same breath — the idempotent crontab
+line of section 12 — because GATE 0b is a promise about minute one, not about step 21.
 
 Interview path: the brainstorm (step 4) — fifteen minutes, their own words, four things
 only (what and who; what exists; what is deliberately not in it; what would make it
@@ -417,7 +418,7 @@ never in conversation memory (Law 25).
 16.2. PROJECT-MANIFEST.md. **16.4** the native task graph. **16.6** `project_state.json` and the checkpoint strategy. **16.9** orchestration mode. **DEFAULT: single-session lead plus workflow trees.** A team is formed ONLY when the client asks for one in their own words — everything a team supervises, the tick and the gauntlet already enforce deterministically. The team path is OPTIONAL and lives in `references/optional/agent-team.md`; load it only on that explicit ask, and answer the three-question core rule (subagents only / dynamic workflows / Agent Team) in writing in the execution plan either way.
 17. Determine GitHub (new or existing) and smoke-test the token. **18.** Derive the loops. **19.** Write the launch command and the run plan (`references/terminals.md`).
 20. Self-audit the apparatus with a DIFFERENT agent (Law 30): the ten categories with quoted proof and the break-it pass, the by-command census (prove the instrument on a known-positive first, `/usr/bin/grep` explicitly), the QC-RECORD audit, the entry-gate audit for the `ENTRY-MODE:` line, and the GL-001…GL-008 separation audit. Any FAIL → ONE fix pass dispatched as a workflow of fixer agents, then ONE re-judge. `tools/audit-gate.sh <project>` decides: HALT, HARM and SCOPE findings must clear; every other finding is logged as a `CARRY:` line through `tools/ledger.sh` and travels into the build as a named work item. Two cycles is the ceiling; a third is refused and the run proceeds with its CARRY list (`references/gauntlet.md` §7.1).
-21. Arm the tick, then hand over and start. **22.** Monitor, and write the morning report.
+21. PROVE the tick has been running since step 3 — `crontab -l | grep -c watch-tick.sh` is 1 and `CONTROL/LEDGER.md` carries at least one `S-CHECK` line — then hand over and start. A run reaching here with zero `S-CHECK` lines has a broken enforcer and says so plainly. **22.** Monitor, and write the morning report.
 
 ## 8. The gauntlet
 
@@ -583,7 +584,7 @@ cannot prove the page-building browser tool builds the pages as a website instea
 
 ## 12. Handover and the morning report
 
-**Step 21 — arm the tick FIRST, then say so.** Install the cron half idempotently:
+**Step 3 — arm the tick; step 21 — prove it ran.** Install the cron half idempotently:
 
 ```
 L="$(bash <skill>/tools/watch-tick.sh <project> --cron-line)"; crontab -l 2>/dev/null | grep -qF watch-tick.sh || { crontab -l 2>/dev/null; echo "$L"; } | crontab -
@@ -594,7 +595,8 @@ plain sentence — "A checker now runs every five minutes on its own, whether or
 awake — it writes down what it finds, and I read it every time I check in." — and start
 the model half in the same breath. Where `crontab` is unavailable the degradation is
 NAMED, never silent: "the checker runs whenever I check in, rather than on its own,"
-written to the ledger, with the `/loop 5m` half running alone.
+written to the ledger, with the `/loop 5m` half running alone. The announcement
+sentence is spoken once — at step 3, when the tick is armed — never again at handover.
 
 **The handover assigns the client nothing.** They open no windows and paste nothing. The
 only line they are ever given is the restart sentence in section 3, also written into
