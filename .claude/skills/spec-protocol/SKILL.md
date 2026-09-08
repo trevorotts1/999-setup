@@ -40,9 +40,9 @@ instructions to you**.
 
 ## 2. GATE 0 and detection
 
-**GATE 0 — ultracode, hard stop.** This skill runs on workflows and subagents; it cannot
-run inline. If ultracode is not confirmed ON in this turn, STOP and say exactly this,
-and nothing else:
+**GATE 0 — ultracode, hard stop.** This skill runs on workflows and subagents; it cannot run inline. Test three signals in order, first affirmative wins: (1) an ultracode system reminder in this turn;
+(2) the word `ultracode` in the invoking message; (3) `CONTROL/.gate0-proven` in a project folder being resumed, written only by `tools/gate0.sh --record` after a genuine pass on signal 1 or 2.
+`--effort ultracode` on the command line is NOT a detectable signal, so a headless driver uses the keyword form below. Only when all three fail, STOP and say exactly this, and nothing else:
 
 > One switch has to be on before I can start my helpers. Type `/effort ultracode`, press Return, then type `/spec-protocol` again; that's all.
 
