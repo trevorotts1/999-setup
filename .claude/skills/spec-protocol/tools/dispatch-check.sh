@@ -37,11 +37,21 @@
 #              dispatch" — references/execution-architecture.md, fail-closed).
 #   5  PADDED — agents > units × stages. More seats than the work has stages to
 #              put them in; someone inflated the number to satisfy the floor.
+#   6  NO-RIGHTSIZE — a BUILD dispatch was attempted while CONTROL/LEDGER.md
+#              carries no OVER-ENGINEERING-CHECK: line. The over-engineering
+#              check (Law 42) is mandated by SKILL.md step 13 and defined in
+#              references/pipeline.md, and the 2026-09-07 canary proved it can
+#              be skipped in silence — it was never run and recorded nowhere,
+#              and the apparatus outgrew the job unmeasured. This is what makes
+#              it unskippable: the run cannot reach a builder without it. Run
+#              tools/right-size.sh first; it writes that line, and only on a
+#              pass. Like exit 4 this is a fact about the RUN, not a broken
+#              tool, so it is kept out of exit 2.
 #
-# The four the row enumerates are 0/3/5/2. Exit 4 is the fail-closed precondition
-# refusal the same finding demands in its second sentence; it is kept separate
-# from 2 on purpose — a missing Parallelism Plan is a fact about the RUN, and
-# calling that a tooling failure would let a real refusal read as a broken tool.
+# The four the row enumerates are 0/3/5/2. Exits 4 and 6 are the fail-closed
+# precondition refusals — a missing Parallelism Plan and a missing
+# over-engineering check; both are kept separate from 2 on purpose, because
+# calling a real refusal a tooling failure would let it read as a broken tool.
 #
 # CLIENT_CAP is read from <project>/CAPACITY-LEDGER.md, never declared, never
 # asked, never inherited from the environment (finding S1). Two shapes are
@@ -56,9 +66,11 @@
 # three cases the work item names (10/10 at cap 10 → 0; 10 units, 3 agents,
 # no dep= → 3; 4 units, 40 agents → 5), the executions_total arithmetic, both
 # CLIENT_CAP parse shapes, the dep= escape hatch, both exit-4 refusals, the
-# missing-ledger tooling failure, and a known-positive control for every grep it
-# relies on. A gate whose known-positive comes back negative reports BROKEN
-# INSTRUMENT, never "clean".
+# exit-6 pair (ONE build fixture refused without the OVER-ENGINEERING-CHECK:
+# line and passed with it — a pass/fail pair on one fixture, so a broken check
+# cannot show as a class-wide refusal), the missing-ledger tooling failure, and
+# a known-positive control for every grep it relies on. A gate whose
+# known-positive comes back negative reports BROKEN INSTRUMENT, never "clean".
 
 set -uo pipefail
 
@@ -111,6 +123,26 @@ has_parallelism_plan() {
   "${GREP}" -qE '^[[:space:]]*#{1,6}[[:space:]].*Parallelism Plan' "${f}" 2>/dev/null && return 0
   "${GREP}" -qE '^[[:space:]]*(\*\*)?Parallelism Plan' "${f}" 2>/dev/null && return 0
   return 1
+}
+
+# --- The over-engineering check gate (fail-closed) ---------------------------
+# tools/right-size.sh writes "OVER-ENGINEERING-CHECK: units=… verdict=…" into
+# CONTROL/LEDGER.md, and writes it ONLY on a pass. So the presence of the line
+# is the proof the check ran and cleared; its absence is the proof it did not.
+has_rightsize_line() {
+  local f="$1"
+  [[ -f "${f}" ]] || return 1
+  [[ -r "${f}" ]] || return 1
+  "${GREP}" -q 'OVER-ENGINEERING-CHECK:' "${f}" 2>/dev/null && return 0
+  return 1
+}
+
+# Deliberately broad: any label carrying "build" in any case is a build
+# dispatch, "rebuild" included. Fail-closed is the safe direction here — the
+# cost of gating one extra dispatch is a re-run of right-size.sh; the cost of
+# missing one is the defect this exists to end.
+is_build_label() {
+  printf '%s' "$1" | "${GREP}" -qi 'build'
 }
 
 # --- The state counter ------------------------------------------------------
@@ -287,6 +319,26 @@ run_check() {
     printf 'DISPATCH-CHECK WARNING | label says x%s but agents=%s — the tree name will not match what ran\n' "${label_n}" "${agents}" >&2
   fi
 
+  # --- Fail-closed precondition: no over-engineering check, no builder ------
+  # Ahead of the width arithmetic on purpose: a dispatch that should never fire
+  # is refused before its shape is argued about.
+  if is_build_label "${label}"; then
+    local ledger_doc="${project}/CONTROL/LEDGER.md"
+    if ! has_rightsize_line "${ledger_doc}"; then
+      printf 'DISPATCH-CHECK NO-RIGHTSIZE | CONTROL/LEDGER.md carries no OVER-ENGINEERING-CHECK: line\n' >&2
+      printf 'DISPATCH-CHECK NOTE | read: %s | run tools/right-size.sh %s first — it writes that line, and only on a pass (Law 42, SKILL.md step 13)\n' \
+        "${ledger_doc}" "${project}" >&2
+      exit 6
+    fi
+  fi
+
+  # ==========================================================================
+  # WI-34 INSERTION POINT — the budget/pause preconditions (exit 7 and exit 8)
+  # belong HERE, between the over-engineering gate above and the width
+  # arithmetic below. WI-34 owns those two exit codes and this block; WI-31
+  # added nothing to it and reserved it so the two edits do not collide.
+  # ==========================================================================
+
   # --- The floor (S4). The only number this skill controls. -----------------
   local floor="${units}"
   (( cap < floor )) && floor="${cap}"
@@ -388,6 +440,9 @@ run_selftest() {
   printf 'CLIENT_CAP=10\nBROWSER_CAP=12\nWORKFLOW_CEILING=50\n' > "${P}/CAPACITY-LEDGER.md"
   printf '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n' > "${P}/CONTROL/EXECUTION-PLAN.md"
   printf '{\n  "schema": "spec-protocol/project-state@1",\n  "run_status": "RUNNING",\n  "agents": { "executions_total": 0, "budget_initial": 1000 }\n}\n' > "${P}/CONTROL/project_state.json"
+  # Every fixture below that dispatches a BUILD needs the over-engineering line
+  # right-size.sh writes, or it is refused with exit 6 before its width is read.
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P}/CONTROL/LEDGER.md"
 
   local rc out total ok
   read_total() { sed -n 's/.*"executions_total"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${P}/CONTROL/project_state.json" | head -n 1; }
@@ -450,6 +505,7 @@ run_selftest() {
     printf 'clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n'
   } > "${P3}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P3}/CONTROL/EXECUTION-PLAN.md"
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P3}/CONTROL/LEDGER.md"
   # 10 units and 9 agents DISCRIMINATES: it exits 3 only if the cap parsed as
   # 10. A mis-parse of 2 (the `max(2,` on that same line) would make the floor
   # 2, and 9 agents would sail through with exit 0.
@@ -497,9 +553,30 @@ run_selftest() {
   ok=0; [[ "${rc}" == "0" && "${awk_total}" == "11" ]] && ok=1
   report 14 "awk-fallback-counts" "${ok}" "rc=${rc} (want 0) with python3 forced off; executions_total 7 → ${awk_total} (want 11)"
 
+  # --- 13: the exit-6 pair — ONE build fixture, both halves ----------------
+  # A refusal that fired for every build dispatch would look identical to a
+  # working gate from the failing half alone. The same fixture is therefore run
+  # twice, with the OVER-ENGINEERING-CHECK: line the only thing that changes.
+  local P7="${T}/proj-rightsize"
+  mkdir -p "${P7}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P7}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P7}/CONTROL/EXECUTION-PLAN.md"
+
+  out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "6" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-RIGHTSIZE | CONTROL/LEDGER.md carries no OVER-ENGINEERING-CHECK: line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "${P7}/CONTROL/LEDGER.md" || ok=0
+  if [[ -f "${P7}/CONTROL/project_state.json" ]]; then ok=0; fi
+  report 15 "no-rightsize-refused" "${ok}" "rc=${rc} (want 6) for a build dispatch with no OVER-ENGINEERING-CHECK: line; the message names the exact path read and no counter moved"
+
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P7}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  report 16 "rightsize-line-allows" "${ok}" "rc=${rc} (want 0) — the SAME dispatch, on the SAME fixture, with the ledger line added and nothing else changed. This half is what proves exit 6 is a fact about the missing line and not a class-wide refusal of build dispatches; ${out}"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (15 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (17 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"
