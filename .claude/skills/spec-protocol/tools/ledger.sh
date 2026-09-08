@@ -124,7 +124,7 @@ run_selftest() {
   trap 'rm -rf "${ST_HOME}"' EXIT
   printf 'ledger.sh --selftest | self=%s | home=%s\n' "${ST_SELF}" "${ST_HOME}"
 
-  local L LEDGER INTENTS_BEFORE INTENTS_AFTER GUARD
+  local L LEDGER INTENTS_BEFORE INTENTS_AFTER GUARD ML ML_BEFORE ML_AFTER
   LEDGER="CONTROL/LEDGER.md"
 
   # --- 1. SCORE, well formed, bare — the exact shape gauntlet.md section 5 writes
@@ -206,6 +206,52 @@ run_selftest() {
     st_ok "upsert mode keeps exactly one line per key"
   else
     st_bad "upsert mode keeps one line per key" "rc=${ST_RC} lines=$(st_lines CONTROL/HEARTBEAT.md) err=${ST_ERR}"
+  fi
+
+  # --- 9. a ONE-LINE write: rc 0 with the line on disk. This is the CONTROL for
+  #        cases 10 and 11 — a verification that refused every write, or accepted
+  #        every write, fails this set as a whole rather than one case of it.
+  L='2026-09-07T04:30:00Z | NOTE | unit=U2 | a one-line payload (multi-line control)'
+  st_write "CONTROL/multiline.md" "${L}"
+  if (( ST_RC == 0 )) && [[ "$(st_last CONTROL/multiline.md)" == "${L}" ]]; then
+    st_ok "one-line write returns 0 with the line present (control for the multi-line cases)"
+  else
+    st_bad "one-line write returns 0 with the line present" "rc=${ST_RC} last=[$(st_last CONTROL/multiline.md)] err=${ST_ERR}"
+  fi
+
+  # --- 10. a SIX-LINE write — the QC RECORD shape of SKILL.md, the payload that
+  #         used to exit 1 after its bytes had already landed. rc 0, all six
+  #         lines present, in order, and the file grew by exactly six.
+  ML='QC RECORD | unit=U2 | round=1
+judge=judge-b (a seat that did not build U2)
+provenance=STRIPPED
+bar=reference-app (fetched 2026-09-07)
+verdict=PASS
+outcome=PASSED'
+  ML_BEFORE="$(st_lines CONTROL/multiline.md)"
+  st_write "CONTROL/multiline.md" "${ML}"
+  ML_AFTER="$(st_lines CONTROL/multiline.md)"
+  if (( ST_RC == 0 )) && (( ML_AFTER - ML_BEFORE == 6 )) \
+     && [[ "$(tail -n 6 "${ST_HOME}/CONTROL/multiline.md")" == "${ML}" ]]; then
+    st_ok "six-line write returns 0 with all six lines present and in order (${ML_BEFORE}->${ML_AFTER})"
+  else
+    st_bad "six-line write returns 0 with all six lines in order" "rc=${ST_RC} before=${ML_BEFORE} after=${ML_AFTER} tail6=[$(tail -n 6 "${ST_HOME}/CONTROL/multiline.md" 2>/dev/null)] err=${ST_ERR}"
+  fi
+
+  # --- 11. THE DISCRIMINATING CASE: the same six-line payload again, so the file
+  #         ALREADY ends in the payload's last line before this write starts.
+  #         The tail half of the verification is satisfied here whether or not
+  #         the append landed, so this case passes only because the COUNT half
+  #         is computed correctly — a count taken from the wrong baseline (the
+  #         post-rename target, or the pre-upsert-filter copy) fails right here.
+  ML_BEFORE="$(st_lines CONTROL/multiline.md)"
+  st_write "CONTROL/multiline.md" "${ML}"
+  ML_AFTER="$(st_lines CONTROL/multiline.md)"
+  if (( ST_RC == 0 )) && (( ML_AFTER - ML_BEFORE == 6 )) \
+     && [[ "$(tail -n 6 "${ST_HOME}/CONTROL/multiline.md")" == "${ML}" ]]; then
+    st_ok "six-line write into a file already ending in the payload's last line returns 0 and grew by exactly 6 (the count check is what proves this append landed)"
+  else
+    st_bad "six-line write onto an identical trailing line" "rc=${ST_RC} before=${ML_BEFORE} after=${ML_AFTER} err=${ST_ERR}"
   fi
 
   printf 'ledger.sh --selftest | passes=%d fails=%d\n' "${ST_PASSES}" "${ST_FAILS}"
@@ -386,6 +432,12 @@ if [[ -n "${UPSERT_KEY}" ]]; then
   mv "${TMP}.filtered" "${TMP}"
 fi
 
+# The line count of the file as it will stand IMMEDIATELY BEFORE this payload
+# is appended (i.e. after any upsert filter above, so an upsert's own deletion
+# is never mistaken for a short append). The verification below subtracts this
+# from the final count to prove the append added exactly the payload's lines.
+PRE_N=$(wc -l < "${TMP}" | tr -d ' ')
+
 printf '%s\n' "${LINE}" >> "${TMP}"
 
 # Atomic rename — still inside the lock, so no other writer's read of
@@ -403,10 +455,24 @@ if [[ ! -f "${TARGET}" ]]; then
   echo "WARNING: iCloud eviction detected for ${HOME_DIR}" >&2
 fi
 
-# --- Verify THIS write landed (tail, not whole-file grep: a whole-file grep
-# would pass on an earlier identical line and mask a failed append) ---
-if [[ "$(tail -n 1 "${TARGET}")" != "${LINE}" ]]; then
-  echo "ERROR: ledger write verification failed — last line of ${TARGET} is not the line just written" >&2
+# --- Verify THIS write landed. Two parts, because a payload is not always one
+# line: the file's last line must equal the payload's LAST line, AND the file's
+# line count must have grown by exactly the payload's line count.
+#
+# The tail half is still a tail and not a whole-file grep for the original
+# reason: a whole-file grep would pass on an earlier identical line and mask a
+# failed append. For a multi-line payload the tail half alone can no longer
+# carry that guarantee on its own — a file that already ended in the payload's
+# last line would satisfy it whether or not this append landed — so the COUNT
+# half now carries it: the file cannot have grown by exactly the payload's line
+# count unless this append is what grew it. (The old check compared the file's
+# last line against the WHOLE payload, so every multi-line write reported a
+# failed write after its bytes had already landed.) ---
+PAYLOAD_LAST="${LINE##*$'\n'}"
+PAYLOAD_N=$(printf '%s\n' "${LINE}" | wc -l | tr -d ' ')
+POST_N=$(wc -l < "${TARGET}" | tr -d ' ')
+if [[ "$(tail -n 1 "${TARGET}")" != "${PAYLOAD_LAST}" ]] || (( POST_N - PRE_N != PAYLOAD_N )); then
+  echo "ERROR: ledger write verification failed — ${TARGET} does not end with the last line just written, or did not grow by the ${PAYLOAD_N} line(s) just written (before=${PRE_N} after=${POST_N})" >&2
   exit 1
 fi
 
