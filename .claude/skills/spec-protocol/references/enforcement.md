@@ -55,6 +55,26 @@ its exit codes and its selftest are `references/workflows.md` §13. This skill
 never removes, disables or weakens a governance hook, and `disableAllHooks` is
 never set.
 
+**SHAPE 7 and the residual limit it does NOT cover (written down, not hidden).**
+The same hook refuses a launch whose DECLARED agent count — summed across every
+stage, so a three-stage tree over ten units is thirty, not ten — is not booked by
+a `CONTROL/dispatch-log.md` row written in the last 120 seconds, and its message
+names both numbers (`declared=<n> booked=<n>`, or `booked=none`). That makes
+SKILL.md §5's write-ahead rule mechanical: `tools/dispatch-check.sh` books the
+whole tree write-ahead and rolls the booking back if the row fails to land, so
+`agents.executions_total` is exact for every dispatch that CALLS it — on
+2026-09-07 ten stage-2 verifiers never called it, and the counter read 6 while 17
+agents had run. **The limit: the count is exact for a tree's DECLARED width at
+launch and CANNOT see an agent an already-running workflow spawns internally,
+because a PreToolUse hook fires once per launch, not once per inner agent.** There
+is no harness agent journal to fall back on — the per-session transcript under
+`~/.claude/projects/` is a session record keyed by working directory, not a
+per-agent ledger, and nothing here is built on it. So `tools/anchor.sh`'s
+dispatch-log census stays the cross-check: `agents.executions_total` against the
+sum of the `agents=` fields in `CONTROL/dispatch-log.md`. **A divergence between
+the two is a FINDING — an unbooked dispatch, named and reconciled — never a
+rounding error, and never absorbed silently.**
+
 ---
 
 ## 2. Who owns which standard

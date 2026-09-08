@@ -297,8 +297,10 @@ custom) in one plain question, which pre-sets defaults and removes questions tha
 **The RESEARCH-READY gate (step 3.5).** No research dispatches until BOTH ledger lines
 exist: `BUILD-TARGET: <taxonomy>` (section 3) and `INPUT-CAPTURED: <path>` (written the
 moment the brainstorm's verbatim capture lands in `00-INPUT/`, or the provided material
-is in place and confirmed). It blocks the DISPATCH only, never the flow. Every research
-dispatch writes its `CONTROL/dispatch-log.md` row BEFORE firing, in this exact format:
+is in place and confirmed). It blocks the DISPATCH only, never the flow. EVERY dispatch,
+research or build, writes its `CONTROL/dispatch-log.md` row BEFORE firing, booking the
+tree's full declared agent count across all stages; `tools/hooks/dispatch-gate.py` SHAPE 7
+refuses a launch that was not booked. The research row is in this exact format:
 
 `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>`
 
