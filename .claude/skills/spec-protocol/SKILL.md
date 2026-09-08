@@ -118,8 +118,9 @@ config stores; no bootstrap outcome ever blocks the run.
 **Progress visibility (step 2.10).** Run `scripts/setup-statusline.sh` once — detect
 first, never destroy, back up both settings stores, idempotent — and the deployed
 `~/.claude/statusline-command.sh` is REGENERATED from the installer, never edited in
-place (verify with a heredoc-extract diff, not by eye);
-`references/progress-visibility.md` owns the bar and its segments.
+place (verify with a heredoc-extract diff, not by eye) — `--check` is the drift report,
+naming the deployed and installer hashes, and `--force` is the repair that regenerates
+the body; `references/progress-visibility.md` owns the bar and its segments.
 
 **Regular Claude Code — the defaults path.** Seats are the one seat table in
 `references/capacity.md` §11; never restate them, and never tell the client which model

@@ -26,6 +26,13 @@
 # installer, then diff the two. (That is exactly how an earlier defect
 # survived — the installer carried the fix, the running script did not.)
 #
+# HOW IT NOTICES. The stamp file is TWO lines — the sha256 of the body this
+# installer generates, and the date. Every path that could stop early now
+# compares the deployed file's sha256 against the installer's own first, so a
+# statusLine key that is already present can no longer freeze a stale body in
+# place. `--check` is the drift report (both hashes, writes nothing); `--force`
+# is the repair. A statusline that is not ours is never written to, in any mode.
+#
 # Never prints API keys or any secret value. Name-only output.
 set -uo pipefail
 
@@ -50,6 +57,37 @@ if ! command -v jq >/dev/null 2>&1; then
   say "One small helper program is missing (jq). Install it, then run this again."
   exit 2
 fi
+
+# --- content hashing ------------------------------------------------------
+# The installer owns the body, so the installer has to be able to tell when the
+# deployed copy is no longer the body it would write. sha256 of the generated
+# text is that test. `shasum` ships with macOS, `sha256sum` with most Linux.
+# Each candidate is RUN on a known input before it is trusted — a resolvable
+# name is not a working program — and with neither of them working the answer
+# is UNDETERMINED: this script never regenerates on an unproven comparison,
+# because a wrong "drift" verdict would overwrite a healthy file.
+
+SHA_TOOL=""
+sha256_resolve() {
+  [ -n "$SHA_TOOL" ] && return 0
+  if printf '' | shasum -a 256 >/dev/null 2>&1; then SHA_TOOL="shasum"; return 0; fi
+  if printf '' | sha256sum      >/dev/null 2>&1; then SHA_TOOL="sha256sum"; return 0; fi
+  return 1
+}
+
+sha256_stdin() {
+  sha256_resolve || return 1
+  case "$SHA_TOOL" in
+    shasum)    shasum -a 256 2>/dev/null | awk '{print $1}' ;;
+    sha256sum) sha256sum     2>/dev/null | awk '{print $1}' ;;
+    *)         return 1 ;;
+  esac
+}
+
+sha256_file() {
+  [ -f "$1" ] || return 1
+  sha256_stdin < "$1"
+}
 
 # --- store helpers ------------------------------------------------------
 
@@ -79,74 +117,13 @@ set_statusline_key() {
     "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 
-# --- main ----------------------------------------------------------------
-
-# --check: detection-only dry run. Reports what WOULD happen, writes nothing.
-# Testing MUST use this mode — a bare invocation mutates the settings stores.
-if [ "${1:-}" = "--check" ]; then
-  say "DRY RUN (--check) — nothing will be written."
-  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
-    if has_statusline "$f"; then
-      say "Already configured in $f — healthy, no action."
-    elif [ -f "$f" ]; then
-      say "Would configure statusLine in $f."
-    else
-      say "Store absent: $f — skipped."
-    fi
-  done
-  if [ -f "$STATUSLINE_SCRIPT" ]; then
-    grep -q "SPEC-PROTOCOL-STATUSLINE" "$STATUSLINE_SCRIPT" 2>/dev/null \
-      && say "Shared script already installed (ours) — would keep." \
-      || say "Shared script present but NOT ours — would leave untouched."
-  else
-    say "Would install shared script: $STATUSLINE_SCRIPT"
-  fi
-  [ -f "$STAMP_FILE" ] && say "Stamp present — a real run would report already-installed."
-  exit 0
-fi
-
-# 1. Detect-first. An existing statusLine in EITHER store is reported, never
-#    replaced. Equal-or-better is the healthy outcome; enhanceable lines are
-#    preserved and only extended by hand — this script never rewrites them.
-EXISTING=0
-for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
-  if has_statusline "$f"; then
-    say "Claude Code Status Line (name-only check):"
-    say "Already configured in $(basename "$f")."
-    say "No replacement required."
-    EXISTING=1
-  fi
-done
-if [ "$EXISTING" = 1 ]; then
-  exit 0
-fi
-
-# 2. Idempotency stamp. Same launch paths + same script + already stamped ->
-#    nothing to do. Stamp and key presence can drift (documented disable
-#    removes only the key), so a stamp is honored only while a store still
-#    carries the line; otherwise the stamp is cleared and install proceeds.
-if [ -f "$STAMP_FILE" ]; then
-  STAMP_VALID=0
-  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
-    if has_statusline "$f"; then STAMP_VALID=1; break; fi
-  done
-  if [ "$STAMP_VALID" = 1 ]; then
-    say "Spec Protocol status line: already installed (stamp present)."
-    say "No replacement required."
-    exit 0
-  fi
-  warn "Stamp present but no statusLine key in either store — removing stamp."
-  rm -f "$STAMP_FILE"
-fi
-
-# 3. Install the shared statusline command script (idempotent overwrite of
-#    our own file only — the file is OURS, not the user's).
-if [ -f "$STATUSLINE_SCRIPT" ] && ! grep -q "SPEC-PROTOCOL-STATUSLINE" "$STATUSLINE_SCRIPT" 2>/dev/null; then
-  warn "Existing $STATUSLINE_SCRIPT is not ours — left untouched."
-  say "Status line left UNCONFIGURED. Point a statusLine key at it by hand."
-  exit 0
-fi
-cat > "$STATUSLINE_SCRIPT" <<'STATUSLINE_EOF'
+# --- the generated body ---------------------------------------------------
+# The deployed script, as a quoted heredoc, emitted by a function so the
+# installer can HASH the body it would write without writing it anywhere.
+# This is the only copy of the body; ~/.claude/statusline-command.sh is its
+# output and nothing else.
+emit_statusline_body() {
+  cat <<'STATUSLINE_EOF'
 #!/usr/bin/env bash
 # SPEC-PROTOCOL-STATUSLINE — Spec Protocol status line (the CLIENT BAR).
 #
@@ -456,6 +433,392 @@ add "$wavseg"
 [ -n "$out" ] && printf '%s\n' "$out"
 exit 0
 STATUSLINE_EOF
+}
+
+# --- is the deployed body still the installer's body? ---------------------
+# `is_ours` is the ONE ownership test in this file: the generated body carries
+# the SPEC-PROTOCOL-STATUSLINE marker on its second line, and a statusline
+# without it belongs to somebody else and is never written to, in any mode.
+
+STATUSLINE_MARKER="SPEC-PROTOCOL-STATUSLINE"
+
+is_ours() {
+  [ -f "$1" ] || return 1
+  grep -q "$STATUSLINE_MARKER" "$1" 2>/dev/null
+}
+
+installer_body_hash() { emit_statusline_body | sha256_stdin; }
+deployed_body_hash()  { sha256_file "$STATUSLINE_SCRIPT"; }
+
+# The stamp is TWO lines: the sha256 of the body the last install wrote, then
+# the date. A pre-1.19.0 stamp holds only a date, which is not 64 hex
+# characters, so it reads as "no recorded hash" and can never read as a match.
+stamp_hash() {
+  local h
+  [ -f "$STAMP_FILE" ] || return 1
+  h="$(sed -n '1p' "$STAMP_FILE" 2>/dev/null)"
+  printf '%s' "$h" | grep -qE '^[0-9a-f]{64}$' || return 1
+  printf '%s' "$h"
+}
+
+write_stamp() {
+  local h
+  h="$(installer_body_hash || true)"
+  mkdir -p "$STAMP_DIR"
+  printf '%s\n%s\n' "${h:-no-content-hash}" "$(date +%Y-%m-%d)" > "$STAMP_FILE"
+}
+
+# body_state — sets BODY_STATE (and the hashes behind the verdict) to one of:
+#   absent        no deployed script at all
+#   foreign       a statusline that is not ours; never touched
+#   undetermined  no working sha256 tool, so the comparison cannot be made
+#   match         the deployed body IS the body this installer generates
+#   drift         the deployed body is NOT the body this installer generates
+# It sets globals rather than printing, because a `$(...)` call would run it in
+# a subshell and the hashes would never reach the caller.
+BODY_STATE=""
+BODY_DEPLOYED_HASH=""
+BODY_INSTALLER_HASH=""
+BODY_STAMP_HASH=""
+BODY_STAMP_CURRENT=0
+body_state() {
+  BODY_STATE=""
+  BODY_DEPLOYED_HASH=""
+  BODY_INSTALLER_HASH="$(installer_body_hash || true)"
+  BODY_STAMP_HASH="$(stamp_hash || true)"
+  BODY_STAMP_CURRENT=0
+  if [ -n "$BODY_INSTALLER_HASH" ] && [ "$BODY_STAMP_HASH" = "$BODY_INSTALLER_HASH" ]; then
+    BODY_STAMP_CURRENT=1
+  fi
+  if [ ! -f "$STATUSLINE_SCRIPT" ]; then BODY_STATE="absent"; return 0; fi
+  if ! is_ours "$STATUSLINE_SCRIPT"; then BODY_STATE="foreign"; return 0; fi
+  BODY_DEPLOYED_HASH="$(deployed_body_hash || true)"
+  if [ -z "$BODY_INSTALLER_HASH" ] || [ -z "$BODY_DEPLOYED_HASH" ]; then
+    BODY_STATE="undetermined"; return 0
+  fi
+  if [ "$BODY_DEPLOYED_HASH" = "$BODY_INSTALLER_HASH" ]; then
+    BODY_STATE="match"
+  else
+    BODY_STATE="drift"
+  fi
+}
+
+report_hashes() {
+  say "  deployed  sha256: ${BODY_DEPLOYED_HASH:-unknown}"
+  say "  installer sha256: ${BODY_INSTALLER_HASH:-unknown}"
+}
+
+# Regenerate ONLY the file the installer owns, and re-stamp it. A statusline
+# that is not ours is refused here exactly as it is at the install step: rc 1,
+# nothing written, no settings store touched.
+regenerate_body() {
+  if [ -f "$STATUSLINE_SCRIPT" ] && ! is_ours "$STATUSLINE_SCRIPT"; then
+    warn "Existing $STATUSLINE_SCRIPT is not ours — would leave untouched."
+    say "Status line body left UNCHANGED. Nothing was written."
+    return 1
+  fi
+  mkdir -p "$(dirname "$STATUSLINE_SCRIPT")"
+  emit_statusline_body > "$STATUSLINE_SCRIPT"
+  chmod +x "$STATUSLINE_SCRIPT"
+  write_stamp
+  ok "Regenerated from the installer: $STATUSLINE_SCRIPT"
+  return 0
+}
+
+# --- main ----------------------------------------------------------------
+
+# --check: detection-only dry run. Reports what WOULD happen, writes nothing —
+# including the drift report, which is a comparison and never a repair.
+# Testing MUST use this mode — a bare invocation mutates the settings stores.
+if [ "${1:-}" = "--check" ]; then
+  say "DRY RUN (--check) — nothing will be written."
+  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+    if has_statusline "$f"; then
+      say "Already configured in $f — healthy, no action."
+    elif [ -f "$f" ]; then
+      say "Would configure statusLine in $f."
+    else
+      say "Store absent: $f — skipped."
+    fi
+  done
+  body_state
+  case "$BODY_STATE" in
+    absent)
+      say "Would install shared script: $STATUSLINE_SCRIPT" ;;
+    foreign)
+      say "Shared script present but NOT ours — would leave untouched." ;;
+    undetermined)
+      warn "UNDETERMINED: no working sha256 tool (shasum, sha256sum) on PATH."
+      say "Shared script already installed (ours) — its body cannot be compared." ;;
+    match)
+      say "HEALTHY: deployed body matches installer"
+      report_hashes ;;
+    drift)
+      say "DRIFT: deployed body differs from installer"
+      report_hashes
+      say "  Repair: run this installer with --force." ;;
+  esac
+  if [ -f "$STAMP_FILE" ]; then
+    if [ "$BODY_STAMP_CURRENT" = 1 ]; then
+      say "Stamp present and carries the installer's own content hash."
+    elif [ -n "$BODY_STAMP_HASH" ]; then
+      say "Stamp present, records $BODY_STAMP_HASH — not the installer's body."
+    else
+      say "Stamp present but carries NO content hash (pre-1.19.0 date-only stamp)."
+    fi
+  else
+    say "No stamp — a real run would install and stamp."
+  fi
+  exit 0
+fi
+
+# --force: the repair. Regenerates the file the installer owns WITHOUT the
+# content comparison, then re-stamps it. It still refuses a statusline that is
+# not ours, and it still never writes a settings store — a missing statusLine
+# key is the bare run's job, not this one's.
+if [ "${1:-}" = "--force" ]; then
+  say "FORCE — regenerating the installer-owned status line script."
+  regenerate_body || say "Nothing regenerated."
+  exit 0
+fi
+
+# --selftest: three fixtures under a TEMPORARY HOME, each one this same file
+# re-invoked with $HOME pointed into the temp tree. Every path this script
+# touches is derived from $HOME, so nothing outside the temp tree can be
+# written; the real ~/.claude files are stat'd before and after as the proof.
+#
+#   A  stale body + a stamp that matches the STALE body -> DRIFT
+#   B  the current body + a current stamp              -> HEALTHY
+#   C  a statusline that is not ours                   -> not ours, untouched
+#
+# Fixture A is the discriminating one: its stamp is internally consistent, so
+# only a comparison against the INSTALLER catches it. Three fixtures must
+# return three different verdicts; a run where they agree is a broken test.
+if [ "${1:-}" = "--selftest" ]; then
+  SELF="$0"
+  case "$SELF" in /*) ;; *) SELF="$PWD/$SELF" ;; esac
+  T="$(mktemp -d "${TMPDIR:-/tmp}/spec-statusline-selftest.XXXXXX")" || {
+    bad "selftest: cannot create a temporary directory."; exit 2; }
+  trap 'rm -rf "$T"' EXIT
+  SELFTEST_FAILED=0
+
+  st_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || printf 'absent'; }
+  st_fingerprint() {
+    printf '%s|%s|%s|%s' \
+      "$(st_mtime "$HOME/.claude/statusline-command.sh")" \
+      "$(st_mtime "$STAMP_FILE")" \
+      "$(st_mtime "$HOME/.claude/settings.json")" \
+      "$(st_mtime "$HOME/.claude-nine/settings.json")"
+  }
+  REAL_BEFORE="$(st_fingerprint)"
+
+  st_fail() { bad "selftest: $*"; SELFTEST_FAILED=$((SELFTEST_FAILED+1)); }
+  st_report() {   # st_report <failure count before the fixture> <line>
+    if [ "$SELFTEST_FAILED" = "$1" ]; then say "  PASS  $2"; else say "  FAIL  $2"; fi
+  }
+  st_expect() {   # st_expect <label> <text> <pattern>
+    printf '%s' "$2" | grep -qi -- "$3" && return 0
+    st_fail "$1: expected /$3/ in the output"
+    return 1
+  }
+
+  st_home() {     # st_home <name> -> a fixture HOME with the statusLine key set
+    local h="$T/$1"
+    mkdir -p "$h/.claude"
+    printf '%s\n' '{"statusLine":{"type":"command","command":"statusline-command.sh"}}' \
+      > "$h/.claude/settings.json"
+    printf '%s' "$h"
+  }
+  st_run() {      # st_run <fixture HOME> [flag]
+    if [ -n "${2:-}" ]; then HOME="$1" bash "$SELF" "$2" 2>&1
+    else                    HOME="$1" bash "$SELF"      2>&1; fi
+  }
+
+  INSTALLER_HASH="$(installer_body_hash || true)"
+  [ -n "$INSTALLER_HASH" ] || { bad "selftest: no working sha256 tool — UNDETERMINED, not a pass."; exit 2; }
+
+  # --- fixture A: stale body, stamp valid for that stale body ---------------
+  A0="$SELFTEST_FAILED"
+  HA="$(st_home A)"
+  emit_statusline_body > "$HA/.claude/statusline-command.sh"
+  printf '%s\n' '# a line an earlier version carried' >> "$HA/.claude/statusline-command.sh"
+  printf '%s\n%s\n' "$(sha256_file "$HA/.claude/statusline-command.sh")" '2026-01-01' \
+    > "$HA/.claude/.spec-protocol-statusline-stamp"
+  A_SETTINGS_BEFORE="$(sha256_file "$HA/.claude/settings.json")"
+  A_CHECK="$(st_run "$HA" --check)"
+  st_expect "A --check" "$A_CHECK" 'DRIFT: deployed body differs from installer'
+  st_expect "A --check" "$A_CHECK" "$INSTALLER_HASH"
+  A_INSTALL="$(st_run "$HA")"
+  st_expect "A install" "$A_INSTALL" 'DRIFT'
+  st_expect "A install" "$A_INSTALL" 'Regenerated from the installer'
+  [ "$(sha256_file "$HA/.claude/statusline-command.sh")" = "$INSTALLER_HASH" ] \
+    || st_fail "A install: the body was not regenerated to the installer's"
+  [ "$(sed -n '1p' "$HA/.claude/.spec-protocol-statusline-stamp")" = "$INSTALLER_HASH" ] \
+    || st_fail "A install: the stamp does not carry the installer's hash"
+  [ "$(sha256_file "$HA/.claude/settings.json")" = "$A_SETTINGS_BEFORE" ] \
+    || st_fail "A install: the settings store was rewritten — it must never be"
+  st_report "$A0" "A  stale body + valid stamp      -> DRIFT, regenerated, settings untouched"
+
+  # --- fixture B: the current body, current stamp --------------------------
+  B0="$SELFTEST_FAILED"
+  HB="$(st_home B)"
+  emit_statusline_body > "$HB/.claude/statusline-command.sh"
+  printf '%s\n%s\n' "$INSTALLER_HASH" "$(date +%Y-%m-%d)" \
+    > "$HB/.claude/.spec-protocol-statusline-stamp"
+  B_BODY_BEFORE="$(st_mtime "$HB/.claude/statusline-command.sh")"
+  B_CHECK="$(st_run "$HB" --check)"
+  st_expect "B --check" "$B_CHECK" 'HEALTHY: deployed body matches installer'
+  B_INSTALL="$(st_run "$HB")"
+  st_expect "B install" "$B_INSTALL" 'matches the installer'
+  [ "$(sha256_file "$HB/.claude/statusline-command.sh")" = "$INSTALLER_HASH" ] \
+    || st_fail "B install: a matching body was altered"
+  [ "$(st_mtime "$HB/.claude/statusline-command.sh")" = "$B_BODY_BEFORE" ] \
+    || st_fail "B install: a matching body was rewritten"
+  st_report "$B0" "B  current body + current stamp  -> HEALTHY, nothing rewritten"
+
+  # --- fixture C: a statusline that is not ours ----------------------------
+  C0="$SELFTEST_FAILED"
+  HC="$(st_home C)"
+  printf '%s\n%s\n' '#!/usr/bin/env bash' 'echo "somebody else s bar"' \
+    > "$HC/.claude/statusline-command.sh"
+  C_BODY_BEFORE="$(sha256_file "$HC/.claude/statusline-command.sh")"
+  C_CHECK="$(st_run "$HC" --check)"
+  st_expect "C --check" "$C_CHECK" 'NOT ours — would leave untouched'
+  C_INSTALL="$(st_run "$HC")"
+  st_expect "C install" "$C_INSTALL" 'not ours — would leave untouched'
+  C_FORCE="$(st_run "$HC" --force)"
+  st_expect "C --force" "$C_FORCE" 'not ours — would leave untouched'
+  [ "$(sha256_file "$HC/.claude/statusline-command.sh")" = "$C_BODY_BEFORE" ] \
+    || st_fail "C: a foreign statusline was modified"
+  [ -f "$HC/.claude/.spec-protocol-statusline-stamp" ] \
+    && st_fail "C: a foreign statusline was stamped"
+  st_report "$C0" "C  a statusline that is not ours -> not ours — would leave untouched (--check, install, --force)"
+
+  # --- the three verdicts must differ --------------------------------------
+  if printf '%s' "$A_CHECK" | grep -q 'HEALTHY' \
+     || printf '%s' "$B_CHECK" | grep -q 'DRIFT' \
+     || printf '%s' "$C_CHECK" | grep -q 'DRIFT\|HEALTHY'; then
+    st_fail "the three fixtures did not return three different verdicts — the test is broken"
+  fi
+
+  # --- proof that this box was not written to ------------------------------
+  REAL_AFTER="$(st_fingerprint)"
+  if [ "$REAL_BEFORE" = "$REAL_AFTER" ]; then
+    say "Real \$HOME statusline files unchanged (mtimes identical before and after)."
+  else
+    st_fail "a file under the real \$HOME changed during the selftest"
+  fi
+
+  if [ "$SELFTEST_FAILED" = 0 ]; then
+    ok "selftest: 3 fixtures, 3 different verdicts — DRIFT, HEALTHY, not ours."
+    exit 0
+  fi
+  bad "selftest FAILED — $SELFTEST_FAILED check(s) did not hold."
+  exit 1
+fi
+
+# 1. Detect-first. An existing statusLine key in EITHER store is reported and
+#    NEVER replaced — the settings stores are still never rewritten when a key
+#    exists. The BODY is a separate question, and it used to ride on the same
+#    answer: a present key ended the run, so a deployed script written by an
+#    older installer stayed on the box for ever. It no longer does. The
+#    deployed file is this installer's own output, so its sha256 is compared
+#    with the body this installer would write, and only OUR file is
+#    regenerated on a mismatch.
+EXISTING=0
+for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+  if has_statusline "$f"; then
+    say "Claude Code Status Line (name-only check):"
+    say "Already configured in $(basename "$f")."
+    say "No replacement required."
+    EXISTING=1
+  fi
+done
+if [ "$EXISTING" = 1 ]; then
+  body_state
+  case "$BODY_STATE" in
+    match)
+      if [ "$BODY_STAMP_CURRENT" = 1 ]; then
+        say "Deployed body matches the installer — nothing to regenerate."
+      else
+        say "Deployed body matches the installer — refreshing the content stamp."
+        write_stamp
+      fi
+      ;;
+    drift)
+      say "DRIFT: deployed body differs from installer"
+      report_hashes
+      regenerate_body || true
+      ;;
+    absent)
+      say "No deployed status line script — installing ours."
+      regenerate_body || true
+      ;;
+    foreign)
+      warn "Existing $STATUSLINE_SCRIPT is not ours — would leave untouched."
+      say "Status line body left UNCHANGED. Nothing was written."
+      ;;
+    *)
+      warn "UNDETERMINED: no working sha256 tool (shasum, sha256sum) on PATH."
+      say "The deployed body cannot be compared, so it is left exactly as it stands."
+      ;;
+  esac
+  exit 0
+fi
+
+# 2. Idempotency stamp. Same launch paths + same script + already stamped ->
+#    nothing to do. Stamp and key presence can drift (documented disable
+#    removes only the key), so a stamp is honored only while a store still
+#    carries the line; otherwise the stamp is cleared and install proceeds.
+#    The stamp is never on its own a reason to stop either: step 1 normally
+#    answers the key-present case, and this branch repeats the SAME content
+#    comparison so no path in this file can report already-installed over a
+#    body the installer no longer generates.
+if [ -f "$STAMP_FILE" ]; then
+  STAMP_VALID=0
+  for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
+    if has_statusline "$f"; then STAMP_VALID=1; break; fi
+  done
+  if [ "$STAMP_VALID" = 1 ]; then
+    body_state
+    case "$BODY_STATE" in
+      match)
+        say "Spec Protocol status line: already installed (content stamp matches)."
+        say "No replacement required."
+        [ "$BODY_STAMP_CURRENT" = 1 ] || write_stamp
+        ;;
+      drift)
+        say "DRIFT: deployed body differs from installer"
+        report_hashes
+        regenerate_body || true
+        ;;
+      absent)
+        say "Stamp present but no deployed script — installing ours."
+        regenerate_body || true
+        ;;
+      foreign)
+        warn "Existing $STATUSLINE_SCRIPT is not ours — would leave untouched."
+        say "Status line body left UNCHANGED. Nothing was written."
+        ;;
+      *)
+        warn "UNDETERMINED: no working sha256 tool (shasum, sha256sum) on PATH."
+        say "The deployed body cannot be compared, so it is left exactly as it stands."
+        ;;
+    esac
+    exit 0
+  fi
+  warn "Stamp present but no statusLine key in either store — removing stamp."
+  rm -f "$STAMP_FILE"
+fi
+
+# 3. Install the shared statusline command script (idempotent overwrite of
+#    our own file only — the file is OURS, not the user's).
+if [ -f "$STATUSLINE_SCRIPT" ] && ! is_ours "$STATUSLINE_SCRIPT"; then
+  warn "Existing $STATUSLINE_SCRIPT is not ours — left untouched."
+  say "Status line left UNCONFIGURED. Point a statusLine key at it by hand."
+  exit 0
+fi
+emit_statusline_body > "$STATUSLINE_SCRIPT"
 chmod +x "$STATUSLINE_SCRIPT"
 ok "Shared statusline command: $STATUSLINE_SCRIPT"
 
@@ -485,9 +848,10 @@ if [ "$WROTE" = 0 ]; then
   exit 0
 fi
 
-# 5. Stamp, so a re-run reports already-installed instead of reconfiguring.
-mkdir -p "$STAMP_DIR"
-printf '%s\n' "$(date +%Y-%m-%d)" > "$STAMP_FILE"
+# 5. Stamp: the sha256 of the body this installer generates, then the date. A
+#    date on its own could never answer the one question a re-run has to ask —
+#    is the deployed body still the body this installer writes?
+write_stamp
 
 say ""
 say "Progress Visibility"
