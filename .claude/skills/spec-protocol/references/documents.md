@@ -809,6 +809,40 @@ DELIBERATELY small. The launch command body is under 3,900 characters. The dispa
 log and heartbeat carry exactly one line per event and are never allowed to grow
 into documents that a resuming agent would need to read in full.
 
+**Proportionality — the same rule, applied to the shapes the self-audit
+measures.** A mandated shape is a floor on CONTENT, never a floor on file
+count or heading count, and a two-page website does not owe the apparatus an
+operating system's paperwork (Law 42). Three shapes scale with the project and
+are read that way by the step-20 audit:
+
+- **Loop documents (document 9).** `LOOPS/` holds one file per CORE loop and
+  ONE shared file for the survival loops when the register carries only the
+  minimum five (`references/loops.md`, "The minimum viable set"): build,
+  review-carrying-the-gate and the merge train each get their own file, and
+  stall detection plus swarm watch share `LOOPS/SURVIVAL.md` with a labelled
+  block each. Every loop still carries all of its fields — name, purpose,
+  tracker, reads, interval, owns-this-transition, preconditions, the tick, the
+  stop condition, interruption handling and the "this loop never" list. A
+  register that grows past the minimum five goes back to one file per loop.
+- **The manifest (document 17).** The eighteen contents
+  (`references/execution-architecture.md`, Layer 1) may be satisfied by a
+  LABELLED ROW rather than a section when the project has fewer than ten
+  units. All eighteen labels are still present and still findable by name; a
+  one-line row that cites its operational carrier is a complete content, and a
+  section heading with the same sentence under it is not a better one.
+- **Build cards (document 1).** The eleven build-card fields reduce to six
+  when one writer owns each file: `Same commit as:`, `Touches:` and
+  `My region only:` are Law 19 machinery for SHARED artifacts, so on a project
+  where no two units write the same file each is recorded `n/a` with the reason
+  named on the line (`n/a — one writer owns this file`). The reason is
+  mandatory; a blank or a deleted field is a defect, an `n/a` with its reason
+  is a decision. CURRENT STATE, CHANGE TO MAKE, VERIFY, QC, ROLLBACK and DONE
+  WHEN are never reduced by anything.
+
+A document written to this clause is CONFORMING, not a finding. A document
+that departs from it is a **CARRY** finding and never a HALT
+(`references/gauntlet.md` §7.1) — literal shape does not stop a builder.
+
 ## There is no MERGE-LOG.md — the ledger owns the merge records
 
 Earlier drafts added a `CONTROL/MERGE-LOG.md`. That was an extra document the v4
