@@ -199,6 +199,15 @@ message's counts unchanged is not sent — the next thing the client hears is
 either a changed count or the one question, and three consecutive unchanged
 counts is a stall, raised through the tick, never narrated.
 
+**BINDING — the machine facts a client is never given (RC-11, the 2026-09-08 canary).**
+The client is never told a file path, a line number, a commit, a byte count,
+another person's email address, or anything about the machine owner's own rules —
+a write gate, a standing order, a hand-tuned setting, a memory file. A true fact
+the client can do nothing with is not spoken to them; it goes to
+`CONTROL/SESSION-LOG.md`. This binds the setup phase exactly as hard as the build:
+nothing at all is spoken before the opening script, and no setup step is put to the
+client as a decision except the step-2.5 update offer.
+
 **Why, from the canary.** Two of the sentences that reached a bakery owner were
 true, and neither was hers to hold. She was told that her contact form would
 have sent her neighbours' messages to a stranger — a fault found and fixed
