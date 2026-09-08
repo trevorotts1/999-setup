@@ -613,6 +613,8 @@ Explained once, in these words:
 
 > At the bottom of the window you'll see a bar with how close your project is to done. Press Ctrl and T together to see the list of pieces and which are finished.
 
+The bar reads two files and nothing else. Write `CONTROL/setup_progress.json` as `{"step":n,"of":9}` on entering each of the nine setup steps (2, 3, 4, 5, 6, 6.5, 7, 9, 13), and write `tasks.counts` `{pending, in_progress, completed}` into `CONTROL/project_state.json` at every checkpoint. `references/progress-visibility.md` section 6 owns both shapes; a bar segment with no file behind it is a bar that cannot clear itself. `tools/bar-check.sh <project>` proves both on disk and the five-minute tick calls it.
+
 Any status message in chat opens with exactly this line, first, always, carrying this
 run's real counts read from the task graph and `CONTROL/CHECKLIST.md`:
 
