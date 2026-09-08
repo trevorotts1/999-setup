@@ -47,11 +47,36 @@
 #              tools/right-size.sh first; it writes that line, and only on a
 #              pass. Like exit 4 this is a fact about the RUN, not a broken
 #              tool, so it is kept out of exit 2.
+#   7  BUDGET PAUSE — CONTROL/project_state.json says the run is AT or PAST its
+#              pause line: agents.executions_total >= agents.first_pause ×
+#              (agents.pause_blocks_granted + 1). The 2026-09-07 canary walked
+#              from 20 executions to 72 with nothing refusing a single dispatch,
+#              because the pause lived in exactly ONE instrument — tools/anchor.sh
+#              — which only decides when the five-minute tick runs, and the tick
+#              was armed at a step the run never reached. This is that same
+#              decision, taken where the dispatch actually happens: deploy the
+#              best stable build, write the plain report, ask the one question
+#              (SKILL.md section 6). Each "keep going" increments
+#              agents.pause_blocks_granted, which moves the wall up by one block
+#              and the run resumes at full width. A PAUSE is never a STOP.
+#   8  BUDGET CEILING — agents.executions_total >= agents.ceiling (2,000 per
+#              project; operator decision 2026-09-07, finding G6). The absolute
+#              stop: stop dispatching, run_status=STOPPED_CAP, preserve the best
+#              stable build, write the blocker report. It is tested BEFORE the
+#              pause, for the reason anchor.sh gives in its own budget audit: a
+#              run at the ceiling is also past its pause line, and reporting
+#              that as a pause would leave a project able to answer "keep going"
+#              past a line it can never cross.
 #
 # The four the row enumerates are 0/3/5/2. Exits 4 and 6 are the fail-closed
 # precondition refusals — a missing Parallelism Plan and a missing
 # over-engineering check; both are kept separate from 2 on purpose, because
 # calling a real refusal a tooling failure would let it read as a broken tool.
+# Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
+# reason: the instrument worked perfectly, the RUN is out of budget. When the
+# four budget keys cannot be READ, though, the gate does not fall through to a
+# pass — it exits 2 and names tools/state-check.sh, because a gate that cannot
+# read the budget cannot licence a dispatch against it.
 #
 # CLIENT_CAP is read from <project>/CAPACITY-LEDGER.md, never declared, never
 # asked, never inherited from the environment (finding S1). Two shapes are
@@ -69,8 +94,12 @@
 # exit-6 pair (ONE build fixture refused without the OVER-ENGINEERING-CHECK:
 # line and passed with it — a pass/fail pair on one fixture, so a broken check
 # cannot show as a class-wide refusal), the missing-ledger tooling failure, and
-# a known-positive control for every grep it relies on. A gate whose
-# known-positive comes back negative reports BROKEN INSTRUMENT, never "clean".
+# a known-positive control for every grep it relies on. The budget wall is
+# proven on ONE fixture, all three legs: executions_total=19 against a
+# first_pause of 20 passes, the SAME fixture at 20 exits 7 naming pause_at=20,
+# and one granted block passes it again at 20 — a run where all three legs
+# answer alike is a broken test, not a finding. A gate whose known-positive
+# comes back negative reports BROKEN INSTRUMENT, never "clean".
 
 set -uo pipefail
 
@@ -143,6 +172,94 @@ has_rightsize_line() {
 # missing one is the defect this exists to end.
 is_build_label() {
   printf '%s' "$1" | "${GREP}" -qi 'build'
+}
+
+# --- The budget wall (RC-4b): the pause line and the ceiling -----------------
+# Until this block existed, the pause decision lived in exactly one instrument,
+# tools/anchor.sh, which only decides when the five-minute tick runs. The
+# 2026-09-07 canary never reached the step that armed the tick, so
+# executions_total walked from 20 (its own pause line) to 72 with nothing
+# mechanical refusing a dispatch. The pause has to be a WALL, not a reminder,
+# and a wall stands at the door the dispatch goes through.
+#
+# jnum below is COPIED, deliberately character for character, from
+# tools/anchor.sh's budget audit (its jnum): the same sed, over the same
+# newline-stripped text. Two instruments that decide the same pause must never
+# disagree about how CONTROL/project_state.json parses. It matches an
+# exactly-quoted key at ANY nesting depth and, being greedy, returns the LAST
+# occurrence when a key appears twice — anchor.sh's override design, kept
+# identical rather than "improved".
+jnum() {  # jnum <flat-json-file> <key> -> integer on stdout, or rc 1
+  local v
+  v="$(sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9]*\).*/\1/p' "$1" | head -1)"
+  [[ -n "$v" ]] || return 1
+  printf '%s\n' "$v"
+}
+
+# The absolute per-project ceiling (operator decision 2026-09-07, finding G6).
+# A state file may lower it; it may never raise it, which is why the state value
+# is only taken when it is SMALLER — the same clamp anchor.sh applies.
+DEFAULT_CEILING=2000
+
+# budget_gate <state-json> — exits 8 at the ceiling, 7 at the pause line, and 2
+# when the budget cannot be read. Returns 0 only when the run is PROVABLY under
+# both lines. It never returns 0 on a file it could not measure: an undetermined
+# budget is exactly the state in which a dispatch must not be licensed.
+budget_gate() {
+  local sp="$1" flat=""
+
+  [[ -f "${sp}" ]] \
+    || tooling "no state file at ${sp} — the pause line and the ceiling are UNDETERMINED, and an undetermined budget never licences a dispatch. SKILL.md section 6 writes agents.initial, agents.warn_at, agents.first_pause, agents.pause_blocks_granted and agents.ceiling BEFORE the first dispatch; tools/state-check.sh <project> says which of them are missing."
+  [[ -r "${sp}" ]] \
+    || tooling "state file is unreadable: ${sp} — run tools/state-check.sh <project>; the budget is UNDETERMINED and no dispatch is licensed against it"
+
+  flat="$(mktemp "${TMPDIR:-/tmp}/dispatch-check-state.XXXXXX" 2>/dev/null)" \
+    || tooling "could not create a temp file to read ${sp} — the budget is UNDETERMINED"
+  if ! tr -d '\n\r' < "${sp}" > "${flat}" 2>/dev/null; then
+    rm -f "${flat}" 2>/dev/null || true
+    tooling "could not read ${sp} — the budget is UNDETERMINED; run tools/state-check.sh <project>"
+  fi
+
+  local exec_t pause_state blocks ceil_state missing=""
+  exec_t="$(jnum      "${flat}" 'executions_total'     || true)"
+  pause_state="$(jnum "${flat}" 'first_pause'          || true)"
+  blocks="$(jnum      "${flat}" 'pause_blocks_granted' || true)"
+  ceil_state="$(jnum  "${flat}" 'ceiling'              || true)"
+  rm -f "${flat}" 2>/dev/null || true
+
+  [[ -n "${exec_t}"      ]] || missing="${missing} agents.executions_total"
+  [[ -n "${pause_state}" ]] || missing="${missing} agents.first_pause"
+  [[ -n "${blocks}"      ]] || missing="${missing} agents.pause_blocks_granted"
+  [[ -n "${ceil_state}"  ]] || missing="${missing} agents.ceiling"
+  [[ -z "${missing}" ]] \
+    || tooling "${sp} carries no${missing} — the budget is UNDETERMINED, so this gate refuses instead of passing a dispatch it cannot measure. Run tools/state-check.sh <project>: it exits 3 naming every missing key, and exits 4 when the numbers were computed and written to a near-miss path such as agents.project_budget.* — which is a WRITER defect, not an absent budget."
+
+  is_uint "${exec_t}"      || tooling "agents.executions_total parsed as '${exec_t}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
+  is_uint "${pause_state}" || tooling "agents.first_pause parsed as '${pause_state}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
+  is_uint "${blocks}"      || tooling "agents.pause_blocks_granted parsed as '${blocks}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
+  is_uint "${ceil_state}"  || tooling "agents.ceiling parsed as '${ceil_state}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
+
+  local ceil="${DEFAULT_CEILING}" pause
+  (( ceil_state < ceil )) && ceil="${ceil_state}"
+  pause=$(( pause_state * ( blocks + 1 ) ))
+  (( pause > ceil )) && pause="${ceil}"
+
+  # THE CEILING IS TESTED FIRST, as tools/anchor.sh tests it first in its budget
+  # audit, and for the reason it gives there: a run at 2,000 is also past its
+  # pause line, and reporting that as a pause would leave a project able to
+  # answer "keep going" past the absolute ceiling. A run BELOW the ceiling is
+  # never STOPPED_CAP — it has budget left, so it pauses and asks instead.
+  if (( exec_t >= ceil )); then
+    printf 'DISPATCH-CHECK CEILING | executions=%s | ceiling=%s\n' "${exec_t}" "${ceil}" >&2
+    printf 'DISPATCH-CHECK NOTE | read: %s | the absolute per-project ceiling is reached: stop dispatching, set run_status=STOPPED_CAP, preserve the best stable build and write the blocker report. A LIMIT REACHED stop is never a PASS and never drift, and it is never crossed without the operator.\n' "${sp}" >&2
+    exit 8
+  fi
+  if (( exec_t >= pause )); then
+    printf 'DISPATCH-CHECK PAUSED | executions=%s | pause_at=%s | ceiling=%s\n' "${exec_t}" "${pause}" "${ceil}" >&2
+    printf 'DISPATCH-CHECK NOTE | read: %s | pause_at = agents.first_pause %s × (agents.pause_blocks_granted %s + 1). Deploy the best stable build, write the plain report, then ask the one question (SKILL.md section 6). Each "keep going" increments agents.pause_blocks_granted, which moves this wall up by one block, and the run resumes at full width. This is a PAUSE, not a stop.\n' "${sp}" "${pause_state}" "${blocks}" >&2
+    exit 7
+  fi
+  return 0
 }
 
 # --- The state counter ------------------------------------------------------
@@ -332,12 +449,12 @@ run_check() {
     fi
   fi
 
-  # ==========================================================================
-  # WI-34 INSERTION POINT — the budget/pause preconditions (exit 7 and exit 8)
-  # belong HERE, between the over-engineering gate above and the width
-  # arithmetic below. WI-34 owns those two exit codes and this block; WI-31
-  # added nothing to it and reserved it so the two edits do not collide.
-  # ==========================================================================
+  # --- Fail-closed precondition: the budget wall (RC-4b) --------------------
+  # WI-31 reserved this point between the over-engineering gate above and the
+  # width arithmetic below, and this is the block it reserved it for. The order
+  # is the point: a dispatch that is past the pause line must not be argued
+  # about on width — it must not fire at all, at any width.
+  budget_gate "${state_json}"
 
   # --- The floor (S4). The only number this skill controls. -----------------
   local floor="${units}"
@@ -434,12 +551,27 @@ run_selftest() {
   fi
   report 0 "grep-controls" 1 "label known-positive=1, heading known-positive=1 (both on ${GREP})"
 
+  # --- the canonical state file every fixture that DISPATCHES now needs ------
+  # The budget wall reads four keys before the width arithmetic, and refuses
+  # (exit 2, naming tools/state-check.sh) when it cannot read them. That is the
+  # deliberate design — an unreadable budget never licences a dispatch — so
+  # every fixture below that expects a width verdict carries the canonical
+  # block written at the paths SKILL.md section 6 names.
+  #   write_state <path> <executions_total> <first_pause> <blocks> <ceiling>
+  write_state() {
+    printf '{\n  "schema": "spec-protocol/project-state@1",\n  "run_status": "RUNNING",\n  "agents": {\n    "executions_total": %s,\n    "initial": 35,\n    "warn_at": 150,\n    "first_pause": %s,\n    "pause_blocks_granted": %s,\n    "ceiling": %s\n  }\n}\n' "$2" "$3" "$4" "$5" > "$1"
+  }
+  # read_state_total <path> — the same sed the report lines use, one place.
+  read_state_total() {
+    sed -n 's/.*"executions_total"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -n 1
+  }
+
   # --- a project fixture ----------------------------------------------------
   local P="${T}/proj"
   mkdir -p "${P}/CONTROL"
   printf 'CLIENT_CAP=10\nBROWSER_CAP=12\nWORKFLOW_CEILING=50\n' > "${P}/CAPACITY-LEDGER.md"
   printf '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n' > "${P}/CONTROL/EXECUTION-PLAN.md"
-  printf '{\n  "schema": "spec-protocol/project-state@1",\n  "run_status": "RUNNING",\n  "agents": { "executions_total": 0 }\n}\n' > "${P}/CONTROL/project_state.json"
+  write_state "${P}/CONTROL/project_state.json" 0 200 0 2000
   # Every fixture below that dispatches a BUILD needs the over-engineering line
   # right-size.sh writes, or it is refused with exit 6 before its width is read.
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P}/CONTROL/LEDGER.md"
@@ -506,6 +638,7 @@ run_selftest() {
   } > "${P3}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P3}/CONTROL/EXECUTION-PLAN.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P3}/CONTROL/LEDGER.md"
+  write_state "${P3}/CONTROL/project_state.json" 0 200 0 2000
   # 10 units and 9 agents DISCRIMINATES: it exits 3 only if the cap parsed as
   # 10. A mis-parse of 2 (the `max(2,` on that same line) would make the floor
   # 2, and 9 agents would sail through with exit 0.
@@ -513,9 +646,14 @@ run_selftest() {
   ok=0; [[ "${rc}" == "3" ]] && ok=1
   report 9 "template-line-parses" "${ok}" "rc=${rc} (want 3 — cap 10 read from the 'clientCap = … = 10 [MEASURED …]' line, floor = min(10,10) = 10 > 9 agents; a mis-parse to 2 would have exited 0); ${out}"
 
-  # --- 8b: a refused dispatch writes no state file --------------------------
-  if [[ -f "${P3}/CONTROL/project_state.json" ]]; then ok=0; else ok=1; fi
-  report 10 "no-state-on-refusal" "${ok}" "a refused dispatch created no ${P3}/CONTROL/project_state.json"
+  # --- 8b: a refused dispatch spends no budget ------------------------------
+  # This fixture carries the canonical budget block (the wall requires it before
+  # any width verdict), so the proof is the COUNTER, not the file's absence: the
+  # exit-3 refusal above must have left executions_total exactly where it was.
+  local p3_total
+  p3_total="$(read_state_total "${P3}/CONTROL/project_state.json")"
+  ok=0; [[ "${p3_total}" == "0" ]] && ok=1
+  report 10 "no-spend-on-refusal" "${ok}" "executions_total still ${p3_total} (want 0) after the under-width refusal — a refused dispatch never spends budget"
 
   # --- 9: an unfilled template placeholder is UNDETERMINED, never cap 2 -----
   local P4="${T}/proj-placeholder"
@@ -546,10 +684,10 @@ run_selftest() {
   mkdir -p "${P6}/CONTROL"
   printf 'CLIENT_CAP=4\n' > "${P6}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n' > "${P6}/CONTROL/EXECUTION-PLAN.md"
-  printf '{\n  "schema": "spec-protocol/project-state@1",\n  "agents": { "executions_total": 7 }\n}\n' > "${P6}/CONTROL/project_state.json"
+  write_state "${P6}/CONTROL/project_state.json" 7 200 0 2000
   out="$(DISPATCH_NO_PYTHON=1 bash "${SELF}" "${P6}" 4 4 '[Sonnet x4] judge wave-2' 2>&1)"; rc=$?
   local awk_total
-  awk_total="$(sed -n 's/.*"executions_total"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${P6}/CONTROL/project_state.json" | head -n 1)"
+  awk_total="$(read_state_total "${P6}/CONTROL/project_state.json")"
   ok=0; [[ "${rc}" == "0" && "${awk_total}" == "11" ]] && ok=1
   report 14 "awk-fallback-counts" "${ok}" "rc=${rc} (want 0) with python3 forced off; executions_total 7 → ${awk_total} (want 11)"
 
@@ -561,22 +699,96 @@ run_selftest() {
   mkdir -p "${P7}/CONTROL"
   printf 'CLIENT_CAP=10\n' > "${P7}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P7}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P7}/CONTROL/project_state.json" 0 200 0 2000
 
   out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "6" ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'NO-RIGHTSIZE | CONTROL/LEDGER.md carries no OVER-ENGINEERING-CHECK: line' || ok=0
   printf '%s' "${out}" | "${GREP}" -q "${P7}/CONTROL/LEDGER.md" || ok=0
-  if [[ -f "${P7}/CONTROL/project_state.json" ]]; then ok=0; fi
-  report 15 "no-rightsize-refused" "${ok}" "rc=${rc} (want 6) for a build dispatch with no OVER-ENGINEERING-CHECK: line; the message names the exact path read and no counter moved"
+  local p7_total
+  p7_total="$(read_state_total "${P7}/CONTROL/project_state.json")"
+  [[ "${p7_total}" == "0" ]] || ok=0
+  report 15 "no-rightsize-refused" "${ok}" "rc=${rc} (want 6) for a build dispatch with no OVER-ENGINEERING-CHECK: line; the message names the exact path read and no counter moved (executions_total still ${p7_total}, want 0)"
 
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P7}/CONTROL/LEDGER.md"
   out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "0" ]] && ok=1
   report 16 "rightsize-line-allows" "${ok}" "rc=${rc} (want 0) — the SAME dispatch, on the SAME fixture, with the ledger line added and nothing else changed. This half is what proves exit 6 is a fact about the missing line and not a class-wide refusal of build dispatches; ${out}"
 
+  # --- 14: THE BUDGET WALL — three legs on ONE fixture (RC-4b) --------------
+  # One fixture, three answers. A run where all three legs return the same code
+  # is a broken test, not a finding: the pass leg proves the wall is not a
+  # class-wide refusal of dispatches, the refusal leg proves it stands, and the
+  # granted-block leg proves the wall MOVES rather than being a fixed number.
+  local P8="${T}/proj-pause"
+  mkdir -p "${P8}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P8}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P8}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P8}/CONTROL/project_state.json" 19 20 0 2000
+
+  local p8_total
+  out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  p8_total="$(read_state_total "${P8}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p8_total}" == "20" ]] && ok=1
+  report 17 "under-the-pause-passes" "${ok}" "rc=${rc} (want 0) at executions_total=19 against first_pause=20; the pass moved the counter 19 → ${p8_total} (want 20), which is what puts the SAME fixture on the far side of the line for the next leg"
+
+  out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-2' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "7" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK PAUSED | executions=20 | pause_at=20 | ceiling=2000' || ok=0
+  p8_total="$(read_state_total "${P8}/CONTROL/project_state.json")"
+  [[ "${p8_total}" == "20" ]] || ok=0
+  report 18 "at-the-pause-refused" "${ok}" "rc=${rc} (want 7) on the SAME fixture one execution later; the line names pause_at=20 and the counter did not move (${p8_total}, want 20): ${out}"
+
+  write_state "${P8}/CONTROL/project_state.json" 20 20 1 2000
+  out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-3' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  report 19 "granted-block-moves-the-wall" "${ok}" "rc=${rc} (want 0) at the SAME executions_total=20 with agents.pause_blocks_granted=1 — the wall is 20 × (1+1) = 40, so a granted block resumes the run at full width rather than raising a new number"
+
+  # --- 15: the ceiling outranks the pause -----------------------------------
+  # At the ceiling a run is ALSO past its pause line. Reporting that as a pause
+  # would leave a project able to answer "keep going" past a line it can never
+  # cross, so the ceiling is tested first — as tools/anchor.sh tests it first.
+  local P9="${T}/proj-ceiling"
+  mkdir -p "${P9}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P9}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P9}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P9}/CONTROL/project_state.json" 2000 20 0 2000
+  out="$(bash "${SELF}" "${P9}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "8" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK CEILING | executions=2000 | ceiling=2000' || ok=0
+  if printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK PAUSED'; then ok=0; fi
+  report 20 "ceiling-outranks-pause" "${ok}" "rc=${rc} (want 8, NOT 7) at executions_total=2000 against ceiling=2000 and a pause line it is also past; the output says CEILING and never PAUSED"
+
+  # --- 16: no budget keys is UNDETERMINED, never a pass ---------------------
+  local P10="${T}/proj-nobudget"
+  mkdir -p "${P10}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P10}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P10}/CONTROL/EXECUTION-PLAN.md"
+  printf '{\n  "schema": "spec-protocol/project-state@1",\n  "agents": { "executions_total": 5 }\n}\n' > "${P10}/CONTROL/project_state.json"
+  out="$(bash "${SELF}" "${P10}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "2" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'tools/state-check.sh' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'agents.first_pause' || ok=0
+  local p10_total
+  p10_total="$(read_state_total "${P10}/CONTROL/project_state.json")"
+  [[ "${p10_total}" == "5" ]] || ok=0
+  report 21 "no-budget-keys-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a state file carrying executions_total alone; the message names tools/state-check.sh and every missing key, and the counter did not move (${p10_total}, want 5): ${out}"
+
+  # --- 17: no state file at all is the same answer --------------------------
+  local P11="${T}/proj-nostate"
+  mkdir -p "${P11}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P11}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P11}/CONTROL/EXECUTION-PLAN.md"
+  out="$(bash "${SELF}" "${P11}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "2" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q "${P11}/CONTROL/project_state.json" || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'tools/state-check.sh' || ok=0
+  if [[ -f "${P11}/CONTROL/project_state.json" ]]; then ok=0; fi
+  report 22 "no-state-file-undetermined" "${ok}" "rc=${rc} (want 2) when CONTROL/project_state.json does not exist: the gate names the exact path and tools/state-check.sh, and it does NOT seed a file to dispatch against — the budget block is written at SKILL.md section 6, before the first dispatch"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (17 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (23 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

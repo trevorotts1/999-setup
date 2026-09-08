@@ -7,7 +7,7 @@ were prose. A conductor that resolved the ambiguity conservatively dispatched
 says no, at launch, in the one place the model cannot talk its way past.
 
 It reads the script the launch is about to run (inline `script` or `scriptPath`)
-and blocks (exit 2) five shapes, naming the fix for each:
+and blocks (exit 2) six shapes, naming the fix for each:
 
   1. parallel(build) followed by parallel(qc)      -> pipeline(units, build, qc)
   2. a judge stage with fewer items than the build stage  -> one judge per unit
@@ -15,10 +15,15 @@ and blocks (exit 2) five shapes, naming the fix for each:
   4. an item count below min(dispatchable, CLIENT_CAP), when a CAPACITY-LEDGER.md
      is found upward from cwd and the script carries no `dep=` reason
   5. a merge agent inside a build tree             -> Law 3: it runs outside the tree
+  6. any launch at all while CONTROL/project_state.json (found upward from cwd)
+     says the run is at or past its pause line or its ceiling -> the budget wall,
+     the same arithmetic and the same message tools/dispatch-check.sh prints at
+     exit 7 and exit 8. Shape 6 is not about the tree: it is about the RUN.
 
 FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
-unreadable input, an unparseable script, an undetermined item count, any
-exception at all -> exit 0 and the launch proceeds. A gate that cannot see the
+unreadable input, an unparseable script, an undetermined item count, a state
+file it cannot find or whose budget keys are absent, any exception at all ->
+exit 0 and the launch proceeds. A gate that cannot see the
 shape says NOTHING about the shape; it never guesses. Two consequences the
 conductor owns: "the hook did not block" is never evidence that a tree is wide
 enough, and a launch by saved NAME has no local file to read, so it passes the
@@ -61,6 +66,31 @@ FIX_5 = (
     "  why there is one of it; inside the tree it holds a build slot while nine idle.\n"
     "  Launch it as its own workflow after the tree returns."
 )
+FIX_6_PAUSE = (
+    "FIX: this is not a defect in the tree -- it is the budget wall. agents.executions_total\n"
+    "  in CONTROL/project_state.json is at or past agents.first_pause x\n"
+    "  (agents.pause_blocks_granted + 1). Deploy the best stable build, write the plain\n"
+    "  report, then ask the one question (SKILL.md section 6). Each 'keep going' the client\n"
+    "  gives increments agents.pause_blocks_granted, which moves the wall up by one block\n"
+    "  and the run resumes at FULL width -- a pause is never a stop. tools/dispatch-check.sh\n"
+    "  refuses the same dispatch with exit 7; this hook is the half that holds when the\n"
+    "  conductor never calls it."
+)
+FIX_6_CEILING = (
+    "FIX: the absolute per-project ceiling (agents.ceiling, 2,000 -- operator decision\n"
+    "  2026-09-07, finding G6) is reached. Stop dispatching, set run_status=STOPPED_CAP,\n"
+    "  preserve the best stable build and write the blocker report. A LIMIT REACHED stop is\n"
+    "  never a PASS and never drift, and it is never crossed without the operator.\n"
+    "  tools/dispatch-check.sh refuses the same dispatch with exit 8. The ceiling is tested\n"
+    "  BEFORE the pause: a run at the ceiling is also past its pause line, and calling that\n"
+    "  a pause would leave a project able to answer 'keep going' past a line it can never\n"
+    "  cross."
+)
+
+# The absolute per-project ceiling. A state file may lower it and may never
+# raise it, which is why the state value is taken only when it is SMALLER --
+# the same clamp tools/anchor.sh applies in its budget audit.
+CEILING_DEFAULT = 2000
 
 
 def allow():
@@ -260,6 +290,71 @@ def parse_client_cap(path):
     return None
 
 
+def find_state_file(start_dir):
+    """CONTROL/project_state.json, searched upward from cwd like the ledger."""
+    d = os.path.abspath(start_dir)
+    seen = 0
+    while seen < 40:
+        p = os.path.join(d, "CONTROL", "project_state.json")
+        if os.path.isfile(p):
+            return p
+        nd = os.path.dirname(d)
+        if nd == d:
+            return None
+        d, seen = nd, seen + 1
+    return None
+
+
+def jnum(flat, key):
+    """tools/anchor.sh's jnum, in Python.
+
+    anchor.sh reads the state file with a GREEDY sed over the newline-stripped
+    text, so it matches an exactly-quoted key at ANY nesting depth and returns
+    the LAST occurrence when a key appears twice. tools/dispatch-check.sh copies
+    that sed character for character; this is the same rule in the third
+    instrument, because three gates that decide one pause must never disagree
+    about how the file parses.
+    """
+    found = re.findall(r'"' + re.escape(key) + r'"[ \t]*:[ \t]*(-?\d+)', flat)
+    if not found:
+        return None
+    return int(found[-1])
+
+
+def budget_state(cwd):
+    """(path, executions, pause_at, ceiling), or None when it cannot be read.
+
+    None is the fail-open answer this hook owes: a gate that cannot read the
+    budget says NOTHING about the budget. tools/dispatch-check.sh answers the
+    same question differently ON PURPOSE -- it exits 2 and names
+    tools/state-check.sh -- because it is CALLED by the conductor and can refuse
+    a dispatch out loud, while a PreToolUse hook that blocked on an unreadable
+    file would take the whole harness down with it.
+    """
+    path = find_state_file(cwd or os.getcwd())
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            flat = fh.read().replace("\n", "").replace("\r", "")
+    except Exception:
+        return None
+    execs = jnum(flat, "executions_total")
+    first_pause = jnum(flat, "first_pause")
+    blocks = jnum(flat, "pause_blocks_granted")
+    ceil = jnum(flat, "ceiling")
+    if execs is None or first_pause is None or blocks is None or ceil is None:
+        return None
+    if any(v < 0 for v in (execs, first_pause, blocks, ceil)):
+        return None
+    if ceil > CEILING_DEFAULT:
+        ceil = CEILING_DEFAULT
+    pause = first_pause * (blocks + 1)
+    if pause > ceil:
+        pause = ceil
+    return path, execs, pause, ceil
+
+
 # ---------------------------------------------------------------------------
 # The evaluation. Returns a list of findings; an empty list means "allow".
 # ---------------------------------------------------------------------------
@@ -349,6 +444,26 @@ def evaluate(script, cwd=None):
                     "  reason in the script as a `dep=<reason>` comment and this check stands down."
                     % (widest, cap, ledger)
                 )
+
+    # --- 6. the budget wall: past the pause line, or at the ceiling ----------
+    # The pause used to be decided in exactly ONE instrument, tools/anchor.sh,
+    # which only runs when the five-minute tick runs. The 2026-09-07 canary
+    # never armed the tick, so executions_total walked from its pause line of 20
+    # to 72 with nothing refusing a launch. The refusal has to hold even when
+    # the conductor never calls tools/dispatch-check.sh -- which is this hook.
+    st = budget_state(cwd)
+    if st:
+        path, execs, pause, ceil = st
+        if execs >= ceil:
+            findings.append(
+                "SHAPE 6 -- DISPATCH-CHECK CEILING | executions=%d | ceiling=%d\n"
+                "  (read: %s)\n%s" % (execs, ceil, path, FIX_6_CEILING)
+            )
+        elif execs >= pause:
+            findings.append(
+                "SHAPE 6 -- DISPATCH-CHECK PAUSED | executions=%d | pause_at=%d | ceiling=%d\n"
+                "  (read: %s)\n%s" % (execs, pause, ceil, path, FIX_6_PAUSE)
+            )
     return findings
 
 
@@ -545,10 +660,81 @@ def selftest():
     report(12, "string-decoy-ignored", rc == 0, "rc=%d (want 0) -- 'agent(' inside a prompt string is text, not a call%s"
            % (rc, "" if rc == 0 else ": " + out.strip()[:300]))
 
+    # 9 -- SHAPE 6, the budget wall: a pair on ONE script, two state files.
+    #      The blocked half alone proves nothing -- a gate that blocked every
+    #      launch would score it. The allowed half, one execution under the
+    #      line, is what makes the pair a test instead of a class-wide refusal.
+    def state_dir(name, execs, first_pause, blocks, ceil):
+        d = tempfile.mkdtemp(prefix="dispatch-gate-%s." % name, dir=sandbox)
+        os.makedirs(os.path.join(d, "CONTROL"), exist_ok=True)
+        with open(os.path.join(d, "CONTROL", "project_state.json"), "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "schema": "spec-protocol/project-state@1",
+                    "run_status": "RUNNING",
+                    "agents": {
+                        "executions_total": execs,
+                        "initial": 35,
+                        "warn_at": 150,
+                        "first_pause": first_pause,
+                        "pause_blocks_granted": blocks,
+                        "ceiling": ceil,
+                    },
+                },
+                fh,
+                indent=2,
+            )
+        return d
+
+    over = state_dir("over", 20, 20, 0, 2000)
+    under = state_dir("under", 19, 20, 0, 2000)
+    rc_over, out_over = _run_child(payload(FIXTURE_WAVE1), over)
+    rc_under, _ = _run_child(payload(FIXTURE_WAVE1), under)
+    ok = (
+        rc_over == 2
+        and "SHAPE 6" in out_over
+        and "DISPATCH-CHECK PAUSED | executions=20 | pause_at=20 | ceiling=2000" in out_over
+        and rc_under == 0
+    )
+    report(13, "past-pause-blocked", ok,
+           "executions_total=20 against first_pause=20 -> rc=%d (want 2), carrying the same line "
+           "tools/dispatch-check.sh prints at exit 7; the SAME script at 19 -> rc=%d (want 0)"
+           % (rc_over, rc_under))
+
+    # 9b -- a granted block moves the wall rather than raising a new number
+    granted = state_dir("granted", 20, 20, 1, 2000)
+    rc_g, _ = _run_child(payload(FIXTURE_WAVE1), granted)
+    report(14, "granted-block-allows", rc_g == 0,
+           "rc=%d (want 0) at the same executions_total=20 with pause_blocks_granted=1 "
+           "-- the wall is 20 x (1+1) = 40" % rc_g)
+
+    # 9c -- the ceiling outranks the pause (a run at 2,000 is past both lines)
+    at_ceiling = state_dir("ceiling", 2000, 20, 0, 2000)
+    rc_c2, out_c2 = _run_child(payload(FIXTURE_WAVE1), at_ceiling)
+    ok = (rc_c2 == 2
+          and "DISPATCH-CHECK CEILING | executions=2000 | ceiling=2000" in out_c2
+          and "DISPATCH-CHECK PAUSED" not in out_c2)
+    report(15, "ceiling-outranks-pause", ok,
+           "rc=%d (want 2) and the message says CEILING, never PAUSED -- reporting the ceiling "
+           "as a pause would let a project answer 'keep going' past a line it can never cross"
+           % rc_c2)
+
+    # 9d -- a state file with no budget keys says NOTHING (fails open)
+    nobudget = tempfile.mkdtemp(prefix="dispatch-gate-nobudget.", dir=sandbox)
+    os.makedirs(os.path.join(nobudget, "CONTROL"), exist_ok=True)
+    with open(os.path.join(nobudget, "CONTROL", "project_state.json"), "w", encoding="utf-8") as fh:
+        fh.write('{"agents": {"executions_total": 5000}}\n')
+    rc_nb, _ = _run_child(payload(FIXTURE_WAVE1), nobudget)
+    report(16, "no-budget-keys-fails-open", rc_nb == 0,
+           "rc=%d (want 0) for a state file with executions_total and no pause line: this hook "
+           "fails open on what it cannot measure. tools/dispatch-check.sh answers the same file "
+           "with exit 2 naming tools/state-check.sh -- that is the gate that refuses, and the "
+           "conductor owns the difference" % rc_nb)
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (13 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (17 checks)")
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)
