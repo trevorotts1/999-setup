@@ -42,6 +42,15 @@ reports "installed" for a machine that has nothing but a stale folder, and the
 other reports "installed" for a machine that has nothing but a name on the PATH.
 Read the artifact, or report nothing.
 
+**Only the paths named above are read.** Detection opens the root candidates,
+the `openclaw.json` at a root, the workspace content files of §2, and the secrets
+pointer — and nothing else. It never lists the directory the run was started in and
+never widens to whatever else is on the box. **The presence of unrelated files beside
+the named paths is not a signal**: a log, a scratch file, a driver's leftovers or
+another tool's output neither confirms a detection nor denies one, carries no
+information about this run, and is not recorded. Only (a), (b) or (c) above decides,
+and only by being read at the path this file names.
+
 **Where the workspace is.** The workspace path is **READ from `openclaw.json`'s
 workspace setting**; only when the config cannot name one, fall back to
 `<root>/workspace/` — and **record which of the two answered**. A run that guessed
