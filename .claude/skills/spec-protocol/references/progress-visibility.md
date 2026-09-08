@@ -334,8 +334,11 @@ is a reader; it never invents numbers and never trusts a stale memory of progres
 
 **Before the plan exists** there is nothing to count, and `0%` would be a lie about a
 project that has not been planned yet. The conductor writes `CONTROL/setup_progress.json`
-at each step of the nine-step setup flow, and this segment reads that instead. One line,
-exactly this shape:
+on entering each step of the nine-step setup flow, and this segment reads that instead.
+**The nine steps are 2, 3, 4, 5, 6, 6.5, 7, 9 and 13** — written out here because "the
+nine-step setup flow" left the conductor to infer which nine, and a step it has to guess
+at is a step it writes nothing for. `SKILL.md` §12 issues the instruction; this section
+owns the shape. One line, exactly this shape:
 
 ```json
 {"step":4,"of":9}
@@ -514,7 +517,7 @@ Do not claim a metric works unless it was actually observed.
 | Every segment absent below the project root | no `CONTROL/` directory found anywhere from `$cwd` up to `$HOME` | omit is correct if truly outside a Spec Protocol project; if inside one, confirm the walk reached the directory that holds `CONTROL/` |
 | `Working` absent while agents are running | no `CONTROL/HEARTBEAT.md`, or agents append instead of upserting through `ledger.sh` | fix the writers (document 13); the bar never invents a heartbeat |
 | `Now` absent while a unit is in progress | no unit in `project_state.json` carries an IN_PROGRESS status with a name | the bar never manufactures a piece name; give the unit its plain name |
-| `Getting ready` never appears | the conductor is not writing `CONTROL/setup_progress.json` at each flow step | one line, `{"step":n,"of":9}`, written on entering each step |
+| `Getting ready` never appears | the conductor is not writing `CONTROL/setup_progress.json` at each flow step | not a bar fault and not a fix to make here: `SKILL.md` §12 carries the instruction — one line, `{"step":n,"of":9}`, on entering each of steps 2, 3, 4, 5, 6, 6.5, 7, 9 and 13 (§6). Prove it with `tools/bar-check.sh <project>` (exit 3 names the file it missed); `tools/watch-tick.sh` runs it every five minutes so a blank segment becomes a finding instead of silence |
 | Blocks render as `?` or mojibake | a terminal or font without the block glyphs | the bar itself is locale-proof (eleven prebuilt literals); this is a font problem, not a script one |
 
 ## 10. How to disable / restore

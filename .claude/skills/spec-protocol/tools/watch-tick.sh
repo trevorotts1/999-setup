@@ -40,6 +40,15 @@
 #            minutes (20 for a merge stage)        -> ACTION|reap-and-redispatch
 #   S13      a RESULT is written for the unit and its heartbeat is STILL fresh
 #                                                  -> ACTION|reap
+#   bar      the two files the client status bar reads, through
+#            tools/bar-check.sh: CONTROL/setup_progress.json and
+#            CONTROL/project_state.json tasks.counts
+#                                                  -> ACTION|write-bar-inputs
+#            (or ACTION|fix-bar-input when one is present and unparseable).
+#            NOT an S-number: RULE 5's table owns those, and this is the
+#            enforcement half of SKILL.md §12's bar instruction. A bar segment
+#            with no file behind it renders as nothing, silently, for a whole
+#            run — the client never asks why, so the tick has to.
 #
 # THE DEFINITIONS, MECHANICALLY (so two readers count the same numbers)
 #   runnable  an OPEN box in CONTROL/CHECKLIST.md (`- [ ] …`) whose unit id has
@@ -67,7 +76,12 @@
 #       UNDETERMINED, and S2 does not fire on it (an unparseable log is not a
 #       proven zero);
 #     - a heartbeat timestamp it cannot parse -> that row's age is UNDETERMINED,
-#       so neither S6 nor S13 fires on it.
+#       so neither S6 nor S13 fires on it;
+#     - no tools/bar-check.sh, or a bar-check exit it does not recognise -> the
+#       bar is UNDETERMINED and says so in `bar=`, never a silent pass. A
+#       project with no plan yet whose CONTROL/setup_progress.json IS being
+#       written reads `bar=getting-ready`: that is the segment the bar shows
+#       before the plan exists, so it is a pass, not a finding.
 #   And it proves its own instruments against embedded fixtures before it
 #   trusts them (a positive that MUST match, negatives that MUST NOT, including
 #   the bracket-with-no-count trap). Control failure is exit 2 — BROKEN
@@ -128,6 +142,7 @@ SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 SELF="${SCRIPT_DIR}/$(basename "$SELF")"
 LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
 ANCHOR_SH="${SCRIPT_DIR}/anchor.sh"
+BAR_CHECK_SH="${SCRIPT_DIR}/bar-check.sh"
 
 HOME_DIR=""
 DO_SELFTEST=0
@@ -646,6 +661,64 @@ run_tick() {
     fi
   done < "$WORKDIR/closed.tsv"
 
+  # THE BAR — the two files SKILL.md §12 tells the conductor to write, proven
+  # by tools/bar-check.sh. The bar's own contract (references/progress-visibility.md
+  # §6) decides when a missing input is a finding rather than a normal state:
+  #
+  #   project_state.json present, tasks.counts absent  -> FINDING. The plan
+  #     exists and the pieces segment still has nothing to read. This is the
+  #     live shape from the canary run: a state file carrying task_graph.units
+  #     and no tasks key at all.
+  #   neither input present                            -> FINDING. The bar has
+  #     no progress segment it can render, in either phase of the run.
+  #   no project_state.json yet, setup_progress.json being written -> PASS.
+  #     Before the plan exists `Getting ready: step n of 9` IS the segment.
+  #   present but unparseable                          -> FINDING (fix-bar-input):
+  #     a file the bar cannot read renders exactly as blank as a missing one.
+  #
+  # bar-check.sh writes nothing and never touches the project.
+  local BAR_NOTE="" BRC=0 BOUT="" BMISS="" BMAL=""
+  if [[ ! -f "$BAR_CHECK_SH" ]]; then
+    BAR_NOTE="undetermined(no bar-check.sh at ${BAR_CHECK_SH})"
+    add_undet "bar=undetermined(tools/bar-check.sh absent — the two status-bar inputs were not checked)"
+  else
+    set +e
+    BOUT="$(bash "$BAR_CHECK_SH" "$HOME_DIR" 2>&1)"; BRC=$?
+    set -e
+    BMISS="$(printf '%s\n' "$BOUT" | "$AWK" '/^BAR-CHECK /{for(i=1;i<=NF;i++) if ($i ~ /^missing=/)   { sub(/^missing=/,   "", $i); print $i; exit } }')"
+    BMAL="$( printf '%s\n' "$BOUT" | "$AWK" '/^BAR-CHECK /{for(i=1;i<=NF;i++) if ($i ~ /^malformed=/) { sub(/^malformed=/, "", $i); print $i; exit } }')"
+    bar_missing() { case ",${BMISS}," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+    case "$BRC" in
+      0)
+        BAR_NOTE="ok(both inputs present)" ;;
+      3)
+        if bar_missing "CONTROL/project_state.json:tasks.counts"; then
+          BAR_NOTE="missing(${BMISS})"
+          emit "write-bar-inputs" "${BMISS}" \
+            "BAR: the plan exists and the pieces segment has no counts to read — write tasks.counts at every checkpoint (SKILL.md §12; shapes in references/progress-visibility.md §6)"
+        elif bar_missing "CONTROL/project_state.json" \
+             && { bar_missing "CONTROL/setup_progress.json" || bar_missing "CONTROL/setup_progress.json:step"; }; then
+          BAR_NOTE="missing(${BMISS})"
+          emit "write-bar-inputs" "${BMISS}" \
+            "BAR: no file behind either progress segment, so the client bar shows nothing there all run — write them (SKILL.md §12; shapes in references/progress-visibility.md §6)"
+        else
+          BAR_NOTE="getting-ready(pre-plan; ${BMISS})"
+        fi ;;
+      2)
+        if [[ -n "$BMAL" && "$BMAL" != "none" ]]; then
+          BAR_NOTE="malformed(${BMAL})"
+          emit "fix-bar-input" "${BMAL}" \
+            "BAR: present and unparseable, so the bar drops that segment — a file it cannot read is as blank as one that is not there (references/progress-visibility.md §6)"
+        else
+          BAR_NOTE="undetermined(bar-check.sh exit 2, no file named)"
+          add_undet "bar=undetermined(bar-check.sh could not run: $(printf '%s' "$BOUT" | "$GREP" -m1 'UNDETERMINED (exit 2)' || printf 'no reason line'))"
+        fi ;;
+      *)
+        BAR_NOTE="undetermined(bar-check.sh exit ${BRC})"
+        add_undet "bar=undetermined(bar-check.sh exited ${BRC}, an exit this tick does not recognise — the bar inputs were not proven)" ;;
+    esac
+  fi
+
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
@@ -659,7 +732,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -682,6 +755,11 @@ run_tick() {
 #   9  A MISSING PROJECT is exit 2 NAMING THE PATH, never a verdict
 #  10  UNDETERMINED, not a violation — no dispatch log and no capacity ledger:
 #      S2 does not fire on an unproven zero and S5 says so in writing
+#  11  THE BAR with no file behind either segment -> exit 3, ACTION|write-bar-inputs
+#      naming both. Cases 1-10 all write CONTROL/setup_progress.json and none of
+#      them fires it: that is the negative control for this check.
+#  12  THE BAR on the live shape — project_state.json present and parseable with
+#      no tasks key -> exit 3, ACTION|write-bar-inputs naming tasks.counts
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -691,6 +769,13 @@ selftest() {
   mk_home() {  # mk_home <dir>
     mkdir -p "$1/SPEC" "$1/CONTROL"
     printf 'Goal: build the thing.\n' > "$1/SPEC/GOAL.md"
+    # The pre-plan bar input, written the way SKILL.md §12 instructs. Every
+    # fixture below carries it, so the bar check is SILENT in all of them and
+    # cases 11 and 12 are the only places it can fire — which is what proves it
+    # discriminates rather than firing on everything. project_state.json is
+    # deliberately NOT written here: it is anchor.sh's reconcile input, and
+    # these fixtures own their anchor state.
+    printf '{"step":4,"of":9}\n' > "$1/CONTROL/setup_progress.json"
     printf -- '- [x] U-01 build the parser\n- [ ] U-02 qc the parser\n' > "$1/CONTROL/CHECKLIST.md"
     printf -- '- [ ] U-02 qc the parser\n' > "$1/CONTROL/TODO.md"
   }
@@ -835,6 +920,36 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'S5=undetermined(no CAPACITY-LEDGER.md)' \
      && "$GREP" -q 'S-CHECK | violations=0' "$T/c10/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 10 "undetermined-not-violation" "$ok" "rc=${RC} (want 0); S2 did NOT fire on an absent dispatch log; the S-CHECK line names both undetermined counts"
+
+  # --- case 11: THE BAR, with no file behind either segment. Cases 1-10 all
+  #     carry CONTROL/setup_progress.json and none of them fires this check;
+  #     remove it, with no project_state.json either, and the bar has nothing
+  #     to render in either phase of the run. That pair is the discrimination.
+  mk_home "$T/c11"
+  rm -f "$T/c11/CONTROL/setup_progress.json"
+  runw "$T/c11"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|write-bar-inputs|CONTROL/setup_progress.json,CONTROL/project_state.json|' \
+     && printf '%s' "$OUT" | "$GREP" -q 'bar=missing(CONTROL/setup_progress.json,CONTROL/project_state.json)'; then ok=1; fi
+  report 11 "bar-inputs-missing" "$ok" "rc=${RC} (want 3); ACTION|write-bar-inputs NAMING both files; the S-CHECK line carries bar=missing(…) — and cases 1-10, which write setup_progress.json, stayed silent"
+
+  # --- case 12: THE LIVE SHAPE. project_state.json exists and parses and
+  #     carries task_graph.units instead of a tasks key, exactly as the canary
+  #     run's did, so the pieces segment has no counts to read. The reconcile is
+  #     skipped here because this fixture's state file is the SUBJECT of the
+  #     check, not an anchor input.
+  mk_home "$T/c12"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","phase":"T-07","task_graph":{"units":[]}}\n' \
+    > "$T/c12/CONTROL/project_state.json"
+  set +e
+  OUT="$(WATCH_SKIP_ANCHOR=1 bash "$SELF" "$T/c12" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|write-bar-inputs|CONTROL/project_state.json:tasks.counts|' \
+     && printf '%s' "$OUT" | "$GREP" -q 'bar=missing(CONTROL/project_state.json:tasks.counts)'; then ok=1; fi
+  report 12 "bar-counts-missing" "$ok" "rc=${RC} (want 3); a state file that EXISTS and parses is still a finding when tasks.counts is absent — the canary shape, named"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
