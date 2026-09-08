@@ -657,11 +657,20 @@ not count against the closed seventeen and never need the added-document ask:
                 "history": [ {"round":<int>,"score":<float>,"ts":"<ISO>"} ] },
     "best_stable_build": { "checkpoint": "checkpoint/<slug>-<NNN>",
                            "commit": "<sha>", "score": <float>, "ts": "<ISO>" },
-    "agents": { "executions_total": <int>, "budget_initial": <int>,
+    "agents": { "executions_total": <int>,
+                // AXIS 2 — the operator's LIFETIME agent count (1,000 per project).
+                // NEVER given a project-execution number:
+                "budget_initial": <int>,
                 "session_budget_remaining": <int>,
+                // The PROJECT execution budget (SKILL.md section 6, the five
+                // canonical paths tools/state-check.sh enforces):
                 "initial": <int>, "warn_at": <int>,
                 "first_pause": <int>, "pause_blocks_granted": <int>,
                 "ceiling": 2000,
+                // The two axes are NEVER mixed: a PROJECT number written into an
+                // AXIS-2 field makes claimed = budget_initial − session_budget_remaining
+                // go negative, which fires a FALSE budget-negative-spend alarm in
+                // tools/anchor.sh rather than the budget-pause the run needed.
                 "by_workflow": { "<wf-name>": <int> },
                 "commanders": [ {"name":"<ascii>","domain":"build|visual-qa|technical-qa|release",
                                   "spawned_at":"<ISO>","last_report":"<ISO>"} ] },
