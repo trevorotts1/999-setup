@@ -128,8 +128,7 @@ naming the deployed and installer hashes, and `--force` is the repair that regen
 the body; `references/progress-visibility.md` owns the bar and its segments.
 
 **Regular Claude Code — the defaults path.** Seats are the one seat table in
-`references/capacity.md` §11; never restate them, and never tell the client which model
-takes which seat. Say exactly this:
+`references/capacity.md` §11 — never restated here, never named to the client. Say exactly this:
 
 > No setup questions needed; I'll choose the right helpers myself.
 
@@ -466,10 +465,7 @@ at ≤ `clientCap` units, and launch ALL of them in the same turn, each tree car
 work with zero workflows running is an emergency, never a next tick. A blocked stream is
 HELD by not launching it — never by launching a tree that sits and waits.
 `tools/dispatch-check.sh` and the PreToolUse hook `tools/hooks/dispatch-gate.py` refuse
-under-width dispatches and the four forbidden shapes: `parallel(build)` then
-`parallel(qc)`; a judge phase with fewer judges than landed units; a tree passing fewer
-units than the dispatchable set allows without a `dep=` reason; a merge agent inside a
-build tree (`references/workflows.md` §13).
+under-width dispatches and the four forbidden shapes, which `references/workflows.md` §13 owns in full.
 
 **SEAT PINNING and the four properties.** Every `agent()` call carries an explicit
 `model:` for its seat — a bare call inherits the session model, which lands judges on
@@ -557,15 +553,9 @@ which standards belong to which, the two halves of the tick, the status and comp
 contracts, and the atomic-ledger contract are all in **`references/enforcement.md`**.
 Read the roster there. The short form the conductor must know by heart:
 
-- `tools/watch-tick.sh <project>` runs every five minutes from a crontab line and checks S2 (zero-workflow), S3 (the `[<model> x<N>]` label), S5 (idle capacity), S6 (heartbeat freshness) and S13 (finished-but-alive); it prints one `ACTION|<verb>|<target>|<evidence>` line per finding and exits 3, writes one `S-CHECK | violations=0 | runnable=<n> open=<n> trees=<n>` line on a clean pass, exits 4 while `CONTROL/TERMINAL-DRIFT.flag` exists, and exits 2 rather than ever reporting a false all-clear.
 - `tools/anchor.sh --mode reconcile` runs at every wave boundary, every tick, after every compaction and before every dispatch: the three-way reconcile, the repeated-intent alarm (S14), the ledger-provenance pairing of every RESULT against its prior CLAIM, the budget audit and the pause decision, and the recovery ladder — re-dispatch from the checkpoint, then backoff up to two hours on capacity events, then fallback seats, and only then the drift flag; and honours `CONTROL/OPERATOR-OVERRIDE.json`, which no agent may edit and no audit finding may propose removing.
-- `tools/ledger.sh` performs every state write, locked and atomic, BEFORE the next action; a crash resumes from the last ledger line, and a run that ledgers only on completion has no state to resume from at the moment it most needs one.
 - `tools/dispatch-check.sh` and `tools/hooks/dispatch-gate.py` refuse the under-width and forbidden-shape dispatches before they fire, and refuse a dispatch at or past the pause line (exit 7) or the ceiling (exit 8), so the pause is a wall and not a reminder; `tools/width.sh` supplies the number both of them measure against.
 - `tools/env-sweep.sh` reads credential stores by PARSING them, never by sourcing them, and `tools/place-key.sh` files a key straight from the clipboard so no value ever reaches the transcript.
-
-The cron half never depends on the model; the conductor's in-session `/loop 5m` on the
-same command is the half that dispatches (`references/loops.md` Loop 9). A missing
-`S-CHECK` line within ten minutes means the tick itself stopped, and that is a finding.
 
 ## 11. Websites, funnels, and apps
 
@@ -582,8 +572,7 @@ instruments with named thresholds before anything is published; publish deploys,
 The stages are owned by `references/wireframes.md`, `references/scaffolding.md` (with
 its `templates/scaffolding/` tokens), `references/build.md`,
 `references/hero-images.md`, `references/logo.md`, and `references/media-pipeline.md`
-for the image manifest, the persistence contract and the video lane — read the SECTION a
-step cites, never the whole file. `references/funnel-architecture.md` owns the
+for the image manifest, the persistence contract and the video lane. `references/funnel-architecture.md` owns the
 funnel-only page types, the email and SMS matrices and the Convert and Flow
 (GoHighLevel, GHL) build path, and reaches `references/command-center-integration.md`
 for the project card. The design companions are invoked by name in the design stages and
@@ -611,8 +600,7 @@ sentence is spoken once — at step 3, when the tick is armed — never again at
 **The handover assigns the client nothing.** They open no windows and paste nothing. The
 only line they are ever given is the restart sentence in section 3, also written into
 `CONTROL/LAUNCH-COMMAND.md` and into the project folder as `IF-THE-POWER-GOES-OUT.md`
-(`references/if-the-power-goes-out.md`). The three-window instructions survive only as
-the labelled last-resort rung of `references/terminals.md`, at the client's own request.
+(`references/if-the-power-goes-out.md`); `references/terminals.md` owns the last-resort three-window rung.
 
 **What the client sees while it runs** — the status bar, one line, this shape:
 
