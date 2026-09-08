@@ -353,10 +353,13 @@ rewired without a yes.
 `initial = WF01 + units × 3 + 4`; `warn = max(150, 3 × initial)` (the conductor analyzes
 whether measurable progress is still happening, and records it); `first_pause = max(200,
 4 × initial)`; `ceiling = 2,000 executions per project`, counted per project and never
-per session. All four are written to the ledger and to `CONTROL/project_state.json`
-before the first dispatch, and `tools/anchor.sh` decides the pause. At `first_pause` the
-run deploys the best stable build, writes the plain report, sets `run_status =
-PAUSED_CAP`, and asks one question:
+per session. All four are written before the first dispatch to the ledger and to
+`CONTROL/project_state.json` at exactly these paths — `agents.initial`, `agents.warn_at`,
+`agents.first_pause`, `agents.ceiling`, with `agents.pause_blocks_granted` at 0 — and
+`tools/state-check.sh` refuses any other spelling. `agents.budget_initial` and
+`agents.session_budget_remaining` are the SEPARATE lifetime-agent axis and are never given a
+project number. `tools/anchor.sh` decides the pause. At `first_pause` the run deploys the best
+stable build, writes the plain report, sets `run_status = PAUSED_CAP`, and asks one question:
 
 > I've done a lot of work and your <target> is live at <URL>. I've reached the point where I check in before spending more. Here's where it stands: <two lines>. Keep going?
 
@@ -395,10 +398,11 @@ in the ledger and run the reconciler in two-layer mode, saying so. A markdown ch
 alone is documentation, not a task system.
 
 **The state file (step 16.6).** `CONTROL/project_state.json` answers the twelve state
-questions from round zero with `run_status=RUNNING`, the agent-budget declaration copied
-from the ledger, and the checkpoint rules — the seven moments, the
-`checkpoint/<slug>-<NNN>` tag scheme, the `best_stable_build` pointer. State lives on
-disk, never in conversation memory (Law 25).
+questions from round zero with `run_status=RUNNING`, the agent-budget declaration copied from
+the ledger at the canonical `agents.*` paths above, validated by `tools/state-check.sh` before
+the first dispatch, and the checkpoint rules — the seven moments, the
+`checkpoint/<slug>-<NNN>` tag scheme, the `best_stable_build` pointer. State lives on disk,
+never in conversation memory (Law 25).
 
 ### The run, in order — the step numbers every reference cites
 

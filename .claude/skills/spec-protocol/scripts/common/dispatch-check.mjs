@@ -293,7 +293,7 @@ function selftest() {
   fs.mkdirSync(path.join(P, 'CONTROL'), { recursive: true })
   fs.writeFileSync(path.join(P, 'CAPACITY-LEDGER.md'), 'CLIENT_CAP=10\nBROWSER_CAP=12\nWORKFLOW_CEILING=50\n')
   fs.writeFileSync(path.join(P, 'CONTROL', 'EXECUTION-PLAN.md'), '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n')
-  fs.writeFileSync(path.join(P, 'CONTROL', 'project_state.json'), '{\n  "schema": "spec-protocol/project-state@1",\n  "agents": { "executions_total": 0, "budget_initial": 1000 }\n}\n')
+  fs.writeFileSync(path.join(P, 'CONTROL', 'project_state.json'), '{\n  "schema": "spec-protocol/project-state@1",\n  "agents": { "executions_total": 0 }\n}\n')
   const total = () => JSON.parse(fs.readFileSync(path.join(P, 'CONTROL', 'project_state.json'), 'utf8')).agents.executions_total
 
   // 0 — the parser's known-positive control, on both accepted shapes

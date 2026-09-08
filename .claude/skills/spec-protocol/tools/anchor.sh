@@ -883,7 +883,41 @@ run_anchor() {
     disp="$DISPATCH_ROWS"
 
     if [[ -z "$claimed" ]]; then
-      cmp="budget-undetermined(no-claimed-spend: budget_initial and/or session_budget_remaining absent from ${STATE})"
+      # THE NEAR-MISS PROBE, run BEFORE the undetermined verdict (RC-3).
+      #
+      # "Undetermined" is the right word for a state file we were never given.
+      # It is the WRONG word for one that was written to a path no reader
+      # reads: the canary run computed its budget correctly and wrote it to
+      # agents.project_budget.{initial,warn,first_pause,ceiling}, and every
+      # reconcile after that said "budget-undetermined" — so the writer's
+      # defect read as our own missing input, and BUDGET-PAUSE never fired.
+      #
+      # The probe looks for the near-miss CONTAINER, not for a missing key,
+      # and the distinction is the whole point: jnum matches a quoted key at
+      # ANY nesting depth, so the nested first_pause above comes back as
+      # PRESENT. A "first_pause is absent" test would therefore never fire on
+      # the very file this branch exists for. An agents.project_budget or
+      # agents.budget OBJECT is proof on its own that the five canonical flat
+      # paths were not written, because the canonical schema has no such key
+      # (references/documents.md "The budget block, in full").
+      #
+      # tools/state-check.sh is the instrument that decides this properly, on
+      # paths rather than on text; the action names it rather than guessing.
+      local nearkey=""
+      nearkey="$(sed -n 's/.*"\(project_budget\)"[[:space:]]*:[[:space:]]*{.*/\1/p' "$flat" | head -1)"
+      if [[ -z "$nearkey" ]]; then
+        nearkey="$(sed -n 's/.*"\(budget\)"[[:space:]]*:[[:space:]]*{.*/\1/p' "$flat" | head -1)"
+      fi
+      if [[ -n "$nearkey" ]]; then
+        # The evidence field is truncated at 160 characters by sanitize(), so
+        # the instrument's name goes in it and the full explanation goes to
+        # stderr, where the other UNDETERMINED explanations already live.
+        action "run-state-check" "$UNIT" "tools/state-check.sh (exit 4 names it): WRITER DEFECT, not an absent state file — agents.${nearkey} sits where the canonical flat agents.* paths belong"
+        note "anchor.sh: CLASS 6 WRITER DEFECT — ${STATE} carries an agents.${nearkey} OBJECT instead of the canonical flat paths agents.initial, agents.warn_at, agents.first_pause, agents.pause_blocks_granted, agents.ceiling (SKILL.md section 6). The numbers were computed and written where no reader reads them, which is why the pause line could not be read. Run tools/state-check.sh <project> — it exits 4 and names the key — and rewrite the block at the canonical paths before the next dispatch."
+        cmp="budget-writer-defect(agents.${nearkey})"
+      else
+        cmp="budget-undetermined(no-claimed-spend: budget_initial and/or session_budget_remaining absent from ${STATE})"
+      fi
     elif (( claimed < 0 )); then
       # NEGATIVE CLAIMED SPEND — the scoreboard is impossible, not merely off.
       #
@@ -1457,6 +1491,12 @@ intent_stall() {
 #   16    THE FRESH-SESSION CLEAR — the flag holds while nothing is named
 #         (including against this script's own escalation line), and clears
 #         itself once the BLOCKER-NAMED row is on CONTROL/TODO.md
+#   18    CLASS 6 BUDGET AUDIT, the WRITER DEFECT — a state file carrying
+#         agents.project_budget.first_pause and no canonical flat path MUST
+#         report budget-writer-defect(agents.project_budget) and raise
+#         ACTION|run-state-check naming tools/state-check.sh, never
+#         budget-undetermined; the control fixture with the canonical keys
+#         MUST still report budget-ok (the probe discriminates)
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -1992,7 +2032,48 @@ EOF
   report 17 "fresh-session-clears-the-flag" "$ok" \
     "ladder climbed to the flag (rc=4, flag present)=${ok16a}; with no named blocker the stop HELD across another reconcile (rc=${c17_rc_hold}, want 4, flag survived, and the script's own OPERATOR-ESCALATION line did not satisfy the marker)=${ok16b}; after a '- [x] BLOCKER-NAMED | … | session=…' row landed on CONTROL/TODO.md the reconcile cleared the flag itself (rc=${c17_rc_clear}, want not-4; TERMINAL-DRIFT-CLEARED written through ledger.sh naming the blocker; recovery_rung reset to ${c17_rung})=${ok16c}"
 
-  printf 'SELFTEST COMPLETE | %s of 17 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- CLASS 6, control F (case 18): THE WRITER DEFECT. The state file carries
+  #     agents.project_budget.first_pause — the shape the canary run actually
+  #     wrote — and none of the canonical flat paths. Before this case the
+  #     branch reported "budget-undetermined(no-claimed-spend …)", which reads
+  #     as "you never gave me a state file" for a file that WAS given and was
+  #     written wrong. The verdict must NAME the near-miss key so the conductor
+  #     fixes the WRITER, and the action must name the instrument that decides
+  #     it properly (tools/state-check.sh).
+  #
+  #     The control is the half that matters: the SAME run shape with the
+  #     canonical keys must still come back budget-ok. A probe that cannot stay
+  #     quiet on a correct file would turn every honest run into a defect
+  #     report.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c18"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c18/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","agents":{"executions_total":72,"session_budget_remaining":936,"session_budget_total":1000,"project_budget":{"initial":41,"warn":150,"first_pause":200,"ceiling":2000}},"workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c18/CONTROL/project_state.json"
+  mk_dispatch_log "$T/c18" 72
+  runa "$T/c18" "U-02" --mode reconcile --tasks "$T/c18/CONTROL/task-graph-snapshot.json" --state "$T/c18/CONTROL/project_state.json"
+  local c18_rc="$RC" ok18a=0
+  if printf '%s' "$OUT" | "$GREP" -q 'budget-writer-defect(agents.project_budget)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|run-state-check|U-02|' \
+     && printf '%s' "$OUT" | "$GREP" -q 'tools/state-check.sh' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined'; then ok18a=1; fi
+  # the control: canonical keys, same census — must be budget-ok and must NOT
+  # mention a writer defect.
+  mk_home "$T/c18ctl"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c18ctl/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c18ctl" 1000 928 72
+  mk_dispatch_log "$T/c18ctl" 72
+  runa "$T/c18ctl" "U-02" --mode reconcile --tasks "$T/c18ctl/CONTROL/task-graph-snapshot.json" --state "$T/c18ctl/CONTROL/project_state.json"
+  local c18_rc_ctl="$RC" ok18b=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=72/dispatched=72)' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-writer-defect'; then ok18b=1; fi
+  ok=0
+  if (( ok18a == 1 && ok18b == 1 )); then ok=1; fi
+  report 18 "budget-writer-defect" "$ok" \
+    "near-miss fixture (agents.project_budget.first_pause, no flat path): rc=${c18_rc}; classes carry budget-writer-defect(agents.project_budget) and ACTION|run-state-check names tools/state-check.sh; NOT budget-undetermined=${ok18a}. Control (the same run with the canonical agents.* keys): rc=${c18_rc_ctl} (want 0), budget-ok(claimed=72/dispatched=72), no writer-defect verdict=${ok18b} — the probe discriminates instead of firing on everything."
+
+  printf 'SELFTEST COMPLETE | %s of 18 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

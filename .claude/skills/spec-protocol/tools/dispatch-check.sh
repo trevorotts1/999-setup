@@ -439,7 +439,7 @@ run_selftest() {
   mkdir -p "${P}/CONTROL"
   printf 'CLIENT_CAP=10\nBROWSER_CAP=12\nWORKFLOW_CEILING=50\n' > "${P}/CAPACITY-LEDGER.md"
   printf '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n' > "${P}/CONTROL/EXECUTION-PLAN.md"
-  printf '{\n  "schema": "spec-protocol/project-state@1",\n  "run_status": "RUNNING",\n  "agents": { "executions_total": 0, "budget_initial": 1000 }\n}\n' > "${P}/CONTROL/project_state.json"
+  printf '{\n  "schema": "spec-protocol/project-state@1",\n  "run_status": "RUNNING",\n  "agents": { "executions_total": 0 }\n}\n' > "${P}/CONTROL/project_state.json"
   # Every fixture below that dispatches a BUILD needs the over-engineering line
   # right-size.sh writes, or it is refused with exit 6 before its width is read.
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P}/CONTROL/LEDGER.md"
