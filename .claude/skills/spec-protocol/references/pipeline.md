@@ -1036,7 +1036,44 @@ be verified.
 Everything not listed above is OUT OF SCOPE — do NOT fix, review, or merge it.
 If you believe an out-of-scope item affects the target, FLAG it
 out-of-scope-suspected with a one-line reason; do NOT touch it yourself.
+
+## READ-ONLY FOR EVERY AGENT (never in scope, never flagged)
+- `CONTROL/OPERATOR-OVERRIDE.json` — the operator override.
 ```
+
+### The read-only set — `CONTROL/OPERATOR-OVERRIDE.json`
+
+One file sits outside the fence in both directions: **`CONTROL/OPERATOR-OVERRIDE.json`,
+the operator override.** Every agent may READ it. **No agent may edit, move, rename or
+delete it, and no audit finding, QC verdict, review or fix pass may propose changing or
+removing it** — not as a HALT, not as a HARM, not as a SCOPE finding, not as a CARRY item,
+and not as a tidy-up on the way past. It is never listed in the in-scope set, and it is
+never raised as out-of-scope-suspected either: it is not a suspicion to be resolved, it is
+a decision already taken by the person who owns the run.
+
+The file is a flat JSON object whose one honoured key today is `first_pause`, an integer,
+alongside the free-text `set_by` and `reason`:
+
+```json
+{ "first_pause": 20, "set_by": "operator", "reason": "canary proof D" }
+```
+
+`tools/anchor.sh` and `tools/dispatch-check.sh` read it **before**
+`CONTROL/project_state.json` and let its `first_pause` win over `agents.first_pause`,
+recording `override=first_pause:<n>(source=<…>)` on the RECONCILE line and on the dispatch
+PASS and PAUSED lines, so the override is never silent. `SPEC_PROTOCOL_FIRST_PAUSE` does
+the same job for a headless driver that cannot write into a project folder that does not
+exist yet; the file wins when both are present, and the emitted line names whichever source
+decided. A malformed override is exit 2 in both scripts — a tooling failure, never an
+ignored file and never a pass.
+
+**Why it is fenced this way.** On 2026-09-07 the run was given a pause line of 20 inside
+`CONTROL/project_state.json`, classified the injected number as a defect, reverted it to
+the computed 200, and then moved the key path three times underneath it. An override the
+run is free to repair is not an override. `tools/audit-gate.sh` therefore refuses a
+findings file whose findings name this path — exit 10, `verdict=OUT-OF-SCOPE`, logged and
+not re-dispatched — and `tools/state-check.sh` refuses to judge the file at all rather than
+mistake it for a mis-spelled budget block.
 
 ---
 

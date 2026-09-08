@@ -62,22 +62,34 @@
 #                 the apparatus in its own context instead of dispatching a
 #                 workflow of fixer agents (RC-7). The fix pass is dispatched,
 #                 not performed.
+#  10  OUT-OF-SCOPE DRIFT — a finding of any class names
+#                 CONTROL/OPERATOR-OVERRIDE.json, the OPERATOR OVERRIDE. That
+#                 file is read-only for every agent (references/pipeline.md, the
+#                 scope fence) and is never in the in-scope set, so a finding
+#                 that proposes changing or removing it is working outside the
+#                 scope set — which the fence calls DRIFT: reject, log,
+#                 do not re-dispatch. Tested BEFORE the cycle count and the
+#                 verdict, because it is not a finding to be counted, carried or
+#                 fixed. Like 4, 6 and 9 it is a fact about the RUN and is kept
+#                 out of exit 2.
 #
 # THE LEDGER LINE. Exactly one, written through tools/ledger.sh on every run
 # that reaches a verdict (0, 3, 5 and 9 — never on a tooling failure, which
 # claims nothing):
 #
-#   AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<PASS|BLOCKED|CEILING>
+#   AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<PASS|BLOCKED|CEILING|OUT-OF-SCOPE>
 #
 # The cycle number is COUNTED, never passed in: it is the number of
 # "AUDIT-CYCLE:" lines in <project>/CONTROL/LEDGER.md. A gate that took the
 # cycle number as an argument would be a gate the caller could reset.
 #
-# --selftest proves the instrument before any verdict is believed. Nine
+# --selftest proves the instrument before any verdict is believed. Eleven
 # numbered fixtures, each printing one PASS/FAIL report line: the grep
 # controls, zero findings, CARRY-only, one HALT, one HARM, one SCOPE, the
-# third-cycle ceiling, a named tooling failure, and the exit-9 pair (a
-# recorded fix pass without wf-fix dispatch rows, and the control with them).
+# third-cycle ceiling, a named tooling failure, the exit-9 pair (a
+# recorded fix pass without wf-fix dispatch rows, and the control with them),
+# and the exit-10 pair (one findings file with and without a line naming
+# CONTROL/OPERATOR-OVERRIDE.json: rc 10 with it, an ordinary rc 3 without).
 # The CARRY-only fixture is the discriminating one — it must PASS with
 # findings still open, which is the whole point of the change — and it is run
 # against the same file as the HALT fixture with only the class word changed,
@@ -103,6 +115,9 @@ DISPATCH_REL="CONTROL/dispatch-log.md"
 # One expression per class, built the same way, so no class can be checked
 # more loosely than another.
 class_re() { printf '^[[:space:]]*([-*|][[:space:]]*)?(\\*\\*)?%s(\\*\\*)?[[:space:]]*[|:]' "$1"; }
+# A finding — any class — that names CONTROL/OPERATOR-OVERRIDE.json. Built from
+# the same shape as class_re so no class is checked more loosely than another.
+OVERRIDE_DRIFT_RE='^[[:space:]]*([-*|][[:space:]]*)?(\*\*)?(HALT|HARM|SCOPE|CARRY)(\*\*)?[[:space:]]*[|:].*OPERATOR-OVERRIDE'
 CYCLE_RE='^[[:space:]]*([-*|][[:space:]]*)?(\*\*)?AUDIT-CYCLE(\*\*)?[[:space:]]*:'
 FIXPASS_RE='^[[:space:]]*([-*|][[:space:]]*)?(\*\*)?(AUDIT-)?FIX-PASS(\*\*)?[[:space:]]*[|:]'
 WFFIX_RE='run=wf-fix-[A-Za-z0-9._-]+'
@@ -167,6 +182,19 @@ prove_greps() {
   printf 'A sentence that merely mentions HALT and SCOPE in passing.\n' > "${T}/control-neg.txt" 2>/dev/null || return 2
   neg="$(count_matches "$(class_re HALT)" "${T}/control-neg.txt")" || return 2
   [[ "${neg}" == "0" ]] || { printf 'known-negative HALT=%s' "${neg}"; return 1; }
+
+  # The out-of-scope-drift expression, proven on its own pair. The positive is a
+  # finding that names the operator override; the negatives are the ordinary
+  # findings above (no override named) and a line that mentions the file in
+  # prose without being a finding at all.
+  {
+    printf 'SCOPE | CONTROL/OPERATOR-OVERRIDE.json | remove the unexplained override file\n'
+    printf 'The run reads CONTROL/OPERATOR-OVERRIDE.json, which is prose and not a finding.\n'
+  } > "${T}/control-ov.txt" 2>/dev/null || return 2
+  pos="$(count_matches "${OVERRIDE_DRIFT_RE}" "${T}/control-ov.txt")" || return 2
+  [[ "${pos}" == "1" ]] || { printf 'override-drift known-positive=%s' "${pos}"; return 1; }
+  neg="$(count_matches "${OVERRIDE_DRIFT_RE}" "${T}/control.txt")" || return 2
+  [[ "${neg}" == "0" ]] || { printf 'override-drift known-negative=%s' "${neg}"; return 1; }
   return 0
 }
 
@@ -233,6 +261,34 @@ run_gate() {
   harm="$(count_matches  "$(class_re HARM)"  "${findings}")" || tooling "grep failed reading ${findings} (HARM)"
   scope="$(count_matches "$(class_re SCOPE)" "${findings}")" || tooling "grep failed reading ${findings} (SCOPE)"
   carry="$(count_matches "$(class_re CARRY)" "${findings}")" || tooling "grep failed reading ${findings} (CARRY)"
+
+  # --- exit 10: a finding that proposes touching the OPERATOR OVERRIDE -------
+  # CONTROL/OPERATOR-OVERRIDE.json is the operator's own file. It is read-only
+  # for every agent (references/pipeline.md, the scope fence), it is never in
+  # the in-scope set, and a finding that proposes changing or removing it is by
+  # definition working outside the scope set — which the fence calls DRIFT and
+  # says to reject, log, and not re-dispatch.
+  #
+  # It is tested BEFORE the cycle count, the fix-pass check and the verdict, on
+  # purpose: this is not a finding to be counted, carried or fixed, so nothing
+  # downstream may be allowed to act on it first. The 2026-09-07 canary is the
+  # reason the rule is mechanical rather than written down — that run classified
+  # an injected pause line as a defect and reverted it (canary-notes.md:63-68).
+  # An override an audit may repair is not an override.
+  local ovdrift
+  ovdrift="$(count_matches "${OVERRIDE_DRIFT_RE}" "${findings}")" \
+    || tooling "grep failed reading ${findings} (OPERATOR-OVERRIDE drift)"
+  if (( ovdrift >= 1 )); then
+    local ovcycle
+    ovcycle="$(count_matches "${CYCLE_RE}" "${ledger_md}")" \
+      || tooling "grep failed reading ${ledger_md} (AUDIT-CYCLE)"
+    write_ledger_line "${project}" "${ovcycle}" "${halt}" "${harm}" "${scope}" "${carry}" "OUT-OF-SCOPE"
+    printf 'AUDIT-GATE OUT-OF-SCOPE | cycle=%s | %s finding(s) in %s name CONTROL/OPERATOR-OVERRIDE.json\n' \
+      "${ovcycle}" "${ovdrift}" "${findings}" >&2
+    printf 'AUDIT-GATE OUT-OF-SCOPE | the operator override is READ-ONLY for every agent and is never in the in-scope set. A finding that proposes changing or removing it is DRIFT (references/pipeline.md, the scope fence): it is refused here, logged, and NOT re-dispatched. Delete these lines from the findings file and run the gate again; the rest of the audit is not judged until they are gone.\n' >&2
+    show_matches "${OVERRIDE_DRIFT_RE}" "${findings}" >&2
+    exit 10
+  fi
 
   # --- the cycle number, counted from the ledger ----------------------------
   local cycle
@@ -454,9 +510,43 @@ run_selftest() {
   ok=0; [[ "${rc}" == "0" && "${line}" == "AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=1 | verdict=PASS" ]] && ok=1
   report 9 "dispatched-fix-passes" "${ok}" "rc=${rc} (want 0) on the SAME ledger record once run=wf-fix-01 exists in the dispatch log — so exit 9 is a finding about the run, not a refusal of the class; ledger line: ${line:-NONE}"
 
+  # --- 10: a finding that proposes touching the OPERATOR OVERRIDE → rc 10 --
+  # A pass/fail pair on ONE fixture: the same findings file, with and without
+  # the line that names CONTROL/OPERATOR-OVERRIDE.json. Without it the file is
+  # an ordinary one-HALT audit and the gate BLOCKS at rc 3; with it the gate
+  # refuses the whole findings file as out-of-scope drift at rc 10, before any
+  # verdict is reached. A gate that answered alike either way would prove
+  # nothing about the override.
+  P="$(mkproj proj-override 1)"
+  {
+    printf '# Apparatus audit — cycle 1\n\n'
+    printf 'HALT  | U04 | the home page has two conflicting layouts\n'
+  } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
+  out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
+  line="$(gate_line "${P}")"
+  local ov_ctl=0
+  [[ "${rc}" == "3" && "${line}" == "AUDIT-GATE | cycle=1 | halt=1 harm=0 scope=0 carry=0 | verdict=BLOCKED" ]] && ov_ctl=1
+  local rc_ctl="${rc}" line_ctl="${line}"
+
+  P="$(mkproj proj-override-drift 1)"
+  {
+    printf '# Apparatus audit — cycle 1\n\n'
+    printf 'HALT  | U04 | the home page has two conflicting layouts\n'
+    printf 'SCOPE | CONTROL/OPERATOR-OVERRIDE.json | an unexplained override file; remove it and let the computed first_pause stand\n'
+  } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
+  out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
+  line="$(gate_line "${P}")"
+  ok=0
+  [[ "${rc}" == "10" ]] && ok=1
+  printf '%s' "${line}" | "${GREP}" -q 'verdict=OUT-OF-SCOPE' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'AUDIT-GATE OUT-OF-SCOPE' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'READ-ONLY for every agent' || ok=0
+  (( ov_ctl == 1 )) || ok=0
+  report 10 "override-finding-is-drift" "${ok}" "rc=${rc} (want 10) for a findings file whose SCOPE line names CONTROL/OPERATOR-OVERRIDE.json; the ledger says verdict=OUT-OF-SCOPE and the message says the file is read-only for every agent. CONTROL, the SAME findings file with that one line removed: rc=${rc_ctl} (want 3, an ordinary BLOCKED)=${ov_ctl} — the refusal is about the override and not about findings in general; ledger lines: [${line:-NONE}] and [${line_ctl:-NONE}]"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'audit-gate.sh selftest: ALL PASS (10 checks, fixtures 0-9)\n'
+    printf 'audit-gate.sh selftest: ALL PASS (11 checks, fixtures 0-10)\n'
     exit 0
   fi
   printf 'audit-gate.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; triage the audit by hand against references/gauntlet.md §7.1 and say so in the ledger\n' "${FAILS}"
