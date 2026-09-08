@@ -40,6 +40,11 @@
 #             unreadable, the JSON does not parse, or the parser failed its own
 #             known-positive control. NEVER a verdict about the state file: an
 #             exit 2 is UNDETERMINED, said out loud, with the path named.
+#             CONTROL/OPERATOR-OVERRIDE.json is refused here too, BY NAME and
+#             before anything is parsed: the operator override is out of this
+#             gate's scope, and it is never reported as a near-miss, a writer
+#             defect or a missing budget block (WI-35; see "OUT OF SCOPE" by
+#             resolve_state below).
 #   3  MISSING — the file parses, no near-miss spelling is present, and one or
 #             more of the five keys is absent (or present but not an integer).
 #             Every missing key is named. This is "not written yet".
@@ -290,6 +295,31 @@ resolve_state() {  # resolve_state <arg> -> prints the state file path
   printf '%s\n' "$a"
 }
 
+# CONTROL/OPERATOR-OVERRIDE.json IS OUT OF SCOPE FOR THIS INSTRUMENT (WI-35).
+#
+# It is the operator's own file, not a state file: a flat object whose only
+# honoured key is first_pause, read by tools/anchor.sh and tools/dispatch-check.sh
+# BEFORE CONTROL/project_state.json and outranking it. Handed to the checker it
+# would flatten to a bare `first_pause` path, which the stray-key probe above
+# reads as "first_pause not directly under agents" — and this gate would report
+# the operator's override as a WRITER DEFECT, exactly the misclassification the
+# canary run made when it reverted the injected pause line as a defect
+# (canary-notes.md:63-68).
+#
+# So it is refused BY NAME, before anything is parsed, and refused as exit 2:
+# UNDETERMINED, never a verdict. It is never exit 4 and never exit 3, because
+# this instrument has nothing to say about a file it does not own. A project
+# directory is unaffected — resolve_state above reads CONTROL/project_state.json
+# and never looks at its neighbours — so a project carrying an override still
+# passes on its state file alone.
+OVERRIDE_BASENAME="OPERATOR-OVERRIDE.json"
+refuse_out_of_scope() {  # refuse_out_of_scope <path>
+  printf 'state-check.sh: OUT OF SCOPE (exit 2): %s\n' "$1" >&2
+  printf 'state-check.sh: CONTROL/OPERATOR-OVERRIDE.json is the OPERATOR OVERRIDE, not a project state file. It is read-only for every agent (references/pipeline.md, the scope fence), no audit finding may propose changing or removing it, and this gate makes NO claim about it — it is not a near-miss, not a writer defect, and not missing keys.\n' >&2
+  printf 'state-check.sh: to check the budget block, point this script at the project folder or at CONTROL/project_state.json.\n' >&2
+  exit 2
+}
+
 #==============================================================================
 # SELFTEST — the five fixtures RC-3 names, behind a known-positive control on
 # the parser. Every case asserts both the exit code and what the line must say,
@@ -391,7 +421,31 @@ selftest() {
   if (( RC == 0 )) && printf '%s' "${OUT}" | "${GREP}" -q 'pause_blocks_granted=2'; then ok=1; fi
   report 5 "advanced-run-passes" "${ok}" "rc=${RC} (want 0); a granted block is not a schema fault"
 
-  printf 'SELFTEST COMPLETE | %s of 6 cases passed | %s failed\n' "${PASSES}" "${FAILS}"
+  # --- case 6: THE OPERATOR OVERRIDE IS OUT OF SCOPE (WI-35). Two legs on one
+  #     project, and both matter:
+  #       a  a canonical state file with CONTROL/OPERATOR-OVERRIDE.json sitting
+  #          beside it still PASSES, and the verdict never mentions the override
+  #          — the checker reads its own file and does not inventory the folder;
+  #       b  handed the override file DIRECTLY, it refuses as OUT OF SCOPE with
+  #          rc 2 and never rc 4. Leg (b) is the one that would fail loudest if
+  #          it were missing: the override flattens to a bare `first_pause`, so
+  #          the stray-key probe would call the operator's own file a WRITER
+  #          DEFECT — the same misclassification the canary made when it
+  #          reverted the injected pause line as a defect.
+  mkdir -p "${T}/c6/CONTROL"
+  printf '{"schema":"spec-protocol/project-state@1","agents":{"executions_total":20,"initial":41,"warn_at":150,"first_pause":200,"pause_blocks_granted":0,"ceiling":2000}}\n' > "${T}/c6/CONTROL/project_state.json"
+  printf '{"first_pause": 20, "set_by": "operator", "reason": "canary proof D"}\n' > "${T}/c6/CONTROL/OPERATOR-OVERRIDE.json"
+  runf "${T}/c6"
+  local ov_a=0 ov_b=0 rc_a="${RC}" out_a="${OUT}"
+  if (( RC == 0 )) && printf '%s' "${OUT}" | "${GREP}" -q 'PASS' \
+     && ! printf '%s' "${OUT}" | "${GREP}" -q 'OPERATOR-OVERRIDE'; then ov_a=1; fi
+  runf "${T}/c6/CONTROL/OPERATOR-OVERRIDE.json"
+  if (( RC == 2 )) && printf '%s' "${OUT}" | "${GREP}" -q 'OUT OF SCOPE' \
+     && ! printf '%s' "${OUT}" | "${GREP}" -q 'WRITER DEFECT'; then ov_b=1; fi
+  ok=0; (( ov_a == 1 && ov_b == 1 )) && ok=1
+  report 6 "operator-override-out-of-scope" "${ok}" "project carrying CONTROL/OPERATOR-OVERRIDE.json beside a canonical state file: rc=${rc_a} (want 0), PASS with no mention of the override=${ov_a}. The override file handed in directly: rc=${RC} (want 2, OUT OF SCOPE), and NEVER exit 4 WRITER DEFECT=${ov_b} — this gate makes no claim about a file it does not own."
+
+  printf 'SELFTEST COMPLETE | %s of 7 cases passed | %s failed\n' "${PASSES}" "${FAILS}"
   if (( FAILS > 0 )); then return 1; fi
   return 0
 }
@@ -409,5 +463,10 @@ case "$1" in
 esac
 
 STATE_FILE="$(resolve_state "$1")"
+# The operator override is refused by name, before the parser runs: this gate
+# owns CONTROL/project_state.json and claims nothing about any other file.
+if [[ "$(basename "${STATE_FILE}")" == "${OVERRIDE_BASENAME}" ]]; then
+  refuse_out_of_scope "${STATE_FILE}"
+fi
 check_state "${STATE_FILE}"
 exit $?

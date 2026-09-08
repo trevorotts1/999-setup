@@ -68,6 +68,16 @@
 #              that as a pause would leave a project able to answer "keep going"
 #              past a line it can never cross.
 #
+# THE OPERATOR OVERRIDE. CONTROL/OPERATOR-OVERRIDE.json is read BEFORE
+# CONTROL/project_state.json and its `first_pause` REPLACES agents.first_pause
+# in the arithmetic above; SPEC_PROTOCOL_FIRST_PAUSE does the same for a
+# headless driver that cannot write into a folder that does not exist yet, and
+# the FILE WINS when both are present. Whichever source decided, the PASS line
+# and the PAUSED line carry `override=first_pause:<n>(source=<…>)`, so the
+# override is never silent. A malformed override is exit 2 — never ignored,
+# never a pass. See "THE OPERATOR OVERRIDE" below the width helpers for the
+# contract in full.
+#
 # The four the row enumerates are 0/3/5/2. Exits 4 and 6 are the fail-closed
 # precondition refusals — a missing Parallelism Plan and a missing
 # over-engineering check; both are kept separate from 2 on purpose, because
@@ -98,8 +108,13 @@
 # proven on ONE fixture, all three legs: executions_total=19 against a
 # first_pause of 20 passes, the SAME fixture at 20 exits 7 naming pause_at=20,
 # and one granted block passes it again at 20 — a run where all three legs
-# answer alike is a broken test, not a finding. A gate whose known-positive
-# comes back negative reports BROKEN INSTRUMENT, never "clean".
+# answer alike is a broken test, not a finding. The OPERATOR OVERRIDE is proven
+# the same way on one more fixture, five legs: no override at all passes at
+# executions_total=20 against first_pause=200; the override file at 20 refuses
+# the identical dispatch with rc 7; the variable alone does the same and names
+# itself; the file beats a disagreeing variable; and a malformed override is
+# rc 2, never rc 0. A gate whose known-positive comes back negative reports
+# BROKEN INSTRUMENT, never "clean".
 
 set -uo pipefail
 
@@ -174,6 +189,170 @@ is_build_label() {
   printf '%s' "$1" | "${GREP}" -qi 'build'
 }
 
+# --- THE OPERATOR OVERRIDE — CONTROL/OPERATOR-OVERRIDE.json (WI-35) ----------
+#
+# THE CONTRACT. A FLAT JSON object. One honoured key today:
+#
+#     { "first_pause": 20, "set_by": "operator", "reason": "canary proof D" }
+#
+#   first_pause  a non-negative integer. It REPLACES agents.first_pause from
+#                CONTROL/project_state.json in the pause arithmetic, and it is
+#                read BEFORE that file. Granted blocks still multiply it and the
+#                ceiling still clamps it: an override MOVES the pause line, it
+#                never abolishes the ceiling.
+#   set_by       free text. Recorded on stderr, never parsed.
+#   reason       free text. Recorded on stderr, never parsed.
+#
+#   Nothing is nested, and no key appears twice. Both are REFUSED rather than
+#   tolerated, because jnum above matches a quoted key at ANY depth and, being
+#   greedy, returns the LAST occurrence — so a nested or duplicated first_pause
+#   resolves unpredictably (RC-3). A file this parser accepts is a file this
+#   gate and tools/anchor.sh agree about.
+#
+# WHY IT EXISTS. The 2026-09-07 canary injected agents.first_pause=20 into the
+# state file to force the pause. The run classified the injection as a defect,
+# reverted it to the computed 200, and moved the key path three times underneath
+# it (canary-notes.md:63-68). An override the run is free to repair is not an
+# override. This file lives outside the state file and outside the audit's
+# reach: references/pipeline.md's scope fence makes it READ-ONLY for every
+# agent, and tools/audit-gate.sh refuses an audit finding that proposes changing
+# or removing it as out-of-scope drift.
+#
+# SPEC_PROTOCOL_FIRST_PAUSE is the same override for a headless driver that
+# cannot write into a project folder that does not exist yet. THE FILE WINS when
+# both are present, and both the PASS and the PAUSED line NAME the source used,
+# so a run can never be paused by a number nobody can point at.
+#
+# FAIL LOUD. An override that exists and cannot be honoured is a TOOLING FAILURE
+# (exit 2) — never an ignored file, never a pass. ABSENCE is not a failure: no
+# file and no variable means no override, and the state file decides as before.
+#
+# The parser below is COPIED, deliberately, into tools/anchor.sh: two
+# instruments that decide the same pause must never disagree about how the
+# override parses. Only the failure primitive differs (tooling here, die_tool
+# there), and both are exit 2.
+OV_AWK="/usr/bin/awk"
+if [[ ! -x "${OV_AWK}" ]]; then OV_AWK="$(command -v awk 2>/dev/null || true)"; fi
+
+OVERRIDE_REL="CONTROL/OPERATOR-OVERRIDE.json"
+OVERRIDE_PAUSE=""    # the honoured first_pause, or "" for no override
+OVERRIDE_SOURCE=""   # the path or the variable name the number came from
+OVERRIDE_TAG=""      # override=first_pause:<n>(source=<...>), or ""
+
+# override_parse <file> — a STRICT flat-object reader. Emits one
+# `key<TAB>type<TAB>value` line per member and a final OVERRIDE-OK, or one
+# OVERRIDE-ERROR line and rc 1. Dependency-free (no jq, no node, no python):
+# this runs on a client's machine before anything dispatches. Paths are the
+# point — a regex over the text cannot tell a flat first_pause from one buried
+# two levels down, which is the exact defect RC-3 records.
+override_parse() {
+  LC_ALL=C "${OV_AWK}" '
+    function ovfail(m) { printf("OVERRIDE-ERROR\t%s\n", m); exit 1 }
+    function ws() { while (i <= n && substr(s,i,1) ~ /[ \t\r\n]/) i++ }
+    function jstr(   out, c) {
+      if (substr(s,i,1) != "\"") ovfail("expected a quoted key or string at byte " i)
+      i++; out = ""
+      while (i <= n) {
+        c = substr(s,i,1)
+        if (c == "\\") { out = out substr(s,i,2); i += 2; continue }
+        if (c == "\"") { i++; return out }
+        out = out c; i++
+      }
+      ovfail("unterminated string")
+    }
+    function jval(   c, st, t) {
+      ws(); c = substr(s,i,1)
+      if (c == "\"") { VT = "string"; VV = jstr(); return }
+      if (c == "{" || c == "[") ovfail("a nested value is not allowed here: the override file is a FLAT object")
+      st = i
+      while (i <= n && index(",}", substr(s,i,1)) == 0 && substr(s,i,1) !~ /[ \t\r\n]/) i++
+      t = substr(s, st, i - st)
+      if (t ~ /^-?[0-9]+$/)            { VT = "int";    VV = t; return }
+      if (t ~ /^-?[0-9]+\.[0-9]+$/)    { VT = "number"; VV = t; return }
+      if (t == "true" || t == "false") { VT = "bool";   VV = t; return }
+      if (t == "null")                 { VT = "null";   VV = t; return }
+      ovfail("unparseable value: " t)
+    }
+    { s = s $0 "\n" }
+    END {
+      n = length(s); i = 1
+      ws()
+      if (substr(s,i,1) != "{") ovfail("the override file must be exactly one JSON object")
+      i++; ws()
+      if (substr(s,i,1) == "}") { i++ } else {
+        while (1) {
+          ws(); k = jstr()
+          if (k in seen) ovfail("duplicate key: " k)
+          seen[k] = 1
+          ws(); if (substr(s,i,1) != ":") ovfail("expected : after key " k); i++
+          jval()
+          printf("%s\t%s\t%s\n", k, VT, VV)
+          ws(); c = substr(s,i,1)
+          if (c == ",") { i++; continue }
+          if (c == "}") { i++; break }
+          ovfail("expected , or } after key " k)
+        }
+      }
+      ws()
+      if (i <= n) ovfail("trailing content after the object")
+      print "OVERRIDE-OK"
+    }
+  ' "$1"
+}
+
+# override_resolve <project> — sets OVERRIDE_PAUSE / OVERRIDE_SOURCE /
+# OVERRIDE_TAG, or leaves all three empty when there is no override at all.
+# It NEVER returns quietly on an override it could not honour: that path calls
+# tooling() and the gate exits 2, because an undetermined pause line never
+# licences a dispatch.
+override_resolve() {
+  local f="${1%/}/${OVERRIDE_REL}" out rc fp ty envv setby reason
+  OVERRIDE_PAUSE=""; OVERRIDE_SOURCE=""; OVERRIDE_TAG=""
+  [[ -n "${OV_AWK}" && -x "${OV_AWK}" ]] \
+    || tooling "no awk found (tried /usr/bin/awk then \$PATH) — ${f} cannot be read, so whether an operator override is in force is UNDETERMINED, and an undetermined pause line never licences a dispatch"
+
+  # --- (1) THE FILE, read BEFORE CONTROL/project_state.json, and winning ----
+  if [[ -e "${f}" ]]; then
+    [[ -f "${f}" ]] || tooling "${f} exists but is not a regular file — an operator override that cannot be read is never ignored"
+    [[ -r "${f}" ]] || tooling "${f} is unreadable — an operator override that cannot be read is never ignored"
+    out="$(override_parse "${f}" 2>&1)"; rc=$?
+    if (( rc != 0 )) || ! printf '%s\n' "${out}" | "${GREP}" -q '^OVERRIDE-OK$'; then
+      tooling "MALFORMED OPERATOR OVERRIDE at ${f}: $(printf '%s' "${out}" | tr '\n' ' ' | cut -c1-300). The contract is one FLAT JSON object, no nesting and no repeated key: {\"first_pause\": <int>, \"set_by\": \"...\", \"reason\": \"...\"}. A malformed override is never ignored and never a pass."
+    fi
+    ty="$(printf '%s\n' "${out}" | LC_ALL=C "${OV_AWK}" -F '\t' '$1 == "first_pause" { print $2; exit }')"
+    fp="$(printf '%s\n' "${out}" | LC_ALL=C "${OV_AWK}" -F '\t' '$1 == "first_pause" { print $3; exit }')"
+    [[ -n "${ty}" ]] \
+      || tooling "MALFORMED OPERATOR OVERRIDE at ${f}: it carries no first_pause. first_pause is the only honoured key, so an override file without one overrides nothing — which is exactly the silent no-op this file exists to prevent. Remove the file or give it a first_pause."
+    [[ "${ty}" == "int" ]] && is_uint "${fp}" \
+      || tooling "MALFORMED OPERATOR OVERRIDE at ${f}: first_pause is '${fp}' (${ty}), which is not a non-negative integer"
+    setby="$(printf '%s\n' "${out}" | LC_ALL=C "${OV_AWK}" -F '\t' '$1 == "set_by" { print $3; exit }')"
+    reason="$(printf '%s\n' "${out}" | LC_ALL=C "${OV_AWK}" -F '\t' '$1 == "reason" { print $3; exit }')"
+    OVERRIDE_PAUSE="${fp}"
+    OVERRIDE_SOURCE="${f}"
+    OVERRIDE_TAG="override=first_pause:${fp}(source=${f})"
+    printf 'DISPATCH-CHECK NOTE | OPERATOR OVERRIDE in force | first_pause=%s from %s (set_by=%s; reason=%s). It is read BEFORE CONTROL/project_state.json and it wins; no agent may edit this file and no audit finding may propose removing it.\n' \
+      "${fp}" "${f}" "${setby:-unstated}" "${reason:-unstated}" >&2
+    if [[ -n "${SPEC_PROTOCOL_FIRST_PAUSE:-}" ]]; then
+      printf 'DISPATCH-CHECK NOTE | SPEC_PROTOCOL_FIRST_PAUSE=%s is also set and is NOT used — the file wins when both are present, and the line above names the file as the source.\n' \
+        "${SPEC_PROTOCOL_FIRST_PAUSE}" >&2
+    fi
+    return 0
+  fi
+
+  # --- (2) the environment variable, for a driver with nowhere to write -----
+  envv="${SPEC_PROTOCOL_FIRST_PAUSE:-}"
+  envv="${envv//[[:space:]]/}"
+  [[ -n "${envv}" ]] || return 0   # no file, no variable: no override. Not a failure.
+  is_uint "${envv}" \
+    || tooling "MALFORMED OPERATOR OVERRIDE: SPEC_PROTOCOL_FIRST_PAUSE='${SPEC_PROTOCOL_FIRST_PAUSE:-}' is not a non-negative integer. A variable that is set and cannot be honoured is never ignored."
+  OVERRIDE_PAUSE="${envv}"
+  OVERRIDE_SOURCE="env:SPEC_PROTOCOL_FIRST_PAUSE"
+  OVERRIDE_TAG="override=first_pause:${envv}(source=env:SPEC_PROTOCOL_FIRST_PAUSE)"
+  printf 'DISPATCH-CHECK NOTE | OPERATOR OVERRIDE in force | first_pause=%s from the environment variable SPEC_PROTOCOL_FIRST_PAUSE (no %s on disk). Write the file once CONTROL/ exists; the file wins over the variable.\n' \
+    "${envv}" "${f}" >&2
+  return 0
+}
+
 # --- The budget wall (RC-4b): the pause line and the ceiling -----------------
 # Until this block existed, the pause decision lived in exactly one instrument,
 # tools/anchor.sh, which only decides when the five-minute tick runs. The
@@ -201,12 +380,19 @@ jnum() {  # jnum <flat-json-file> <key> -> integer on stdout, or rc 1
 # is only taken when it is SMALLER — the same clamp anchor.sh applies.
 DEFAULT_CEILING=2000
 
-# budget_gate <state-json> — exits 8 at the ceiling, 7 at the pause line, and 2
-# when the budget cannot be read. Returns 0 only when the run is PROVABLY under
-# both lines. It never returns 0 on a file it could not measure: an undetermined
-# budget is exactly the state in which a dispatch must not be licensed.
+# budget_gate <state-json> <project> — exits 8 at the ceiling, 7 at the pause
+# line, and 2 when the budget cannot be read. Returns 0 only when the run is
+# PROVABLY under both lines. It never returns 0 on a file it could not measure:
+# an undetermined budget is exactly the state in which a dispatch must not be
+# licensed.
 budget_gate() {
-  local sp="$1" flat=""
+  local sp="$1" project="$2" flat=""
+
+  # THE OPERATOR OVERRIDE IS READ FIRST — before the state file below, and
+  # before any of its own tooling refusals. Order is the point twice over: the
+  # override WINS over agents.first_pause, and a malformed override must exit 2
+  # even on a project whose state file would have been refused anyway.
+  override_resolve "${project}"
 
   [[ -f "${sp}" ]] \
     || tooling "no state file at ${sp} — the pause line and the ceiling are UNDETERMINED, and an undetermined budget never licences a dispatch. SKILL.md section 6 writes agents.initial, agents.warn_at, agents.first_pause, agents.pause_blocks_granted and agents.ceiling BEFORE the first dispatch; tools/state-check.sh <project> says which of them are missing."
@@ -239,9 +425,15 @@ budget_gate() {
   is_uint "${blocks}"      || tooling "agents.pause_blocks_granted parsed as '${blocks}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
   is_uint "${ceil_state}"  || tooling "agents.ceiling parsed as '${ceil_state}' from ${sp}, which is not a non-negative integer — run tools/state-check.sh <project>"
 
+  # The override outranks agents.first_pause outright. It moves the PAUSE only:
+  # granted blocks still multiply it and the ceiling still clamps it, because an
+  # operator moving the pause line has not moved the absolute ceiling.
+  local pause_src="${pause_state}"
+  if [[ -n "${OVERRIDE_PAUSE}" ]]; then pause_src="${OVERRIDE_PAUSE}"; fi
+
   local ceil="${DEFAULT_CEILING}" pause
   (( ceil_state < ceil )) && ceil="${ceil_state}"
-  pause=$(( pause_state * ( blocks + 1 ) ))
+  pause=$(( pause_src * ( blocks + 1 ) ))
   (( pause > ceil )) && pause="${ceil}"
 
   # THE CEILING IS TESTED FIRST, as tools/anchor.sh tests it first in its budget
@@ -255,8 +447,14 @@ budget_gate() {
     exit 8
   fi
   if (( exec_t >= pause )); then
-    printf 'DISPATCH-CHECK PAUSED | executions=%s | pause_at=%s | ceiling=%s\n' "${exec_t}" "${pause}" "${ceil}" >&2
-    printf 'DISPATCH-CHECK NOTE | read: %s | pause_at = agents.first_pause %s × (agents.pause_blocks_granted %s + 1). Deploy the best stable build, write the plain report, then ask the one question (SKILL.md section 6). Each "keep going" increments agents.pause_blocks_granted, which moves this wall up by one block, and the run resumes at full width. This is a PAUSE, not a stop.\n' "${sp}" "${pause_state}" "${blocks}" >&2
+    printf 'DISPATCH-CHECK PAUSED | executions=%s | pause_at=%s | ceiling=%s%s\n' \
+      "${exec_t}" "${pause}" "${ceil}" "${OVERRIDE_TAG:+ | ${OVERRIDE_TAG}}" >&2
+    if [[ -n "${OVERRIDE_TAG}" ]]; then
+      printf 'DISPATCH-CHECK NOTE | read: %s | pause_at = the OPERATOR OVERRIDE first_pause %s (source: %s, read before %s and outranking its agents.first_pause of %s) × (agents.pause_blocks_granted %s + 1). Deploy the best stable build, write the plain report, then ask the one question (SKILL.md section 6). Each "keep going" increments agents.pause_blocks_granted, which moves this wall up by one block, and the run resumes at full width. This is a PAUSE, not a stop.\n' \
+        "${sp}" "${OVERRIDE_PAUSE}" "${OVERRIDE_SOURCE}" "${sp}" "${pause_state}" "${blocks}" >&2
+    else
+      printf 'DISPATCH-CHECK NOTE | read: %s | pause_at = agents.first_pause %s × (agents.pause_blocks_granted %s + 1). Deploy the best stable build, write the plain report, then ask the one question (SKILL.md section 6). Each "keep going" increments agents.pause_blocks_granted, which moves this wall up by one block, and the run resumes at full width. This is a PAUSE, not a stop.\n' "${sp}" "${pause_state}" "${blocks}" >&2
+    fi
     exit 7
   fi
   return 0
@@ -454,7 +652,7 @@ run_check() {
   # width arithmetic below, and this is the block it reserved it for. The order
   # is the point: a dispatch that is past the pause line must not be argued
   # about on width — it must not fire at all, at any width.
-  budget_gate "${state_json}"
+  budget_gate "${state_json}" "${project}"
 
   # --- The floor (S4). The only number this skill controls. -----------------
   local floor="${units}"
@@ -519,8 +717,12 @@ run_check() {
     tooling "ledger.sh failed (rc=${rc}) writing CONTROL/dispatch-log.md: ${out}"
   fi
 
-  printf 'DISPATCH-CHECK PASS | project=%s | units=%s | agents=%s | cap=%s | floor=%s | ceiling=%s | label=%s | dep=%s | executions_total=%s\n' \
-    "${project}" "${units}" "${agents}" "${cap}" "${floor}" "${pad_ceiling}" "${label}" "${dep:-none}" "${total}"
+  # The override goes on the PASS line too, not only on the refusal. A dispatch
+  # that was licensed against an operator-moved pause line must say so where the
+  # row is read, or the override is silent on every turn it did not stop.
+  printf 'DISPATCH-CHECK PASS | project=%s | units=%s | agents=%s | cap=%s | floor=%s | ceiling=%s | label=%s | dep=%s | executions_total=%s%s\n' \
+    "${project}" "${units}" "${agents}" "${cap}" "${floor}" "${pad_ceiling}" "${label}" "${dep:-none}" "${total}" \
+    "${OVERRIDE_TAG:+ | ${OVERRIDE_TAG}}"
   exit 0
 }
 
@@ -539,6 +741,11 @@ run_selftest() {
     echo "BROKEN INSTRUMENT: cannot create a temp dir for the selftest" >&2; exit 2; }
   # shellcheck disable=SC2064
   trap "release_state_lock; rm -rf '${T}'" EXIT
+
+  # The override variable is cleared before the first fixture and exported only
+  # by the legs that mean to set it. A selftest that inherited an operator's own
+  # SPEC_PROTOCOL_FIRST_PAUSE would report a wall it never proved.
+  unset SPEC_PROTOCOL_FIRST_PAUSE
 
   # --- control 0: the greps, proven on a known positive first ---------------
   local kp_label kp_head
@@ -786,9 +993,70 @@ run_selftest() {
   if [[ -f "${P11}/CONTROL/project_state.json" ]]; then ok=0; fi
   report 22 "no-state-file-undetermined" "${ok}" "rc=${rc} (want 2) when CONTROL/project_state.json does not exist: the gate names the exact path and tools/state-check.sh, and it does NOT seed a file to dispatch against — the budget block is written at SKILL.md section 6, before the first dispatch"
 
+  # --- 18: THE OPERATOR OVERRIDE — five legs on ONE fixture (WI-35) ---------
+  # The fixture says first_pause=200 and executions_total=20, which is a run
+  # comfortably under its own pause line. Every leg below changes ONLY where
+  # first_pause comes from, so the pass/fail split is attributable to the
+  # override and to nothing else. A run where every leg answers alike is a
+  # broken test, not a finding.
+  local P12="${T}/proj-override"
+  mkdir -p "${P12}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P12}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P12}/CONTROL/EXECUTION-PLAN.md"
+  local ovf="${P12}/CONTROL/OPERATOR-OVERRIDE.json"
+  local p12_total
+
+  # (a) THE CONTROL FIRST: the same fixture with no override at all.
+  write_state "${P12}/CONTROL/project_state.json" 20 200 0 2000
+  out="$(bash "${SELF}" "${P12}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  if printf '%s' "${out}" | "${GREP}" -q 'override='; then ok=0; fi
+  report 23 "no-override-passes" "${ok}" "rc=${rc} (want 0) at executions_total=20 against agents.first_pause=200 and NO override file and NO variable; no override= token anywhere. This is the half that proves the legs below are moved by the override and not by a broken gate: ${out}"
+
+  # (b) THE FILE: the same numbers, first_pause overridden to 20 → rc 7.
+  write_state "${P12}/CONTROL/project_state.json" 20 200 0 2000
+  printf '{"first_pause": 20, "set_by": "operator", "reason": "canary proof D"}\n' > "${ovf}"
+  out="$(bash "${SELF}" "${P12}" 1 1 '[Sonnet x1] judge unit-2' 2>&1)"; rc=$?
+  p12_total="$(read_state_total "${P12}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "7" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK PAUSED | executions=20 | pause_at=20' || ok=0
+  printf '%s' "${out}" | "${GREP}" -qE 'override=first_pause:20\(source=.*/CONTROL/OPERATOR-OVERRIDE\.json\)' || ok=0
+  [[ "${p12_total}" == "20" ]] || ok=0
+  report 24 "override-file-pauses" "${ok}" "rc=${rc} (want 7) on the SAME fixture with CONTROL/OPERATOR-OVERRIDE.json setting first_pause=20 over the state file's 200; the line carries pause_at=20 and override=first_pause:20(source=<the file>), and the counter did not move (${p12_total}, want 20): ${out}"
+
+  # (c) THE VARIABLE alone, no file → the same wall, the variable named.
+  rm -f "${ovf}"
+  export SPEC_PROTOCOL_FIRST_PAUSE=20
+  out="$(bash "${SELF}" "${P12}" 1 1 '[Sonnet x1] judge unit-3' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "7" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'override=first_pause:20(source=env:SPEC_PROTOCOL_FIRST_PAUSE)' || ok=0
+  report 25 "override-env-pauses" "${ok}" "rc=${rc} (want 7) with SPEC_PROTOCOL_FIRST_PAUSE=20 and NO override file — the headless driver's path — and the line names env:SPEC_PROTOCOL_FIRST_PAUSE as the source: ${out}"
+
+  # (d) BOTH, disagreeing: file 20, variable 50. The FILE must win.
+  printf '{"first_pause": 20, "set_by": "operator", "reason": "canary proof D"}\n' > "${ovf}"
+  export SPEC_PROTOCOL_FIRST_PAUSE=50
+  out="$(bash "${SELF}" "${P12}" 1 1 '[Sonnet x1] judge unit-4' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "7" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'pause_at=20' || ok=0
+  printf '%s' "${out}" | "${GREP}" -qE 'override=first_pause:20\(source=.*/CONTROL/OPERATOR-OVERRIDE\.json\)' || ok=0
+  if printf '%s' "${out}" | "${GREP}" -q 'override=first_pause:50'; then ok=0; fi
+  report 26 "file-wins-over-variable" "${ok}" "rc=${rc} (want 7) with the file at 20 and SPEC_PROTOCOL_FIRST_PAUSE=50 disagreeing: the emitted line names the FILE as the source and the arithmetic is pause_at=20, never 50: ${out}"
+  unset SPEC_PROTOCOL_FIRST_PAUSE
+
+  # (e) MALFORMED — nested, the shape jnum resolves unpredictably. Exit 2,
+  #     never 0: an override that cannot be honoured is never quietly ignored.
+  printf '{"first_pause": {"value": 20}, "set_by": "operator"}\n' > "${ovf}"
+  out="$(bash "${SELF}" "${P12}" 1 1 '[Sonnet x1] judge unit-5' 2>&1)"; rc=$?
+  p12_total="$(read_state_total "${P12}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "2" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'MALFORMED OPERATOR OVERRIDE' || ok=0
+  [[ "${p12_total}" == "20" ]] || ok=0
+  report 27 "malformed-override-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a nested first_pause; the message says MALFORMED OPERATOR OVERRIDE and names the path, and the counter did not move (${p12_total}, want 20): ${out}"
+  rm -f "${ovf}"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (23 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (28 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"
