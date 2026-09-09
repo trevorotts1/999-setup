@@ -53,8 +53,8 @@ covers just that one message." No degraded run, no partial run, no "let me try a
 **GATE 0b — the tick is armed.** Every run opens with its enforcer in place: the
 five-minute tick armed by `tools/watch-tick.sh --arm <project>` (step 3, the moment `CONTROL/` exists — the tool writes the crontab line itself, idempotently, and names the degradation when `crontab` cannot be run),
 reconciling through `tools/anchor.sh --mode reconcile` and checking S2, S3, S5, S6 and
-S13 from minute one (`references/enforcement.md`). Nothing in this skill ever removes,
-disables or weakens a governance hook, and `disableAllHooks` is never set.
+S13 from minute one (`references/enforcement.md`). `tools/hook-check.sh` proves the registered hook current here, and a stale hook stops the run. Nothing in this skill ever removes,
+disables or weakens a governance hook, refuses to run on a stale one, and `disableAllHooks` is never set.
 
 **GATE 0c — Git Bash on Windows** (on macOS and Linux a PLATFORM-SKIP with the reason
 named — never run, never reported as passed). Detect the platform first
