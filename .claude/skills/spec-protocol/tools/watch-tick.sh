@@ -62,6 +62,21 @@
 #            cannot read a spoken message, so an ABSENT or empty
 #            CONTROL/.speech/ is UNDETERMINED, never a pass. A hook cannot see
 #            speech either; the draft file is the only thing that can be seen.
+#   published every `PUBLISHED:` line on CONTROL/LEDGER.md has a
+#            `SHIP-GUARD: rc=0` line at an EARLIER timestamp (WI-69 wires in
+#            WI-60's guard: references/publish.md runs tools/ship-guard.sh
+#            AGAIN at the live origin and rc 0 is a precondition of the
+#            publish). A publish with no earlier guard line is a page that
+#            went live unguarded
+#                                              -> DRIFT-ALARM published-unguarded
+#                                              -> ACTION|ship-guard
+#            Also not an S-number. ORDER is the whole check: a guard line
+#            written AFTER the publish is a receipt, not a guard, so the
+#            comparison is on timestamps, never on mere presence — the LAST
+#            publish line is the live address (references/publish.md's
+#            measured upsert caveat) and a guard counts only when strictly
+#            earlier than it. A missing or unreadable ledger is UNDETERMINED,
+#            never a pass: absence is not proof nothing published.
 #
 # THE DEFINITIONS, MECHANICALLY (so two readers count the same numbers)
 #   runnable  an OPEN box in CONTROL/CHECKLIST.md (`- [ ] …`) whose unit id has
@@ -93,6 +108,13 @@
 #     - no drafted client message under CONTROL/.speech/ -> `speech=` is
 #       UNDETERMINED. An absent draft folder is not proof that nothing was said
 #       to the client, so it is never reported as a speech pass;
+#     - a missing or unreadable CONTROL/LEDGER.md -> `published=` is
+#       UNDETERMINED. An absent ledger is not proof nothing published, so it
+#       is never reported as a publish pass — and the publish direction is
+#       fail-closed: the DRIFT-ALARM still fires, named
+#       `published-unguarded(undetermined)` with the reason, because a publish
+#       is irreversible and the guard is the last thing between a run and a
+#       client's live page;
 #     - no tools/bar-check.sh, or a bar-check exit it does not recognise -> the
 #       bar is UNDETERMINED and says so in `bar=`, never a silent pass. A
 #       project with no plan yet whose CONTROL/setup_progress.json IS being
@@ -926,6 +948,114 @@ run_tick() {
     add_undet "speech=undetermined(nothing drafted under CONTROL/.speech/ — a script cannot read a spoken message, so an absent draft is not proof the client was told nothing)"
   fi
 
+  # THE PUBLISHED-UNGUARDED CHECK (WI-69) — the guard's wall, on the tick side.
+  # references/publish.md requires `SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>`
+  # ABOVE the PUBLISHED: line: the guard runs at the live origin BEFORE the
+  # address is handed to anyone. The tick judges ORDER, never mere presence —
+  # a guard line written after the publish is a receipt, not a guard. The live
+  # address is the LAST PUBLISHED: line (publish.md's measured upsert caveat:
+  # the colon-delimited shape appends a second line instead of replacing the
+  # first), and a SHIP-GUARD: rc=0 line counts only when its timestamp is
+  # strictly EARLIER than that publish's.
+  #
+  #   LAST PUBLISHED: with no SHIP-GUARD: rc=0 earlier -> DRIFT-ALARM
+  #                                                    published-unguarded
+  #   guard earlier than the last publish              -> silent
+  #   no PUBLISHED: line at all                        -> silent (nothing
+  #                                                    published yet — absence
+  #                                                    of a publish is a pass)
+  #   missing/unreadable CONTROL/LEDGER.md              -> DRIFT-ALARM
+  #                                                    published-unguarded-
+  #                                                    (undetermined), naming
+  #                                                    why. ABSENCE IS NOT A
+  #                                                    PASS: a firewall that
+  #                                                    fails open when its own
+  #                                                    ledger is gone is not a
+  #                                                    firewall.
+  #
+  # The rc=0 class is closed on the right (`rc=01` is not a pass) and every
+  # grep's rc is checked: rc 0 is a match, rc 1 is a proven zero match, rc>=2
+  # is an ERROR, never a zero — and here an error refuses exactly like a zero
+  # match does. Timestamps are compared as EPOCHS via iso_to_epoch (the same
+  # converter S6 uses), never as strings: a string compare silently passes a
+  # reordered ledger whenever the shape drifts. A side both this block and the
+  # selftest rely on: ledger.sh prefixes every line it writes with an ISO8601Z
+  # clock, so both the guard and the publish lines carry comparable stamps.
+  local PUB_NOTE="" PUB_ALARM=0 PUB_WHY=""
+  if [[ ! -f "$LED" ]]; then
+    PUB_NOTE="undetermined(no CONTROL/LEDGER.md — an absent ledger is not proof nothing published)"
+    add_undet "published=undetermined(no CONTROL/LEDGER.md — an absent ledger is not proof nothing published)"
+    PUB_ALARM=1
+    PUB_WHY="no CONTROL/LEDGER.md — an absent ledger is not proof nothing published, so this fires rather than passing"
+  elif [[ ! -r "$LED" ]]; then
+    PUB_NOTE="undetermined(CONTROL/LEDGER.md unreadable)"
+    add_undet "published=undetermined(CONTROL/LEDGER.md unreadable — an unreadable ledger is not proof nothing published)"
+    PUB_ALARM=1
+    PUB_WHY="CONTROL/LEDGER.md unreadable — an unreadable ledger is not proof nothing published, so this fires rather than passing"
+  else
+    local pub_ts="" pub_line sg_ts="" grc
+    set +e
+    pub_line="$("$GREP" -h 'PUBLISHED:' "$LED" 2>/dev/null | tail -n 1)"; grc=$?
+    set -e
+    if (( grc >= 2 )); then
+      PUB_NOTE="undetermined(ledger read error)"
+      add_undet "published=undetermined(reading CONTROL/LEDGER.md failed — a ledger that cannot be read is not proof nothing published)"
+      PUB_ALARM=1
+      PUB_WHY="reading CONTROL/LEDGER.md failed — a ledger that cannot be read is not proof nothing published, so this fires rather than passing"
+    elif [[ -z "$pub_line" ]]; then
+      PUB_NOTE="ok(no PUBLISHED: line — nothing published yet)"
+    else
+      pub_ts="$(printf '%s' "$pub_line" | "$GREP" -oE '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' | head -n 1)"
+      local pub_ep="" sg_line sg_ep
+      if [[ -n "$pub_ts" ]] && pub_ep="$(iso_to_epoch "$pub_ts")"; then
+        : > "$WORKDIR/shipguard.txt"
+        set +e
+        "$GREP" -hE 'SHIP-GUARD: rc=0( |$)' "$LED" > "$WORKDIR/shipguard.txt" 2>/dev/null; grc=$?
+        set -e
+        if (( grc >= 2 )); then
+          PUB_NOTE="undetermined(guard-line read error)"
+          add_undet "published=undetermined(reading the SHIP-GUARD lines failed — an unreadable ledger is not proof the publish was guarded)"
+          PUB_ALARM=1
+          PUB_WHY="reading the SHIP-GUARD: lines in CONTROL/LEDGER.md failed — an unreadable ledger is not proof the publish was guarded, so this fires rather than passing"
+        else
+          local sg_ok=0 sgt sg_last="" sg_last_ep=""
+          while IFS= read -r sg_line; do
+            [[ -n "$sg_line" ]] || continue
+            sgt="$(printf '%s' "$sg_line" | "$GREP" -oE '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' | head -n 1)"
+            [[ -n "$sgt" ]] || continue
+            sg_ep="$(iso_to_epoch "$sgt")" || continue
+            if [[ -z "$sg_last" ]] || (( sg_ep > sg_last_ep )); then sg_last="$sgt"; sg_last_ep="$sg_ep"; fi
+            if (( sg_ep < pub_ep )); then sg_ok=1; sg_ts="$sgt"; break; fi
+          done < "$WORKDIR/shipguard.txt"
+          if (( sg_ok == 1 )); then
+            PUB_NOTE="ok(guard ${sg_ts} earlier than publish ${pub_ts})"
+          elif [[ -n "$sg_last" ]]; then
+            PUB_NOTE="unguarded(publish ${pub_ts}: newest guard ${sg_last} is after the publish)"
+            PUB_ALARM=1
+            PUB_WHY="PUBLISHED: at ${pub_ts} but newest SHIP-GUARD: rc=0 at ${sg_last} is AFTER it — a later guard is a receipt, not a guard"
+          else
+            PUB_NOTE="unguarded(publish ${pub_ts}, no SHIP-GUARD: rc=0 line at all)"
+            PUB_ALARM=1
+            PUB_WHY="PUBLISHED: at ${pub_ts} with no SHIP-GUARD: rc=0 line at all — an unguarded publish (references/publish.md)"
+          fi
+        fi
+      else
+        PUB_NOTE="undetermined(last PUBLISHED: line carries no parseable timestamp)"
+        add_undet "published=undetermined(the last PUBLISHED: line carries no parseable ISO8601Z timestamp — an undateable publish cannot be proven guarded)"
+        PUB_ALARM=1
+        PUB_WHY="the last PUBLISHED: line carries no parseable ISO8601Z timestamp — an undateable publish cannot be proven guarded, so this fires rather than passing"
+      fi
+    fi
+  fi
+  if (( PUB_ALARM == 1 )); then
+    local PUB_ALARM_NAME="published-unguarded"
+    [[ "$PUB_NOTE" == undetermined* ]] && PUB_ALARM_NAME="published-unguarded(undetermined)"
+    ledger_write "CONTROL/LEDGER.md" \
+      "$(iso_now) | DRIFT-ALARM | ${PUB_ALARM_NAME} | $(sanitize "${PUB_WHY}") | $(sanitize "run tools/ship-guard.sh <project> <the deployed origin>; on rc 0 record SHIP-GUARD: rc=0 BEFORE any PUBLISHED: line — order is the guard (references/publish.md)")"
+    emit "ship-guard" "CONTROL/LEDGER.md" \
+      "DRIFT-ALARM ${PUB_ALARM_NAME}: ${PUB_WHY}"
+  fi
+
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
@@ -939,7 +1069,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | published=$(sanitize "$PUB_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -983,6 +1113,19 @@ run_tick() {
 #  18  THE CONTROL FOR 17 — the same draft WITH its SPEECH-CHECK line -> exit 0
 #      and no alarm. 17 and 18 differ by one ledger line, which is the whole
 #      discrimination: a check that fires on both measures nothing.
+#  19  PUBLISHED-UNGUARDED — a ledger with a PUBLISHED: line and no
+#      SHIP-GUARD: rc=0 line -> exit 3, DRIFT-ALARM published-unguarded, and
+#      the S-CHECK line carries published=unguarded(…).
+#  20  THE CONTROL FOR 19 — SHIP-GUARD: rc=0 at an EARLIER timestamp than the
+#      PUBLISHED: line -> exit 0 and no alarm. 19 and 20 differ by one ordered
+#      ledger line, which is the presence half of the discrimination.
+#  21  THE DISCRIMINATING CASE — PUBLISHED: at 10:29:28Z with SHIP-GUARD:
+#      rc=0 at 10:35:00Z, the guard AFTER the publish -> exit 3, DRIFT-ALARM
+#      published-unguarded. An implementation that greps for the presence of
+#      both lines passes 19 and 20 and fails HERE: order is the guard, and a
+#      guard written after the publish is a receipt, not a guard. Cases 1-18
+#      carry no PUBLISHED: line at all, so none of them can fire this check —
+#      that silence is the negative control for the whole section.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1290,6 +1433,60 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(1 drafted, all linted)' \
      && ! "$GREP" -q 'DRIFT-ALARM' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 18 "speech-checked-control" "$ok" "rc=${RC} (want 0); the SPEECH-CHECK line for turn-07.txt silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries speech=ok(1 drafted, all linted)"
+
+  # --- case 19: PUBLISHED-UNGUARDED. The row is open, labelled and freshly
+  #     stamped, so nothing else can fire: the case isolates the publish check.
+  mk_home "$T/c19"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-019\n' "$(stamp 1)" > "$T/c19/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c19/CONTROL/HEARTBEAT.md"
+  printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-019.vercel.app domain=none status=200\n' > "$T/c19/CONTROL/LEDGER.md"
+  runw "$T/c19"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|ship-guard|CONTROL/LEDGER.md|DRIFT-ALARM published-unguarded:' \
+     && printf '%s' "$OUT" | "$GREP" -q 'published=unguarded(publish 2026-09-08T10:29:28Z, no SHIP-GUARD: rc=0 line at all)' \
+     && "$GREP" -q 'DRIFT-ALARM | published-unguarded |' "$T/c19/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 19 "published-unguarded" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | published-unguarded written for the PUBLISHED: line with no guard line; ACTION|ship-guard emitted; the S-CHECK line carries published=unguarded(…)"
+
+  # --- case 20: THE CONTROL FOR 19. Byte for byte the same fixture plus the
+  #     guard line at an EARLIER timestamp. The alarm must go silent: a check
+  #     that fires whether or not the guard ran is not a check.
+  mk_home "$T/c20"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-020\n' "$(stamp 1)" > "$T/c20/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c20/CONTROL/HEARTBEAT.md"
+  {
+    printf '2026-09-08T10:20:00Z | SHIP-GUARD: rc=0 checks=14 at=2026-09-08T10:20:00Z\n'
+    printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-020.vercel.app domain=none status=200\n'
+  } > "$T/c20/CONTROL/LEDGER.md"
+  runw "$T/c20"
+  ok=0
+  if (( RC == 0 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'published-unguarded' \
+     && printf '%s' "$OUT" | "$GREP" -q 'published=ok(guard 2026-09-08T10:20:00Z earlier than publish 2026-09-08T10:29:28Z)' \
+     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 20 "published-guarded-control" "$ok" "rc=${RC} (want 0); the earlier SHIP-GUARD: rc=0 line silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries published=ok(guard … earlier than publish …)"
+
+  # --- case 21: THE DISCRIMINATING CASE. Both lines are present, but the
+  #     guard is stamped 10:35:00Z — AFTER the 10:29:28Z publish. A guard
+  #     written after the publish is a receipt, not a guard, so the alarm
+  #     MUST fire. A presence-only implementation passes 19 and 20 and fails
+  #     HERE, which is the leg that would have caught the canary shape (a
+  #     page published while its guard sat unused in the same tree).
+  mk_home "$T/c21"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-021\n' "$(stamp 1)" > "$T/c21/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c21/CONTROL/HEARTBEAT.md"
+  {
+    printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-021.vercel.app domain=none status=200\n'
+    printf '2026-09-08T10:35:00Z | SHIP-GUARD: rc=0 checks=14 at=2026-09-08T10:35:00Z\n'
+  } > "$T/c21/CONTROL/LEDGER.md"
+  runw "$T/c21"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|ship-guard|CONTROL/LEDGER.md|DRIFT-ALARM published-unguarded:' \
+     && printf '%s' "$OUT" | "$GREP" -q 'newest SHIP-GUARD: rc=0 at 2026-09-08T10:35:00Z is AFTER it' \
+     && "$GREP" -q 'DRIFT-ALARM | published-unguarded |' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -q 'a later guard is a receipt, not a guard' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 21 "published-guard-after-publish" "$ok" "rc=${RC} (want 3); both lines present but the guard at 10:35:00Z is AFTER the publish at 10:29:28Z — DRIFT-ALARM | published-unguarded still written, because order is the guard"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
