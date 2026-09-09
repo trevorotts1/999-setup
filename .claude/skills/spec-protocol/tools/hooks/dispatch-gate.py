@@ -25,14 +25,17 @@ and blocks (exit 2) seven shapes, naming the fix for each:
      The message names both numbers: `declared=<n> booked=<n>`, or
      `booked=none` when nothing booked it at all.
 
-SHAPES 6 AND 7 ARE SCOPED to spec-protocol projects. They are evaluated only
-when cwd, or a parent up to three levels above it, carries a
-CONTROL/project_state.json whose first line or `schema` field reads
-`spec-protocol/project-state@1`. Everywhere else they fail OPEN and say so on
-stderr in one line, so an operator's own orchestration folder -- which may carry
-a CONTROL/dispatch-log.md of its own and no state file -- is never refused for a
-booking rule it never agreed to. Shapes 1-5 are facts about the SCRIPT and are
-not scoped: they hold wherever a Workflow launches.
+SHAPE 7 IS SCOPED to spec-protocol projects. It is evaluated only when cwd,
+or a parent up to forty levels above it, carries the GATE 0 marker -- the file
+tools/gate0.sh --record writes after a genuine GATE 0 pass, present before any
+dispatch and absent from any folder that merely has a CONTROL/ directory.
+Everywhere else it fails OPEN and says so on stderr in one line, so an
+operator's own orchestration folder -- which may carry a
+CONTROL/dispatch-log.md of its own and no marker -- is never refused for a
+booking rule it never agreed to. SHAPE 6 is NOT scoped: it reads the budget
+through find_state_file and fails open on whatever it cannot measure. Shapes
+1-5 are facts about the SCRIPT and are not scoped: they hold wherever a
+Workflow launches.
 
 FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
 unreadable input, an unparseable script, an undetermined item count, a state
@@ -135,25 +138,27 @@ ROW_AGENTS = re.compile(r"(?<![A-Za-z0-9_-])agents\s*=\s*(\d+)")
 # the same clamp tools/anchor.sh applies in its budget audit.
 CEILING_DEFAULT = 2000
 
-# --- THE SCOPE OF SHAPE 6 AND SHAPE 7 ---------------------------------------
+# --- THE SCOPE OF SHAPE 7 ----------------------------------------------------
 # Shapes 1-5 are facts about the SCRIPT and hold wherever a Workflow launches.
-# Shapes 6 and 7 are facts about a spec-protocol RUN -- its budget line and its
-# dispatch bookings -- and they are only true of a spec-protocol project. An
-# operator's own orchestration folder can carry a CONTROL/dispatch-log.md of its
-# own (a fleet roll's log, say) and no project_state.json, and SHAPE 7 reading
-# that log would refuse every launch from it for a booking rule that folder never
-# agreed to. So the two shapes are SCOPED: they are evaluated only when the
-# launch's working directory, or a parent up to three levels above it, carries a
-# CONTROL/project_state.json whose first line or whose "schema" field reads
-# STATE_SCHEMA. Anywhere else they FAIL OPEN with SCOPE_NOTE on stderr -- the
-# same fail-open direction as every other undetermined input in this hook, and
-# said out loud so silence is never mistaken for a verdict.
-STATE_SCHEMA = "spec-protocol/project-state@1"
-SCOPE_NOTE = "SHAPE 6/7: not a spec-protocol project, not evaluated"
-# cwd plus three parents. Deliberately SHORTER than find_state_file's 40-level
-# walk: an ancestor forty levels up is not this launch's project.
-SCOPE_MAX_PARENTS = 3
-SCHEMA_FIELD = re.compile(r'"schema"[ \t]*:[ \t]*"([^"]*)"')
+# SHAPE 6 is NOT scoped: budget_state() already returns None when the state
+# file is absent, and that None is the fail-open answer this hook owes.
+# SHAPE 7 alone is a fact about a spec-protocol RUN -- its dispatch bookings --
+# and is only true of a spec-protocol project. An operator's own orchestration
+# folder can carry a CONTROL/dispatch-log.md of its own (a fleet roll's log,
+# say) and no GATE 0 marker, and SHAPE 7 reading that log would refuse every
+# launch from it for a booking rule that folder never agreed to. So SHAPE 7 is
+# SCOPED: it is evaluated only when the launch's working directory, or a
+# parent up to forty levels above it, carries BOTH a CONTROL/ directory and
+# its CONTROL/.gate0-proven marker, written only by tools/gate0.sh --record
+# after a genuine GATE 0 pass and therefore present before any dispatch.
+# Anywhere else SHAPE 7 FAILS OPEN with SCOPE_NOTE on stderr -- the same
+# fail-open direction as every other undetermined input in this hook, and said
+# out loud so silence is never mistaken for a verdict.
+GATE0_MARKER = ".gate0-proven"
+SCOPE_NOTE = "SHAPE 7: not a spec-protocol project, not evaluated"
+# cwd plus forty parents: a workflow may launch from a nested build directory,
+# and a short walk would strand it outside its own project.
+SCOPE_MAX_PARENTS = 40
 
 
 def allow():
@@ -433,33 +438,23 @@ def jnum(flat, key):
     return int(found[-1])
 
 
-def spec_protocol_state(start_dir):
-    """The CONTROL/project_state.json that puts a launch IN SCOPE for 6 and 7.
+def spec_protocol_project(start_dir):
+    """The CONTROL/ directory that puts a launch IN SCOPE for SHAPE 7.
 
-    Returns its path, or None. cwd plus at most SCOPE_MAX_PARENTS levels up; the
-    FIRST CONTROL/project_state.json found decides, and it decides both ways --
-    a nearer state file that is not canonical means this directory belongs to
-    something else, so the walk stops rather than reaching past it for a
-    canonical file further up. A file it cannot read is out of scope too, which
-    is the fail-open direction: a shape that cannot see the project says nothing
+    Returns its path, or None. cwd plus at most SCOPE_MAX_PARENTS levels up;
+    the FIRST CONTROL/ directory that also carries the .gate0-proven marker
+    wins. A CONTROL/ directory without the marker is not this launch's
+    project -- the walk continues upward rather than stopping, so a nested
+    orchestration folder never masks a real project above it. This is the
+    fail-open direction: a shape that cannot see the project says nothing
     about the project.
     """
     d = os.path.abspath(start_dir or os.getcwd())
     for _ in range(SCOPE_MAX_PARENTS + 1):
-        p = os.path.join(d, "CONTROL", "project_state.json")
-        if os.path.isfile(p):
-            try:
-                with open(p, encoding="utf-8", errors="replace") as fh:
-                    head = fh.read(8192)
-            except Exception:
-                return None
-            lines = head.splitlines()
-            if lines and STATE_SCHEMA in lines[0]:
-                return p
-            m = SCHEMA_FIELD.search(head)
-            if m and m.group(1).strip() == STATE_SCHEMA:
-                return p
-            return None
+        control = os.path.join(d, "CONTROL")
+        if os.path.isdir(control):
+            if os.path.isfile(os.path.join(control, GATE0_MARKER)):
+                return control
         nd = os.path.dirname(d)
         if nd == d:
             return None
@@ -641,25 +636,15 @@ def evaluate(script, cwd=None):
                     % (widest, cap, ledger)
                 )
 
-    # --- THE SCOPE OF 6 AND 7 ------------------------------------------------
-    # Both remaining shapes are facts about a spec-protocol RUN, not about the
-    # script, so both are gated on finding this project's canonical state file
-    # within cwd + SCOPE_MAX_PARENTS. Outside one they fail OPEN and say so, so
-    # an operator's own orchestration folder -- which may well carry a
-    # CONTROL/dispatch-log.md of its own and no state file -- is never refused
-    # for a booking rule it never agreed to.
-    scope_state = spec_protocol_state(cwd or os.getcwd())
-    if scope_state is None:
-        sys.stderr.write(SCOPE_NOTE + "\n")
-        return findings
-
     # --- 6. the budget wall: past the pause line, or at the ceiling ----------
     # The pause used to be decided in exactly ONE instrument, tools/anchor.sh,
     # which only runs when the five-minute tick runs. The 2026-09-07 canary
     # never armed the tick, so executions_total walked from its pause line of 20
     # to 72 with nothing refusing a launch. The refusal has to hold even when
     # the conductor never calls tools/dispatch-check.sh -- which is this hook.
-    st = budget_state(cwd, scope_state)
+    # SHAPE 6 is NOT scoped: budget_state() returns None when the state file is
+    # absent, and that None is already the fail-open answer this hook owes.
+    st = budget_state(cwd)
     if st:
         path, execs, pause, ceil = st
         if execs >= ceil:
@@ -681,11 +666,15 @@ def evaluate(script, cwd=None):
     # increment -- and the pause line was short by whole trees. SKILL.md
     # section 5 now binds EVERY dispatch, research or build, to book before it
     # fires; this is the half that holds when the conductor forgets.
-    # The log is read from the SAME CONTROL/ the scoping state file came out of,
-    # never from a nearer or farther one: the file that proves this is a
-    # spec-protocol project is the file that says which log books its dispatches.
-    control = os.path.dirname(scope_state)
-    if control:
+    # --- 7 scope: outside a marked project the write-ahead rule does not ---
+    # apply, so the launch proceeds unexamined. The log is read from the SAME
+    # CONTROL/ the marker came out of, never from a nearer or farther one: the
+    # marker that proves this IS a spec-protocol project says which log books
+    # its dispatches.
+    control = spec_protocol_project(cwd or os.getcwd())
+    if control is None:
+        sys.stderr.write(SCOPE_NOTE + "\n")
+    else:
         declared = declared_agents(code, stages)
         if declared:
             log = dispatch_log_booking(control, time.time())
@@ -975,15 +964,13 @@ def selftest():
            "as a pause would let a project answer 'keep going' past a line it can never cross"
            % rc_c2)
 
-    # 9d -- a state file with no budget keys says NOTHING (fails open)
+    # 9d -- a state file with no budget keys says NOTHING (fails open).
+    #      SHAPE 6 is unscoped, so no marker ceremony belongs here: one state
+    #      file, no pause line, rc 0 for exactly the reason the docstring says.
     nobudget = tempfile.mkdtemp(prefix="dispatch-gate-nobudget.", dir=sandbox)
     os.makedirs(os.path.join(nobudget, "CONTROL"), exist_ok=True)
     with open(os.path.join(nobudget, "CONTROL", "project_state.json"), "w", encoding="utf-8") as fh:
-        # The schema line is DELIBERATE: without it this fixture would be out of
-        # scope (WI-56e) and would pass for the wrong reason -- the scope rule
-        # rather than the missing budget keys. In scope, with no pause line, it
-        # is the fail-open case this check was written to prove.
-        fh.write('{"schema": "%s", "agents": {"executions_total": 5000}}\n' % STATE_SCHEMA)
+        fh.write('{"agents": {"executions_total": 5000}}\n')
     rc_nb, _ = _run_child(payload(FIXTURE_WAVE1), nobudget)
     report(16, "no-budget-keys-fails-open", rc_nb == 0,
            "rc=%d (want 0) for a state file with executions_total and no pause line: this hook "
@@ -1000,27 +987,11 @@ def selftest():
     def log_dir(name, agents, age_seconds=0, write_log=True):
         d = tempfile.mkdtemp(prefix="dispatch-gate-%s." % name, dir=sandbox)
         os.makedirs(os.path.join(d, "CONTROL"), exist_ok=True)
-        # A canonical state file, well under its pause line, is what puts these
-        # fixtures IN SCOPE for SHAPE 7 (WI-56e). It is also what a real project
-        # has: tools/dispatch-check.sh writes this block at the first dispatch,
-        # so a project with a dispatch log always has one beside it.
-        with open(os.path.join(d, "CONTROL", "project_state.json"), "w", encoding="utf-8") as fh:
-            json.dump(
-                {
-                    "schema": STATE_SCHEMA,
-                    "run_status": "RUNNING",
-                    "agents": {
-                        "executions_total": 0,
-                        "initial": 34,
-                        "warn_at": 150,
-                        "first_pause": 200,
-                        "pause_blocks_granted": 0,
-                        "ceiling": 2000,
-                    },
-                },
-                fh,
-                indent=2,
-            )
+        # The GATE 0 marker is what puts these fixtures IN SCOPE for SHAPE 7
+        # (WI-64). It is also what a real project has before its first
+        # dispatch: tools/gate0.sh --record writes it at the GATE 0 pass.
+        with open(os.path.join(d, "CONTROL", GATE0_MARKER), "w", encoding="utf-8") as fh:
+            fh.write("signal=keyword\nrecorded=2026-09-08T00:00:00Z\nproject=selftest\n")
         if write_log:
             ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_seconds))
             with open(os.path.join(d, "CONTROL", "dispatch-log.md"), "w", encoding="utf-8") as fh:
@@ -1061,15 +1032,16 @@ def selftest():
            "booked a tree that already fired; without this case the %ds window is untested "
            "code" % (rc_stale, BOOKING_WINDOW_SECONDS))
 
-    # 11 -- THE SCOPE PAIR (WI-56e). ONE directory, two answers, and the ONLY
-    #       thing that differs between them is the state file. That is what makes
-    #       it a scope test rather than a claim: if the second leg also returned
-    #       0 the scope rule would be a blanket stand-down, and if the first leg
-    #       blocked, the rule would not exist at all.
+    # 11 -- THE SCOPE PAIR (WI-64, re-pointed from WI-56e). ONE directory,
+    #       two answers, and the ONLY thing that differs between them is the
+    #       GATE 0 marker. That is what makes it a scope test rather than a
+    #       claim: if the second leg also returned 0 the scope rule would be a
+    #       blanket stand-down, and if the first leg blocked, the rule would
+    #       not exist at all.
     #
     #       The first leg is the operator's own orchestration folder: a
     #       CONTROL/dispatch-log.md that belongs to something else entirely (a
-    #       fleet roll's log), no project_state.json, and a spec-protocol tree
+    #       fleet roll's log), no .gate0-proven, and a spec-protocol tree
     #       launched from inside it. Before this rule SHAPE 7 read that foreign
     #       log, found no booking row for THIS launch, and blocked -- refusing an
     #       operator's workflow for a booking rule that folder never agreed to.
@@ -1085,41 +1057,26 @@ def selftest():
     rc_out, out_out = _run_child(payload(FIXTURE_THREE_STAGE), scope)
     ok = rc_out == 0 and SCOPE_NOTE in out_out
     report(21, "foreign-log-not-in-scope", ok,
-           "a cwd carrying an UNRELATED CONTROL/dispatch-log.md and NO project_state.json -> "
+           "a cwd carrying an UNRELATED CONTROL/dispatch-log.md and NO .gate0-proven -> "
            "rc=%d (want 0) and stderr carries the one-line note %r: %s. The operator's own "
            "orchestration folder is not a spec-protocol project and is never held to its "
            "booking rule"
            % (rc_out, SCOPE_NOTE, "yes" if SCOPE_NOTE in out_out else "NO -- note absent"))
 
-    # 11b -- the SAME cwd, the SAME script, the SAME foreign log, one canonical
-    #        state file added and nothing else changed. Now it IS a spec-protocol
+    # 11b -- the SAME cwd, the SAME script, the SAME foreign log, one GATE 0
+    #        marker added and nothing else changed. Now it IS a spec-protocol
     #        project, nothing inside the window booked the tree, and SHAPE 7
     #        blocks. This is the discriminating half: it proves the note above is
     #        a scope decision and not a hole.
-    with open(os.path.join(scope, "CONTROL", "project_state.json"), "w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "schema": STATE_SCHEMA,
-                "run_status": "RUNNING",
-                "agents": {
-                    "executions_total": 0,
-                    "initial": 34,
-                    "warn_at": 150,
-                    "first_pause": 200,
-                    "pause_blocks_granted": 0,
-                    "ceiling": 2000,
-                },
-            },
-            fh,
-            indent=2,
-        )
+    with open(os.path.join(scope, "CONTROL", GATE0_MARKER), "w", encoding="utf-8") as fh:
+        fh.write("signal=keyword\nrecorded=2026-09-08T00:00:00Z\nproject=selftest\n")
     rc_in, out_in = _run_child(payload(FIXTURE_THREE_STAGE), scope)
     ok = (rc_in == 2 and "SHAPE 7" in out_in and "booked=none" in out_in
           and SCOPE_NOTE not in out_in)
     report(22, "same-cwd-in-scope-blocked", ok,
-           "the IDENTICAL cwd once %s carries schema %s -> rc=%d (want 2), SHAPE 7 named: %s, "
-           "booked=none: %s, and the scope note is GONE: %s. Only the state file changed"
-           % (os.path.join(scope, "CONTROL", "project_state.json"), STATE_SCHEMA, rc_in,
+           "the IDENTICAL cwd once %s exists -> rc=%d (want 2), SHAPE 7 named: %s, "
+           "booked=none: %s, and the scope note is GONE: %s. Only the marker changed"
+           % (os.path.join(scope, "CONTROL", GATE0_MARKER), rc_in,
               "yes" if "SHAPE 7" in out_in else "NO",
               "yes" if "booked=none" in out_in else "NO",
               "yes" if SCOPE_NOTE not in out_in else "NO -- still noted"))
