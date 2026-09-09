@@ -219,13 +219,25 @@ session log. The client hears what CHANGED and what they must DECIDE; the
 reasoning, the counts and the self-criticism are the apparatus talking to
 itself.
 
-**The check that runs.** `tools/speech-check.sh <file>` lints a drafted client
-message and exits 3 naming each banned class it finds — path, workflow-id,
-law-number, md-filename, trend, money, model-id, operator-heading — and records
-`SPEECH-CHECK: clean` or that list through `tools/ledger.sh`. Its `--selftest`
-proves it discriminates rather than merely refuses: the sanctioned status
-sentence of SKILL.md section 12 passes, and so does the word "operator" used in
-ordinary prose. A checker that catches every fixture is broken, not strict.
+**BINDING — the check that runs (RC-21, the 2026-09-08 canary).** The two rules
+above are not enforced by remembering them. Every client-visible message is
+drafted to a file under `CONTROL/.speech/` and put through
+`tools/speech-check.sh <file>` before it is spoken, on the terms **SKILL.md's
+RULE 5** sets out: RULE 5 names this tool as the sixth instrument and owns the
+procedure — which verdicts may be spoken, which must be recorded, and which are
+rewritten — and this file does not restate it. Read it there; a rule written
+twice drifts in one of the two places.
+
+`tools/speech-check.sh` lints a drafted client message and exits 3 naming each
+banned class it finds — path, workflow-id, law-number, md-filename, trend,
+money, model-id, operator-heading, tmp-path, backup-announcement — and records
+`SPEECH-CHECK: clean` or that list through `tools/ledger.sh`. That ledger line
+is the proof the lint ran: `tools/watch-tick.sh` raises `DRIFT-ALARM
+speech-unchecked` when a drafted message has none. Its `--selftest` proves it
+discriminates rather than merely refuses: the sanctioned status sentence of
+SKILL.md section 12 passes, the word "operator" used in ordinary prose passes,
+and so does the verbatim opening script — Candace's own words. A checker that
+catches every fixture is broken, not strict.
 
 ---
 

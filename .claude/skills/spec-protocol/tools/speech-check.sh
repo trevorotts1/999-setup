@@ -11,7 +11,7 @@
 # it; a lint that runs can. This is that lint: advisory to a model, mechanical
 # in what it measures.
 #
-# THE EIGHT BANNED CLASSES — the class id is what the tool prints and what the
+# THE TEN BANNED CLASSES — the class id is what the tool prints and what the
 # ledger records:
 #   path              a path-like string  (captures/, tools/ledger.sh, 00-INPUT/bar/)
 #   workflow-id       a WF- / wf- id      (WF-AUDIT-20B)
@@ -21,6 +21,8 @@
 #   money             a cost              ($4.20, 12 dollars, 40 USD)
 #   model-id          a model name        (claude-sonnet-4-5, opus, haiku, gpt-4)
 #   operator-heading  a line that OPENS an operator aside ("Operator note.")
+#   tmp-path          a scratch path      (/tmp/corner-post-backup, %TEMP%\draft)
+#   backup-announcement  the words "backup at" and then a path
 #
 # The word "operator" in ordinary prose is NOT banned and must not be flagged:
 # this tool matches the HEADING — the start of a line — never the word. The
@@ -40,7 +42,7 @@
 #   speech-check.sh <file>                  lint the drafted message in <file>
 #   speech-check.sh - [--home <dir>]        lint stdin
 #   speech-check.sh --selftest              prove the instrument, then exit
-#   speech-check.sh --classes               print the eight class ids, exit 0
+#   speech-check.sh --classes               print the ten class ids, exit 0
 #   speech-check.sh <file> --home <dir>     name the project home for the ledger
 #
 # OUTPUT — one verdict line, then one detail line per hit (the matched TOKEN
@@ -77,7 +79,7 @@ if [ ! -x "${GREP}" ]; then
   if [ -x /bin/grep ]; then GREP="/bin/grep"; else GREP="$(command -v grep 2>/dev/null || true)"; fi
 fi
 
-CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading"
+CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement"
 
 # ---------------------------------------------------------------------------
 # The patterns. POSIX ERE only (no \b, no \d) so BSD grep and GNU grep agree.
@@ -111,6 +113,17 @@ RE_model_id='[Cc]laude-[A-Za-z0-9]|(^|[^A-Za-z])[Gg][Pp][Tt]-[0-9]|(^|[^A-Za-z])
 # whole reason "the operator of the bakery" passes: mid-line is not a heading.
 RE_operator_heading='^[[:space:]>*_#`-]*[Oo]perator[[:space:]]+[Nn]ote'
 
+# tmp-path — the 2026-09-08 canary's own sentence, six turns running: a scratch
+# directory spoken into a client's transcript. `path` already catches it; this
+# class exists so the report NAMES the second breach in that line — a project
+# write outside the project folder — and so the Windows shape is named too.
+RE_tmp_path='(^|[^A-Za-z0-9_.~-])/[Tt][Mm][Pp]/[A-Za-z0-9_.~-]|%[Tt][Ee][Mm][Pp]%\\'
+
+# backup-announcement — the words "backup at" followed by a path-shaped token.
+# The words alone are legal ("there is a backup, and it is safe"); the words
+# plus a path are the canary line, and the client can do nothing with either.
+RE_backup_announcement='[Bb]ackups?[[:space:]]+at[[:space:]]+[^[:space:]]*[/\][^[:space:]]'
+
 re_for() {
   case "$1" in
     path)             printf '%s' "${RE_path}" ;;
@@ -121,6 +134,8 @@ re_for() {
     money)            printf '%s' "${RE_money}" ;;
     model-id)         printf '%s' "${RE_model_id}" ;;
     operator-heading) printf '%s' "${RE_operator_heading}" ;;
+    tmp-path)         printf '%s' "${RE_tmp_path}" ;;
+    backup-announcement) printf '%s' "${RE_backup_announcement}" ;;
     *)                return 1 ;;
   esac
 }
@@ -191,7 +206,7 @@ lint() {
       # Keep at most three sample tokens per class; never echo the sentence.
       hits="$(printf '%s\n' "${out}" | head -n 3)"
       HIT_LINES="${HIT_LINES}$(printf '%s\n' "${hits}" | while IFS= read -r h; do
-        printf 'SPEECH-CHECK   %-16s | line %s | %s\n' "${cls}" "${h%%:*}" "${h#*:}"
+        printf 'SPEECH-CHECK   %-19s | line %s | %s\n' "${cls}" "${h%%:*}" "${h#*:}"
       done)
 "
     fi
@@ -231,16 +246,17 @@ run_one() {
 }
 
 # ---------------------------------------------------------------------------
-# --selftest — ten fixtures. TWO of them are CONTROLS that must PASS: the
-# sanctioned status sentence of SKILL.md section 12, and a sentence using the
-# word "operator" in ordinary prose. A selftest in which every fixture is
-# caught is a BROKEN tool, not a strict one, and these two are what prove the
-# difference. The other eight carry exactly one banned class each, in
-# isolation, and each must be caught AND named.
+# --selftest — twelve fixtures. THREE of them are CONTROLS that must PASS: the
+# sanctioned status sentence of SKILL.md section 12, a sentence using the word
+# "operator" in ordinary prose, and the verbatim opening script of SKILL.md
+# lines 148-152 — Candace's own words, and a lint that rejects those is worse
+# than no lint at all. A selftest in which every fixture is caught is a BROKEN
+# tool, not a strict one, and those three are what prove the difference. The
+# other nine carry the banned classes, and each must be caught AND named.
 #
 # The selftest also exercises the ledger path for real: it builds a throwaway
-# project home with a CONTROL/ directory and asserts that ten SPEECH-CHECK
-# lines landed in it — eight lists and two `clean`.
+# project home with a CONTROL/ directory and asserts that twelve SPEECH-CHECK
+# lines landed in it — nine lists and three `clean`.
 # ---------------------------------------------------------------------------
 selftest() {
   local tmp fails=0 n=0 home
@@ -249,7 +265,7 @@ selftest() {
   home="${tmp}/home"
   mkdir -p "${home}/CONTROL"
 
-  _fixture() { # _fixture <label> <want-rc> <want-class-or-none> <text>
+  _fixture() { # _fixture <label> <want-rc> <want-class(es)-or-none> <text>
     local label="$1" wantrc="$2" wantcls="$3" text="$4" f out rc gotcls
     n=$((n + 1))
     f="${tmp}/${label}.txt"
@@ -266,11 +282,14 @@ selftest() {
         fails=$((fails + 1)); return
       fi
     else
-      case ",${gotcls}," in
-        *",${wantcls},"*) : ;;
-        *) echo "SELFTEST FAIL | ${label} | class ${wantcls} not named (got classes=${gotcls})"
-           fails=$((fails + 1)); return ;;
-      esac
+      local w
+      for w in ${wantcls}; do
+        case ",${gotcls}," in
+          *",${w},"*) : ;;
+          *) echo "SELFTEST FAIL | ${label} | class ${w} not named (got classes=${gotcls})"
+             fails=$((fails + 1)); return ;;
+        esac
+      done
     fi
     echo "SELFTEST ok   | ${label} | rc=${rc} classes=${gotcls}"
   }
@@ -311,19 +330,38 @@ selftest() {
   _fixture banned-operator-heading 3 operator-heading \
     '**Operator note.** The gate is green and nothing needs you.'
 
-  # --- The ledger really was written: ten lines, two of them `clean`.
+  # --- THE CANARY LINE, verbatim from the 2026-09-08 claude-nine run, spoken
+  # to a picture-framer on six consecutive turns. Two breaches in one sentence:
+  # a project write outside the project folder, and a filesystem path in
+  # client-visible text. BOTH names must appear in the report — `path` because
+  # it is a path, `tmp-path` because of where it points.
+  _fixture canary-tmp-backup 3 'path tmp-path' \
+    'Details saved — backup at `/tmp/corner-post-framing-backup-20260908T1315Z`.'
+
+  # --- CONTROL 3: THE DISCRIMINATING CONTROL. The verbatim opening script,
+  # SKILL.md lines 148-152 — the first words the client ever hears. A lint that
+  # rejects Candace's own words is worse than no lint, so if this fixture ever
+  # goes red the new patterns are over-broad and the tool is the defect.
+  _fixture control-opening-script 0 none \
+    "
+> Hi, I'm Candace. I build the thing you've been wanting: a website, an app for phones or computers, or pages that sell for you. You don't need to know which; that's my job.
+
+> Here's how it works. I ask you plain questions, one at a time. \"I don't know\" is always a fine answer; I'll choose. Then my helpers build it, check it, and put it online, around the clock. You can walk away.
+"
+
+  # --- The ledger really was written: twelve lines, three of them `clean`.
   local total clean
   total="$("${GREP}" -c 'SPEECH-CHECK: ' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
   clean="$("${GREP}" -c 'SPEECH-CHECK: clean' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
-  if [ "${total}" = "10" ] && [ "${clean}" = "2" ]; then
-    echo "SELFTEST ok   | ledger-written | lines=10 clean=2"
+  if [ "${total}" = "12" ] && [ "${clean}" = "3" ]; then
+    echo "SELFTEST ok   | ledger-written | lines=12 clean=3"
   else
-    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 10) clean=${clean} (want 2)"
+    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 12) clean=${clean} (want 3)"
     fails=$((fails + 1))
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    echo "SELFTEST PASS | ${n} fixtures (2 controls PASS, 8 banned classes caught) + ledger check"
+    echo "SELFTEST PASS | ${n} fixtures (3 controls PASS, 9 banned lines caught) + ledger check"
     exit 0
   fi
   echo "SELFTEST FAILED | ${fails} check(s) failed — this checker may not be believed until it is fixed" >&2
@@ -340,7 +378,7 @@ while [ "$#" -gt 0 ]; do
     --selftest) selftest ;;
     --classes)  for c in ${CLASS_IDS}; do echo "${c}"; done; exit 0 ;;
     --home)     shift; [ "$#" -gt 0 ] || die_undetermined "--home given with no directory"; HOME_ARG="$1" ;;
-    --help|-h)  sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h)  sed -n '2,62p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -)          SRC="-" ;;
     -*)         die_undetermined "unknown option: $1" ;;
     *)          SRC="$1" ;;

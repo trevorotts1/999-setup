@@ -51,6 +51,17 @@
 #            enforcement half of SKILL.md §12's bar instruction. A bar segment
 #            with no file behind it renders as nothing, silently, for a whole
 #            run — the client never asks why, so the tick has to.
+#   speech   every drafted client message under CONTROL/.speech/ has a
+#            `SPEECH-CHECK: … | file=<name>` line on CONTROL/LEDGER.md, which
+#            tools/speech-check.sh — RULE 5's sixth instrument — writes when it
+#            lints one.  A draft with no such line is a turn boundary that
+#            passed with a client-visible message nobody checked
+#                                              -> DRIFT-ALARM speech-unchecked
+#                                              -> ACTION|speech-check
+#            Also not an S-number, and deliberately evidence-only: a script
+#            cannot read a spoken message, so an ABSENT or empty
+#            CONTROL/.speech/ is UNDETERMINED, never a pass. A hook cannot see
+#            speech either; the draft file is the only thing that can be seen.
 #
 # THE DEFINITIONS, MECHANICALLY (so two readers count the same numbers)
 #   runnable  an OPEN box in CONTROL/CHECKLIST.md (`- [ ] …`) whose unit id has
@@ -79,6 +90,9 @@
 #       proven zero);
 #     - a heartbeat timestamp it cannot parse -> that row's age is UNDETERMINED,
 #       so neither S6 nor S13 fires on it;
+#     - no drafted client message under CONTROL/.speech/ -> `speech=` is
+#       UNDETERMINED. An absent draft folder is not proof that nothing was said
+#       to the client, so it is never reported as a speech pass;
 #     - no tools/bar-check.sh, or a bar-check exit it does not recognise -> the
 #       bar is UNDETERMINED and says so in `bar=`, never a silent pass. A
 #       project with no plan yet whose CONTROL/setup_progress.json IS being
@@ -866,6 +880,52 @@ run_tick() {
     esac
   fi
 
+  # THE SPEECH LINT — RULE 5's sixth instrument, read for its ABSENCE.
+  # tools/speech-check.sh lints a drafted client message and records
+  # `SPEECH-CHECK: <verdict> | file=<name>` on CONTROL/LEDGER.md. Nothing read
+  # for the missing line until this check existed, which is how six consecutive
+  # turns of the 2026-09-08 canary spoke a /tmp path to a picture-framer with a
+  # working, self-testing lint sitting unused in the same tree.
+  #
+  #   a draft with a matching SPEECH-CHECK line   -> checked, silent
+  #   a draft with none                           -> DRIFT-ALARM speech-unchecked
+  #   no draft at all (no folder, or empty)       -> UNDETERMINED, never a pass
+  #
+  # The last row is the honest limit: this script cannot read a spoken message,
+  # only a drafted one, so it fires on EVIDENCE (a draft nobody linted) and
+  # says so in writing when it has none.
+  local SPEECH_DIR SPEECH_NOTE="" SPEECH_UNCHK="" SPEECH_N=0 SPEECH_BAD=0
+  SPEECH_DIR="$HOME_DIR/CONTROL/.speech"
+  if [[ -d "$SPEECH_DIR" ]]; then
+    local sf sbase
+    while IFS= read -r sf; do
+      [[ -n "$sf" ]] || continue
+      sbase="$(basename "$sf")"
+      SPEECH_N=$(( SPEECH_N + 1 ))
+      # Exact substring, never a regex: a draft is named by the client's turn
+      # and a basename is not a pattern this tick gets to interpret.
+      if [[ -f "$LED" ]] && "$AWK" -v want="| file=${sbase}" \
+           'index($0, "SPEECH-CHECK:") > 0 && index($0, want) > 0 { found = 1 }
+            END { exit(found ? 0 : 1) }' "$LED"; then
+        continue
+      fi
+      SPEECH_BAD=$(( SPEECH_BAD + 1 ))
+      SPEECH_UNCHK="${SPEECH_UNCHK}${SPEECH_UNCHK:+,}${sbase}"
+    done < <(find "$SPEECH_DIR" -maxdepth 1 -type f 2>/dev/null | LC_ALL=C sort)
+  fi
+  if (( SPEECH_BAD > 0 )); then
+    SPEECH_NOTE="unchecked(${SPEECH_UNCHK})"
+    ledger_write "CONTROL/LEDGER.md" \
+      "$(iso_now) | DRIFT-ALARM | speech-unchecked | drafts=${SPEECH_N} unchecked=${SPEECH_BAD} | $(sanitize "${SPEECH_UNCHK}") | $(sanitize "no SPEECH-CHECK: line on CONTROL/LEDGER.md — RULE 5 lints every client-visible message before it is spoken; an exit 3 is REWRITTEN, never overridden")"
+    emit "speech-check" "$SPEECH_UNCHK" \
+      "DRIFT-ALARM speech-unchecked: ${SPEECH_BAD}/${SPEECH_N} drafts in CONTROL/.speech/ carry no SPEECH-CHECK: line — lint with tools/speech-check.sh before speaking (SKILL.md RULE 5)"
+  elif (( SPEECH_N > 0 )); then
+    SPEECH_NOTE="ok(${SPEECH_N} drafted, all linted)"
+  else
+    SPEECH_NOTE="undetermined(no draft under CONTROL/.speech/)"
+    add_undet "speech=undetermined(nothing drafted under CONTROL/.speech/ — a script cannot read a spoken message, so an absent draft is not proof the client was told nothing)"
+  fi
+
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
@@ -879,7 +939,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -918,6 +978,11 @@ run_tick() {
 #      mark exits 0 with PRE-PLAN lines naming every count undetermined and NO
 #      verdict line in the ledger — and the SAME project with the plan files
 #      present produces one, the control proving the silence is the phase.
+#  17  SPEECH — a drafted client message under CONTROL/.speech/ with no
+#      SPEECH-CHECK line on the ledger -> exit 3, DRIFT-ALARM speech-unchecked
+#  18  THE CONTROL FOR 17 — the same draft WITH its SPEECH-CHECK line -> exit 0
+#      and no alarm. 17 and 18 differ by one ledger line, which is the whole
+#      discrimination: a check that fires on both measures nothing.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1190,6 +1255,41 @@ selftest() {
   if (( RC == 0 )) && [[ "$n_sc16" == "1" ]] \
      && ! printf '%s' "$OUT" | "$GREP" -q '^PRE-PLAN [|]'; then ok=1; fi
   report 16 "post-plan-tick-control" "$ok" "rc=${RC} (want 0); the same project with its plan files written now carries ${n_sc16} verdict line (want 1) and no PRE-PLAN lines — the silence in the first leg is the phase, not a broken writer"
+  # --- case 17: SPEECH. A client message was drafted for turn 07 and no
+  #     SPEECH-CHECK line names it, so the turn boundary passed with a
+  #     client-visible message that RULE 5's sixth instrument never saw. The
+  #     row is open, labelled and freshly stamped, so nothing else can fire:
+  #     the case isolates the speech check.
+  mk_home "$T/c17"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-017\n' "$(stamp 1)" > "$T/c17/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c17/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c17/CONTROL/.speech"
+  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c17/CONTROL/.speech/turn-07.txt"
+  runw "$T/c17"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|speech-check|turn-07.txt|DRIFT-ALARM speech-unchecked' \
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=unchecked(turn-07.txt)' \
+     && "$GREP" -q 'DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 17 "speech-unchecked" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | speech-unchecked written for turn-07.txt; ACTION|speech-check emitted; the S-CHECK line carries speech=unchecked(turn-07.txt)"
+
+  # --- case 18: THE CONTROL FOR 17. Byte for byte the same fixture plus the
+  #     one line speech-check.sh writes when it lints the draft. The alarm must
+  #     go silent: a check that fires whether or not the work was done is not a
+  #     check. This pair is the discrimination for the whole speech section.
+  mk_home "$T/c18"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-018\n' "$(stamp 1)" > "$T/c18/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c18/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c18/CONTROL/.speech"
+  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c18/CONTROL/.speech/turn-07.txt"
+  printf '%s | SPEECH-CHECK: clean | file=turn-07.txt\n' "$(stamp 1)" > "$T/c18/CONTROL/LEDGER.md"
+  runw "$T/c18"
+  ok=0
+  if (( RC == 0 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'speech-unchecked' \
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(1 drafted, all linted)' \
+     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 18 "speech-checked-control" "$ok" "rc=${RC} (want 0); the SPEECH-CHECK line for turn-07.txt silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries speech=ok(1 drafted, all linted)"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

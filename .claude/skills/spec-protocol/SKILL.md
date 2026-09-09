@@ -548,8 +548,10 @@ the loop register (a section of the execution plan) and a written stop condition
 (`references/loops.md`).
 
 **RULE 5 — every dispatch is QC'd every five minutes, by an instrument and never by
-memory.** The standards S1–S19, the five instruments that check them (`tools/width.sh`,
-`tools/dispatch-check.sh`, `tools/watch-tick.sh`, `tools/anchor.sh`, `tools/ledger.sh`),
+memory.** The standards S1–S19, the six instruments that check them (`tools/width.sh`,
+`tools/dispatch-check.sh`, `tools/watch-tick.sh`, `tools/anchor.sh`, `tools/ledger.sh`,
+`tools/speech-check.sh` — every client-visible message is drafted to a file under
+`CONTROL/.speech/`, linted with `tools/speech-check.sh`, and spoken only on exit 0 or a recorded exit 2; an exit 3 is REWRITTEN, never overridden, and the tick raises `DRIFT-ALARM speech-unchecked` on a draft carrying no `SPEECH-CHECK:` line),
 which standards belong to which, the two halves of the tick, the status and completion
 contracts, and the atomic-ledger contract are all in **`references/enforcement.md`**.
 Read the roster there. The short form the conductor must know by heart:
