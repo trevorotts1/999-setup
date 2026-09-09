@@ -87,6 +87,23 @@
 #              seat-check.sh still works — and the missing line is named in a
 #              WARNING on stderr instead. Like 4, 6, 7 and 8 it is a fact about
 #              the RUN, not a broken tool, so it is kept out of exit 2.
+#  11  NO-SEAT-PROBE — a BUILD dispatch was attempted while CONTROL/LEDGER.md
+#              carries no SEAT-PROBE: line. tools/seat-probe.sh <project>
+#              proves every seat CALLABLE with a known-answer smoke call at
+#              max_tokens 600 or more, runs the fake-model control first, and
+#              writes exactly one
+#                SEAT-PROBE: seats=<n> callable=<n> dead=<n> undetermined=<n>
+#              line through tools/ledger.sh. The 2026-09-08 canary entered its
+#              build phase on an unproven seat and spent 31 minutes discovering
+#              the leg was dead, naming it nowhere — a dispatch that should
+#              never fire is refused before it does. Run tools/seat-probe.sh
+#              <project> first (SKILL.md step 21 runs it after the audit gate
+#              and before the tick proof). The PROOF is deliberately not read:
+#              a probe that found a dead seat still ran, so demanding
+#              callable=all here would refuse a run whose dead leg is already
+#              NAMED and re-decide a verdict this gate does not own. Like 4
+#              and 6 it is a fact about the RUN, not a broken tool, so it is
+#              kept out of exit 2.
 #  12  NO-AUDIT-GATE — a BUILD dispatch was attempted while CONTROL/LEDGER.md
 #              carries no AUDIT-GATE line. SKILL.md step 20 runs
 #              tools/audit-gate.sh, which writes exactly one
@@ -117,10 +134,11 @@
 # never a pass. See "THE OPERATOR OVERRIDE" below the width helpers for the
 # contract in full.
 #
-# The four the row enumerates are 0/3/5/2. Exits 4, 6, 10 and 12 are the
+# The four the row enumerates are 0/3/5/2. Exits 4, 6, 10, 11 and 12 are the
 # fail-closed precondition refusals — a missing Parallelism Plan, a missing
-# over-engineering check, a conductor off the Opus lane and a missing step-20
-# audit gate; all four are kept separate from 2 on purpose, because calling a
+# over-engineering check, a conductor off the Opus lane, a missing seat probe
+# and a missing step-20 audit gate; all five are kept separate from 2 on
+# purpose, because calling a
 # real refusal a tooling failure would let it read as a broken tool.
 # Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
 # reason: the instrument worked perfectly, the RUN is out of budget. When the
@@ -403,6 +421,25 @@ seat_lane_of() {
 # missing one is the defect this exists to end.
 is_build_label() {
   printf '%s' "$1" | "${GREP}" -qi 'build'
+}
+
+# --- The seat probe gate (fail-closed; RC-17) --------------------------------
+# tools/seat-probe.sh <project> proves every seat CALLABLE and writes exactly
+# ONE line of this shape through tools/ledger.sh:
+#
+#   SEAT-PROBE: seats=<n> callable=<n> dead=<n> undetermined=<n>
+#
+# The SHAPE is the proof the probe RAN. A ledger can discuss seat capacity at
+# length without one ever having been proven callable, which is exactly what
+# the 2026-09-08 canary's ledger did. The proof COUNTS are deliberately not
+# read here — see exit 11 in the header.
+SEAT_PROBE_RE='SEAT-PROBE:[[:space:]]*seats=[0-9]+[[:space:]]+callable=[0-9]+[[:space:]]+dead=[0-9]+[[:space:]]+undetermined=[0-9]+'
+has_seat_probe_line() {
+  local f="$1"
+  [[ -f "${f}" ]] || return 1
+  [[ -r "${f}" ]] || return 1
+  "${GREP}" -qE "${SEAT_PROBE_RE}" "${f}" 2>/dev/null && return 0
+  return 1
 }
 
 # --- The step-20 audit gate (fail-closed; RC-24 substance A) -----------------
@@ -952,6 +989,24 @@ run_check() {
     fi
   fi
 
+  # --- Fail-closed precondition: no seat probe, no builder (RC-17) ------------
+  # Same shape as the block above and for the same reason. The seat probe is
+  # a shipped, selftested instrument that the canary never ran, because
+  # nothing refused a builder over its absence. This refuses it. It sits
+  # AFTER the conductor's-seat gate so the RC-15 omission keeps its order,
+  # and BEFORE the audit gate, the budget wall and the width arithmetic,
+  # because a dispatch that should never fire is refused before its shape is
+  # argued about.
+  if is_build_label "${label}"; then
+    local probe_doc="${project}/CONTROL/LEDGER.md"
+    if ! has_seat_probe_line "${probe_doc}"; then
+      printf 'DISPATCH-CHECK NO-SEAT-PROBE | CONTROL/LEDGER.md carries no SEAT-PROBE: line\n' >&2
+      printf 'DISPATCH-CHECK NOTE | read: %s | run tools/seat-probe.sh %s first (SKILL.md step 21). It proves every seat CALLABLE with a known-answer smoke call and writes "SEAT-PROBE: seats=<n> callable=<n> dead=<n> undetermined=<n>" through tools/ledger.sh. A ledger that discusses seats in prose has not run the probe.\n' \
+        "${probe_doc}" "${project}" >&2
+      exit 11
+    fi
+  fi
+
   # --- Fail-closed precondition: no step-20 audit gate, no builder ----------
   # Same shape as the block above and for the same reason. The audit gate is a
   # shipped, selftested instrument that the canary never ran, because nothing
@@ -1137,10 +1192,12 @@ run_selftest() {
   printf '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n' > "${P}/CONTROL/EXECUTION-PLAN.md"
   write_state "${P}/CONTROL/project_state.json" 0 200 0 2000
   # Every fixture below that dispatches a BUILD needs the over-engineering line
-  # right-size.sh writes and the AUDIT-GATE line audit-gate.sh writes, or it is
-  # refused with exit 6 or exit 12 before its width is ever read.
+  # right-size.sh writes, the SEAT-PROBE: line seat-probe.sh writes and the
+  # AUDIT-GATE line audit-gate.sh writes, or it is refused with exit 6, 11 or
+  # 12 before its width is ever read.
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P}/CONTROL/LEDGER.md"
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P}/CONTROL/LEDGER.md"
 
   local rc out total ok
   read_total() { sed -n 's/.*"executions_total"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${P}/CONTROL/project_state.json" | head -n 1; }
@@ -1205,6 +1262,7 @@ run_selftest() {
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P3}/CONTROL/EXECUTION-PLAN.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P3}/CONTROL/LEDGER.md"
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P3}/CONTROL/LEDGER.md"
+    printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P3}/CONTROL/LEDGER.md"
   write_state "${P3}/CONTROL/project_state.json" 0 200 0 2000
   # 10 units and 9 agents DISCRIMINATES: it exits 3 only if the cap parsed as
   # 10. A mis-parse of 2 (the `max(2,` on that same line) would make the floor
@@ -1279,6 +1337,7 @@ run_selftest() {
 
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P7}/CONTROL/LEDGER.md"
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P7}/CONTROL/LEDGER.md"
+    printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P7}/CONTROL/LEDGER.md"
   out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "0" ]] && ok=1
   report 16 "rightsize-line-allows" "${ok}" "rc=${rc} (want 0) — the SAME dispatch, on the SAME fixture, with the ledger line added and nothing else changed. This half is what proves exit 6 is a fact about the missing line and not a class-wide refusal of build dispatches; ${out}"
@@ -1462,6 +1521,7 @@ run_selftest() {
   local seatled="${P13}/CONTROL/LEDGER.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${seatled}"
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${seatled}"
+    printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${seatled}"
   local p13_total
 
   # (a) THE CONTROL FIRST: no seat line at all → PASS, with the line named.
@@ -1496,6 +1556,7 @@ run_selftest() {
   if printf '%s' "${out}" | "${GREP}" -q 'WRONG-SEAT'; then ok=0; fi
   report 31 "newer-opus-line-clears-it" "${ok}" "rc=${rc} (want 0) with a NEWER resolved=opus line appended BELOW the sonnet one: the newest line is the only one that counts, which is exactly the operator's cure, and the counter moved 11 → ${p13_total} (want 21): ${out}"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P15}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P15}/CONTROL/LEDGER.md"
 
   # (a) no AUDIT-GATE line → rc 12, the path named, no budget spent.
   out="$(bash "${SELF}" "${P15}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
@@ -1524,6 +1585,7 @@ run_selftest() {
 
   # (c) the canonical line added, nothing else changed → rc 0.
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P15}/CONTROL/LEDGER.md"
+    printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P15}/CONTROL/LEDGER.md"
   out="$(bash "${SELF}" "${P15}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   p15_total="$(read_state_total "${P15}/CONTROL/project_state.json")"
   ok=0; [[ "${rc}" == "0" && "${p15_total}" == "10" ]] && ok=1
@@ -1548,6 +1610,7 @@ run_selftest() {
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P17}/CONTROL/EXECUTION-PLAN.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=1 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P17}/CONTROL/LEDGER.md"
   printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P17}/CONTROL/LEDGER.md"
+    printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P17}/CONTROL/LEDGER.md"
   printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' >> "${P17}/CONTROL/LEDGER.md"
   write_state "${P17}/CONTROL/project_state.json" 0 200 0 2000
   local mlog="${P17}/CONTROL/dispatch-log.md"
@@ -1633,9 +1696,36 @@ run_selftest() {
   ok=0; [[ "${all_rows}" == "${agents_rows}" ]] && (( all_rows >= 4 )) && ok=1
   report 43 "every-row-carries-agents" "${ok}" "${mlog}: ${all_rows} timestamped rows, ${agents_rows} carrying agents= (want equal, and at least 4 rows so the equality is not vacuous)"
 
+  # --- 26: THE SEAT-PROBE PAIR — ONE build fixture, both halves (RC-17) -----
+  # A refusal that fired for every build dispatch would look identical to a
+  # working gate from the failing half alone. The same fixture is therefore
+  # run twice, with the SEAT-PROBE: line the only thing that changes.
+  local P18="${T}/proj-seatprobe"
+  mkdir -p "${P18}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P18}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P18}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P18}/CONTROL/project_state.json" 0 200 0 2000
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P18}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P18}/CONTROL/LEDGER.md"
+
+  out="$(bash "${SELF}" "${P18}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "11" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-SEAT-PROBE | CONTROL/LEDGER.md carries no SEAT-PROBE: line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "${P18}/CONTROL/LEDGER.md" || ok=0
+  local p18_total
+  p18_total="$(read_state_total "${P18}/CONTROL/project_state.json")"
+  [[ "${p18_total}" == "0" ]] || ok=0
+  report 44 "no-seat-probe-refused" "${ok}" "rc=${rc} (want 11) for a build dispatch whose CONTROL/LEDGER.md carries the over-engineering and audit lines but no SEAT-PROBE: line; the message names the exact path read and no counter moved (executions_total still ${p18_total}, want 0)"
+
+  printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P18}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P18}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  p18_total="$(read_state_total "${P18}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p18_total}" == "10" ]] && ok=1
+  report 45 "seat-probe-line-allows" "${ok}" "rc=${rc} (want 0) — the SAME dispatch, on the SAME fixture, with 'SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0' added and nothing else changed. This half is what proves exit 11 is a fact about the missing line and not a class-wide refusal of build dispatches; executions_total 0 -> ${p18_total} (want 10)"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (44 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (46 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

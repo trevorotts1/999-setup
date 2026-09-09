@@ -62,6 +62,17 @@
 #            cannot read a spoken message, so an ABSENT or empty
 #            CONTROL/.speech/ is UNDETERMINED, never a pass. A hook cannot see
 #            speech either; the draft file is the only thing that can be seen.
+#   stalled-turn  a BUILD-phase run whose newest file mtime anywhere under the
+#            project folder has not advanced for `STALLED_MIN` minutes or more
+#            (default 15) — the 2026-09-08 canary burned 31 wall-clock minutes
+#            with zero file writes while a provider leg hung
+#                                              -> DRIFT-ALARM stalled-turn
+#                                              -> ACTION|stalled-turn
+#            Also not an S-number, and deliberately evidence-only: the tick runs
+#            every five minutes, so a 15-minute ceiling is three silent ticks,
+#            never one slow write. The BUILD-phase read is the dispatch log's
+#            own census (a build-stage open row), never a state word any model
+#            may rewrite at will.
 #
 # THE DEFINITIONS, MECHANICALLY (so two readers count the same numbers)
 #   runnable  an OPEN box in CONTROL/CHECKLIST.md (`- [ ] …`) whose unit id has
@@ -148,6 +159,11 @@
 #                               that runs writes through the same command, so
 #                               a fixture command can never leak into the
 #                               operator's table.
+#   WATCH_STALLED_MIN=<n>       stalled-turn ceiling, minutes (default 15).
+#                               Same style as anchor.sh's BUDGET_TOL honored
+#                               through ANCHOR_BUDGET_TOL: the constant carries
+#                               the doctrine's number and the environment only
+#                               overrides it.
 #==============================================================================
 
 set -euo pipefail
@@ -181,6 +197,11 @@ DO_ARM=0
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
+# The stalled-turn ceiling (RC-17): a BUILD-phase run with no file write for
+# this long raises DRIFT-ALARM stalled-turn. Same style as anchor.sh's
+# BUDGET_TOL honored through ANCHOR_BUDGET_TOL — the constant is the doctrine's
+# number and WATCH_STALLED_MIN only overrides it.
+STALLED_MIN="${WATCH_STALLED_MIN:-15}"
 
 WORKDIR=""
 SELFTEST_TMP=""
@@ -511,6 +532,7 @@ done
 
 [[ "$STALE_MIN"       =~ ^[0-9]+$ ]] || die_tool "WATCH_STALE_MIN must be a non-negative integer (got: ${STALE_MIN})"
 [[ "$MERGE_STALE_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_MERGE_STALE_MIN must be a non-negative integer (got: ${MERGE_STALE_MIN})"
+[[ "$STALLED_MIN"     =~ ^[0-9]+$ ]] || die_tool "WATCH_STALLED_MIN must be a non-negative integer (got: ${STALLED_MIN})"
 
 #==============================================================================
 # THE TICK
@@ -926,6 +948,63 @@ run_tick() {
     add_undet "speech=undetermined(nothing drafted under CONTROL/.speech/ — a script cannot read a spoken message, so an absent draft is not proof the client was told nothing)"
   fi
 
+  # THE STALLED TURN (RC-17) — the wall-clock ceiling on a single turn. The
+  # 2026-09-08 canary burned 31 minutes with zero file writes while a provider
+  # leg hung in a retry loop: nothing in the skill bounded it. This check
+  # bounds it. It fires only when BOTH hold: the run is in the BUILD phase
+  # (the dispatch log's own census — an OPEN row whose stage names build,
+  # never a state word) AND the newest file mtime anywhere under the project
+  # folder is STALLED_MIN minutes old or more. A run outside the build phase
+  # is not stalled-turn material (apparatus work writes elsewhere and slower),
+  # and a run with no readable clock is UNDETERMINED, never a pass and never
+  # an alarm.
+  local STALL_NOTE="" STALL_ELAPSED=""
+  {
+    local stall_build=0 stall_newest="" stall_now stall_age=0 stall_path=""
+    local su sstage
+    while IFS=$'\t' read -r su sstage _slok _stree _sts _slabel; do
+      [[ -n "$su" ]] || continue
+      case "$(printf '%s' "${sstage}" | tr 'A-Z' 'a-z')" in *build*) stall_build=1; break ;; esac
+    done < "$WORKDIR/open.tsv"
+    if (( stall_build == 1 )); then
+      stall_now="$(epoch_now)"
+      # The newest mtime under the project home, CONTROL excluded: the ledger
+      # this tick writes is not progress, and counting it would make the check
+      # unable to fire on a run whose only writer is the tick itself. The
+      # ledger's own lock and pin sentinels are excluded for the same reason
+      # (tools/anchor.sh's census excludes them too): a sentinel this tick's
+      # own ledger write created is not a project write.
+      while IFS= read -r stall_path; do
+        [[ -n "$stall_path" ]] || continue
+        local se
+        se="$(stat -f %m "$stall_path" 2>/dev/null || stat -c %Y "$stall_path" 2>/dev/null || true)"
+        if [[ -n "$se" ]] && { [[ -z "$stall_newest" ]] || (( se > stall_newest )); }; then
+          stall_newest="$se"
+        fi
+      done < <(find "$HOME_DIR" -path "$HOME_DIR/CONTROL" -prune -o -type f \
+        ! -name '.ledger-pinned' ! -name '*.lock' ! -name '*.tmp.*' ! -name '*.lock.d' -print 2>/dev/null)
+      if [[ -z "$stall_newest" ]]; then
+        STALL_NOTE="undetermined(no readable file mtime under the project folder — the clock has no witness)"
+        add_undet "stalled-turn=undetermined(no file mtime could be read under ${HOME_DIR} — an unreadable clock is not proof of progress)"
+      else
+        stall_age=$(( (stall_now - stall_newest) / 60 ))
+        if (( stall_age >= STALLED_MIN )); then
+          STALL_NOTE="stalled(elapsed=${stall_age}m)"
+          STALL_ELAPSED="${stall_age}"
+          ledger_write "CONTROL/LEDGER.md" \
+            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | $(sanitize "no file write under the project folder for ${stall_age} minutes while an open BUILD row stands (ceiling ${STALLED_MIN}m) — a turn that writes nothing for this long is hung, not slow; TaskStop the hung tree and re-dispatch from its slice")"
+          emit "stalled-turn" "elapsed=${stall_age}m" \
+            "DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${stall_age} minutes old (ceiling ${STALLED_MIN}) while a BUILD row stands open — the turn is hung, not slow (RC-17)"
+        else
+          STALL_NOTE="ok(newest write ${stall_age}m ago, ceiling ${STALLED_MIN}m)"
+        fi
+      fi
+    else
+      STALL_NOTE="undetermined(no open BUILD row — the ceiling applies to the build phase only)"
+      add_undet "stalled-turn=undetermined(no open BUILD row in CONTROL/dispatch-log.md — outside the build phase the wall-clock ceiling does not apply)"
+    fi
+  }
+
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
@@ -939,7 +1018,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -1290,6 +1369,52 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(1 drafted, all linted)' \
      && ! "$GREP" -q 'DRIFT-ALARM' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 18 "speech-checked-control" "$ok" "rc=${RC} (want 0); the SPEECH-CHECK line for turn-07.txt silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries speech=ok(1 drafted, all linted)"
+
+  # --- case 19: STALLED-TURN. A BUILD row stands open and every file under
+  #     the project folder is 20 minutes old, past the 15-minute ceiling. The
+  #     mtimes are SET with touch -t and READ BACK with stat -f %m, so the
+  #     ages are measured, not assumed. The row is labelled and freshly
+  #     stamped with a fresh heartbeat, so S3, S6 and S13 stay silent: the
+  #     case isolates the stalled-turn check.
+  mk_home "$T/c19"
+  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-019\n' "$(stamp 1)" > "$T/c19/CONTROL/dispatch-log.md"
+  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c19/CONTROL/HEARTBEAT.md"
+  printf 'build output\n' > "$T/c19/work.txt"
+  OUT19_OLD="$(date -u -v-20M +%Y%m%d%H%M 2>/dev/null || date -u -d '20 minutes ago' +%Y%m%d%H%M)"
+  TZ=UTC touch -t "${OUT19_OLD}" "$T/c19/work.txt" "$T/c19/CONTROL/dispatch-log.md" "$T/c19/CONTROL/HEARTBEAT.md" "$T/c19/CONTROL/CHECKLIST.md" "$T/c19/CONTROL/TODO.md" "$T/c19/CONTROL/setup_progress.json" "$T/c19/SPEC/GOAL.md"
+  local c19_mtime c19_age
+  c19_mtime="$(stat -f %m "$T/c19/work.txt" 2>/dev/null || stat -c %Y "$T/c19/work.txt")"
+  c19_age=$(( ($(date -u +%s) - c19_mtime) / 60 ))
+  runw "$T/c19"
+  ok=0
+  if (( RC == 3 )) \
+     && (( c19_age >= 15 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|stalled-turn|' \
+     && printf '%s' "$OUT" | "$GREP" -q 'stalled-turn=stalled(elapsed=' \
+     && "$GREP" -q 'DRIFT-ALARM | stalled-turn | elapsed=' "$T/c19/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 19 "stalled-turn-fires" "$ok" "rc=${RC} (want 3); work.txt mtime read back as ${c19_age}m old (want >= 15, set by touch -t ${OUT19_OLD}); ACTION|stalled-turn emitted; DRIFT-ALARM | stalled-turn | elapsed= on the ledger"
+
+  # --- case 20: THE CONTROL FOR 19. Byte for byte the same fixture, backdated
+  #     5 minutes. The ceiling must stay silent: a check that fires on a fresh
+  #     write measures nothing. This pair is the discrimination for the whole
+  #     stalled-turn section.
+  mk_home "$T/c20"
+  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-020\n' "$(stamp 1)" > "$T/c20/CONTROL/dispatch-log.md"
+  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c20/CONTROL/HEARTBEAT.md"
+  printf 'build output\n' > "$T/c20/work.txt"
+  OUT20_OLD="$(date -u -v-5M +%Y%m%d%H%M 2>/dev/null || date -u -d '5 minutes ago' +%Y%m%d%H%M)"
+  TZ=UTC touch -t "${OUT20_OLD}" "$T/c20/work.txt" "$T/c20/CONTROL/dispatch-log.md" "$T/c20/CONTROL/HEARTBEAT.md" "$T/c20/CONTROL/CHECKLIST.md" "$T/c20/CONTROL/TODO.md" "$T/c20/CONTROL/setup_progress.json" "$T/c20/SPEC/GOAL.md"
+  local c20_mtime c20_age
+  c20_mtime="$(stat -f %m "$T/c20/work.txt" 2>/dev/null || stat -c %Y "$T/c20/work.txt")"
+  c20_age=$(( ($(date -u +%s) - c20_mtime) / 60 ))
+  runw "$T/c20"
+  ok=0
+  if (( RC == 0 )) \
+     && (( c20_age < 15 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM stalled-turn' \
+     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'stalled-turn=ok('; then ok=1; fi
+  report 20 "stalled-turn-control" "$ok" "rc=${RC} (want 0); work.txt mtime read back as ${c20_age}m old (want < 15, set by touch -t ${OUT20_OLD}); no stalled-turn anywhere; the S-CHECK line carries stalled-turn=ok(…); no DRIFT-ALARM on the ledger"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
