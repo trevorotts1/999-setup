@@ -281,6 +281,19 @@ what got built, what I checked, and the one or two things only you can decide.
 [plain-English list of anything that could not be finished, with the reason in
 plain language and what you can do about it]
 
+## How much of the machine was used
+
+[plain-English fan-out figures, read off the run's own records — never felt.
+The Capacity Ledger (`CAPACITY-LEDGER.md`) records the measured `clientCap`
+(the width this machine supports; `references/capacity.md` §3). The run's
+`S-CHECK` lines on `CONTROL/LEDGER.md` (one per five-minute tick,
+`tools/watch-tick.sh`) each carry `open=<n>`: peak concurrency is the largest
+`open=` in the run, mean concurrency is the arithmetic mean of `open=` across
+the run's `S-CHECK` lines. The report states both against the cap, e.g. "at
+its busiest the run used 6 of its 10 seats, 3 on average — 17% of the
+machine's width." A run that used a small fraction of its cap says so; today
+nothing counts it, so the report must.]
+
 ## Questions for you
 
 [any decisions that need your input, in plain language, with a recommendation]
