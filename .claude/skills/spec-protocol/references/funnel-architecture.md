@@ -694,7 +694,8 @@ one ledger line per integration point
 
 - Form submissions post to GHL. **The destination is a ledger line before the
   build, and a proven arrival before the ship:**
-  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one line per form.
+  `FORM-DESTINATION: <form>=<GHL | email | Supabase table> owner=<client|operator>`,
+  one line per form.
   This is not a funnel-only contract — it is the same line every target writes
   (`references/ship-checks.md` section 3), and instrument 6 of
   `STAGE-SHIP-CHECKS` submits one real entry, proves it arrived, then deletes

@@ -67,6 +67,25 @@
 #              run at the ceiling is also past its pause line, and reporting
 #              that as a pause would leave a project able to answer "keep going"
 #              past a line it can never cross.
+#  12  NO-AUDIT-GATE — a BUILD dispatch was attempted while CONTROL/LEDGER.md
+#              carries no AUDIT-GATE line. SKILL.md step 20 runs
+#              tools/audit-gate.sh, which writes exactly one
+#                AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<v>
+#              line through tools/ledger.sh on every run that reaches a verdict.
+#              The 2026-09-07 canary proved that gate can be skipped in silence:
+#              it shipped, it had a selftest, and it never ran — a recursive
+#              grep for 'audit-gate|AUDIT-FINDINGS' over the whole project
+#              returned rc=1, zero, with 'grep -ci audit CONTROL/*.md'
+#              non-empty in four files as the control. This is what makes it
+#              unskippable: the run cannot reach a builder without it. The
+#              match is on the LINE SHAPE, never on the word "audit" — a ledger
+#              that merely discusses an audit in prose has not run the gate. The
+#              VERDICT is deliberately not read: a CEILING verdict means the run
+#              PROCEEDS with its full CARRY list (references/gauntlet.md 7.1),
+#              so demanding verdict=PASS here would contradict the ceiling rule
+#              and re-decide a verdict this gate does not own. Like 4 and 6 it
+#              is a fact about the RUN, not a broken tool, so it is kept out of
+#              exit 2.
 #
 # THE OPERATOR OVERRIDE. CONTROL/OPERATOR-OVERRIDE.json is read BEFORE
 # CONTROL/project_state.json and its `first_pause` REPLACES agents.first_pause
@@ -78,9 +97,10 @@
 # never a pass. See "THE OPERATOR OVERRIDE" below the width helpers for the
 # contract in full.
 #
-# The four the row enumerates are 0/3/5/2. Exits 4 and 6 are the fail-closed
-# precondition refusals — a missing Parallelism Plan and a missing
-# over-engineering check; both are kept separate from 2 on purpose, because
+# The four the row enumerates are 0/3/5/2. Exits 4, 6 and 12 are the fail-closed
+# precondition refusals — a missing Parallelism Plan, a missing
+# over-engineering check and a missing step-20 audit gate; all three are kept
+# separate from 2 on purpose, because
 # calling a real refusal a tooling failure would let it read as a broken tool.
 # Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
 # reason: the instrument worked perfectly, the RUN is out of budget. When the
@@ -103,7 +123,11 @@
 # CLIENT_CAP parse shapes, the dep= escape hatch, both exit-4 refusals, the
 # exit-6 pair (ONE build fixture refused without the OVER-ENGINEERING-CHECK:
 # line and passed with it — a pass/fail pair on one fixture, so a broken check
-# cannot show as a class-wide refusal), the missing-ledger tooling failure, and
+# cannot show as a class-wide refusal), the exit-12 quartet (ONE build fixture
+# refused with no AUDIT-GATE line, refused again on a ledger that only says the
+# word "audit" in prose — the leg a word-search implementation fails — passed
+# once the canonical AUDIT-GATE line is added, and a non-build dispatch on the
+# same bare fixture passing throughout), the missing-ledger tooling failure, and
 # a known-positive control for every grep it relies on. The budget wall is
 # proven on ONE fixture, all three legs: executions_total=19 against a
 # first_pause of 20 passes, the SAME fixture at 20 exits 7 naming pause_at=20,
@@ -187,6 +211,28 @@ has_rightsize_line() {
 # missing one is the defect this exists to end.
 is_build_label() {
   printf '%s' "$1" | "${GREP}" -qi 'build'
+}
+
+# --- The step-20 audit gate (fail-closed; RC-24 substance A) -----------------
+# tools/audit-gate.sh writes exactly ONE line of this shape through
+# tools/ledger.sh on every run that reaches a verdict (audit-gate.sh, its
+# write_ledger_line):
+#
+#   AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<v>
+#
+# The SHAPE is the proof the gate RAN. The word "audit" is not: a ledger can
+# discuss an audit at length without one ever having been executed, which is
+# exactly what the 2026-09-07 canary's ledger did. So the expression below
+# demands all five counters and the verdict field, in order, and a leading
+# timestamp or list marker is tolerated because ledger.sh's callers may add one.
+# The verdict VALUE is not read here — see exit 12 in the header.
+AUDIT_GATE_RE='AUDIT-GATE[[:space:]]*\|[[:space:]]*cycle=[0-9]+[[:space:]]*\|[[:space:]]*halt=[0-9]+[[:space:]]+harm=[0-9]+[[:space:]]+scope=[0-9]+[[:space:]]+carry=[0-9]+[[:space:]]*\|[[:space:]]*verdict=[A-Za-z][A-Za-z-]*'
+has_audit_gate_line() {
+  local f="$1"
+  [[ -f "${f}" ]] || return 1
+  [[ -r "${f}" ]] || return 1
+  "${GREP}" -qE "${AUDIT_GATE_RE}" "${f}" 2>/dev/null && return 0
+  return 1
 }
 
 # --- THE OPERATOR OVERRIDE — CONTROL/OPERATOR-OVERRIDE.json (WI-35) ----------
@@ -647,6 +693,24 @@ run_check() {
     fi
   fi
 
+  # --- Fail-closed precondition: no step-20 audit gate, no builder ----------
+  # Same shape as the block above and for the same reason. The audit gate is a
+  # shipped, selftested instrument that the canary never ran, because nothing
+  # refused a builder over its absence. This refuses it. It sits AFTER the
+  # over-engineering gate so the step-13 omission is still reported as exit 6
+  # rather than being masked by the step-20 one, and BEFORE the budget wall and
+  # the width arithmetic, because a dispatch that should never fire is refused
+  # before its shape is argued about.
+  if is_build_label "${label}"; then
+    local audit_doc="${project}/CONTROL/LEDGER.md"
+    if ! has_audit_gate_line "${audit_doc}"; then
+      printf 'DISPATCH-CHECK NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line\n' >&2
+      printf 'DISPATCH-CHECK NOTE | read: %s | run tools/audit-gate.sh %s first (SKILL.md step 20). It writes "AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<v>" through tools/ledger.sh on every run that reaches a verdict. A ledger that mentions an audit in prose has not run the gate, and a CARRY-only audit PASSES with its findings still open (references/gauntlet.md 7.1) — so this refusal is about the missing RUN, never about the findings.\n' \
+        "${audit_doc}" "${project}" >&2
+      exit 12
+    fi
+  fi
+
   # --- Fail-closed precondition: the budget wall (RC-4b) --------------------
   # WI-31 reserved this point between the over-engineering gate above and the
   # width arithmetic below, and this is the block it reserved it for. The order
@@ -780,8 +844,10 @@ run_selftest() {
   printf '# Execution plan\n\n## Parallelism Plan\n\nwave 2: 10 units, one tree.\n' > "${P}/CONTROL/EXECUTION-PLAN.md"
   write_state "${P}/CONTROL/project_state.json" 0 200 0 2000
   # Every fixture below that dispatches a BUILD needs the over-engineering line
-  # right-size.sh writes, or it is refused with exit 6 before its width is read.
+  # right-size.sh writes and the AUDIT-GATE line audit-gate.sh writes, or it is
+  # refused with exit 6 or exit 12 before its width is ever read.
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P}/CONTROL/LEDGER.md"
 
   local rc out total ok
   read_total() { sed -n 's/.*"executions_total"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${P}/CONTROL/project_state.json" | head -n 1; }
@@ -845,6 +911,7 @@ run_selftest() {
   } > "${P3}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P3}/CONTROL/EXECUTION-PLAN.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P3}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P3}/CONTROL/LEDGER.md"
   write_state "${P3}/CONTROL/project_state.json" 0 200 0 2000
   # 10 units and 9 agents DISCRIMINATES: it exits 3 only if the cap parsed as
   # 10. A mis-parse of 2 (the `max(2,` on that same line) would make the floor
@@ -918,6 +985,7 @@ run_selftest() {
   report 15 "no-rightsize-refused" "${ok}" "rc=${rc} (want 6) for a build dispatch with no OVER-ENGINEERING-CHECK: line; the message names the exact path read and no counter moved (executions_total still ${p7_total}, want 0)"
 
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P7}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P7}/CONTROL/LEDGER.md"
   out="$(bash "${SELF}" "${P7}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "0" ]] && ok=1
   report 16 "rightsize-line-allows" "${ok}" "rc=${rc} (want 0) — the SAME dispatch, on the SAME fixture, with the ledger line added and nothing else changed. This half is what proves exit 6 is a fact about the missing line and not a class-wide refusal of build dispatches; ${out}"
@@ -1054,9 +1122,68 @@ run_selftest() {
   report 27 "malformed-override-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a nested first_pause; the message says MALFORMED OPERATOR OVERRIDE and names the path, and the counter did not move (${p12_total}, want 20): ${out}"
   rm -f "${ovf}"
 
+  # --- 19: THE STEP-20 AUDIT GATE — four legs on ONE fixture (RC-24 A) ------
+  # The fixture carries the OVER-ENGINEERING-CHECK: line from the start, so the
+  # exit-6 gate is satisfied throughout and every answer below is attributable
+  # to the AUDIT-GATE line and to nothing else. The four legs are, in order: no
+  # AUDIT-GATE line at all; a ledger that says the word "audit" in prose and
+  # nothing more; the canonical AUDIT-GATE line added and nothing else changed;
+  # and a NON-build dispatch against the bare ledger. A gate that answered all
+  # four alike would be a broken test, not a finding.
+  local P13="${T}/proj-auditgate"
+  mkdir -p "${P13}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P13}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P13}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P13}/CONTROL/project_state.json" 0 200 0 2000
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P13}/CONTROL/LEDGER.md"
+
+  # (a) no AUDIT-GATE line → rc 12, the path named, no budget spent.
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  local p13_total
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "12" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "${P13}/CONTROL/LEDGER.md" || ok=0
+  [[ "${p13_total}" == "0" ]] || ok=0
+  report 28 "no-audit-gate-refused" "${ok}" "rc=${rc} (want 12) for a build dispatch whose CONTROL/LEDGER.md carries no AUDIT-GATE line; the message names the exact path read and no counter moved (executions_total still ${p13_total}, want 0)"
+
+  # (b) THE DISCRIMINATING CONTROL FOR A WORD-SEARCH: the ledger now says the
+  #     word "audit" — twice, in prose, including the literal string AUDIT — and
+  #     the gate must STILL refuse. An implementation that greps for the word
+  #     rather than the line shape passes leg (a) and fails here.
+  {
+    printf 'AUDIT-CYCLE: 1\n'
+    printf '2026-09-08T00:03:00Z | the apparatus audit ran and the AUDIT notes are in QUALITY-CONTROL/\n'
+  } >> "${P13}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  local audit_words
+  audit_words="$("${GREP}" -ci audit "${P13}/CONTROL/LEDGER.md")"
+  ok=0; [[ "${rc}" == "12" ]] && ok=1
+  [[ "${audit_words}" -ge 2 ]] || ok=0
+  report 29 "prose-audit-still-refused" "${ok}" "rc=${rc} (want 12) on a ledger whose own control count says ${audit_words} line(s) contain the word 'audit' (want >= 2, including an AUDIT-CYCLE: line) — the gate matches the LINE SHAPE, so a word-search implementation passes leg (a) and fails this one"
+
+  # (c) the canonical line added, nothing else changed → rc 0.
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS\n' >> "${P13}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p13_total}" == "10" ]] && ok=1
+  report 30 "audit-gate-line-allows" "${ok}" "rc=${rc} (want 0) on the SAME fixture with 'AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=2 | verdict=PASS' added and nothing else changed — carry=2 with a PASS verdict, the CARRY-only outcome references/gauntlet.md 7.1 requires the gate to allow; executions_total 0 -> ${p13_total} (want 10). This half is what proves exit 12 is a fact about the missing line and not a class-wide refusal of build dispatches"
+
+  # (d) a NON-build dispatch against a bare ledger passes: the gate is scoped to
+  #     the build phase, exactly as exit 6 is.
+  local P14="${T}/proj-auditgate-judge"
+  mkdir -p "${P14}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P14}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P14}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P14}/CONTROL/project_state.json" 0 200 0 2000
+  printf '# Ledger\n\nENTRY-MODE: interview\n' > "${P14}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P14}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  report 31 "non-build-not-audit-gated" "${ok}" "rc=${rc} (want 0) for a JUDGE dispatch on a ledger with no AUDIT-GATE line and no OVER-ENGINEERING-CHECK line — the step-20 gate is a BUILD-phase refusal, so it must not fire here: ${out}"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (28 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (32 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

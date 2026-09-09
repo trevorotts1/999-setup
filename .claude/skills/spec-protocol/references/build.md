@@ -99,12 +99,16 @@ never shipped. The failing check is named and surfaced; a silent build is a
 defect (a page nobody can verify is not a built page).
 
 **Every form's destination is declared BEFORE this stage opens, for EVERY
-target** — `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one
-ledger line per form on any page or screen (`references/ship-checks.md`
-section 3; the funnel wiring at `references/funnel-architecture.md` Stage 4
-generalized). A contact form on a website and a sign-up form in an app carry
-the same contract as a funnel's opt-in: a named destination before a single
-field is built, and a proven arrival before it ships.
+target** — `FORM-DESTINATION: <form>=<GHL | email | Supabase table>
+owner=<client|operator>`, one ledger line per form on any page or screen
+(`references/ship-checks.md` section 3; the funnel wiring at
+`references/funnel-architecture.md` Stage 4 generalized). The `owner=` field is
+never omitted, and a destination at a reserved name that can never receive mail
+is recorded BLOCKED with the reason rather than confirmed — both rules live in
+`references/ship-checks.md` section 3 and both are checked by
+`tools/ship-guard.sh`. A contact form on a website and a sign-up form in an app
+carry the same contract as a funnel's opt-in: a named destination before a
+single field is built, and a proven arrival before it ships.
 
 **What follows the build — BUILD-FINAL → SHIP-CHECKS → PUBLISH.** This stage's
 pass bar is a BUILD bar, not the ship bar, and passing it is not the finish
@@ -332,9 +336,11 @@ order mechanically:
   text). A stage line naming pages that fail any check group is not a pass and
   does not open `STAGE-LOGO`.
 - A page carrying a form opens only when that form's
-  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>` line already exists
-  — a form with no named destination is not built (`references/ship-checks.md`
-  section 3).
+  `FORM-DESTINATION: <form>=<GHL | email | Supabase table> owner=<client|operator>`
+  line already exists — a form with no named destination is not built, a line
+  carrying no `owner=` is read as `operator` and refused, and an address at a
+  reserved name is recorded BLOCKED with the reason rather than confirmed
+  (`references/ship-checks.md` section 3).
 - The gate does not end here: `STAGE-SHIP-CHECKS` opens only after
   `STAGE-BUILD` passes, and `STAGE-PUBLISH` opens only after
   `SHIP-CHECKS: pass=<n>/<n>` is written with both numbers equal

@@ -226,6 +226,34 @@ built.
   and a line carrying no `owner=` at all is read as `operator` — not saying
   whose it is has never been proof that it is theirs.
 
+**Two rules bind every FORM-DESTINATION line, and `tools/ship-guard.sh` checks
+both.**
+
+1. **The line ALWAYS carries `owner=client` or `owner=operator`.** The field is
+   never omitted and never carries a third value. A line with no `owner=` at
+   all, one whose value is anything else, and one too malformed to parse are
+   all read as `operator` and refused — none of them is proof of client
+   ownership. This is the rule the shape at the top of this section states, and
+   every file that quotes that shape quotes it with the `owner=` field
+   attached (`references/build.md` section 2 and section 5,
+   `references/funnel-architecture.md` Stage 4).
+2. **A destination at a reserved name is recorded BLOCKED with the reason, never
+   confirmed.** `.example`, `.invalid` and `.test` (RFC 2606) and `.localhost`
+   (RFC 6761) exist precisely so that they can never resolve, so an address
+   under one of them cannot receive mail from anybody, ever. Confirming such a
+   destination is worse than leaving the form blocked: it reports a working
+   route for messages that will be lost. The correct record is the BLOCKED line
+   below, with the reserved name stated in the reason —
+   `FORM-DESTINATION: <form>=BLOCKED owner=client reason=<name> can never
+   receive mail`. `tools/ship-guard.sh` exits 5 naming the undeliverable domain
+   when such an address is carried as a CONFIRMED destination, and exits 0 on
+   the same domain recorded BLOCKED; it prints the domain only, never the
+   mailbox name before the `@`. The 2026-09-07 canary is why this is mechanical
+   rather than written down: the one address the client gave sat at a `.example`
+   name, it WAS correctly recorded BLOCKED, and the form was then wired to the
+   machine owner's real inbox instead — the swap the next paragraph but one
+   forbids.
+
 **A destination not owned by the client is refused at the STAGE GATE, not at
 publish.** A form whose line carries anything but `owner=client` does not open
 `STAGE-BUILD` for the page that carries it (`references/build.md` section 5,
