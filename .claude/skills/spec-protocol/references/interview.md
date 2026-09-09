@@ -326,12 +326,13 @@ Record every branch answer in their own words. A branch answer the
 pre-statement reads already settled is stated back, never asked.
 
 **7–12. The content inventory.** Each is prefaced with "I don't know is fine,
-I'll write a draft you can change". **Each answer is written to
-`00-INPUT/CONTENT.md` the moment it is given** — under its own heading, in their
-own words, before the next question is spoken; an answer that lives only in the
-conversation is an answer a compaction or a restart loses. An "I don't know" is
-written too, as `DRAFT — write one` above the drafted text, so a draft can never
-be mistaken for something they said. (`references/documents.md`, the
+I'll write a draft you can change" — each EXCEPT a FABRICATION-GUARD item,
+which gets the honest pair in the exception below instead. **Each answer is written
+to `00-INPUT/CONTENT.md` the moment it is given** — under its own heading, in
+their own words, before the next question is spoken; an answer that lives only
+in the conversation is an answer a compaction or a restart loses. An "I don't
+know" is written too, as `DRAFT — write one` above the drafted text, so a draft
+can never be mistaken for something they said. (`references/documents.md`, the
 infrastructure list, owns the file's shape and headings.) These are the client's
 OWN facts — the counterpart of the outside-world reference research,
 `references/research.md` Step 2 — and the ship check FAILS any page carrying a
@@ -369,6 +370,29 @@ and every "I don't know" recorded as one. These answers ARE the acceptance
 criteria, written down BEFORE anything is built: a criterion that cannot be
 traced to something the person actually said here was invented, and inventing
 one is the defect.
+
+**⛔ The FABRICATION-GUARD exception — the draft offer is withdrawn, and only
+there.** `references/build.md` section 6 owns the list of FABRICATION-GUARD
+facts and this file never restates it: they are the facts that attribute
+something to a real third party who has not agreed to it. The draft offer at
+7–12 is for the client's OWN words and it stands UNCHANGED for every other
+question in this list — 7, 8, 9, 12 and every question outside the content
+inventory keep it verbatim. For a FABRICATION-GUARD item it is not softened, it
+is REPLACED, by the honest pair — spoken in these words:
+
+> If you have real ones, I'll use them exactly. If not, I'll leave that part
+> off — I won't make up a customer.
+
+Question 11 is always one of these; question 10 is one whenever the answer would
+be a staff member's photograph or another company's logo. An "I don't know"
+there is written to `00-INPUT/CONTENT.md` as `OMIT`, never as `DRAFT — write
+one`, and that part is simply left off the built page — an omission is a PASS,
+not a gap, and it is said that way: "I've left the customer-words part off, and
+you can send me real ones any time and I'll put them in." `tools/ship-guard.sh`
+then FAILS any built page that renders one of these facts without a `SOURCED`
+entry, naming the fact and the page, so a drafted quote cannot reach a client's
+site by being forgotten. This is the refusal promoted from judgement to script:
+it must not depend on which model is sitting in the chair.
 
 ### The pre-statement reads (disk only, seconds, before question 1)
 

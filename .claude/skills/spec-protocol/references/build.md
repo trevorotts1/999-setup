@@ -383,6 +383,35 @@ section 3, questions 7–12) — but only when `00-INPUT/CONTENT.md` carries
 `DRAFT — write one` above that item. A drafted fact is honest; an unsourced fact
 is invented, and inventing one is the defect.
 
+**⛔ FABRICATION-GUARD — the facts a draft can never satisfy.** A named subset
+of business facts — some already in the list above, the rest added here as
+members of the same class — may carry ONLY `SOURCED` or `OMIT` in
+`00-INPUT/CONTENT.md`, and NEVER `DRAFT — write one`. The subset is written
+once, HERE, and cited from everywhere else — never restated: a testimonial or
+review, the person credited with one, a star rating or review count, a named
+customer, an award, a certification, a press quote, a client logo, and a staff
+member's name or photograph. The unifying reason, in one sentence: every one of
+these attributes something to a real third party who has not agreed to it.
+`OMIT` is the honest second state — the section is left off the page rather
+than filled with a plausible stranger — and it is a PASS, not a defect. The
+interview stops offering the draft for these items and offers the honest pair
+instead (`references/interview.md` section 3): "If you have real ones, I'll use
+them exactly. If not, I'll leave that part off — I won't make up a customer."
+
+**How FABRICATION-GUARD is checked — `tools/ship-guard.sh`, never eyes.** Any
+built page rendering a FABRICATION-GUARD fact whose `00-INPUT/CONTENT.md` entry
+is not `SOURCED` FAILS, non-zero, naming both the fact and the page. The result
+is one ledger line through `tools/ledger.sh`:
+
+```
+FABRICATION-GUARD: facts=<n> sourced=<n> omitted=<n> unsourced=<n>
+```
+
+`unsourced` must be `0`. A missing `00-INPUT/CONTENT.md` is not a pass by
+default here either — it is the check's own failure and it blocks the same way,
+for the reason the CONTENT-TRUTH paragraph below already gives: an absent file
+proves nothing about the page.
+
 **How it is checked — a command, never eyes** (the same rule section 1 carries).
 For every built page, enumerate the business facts it renders, and for each one
 either match it to its entry in `00-INPUT/CONTENT.md` or match it to that item's
