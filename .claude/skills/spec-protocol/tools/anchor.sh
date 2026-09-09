@@ -353,6 +353,57 @@ state_lines() {  # state_lines <file> -> every line that is not a contentless ti
   "$AWK" -v M1="$TICK_M1" -v M2="$TICK_M2" -v MODE=state "$AWK_CLASSIFY" "$1"
 }
 
+#------------------------------------------------------------------------------
+# CLASS 8's counter — CAN THIS LEDGER BE TIME-ORDERED AT ALL? (RC-18.)
+#
+# Every non-tick line is either a RECORD or markdown STRUCTURE, and a record
+# with no ISO8601Z at its head cannot be placed in time by anything. The three
+# categories below MIRROR tools/ledger.sh's LEDGER_STRUCT_RE exactly, so the
+# writer and this reader agree by construction: every line ledger.sh stamps is
+# a line this counts, and every line ledger.sh leaves alone is a line this
+# skips. Read that constant's comment for why a checklist row is not a record.
+#
+# The stamped test tolerates a leading `- ` bullet because document 12's rows
+# are allowed one (the dispatch census below reads the same optional bullet):
+# `- 2026-…` already carries its clock and is not a defect.
+#
+# THE SELF-REFERENCE TRAP, avoided by construction rather than by exclusion:
+# every line THIS script writes — RECONCILE, DRIFT-ALARM, RECOVERY-LADDER,
+# TERMINAL-DRIFT, BUDGET-CAP — opens with iso_now(), so this counter can never
+# be inflated by its own output the way the capacity grace once was by its own
+# ladder lines. No SELF_AUTHORED_RE filter is needed and none is applied: an
+# unstamped self-written line would be a real defect and must be counted.
+#
+# Digits are spelled out rather than written as {4}: interval expressions are
+# not portable across the awks this script runs on, and inflight_units below
+# already spells them out for the same reason. `[|]` not `\|`, which is an
+# illegal regex in BSD awk.
+#------------------------------------------------------------------------------
+AWK_LEDGER_STAMP='
+{
+  if ($0 ~ /^[ \t]*$/) { next }
+  if ($0 ~ /^[ \t]*(#|>|---|[|])/) { st++; next }
+  if ($0 ~ /^[ \t]*[-*+][ \t]*\[[ xX]\]/) { st++; next }
+  rec++
+  if ($0 ~ /^[ \t]*(- )?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z/) ok++
+  else un++
+}
+END { printf "%d %d %d %d\n", rec+0, ok+0, un+0, st+0 }
+'
+
+# ledger_stamp_census <ledger-path> -> "<records> <stamped> <unstamped> <structure>"
+# Prints NOTHING and returns 1 when the answer is UNDETERMINED — no awk, no
+# such file, unreadable. An absent ledger is never counted as a proven zero.
+ledger_stamp_census() {
+  [[ -n "$AWK" && -x "$AWK" ]] || return 1
+  [[ -f "$1" ]] || return 1
+  local sf="$WORKDIR/ledger.nontick.txt"
+  state_lines "$1" > "$sf" 2>/dev/null || return 1
+  [[ -f "$sf" ]] || return 1
+  "$AWK" "$AWK_LEDGER_STAMP" "$sf" 2>/dev/null || return 1
+  return 0
+}
+
 # ledger.cmd <file> <marker-re> <unit-re> -> the unit tokens of every line
 # carrying <marker-re>, in file order, deduplicated. CLASS 7 (ledger
 # provenance) uses it twice: units with a `| CLAIM |` line and units with a
@@ -1187,6 +1238,73 @@ run_anchor() {
     fi
   fi
 
+  #--------------------------------------------------------------------------
+  # CLASS 8 — CAN THIS LEDGER BE TIME-ORDERED AT ALL? (RC-18.)
+  #     Its own gate: the ledger itself, and it runs for IDLE units too — a
+  #     ledger nobody can order in time is a defect of the FILE, not of the
+  #     unit being reconciled.
+  #
+  #     Every RECORD line must open with an ISO8601Z timestamp. Until
+  #     tools/ledger.sh became the writer of record there was nothing anywhere
+  #     that required one: ledger.sh appended the caller's string verbatim, so
+  #     a caller that supplied no clock produced a clockless line and no
+  #     reader complained. One real project ledger reached 30 lines carrying
+  #     exactly ONE timestamp (its GATE0 line) while the control project, same
+  #     instrument and same day, carried 254. Nothing in this script noticed:
+  #     the only timestamp it ever read was the LAST RE-ANCHOR/RECONCILE line,
+  #     for the staleness field below, which reports
+  #     `undetermined(no-timestamp-field)` in a DISPLAY field and alarms on
+  #     nothing.
+  #
+  #     THIS IS A DETECTION AND NEVER A REPAIR. Not one line is rewritten,
+  #     back-dated, re-ordered or removed here, and no future version of this
+  #     class may do so: rewriting a ledger's history is precisely the thing a
+  #     ledger must never do, and a back-dated line is a worse artifact than a
+  #     clockless one because it looks trustworthy. A run that finds old
+  #     unstamped lines REPORTS them and leaves them standing.
+  #
+  #     The counter is ledger_stamp_census (top of this file), which mirrors
+  #     tools/ledger.sh's own LEDGER_STRUCT_RE exactly, so the writer and this
+  #     reader agree by construction: every line ledger.sh stamps is a line
+  #     this counts, and every line ledger.sh leaves alone (a checklist row, a
+  #     heading, a table row, a rule, a blockquote, a blank) is a line this
+  #     skips. Contentless ticks are already excluded upstream by state_lines.
+  #
+  #     FAIL-CLOSED like every other class here: an absent ledger, or a census
+  #     that could not run, is UNDETERMINED and says which path it checked. It
+  #     is never a silent zero and never a pass.
+  #--------------------------------------------------------------------------
+  STAMP_NOTE=""
+  if [[ "$MODE" == "reconcile" ]]; then
+    if [[ ! -f "$LED" ]]; then
+      STAMP_NOTE="ledger-stamp-undetermined(LEDGER.md absent)"
+      note "anchor.sh: CLASS 8 UNDETERMINED — ${LED} does not exist. An absent ledger is not a proven zero, so no ledger-unstamped verdict is made."
+    else
+      local _sc _src _n_rec _n_ok _n_un _n_st
+      set +e
+      _sc="$(ledger_stamp_census "$LED")"
+      _src=$?
+      set -e
+      if (( _src != 0 )) || [[ -z "$_sc" ]]; then
+        STAMP_NOTE="ledger-stamp-undetermined(census-unavailable: awk=${AWK:-none})"
+        note "anchor.sh: CLASS 8 UNDETERMINED — the stamp census could not read ${LED} (awk=${AWK:-none}, rc=${_src}). This is NOT reported as zero unstamped lines."
+      else
+        _n_rec="$(printf '%s' "$_sc" | cut -d' ' -f1)"
+        _n_ok="$(printf '%s' "$_sc" | cut -d' ' -f2)"
+        _n_un="$(printf '%s' "$_sc" | cut -d' ' -f3)"
+        _n_st="$(printf '%s' "$_sc" | cut -d' ' -f4)"
+        if (( _n_un > 0 )); then
+          STAMP_NOTE="ledger-unstamped(n=${_n_un})"
+          alarm "ledger-unstamped(n=${_n_un})" "n=${_n_un} record line(s) carry no ISO8601Z prefix (records=${_n_rec} stamped=${_n_ok} structure=${_n_st}); this ledger cannot be time-ordered. DETECTION ONLY: no line is rewritten, back-dated or removed. Fix the WRITER, never the file. Ledger: ${LED}"
+          action "route-writes-through-ledger.sh" "${UNIT}" "${_n_un} of ${_n_rec} record line(s) in ${LED} open with no ISO8601Z. Find what wrote them and route it through tools/ledger.sh, which supplies the clock and the writer=ledger.sh signature. Do NOT edit the ledger."
+          note "anchor.sh: CLASS 8 — ${_n_un} of ${_n_rec} record line(s) in ${LED} open with no ISO8601Z timestamp (stamped=${_n_ok}, markdown structure skipped=${_n_st}). This ledger cannot be placed in time by anything, so the staleness field, the plateau curve and every after-the-fact audit read it as guesswork. tools/ledger.sh is now the writer of record: it prefixes the clock to any record line that arrives without one and appends ' | writer=ledger.sh', so a line still missing both was written by something that did not go through it, or predates it. THE FIX IS THE WRITER, NOT THE FILE: nothing in this script rewrites, back-dates, re-orders or deletes a ledger line, and nothing in it ever may."
+        else
+          STAMP_NOTE="ledger-stamped(records=${_n_rec}/unstamped=0/structure=${_n_st})"
+        fi
+      fi
+    fi
+  fi
+
   if [[ "$UNIT" != "IDLE" ]]; then
     local UESC; UESC="$(re_escape "$UNIT")"
     if ! g_has "$UESC" "$TODO" && ! g_has "$UESC" "$CHK"; then
@@ -1227,14 +1345,17 @@ run_anchor() {
   fi
 
   #--------------------------------------------------------------------------
-  # (7) THE SEVEN DETECTION CLASSES (reconcile mode)
+  # (7) THE EIGHT DETECTION CLASSES (reconcile mode)
   #     Classes 1-4 need --tasks AND --state. Class 5 needs --intents (below,
   #     with the fingerprint). CLASS 6 (budget) needs --state only, so it runs
   #     on its own gate — a run that cannot supply a task snapshot can still be
   #     audited against its own spend. CLASS 7 (ledger provenance — the
   #     anti-drift contract's claim-before/result-after pairing) needs the
   #     ledger only, so it runs on its own gate below even when --tasks and
-  #     --state are absent; it skips for IDLE units.
+  #     --state are absent; it skips for IDLE units. CLASS 8 (ledger-unstamped
+  #     — whether the file can be time-ordered at all) needs the ledger only
+  #     too, and unlike class 7 it runs for IDLE units as well: a clockless
+  #     ledger is a defect of the FILE, not of the unit.
   #--------------------------------------------------------------------------
   local CLASSES="skipped(mode=anchor)"
   if [[ "$MODE" == "reconcile" ]]; then
@@ -1359,6 +1480,15 @@ run_anchor() {
     # CLASS 7 — the ledger provenance check. Its own gate: the ledger itself.
     if [[ -n "${CLAIM_NOTE:-}" ]]; then
       CLASSES="${CLASSES},${CLAIM_NOTE}"
+    fi
+
+    # CLASS 8 — can this ledger be time-ordered? Emitted exactly as the budget
+    # classes are, unconditionally, so the five-minute tick REPORTS it: a
+    # verdict that only appears when it is bad is a verdict nobody trusts when
+    # it is good. The undetermined forms ride here too, for the same reason
+    # budget-undetermined does.
+    if [[ -n "${STAMP_NOTE:-}" ]]; then
+      CLASSES="${CLASSES},${STAMP_NOTE}"
     fi
   fi
 
@@ -1696,6 +1826,14 @@ intent_stall() {
 #         ACTION|run-state-check naming tools/state-check.sh, never
 #         budget-undetermined; the control fixture with the canonical keys
 #         MUST still report budget-ok (the probe discriminates)
+#   20    CLASS 8 LEDGER-UNSTAMPED — a legacy ledger holding the three
+#         clockless shapes the canary photographed MUST raise DRIFT-ALARM |
+#         ledger-unstamped(n=3) at exit 3 and name n=3 (3, not 5: a heading
+#         and a contentless tick are not records); the same shape fully
+#         stamped MUST NOT alarm and MUST report unstamped=0; the reconcile
+#         MUST REPAIR NOTHING (sha256 of the fixture's own lines identical
+#         before and after); and a SECOND reconcile MUST still say n=3, which
+#         is what rules out a quiet backfill behind the alarm
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -2351,7 +2489,96 @@ EOF
   report 19 "operator-override" "$ok" \
     "file override 20 over a state file saying 200 at executions_total=20: rc=${rc19a} (want 3), BUDGET-PAUSE at pause_at=20 and classes carry override=first_pause:20(source=<the file>)=${ov19a}. CONTROL, the same fixture with no override at all: rc=${rc19b} (want 0), no pause and no override= token=${ov19b} — the pass/fail pair that proves the override moved the line. Variable alone: rc=${rc19c} (want 3) with source=env:SPEC_PROTOCOL_FIRST_PAUSE=${ov19c}. File 20 vs variable 50: rc=${rc19d} (want 3), the FILE named as the source and the arithmetic 20=${ov19d}. Malformed (nested first_pause): rc=${rc19e} (want 2, NEVER 0), named TOOLING FAILURE=${ov19e}"
 
-  printf 'SELFTEST COMPLETE | %s of 19 cases passed | %s failed\n' "$PASSES" "$FAILS"
+
+  #--------------------------------------------------------------------------
+  # --- CLASS 8 (case 20): LEDGER-UNSTAMPED — can this ledger be time-ordered
+  #     at all? (RC-18.) Four legs, and the last two are the ones that make it
+  #     a test rather than a demonstration:
+  #
+  #       a  THE POSITIVE. A legacy-shaped ledger carrying the three clockless
+  #          shapes the canary photographed verbatim (`ENTRY-MODE: interview`,
+  #          `BUILD-TARGET: WEBSITE`, `CAPACITY-LEDGER: …`) MUST raise
+  #          DRIFT-ALARM | ledger-unstamped(n=3), exit 3, name n=3 on the
+  #          RECONCILE line's classes, and emit the ACTION. n is 3 and not 5:
+  #          the same fixture also holds a markdown heading and a contentless
+  #          tick, neither of which is a record, so the count proves the
+  #          census discriminates instead of counting lines.
+  #       b  THE NEGATIVE CONTROL. The SAME fixture with every record stamped
+  #          MUST NOT alarm, MUST exit 0, and MUST report
+  #          ledger-stamped(...unstamped=0...). A class that fires on every
+  #          ledger is not a detector.
+  #       c  IT REPAIRS NOTHING. sha256 of the fixture's own lines is captured
+  #          before the reconcile and re-computed after: byte-identical. The
+  #          whole file legitimately GREW — this script appends its own
+  #          (stamped) DRIFT-ALARM and RECONCILE lines, which is its job — but
+  #          not one pre-existing byte may change. Rewriting a ledger's
+  #          history is precisely what a ledger must never do, and a
+  #          back-dated line is a worse artifact than a clockless one because
+  #          it looks trustworthy.
+  #       d  AND IT DOES NOT QUIETLY BACKFILL. A SECOND reconcile still says
+  #          n=3. A class that repaired on the first pass would report 0 here
+  #          and leg (c) alone could not tell the difference between "left it
+  #          alone" and "fixed it before I looked".
+  #--------------------------------------------------------------------------
+  mk_home "$T/c20"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c20/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c20/CONTROL/project_state.json"
+  # The fixture is written with printf, NOT through ledger.sh, ON PURPOSE:
+  # ledger.sh is now the writer of record and would stamp these, so the only
+  # way to photograph a legacy ledger is to write one directly. Three stamped
+  # records, three clockless ones, one heading, one contentless tick.
+  {
+    printf '## Project log\n'
+    printf '2026-09-08T13:00:00Z | GATE0 | ultracode=on | writer=ledger.sh\n'
+    printf 'ENTRY-MODE: interview\n'
+    printf 'BUILD-TARGET: WEBSITE\n'
+    printf '2026-09-08T13:02:00Z | NOTE | unit=U-02 | the design direction is locked | writer=ledger.sh\n'
+    printf 'CAPACITY-LEDGER: written 2026-09-08T13:06Z, clientCap=10 [MEASURED]\n'
+    printf -- '- heartbeat (ledger auto-tick)\n'
+    printf '2026-09-08T13:08:00Z | NOTE | unit=U-02 | copy drafted | writer=ledger.sh\n'
+  } > "$T/c20/CONTROL/LEDGER.md"
+  local c20_fixn c20_sha_before c20_sha_after c20args
+  c20_fixn="$(wc -l < "$T/c20/CONTROL/LEDGER.md" | tr -d ' ')"
+  c20_sha_before="$(head -n "$c20_fixn" "$T/c20/CONTROL/LEDGER.md" | sha_stdin)"
+  c20args=( "$T/c20" "U-02" --mode reconcile --tasks "$T/c20/CONTROL/task-graph-snapshot.json" --state "$T/c20/CONTROL/project_state.json" )
+  runa "${c20args[@]}"
+  local c20_rc="$RC" ok20a=0 ok20b=0 ok20c=0 ok20d=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| DRIFT-ALARM \| ledger-unstamped\(n=3\) \| unit=U-02 \|' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ledger-unstamped(n=3)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|route-writes-through-ledger.sh|U-02|'; then ok20a=1; fi
+  # (c) not one pre-existing byte changed.
+  c20_sha_after="$(head -n "$c20_fixn" "$T/c20/CONTROL/LEDGER.md" | sha_stdin)"
+  if [[ -n "$c20_sha_before" && "$c20_sha_before" == "$c20_sha_after" ]]; then ok20c=1; fi
+  # (d) and nothing was backfilled behind the alarm.
+  runa "${c20args[@]}"
+  local c20_rc2="$RC"
+  if (( RC == 3 )) && printf '%s' "$OUT" | "$GREP" -q 'ledger-unstamped(n=3)'; then ok20d=1; fi
+  # (b) THE CONTROL: the same shape, fully stamped.
+  mk_home "$T/c20ctl"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c20ctl/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c20ctl/CONTROL/project_state.json"
+  {
+    printf '## Project log\n'
+    printf '2026-09-08T13:00:00Z | GATE0 | ultracode=on | writer=ledger.sh\n'
+    printf '2026-09-08T13:01:00Z | ENTRY-MODE: interview | writer=ledger.sh\n'
+    printf '2026-09-08T13:01:30Z | BUILD-TARGET: WEBSITE | writer=ledger.sh\n'
+    printf '2026-09-08T13:02:00Z | NOTE | unit=U-02 | the design direction is locked | writer=ledger.sh\n'
+    printf '2026-09-08T13:06:00Z | CAPACITY-LEDGER: clientCap=10 [MEASURED] | writer=ledger.sh\n'
+    printf -- '- heartbeat (ledger auto-tick)\n'
+    printf '2026-09-08T13:08:00Z | NOTE | unit=U-02 | copy drafted | writer=ledger.sh\n'
+  } > "$T/c20ctl/CONTROL/LEDGER.md"
+  runa "$T/c20ctl" "U-02" --mode reconcile --tasks "$T/c20ctl/CONTROL/task-graph-snapshot.json" --state "$T/c20ctl/CONTROL/project_state.json"
+  local c20_rc_ctl="$RC"
+  if (( RC == 0 )) \
+     && ! "$GREP" -q 'ledger-unstamped' "$T/c20ctl/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'ledger-unstamped' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ledger-stamped(records=6/unstamped=0/structure=1)'; then ok20b=1; fi
+  ok=0
+  if (( ok20a == 1 && ok20b == 1 && ok20c == 1 && ok20d == 1 )); then ok=1; fi
+  report 20 "ledger-unstamped" "$ok" \
+    "3 clockless records among 6 records + 1 heading + 1 contentless tick: rc=${c20_rc} (want 3), DRIFT-ALARM | ledger-unstamped(n=3) written, classes and ACTION|route-writes-through-ledger.sh name it, and n is 3 not 5 (the heading and the tick are not records)=${ok20a}. CONTROL, the same shape fully stamped: rc=${c20_rc_ctl} (want 0), ledger-stamped(records=6/unstamped=0/structure=1), no alarm anywhere=${ok20b} — the pass/fail pair that proves this is a detector and not a siren. REPAIRS NOTHING: sha256 of the fixture's ${c20_fixn} pre-existing lines identical before and after=${ok20c} (before=${c20_sha_before%% *} after=${c20_sha_after%% *}); the file grew only by this script's own stamped DRIFT-ALARM and RECONCILE lines. NO SILENT BACKFILL: a second reconcile still reports n=3, rc=${c20_rc2}=${ok20d}"
+  printf 'SELFTEST COMPLETE | %s of 20 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

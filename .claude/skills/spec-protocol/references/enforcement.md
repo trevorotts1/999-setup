@@ -20,7 +20,7 @@ cadence — there is no third category, and no standard is unassigned.
 | `tools/dispatch-check.sh` | Whether a wave may fire: `floor = min(units, CLIENT_CAP)` (the skill owns the floor; the harness owns the ceiling), and whether the dispatch is padded past the work | `bash tools/dispatch-check.sh <project> <units> <agents> <label> [dep=…] [stages=<n>]` BEFORE the wave | 0 PASS (row written through `ledger.sh`, `agents.executions_total` incremented atomically); 3 UNDER-WIDTH; 5 PADDED; 2 TOOLING FAILURE | `bash tools/dispatch-check.sh --selftest` | `node scripts/common/dispatch-check.mjs` |
 | `tools/watch-tick.sh` | The five-minute state of the swarm: it reconciles, counts runnable units and open dispatch rows, and checks S2, S3, S5, S6 and S13 | `*/5 * * * * bash <skill>/tools/watch-tick.sh <project> >> <project>/CONTROL/watch-tick.log 2>&1`, written and announced at step 3, the moment `CONTROL/` exists | 0 clean (one `S-CHECK \| violations=0 \| runnable=<n> open=<n> trees=<n>` line); 3 findings, one `ACTION\|<verb>\|<target>\|<evidence>` line each; 4 `CONTROL/TERMINAL-DRIFT.flag` exists — nothing dispatches; 2 broken instrument, never an all-clear | `bash tools/watch-tick.sh --selftest` — ten fixtures, read-only | `node scripts/common/watch-tick.mjs` |
 | `tools/anchor.sh` | Drift: the three-way reconcile (manifest ↔ native task graph ↔ `project_state.json` ↔ the artifacts on disk), the repeated-intent alarm, the budget audit, the recovery ladder, and the pause-at-cap decision | `bash tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile --tasks CONTROL/task-graph-snapshot.json --state CONTROL/project_state.json` before every dispatch, at every wave boundary, at every tick, after every compaction | 0 clean; 3 alarm with `RECONCILE-ACTIONS`; 4 TERMINAL-DRIFT (the run stops dispatching) | `bash tools/anchor.sh --selftest` | — |
-| `tools/ledger.sh` | That a state change is written before the next action: locked, atomic (`.tmp` + rename under a lock), append-only, with upsert-in-place for `HEARTBEAT.md` | `bash tools/ledger.sh <home> <file> <line> [upsert-key]` at every claim, result, score and check | 0 written; non-zero the write did NOT happen — never assume it did | `bash tools/ledger.sh --selftest` | `node scripts/common/ledger.mjs` |
+| `tools/ledger.sh` | That a state change is written before the next action: locked, atomic (`.tmp` + rename under a lock), append-only, with upsert-in-place for `HEARTBEAT.md`; and that the line carries its own origin — the WRITER OF RECORD supplies the ISO8601Z clock to any record that arrives without one (a caller's own stamp is kept, never doubled) and signs it ` | writer=ledger.sh` (§5) | `bash tools/ledger.sh <home> <file> <line> [upsert-key]` at every claim, result, score and check | 0 written; non-zero the write did NOT happen — never assume it did | `bash tools/ledger.sh --selftest` | `node scripts/common/ledger.mjs` |
 
 **A gate whose selftest fails is a BROKEN INSTRUMENT.** Do the arithmetic by
 hand, write that fact in the ledger, and never read a broken instrument's
@@ -177,7 +177,57 @@ RESULT unit against a prior CLAIM for the SAME unit id and alarms
 exceed `ANCHOR_CLAIM_UNPAIRED_TOL` (default 3) with no CLAIM — the ledger
 failing as the single source of truth; an absent ledger is UNDETERMINED, and
 an IDLE reconcile claims nothing. A run that ledgers only on completion has
-no state to resume from at the moment it most needs one.** At every wave
+no state to resume from at the moment it most needs one.**
+
+**`tools/ledger.sh` is the WRITER OF RECORD — the clock and the signature
+(binding).** A ledger line has to carry two facts about its own origin, and
+before this neither was anyone's job: `ledger.sh` appended the caller's string
+verbatim, so a caller that supplied no timestamp produced a clockless line and
+no reader anywhere complained. One real project ledger reached 30 lines
+carrying exactly ONE timestamp while the control project, same instrument and
+same day, carried 254. So the writer now supplies both:
+
+- **The clock.** A RECORD line whose first line does not already begin with an
+  ISO8601Z gets `<ISO8601Z> | ` prefixed to it, taken under the lock so the
+  recorded time orders with the file. A line that ALREADY carries its own
+  ISO8601Z keeps it byte-for-byte — `tools/anchor.sh`, `tools/dispatch-check.sh`
+  and `tools/speech-check.sh` each stamp every line they write, and stamping
+  those again would put two timestamps on every line those three tools have
+  ever produced. On a multi-line payload only the FIRST line is stamped; the
+  rest is the payload's own body.
+- **The signature.** ` | writer=ledger.sh` is appended, so a line the tool wrote
+  is distinguishable from one typed in by hand.
+- **The one shape that gets neither, and why it is not a softening.** This
+  script is the write primitive for ALL project MD files, `CONTROL/TODO.md` and
+  `CONTROL/CHECKLIST.md` included, and there a line's SHAPE is its meaning: a
+  markdown checklist row, heading, table row, rule, blockquote or blank line is
+  written byte-for-byte. Every reader of those rows is anchored to the row start
+  — `anchor.sh:770` clears the TERMINAL-DRIFT stop only on a `^`-anchored
+  `- [x] BLOCKER-NAMED |` row, `anchor.sh:1691` writes
+  `- [ ] OPERATOR-ESCALATION | …` to `CONTROL/TODO.md` through this very script,
+  and the open/done census at `anchor.sh:835`/`:843-844` is anchored too — so a
+  stamp in FRONT of a row would make the drift stop unclearable and hide the
+  escalation the ladder just wrote. The rule is stamp every RECORD, not stamp
+  every line.
+
+**`tools/anchor.sh` CLASS 8 (`ledger-unstamped`) is the reader half.** Every
+reconcile counts the non-tick RECORD lines in `CONTROL/LEDGER.md` that carry no
+ISO8601Z prefix, raises `DRIFT-ALARM | ledger-unstamped(n=<count>)` at exit 3
+when that count exceeds zero, emits
+`ACTION|route-writes-through-ledger.sh`, and reports
+`ledger-stamped(records=…/unstamped=0/structure=…)` when it is clean — the
+verdict rides in the RECONCILE line's `classes=` field exactly as the budget
+classes do, so the five-minute tick reports it either way. Its census MIRRORS
+the writer's own shape rule, so the two agree by construction. **It is a
+DETECTION and never a repair:** not one line is rewritten, back-dated,
+re-ordered or removed, and no future version may do so — rewriting a ledger's
+history is precisely what a ledger must never do, and a back-dated line is a
+worse artifact than a clockless one because it looks trustworthy. A run that
+finds old unstamped lines REPORTS them and leaves them standing. **The fix is
+the writer, never the file.** An absent ledger, or a census that could not run,
+is UNDETERMINED naming the path — never a silent zero and never a pass.
+
+At every wave
 boundary, at every cron/loop tick start, after every
 compaction, and before every dispatch, the conductor runs `tools/anchor.sh
 --mode reconcile` — the three-way reconciler (manifest ↔ native task graph ↔
