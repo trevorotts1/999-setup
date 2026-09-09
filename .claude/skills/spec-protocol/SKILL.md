@@ -279,7 +279,9 @@ The FIRST counted question is the mode question, in the interview file's own wor
 never re-asked; record `INTERVIEW-MODE: simple|advanced` through `tools/ledger.sh` BEFORE the next
 question. DEFAULT MODE is §3's whole list — the mode question, the target's Step 1d branch (asked in
 BOTH modes: the pages, the sign-in, the one action, the phone-store or window question, the hosting
-already owned), the six content-inventory questions, the artwork question, D1 (the example they
+already owned), the six content-inventory questions (whose FABRICATION-GUARD subset is offered the
+honest pair, never the draft, because those facts attribute something to a real third party —
+`references/build.md` section 6 owns the subset), the artwork question, D1 (the example they
 would be happy to match), D4 (what they specifically do not want), and the done-condition. ADVANCED
 MODE adds §4's five items and nothing else. Everything else is DECIDED and REPORTED as a statement
 in the recap, never asked: D2 is defaulted to "as good as", D3 is never asked, the screenshot tool
