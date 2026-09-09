@@ -33,6 +33,22 @@
 #   Exit 2 is never "no drift". A detector that cannot prove itself reports
 #   BROKEN INSTRUMENT. UNDETERMINED is a correct answer; a false all-clear is not.
 #
+# THE PRE-PLAN DEGRADATION (RC-19)
+#   The tick is armed at step 3, the moment CONTROL/ exists — but CHECKLIST.md
+#   and TODO.md are not written until the plan steps (13-16), and the step-6.5
+#   mark (a capacity-ledger line in CONTROL/LEDGER.md, or the CAPACITY-LEDGER.md
+#   file itself) does not land until step 6.5. BEFORE that mark, a missing plan
+#   file is the run's NORMAL early state, not a failure: the required-file gate
+#   returns the classes it can check at exit 0 and marks every class it could
+#   not run undetermined(pre-plan), naming each one. It never claims an
+#   all-clear it cannot prove, and it never reports a tooling failure for a
+#   file the run is not yet supposed to have. ONCE the mark exists, a missing
+#   plan file is a real failure again and the gate is exit 2 exactly as before
+#   — the discriminating case a blanket softening would break.
+#   (Note: the uppercase colon marker is never written by this script into any
+#   ledger line, or the phase test would find its own writing — the same trap
+#   the capacity-event detector documents below.)
+#
 # THE RECOVERY LADDER (references/anti-drift.md section 6)
 #   Exit 4 is the LAST rung, never the first. When the no-delta counter reaches
 #   N the script climbs, one rung per reconcile, and each rung is a thing the
@@ -795,12 +811,73 @@ run_anchor() {
     fi
   fi
 
-  # --- required inputs. A missing one is exit 2 NAMING THE PATH — never a verdict.
-  local missing=""
-  [[ -f "$GOAL" ]] || missing="${missing} ${GOAL}"
-  [[ -f "$CHK"  ]] || missing="${missing} ${CHK}"
-  [[ -f "$TODO" ]] || missing="${missing} ${TODO}"
+  # --- required inputs. A missing one is exit 2 NAMING THE PATH — never a
+  #     verdict — EXCEPT before the run has reached step 6.5 (RC-19): the tick
+  #     is armed at step 3, and CHECKLIST.md and TODO.md are not due until the
+  #     plan steps (13-16), so a missing plan file that early is the run's
+  #     normal state, not a tooling failure. The phase test is a
+  #     `CAPACITY-LEDGER` line in CONTROL/LEDGER.md (written at 6.5) OR the
+  #     CAPACITY-LEDGER.md file itself (SKILL.md step 6.5:
+  #     "write <project>/CAPACITY-LEDGER.md"). Two independent witnesses, and
+  #     EITHER one proves the plan phase has begun. The marker is matched in
+  #     the ledger only at line START or after a pipe field — the same
+  #     discipline as the CLAIM/CAPACITY-EVENT detectors above — so a prose
+  #     mention and this script's own OUTPUT lines can never satisfy the test.
+  #     After step 6.5 the missing files are a real failure and die_tool stands
+  #     exactly as written.
+  #
+  #     THE DEGRADED PATH (exit 0) proves both halves of the negative-result
+  #     contract: it names every class it could not run (never a silent skip),
+  #     and it never emits an S-CHECK-style verdict or the word "clean" — a
+  #     pre-plan tick that said violations=0 would be an all-clear it cannot
+  #     prove. The classes the plan DOES make checkable still run (the ledger
+  #     tick-counts and, in reconcile mode, the state-delta bookkeeping needs
+  #     the fingerprint file to exist, so it is initialised here); everything
+  #     that reads the plan files is marked undetermined(pre-plan), each one
+  #     NAMED, in the same style as budget-undetermined above.
+  local missing="" missing_names=""
+  [[ -f "$GOAL" ]] || { missing="${missing} ${GOAL}"; missing_names="${missing_names} SPEC/GOAL.md"; }
+  [[ -f "$CHK"  ]] || { missing="${missing} ${CHK}";  missing_names="${missing_names} CONTROL/CHECKLIST.md"; }
+  [[ -f "$TODO" ]] || { missing="${missing} ${TODO}"; missing_names="${missing_names} CONTROL/TODO.md"; }
   if [[ -n "$missing" ]]; then
+    local CAP_MARK_FOUND=0
+    if [[ -f "$LED" ]]; then
+      local cm_out cm_rc
+      set +e
+      cm_out="$("$GREP" -cE '(^|[|][[:space:]]*)CAPACITY-LEDGER:' "$LED" 2>&1)"; cm_rc=$?
+      set -e
+      if (( cm_rc >= 2 )); then die_tool "grep rc=${cm_rc} scanning ${LED} for the step-6.5 marker: ${cm_out}"; fi
+      [[ "$cm_out" =~ ^[0-9]+$ ]] || cm_out=0
+      (( cm_out > 0 )) && CAP_MARK_FOUND=1
+    fi
+    [[ -f "$HOME_DIR/CAPACITY-LEDGER.md" ]] && CAP_MARK_FOUND=1
+    if (( CAP_MARK_FOUND == 0 )); then
+      # --- PRE-PLAN: degrade, name every unchecked class, exit 0. Never a
+      #     verdict, never an all-clear, never a fake zero.
+      printf 'PRE-PLAN | required plan file(s) not yet written:%s\n' "$missing_names"
+      printf "PRE-PLAN | this is the run's NORMAL state before step 6.5: the tick is armed at step 3 but CHECKLIST.md and TODO.md are due at the plan steps (13-16). This is NOT an all-clear, NOT a clean verdict, and NOT a tooling failure — nothing about drift was determined.\n"
+      printf 'PRE-PLAN | undetermined(pre-plan): counts=undetermined(CHECKLIST.md absent — the checklist census was not run) | next=undetermined(TODO.md absent — the top-open-item read was not run) | unit-in-plan=undetermined(CHECKLIST.md and TODO.md absent — the plan-membership check was not run) | anchor-hash=undetermined(GOAL.md, CHECKLIST.md and/or TODO.md absent — the plan fingerprint was not computed) | classes 1-7=undetermined(CHECKLIST.md and/or TODO.md absent — the reconcile classes were not run)\n'
+      printf 'PRE-PLAN | checked instead: the ledger exists and its tick census ran (see the ledger= field of the line just written). Everything else is named above.\n'
+      local PP_LINE
+      PP_LINE="$(iso_now) | RECONCILE | anchor=n/a(pre-plan) | unit=${UNIT} | result=pre-plan | tasks=undetermined(no-snapshot) | counts=undetermined(pre-plan) | classes=undetermined(pre-plan: no CAPACITY-LEDGER line and no CAPACITY-LEDGER.md file, so the run has not reached step 6.5; plan files due at steps 13-16 are not yet written${missing_names}) | ledger=ticks-counted | intents=n/a | ticks=n/a | stateful-heartbeats=n/a | fp=n/a(pre-plan) | nodelta=n/a | rung=0/4 | age=first-anchor | next=undetermined(pre-plan: TODO.md not yet written)"
+      if [[ -f "$LED" ]]; then
+        # The census this line DOES prove: contentless ticks vs stateful lines.
+        local PP_CLS PP_TICKS PP_FULL
+        PP_CLS="$(classify_file "$LED")"
+        PP_TICKS="$(printf '%s' "$PP_CLS" | cut -d' ' -f1)"
+        PP_FULL="$(printf '%s' "$PP_CLS" | cut -d' ' -f2)"
+        PP_LINE="$(printf '%s' "$PP_LINE" | sed -e "s/| ticks=n\/a | stateful-heartbeats=n\/a |/| ticks=${PP_TICKS} | stateful-heartbeats=${PP_FULL} |/")"
+      fi
+      if [[ "$MODE" == "reconcile" ]]; then
+        if [[ ! -f "$FPFILE" ]]; then
+          printf 'fp=\ncount=0\nsince=%s\nts=%s\nbudget_advisory=0\nrecovery_rung=0\n' "$(iso_now)" "$(iso_now)" > "${FPFILE}.tmp.$$" 2>/dev/null \
+            && mv "${FPFILE}.tmp.$$" "$FPFILE" 2>/dev/null || true
+        fi
+      fi
+      ledger_write "CONTROL/LEDGER.md" "$PP_LINE"
+      printf '%s\n' "$PP_LINE"
+      exit 0
+    fi
     die_tool "required file(s) missing:${missing} (checked: SPEC/GOAL.md, CONTROL/CHECKLIST.md, CONTROL/TODO.md under ${HOME_DIR}). Not checked: the task snapshot and project state, because the run stopped here."
   fi
   local MAN_NOTE="present"
@@ -1879,10 +1956,13 @@ selftest() {
   if (( RC == 3 )) && "$GREP" -qE 'DRIFT-ALARM \| unit-not-in-plan' "$T/c2/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 2 "unit-not-in-plan" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | unit-not-in-plan present"
 
-  # --- case 3: a required file is missing
+  # --- case 3: a required file is missing AFTER step 6.5 (the CAPACITY-LEDGER.md
+  #     mark is present, so the pre-plan degradation of case 21 does not apply
+  #     and the gate stays exit 2)
   mkdir -p "$T/c3/SPEC" "$T/c3/CONTROL"
   printf 'Goal\n' > "$T/c3/SPEC/GOAL.md"
   printf -- '- [ ] U-01\n' > "$T/c3/CONTROL/CHECKLIST.md"
+  printf '# CAPACITY LEDGER — c3 — computed at step 6.5\n' > "$T/c3/CAPACITY-LEDGER.md"
   runa "$T/c3" "U-01"
   ok=0
   if (( RC == 2 )) && printf '%s' "$OUT" | "$GREP" -q 'CONTROL/TODO.md'; then ok=1; fi
@@ -2578,7 +2658,78 @@ EOF
   if (( ok20a == 1 && ok20b == 1 && ok20c == 1 && ok20d == 1 )); then ok=1; fi
   report 20 "ledger-unstamped" "$ok" \
     "3 clockless records among 6 records + 1 heading + 1 contentless tick: rc=${c20_rc} (want 3), DRIFT-ALARM | ledger-unstamped(n=3) written, classes and ACTION|route-writes-through-ledger.sh name it, and n is 3 not 5 (the heading and the tick are not records)=${ok20a}. CONTROL, the same shape fully stamped: rc=${c20_rc_ctl} (want 0), ledger-stamped(records=6/unstamped=0/structure=1), no alarm anywhere=${ok20b} — the pass/fail pair that proves this is a detector and not a siren. REPAIRS NOTHING: sha256 of the fixture's ${c20_fixn} pre-existing lines identical before and after=${ok20c} (before=${c20_sha_before%% *} after=${c20_sha_after%% *}); the file grew only by this script's own stamped DRIFT-ALARM and RECONCILE lines. NO SILENT BACKFILL: a second reconcile still reports n=3, rc=${c20_rc2}=${ok20d}"
-  printf 'SELFTEST COMPLETE | %s of 20 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- RC-19 (case 21): THE PRE-PLAN DEGRADATION and THE DISCRIMINATING CASE.
+  #     The tick is armed at step 3; CHECKLIST.md and TODO.md are not due until
+  #     the plan steps (13-16) and the step-6.5 capacity-ledger mark does not
+  #     exist yet. Before that mark a missing plan file is the run's NORMAL
+  #     early state — exit 0 with every unchecked class named
+  #     undetermined(pre-plan), never an all-clear. Once the mark exists (either
+  #     witness: a capacity-ledger line in CONTROL/LEDGER.md or the
+  #     CAPACITY-LEDGER.md file), the same missing files are a real failure and
+  #     die_tool stands. FOUR legs, because one leg alone cannot prove a phase
+  #     boundary:
+  #       a  pre-plan project (no CHECKLIST/TODO, no mark) -> rc 0, PRE-PLAN
+  #          lines, undetermined(pre-plan) named, and NO clean verdict;
+  #       b  THE DISCRIMINATOR — the SAME missing files with CAPACITY-LEDGER.md
+  #          present -> rc 2, the original die_tool message unchanged;
+  #       c  the second witness — the mark as a LEDGER LINE (no ledger file)
+  #          -> rc 2 as well, so either witness arms the strict gate;
+  #       d  the healthy control — a full plan project -> rc 0 WITH a
+  #          RE-ANCHOR verdict line, proving leg (a)'s silence is the phase,
+  #          not a broken writer. A blanket softening passes (a) and fails (b).
+  #--------------------------------------------------------------------------
+  local pp21a=0 pp21b=0 pp21c=0 pp21d=0 rc21a rc21b rc21c rc21d
+  # (a) THE PRE-PLAN PROJECT. mk_home without the plan files: GOAL.md only.
+  mkdir -p "$T/c21a/SPEC" "$T/c21a/CONTROL"
+  printf 'Goal: build the thing.\n' > "$T/c21a/SPEC/GOAL.md"
+  runa "$T/c21a" "IDLE" --mode reconcile
+  rc21a="$RC"
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'PRE-PLAN | required plan file(s) not yet written' \
+     && printf '%s' "$OUT" | "$GREP" -q 'undetermined(pre-plan)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'CONTROL/CHECKLIST.md' \
+     && printf '%s' "$OUT" | "$GREP" -q 'CONTROL/TODO.md' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'result=clean' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'violations=' \
+     && "$GREP" -q '| result=pre-plan |' "$T/c21a/CONTROL/LEDGER.md" 2>/dev/null; then pp21a=1; fi
+  # (a2) EVERY missing file is NAMED — take GOAL.md away as well and its name
+  #      must appear in the PRE-PLAN list with the other two.
+  mkdir -p "$T/c21a2/SPEC" "$T/c21a2/CONTROL"
+  runa "$T/c21a2" "IDLE" --mode reconcile
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'required plan file(s) not yet written:.*SPEC/GOAL.md CONTROL/CHECKLIST.md CONTROL/TODO.md' \
+     && printf '%s' "$OUT" | "$GREP" -q 'anchor-hash=undetermined'; then pp21a=1; fi
+  # (b) THE DISCRIMINATING CASE — same missing files, the step-6.5 FILE present.
+  mkdir -p "$T/c21b/SPEC" "$T/c21b/CONTROL"
+  printf 'Goal: build the thing.\n' > "$T/c21b/SPEC/GOAL.md"
+  printf '# CAPACITY LEDGER — c21b — computed at step 6.5\n' > "$T/c21b/CAPACITY-LEDGER.md"
+  runa "$T/c21b" "IDLE" --mode reconcile
+  rc21b="$RC"
+  if (( RC == 2 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'TOOLING FAILURE (exit 2): required file(s) missing' \
+     && printf '%s' "$OUT" | "$GREP" -q 'Not checked: the task snapshot and project state, because the run stopped here'; then pp21b=1; fi
+  # (c) THE SECOND WITNESS — the mark as a ledger LINE, no ledger file.
+  mkdir -p "$T/c21c/SPEC" "$T/c21c/CONTROL"
+  printf 'Goal: build the thing.\n' > "$T/c21c/SPEC/GOAL.md"
+  printf '2026-09-09T00:00:00Z | CAPACITY-LEDGER: computed at step 6.5\n' > "$T/c21c/CONTROL/LEDGER.md"
+  runa "$T/c21c" "IDLE" --mode reconcile
+  rc21c="$RC"
+  if (( RC == 2 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'TOOLING FAILURE (exit 2): required file(s) missing'; then pp21c=1; fi
+  # (d) THE HEALTHY CONTROL — the full plan, no mark needed: the normal rc 0
+  #     path WITH its verdict line, the thing leg (a) must never fabricate.
+  mk_home "$T/c21d"
+  runa "$T/c21d" "IDLE"
+  rc21d="$RC"
+  if (( RC == 0 )) \
+     && "$GREP" -qE '\| RE-ANCHOR \|' "$T/c21d/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'PRE-PLAN'; then pp21d=1; fi
+  ok=0
+  if (( pp21a == 1 && pp21b == 1 && pp21c == 1 && pp21d == 1 )); then ok=1; fi
+  report 21 "pre-plan-degradation" "$ok" \
+    "pre-plan project (no CHECKLIST/TODO, no step-6.5 mark): rc=${rc21a} (want 0), PRE-PLAN lines name every unchecked class undetermined(pre-plan), NO clean verdict, NO violations count, ledger line result=pre-plan=${pp21a}. THE DISCRIMINATOR, the same missing files with CAPACITY-LEDGER.md present: rc=${rc21b} (want 2), the original die_tool message unchanged=${pp21b}. Second witness, the mark as a ledger LINE: rc=${rc21c} (want 2)=${pp21c}. Healthy control, full plan: rc=${rc21d} (want 0) WITH a RE-ANCHOR verdict and no PRE-PLAN lines=${pp21d} — leg (a)'s silence is the phase, not a broken writer."
+  printf 'SELFTEST COMPLETE | %s of 21 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }
