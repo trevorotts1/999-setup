@@ -231,12 +231,21 @@ one if none is found, then prove it by actually running it. A visual bar with
 no working capture tool discovered at review time blocks every visual unit at
 once; fixing that now, once, is cheaper than discovering it per unit later.
 
+**Every capture lands under `<project>/captures/`, never the session working
+directory.** `<project>` is the project folder step 3 created
+(`~/Downloads/projects/<slug>/`); resolve every capture output path from it,
+never from `$PWD` and never from a bare relative name. A capture file found
+outside the project folder is a defect the run REPORTS through the tick —
+never a file it tidies away by moving.
+
 **Step 1 — detect, by real execution, never by name resolution, and never in
 a way that can itself download or hang.**
 
 1. Check whether a Playwright MCP tool is present in this session's tool list.
    If present, that answers it — DEFAULT capture tool (`references/gauntlet.md`,
-   Section 4). Stop here.
+   Section 4). Set its output directory explicitly to `<project>/captures/`
+   before the first capture, so it never defaults to the session working
+   directory. Stop here.
 2. Otherwise run, foreground, with a timeout, capturing stdout/stderr and the
    exit code:
    ```
@@ -283,10 +292,11 @@ proven — never silently skip, never pass unproven. D3 unasked (older project)
    successfully while the browser binaries are still absent or broken; only an
    actual screenshot proves the capability Gate 3 needs. Run:
    ```
-   npx playwright screenshot --viewport-size=800,600 "data:text/html,<h1>probe</h1>" <scratch>/capture-probe.png
+   npx playwright screenshot --viewport-size=800,600 "data:text/html,<h1>probe</h1>" <project>/captures/capture-probe.png
    ```
    then assert the output file exists AND is non-empty (e.g. `[ -s
-   <scratch>/capture-probe.png ]`). **This — a real probe screenshot landing a
+   <project>/captures/capture-probe.png ]`). `<project>` is the project folder,
+   never the session working directory (see above). **This — a real probe screenshot landing a
    non-empty file — is the ONLY acceptable proof that the capture tool works.**
    A version string is not this proof: browsers can be absent while `npx
    playwright --version` still prints cleanly. Exit 0 with the file present and

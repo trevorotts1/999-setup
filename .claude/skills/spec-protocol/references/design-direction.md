@@ -33,7 +33,8 @@ plus the page map — never a live URL); the `uipro` design-system candidates
 FUNNEL) or the primary screen (all four app targets — see the target table in
 `references/design-brief.md` section 2), each with **placeholder images** at
 the exact pixel sizes the layout reserves; **screenshots of each variant at
-375, 1024, and 1440**, written to `captures/design-direction/variant-<n>/`; one
+375, 1024, and 1440**, written to `<project>/captures/design-direction/variant-<n>/`
+(resolved from the project folder, never the session working directory); one
 blind panel score per variant against the frozen bar package; exactly one
 variant locked.
 

@@ -112,6 +112,9 @@ string). If none is found, install one: `npx playwright install chromium` and
 prove the install with a real probe screenshot. Only if installation genuinely
 fails does this fall back to reporting the gap and its consequence for visual
 bars — install-then-prove, never detect-and-warn when installing is possible.
+Every capture writes under `<project>/captures/`
+(`references/environment-sweep.md`) — resolved from the project folder, never
+the session working directory.
 
 ### Slice the spec (Law 5)
 

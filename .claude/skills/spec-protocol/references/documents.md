@@ -737,7 +737,8 @@ not count against the closed seventeen and never need the added-document ask:
   and its writer is the orchestrator.
 - **captures/** — the Gauntlet's evidence artifacts (screenshots, diffs, and other
   binary capture output from the capture tooling — `references/gauntlet.md`
-  Section 4). One subfolder per unit, `captures/<unit-id>/`, e.g.
+  Section 4), always `<project>/captures/` under the project folder, never the
+  session working directory. One subfolder per unit, `captures/<unit-id>/`, e.g.
   `captures/gym-04/ours-desktop-c2.png`. RATIFIED as INFRASTRUCTURE, not one of
   the seventeen documents — PNGs and other binaries cannot live inside the markdown
   ledger that Law 39 folds evidence into (document 6), so the ledger and the

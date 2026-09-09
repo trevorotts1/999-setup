@@ -71,7 +71,8 @@ a FAIL, never a skip.
 
 Run them against that served address, page by page (`<url>` is the page's live
 served URL, `<page>` its brief page name). Every command writes JSON; the judge
-reads the JSON, not the terminal.
+reads the JSON, not the terminal. Every relative report path below resolves
+from the project folder, never the session working directory.
 
 | # | Instrument | Command | JSON report | Threshold |
 |---|---|---|---|---|
@@ -79,7 +80,7 @@ reads the JSON, not the terminal.
 | 2 | axe-core | `npx -y @axe-core/cli "<url>" --exit --save ship-checks/axe-<page>.json` | `ship-checks/axe-<page>.json` | **zero** `violations[]` entries whose `impact` is `critical` or `serious`; `moderate` and `minor` are recorded, not gating |
 | 3 | HTML meta checker | the capture tool fetches each page's HTML plus `/sitemap.xml`, `/robots.txt`, the favicon URL and one deliberately absent path, and writes the field table below | `ship-checks/meta.json` | **every field true for every page** (the eight fields in 2.1) |
 | 4 | Link crawler | `npx -y linkinator "<url>" --recurse --format json --silent > ship-checks/links.json` | `ship-checks/links.json` | **zero** links with `state: "BROKEN"` — zero 4xx and zero 5xx, internal or external |
-| 5 | Playwright console capture | a Playwright pass over every page that records `console` messages of type `error` and every `pageerror`, then repeats the pass while walking the page's primary interaction | `ship-checks/console.json` | **zero** errors; warnings are recorded and do not gate |
+| 5 | Playwright console capture | a Playwright pass over every page that records `console` messages of type `error` and every `pageerror`, then repeats the pass while walking the page's primary interaction; every capture it writes lands under `<project>/captures/` (`references/environment-sweep.md`) | `ship-checks/console.json` | **zero** errors; warnings are recorded and do not gate |
 | 6 | Form probe | one real submission per form, proven to arrive at its `FORM-DESTINATION`, then deleted and the deletion proven (2.2) | `ship-checks/form-probe.json` | **every** form row `arrived=true` AND `deleted=true`, each with its proof command and output; an unprovable arrival is UNDETERMINED and fails |
 | 7 | Analytics | the same Playwright pass records the network log and filters it to the tracking plan's named endpoint | `ship-checks/analytics.json` | **at least one** request per page to the named analytics endpoint, with a 2xx or 204 response; a tag that never fires is a FAIL |
 | 8 | `FILL-FROM-BRIEF` census | `/usr/bin/grep -rc -- 'FILL-FROM-BRIEF' <build-dir>` over the built output AND over every served HTML/CSS/JS asset fetched from that served address | `ship-checks/token-census.json` | **0** occurrences — a shipped scaffold token (`templates/scaffolding/colors.css`) is a defect, not a placeholder |
