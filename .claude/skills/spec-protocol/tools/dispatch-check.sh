@@ -4,6 +4,14 @@
 # Usage:
 #   dispatch-check.sh <project> <units> <agents> <label> [dep=<reason>] [stages=<n>]
 #                     [unit=<work item>] [phase=<word>] [run=<run id>] [cite=<text>]
+#                     [model=<role>] [plan=<one line>]
+#   model= and plan= feed the CLAIM line this gate writes for every dispatch
+#   it books (RC-29c): `<ts> | CLAIM | unit=<unit> | agent=<label> | model=<role>
+#   | plan=<plan>`. Defaults are READ off the dispatch, never invented — the
+#   model is the bracket head of the label (`[<model> x<N>]`), the plan is the
+#   label with that bracket stripped. Pass plan= to state the unit's intent
+#   when the label alone does not say it; that intent is what class 5 reads
+#   through CONTROL/last-intents.txt.
 #   run= is OPTIONAL. With no run= this gate MINTS wf-<phase>-<NN> itself, from
 #   phase= (or the phase word in the label or unit) and CONTROL/.run-counter.
 #   dispatch-check.sh --selftest
@@ -852,7 +860,7 @@ run_check() {
   # run_id starts EMPTY, not "pending": an empty id is the signal to MINT one
   # below (RC-23a). "pending" survives only as the phase NAME a minted id carries
   # when no phase can be determined, and it is never a run id in its own right.
-  local dep="" stages="${DISPATCH_STAGES:-${DEFAULT_STAGES}}" unit="" run_id="" phase="" cite=""
+  local dep="" stages="${DISPATCH_STAGES:-${DEFAULT_STAGES}}" unit="" run_id="" phase="" cite="" model="" plan=""
   local a
   for a in "$@"; do
     case "${a}" in
@@ -862,7 +870,9 @@ run_check() {
       phase=*)  phase="${a#phase=}" ;;
       cite=*)   cite="${a#cite=}" ;;
       run=*)    run_id="${a#run=}" ;;
-      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, phase=, run=, cite=" ;;
+      model=*)  model="${a#model=}" ;;
+      plan=*)   plan="${a#plan=}" ;;
+      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, phase=, run=, cite=, model=, plan=" ;;
     esac
   done
 
@@ -1073,6 +1083,41 @@ run_check() {
     fi
     tooling "ledger.sh failed (rc=${rc}) writing CONTROL/dispatch-log.md: ${out}"
   fi
+
+  # --- THE CLAIM (RC-29c). Every booked dispatch writes the anti-drift
+  #     contract's before-write for its unit, which feeds CONTROL/last-intents.txt
+  #     through the writer that already exists in tools/ledger.sh (class 5's
+  #     only input). No new file, no new shape: the line is anti-drift.md
+  #     section 8's CLAIM shape verbatim. model= and plan= default off the
+  #     dispatch itself — the bracket head of the label, and the label with
+  #     that bracket stripped — so a caller that passes neither still writes a
+  #     shaped line. The write rides AFTER the dispatch-log row: a refused
+  #     dispatch books nothing and claims nothing. A CLAIM that cannot be
+  #     written never fails the booking — the row above already landed, and a
+  #     store that reports failure for work it did is the defect ledger.sh's
+  #     verification was rebuilt to stop reporting. It says so on stderr.
+  {
+    local claim_model="${model}" claim_plan="${plan}" claim_agent claim_unit
+    if [[ -z "$claim_model" ]]; then
+      claim_model="$(printf '%s' "${label}" | sed -n 's/^[[:space:]]*\[\([^]]*\)\].*/\1/p' | sed -n 's/^\([A-Za-z0-9.-]*\)[[:space:]].*/\1/p' | head -n 1)"
+      [[ -n "$claim_model" ]] || claim_model="unlabelled"
+    fi
+    if [[ -z "$claim_plan" ]]; then
+      claim_plan="$(printf '%s' "${label}" | sed -e 's/^[[:space:]]*\[[^]]*\][[:space:]]*//' | tr -d '\n\r' | tr '|' '/' | cut -c1-160)"
+      [[ -n "$claim_plan" ]] || claim_plan="${label}"
+    fi
+    claim_plan="$(printf '%s' "$claim_plan" | tr -d '\n\r' | tr '|' '/' | cut -c1-160)"
+    claim_agent="$(printf '%s' "${label}" | tr -d '\n\r' | tr '|' '/' | cut -c1-160)"
+    claim_unit="$(printf '%s' "${unit}" | tr -d '\n\r' | tr '|' '/' | cut -c1-160)"
+    local claim_line claim_out claim_rc
+    claim_line="$(date -u +%Y-%m-%dT%H:%M:%SZ) | CLAIM | unit=${claim_unit} | agent=${claim_agent} | model=${claim_model} | plan=${claim_plan}"
+    set +e
+    claim_out="$("${LEDGER_SH}" "${project}" "CONTROL/LEDGER.md" "${claim_line}" 2>&1)"; claim_rc=$?
+    set -e
+    if (( claim_rc != 0 )); then
+      printf 'DISPATCH-CHECK WARNING | booked the dispatch row but could not write its CLAIM line (rc=%s: %s) — reconcile class 7 will report this unit unpaired until the claim is written; the booking stands\n' "${claim_rc}" "${claim_out}" >&2
+    fi
+  }
 
   # The override goes on the PASS line too, not only on the refusal. A dispatch
   # that was licensed against an operator-moved pause line must say so where the
@@ -1633,9 +1678,42 @@ run_selftest() {
   ok=0; [[ "${all_rows}" == "${agents_rows}" ]] && (( all_rows >= 4 )) && ok=1
   report 43 "every-row-carries-agents" "${ok}" "${mlog}: ${all_rows} timestamped rows, ${agents_rows} carrying agents= (want equal, and at least 4 rows so the equality is not vacuous)"
 
+  # --- 26: THE CLAIM (RC-29c). One booked dispatch appends exactly one line
+  #     to CONTROL/last-intents.txt — through the writer that already exists
+  #     in tools/ledger.sh, not a new mechanism. The count before and after
+  #     is the discrimination: a gate that books without claiming passes every
+  #     case above and fails here.
+  local P18="${T}/proj-claim"
+  mkdir -p "${P18}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P18}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P18}/CONTROL/EXECUTION-PLAN.md"
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=1 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P18}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P18}/CONTROL/LEDGER.md"
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' >> "${P18}/CONTROL/LEDGER.md"
+  write_state "${P18}/CONTROL/project_state.json" 0 200 0 2000
+  local int_before int_after int_last
+  if [[ -f "${P18}/CONTROL/last-intents.txt" ]]; then
+    int_before="$(wc -l < "${P18}/CONTROL/last-intents.txt" | tr -d ' ')"
+  else
+    int_before="0"
+  fi
+  out="$(bash "${SELF}" "${P18}" 1 1 '[Opus x1] build unit-9' 'plan=land the parser' 2>&1)"; rc=$?
+  if [[ -f "${P18}/CONTROL/last-intents.txt" ]]; then
+    int_after="$(wc -l < "${P18}/CONTROL/last-intents.txt" | tr -d ' ')"
+  else
+    int_after="0"
+  fi
+  int_last="$(tail -n 1 "${P18}/CONTROL/last-intents.txt" 2>/dev/null || true)"
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  [[ "${int_before}" == "0" ]] || ok=0
+  [[ "${int_after}" == "1" ]] || ok=0
+  [[ "${int_last}" == "land the parser" ]] || ok=0
+  "${GREP}" -qE '\| CLAIM \| unit=1-units \| agent=\[Opus x1\] build unit-9 \| model=Opus \| plan=land the parser' "${P18}/CONTROL/LEDGER.md" 2>/dev/null || ok=0
+  report 44 "claim-feeds-last-intents" "${ok}" "rc=${rc} (want 0); CONTROL/last-intents.txt ${int_before} -> ${int_after} lines (want 0 -> 1) with last line [${int_last}] (want [land the parser]); the ledger carries the shaped CLAIM line for unit=1-units"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (44 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (45 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"
