@@ -33,6 +33,7 @@
 #   gate0.sh <project> --record <signal>    record a genuine pass by signal 1 or 2
 #   gate0.sh --check <project>              same, flags first
 #   gate0.sh --record <signal> <project>    same, flags first
+#   gate0.sh --open <dir>                   first-turn engagement marker (RC-16)
 #   gate0.sh --selftest                     prove the instrument, then exit
 #
 # `--record` writes the marker AND one line through tools/ledger.sh:
@@ -41,14 +42,35 @@
 # and gets no second ledger line, so "one GATE0 line per project" holds across
 # every resumed turn.
 #
+# THE ENGAGEMENT MARKER — <dir>/.spec-protocol-opened-<ISO8601Z>, zero bytes.
+#
+# `--open <dir>` is the FIRST action of step 3, before the opening script is spoken
+# (SKILL.md section 3). It answers the one question nothing else could: did this
+# skill engage AT ALL on turn 1? A turn where the skill never engages produces no
+# project folder, no ledger, no GATE 0 pass and no GATE 0 refusal — a silent no-op
+# every downstream check reads as a run that merely started later. The marker is
+# written into the SESSION working directory it is handed: never a project folder
+# (none exists yet at that instant), never anywhere under $HOME.
+#
+# It is written ONLY when that same folder already carries a believable signal-3
+# marker — the one `--record` wrote. There is no second source of truth: `--open`
+# asks `--check`'s own logic and writes nothing when the answer is anything but a
+# pass. It is idempotent, so one launch directory carries exactly one marker
+# however many turns call it, and it writes no ledger line (at step 3 there is no
+# ledger yet). See EXIT CODES 0 and 2 below for the `--open` half of the contract.
+#
 # EXIT CODES
-#   0 — PASS: the marker is present and well formed (--check), or recorded (--record)
+#   0 — PASS: the marker is present and well formed (--check), or recorded (--record),
+#       or the engagement marker was written or was already there (--open; path on stdout)
 #   1 — NO MARKER: this project folder carries no signal 3. Not an error — it is the
 #       answer a fresh project must give, and the caller falls through to the refusal
 #       only when signals 1 and 2 also failed.
 #   2 — UNDETERMINED: a marker that cannot be believed (malformed, unreadable, or
 #       naming another project), or an instrument failure (bad usage, unwritable
 #       folder). NEVER a pass — a broken checker is a fact about the checker.
+#       For `--open` it also covers "no genuine pass is recorded here", and NOTHING
+#       is written: an engagement marker on a failed gate would let a canary read a
+#       silent no-op as a success, which is the whole failure RC-16 exists to catch.
 #   3 — REFUSED: `--record` was given a signal name other than `reminder` or
 #       `keyword`. Only a signal the gate actually tests may be recorded as one, and
 #       nothing is written.
@@ -192,6 +214,47 @@ do_record() {
 }
 
 # ============================================================================
+# --open — the first-turn engagement marker (RC-16): proof the skill engaged
+# ============================================================================
+do_open() {
+  local dir="$1" slug sig ts marker existing f out
+  slug="$(slug_of "${dir}")"
+
+  # The ONE authority is the pass `--record` already wrote into this same folder.
+  # do_check runs in a command substitution — a subshell — so its own `exit 2`
+  # cannot end this script, and BOTH of its negatives mean the same thing here:
+  # rc 1 (no marker) and rc 2 (a marker that cannot be believed) are alike "nothing
+  # was proven", so nothing is written and the caller is told which folder it asked.
+  if ! out="$(do_check "${dir}" 2>/dev/null)"; then
+    echo "GATE0 OPEN | dir=${slug} | verdict=NO-RECORDED-PASS | marker=NOT-WRITTEN | reason=${dir%/}/${MARKER_REL} does not record a genuine GATE 0 pass" >&2
+    exit 2
+  fi
+  sig="$(field "${dir%/}/${MARKER_REL}" signal)"
+
+  # Idempotent: one launch directory carries exactly ONE marker, however many turns
+  # call --open, so the canary's census can never read one engagement as several.
+  existing=""
+  for f in "${dir%/}"/.spec-protocol-opened-*; do
+    [ -e "${f}" ] || continue
+    existing="${f}"
+    break
+  done
+  if [ -n "${existing}" ]; then
+    echo "GATE0 OPEN | dir=${slug} | verdict=ALREADY | via=${sig} | marker=${existing}"
+    return 0
+  fi
+
+  [ -w "${dir%/}" ] || undetermined "${dir%/} is not writable — the engagement marker could not be written"
+  ts="$(iso_now)"
+  printf '%s' "${ts}" | "${GGREP}" -qE "${ISO_RE}" \
+    || undetermined "date -u produced '${ts}', which is not an ISO8601Z timestamp — the marker name would be unparseable"
+  marker="${dir%/}/.spec-protocol-opened-${ts}"
+  : > "${marker}" 2>/dev/null || undetermined "could not write ${marker}"
+  echo "GATE0 OPEN | dir=${slug} | verdict=OPENED | via=${sig} | recorded=${ts} | marker=${marker}"
+  return 0
+}
+
+# ============================================================================
 # --selftest — the instrument proves itself, on fixtures, before anyone trusts it
 # ============================================================================
 ST_FAILS=0
@@ -277,6 +340,29 @@ selftest() {
   fi
   rm -f "${C}/${MARKER_REL}"
 
+  # ---- FIXTURE 5: --open after a genuine pass writes ONE zero-byte marker ------
+  local nopen stamp
+  out="$("${SELF}" --open "${A}" 2>&1)"; rc=$?
+  nopen="$(ls -a1 "${A}" 2>/dev/null | "${GGREP}" -c '^\.spec-protocol-opened-')"
+  [ -n "${nopen}" ] || nopen=0
+  stamp="$(ls -a1 "${A}" 2>/dev/null | "${GGREP}" '^\.spec-protocol-opened-' | head -1 | sed 's/^\.spec-protocol-opened-//')"
+  if [ "${rc}" = "0" ] && [ "${nopen}" = "1" ] && [ ! -s "${A}/.spec-protocol-opened-${stamp}" ] \
+     && printf '%s' "${stamp}" | "${GGREP}" -qE "${ISO_RE}"; then
+    st_ok "FIXTURE 5 open-after-pass | rc=0 | exactly 1 marker, zero bytes | .spec-protocol-opened-${stamp} parses as ISO8601Z"
+  else
+    st_bad "FIXTURE 5 open-after-pass | rc=${rc} (want 0) markers=${nopen} (want 1) stamp='${stamp}' | ${out}"
+  fi
+
+  # ---- FIXTURE 5b (THE DISCRIMINATING ONE): no recorded pass, nothing written --
+  out="$("${SELF}" --open "${B}" 2>&1)"; rc=$?
+  nopen="$(ls -a1 "${B}" 2>/dev/null | "${GGREP}" -c '^\.spec-protocol-opened-')"
+  [ -n "${nopen}" ] || nopen=0
+  if [ "${rc}" = "2" ] && [ "${nopen}" = "0" ]; then
+    st_ok "FIXTURE 5b open-without-pass | rc=2 and 0 markers in ${B} — a marker on a FAILED gate would let the canary read a silent no-op as a success"
+  else
+    st_bad "FIXTURE 5b open-without-pass | rc=${rc} (want 2) markers=${nopen} (want 0) | ${out}"
+  fi
+
   # ---- the refusal: only a signal the gate tests may be recorded as one --------
   out="$("${SELF}" "${C}" --record ultracode 2>&1)"; rc=$?
   if [ "${rc}" = "3" ] && [ ! -e "${C}/${MARKER_REL}" ]; then
@@ -310,7 +396,7 @@ selftest() {
                     || st_bad "USAGE no-arguments | rc=${rc} (want 2) | ${out}"
 
   if [ "${ST_FAILS}" -eq 0 ]; then
-    echo "SELFTEST PASS | 4 fixtures (marker-absent, record+ledger, cross-project, malformed) + 8 supporting checks | marker=${MARKER_REL}"
+    echo "SELFTEST PASS | 5 fixtures (marker-absent, record+ledger, cross-project, malformed, first-turn-open) + 9 supporting checks | marker=${MARKER_REL} | open=.spec-protocol-opened-<ISO8601Z>"
     exit 0
   fi
   echo "SELFTEST FAILED | ${ST_FAILS} check(s) failed — this checker may not be believed" >&2
@@ -328,20 +414,22 @@ SIGNAL=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --check)    MODE="check" ;;
+    --open)     MODE="open" ;;
     --record)   MODE="record"; shift; SIGNAL="${1:-}"
                 [ -n "${SIGNAL}" ] || undetermined "--record needs a signal name (${VALID_SIGNALS})" ;;
     --selftest) selftest ;;
-    -*)         undetermined "unknown option '$1' (usage: gate0.sh <project> --check | <project> --record <signal> | --selftest)" ;;
+    -*)         undetermined "unknown option '$1' (usage: gate0.sh <project> --check | <project> --record <signal> | --open <dir> | --selftest)" ;;
     *)          [ -z "${PROJECT}" ] || undetermined "two project paths given ('${PROJECT}' and '$1')"
                 PROJECT="$1" ;;
   esac
   shift
 done
 
-[ -n "${MODE}" ]    || undetermined "no mode given (usage: gate0.sh <project> --check | <project> --record <signal> | --selftest)"
+[ -n "${MODE}" ]    || undetermined "no mode given (usage: gate0.sh <project> --check | <project> --record <signal> | --open <dir> | --selftest)"
 [ -n "${PROJECT}" ] || undetermined "no project folder given — GATE 0's signal 3 is per project folder and cannot be answered without one"
 
 case "${MODE}" in
   check)  do_check  "${PROJECT}" ;;
   record) do_record "${PROJECT}" "${SIGNAL}" ;;
+  open)   do_open   "${PROJECT}" ;;
 esac
