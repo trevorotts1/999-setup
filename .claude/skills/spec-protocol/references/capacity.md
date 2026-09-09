@@ -757,7 +757,9 @@ Three constraints:
 - **A fallback does not add an agent to the ceiling** (Rule 3.35 clause 2). It
   is the same agent served elsewhere.
 - **Every use of a fallback is recorded** — which item, which role, which
-  model actually ran — on the tracker and in the unit's verdict.
+  model actually ran — on the tracker and in the unit's verdict, in this
+  mechanical form, written through `tools/ledger.sh` before the re-dispatch:
+  `SEAT-FALLBACK: role=<role> primary=<label> status=<code> substitute=<label> source=execution-plan-fallback-table`.
 
 The question this table answers: when the provider serving your judges refuses
 a request at two in the morning, what happens? The acceptable answers are "the
