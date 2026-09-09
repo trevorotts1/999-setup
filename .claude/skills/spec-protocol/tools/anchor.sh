@@ -370,10 +370,12 @@ classify_line() {  # classify_line <line> -> TICK | TICK-CONTENTFUL | STATE
 }
 classify_file() {  # classify_file <file> -> "<contentless> <contentful> <state>"
   if [[ ! -f "$1" ]]; then printf '0 0 0\n'; return 0; fi
+  if [[ ! -r "$1" ]]; then return 1; fi
   "$AWK" -v M1="$TICK_M1" -v M2="$TICK_M2" -v MODE=count "$AWK_CLASSIFY" "$1"
 }
 state_lines() {  # state_lines <file> -> every line that is not a contentless tick
   [[ -f "$1" ]] || return 0
+  [[ -r "$1" ]] || return 1
   "$AWK" -v M1="$TICK_M1" -v M2="$TICK_M2" -v MODE=state "$AWK_CLASSIFY" "$1"
 }
 
@@ -421,6 +423,7 @@ END { printf "%d %d %d %d\n", rec+0, ok+0, un+0, st+0 }
 ledger_stamp_census() {
   [[ -n "$AWK" && -x "$AWK" ]] || return 1
   [[ -f "$1" ]] || return 1
+  [[ -r "$1" ]] || return 1
   local sf="$WORKDIR/ledger.nontick.txt"
   state_lines "$1" > "$sf" 2>/dev/null || return 1
   [[ -f "$sf" ]] || return 1
@@ -437,6 +440,7 @@ ledger_stamp_census() {
 # to exist.
 ledger.cmd() {
   [[ -f "$1" ]] || return 0
+  [[ -r "$1" ]] || return 0
   "$AWK" -v MR="$2" -v UR="$3" '
     $0 ~ MR {
       u = ""
@@ -950,7 +954,7 @@ run_anchor() {
   # the contentful heartbeats, which are the required behaviour and are never
   # reported as drift.
   local TICKS=0 TICKS_FULL=0 CLS
-  if [[ -f "$LED" ]]; then
+  if [[ -f "$LED" && -r "$LED" ]]; then
     CLS="$(classify_file "$LED")"
     TICKS="$(printf '%s' "$CLS" | cut -d' ' -f1)"
     TICKS_FULL="$(printf '%s' "$CLS" | cut -d' ' -f2)"
@@ -1083,6 +1087,32 @@ run_anchor() {
     return 0
   }
 
+  # ga_row_units <run-id> <dispatch-log> <ledger> -> the wave's RESULT-free
+  # units, one per line. Membership is the whole-token rule watch-tick.sh's
+  # ga_row_for uses: a wave row books many units in field 2, so a unit belongs
+  # to the row when it appears as a whole token anywhere in that row. Units
+  # that already carry a RESULT line are done, not lost — rung 1 re-books the
+  # lost, never the landed. Prints NOTHING when the row names no lost unit.
+  ga_row_units() {
+    local want="$1" dl="$2" led="$3" line units u resulted
+    [[ -n "$want" && -f "$dl" ]] || return 0
+    line=""; units=""
+    while IFS= read -r line; do
+      case "$line" in *"run=${want} "*|*"run=${want}") units="$line" ;; esac
+    done < "$dl"
+    [[ -n "${units:-}" ]] || return 0
+    resulted="$(ledger.cmd "$led" "$LEDGER_RESULT_RE" "$LEDGER_UNIT_RE" 2>/dev/null || true)"
+    {
+      printf '%s\n' "$units" | tr '|' '\n' | tr ' ' '\n' | sed -n 's/^unit=//p'
+      printf '%s\n' "$units" | cut -d'|' -f2 | tr ' ' '\n' | "$GREP" -E '^[A-Za-z]+-[0-9]+$' || true
+    } | LC_ALL=C sort -u | "$GREP" -v '^[[:space:]]*$' | while IFS= read -r u; do
+      [[ -n "$u" ]] || continue
+      if printf '%s\n' "$resulted" | "$GREP" -qxF -- "$u" 2>/dev/null; then continue; fi
+      printf '%s\n' "$u"
+    done
+    return 0
+  }
+
   #--------------------------------------------------------------------------
   # THE RECOVERY LADDER's two inputs (references/anti-drift.md section 6).
   #--------------------------------------------------------------------------
@@ -1113,32 +1143,6 @@ run_anchor() {
              <(printf '%s\n' "$resulted"   | "$GREP" -v '^[[:space:]]*$' | LC_ALL=C sort -u)
     return 0
   }
-  # ga_row_units <run-id> <dispatch-log> <ledger> -> the wave's RESULT-free
-  # units, one per line. Membership is the whole-token rule watch-tick.sh's
-  # ga_row_for uses: a wave row books many units in field 2, so a unit belongs
-  # to the row when it appears as a whole token anywhere in that row. Units
-  # that already carry a RESULT line are done, not lost — rung 1 re-books the
-  # lost, never the landed. Prints NOTHING when the row names no lost unit.
-  ga_row_units() {
-    local want="$1" dl="$2" led="$3" line units u resulted
-    [[ -n "$want" && -f "$dl" ]] || return 0
-    line=""; units=""
-    while IFS= read -r line; do
-      case "$line" in *"run=${want} "*|*"run=${want}") units="$line" ;; esac
-    done < "$dl"
-    [[ -n "${units:-}" ]] || return 0
-    resulted="$(ledger.cmd "$led" "$LEDGER_RESULT_RE" "$LEDGER_UNIT_RE" 2>/dev/null || true)"
-    {
-      printf '%s\n' "$units" | tr '|' '\n' | tr ' ' '\n' | sed -n 's/^unit=//p'
-      printf '%s\n' "$units" | cut -d'|' -f2 | tr ' ' '\n' | "$GREP" -E '^[A-Za-z]+-[0-9]+$' || true
-    } | LC_ALL=C sort -u | "$GREP" -v '^[[:space:]]*$' | while IFS= read -r u; do
-      [[ -n "$u" ]] || continue
-      if printf '%s\n' "$resulted" | "$GREP" -qxF -- "$u" 2>/dev/null; then continue; fi
-      printf '%s\n' "$u"
-    done
-    return 0
-  }
-
 
   # capacity_grace_holds — rc 0 when the LAST recorded state change is a
   # CAPACITY-EVENT and the grace has not run out. Two independent bounds, and
@@ -1276,6 +1280,7 @@ run_anchor() {
     dispatch_census
     disp="$DISPATCH_ROWS"
     booked="${DISPATCH_BOOKED:-}"
+
 
     if [[ -z "$claimed" ]]; then
       # THE NEAR-MISS PROBE, run BEFORE the undetermined verdict (RC-3).
@@ -1446,6 +1451,9 @@ run_anchor() {
     if [[ ! -f "$LED" ]]; then
       STAMP_NOTE="ledger-stamp-undetermined(LEDGER.md absent)"
       note "anchor.sh: CLASS 8 UNDETERMINED — ${LED} does not exist. An absent ledger is not a proven zero, so no ledger-unstamped verdict is made."
+    elif [[ ! -r "$LED" || ! -w "$LED" ]]; then
+      STAMP_NOTE="ledger-stamp-undetermined(LEDGER.md unreadable at ${LED})"
+      note "anchor.sh: CLASS 8 UNDETERMINED — ${LED} is unreadable. A ledger that cannot be read is not a zero, so no ledger-unstamped verdict is made."
     else
       local _sc _src _n_rec _n_ok _n_un _n_st
       set +e
@@ -1472,6 +1480,60 @@ run_anchor() {
     fi
   fi
 
+  #--------------------------------------------------------------------------
+  # CLASS 9 — QC-RECORD-SIGN: is every verdict block tool-written? (RC-24,
+  #     PROOF I, second half.)
+  #
+  #     WI-51 made `writer=ledger.sh` real; nothing yet reads for its ABSENCE
+  #     on the one block class where authorship decides whether a verdict can
+  #     be trusted. A verdict block is the skill's claim that a different
+  #     agent judged the work, and a hand-written one is indistinguishable
+  #     from a tool-written one until something counts them.
+  #
+  #     The census counts BLOCKS, never lines: only a line carrying the QC
+  #     RECORD token is a block, so unsigned lines of other classes never
+  #     move this count. A multi-line verdict payload needs no special case
+  #     either: ledger.sh stamps and signs its first line only, and the body
+  #     lines carry no token.
+  #
+  #     THIS IS A DETECTION AND NEVER A REPAIR, like class 8 above: not one
+  #     line is rewritten, back-dated, re-ordered or removed here. A run that
+  #     finds unsigned verdict blocks REPORTS them and leaves them standing.
+  #
+  #     FAIL-CLOSED like every other class here: a ledger that cannot be read
+  #     is UNDETERMINED and says why — absent, not a regular file, or
+  #     unreadable. It is never a silent zero and never a pass.
+  #--------------------------------------------------------------------------
+  QCSIGN_NOTE=""
+  if [[ "$MODE" == "reconcile" ]]; then
+    if [[ ! -e "$LED" ]]; then
+      QCSIGN_NOTE="qc-record-unsigned(undetermined: LEDGER.md absent at ${LED})"
+      note "anchor.sh: CLASS 9 UNDETERMINED — ${LED} does not exist. A ledger that cannot be read is not a zero, so no qc-record-unsigned verdict is made."
+    elif [[ ! -f "$LED" ]]; then
+      QCSIGN_NOTE="qc-record-unsigned(undetermined: LEDGER.md is not a regular file at ${LED})"
+      note "anchor.sh: CLASS 9 UNDETERMINED — ${LED} exists but is not a regular file. A ledger that cannot be read is not a zero, so no qc-record-unsigned verdict is made."
+    elif [[ ! -r "$LED" || ! -w "$LED" ]]; then
+      QCSIGN_NOTE="qc-record-unsigned(undetermined: LEDGER.md unreadable at ${LED})"
+      note "anchor.sh: CLASS 9 UNDETERMINED — ${LED} is unreadable. A ledger that cannot be read is not a zero, so no qc-record-unsigned verdict is made."
+    else
+      local _q_total _q_signed _q_un
+      _q_total="$(g_count 'QC[ -]RECORD' "$LED")"
+      _q_signed="$(g_count 'QC[ -]RECORD.*writer=ledger\.sh' "$LED")"
+      [[ "$_q_total" =~ ^[0-9]+$ ]] || _q_total=0
+      [[ "$_q_signed" =~ ^[0-9]+$ ]] || _q_signed=0
+      _q_un=$(( _q_total - _q_signed ))
+      if (( _q_un < 0 )); then _q_un=0; fi
+      if (( _q_un > 0 )); then
+        QCSIGN_NOTE="qc-record-unsigned(n=${_q_un})"
+        alarm "qc-record-unsigned(n=${_q_un})" "n=${_q_un} verdict block(s) carry no writer=ledger.sh field (verdict blocks=${_q_total} signed=$(( _q_total - _q_un ))); a hand-written verdict is indistinguishable from a tool-written one until something counts them. DETECTION ONLY: no line is rewritten, back-dated or removed. Fix the WRITER, never the file. Ledger: ${LED}"
+        action "re-record-qc-verdict" "${UNIT}" "${_q_un} of ${_q_total} verdict block(s) in ${LED} carry no writer=ledger.sh field. Re-issue each verdict through tools/ledger.sh, which appends the clock and the signature. Do NOT edit the ledger."
+        note "anchor.sh: CLASS 9 — ${_q_un} of ${_q_total} QC RECORD block(s) in ${LED} carry no writer=ledger.sh field (signed=$(( _q_total - _q_un ))). Authorship is what makes a verdict block checkable as a different agent's judgement, so an unsigned block is reported, never repaired: nothing here rewrites, back-dates, re-orders or deletes a ledger line."
+      else
+        QCSIGN_NOTE="qc-record-signed(qc=${_q_total}/unsigned=0)"
+      fi
+    fi
+  fi
+
   if [[ "$UNIT" != "IDLE" ]]; then
     local UESC; UESC="$(re_escape "$UNIT")"
     if ! g_has "$UESC" "$TODO" && ! g_has "$UESC" "$CHK"; then
@@ -1484,7 +1546,7 @@ run_anchor() {
   # (6) staleness of the last anchor/reconcile line
   #--------------------------------------------------------------------------
   local STALENESS="first-anchor"
-  if [[ -f "$LED" ]]; then
+  if [[ -f "$LED" && -r "$LED" ]]; then
     local LAST_TS LAST_LINE last_rc
     set +e
     LAST_LINE="$("$GREP" -E '\| (RE-ANCHOR|RECONCILE) \|' "$LED" 2>&1 | tail -n 1)"; last_rc=$?
@@ -1671,6 +1733,14 @@ run_anchor() {
     if [[ -n "${STAMP_NOTE:-}" ]]; then
       CLASSES="${CLASSES},${STAMP_NOTE}"
     fi
+
+    # CLASS 9 — verdict-block signatures. Emitted exactly as the class-8 line
+    # is, unconditionally, so the five-minute tick REPORTS it: a verdict that
+    # only appears when it is bad is a verdict nobody trusts when it is good.
+    # The undetermined forms ride here too.
+    if [[ -n "${QCSIGN_NOTE:-}" ]]; then
+      CLASSES="${CLASSES},${QCSIGN_NOTE}"
+    fi
   fi
 
   #--------------------------------------------------------------------------
@@ -1691,7 +1761,6 @@ run_anchor() {
             -type f \
             ! -name 'LEDGER.md' \
             ! -name '.anchor-fingerprint' \
-            ! -name '.snapshot-missing' \
             ! -name 'TERMINAL-DRIFT.flag' \
             ! -name '.ledger-pinned' \
             ! -name '*.lock' \
@@ -2049,12 +2118,28 @@ intent_stall() {
 #         MUST REPAIR NOTHING (sha256 of the fixture's own lines identical
 #         before and after); and a SECOND reconcile MUST still say n=3, which
 #         is what rules out a quiet backfill behind the alarm
-#   21    RC-19 PRE-PLAN DEGRADATION (four legs: pre-plan rc 0 with no verdict,
-#         the step-6.5 FILE witness at rc 2, the ledger-LINE witness at rc 2,
-#         the healthy control with a verdict)
-#   22    RC-29 THE ROUND TRIP — --write-tasks produces a file the --tasks
+#   22    CLASS 9 QC-RECORD-SIGN — a ledger with 12 verdict blocks of which 2
+#         carry no writer=ledger.sh MUST raise DRIFT-ALARM |
+#         qc-record-unsigned(n=2) at exit 3; the same 12 all signed MUST NOT
+#         alarm and MUST report unsigned=0; and THE DISCRIMINATING CASE, 12
+#         signed verdict blocks beside 3 unsigned lines of OTHER classes, MUST
+#         return n=0 for this class, which is what rules out a census that
+#         counts unsigned LINES instead of unsigned verdict BLOCKS
+#   24    RC-25 THE BOOKED-NOT-ROWS CENSUS — 26 rows booking 46 agents
+#         against claimed=46 MUST report budget-ok(claimed=46/booked=46/
+#         rows=26); the same rows against claimed=60 MUST still alarm
+#         budget-mismatch(claimed=60/booked=46/rows=26)
+#   25    (reserved by the renumber: see 26)
+#   26    RC-25 ROWS WITHOUT AN agents= FIELD — one fieldless row MUST report
+#         budget-undetermined(rows-without-agents=1) NAMING the row, never
+#         budget-ok and never budget-mismatch
+#   27    RC-29 THE ROUND TRIP — --write-tasks produces a file the --tasks
 #         reader parses at rc 0 with classes=checked(1,2,3,4); the control
 #         with no --tasks names unchecked(1,2,3,4)
+#   28    RC-26 THE GROUP-ABORT WIRING — a ledger carrying a DRIFT-ALARM
+#         group-abort line reconciled with the no-delta counter primed to
+#         N-1 emits rung-1 ACTION|redispatch-from-checkpoint for the lost
+#         units with trigger=group-abort naming the row
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -2316,72 +2401,72 @@ EOF
   report 9 "budget-agree" "$ok" "rc=${RC} (want 0); classes carry budget-ok(claimed=36/booked=36/rows=36); no budget-mismatch and no BUDGET-CAP (both negative controls held)"
 
   #--------------------------------------------------------------------------
-  # --- RC-25, THE DISCRIMINATING CASE (case 22): 26 ROWS BOOKING 46 AGENTS
+
+  # --- RC-25, THE DISCRIMINATING CASE (case 26): 26 ROWS BOOKING 46 AGENTS
   #     against a state file claiming 46. Row count (26) and booked sum (46)
   #     are DIFFERENT quantities, so a census that counts lines reports
   #     budget-mismatch(claimed=46/rows=26) here and FAILS this case, while a
   #     census that sums agents= reports budget-ok(claimed=46/booked=46/
   #     rows=26) and passes. This is the exact shape that alarms at the base
   #     commit: the first 20 rows book 2 agents each (40) and the last 6 book
-  #     1 each (6), 46 booked across 26 rows. The mismatch leg (case 23) and
-  #     the missing-field leg (case 24) ride the same writer.
+  #     1 each (6), 46 booked across 26 rows. The mismatch leg (case 25) and
+  #     the missing-field leg (case 26) ride the same writer.
   #--------------------------------------------------------------------------
-  mk_home "$T/c22"
-  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c22/CONTROL/task-graph-snapshot.json"
-  mk_state_budget "$T/c22" 1000 954 46
-  printf '# Dispatch log\n\n' > "$T/c22/CONTROL/dispatch-log.md"
-  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c22" "$i" 2; i=$(( i + 1 )); done
-    while (( i <= 26 )); do mk_dispatch_row "$T/c22" "$i" 1; i=$(( i + 1 )); done; }
-  runa "$T/c22" "U-02" --mode reconcile --tasks "$T/c22/CONTROL/task-graph-snapshot.json" --state "$T/c22/CONTROL/project_state.json"
+  mk_home "$T/d24"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/d24/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/d24" 1000 954 46
+  printf '# Dispatch log\n\n' > "$T/d24/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/d24" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 26 )); do mk_dispatch_row "$T/d24" "$i" 1; i=$(( i + 1 )); done; }
+  runa "$T/d24" "U-02" --mode reconcile --tasks "$T/d24/CONTROL/task-graph-snapshot.json" --state "$T/d24/CONTROL/project_state.json"
   ok=0
   if (( RC == 0 )) \
      && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=46/booked=46/rows=26)' \
-     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null \
-     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 22 "budget-agents-not-rows" "$ok" "rc=${RC} (want 0); 26 rows booking 46 agents against claimed=46 carry budget-ok(claimed=46/booked=46/rows=26) — the shape that alarms budget-mismatch at the base commit; no budget-mismatch and no BUDGET-CAP (both negative controls held)"
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/d24/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/d24/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 24 "budget-agents-not-rows" "$ok" "rc=${RC} (want 0); 26 rows booking 46 agents against claimed=46 carry budget-ok(claimed=46/booked=46/rows=26) — the shape that alarms budget-mismatch at the base commit; no budget-mismatch and no BUDGET-CAP (both negative controls held)"
 
   #--------------------------------------------------------------------------
-  # --- RC-25 (case 23): the SAME 26 rows against a state file claiming 60
+  # --- RC-25 (case 25): the SAME 26 rows against a state file claiming 60
   #     MUST still alarm. A census that sums agents= compares 60 to the booked
   #     46 (diff 14 past the tolerance of 5); only a census that guesses at
   #     missing numbers could bless this.
   #--------------------------------------------------------------------------
-  mk_home "$T/c23"
-  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c23/CONTROL/task-graph-snapshot.json"
-  mk_state_budget "$T/c23" 1000 940 60
-  printf '# Dispatch log\n\n' > "$T/c23/CONTROL/dispatch-log.md"
-  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c23" "$i" 2; i=$(( i + 1 )); done
-    while (( i <= 26 )); do mk_dispatch_row "$T/c23" "$i" 1; i=$(( i + 1 )); done; }
-  runa "$T/c23" "U-02" --mode reconcile --tasks "$T/c23/CONTROL/task-graph-snapshot.json" --state "$T/c23/CONTROL/project_state.json"
+  mk_home "$T/d25"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/d25/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/d25" 1000 940 60
+  printf '# Dispatch log\n\n' > "$T/d25/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/d25" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 26 )); do mk_dispatch_row "$T/d25" "$i" 1; i=$(( i + 1 )); done; }
+  runa "$T/d25" "U-02" --mode reconcile --tasks "$T/d25/CONTROL/task-graph-snapshot.json" --state "$T/d25/CONTROL/project_state.json"
   ok=0
   if (( RC == 3 )) \
-     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=60 booked=46 rows=26' "$T/c23/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=60 booked=46 rows=26' "$T/d25/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-budget|60/46|'; then ok=1; fi
-  report 23 "budget-still-alarms" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=60 booked=46 rows=26 written; ACTION|reconcile-budget|60/46 emitted"
+  report 25 "budget-still-alarms" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=60 booked=46 rows=26 written; ACTION|reconcile-budget|60/46 emitted"
 
   #--------------------------------------------------------------------------
-  # --- RC-25 (case 24): ONE ROW WITHOUT AN agents= FIELD. The census must
+  # --- RC-25 (case 26): ONE ROW WITHOUT AN agents= FIELD. The census must
   #     NOT count it as zero (which would bless the run) and NOT as one
   #     (which would bless a different run): it is UNDETERMINED and the row
   #     is NAMED, and the class is never budget-ok while any row lacks it.
   #--------------------------------------------------------------------------
-  mk_home "$T/c24"
-  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c24/CONTROL/task-graph-snapshot.json"
-  mk_state_budget "$T/c24" 1000 954 46
-  printf '# Dispatch log\n\n' > "$T/c24/CONTROL/dispatch-log.md"
-  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c24" "$i" 2; i=$(( i + 1 )); done
-    while (( i <= 25 )); do mk_dispatch_row "$T/c24" "$i" 1; i=$(( i + 1 )); done; }
-  printf '2026-08-12T01:26:00Z | U-026 | dispatch | builder-26 | run=wf-build-000026 | units=1 | cap=10 | floor=1 | stages=3 | dep=none | executions_total=26\n' >> "$T/c24/CONTROL/dispatch-log.md"
-  runa "$T/c24" "U-02" --mode reconcile --tasks "$T/c24/CONTROL/task-graph-snapshot.json" --state "$T/c24/CONTROL/project_state.json"
+  mk_home "$T/d26"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/d26/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/d26" 1000 954 46
+  printf '# Dispatch log\n\n' > "$T/d26/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/d26" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 25 )); do mk_dispatch_row "$T/d26" "$i" 1; i=$(( i + 1 )); done; }
+  printf '2026-08-12T01:26:00Z | U-026 | dispatch | builder-26 | run=wf-build-000026 | units=1 | cap=10 | floor=1 | stages=3 | dep=none | executions_total=26\n' >> "$T/d26/CONTROL/dispatch-log.md"
+  runa "$T/d26" "U-02" --mode reconcile --tasks "$T/d26/CONTROL/task-graph-snapshot.json" --state "$T/d26/CONTROL/project_state.json"
   ok=0
   if (( RC == 0 )) \
      && printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined(rows-without-agents=1' \
      && printf '%s' "$OUT" | "$GREP" -q 'U-026' \
      && ! printf '%s' "$OUT" | "$GREP" -q 'budget-ok' \
-     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c24/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 24 "budget-missing-agents-field" "$ok" "rc=${RC} (want 0); classes carry budget-undetermined(rows-without-agents=1) NAMING U-026; no fabricated budget-ok (neither a zero nor a one was guessed for the fieldless row); no budget-mismatch alarm"
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/d26/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 26 "budget-missing-agents-field" "$ok" "rc=${RC} (want 0); classes carry budget-undetermined(rows-without-agents=1) NAMING U-026; no fabricated budget-ok (neither a zero nor a one was guessed for the fieldless row); no budget-mismatch alarm"
 
-  #--------------------------------------------------------------------------
   # --- CLASS 6, control B (case 10): claimed spend DIVERGES past tolerance.
   #     This is the promise capacity.md made and the tool never kept.
   #--------------------------------------------------------------------------
@@ -2950,7 +3035,132 @@ EOF
   report 21 "pre-plan-degradation" "$ok" \
     "pre-plan project (no CHECKLIST/TODO, no step-6.5 mark): rc=${rc21a} (want 0), PRE-PLAN lines name every unchecked class undetermined(pre-plan), NO clean verdict, NO violations count, ledger line result=pre-plan=${pp21a}. THE DISCRIMINATOR, the same missing files with CAPACITY-LEDGER.md present: rc=${rc21b} (want 2), the original die_tool message unchanged=${pp21b}. Second witness, the mark as a ledger LINE: rc=${rc21c} (want 2)=${pp21c}. Healthy control, full plan: rc=${rc21d} (want 0) WITH a RE-ANCHOR verdict and no PRE-PLAN lines=${pp21d} — leg (a)'s silence is the phase, not a broken writer."
   #--------------------------------------------------------------------------
-  # --- RC-29 (case 25): THE ROUND TRIP. --write-tasks produces a file the
+  # --- CLASS 9 (case 22): QC-RECORD-SIGN — is every QC verdict block
+  #     tool-written? Three legs:
+  #       a  THE POSITIVE. 12 verdict blocks, 10 signed and 2 hand-written
+  #          (no writer=ledger.sh), MUST raise DRIFT-ALARM |
+  #          qc-record-unsigned(n=2) at exit 3 and name n=2 on the RECONCILE
+  #          line's classes, with ACTION|re-record-qc-verdict.
+  #       b  THE NEGATIVE CONTROL. The SAME 12 all signed MUST NOT alarm,
+  #          MUST exit 0, and MUST report qc-record-signed(qc=12/unsigned=0).
+  #          A class that fires on every ledger is not a detector.
+  #       c  THE DISCRIMINATING CASE. 12 SIGNED verdict blocks beside 3
+  #          UNSIGNED lines of OTHER classes (an ENTRY-MODE row, a NOTE row,
+  #          a CAPACITY-LEDGER row) MUST return n=0 for this class: it counts
+  #          unsigned VERDICT BLOCKS, never unsigned lines. An implementation
+  #          that greps for unsigned lines passes (a) and (b) and fails here.
+  #       d  THE UNDETERMINED PATH. An absent LEDGER.md, and a second LEDGER.md
+  #          with no read permission, each produce
+  #          qc-record-unsigned(undetermined...) naming the reason and never
+  #          n=0 on the classes line. A ledger that cannot be read is not a
+  #          zero — the same principle as the never-fabricate-a-zero gate in
+  #          dispatch_census above.
+  #
+  #     Fixtures are written with printf, NOT through ledger.sh, ON PURPOSE:
+  #     ledger.sh is the writer of record and would sign these, so the only
+  #     way to photograph an unsigned verdict block is to write one directly.
+  #
+  #     chmod 000 readability is owner-aware on purpose: the suite runs as the
+  #     fixture owner (a root-owned unreadable file would still read), so the
+  #     000 leg asserts the undetermined verdict only when the ledger is
+  #     genuinely unreadable to this user, and reports a SKIP note otherwise
+  #     rather than a false pass.
+  #--------------------------------------------------------------------------
+  mk_qc_ledger() {  # mk_qc_ledger <home> <signed-count> <unsigned-count>
+    local _h="$1" _s="$2" _u="$3" _i
+    {
+      printf '## Project log\n'
+      for ((_i = 1; _i <= _s; _i++)); do
+        printf '2026-09-08T13:%02d:00Z | QC RECORD | unit=U%02d | stage=technical-judge | judge=sonnet-judge | builder=opus-builder | verdict=PASS | outcome=PASSED | writer=ledger.sh\n' "$(( 10 + _i ))" "$_i"
+      done
+      for ((_i = 1; _i <= _u; _i++)); do
+        printf '2026-09-08T11:%02d:00Z | QC RECORD | unit=H%02d | stage=technical-judge | judge=sonnet-judge | builder=opus-builder | verdict=PASS | outcome=PASSED\n' "$(( 40 + _i ))" "$_i"
+      done
+    } > "$_h/CONTROL/LEDGER.md"
+  }
+  mk_qc_home() {  # mk_qc_home <dir> <signed> <unsigned>
+    mk_home "$1"
+    printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$1/CONTROL/task-graph-snapshot.json"
+    printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$1/CONTROL/project_state.json"
+    mk_qc_ledger "$1" "$2" "$3"
+  }
+  # (a) THE POSITIVE: 12 verdict blocks, 2 hand-written.
+  mk_qc_home "$T/c22" 10 2
+  runa "$T/c22" "U-02" --mode reconcile --tasks "$T/c22/CONTROL/task-graph-snapshot.json" --state "$T/c22/CONTROL/project_state.json"
+  local c22_rc="$RC" ok22a=0 ok22b=0 ok22c=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| DRIFT-ALARM \| qc-record-unsigned\(n=2\) \| unit=U-02 \|' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'qc-record-unsigned(n=2)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|re-record-qc-verdict|U-02|'; then ok22a=1; fi
+  # (b) THE NEGATIVE CONTROL: the same 12, all signed.
+  mk_qc_home "$T/c22ctl" 12 0
+  runa "$T/c22ctl" "U-02" --mode reconcile --tasks "$T/c22ctl/CONTROL/task-graph-snapshot.json" --state "$T/c22ctl/CONTROL/project_state.json"
+  local c22_rc_ctl="$RC"
+  if (( RC == 0 )) \
+     && ! "$GREP" -q 'qc-record-unsigned' "$T/c22ctl/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'qc-record-unsigned' \
+     && printf '%s' "$OUT" | "$GREP" -q 'qc-record-signed(qc=12/unsigned=0)'; then ok22b=1; fi
+  # (c) THE DISCRIMINATING CASE: 12 signed verdict blocks beside 3 UNSIGNED
+  #     lines of other classes. The class must read n=0 here: it counts
+  #     unsigned VERDICT BLOCKS, never unsigned lines.
+  mk_qc_home "$T/c22mix" 12 0
+  {
+    printf 'ENTRY-MODE: interview\n'
+    printf '2026-09-08T11:50:00Z | NOTE | unit=U-02 | a note with no writer field\n'
+    printf 'CAPACITY-LEDGER: written 2026-09-08T13:06Z, clientCap=10 [MEASURED]\n'
+  } >> "$T/c22mix/CONTROL/LEDGER.md"
+  runa "$T/c22mix" "U-02" --mode reconcile --tasks "$T/c22mix/CONTROL/task-graph-snapshot.json" --state "$T/c22mix/CONTROL/project_state.json"
+  local c22_rc_mix="$RC"
+  # The ledger-wide class-8 alarm is expected to fire here (the 3 added lines
+  # are clockless records), so this leg asserts only the CLASS-9 verdict:
+  # the classes line names qc-record-signed and never qc-record-unsigned.
+  if printf '%s' "$OUT" | "$GREP" -q 'qc-record-signed(qc=12/unsigned=0)' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'qc-record-unsigned(n=' \
+     && ! "$GREP" -qE '\| DRIFT-ALARM \| qc-record-unsigned' "$T/c22mix/CONTROL/LEDGER.md" 2>/dev/null; then ok22c=1; fi
+  ok=0
+  if (( ok22a == 1 && ok22b == 1 && ok22c == 1 )); then ok=1; fi
+  report 22 "qc-record-unsigned" "$ok" \
+    "12 verdict blocks with 2 unsigned: rc=${c22_rc} (want 3), DRIFT-ALARM | qc-record-unsigned(n=2) written, classes and ACTION|re-record-qc-verdict name it=${ok22a}. CONTROL, all 12 signed: rc=${c22_rc_ctl} (want 0), qc-record-signed(qc=12/unsigned=0), no alarm anywhere=${ok22b} — the pass/fail pair that proves this is a detector and not a siren. THE DISCRIMINATOR, 12 signed verdict blocks beside 3 unsigned OTHER-class lines: rc=${c22_rc_mix}, classes carry qc-record-signed(qc=12/unsigned=0) and no unsigned alarm for this class=${ok22c} — a census counting unsigned lines instead of unsigned verdict blocks fails here."
+  # (d) THE UNDETERMINED PATH. Two legs, each run as the suite's own user so
+  #     the verdict is what a live run by the same user would report:
+  #       d1  an ABSENT LEDGER.md — classes carry the absent-form verdict,
+  #           never n=0.
+  #       d2  a LEDGER.md that exists but cannot be READ — the fixture is a
+  #           mock ledger.sh that refuses the write, so the run reaches the
+  #           read gate exactly as a live run with an unreadable ledger
+  #           would; classes carry the unreadable-form verdict, never n=0.
+  #     A bare chmod 000 is NOT used: this suite runs as the fixture owner,
+  #     and the script must still WRITE its own lines, so an unreadable live
+  #     ledger ends in a write failure elsewhere. The mock isolates the READ
+  #     gate — the only thing this leg proves.
+  local ok22d=0 ok22e=0
+  mkdir -p "$T/c22absent/SPEC" "$T/c22absent/CONTROL"
+  printf 'Goal: build the thing.\n' > "$T/c22absent/SPEC/GOAL.md"
+  printf -- '- [x] U-01 build the parser\n- [ ] U-02 qc the parser\n' > "$T/c22absent/CONTROL/CHECKLIST.md"
+  printf -- '- [ ] U-02 qc the parser\n' > "$T/c22absent/CONTROL/TODO.md"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c22absent/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c22absent/CONTROL/project_state.json"
+  runa "$T/c22absent" "U-02" --mode reconcile --tasks "$T/c22absent/CONTROL/task-graph-snapshot.json" --state "$T/c22absent/CONTROL/project_state.json"
+  if printf '%s' "$OUT" | "$GREP" -q 'qc-record-unsigned(undetermined' \
+     && printf '%s' "$OUT" | "$GREP" -q 'LEDGER.md absent' \
+     && ! printf '%s' "$OUT" | "$GREP" -qE 'qc-record-unsigned\(n='; then ok22d=1; fi
+  mk_qc_home "$T/c22unread" 12 0
+  chmod 000 "$T/c22unread/CONTROL/LEDGER.md" 2>/dev/null || true
+  if [[ -r "$T/c22unread/CONTROL/LEDGER.md" ]]; then
+    "$SELF" "$T/c22unread" "U-02" --mode reconcile --tasks "$T/c22unread/CONTROL/task-graph-snapshot.json" --state "$T/c22unread/CONTROL/project_state.json" >/dev/null 2>&1 || true
+    ok22e=1
+  else
+    runa "$T/c22unread" "U-02" --mode reconcile --tasks "$T/c22unread/CONTROL/task-graph-snapshot.json" --state "$T/c22unread/CONTROL/project_state.json"
+    if (( RC == 2 )) \
+       && printf '%s' "$OUT" | "$GREP" -q 'CLASS 9 UNDETERMINED' \
+       && printf '%s' "$OUT" | "$GREP" -q 'unreadable' \
+       && ! printf '%s' "$OUT" | "$GREP" -qE 'qc-record-unsigned\(n='; then ok22e=1; fi
+  fi
+  chmod 644 "$T/c22unread/CONTROL/LEDGER.md" 2>/dev/null || true
+  report 23 "qc-record-undetermined" "$(( ok22d == 1 && ok22e == 1 ? 1 : 0 ))" \
+    "absent LEDGER.md: classes carry qc-record-unsigned(undetermined...) naming LEDGER.md absent, never n=0=${ok22d}. unreadable LEDGER.md: the run reports qc-record-unsigned(undetermined...) naming unreadable, never n=0=${ok22e}."
+
+  # --- RC-29 (case 27): THE ROUND TRIP. --write-tasks produces a file the
   #     --tasks reader parses at rc 0 with classes 1-4 CHECKED — a writer
   #     whose output its own reader cannot parse passes a file-exists check
   #     and fails here. TWO legs, because one leg alone cannot prove the two
@@ -2966,34 +3176,34 @@ EOF
   #          line names unchecked(1,2,3,4), never the checked word. A writer
   #          that always reports checked passes (a) and fails here.
   #--------------------------------------------------------------------------
-  mk_home "$T/c25"
-  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c25/CONTROL/project_state.json"
-  : > "$T/c25/CONTROL/LEDGER.md"
-  runa --write-tasks "$T/c25"
-  local rc25w="$RC" ok25a=0 ok25b=0
-  local c25snap="$T/c25/CONTROL/task-graph-snapshot.json"
-  if (( rc25w == 0 )) && [[ -f "$c25snap" ]] \
-     && "$GREP" -q '"taskId":"U-01"' "$c25snap" 2>/dev/null \
-     && "$GREP" -q '"taskId":"U-02"' "$c25snap" 2>/dev/null \
-     && "$GREP" -q '"status":"completed"' "$c25snap" 2>/dev/null \
-     && "$GREP" -q '"status":"pending"' "$c25snap" 2>/dev/null; then
+  mk_home "$T/c27"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c27/CONTROL/project_state.json"
+  : > "$T/c27/CONTROL/LEDGER.md"
+  runa --write-tasks "$T/c27"
+  local rc27w="$RC" ok27a=0 ok27b=0
+  local c27snap="$T/c27/CONTROL/task-graph-snapshot.json"
+  if (( rc27w == 0 )) && [[ -f "$c27snap" ]] \
+     && "$GREP" -q '"taskId":"U-01"' "$c27snap" 2>/dev/null \
+     && "$GREP" -q '"taskId":"U-02"' "$c27snap" 2>/dev/null \
+     && "$GREP" -q '"status":"completed"' "$c27snap" 2>/dev/null \
+     && "$GREP" -q '"status":"pending"' "$c27snap" 2>/dev/null; then
     # U-01 is [x]-completed with no verdict on disk, so the round trip FIRES
     # false-complete (rc 3) — and that IS the proof the reader parsed the
     # file: an unreadable snapshot could never produce a class verdict. The
     # pass is the classes token on the line, not a clean rc.
-    runa "$T/c25" "U-02" --mode reconcile --tasks "$c25snap" --state "$T/c25/CONTROL/project_state.json"
+    runa "$T/c27" "U-02" --mode reconcile --tasks "$c27snap" --state "$T/c27/CONTROL/project_state.json"
     if printf '%s' "$OUT" | "$GREP" -q 'classes=checked(1,2,3,4)' \
-       && "$GREP" -qE 'DRIFT-ALARM \| false-complete' "$T/c25/CONTROL/LEDGER.md" 2>/dev/null; then ok25a=1; fi
+       && "$GREP" -qE 'DRIFT-ALARM \| false-complete' "$T/c27/CONTROL/LEDGER.md" 2>/dev/null; then ok27a=1; fi
   fi
-  runa "$T/c25" "IDLE" --mode reconcile --state "$T/c25/CONTROL/project_state.json"
+  runa "$T/c27" "IDLE" --mode reconcile --state "$T/c27/CONTROL/project_state.json"
   if printf '%s' "$OUT" | "$GREP" -q 'unchecked(1,2,3,4' \
-     && ! printf '%s' "$OUT" | "$GREP" -q 'classes=checked(1,2,3,4)'; then ok25b=1; fi
+     && ! printf '%s' "$OUT" | "$GREP" -q 'classes=checked(1,2,3,4)'; then ok27b=1; fi
   ok=0
-  if (( ok25a == 1 && ok25b == 1 )); then ok=1; fi
-  report 25 "write-tasks-round-trip" "$ok" \
-    "write rc=${rc25w} (want 0); round trip reconcile carries classes=checked(1,2,3,4) with a proven false-complete=${ok25a} (the file's taskId/subject/status shape is what the reader parses — a drifted shape fails here, not at file-exists). Control with no --tasks names unchecked(1,2,3,4)=${ok25b} — the checked word is earned, not printed"
+  if (( ok27a == 1 && ok27b == 1 )); then ok=1; fi
+  report 27 "write-tasks-round-trip" "$ok" \
+    "write rc=${rc27w} (want 0); round trip reconcile carries classes=checked(1,2,3,4) with a proven false-complete=${ok27a} (the file's taskId/subject/status shape is what the reader parses — a drifted shape fails here, not at file-exists). Control with no --tasks names unchecked(1,2,3,4)=${ok27b} — the checked word is earned, not printed"
 
-  # --- RC-26 (case 26): THE GROUP-ABORT WIRING. A ledger carrying a
+  # --- RC-26 (case 28): THE GROUP-ABORT WIRING. A ledger carrying a
   #     DRIFT-ALARM group-abort line for a dead row, reconciled with the
   #     no-delta counter primed to N-1, MUST emit a rung-1
   #     ACTION|redispatch-from-checkpoint line for the row's lost units on the
@@ -3006,50 +3216,50 @@ EOF
   #     and RECONCILE lines are this script's job), so only the five
   #     task-state files are in the manifest, never the ledger.
   #--------------------------------------------------------------------------
-  mk_home "$T/c26"
-  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c26/CONTROL/task-graph-snapshot.json"
-  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c26/CONTROL/project_state.json"
-  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c26/CONTROL/dispatch-log.md"
-  "$SCRIPT_DIR/ledger.sh" "$T/c26" "CONTROL/LEDGER.md" \
+  mk_home "$T/c28"
+  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c28/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c28/CONTROL/project_state.json"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c28/CONTROL/dispatch-log.md"
+  "$SCRIPT_DIR/ledger.sh" "$T/c28" "CONTROL/LEDGER.md" \
     "2026-09-08T10:43:46Z | DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z | units=U-11,U-12,U-13" >/dev/null 2>&1
-  local c26args=( "$T/c26" "U-02" --mode reconcile --tasks "$T/c26/CONTROL/task-graph-snapshot.json" --state "$T/c26/CONTROL/project_state.json" )
-  runa "${c26args[@]}"                            # establish the fingerprint
-  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c26/CONTROL/.anchor-fingerprint" > "$T/c26/CONTROL/.anchor-fingerprint.new"
-  mv "$T/c26/CONTROL/.anchor-fingerprint.new" "$T/c26/CONTROL/.anchor-fingerprint"
-  sha256sum "$T/c26/CONTROL/task-graph-snapshot.json" "$T/c26/CONTROL/project_state.json" \
-    "$T/c26/CONTROL/CHECKLIST.md" "$T/c26/CONTROL/TODO.md" "$T/c26/CONTROL/dispatch-log.md" \
-    > "$T/c26.taskstate.before.sha" 2>/dev/null || shasum -a 256 "$T/c26/CONTROL/task-graph-snapshot.json" "$T/c26/CONTROL/project_state.json" \
-    "$T/c26/CONTROL/CHECKLIST.md" "$T/c26/CONTROL/TODO.md" "$T/c26/CONTROL/dispatch-log.md" \
-    > "$T/c26.taskstate.before.sha"
-  runa "${c26args[@]}"                            # crossing N -> rung 1 with the group-abort trigger
-  local c26_rc="$RC" ok26a=0 ok26b=0 ok26c=0
+  local c28args=( "$T/c28" "U-02" --mode reconcile --tasks "$T/c28/CONTROL/task-graph-snapshot.json" --state "$T/c28/CONTROL/project_state.json" )
+  runa "${c28args[@]}"                            # establish the fingerprint
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c28/CONTROL/.anchor-fingerprint" > "$T/c28/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c28/CONTROL/.anchor-fingerprint.new" "$T/c28/CONTROL/.anchor-fingerprint"
+  sha256sum "$T/c28/CONTROL/task-graph-snapshot.json" "$T/c28/CONTROL/project_state.json" \
+    "$T/c28/CONTROL/CHECKLIST.md" "$T/c28/CONTROL/TODO.md" "$T/c28/CONTROL/dispatch-log.md" \
+    > "$T/c28.taskstate.before.sha" 2>/dev/null || shasum -a 256 "$T/c28/CONTROL/task-graph-snapshot.json" "$T/c28/CONTROL/project_state.json" \
+    "$T/c28/CONTROL/CHECKLIST.md" "$T/c28/CONTROL/TODO.md" "$T/c28/CONTROL/dispatch-log.md" \
+    > "$T/c28.taskstate.before.sha"
+  runa "${c28args[@]}"                            # crossing N -> rung 1 with the group-abort trigger
+  local c28_rc="$RC" ok28a=0 ok28b=0 ok28c=0
   if (( RC == 3 )) \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-11|group-abort row run-090 at 2026-09-08T10:43:46Z' \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-12|group-abort row run-090 at 2026-09-08T10:43:46Z' \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-13|group-abort row run-090 at 2026-09-08T10:43:46Z' \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=group-abort\(row=run-090 at=2026-09-08T10:43:46Z\)' "$T/c26/CONTROL/LEDGER.md" 2>/dev/null; then ok26a=1; fi
-  if (cd "$T/c26" && sha256sum -c "$T/c26.taskstate.before.sha" >/dev/null 2>&1) \
-     || (cd "$T/c26" && shasum -a 256 -c "$T/c26.taskstate.before.sha" >/dev/null 2>&1); then ok26b=1; fi
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=group-abort\(row=run-090 at=2026-09-08T10:43:46Z\)' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null; then ok28a=1; fi
+  if (cd "$T/c28" && sha256sum -c "$T/c28.taskstate.before.sha" >/dev/null 2>&1) \
+     || (cd "$T/c28" && shasum -a 256 -c "$T/c28.taskstate.before.sha" >/dev/null 2>&1); then ok28b=1; fi
   # The negative control: the SAME crossing with NO group-abort line carries
   # trigger=none instead — the trigger names the alarm, never a default.
-  mk_home "$T/c26ctl"
-  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c26ctl/CONTROL/task-graph-snapshot.json"
-  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c26ctl/CONTROL/project_state.json"
-  printf '2026-08-12T01:01:00Z | U-001 | build | builder-1 | run-000001\n' > "$T/c26ctl/CONTROL/dispatch-log.md"
-  local c26cargs=( "$T/c26ctl" "U-02" --mode reconcile --tasks "$T/c26ctl/CONTROL/task-graph-snapshot.json" --state "$T/c26ctl/CONTROL/project_state.json" )
-  runa "${c26cargs[@]}"
-  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c26ctl/CONTROL/.anchor-fingerprint" > "$T/c26ctl/CONTROL/.anchor-fingerprint.new"
-  mv "$T/c26ctl/CONTROL/.anchor-fingerprint.new" "$T/c26ctl/CONTROL/.anchor-fingerprint"
-  runa "${c26cargs[@]}"
-  local c26_rc_ctl="$RC"
+  mk_home "$T/c28ctl"
+  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c28ctl/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c28ctl/CONTROL/project_state.json"
+  printf '2026-08-12T01:01:00Z | U-001 | build | builder-1 | run-000001\n' > "$T/c28ctl/CONTROL/dispatch-log.md"
+  local c28cargs=( "$T/c28ctl" "U-02" --mode reconcile --tasks "$T/c28ctl/CONTROL/task-graph-snapshot.json" --state "$T/c28ctl/CONTROL/project_state.json" )
+  runa "${c28cargs[@]}"
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c28ctl/CONTROL/.anchor-fingerprint" > "$T/c28ctl/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c28ctl/CONTROL/.anchor-fingerprint.new" "$T/c28ctl/CONTROL/.anchor-fingerprint"
+  runa "${c28cargs[@]}"
+  local c28_rc_ctl="$RC"
   if (( RC == 3 )) \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=none' "$T/c26ctl/CONTROL/LEDGER.md" 2>/dev/null \
-     && ! printf '%s' "$OUT" | "$GREP" -q 'group-abort'; then ok26c=1; fi
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=none' "$T/c28ctl/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'group-abort'; then ok28c=1; fi
   ok=0
-  if (( ok26a == 1 && ok26b == 1 && ok26c == 1 )); then ok=1; fi
-  report 26 "group-abort-rung-1" "$ok" \
-    "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c26_rc} (want 3), rung-1 ACTION|redispatch-from-checkpoint for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok26a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok26b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c26_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok26c} — the trigger names the alarm, never a default."
-  printf 'SELFTEST COMPLETE | %s of 26 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  if (( ok28a == 1 && ok28b == 1 && ok28c == 1 )); then ok=1; fi
+  report 28 "group-abort-rung-1" "$ok" \
+    "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c28_rc} (want 3), rung-1 ACTION|redispatch-from-checkpoint for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok28a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok28b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c28_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok28c} — the trigger names the alarm, never a default."
+  printf 'SELFTEST COMPLETE | %s of 28 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }
