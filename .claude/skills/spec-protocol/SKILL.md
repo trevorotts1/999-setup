@@ -101,13 +101,13 @@ one line, and the other bundled skills go through the nine-router-setup installe
 no, record the declined offer and never raise it again (Law 46). A failed update is a
 finding, never a stopped build.
 
-**Auto-compaction (step 2.6) and OpenClaw (step 2.8).** Ensure `autoCompactEnabled:
-true` and `autoCompactWindow` per launcher in each config root's `settings.json` — back the
-file up first, preserve every other key, refuse on invalid JSON, never print its
-contents; one line, never a gate. The window is 500000 on `claude`; on `claude-nine` and
-`claude-codex` it is the smaller of 500000 and the resolved seat's measured context
-ceiling, recorded with its provenance mark (`references/capacity.md` §11). Report to the
-client only what `tools/compact-check.sh <config-root>` read from the live
+**Auto-compaction (step 2.6) and OpenClaw (step 2.8).** Ensure `autoCompactEnabled: true`, and set `autoCompactWindow` through `tools/compact-guard.sh <config-root> <target>` — the only
+writer of that key, and a FLOOR, not an equality: it RAISES a live value that is BELOW the target and it NEVER lowers one at or above the target, because a larger live value is the operator's
+own — it STANDS, and it is RECORDED, never corrected. It writes ONE config root, the launcher's OWN, resolved from `CLAUDE_CONFIG_DIR` and never hardcoded (`references/platform.md` §2, §5.4,
+§7: a per-root key stays INVISIBLE to the other launcher, so writing the sibling root buys the run nothing and costs the operator a setting) — back the file up first, preserve every other
+key, refuse on invalid JSON, never print its contents; one line, never a gate. The target is 500000 on `claude`; on `claude-nine` and `claude-codex` it is the smaller of 500000 and the
+resolved seat's measured context ceiling, recorded with its provenance mark (`references/capacity.md` §11). `tools/ledger.sh` records one line, naming its OWN root only: `AUTOCOMPACT:
+root=<path> live=<n> target=<n> action=raised|no-write-above-target|no-write-undetermined`. Report to the client only what `tools/compact-check.sh <config-root>` read from the live
 `<config-root>/settings.json`, named with that path — never a sibling `.bak`, and rc 2
 is UNDETERMINED, never a number. Then detect OpenClaw from file evidence only
 (`references/openclaw-ingest.md`): nothing is read and nothing written until the
