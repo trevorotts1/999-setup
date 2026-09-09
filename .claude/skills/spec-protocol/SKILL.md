@@ -51,7 +51,7 @@ the word `ultracode` in front of the command — type `ultracode /spec-protocol`
 covers just that one message." No degraded run, no partial run, no "let me try anyway."
 
 **GATE 0b — the tick is armed.** Every run opens with its enforcer in place: the
-five-minute tick `tools/watch-tick.sh <project>` on a crontab line (step 3, the moment `CONTROL/` exists),
+five-minute tick armed by `tools/watch-tick.sh --arm <project>` (step 3, the moment `CONTROL/` exists — the tool writes the crontab line itself, idempotently, and names the degradation when `crontab` cannot be run),
 reconciling through `tools/anchor.sh --mode reconcile` and checking S2, S3, S5, S6 and
 S13 from minute one (`references/enforcement.md`). Nothing in this skill ever removes,
 disables or weakens a governance hook, and `disableAllHooks` is never set.
@@ -583,19 +583,20 @@ cannot prove the page-building browser tool builds the pages as a website instea
 
 ## 12. Handover and the morning report
 
-**Step 3 — arm the tick; step 21 — prove it ran.** Install the cron half idempotently:
+**Step 3 — arm the tick; step 21 — prove it ran.** One command installs the cron half
+idempotently, writing the crontab line itself so nothing is pasted:
 
 ```
-L="$(bash <skill>/tools/watch-tick.sh <project> --cron-line)"; crontab -l 2>/dev/null | grep -qF watch-tick.sh || { crontab -l 2>/dev/null; echo "$L"; } | crontab -
+bash <skill>/tools/watch-tick.sh --arm <project>
 ```
 
-Prove it landed (`crontab -l | grep watch-tick.sh` prints the row), announce it in one
+Exit 0 armed, 3 already present (nothing written), 2 `crontab` unavailable with the
+degradation NAMED: "the checker runs whenever I check in, rather than on its own,"
+written to the ledger, with the `/loop 5m` half running alone. Then announce it in one
 plain sentence — "A checker now runs every five minutes on its own, whether or not I'm
 awake — it writes down what it finds, and I read it every time I check in." — and start
-the model half in the same breath. Where `crontab` is unavailable the degradation is
-NAMED, never silent: "the checker runs whenever I check in, rather than on its own,"
-written to the ledger, with the `/loop 5m` half running alone. The announcement
-sentence is spoken once — at step 3, when the tick is armed — never again at handover.
+the model half in the same breath. The sentence is spoken once, at step 3 when the tick
+is armed, never again at handover; step 21 PROVES it ran and never re-arms it.
 
 **The handover assigns the client nothing.** They open no windows and paste nothing. The
 only line they are ever given is the restart sentence in section 3, also written into

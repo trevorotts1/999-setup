@@ -10,9 +10,10 @@
 #   was the conductor remembering to look. This is the half that does not
 #   depend on the model.
 #
-#   THE TWO HALVES (references/loops.md Loop 9, SKILL.md RULE 5 and step 21):
-#     THE CRON HALF — this script, on a crontab line the skill writes and
-#       announces at step 21:
+#   THE TWO HALVES (references/loops.md Loop 9, SKILL.md RULE 5, step 3 which
+#   ARMS the tick and step 21 which PROVES it ran):
+#     THE CRON HALF — this script, on the crontab line `--arm` writes and the
+#       skill announces at step 3 (step 21 proves it ran; it never re-arms):
 #         */5 * * * * bash <skill>/tools/watch-tick.sh <project> \
 #                     >> <project>/CONTROL/watch-tick.log 2>&1
 #       It runs whether or not a session is alive, whether or not the model is
@@ -22,8 +23,9 @@
 #       ACTION lines this script prints (and the same lines in the log) and
 #       does the dispatching. Command-shaped, never free-form.
 #   Either half alone is a partial machine. The cron half proves the state; the
-#   model half acts on it. `--cron-line` prints the exact crontab line so step
-#   21 announces the instrument rather than a paraphrase of it.
+#   model half acts on it. `--arm <project>` WRITES that line at step 3, so the
+#   arming is an instrument rather than a snippet a model is asked to paste,
+#   and `--cron-line` still prints it verbatim for step 21 to prove against.
 #
 # WHAT IT CHECKS (the standards it owns; the table in SKILL.md RULE 5 is the
 # roster's only owner and this header never restates it)
@@ -108,7 +110,10 @@
 #
 # USAGE
 #   watch-tick.sh <project-home>
-#   watch-tick.sh <project-home> --cron-line     # print the step-21 crontab line
+#   watch-tick.sh <project-home> --cron-line     # PRINT the crontab line
+#   watch-tick.sh --arm <project-home>           # WRITE it (step 3), idempotently:
+#                                                #   0 armed, 3 already present,
+#                                                #   2 crontab unavailable (named)
 #   watch-tick.sh --selftest
 #
 # ENVIRONMENT KNOBS (all optional; defaults are the doctrine's numbers)
@@ -118,6 +123,17 @@
 #   WATCH_SKIP_ANCHOR=1         selftest/diagnostic only: skip the reconcile and
 #                               record anchor=skipped(WATCH_SKIP_ANCHOR)
 #   WATCH_TICK_SELFTEST_BREAK_LABEL=1  sabotage the label detector (selftest)
+#   WATCH_TICK_CRONTAB_FILE=<path>  --arm only: arm against this FIXTURE table
+#                               instead of the live crontab, which is then
+#                               neither read nor written. Every selftest case
+#                               uses it; nothing else should.
+#   WATCH_TICK_CRONTAB_CMD=<cmd>    --arm only: the crontab command used for
+#                               BOTH the read and the write. A path that cannot
+#                               run is the "crontab unavailable" arm, provable
+#                               without going near a real crontab; a command
+#                               that runs writes through the same command, so
+#                               a fixture command can never leak into the
+#                               operator's table.
 #==============================================================================
 
 set -euo pipefail
@@ -147,6 +163,7 @@ BAR_CHECK_SH="${SCRIPT_DIR}/bar-check.sh"
 HOME_DIR=""
 DO_SELFTEST=0
 DO_CRON_LINE=0
+DO_ARM=0
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
@@ -351,13 +368,114 @@ self_prove() {
 }
 
 #------------------------------------------------------------------------------
-# 4. Usage and the step-21 crontab line.
+# 4. Usage, the crontab line, and the step-3 arming.
 #------------------------------------------------------------------------------
 usage() { sed -n '2,140p' "$SELF" | sed 's/^# \{0,1\}//'; }
 
 cron_line() {  # cron_line <project-home>
   printf '*/5 * * * * bash %s/watch-tick.sh %s >> %s/CONTROL/watch-tick.log 2>&1\n' \
     "$SCRIPT_DIR" "$1" "$1"
+}
+
+#------------------------------------------------------------------------------
+# 4b. THE ARMING (step 3). `--cron-line` PRINTS the line; `--arm` WRITES it, so
+#     GATE 0b has an instrument instead of a snippet a model is asked to paste
+#     — the defect this arm exists to close: nothing armed the tick mechanically,
+#     so a run could reach step 21 having never ticked at all. `--arm` builds
+#     the line by calling cron_line, never by rewriting it, so the line the
+#     skill proves is byte-identical to the line it installs.
+#
+#     THE GUARD is exactly the one SKILL.md section 12 spells out: read the
+#     current table once, `grep -qF watch-tick.sh` over it, append only when
+#     that finds nothing. A second arm therefore adds nothing and SAYS so
+#     (exit 3) rather than doubling the tick.
+#
+#     THE FIXTURE MODE, and why it exists. WATCH_TICK_CRONTAB_FILE names a file
+#     that stands in for the table. The selftest arms against that file only:
+#     the operator's live crontab is never read and never written by any
+#     selftest case. Proving this code and experimenting on the machine that
+#     runs the fleet are not the same act.
+#
+#     THE UNAVAILABLE ARM is proven by RUNNING the command, never by a name
+#     lookup: `command -v` proves a NAME resolves, not that the program runs,
+#     and rc 126/127 is a shell abort rather than a fact about the table. A
+#     command that ran and said "no crontab for <user>" is an EMPTY table — the
+#     normal first-arm state — and is never reported as unavailability.
+#     WATCH_TICK_CRONTAB_CMD names the command for BOTH the read and the
+#     write, so the write can never reach a different table than the read
+#     proved (a fixture command that "ran" but leaked its write into the real
+#     crontab would be a test that arms the operator's machine); a value that
+#     is set and cannot be honoured is never ignored.
+#------------------------------------------------------------------------------
+CRONTAB_CMD="${WATCH_TICK_CRONTAB_CMD:-crontab}"
+CRONTAB_FILE="${WATCH_TICK_CRONTAB_FILE:-}"
+CRONTAB_PROBE_OUT=""
+CRONTAB_PROBE_RC=0
+
+crontab_probe() {  # rc 0 = the command RAN (whatever it exited); rc 1 = it could not
+  local out rc
+  set +e
+  out="$("$CRONTAB_CMD" -l 2>&1)"; rc=$?
+  set -e
+  CRONTAB_PROBE_OUT="$out"
+  CRONTAB_PROBE_RC="$rc"
+  case "$rc" in 126|127) return 1 ;; *) return 0 ;; esac
+}
+
+arm_unavailable() {  # arm_unavailable <reason> <cron-line>; the degradation on STDOUT
+  printf 'ARM | UNAVAILABLE (exit 2) | %s\n' "$(sanitize "$1")"
+  printf 'ARM | nothing was written and the tick is NOT armed.\n'
+  printf 'ARM | THE DEGRADATION, NAMED: the five-minute cron half does not exist on this box. Write that to the ledger, tell the client "the checker runs whenever I check in, rather than on its own", run the model half (/loop 5m) alone, and run this by hand at every ritual point:\n'
+  printf 'ARM | %s\n' "$2"
+  printf 'ARM | this is NOT an all-clear: the tick stays unarmed until something else arms it, and step 21 will find zero S-CHECK lines.\n'
+}
+
+arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavailable
+  local home="$1" line table wrc
+  line="$(cron_line "$home")"
+
+  if [[ -n "$CRONTAB_FILE" ]]; then
+    # FIXTURE MODE. The file IS the table. No crontab process runs unless the
+    # operator named one, and then it is PROVEN before anything is written.
+    if [[ -n "${WATCH_TICK_CRONTAB_CMD:-}" ]] && ! crontab_probe; then
+      arm_unavailable "\`${CRONTAB_CMD} -l\` came back rc=${CRONTAB_PROBE_RC}: ${CRONTAB_PROBE_OUT}" "$line"
+      return 2
+    fi
+    if [[ -f "$CRONTAB_FILE" ]] && "$GREP" -qF watch-tick.sh "$CRONTAB_FILE"; then
+      printf 'ARM | ALREADY PRESENT (exit 3) | %s already carries a watch-tick.sh line; nothing written\n' "$CRONTAB_FILE"
+      return 3
+    fi
+    { if [[ -f "$CRONTAB_FILE" ]]; then cat "$CRONTAB_FILE"; fi
+      printf '%s\n' "$line"
+    } > "${CRONTAB_FILE}.tmp.$$" || die_tool "could not stage the arming into ${CRONTAB_FILE}.tmp.$$"
+    mv "${CRONTAB_FILE}.tmp.$$" "$CRONTAB_FILE" || die_tool "could not install the arming into ${CRONTAB_FILE}"
+    printf 'ARM | ARMED (exit 0) | one line appended to the fixture table %s: %s\n' "$CRONTAB_FILE" "$line"
+    return 0
+  fi
+
+  # LIVE MODE. The probe IS the read, so the table is read exactly once.
+  if ! crontab_probe; then
+    arm_unavailable "\`${CRONTAB_CMD} -l\` came back rc=${CRONTAB_PROBE_RC}: ${CRONTAB_PROBE_OUT}" "$line"
+    return 2
+  fi
+  table="$CRONTAB_PROBE_OUT"
+  (( CRONTAB_PROBE_RC == 0 )) || table=""   # it ran and had nothing: an EMPTY table
+  if printf '%s\n' "$table" | "$GREP" -qF watch-tick.sh; then
+    printf 'ARM | ALREADY PRESENT (exit 3) | the crontab already carries a watch-tick.sh line; nothing written\n'
+    return 3
+  fi
+  set +e
+  { if [[ -n "$table" ]]; then printf '%s\n' "$table"; fi
+    printf '%s\n' "$line"
+  } | "$CRONTAB_CMD" -
+  wrc=$?
+  set -e
+  if (( wrc != 0 )); then
+    arm_unavailable "the write itself failed: the pipe into the crontab command returned rc=${wrc}" "$line"
+    return 2
+  fi
+  printf 'ARM | ARMED (exit 0) | one line installed: %s\n' "$line"
+  return 0
 }
 
 #==============================================================================
@@ -367,6 +485,7 @@ while (( $# )); do
   case "$1" in
     --selftest)  DO_SELFTEST=1; shift ;;
     --cron-line) DO_CRON_LINE=1; shift ;;
+    --arm)       DO_ARM=1; shift ;;
     -h|--help)   usage; exit 0 ;;
     --*)         die_tool "unknown option: $1" ;;
     *)
@@ -383,11 +502,20 @@ done
 # THE TICK
 #==============================================================================
 run_tick() {
-  [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: watch-tick.sh <project-home> [--cron-line]"
+  [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: watch-tick.sh <project-home> [--cron-line|--arm]"
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 
   if (( DO_CRON_LINE )); then cron_line "$HOME_DIR"; exit 0; fi
+
+  # --arm is the step-3 half and runs BEFORE self_prove and before any project
+  # file is read: arming a project the plan has not reached yet is the whole
+  # point of it (RC-19), so it may never depend on a plan file existing.
+  if (( DO_ARM )); then
+    local arc=0
+    set +e; arm_tick "$HOME_DIR"; arc=$?; set -e
+    exit "$arc"
+  fi
 
   self_prove
 
@@ -406,7 +534,7 @@ run_tick() {
   #     and the capture-proof stop, and this tick has no standing to count
   #     anything on a project whose state layers disagree.
   #--------------------------------------------------------------------------
-  local ANCHOR_NOTE="" ARC=0 AOUT=""
+  local ANCHOR_NOTE="" ARC=0 AOUT="" PRE_PLAN=0
   if [[ "${WATCH_SKIP_ANCHOR:-0}" == "1" ]]; then
     ANCHOR_NOTE="skipped(WATCH_SKIP_ANCHOR)"
   else
@@ -420,7 +548,12 @@ run_tick() {
     AOUT="$(bash "$ANCHOR_SH" "${AARGS[@]}" 2>&1)"; ARC=$?
     set -e
     case "$ARC" in
-      0) ANCHOR_NOTE="reconcile-clean" ;;
+      0) if printf '%s\n' "$AOUT" | "$GREP" -q '^PRE-PLAN |'; then
+           # anchor.sh's pre-plan arm exits 0 without checking for drift. Calling
+           # that "reconcile-clean" would be an all-clear this tick cannot prove.
+           ANCHOR_NOTE="pre-plan(no drift verdict claimed)"
+           PRE_PLAN=1
+         else ANCHOR_NOTE="reconcile-clean"; fi ;;
       3) ANCHOR_NOTE="reconcile-drift(exit 3)" ;;
       4) ANCHOR_NOTE="terminal-drift(exit 4)" ;;
       *) printf '%s\n' "$AOUT" >&2
@@ -436,6 +569,20 @@ run_tick() {
     printf 'TERMINAL-DRIFT | flag present: %s\n' "$FLAG"
     printf 'TERMINAL-DRIFT | the tick counts nothing and writes no S-CHECK line while this file exists — the flag IS the state, and anchor.sh already recorded it. Name the blocker in %s/CONTROL/TODO.md as a row starting "- [x] BLOCKER-NAMED | <the blocker> | session=<this session>" and the next tick clears it.\n' "$HOME_DIR"
     exit 4
+  fi
+
+  # THE PRE-PLAN TICK (RC-19). anchor.sh said the plan files are not due yet —
+  # the run has not reached step 6.5. The S-checks below read CHECKLIST.md for
+  # their runnable count, and dying there would put the TOOLING FAILURE back in
+  # watch-tick.log every five minutes: the exact canary failure this arm
+  # exists to end. So the tick degrades the same way the reconcile did: the
+  # counts it cannot take are named undetermined(pre-plan), no verdict line is
+  # written (a violations=0 count would be an all-clear it cannot prove), exit 0.
+  # Once the plan exists this branch never fires and the full S-check runs.
+  if (( PRE_PLAN == 1 )); then
+    printf 'PRE-PLAN | the tick takes no counts before step 6.5: runnable/open/trees=undetermined(pre-plan: CONTROL/CHECKLIST.md not yet written — the runnable count has no source) | S2,S3,S5,S6,S13,bar=undetermined(pre-plan: the plan files they read do not exist yet)\n'
+    printf 'PRE-PLAN | this line carries no verdict — an all-clear before the plan exists is not provable, and a TOOLING FAILURE for files the run has not reached is the failure RC-19 closed. Exit 0.\n'
+    return 0
   fi
 
   [[ -f "$CHK" ]] || die_tool "CONTROL/CHECKLIST.md is missing at ${CHK} — the runnable count has no source. Checked: ${CHK}. Not checked: the dispatch log and the heartbeat, because the run stopped here."
@@ -760,6 +907,17 @@ run_tick() {
 #      them fires it: that is the negative control for this check.
 #  12  THE BAR on the live shape — project_state.json present and parseable with
 #      no tasks key -> exit 3, ACTION|write-bar-inputs naming tasks.counts
+#  13  --arm, THE FIRST ARM, against a FIXTURE crontab file: exactly one line
+#      added at exit 0, and the line already in the fixture survives
+#  14  --arm again on the same fixture: exit 3, nothing written, still one line
+#  15  --arm with the crontab command UNAVAILABLE: exit 2, the degradation
+#      NAMED on stdout, and the fixture table left untouched
+#      Cases 13-15 arm a FIXTURE FILE. No case here reads or writes the
+#      operator's crontab, which is the control that makes them safe to run.
+#  16  THE PRE-PLAN TICK (RC-19): a project with no plan files and no step-6.5
+#      mark exits 0 with PRE-PLAN lines naming every count undetermined and NO
+#      verdict line in the ledger — and the SAME project with the plan files
+#      present produces one, the control proving the silence is the phase.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -950,6 +1108,88 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q '^ACTION|write-bar-inputs|CONTROL/project_state.json:tasks.counts|' \
      && printf '%s' "$OUT" | "$GREP" -q 'bar=missing(CONTROL/project_state.json:tasks.counts)'; then ok=1; fi
   report 12 "bar-counts-missing" "$ok" "rc=${RC} (want 3); a state file that EXISTS and parses is still a finding when tasks.counts is absent — the canary shape, named"
+
+  # --- case 13: --arm, THE FIRST ARM. WATCH_TICK_CRONTAB_FILE is the whole
+  #     instrument, so no crontab process runs at all: the operator's table is
+  #     neither read nor written here or in cases 14-15. One line is added, and
+  #     the line already in the fixture survives — an append, not a clobber.
+  mk_home "$T/c13"
+  local CF13="$T/c13/crontab.fixture" n13 keep13
+  printf '0 3 * * * /usr/bin/true\n' > "$CF13"
+  set +e
+  OUT="$(WATCH_TICK_CRONTAB_FILE="$CF13" bash "$SELF" --arm "$T/c13" 2>&1)"; RC=$?
+  set -e
+  n13="$("$GREP" -c 'watch-tick.sh' "$CF13" || true)"
+  keep13="$("$GREP" -c '/usr/bin/true' "$CF13" || true)"
+  ok=0
+  if (( RC == 0 )) && [[ "$n13" == "1" && "$keep13" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
+     && "$GREP" -q '^\*/5 \* \* \* \* bash .*watch-tick.sh .*watch-tick.log' "$CF13"; then ok=1; fi
+  report 13 "arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n13} watch-tick.sh line (want 1) in the shape --cron-line prints, and still carries its ${keep13} pre-existing line (want 1)"
+
+  # --- case 14: THE SECOND ARM, same fixture. The guard SKILL.md section 12
+  #     spells out, proven rather than described: exit 3, nothing written, the
+  #     count STILL 1. Case 13 is this case's positive control.
+  set +e
+  OUT="$(WATCH_TICK_CRONTAB_FILE="$CF13" bash "$SELF" --arm "$T/c13" 2>&1)"; RC=$?
+  set -e
+  local n14; n14="$("$GREP" -c 'watch-tick.sh' "$CF13" || true)"
+  ok=0
+  if (( RC == 3 )) && [[ "$n14" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^ARM | ALREADY PRESENT (exit 3)'; then ok=1; fi
+  report 14 "arm-idempotent" "$ok" "rc=${RC} (want 3); the count stayed at ${n14} (want 1) — a second arm adds nothing and says so"
+
+  # --- case 15: THE CRONTAB IS UNAVAILABLE. The named command does not exist,
+  #     so the probe comes back rc 127 — a shell abort, never a fact about the
+  #     table. Exit 2, the degradation NAMED on STDOUT (stderr is discarded
+  #     here on purpose, so the assertion can only pass on stdout), and the
+  #     fixture table left untouched.
+  mk_home "$T/c15"
+  local CF15="$T/c15/crontab.fixture" n15
+  : > "$CF15"
+  set +e
+  OUT="$(WATCH_TICK_CRONTAB_FILE="$CF15" WATCH_TICK_CRONTAB_CMD="$T/c15/no-such-crontab" \
+         bash "$SELF" --arm "$T/c15" 2>/dev/null)"; RC=$?
+  set -e
+  n15="$("$GREP" -c 'watch-tick.sh' "$CF15" || true)"
+  ok=0
+  if (( RC == 2 )) && [[ "$n15" == "0" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'THE DEGRADATION, NAMED' \
+     && printf '%s' "$OUT" | "$GREP" -q 'the tick is NOT armed' \
+     && printf '%s' "$OUT" | "$GREP" -q 'rc=127'; then ok=1; fi
+  report 15 "arm-crontab-unavailable" "$ok" "rc=${RC} (want 2); the degradation is NAMED on stdout with the probe's own rc=127; the fixture table still carries ${n15} watch-tick.sh line(s) (want 0) — nothing written, nothing claimed"
+
+  # --- case 16: THE PRE-PLAN TICK. anchor.sh's degradation (RC-19) reports the
+  #     plan files are not due yet; the tick must NOT then die on its own
+  #     CHECKLIST gate — 40 TOOLING FAILUREs in the canary's watch-tick.log is
+  #     the failure this closes — and must NOT write a verdict either: a
+  #     violations=0 line before the plan exists is an all-clear it cannot
+  #     prove. The control is the same project WITH its plan files: it gets a
+  #     real S-CHECK line, so the silence is the phase and not a broken writer.
+  mk_home "$T/c16pre"
+  rm -f "$T/c16pre/CONTROL/CHECKLIST.md" "$T/c16pre/CONTROL/TODO.md"
+  set +e
+  OUT="$(bash "$SELF" "$T/c16pre" 2>&1)"; RC=$?
+  set -e
+  local n_sc16
+  n_sc16="$("$GREP" -cF 'S-CHECK' "$T/c16pre/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^PRE-PLAN [|]' \
+     && printf '%s' "$OUT" | "$GREP" -q 'undetermined(pre-plan)' \
+     && [[ "$n_sc16" == "0" ]]; then ok=1; fi
+  report 16 "pre-plan-tick" "$ok" "rc=${RC} (want 0); PRE-PLAN lines name the unchecked counts undetermined(pre-plan); the fixture ledger carries ${n_sc16} verdict line(s) (want 0 — no verdict before the plan exists); NO TOOLING FAILURE for files the run has not reached"
+  # the control: plan files restored, the SAME project writes a real verdict.
+  printf -- '- [ ] U-02 qc the parser\n' > "$T/c16pre/CONTROL/CHECKLIST.md"
+  printf -- '- [ ] U-02 qc the parser\n' > "$T/c16pre/CONTROL/TODO.md"
+  set +e
+  OUT="$(bash "$SELF" "$T/c16pre" 2>&1)"; RC=$?
+  set -e
+  n_sc16="$("$GREP" -cF 'S-CHECK' "$T/c16pre/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  ok=0
+  if (( RC == 0 )) && [[ "$n_sc16" == "1" ]] \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^PRE-PLAN [|]'; then ok=1; fi
+  report 16 "post-plan-tick-control" "$ok" "rc=${RC} (want 0); the same project with its plan files written now carries ${n_sc16} verdict line (want 1) and no PRE-PLAN lines — the silence in the first leg is the phase, not a broken writer"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
