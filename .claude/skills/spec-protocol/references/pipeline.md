@@ -333,7 +333,10 @@ returns a verdict without writing the record has not produced a verdict.**
 
 A QC RECORD has EXACTLY six fields, one line each, in this order — the six
 things the bar checks, namely that every QC record shows a blind critic, a
-named bar, a binary verdict, and the loop-or-pass outcome, with zero self-QC:
+named bar, a binary verdict, and the loop-or-pass outcome, with zero self-QC.
+The same field order is a row of the LEDGER VOCABULARY table (`references/documents.md`), transcribed from this block; when the two
+ever differ, this block is the one that was meant to move and the table is
+corrected in the same change:
 
 ```
 QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
@@ -625,9 +628,10 @@ never the earlier verdict, never the earlier gap, never the earlier score,
 never the round number (`references/gauntlet.md` Section 5 — never reuse the
 previous verifier's judgment; a judge shown its own prior verdict anchors on it
 instead of re-judging). Earlier verdicts never carry. Every re-judge writes its
-own `SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>` line
-through `tools/ledger.sh` (`references/gauntlet.md` Section 5, the score is
-trend only and decides nothing), and three consecutive rounds whose `best` rose
+own `SCORE` line through `tools/ledger.sh` — its five fields, in order, are a
+row of the LEDGER VOCABULARY table (`references/documents.md`), and `tools/ledger.sh` REFUSES the line if they are not all there
+(`references/gauntlet.md` Section 5; the score is trend only and decides
+nothing), and three consecutive rounds whose `best` rose
 by less than 0.3 end the unit on the plateau rule — honestly, with its best
 checkpoint preserved and its one gap named — instead of running to the
 twentieth cycle.

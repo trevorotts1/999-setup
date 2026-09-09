@@ -204,7 +204,10 @@ against the published origin, before the `PUBLISHED:` line is written
 
 ## 3. FORM-DESTINATION — declared before the build, owned by the client, proven here
 
-**The ledger line, written BEFORE `STAGE-BUILD` opens, for EVERY target:**
+**The ledger line, written BEFORE `STAGE-BUILD` opens, for EVERY target** — the
+field order is a row of the LEDGER VOCABULARY table (`references/documents.md`), which is where every other file reads it; this
+section is the only other place it is spelled out, because the contract it
+belongs to is defined here:
 
 `FORM-DESTINATION: <form>=<GHL | email | Supabase table> owner=<client|operator>`
 

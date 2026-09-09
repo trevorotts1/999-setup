@@ -33,13 +33,25 @@ pages, `references/funnel-architecture.md` Stage 7).
 client when they own a web address; one screenshot pair per published page in
 `captures/publish/`.
 
-**Ledger line:**
+**Ledger line** — the canonical field order is the LEDGER VOCABULARY table in
+`references/documents.md`. This file carries the shape because the stage that
+writes it is defined here; nothing else in this file restates a line format:
 
-`PUBLISHED: <url> domain=<name|none>`
+`PUBLISHED: <url> domain=<name|none> status=<code>`
 
-Written through `tools/ledger.sh` with `PUBLISHED` as the upsert key, so the
-line is re-written in place — never duplicated — when a custom domain starts
-answering later (section 5).
+`status=` is the HTTP code section 2's `curl` proof actually measured — `200` on
+a clean publish, and the machine-readable half of a claim the ledger used to make
+only in prose. Written through `tools/ledger.sh` with `PUBLISHED` as the upsert
+key. **Measured caveat, because the run depends on it:** that upsert removes an
+existing line only where the key appears as the literal `| <key> |`
+(`tools/ledger.sh:431`), and this line is colon-delimited, so a re-write for a
+late custom domain (section 5) appends a SECOND `PUBLISHED:` line instead of
+replacing the first. Controls on the same instrument: a pipe-delimited
+`| PUBLISHED |` line dedups to one, and so does a heartbeat, so the instrument is
+sound and the mismatch is this shape's. Until that is reconciled, **the live
+address is the LAST `PUBLISHED:` line in the ledger, never the first** — a
+resuming session that reads the first one reads the platform address after the
+domain has already answered.
 
 **Pass/fail check:** the final address returns 200, and
 `captures/publish/<page>-375.png` and `captures/publish/<page>-1440.png` exist
@@ -158,11 +170,14 @@ curl -sS -o /dev/null -w '%{http_code}\n' "https://<name>"
 
 Every 60 seconds, up to 60 minutes, each attempt recorded. When the name
 resolves AND returns 200, the stage re-writes its ledger line as
-`PUBLISHED: https://<name> domain=<name>` (the upsert key keeps it one line).
+`PUBLISHED: https://<name> domain=<name> status=<the code the poll measured>`
+(appended, not replaced — section 1's measured caveat; the LAST such line is the
+live address).
 
 If the hour passes without an answer, the run does NOT claim the domain and
 does NOT stop: the platform address stands as the live address, the line stays
-`PUBLISHED: <platform-url> domain=none`, and the morning report carries one
+`PUBLISHED: <platform-url> domain=none status=200`, and the morning report
+carries one
 plain sentence — "Your web address hasn't switched over yet. The two rows are
 added; it can take a few hours to spread." The next loop re-polls and re-writes
 the line when it answers (`references/loops.md`).

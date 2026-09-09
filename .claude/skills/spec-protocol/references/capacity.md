@@ -670,7 +670,9 @@ fail identically.
 
 ### 6.2 The CAPACITY-EVENT line
 
-Every detected change writes one state-carrying ledger line through `ledger.sh`:
+Every detected change writes one state-carrying ledger line through `ledger.sh`.
+The field order below is the `CAPACITY-LEDGER` row of the LEDGER VOCABULARY table (`references/documents.md`); no other file restates
+it:
 
 ```
 <ISO8601> | CAPACITY-EVENT | provider=<p> | event=<429-cluster|balance-low|
