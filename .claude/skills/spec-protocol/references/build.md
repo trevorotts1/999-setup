@@ -99,10 +99,11 @@ never shipped. The failing check is named and surfaced; a silent build is a
 defect (a page nobody can verify is not a built page).
 
 **Every form's destination is declared BEFORE this stage opens, for EVERY
-target** — `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one
-ledger line per form on any page or screen (`references/ship-checks.md`
-section 3; the funnel wiring at `references/funnel-architecture.md` Stage 4
-generalized). A contact form on a website and a sign-up form in an app carry
+target** — one `FORM-DESTINATION` ledger line per form on any page or screen,
+to the field order in the LEDGER VOCABULARY table
+(`references/documents.md`); the rule is `references/ship-checks.md`
+section 3, and the funnel wiring at `references/funnel-architecture.md` Stage 4
+generalized. A contact form on a website and a sign-up form in an app carry
 the same contract as a funnel's opt-in: a named destination before a single
 field is built, and a proven arrival before it ships.
 
@@ -116,7 +117,8 @@ its command, its JSON report, and its threshold), and then `STAGE-PUBLISH`
 (`references/publish.md`: deploy, prove 200, the domain question, the two
 records, the poll). Nothing is published until
 `SHIP-CHECKS: pass=<n>/<n>` is in the ledger with both numbers equal, and the
-run is not done until `PUBLISHED: <url> domain=<name|none>` is.
+run is not done until the `PUBLISHED:` line is written — its exact field order is
+the LEDGER VOCABULARY table in `references/documents.md`.
 
 ---
 
@@ -331,10 +333,10 @@ order mechanically:
   44px), accessibility (WCAG AA contrast, keyboard-only focus order, alt
   text). A stage line naming pages that fail any check group is not a pass and
   does not open `STAGE-LOGO`.
-- A page carrying a form opens only when that form's
-  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>` line already exists
-  — a form with no named destination is not built (`references/ship-checks.md`
-  section 3).
+- A page carrying a form opens only when that form's `FORM-DESTINATION` line
+  already exists, in the field order the LEDGER VOCABULARY table gives
+  (`references/documents.md`) — a form with no named destination is not built
+  (`references/ship-checks.md` section 3).
 - The gate does not end here: `STAGE-SHIP-CHECKS` opens only after
   `STAGE-BUILD` passes, and `STAGE-PUBLISH` opens only after
   `SHIP-CHECKS: pass=<n>/<n>` is written with both numbers equal
@@ -391,7 +393,8 @@ either match it to its entry in `00-INPUT/CONTENT.md` or match it to that item's
 CONTENT-TRUTH: facts=<n> matched=<n> drafted=<n> unmatched=<n>
 ```
 
-`unmatched` must be `0`. A missing `00-INPUT/CONTENT.md` is not a pass by
+This is the one place the shape is written outside the LEDGER VOCABULARY table (`references/documents.md`), which carries it as a row
+so nothing else has to restate it. `unmatched` must be `0`. A missing `00-INPUT/CONTENT.md` is not a pass by
 default — it is the check's own failure, and it blocks the same way (a negative
 carries a claim's burden; an absent file proves nothing about the page).
 Every fact counted in `drafted` is listed in the morning report for the client

@@ -693,8 +693,9 @@ one ledger line per integration point
 `FUNNEL-INTEGRATION-<name>: <GHL|n8n> <what posts where>`.
 
 - Form submissions post to GHL. **The destination is a ledger line before the
-  build, and a proven arrival before the ship:**
-  `FORM-DESTINATION: <form>=<GHL | email | Supabase table>`, one line per form.
+  build, and a proven arrival before the ship:** one `FORM-DESTINATION` line per
+  form, to the field order in the LEDGER VOCABULARY table
+  (`references/documents.md`).
   This is not a funnel-only contract — it is the same line every target writes
   (`references/ship-checks.md` section 3), and instrument 6 of
   `STAGE-SHIP-CHECKS` submits one real entry, proves it arrived, then deletes
@@ -788,4 +789,5 @@ Hosting names the destination; `STAGE-PUBLISH` makes it answer. After
 same as for every other target: publish (through Convert and Flow (GoHighLevel,
 GHL) for GHL-hosted pages, Vercel through its MCP for self-hosted ones), prove
 200, ask the domain question, hand over the two records, poll until the address
-answers, and write `PUBLISHED: <url> domain=<name|none>`.
+answers, and write the `PUBLISHED:` line to the field order in the LEDGER
+VOCABULARY table (`references/documents.md`).

@@ -412,7 +412,8 @@ is data, not noise.
 the blind visual verdict here, and the technical verdict at
 `references/pipeline.md` Stage 2 — writes ONE score line through
 `tools/ledger.sh` into the live ledger (document 6) the moment the verdict is
-reached, beside the QC RECORD:
+reached, beside the QC RECORD. This is the shape the LEDGER VOCABULARY table (`references/documents.md`) carries as its `SCORE` row,
+and the one shape `tools/ledger.sh` judges rather than merely writes:
 
 ```
 SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>
@@ -1223,8 +1224,8 @@ them separately and never conflates them (`references/capacity.md`).
 **The plateau rule is what keeps the budget off flat rounds.** The `warn` row's
 obligation — "is measurable progress still occurring" — is not a judgement call
 and never was: it is read off the SCORE lines every judge verdict writes
-(Section 5), `SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> |
-delta=<d>`, through `tools/ledger.sh`. Per unit, three consecutive rounds with
+(Section 5) through `tools/ledger.sh`, in the field order the LEDGER VOCABULARY
+table gives (`references/documents.md`). Per unit, three consecutive rounds with
 `delta < 0.3` is a PLATEAU: that unit's loop ends there, its best checkpoint is
 preserved, its one honest gap is written (Section 9), and the budget goes to the
 next unit instead of to rounds five through twenty of a climb that has stopped

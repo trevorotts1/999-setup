@@ -325,13 +325,16 @@ Why this script is shaped the way it is:
 - Width is not written into the script. The runtime concurrency is the ledger's
   number; the script would run correctly at width 2 or 16 without an edit.
 
-The ledger during the run — every line carries state:
+The ledger during the run — every line carries state. The last two lines are
+ABBREVIATED, in the field order the LEDGER VOCABULARY table gives
+(`references/documents.md`), with the trailing fields elided as `| …`; the full
+order is the table's, never this example's:
 
 ```
 2026-08-12T14:22:03Z | CLAIM  | unit=U3 | agent=[opus x10] build:U3
 2026-08-12T14:31:40Z | RESULT | unit=U3 | PASS | evidence=branch u3-search pushed, verify exit 0
-2026-08-12T14:35:00Z | RECONCILE | clean | anchor=9f31c2ab | unit=U5 | next=U7 card grid mobile | counts=4/2/0/1/0/0 | tasks=3/3/1
-2026-08-12T14:40:00Z | S-CHECK | violations=0 | trees=4 | prefixes=4 | widths ok vs ledger
+2026-08-12T14:35:00Z | RECONCILE | anchor=9f31c2ab | unit=U5 | result=clean | tasks=3/3/1 | counts=4/2/0/1/0/0 | … | next=U7 card grid mobile
+2026-08-12T14:40:00Z | S-CHECK | violations=0 | runnable=4 open=2 trees=4 | … | actions=none | undetermined=none
 ```
 
 Reading those two count fields, because they are the ones a resuming session lives on:

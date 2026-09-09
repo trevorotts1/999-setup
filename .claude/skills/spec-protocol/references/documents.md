@@ -226,9 +226,9 @@ FAIL if: <exact condition> → incomplete because <reason>
   role writes that verdict block (the judge on a Gate 1/2 finding; the critic
   on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5).
   **Every verdict block opens with the QC RECORD** — the six-field format
-  defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`:
-  `QC-RECORD unit=… judge=… bar=…` / `bar-fetch=…` / `verdict=…` / `outcome=…`
-  plus `blind=yes model-independence=… self-qc=no` and `provenance=STRIPPED`
+  defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`,
+  whose exact field order is the LEDGER VOCABULARY table in this file — read it
+  there, never restated here. The record's last field is `provenance=STRIPPED`
   (Law 49 — the critic's package carries no timestamps, authorship, history,
   builder identity, builder reasoning, or effort narrative; `provenance=VIOLATION`
   voids the verdict), written through `tools/ledger.sh` the moment the verdict
@@ -345,8 +345,10 @@ FAIL if: <exact condition> → incomplete because <reason>
 - **Path:** `CONTROL/dispatch-log.md`
 - **Writer:** the orchestrator
 - **Readers:** the stall-detection loop; any resuming session
-- **Shape:** one line per dispatch, written BEFORE each agent fires:
-  `timestamp | work item | stage | full label | run id`. Must stay small.
+- **Shape:** one line per dispatch, written BEFORE each agent fires — the
+  dispatch row of the LEDGER VOCABULARY table in this file, which is
+  `tools/dispatch-check.sh`'s own row and not a second definition of it. Must
+  stay small.
 - **What makes it wrong:** a dispatch that is not in the log but left artifacts on
   disk; a log line written after the dispatch rather than before.
 
@@ -364,8 +366,10 @@ FAIL if: <exact condition> → incomplete because <reason>
   closes).
 - **Readers:** the stall-detection loop; `tools/watch-tick.sh` (S6 reads each
   agent's heartbeat age and S13 reaps a finished-but-still-stamping agent)
-- **Shape:** one line per live agent, overwritten on every real progress step:
-  `timestamp | agent label | work item | stage`. Must stay small.
+- **Shape:** one line per live agent, overwritten on every real progress step —
+  the heartbeat row of the LEDGER VOCABULARY table in this file, which is
+  `ledger.sh`'s upsert key and `watch-tick.sh`'s parse target, not a second
+  definition of either. Must stay small.
 - **What makes it wrong:** a heartbeat driven by a timer rather than progress; an
   agent that stamps another agent's line; an agent with no heartbeat at all (died at
   launch — reconcile against the dispatch log, not the heartbeat); a heartbeat
@@ -391,18 +395,21 @@ FAIL if: <exact condition> → incomplete because <reason>
   > Here's what got built, what I checked, and the one or two things only you can
   > decide.
 
-  `<URL>` is read from the `PUBLISHED: <url> domain=<name|none>` ledger line
-  written by `STAGE-PUBLISH` (`references/publish.md`), never retyped from
-  memory, and it is the custom domain when one answers. When the run has no
+  `<URL>` is read from the LAST `PUBLISHED:` ledger line, whose field order is
+  the LEDGER VOCABULARY table in this file — written by `STAGE-PUBLISH`
+  (`references/publish.md`), never retyped from memory, and it is the custom
+  domain when one answers. The LAST one, not the first, for the reason that
+  row records: a late domain APPENDS its line, so the first is the stale
+  platform address. When the run has no
   `PUBLISHED:` line, the opening says so in the same plain voice — what is
   built, and the one thing that stopped it going live — and never implies an
   address that does not answer.
 - **The score curve, one line per unit — the section every morning report
   carries.** Under a heading the client can read, the report prints ONE line per
   unit: the piece in the client's own words, its score at every round in order,
-  and how it ended. The curve is read straight off the
-  `SCORE | unit=… | round=… | score=… | best=… | delta=…` lines in the live
-  ledger (document 6) — written by every judge verdict through `tools/ledger.sh`
+  and how it ended. The curve is read straight off the `SCORE` lines in the live
+  ledger (document 6) — their field order is the LEDGER VOCABULARY table in this
+  file, and they are written by every judge verdict through `tools/ledger.sh`
   (`references/gauntlet.md` Section 5) — never retyped from memory and never
   rounded to flatter the run. A unit ended by the **plateau rule** (three
   consecutive rounds whose best rose by less than 0.3 — `references/gauntlet.md`
@@ -552,6 +559,110 @@ FAIL if: <exact condition> → incomplete because <reason>
   block missing any of the eleven fields; hand-carried state (state lives in
   project_state.json — the manifest says how the project OPERATES, never where
   it currently IS); example task names copied instead of derived.
+
+---
+
+## THE LEDGER VOCABULARY — written ONCE here, cited everywhere else
+
+**This is the only table of ledger line formats in the skill.** Every reference
+file that used to restate a shape cites this table in one line and never repeats
+it — the same consolidation `references/capacity.md` §11 already did for the seat
+table. Two copies of a line format is how a run and the thing that grades the run
+end up measuring different strings, each of them right about its own copy.
+
+**The table is transcribed from the scripts, never from prose.** Where a script's
+regex or `printf` already fixes a shape, that script is the authority and the row
+below is its transcription: `tools/audit-gate.sh:117-123` (`CARRY`,
+`AUDIT-CYCLE`, `FIX-PASS`, `run=wf-fix-`), `tools/audit-gate.sh:206`
+(`AUDIT-GATE`), `tools/dispatch-check.sh:704` (the dispatch row),
+`tools/ledger.sh:85` (`SCORE`, the one shape `ledger.sh` refuses on),
+`tools/right-size.sh:298`, `tools/anchor.sh:1052` and `:1588`,
+`tools/watch-tick.sh:735`. **A table that disagrees with the script that enforces
+it is worse than no table:** when the two differ the script is right and this
+table is corrected, never the other way round.
+
+`tools/ledger.sh` is the write PRIMITIVE for every line here and is never its
+author. The **Written by** column names the tool or the role that COMPOSES the
+line and hands it to `ledger.sh`. A shape that opens `<ISO8601Z> | ` is one whose
+writer stamps its own timestamp before the handoff; the rest give the payload
+from the event name onward.
+
+**Reading a row:** a literal pipe inside a table cell is written `\|` — markdown's
+table escape. On disk the character is a bare `|`. Angle brackets mark a value to
+substitute, never text to type.
+
+| Event | Exact field order | Written by |
+|---|---|---|
+| `ENTRY-MODE` | `ENTRY-MODE: <interview\|pointed>` | the conductor, the instant `CONTROL/` exists (`SKILL.md` section 3) — the run's first ledger line |
+| `BUILD-TARGET` | `BUILD-TARGET: <taxonomy>` | the conductor, after the target is classified and confirmed (`SKILL.md` section 3); half of the RESEARCH-READY gate |
+| `INPUT-CAPTURED` | `INPUT-CAPTURED: <path>` | the conductor, the moment the brainstorm capture or the provided material lands in `00-INPUT/` (`SKILL.md` section 5); the other half of that gate |
+| `INTERVIEW-MODE` | `INTERVIEW-MODE: <simple\|advanced>` | the conductor, BEFORE the second counted question (`references/interview.md`); never confused with `ENTRY-MODE` — both lines exist on every run |
+| `CAPACITY-LEDGER` | **not a ledger line.** It is the file `<project>/CAPACITY-LEDGER.md` (`references/capacity.md` §4), read by `tools/dispatch-check.sh`, `tools/watch-tick.sh` and `tools/hooks/dispatch-gate.py`. The LEDGER line for a capacity CHANGE is `<ISO8601> \| CAPACITY-EVENT \| provider=<p> \| event=<…> \| evidence=<…> \| response=<…>` | the card is emitted by `tools/capacity-resolver.sh` at step 6.5; the conductor writes the file. `CAPACITY-EVENT` is written by the conductor (`references/capacity.md` §6.2); no script composes it — `tools/anchor.sh:285` only READS the class, and `:306` excludes it from the state-delta fingerprint as one of that script's self-authored classes (applied at `:1403`, proven by selftest case 8 at `:1660`), because observation is not progress |
+| `OVER-ENGINEERING-CHECK` | `<ISO8601Z> \| OVER-ENGINEERING-CHECK: units=<n> apparatus_kb=<n> budget_kb=<n> removed=<n> verdict=<PASS\|TRIMMED>` | `tools/right-size.sh:298`. The verdict has exactly TWO values and `REFUSED` is not one of them: `PASS` when nothing was cut, `TRIMMED` the moment `removed > 0` (`:281-282`) — a refusal exits without writing a line at all. Exactly one per run; the script refuses to append a second (`:294`). `tools/dispatch-check.sh:180` reads it and exits 6 for a build dispatch without it |
+| `AUDIT-CYCLE` | `AUDIT-CYCLE: <n>` | the auditor, one per cycle. Counted by `tools/audit-gate.sh` `CYCLE_RE` (`:121`) in `CONTROL/LEDGER.md`; no line means cycle 0, never an assumed cycle |
+| `CARRY` | in `QUALITY-CONTROL/AUDIT-FINDINGS.md`: `CARRY \| <unit or document> \| <the defect, and which unit absorbs it>`. In `CONTROL/LEDGER.md`: `CARRY: <the same defect>`. Both are matched by the same class expression (`tools/audit-gate.sh:117`), which accepts `\|` or `:` after the class word and an optional `- `, `* `, `\| ` or `**` lead | the auditor writes the finding; the conductor logs each as a `CARRY:` line through `tools/ledger.sh` (`tools/audit-gate.sh:330`). A CARRY is never blocking (`references/gauntlet.md` §7.1) |
+| `AUDIT-GATE` | `AUDIT-GATE \| cycle=<n> \| halt=<n> harm=<n> scope=<n> carry=<n> \| verdict=<PASS\|BLOCKED\|CEILING\|OUT-OF-SCOPE>` | `tools/audit-gate.sh:206`, through `tools/ledger.sh`, into `CONTROL/LEDGER.md` |
+| `FIX-PASS` | `FIX-PASS: <what the pass repaired>` (the prefix `AUDIT-FIX-PASS:` is also matched) | the conductor, one per fix pass. Counted by `tools/audit-gate.sh` `FIXPASS_RE` (`:122`); each one must be matched by a distinct `run=wf-fix-` tree in the dispatch log or the gate exits 9 |
+| `run=wf-fix-<NN>` | `run=wf-fix-<NN>` — a field of the dispatch row, matched as `run=wf-fix-[A-Za-z0-9._-]+` | `tools/dispatch-check.sh:704` writes it into `CONTROL/dispatch-log.md`; `tools/audit-gate.sh:123,308` counts the DISTINCT trees. A fix pass is dispatched as a workflow, never performed by the conductor |
+| the dispatch row | `<ISO8601Z> \| <unit> \| dispatch \| <label> \| run=<run-id> \| units=<n> \| agents=<n> \| cap=<n> \| floor=<n> \| stages=<n> \| dep=<reason\|none> \| executions_total=<n>` | `tools/dispatch-check.sh:704`, through `tools/ledger.sh`, into `CONTROL/dispatch-log.md` — written BEFORE the agents fire, on the same pass that increments `agents.executions_total`. Two fields read wrong if transcribed from prose: `dep=` carries the stated dependency REASON, never a unit id, and the `<unit>` slot falls back to `<units>-units` when the optional `unit=` argument is absent |
+| the heartbeat line (`CONTROL/HEARTBEAT.md`) | `<ISO8601Z> \| <agent label> \| <unit> \| <stage>` | each agent, its OWN line only, through `tools/ledger.sh`'s UPSERT mode with the agent label as the key (`tools/ledger.sh:14-15` states it, `:427-431` implements it by removing any existing line containing the literal `\| <key> \|`, `:203-208` proves it) — one line per live agent, overwritten on every real progress step, never appended. Parsed by `tools/watch-tick.sh`'s heartbeat map (`:280`, `:537`) for S6 freshness and S13 reaping; a stamp that map cannot parse makes that row's age UNDETERMINED (`:555`), never fresh |
+| `QC RECORD` | SIX lines, one field each, handed to `ledger.sh` as ONE payload. The first token is `QC-RECORD` with a HYPHEN: `QC-RECORD unit=<id> judge=<seat label> bar=<the bar, named>` / `bar-fetch=<URL \| capture path \| file path \| answer-key reference>` / `verdict=<PASS\|FAIL\|BLOCKED\|INFEASIBLE\|LIMIT-REACHED>` / `outcome=<PASSED\|CLIENT-ACCEPTED gap=<…>\|LOOPED cycle n of 20\|ESCALATED…>` / `blind=<yes> model-independence=<PROVEN\|UNPROVEN> self-qc=<no>` / `provenance=<STRIPPED\|VIOLATION>` | the judge, the moment the verdict is reached (`references/pipeline.md` Stage 2, `PROMPT-QC-INSTRUCTIONS.md`) — the ONE row here with no script that fixes its shape, so Stage 2's block is its authority and this row is that block transcribed. `tools/ledger.sh` selftest case 10 (`:225`) proves only that a six-LINE payload lands whole, using an abbreviated stand-in payload, never this field order |
+| `SCORE` | `SCORE \| unit=<id> \| round=<n> \| score=<x.x> \| best=<x.x> \| delta=<d>`, optionally behind the usual `<ISO8601Z> \| ` prefix | every judge verdict, beside its QC RECORD (`references/gauntlet.md` §5). **`tools/ledger.sh:85` REFUSES a line of this class that does not carry all five fields in this order with numeric `round`, `score`, `best` and `delta`** — the only shape `ledger.sh` judges |
+| `RECONCILE` | `<ISO8601Z> \| RECONCILE \| anchor=<8-hex> \| unit=<id\|IDLE> \| result=<clean\|alarm\|actions:<n>\|TERMINAL-DRIFT> \| tasks=<…> \| counts=<…> \| classes=<…> \| ledger=<…> \| intents=<…> \| ticks=<n> \| stateful-heartbeats=<n> \| fp=<8-hex> \| nodelta=<n> \| rung=<n>/4 \| age=<…> \| next=<…>` | `tools/anchor.sh:1588` (`--mode reconcile`). The anchor mode writes `<ISO8601Z> \| RE-ANCHOR \| anchor=<…> \| unit=<…> \| next=<…> \| counts=<…> \| tasks=<…> \| manifest=<…> \| age=<…>` (`:1582`) |
+| `S-CHECK` | `<ISO8601Z> \| S-CHECK \| violations=<n> \| runnable=<n> open=<n> trees=<n> \| cap=<…> \| anchor=<…> \| bar=<…> \| trees-detail=<…> \| actions=<…> \| undetermined=<…>` | `tools/watch-tick.sh:735`, one per five-minute tick. A tick that finds `CONTROL/TERMINAL-DRIFT.flag` writes NO S-CHECK line — the flag is the state |
+| `BUDGET-PAUSE` | `<ISO8601Z> \| BUDGET-PAUSE \| executions=<n> \| pause_at=<n> \| ceiling=<n> \| remaining=<n\|undetermined> \| unit=<id> \| required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'` | `tools/anchor.sh:1052`. Its sibling at the absolute ceiling is `<ISO8601Z> \| BUDGET-CAP \| executions=<n> \| cap=<n> \| remaining=<…> \| unit=<id> \| required=run_status=STOPPED_CAP; …` (`:1045`) |
+| `FORM-DESTINATION` | `FORM-DESTINATION: <form>=<GHL \| email \| Supabase table> owner=<client\|operator>`, one line per form; the honest no-address form is `FORM-DESTINATION: <form>=BLOCKED owner=client reason=<the reason, in plain words>` | the conductor, BEFORE `STAGE-BUILD` opens (`references/ship-checks.md` section 3). Parsed by `tools/ship-guard.sh:119-126`, which exits 4 on a destination that is not the client's |
+| `ACCOUNT-REGISTERED` | **NO SUCH LEDGER LINE.** Nothing in this skill writes one, and this table does not mint one. The contract it is mistaken for — no third-party account opened in the client's name without a spoken yes — is `references/ship-checks.md` section 3, and its record is a row in the decision register (`SPEC/DECISIONS.md`, document 10), in the client's own words | — no writer. A grader looking for `ACCOUNT-REGISTERED` in a ledger is looking for a string this skill never emits |
+| `SHIP-GUARD` | a STDOUT verdict, not a ledger line: `SHIP-GUARD \| verdict=<CLEAN\|EXPOSED\|FOREIGN-DESTINATION\|UNDETERMINED> \| <the counts or the reason>`, preceded by `SHIP-GUARD \| project=<…>`, `\| origin=<…>`, `\| deploy-root=<…>`, `\| ledger=<…>` | `tools/ship-guard.sh` (`:103,220-223,259,333-346`). Its exit code, not its text, is what gates the publish (0 clean, 2 UNDETERMINED, 3 exposed path, 4 foreign destination) |
+| `CONTENT-TRUTH` | `CONTENT-TRUTH: facts=<n> matched=<n> drafted=<n> unmatched=<n>` — `unmatched` must be `0` | the content-truth ship check, after the build is final and before anything publishes (`references/build.md` section 6) |
+| `PUBLISHED` | `PUBLISHED: <url> domain=<name\|none> status=<code>` | `STAGE-PUBLISH` (`references/publish.md`), composed by the conductor and handed to `tools/ledger.sh`. `status=` is the HTTP code the section-2 `curl` proof measured — `200` on a clean publish, and the machine-readable half of a claim the ledger used to make only in prose. **The upsert key does NOT deduplicate this shape, measured:** `ledger.sh`'s upsert removes an existing line only where the key appears as the literal `\| <key> \|` (`:431`), and this line is colon-delimited, so re-writing it for a late custom domain with `PUBLISHED` as the key appends a SECOND line rather than replacing the first. Controls on the same instrument in the same run: the same key against a pipe-delimited `\| PUBLISHED \|` line dedups to 1, and a `builder-a` heartbeat dedups to 1 — so the instrument is sound and the mismatch is this shape's. Until that is reconciled, a run that re-writes the line reads the LAST `PUBLISHED:` line, never the first |
+
+**Two events that are named here and are NOT ledger lines** — `CAPACITY-LEDGER`
+(a file) and `SHIP-GUARD` (a stdout verdict) — are in the table precisely so that
+nothing looks for them in `CONTROL/LEDGER.md` and reports a clean zero when it
+finds none. `ACCOUNT-REGISTERED` is in the table for the same reason and the
+opposite verdict: it is a string with no writer anywhere in this skill.
+
+**Which rows a script writes, and which a role writes.** `/usr/bin/grep -rc
+'<event>' tools/` finds SEVEN of the names above in no script, and they split
+three ways. Five are conductor-written: `BUILD-TARGET`, `INPUT-CAPTURED`,
+`INTERVIEW-MODE`, `CONTENT-TRUTH` and `PUBLISHED`. The sixth is `QC-RECORD` and
+the seventh is `ACCOUNT-REGISTERED`, each treated in its own paragraph below.
+The five are not drift and not a missing tool — they are composed by the CONDUCTOR and
+handed to `tools/ledger.sh`, which writes any line it is given and judges only
+the `SCORE` class. A role-written line has no second writer to disagree with;
+what fixes it is the section that requires it (`SKILL.md` sections 3–6,
+`references/interview.md`, `references/build.md` section 6,
+`references/publish.md`) plus this table. `ENTRY-MODE` reaches `tools/` only
+inside a fixture (`tools/audit-gate.sh:388`), which quotes this table's shape
+exactly — a fixture is where a role-written shape gets proven, so its quote must
+match this table too. `QC-RECORD` reaches `tools/` not at all: measured,
+`/usr/bin/grep -rc 'QC-RECORD' tools/` is 0 files, and the one hit for the spaced
+form is `tools/ledger.sh:225`, an ABBREVIATED six-LINE stand-in
+(`QC RECORD | unit=U2 | round=1` …) planted to prove a six-line payload lands
+whole. It is not the field order and does not claim to be — `references/pipeline.md`
+Stage 2 is the only authority for that, and the row above is transcribed from
+there. `ACCOUNT-REGISTERED` appears in no script and no reference file for the
+reason its row gives: nothing writes it.
+
+**The rows a script enforces were proven against the script, not read off it.**
+The four shapes `tools/audit-gate.sh` counts (`AUDIT-CYCLE:`, a `CARRY` finding,
+`FIX-PASS:` and the `run=wf-fix-` field of the dispatch row) and the dispatch row
+itself were each written into a fixture project from THIS table and driven through
+`bash tools/audit-gate.sh <fixture>` and `tools/dispatch-check.sh`, with the
+negative control run alongside. Measured: the gate answered
+`AUDIT-GATE PASS | cycle=1 | halt=0 harm=0 scope=0 carry=1`, rc=0 — so each row
+was COUNTED, not merely tolerated (drop the `AUDIT-CYCLE:` line and the same gate
+records cycle 0; drop the `CARRY` finding and carry falls to 0). Swap
+`run=wf-fix-01` for `run=wf-other-01` in the dispatch row and it exits 9 instead
+of 0. The dispatch row was not transcribed at all: `tools/dispatch-check.sh` was
+RUN, and the row it emitted is the row above, field for field. A row that agrees
+with the prose and not with the regex passes a reading and fails that fixture.
+
+**Adding an event.** A new line format is added HERE first, in the same change
+that adds the code that writes it, and nowhere else. A shape that exists in a
+reference file and in no tool is prose; a shape that exists in a tool and not in
+this table is drift, and the next audit finds it as a `CARRY`.
 
 ---
 
@@ -757,7 +868,8 @@ not count against the closed seventeen and never need the added-document ask:
   native graph is; the snapshot is its photograph for the tool).
 - **The RE-ANCHOR/DRIFT-ALARM/RECONCILE lines inside the ledger**
   (`references/anti-drift.md`) are ledger CONTENT, not a new file —
-  `tools/anchor.sh` writes them through `tools/ledger.sh`.
+  `tools/anchor.sh` writes them through `tools/ledger.sh`, to the field order in
+  the LEDGER VOCABULARY table above.
 - The skill's own `references/` files (gauntlet.md, pipeline.md, the rest) — read
   by the skill at runtime, never part of any project folder.
 

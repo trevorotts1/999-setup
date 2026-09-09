@@ -117,7 +117,10 @@ ACTION|<verb>|<task-or-unit>|<evidence>
 `project_state.json` update, the checklist correction (the plan wins, Law 1) —
 and then re-runs `anchor.sh` to confirm clean.
 
-**(e) The result line is written through `tools/ledger.sh`.** A pass that finds
+**(e) The result line is written through `tools/ledger.sh`.** Its full field
+order — and `RE-ANCHOR`'s, `S-CHECK`'s and `BUDGET-PAUSE`'s — is the LEDGER VOCABULARY table (`references/documents.md`); the lines
+quoted in this file are abbreviations of those rows, never a second definition
+of them. A pass that finds
 nothing to do writes `RECONCILE | result=clean | counts=… | tasks=…`, which
 CARRIES STATE — and in reconcile mode it carries the class-7 ledger field
 (`ledger=ledger-ok(…)/unpaired-claim(…)/ledger-undetermined(…)`), the
