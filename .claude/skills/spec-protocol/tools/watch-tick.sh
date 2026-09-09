@@ -74,6 +74,18 @@
 #            own census (a build-stage open row), never a state word any model
 #            may rewrite at will.
 #
+#   speech-lint  the tick RUNS tools/speech-check.sh on the newest unchecked
+#            draft under CONTROL/.speech/ (one file per tick, default timeout
+#            25s via WATCH_SPEECH_TIMEOUT): a REJECT names its classes and is
+#            reported never edited; a lint that cannot run at all (missing,
+#            not executable, exit 4, timeout) raises DRIFT-ALARM
+#            speech-unchecked; an older draft causes no new run
+#                                              -> DRIFT-ALARM speech-unchecked (lint unrunnable only)
+#                                              -> ACTION|speech-check
+#            Also not an S-number, and deliberately evidence-only: the lint
+#            writes its own SPEECH-CHECK verdict through ledger.sh, so the tick
+#            never stamps a verdict it did not run.
+#
 #   group-abort  two or more agents of one dispatch row ending at an identical
 #            timestamp with no completion record (the RC-26 kill signature:
 #            the three WAVE4 builders sharing 10:43:46.087Z)
@@ -176,9 +188,25 @@
 #                               through ANCHOR_BUDGET_TOL: the constant carries
 #                               the doctrine's number and the environment only
 #                               overrides it.
+#   WATCH_SPEECH_CHECK_SH=<path>  fixture only: the lint the speech section
+#                               runs instead of tools/speech-check.sh. Every
+#                               selftest case that needs a broken lint uses it;
+#                               nothing else should.
+#   WATCH_SPEECH_TIMEOUT=<secs>   fixture only: how long one lint run may take
+#                               before the tick moves on without it (default 25).
+#                               Nothing else should.
 #==============================================================================
 
 set -euo pipefail
+# Never inherit a parent shell's xtrace: `bash -x` exports SHELLOPTS, and an
+# inheriting child would spray `++ ...` lines into captured output —
+# self_prove counts parser rows, so one leaked line turns a proven instrument
+# into BROKEN-INSTRUMENT exit 2. Off, always (SHELLOPTS is readonly, so unset
+# it through the environment for every child this script spawns).
+if [[ "${SHELLOPTS:-}" == *xtrace* ]]; then
+  export SHELLOPTS=""
+  set +x
+fi
 
 #------------------------------------------------------------------------------
 # 0. Instruments. Absolute paths where the doctrine requires it (the bare
@@ -201,6 +229,10 @@ SELF="${SCRIPT_DIR}/$(basename "$SELF")"
 LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
 ANCHOR_SH="${SCRIPT_DIR}/anchor.sh"
 BAR_CHECK_SH="${SCRIPT_DIR}/bar-check.sh"
+# WATCH_SPEECH_CHECK_SH names the lint to run (fixture only: the default is the
+# sixth instrument beside this script). A value that is set and cannot be
+# honoured is never ignored — it IS the lint for this run.
+SPEECH_CHECK_SH="${WATCH_SPEECH_CHECK_SH:-${SCRIPT_DIR}/speech-check.sh}"
 
 HOME_DIR=""
 DO_SELFTEST=0
@@ -1097,39 +1129,141 @@ run_tick() {
   # working, self-testing lint sitting unused in the same tree.
   #
   #   a draft with a matching SPEECH-CHECK line   -> checked, silent
-  #   a draft with none                           -> DRIFT-ALARM speech-unchecked
+  #   the newest draft newer than the newest SPEECH-CHECK line -> RUN the lint
+  #        on that file; the lint writes its own verdict through ledger.sh
+  #   the lint missing, not executable, or exiting 4 -> DRIFT-ALARM
+  #        speech-unchecked (the lint could not be run at all)
   #   no draft at all (no folder, or empty)       -> UNDETERMINED, never a pass
   #
   # The last row is the honest limit: this script cannot read a spoken message,
-  # only a drafted one, so it fires on EVIDENCE (a draft nobody linted) and
-  # says so in writing when it has none.
-  local SPEECH_DIR SPEECH_NOTE="" SPEECH_UNCHK="" SPEECH_N=0 SPEECH_BAD=0
+  # only a drafted one, so it runs on EVIDENCE (a draft newer than the last
+  # verdict) and says so in writing when it has none. A REJECT is reported,
+  # never suppressed and never edited: the lint's exit 3 and the classes it
+  # named stand, and this tick does not rewrite the message. The tick's job is
+  # to make the failure visible within five minutes, not to fix prose.
+  local SPEECH_DIR SPEECH_NOTE="" SPEECH_LINT_RAN=0 SPEECH_LINT_RC="" SPEECH_LINT_CLASSES=""
   SPEECH_DIR="$HOME_DIR/CONTROL/.speech"
-  if [[ -d "$SPEECH_DIR" ]]; then
-    local sf sbase
-    while IFS= read -r sf; do
-      [[ -n "$sf" ]] || continue
-      sbase="$(basename "$sf")"
-      SPEECH_N=$(( SPEECH_N + 1 ))
-      # Exact substring, never a regex: a draft is named by the client's turn
-      # and a basename is not a pattern this tick gets to interpret.
-      if [[ -f "$LED" ]] && "$AWK" -v want="| file=${sbase}" \
-           'index($0, "SPEECH-CHECK:") > 0 && index($0, want) > 0 { found = 1 }
-            END { exit(found ? 0 : 1) }' "$LED"; then
-        continue
+  # newest_unchecked_draft — the newest CONTROL/.speech/ file whose mtime is
+  # newer than the newest SPEECH-CHECK: line on CONTROL/LEDGER.md. Empty when
+  # there is nothing to run on. One tick runs the lint on this ONE file only,
+  # never on the whole directory, so a tick cannot fan out unboundedly.
+  newest_unchecked_draft() {  # newest_unchecked_draft <speech-dir> <ledger> -> path or nothing
+    local sdir="$1" led="$2" newest_line_epoch=0 f m cand="" cand_m=0
+    local -a files=()
+    while IFS= read -r f; do
+      [[ -n "$f" ]] || continue
+      files+=("$f")
+    done < <(find "$sdir" -maxdepth 1 -type f 2>/dev/null | LC_ALL=C sort)
+    (( ${#files[@]} > 0 )) || return 0
+    if [[ -f "$led" ]]; then
+      local last_line
+      last_line="$("$GREP" -h 'SPEECH-CHECK:' "$led" 2>/dev/null | tail -1 || true)"
+      if [[ -n "$last_line" ]]; then
+        local lts
+        lts="$(printf '%s' "$last_line" | "$AWK" -F'|' '{print $1}')"
+        lts="$(printf '%s' "$lts" | tr -d ' \t')"
+        if [[ -n "$lts" ]] && newest_line_epoch="$(iso_to_epoch "$lts" 2>/dev/null)"; then
+          :
+        else
+          newest_line_epoch=0
+        fi
       fi
-      SPEECH_BAD=$(( SPEECH_BAD + 1 ))
-      SPEECH_UNCHK="${SPEECH_UNCHK}${SPEECH_UNCHK:+,}${sbase}"
-    done < <(find "$SPEECH_DIR" -maxdepth 1 -type f 2>/dev/null | LC_ALL=C sort)
-  fi
-  if (( SPEECH_BAD > 0 )); then
-    SPEECH_NOTE="unchecked(${SPEECH_UNCHK})"
-    ledger_write "CONTROL/LEDGER.md" \
-      "$(iso_now) | DRIFT-ALARM | speech-unchecked | drafts=${SPEECH_N} unchecked=${SPEECH_BAD} | $(sanitize "${SPEECH_UNCHK}") | $(sanitize "no SPEECH-CHECK: line on CONTROL/LEDGER.md — RULE 5 lints every client-visible message before it is spoken; an exit 3 is REWRITTEN, never overridden")"
-    emit "speech-check" "$SPEECH_UNCHK" \
-      "DRIFT-ALARM speech-unchecked: ${SPEECH_BAD}/${SPEECH_N} drafts in CONTROL/.speech/ carry no SPEECH-CHECK: line — lint with tools/speech-check.sh before speaking (SKILL.md RULE 5)"
-  elif (( SPEECH_N > 0 )); then
-    SPEECH_NOTE="ok(${SPEECH_N} drafted, all linted)"
+    fi
+    for f in "${files[@]}"; do
+      m="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)"
+      [[ "$m" =~ ^[0-9]+$ ]] || m=0
+      # Ties break toward the last name in sort order: fixtures write several
+      # drafts inside one second, and the newest draft is the last one.
+      if (( m > newest_line_epoch )) && (( m >= cand_m )); then
+        cand="$f"; cand_m="$m"
+      fi
+    done
+    [[ -n "$cand" ]] && printf '%s\n' "$cand"
+    return 0
+  }
+  # run_speech_lint — invoke the lint on ONE draft file. Fail-loud-but-continue
+  # in the style this file already uses for anchor.sh failures: a lint that
+  # hangs or errors leaves the tick's other checks intact and their verdicts
+  # still written. Sets SPEECH_LINT_RAN=1 with SPEECH_LINT_RC and
+  # SPEECH_LINT_CLASSES on a completed run. Returns 0 in ALL cases: a REJECT
+  # is carried by the emitted ACTION line and the S-CHECK count, never by a
+  # nonzero return (under `set -e` a nonzero return would abort the tick
+  # before the S-CHECK line is written — the exact failure this item closes).
+  run_speech_lint() {  # run_speech_lint <draft-file> -> always 0; findings ride in actions.txt
+    local draft="$1" lout lrc db
+    db="$(basename "$draft")"
+    if [[ ! -f "$SPEECH_CHECK_SH" ]]; then
+      SPEECH_NOTE="unchecked(${db}; could-not-run: tools/speech-check.sh missing)"
+      ledger_write "CONTROL/LEDGER.md" \
+        "$(iso_now) | DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1 | $(sanitize "${db}") | $(sanitize "the lint could not be run at all: tools/speech-check.sh is missing — RULE 5 lints every client-visible message before it is spoken; an exit 3 is REWRITTEN, never overridden")"
+      emit "speech-check" "$db" \
+        "DRIFT-ALARM speech-unchecked: the lint could not be run at all (tools/speech-check.sh missing) with a client-visible draft ${db} present — install the lint and lint before speaking (SKILL.md RULE 5)"
+      return 0
+    fi
+    if [[ ! -x "$SPEECH_CHECK_SH" ]]; then
+      SPEECH_NOTE="unchecked(${db}; could-not-run: tools/speech-check.sh not executable)"
+      ledger_write "CONTROL/LEDGER.md" \
+        "$(iso_now) | DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1 | $(sanitize "${db}") | $(sanitize "the lint could not be run at all: tools/speech-check.sh is not executable — RULE 5 lints every client-visible message before it is spoken; an exit 3 is REWRITTEN, never overridden")"
+      emit "speech-check" "$db" \
+        "DRIFT-ALARM speech-unchecked: the lint could not be run at all (tools/speech-check.sh not executable) with a client-visible draft ${db} present — restore the lint's execute bit and lint before speaking (SKILL.md RULE 5)"
+      return 0
+    fi
+    # `timeout` is coreutils, not POSIX: fleet Linux has it, macOS only with
+    # it on PATH. Without it the lint runs unguarded rather than not at all.
+    local _stimeout="${WATCH_SPEECH_TIMEOUT:-25}"
+    set +e
+    if command -v timeout >/dev/null 2>&1; then
+      lout="$(timeout "$_stimeout" bash "$SPEECH_CHECK_SH" "$draft" --home "$HOME_DIR" 2>&1)"; lrc=$?
+    else
+      lout="$(bash "$SPEECH_CHECK_SH" "$draft" --home "$HOME_DIR" 2>&1)"; lrc=$?
+    fi
+    set -e
+    if (( lrc == 124 )) || (( lrc == 142 )); then
+      SPEECH_NOTE="unchecked(${db}; could-not-run: lint timed out)"
+      return 0
+    fi
+    if (( lrc == 4 )); then
+      SPEECH_NOTE="unchecked(${db}; could-not-run: lint selftest failed, exit 4)"
+      ledger_write "CONTROL/LEDGER.md" \
+        "$(iso_now) | DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1 | $(sanitize "${db}") | $(sanitize "the lint could not be run at all: tools/speech-check.sh exited 4 (selftest failed) — RULE 5 lints every client-visible message before it is spoken; an exit 3 is REWRITTEN, never overridden")"
+      emit "speech-check" "$db" \
+        "DRIFT-ALARM speech-unchecked: the lint could not be run at all (tools/speech-check.sh exited 4, selftest failed) with a client-visible draft ${db} present — fix the lint; it may not be believed until it passes (SKILL.md RULE 5)"
+      return 0
+    fi
+    if (( lrc == 2 )); then
+      SPEECH_NOTE="unchecked(${db}; lint undetermined, exit 2)"
+      return 0
+    fi
+    SPEECH_LINT_RAN=1; SPEECH_LINT_RC="$lrc"
+    SPEECH_LINT_CLASSES="$(printf '%s\n' "$lout" | sed -n 's/^SPEECH-CHECK | verdict=[A-Z]* | classes=\([A-Za-z,+_-]*\).*/\1/p' | head -1)"
+    [[ -n "$SPEECH_LINT_CLASSES" ]] || SPEECH_LINT_CLASSES="none"
+    if (( lrc == 3 )); then
+      SPEECH_NOTE="reject(${db}; classes=${SPEECH_LINT_CLASSES})"
+      emit "speech-check" "$db" \
+        "SPEECH-CHECK REJECT (exit 3): ${db} names classes ${SPEECH_LINT_CLASSES} — reported, never suppressed and never edited; rewrite the message, never override (SKILL.md RULE 5)"
+      return 0
+    fi
+    SPEECH_NOTE="ok(lint ran on ${db}; verdict=${SPEECH_LINT_CLASSES})"
+    return 0
+  }
+  if [[ -d "$SPEECH_DIR" ]]; then
+    _SPEECH_CAND="$(newest_unchecked_draft "$SPEECH_DIR" "$LED" || true)"
+    if [[ -n "${_SPEECH_CAND:-}" ]]; then
+      # run_speech_lint returns 0 on every path (a REJECT rides in actions.txt
+      # and the S-CHECK count), so the tick always reaches its verdict line.
+      run_speech_lint "$_SPEECH_CAND"
+      unset _SPEECH_CAND
+    else
+      _SPEECH_N="$("$GREP" -c '[^[:space:]]' < <(find "$SPEECH_DIR" -maxdepth 1 -type f 2>/dev/null) 2>/dev/null || true)"
+      [[ -n "${_SPEECH_N:-}" ]] || _SPEECH_N=0
+      if (( _SPEECH_N > 0 )); then
+        SPEECH_NOTE="ok(all drafts linted)"
+      else
+        SPEECH_NOTE="undetermined(no draft under CONTROL/.speech/)"
+        add_undet "speech=undetermined(nothing drafted under CONTROL/.speech/ — a script cannot read a spoken message, so an absent draft is not proof the client was told nothing)"
+      fi
+      unset _SPEECH_N
+    fi
   else
     SPEECH_NOTE="undetermined(no draft under CONTROL/.speech/)"
     add_undet "speech=undetermined(nothing drafted under CONTROL/.speech/ — a script cannot read a spoken message, so an absent draft is not proof the client was told nothing)"
@@ -1244,11 +1378,15 @@ run_tick() {
 #      mark exits 0 with PRE-PLAN lines naming every count undetermined and NO
 #      verdict line in the ledger — and the SAME project with the plan files
 #      present produces one, the control proving the silence is the phase.
-#  17  SPEECH — a drafted client message under CONTROL/.speech/ with no
-#      SPEECH-CHECK line on the ledger -> exit 3, DRIFT-ALARM speech-unchecked
-#  18  THE CONTROL FOR 17 — the same draft WITH its SPEECH-CHECK line -> exit 0
-#      and no alarm. 17 and 18 differ by one ledger line, which is the whole
-#      discrimination: a check that fires on both measures nothing.
+#  17  SPEECH — the tick RUNS the lint on a draft newer than the last
+#      SPEECH-CHECK line: a clean draft gains one SPEECH-CHECK line and no
+#      alarm; the verbatim 2026-09-08 canary sentence REJECTS naming path
+#      and tmp-path (case 18); a missing lint raises DRIFT-ALARM
+#      speech-unchecked (case 19); an older draft causes no new run (case
+#      20); the skill opening lints clean (case 21); five drafts yield one
+#      line for the newest only (case 22); a hung lint never blocks the
+#      tick (case 23).
+#  18  (folded into 17 above: the speech-lint legs live in cases 17-23)
 #  19  THE SNAPSHOT WITNESS (RC-29b) — a project past step 6.5 with no
 #      task-graph-snapshot.json: first tick silent (one tick of grace), second
 #      tick DRIFT-ALARM tasks-snapshot-absent at exit 3; the control with the
@@ -1300,6 +1438,12 @@ selftest() {
     fi
   }
   runw() {  # runw <args...> -> sets RC and OUT
+    # The operator box carries a `grep` shell shim that pretty-prints matches
+    # instead of emitting them (see header §0). It is exported into this
+    # shell, but command substitution runs `bash` (not sh), and a non-exported
+    # function does not cross an exec boundary — so unsetting it here keeps
+    # every child tick on the real grep this file already resolved into $GREP.
+    unset -f grep 2>/dev/null || true
     set +e
     OUT="$(bash "$SELF" "$@" 2>&1)"; RC=$?
     set -e
@@ -1538,41 +1682,143 @@ selftest() {
   if (( RC == 0 )) && [[ "$n_sc16" == "1" ]] \
      && ! printf '%s' "$OUT" | "$GREP" -q '^PRE-PLAN [|]'; then ok=1; fi
   report 16 "post-plan-tick-control" "$ok" "rc=${RC} (want 0); the same project with its plan files written now carries ${n_sc16} verdict line (want 1) and no PRE-PLAN lines — the silence in the first leg is the phase, not a broken writer"
-  # --- case 17: SPEECH. A client message was drafted for turn 07 and no
-  #     SPEECH-CHECK line names it, so the turn boundary passed with a
-  #     client-visible message that RULE 5's sixth instrument never saw. The
-  #     row is open, labelled and freshly stamped, so nothing else can fire:
-  #     the case isolates the speech check.
+  # --- case 17: SPEECH. A client message newer than the last SPEECH-CHECK line
+  #     makes the tick RUN the lint on it: the lint writes its own verdict
+  #     through ledger.sh. The row is open, labelled and freshly stamped, so
+  #     nothing else can fire: the case isolates the speech run.
   mk_home "$T/c17"
   printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-017\n' "$(stamp 1)" > "$T/c17/CONTROL/dispatch-log.md"
   printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c17/CONTROL/HEARTBEAT.md"
   mkdir -p "$T/c17/CONTROL/.speech"
   printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c17/CONTROL/.speech/turn-07.txt"
+  local n17_before n17_after
+  n17_before="$("$GREP" -c 'SPEECH-CHECK:' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n17_before" =~ ^[0-9]+$ ]] || n17_before=0
   runw "$T/c17"
+  n17_after="$("$GREP" -c 'SPEECH-CHECK:' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n17_after" =~ ^[0-9]+$ ]] || n17_after=0
   ok=0
-  if (( RC == 3 )) \
-     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|speech-check|turn-07.txt|DRIFT-ALARM speech-unchecked' \
-     && printf '%s' "$OUT" | "$GREP" -q 'speech=unchecked(turn-07.txt)' \
-     && "$GREP" -q 'DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 17 "speech-unchecked" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | speech-unchecked written for turn-07.txt; ACTION|speech-check emitted; the S-CHECK line carries speech=unchecked(turn-07.txt)"
+  if [[ "$n17_before" == "0" && "$n17_after" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(lint ran on turn-07.txt' \
+     && "$GREP" -q 'SPEECH-CHECK: clean | file=turn-07.txt' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -q 'DRIFT-ALARM | speech-unchecked' "$T/c17/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 17 "speech-lint-runs" "$ok" "rc=${RC}; SPEECH-CHECK lines before=${n17_before} after=${n17_after} (want 0 then 1); the tick RAN the lint and it wrote a clean verdict; no speech-unchecked alarm"
 
-  # --- case 18: THE CONTROL FOR 17. Byte for byte the same fixture plus the
-  #     one line speech-check.sh writes when it lints the draft. The alarm must
-  #     go silent: a check that fires whether or not the work was done is not a
-  #     check. This pair is the discrimination for the whole speech section.
+  # --- case 18: THE DISCRIMINATING CASE. The verbatim 2026-09-08 canary
+  #     sentence must come back a REJECT naming `path` and `tmp-path` — the
+  #     proof the tick ran the REAL lint rather than writing a stub line. A
+  #     naive implementation that appends `SPEECH-CHECK: clean` fails here.
   mk_home "$T/c18"
   printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-018\n' "$(stamp 1)" > "$T/c18/CONTROL/dispatch-log.md"
   printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c18/CONTROL/HEARTBEAT.md"
   mkdir -p "$T/c18/CONTROL/.speech"
-  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c18/CONTROL/.speech/turn-07.txt"
-  printf '%s | SPEECH-CHECK: clean | file=turn-07.txt\n' "$(stamp 1)" > "$T/c18/CONTROL/LEDGER.md"
+  printf 'Details saved \xe2\x80\x94 backup at `/tmp/corner-post-framing-backup-20260908T1315Z`.\n' > "$T/c18/CONTROL/.speech/turn-06.txt"
   runw "$T/c18"
   ok=0
-  if (( RC == 0 )) \
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|speech-check|turn-06.txt|SPEECH-CHECK REJECT' \
+     && "$GREP" -q 'SPEECH-CHECK: .*path.*tmp-path.*| file=turn-06.txt' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=reject(turn-06.txt'; then ok=1; fi
+  report 18 "speech-reject-canary" "$ok" "rc=${RC} (want 3); the canary sentence came back a REJECT naming path and tmp-path on the ledger line for turn-06.txt — the tick ran the real lint"
+
+  # --- case 19: THE LINT CANNOT BE RUN. speech-check.sh missing (chmod 000
+  #     equivalent for the fixture: the file is not there) with a client-visible
+  #     draft present still raises DRIFT-ALARM speech-unchecked — the narrowed
+  #     WI-54 alarm, which now fires only when the lint could not run at all.
+  mk_home "$T/c19"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-019\n' "$(stamp 1)" > "$T/c19/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c19/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c19/CONTROL/.speech"
+  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c19/CONTROL/.speech/turn-07.txt"
+  set +e
+  OUT="$(WATCH_SPEECH_CHECK_SH="$T/c19/no-such-speech-check.sh" bash "$SELF" "$T/c19" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|speech-check|turn-07.txt|DRIFT-ALARM speech-unchecked' \
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=unchecked(turn-07.txt' \
+     && "$GREP" -q 'DRIFT-ALARM | speech-unchecked | drafts=1 unchecked=1' "$T/c19/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 19 "speech-unchecked-no-lint" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | speech-unchecked written for turn-07.txt with the lint missing; the narrowed alarm fires only when the lint could not be run at all"
+
+  # --- case 20: THE CONTROL THAT PROVES IT DOES NOT OVER-FIRE. The draft is
+  #     OLDER than the newest SPEECH-CHECK line, so no new lint run and no new
+  #     ledger line: the counts before and after are identical.
+  mk_home "$T/c20"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-020\n' "$(stamp 1)" > "$T/c20/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c20/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c20/CONTROL/.speech"
+  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c20/CONTROL/.speech/turn-07.txt"
+  touch -d '2001-01-01 00:00:00 UTC' "$T/c20/CONTROL/.speech/turn-07.txt" 2>/dev/null \
+    || touch -t 200101010000 "$T/c20/CONTROL/.speech/turn-07.txt"
+  printf '%s | SPEECH-CHECK: clean | file=turn-07.txt\n' "$(stamp 1)" > "$T/c20/CONTROL/LEDGER.md"
+  local n20_before n20_after
+  n20_before="$("$GREP" -c 'SPEECH-CHECK:' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n20_before" =~ ^[0-9]+$ ]] || n20_before=0
+  runw "$T/c20"
+  n20_after="$("$GREP" -c 'SPEECH-CHECK:' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n20_after" =~ ^[0-9]+$ ]] || n20_after=0
+  ok=0
+  if [[ "$n20_before" == "1" && "$n20_after" == "1" ]] \
      && ! printf '%s' "$OUT" | "$GREP" -q 'speech-unchecked' \
-     && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(1 drafted, all linted)' \
-     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 18 "speech-checked-control" "$ok" "rc=${RC} (want 0); the SPEECH-CHECK line for turn-07.txt silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries speech=ok(1 drafted, all linted)"
+     && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(all drafts linted)'; then ok=1; fi
+  report 20 "speech-no-overfire" "$ok" "rc=${RC}; SPEECH-CHECK lines before=${n20_before} after=${n20_after} (want 1 then 1); an older draft caused no new lint run and no new ledger line"
+
+  # --- case 21: THE SKILL'S OWN WORDS. The verbatim opening from SKILL.md
+  #     must come back a clean verdict, exit 0 — a lint that rejects the
+  #     skill's own words is worse than no lint.
+  mk_home "$T/c21"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-021\n' "$(stamp 1)" > "$T/c21/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c21/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c21/CONTROL/.speech"
+  printf '> Hi, I'"'"'m Candace. I build the thing you'"'"'ve been wanting: a website, an app for phones or computers, or pages that sell for you. You don'"'"'t need to know which; that'"'"'s my job.\n\n> Here'"'"'s how it works. I ask you plain questions, one at a time. "I don'"'"'t know" is always a fine answer; I'"'"'ll choose. Then my helpers build it, check it, and put it online, around the clock. You can walk away.\n' > "$T/c21/CONTROL/.speech/turn-01.txt"
+  runw "$T/c21"
+  ok=0
+  if (( RC == 0 )) \
+     && "$GREP" -q 'SPEECH-CHECK: clean | file=turn-01.txt' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 21 "speech-opening-clean" "$ok" "rc=${RC} (want 0); the verbatim opening produced a clean verdict for turn-01.txt"
+
+  # --- case 22: ONE FILE PER TICK. Five unchecked drafts produce exactly one
+  #     new SPEECH-CHECK line, for the newest draft only.
+  mk_home "$T/c22"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-022\n' "$(stamp 1)" > "$T/c22/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c22/CONTROL/HEARTBEAT.md"
+  mkdir -p "$T/c22/CONTROL/.speech"
+  printf 'First draft, please ignore.\n' > "$T/c22/CONTROL/.speech/turn-01.txt"
+  printf 'Second draft, please ignore.\n' > "$T/c22/CONTROL/.speech/turn-02.txt"
+  printf 'Third draft, please ignore.\n' > "$T/c22/CONTROL/.speech/turn-03.txt"
+  printf 'Fourth draft, please ignore.\n' > "$T/c22/CONTROL/.speech/turn-04.txt"
+  printf 'Fifth draft, please ignore.\n' > "$T/c22/CONTROL/.speech/turn-05.txt"
+  local n22_before n22_after
+  n22_before="$("$GREP" -c 'SPEECH-CHECK:' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n22_before" =~ ^[0-9]+$ ]] || n22_before=0
+  runw "$T/c22"
+  n22_after="$("$GREP" -c 'SPEECH-CHECK:' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null || true)"
+  [[ "$n22_after" =~ ^[0-9]+$ ]] || n22_after=0
+  ok=0
+  if [[ "$n22_before" == "0" && "$n22_after" == "1" ]] \
+     && "$GREP" -q 'SPEECH-CHECK: clean | file=turn-05.txt' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 22 "speech-one-file-per-tick" "$ok" "rc=${RC}; SPEECH-CHECK lines before=${n22_before} after=${n22_after} (want 0 then 1); the one new line is for the newest draft turn-05.txt"
+
+  # --- case 23: THE TICK SURVIVES A BROKEN LINT. speech-check.sh replaced by
+  #     a script that sleeps past its timeout: the tick's other verdicts are
+  #     still written and the run is not blocked.
+  mk_home "$T/c23"
+  printf -- '- [ ] U-02 qc\n- [ ] U-03 build\n' > "$T/c23/CONTROL/CHECKLIST.md"
+  printf '# Dispatch log\n' > "$T/c23/CONTROL/dispatch-log.md"
+  mkdir -p "$T/c23/CONTROL/.speech"
+  printf 'Your website is live. Have a look and tell me what to change.\n' > "$T/c23/CONTROL/.speech/turn-07.txt"
+  printf '#!/usr/bin/env bash\nsleep 60\nexit 0\n' > "$T/c23/broken-speech-check.sh"
+  chmod +x "$T/c23/broken-speech-check.sh"
+  local OUT23 RC23
+  set +e
+  OUT23="$(WATCH_SPEECH_CHECK_SH="$T/c23/broken-speech-check.sh" WATCH_SPEECH_TIMEOUT=2 bash "$SELF" "$T/c23" 2>&1)"; RC23=$?
+  set -e
+  ok=0
+  if (( RC23 == 3 )) \
+     && printf '%s' "$OUT23" | "$GREP" -q '^ACTION|dispatch-now|' \
+     && printf '%s' "$OUT23" | "$GREP" -q 'S-CHECK | violations=' \
+     && "$GREP" -q 'S-CHECK | violations=' "$T/c23/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 23 "speech-broken-lint-survives" "$ok" "rc=${RC23} (want 3); the S2 verdict still fired and the S-CHECK line was still written while the lint slept past its 2s timeout — output quoted: [$(printf '%s' "$OUT23" | "$GREP" -m2 '^ACTION\|S-CHECK' | tr '\n' ';')]"
 
   # --- case 19: GROUP-ABORT, THE POSITIVE. One dispatch wave (run-090)
   #     booking three agents; all three heartbeat lines frozen at the
