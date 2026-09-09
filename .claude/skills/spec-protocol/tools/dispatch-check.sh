@@ -67,6 +67,21 @@
 #              run at the ceiling is also past its pause line, and reporting
 #              that as a pause would leave a project able to answer "keep going"
 #              past a line it can never cross.
+#  10  WRONG SEAT — a BUILD dispatch was attempted while the MOST RECENT
+#              CONDUCTOR-SEAT: line in CONTROL/LEDGER.md reads anything other
+#              than resolved=opus. The conductor's chair is Opus (the one seat
+#              table, references/capacity.md section 11); on the 2026-09-08
+#              canary it slid into the router's sonnet default at the turn-04
+#              boundary and nothing in the skill noticed for seventeen turns.
+#              tools/seat-check.sh reads the chair and SKILL.md section 2 writes
+#              that line. This is a PHASE GATE, never a hard stop: a conductor
+#              off the Opus lane may finish the apparatus, and only the BUILD
+#              phase is held. The operator clears it by starting the session on
+#              the Opus lane, which records a newer line. ABSENCE of any
+#              CONDUCTOR-SEAT line is NOT a refusal — a run predating
+#              seat-check.sh still works — and the missing line is named in a
+#              WARNING on stderr instead. Like 4, 6, 7 and 8 it is a fact about
+#              the RUN, not a broken tool, so it is kept out of exit 2.
 #
 # THE OPERATOR OVERRIDE. CONTROL/OPERATOR-OVERRIDE.json is read BEFORE
 # CONTROL/project_state.json and its `first_pause` REPLACES agents.first_pause
@@ -78,10 +93,11 @@
 # never a pass. See "THE OPERATOR OVERRIDE" below the width helpers for the
 # contract in full.
 #
-# The four the row enumerates are 0/3/5/2. Exits 4 and 6 are the fail-closed
-# precondition refusals — a missing Parallelism Plan and a missing
-# over-engineering check; both are kept separate from 2 on purpose, because
-# calling a real refusal a tooling failure would let it read as a broken tool.
+# The four the row enumerates are 0/3/5/2. Exits 4, 6 and 10 are the fail-closed
+# precondition refusals — a missing Parallelism Plan, a missing over-engineering
+# check, and a conductor off the Opus lane; all three are kept separate from 2 on
+# purpose, because calling a real refusal a tooling failure would let it read as
+# a broken tool.
 # Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
 # reason: the instrument worked perfectly, the RUN is out of budget. When the
 # four budget keys cannot be READ, though, the gate does not fall through to a
@@ -113,8 +129,13 @@
 # executions_total=20 against first_pause=200; the override file at 20 refuses
 # the identical dispatch with rc 7; the variable alone does the same and names
 # itself; the file beats a disagreeing variable; and a malformed override is
-# rc 2, never rc 0. A gate whose known-positive comes back negative reports
-# BROKEN INSTRUMENT, never "clean".
+# rc 2, never rc 0. THE CONDUCTOR'S SEAT is proven on one more fixture, four
+# legs: no CONDUCTOR-SEAT line at all passes with a warning naming the missing
+# line; the same build dispatch after a resolved=sonnet line exits 10 and spends
+# nothing; after a resolved=opus line it passes again; and a JUDGE dispatch under
+# that same resolved=sonnet line passes, which is what proves the gate reads the
+# BUILD phase and is not a class-wide refusal. A gate whose known-positive comes
+# back negative reports BROKEN INSTRUMENT, never "clean".
 
 set -uo pipefail
 
@@ -179,6 +200,30 @@ has_rightsize_line() {
   [[ -r "${f}" ]] || return 1
   "${GREP}" -q 'OVER-ENGINEERING-CHECK:' "${f}" 2>/dev/null && return 0
   return 1
+}
+
+# --- The conductor's seat (RC-15) -------------------------------------------
+# tools/seat-check.sh resolves which lane the CONDUCTOR is sitting in and
+# SKILL.md section 2 writes its verdict into CONTROL/LEDGER.md as
+#
+#   CONDUCTOR-SEAT: expected=opus resolved=<lane> launcher=<name> source=<src>
+#
+# The NEWEST such line is the only one that counts: a run that opened in the
+# wrong chair and was restarted in the right one records a second line, and the
+# second line is the truth about the session dispatching now. This gate reads
+# the line; it never reads the environment and never resolves a seat itself —
+# one instrument owns that question, and it is not this one.
+last_seat_line() {
+  local f="$1"
+  [[ -f "${f}" ]] || return 1
+  [[ -r "${f}" ]] || return 1
+  "${GREP}" -h 'CONDUCTOR-SEAT:' "${f}" 2>/dev/null | tail -n 1
+}
+
+# seat_lane_of <line> — the resolved= field, or empty when the line carries none.
+# An empty field is NOT read as opus: a malformed seat line is a wrong seat.
+seat_lane_of() {
+  printf '%s' "$1" | sed -n 's/.*resolved=\([A-Za-z0-9._-][A-Za-z0-9._-]*\).*/\1/p' | head -n 1
 }
 
 # Deliberately broad: any label carrying "build" in any case is a build
@@ -645,6 +690,27 @@ run_check() {
         "${ledger_doc}" "${project}" >&2
       exit 6
     fi
+
+    # --- Fail-closed precondition: the conductor's own seat (RC-15) --------
+    # Second, after the over-engineering line, so the existing refusal keeps its
+    # order and this one is additive. Only the BUILD phase is gated: the
+    # apparatus may be finished from any chair, and a judge dispatch is never
+    # touched here.
+    local seat_line seat_lane
+    seat_line="$(last_seat_line "${ledger_doc}" || true)"
+    if [[ -z "${seat_line}" ]]; then
+      printf 'DISPATCH-CHECK WARNING | no CONDUCTOR-SEAT: line in %s — which lane the conductor is sitting in is UNRECORDED, which is not the same as proven wrong, so this build dispatch is NOT refused. Run tools/seat-check.sh <launcher> at step 2; it resolves the chair and SKILL.md section 2 writes the line.\n' \
+        "${ledger_doc}" >&2
+    else
+      seat_lane="$(seat_lane_of "${seat_line}")"
+      if [[ "${seat_lane}" != "opus" ]]; then
+        printf 'DISPATCH-CHECK WRONG-SEAT | the newest CONDUCTOR-SEAT: line reads resolved=%s, not resolved=opus\n' \
+          "${seat_lane:-NONE}" >&2
+        printf 'DISPATCH-CHECK NOTE | read: %s | the conductor is not on the Opus lane, so the BUILD phase does not open (references/capacity.md section 11 seats the conductor on Opus). This is a PHASE GATE, not a stop: the apparatus work continues and the run says so in the ledger. The operator clears it by starting the session on the Opus lane; tools/seat-check.sh then records a newer CONDUCTOR-SEAT line and this dispatch fires. Nothing here writes a settings file.\n' \
+          "${ledger_doc}" >&2
+        exit 10
+      fi
+    fi
   fi
 
   # --- Fail-closed precondition: the budget wall (RC-4b) --------------------
@@ -1054,9 +1120,60 @@ run_selftest() {
   report 27 "malformed-override-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a nested first_pause; the message says MALFORMED OPERATOR OVERRIDE and names the path, and the counter did not move (${p12_total}, want 20): ${out}"
   rm -f "${ovf}"
 
+  # --- 19: THE CONDUCTOR'S SEAT — four legs on ONE fixture (RC-15) ----------
+  # One fixture, four answers, and the SPLIT is what makes this a test rather
+  # than a claim. (a) No CONDUCTOR-SEAT line at all PASSES: a run that predates
+  # tools/seat-check.sh must still build, so absence is a WARNING naming the
+  # missing line and never a refusal. (b) The same build dispatch under a
+  # resolved=sonnet line exits 10 and spends nothing. (c) A JUDGE dispatch under
+  # that SAME sonnet line still passes, which is what proves the gate reads the
+  # BUILD phase and is not a class-wide refusal. (d) A newer resolved=opus line
+  # opens the build phase again — the operator's cure, proven rather than
+  # promised. A run where all four legs answer alike is a broken test.
+  local P13="${T}/proj-seat"
+  mkdir -p "${P13}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P13}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P13}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P13}/CONTROL/project_state.json" 0 200 0 2000
+  local seatled="${P13}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${seatled}"
+  local p13_total
+
+  # (a) THE CONTROL FIRST: no seat line at all → PASS, with the line named.
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p13_total}" == "10" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'WARNING | no CONDUCTOR-SEAT: line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "${seatled}" || ok=0
+  report 28 "no-seat-line-warns-only" "${ok}" "rc=${rc} (want 0) for a build dispatch with NO CONDUCTOR-SEAT: line at all — a run predating seat-check.sh still builds; the warning names the missing line and the exact path read, and the counter moved 0 → ${p13_total} (want 10)"
+
+  # (b) THE REFUSAL: the identical dispatch under a resolved=sonnet line.
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=sonnet launcher=claude-nine source=session-env\n' >> "${seatled}"
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "10" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'WRONG-SEAT | the newest CONDUCTOR-SEAT: line reads resolved=sonnet, not resolved=opus' || ok=0
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  [[ "${p13_total}" == "10" ]] || ok=0
+  report 29 "wrong-seat-refuses-build" "${ok}" "rc=${rc} (want 10) on the SAME fixture with only a resolved=sonnet CONDUCTOR-SEAT: line added; the message names the lane it read, and a refused dispatch spends nothing (counter still ${p13_total}, want 10): ${out}"
+
+  # (c) THE PHASE CONTROL: a JUDGE dispatch under that same sonnet line passes.
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p13_total}" == "11" ]] && ok=1
+  if printf '%s' "${out}" | "${GREP}" -q 'WRONG-SEAT'; then ok=0; fi
+  report 30 "wrong-seat-gates-build-only" "${ok}" "rc=${rc} (want 0) for a JUDGE dispatch under the SAME resolved=sonnet line — exit 10 is a BUILD-phase gate, so the apparatus and the judging continue from the wrong chair — and the counter moved 10 → ${p13_total} (want 11)"
+
+  # (d) THE CURE: a newer resolved=opus line, and the build phase opens again.
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' >> "${seatled}"
+  out="$(bash "${SELF}" "${P13}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  p13_total="$(read_state_total "${P13}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p13_total}" == "21" ]] && ok=1
+  if printf '%s' "${out}" | "${GREP}" -q 'WRONG-SEAT'; then ok=0; fi
+  report 31 "newer-opus-line-clears-it" "${ok}" "rc=${rc} (want 0) with a NEWER resolved=opus line appended BELOW the sonnet one: the newest line is the only one that counts, which is exactly the operator's cure, and the counter moved 11 → ${p13_total} (want 21): ${out}"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (28 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (32 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

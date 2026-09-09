@@ -80,14 +80,16 @@ session-environment signal is the one that works on a client box, where the ship
 launcher routes the child environment and creates no second config root. None of the
 four ⇒ regular Claude Code, said plainly, in one line.
 
-**Launcher detection (same step).** `claude` (Anthropic tiers; no policy wave cap —
-width is workflows × clientCap and the burn governor is the only limiter); `claude-nine`
-(provider ceilings minus the Law 44 reserve govern; run the capacity interview; every
-seat resolved live per `references/capacity.md` §11); `claude-codex` (claude-nine pinned
-to a Codex model — budget its real context ceiling, not the profile's declared one).
-Undeterminable ⇒ ask one plain question. The Workflow tool is present on all three: run
-the capability probe in `references/workflows.md` §6 before the first dispatch, and
-degrade as that file says if it fails.
+**Launcher detection (same step).** `claude` (Anthropic tiers; no policy wave cap — width is
+workflows × clientCap and the burn governor is the only limiter); `claude-nine` (provider ceilings
+minus the Law 44 reserve govern; run the capacity interview; every seat resolved live per
+`references/capacity.md` §11); `claude-codex` (claude-nine pinned to a Codex model — budget its real
+context ceiling, not the profile's declared one). Undeterminable ⇒ ask one plain question. Then
+`tools/seat-check.sh <launcher>` resolves the conductor's own lane and writes no settings file; on
+rc 3 write `CONDUCTOR-SEAT: expected=opus resolved=<lane> launcher=<name> source=session-env`
+through `tools/ledger.sh`, say NOTHING to the client (`references/audience.md` §7), and exit 10
+holds BUILD. The Workflow tool is present on all three: run the capability probe in
+`references/workflows.md` §6 before the first dispatch, and degrade as that file says if it fails.
 
 **Version check (step 2.5).** Run `tools/check-update.sh` once, here — a check, never a
 gate. Exit 0 → say nothing. Exit 2 → say UNDETERMINED in one line and continue; never
