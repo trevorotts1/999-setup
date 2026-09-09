@@ -302,9 +302,10 @@ custom) in one plain question, which pre-sets defaults and removes questions tha
 exist: `BUILD-TARGET: <taxonomy>` (section 3) and `INPUT-CAPTURED: <path>` (written the
 moment the brainstorm's verbatim capture lands in `00-INPUT/`, or the provided material
 is in place and confirmed). It blocks the DISPATCH only, never the flow. EVERY dispatch,
-research or build, writes its `CONTROL/dispatch-log.md` row BEFORE firing, booking the
-tree's full declared agent count across all stages; `tools/hooks/dispatch-gate.py` SHAPE 7
-refuses a launch that was not booked. The research row is in this exact format:
+research included, BOOKS ITSELF through `tools/dispatch-check.sh` — readers at `agents=1`
+like every other dispatch — which mints the `wf-<phase>-<NN>` run id and writes the
+`CONTROL/dispatch-log.md` row for the tree's full declared agent count across all stages.
+No row is hand-written; SHAPE 7 refuses an unbooked launch. Readers add `cite=`:
 
 `timestamp | research <taxonomy> | <stage> | [<model> ×1] <reader label> | <run-id> | BUILD-TARGET: <taxonomy> | INPUT-CAPTURED: <path>`
 
