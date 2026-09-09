@@ -55,7 +55,11 @@
 #   run can do for itself while the client sleeps:
 #     rung 1  ACTION|redispatch-from-checkpoint for every in-flight unit (a
 #             dispatch-log row with no RESULT line) — TaskStop it, then re-fire
-#             it from its last checkpoint;
+#             it from its last checkpoint. A `DRIFT-ALARM group-abort` line on
+#             the ledger (tools/watch-tick.sh, RC-26) names the dead row
+#             directly: those units re-dispatch FIRST, before the general
+#             in-flight census, and the rung-1 ledger line carries
+#             trigger=group-abort naming the row;
 #     rung 2  if the last recorded state change was a CAPACITY-EVENT, the
 #             counter does NOT count toward drift for up to two hours: N rises
 #             to max(ANCHOR_TERMINAL_N, ceil(120min / cadence)) while the grace
@@ -1060,6 +1064,32 @@ run_anchor() {
     return 0
   }
 
+  # ga_row_units <run-id> <dispatch-log> <ledger> -> the wave's RESULT-free
+  # units, one per line. Membership is the whole-token rule watch-tick.sh's
+  # ga_row_for uses: a wave row books many units in field 2, so a unit belongs
+  # to the row when it appears as a whole token anywhere in that row. Units
+  # that already carry a RESULT line are done, not lost — rung 1 re-books the
+  # lost, never the landed. Prints NOTHING when the row names no lost unit.
+  ga_row_units() {
+    local want="$1" dl="$2" led="$3" line units u resulted
+    [[ -n "$want" && -f "$dl" ]] || return 0
+    line=""; units=""
+    while IFS= read -r line; do
+      case "$line" in *"run=${want} "*|*"run=${want}") units="$line" ;; esac
+    done < "$dl"
+    [[ -n "${units:-}" ]] || return 0
+    resulted="$(ledger.cmd "$led" "$LEDGER_RESULT_RE" "$LEDGER_UNIT_RE" 2>/dev/null || true)"
+    {
+      printf '%s\n' "$units" | tr '|' '\n' | tr ' ' '\n' | sed -n 's/^unit=//p'
+      printf '%s\n' "$units" | cut -d'|' -f2 | tr ' ' '\n' | "$GREP" -E '^[A-Za-z]+-[0-9]+$' || true
+    } | LC_ALL=C sort -u | "$GREP" -v '^[[:space:]]*$' | while IFS= read -r u; do
+      [[ -n "$u" ]] || continue
+      if printf '%s\n' "$resulted" | "$GREP" -qxF -- "$u" 2>/dev/null; then continue; fi
+      printf '%s\n' "$u"
+    done
+    return 0
+  }
+
   # capacity_grace_holds — rc 0 when the LAST recorded state change is a
   # CAPACITY-EVENT and the grace has not run out. Two independent bounds, and
   # both must hold: the no-delta count under CAPACITY_N, and the wall-clock
@@ -1694,8 +1724,39 @@ run_anchor() {
       local ts; ts="$(iso_now)"
       if (( RUNG < 1 )); then
         # --- RUNG 1: TaskStop and re-fire what is in flight.
-        local inf n_inf=0 u shown=0 dl_note
+        #     A group-abort alarm (tools/watch-tick.sh, RC-26) names the dead
+        #     row directly: those units re-dispatch FIRST, re-BOOKED through
+        #     tools/dispatch-check.sh from their checkpoints rather than
+        #     re-derived by a model reading the ledger, and the rung-1 ledger
+        #     line carries trigger=group-abort naming the row. Detect-and-log
+        #     holds: this rung emits ACTION lines; the conductor executes them.
+        local inf n_inf=0 u shown=0 dl_note ga_line="none" ga_row="" ga_units="" ga_at=""
         if [[ -f "$DL" ]]; then dl_note="${DL}"; else dl_note="${DL} (absent — no in-flight census was possible)"; fi
+        if [[ -f "$LED" ]]; then
+          set +e
+          ga_line="$("$GREP" -E '\|[[:space:]]*DRIFT-ALARM[[:space:]]*\|[[:space:]]*group-abort[[:space:]]*\|' "$LED" 2>/dev/null | tail -n 1)"
+          set -e
+          if [[ -n "$ga_line" ]]; then
+            ga_row="$(printf '%s' "$ga_line" | sed -n 's/.*row=\([^ |]*\).*/\1/p' | head -1)"
+            ga_at="$(printf '%s' "$ga_line" | sed -n 's/.*at=\([^ |]*\).*/\1/p' | head -1)"
+            if [[ -n "$ga_row" && -f "$DL" ]]; then
+              ga_units="$(ga_row_units "$ga_row" "$DL" "$LED")"
+            fi
+          fi
+        fi
+        if [[ -n "$ga_units" ]]; then
+          while IFS= read -r u; do
+            [[ -n "$u" ]] || continue
+            shown=$(( shown + 1 ))
+            if (( shown > 20 )); then break; fi
+            action "redispatch-from-checkpoint" "$u" "group-abort row ${ga_row} at ${ga_at:-unknown}: re-BOOK through tools/dispatch-check.sh from its last checkpoint, never re-derived by a model reading the ledger. This is rung 1 of the recovery ladder — it runs BEFORE any escalation."
+          done <<< "$ga_units"
+          local ga_total=0
+          ga_total="$(printf '%s\n' "$ga_units" | "$GREP" -c '[^[:space:]]' || true)"
+          if (( ga_total > shown )); then
+            action "redispatch-from-checkpoint" "+$(( ga_total - shown )) more" "the group-abort list for row ${ga_row} was truncated at ${shown} ACTION lines; the full row census follows the alarm line in ${LED}"
+          fi
+        fi
         inf="$(inflight_units)"
         if [[ -n "$inf" ]]; then
           set +e
@@ -1716,7 +1777,9 @@ run_anchor() {
         else
           action "redispatch-from-checkpoint" "$UNIT" "no dispatch row is missing its RESULT line (census read: ${dl_note}). Re-dispatch the current unit from its last checkpoint anyway — rung 1 runs before any escalation."
         fi
-        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=1/4 | action=redispatch-from-checkpoint | in-flight=${n_inf} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=capacity-grace-then-fallback-seats-then-flag"
+        local ga_trig="trigger=none"
+        if [[ -n "$ga_units" ]]; then ga_trig="trigger=group-abort(row=${ga_row} at=${ga_at:-unknown})"; fi
+        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=1/4 | action=redispatch-from-checkpoint | in-flight=${n_inf} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=capacity-grace-then-fallback-seats-then-flag | ${ga_trig}"
         RUNG=1
         if (( SEVERITY < 3 )); then SEVERITY=3; fi
       elif capacity_grace_holds "$NEWN" "$WINDOW_MIN"; then
@@ -2729,7 +2792,65 @@ EOF
   if (( pp21a == 1 && pp21b == 1 && pp21c == 1 && pp21d == 1 )); then ok=1; fi
   report 21 "pre-plan-degradation" "$ok" \
     "pre-plan project (no CHECKLIST/TODO, no step-6.5 mark): rc=${rc21a} (want 0), PRE-PLAN lines name every unchecked class undetermined(pre-plan), NO clean verdict, NO violations count, ledger line result=pre-plan=${pp21a}. THE DISCRIMINATOR, the same missing files with CAPACITY-LEDGER.md present: rc=${rc21b} (want 2), the original die_tool message unchanged=${pp21b}. Second witness, the mark as a ledger LINE: rc=${rc21c} (want 2)=${pp21c}. Healthy control, full plan: rc=${rc21d} (want 0) WITH a RE-ANCHOR verdict and no PRE-PLAN lines=${pp21d} — leg (a)'s silence is the phase, not a broken writer."
-  printf 'SELFTEST COMPLETE | %s of 21 cases passed | %s failed\n' "$PASSES" "$FAILS"
+
+  #--------------------------------------------------------------------------
+  # --- RC-26 (case 22): THE GROUP-ABORT WIRING. A ledger carrying a
+  #     DRIFT-ALARM group-abort line for a dead row, reconciled with the
+  #     no-delta counter primed to N-1, MUST emit a rung-1
+  #     ACTION|redispatch-from-checkpoint line for the row's lost units on the
+  #     crossing pass, and the rung-1 RECOVERY-LADDER ledger line MUST carry
+  #     trigger=group-abort naming the row. Detect-and-log holds: the script
+  #     emits the ACTION lines and mutates no task state — the fixture
+  #     project's task-state manifest (snapshot, state, checklist, todo,
+  #     dispatch log) is sha256-captured before the crossing pass and MUST
+  #     verify identical after it. The ledger legitimately GREW (the rung-1
+  #     and RECONCILE lines are this script's job), so only the five
+  #     task-state files are in the manifest, never the ledger.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c22"
+  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c22/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c22/CONTROL/project_state.json"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c22/CONTROL/dispatch-log.md"
+  "$SCRIPT_DIR/ledger.sh" "$T/c22" "CONTROL/LEDGER.md" \
+    "2026-09-08T10:43:46Z | DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z | units=U-11,U-12,U-13" >/dev/null 2>&1
+  local c22args=( "$T/c22" "U-02" --mode reconcile --tasks "$T/c22/CONTROL/task-graph-snapshot.json" --state "$T/c22/CONTROL/project_state.json" )
+  runa "${c22args[@]}"                            # establish the fingerprint
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c22/CONTROL/.anchor-fingerprint" > "$T/c22/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c22/CONTROL/.anchor-fingerprint.new" "$T/c22/CONTROL/.anchor-fingerprint"
+  sha256sum "$T/c22/CONTROL/task-graph-snapshot.json" "$T/c22/CONTROL/project_state.json" \
+    "$T/c22/CONTROL/CHECKLIST.md" "$T/c22/CONTROL/TODO.md" "$T/c22/CONTROL/dispatch-log.md" \
+    > "$T/c22.taskstate.before.sha" 2>/dev/null || shasum -a 256 "$T/c22/CONTROL/task-graph-snapshot.json" "$T/c22/CONTROL/project_state.json" \
+    "$T/c22/CONTROL/CHECKLIST.md" "$T/c22/CONTROL/TODO.md" "$T/c22/CONTROL/dispatch-log.md" \
+    > "$T/c22.taskstate.before.sha"
+  runa "${c22args[@]}"                            # crossing N -> rung 1 with the group-abort trigger
+  local c22_rc="$RC" ok22a=0 ok22b=0 ok22c=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-11|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-12|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-13|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=group-abort\(row=run-090 at=2026-09-08T10:43:46Z\)' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null; then ok22a=1; fi
+  if (cd "$T/c22" && sha256sum -c "$T/c22.taskstate.before.sha" >/dev/null 2>&1) \
+     || (cd "$T/c22" && shasum -a 256 -c "$T/c22.taskstate.before.sha" >/dev/null 2>&1); then ok22b=1; fi
+  # The negative control: the SAME crossing with NO group-abort line carries
+  # trigger=none instead — the trigger names the alarm, never a default.
+  mk_home "$T/c22ctl"
+  printf '{"tasks":[{"taskId":"U-02","subject":"qc","status":"pending"}]}\n' > "$T/c22ctl/CONTROL/task-graph-snapshot.json"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c22ctl/CONTROL/project_state.json"
+  printf '2026-08-12T01:01:00Z | U-001 | build | builder-1 | run-000001\n' > "$T/c22ctl/CONTROL/dispatch-log.md"
+  local c22cargs=( "$T/c22ctl" "U-02" --mode reconcile --tasks "$T/c22ctl/CONTROL/task-graph-snapshot.json" --state "$T/c22ctl/CONTROL/project_state.json" )
+  runa "${c22cargs[@]}"
+  sed -e "s/^count=.*/count=$(( TERMINAL_N - 1 ))/" "$T/c22ctl/CONTROL/.anchor-fingerprint" > "$T/c22ctl/CONTROL/.anchor-fingerprint.new"
+  mv "$T/c22ctl/CONTROL/.anchor-fingerprint.new" "$T/c22ctl/CONTROL/.anchor-fingerprint"
+  runa "${c22cargs[@]}"
+  local c22_rc_ctl="$RC"
+  if (( RC == 3 )) \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=none' "$T/c22ctl/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'group-abort'; then ok22c=1; fi
+  ok=0
+  if (( ok22a == 1 && ok22b == 1 && ok22c == 1 )); then ok=1; fi
+  report 22 "group-abort-rung-1" "$ok" \
+    "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c22_rc} (want 3), rung-1 ACTION|redispatch-from-checkpoint for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok22a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok22b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c22_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok22c} — the trigger names the alarm, never a default."
+  printf 'SELFTEST COMPLETE | %s of 22 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }

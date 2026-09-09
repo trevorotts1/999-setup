@@ -308,6 +308,21 @@ on every tick without a second read; the five-minute tick
 (`tools/watch-tick.sh`, PART 4) runs that reconcile and carries its verdict into
 its own `S-CHECK` line as `anchor=<…>`.
 
+**The group-abort alarm (RC-26) is a watch-tick detection, not an eighth
+reconcile class.** `tools/watch-tick.sh` raises `DRIFT-ALARM | group-abort |
+row=<run-id> agents=<n> at=<ts>` when two or more agents of one dispatch row
+end at an identical timestamp with no completion record — the shared last
+stamp on `CONTROL/HEARTBEAT.md`, one `run=` row on `CONTROL/dispatch-log.md`,
+no RESULT line on the ledger. `tools/anchor.sh` recovery-ladder rung 1 reads
+that alarm and emits the rung-1 `ACTION|redispatch-from-checkpoint` lines for
+the named row FIRST, re-BOOKED through `tools/dispatch-check.sh` from the
+checkpoints, with the rung-1 ledger line carrying
+`trigger=group-abort(row=<run-id> at=<ts>)`. The ladder's detect-and-log
+contract holds: the script emits the ACTION lines, the conductor executes
+them. Honest limit, stated here and in `references/loops.md` Loop 9: this
+detector does NOT stop the process deaths, whose cause is undetermined; it
+makes them visible within five minutes and re-books the work.
+
 ---
 
 ## 5. The RE-ANCHOR line

@@ -42,6 +42,18 @@
 #            minutes (20 for a merge stage)        -> ACTION|reap-and-redispatch
 #   S13      a RESULT is written for the unit and its heartbeat is STILL fresh
 #                                                  -> ACTION|reap
+#   group-abort  two or more agents of one dispatch row ending at an identical
+#            timestamp with no completion record (the RC-26 kill signature:
+#            the three WAVE4 builders sharing 10:43:46.087Z)
+#                                              -> DRIFT-ALARM group-abort
+#                                              -> ACTION|redispatch-from-checkpoint
+#            Also not an S-number, and deliberately evidence-only: the row is
+#            named by its run id, the shared stamp is read off
+#            CONTROL/HEARTBEAT.md (one line per live agent — a killed agent's
+#            line freezes, so agents killed in one event share their last
+#            stamp), and completion is the ledger's RESULT set. A lone agent
+#            with no completion record is the existing stall path's business
+#            (S6), never this alarm's.
 #   bar      the two files the client status bar reads, through
 #            tools/bar-check.sh: CONTROL/setup_progress.json and
 #            CONTROL/project_state.json tasks.counts
@@ -320,6 +332,19 @@ NF >= 2 {
 }
 '
 
+AWK_HB_ALL="${AWK_LIB}"'
+BEGIN { FS = "|" }
+NF >= 2 {
+  ts = trim($1); sub(/^-[ \t]*/, "", ts)
+  if (ts !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) next
+  agent = trim($2)
+  item  = (NF >= 3 ? $3 : "")
+  u = unit_of($0, item)
+  if (u == "" || ts == "") next
+  print ts "\t" u "\t" agent
+}
+'
+
 AWK_RESULTS="${AWK_LIB}"'
 /[|][ \t]*RESULT[ \t]*[|]/ {
   if (match($0, /(^|[ \t|])unit=[^ \t|]+/)) {
@@ -338,6 +363,61 @@ awk_rows()      { "$AWK" -v MUL="$MUL" -v BREAK_LABEL="$BREAK_LABEL" "$AWK_ROWS"
 awk_checklist() { "$AWK" -v MUL="$MUL" -v BREAK_LABEL="$BREAK_LABEL" "$AWK_CHECKLIST" "$1"; }
 awk_heartbeat() { "$AWK" -v MUL="$MUL" -v BREAK_LABEL="$BREAK_LABEL" "$AWK_HEARTBEAT" "$1"; }
 awk_results()   { "$AWK" -v MUL="$MUL" -v BREAK_LABEL="$BREAK_LABEL" "$AWK_RESULTS"   "$1" 2>/dev/null; }
+awk_hb_all()    { "$AWK" -v MUL="$MUL" -v BREAK_LABEL="$BREAK_LABEL" "$AWK_HB_ALL"    "$1"; }
+
+# ga_stamp_groups <hb-all.tsv> -> "<ts>\t<count>\t<unit1,unit2,...>" per shared stamp.
+# Input rows are "ts \t unit \t agent". Units, not agents, are counted: one
+# agent re-stamping one unit is one life, never a group. Output is sorted by
+# timestamp so the ledger order is deterministic.
+ga_stamp_groups() {
+  "$AWK" -F '\t' '
+    NF >= 2 && $1 != "" && $2 != "" {
+      if (!(($1 SUBSEP $2) in seen)) { seen[$1 SUBSEP $2] = 1; cnt[$1]++; units[$1] = (units[$1] == "" ? $2 : units[$1] "," $2) }
+    }
+    END { for (t in cnt) if (cnt[t] >= 1) print t "\t" cnt[t] "\t" units[t] }
+  ' "$1" | LC_ALL=C sort
+}
+
+# ga_row_for <comma-units> <dispatch-log> -> the single run id owning every
+# unit, or nothing. The run id is read off the RAW dispatch log (the run=
+# field of document 12's row, matched per unit id as a whole pipe field), not
+# off the parsed rows — one dispatch BOOKS one wave under one run id for many
+# units, while the row parser keys open counts per unit, so the raw log is the
+# only place the whole wave's membership is visible. Units from two waves, or
+# a unit with no wave at all, is NOT one dispatch row — the alarm names a row,
+# so a group that spans rows names none.
+ga_row_for() {
+  local csv="$1" dl="$2" want got r u
+  want="$(printf '%s' "$csv" | tr ',' '\n' | LC_ALL=C sort -u | "$GREP" -c '[^[:space:]]' || true)"
+  [[ -n "$want" && "$want" -gt 0 ]] || return 0
+  got=""
+  while IFS= read -r u; do
+    [[ -n "$u" ]] || continue
+    r="$("$AWK" -F '|' -v u="$u" '
+      {
+        unit = $2; gsub(/^[ \t]+/, "", unit); gsub(/[ \t]+$/, "", unit)
+        # A wave row books MANY units in field 2 ("U-11 build U-12 build
+        # U-13 build") or in unit= fields; the unit is a member when it
+        # appears as a whole token anywhere in the row, not only in first
+        # position. Whole-token match: pad both sides with one space.
+        hit = (index(" " $0 " ", " " u " ") > 0)
+        if (!hit && match($0, /(^|[ \t|])unit=[^ \t|]+/)) {
+          m = substr($0, RSTART, RLENGTH); sub(/^[^=]*=/, "", m)
+          if (m == u) hit = 1
+        }
+        if (hit) {
+          for (i = 1; i <= NF; i++) {
+            f = $i; gsub(/^[ \t]+/, "", f); gsub(/[ \t]+$/, "", f)
+            if (f ~ /^run=/) { sub(/^run=/, "", f); gsub(/[ \t]+$/, "", f); if (f != "") { print f; exit } }
+          }
+        }
+      }' "$dl")"
+    [[ -n "$r" ]] || return 0
+    if [[ -z "$got" ]]; then got="$r"
+    elif [[ "$got" != "$r" ]]; then return 0; fi
+  done <<< "$(printf '%s' "$csv" | tr ',' '\n')"
+  printf '%s\n' "$got"
+}
 
 #------------------------------------------------------------------------------
 # 3b. THE SELF-PROOF. Every invocation proves the row parser and the label
@@ -699,6 +779,7 @@ run_tick() {
   #--------------------------------------------------------------------------
   : > "$WORKDIR/hb-unit.tsv"
   : > "$WORKDIR/hb-label.tsv"
+  : > "$WORKDIR/hb-all.tsv"
   local HB_UNPARSED=0
   if [[ -f "$HB" ]]; then
     local hu hl hts hep
@@ -711,6 +792,10 @@ run_tick() {
         HB_UNPARSED=$(( HB_UNPARSED + 1 ))
       fi
     done < <(awk_heartbeat "$HB")
+    # The full stamp census for the group-abort check: every heartbeat line's
+    # own timestamp (not the newest-per-unit map above — a shared LAST stamp is
+    # the signature, and the map keeps only one stamp per unit).
+    awk_hb_all "$HB" > "$WORKDIR/hb-all.tsv" || true
   fi
   if (( HB_UNPARSED > 0 )); then
     add_undet "heartbeat=partial(${HB_UNPARSED} lines in CONTROL/HEARTBEAT.md carry a timestamp this tick cannot parse; those rows' ages are UNDETERMINED and neither S6 nor S13 fires on them)"
@@ -821,6 +906,49 @@ run_tick() {
       fi
     fi
   done < "$WORKDIR/closed.tsv"
+
+  # THE GROUP-ABORT CHECK — the RC-26 kill signature, read for its EVIDENCE.
+  # A dispatch row books a wave (run=<run-id>, agents=<n>) and each agent stamps
+  # CONTROL/HEARTBEAT.md on progress — one line per live agent, so a killed
+  # agent's line FREEZES at its last stamp. Two or more heartbeat lines sharing
+  # one identical timestamp, whose units belong to one dispatch row (the same
+  # run= id in CONTROL/dispatch-log.md) and carry no RESULT line on
+  # CONTROL/LEDGER.md, is the group abort the canary photographed: three WAVE4
+  # builders sharing 10:43:46.087Z with no completion record. One alarm per row:
+  # `DRIFT-ALARM group-abort row=<run-id> agents=<n> at=<ts>`.
+  #
+  #   shared stamp + one row + no RESULT   -> DRIFT-ALARM group-abort
+  #   staggered stamps, or RESULT present  -> silent (completions, not deaths)
+  #   one lone agent, no RESULT            -> silent (S6's stall path, not this)
+  #
+  # The honest limit, written down and not hidden: this detector does NOT stop
+  # the process deaths — their cause is UNDETERMINED. It makes them visible
+  # within five minutes and re-books the work through the rung-1 ACTION below.
+  local GA_NOTE=""
+  if [[ -f "$HB" && -f "$DL" ]]; then
+    local ga_ts ga_units ga_row ga_n
+    while IFS=$'\t' read -r ga_ts ga_n ga_units; do
+      [[ -n "$ga_ts" && -n "$ga_units" ]] || continue
+      if (( ga_n < 2 )); then continue; fi
+      # Every unit in this stamp group must be RESULT-free: one completion
+      # among them means the stamp is shared life, not a shared death.
+      local ga_all_open=1 ga_u
+      while IFS= read -r ga_u; do
+        [[ -n "$ga_u" ]] || continue
+        if "$GREP" -qxF -- "$ga_u" "$WORKDIR/results.txt" 2>/dev/null; then ga_all_open=0; break; fi
+      done <<< "$(printf '%s' "$ga_units" | tr ',' '\n')"
+      if (( ga_all_open != 1 )); then continue; fi
+      # Every unit in the group must belong to ONE dispatch row (one run= id
+      # on the raw dispatch log — one booking, one wave, one row).
+      ga_row="$(ga_row_for "$ga_units" "$DL")"
+      if [[ -z "$ga_row" ]]; then continue; fi
+      GA_NOTE="row=${ga_row} agents=${ga_n} at=${ga_ts}"
+      ledger_write "CONTROL/LEDGER.md" \
+        "$(iso_now) | DRIFT-ALARM | group-abort | row=${ga_row} agents=${ga_n} at=${ga_ts} | $(sanitize "units=${ga_units}") | $(sanitize "two or more agents of one dispatch row ending at an identical timestamp with no completion record — re-dispatch from the checkpoint through tools/dispatch-check.sh, never re-derived by a model reading the ledger")"
+      emit "redispatch-from-checkpoint" "$ga_units" \
+        "DRIFT-ALARM group-abort: ${ga_n} agents of dispatch row ${ga_row} ended at the identical timestamp ${ga_ts} with no RESULT line on CONTROL/LEDGER.md — TaskStop the row's survivors and re-BOOK the units through tools/dispatch-check.sh from their checkpoints (anchor.sh recovery-ladder rung 1)"
+    done < <(ga_stamp_groups "$WORKDIR/hb-all.tsv")
+  fi
 
   # THE BAR — the two files SKILL.md §12 tells the conductor to write, proven
   # by tools/bar-check.sh. The bar's own contract (references/progress-visibility.md
@@ -983,6 +1111,19 @@ run_tick() {
 #  18  THE CONTROL FOR 17 — the same draft WITH its SPEECH-CHECK line -> exit 0
 #      and no alarm. 17 and 18 differ by one ledger line, which is the whole
 #      discrimination: a check that fires on both measures nothing.
+#  19  GROUP-ABORT, THE POSITIVE — three agents of one dispatch row sharing
+#      the end timestamp 2026-09-08T10:43:46Z with no completion record ->
+#      exit 3, DRIFT-ALARM group-abort naming the row and agents=3, plus
+#      ACTION|redispatch-from-checkpoint. The canary's photographed signature.
+#  20  THE DISCRIMINATING CONTROL — three agents of one row ending at
+#      10:43:44Z, 10:43:46Z and 10:43:51Z each WITH a completion record ->
+#      NO group-abort. 19 and 20 differ by the shared stamp and the RESULT
+#      lines: an implementation that alarms on any three agents of one row
+#      passes 19 and fails this control.
+#  21  THE SECOND CONTROL — one lone agent with no completion record -> NO
+#      group-abort. The rule is about the SHARED timestamp, not merely about
+#      a missing completion record: the lone agent is the existing stall
+#      path's business (S6 fires on it), never this alarm's.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1290,6 +1431,68 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'speech=ok(1 drafted, all linted)' \
      && ! "$GREP" -q 'DRIFT-ALARM' "$T/c18/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 18 "speech-checked-control" "$ok" "rc=${RC} (want 0); the SPEECH-CHECK line for turn-07.txt silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries speech=ok(1 drafted, all linted)"
+
+  # --- case 19: GROUP-ABORT, THE POSITIVE. One dispatch wave (run-090)
+  #     booking three agents; all three heartbeat lines frozen at the
+  #     identical end stamp 2026-09-08T10:43:46Z — the canary's photographed
+  #     signature — with no completion record anywhere. The alarm MUST fire,
+  #     naming the row and agents=3, with the rung-1 re-dispatch ACTION.
+  #     NOTE on the checklist: U-02 stays open with no dispatch row so S2
+  #     cannot fire (runnable=1 needs open=0); the wave units U-11..U-13 are
+  #     not checklist boxes, so they add no runnable count either. S6 WILL
+  #     also fire on the stale wave units — a dead agent is both stale and
+  #     group-aborted, and the case does not assert S6's absence.
+  mk_home "$T/c19"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c19/CONTROL/dispatch-log.md"
+  {
+    printf '2026-09-08T10:43:46Z | WF04 builder-a | U-11 | build\n'
+    printf '2026-09-08T10:43:46Z | WF04 builder-b | U-12 | build\n'
+    printf '2026-09-08T10:43:46Z | WF04 builder-c | U-13 | build\n'
+  } > "$T/c19/CONTROL/HEARTBEAT.md"
+  runw "$T/c19"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM group-abort: 3 agents of dispatch row run-090 ended at the identical timestamp 2026-09-08T10:43:46Z' \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|redispatch-from-checkpoint|U-11,U-12,U-13|' \
+     && "$GREP" -q 'DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z' "$T/c19/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 19 "group-abort-positive" "$ok" "rc=${RC} (want 3); DRIFT-ALARM group-abort naming row=run-090 agents=3 at=2026-09-08T10:43:46Z written; ACTION|redispatch-from-checkpoint for U-11,U-12,U-13 emitted"
+
+  # --- case 20: THE DISCRIMINATING CONTROL. The same wave, but the three
+  #     agents ended seconds apart (10:43:44Z, 10:43:46Z, 10:43:51Z) and each
+  #     carries a completion record. No shared death stamp, no missing
+  #     completion — the alarm MUST stay silent. An implementation that alarms
+  #     on any three agents of one row passes 19 and fails here.
+  mk_home "$T/c20"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c20/CONTROL/dispatch-log.md"
+  {
+    printf '2026-09-08T10:43:44Z | WF04 builder-a | U-11 | build\n'
+    printf '2026-09-08T10:43:46Z | WF04 builder-b | U-12 | build\n'
+    printf '2026-09-08T10:43:51Z | WF04 builder-c | U-13 | build\n'
+  } > "$T/c20/CONTROL/HEARTBEAT.md"
+  {
+    printf '2026-09-08T10:44:00Z | RESULT | unit=U-11 | PASS | evidence=repos/a.ts\n'
+    printf '2026-09-08T10:44:01Z | RESULT | unit=U-12 | PASS | evidence=repos/b.ts\n'
+    printf '2026-09-08T10:44:02Z | RESULT | unit=U-13 | PASS | evidence=repos/c.ts\n'
+  } > "$T/c20/CONTROL/LEDGER.md"
+  runw "$T/c20"
+  ok=0
+  if ! printf '%s' "$OUT" | "$GREP" -q 'group-abort' \
+     && ! "$GREP" -q 'group-abort' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 20 "group-abort-staggered-control" "$ok" "rc=${RC}; staggered end stamps with a RESULT per unit raised no group-abort on stdout or on the ledger — the check discriminates instead of firing on every wave"
+
+  # --- case 21: THE SECOND CONTROL. One lone agent with no completion
+  #     record. The rule is about the SHARED timestamp, not merely about a
+  #     missing completion: the lone agent is the existing stall path's
+  #     business (S6 fires on it below), never this alarm's.
+  mk_home "$T/c21"
+  printf '2026-09-08T10:40:00Z | U-11 build | build | [opus x10] WF04 builder | run=run-091 | units=1 | agents=1 | cap=10 | floor=1 | stages=4 | dep=none | executions_total=1\n' > "$T/c21/CONTROL/dispatch-log.md"
+  printf '2026-09-08T10:43:46Z | WF04 builder-a | U-11 | build\n' > "$T/c21/CONTROL/HEARTBEAT.md"
+  runw "$T/c21"
+  ok=0
+  if ! printf '%s' "$OUT" | "$GREP" -q 'group-abort' \
+     && ! "$GREP" -q 'group-abort' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reap-and-redispatch|U-11|'; then ok=1; fi
+  report 21 "group-abort-lone-agent-control" "$ok" "rc=${RC}; one agent with no RESULT raised no group-abort anywhere, and S6 still fired ACTION|reap-and-redispatch for U-11 — the stall path kept its jurisdiction"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
