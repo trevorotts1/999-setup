@@ -1013,19 +1013,64 @@ run_anchor() {
   # suspended and a grep rc>=2 would quietly degrade a TOOLING FAILURE into an
   # "undetermined" verdict. Called plainly, an instrument failure still exits 2.
   dispatch_census() {
-    local rows nonblank heads content
+    local rows nonblank heads content census
     DISPATCH_ROWS=""
+    DISPATCH_BOOKED=""
+    DISPATCH_NOAGENT_N="0"
+    DISPATCH_NOAGENT_ROWS=""
     [[ -f "$DL" ]] || return 0              # absent file: never counted as zero
     # A dispatch row is document 12's shape: a leading timestamp then at least
     # two pipe-separated fields (`ts | work item | stage | label | run id`).
     rows="$(g_count '^[[:space:]]*(- )?[0-9]{4}-[0-9]{2}-[0-9]{2}[^|]*\|[^|]*\|' "$DL")"
-    if (( rows > 0 )); then DISPATCH_ROWS="$rows"; return 0; fi
+    if (( rows > 0 )); then
+      DISPATCH_ROWS="$rows"
+      # THE AGENTS CENSUS (RC-25). A row count and a booked total are different
+      # quantities, so the census SUMS the agents= field dispatch-check.sh
+      # writes on every row. A row with NO agents= field is UNDETERMINED and
+      # named (never a zero, never a one): a guessed number for a missing
+      # field can fabricate agreement, which is worse than the mismatch it
+      # replaces. The g_count above is the row-pattern the census is built
+      # on; the awk count must agree with it, so non-row lines (headings,
+      # ticks, blank lines) can never leak into the census.
+      census="$("$AWK" '
+        $0 ~ /^[ \t]*(- )?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][^|]*[|][^|]*[|]/ {
+          rows++
+          n = split($0, f, "|")
+          unit = (n >= 2 ? f[2] : "")
+          gsub(/^[ \t]+|[ \t]+$/, "", unit)
+          if (match($0, /agents=[0-9][0-9]*/)) {
+            a = substr($0, RSTART, RLENGTH)
+            sub(/^agents=/, "", a)
+            booked += a
+          } else {
+            noagent++
+            id = (unit != "" ? unit "@line-" NR : "line-" NR)
+            names = (names == "" ? id : names "," id)
+          }
+        }
+        END { printf "%d\n%d\n%d\n%s\n", rows+0, booked+0, noagent+0, names }
+      ' "$DL")" || die_tool "agents census failed on ${DL}"
+      DISPATCH_ROWS="$(printf '%s\n' "$census" | sed -n '1p')"
+      DISPATCH_BOOKED="$(printf '%s\n' "$census" | sed -n '2p')"
+      DISPATCH_NOAGENT_N="$(printf '%s\n' "$census" | sed -n '3p')"
+      DISPATCH_NOAGENT_ROWS="$(printf '%s\n' "$census" | sed -n '4p')"
+      [[ "$DISPATCH_ROWS" =~ ^[0-9]+$ && "$DISPATCH_BOOKED" =~ ^[0-9]+$ && "$DISPATCH_NOAGENT_N" =~ ^[0-9]+$ ]] \
+        || die_tool "agents census returned a non-numeric tally for ${DL}"
+      # The line-count above and the awk row-count below are two instruments
+      # for the same rows; they must AGREE, or neither is believed.
+      [[ "$DISPATCH_ROWS" == "$rows" ]] \
+        || die_tool "agents census counted ${DISPATCH_ROWS} rows in ${DL} but the row-pattern matched ${rows}"
+      return 0
+    fi
     nonblank="$(g_count '[^[:space:]]' "$DL")"
     heads="$(g_count '^[[:space:]]*(#|-{3,}|\|)' "$DL")"
     content=$(( nonblank - heads ))
     # Content but no parseable row is a PARSE FAILURE, not an empty log.
     if (( content > 0 )); then return 0; fi
     DISPATCH_ROWS="0"                       # genuinely empty: a PROVEN zero
+    DISPATCH_BOOKED="0"
+    DISPATCH_NOAGENT_N="0"
+    DISPATCH_NOAGENT_ROWS=""
     return 0
   }
 
@@ -1191,10 +1236,11 @@ run_anchor() {
     fi
 
     # --- (i) claimed spend vs the dispatch-log census
-    local claimed="" disp="" cmp
+    local claimed="" disp="" booked="" cmp
     if [[ -n "$init" && -n "$rem" ]]; then claimed=$(( init - rem )); fi
     dispatch_census
     disp="$DISPATCH_ROWS"
+    booked="${DISPATCH_BOOKED:-}"
 
     if [[ -z "$claimed" ]]; then
       # THE NEAR-MISS PROBE, run BEFORE the undetermined verdict (RC-3).
@@ -1260,15 +1306,24 @@ run_anchor() {
       else
         cmp="budget-undetermined(no-dispatch-log: ${DL} does not exist — an absent log is not a census of zero)"
       fi
+    elif [[ -n "${DISPATCH_NOAGENT_N:-}" && "${DISPATCH_NOAGENT_N:-0}" -gt 0 ]]; then
+      # ROWS WITHOUT AN agents= FIELD (RC-25). A row with no field is counted
+      # as UNDETERMINED and NAMED — never as zero and never as one, and the
+      # class is never budget-ok while any row lacks it. anchor.sh:1040
+      # already states that principle for a neighbouring census (never a
+      # fabricated zero): a census that guesses at a missing field can
+      # fabricate agreement, which is worse than the mismatch it replaces.
+      cmp="budget-undetermined(rows-without-agents=${DISPATCH_NOAGENT_N}: ${DISPATCH_NOAGENT_ROWS} — every dispatch row must carry an agents= field (dispatch-check.sh writes one); re-book or re-ground the named rows before this class can reconcile)"
+      note "anchor.sh: CLASS 6 UNDETERMINED — ${DISPATCH_NOAGENT_N} dispatch row(s) in ${DL} carry no agents= field: ${DISPATCH_NOAGENT_ROWS}. The booked census SUMS agents= (dispatch-check.sh emits it on every row), so a row without the field is an unbookable number, never a zero and never a one; no budget-agreement verdict is claimed while any row lacks it. RC-23(b) retires the hand-written rows that caused this."
     else
-      local diff=$(( claimed - disp ))
+      local diff=$(( claimed - booked ))
       if (( diff < 0 )); then diff=$(( 0 - diff )); fi
       if (( diff > BUDGET_TOL )); then
-        alarm "budget-mismatch" "claimed=${claimed} dispatched=${disp} — budget_initial ${init} minus session_budget_remaining ${rem} diverges from the dispatch-log census by ${diff} > ANCHOR_BUDGET_TOL ${BUDGET_TOL}"
-        action "reconcile-budget" "${claimed}/${disp}" "claimed spend ${claimed} vs ${disp} rows in ${DL}; diff=${diff} > tol=${BUDGET_TOL}"
-        cmp="budget-mismatch(claimed=${claimed}/dispatched=${disp})"
+        alarm "budget-mismatch" "claimed=${claimed} booked=${booked} rows=${disp} — budget_initial ${init} minus session_budget_remaining ${rem} diverges from the dispatch-log agents census by ${diff} > ANCHOR_BUDGET_TOL ${BUDGET_TOL}"
+        action "reconcile-budget" "${claimed}/${booked}" "claimed spend ${claimed} vs ${booked} booked agents across ${disp} rows in ${DL}; diff=${diff} > tol=${BUDGET_TOL}"
+        cmp="budget-mismatch(claimed=${claimed}/booked=${booked}/rows=${disp})"
       else
-        cmp="budget-ok(claimed=${claimed}/dispatched=${disp})"
+        cmp="budget-ok(claimed=${claimed}/booked=${booked}/rows=${disp})"
       fi
     fi
 
@@ -2133,12 +2188,22 @@ EOF
   #     census. The detector MUST NOT fire. A budget audit that cannot stay
   #     quiet on an honest ledger is an alarm, not a detector.
   #--------------------------------------------------------------------------
-  mk_dispatch_log() {  # mk_dispatch_log <home> <n-rows>
-    local h="$1" n="$2" i=1
+  mk_dispatch_row() {  # mk_dispatch_row <home> <i> <agents>
+    # The H10 dispatch-row shape dispatch-check.sh:704 emits: every row
+    # carries an agents= field (RC-25), and the budget audit SUMS that field.
+    local h="$1" i="$2" ae="$3"
+    printf '2026-08-12T%02d:%02d:00Z | U-%03d | dispatch | builder-%d | run=wf-build-%06d | units=%d | agents=%d | cap=10 | floor=1 | stages=3 | dep=none | executions_total=%d\n' \
+      $(( (i / 60) % 24 )) $(( i % 60 )) "$i" "$i" "$i" "$ae" "$ae" "$i" >> "$h/CONTROL/dispatch-log.md"
+  }
+  mk_dispatch_log() {  # mk_dispatch_log <home> <n-rows> [agents-each, default 1]
+    # Rows carry the H10 dispatch-row shape dispatch-check.sh:704 emits. The
+    # optional third argument sets agents= per row, so a fixture can hold
+    # rows and booked agents APART (RC-25) instead of pairing a row count
+    # with an equal agent count as if they were the same quantity.
+    local h="$1" n="$2" ae="${3:-1}" i=1
     printf '# Dispatch log\n\n' > "$h/CONTROL/dispatch-log.md"
     while (( i <= n )); do
-      printf '2026-08-12T0%d:%02d:00Z | U-%03d | build | builder-%d | run-%06d\n' \
-        $(( i % 10 )) $(( i % 60 )) "$i" "$i" "$i" >> "$h/CONTROL/dispatch-log.md"
+      mk_dispatch_row "$h" "$i" "$ae"
       i=$(( i + 1 ))
     done
   }
@@ -2156,10 +2221,76 @@ EOF
   runa "$T/c9" "U-02" --mode reconcile --tasks "$T/c9/CONTROL/task-graph-snapshot.json" --state "$T/c9/CONTROL/project_state.json"
   ok=0
   if (( RC == 0 )) \
-     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=36/dispatched=36)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=36/booked=36/rows=36)' \
      && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c9/CONTROL/LEDGER.md" 2>/dev/null \
      && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c9/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 9 "budget-agree" "$ok" "rc=${RC} (want 0); classes carry budget-ok(claimed=36/dispatched=36); no budget-mismatch and no BUDGET-CAP (both negative controls held)"
+  report 9 "budget-agree" "$ok" "rc=${RC} (want 0); classes carry budget-ok(claimed=36/booked=36/rows=36); no budget-mismatch and no BUDGET-CAP (both negative controls held)"
+
+  #--------------------------------------------------------------------------
+  # --- RC-25, THE DISCRIMINATING CASE (case 22): 26 ROWS BOOKING 46 AGENTS
+  #     against a state file claiming 46. Row count (26) and booked sum (46)
+  #     are DIFFERENT quantities, so a census that counts lines reports
+  #     budget-mismatch(claimed=46/rows=26) here and FAILS this case, while a
+  #     census that sums agents= reports budget-ok(claimed=46/booked=46/
+  #     rows=26) and passes. This is the exact shape that alarms at the base
+  #     commit: the first 20 rows book 2 agents each (40) and the last 6 book
+  #     1 each (6), 46 booked across 26 rows. The mismatch leg (case 23) and
+  #     the missing-field leg (case 24) ride the same writer.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c22"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c22/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c22" 1000 954 46
+  printf '# Dispatch log\n\n' > "$T/c22/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c22" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 26 )); do mk_dispatch_row "$T/c22" "$i" 1; i=$(( i + 1 )); done; }
+  runa "$T/c22" "U-02" --mode reconcile --tasks "$T/c22/CONTROL/task-graph-snapshot.json" --state "$T/c22/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=46/booked=46/rows=26)' \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -qE '\| BUDGET-CAP \|' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 22 "budget-agents-not-rows" "$ok" "rc=${RC} (want 0); 26 rows booking 46 agents against claimed=46 carry budget-ok(claimed=46/booked=46/rows=26) — the shape that alarms budget-mismatch at the base commit; no budget-mismatch and no BUDGET-CAP (both negative controls held)"
+
+  #--------------------------------------------------------------------------
+  # --- RC-25 (case 23): the SAME 26 rows against a state file claiming 60
+  #     MUST still alarm. A census that sums agents= compares 60 to the booked
+  #     46 (diff 14 past the tolerance of 5); only a census that guesses at
+  #     missing numbers could bless this.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c23"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c23/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c23" 1000 940 60
+  printf '# Dispatch log\n\n' > "$T/c23/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c23" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 26 )); do mk_dispatch_row "$T/c23" "$i" 1; i=$(( i + 1 )); done; }
+  runa "$T/c23" "U-02" --mode reconcile --tasks "$T/c23/CONTROL/task-graph-snapshot.json" --state "$T/c23/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 3 )) \
+     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=60 booked=46 rows=26' "$T/c23/CONTROL/LEDGER.md" 2>/dev/null \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-budget|60/46|'; then ok=1; fi
+  report 23 "budget-still-alarms" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=60 booked=46 rows=26 written; ACTION|reconcile-budget|60/46 emitted"
+
+  #--------------------------------------------------------------------------
+  # --- RC-25 (case 24): ONE ROW WITHOUT AN agents= FIELD. The census must
+  #     NOT count it as zero (which would bless the run) and NOT as one
+  #     (which would bless a different run): it is UNDETERMINED and the row
+  #     is NAMED, and the class is never budget-ok while any row lacks it.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c24"
+  printf '{"tasks":[{"taskId":"T-02","subject":"qc","status":"pending"}]}\n' > "$T/c24/CONTROL/task-graph-snapshot.json"
+  mk_state_budget "$T/c24" 1000 954 46
+  printf '# Dispatch log\n\n' > "$T/c24/CONTROL/dispatch-log.md"
+  { i=1; while (( i <= 20 )); do mk_dispatch_row "$T/c24" "$i" 2; i=$(( i + 1 )); done
+    while (( i <= 25 )); do mk_dispatch_row "$T/c24" "$i" 1; i=$(( i + 1 )); done; }
+  printf '2026-08-12T01:26:00Z | U-026 | dispatch | builder-26 | run=wf-build-000026 | units=1 | cap=10 | floor=1 | stages=3 | dep=none | executions_total=26\n' >> "$T/c24/CONTROL/dispatch-log.md"
+  runa "$T/c24" "U-02" --mode reconcile --tasks "$T/c24/CONTROL/task-graph-snapshot.json" --state "$T/c24/CONTROL/project_state.json"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-undetermined(rows-without-agents=1' \
+     && printf '%s' "$OUT" | "$GREP" -q 'U-026' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'budget-ok' \
+     && ! "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch' "$T/c24/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 24 "budget-missing-agents-field" "$ok" "rc=${RC} (want 0); classes carry budget-undetermined(rows-without-agents=1) NAMING U-026; no fabricated budget-ok (neither a zero nor a one was guessed for the fieldless row); no budget-mismatch alarm"
 
   #--------------------------------------------------------------------------
   # --- CLASS 6, control B (case 10): claimed spend DIVERGES past tolerance.
@@ -2172,9 +2303,9 @@ EOF
   runa "$T/c10" "U-02" --mode reconcile --tasks "$T/c10/CONTROL/task-graph-snapshot.json" --state "$T/c10/CONTROL/project_state.json"
   ok=0
   if (( RC == 3 )) \
-     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=100 dispatched=3' "$T/c10/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE 'DRIFT-ALARM \| budget-mismatch \| unit=U-02 \| claimed=100 booked=3 rows=3' "$T/c10/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-budget|100/3|'; then ok=1; fi
-  report 10 "budget-mismatch" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=100 dispatched=3 written; ACTION|reconcile-budget|100/3 emitted"
+  report 10 "budget-mismatch" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | budget-mismatch | claimed=100 booked=3 rows=3 written; ACTION|reconcile-budget|100/3 emitted"
 
   #--------------------------------------------------------------------------
   # --- CLASS 6, control C (case 11): the FIRST PAUSE. executions_total has
@@ -2488,12 +2619,12 @@ EOF
   runa "$T/c18ctl" "U-02" --mode reconcile --tasks "$T/c18ctl/CONTROL/task-graph-snapshot.json" --state "$T/c18ctl/CONTROL/project_state.json"
   local c18_rc_ctl="$RC" ok18b=0
   if (( RC == 0 )) \
-     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=72/dispatched=72)' \
+     && printf '%s' "$OUT" | "$GREP" -q 'budget-ok(claimed=72/booked=72/rows=72)' \
      && ! printf '%s' "$OUT" | "$GREP" -q 'budget-writer-defect'; then ok18b=1; fi
   ok=0
   if (( ok18a == 1 && ok18b == 1 )); then ok=1; fi
   report 18 "budget-writer-defect" "$ok" \
-    "near-miss fixture (agents.project_budget.first_pause, no flat path): rc=${c18_rc}; classes carry budget-writer-defect(agents.project_budget) and ACTION|run-state-check names tools/state-check.sh; NOT budget-undetermined=${ok18a}. Control (the same run with the canonical agents.* keys): rc=${c18_rc_ctl} (want 0), budget-ok(claimed=72/dispatched=72), no writer-defect verdict=${ok18b} — the probe discriminates instead of firing on everything."
+    "near-miss fixture (agents.project_budget.first_pause, no flat path): rc=${c18_rc}; classes carry budget-writer-defect(agents.project_budget) and ACTION|run-state-check names tools/state-check.sh; NOT budget-undetermined=${ok18a}. Control (the same run with the canonical agents.* keys): rc=${c18_rc_ctl} (want 0), budget-ok(claimed=72/booked=72/rows=72), no writer-defect verdict=${ok18b} — the probe discriminates instead of firing on everything."
 
   #--------------------------------------------------------------------------
   # --- CLASS 6, control G (case 19): THE OPERATOR OVERRIDE. Five legs on ONE
@@ -2729,7 +2860,7 @@ EOF
   if (( pp21a == 1 && pp21b == 1 && pp21c == 1 && pp21d == 1 )); then ok=1; fi
   report 21 "pre-plan-degradation" "$ok" \
     "pre-plan project (no CHECKLIST/TODO, no step-6.5 mark): rc=${rc21a} (want 0), PRE-PLAN lines name every unchecked class undetermined(pre-plan), NO clean verdict, NO violations count, ledger line result=pre-plan=${pp21a}. THE DISCRIMINATOR, the same missing files with CAPACITY-LEDGER.md present: rc=${rc21b} (want 2), the original die_tool message unchanged=${pp21b}. Second witness, the mark as a ledger LINE: rc=${rc21c} (want 2)=${pp21c}. Healthy control, full plan: rc=${rc21d} (want 0) WITH a RE-ANCHOR verdict and no PRE-PLAN lines=${pp21d} — leg (a)'s silence is the phase, not a broken writer."
-  printf 'SELFTEST COMPLETE | %s of 21 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  printf 'SELFTEST COMPLETE | %s of 24 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }
