@@ -50,8 +50,14 @@
 #   1 — credential error (missing PIT or Location ID)
 #   2 — input file missing or unreadable
 #   3 — folder create/list failed
-#   4 — upload failed
+#   4 — upload failed, or the response carried no usable fileId/url
 #   5 — upload verification failed (read-back returned no matching file)
+#   6 — upload verification UNDETERMINED (the read-back matcher itself failed);
+#       a statement about the checker, never about the upload
+#
+# CREDENTIAL SAFETY: the PIT is never placed on a command line. Every curl call
+# takes its Authorization header from STDIN via `--config -` (see
+# ghl_header_config below and references/environment-sweep.md RULE 1).
 
 set -euo pipefail
 
@@ -129,20 +135,42 @@ if [ -z "$LOCATION_ID" ]; then
   exit 1
 fi
 
+# ---- The ONE place the credential reaches curl ------------------------------
+#
+# CREDENTIAL SAFETY (references/environment-sweep.md RULE 1): the PIT NEVER
+# reaches a command line. Every call below pipes its headers into curl's
+# `--config -`, so the process table shows only "--config -" for the life of
+# the request — an Authorization header carrying the token as a `-H` ARGUMENT
+# is visible in `ps` to every user on the box, for every second the upload
+# takes, and a multipart upload is the longest request this skill makes. It is
+# also the single defect M4 was raised on: the token used to sit on the command
+# line of all three calls below. `printf` is a shell builtin, so the value never
+# becomes an argv entry of any process, and nothing is written to disk. This is
+# the identical pattern proven in tools/env-sweep.sh (curl_bearer_status).
+#
+# THE QUOTING TRAP, MEASURED (recorded in tools/env-sweep.sh): a curl config
+# value MUST be quoted — an unquoted `header = ...` line is SILENTLY DROPPED,
+# the request goes out with no Authorization header at all, and the 401 that
+# comes back reads exactly like a dead key. Backslashes and double quotes are
+# escaped for curl's quoted form here for the same reason.
+ghl_header_config() {
+  local esc="${PIT//\\/\\\\}"
+  esc="${esc//\"/\\\"}"
+  printf 'header = "Authorization: Bearer %s"\n' "$esc"
+  printf 'header = "Version: %s"\n' "$VERSION"
+}
+
 # ---- Helper: do a curl GET with auth headers and write body to stdout -------
 ghl_get() {
   local url="$1"
-  curl -s -H "Authorization: Bearer $PIT" -H "Version: $VERSION" "$url"
+  ghl_header_config | curl -s --config - "$url"
 }
 
 ghl_post() {
   local url="$1"
   local data="$2"
-  curl -s -w "\n%{http_code}" \
-    -H "Authorization: Bearer $PIT" \
-    -H "Version: $VERSION" \
-    -H "Content-Type: application/json" \
-    -X POST -d "$data" "$url"
+  { ghl_header_config; printf 'header = "Content-Type: application/json"\n'; } \
+    | curl -s -w "\n%{http_code}" --config - -X POST -d "$data" "$url"
 }
 
 # ---- 1. List existing folder by name ---------------------------------------
@@ -200,9 +228,8 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Uploading $LOCAL_FILE as $UPLOAD_NAME to 
 
 # curl multipart upload — body to temp file, HTTP code captured from stdout
 UPLOAD_TMP=$(mktemp)
-HTTP_CODE=$(curl -s -w "%{http_code}" \
-  -H "Authorization: Bearer $PIT" \
-  -H "Version: $VERSION" \
+HTTP_CODE=$(ghl_header_config | curl -s -w "%{http_code}" \
+  --config - \
   -F "file=@$LOCAL_FILE" \
   -F "name=$UPLOAD_NAME" \
   -F "parentId=$FOLDER_ID" \
@@ -225,14 +252,38 @@ if [ -z "$FILE_URL" ]; then
   exit 4
 fi
 
+# A NON-EMPTY fileId IS REQUIRED BEFORE THE READ-BACK, and it is a hard stop.
+# The API contract at the top of this file declares fileId REQUIRED in
+# UploadFileResponseDTO, so an empty one means the response is not the response
+# this script was written against. It is also the difference between a real
+# verification and a vacuous one: with an empty FILE_ID the old read-back ran
+# `grep -c ""`, which matches EVERY line of any response body and therefore
+# passed no matter what came back — a green verification for an upload nobody
+# had checked. Fail loudly here instead.
+if [ -z "$FILE_ID" ]; then
+  echo "{\"status\":\"fail\",\"message\":\"Upload returned a URL but no fileId — the read-back cannot be performed and is NOT claimed as passed. Response head: $(echo "$UPLOAD_BODY" | head -c 300)\",\"url\":\"$FILE_URL\",\"folderId\":\"$FOLDER_ID\",\"folderName\":\"$PROJECT_SLUG\",\"folderStatus\":\"$FOLDER_STATUS\"}"
+  exit 4
+fi
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Upload success: fileId=$FILE_ID url=$FILE_URL" >&2
 
 # ---- 4. Verify upload by reading back (list files in folder) ---------------
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Verifying upload via read-back..." >&2
 # sortBy and sortOrder are REQUIRED by the OpenAPI spec (medias.json GET /medias/files)
 VERIFY_RESP=$(ghl_get "$GHL_BASE/medias/files?sortBy=name&sortOrder=asc&type=file&parentId=$FOLDER_ID&altType=location&altId=$LOCATION_ID&limit=5")
-VERIFY_MATCH=$(echo "$VERIFY_RESP" | grep -c "$FILE_ID" 2>/dev/null || true)
-if [ "$VERIFY_MATCH" -eq 0 ]; then
+# -F: the id is DATA, never a regex (a metacharacter in an id would silently
+# change what is matched). The quotes around it are part of the pattern, so a
+# short id cannot match a longer id that merely contains it.
+# rc 0 = matched, rc 1 = zero matches (a real finding), rc >= 2 = grep ITSELF
+# failed — a broken matcher, which is never evidence about the upload.
+VERIFY_MATCH=0
+VERIFY_RC=0
+VERIFY_MATCH=$(printf '%s\n' "$VERIFY_RESP" | /usr/bin/grep -cF -- "\"$FILE_ID\"") || VERIFY_RC=$?
+if [ "$VERIFY_RC" -ge 2 ]; then
+  echo "{\"status\":\"fail\",\"message\":\"Upload verification UNDETERMINED — the read-back matcher itself failed (grep exit ${VERIFY_RC}). This is a statement about the checker, NOT about the upload: the file may well be there.\",\"fileId\":\"$FILE_ID\",\"url\":\"$FILE_URL\",\"folderId\":\"$FOLDER_ID\",\"folderName\":\"$PROJECT_SLUG\",\"folderStatus\":\"$FOLDER_STATUS\"}"
+  exit 6
+fi
+if [ "${VERIFY_MATCH:-0}" -eq 0 ]; then
   echo "{\"status\":\"fail\",\"message\":\"Upload verification failed — file $FILE_ID not found in read-back\",\"fileId\":\"$FILE_ID\",\"url\":\"$FILE_URL\",\"folderId\":\"$FOLDER_ID\",\"folderName\":\"$PROJECT_SLUG\",\"folderStatus\":\"$FOLDER_STATUS\"}"
   exit 5
 fi

@@ -2,18 +2,23 @@
 
 Every built unit is judged by a blind critic (Law 49 — the critic sees the
 work, never the effort) against the item's named, fetchable bar (Law 48).
-**The verdict is binary: PASS or FAIL. There is no numeric pass lane.**
-PASS = completely exceeds expectation (Issue 17, PART 1 item 5) — the single
-pass standard, never "acceptable", never "meets spec", never "good enough".
+**The verdict is binary: PASS or FAIL, and the binary verdict is what
+decides. There is no numeric pass lane — a 0–10 score is recorded on every
+verdict for trend only and never decides.**
+PASS at Gate 3 is decided by the bar's declared relationship, frozen at
+selection: wins-or-ties → OURS or TIE passes; meet-all-requirements → every
+requirement checked passes. The judge never raises the relationship.
 FAIL = looped to the builder with the critic's exact finding, max 20 fix-loop
 cycles per finding, then escalation to the operator with the full finding
 history (Rule 3.22, operator ruling 2026-08-14). The non-success states
 BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
+`CLIENT-ACCEPTED` is the client's own acceptance of a unit that did not meet
+the relationship, carrying the one named gap; no judge ever writes it.
 
 The ten categories below are the critic's rubric surface — quoted proof
 beside every judgement. Each category's judgement maps to the binary
-verdict: any category that does not completely exceed its bar is a FAIL,
-and its exact finding loops the item to the builder.
+verdict: any category that fails the frozen relationship against its bar is
+a FAIL, and its exact finding loops the item to the builder.
 
 **Law 50 — the bar wins by default (binding on every verdict).** A judge
 verdict is one of: PASS, FAIL (looped to the builder with the exact finding,

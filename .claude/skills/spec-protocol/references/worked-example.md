@@ -45,27 +45,32 @@ Cores are MEASURED, never inherited. 10 is this machine's value, not a constant:
 Launcher: claude (regular Claude Code)      Harness mode: regular
 Cores: 12 → per-workflow concurrency min(16,12−2) = 10
 Context ceiling (session): default (Anthropic)
-ROLE RESOLUTION: orchestrator=lead  builder=sonnet→sonnet  researcher=haiku→haiku
-  visual-verifier=fable→fable  technical-judge=fable→fable  security-judge=fable→fable
-  release-judge=opus→opus   (no alias overrides in this profile — resolved = alias;
-  builder/judge/critic are three different tiers — verified different)
-Ceilings: Anthropic subscription (window-metered, opaque) | operator cap 20/wave
-Governing number: harness 50×10=500 | operator-cap 20 | provider n/a → GOVERNS: 20 (operator cap)
+ROLE RESOLUTION: per the seat table (references/capacity.md §11) — conductor=session
+  opus; WF01 planners + builders + repair=opus→opus; blind visual judges, technical
+  judges, release council=sonnet→sonnet; readers + merge writer=haiku→haiku
+  (no alias overrides in this profile — resolved = alias; builder and judges are
+  different tiers — verified different by the family rule)
+Ceilings: Anthropic subscription (window-metered, opaque) | no policy cap on any path
+Governing number: harness 50×10=500 | provider n/a → GOVERNS: 500 (harness)
 AGENT TEAM: mode=team (probe PASS after consent; enablement written 14:02, backup
   ~/.claude/settings.json.backup.20260812-140201)
-  commanders=4 → persistent slots = lead+4 = 5 → 15 remain for workflow width
-WAVE SIZE: 15 (workflow width) + 5 persistent    WORKFLOW COUNT: 2    AGENTS PER WORKFLOW: ≤10
+  commanders=4 → persistent slots = lead+4 = 5 → 495 remain for workflow width
+WAVE SIZE: 495 (workflow width) + 5 persistent = 500    WORKFLOW COUNT: 50    AGENTS PER WORKFLOW: ≤10 (= clientCap 10)
 AGENT BUDGET DECLARATION: workflows=6-type gauntlet shape, scaled; expected total ≈ 34;
   repair formula N=failed workstreams ≤12/wave; SOFT 75–125 scaled → 30–50; HARD STOP 200
 Request budget per 5h window: not window-metered — governed by rate-limit responses;
   on 429/limit → park-and-resume (Loop 6), never retry-hammer.
 Burn governor: subscription; commanders counted at full session rate (pessimistic
   shared bucket); watch limits.
-Fallback: builder sonnet→opus | qc fable→opus | merger haiku→sonnet | critic opus→fable
+Fallback (seat table, references/capacity.md §11): builder opus→sonnet | judges
+  sonnet→opus | readers + merger haiku→sonnet — independence re-checked after any
+  fallback
 ```
 
-*(Scenario-b variant: GOVERNS: 500 (harness); WAVE 500; WORKFLOWS 50×10 — the 5
-persistent slots are noise, and the same six phases below simply run wider.)*
+*(Scenario-b variant: the SAME GOVERNS: 500 (harness). The only difference is the
+provider line — 2,500 − 25% reserve = 1,875 usable — which still sits above the
+harness, so the 5 persistent slots stay noise and the six phases below are
+identical.)*
 
 The three axes are visibly separate on this page and never collapse into each other:
 
@@ -74,12 +79,14 @@ The three axes are visibly separate on this page and never collapse into each ot
   concurrently**.
 - **BUDGET** — **1,000 subagent executions for the whole session**, a lifetime count,
   not a simultaneity limit. This run declares ≈34 against it and spends 36.
-- **POLICY** — the operator's standing **20 agents per wave** on Anthropic-billed
-  Claude Code.
+- **POLICY** — **none.** There is no wave cap on any path (the operator's ruling:
+  no caps beyond the harness). On an Anthropic-billed subscription the provider
+  publishes no concurrency figure either, so the **burn governor** is the only
+  limiter: it parks on 429/limit responses and resumes (Loop 6).
 
-The smallest of the three governs. Here that is 20, the policy cap, and the ledger
-marks it. Nothing in this file ever writes 300 as a promise on this machine, and
-nothing writes 1,000 as a width.
+The smallest number that actually exists governs. Here that is 500, the harness, and
+the ledger marks it. Nothing in this file ever writes 300 as a promise on this
+machine, and nothing writes 1,000 as a width.
 
 ---
 
@@ -88,8 +95,8 @@ nothing writes 1,000 as a width.
 Block D: D1 = "the recipe cards on pinch-of-yum look right to me" → bar candidates
 researched → the user picks **the frozen snapshot of pinchofyum.com's recipe index**
 (captured via Playwright, 1440×900 + 390×844, 2026-08-12, the snapshot IS the bar);
-D2 = wins-or-ties; D3 = yes (~130 MB download consented, probe screenshot proven
-non-empty); D4 = "no ads, no life-story paragraphs above the recipe." Feature list
+D2 = wins-or-ties (defaulted, never asked); the screenshot tool installed silently
+at step 9, one sentence spoken, probe screenshot proven non-empty; D4 = "no ads, no life-story paragraphs above the recipe." Feature list
 confirmed: add-recipe form, card grid, ingredient search, phone-usable. Decisions
 closed. Seventeen documents written; the dependency sort returns 9/9 units, no cycles.
 
@@ -235,27 +242,28 @@ re-spawned a live commander on top of itself and put two writers on one domain.
 ## Step 4 — PARALLELISM PLAN (a section of CONTROL/EXECUTION-PLAN.md)
 
 ```
-Topology: gauntlet six-workflow shape (references/gauntlet.md §13), scaled to WAVE 15+5.
-WF01 blueprint-lock   [opus ×4]   parent T-01; units: architecture, data model, UX plan, test plan  (pipeline)
-WF02 primary-build    [sonnet ×10] parent T-03; units U1–U9 + integration        (pipeline; width 10)
-WF03 visual-gauntlet  [fable ×4]  parent T-04; blind card-grid/mobile/search/add-form judges (pipeline; launches on first landed unit)
-WF04 tech-gauntlet    [fable ×3]  parent T-05; logic / regression / release-blocker judges   (pipeline)
-WF05 release-council  [opus ×4]   parent T-07; 4/4 to pass  (parallel — BARRIER-JUSTIFIED: each judge must see the COMPLETE integrated build, and the council verdict needs all four)
-WF06 repair-loop      [sonnet ×N] parent T-06; one per failed workstream, ≤12/wave  (pipeline; entry: failures>0)
-Merge train           [haiku ×1]  15-minute trigger, wave close always — CONCURRENT, never a station
-Concurrent at peak: lead+4 commanders (5) + WF02(10) + train(1) + watch as lead duty = 16 ≤ 20 ✓ (ledger line: GOVERNS 20)
-Widest moment: 5 persistent + WF02(10) + WF03(4) + train(1) = 20 = GOVERNS 20 exactly ✓
-  (workflow-side 10+4+1 = 15 = the 15 slots the ledger left after the 5 persistent)
+Topology: the ONE swarm shape (references/gauntlet.md §13.1) — five workflow types and no others — sized by the dispatchable set (495 workflow slots available).
+Full-capacity shape (§13.1): WF01 8 / Unit Gauntlet 16 / Integrated Visual 16 / Council 4 / Repair ≤12. This run's derived widths follow.
+WF01 blueprint-lock        [opus ×8]   parent T-01; 8 planner slices: architecture, domain, the two personalization planners, visual world, UX/feel, testing-privacy-performance, evidence-harness  (parallel — BARRIER-JUSTIFIED: the synthesis needs every plan)
+Unit Gauntlet A            [opus ×10]  parent T-03; units U1–U9 + integration = 10 UNIT slices in ONE pipeline() call. Stages per unit, all seat-pinned, no barrier between them: build (builder seat) → blind visual judge (vision-proven seat) → technical judge (judge seat) → fix loop. Unit 1 is the evidence harness; page units dispatch only after HARNESS-READY:
+Integrated Visual Gauntlet [sonnet ×5] parent T-04; after the units integrate: one blind judge per whole page/screen at every viewport (card-grid, mobile, search, add-form) + the global blind benchmark judge
+WF05 release-council       [sonnet ×4] parent T-07; 4/4 to pass  (parallel — BARRIER-JUSTIFIED: each judge must see the COMPLETE integrated build, and the council verdict needs all four)
+WF06 selective-repair      [opus ×N]   parent T-06; one repair seat per failed workstream, ≤12 per wave, then the council again  (pipeline; entry: failures>0; passing workstreams are LOCKED and never rerun)
+Merge train                [haiku ×1]  15-minute trigger, wave close always — CONCURRENT, OUTSIDE every build tree (a merge agent inside a build tree is a forbidden shape), never a station
+Concurrent at peak: lead+4 commanders (5) + Unit Gauntlet A (10) + train(1) + watch as lead duty = 16 ≤ 500 ✓ (ledger line: GOVERNS 500 harness)
+Widest moment: 5 persistent + Unit Gauntlet A (10) + Integrated Visual (5) + train(1) = 21, far inside the harness's 500 ✓
+  (the wave is sized by this project's dispatchable set and the per-workflow width — never by a policy number)
+Naming note: WF02 / WF03 / WF04 where they appear later in this example are the three STAGES of the Unit Gauntlet — build, blind visual judge, technical judge — never three separate trees.
 ```
 
 Where each number came from:
 
 | Number | Source |
 |---|---|
-| WF02 width 10 | `min(16, cores−2)` with cores measured at 12 — Capacity Ledger line `Cores:` |
+| Unit Gauntlet A width 10 | `min(16, cores−2)` with cores measured at 12 — Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
 | 5 persistent slots | lead + 4 commanders = N+1, deducted BEFORE workflow width — ledger line `AGENT TEAM:` |
-| 15 workflow slots | 20 − 5 — ledger line `WAVE SIZE:` |
-| 20 governs | operator cap on Anthropic-billed Claude Code, smallest of {300, 20, n/a} — ledger line `Governing number:` |
+| 495 workflow slots | 500 − 5 persistent — ledger line `WAVE SIZE:` (this build dispatches 15 of them) |
+| 500 governs | the harness — 50 workflows × clientCap 10; the only candidate that exists here, since no policy cap applies on any path and the subscription publishes no provider figure — ledger line `Governing number:` |
 | WF06 N | the selective-repair formula, N = failed workstreams, ≤12 per wave. This run: N = **2** |
 | ≈34 expected / 200 hard stop | agent-budget declaration — ledger line `AGENT BUDGET DECLARATION:` |
 | 4 commanders | a Gauntlet software build uses 4, inside the documented 3–5 band |
@@ -317,13 +325,16 @@ Why this script is shaped the way it is:
 - Width is not written into the script. The runtime concurrency is the ledger's
   number; the script would run correctly at width 2 or 16 without an edit.
 
-The ledger during the run — every line carries state:
+The ledger during the run — every line carries state. The last two lines are
+ABBREVIATED, in the field order the LEDGER VOCABULARY table gives
+(`references/documents.md`), with the trailing fields elided as `| …`; the full
+order is the table's, never this example's:
 
 ```
-2026-08-12T14:22:03Z | CLAIM  | unit=U3 | agent=[sonnet x10] build:U3
+2026-08-12T14:22:03Z | CLAIM  | unit=U3 | agent=[opus x10] build:U3
 2026-08-12T14:31:40Z | RESULT | unit=U3 | PASS | evidence=branch u3-search pushed, verify exit 0
-2026-08-12T14:35:00Z | RECONCILE | clean | anchor=9f31c2ab | unit=U5 | next=U7 card grid mobile | counts=4/2/0/1/0/0 | tasks=3/3/1
-2026-08-12T14:40:00Z | S-CHECK | violations=0 | trees=4 | prefixes=4 | widths ok vs ledger
+2026-08-12T14:35:00Z | RECONCILE | anchor=9f31c2ab | unit=U5 | result=clean | tasks=3/3/1 | counts=4/2/0/1/0/0 | … | next=U7 card grid mobile
+2026-08-12T14:40:00Z | S-CHECK | violations=0 | runnable=4 open=2 trees=4 | … | actions=none | undetermined=none
 ```
 
 Reading those two count fields, because they are the ones a resuming session lives on:
@@ -360,8 +371,9 @@ the broken run's real format:
 - heartbeat 2026-08-12T15:02:00Z (ledger auto-tick)
 ```
 
-That format is not invented. The operator's real ledger
-(`GAUNTLET-LOOP-WORK/LEDGER.md`, censused 2026-08-12) is **2,366 lines** and
+That format is not invented. The operator's real ledger from the failed run
+(censused 2026-08-12, the census in `references/anti-drift.md` §1) is **2,366
+lines** and
 accumulated **740** such lines — **31.3% of the file** — at a **3-minute** cadence.
 Its longest consecutive run was **139 ticks, about 6.95 hours**, and that run
 **ends at line 2,338 of 2,366**: the drift streak IS the tail. The run did not drift
@@ -540,7 +552,7 @@ reconciler reads and emits actions. This file is what a cold session reads first
   "run_status": "PASS",
   "round": 2,
   "phase": "T-07",
-  "scores": { "current": 8.8, "best": 8.8, "gate": 8.5,
+  "scores": { "current": 8.8, "best": 8.8, "trend_only": true,
               "history": [ {"round":1,"score":7.9,"ts":"2026-08-12T15:41:02Z"},
                            {"round":2,"score":8.8,"ts":"2026-08-12T16:20:33Z"} ] },
   "best_stable_build": { "checkpoint": "checkpoint/recipe-box-003",
@@ -644,14 +656,14 @@ either cites a doctrine constant or shows the operation on one.
 | Cores | 12 | `sysctl -n hw.ncpu`, measured at run time |
 | Per-workflow width | 10 | `min(16, cores−2)` = `min(16, 10)` = 10 |
 | Harness delivery ceiling | 500 | 50 workflows (hard session ceiling) × 10 |
-| Operator wave cap | 20 | standing operator doctrine, Anthropic-billed Claude Code |
-| Provider ceiling | n/a | Anthropic subscription is window-metered and opaque; the rate-limit response is the meter |
-| GOVERNING number | **20** | smallest of {500 harness, 20 policy, n/a provider} |
+| Policy wave cap | none | the operator's ruling — no caps beyond the harness, on any path |
+| Provider ceiling | n/a | Anthropic subscription is window-metered and opaque; the rate-limit response is the meter, and the burn governor is the only limiter |
+| GOVERNING number | **500** | the harness — the only candidate that exists: {500 harness, n/a provider} |
 | Commanders | 4 | Gauntlet software build; inside the documented 3–5 band |
 | Persistent slots | 5 | lead + N commanders = N + 1 = 4 + 1, deducted BEFORE workflow width |
-| Workflow slots left | 15 | 20 − 5 |
-| Peak during build | 16 ≤ 20 | 5 persistent + WF02(10) + train(1) |
-| Widest moment | 20 = 20 | 5 persistent + WF02(10) + WF03(4) + train(1); workflow side 10+4+1 = 15 = the 15 slots |
+| Workflow slots left | 495 | 500 − 5 |
+| Peak during build | 16 ≤ 500 | 5 persistent + WF02(10) + train(1) |
+| Widest moment | 20 ≤ 500 | 5 persistent + WF02(10) + WF03(4) + train(1); this project's dispatchable set sets it, not a cap |
 | Session budget | 1,000 | subagent executions per session — a lifetime count, never a width |
 | Declared expectation | ≈34 | 26 baseline (4+10+4+3+4 workflows + 1 train) + 8 expected repair wave |
 | Actual executions | 36 | 30 workflow (`by_workflow`) + 6 non-workflow |
@@ -665,10 +677,11 @@ either cites a doctrine constant or shows the operation on one.
 | TERMINAL-DRIFT N | 6 | `max(3, ceil(30 min ÷ cadence))` at the 5-minute reconcile cadence |
 
 Scenario-(b) recheck, for the same project on 9Router + DeepSeek v4 Flash direct:
-provider 2,500 − 25% reserve = 1,875 usable; harness 50 × 10 = 500; no operator cap
-on the user's own keys. Smallest = **500**, so the harness governs and the provider
-never notices. The 5 persistent slots are noise against 500, the six phases are
-unchanged, and only the widths move.
+provider 2,500 − 25% reserve = 1,875 usable; harness 50 × 10 = 500; no policy cap
+anywhere. Smallest = **500**, so the harness governs and the provider never
+notices — the same governing number as scenario (a), reached the same way. The 5
+persistent slots are noise against 500, the six phases are unchanged, and only the
+provider line differs.
 
 ---
 
@@ -684,7 +697,7 @@ and the `project_state.json` schema. The checkpoint moments and the named exit
 statuses.
 
 **Never copy:** `recipe-box`. `T-01`…`T-07`. `U1`…`U9`. `wf02-build`. The commander
-names. 12 cores, width 10, wave 15+5, GOVERNS 20, 36 executions, N = 2, score 8.8.
+names. 12 cores, width 10, wave 495+5, GOVERNS 500, 36 executions, N = 2, score 8.8.
 Those are one machine's measurement and one project's shape on one afternoon. A
 different box, a different app, or a different provider path produces different
 numbers from the same formulas — and a build that reproduces these numbers without

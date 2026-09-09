@@ -82,8 +82,8 @@ always carries the test that would settle it (§8 lists them together).
 
 | Capability | macOS | Windows | Notes |
 |---|---|---|---|
-| **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash REQUIRED**; native PowerShell **CANNOT** run them | On native Windows without Git Bash, every bash-tool verdict is **UNDETERMINED** and the run says so. It never pretends the checks ran, and it never converts a missing interpreter into a clean result. |
-| **Core count** (feeds width clientCap = `min(systemConcurrentMax, cores−2)`) | `/usr/sbin/sysctl -n hw.ncpu` — **AVAILABLE**. The `/usr/bin/sysctl` path returns **rc=127**, a shell abort, never an answer. Alternate: `getconf _NPROCESSORS_ONLN` | PowerShell `[Environment]::ProcessorCount`; or `%NUMBER_OF_PROCESSORS%`; or `nproc` under Git Bash — **AVAILABLE** | The FORMULA is identical everywhere; only the instrument changes. Cores are measured, never inherited (`tools/capacity-resolver.sh` enforces this itself). |
+| **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash is a HARD PREREQUISITE on Windows, installed ONCE by the Windows installer** — `nine-router-setup`'s `setup-windows.ps1` (the TODO block below names the exact installer change). Native PowerShell **CANNOT** run these scripts. | **GATE 0 checks for it on Windows** — RUN `bash --version`, read `$LASTEXITCODE` (§3) — and when it is missing says one plain sentence and stops: *"One small helper program needs installing first. It takes two minutes; here is the one thing to click."* Until it is installed the **four Node twins (§2.1)** carry the width gate, the dispatch gate, the five-minute tick and the ledger, and **every other bash-tool verdict is UNDETERMINED** and the run says so — it never pretends the checks ran, never converts a missing interpreter into a clean result, and the client hears the §4.4 sentence. |
+| **Core count and RAM** (feed width clientCap = `max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))`) | `/usr/sbin/sysctl -n hw.ncpu` — **AVAILABLE**. The `/usr/bin/sysctl` path returns **rc=127**, a shell abort, never an answer. Alternate: `getconf _NPROCESSORS_ONLN` | PowerShell `[Environment]::ProcessorCount`; or `%NUMBER_OF_PROCESSORS%`; or `nproc` under Git Bash — **AVAILABLE** | The FORMULA is identical everywhere; only the instrument changes. Cores are measured, never inherited (`tools/capacity-resolver.sh` enforces this itself). |
 | **Home / config root** | `$HOME`, `~/.claude` — **AVAILABLE** | `$env:USERPROFILE`, `%USERPROFILE%\.claude` — **AVAILABLE** | Separator differs (`/` vs `\`). **Never hardcode `/Users/…`** or a drive letter. Resolve the config root from `CLAUDE_CONFIG_DIR` when set, else the platform default. |
 | **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box **AND** the session's LAUNCH CONTEXT is an attached tmux session or iTerm2 with `it2` — **presence is NECESSARY, never SUFFICIENT; the gate is launch context, not box inventory (§5.1)**; absent, or the launch context not guaranteed → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
 | **Agent Teams (in-process)** | **AVAILABLE — but probe first**; enablement is per-box, not per-OS | **UNDETERMINED** — the docs state no OS restriction for in-process teams, and nothing affirms native Windows either | The AGENT-TEAM-PROBE (`references/agent-team.md` §3) is the decider, per box, on BOTH platforms. Probe, never assume — same rule either way. |
@@ -94,6 +94,53 @@ always carries the test that would settle it (§8 lists them together).
 | **Service / scheduler management** (e.g. starting the 9Router) | `launchctl` — **AVAILABLE** | Scheduled Tasks, or an `nssm`-style service wrapper | Already split upstream: `launchers/macos/` vs `launchers/windows/` in the `999-setup` repo. Use the shipped launcher for the detected platform; never hand-roll the other one's command. |
 | **Process inspection for the pre-flight** | `ps aux \| grep '[c]laude'`, `tmux list-sessions` | `Get-Process`, `tasklist` — no tmux equivalent | Observation ONLY on both platforms (`references/agent-team.md` §4): never terminate, attach, or send anything into what you find. |
 | **Video stitching / transcoding** (`ffmpeg` + `ffprobe`, for joining multi-clip video items) | **PER-BOX — detected by EXECUTION, never assumed**: run `ffmpeg -version` AND `ffprobe -version`, both, and require exit 0 with a parsed version line. Install offered only with the client's consent and only via a package manager **already present** (`brew install ffmpeg` where Homebrew already exists — never install Homebrew to get it) | **PER-BOX detection is the same** under Git Bash; the **INSTALL path is UNDETERMINED** — no consented, platform-proven install route has been established here | Presence is a fact about a machine, not about an OS, so **no fleet-wide assumption is made in either direction** and the verdict is re-taken every run that stitches (`references/capacity.md` volatility row 24). **Absent, declined, or unattended → degrade to CLIPS-PLUS-GAP**: every clip still generates and persists, and the MEDIA-GAPS manifest carries a `NEEDS-JOINING` entry. `references/media-pipeline.md` 6d owns the ladder and the client wording; this row owns only the platform verdict. |
+
+> **TODO — NAMED HERE BECAUSE IT IS OUT OF THIS SKILL'S WRITE SCOPE.** The
+> installer that must install Git Bash is `setup-windows.ps1`, and it lives in
+> the `nine-router-setup` skill, not in this one. This file therefore cannot
+> make the change; it can only name it exactly, so that it is not lost:
+> **`winget install Git.Git` where `winget` is present** — presence PROVEN by
+> RUNNING `winget --version` and reading `$LASTEXITCODE`, never by name
+> resolution (§3, §8 item 6) — **and where `winget` is not present, name the
+> download** instead of bootstrapping a package manager to get there (§2,
+> package-manager row): the Git for Windows installer at
+> `https://git-scm.com/download/win`, reported as BLOCKED-with-a-manual-step and
+> never as a silent skip. Until that installer change ships, GATE 0's Windows
+> check is the only thing between a client and a run with no enforcement, and
+> §2.1 is what keeps such a run honest.
+
+### 2.1 THE NODE TWINS — the fallback that runs when bash is absent
+
+Four of the enforcement scripts ship a **Node twin** under `scripts/common/`,
+because Node is guaranteed wherever Claude Code runs and bash is not. They are
+what keeps the gate, the tick and the ledger working on a Windows box that has
+PowerShell and no Git Bash — the case row 1 would otherwise leave with no
+enforcement at all.
+
+| Bash original | Node twin | What it carries when bash is absent |
+|---|---|---|
+| `tools/width.sh` | `node scripts/common/width.mjs` | The measured width: the same three `KEY=VALUE` lines, the same `[MEASURED …]` marks, the same exit codes (0 / 2 / 64). Node's own `os.cpus()` / `os.totalmem()` is tried LAST, after the same shell instruments, and names itself in the mark, so on a box where both run they print the same instrument and the same `CLIENT_CAP` |
+| `tools/dispatch-check.sh` | `node scripts/common/dispatch-check.mjs` | The pre-dispatch gate — the width floor, the `[<model> x<N>]` label, the Parallelism Plan requirement, the forbidden shapes — so the PreToolUse hook refuses an under-width launch on both platforms |
+| `tools/watch-tick.sh` | `node scripts/common/watch-tick.mjs` | The five-minute tick: same reconcile, same S-checks, same `ACTION\|<verb>\|<target>\|<evidence>` lines, same exit codes 0 / 3 / 4 |
+| `tools/ledger.sh` | `node scripts/common/ledger.mjs` | The atomic ledger write: same line shapes, same `.tmp`+rename inside the same lock directory, the same SCORE-class refusal (exit 2, nothing written), the same CLAIM → `CONTROL/last-intents.txt` window. `--selftest` PROVES byte-identity against the bash original on any box where bash runs, and reports UNDETERMINED with the reason named where it does not |
+
+**Selection is MEASURED, never assumed:** RUN `bash --version` and read the exit
+code (§3 — `command -v` proves only that a NAME resolves). rc=0 with a version
+string → the bash tools are the instrument. Anything else → the Node twin is the
+instrument. Either way the run records WHICH twin answered, beside the value.
+**The twins are a FALLBACK, never a second opinion:** exactly one of a pair runs
+for a given job in a given run. One lock caveat, stated rather than hidden:
+`ledger.sh` prefers `flock(1)` where it resolves while `ledger.mjs` always takes
+the mkdir lock at the same path, so the two interlock correctly on any box
+without `flock(1)` — which includes every Windows box, the case this port exists
+for — and both twins must not be run concurrently against one file on a box that
+has `flock(1)`.
+
+**What the twins do NOT cover.** `anchor.sh`, `env-sweep.sh`,
+`capacity-resolver.sh`, `capacity-profile.sh`, `place-key.sh`, `self-update.sh`
+and `check-update.sh` have no Node twin. On a PowerShell-only box their verdicts
+are **UNDETERMINED**, named that way per §4, and the client hears §4.4. The twins
+keep four jobs honest; they do not make the whole kit available.
 
 ---
 
@@ -187,116 +234,35 @@ X"), and a negative carries the same burden of proof as a positive:
 - **UNDETERMINED is a correct answer** and is always better than a confident
   wrong zero. Every UNDETERMINED cell in §2 ships with its test.
 
+### 4.4 The spoken fallback on a PowerShell-only machine
+
+§2 row 1 and §2.1 decide what such a machine can ENFORCE. This clause decides
+what the CLIENT is TOLD, because "there is no safety net on this box" is exactly
+the fact a non-technical client must never be left to discover for themselves.
+On a Windows box where `bash --version` did not return 0 — Git Bash absent, so
+`anchor.sh`, `env-sweep.sh` and `capacity-resolver.sh` cannot run and their
+verdicts are UNDETERMINED (§4.2) — the run says this, once, in these words:
+
+> On this computer I can't run my safety checks, so I'll build more slowly and
+> carefully, and I'll say so in the morning report.
+
+It is spoken ALONGSIDE the §4.1 PLATFORM-SKIP lines, never instead of them: the
+sentence is the client's copy of the fact the ledger already carries. It is never
+softened into "everything is fine", and it is never withheld on the grounds that
+the Node twins (§2.1) cover the gate, the tick and the ledger — they cover four
+jobs, not the whole kit, and the difference is the client's to know.
+
 ---
 
 ## 5. RULES THIS FILE OWNS (single owner — other files cite, never restate)
 
 ### 5.1 `teammateMode: "tmux"` must NEVER be written on Windows
 
-tmux is a Unix assumption and split panes are unsupported in Windows
-Terminal. On native Windows, the Agent-Teams enablement write sets the
-feature flag ALONE and leaves the display mode unclaimed — `teammateMode` is
-UNDETERMINED there, not defaulted. In-process mode is the Windows answer if
-teams run at all. `references/agent-team.md` §5.5 step 3 cites this rule; the
-rule itself lives here so there is exactly one place to change it.
-
-On macOS the write is `"teammateMode": "tmux"` **only after tmux is proven
-present by running it** (`tmux -V`, exit code read) — presence of the name is
-not presence of the program. Absent tmux and absent Homebrew, the step
-reports `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` and keeps validating
-everything else; it never installs Homebrew to get there.
-
-**The four documented `teammateMode` values** (sources: the harness's own
-settings reference and Agent Teams doc pages —
-`code.claude.com/docs/en/settings.md`, `code.claude.com/docs/en/agent-teams.md`):
-`in-process` — every teammate in the one terminal, "works in any terminal, no
-extra setup required"; `auto` — split panes ONLY if already inside tmux, or
-inside iTerm2 with `it2` on PATH, and **silently falls back to in-process
-otherwise**; `tmux` — split-pane mode, which doc-verbatim **"auto-detects
-whether to use tmux or iTerm2 based on your terminal"**, so the value this
-rule already writes serves iTerm2 users too and there is no second value to
-pick; `iterm2` — added v2.1.186, native iTerm2 panes in the CURRENT window
-via the `it2` CLI.
-
-**The documented default is `in-process` as of v2.1.179; it was `auto`
-before.** Sourcing caveat, stated because it is thin: the 2.1.179 changelog
-entry is **SILENT** on the flip — the two doc pages named above are the sole
-source for it. Why it matters here: this skill's own procedure floor is
-**2.1.178**, so a box sitting exactly at the floor still defaults to `auto`,
-not `in-process`. Blast radius, said just as plainly so this reads as a
-caveat and not an alarm: `auto` outside tmux/iTerm2 falls back to in-process
-anyway, so a plain-terminal client behaves identically under either default.
-
-#### The per-box half of the same rule — the half that is NOT about the OS
-
-The clause above is a per-OS ban. This clause binds **every** platform,
-macOS and Linux included, and it is the half that decides what a box with no
-tmux actually gets:
-
-> On any OS, `teammateMode: "tmux"` is written **only when tmux (or iTerm2 +
-> `it2`) is PROVEN present on that box**. Absent → the key is **omitted** and
-> in-process is the answer — the documented default, which works in any
-> terminal with no extra setup. **A no-tmux, no-Homebrew Mac is a
-> DEGRADED-DISPLAY box, never a BLOCKED box.**
-
-The four clauses fail differently, so read them separately:
-
-- **PROVEN present means RUN, not resolved.** `tmux -V` with the exit code
-  read, per §3: `command -v` proves only that a NAME resolves. For the
-  iTerm2 + `it2` path the same standard applies — RUN `it2` with a harmless
-  flag and read the exit code; **the exact flag is UNDETERMINED here** (`it2`
-  was never probed on the box in §7, so no flag string in this file is a
-  measurement). A probe that was not run leaves the verdict
-  **UNDETERMINED**, and UNDETERMINED takes the ABSENT branch — the key is
-  omitted. Writing the key on an unproven box is exactly the failure this
-  rule exists to prevent.
-- **OMITTED — not set to a fallback string.** There is no "write in-process
-  instead" step. `teammateMode` is left unwritten and the harness's own
-  documented default (in-process, "works in any terminal, no extra setup
-  required") applies. **Omission is the action.**
-- **DEGRADED DISPLAY ≠ BLOCKED RUN.** `teammateMode` selects DISPLAY ONLY.
-  tmux is therefore never a prerequisite for Agent Teams; its absence never
-  blocks team formation, never blocks the build, and is never grounds to stop
-  and ask the client to install anything. It costs split panes and nothing
-  else.
-- **PRESENCE IS NECESSARY, NEVER SUFFICIENT — the gate is LAUNCH CONTEXT,
-  not box inventory.** Presence proven by RUNNING the binary (first clause
-  above) remains a **necessary precondition — it is never the decider.**
-  That condition is satisfied while the client sees NOTHING: on a Mac where
-  `tmux -V` returns 0 but the client launches from a plain Terminal, the
-  binary selects **external session mode** — a SEPARATE tmux session that is
-  **provably never auto-attached** — and it can raise a consent dialog on a
-  non-technical client's screen ("Opens teammates in a separate tmux
-  session", with a Cancel/skip option). So split-pane display is promised
-  **only where the session will run INSIDE AN ATTACHED tmux session, OR in
-  iTerm2 with `it2` PROVEN present.** ("Inside tmux" alone is an incomplete
-  statement of the gate: the iTerm2 + `it2` path puts native panes in the
-  current window with no tmux involved at all.) **Where the launch context
-  cannot be guaranteed, the key is OMITTED and in-process is the answer** —
-  and that box is still a DEGRADED-DISPLAY box, never a BLOCKED box, exactly
-  as the clause above states. **Dated observation, not a standing claim
-  (2026-08-12, worktree-scoped string extraction of the installed binary):**
-  the backend decision tree read *inside tmux → "tmux (running inside tmux
-  session)"*; *iTerm2 + `it2` → "iterm2 (native iTerm2 with it2 CLI)"*; *not
-  in tmux or iTerm2 but tmux installed → **"tmux (external session mode)"***;
-  *no backend → error, then in-process fallback*; *non-interactive `-p` →
-  in-process, panes never*. In that same extraction `attach-session` occurred
-  **exactly 2 times in the entire binary, BOTH inside the `--worktree
-  --tmux` feature**, against a control of `new-session` at 25 occurrences —
-  i.e. nothing auto-attaches the external session. Re-extract before relying
-  on it; a later build may decide differently.
-
-**Scope of the `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` report
-above:** that string names the tmux **installation** — an optional
-convenience — as blocked. It never names the run, the teams, or the build as
-blocked. The paragraph above already says the step "keeps validating
-everything else"; this clause states the consequence in the ledger's own
-vocabulary so no reader can convert an install-side BLOCKED into a stop gate.
-The correct ledger line for such a box is the §4.1 PLATFORM-SKIP:
-
-```
-<ts> | PLATFORM-SKIP | step=tmux-display-mode | reason=tmux not proven present on this box (tmux -V did not return 0) | consequence=teammateMode OMITTED; in-process display; team formation UNAFFECTED — degraded display, not a blocked run
-```
+- **Windows — the per-OS ban.** tmux is a Unix assumption and split panes are unsupported in Windows Terminal, so the Agent-Teams enablement write sets the feature flag ALONE and leaves `teammateMode` UNDETERMINED there — never defaulted. In-process is the Windows answer if teams run at all. (`references/agent-team.md` §5.5 step 3 cites this rule; it lives here so there is one place to change it.)
+- **Any OS — the per-box half.** `teammateMode: "tmux"` is written ONLY where tmux (or iTerm2 + `it2`) is PROVEN present by RUNNING it (§3 — `tmux -V`, exit code read; the `it2` probe flag is itself UNDETERMINED, and an unrun probe takes the ABSENT branch) **AND** the session's launch context is an attached tmux session or iTerm2 with `it2`. **Presence is NECESSARY, never SUFFICIENT:** a proven binary launched from a plain Terminal selects external session mode, which nothing auto-attaches and which can raise a consent dialog on a non-technical client's screen (dated evidence: §7.1 row C).
+- **Absent, or the launch context not guaranteed → the key is OMITTED**, never set to a fallback string; the harness's own documented default applies (`in-process`, "works in any terminal, no extra setup required", default since v2.1.179; `auto` at this skill's 2.1.178 floor, which falls back to in-process outside tmux/iTerm2 anyway). **Omission is the action.** The four documented values are `in-process`, `auto`, `tmux` (which doc-verbatim "auto-detects whether to use tmux or iTerm2 based on your terminal", so it serves iTerm2 users too) and `iterm2` — sources `code.claude.com/docs/en/settings.md` and `code.claude.com/docs/en/agent-teams.md`.
+- **DEGRADED DISPLAY ≠ BLOCKED RUN.** `teammateMode` selects DISPLAY ONLY: tmux is never a prerequisite for Agent Teams, its absence never blocks team formation or the build, and it is never grounds to ask a client to install anything. `TMUX INSTALLATION BLOCKED — HOMEBREW NOT FOUND` names an optional INSTALL as blocked and never the run, the teams or the build; Homebrew is never installed to clear it, and everything else keeps validating.
+- The ledger line for such a box is the §4.1 skip: `<ts> | PLATFORM-SKIP | step=tmux-display-mode | reason=tmux not proven present on this box (tmux -V did not return 0) | consequence=teammateMode OMITTED; in-process display; team formation UNAFFECTED — degraded display, not a blocked run`
 
 ### 5.2 The Windows peer-messaging gap must be SURFACED, never hidden
 
@@ -320,6 +286,36 @@ re-detected on resume (`references/resume.md` step 0.5 — free, and
 `[MEASURED]`), and is cited by name wherever a capability verdict is used.
 A capability asserted without a platform line behind it is ASSUMED, and is
 sized conservatively like any other unmarked value.
+
+### 5.4 A file this skill GENERATED is written silently; a file it did not generate is never written
+
+- **The skill's own artifacts — written silently, backup path recorded.** `~/.claude/statusline-command.sh`
+  carrying the `SPEC-PROTOCOL-STATUSLINE` marker and the companion skills the bootstrap installs are THIS
+  skill's output, and in each case for the same reason: **the skill GENERATED THE WHOLE FILE.** The
+  `autoCompact*` keys are **NOT** in this class (RC-20). A single key inside a `settings.json` the operator
+  owns and hand-tuned is the operator's, and the third bullet's own test — the distinction is the FILE —
+  decides it that way, because the FILE is his. Each artifact that IS the skill's own is installed or
+  regenerated by its own installer, never edited in place, backed up FIRST, and the backup
+  path written through `tools/ledger.sh`. One plain sentence is spoken about the outcome and no question
+  is asked (`SKILL.md` §4 owns that rule).
+- **Every other file — never written, never offered, never explained.** A file this skill did not
+  generate belongs to whoever owns the machine. It is not edited, not regenerated, and never raised with
+  the client in any form — not as a question, not as a finding, not as an aside. It is recorded once as
+  an operator finding in `CONTROL/SESSION-LOG.md` and the run continues.
+- **The distinction is the FILE, and NEVER who is at the keyboard.** Which branch applies is settled by
+  whether the file is this skill's own artifact — the `SPEC-PROTOCOL-STATUSLINE` marker, the key name,
+  the installer that emits it — never by whose machine it is. The operator's box is the one place a human
+  is present to ask, and asking is an operator-mode behaviour with no client path, so this rule holds
+  unchanged on the operator's box and on a client box alike. A machine owner's own standing rules — a
+  write gate, a memory file, a hand-tuned config — are the operator's, are never applied to the skill's
+  own artifacts, and are never explained to a client (`references/audience.md` §7). **The carve-out, and
+  the only one: a KEY inside a file this skill did not generate is not one of the skill's own artifacts**,
+  so a hand-tuned value there BINDS and the first bullet's silent-write branch does not reach it. What the
+  skill may still do to such a key is bounded to the direction that cannot cost the operator anything, and
+  a SCRIPT does it, never a sentence a model interprets: `tools/compact-guard.sh` RAISES
+  `autoCompactWindow` when the live value is below the target, NEVER lowers one at or above the target, and
+  RECORDS the larger value it left alone (`SKILL.md` step 2.6). That is why `autoCompact*` left the first
+  bullet's class, and it changes nothing for `statusline-command.sh` or the companion skills.
 
 ---
 
@@ -410,7 +406,7 @@ different instruments.
 |---|---|---|---|
 | A | **Headless `claude -p` did not engage Agent Teams at all.** Same feature flag, same settings, same binary: a named agent spawned, but there was **no team directory, no tmux session, and no teammate protocol**. Reading: teams presented as an INTERACTIVE-session feature on that box that day. | Absence of `{config root}/teams/session-{id8}/` on disk, plus `tmux list-sessions` — both run OUTSIDE the session under test | Dated observation. One box, one day, one invocation mode. Not a documented product limit. **CORRECTED 2026-08-12 (instrument correction above): the NEGATIVE half — 'did not engage Agent Teams at all' — is UNDETERMINED, not proven.** Directory absence cannot carry it (team directories are deleted on disband), and the named agent that spawned may have run as an ordinary subagent; only the teammate's own session transcript settles it (`references/agent-team.md` §10). The DISPLAY half — no tmux session on that box that day — stands unchanged, and §5.1 is unaffected. |
 | B | **Team formation under the routed launcher (`claude-nine`) was proven IN-PROCESS, with NO tmux pane.** The team formed and the teammate's on-disk inbox existed while no split pane had been created. Reading: tmux was not required for a team to form on that box that day. | `{config root}/teams/session-{id8}/inboxes/{name}.json` present on disk, and `tmux list-panes` pane count showing no added pane | Dated observation. Consistent with the documented in-process default (§5.1), but the DOCS are the authority for the general rule; this row is only one box's confirmation. **CORRECTED 2026-08-12: the inbox artifact in the middle column is DEMOTED to a split-pane-only corroborator** (instrument correction above) — in-process teammates never create it, so it can neither prove nor disprove an IN-PROCESS team on its own, and it may never ground a negative. What settles that reading is the teammate's own session transcript (`references/agent-team.md` §10). The DISPLAY finding — a team present with no added pane, read from the `tmux list-panes` count — is a SEPARATE instrument and stands. |
-| C | **Two live tmux sessions ran teammates for over an hour at `session_attached=0`.** The teammates worked the whole time; nobody could see them. Reading: an UNATTACHED tmux session is a running team with NO display — precisely the outcome a presence-only gate produces, which is why §5.1's fourth clause gates on LAUNCH CONTEXT rather than on the box owning a tmux binary. | `tmux list-sessions` read from OUTSIDE the sessions under test, reporting `session_attached=0` on both — observation only, nothing attached, signalled, or sent into them | Dated observation. One box, one day, two sessions. Not a property of macOS, of tmux, or of the harness, and not recallable as an input to a later run. |
+| C | **Two live tmux sessions ran teammates for over an hour at `session_attached=0`.** The teammates worked the whole time; nobody could see them. Reading: an UNATTACHED tmux session is a running team with NO display — precisely the outcome a presence-only gate produces, which is why §5.1's per-box clause gates on LAUNCH CONTEXT rather than on the box owning a tmux binary. | `tmux list-sessions` read from OUTSIDE the sessions under test, reporting `session_attached=0` on both — observation only, nothing attached, signalled, or sent into them | Dated observation. One box, one day, two sessions. Not a property of macOS, of tmux, or of the harness, and not recallable as an input to a later run. |
 
 **Why the instrument column says EXTERNAL.** A session cannot self-report
 whether Agent Teams is active, so neither observation above may be sourced
@@ -481,4 +477,5 @@ Consequences that follow from the `exec` line, and only from it:
 | `references/agent-team.md` §3, §5.5 | The tmux / `teammateMode` rule (§5.1) and the peer-messaging gap (§5.2), by citation — this file is the owner. §5.1 has TWO halves and both live here: the per-OS ban (never on Windows) and the per-box rule (any OS — write only where tmux/iTerm2+`it2` is PROVEN present **AND the launch context is an attached tmux session or iTerm2 + `it2`; presence is NECESSARY, never SUFFICIENT**; absent or launch context not guaranteed → key OMITTED, in-process, DEGRADED-DISPLAY not BLOCKED). Also the launcher/config-root exhibit (§7.2), including `claude-codex` sharing `~/.claude-nine` |
 | `references/resume.md` step 0.5 | Platform re-detect on every resume (free, `[MEASURED]`) |
 | `references/environment-sweep.md`, `tools/*.sh` | The bash-interpreter requirement (§2, row 1) and the UNDETERMINED-not-pass rule when it is absent |
+| `SKILL.md` GATE 0, `scripts/common/*.mjs` | The Windows Git Bash prerequisite and its one-sentence check (§2, row 1); the four Node twins that carry the width gate, the dispatch gate, the tick and the ledger when bash is absent, and the measured `bash --version` rule that selects between them (§2.1); the sentence the client hears on a PowerShell-only box (§4.4) |
 | `work-999-setup` (separate repo) | The two-branch consistency clause (§6) |

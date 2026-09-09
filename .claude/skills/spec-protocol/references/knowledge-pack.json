@@ -1,0 +1,14 @@
+{
+  "source": "https://github.com/trevorotts1/openclaw-onboarding",
+  "pin": "<tag, set at release>",
+  "lookup_order": ["~/.openclaw/skills/<folder>", "<local checkout>/<folder>", "github:<folder>@<pin>"],
+  "cache": "<skill>/companions/openclaw-skills/<folder>/",
+  "reading_list": ["SKILL.md", "INSTRUCTIONS.md", "INSTALL.md", "PREREQS.json", "models.json", "QC.md"],
+  "acceptance": "the folder's own qc-*.sh",
+  "folders": {
+    "convert_and_flow": ["06-ghl-install-pages", "44-convert-and-flow-operator", "38-conversational-ai-system", "29-ghl-convert-and-flow", "05-ghl-setup", "36-ghl-mcp-setup"],
+    "kie": ["07-kie-setup", "66-kie-image", "67-kie-video", "68-kie-audio", "46-kie-callback-relay"],
+    "agnes": ["63-agnes-image", "64-agnes-video"]
+  },
+  "excluded_until_in_repo": ["blackceo-ghl-agency-api"]
+}

@@ -57,6 +57,10 @@ and a blind question makes the user do the conductor's homework.
 - **Focused on patterns and benchmarks that shape the QUESTIONS** — similar
   apps and their features, typical page structures, stage counts, cadence and
   conversion benchmarks. Not the deep pass.
+- **On a WEBSITE it is not a separate pass.** The build target `WEBSITE` folds
+  this pass and Step 1's four topics into ONE dispatch against the cached
+  site-type table in Step 1 — one reader, one brief, one set of findings that
+  serves both the interview and the spec.
 
 **Distinct from the deeper research below.** The Just-in-Time pass informs the
 interview. Steps 1 and 2 below run after the interview and before the
@@ -98,10 +102,63 @@ web-researches itself (Law 12).
    now, and what does each one cost in complexity? Prefer boring and
    well-documented over clever and new — the user is learning, and the app must
    be maintainable by whoever reads it next.
+
+   **There is a declared default stack per target, so this reader CONFIRMS
+   instead of re-deciding.** The stack is already chosen before the reader goes
+   out; its job is to check the choice against what is current and say so:
+
+   | Build target | Default stack |
+   |---|---|
+   | `WEBSITE` | Static HTML/CSS/JS from the shipped template (`templates/scaffolding/`) |
+   | `WEB_APP` | Next.js + Supabase + Vercel |
+   | `MOBILE_AND_WEB` | Next.js + Supabase + Vercel |
+   | `MOBILE_APP` | Expo |
+   | `DESKTOP_SOFTWARE` | Tauri |
+
+   **Research MAY override a default — with a stated reason.** An override is a
+   RATIFIED decision in the decision register (document 10) naming what the
+   research found, which source proved it, and why the default does not fit this
+   build. An override with no stated reason is not an override; the default
+   stands. Silence from the reader is a confirmation, not a licence to invent a
+   different stack at build time.
 4. **Common pitfalls.** What breaks first in apps like this? What do first-time
    builders of this kind of app get wrong most often? What will this app need
    that beginners forget (accounts, storage limits, error messages, mobile
    layout)?
+
+### On a WEBSITE the four topics are ONE dispatch, against a cached table
+
+**Rule.** When the build target is `WEBSITE`, topics 1–4 above are ONE brief to
+ONE reader, and the Just-in-Time pass folds into the same dispatch. A brochure
+or marketing site's domain vocabulary, page set, stack and pitfalls do not
+change from client to client, so four readers would return four versions of the
+same paragraph and cost four dispatches to do it. The one reader's job is
+narrower and sharper: CONFIRM OR CORRECT the cached table below for this
+client's site type, and return the specifics only this client's business has
+(their service area, their competitors' page sets, anything their trade
+regulates — hours, licences, allergen or pricing disclosure).
+
+**The cache, dated.** These are the skill's standing site-type findings. They
+are the reader's starting point, never the run's final answer, and never
+quoted to a client as fresh research:
+
+| Site type | The pages it carries | What every page of it must carry |
+|---|---|---|
+| Local service business (trades, cleaning, repair) | home, services, service area, about, reviews, contact | phone as a tap-to-call link, service area named, one clear "get a quote" action per page |
+| Professional practice (legal, medical, accounting, coaching) | home, each service, about/team, credentials, contact, booking | credentials and registration numbers, a booking path, plain-language description of what happens next |
+| Restaurant, café, food | home, menu, hours and location, order/reserve, about | hours, address with a map link, a current menu that is text (never only a photo of one) |
+| Portfolio or creative | home, work/gallery, about, contact | the work first and large, one contact path, fast images |
+| Small e-commerce | home, catalogue, product, cart, checkout, shipping and returns, contact | prices, shipping cost before checkout, a returns statement, a real contact route |
+| Community, church, nonprofit | home, what we do, events, give/volunteer, about, contact | the next event with its date, one giving or volunteering action, who to call |
+
+**Cache discipline.** The table carries the date it was last confirmed:
+**confirmed 2026-09-07**. The single reader re-confirms it in the same
+dispatch; anything it corrects is returned WITH its source URL and the table's
+row is treated as corrected for this run. The run writes one ledger line —
+`RESEARCH-CACHE: website type=<site type> confirmed=<ISO date> corrections=<n>`
+— so the next reader (and the morning report) can see whether the cache was
+trusted or overridden. A cache older than the run may be used; a cache quoted
+without its date may not.
 
 **Where the findings go** — all three, with sources:
 
@@ -159,6 +216,22 @@ app:
 - **The current-state document** — the survey itself, as a measured finding with
   sources.
 
+**Reference research is the outside world's facts; the content inventory is the
+client's own.** This survey gathers what OTHER people built — features, flows,
+patterns, prices, the bar. It never supplies one fact about the client's own
+business. Those come from the content inventory, the interview's questions 7–12,
+written to `00-INPUT/CONTENT.md` as each answer is given
+(`references/interview.md` section 3): business name and tagline, offers and
+prices, contact and hours, logo and photo locations, testimonials, an existing
+domain. The two are counterparts and neither substitutes for the other — a
+competitor's testimonial is not the client's testimonial, and a price found in
+this survey is research, never their price. A business fact that reached a built
+page from this survey instead of from `00-INPUT/CONTENT.md` is an invented fact,
+and the ship check fails it (`references/build.md` section 6). Where this survey
+leaves a gap in the client's own facts, the gap is marked `DRAFT — write one` in
+`00-INPUT/CONTENT.md` and asked about in the morning report — it is never filled
+from a reference app.
+
 **Present to the user as REFERENCE MATERIAL — empowering, warm, concrete:**
 
 > I looked at three apps that do something like yours. You are going to build
@@ -204,6 +277,11 @@ open and the builder can reach), and (3) compare the user's app against it. If
 the agent cannot obtain the reference, it hallucinates the comparison and
 approves everything — a bar that approves everything is not a bar.
 
+**Fetchable means CAPTURABLE.** A candidate the run cannot screenshot today is
+not fetchable, because what gets judged is the frozen screenshot package, never
+the live URL (`references/gauntlet.md` section 4). The capture happens at
+selection, in the same breath as the pick — see "Freezing the bar" below.
+
 **One user question, in plain language** (the audience rules — one question at a
 time, no jargon — one question presenting the candidates, never a menu):
 
@@ -220,7 +298,8 @@ today, so I cannot honestly compare against it") and present the ones that
 passed.
 
 - **If the user selects one**, it becomes the frozen bar — captured into the
-  current-state document (document 15), next to the survey itself.
+  current-state document (document 15), next to the survey itself, and frozen
+  as screenshots in the same moment (below).
   Freeze D2 and D4 beside it, in the same breath: the D2 relationship ("wins
   or ties" or "meet all requirements") and the D4 avoid-that items (merged
   with the survey's AVOID THAT findings) are ratified into the decision
@@ -239,6 +318,39 @@ bar does not change the modeling purpose: the reference apps remain material to
 study and mirror first, and the bar is a quality target the user's own app must
 reach on its own merits. Inspiration and compliance are separate — mirror what
 they got right, never copy what they built.
+
+### Freezing the bar at selection — screenshots and a page map, never a live URL
+
+**The moment the user picks, the bar is CAPTURED, not bookmarked.** This runs
+at bar selection, before the specification is written, and it is the whole
+reason the pick has to be openable today:
+
+1. **Screenshot the bar at 375, 1024, and 1440** — the three viewports —
+   for **every page mapped to one of ours**, plus the **section crops** of each
+   mapped page: hero, proof, CTA, footer.
+2. **Write the shots into `00-INPUT/bar/`**, one folder per mapped page, file
+   names carrying the page and the viewport (`home/1024.png`,
+   `home/crop-hero-1024.png`). Labels stripped — no browser chrome, no URL bar,
+   nothing that says whose page this is.
+3. **Write the page-mapping table beside them** in `00-INPUT/bar/PAGE-MAP.md`:
+   one row per pair, their page ↔ our page (their home ↔ our home, their
+   pricing ↔ our services), with the bar page's URL recorded as the SOURCE of
+   the capture. A page of ours with no counterpart is a row with `none` and a
+   one-line reason; the critic is never asked to compare it.
+4. **Ledger line:** `BAR-FROZEN: pages=<n> shots=<n>` — the number of mapped
+   pages and the number of image files actually on disk, counted, not intended.
+
+**The critic never receives a URL.** It receives OUR shots and the BAR's shots
+at the same viewport, labels stripped, and nothing else — no page names, no
+source, no builder reasoning (`references/gauntlet.md` section 4, and the blind
+A/B protocol in section 5). A comparison run against a live page is not a
+comparison: the page can change between two verdicts, and then nobody knows
+what was judged.
+
+**A bar that cannot be captured is not a bar.** If the shots cannot be taken —
+the site blocks automation, the page needs a login — say so plainly and re-do
+the selection with the remaining candidates (Law 50, fail-closed). Never
+substitute a description of the page for the page.
 
 ---
 

@@ -11,6 +11,28 @@
 # Never prints API keys or any secret value.
 set -uo pipefail
 
+# --- arguments --------------------------------------------------------
+# --selftest runs ONLY the knowledge-pack resolver against fixture
+# directories and exits; it installs nothing and touches no real store.
+# --hooks-only refreshes ONLY the dispatch gate hook FILE (WI-65) inside the
+# ACTIVE config root and exits, running no other group. It never writes any
+# store file and never registers anything.
+KP_SELFTEST=0
+HOOK_ONLY=0
+while [ $# -gt 0 ]; do
+  case "${1:-}" in
+    --selftest) KP_SELFTEST=1 ;;
+    --hooks-only) HOOK_ONLY=1 ;;
+    -h|--help)
+      printf '%s\n' "usage: bootstrap-companions.sh [--selftest] [--hooks-only]"
+      printf '%s\n' "  --selftest    resolve every knowledge-pack folder against fixtures; install nothing"
+      printf '%s\n' "  --hooks-only  refresh the dispatch gate hook FILE in the ACTIVE config root, then stop (never any store file)"
+      exit 0 ;;
+    *) printf '%s\n' "unknown argument: ${1:-}" >&2; exit 2 ;;
+  esac
+  shift
+done
+
 CLAUDE_CONFIG_DIR_ACTUAL="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # The shared-vs-separate comparison is ALWAYS $HOME/.claude vs the claude-nine
 # dir — comparing CLAUDE_CONFIG_DIR (an env var the caller may inherit) against
@@ -118,6 +140,490 @@ mcp_url_in_any_store() {
   return 1
 }
 
+# --- the knowledge pack (group 5: openclaw-skills) --------------------
+#
+# The manifest is references/knowledge-pack.json. It names the folders as
+# they exist in the onboarding repository and in an installed OpenClaw, and
+# it names the lookup order this resolver follows, per folder, in the
+# manifest's own order:
+#
+#   1. ~/.openclaw/skills/<folder>   — the box already has OpenClaw
+#   2. <local checkout>/<folder>     — ~/openclaw-onboarding by default
+#   3. github:<folder>@<pin>         — reported as pull-required, and pulled
+#                                      ONLY when the GitHub token the skill
+#                                      already holds for the client's own
+#                                      repository is present
+#
+# Anything resolved is cached at <skill>/companions/openclaw-skills/<folder>/
+# and every folder's SOURCE and TAG go into the installation report.
+#
+# The skill READS these folders (SKILL.md, INSTRUCTIONS.md, INSTALL.md,
+# PREREQS.json, models.json, QC.md) and follows the steps with its own tools.
+# It never asks OpenClaw's agent to run anything. The folder's own qc-*.sh is
+# the acceptance check.
+
+SKILL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)"
+KP_MANIFEST="${KP_MANIFEST:-$SKILL_ROOT/references/knowledge-pack.json}"
+KP_OPENCLAW_SKILLS_DIR="${KP_OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}"
+KP_CHECKOUT_DIR="${KP_CHECKOUT_DIR:-$HOME/openclaw-onboarding}"
+KP_CACHE_DIR="${KP_CACHE_DIR:-$SKILL_ROOT/companions/openclaw-skills}"
+
+KP_TOTAL=0
+KP_OK=0
+KP_PULL=0
+KP_REPORT=""
+
+# Read a top-level scalar from the manifest. jq first, python3 second; a box
+# with neither gets a named failure, never a guessed folder list.
+kp_get() {
+  local k="$1"
+  [ -f "$KP_MANIFEST" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg k "$k" '.[$k] // empty' "$KP_MANIFEST"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],""))' \
+      "$KP_MANIFEST" "$k"
+  else
+    return 2
+  fi
+}
+
+# Every folder in the manifest, in the manifest's order, one per line.
+kp_folders() {
+  [ -f "$KP_MANIFEST" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.folders | to_entries[] | .value[]' "$KP_MANIFEST"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+for group in d["folders"].values():
+    for folder in group:
+        print(folder)' "$KP_MANIFEST"
+  else
+    return 2
+  fi
+}
+
+KP_SOURCE="$(kp_get source 2>/dev/null || true)"
+[ -n "$KP_SOURCE" ] || KP_SOURCE="https://github.com/trevorotts1/openclaw-onboarding"
+KP_PIN="$(kp_get pin 2>/dev/null || true)"
+[ -n "$KP_PIN" ] || KP_PIN="unset"
+
+# The token value NEVER reaches stdout of this script: it is captured into a
+# local and handed to git through a credential helper that reads it from the
+# environment, so it never appears in an argument list either.
+kp_token_value() {
+  [ "${KP_FORCE_NO_TOKEN:-0}" = "1" ] && return 1
+  [ -n "${GITHUB_TOKEN:-}" ] && { printf '%s' "$GITHUB_TOKEN"; return 0; }
+  [ -n "${GH_TOKEN:-}" ]     && { printf '%s' "$GH_TOKEN"; return 0; }
+  [ -n "${GITHUB_PAT:-}" ]   && { printf '%s' "$GITHUB_PAT"; return 0; }
+  if command -v gh >/dev/null 2>&1; then
+    local t
+    t="$(gh auth token 2>/dev/null || true)"
+    [ -n "$t" ] && { printf '%s' "$t"; return 0; }
+  fi
+  return 1
+}
+
+kp_token_present() { kp_token_value >/dev/null 2>&1; }
+
+# Prints "<source>|<path>". Returns 0 when the folder is on disk, 1 when a
+# pull is required.
+kp_resolve() {
+  local folder="$1"
+  if [ -d "$KP_OPENCLAW_SKILLS_DIR/$folder" ]; then
+    printf 'openclaw-install|%s\n' "$KP_OPENCLAW_SKILLS_DIR/$folder"; return 0
+  fi
+  if [ -d "$KP_CHECKOUT_DIR/$folder" ]; then
+    printf 'local-checkout|%s\n' "$KP_CHECKOUT_DIR/$folder"; return 0
+  fi
+  if [ -d "$KP_CACHE_DIR/$folder" ]; then
+    printf 'cache|%s\n' "$KP_CACHE_DIR/$folder"; return 0
+  fi
+  printf 'pull-required|%s/tree/%s/%s\n' "$KP_SOURCE" "$KP_PIN" "$folder"; return 1
+}
+
+kp_cache_folder() {
+  local folder="$1" src="$2"
+  [ -d "$src" ] || return 1
+  [ -d "$KP_CACHE_DIR/$folder" ] && return 0
+  mkdir -p "$KP_CACHE_DIR/$folder" 2>/dev/null || return 1
+  cp -R "$src/." "$KP_CACHE_DIR/$folder/" 2>/dev/null || return 1
+  return 0
+}
+
+# The pull. Runs ONLY when kp_token_present said yes.
+kp_pull_folder() {
+  local folder="$1" tag="$2" tok work
+  tok="$(kp_token_value)" || return 1
+  command -v git >/dev/null 2>&1 || return 1
+  [ "$tag" = "unset" ] && return 1
+  work="$(mktemp -d "${TMPDIR:-/tmp}/spec-protocol-kp.XXXXXX")" || return 1
+  KP_GH_TOKEN="$tok" GIT_TERMINAL_PROMPT=0 git \
+    -c credential.helper='!f(){ printf "username=x-access-token\npassword=%s\n" "$KP_GH_TOKEN"; }; f' \
+    -c advice.detachedHead=false \
+    clone --depth 1 --branch "$tag" --filter=blob:none --sparse \
+    "$KP_SOURCE.git" "$work/repo" >/dev/null 2>&1 || { rm -rf "$work"; return 1; }
+  git -C "$work/repo" sparse-checkout set "$folder" >/dev/null 2>&1 || { rm -rf "$work"; return 1; }
+  if [ ! -d "$work/repo/$folder" ]; then rm -rf "$work"; return 1; fi
+  mkdir -p "$KP_CACHE_DIR/$folder" 2>/dev/null || { rm -rf "$work"; return 1; }
+  cp -R "$work/repo/$folder/." "$KP_CACHE_DIR/$folder/" 2>/dev/null || { rm -rf "$work"; return 1; }
+  rm -rf "$work"
+  return 0
+}
+
+kp_run_group() {
+  local folders folder line src path
+  folders="$(kp_folders 2>/dev/null || true)"
+  if [ -z "$folders" ]; then
+    bad "Knowledge pack: could not read $KP_MANIFEST (tried jq, then python3). Source: $KP_SOURCE — report this failure; never guess the folder list."
+    return 1
+  fi
+  KP_TOTAL=0; KP_OK=0; KP_PULL=0; KP_REPORT=""
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    KP_TOTAL=$((KP_TOTAL + 1))
+    line="$(kp_resolve "$folder")"
+    src="${line%%|*}"
+    path="${line#*|}"
+    case "$src" in
+      openclaw-install|local-checkout)
+        kp_cache_folder "$folder" "$path" || warn "$folder resolved at $path but could not be cached into $KP_CACHE_DIR/$folder"
+        ;;
+      pull-required)
+        if kp_token_present; then
+          if kp_pull_folder "$folder" "$KP_PIN"; then
+            src="github@$KP_PIN"
+            path="$KP_CACHE_DIR/$folder"
+          else
+            src="pull-failed"
+          fi
+        fi
+        ;;
+    esac
+    case "$src" in
+      pull-required)
+        KP_PULL=$((KP_PULL + 1))
+        warn "$folder: pull-required — $path (pin $KP_PIN). No GitHub token present, so no pull was attempted."
+        ;;
+      pull-failed)
+        bad "$folder: pull failed from $KP_SOURCE at pin $KP_PIN — report this failure; do not substitute another repository."
+        ;;
+      *)
+        KP_OK=$((KP_OK + 1))
+        ok "$folder: source=$src tag=$KP_PIN"
+        ;;
+    esac
+    KP_REPORT="${KP_REPORT}    $folder: source=$src tag=$KP_PIN path=$path
+"
+  done <<< "$folders"
+  return 0
+}
+
+# --- selftest ---------------------------------------------------------
+# Three phases against fixture directories: the OpenClaw install first, a
+# local checkout second, neither (and no token) third. Installs nothing,
+# writes nothing outside its own temp directory.
+kp_selftest() {
+  local tmp folders folder line src rc=0 n=0 phase_fail
+  folders="$(kp_folders 2>/dev/null || true)"
+  if [ -z "$folders" ]; then
+    printf '✗ selftest: could not read %s (tried jq, then python3)\n' "$KP_MANIFEST"
+    return 1
+  fi
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/spec-protocol-kp-selftest.XXXXXX")" || {
+    printf '✗ selftest: mktemp failed\n'; return 1; }
+
+  KP_OPENCLAW_SKILLS_DIR="$tmp/openclaw/skills"
+  KP_CHECKOUT_DIR="$tmp/checkout"
+  KP_CACHE_DIR="$tmp/cache"
+  KP_FORCE_NO_TOKEN=1
+  mkdir -p "$KP_OPENCLAW_SKILLS_DIR" "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+
+  # A fixture folder carries the reading list and its own acceptance script.
+  kp_fixture() {
+    local root="$1" f="$2"
+    mkdir -p "$root/$f"
+    printf '# %s (fixture)\n' "$f" > "$root/$f/SKILL.md"
+    printf '{"fixture": true}\n' > "$root/$f/PREREQS.json"
+    printf '# QC (fixture)\n' > "$root/$f/QC.md"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$root/$f/qc-fixture.sh"
+  }
+
+  printf '\n===== knowledge-pack selftest: %s =====\n' "$KP_MANIFEST"
+  printf 'folders in manifest: %s\n' "$(printf '%s\n' "$folders" | grep -c .)"
+
+  # ---- phase 1: the OpenClaw install ----
+  n=0; phase_fail=0
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    kp_fixture "$KP_OPENCLAW_SKILLS_DIR" "$folder"
+  done <<< "$folders"
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "openclaw-install" ]; then
+      printf '✗ phase 1 %s: expected openclaw-install, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    kp_cache_folder "$folder" "${line#*|}" || { printf '✗ phase 1 %s: cache write failed\n' "$folder"; phase_fail=1; }
+    [ -f "$KP_CACHE_DIR/$folder/SKILL.md" ] || { printf '✗ phase 1 %s: not cached\n' "$folder"; phase_fail=1; }
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 1: %s/%s folders resolved from the fixture ~/.openclaw/skills, all cached\n' "$n" "$n"
+  else
+    rc=1
+  fi
+
+  # ---- phase 2: the local checkout ----
+  rm -rf "$KP_OPENCLAW_SKILLS_DIR" "$KP_CACHE_DIR"
+  mkdir -p "$KP_OPENCLAW_SKILLS_DIR" "$KP_CACHE_DIR"
+  n=0; phase_fail=0
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    kp_fixture "$KP_CHECKOUT_DIR" "$folder"
+  done <<< "$folders"
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "local-checkout" ]; then
+      printf '✗ phase 2 %s: expected local-checkout, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    kp_cache_folder "$folder" "${line#*|}" || { printf '✗ phase 2 %s: cache write failed\n' "$folder"; phase_fail=1; }
+    [ -f "$KP_CACHE_DIR/$folder/SKILL.md" ] || { printf '✗ phase 2 %s: not cached\n' "$folder"; phase_fail=1; }
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 2: %s/%s folders resolved from the fixture local checkout, all cached\n' "$n" "$n"
+  else
+    rc=1
+  fi
+
+  # ---- phase 3: neither, and no token ----
+  rm -rf "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+  mkdir -p "$KP_CHECKOUT_DIR" "$KP_CACHE_DIR"
+  n=0; phase_fail=0
+  if kp_token_present; then
+    printf '✗ phase 3: KP_FORCE_NO_TOKEN=1 but a token still reported present\n'; phase_fail=1
+  fi
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    n=$((n + 1))
+    line="$(kp_resolve "$folder")"; src="${line%%|*}"
+    if [ "$src" != "pull-required" ]; then
+      printf '✗ phase 3 %s: expected pull-required, got %s\n' "$folder" "$src"; phase_fail=1
+    fi
+    case "${line#*|}" in
+      "$KP_SOURCE/tree/$KP_PIN/$folder") : ;;
+      *) printf '✗ phase 3 %s: pull-required path did not name the GitHub path and pin\n' "$folder"; phase_fail=1 ;;
+    esac
+  done <<< "$folders"
+  if [ "$phase_fail" -eq 0 ]; then
+    printf '✓ phase 3: %s/%s folders reported pull-required at %s/tree/%s/<folder>, no pull attempted\n' \
+      "$n" "$n" "$KP_SOURCE" "$KP_PIN"
+  else
+    rc=1
+  fi
+
+  rm -rf "$tmp"
+  if [ "$rc" -eq 0 ]; then
+    printf '\nselftest: PASS (3 phases, %s folders each)\n' "$n"
+  else
+    printf '\nselftest: FAIL\n'
+  fi
+  return "$rc"
+}
+
+# --- the dispatch gate hook file (WI-65 retires WI-56 (d)) ----------------
+#
+# tools/hooks/dispatch-gate.py is the wall that refuses an unbooked Workflow
+# launch (SHAPE 7) and a launch past the budget (SHAPE 6). WI-56 (d) installed
+# that file into the ACTIVE config root AND registered it in that root's store.
+# The registration is retired: a store file is the operator's file (RC-20),
+# and GATE 0b's tools/hook-check.sh is the only refresh path that may change
+# what actually executes. This block still COPIES the hook file into the ACTIVE
+# config root's hooks/ — the copy is the skill's own artifact — but on this box
+# that copy is INERT, because the registration in the live store points
+# elsewhere, and the report says exactly that instead of reporting success.
+#
+# ONE ROOT ONLY, and NO STORE FILE, EVER. The copy goes into the ACTIVE config
+# root — CLAUDE_CONFIG_DIR when it is set, $HOME/.claude otherwise — and NEVER
+# into the sibling root. Writing the other launcher's file is the exact act
+# RC-20 forbids: it would change enforcement for sessions this run is not part
+# of, silently. The sibling root is NAMED in the output, as the thing
+# deliberately not written. No store under any root is read for writing here,
+# and none is changed: there is no registration step in this block at all.
+#
+# DETECT FIRST, NEVER DESTROY. A byte-identical hook already in place is reported
+# as already current and nothing is copied. A DIFFERENT file is backed up beside
+# itself, with the backup path printed, before it is replaced.
+# The hook must print ALL PASS from its own --selftest before it is called
+# proven (references/workflows.md, "Installing it") — an unproven wall is not
+# claimed as one.
+#
+# A FAILED COPY IS A FINDING, NEVER A STOPPED BUILD. Every failure path calls
+# warn(), files a HOOK-INSTALL finding to the project ledger when a project can
+# be resolved, and returns 0. The build continues without the wall and says so.
+
+HOOK_GREP="/usr/bin/grep"
+[ -x "$HOOK_GREP" ] || HOOK_GREP="$(command -v grep 2>/dev/null || true)"
+
+HOOK_SRC="$SKILL_ROOT/tools/hooks/dispatch-gate.py"
+HOOK_ACTIVE_ROOT="${CLAUDE_CONFIG_DIR_ACTUAL%/}"
+HOOK_DEST_DIR="$HOOK_ACTIVE_ROOT/hooks"
+HOOK_DEST="$HOOK_DEST_DIR/dispatch-gate.py"
+HOOK_STATUS=""
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  HOOK_ROOT_SOURCE="CLAUDE_CONFIG_DIR"
+else
+  HOOK_ROOT_SOURCE="\$HOME/.claude (CLAUDE_CONFIG_DIR is unset)"
+fi
+
+# The root this install must NOT touch. Named, never written.
+hook_sibling_root() {
+  if [ "$HOOK_ACTIVE_ROOT" = "${HOME%/}/.claude" ]; then
+    printf '%s' "${CC9_CONFIG_DIR%/}"
+  else
+    printf '%s' "${HOME%/}/.claude"
+  fi
+}
+
+# A finding goes to the project ledger when a project can be resolved, and is
+# reported here either way: a finding that cannot be filed is never dropped.
+hook_finding() {
+  local line="$1" proj="" led="$SKILL_ROOT/tools/ledger.sh"
+  if [ -n "${SPEC_PROJECT:-}" ] && [ -d "${SPEC_PROJECT%/}/CONTROL" ]; then
+    proj="${SPEC_PROJECT%/}"
+  elif [ -d "$PWD/CONTROL" ]; then
+    proj="$PWD"
+  fi
+  if [ -z "$proj" ]; then
+    say "    finding NOT filed to a ledger: no CONTROL/ resolved from SPEC_PROJECT or \$PWD ($PWD). It stands in this report."
+    return 0
+  fi
+  if [ ! -x "$led" ]; then
+    say "    finding NOT filed to a ledger: $led is missing or not executable. It stands in this report."
+    return 0
+  fi
+  if "$led" "$proj" "CONTROL/LEDGER.md" "$line" >/dev/null 2>&1; then
+    say "    finding filed: $proj/CONTROL/LEDGER.md"
+  else
+    say "    finding NOT filed: $led returned non-zero for $proj/CONTROL/LEDGER.md. It stands in this report."
+  fi
+  return 0
+}
+
+# cmp decides whether the installed copy is the same file; the sha256 is what
+# the report quotes. A box with neither shasum nor sha256sum says UNDETERMINED
+# rather than printing a number it did not compute.
+hook_sha() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$f" 2>/dev/null | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$f" 2>/dev/null | awk '{print $1}'
+  else
+    printf 'UNDETERMINED(no shasum, no sha256sum)'
+  fi
+}
+
+# There is no registrar in this block. WI-65 retired the WI-56 (d)
+# registration outright: no code path here may read a store file for writing,
+# and none may write one. The only refresh path that may change what actually
+# executes is GATE 0b's tools/hook-check.sh, under its own-root rule.
+
+install_dispatch_gate_hook() {
+  local sib ts out rc copied="" sha_src sha_dst
+  sib="$(hook_sibling_root)"
+  say ""
+  say "Checking the dispatch gate hook (SHAPE 6/7 — RC-23d)..."
+  say "Source: $HOOK_SRC"
+  say "Active config root: $HOOK_ACTIVE_ROOT (resolved from $HOOK_ROOT_SOURCE)"
+  say "NOT written, by rule (RC-20, own root only): $sib"
+
+  if [ ! -f "$HOOK_SRC" ]; then
+    HOOK_STATUS="FINDING — source absent, SHAPE 6/7 not installed"
+    warn "FINDING: the hook source $HOOK_SRC is absent, so SHAPE 6/7 cannot be installed. The build continues WITHOUT the write-ahead wall; every dispatch must still book itself through tools/dispatch-check.sh."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=source-absent path=$HOOK_SRC — SHAPE 6/7 not installed, dispatch bookings unenforced"
+    return 0
+  fi
+
+  mkdir -p "$HOOK_DEST_DIR" 2>/dev/null
+  if [ ! -d "$HOOK_DEST_DIR" ]; then
+    HOOK_STATUS="FINDING — $HOOK_DEST_DIR not creatable"
+    warn "FINDING: could not create $HOOK_DEST_DIR, so the hook has nowhere to live and SHAPE 6/7 is not installed. Nothing else was touched."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=dest-dir-uncreatable path=$HOOK_DEST_DIR — SHAPE 6/7 not installed"
+    return 0
+  fi
+
+  sha_src="$(hook_sha "$HOOK_SRC")"
+  if [ -f "$HOOK_DEST" ] && cmp -s "$HOOK_SRC" "$HOOK_DEST"; then
+    copied="already current"
+    say "Already current: $HOOK_DEST is byte-identical to the skill's copy (sha256 $sha_src) — nothing copied."
+  else
+    if [ -e "$HOOK_DEST" ]; then
+      sha_dst="$(hook_sha "$HOOK_DEST")"
+      ts="$(date -u +%Y%m%dT%H%M%SZ)"
+      if cp -p "$HOOK_DEST" "$HOOK_DEST.bak-$ts" 2>/dev/null; then
+        say "A DIFFERENT hook was already installed (sha256 $sha_dst). Backed up, never destroyed: $HOOK_DEST.bak-$ts"
+      else
+        HOOK_STATUS="FINDING — existing hook could not be backed up, nothing overwritten"
+        warn "FINDING: $HOOK_DEST exists and differs from the skill's copy (sha256 $sha_dst), and the backup to $HOOK_DEST.bak-$ts FAILED. Nothing was overwritten — a stale wall is still a wall, and destroying the operator's file to install ours is never the trade."
+        hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=backup-failed path=$HOOK_DEST installed_sha=$sha_dst skill_sha=$sha_src — the installed hook may be stale and was left in place"
+        return 0
+      fi
+    fi
+    if cp "$HOOK_SRC" "$HOOK_DEST.tmp.$$" 2>/dev/null \
+       && chmod +x "$HOOK_DEST.tmp.$$" 2>/dev/null \
+       && mv "$HOOK_DEST.tmp.$$" "$HOOK_DEST" 2>/dev/null; then
+      copied="installed"
+      say "Installed: $HOOK_DEST (sha256 $sha_src)"
+    else
+      rm -f "$HOOK_DEST.tmp.$$" 2>/dev/null
+      HOOK_STATUS="FINDING — copy into the active root failed"
+      warn "FINDING: copying $HOOK_SRC to $HOOK_DEST failed, so SHAPE 6/7 is not installed. The build continues without the wall."
+      hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=copy-failed path=$HOOK_DEST — SHAPE 6/7 not installed"
+      return 0
+    fi
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    HOOK_STATUS="FINDING — python3 absent, hook file copied but UNPROVEN"
+    warn "FINDING: python3 is not on PATH, so $HOOK_DEST could not run its own --selftest. An unproven wall is never claimed as one (references/workflows.md, 'Installing it')."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=python3-absent path=$HOOK_DEST — hook file copied, unproven"
+    return 0
+  fi
+  out="$(python3 "$HOOK_DEST" --selftest 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | "$HOOK_GREP" -q 'ALL PASS'; then
+    HOOK_STATUS="FINDING — hook file copied, selftest failed"
+    warn "FINDING: python3 $HOOK_DEST --selftest exited $rc without printing ALL PASS — a hook that fails its own selftest is a BROKEN INSTRUMENT. Last lines: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=selftest-failed rc=$rc path=$HOOK_DEST — hook file copied, unproven"
+    return 0
+  fi
+  say "Proven: python3 $HOOK_DEST --selftest exited 0 with ALL PASS."
+
+  say "No store file was read for writing and none was changed: WI-65 retired the registration, so this copy is INERT wherever the live registration points elsewhere. Only GATE 0b's tools/hook-check.sh may refresh what actually executes, under its own-root rule."
+  ok "Dispatch gate hook file: $copied, proven — in $HOOK_ACTIVE_ROOT only (sibling root $sib untouched)"
+  HOOK_STATUS="$copied, proven at $HOOK_DEST (sibling root $sib untouched; no store file written by this installer)"
+  return 0
+}
+
+if [ "$KP_SELFTEST" -eq 1 ]; then
+  kp_selftest
+  exit $?
+fi
+
+# --hooks-only: the hook FILE, and nothing else. Exits 0 even on a finding —
+# a failed hook copy is a finding, never a stopped build.
+if [ "$HOOK_ONLY" -eq 1 ]; then
+  install_dispatch_gate_hook
+  say ""
+  say "Result: $PASS ok, $FAIL failed, $WARN warnings (hook file only; no store file written)."
+  say "Dispatch gate hook file: ${HOOK_STATUS:-not run}"
+  exit 0
+fi
+
 # --- report -----------------------------------------------------------
 
 report() {
@@ -136,6 +642,9 @@ report() {
   say "9. Supabase authentication status: see Supabase section."
   say "10. Kie.ai configuration status: Kie.ai is PRIMARY and already implemented inside Spec Protocol — preserved, not reinstalled (see references/dependency-sources.md section 4)."
   say "11. Agnes AI configuration status: Agnes is the APPROVED ALTERNATIVE — configured only when the project chooses it; never required, never auto-subscribed."
+  say "11b. OpenClaw knowledge pack (group 5, openclaw-skills): ${KP_OK:-0} of ${KP_TOTAL:-0} folders resolved, ${KP_PULL:-0} pull-required. Manifest: references/knowledge-pack.json. Source: $KP_SOURCE (pin $KP_PIN). Cache: $KP_CACHE_DIR/<folder>/. Per-folder source and tag:"
+  if [ -n "${KP_REPORT:-}" ]; then printf '%s' "$KP_REPORT"; else say "    (group not run)"; fi
+  say "11c. Dispatch gate hook file (SHAPE 6/7): ${HOOK_STATUS:-not run}. Copied into the ACTIVE config root ONLY (${HOOK_ACTIVE_ROOT:-unresolved}); the sibling root is named and never written (RC-20). No store file under any root is written by this installer — registration was retired in WI-65, and only GATE 0b's tools/hook-check.sh refreshes what executes."
   say "12. Manual client action: Supabase account/dashboard onboarding when the client lacks one (https://supabase.com/dashboard); browser OAuth for Supabase MCP and for any MCP server that requires it."
   say ""
   say "Result: $PASS ok, $FAIL failed, $WARN warnings."
@@ -366,6 +875,19 @@ say "Source: https://agnes-ai.com/ (API base: https://apihub.agnes-ai.com/v1)"
 say "Status: ALTERNATIVE — configure only when the project chooses Agnes over Kie.ai. Never require both providers. Never create a paid subscription automatically."
 
 # =====================================================================
+# 5b. OPENCLAW-SKILLS — the knowledge pack. THIS IS THE FIFTH GROUP.
+#     Source: https://github.com/trevorotts1/openclaw-onboarding
+#     Manifest: references/knowledge-pack.json (thirteen folders)
+# =====================================================================
+say ""
+say "Checking the OpenClaw knowledge pack (group 5: openclaw-skills)..."
+say "Manifest: $KP_MANIFEST"
+say "Source: $KP_SOURCE (pin: $KP_PIN)"
+say "Lookup order per folder: $KP_OPENCLAW_SKILLS_DIR/<folder>, then $KP_CHECKOUT_DIR/<folder>, then github:<folder>@$KP_PIN."
+say "Cache: $KP_CACHE_DIR/<folder>/. Reading list per folder: SKILL.md, INSTRUCTIONS.md, INSTALL.md, PREREQS.json, models.json, QC.md. Acceptance: the folder's own qc-*.sh."
+kp_run_group
+
+# =====================================================================
 # 6. HIGGSFIELD POLICY
 # =====================================================================
 say ""
@@ -383,6 +905,14 @@ else
   say "No separate claude-nine config dir on this box — shared-config install-once rule applies. Validate by launching both plain 'claude' and 'claude-nine' and confirming discovery."
 fi
 say "9Router rule: DO NOT modify model-routing rules merely to make a skill available."
+
+# =====================================================================
+# 8. THE DISPATCH GATE HOOK FILE — tools/hooks/dispatch-gate.py (WI-65)
+#    Active config root only, FILE copy alone. Detect first, back up, never
+#    destroy, never any store file; a failed copy is a finding in the ledger
+#    rather than a stopped build.
+# =====================================================================
+install_dispatch_gate_hook
 
 # =====================================================================
 report

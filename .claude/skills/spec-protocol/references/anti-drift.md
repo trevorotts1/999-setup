@@ -14,8 +14,7 @@ the artifacts on disk.
 
 ## 1. The disease, named and measured
 
-Censused first-hand on the operator's real run, `GAUNTLET-LOOP-WORK/LEDGER.md`,
-2026-08-12:
+Censused first-hand on a real operator run's ledger, 2026-08-12:
 
 | Measurement | Value |
 |---|---|
@@ -27,87 +26,9 @@ Censused first-hand on the operator's real run, `GAUNTLET-LOOP-WORK/LEDGER.md`,
 | Where that run ends | **line 2,338 of 2,366** |
 | The file's final line | a contentless tick |
 
-Read the last two rows together, because they are the whole diagnosis. The
-longest drift run **is the tail**. The run did not drift and recover. It
-drifted and never came back. A stale "44 active / 16 stalled" count survived
-inside it until a watchdog corrected it, and the conductor re-planned from
-decayed context on every cron tick until only the metronome was left.
-
-**Drift is an ABSORBING state, not a transient.** Every design decision below
-follows from that one fact. A detector that merely appends an alarm line would
-have written alarm number 140 into the same dead tail and changed nothing. The
-stop must therefore be a gate that sits OUTSIDE the captured reasoning, and it
-must be a file, not a thought.
-
-And the second fact, equally load-bearing. The obvious literal pattern
-
-```
-heartbeat (ledger auto-tick)
-```
-
-matches **ZERO** of those lines, because the timestamp sits between the words:
-
-```
-- heartbeat 2026-08-06T20:10:38Z (ledger auto-tick)
-```
-
-A brittle pattern reported "no drift found" on a ledger that is 31.3% drift.
-That is not a near miss; it is a clean bill of health issued by an instrument
-that could not have found anything. Hence the standing rule of this file: a
-detector must prove itself on a known-positive before it is permitted to say
-"clean," and a detector that matches nothing reports **BROKEN INSTRUMENT**,
-never ALL CLEAR.
-
-### The two kinds of heartbeat — and why loosening the pattern is the other way to be wrong
-
-The obvious repair for a too-narrow pattern is a wider one. On this same file a
-wide pattern is wrong in the direction that matters more, because it condemns
-the cure.
-
-Measured on the same file, with the instrument proven first (`ledger` returns
-893, a nonsense token returns 0 with rc 1):
-
-| Class | Count | Verdict |
-|---|---|---|
-| **BANNED — contentless tick:** `- heartbeat <ISO8601Z> (ledger auto-tick)`, a timestamp and nothing else | as above | drift |
-| **REQUIRED — the same marker, carrying state:** `- heartbeat <ts> (ledger auto-tick) — E2E driver solving standard-intake (GATE 0)…; transcript 981KB/238 lines, progressing` | 140 | **not drift** |
-| **REQUIRED — a stateful watchdog heartbeat:** `- WATCHDOG <ts> — **Heartbeat: 0 active / 0 stalled.** All 68 workflow records in terminal states… The earlier '44 active / 16 stalled' line was a stale count from pre-teardown transcripts — corrected here.` | 4 | **not drift** |
-
-(Loose counts on this file must always carry their case-sensitivity or be
-omitted: a case-insensitive `heartbeat` matches 895 lines, case-sensitive 890.
-The five-line gap is FOUR capitalized watchdog lines (the last row) plus ONE
-line that is not a heartbeat at all — a slash-separated document-name list,
-`AGENTS/DREAMS/HEARTBEAT/MEMORY/USER`, at line 376. Re-measured 2026-08-12
-against the same file: `Heartbeat:` returns 4 (lines 1989, 2006, 2025, 2051);
-all-caps `HEARTBEAT` returns that single doc-list line. **The gap arithmetic
-and the class are not the same number** — an earlier reading of this exhibit
-assumed they were, which is the very substitution this file exists to forbid:
-a count that matches is not a class that matches until the lines are read.
-The strict anchored figures in the table above — the contentless count, 31.3%,
-and a 139-long run ending at the tail — are the unambiguous ones, confirmed by
-three independent measurements, and are the ones to quote.)
-
-The last row is not merely tolerable. It is the worked positive example of what
-this whole file is trying to install: a tick that carries counts, identifiers,
-and — in that very line — **a correction of a stale count**, which is
-reconciliation happening in public. **A detector that flags those lines as
-drift is broken, and broken in the direction that punishes the behaviour we
-want.** It would teach a run to stop writing the only heartbeats worth having.
-
-So the detector is TWO stages, and both are load-bearing:
-
-1. **The marker**, robust to timestamp position and format: `heartbeat` and
-   `auto-tick` on one line, either order, any case, anything between them,
-   hyphen or space or underscore.
-2. **The residue**: strip the timestamp, the marker words, and all punctuation.
-   **Nothing left → contentless tick, the banned write. Anything left → a real
-   heartbeat that carries state, and it is NOT drift.**
-
-Run over the real file, the two stages together reproduce the strict anchored
-control's contentless count EXACTLY, to the line, while sparing all 144
-state-carrying lines (140 + the 4 watchdog lines). Neither stage alone can do
-both: stage 1 without stage 2 condemns 144 good lines, and stage 2 without
-stage 1 has nothing to examine.
+The last two rows are the diagnosis: the longest drift run IS the tail, so drift
+is an ABSORBING state and the stop must be a file outside the captured reasoning.
+Prove the detector first: run `tools/anchor.sh --selftest`; **BROKEN INSTRUMENT is never ALL CLEAR**.
 
 ---
 
@@ -176,6 +97,15 @@ tools/anchor.sh <project-home> <current-unit-or-IDLE> --mode reconcile \
   [--intents CONTROL/last-intents.txt]
 ```
 
+**`CONTROL/last-intents.txt` has a writer: `tools/ledger.sh`.** Every line
+carrying the `| CLAIM |` marker has its `plan=` field appended there, rolling,
+the last 20 — so the file exists from the first claimed unit onward and class 5
+(the repeated-intent stall, §4) has a real input instead of reporting
+undetermined on every run of every project, which is what it did while nothing
+wrote the file at all. Pass `--intents` on every reconcile once the first CLAIM
+has been written; before that the file does not exist yet, and `anchor.sh`
+refuses a path it cannot read rather than inventing an empty window.
+
 **(c) `anchor.sh` DETECTS and LOGS. It never mutates task state.** It emits a
 RECONCILE-ACTIONS list on stdout, one line each:
 
@@ -187,7 +117,10 @@ ACTION|<verb>|<task-or-unit>|<evidence>
 `project_state.json` update, the checklist correction (the plan wins, Law 1) —
 and then re-runs `anchor.sh` to confirm clean.
 
-**(e) The result line is written through `tools/ledger.sh`.** A pass that finds
+**(e) The result line is written through `tools/ledger.sh`.** Its full field
+order — and `RE-ANCHOR`'s, `S-CHECK`'s and `BUDGET-PAUSE`'s — is the LEDGER VOCABULARY table (`references/documents.md`); the lines
+quoted in this file are abbreviations of those rows, never a second definition
+of them. A pass that finds
 nothing to do writes `RECONCILE | result=clean | counts=… | tasks=…`, which
 CARRIES STATE — and in reconcile mode it carries the class-7 ledger field
 (`ledger=ledger-ok(…)/unpaired-claim(…)/ledger-undetermined(…)`), the
@@ -306,18 +239,30 @@ into one word:
   ahead of the dispatch census on purpose — the impossibility is provable from
   the state file alone, so a missing or unparseable dispatch log must not be
   able to downgrade a proven corruption into `budget-undetermined`.
-- **Executions vs the cap.** `agents.executions_total` against
-  `ANCHOR_HARD_CAP` (default 200, lowered automatically when the state file's
-  own `hard_stop_at` is smaller — the Capacity Ledger's arithmetic binds first).
-  At or past the cap the tool writes `BUDGET-CAP | executions=<n> | cap=<c> | …`
-  through `ledger.sh` and emits `ACTION|stop-dispatching|…` and
-  `ACTION|set-run-status|STOPPED_CAP|…`. **Reaching a declared cap is a
-  legitimate stop, not a defect**, so it exits **3**, not 4 — 4 belongs to the
-  stall — and it raises no DRIFT-ALARM. The conductor performs the status
-  change, preserving the detect/execute split. Crossing the review threshold
-  (`agents.warn_at`, default 150) emits `ACTION|review-budget|…` **once** per
-  run; the once-flag rides in `CONTROL/.anchor-fingerprint`, so no fourth
-  self-written file appears.
+- **Executions vs the pause line and the ceiling — two numbers, not one.**
+  `agents.executions_total` is tested against the project's own thresholds
+  (`references/gauntlet.md` §13.2, `references/capacity.md` §10):
+  - **The ceiling, tested first.** `agents.ceiling` (default `ANCHOR_CEILING`,
+    2,000 per project). At or past it the tool writes
+    `BUDGET-CAP | executions=<n> | cap=<c> | …` through `ledger.sh` and emits
+    `ACTION|stop-dispatching|…` and `ACTION|set-run-status|STOPPED_CAP|…`.
+  - **The pause line, tested second.** `agents.first_pause` (falling back to a
+    legacy `hard_stop_at`, then to `ANCHOR_HARD_CAP`, default 200), multiplied
+    by `agents.pause_blocks_granted + 1` so that each "keep going" moves the
+    line up by one block and never past the ceiling. At or past it the tool
+    writes `BUDGET-PAUSE | executions=<n> | pause_at=<p> | …` and emits
+    `ACTION|pause-and-ask|…` and `ACTION|set-run-status|PAUSED_CAP|…`. The
+    conductor's obligations in that order: deploy the best stable build, write
+    the plain report, set the status, ask the one question. **A pause is never
+    `STOPPED_CAP`** — a run that still has ceiling left has not stopped.
+  - **Reaching either line is a legitimate, declared event, not a defect**, so
+    both exit **3**, not 4 — 4 belongs to the stall — and neither raises a
+    DRIFT-ALARM. The conductor performs the status change, preserving the
+    detect/execute split.
+
+  Crossing the review threshold (`agents.warn_at`, default 150) emits
+  `ACTION|review-budget|…` **once** per run; the once-flag rides in
+  `CONTROL/.anchor-fingerprint`, so no fourth self-written file appears.
 
 **Class 6 fails closed everywhere.** A state file with none of the three budget
 fields reports `classes=…,budget-undetermined(no-budget-fields)` and names the
@@ -359,8 +304,24 @@ Every RECONCILE line carries the verdict in its own field —
 `ledger=ledger-ok(claimed=<n>/resulted=<n>/unpaired=<n>/tol=<t>)`,
 `ledger=unpaired-claim(<n> of <m> RESULT units / tol=<t>)`, or
 `ledger=ledger-undetermined(<reason>)` — so the contract's state is visible
-on every tick without a second read, and the boss cron (PART 4) can check the
-field mechanically.
+on every tick without a second read; the five-minute tick
+(`tools/watch-tick.sh`, PART 4) runs that reconcile and carries its verdict into
+its own `S-CHECK` line as `anchor=<…>`.
+
+**The group-abort alarm (RC-26) is a watch-tick detection, not an eighth
+reconcile class.** `tools/watch-tick.sh` raises `DRIFT-ALARM | group-abort |
+row=<run-id> agents=<n> at=<ts>` when two or more agents of one dispatch row
+end at an identical timestamp with no completion record — the shared last
+stamp on `CONTROL/HEARTBEAT.md`, one `run=` row on `CONTROL/dispatch-log.md`,
+no RESULT line on the ledger. `tools/anchor.sh` recovery-ladder rung 1 reads
+that alarm and emits the rung-1 `ACTION|redispatch-from-checkpoint` lines for
+the named row FIRST, re-BOOKED through `tools/dispatch-check.sh` from the
+checkpoints, with the rung-1 ledger line carrying
+`trigger=group-abort(row=<run-id> at=<ts>)`. The ladder's detect-and-log
+contract holds: the script emits the ACTION lines, the conductor executes
+them. Honest limit, stated here and in `references/loops.md` Loop 9: this
+detector does NOT stop the process deaths, whose cause is undetermined; it
+makes them visible within five minutes and re-books the work.
 
 ---
 
@@ -412,8 +373,8 @@ is: a run working on something nobody wrote down.
 Three exclusions are load-bearing and are stated here so nobody "fixes" them
 later. The ledger's contentless tick lines are excluded; so is every line this
 reconciler itself authors (RE-ANCHOR, RECONCILE, DRIFT-ALARM, TERMINAL-DRIFT,
-S-CHECK, OPERATOR-ESCALATION, BUDGET-CAP); and so is every `CAPACITY-EVENT`
-line. **"No state delta" is measured against the three layers plus disk — never
+RECOVERY-LADDER, S-CHECK, OPERATOR-ESCALATION, BUDGET-CAP); and so is every
+`CAPACITY-EVENT` line. **"No state delta" is measured against the three layers plus disk — never
 against "a line got appended," because appending lines is precisely what the
 captured system kept doing.** A fingerprint that counted its own writes could
 never fire, which is the same class of self-defeating instrument as the brittle
@@ -433,11 +394,31 @@ parallel. What it adds is that the blocker report now contains the capacity
 events, so the 7 a.m. diagnosis reads "capacity collapsed at 02:14, here is the
 ladder we descended" instead of a mystery stall.
 
+It walks in **more slowly**, though, and that is rung 2 of the ladder below.
+The exclusion is about the FINGERPRINT — a capacity event is not a state delta
+and never resets the counter. The THRESHOLD is a separate question, and a
+provider outage is the one quiet period this skill did not have a number for: a
+thirty-minute 429 cluster used to become a permanent stop while the client
+slept. So when the last recorded state change **is** a capacity event, the
+counter is not read as drift for up to two hours.
+
 **The rule: N consecutive reconciles with an UNCHANGED fingerprint, while
-runnable work exists (an open TODO item or a PENDING task), is TERMINAL-DRIFT.**
+runnable work exists (an open TODO item or a PENDING task), starts the recovery
+ladder, and the last rung of that ladder is TERMINAL-DRIFT.**
 
 `N = max(3, ceil(30 min / reconcile cadence))`. At the 5-minute reconcile
 cadence, **N = 6, which is 30 minutes** (`ANCHOR_TERMINAL_N`, default 6).
+
+**When the last recorded state change is a `CAPACITY-EVENT`, N instead is
+`max(6, ceil(120 min / reconcile cadence))` — 24 at the 5-minute cadence, two
+hours** (`ANCHOR_CAPACITY_GRACE_MIN`, default 120; `ANCHOR_RECONCILE_CADENCE_MIN`,
+default 5). The grace is bounded twice, by that count AND by the wall clock, so
+a slower cadence cannot buy an unlimited stall; and it ends the moment any
+state-carrying line lands after the capacity event, because the capacity event
+is then no longer the last thing that happened. Two hours is the number because
+it covers the longest provider incident the fallback table is written for while
+still being shorter than a night: a run that has been dead since 02:14 is
+reported at 04:14, not at 07:00.
 
 Why 30 minutes, stated so it is never re-litigated from taste:
 
@@ -450,20 +431,53 @@ Why 30 minutes, stated so it is never re-litigated from taste:
 - and the measured alternative is N = infinity, which is what the failed run
   had. It produced 139 consecutive proof-free ticks and fired nothing.
 
-**On fire.** `anchor.sh` exits 4 and, in one pass:
+**THE RECOVERY LADDER — what happens when the counter reaches N.** Reaching N
+does not write the flag. It starts a climb, one rung per reconcile, and every
+rung below the top is something the run does FOR ITSELF while the client
+sleeps. Law 8 says never quit — re-fire, resume — and a stop that fires before
+anything has been re-fired is that law broken by the instrument meant to
+enforce it.
 
-1. creates `CONTROL/TERMINAL-DRIFT.flag` containing the count, the window in
-   minutes, the fingerprint, the unit, the next open item, the counts, and the
-   required operator actions;
-2. appends `TERMINAL-DRIFT | no-delta-reconciles=<n> | window=<min> | …` to the
-   ledger through `ledger.sh`;
-3. appends an `OPERATOR-ESCALATION` item to `CONTROL/TODO.md` through
-   `ledger.sh`;
-4. emits `ACTION|stop-dispatching|…` and `ACTION|escalate-to-operator|…`.
+1. **`ACTION|redispatch-from-checkpoint`, for every unit still in flight.**
+   In flight means: a row in `CONTROL/dispatch-log.md` with no `RESULT` line
+   in the ledger — the same census `references/resume.md` step 4 uses. The
+   conductor TaskStops each one and re-dispatches it from its last checkpoint.
+   Most stalls are one dead agent, and this rung ends them.
+2. **The capacity grace.** If the last recorded state change is a
+   `CAPACITY-EVENT`, the counter does not count toward drift until N rises to
+   `max(6, ceil(120 min / cadence))` or two hours of wall clock pass, whichever
+   comes first. The reconciler writes a `RECOVERY-LADDER | rung=2/4 |
+   action=capacity-grace | grace=holds(…)` line and emits
+   `ACTION|wait-for-capacity`; it does NOT alarm, because a provider outage is
+   not a captured conductor and calling it one trains the operator to ignore
+   the alarm that matters.
+3. **`ACTION|switch-to-fallback-seats`.** The grace is over or never applied
+   and re-dispatching did not move the state, so the affected seats move to
+   their named fallback (`references/capacity.md` fallback table, the Loop 8
+   throttle order) and the work is re-dispatched there.
+4. **Only now, the flag.** `anchor.sh` exits 4 and, in one pass:
+   - creates `CONTROL/TERMINAL-DRIFT.flag` containing the count, the window in
+     minutes, the fingerprint, the unit, the next open item, the counts, the
+     capacity events, the rungs already climbed, and the required actions;
+   - appends `TERMINAL-DRIFT | no-delta-reconciles=<n> | window=<min> | …` to
+     the ledger through `ledger.sh`;
+   - appends an `OPERATOR-ESCALATION` item to `CONTROL/TODO.md` through
+     `ledger.sh`;
+   - emits `ACTION|stop-dispatching|…` and `ACTION|escalate-to-operator|…`.
+
+Each rung is recorded as a `RECOVERY-LADDER` line through `ledger.sh`, and
+`RECOVERY-LADDER` is one of the self-authored classes excluded from the
+fingerprint. That exclusion is load-bearing in the same way as the others: a
+ladder line that moved the fingerprint would reset the counter that produced
+it, and the run would climb rung 1 forever without ever reaching the flag. The
+rung also rides in `CONTROL/.anchor-fingerprint` as `recovery_rung=`, and it is
+reset to 0 the moment real state moves — a run that has started progressing
+again begins any future climb from the bottom.
 
 The conductor must then set `run_status=STOPPED_STALL`, stop dispatching, and
 produce the diagnose-the-blocker report: what was in flight, what each of the
-three layers claims, where they disagree, and the last real state change.
+three layers claims, where they disagree, the last real state change, and the
+capacity events inside the window.
 
 **Precondition #0 of every loop, every cron tick, and every dispatch is a test
 for `CONTROL/TERMINAL-DRIFT.flag`. While that file exists, nothing dispatches.**
@@ -472,80 +486,73 @@ This is what makes the stop capture-proof: the check is a file test in the loop
 preamble, outside the captured reasoning. A conductor that has stopped thinking
 can still not tick past a file that exists.
 
-**Recovery** is a human act. A person — or a fresh, reconciled session on that
-person's word — removes the flag once the blocker has been named. Nothing in
-this skill removes it automatically, because a system that can clear its own
-stop does not have one.
+**Recovery.** The flag holds out for exactly one thing: **the blocker, named in
+writing.** A person can supply that, and so can a fresh, reconciled session —
+the one the client starts by pasting the restart command — and the flag does
+not care which of them did it. So the gate has two doors, and `anchor.sh` tests
+both before it does anything else:
+
+- **No named blocker** → nothing dispatches. The script prints the flag and
+  exits 4, exactly as before. This is what keeps the stop capture-proof: a
+  conductor that has stopped thinking cannot tick past a file that exists.
+- **The named blocker is on `CONTROL/TODO.md`** → the reconcile removes the
+  flag itself, writes `TERMINAL-DRIFT-CLEARED | cleared-by=fresh-session |
+  blocker=…` through `ledger.sh`, resets the no-delta counter and the ladder
+  rung, and the run continues.
+
+The token is a checklist row on `CONTROL/TODO.md` whose first field is
+`BLOCKER-NAMED`:
+
+```
+- [x] BLOCKER-NAMED | <the blocker, one line> | session=<this session>
+```
+
+It is anchored to the start of the row on purpose. An unanchored marker would
+match the reconciler's own `OPERATOR-ESCALATION` item — the instruction to
+write the row would satisfy itself, and the stop would clear on the next tick
+with nobody having named anything.
+
+**A system that can clear its own stop still has one, as long as clearing it
+costs a diagnosis.** The old rule — a human, always, and nothing in this skill
+removes it automatically — bought that guarantee with the client's whole night:
+`TERMINAL-DRIFT.flag` is not a filename a sixty-year-old will find and delete,
+so a 429 cluster at 02:14 meant a dead run at 07:00. The blocker line is the
+price instead, and it is a price only a session that actually diagnosed
+something can pay.
 
 ---
 
 ## 7. The detector proves itself on EVERY invocation
 
-`anchor.sh` carries embedded fixtures and asserts all of them before it is
-permitted to reach a verdict:
-
-- a **positive fixture** in the real format — `- heartbeat 2026-08-06T20:10:38Z
-  (ledger auto-tick)` — which the tick pattern MUST match;
-- a **format-drifted positive** with the timestamp in a different position and
-  different punctuation, which it must ALSO match;
-- **three known-negative controls, two of them lifted verbatim from the same
-  real ledger** — a contentful `(ledger auto-tick)` line, a WATCHDOG
-  `Heartbeat:` line that corrects a stale count, and a state-carrying RECONCILE
-  line. Flagging any of the three is a BROKEN INSTRUMENT failure, because a
-  detector that cannot tell the banned write from the required one would punish
-  the cure;
-- the **brittle literal** `heartbeat (ledger auto-tick)`, kept live as a
-  control, which must NOT match the positive fixture. If it ever does, the
-  exhibit is wrong and the tool refuses to report at all;
-- a **known-good control on the instrument itself** — a grep and an awk with
-  known non-empty answers, on the same binaries, checked for both output and
-  exit code.
-
-Any failure prints **BROKEN INSTRUMENT** and exits 2. Not "clean". Not a
-warning. The whole run stops on a detector that cannot prove it discriminates,
+`anchor.sh` asserts its embedded fixtures before it is permitted to reach a
+verdict: a positive in the real format and a format-drifted positive it must
+also match; known-negative controls lifted verbatim from a real ledger (a
+contentful `(ledger auto-tick)` line, a WATCHDOG line that corrects a stale
+count, a state-carrying RECONCILE line) which it must NOT flag, because a
+detector that cannot tell the banned write from the required one would punish
+the cure; the brittle literal kept live as a control that must NOT match; and a
+known-good control on `grep` and `awk` themselves, checked for output and exit
+code. Any failure prints **BROKEN INSTRUMENT** and exits 2 — not "clean", not a
+warning. The run stops on a detector that cannot prove it discriminates,
 because **BROKEN INSTRUMENT is never ALL CLEAR**.
 
 The tick pattern is robust to timestamp position and format by construction:
 case-insensitive, `heartbeat` and `auto-tick` in either order with anything
-between them, and tolerant of `auto tick` / `auto_tick`. Never re-narrow it to
-a literal.
+between them, tolerant of `auto tick` / `auto_tick`. Never re-narrow it to a
+literal.
 
-`anchor.sh --selftest` proves the tool still discriminates: its full case list
-runs in a temporary home — the tool's own `SELFTEST COMPLETE` line states the
-total, and that printed total is the only count to trust; never restate it here.
-The cases: clean anchor (which also asserts NO alarm fires),
-unit-not-in-plan, missing file, sabotaged fixture, false-complete,
-terminal-drift with the counter primed to N−1, the repeated-intent
-signature with its own known-negative control window, and the class-7
-ledger-provenance case (baseline with an existing empty ledger must report
-`ledger-ok(claimed=0/resulted=0/unpaired=0/tol=3)`; one unpaired RESULT unit
-under the default tolerance must stay clean while reporting `unpaired=1`;
-the same unit at `ANCHOR_CLAIM_UNPAIRED_TOL=0` MUST alarm
-`DRIFT-ALARM | unpaired-claim` at exit 3 with `ACTION|write-missing-claims`;
-and a CLAIM added for that unit MUST clear the alarm with
-`ledger=ledger-ok(claimed=1/resulted=1/unpaired=0/…)`); then the
-`CAPACITY-EVENT` exclusion (a ledger receiving ONLY capacity events between
-reconciles must still increment the no-delta counter, with the other-direction
-control that a real state-carrying line still resets it — an exclusion that
-blinded the fingerprint would pass the first half and fail the second); and
-finally the class-6 budget controls: claimed == dispatched must NOT fire,
-a divergence past tolerance MUST fire, the hard cap MUST emit `BUDGET-CAP` plus
-both ACTIONs at exit 3 (never 4), absent budget fields MUST report
-undetermined and MUST NOT alarm, and a NEGATIVE claimed spend MUST alarm as
-`budget-negative-spend` — never laundered into `budget-ok` by the tolerance, and
-never downgraded to `budget-undetermined` by an absent dispatch log. It prints
-one PASS line per case and exits
-nonzero if any case fails. Run it after any edit to the tool, and whenever a
-result surprises you.
-
-The sabotage case also runs a **real-corpus check** when a real ledger is
-available (`ANCHOR_SELFTEST_REAL_LEDGER`, defaulting to the operator's
-`GAUNTLET-LOOP-WORK/LEDGER.md`): the classifier's contentless count must equal
-the strict anchored control on the same file, at least one state-carrying
-auto-tick must be spared, and the brittle literal must still return zero. A
-corpus that is present and disagrees FAILS the case. A corpus that is absent is
-reported as SKIPPED — never as passed. Point it at any ledger you like; the
-assertions are about agreement between instruments, not about one file.
+Run `tools/anchor.sh --selftest` after any edit to the tool, and whenever a
+result surprises you. It runs its full case list in a temporary home, prints one
+PASS line per case, states its own case total in `SELFTEST COMPLETE` (that
+printed total is the only count to trust — never restate it here), and exits
+nonzero if any case fails. The real-corpus check runs only when
+`ANCHOR_SELFTEST_REAL_LEDGER` names a ledger; there is no default path, and with
+the variable unset the case is reported SKIPPED, never passed. When a corpus is
+given, the classifier's contentless count must equal the strict anchored control
+on that same file, at least one state-carrying auto-tick must be spared, and the
+brittle literal must still return zero — a corpus that is present and disagrees
+FAILS the case. The assertions are about agreement between instruments, not
+about one file.
 
 Every `grep` in the tool runs through `/usr/bin/grep`, captures stderr, and
 checks `$?`: rc 0 is a match, rc 1 is no match, and **rc ≥ 2 is an ERROR, not
@@ -618,11 +625,14 @@ silence heartbeats; it is to make each one say something.
 
 ## 9. The cron-tick contract
 
-Scheduled prompts are **command-shaped**, one line:
+Scheduled prompts are **command-shaped**, one line, and that line names the
+script by its ABSOLUTE PATH:
 
 ```
-run /<saved-workflow-name>
+Workflow({ scriptPath: "<HOME>/.claude/workflows/<script>.js" })
 ```
+
+Write the path EXPANDED — a literal `~` is not resolved when the tick is read.
 
 plus at most the anti-drift trailer:
 
@@ -632,7 +642,7 @@ Then run tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile
 do not re-plan; do not use the Agent tool for builders.
 ```
 
-Three rules bind every tick:
+Four rules bind every tick:
 
 1. **Precondition #0:** `CONTROL/TERMINAL-DRIFT.flag` must be absent. If it
    exists, write one line naming the flag and do nothing else this tick.
@@ -641,6 +651,14 @@ Three rules bind every tick:
    tail.
 3. **The `ultracode` keyword does not fire workflows from scheduled prompts**
    (harness ≥ 2.1.210) — never rely on it from a cron.
+4. **Launch by `scriptPath`, never by saved name, and prove the launch by its
+   `runId`.** The two launchers read different registries —
+   `~/.claude/workflows` for regular Claude Code, `~/.claude-nine/workflows` for
+   claude-nine — and each session's registry is a snapshot taken at session
+   start, so a script saved during this run is not findable by name at all. If
+   the `Workflow` result carries no `runId`, the tick dispatched nothing: write
+   `DRIFT-ALARM | tick-noop` to the ledger and re-launch by `scriptPath`. The
+   full form, with the `args` rule, is `references/workflows.md` §7.
 
 This section and `references/workflows.md` §7 state the same contract; they must
 never disagree.

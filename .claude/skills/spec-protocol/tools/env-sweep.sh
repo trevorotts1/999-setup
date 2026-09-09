@@ -13,10 +13,11 @@
 # --selftest proves the instrument before any run is believed (ground rule 11):
 # a known-positive control, a known-negative control, a ~/.env STORE control
 # (proving the tool reads the store it tells users to place a key in — not
-# merely that it lists it), and a leak proof that plants a sentinel value in
-# every checked variable and requires the sentinel to appear ZERO times in the
-# output. A detector whose known-positive comes back MISSING reports BROKEN
-# INSTRUMENT — never "clean".
+# merely that it lists it), a POISONED-STORE control (proving the sweep PARSES
+# a store rather than EXECUTING it), and a leak proof that plants a sentinel
+# value in every checked variable and requires the sentinel to appear ZERO
+# times in the output. A detector whose known-positive comes back MISSING
+# reports BROKEN INSTRUMENT — never "clean".
 #
 # SWEEP_NO_NETWORK=1 makes every smoke test hermetic (no curl, no gh, no npx).
 # The selftest sets it; a normal run does not.
@@ -37,12 +38,12 @@ esac
 SECRETS_ENV="${HOME}/.openclaw/secrets/.env"
 OPENCLAW_ENV="${HOME}/.openclaw/.env"
 # USER_ENV — the user-level env file. environment-sweep.md has listed it as a
-# store since the file was written, but the tool never sourced it, so a key
+# store since the file was written, but the tool never read it, so a key
 # placed there was invisible to a re-detect and every guided key placement on a
 # non-fleet box ended in "I still can't find it". It is the ONE universal,
 # harmless placement target on a box that has no ~/.openclaw/ directory (never
 # conjure that directory to hold a key — a fabricated fleet path is a false
-# topology signal). Sourced in Phase 1, and proven read by the selftest's
+# topology signal). Read in Phase 1, and proven read by the selftest's
 # ~/.env store control.
 USER_ENV="${HOME}/.env"
 NINE_ROUTER_DIR="${HOME}/.9router"
@@ -67,15 +68,65 @@ check_env_var() {
   fi
 }
 
-# --- Source an env file safely (never dump contents) ---
-source_env_file() {
+# --- Read an env file safely: PARSE it, NEVER execute it ---------------------
+#
+# ⛔ A DOTFILE IS DATA, NOT A PROGRAM. This function used to `source` each
+# store, which hands the shell every line in the file to EXECUTE — a stray
+# `rm -rf …`, `curl … | sh`, or `echo … > /somewhere` in a secrets file runs
+# with the sweep's privileges, and a sweep is a READ-ONLY instrument. Worse,
+# a broken or half-written store could abort the sweep mid-run and turn a
+# present key into a reported absence. The parser below cannot execute
+# anything: it reads lines with `read -r` (no backslash processing, no word
+# splitting, no globbing) and exports ONLY names matching
+# ^[A-Za-z_][A-Za-z0-9_]*= — every other line, including a bare command, is
+# skipped in silence. The selftest proves it with a poisoned fixture store.
+#
+# `export "${key}=${value}"` keeps the value off every process's argv:
+# `export` is a shell BUILTIN, so nothing is exec'd and nothing appears in
+# `ps` (the same reasoning curl_bearer_status documents below).
+#
+# Two deliberate compatibility choices, both to avoid a FALSE NEGATIVE about a
+# key that really is present:
+#   - an optional leading `export ` is stripped before the name is matched,
+#     because fleet stores written by hand carry that form and `source` used to
+#     accept it;
+#   - one layer of matching single or double quotes is stripped from the value,
+#     which is what `source` did — an unstripped quote would be carried into a
+#     liveness call and read back as a dead key.
+# Values are NEVER printed, here or anywhere else in this file.
+load_env_file() {
   local env_file="$1"
-  if [[ -f "${env_file}" ]]; then
-    # shellcheck disable=SC1090
-    source "${env_file}" 2>/dev/null
-    return 0
-  fi
-  return 1
+  local line key value trimmed
+  [[ -f "${env_file}" ]] || return 1
+  [[ -r "${env_file}" ]] || return 1
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"                          # tolerate a CRLF store
+    trimmed="${line#"${line%%[![:space:]]*}"}"    # strip leading whitespace
+    [[ -z "${trimmed}" ]] && continue             # blank line
+    [[ "${trimmed}" == "#"* ]] && continue        # comment
+    [[ "${trimmed}" == "export "* ]] && trimmed="${trimmed#export }"
+    trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+    [[ "${trimmed}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+    key="${trimmed%%=*}"
+    value="${trimmed#*=}"
+    case "${value}" in
+      \"*) value="${value#\"}"; value="${value%%\"*}" ;;
+      \'*) value="${value#\'}"; value="${value%%\'*}" ;;
+      *)
+        # `source` ended an unquoted value at a whitespace-preceded `#`.
+        # Matching that here keeps a commented store line resolving to the same
+        # value it resolved to before — an uncut comment would ride into a
+        # liveness call and come back looking like a dead key.
+        case "${value}" in
+          *" #"*)     value="${value%%" #"*}" ;;
+          *$'\t'"#"*) value="${value%%$'\t#'*}" ;;
+        esac
+        value="${value%"${value##*[![:space:]]}"}"   # trim trailing whitespace
+        ;;
+    esac
+    export "${key}=${value}"
+  done < "${env_file}"
+  return 0
 }
 
 # --- Bearer-auth smoke helper: the ONE place the credential escaping lives ----
@@ -383,6 +434,46 @@ run_selftest() {
       bash "${self}" funnel 2>&1)"
   rc_env=$?
 
+  # --- Control 4: THE POISONED STORE. The sweep must PARSE, never EXECUTE.
+  #
+  # A third sandbox HOME whose ~/.env carries a real credential line AND a bare
+  # shell command. `source` would run that command; the parser must skip it and
+  # keep going. Two assertions, because either alone would prove nothing:
+  #   (a) the command's side effect is ABSENT afterwards — the file the poison
+  #       line would have created does not exist;
+  #   (b) the credential in the SAME file is still DETECTED — so (a) is a
+  #       statement about execution, not about a store the sweep never opened.
+  #
+  # THE KNOWN-GOOD CONTROL ON THE INSTRUMENT ITSELF: before the run, the same
+  # path is created and removed by this selftest. If that write fails, "the file
+  # is absent" would be unfalsifiable — /tmp being unwritable would print a
+  # green pass for a sweep that executed the line. The control is checked first
+  # and a failure is reported as BROKEN INSTRUMENT, never as a pass.
+  local sandbox3 out_leakfile rc_leakfile leak_marker leak_control=0
+  leak_marker="/tmp/spec-protocol-leak-test"
+  rm -f "${leak_marker}" 2>/dev/null
+  if echo control > "${leak_marker}" 2>/dev/null && [[ -f "${leak_marker}" ]]; then
+    leak_control=1
+  fi
+  rm -f "${leak_marker}" 2>/dev/null
+  sandbox3="$(mktemp -d "${TMPDIR:-/tmp}/env-sweep-selftest-poison.XXXXXX")" || {
+    echo "SELFTEST: FAIL — could not create the third sandbox HOME" >&2
+    rm -rf "${sandbox}" "${sandbox2}"
+    return 1
+  }
+  {
+    printf 'KIE_API_KEY=%s\n' "${sentinel}"
+    printf 'echo LEAKED > %s\n' "${leak_marker}"
+    printf 'AGNES_API_KEY\n'
+    printf '9BAD_NAME=nope\n'
+  } > "${sandbox3}/.env"
+  chmod 600 "${sandbox3}/.env" 2>/dev/null
+  out_leakfile="$(env -i \
+      HOME="${sandbox3}" PATH="${PATH}" TMPDIR="${TMPDIR:-/tmp}" \
+      SWEEP_NO_NETWORK=1 \
+      bash "${self}" funnel 2>&1)"
+  rc_leakfile=$?
+
   # --- Check 1: both runs exited clean.
   if [[ "${rc_pos}" -eq 0 && "${rc_neg}" -eq 0 ]]; then
     echo "  [PASS] both control runs exited 0 (positive=${rc_pos} negative=${rc_neg})"
@@ -448,9 +539,11 @@ run_selftest() {
   #     environment (control 1) AND the planted ~/.env store (control 3). A
   #     leak proof that scanned only one surface would pass while the other
   #     printed the value; a store the tool newly READS is a new surface it
-  #     could newly PRINT from, so it is scanned here by construction.
+  #     could newly PRINT from, so it is scanned here by construction. The
+  #     poisoned-store control (4) carries the sentinel too, so its output is
+  #     scanned on the same line.
   local leaks
-  leaks="$(printf '%s\n%s\n' "${out_pos}" "${out_env}" | /usr/bin/grep -c "${sentinel}")"
+  leaks="$(printf '%s\n%s\n%s\n' "${out_pos}" "${out_env}" "${out_leakfile}" | /usr/bin/grep -c "${sentinel}")"
 
   local argv_hits url_hits
   argv_hits="$(/usr/bin/grep -cE '^[^#]*-H[[:space:]]+.{0,3}Authorization' "${self}")"
@@ -495,7 +588,7 @@ run_selftest() {
       echo "  [FAIL] ~/.env store control: the control run did not exit 0 (rc=${rc_env})"
     fi
     if [[ "${userenv_pos}" -ne 1 ]]; then
-      echo "  [BROKEN INSTRUMENT] ~/.env store control: a key placed in \$HOME/.env read as MISSING — the tool does not source ~/.env, so every guided key placement there will be reported back to the user as a missing key. That is a false negative about the USER, and it is not permitted."
+      echo "  [BROKEN INSTRUMENT] ~/.env store control: a key placed in \$HOME/.env read as MISSING — the tool does not read ~/.env, so every guided key placement there will be reported back to the user as a missing key. That is a false negative about the USER, and it is not permitted."
     fi
     if [[ "${userenv_neg}" -ne 1 ]]; then
       echo "  [BROKEN INSTRUMENT] ~/.env store control: a credential planted in NO store did not report MISSING — the sweep does not discriminate and its FOUND means nothing"
@@ -503,10 +596,49 @@ run_selftest() {
     fails=$((fails + 1))
   fi
 
-  rm -rf "${sandbox}" "${sandbox2}"
+  # --- Check 7: THE STORE IS PARSED, NOT EXECUTED (control 4).
+  #
+  # The fixture store carried `echo LEAKED > /tmp/spec-protocol-leak-test`
+  # alongside a real credential line. Three assertions:
+  #   (a) the control proved this selftest CAN create that path — otherwise
+  #       "absent" would be unfalsifiable and this check would pass on a
+  #       read-only /tmp while the sweep happily executed the line;
+  #   (b) the path is absent after the run — nothing in the store executed;
+  #   (c) the credential in the SAME file was still detected, and the run still
+  #       exited 0 — so (b) is about execution, not about a file never opened,
+  #       and the two junk lines beside it (a name with no `=`, a name starting
+  #       with a digit) neither aborted the parse nor became variables.
+  local poison_ran=0 poison_pos=0 poison_neg=0
+  [[ -e "${leak_marker}" ]] && poison_ran=1
+  printf '%s\n' "${out_leakfile}" | /usr/bin/grep -qE '^KIE: (FOUND|LIVE|FOUND_NOT_LIVE|FOUND_NOT_VERIFIED)$' && poison_pos=1
+  printf '%s\n' "${out_leakfile}" | /usr/bin/grep -qE '^AGNES: MISSING$' && poison_neg=1
+  if [[ "${leak_control}" -eq 1 && "${poison_ran}" -eq 0 && "${poison_pos}" -eq 1 \
+        && "${poison_neg}" -eq 1 && "${rc_leakfile}" -eq 0 ]]; then
+    echo "  [PASS] parse-not-execute control: a store line reading 'echo LEAKED > ${leak_marker}' did NOT run (control proved the path is writable first), the credential in the same file was still detected, and a name with no '=' stayed MISSING"
+  else
+    if [[ "${leak_control}" -ne 1 ]]; then
+      echo "  [BROKEN INSTRUMENT] parse-not-execute control: this selftest could not create ${leak_marker} itself, so 'the file is absent' proves nothing about the sweep — UNDETERMINED, not a pass"
+    fi
+    if [[ "${poison_ran}" -eq 1 ]]; then
+      echo "  [FAIL] parse-not-execute control: ${leak_marker} EXISTS after the run — the sweep EXECUTED a line from a dotfile. A store is data, never a program."
+    fi
+    if [[ "${poison_pos}" -ne 1 ]]; then
+      echo "  [BROKEN INSTRUMENT] parse-not-execute control: the credential beside the poison line was not detected — the parser stops at the first line it does not understand, which turns any odd store into a false absence"
+    fi
+    if [[ "${poison_neg}" -ne 1 ]]; then
+      echo "  [BROKEN INSTRUMENT] parse-not-execute control: a bare name with no '=' was treated as a credential — the parser is matching on something other than an assignment"
+    fi
+    if [[ "${rc_leakfile}" -ne 0 ]]; then
+      echo "  [FAIL] parse-not-execute control: the control run did not exit 0 (rc=${rc_leakfile})"
+    fi
+    fails=$((fails + 1))
+  fi
+  rm -f "${leak_marker}" 2>/dev/null
+
+  rm -rf "${sandbox}" "${sandbox2}" "${sandbox3}"
   echo
   if [[ "${fails}" -eq 0 ]]; then
-    echo "SELFTEST: PASS (6/6) — instrument proven, 0 secret values printed"
+    echo "SELFTEST: PASS (7/7) — instrument proven, 0 secret values printed, 0 store lines executed"
     return 0
   fi
   echo "SELFTEST: FAIL (${fails} check(s) failed)"
@@ -522,16 +654,16 @@ fi
 
 # Phase 1: Source all env stores
 #
-# ORDER IS PRECEDENCE, and it is deliberate: a later source overwrites an
+# ORDER IS PRECEDENCE, and it is deliberate: a later store overwrites an
 # earlier one, so ~/.env goes FIRST and the openclaw stores keep the last word.
 # A stray user-level file must never shadow the canonical fleet secrets store.
 # This costs the guided-placement flow nothing — that flow only reaches ~/.env
 # when the openclaw stores DON'T carry the key, so there is no collision to
 # lose. Presence detection is unaffected either way; only a same-name collision
 # is decided here, and it is decided toward the authoritative store.
-source_env_file "${USER_ENV}" || true
-source_env_file "${SECRETS_ENV}" || true
-source_env_file "${OPENCLAW_ENV}" || true
+load_env_file "${USER_ENV}" || true
+load_env_file "${SECRETS_ENV}" || true
+load_env_file "${OPENCLAW_ENV}" || true
 
 # Phase 2: Check GitHub
 GITHUB_STATUS="MISSING"

@@ -1,4 +1,4 @@
-# ⚡ If the Power Goes Out
+# If the Power Goes Out
 
 > Your work is safe. Here is what to do — and it is only one step.
 
@@ -6,7 +6,11 @@
 
 ## The short version
 
-**Paste the same command you pasted before.** That is it. The build picks up where it left off. Nothing is lost. Nothing is redone.
+There is one sentence, and this is it:
+
+> If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
+
+That is the whole recovery. Nothing is lost. Nothing is redone.
 
 ---
 
@@ -22,30 +26,19 @@ So when you start up again, the new session reads that record, sees exactly wher
 
 ## Step by step (if you want more detail)
 
-1. **Turn your computer back on.** Open Terminal.
+1. **Turn your computer back on.**
 
-2. **Find your launch command.** It is in your project folder, in a file called `LAUNCH-COMMAND.md`. If you cannot find it, it is here:
-   ```
-   ~/Downloads/projects/<your-project-name>/LAUNCH-COMMAND.md
-   ```
+2. **Open the <Terminal app | PowerShell>.**
 
-3. **Paste the same command into Terminal** that you pasted before. The one that starts with `cd ~/Downloads/projects/...` and then `claude --model...`
+3. **Type `<launcher> --resume` and press Return.**
 
-4. **That is it.** The build reads where it left off and continues. You can walk away again.
+4. **Pick this project from the list.** That is it — the build reads where it left off and continues, and you can walk away again.
 
----
-
-## What if I do not remember which terminal was doing what?
-
-If your setup has the `/purpose` helper, run it in any terminal:
+The same sentence is written down for you in your project folder, in a file called `CONTROL/LAUNCH-COMMAND.md`:
 
 ```
-/purpose
+~/Downloads/projects/<your-project-name>/CONTROL/LAUNCH-COMMAND.md
 ```
-
-It will tell you which project each terminal was working on, how far along it is (as a percentage), and what is left. Then you know which launch command to paste.
-
-If you do not have `/purpose` (or you type it and get "unknown command"): open `CONTROL/LEDGER.md` in your project folder instead — the top of that file says where things stand.
 
 ---
 
@@ -69,4 +62,4 @@ This is not a promise. It is how the system was designed. The record is written 
 
 ---
 
-*You are safe. Paste the command. Go get a coffee.* ☕
+*You are safe. Type the one line. Go get a coffee.*

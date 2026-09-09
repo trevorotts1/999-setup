@@ -2,7 +2,20 @@
    Fill the marked slots from the design brief. Semantic roles ONLY — the build
    never hard-codes a hex. Every text color carries its WCAG AA contrast pair
    (>= 4.5:1 normal text, >= 3:1 large text and UI components); STAGE-BUILD's
-   accessibility check verifies the pairs. */
+   accessibility check verifies the pairs.
+
+   TWO RULES FOR INSTANTIATING THIS FILE:
+   1. No placeholder may ship. After STAGE-SCAFFOLDING every FILL-FROM-BRIEF
+      slot in the project's copy carries a real value from the brief — a
+      surviving placeholder fails STAGE-SCAFFOLDING's acceptance bar, so the
+      stage gate never opens STAGE-HERO. Planned, not yet on disk:
+      STAGE-SHIP-CHECKS (references/ship-checks.md) takes that check over at
+      ship time when it lands.
+   2. The dark block below is CONDITIONAL. Keep it only when the brief names a
+      dark palette, and fill it with the brief's dark values. When the brief
+      names no dark palette, DELETE the whole @media (prefers-color-scheme:
+      dark) block from the project's copy — shipping it unfilled hands a broken
+      palette to every visitor whose system is set to dark. */
 
 :root {
   /* ---- BRAND + ACCENT — from the brief ---- */
@@ -29,8 +42,10 @@
   --color-info: #FILL-FROM-BRIEF;
 }
 
-/* ---- DARK MODE — same roles re-declared; the build never hard-codes a
-   light-only palette ---- */
+/* ---- DARK MODE (CONDITIONAL) — keep this block ONLY if the design brief
+   names a dark palette, and fill it with the brief's dark values. If the brief
+   names no dark palette, delete this whole block: no FILL-FROM-BRIEF slot may
+   ship. ---- */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-brand: #FILL-FROM-BRIEF;

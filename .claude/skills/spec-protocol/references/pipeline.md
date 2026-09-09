@@ -1,7 +1,7 @@
 # The Build → QC → Fix → Pen → Batched-Merge Pipeline
 
 This is the CLEAN version of the batched merge — not one-at-a-time, not the mess.
-It inherits the battle-tested parts of skill-warfix (Sonnet fixer waves, Fable
+It inherits the battle-tested parts of skill-warfix (parallel fixer waves,
 streaming review, holding pen, merge trains, batched GitHub upload, the batch
 merge record with its nothing-dropped reconciliation — written into the ledger,
 NOT a MERGE-LOG.md file — version-surfaces inventory, the post-merge artifact
@@ -86,11 +86,10 @@ brainstorm and the confirmed feature list are the source of truth.
 
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
 
-**Model:** the app-builder model from the capacity interview. The default LANE is
-`Opus` on Claude-Nine, `Sonnet` on regular Claude Code if available — **a lane, not
-a model.** What either lane resolves to is a per-machine fact read live at run time
-(`references/capacity.md` §11) and recorded in the Capacity Ledger; no model id is
-supplied by this page.
+**Model:** the builder seat from the seat table (`references/capacity.md` §11 —
+the one place seats are written). What that seat resolves to is a per-machine fact
+read live at run time and recorded in the Capacity Ledger; no seat, lane, or model
+id is supplied by this page.
 
 ### Concurrency caps — READ THE CAPACITY LEDGER, do not re-derive here
 
@@ -98,7 +97,7 @@ supplied by this page.
 |---|---|---|
 | Per workflow | min(16, cores−2) truly concurrent (10 on a 12-core machine — measured, re-measure per machine) | Measured — the harness runtime cap |
 | Per session | ≤ 50 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
-| Anthropic Claude Code | ≤ 20 concurrent agents per wave (operator cap); in Agent-Team mode the lead + commanders occupy persistent slots inside it first | Operator doctrine |
+| Anthropic Claude Code | **No wave cap.** Width is workflows × clientCap, exactly as on every other path; the burn governor (`references/capacity.md` §6) is the only limiter on a subscription account — it parks on 429s and resumes. In Agent-Team mode the lead + commanders occupy persistent slots inside the harness width first. | Operator ruling 2026-08-16 — no caps beyond the harness |
 | Provider (9Router paths) | ceiling − reserve, per `references/capacity.md` (DeepSeek v4 Flash 2,500 / Pro 500 / Ollama $20 use 2 / $100 use 8 / Agnes verify-live) | Capacity Ledger |
 
 The governing number is the SMALLEST across layers; the project's CAPACITY-LEDGER.md
@@ -113,6 +112,9 @@ string). If none is found, install one: `npx playwright install chromium` and
 prove the install with a real probe screenshot. Only if installation genuinely
 fails does this fall back to reporting the gap and its consequence for visual
 bars — install-then-prove, never detect-and-warn when installing is possible.
+Every capture writes under `<project>/captures/`
+(`references/environment-sweep.md`) — resolved from the project folder, never
+the session working directory.
 
 ### Slice the spec (Law 5)
 
@@ -162,64 +164,88 @@ files), on the operator's 12-core machine. Per-workflow width is min(16, cores�
 = 10 — measured at run time (`sysctl -n hw.ncpu` → 12), never inherited from
 another machine's number.
 
+**The shape is the ONE swarm shape** (`references/gauntlet.md` §13.1, S3
+2026-09-07 — five workflow types and no others). The 24 items are UNITS, and a
+Unit Gauntlet tree carries `clientCap` UNITS: build, blind visual judge and
+technical judge are pipeline STAGES of the same unit, never a separate QC tree
+and never a pair that halves the tree's width.
+
 **WRONG (pipeline-as-phases — the old default):**
 ONE workflow named `wave-1` building items 1–16. When wave-1 finishes, ONE
 workflow named `wave-2` building items 17–24. Then ONE workflow for QC, then ONE
 for fixes. Four trees, strictly sequential. Wall-clock: the sum of all stages.
 
-**RIGHT (swarm) — scenario (b), 9Router + DeepSeek v4 Flash direct:**
+**ALSO WRONG (the split QC tree — retired 2026-09-07):** ten builders in one
+tree and five judges in a separate QC tree. It is a forbidden shape twice over —
+a judge phase with fewer judges than landed units, and a barrier where the unit
+gauntlet has none — and the dispatch gate refuses it
+(`references/workflows.md`, "Forbidden shapes").
+
+**RIGHT (the Unit Gauntlet) — scenario (b), 9Router + DeepSeek v4 Flash direct:**
 The topological sort returns all 24 items with zero incomplete dependencies, so
-N = 24 streams are available. The governing number comes from the Capacity Ledger,
-never from ambition: harness delivery is 50 workflows × 10 = 500, and the provider
-ceiling minus its reserve sits far above that, so the harness governs and all 24
-items fit in one wave, grouped to the measured per-workflow width:
+N = 24 units are dispatchable. The governing number comes from the Capacity
+Ledger, never from ambition: harness delivery is 50 workflows × 10 = 500, and the
+provider ceiling minus its reserve sits far above that, so the harness governs
+and all 24 units fit in one wave, grouped into Unit Gauntlet trees at the
+measured per-workflow width:
 
 ```
-Workflow [v4-Flash ×10] stream-a — items 1–10  (full per-item lifecycle)
-Workflow [v4-Flash ×10] stream-b — items 11–20 (full per-item lifecycle)
-Workflow [v4-Flash ×4]  stream-c — items 21–24 (full per-item lifecycle)
+Workflow [v4-Flash ×10] unit-gauntlet-a — units 1–10  (pipeline: build → blind visual judge → technical judge → fix loop)
+Workflow [v4-Flash ×10] unit-gauntlet-b — units 11–20 (same four stages, seat-pinned per stage)
+Workflow [v4-Flash ×4]  unit-gauntlet-c — units 21–24 (same four stages, seat-pinned per stage)
 ```
 
-All three are dispatched with `pipeline()` — the default. `parallel()` is a
-BARRIER and would need a written BARRIER-JUSTIFIED note; nothing here earns one.
+All three are dispatched with `pipeline()` — the default, and the only shape the
+unit gauntlet accepts. `parallel()` is a BARRIER and would need a written
+BARRIER-JUSTIFIED note; nothing here earns one. Each unit's judge stages fire the
+instant THAT unit's build lands, so the QC lane is inside the same tree as the
+build it judges — there is no separate QC tree to launch and nothing waits for
+the slowest builder of the round.
 
-PLUS, the moment item 1 finishes building in stream-a (not when stream-a finishes):
-
-```
-Workflow [Fable ×5] qc-stream-a — QC for completed items, streaming
-```
-
-PLUS, the merge train runs continuously and OFF the critical path:
-
-```
-Workflow [Haiku ×1] merge-train — drains the pen on the 15-minute batch trigger
-```
-
-Five trees running SIMULTANEOUSLY. Wall-clock: the slowest single item's full
-lifecycle, not the sum of all stages.
-
-**Scenario (a) — plain Claude Code on Anthropic, the same 24 items.** Of the three
-numbers the Capacity Ledger records, the operator cap of 20 concurrent agents per
-wave is the smallest, so it governs: wave size 20, **2 workflows × 10 agents**, and
-extra workflows queue. Same topology, smaller wave — the arithmetic changes, the
-shape does not. Queuing is not stalling: a queued workflow starts the instant a
-slot frees, and no builder ever waits on the merge train for a slot it has not
-already released.
-
-The operator sees five trees in `/workflows` (scenario (b)):
+PLUS, after the units integrate, the Integrated Visual Gauntlet runs the
+product-level look the per-unit judges cannot take:
 
 ```
-[v4-Flash ×10] stream-a      ████████░░░░ 10/10 built, 3 QC'd, 1 merged
-[v4-Flash ×10] stream-b      ████████████ 10/10 built, 5 QC'd
-[v4-Flash ×4]  stream-c      ██████░░░░░░  3/4 built
-[Fable ×5] qc-stream-a       ████░░░░░░░░  3 items reviewed
-[Haiku ×1] merge-train       ██░░░░░░░░░░  2 batches merged
+Workflow [judge-seat ×N] integrated-visual — one blind judge per whole page or screen at every viewport, plus the global blind benchmark judge
 ```
 
-THIS is the visual contract: five trees, five prefixes, all running at once. Note
-what the picture does NOT show — no tree is waiting on the merge train. stream-b
-keeps building while merge-train drains, qc-stream-a keeps judging, and a merge
-that fails parks its own unit without touching the other four trees.
+PLUS, the merge train runs continuously and OFF the critical path, OUTSIDE every
+build tree (Law 3: one writer per repo; a merge agent inside a build tree is a
+forbidden shape because it holds a build slot):
+
+```
+Workflow [reader-seat ×1] merge-train — drains the pen on the 15-minute batch trigger
+```
+
+Four trees running SIMULTANEOUSLY during the build. Wall-clock: the slowest
+single item's full lifecycle, not the sum of all stages.
+
+**Scenario (a) — plain Claude Code on Anthropic, the same 24 items.** The shape
+AND the arithmetic are unchanged. A metered subscription publishes no
+concurrency figure, so there is no provider number to compete with the harness
+and no policy cap to shrink the wave: the harness governs, all 24 units fit in
+one wave, and the same three Unit Gauntlet trees plus the merge train dispatch
+together. The only difference is which instrument holds the
+run — the burn governor (`references/capacity.md` §6) watches for 429/limit
+responses and parks-and-resumes (Loop 6) if the window tightens, and it is the
+ONLY thing that ever narrows an Anthropic run. Queuing, where the harness does
+queue, is not stalling: a queued agent starts the instant a slot frees, and no
+builder ever waits on the merge train for a slot it has not already released.
+
+The operator sees four trees in `/workflows` (scenario (b)):
+
+```
+[v4-Flash ×10] unit-gauntlet-a   ████████░░░░ 10/10 built, 3 judged, 1 merged
+[v4-Flash ×10] unit-gauntlet-b   ████████████ 10/10 built, 5 judged
+[v4-Flash ×4]  unit-gauntlet-c   ██████░░░░░░  3/4 built
+[reader-seat ×1] merge-train     ██░░░░░░░░░░  2 batches merged
+```
+
+THIS is the visual contract: four trees, four prefixes, all running at once. Note
+what the picture does NOT show — no tree is waiting on the merge train, and no
+tree is waiting on a QC phase. unit-gauntlet-b keeps building while merge-train
+drains, every landed unit is being judged inside its own tree, and a merge that
+fails parks its own unit without touching the other trees.
 
 ### Per-builder mechanics
 
@@ -243,9 +269,9 @@ integration branch, or on their pushed branches), its surface is code (or the
 buildable part of live), and any decision gate is ratified. TRUNK ANCESTRY IS A
 RELEASE CONDITION, NOT A DISPATCH CONDITION — a dependent unit never waits for
 the merge train (operator instruction, 2026-08-11: "IT SHOULD NOT WAIT FOR A
-GITHUB MERGE"; and the operator's own earlier ruling in
-SPEC-PROTOCOL-SWARM-FIX §3.1, which this restores: a dependent item "waits for
-Wave 1 to land on the integration branch — never for Wave 1 to merge to trunk").
+GITHUB MERGE"; and the operator's own earlier ruling, which this restores: a
+dependent item waits for Wave 1 to land on the integration branch — never for
+Wave 1 to merge to trunk).
 The one exception must be earned in writing: a dispatch that genuinely requires
 the MERGED trunk artifact carries a MERGE-EDGE-JUSTIFIED note naming why the
 landed artifact cannot serve; without the note, waiting on a merge is a defect.
@@ -265,32 +291,40 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
-**PASS = completely exceeds expectation — the ONE pass standard (Issue 17,
-PART 1 item 5; binding on every verdict in this pipeline).** The single pass
-standard is "completely exceeds expectation" — never "acceptable", never
-"meets spec", never "good enough". The judge compares the work against the
-item's bar (Law 48 — the named, fetchable bar on the build card's QC section
-or the B2H) the way a customer would, and the work must clearly and
-demonstrably exceed what the bar demands, with the exceeding evidence quoted
-in the verdict. Where the bar is an answer-key (no existing product serves as
-the bar — PART 1 item 4), the pass standard is the answer-key's binary PASS,
-which is what "completely exceeds expectation" means when the comparison
-surface is a checkable line, and the objectivity guard stands: an answer-key
-line the judge cannot run to pass/fail is BLOCKED (Law 50) and rewritten by
-the lead before the build. A verdict of "meets the bar exactly" is NOT a
-pass — it is ITERATE, and the gap returned to the builder is "the bar is
-matched, not exceeded — exceed it". The client's own D1/D2 answers
-(`references/interview.md` Block D — the example the client would be happy
-matching, and the relationship "shoulder to shoulder" vs "rulebook") seed the
-bar; the judge's standard is set by the bar, never lowered by any client
-answer (Law 43 — only the client lowers their own standard, and "shoulder to
-shoulder" IS the bar, not a pass below it).
+**PASS at Gate 3 is decided by the bar's declared relationship, frozen at
+selection: wins-or-ties → OURS or TIE passes; meet-all-requirements → every
+requirement checked passes. The judge never raises the relationship.** The
+relationship is the client's own D1/D2 answers (`references/interview.md`
+Block D — the example the client would be happy matching, and whether the
+standard is "shoulder to shoulder" or the rulebook), frozen with the bar
+package at selection and binding on every verdict in this pipeline.
 
-**Model:** the QC model from the capacity interview. The default LANE on
-Claude-Nine is `Fable` — resolved live and recorded in the Capacity Ledger, never
-named by this page; 5×5 = 25 concurrent. Must be a DIFFERENT model from the builder
-(Law 7 — one model's blind spot cannot bless itself). Review streams as features
-land — not in a batch at the end (inherit warfix streaming review).
+Under **wins-or-ties** (the default) the judge compares the work against the
+item's bar (Law 48 — the named, fetchable bar on the build card's QC section
+or the B2H) the way a customer would, and a verdict of OURS or TIE is a PASS,
+with the comparison evidence quoted in the verdict; only BAR — the bar clearly
+ahead — is a FAIL, and the single largest gap is what returns to the builder.
+"Meets the bar exactly" IS a pass under this relationship and is never sent
+back to "exceed it". Under **meet-all-requirements** the bar is an answer-key
+(used when no existing product can serve as the bar) and the pass standard
+is the answer-key's binary PASS: every requirement checked passes. The
+objectivity guard stands under both: an answer-key line the judge cannot run
+to pass/fail is BLOCKED (Law 50) and rewritten by the lead before the build.
+
+**One verdict type — the binary verdict decides, and the 0–10 score is
+recorded for trend only and never decides.** Every verdict also carries a
+0–10 score across the ten categories, written to the ledger as trend data; no
+score, at any value, passes or fails an item. PASS/FAIL is set by the frozen
+relationship above and by nothing else, and no client answer lowers the
+judge's standard (Law 43) — the client's own acceptance has its own outcome,
+`CLIENT-ACCEPTED`, in the QC RECORD below.
+
+**Model:** the technical-judge seat from the seat table (`references/capacity.md`
+§11 — the one place seats are written), resolved live and recorded in the Capacity
+Ledger, never named by this page. It must be a DIFFERENT model from the builder
+(Law 7 — one model's blind spot cannot bless itself); the table's independence
+rule is the authority. Review streams as features land — not in a batch at the end
+(inherit warfix streaming review).
 
 ### The QC record — the one format every item's verdict is written in
 
@@ -301,20 +335,23 @@ reached (Law 2 — write the verdict the instant it is judged). A judge that
 returns a verdict without writing the record has not produced a verdict.**
 
 A QC RECORD has EXACTLY six fields, one line each, in this order — the six
-things the Issue 17 bar checks (spec: every QC record shows a blind critic, a
-named bar, a binary verdict, and the loop-or-pass outcome; zero self-QC):
+things the bar checks, namely that every QC record shows a blind critic, a
+named bar, a binary verdict, and the loop-or-pass outcome, with zero self-QC.
+The same field order is a row of the LEDGER VOCABULARY table (`references/documents.md`), transcribed from this block; when the two
+ever differ, this block is the one that was meant to move and the table is
+corrected in the same change:
 
 ```
 QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
 bar-fetch=<how the bar was obtained: URL | capture path | file path | the
 answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
-outcome=<PASSED|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
+outcome=<PASSED|CLIENT-ACCEPTED gap=<the one named gap>|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
 
-Mechanical checkability — the six checks any cold agent or the boss cron can
+Mechanical checkability — the six checks any cold agent or reviewer can
 run against a QC RECORD without judging anything:
 
 1. **`judge=` must NOT equal the builder's seat label** for that unit (Law 7 —
@@ -331,13 +368,20 @@ run against a QC RECORD without judging anything:
 4. **`verdict=` must be exactly one of PASS, FAIL, BLOCKED, INFEASIBLE,
    LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
    else, and the non-success states are never relabeled PASS (Law 50).
-5. **`outcome=` must be PASSED, LOOPED `cycle n of 20`, ESCALATED, or one of
-   ESCALATED-BLOCKED / ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a
-   reason=** (the fix loop's cap, Rule 3.22 — 20 cycles per finding, operator
-   ruling 2026-08-14; a 21st pass carries ESCALATED with the full finding
-   history) — a FAIL verdict with no LOOPED outcome line, an ESCALATED line
-   with no finding history attached, or a Law-50 verdict (BLOCKED /
-   INFEASIBLE / LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a
+5. **`outcome=` must be PASSED, CLIENT-ACCEPTED with a `gap=`, LOOPED
+   `cycle n of 20`, ESCALATED, or one of ESCALATED-BLOCKED /
+   ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the fix
+   loop's cap — 20 cycles per finding, operator ruling 2026-08-14;
+   a 21st pass carries ESCALATED with the full finding history) — a FAIL
+   verdict with no LOOPED outcome line, an ESCALATED line with no finding
+   history attached, or a Law-50 verdict (BLOCKED / INFEASIBLE /
+   LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a broken record.
+   **CLIENT-ACCEPTED** is the client's own acceptance of a unit that did not
+   meet the frozen relationship — the promise at the top of SKILL.md, "not yet
+   as good as the example you picked — here is the one gap". It is written
+   only after the client has been asked and has said to keep it, it carries
+   that one named gap in `gap=`, its `verdict=` stays FAIL, and no judge may
+   write it: a CLIENT-ACCEPTED record with no client answer behind it is a
    broken record.
 6. **`provenance=` must be STRIPPED** (Law 49 — the critic sees the work,
    never the effort). The critic's received package is stripped of timestamps,
@@ -366,18 +410,20 @@ send it back; do not invent a generic check and call it the card's rubric.
 
 ### The ONE way — a blind critic, a binary verdict
 
-QC is ONE way (Issue 17, PART 1): a blind critic reviews the work; PASS =
-completely exceeds expectation; FAIL = looped to the builder with the exact
-finding, max 20 fix-loop cycles per finding, then escalation to the operator
-with the full finding history (Rule 3.22, operator ruling 2026-08-14). **The
-verdict is binary — there is no numeric pass lane, no "at or above a score"
-pass.** The non-success states BLOCKED / INFEASIBLE / LIMIT REACHED are never
-relabeled PASS (Law 50).
+QC is ONE way: a blind critic reviews the work; PASS = the
+frozen bar relationship met (wins-or-ties → OURS or TIE passes;
+meet-all-requirements → every requirement checked passes); FAIL = looped to
+the builder with the exact finding, max 20 fix-loop cycles per finding, then
+escalation to the operator with the full finding history (operator
+ruling 2026-08-14). **The verdict is binary — there is no numeric pass lane,
+no "at or above a score" pass; the binary verdict decides and the 0–10 score
+is recorded for trend only and never decides.** The non-success states
+BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
 
 The ten categories below are the critic's rubric surface — quoted proof
 beside every judgement. Each category's judgement maps to the binary verdict:
-any category that does not completely exceed its bar is a FAIL, and its exact
-finding loops the item to the builder. The categories (from
+any category that fails the frozen relationship against its bar is a FAIL,
+and its exact finding loops the item to the builder. The categories (from
 PROMPT-QC-INSTRUCTIONS.md):
 
 1. Does it actually work?
@@ -549,7 +595,7 @@ decides which drives:
    dispatches its own fixer, in parallel, exactly as this stage already runs.
 2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
    single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME per-finding 20-cycle cap (Rule 3.22). It is
+   same fix list, under the SAME per-finding 20-cycle cap. It is
    one more row in the fix list, never a second, competing cycle counter.
 3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
    correctness is the floor; re-judging a comparison against a build that has
@@ -557,7 +603,7 @@ decides which drives:
    always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
 
 Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their OWN 20-cycle counter (Rule 3.22),
+Gate-3 largest-gap finding each carry their OWN 20-cycle counter,
 because they are different findings, not because they are different gates.
 
 ---
@@ -568,7 +614,7 @@ because they are different findings, not because they are different gates.
 dispatched concurrently (Law 32). The attempt bound is per finding, not per work
 item.
 
-### The fix loop (Rule 3.22 — bounded and recorded)
+### The fix loop (bounded at 20 cycles per finding, and recorded)
 
 On FAIL: write the six-part finding — (1) which category and the finding, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
@@ -577,9 +623,21 @@ it is fixed (the command and expected result), (6) what a naive fix would break
 (Law 31). **The finding IS the loop-back payload:** the item returns to the
 builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
 summarized, never stripped of its evidence — and the builder fixes exactly that
-finding, never a different problem (Rule 3.34). Re-dispatch a fixer (never the
-judge). The judge re-judges from scratch with fresh proof and a fresh break-it
-pass. Earlier verdicts never carry.
+finding, never a different problem (the fix-versus-finding rule below). Re-dispatch a fixer (never the
+judge). **A NEW judge agent — the same SEAT, a FRESH CONTEXT — re-judges, and
+the previous verdict is not in its prompt.** It works from fresh proof and a
+fresh break-it pass, and it receives exactly what the first judge received:
+never the earlier verdict, never the earlier gap, never the earlier score,
+never the round number (`references/gauntlet.md` Section 5 — never reuse the
+previous verifier's judgment; a judge shown its own prior verdict anchors on it
+instead of re-judging). Earlier verdicts never carry. Every re-judge writes its
+own `SCORE` line through `tools/ledger.sh` — its five fields, in order, are a
+row of the LEDGER VOCABULARY table (`references/documents.md`), and `tools/ledger.sh` REFUSES the line if they are not all there
+(`references/gauntlet.md` Section 5; the score is trend only and decides
+nothing), and three consecutive rounds whose `best` rose
+by less than 0.3 end the unit on the plateau rule — honestly, with its best
+checkpoint preserved and its one gap named — instead of running to the
+twentieth cycle.
 
 **The loop is bounded and recorded (binding):**
 - **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).
@@ -594,11 +652,11 @@ pass. Earlier verdicts never carry.
   finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
   FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
   relabeled pass, never a silent move-on. Escalation feeds the Named Stops
-  (stop 8) and the boss-cron restart from the last clean checkpoint.
+  (stop 8) and the restart from the last clean checkpoint.
   **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
   non-success state that ends the item NOT PASSED, never PASS.
 
-### Rule 3.34 — a finding is proved by running
+### A finding is proved by running
 
 A finding is proved by running, and a fix that does not match its finding is itself
 a finding. A defect found by reading is a suspicion; a defect found by running is a
@@ -625,7 +683,7 @@ reviewers. Self-repair: if the reviewer rejects, a higher-reasoning model confir
 ## Stage 4 — HOLDING PEN (finished work waits in a named place)
 
 Passing work does NOT go straight to main. It stages in the holding pen / landing
-queue, published in the execution plan as two tables (Rule 3.26):
+queue, published in the execution plan as two tables — never held in a head:
 
 - **The holding pen** — work items whose change is not a diff in any repository
   (work that changes only running systems — Law 21). They wait for a human. Status
@@ -651,7 +709,7 @@ builder's pass is a claim, the critic's fetch is the proof.
 The pen lives in the execution plan as a table, not as a file (Law 39 — the
 17-document list is closed).
 
-### Rule 3.21 — the batch size is derived
+### The batch size is derived
 
 The batch size is a derived quantity, stated with its reasoning. It is a drain
 THRESHOLD, never a cap: RULE 2 removed the 10-merge count cap, so whatever is
@@ -661,7 +719,7 @@ independent triggers on every tick: has 15 minutes passed since the last drain
 or above the derived batch size; is the wave closed? If none fired, the loop does
 nothing and sleeps — the correct, cheap outcome.
 
-### Rule 3.32 — the landing queue is not safe until its failure path and freshness rule are written down
+### The landing queue is not safe until its failure path and freshness rule are written down
 
 1. **The failure path** — what happens when a batch lands together and the suite
    goes red. Three legitimate answers: bisect (the default), land one at a time on
@@ -680,16 +738,36 @@ couple two lanes that the schedule went to some trouble to keep apart.
 
 ## Stage 5 — BATCHED GITHUB MERGE (one train per repo, drain in batches)
 
-**Model:** the merger model from the capacity interview. The default LANE is
-`Haiku` on both harnesses — a lane, not a model; what it resolves to is read live
-(`references/capacity.md` §11) and recorded in the Capacity Ledger. One merger per
-repository.
+**Model:** the merge-writer seat from the seat table (`references/capacity.md`
+§11 — the one place seats are written), resolved live and recorded in the Capacity
+Ledger. One merger per repository.
+
+### GitHub is arranged at MINUTE ONE, never at merge time
+
+**Before the first dispatch — not here, and not when the pen is full — the skill
+arranges the safe place to keep the work.** A client who has never had a GitHub
+account is the most likely client this skill has; discovering that at merge time
+fills the pen and never closes delivery. So the arrangement happens at the top of
+the run, in one plain sentence and one click:
+
+> I need a safe place on the internet to keep your work. I will open a page; sign in or create a free account and click Allow.
+
+The skill then drives `gh auth login --web` itself — it reads the one-time code
+aloud, opens the page, and waits. The client never types a token, never opens a
+terminal, and never sees a credential. `gh auth status` proves the result before
+the first builder is dispatched, and the proof is recorded in the ledger.
+
+**If the client declines, that is a DEFAULT, not a stop.** Record
+`GITHUB: operator-provided remote (client declined own account)` in the ledger,
+use the operator-provided remote, and carry on. The run never blocks on this and
+never asks twice.
 
 ### GitHub repo — new or pre-existing?
 
 Before any merge runs, determine: NEW GitHub repo or pre-existing? Ask plainly: "Do
 you want me to create a GitHub repo for this project?" Tell the theorized name,
-confirm the smoke-tested token works (`gh auth status`), create or use existing.
+confirm the smoke-tested token works (`gh auth status` — already proven at minute
+one; this is the re-check, not the arrangement), create or use existing.
 
 ### Law 3 — one merge-writer per repo
 
@@ -701,7 +779,7 @@ protocol never forgives. Two writers on two DIFFERENT repos is expected and corr
 
 ### Law 20 — serialize the merges, batch the verifications
 
-Merges stay one-at-a-time (they must); the expensive verification runs once per
+Merges stay one-at-a-time (they must); the expensive verification happens once per
 batch. The mechanics:
 1. One frozen base per wave per lane — every unit cuts its branch from the same
    commit, frozen for the whole wave.
@@ -744,7 +822,7 @@ loop:
   # THREE independent drain triggers (any one fires; RULE 2 governs the first):
   #   (1) the operator's TIME trigger — 15 minutes since the last drain, whatever
   #       is ready merges as ONE batch, NO count cap (SKILL.md RULE 2);
-  #   (2) the queue has reached the derived batch size (Rule 3.21);
+  #   (2) the queue has reached the derived batch size;
   #   (3) the wave closed.
   if no trigger fired: write heartbeat; sleep; continue
   for each ready item (ONE AT A TIME, oldest first):
@@ -763,7 +841,7 @@ pass with 3. An empty pen is the only reason to wait.
 ### The B2H regression gate — the batch's whole suite is the guarantee that no previously passed requirement regresses
 
 Name the existing per-batch checks as what they already are: a regression gate. When
-a batch's full suite runs once on the integration branch, when the post-merge
+a batch's full suite executes once on the integration branch, when the post-merge
 artifact check verifies every key artifact at HEAD, and when the nothing-dropped
 reconciliation proves every pen item is landed, blocked-with-reason, or ALARM — these
 three together ARE the **B2H regression gate**: *no previously passed requirement
@@ -884,7 +962,7 @@ There is NO MERGE-LOG.md. Each batch appends ONE merge record to the live ledger
 verdict/merge-record section (document 6 — the merge-writer already owns appending
 there; use `tools/ledger.sh` for the atomic append). An earlier draft wrote these to
 a `CONTROL/MERGE-LOG.md`; that was an extra document the v4 never sanctioned and the
-Rule 3.28 ask was never run, so its content folds into the ledger, which already
+added-document ask was never run, so its content folds into the ledger, which already
 holds merge records. Record shape:
 
 ```
@@ -965,7 +1043,44 @@ be verified.
 Everything not listed above is OUT OF SCOPE — do NOT fix, review, or merge it.
 If you believe an out-of-scope item affects the target, FLAG it
 out-of-scope-suspected with a one-line reason; do NOT touch it yourself.
+
+## READ-ONLY FOR EVERY AGENT (never in scope, never flagged)
+- `CONTROL/OPERATOR-OVERRIDE.json` — the operator override.
 ```
+
+### The read-only set — `CONTROL/OPERATOR-OVERRIDE.json`
+
+One file sits outside the fence in both directions: **`CONTROL/OPERATOR-OVERRIDE.json`,
+the operator override.** Every agent may READ it. **No agent may edit, move, rename or
+delete it, and no audit finding, QC verdict, review or fix pass may propose changing or
+removing it** — not as a HALT, not as a HARM, not as a SCOPE finding, not as a CARRY item,
+and not as a tidy-up on the way past. It is never listed in the in-scope set, and it is
+never raised as out-of-scope-suspected either: it is not a suspicion to be resolved, it is
+a decision already taken by the person who owns the run.
+
+The file is a flat JSON object whose one honoured key today is `first_pause`, an integer,
+alongside the free-text `set_by` and `reason`:
+
+```json
+{ "first_pause": 20, "set_by": "operator", "reason": "canary proof D" }
+```
+
+`tools/anchor.sh` and `tools/dispatch-check.sh` read it **before**
+`CONTROL/project_state.json` and let its `first_pause` win over `agents.first_pause`,
+recording `override=first_pause:<n>(source=<…>)` on the RECONCILE line and on the dispatch
+PASS and PAUSED lines, so the override is never silent. `SPEC_PROTOCOL_FIRST_PAUSE` does
+the same job for a headless driver that cannot write into a project folder that does not
+exist yet; the file wins when both are present, and the emitted line names whichever source
+decided. A malformed override is exit 2 in both scripts — a tooling failure, never an
+ignored file and never a pass.
+
+**Why it is fenced this way.** On 2026-09-07 the run was given a pause line of 20 inside
+`CONTROL/project_state.json`, classified the injected number as a defect, reverted it to
+the computed 200, and then moved the key path three times underneath it. An override the
+run is free to repair is not an override. `tools/audit-gate.sh` therefore refuses a
+findings file whose findings name this path — exit 10, `verdict=OUT-OF-SCOPE`, logged and
+not re-dispatched — and `tools/state-check.sh` refuses to judge the file at all rather than
+mistake it for a mis-spelled budget block.
 
 ---
 
@@ -988,8 +1103,13 @@ autonomously and recorded.
    opened and read. This stop must be explicit: an unproven backup is no backup, and
    writing to the store is the moment it matters.
 7. **A missing credential or access the agent does not hold.** It cannot be derived.
-   Asking is the only path, and guessing here is worse than waiting.
-8. **Twenty failed fix loops on the same finding** (Rule 3.22 — 20 cycles per
+   Asking is the only path, and guessing here is worse than waiting. **GitHub is
+   excluded from this stop: it is arranged at minute one through `gh auth login
+   --web` driven by the skill, and a refusal is recorded as a DEFAULT — the
+   operator-provided remote — so it is never a Named Stop at merge time** (Stage 5,
+   "GitHub is arranged at MINUTE ONE"). The stop covers access the skill has no way
+   to arrange, not access it simply had not got round to arranging.
+8. **Twenty failed fix loops on the same finding** (20 cycles per
    finding, operator ruling 2026-08-14). Not because the agent gave up — because
    twenty independent attempts failing is information the human needs. The stop
    escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and

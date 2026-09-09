@@ -1,5 +1,124 @@
 # Changelog
 
+## [1.19.0] — 2026-09-07
+
+### spec-protocol 1.19.0 — the Gauntlet Loop update
+
+A review of the skill against the Gauntlet Loop PDF found three root causes: it
+sized its swarm from a declared number instead of the machine, it had no finish
+line a judge could apply, and its loops could be switched off. Twenty-six work
+items were built in five waves, each judged by a model that did not build it, and
+landed through one merge writer. The skill's own VERSION moves 1.17.7 → 1.19.0;
+the repository's release sequence continues from `v1.18.0`.
+
+### Width is measured, never declared
+
+`clientCap` is now `max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))`, taken from
+the machine at Capacity-Ledger time and marked `[MEASURED <instrument> <ISO>]`.
+The operator's `systemConcurrentMax` declaration, the "REPORTING ONLY"
+environment read and the run that "refuses to plan" on an undetermined number are
+all gone, and so is the 20-agents-per-wave Anthropic cap: width on Anthropic paths
+is workflows × clientCap with the burn governor as the only limiter. Hand-made
+batching is gone with them — every slice of a workflow goes to ONE `pipeline()`
+call and the harness queues the rest as a rolling window. On the operator's
+12-core, 24 GB machine that is 10, and an unmeasurable box falls back to 4 and
+says so rather than guessing.
+
+### One swarm shape
+
+`gauntlet.md` §13 now carries five workflow types and no others — WF01 Blueprint
+Lock, the Unit Gauntlet (build, blind visual judge, technical judge and fix loop
+fused into one `pipeline()` per stream), the Integrated Visual Gauntlet, WF05
+Release Council and WF06 Selective Repair. The pairs-of-five doctrine and the
+third and fourth shapes are deleted. Four forbidden shapes are listed with the fix
+for each, and the dispatch gate refuses all four.
+
+### A finish line, one verdict, and scores that only trend
+
+Gate 3 is decided by the frozen relationship — wins-or-ties passes on OURS or TIE,
+meet-all-requirements passes when every requirement checked passes — and the judge
+never raises the relationship mid-run. The binary verdict decides; the 0–10 score
+across the ten categories is recorded for trend only and never decides, so the old
+8.5 numeric gate is retired. Every verdict writes a `SCORE` ledger line, the
+plateau rule ends a unit honestly when three rounds gain less than 0.3, a new judge
+instance re-judges each round, and `CLIENT-ACCEPTED` joins the QC RECORD outcomes.
+
+### Loops always on, drift that recovers itself, a cap that pauses
+
+The "runs once while you watch" branch is deleted: the shape test has one input
+and the survival loops are always derived. Terminal drift is now the last rung of
+a ladder the run climbs for itself — re-dispatch from checkpoint, a two-hour grace
+when the last state change was a capacity event, fall back to other seats, and only
+then the flag; a fresh session clears that flag after it writes the named blocker.
+The agent cap pauses instead of stopping: `initial = WF01 + units × 3 + 4`, warn at
+`max(150, 3 × initial)`, first pause at `max(200, 4 × initial)` with the best stable
+build deployed and one plain question, each "keep going" buying another block, and
+an absolute ceiling of 2,000 per project counted per project rather than per session.
+
+### The enforcement kit ships as code
+
+Five instruments replace five paragraphs of intention. `tools/width.sh` measures
+cores and RAM on macOS, Linux and Windows and prints `CLIENT_CAP` with its mark.
+`tools/dispatch-check.sh` refuses an under-width dispatch with no stated dependency
+and a padded one alike, and increments `executions_total` atomically on the ones it
+passes. `tools/watch-tick.sh` is the five-minute tick — reconcile, then S2, S3, S5,
+S6 and S13 — installed as a cron line the skill writes and announces, with the
+conductor's in-session loop reading its ACTION lines. `tools/ledger.sh` gained the
+`SCORE` class and now writes `CONTROL/last-intents.txt` so the reconciler's
+repeated-intent check has an input. `tools/hooks/dispatch-gate.py` blocks the
+forbidden shapes before a Workflow launches. Each carries a selftest that proves the
+instrument on a known-positive and a known-negative first, each fails open on a
+tooling error rather than reporting a comfortable zero, and Node twins under
+`scripts/common/` keep the gate, the tick and the ledger working where bash is absent.
+
+### The client hears plainer words
+
+Every client-facing text is the reviewed wording, verbatim: the opening, the
+ultracode gate, the entry-mode question, the defaults line, the restart sentence
+(now one identical string in four files, with `<launcher>` and
+`<Terminal app | PowerShell>` interpolated), the status message, the pause-at-the-cap
+question and the morning-report opening. Mac-only keystrokes are gone from every
+client sentence. `interview.md` was rewritten from 1,500-odd lines to 435: six
+sections, one numbered list per mode, the six content-inventory questions, and a
+counter that may only ever be lowered. The audience is "a non-technical adult, often
+sixty or older, building for their own business or project."
+
+### A design pipeline every target runs
+
+`design-brief.md` and `design-direction.md` are new and run for websites, funnels,
+web apps, mobile apps and desktop software alike — the brief with its Mobbin check
+and copy bar, the direction with three rendered variants scored blind and one
+locked. `ship-checks.md` adds ten instruments each with a command, a report path
+and a threshold, and `publish.md` deploys, proves 200, asks for the domain in the
+client's own words and records the live address. The stage order is one string
+written identically in every stage file, the bar is frozen as screenshots at
+selection rather than held as a URL, and the evidence harness is the first unit of
+the first tree with `HARNESS-READY:` gating the first page dispatch.
+
+### The knowledge pack, the funnel gate, and the media split
+
+`references/knowledge-pack.json` names the thirteen onboarding folders the funnel
+path needs, and `scripts/bootstrap-companions.sh` resolves each from a local
+OpenClaw install, then a local checkout, then reports pull-required — never a
+silent fetch. The funnel gate asks for the three keys in the operator's exact
+wording and says a Mac is preferred until headless page-building is proven.
+`media-pipeline.md` was split into an image file of 670 lines, a `media-video.md`
+loaded only when the plan contains video, and a research log never loaded at
+runtime; `tools/prompt-band.sh` is now the one prompt gate for every provider.
+
+### Windows, and a SKILL.md a person can read
+
+Git Bash becomes a hard prerequisite the Windows installer places, GATE 0 checks
+for it in one plain sentence, and the four Node twins are documented as the
+PowerShell fallback. `SKILL.md` is 671 lines, down from 2,156: the laws table, the
+S-table, the storage layout and the long essays moved to `references/`, the
+standards and their five instruments live in the new `references/enforcement.md`,
+and the team path moved to `references/optional/agent-team.md` behind a 15-line
+stub. Every reference the file cites exists on disk.
+
+Closes S1–S7, G1–G7, R1–R7, C1–C11, W1–W15, M1–M7, E1–E6, B1–B4, VIS-1–VIS-4,
+PLAT-1 and PLAT-2.
+
 ## [1.18.0] — 2026-08-30
 
 ### Candice Companion removed entirely — eradication campaign

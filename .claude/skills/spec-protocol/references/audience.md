@@ -1,8 +1,8 @@
-# Audience UX Rules — Writing for a Non-Technical ~68-Year-Old
+# Audience UX Rules — Writing for a Non-Technical Adult, Often Sixty or Older
 
-The user is around sixty-eight years old, non-technical, building something for a
-class. They ran one command. They will answer plain questions, one at a time, and
-then walk away. They come back to a finished app.
+The user is a non-technical adult, often sixty or older, building for their own
+business or project. They ran one command. They will answer plain questions, one
+at a time, and then walk away. They come back to a finished app.
 
 These rules govern every user-facing prompt, question, instruction, and report this
 skill emits. SKILL.md is read by Claude (the conductor) and can be precise; but
@@ -70,7 +70,7 @@ becomes "repository (your code folder on GitHub)."
 | "work item" / "unit" | "one piece of the project" |
 | "wave" | "a group of pieces that can be built at the same time" |
 | "subagent" | "a helper that does one specific job" |
-| "terminal" | "the Terminal app on your Mac — press Command + Space, type Terminal, press Return" |
+| "terminal" | "the <Terminal app \| PowerShell> on your computer — the place it types commands" |
 | "model" | "the AI that does the thinking. Different models are good at different things, like different tradespeople" |
 
 Use everyday comparisons:
@@ -119,82 +119,45 @@ answer the user has given lives in the project's answers file
 ANSWERED, and asking it again — in the same run, or after a compaction or a
 resume — is the canary defect. Before ANY question, the conductor re-reads the
 brief and the answers file; after a compaction or a resume, it re-reads them
-again (the mechanical mechanism is `interview.md` R5.1, the four rules: the
-named answers file, stable question keys, the pre-question check, and the
-session-log ask line). When the check finds the answer, the conductor states it
+again (the mechanical mechanism is the never-re-ask law in `interview.md`'s
+opening rules, in four parts: the named answers file, stable question keys, the
+pre-question check, and the session-log ask line). When the check finds the answer, the conductor states it
 back in one line — "you already told me <their words>; if anything changed, tell
-me" — and never re-asks. The boss cron flags a question key asked twice in the
-session log as a violation (PART 4 / `tools/boss-cron`).
+me" — and never re-asks. A question key asked twice in the session log is a violation:
+the pre-question check above is what prevents it, and the session log is where it
+is proven.
 
 ---
 
-## 4. Spell it out.
+## 4. The one thing the client ever pastes.
 
-Assume the user does NOT know:
-- What a terminal is. Say "the Terminal app on your Mac."
-- That three lines means three commands. Say "copy everything inside the box and
-  paste it in. That is one command, even though it has several lines."
-- That a line longer than their screen will break. Use short lines.
-- What "Enter" means. Say "press the Return key."
-- What a path is. Say "the folder on your Mac where the work lives."
-- What GitHub is. Say "GitHub is a website where code is stored safely. Your app
-  will live there when it is done."
-
-When giving a path, use the shorter form: `~/Downloads/projects/...` not
-`/Users/yourname/Downloads/projects/...`. The shorter form is what the
-terminal accepts and what the user can type if they need to.
+There is exactly ONE line the client is ever given: the restart sentence in
+section 5 below — the same string in `terminals.md`, in
+`if-the-power-goes-out.md`, in SKILL.md's opening, and in the morning report,
+with the launcher and the platform's own word filled in at run time. Nothing
+else in this skill hands the client a command, a code block, a keystroke, a box
+to copy out of, or a window to open; the old rules for writing those
+instructions are gone because those instructions are gone. If a step needs a
+command run, the skill runs it and says so in one plain sentence. When the
+client does need that one line — after a crash, a restart, or a dropped
+connection — give the sentence whole, put nothing technical around it, and tell
+them the finished work is safe.
 
 ---
 
-## 5. "Paste" means paste.
-
-Do not assume the user knows what to do with a code block. Say:
-
-> Copy the text inside the box below and paste it into the terminal, then press
-> Return.
-
-For the launch command: "Copy everything inside the box — just what is INSIDE the
-lines — and paste it."
-
----
-
-## 6. Stated waits.
-
-When something takes time, say so and give a rough sense:
-
-> This will take a few minutes. You will see progress messages as it works. If you
-> see "..." that means it is still going — do not close the window.
-
----
-
-## 7. Every step has a reason.
-
-> "Type this and press Return. The reason is that this tells your terminal where
-> your project lives."
-
-A reason attached to a step is remembered. A bare command is just noise.
-
----
-
-## 8. Reassure on errors.
-
-> If you see [error message]: that means [plain explanation]. Here is what to do:
-> [one-sentence fix].
-
-Never leave the user staring at an error message with no idea what to do. Never show
-a raw error message without a plain-English explanation.
-
----
-
-## 9. The morning promise.
+## 5. The morning promise.
 
 **The skill runs its own sessions. The user opens nothing.** The building, the
 checking and fixing, and the putting-on-GitHub are seats this skill spawns and
 drives itself — never chores handed to the user as windows to open. That is THE
 HANDOVER RULE (`terminals.md`, binding), and S11 (SKILL.md RULE 5) makes any
 user-facing text that assigns the user a terminal window a failable violation.
-The only thing the user is ever asked to paste is the one restart command in
-`LAUNCH-COMMAND.md` (document 11), and only if their computer crashed.
+The only line the user is ever given is the restart sentence — one string, used
+here, in `terminals.md`, in `if-the-power-goes-out.md`, in SKILL.md's opening,
+and in the morning report, and written into `CONTROL/LAUNCH-COMMAND.md`
+(document 11) — and only if their computer restarted or the connection dropped:
+
+> If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
 At the end of the launch instructions:
 
@@ -212,7 +175,7 @@ then every rule on this page still governs how those instructions are written.
 
 ---
 
-## 10. The voice — warm, plain, confident.
+## 6. The voice — warm, plain, confident.
 
 Not robotic. Not chirpy. Not condescending. Warm, plain, and confident:
 
@@ -220,6 +183,61 @@ Not robotic. Not chirpy. Not condescending. Warm, plain, and confident:
 > ask you a proper set of questions — a step at a time, with a limit I give you up
 > front — and then the tools do the rest. You can walk away — it keeps going on its
 > own.
+
+---
+
+## 7. No operator aside in the client's transcript.
+
+**BINDING — the client-speech rule (the 2026-09-07 canary fix).** No part of a
+client message ever carries a file path, a document name, a workflow id, a rule
+number, a count of findings, a trend, a cost or a model name. There is no
+operator channel in the client's transcript: a heading that opens an aside "for
+the operator", followed by the run's internals, is a defect however honest its
+contents. Operator detail goes to `CONTROL/SESSION-LOG.md`, where the person
+who wants it can read it. A status message that would repeat the previous
+message's counts unchanged is not sent — the next thing the client hears is
+either a changed count or the one question, and three consecutive unchanged
+counts is a stall, raised through the tick, never narrated.
+
+**BINDING — the machine facts a client is never given (RC-11, the 2026-09-08 canary).**
+The client is never told a file path, a line number, a commit, a byte count,
+another person's email address, or anything about the machine owner's own rules —
+a write gate, a standing order, a hand-tuned setting, a memory file. A true fact
+the client can do nothing with is not spoken to them; it goes to
+`CONTROL/SESSION-LOG.md`. This binds the setup phase exactly as hard as the build:
+nothing at all is spoken before the opening script, and no setup step is put to the
+client as a decision except the step-2.5 update offer.
+
+**Why, from the canary.** Two of the sentences that reached a bakery owner were
+true, and neither was hers to hold. She was told that her contact form would
+have sent her neighbours' messages to a stranger — a fault found and fixed
+before a single page was published, so what actually reached her was alarm with
+no decision attached to it. And she was shown a checker's own line, quoted in
+capitals, saying the conductor had made things worse during the very inspection
+that caught it — a confession she could do nothing with. Both belonged in the
+session log. The client hears what CHANGED and what they must DECIDE; the
+reasoning, the counts and the self-criticism are the apparatus talking to
+itself.
+
+**BINDING — the check that runs (RC-21, the 2026-09-08 canary).** The two rules
+above are not enforced by remembering them. Every client-visible message is
+drafted to a file under `CONTROL/.speech/` and put through
+`tools/speech-check.sh <file>` before it is spoken, on the terms **SKILL.md's
+RULE 5** sets out: RULE 5 names this tool as the sixth instrument and owns the
+procedure — which verdicts may be spoken, which must be recorded, and which are
+rewritten — and this file does not restate it. Read it there; a rule written
+twice drifts in one of the two places.
+
+`tools/speech-check.sh` lints a drafted client message and exits 3 naming each
+banned class it finds — path, workflow-id, law-number, md-filename, trend,
+money, model-id, operator-heading, tmp-path, backup-announcement — and records
+`SPEECH-CHECK: clean` or that list through `tools/ledger.sh`. That ledger line
+is the proof the lint ran: `tools/watch-tick.sh` raises `DRIFT-ALARM
+speech-unchecked` when a drafted message has none. Its `--selftest` proves it
+discriminates rather than merely refuses: the sanctioned status sentence of
+SKILL.md section 12 passes, the word "operator" used in ordinary prose passes,
+and so does the verbatim opening script — Candace's own words. A checker that
+catches every fixture is broken, not strict.
 
 ---
 
@@ -247,9 +265,11 @@ Write it in plain language:
 ```
 # Morning Report — <project name> — <date>
 
+Your <target word> is live at <URL> and a safe copy is saved on GitHub. Here's
+what got built, what I checked, and the one or two things only you can decide.
+
 ## What was built
 
-Your app is built and live on GitHub. Here is what it does:
 [one-paragraph plain-English summary]
 
 ## What is working
@@ -260,6 +280,19 @@ Your app is built and live on GitHub. Here is what it does:
 
 [plain-English list of anything that could not be finished, with the reason in
 plain language and what you can do about it]
+
+## How much of the machine was used
+
+[plain-English fan-out figures, read off the run's own records — never felt.
+The Capacity Ledger (`CAPACITY-LEDGER.md`) records the measured `clientCap`
+(the width this machine supports; `references/capacity.md` §3). The run's
+`S-CHECK` lines on `CONTROL/LEDGER.md` (one per five-minute tick,
+`tools/watch-tick.sh`) each carry `open=<n>`: peak concurrency is the largest
+`open=` in the run, mean concurrency is the arithmetic mean of `open=` across
+the run's `S-CHECK` lines. The report states both against the cap, e.g. "at
+its busiest the run used 6 of its 10 seats, 3 on average — 17% of the
+machine's width." A run that used a small fraction of its cap says so; today
+nothing counts it, so the report must.]
 
 ## Questions for you
 

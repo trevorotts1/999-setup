@@ -72,7 +72,7 @@ effort inside the session instead — never hand over an unverified flag.
 
 | Launcher | Write the command as | Notes |
 |---|---|---|
-| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; the 20-per-wave operator cap governs width. |
+| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; no policy wave cap — width is workflows × clientCap, and the burn governor is the only limiter on a subscription account. |
 | Claude-Nine | `claude-nine --model sonnet …` | Aliases route per 9Router; the Capacity Ledger's provider math governs — and the resolved model per alias is recorded there. Aliases are per-machine wiring, so RESOLVE THEM ON THE MACHINE YOU ARE ON and record what you read; never carry a resolution over from another box. (Dated example, authority expired — on one authoring machine `fable` resolved to the 372K Codex model. An example of the shape of the answer, never the answer.) |
 | Claude-Codex | `claude-codex …` (never pass `--model` — the launcher pins `cx/gpt-5.6-sol(high)` and `--autocompact 350k` itself) | 372K context ceiling; long conductor sessions compact at 350K by design. Use it for the CONDUCTOR seat only when the operator says so; subagent routing still follows the router. |
 
@@ -100,7 +100,7 @@ automatically and need no substitution.
 
 | Seat | What it does | Model | Starts |
 |---|---|---|---|
-| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 50 workflows, clientCap = min(systemConcurrentMax, cores−2) sub-agents each. Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
+| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 50 workflows, clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5))) sub-agents each (measured, never declared). Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
 | Seat 2 | **Merge** — drains the pen in batches, ripples, pushes to GitHub. One merge train per repository. | Merger model | The merge-train loop |
 | Seat 3 | **SWARM WATCH** — the secondary loop (Loop 9) that enforces SWARM DOCTRINE. Checks utilization every 5 minutes, flags violations, auto-corrects. Also runs the survival loops (stall detection, budget watch). | Haiku (cheapest tier) | SWARM WATCH (Loop 9) + the survival loops |
 
@@ -116,18 +116,21 @@ model; use that section's commands exactly as written there.
 
 If the project has one repository, there is one merge train = one merge terminal.
 Two repositories = two merge terminals (one per repo, each pointed at its own loop
-file). A zero-loops project (C0 answer DECIDED by the run — C0 is DELETED as a
-question R2; continuous-until-done is the promise) gets NO terminals — the
-launch command (document 11) is the whole mechanism.
+file). No project gets zero seats: every run is continuous-until-done (C0 is
+DELETED as a question — `interview.md`'s decided-and-reported rule, the run decides), so every run has loops and every run
+has these seats. The launch command (document 11) stays what it always was — the
+paste-able restart path, never a substitute for the loops.
 
 ---
 
 ## The audience — spell it out
 
-The user is around sixty-eight, non-technical. They may not know what a terminal is
-— say "open the Terminal app," not "open a terminal." They may not know that three
-lines means three commands. They may not know that a line longer than their terminal
-width breaks. See `audience.md` for the full rules. Every instruction must:
+The user is a non-technical adult, often sixty or older. They may not know what a
+terminal is — say "open the <Terminal app | PowerShell>," not "open a terminal,"
+filling the interpolation from the platform line the Capacity Ledger already
+records (`references/platform.md` §1.2). They may not know that three lines means
+three commands. They may not know that a line longer than their terminal width
+breaks. See `audience.md` for the full rules. Every instruction must:
 
 - Be one paste per session, with every setting already applied.
 - Have short lines a narrow 80-column terminal cannot break.
@@ -202,8 +205,8 @@ instead of the human opening three independent windows. That capability is
 real and present on both harnesses:
 
 - **The Agent/Task tool (subagent dispatch).** Present in every Claude Code and
-  Claude-Nine session — the same mechanism SKILL.md step 41 already uses to fan
-  out builders. The current session can dispatch the build, QC+fix, and merge
+  Claude-Nine session — the same mechanism SKILL.md step 21 already uses to fan
+  out builders (dispatching per the Parallelism Plan written at step 12.7). The current session can dispatch the build, QC+fix, and merge
   roles as its own subagents, in parallel.
 - **The Workflow tool (dependency-aware multi-agent orchestration).** Fires only
   when the user has opted into multi-agent orchestration (`ultracode`, GATE 0).
@@ -214,14 +217,11 @@ This is a genuinely different mechanism from three terminals, not a drop-in
 replacement for them: subagents dispatched by one orchestrating session share
 that session's own context and turn budget, while three independent terminals
 are three fully separate processes that can each run unattended, in parallel,
-for as long as their own session lasts. State the result plainly, naming which
-mechanism is actually available this session — never the retired file check:
+for as long as their own session lasts. Record which mechanism is actually
+available this session in the Capacity Ledger — never the retired file check —
+and say only this to the client, verbatim:
 
-> I am running the building, the checking and fixing, and the merging for you
-> myself. You do not need to open anything or start anything. I am using
-> [Agent Teams | the Workflow tool, because ultracode is on | the Agent/Task
-> tool] — here is what that looks like, and here is where your report will be
-> when it is finished.
+> I'm running the building, checking and fixing myself. You open nothing.
 
 Only if the client asks, unprompted, for separate windows of their own does the
 last-resort rung at the bottom of this file come into play — and then only when
@@ -252,11 +252,15 @@ template handed over with a placeholder still in it is not pasted-and-runnable.
 
 > This is Terminal 1. It builds your app.
 >
-> Open the Terminal app on your Mac. (Press Command + Space, type "Terminal", press
-> Return.)
+> Open the <Terminal app | PowerShell> on your computer. (<On a Mac: hold Command
+> and press the space bar, type "Terminal" | On Windows: press the Windows key,
+> type "PowerShell">, then press Return.)
 >
 > Copy everything inside the fence below — nothing else — and paste it into
 > Terminal 1. Then press Return.
+
+Only the branch for THIS machine's platform is ever spoken — `references/platform.md`
+§1 has already decided which, and the client never hears the other one.
 
 ```
 cd ~/Downloads/projects/<project-slug>
@@ -283,7 +287,8 @@ pins its own model. Use the spelling the Capacity Ledger names for this seat.)
 > This is Terminal 2. It checks the work and fixes anything that is not good enough
 > yet.
 >
-> Open another Terminal window. (Press Command + N, or go to Shell > New Window.)
+> Open a second <Terminal app | PowerShell> window. (<On a Mac: hold Command and
+> press N | On Windows: press Ctrl and N>.)
 >
 > Copy everything inside the fence below and paste it into Terminal 2. Then press
 > Return.
@@ -325,7 +330,8 @@ obey:
 
 > This is Terminal 3. It merges the finished, checked work to GitHub.
 >
-> Open another Terminal window.
+> Open a third <Terminal app | PowerShell> window, the same way you opened the
+> second one.
 >
 > Copy everything inside the fence below and paste it into Terminal 3. Then press
 > Return.
@@ -367,20 +373,41 @@ to merge.)
 
 ## If the user asks "what if something goes wrong"
 
-> If a terminal crashes, or your Mac restarts, or a session runs out: the work that
-> was finished is safe. Each piece was saved the moment it finished. To restart,
-> just paste the same command into the same terminal again. It will pick up where it
-> left off — it will not redo finished work.
+The work that was finished is safe — each piece was saved the moment it
+finished — and there is ONE sentence for coming back, the same string used in
+SKILL.md's opening, in `audience.md`, and in `if-the-power-goes-out.md`:
+
+> If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
 This is the never-quit promise (Law 8) in plain language.
 
 **The full crash-recovery guide for the client is in `references/if-the-power-goes-out.md`.**
 Write a copy of that file into the project folder as `IF-THE-POWER-GOES-OUT.md`
-(beside `LAUNCH-COMMAND.md`) when you hand the folder over, so the client can find
-it without opening the skill's internals. Add a one-line pointer at the top of
-`LAUNCH-COMMAND.md` itself:
-> **If your computer crashed, just paste this same command again. It will pick up
-> where it left off. See `IF-THE-POWER-GOES-OUT.md` if you are nervous.**
+(beside `CONTROL/LAUNCH-COMMAND.md`) when you hand the folder over, so the client
+can find it without opening the skill's internals — and fill its two
+interpolations as you write it: `<launcher>` from the detected launcher
+(`claude`, `claude-nine`, or `claude-codex`) and `<Terminal app | PowerShell>`
+from the detected platform (`platform.md`). A client copy handed over with a
+placeholder still in it is not finished. Put the SAME sentence — no second
+wording — at the top of `CONTROL/LAUNCH-COMMAND.md`, above the fence, and point
+at the guide in the line under it: "The longer version is in
+`IF-THE-POWER-GOES-OUT.md` if you are nervous."
+
+**`RESUME-INVOCATION:` — the same restart, written for an operator or a headless
+driver.** Document 11 carries one machine-readable line under the client's sentence,
+never spoken to anyone:
+
+```
+RESUME-INVOCATION: <launcher> --resume   (first message: ultracode continue)
+```
+
+Same two interpolations, filled the same way. The keyword is in the first message
+because `--effort ultracode` on the command line is not a signal GATE 0 can read
+(SKILL.md section 2), and a driver resuming headlessly has no other way to answer the
+gate. The client's sentence above is unchanged and stays unchanged: their plain
+`<launcher> --resume` passes on GATE 0's third signal — the `CONTROL/.gate0-proven`
+marker `tools/gate0.sh --record` wrote in this project folder when the run's first
+turn passed the gate — so the client is never asked to carry a technical word.
 
 ---
 
