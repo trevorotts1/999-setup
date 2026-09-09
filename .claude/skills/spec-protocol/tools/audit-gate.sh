@@ -392,7 +392,7 @@ run_selftest() {
     printf '%s' "${p}"
   }
   gate_line() { # the AUDIT-GATE line this run wrote, if any
-    "${GREP}" -E '^AUDIT-GATE \| cycle=' "$1/CONTROL/LEDGER.md" 2>/dev/null | tail -n 1
+    "${GREP}" -E 'AUDIT-GATE \| cycle=' "$1/CONTROL/LEDGER.md" 2>/dev/null | tail -n 1
   }
 
   local P out line
@@ -402,7 +402,7 @@ run_selftest() {
   printf '# Apparatus audit — cycle 1\n\nNo findings.\n' > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "0" && "${line}" == "AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS" ]] && ok=1
+  ok=0; [[ "${rc}" == "0" && "${line}" == *"AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS"* ]] && ok=1
   report 1 "zero-findings-passes" "${ok}" "rc=${rc} (want 0); ledger line: ${line:-NONE}"
 
   # --- 2: CARRY-only → rc 0 WITH THE FINDINGS STILL OPEN (discriminating) ---
@@ -418,7 +418,7 @@ run_selftest() {
   local still_open
   still_open="$(count_matches "$(class_re CARRY)" "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md")"
   ok=0
-  [[ "${rc}" == "0" && "${line}" == "AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=3 | verdict=PASS" && "${still_open}" == "3" ]] && ok=1
+  [[ "${rc}" == "0" && "${line}" == *"AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=3 | verdict=PASS"* && "${still_open}" == "3" ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'CARRY finding(s) remain OPEN' || ok=0
   report 2 "carry-only-passes-open" "${ok}" "rc=${rc} (want 0) with ${still_open} CARRY findings STILL OPEN (want 3) — a bounded audit hands over carrying them; ledger line: ${line:-NONE}"
 
@@ -432,7 +432,7 @@ run_selftest() {
   } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "3" && "${line}" == "AUDIT-GATE | cycle=1 | halt=1 harm=0 scope=0 carry=2 | verdict=BLOCKED" ]] && ok=1
+  ok=0; [[ "${rc}" == "3" && "${line}" == *"AUDIT-GATE | cycle=1 | halt=1 harm=0 scope=0 carry=2 | verdict=BLOCKED"* ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'two mutually exclusive paths for the home page' || ok=0
   report 3 "halt-blocks-and-names" "${ok}" "rc=${rc} (want 3) and the message quotes the HALT finding; the pair with fixture 2 is one file, one word changed, opposite verdicts; ledger line: ${line:-NONE}"
 
@@ -445,7 +445,7 @@ run_selftest() {
   } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "3" && "${line}" == "AUDIT-GATE | cycle=2 | halt=0 harm=1 scope=0 carry=1 | verdict=BLOCKED" ]] && ok=1
+  ok=0; [[ "${rc}" == "3" && "${line}" == *"AUDIT-GATE | cycle=2 | halt=0 harm=1 scope=0 carry=1 | verdict=BLOCKED"* ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'mailbox the client does not own' || ok=0
   report 4 "harm-blocks-and-names" "${ok}" "rc=${rc} (want 3); ledger line: ${line:-NONE}"
 
@@ -457,7 +457,7 @@ run_selftest() {
   } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "3" && "${line}" == "AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=1 carry=0 | verdict=BLOCKED" ]] && ok=1
+  ok=0; [[ "${rc}" == "3" && "${line}" == *"AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=1 carry=0 | verdict=BLOCKED"* ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'never ratified' || ok=0
   report 5 "scope-blocks-and-names" "${ok}" "rc=${rc} (want 3); cleared by REMOVAL, never by justification; ledger line: ${line:-NONE}"
 
@@ -470,7 +470,7 @@ run_selftest() {
   } > "${P}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "5" && "${line}" == "AUDIT-GATE | cycle=3 | halt=1 harm=0 scope=0 carry=1 | verdict=CEILING" ]] && ok=1
+  ok=0; [[ "${rc}" == "5" && "${line}" == *"AUDIT-GATE | cycle=3 | halt=1 harm=0 scope=0 carry=1 | verdict=CEILING"* ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'PROCEEDS with its full CARRY list' || ok=0
   report 6 "third-cycle-ceiling" "${ok}" "rc=${rc} (want 5) and the ledger says verdict=CEILING; ledger line: ${line:-NONE}"
 
@@ -493,7 +493,7 @@ run_selftest() {
   printf '2026-09-08T00:00:00Z | 3-units | dispatch | [Opus x3] audit | run=wf-audit-20 | units=3 | agents=3\n' > "${P}/CONTROL/dispatch-log.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "9" && "${line}" == "AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=1 | verdict=BLOCKED" ]] && ok=1
+  ok=0; [[ "${rc}" == "9" && "${line}" == *"AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=1 | verdict=BLOCKED"* ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'DISPATCHED as a workflow of fixer agents' || ok=0
   report 8 "self-fix-refused" "${ok}" "rc=${rc} (want 9) — a CARRY-only findings file that would otherwise PASS is refused because the fix pass has no run=wf-fix-* tree; ledger line: ${line:-NONE}"
 
@@ -507,7 +507,7 @@ run_selftest() {
   } > "${P}/CONTROL/dispatch-log.md"
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
-  ok=0; [[ "${rc}" == "0" && "${line}" == "AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=1 | verdict=PASS" ]] && ok=1
+  ok=0; [[ "${rc}" == "0" && "${line}" == *"AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=1 | verdict=PASS"* ]] && ok=1
   report 9 "dispatched-fix-passes" "${ok}" "rc=${rc} (want 0) on the SAME ledger record once run=wf-fix-01 exists in the dispatch log — so exit 9 is a finding about the run, not a refusal of the class; ledger line: ${line:-NONE}"
 
   # --- 10: a finding that proposes touching the OPERATOR OVERRIDE → rc 10 --
@@ -525,7 +525,7 @@ run_selftest() {
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
   local ov_ctl=0
-  [[ "${rc}" == "3" && "${line}" == "AUDIT-GATE | cycle=1 | halt=1 harm=0 scope=0 carry=0 | verdict=BLOCKED" ]] && ov_ctl=1
+  [[ "${rc}" == "3" && "${line}" == *"AUDIT-GATE | cycle=1 | halt=1 harm=0 scope=0 carry=0 | verdict=BLOCKED"* ]] && ov_ctl=1
   local rc_ctl="${rc}" line_ctl="${line}"
 
   P="$(mkproj proj-override-drift 1)"

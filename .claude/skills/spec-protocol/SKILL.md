@@ -556,8 +556,7 @@ the loop register (a section of the execution plan) and a written stop condition
 **RULE 5 — every dispatch is QC'd every five minutes, by an instrument and never by
 memory.** The standards S1–S19, the six instruments that check them (`tools/width.sh`,
 `tools/dispatch-check.sh`, `tools/watch-tick.sh`, `tools/anchor.sh`, `tools/ledger.sh`,
-`tools/speech-check.sh` — every client-visible message is drafted to a file under
-`CONTROL/.speech/`, linted with `tools/speech-check.sh`, and spoken only on exit 0 or a recorded exit 2; an exit 3 is REWRITTEN, never overridden, and the tick raises `DRIFT-ALARM speech-unchecked` on a draft carrying no `SPEECH-CHECK:` line),
+`tools/speech-check.sh` — `references/audience.md` owns the procedure),
 which standards belong to which, the two halves of the tick, the status and completion
 contracts, and the atomic-ledger contract are all in **`references/enforcement.md`**.
 Read the roster there. The short form the conductor must know by heart:
@@ -623,16 +622,12 @@ Explained once, in these words:
 The bar reads two files and nothing else. Write `CONTROL/setup_progress.json` as `{"step":n,"of":9}` on entering each of the nine setup steps (2, 3, 4, 5, 6, 6.5, 7, 9, 13), and write `tasks.counts` `{pending, in_progress, completed}` into `CONTROL/project_state.json` at every checkpoint. `references/progress-visibility.md` section 6 owns both shapes; a bar segment with no file behind it is a bar that cannot clear itself. `tools/bar-check.sh <project>` proves both on disk and the five-minute tick calls it.
 
 Any status message in chat opens with exactly this line, first, always, carrying this
-run's real counts read from the task graph and `CONTROL/CHECKLIST.md`:
+run's real counts (`references/enforcement.md` §4 owns the shape):
 
 > Still working: 14 of 40 pieces done, 6 being checked right now, nothing waiting on you. Next: the contact page.
 
-A second line follows only when there is genuinely something for them; nothing else is
-spoken as status — no lanes, no ledger lines, no token counters
-(`references/progress-visibility.md`).
 
-No client-visible message carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name. There is no operator channel in a client-visible message — not a parenthetical, not an italic block, not a line labelled 'Operator note', not a footnote. Machine detail goes to `CONTROL/SESSION-LOG.md`; `tools/speech-check.sh`'s operator-heading class is the instrument that refuses the aside.
-A status message whose piece count is identical to the previous status message is either not sent or leads with what DID change — the count is the headline, so a headline that has not moved is not a status. Three consecutive unchanged counts is a stall raised through the tick's speech-unchecked alarm, never narrated.
+No client-visible message carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name — no operator channel in any form (`references/audience.md` §7 owns the rule; `tools/speech-check.sh`'s operator-heading class is the instrument that refuses the aside). Machine detail goes to `CONTROL/SESSION-LOG.md`. The unchanged-count silence and stall rule lives there too.
 
 **The morning report (step 22, document 14)** is the honest close, and it opens with the
 live thing, not with the work:
