@@ -148,7 +148,7 @@ of exactly this shape, and it is the FIRST line, always:
 The counts and the "Next:" are this run's real ones, read from the task graph and
 `CONTROL/CHECKLIST.md` — never rounded, never remembered. A SECOND line follows
 only when there is genuinely something for the client, and says what it is.
-Nothing else is spoken to the client as status: no lanes, no ledger lines, no
+Nothing else is spoken to the client as status: no lanes, no ledger lines, no token counters
 
 ---
 

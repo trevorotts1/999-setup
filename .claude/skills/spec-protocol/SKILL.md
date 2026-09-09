@@ -627,8 +627,7 @@ run's real counts (`references/enforcement.md` §4 owns the shape):
 > Still working: 14 of 40 pieces done, 6 being checked right now, nothing waiting on you. Next: the contact page.
 
 
-No client-visible message carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name — no operator channel in any form (`references/audience.md` §7 owns the rule; `tools/speech-check.sh`'s operator-heading class is the instrument that refuses the aside). Machine detail goes to `CONTROL/SESSION-LOG.md`.
-A status message whose piece count is identical to the previous status message is either not sent or leads with what DID change — the count is the headline, so a headline that has not moved is not a status. Three consecutive unchanged counts is a stall raised through the tick's speech-unchecked alarm, never narrated.
+No client-visible message carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name — no operator channel in any form (`references/audience.md` §7 owns the rule; `tools/speech-check.sh`'s operator-heading class is the instrument that refuses the aside). Machine detail goes to `CONTROL/SESSION-LOG.md`. The unchanged-count silence and stall rule lives there too.
 
 **The morning report (step 22, document 14)** is the honest close, and it opens with the
 live thing, not with the work:
