@@ -73,6 +73,21 @@
 #            never one slow write. The BUILD-phase read is the dispatch log's
 #            own census (a build-stage open row), never a state word any model
 #            may rewrite at will.
+#   published every `PUBLISHED:` line on CONTROL/LEDGER.md has a
+#            `SHIP-GUARD: rc=0` line at an EARLIER timestamp (WI-69 wires in
+#            WI-60's guard: references/publish.md runs tools/ship-guard.sh
+#            AGAIN at the live origin and rc 0 is a precondition of the
+#            publish). A publish with no earlier guard line is a page that
+#            went live unguarded
+#                                              -> DRIFT-ALARM published-unguarded
+#                                              -> ACTION|ship-guard
+#            Also not an S-number. ORDER is the whole check: a guard line
+#            written AFTER the publish is a receipt, not a guard, so the
+#            comparison is on timestamps, never on mere presence — the LAST
+#            publish line is the live address (references/publish.md's
+#            measured upsert caveat) and a guard counts only when strictly
+#            earlier than it. A missing or unreadable ledger is UNDETERMINED,
+#            never a pass: absence is not proof nothing published.
 #
 #   speech-lint  the tick RUNS tools/speech-check.sh on the newest unchecked
 #            draft under CONTROL/.speech/ (one file per tick, default timeout
@@ -128,6 +143,13 @@
 #     - no drafted client message under CONTROL/.speech/ -> `speech=` is
 #       UNDETERMINED. An absent draft folder is not proof that nothing was said
 #       to the client, so it is never reported as a speech pass;
+#     - a missing or unreadable CONTROL/LEDGER.md -> `published=` is
+#       UNDETERMINED. An absent ledger is not proof nothing published, so it
+#       is never reported as a publish pass — and the publish direction is
+#       fail-closed: the DRIFT-ALARM still fires, named
+#       `published-unguarded(undetermined)` with the reason, because a publish
+#       is irreversible and the guard is the last thing between a run and a
+#       client's live page;
 #     - no tools/bar-check.sh, or a bar-check exit it does not recognise -> the
 #       bar is UNDETERMINED and says so in `bar=`, never a silent pass. A
 #       project with no plan yet whose CONTROL/setup_progress.json IS being
@@ -1325,6 +1347,113 @@ run_tick() {
       add_undet "stalled-turn=undetermined(no open BUILD row in CONTROL/dispatch-log.md — outside the build phase the wall-clock ceiling does not apply)"
     fi
   }
+  # THE PUBLISHED-UNGUARDED CHECK (WI-69) — the guard's wall, on the tick side.
+  # references/publish.md requires `SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>`
+  # ABOVE the PUBLISHED: line: the guard runs at the live origin BEFORE the
+  # address is handed to anyone. The tick judges ORDER, never mere presence —
+  # a guard line written after the publish is a receipt, not a guard. The live
+  # address is the LAST PUBLISHED: line (publish.md's measured upsert caveat:
+  # the colon-delimited shape appends a second line instead of replacing the
+  # first), and a SHIP-GUARD: rc=0 line counts only when its timestamp is
+  # strictly EARLIER than that publish's.
+  #
+  #   LAST PUBLISHED: with no SHIP-GUARD: rc=0 earlier -> DRIFT-ALARM
+  #                                                    published-unguarded
+  #   guard earlier than the last publish              -> silent
+  #   no PUBLISHED: line at all                        -> silent (nothing
+  #                                                    published yet — absence
+  #                                                    of a publish is a pass)
+  #   missing/unreadable CONTROL/LEDGER.md              -> DRIFT-ALARM
+  #                                                    published-unguarded-
+  #                                                    (undetermined), naming
+  #                                                    why. ABSENCE IS NOT A
+  #                                                    PASS: a firewall that
+  #                                                    fails open when its own
+  #                                                    ledger is gone is not a
+  #                                                    firewall.
+  #
+  # The rc=0 class is closed on the right (`rc=01` is not a pass) and every
+  # grep's rc is checked: rc 0 is a match, rc 1 is a proven zero match, rc>=2
+  # is an ERROR, never a zero — and here an error refuses exactly like a zero
+  # match does. Timestamps are compared as EPOCHS via iso_to_epoch (the same
+  # converter S6 uses), never as strings: a string compare silently passes a
+  # reordered ledger whenever the shape drifts. A side both this block and the
+  # selftest rely on: ledger.sh prefixes every line it writes with an ISO8601Z
+  # clock, so both the guard and the publish lines carry comparable stamps.
+  local PUB_NOTE="" PUB_ALARM=0 PUB_WHY=""
+  if [[ ! -f "$LED" ]]; then
+    PUB_NOTE="undetermined(no CONTROL/LEDGER.md — an absent ledger is not proof nothing published)"
+    add_undet "published=undetermined(no CONTROL/LEDGER.md — an absent ledger is not proof nothing published)"
+    PUB_ALARM=1
+    PUB_WHY="no CONTROL/LEDGER.md — an absent ledger is not proof nothing published, so this fires rather than passing"
+  elif [[ ! -r "$LED" ]]; then
+    PUB_NOTE="undetermined(CONTROL/LEDGER.md unreadable)"
+    add_undet "published=undetermined(CONTROL/LEDGER.md unreadable — an unreadable ledger is not proof nothing published)"
+    PUB_ALARM=1
+    PUB_WHY="CONTROL/LEDGER.md unreadable — an unreadable ledger is not proof nothing published, so this fires rather than passing"
+  else
+    local pub_ts="" pub_line sg_ts="" grc
+    set +e
+    pub_line="$("$GREP" -h 'PUBLISHED:' "$LED" 2>/dev/null | tail -n 1)"; grc=$?
+    set -e
+    if (( grc >= 2 )); then
+      PUB_NOTE="undetermined(ledger read error)"
+      add_undet "published=undetermined(reading CONTROL/LEDGER.md failed — a ledger that cannot be read is not proof nothing published)"
+      PUB_ALARM=1
+      PUB_WHY="reading CONTROL/LEDGER.md failed — a ledger that cannot be read is not proof nothing published, so this fires rather than passing"
+    elif [[ -z "$pub_line" ]]; then
+      PUB_NOTE="ok(no PUBLISHED: line — nothing published yet)"
+    else
+      pub_ts="$(printf '%s' "$pub_line" | "$GREP" -oE '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' | head -n 1)"
+      local pub_ep="" sg_line sg_ep
+      if [[ -n "$pub_ts" ]] && pub_ep="$(iso_to_epoch "$pub_ts")"; then
+        : > "$WORKDIR/shipguard.txt"
+        set +e
+        "$GREP" -hE 'SHIP-GUARD: rc=0( |$)' "$LED" > "$WORKDIR/shipguard.txt" 2>/dev/null; grc=$?
+        set -e
+        if (( grc >= 2 )); then
+          PUB_NOTE="undetermined(guard-line read error)"
+          add_undet "published=undetermined(reading the SHIP-GUARD lines failed — an unreadable ledger is not proof the publish was guarded)"
+          PUB_ALARM=1
+          PUB_WHY="reading the SHIP-GUARD: lines in CONTROL/LEDGER.md failed — an unreadable ledger is not proof the publish was guarded, so this fires rather than passing"
+        else
+          local sg_ok=0 sgt sg_last="" sg_last_ep=""
+          while IFS= read -r sg_line; do
+            [[ -n "$sg_line" ]] || continue
+            sgt="$(printf '%s' "$sg_line" | "$GREP" -oE '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' | head -n 1)"
+            [[ -n "$sgt" ]] || continue
+            sg_ep="$(iso_to_epoch "$sgt")" || continue
+            if [[ -z "$sg_last" ]] || (( sg_ep > sg_last_ep )); then sg_last="$sgt"; sg_last_ep="$sg_ep"; fi
+            if (( sg_ep < pub_ep )); then sg_ok=1; sg_ts="$sgt"; break; fi
+          done < "$WORKDIR/shipguard.txt"
+          if (( sg_ok == 1 )); then
+            PUB_NOTE="ok(guard ${sg_ts} earlier than publish ${pub_ts})"
+          elif [[ -n "$sg_last" ]]; then
+            PUB_NOTE="unguarded(publish ${pub_ts}: newest guard ${sg_last} is after the publish)"
+            PUB_ALARM=1
+            PUB_WHY="PUBLISHED: at ${pub_ts} but newest SHIP-GUARD: rc=0 at ${sg_last} is AFTER it — a later guard is a receipt, not a guard"
+          else
+            PUB_NOTE="unguarded(publish ${pub_ts}, no SHIP-GUARD: rc=0 line at all)"
+            PUB_ALARM=1
+            PUB_WHY="PUBLISHED: at ${pub_ts} with no SHIP-GUARD: rc=0 line at all — an unguarded publish (references/publish.md)"
+          fi
+        fi
+      else
+        PUB_NOTE="undetermined(last PUBLISHED: line carries no parseable timestamp)"
+        add_undet "published=undetermined(the last PUBLISHED: line carries no parseable ISO8601Z timestamp — an undateable publish cannot be proven guarded)"
+        PUB_ALARM=1
+        PUB_WHY="the last PUBLISHED: line carries no parseable ISO8601Z timestamp — an undateable publish cannot be proven guarded, so this fires rather than passing"
+      fi
+    fi
+  fi
+  if (( PUB_ALARM == 1 )); then
+    local PUB_ALARM_NAME="published-unguarded"
+    [[ "$PUB_NOTE" == undetermined* ]] && PUB_ALARM_NAME="published-unguarded(undetermined)"
+    ledger_write "CONTROL/LEDGER.md" \
+      "$(iso_now) | DRIFT-ALARM | ${PUB_ALARM_NAME} | $(sanitize "${PUB_WHY}") | $(sanitize "run tools/ship-guard.sh <project> <the deployed origin>; on rc 0 record SHIP-GUARD: rc=0 BEFORE any PUBLISHED: line — order is the guard (references/publish.md)")"
+    emit "ship-guard" "CONTROL/LEDGER.md" \
+      "DRIFT-ALARM ${PUB_ALARM_NAME}: ${PUB_WHY}"
+  fi
 
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
@@ -1339,7 +1468,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -1391,19 +1520,32 @@ run_tick() {
 #      task-graph-snapshot.json: first tick silent (one tick of grace), second
 #      tick DRIFT-ALARM tasks-snapshot-absent at exit 3; the control with the
 #      snapshot present stays silent.
-#  19  GROUP-ABORT, THE POSITIVE — three agents of one dispatch row sharing
+#  29  GROUP-ABORT, THE POSITIVE — three agents of one dispatch row sharing
 #      the end timestamp 2026-09-08T10:43:46Z with no completion record ->
 #      exit 3, DRIFT-ALARM group-abort naming the row and agents=3, plus
 #      ACTION|redispatch-from-checkpoint. The canary's photographed signature.
-#  20  THE DISCRIMINATING CONTROL — three agents of one row ending at
+#  30  THE DISCRIMINATING CONTROL — three agents of one row ending at
 #      10:43:44Z, 10:43:46Z and 10:43:51Z each WITH a completion record ->
-#      NO group-abort. 19 and 20 differ by the shared stamp and the RESULT
+#      NO group-abort. 29 and 30 differ by the shared stamp and the RESULT
 #      lines: an implementation that alarms on any three agents of one row
-#      passes 19 and fails this control.
-#  21  THE SECOND CONTROL — one lone agent with no completion record -> NO
+#      passes 29 and fails this control.
+#  31  THE SECOND CONTROL — one lone agent with no completion record -> NO
 #      group-abort. The rule is about the SHARED timestamp, not merely about
 #      a missing completion record: the lone agent is the existing stall
 #      path's business (S6 fires on it), never this alarm's.
+#  26  PUBLISHED-UNGUARDED — a ledger with a PUBLISHED: line and no
+#      SHIP-GUARD: rc=0 line -> exit 3, DRIFT-ALARM published-unguarded, and
+#      the S-CHECK line carries published=unguarded(…).
+#  27  THE CONTROL FOR 26 — SHIP-GUARD: rc=0 at an EARLIER timestamp than the
+#      PUBLISHED: line -> exit 0 and no alarm. 26 and 27 differ by one ordered
+#      ledger line, which is the presence half of the discrimination.
+#  28  THE DISCRIMINATING CASE — PUBLISHED: at 10:29:28Z with SHIP-GUARD:
+#      rc=0 at 10:35:00Z, the guard AFTER the publish -> exit 3, DRIFT-ALARM
+#      published-unguarded. An implementation that greps for the presence of
+#      both lines passes 26 and 27 and fails HERE: order is the guard, and a
+#      guard written after the publish is a receipt, not a guard. Cases 1-25
+#      carry no PUBLISHED: line at all, so none of them can fire this check —
+#      that silence is the negative control for the whole section.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1820,7 +1962,7 @@ selftest() {
      && "$GREP" -q 'S-CHECK | violations=' "$T/c23/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 23 "speech-broken-lint-survives" "$ok" "rc=${RC23} (want 3); the S2 verdict still fired and the S-CHECK line was still written while the lint slept past its 2s timeout — output quoted: [$(printf '%s' "$OUT23" | "$GREP" -m2 '^ACTION\|S-CHECK' | tr '\n' ';')]"
 
-  # --- case 19: GROUP-ABORT, THE POSITIVE. One dispatch wave (run-090)
+  # --- case 29: GROUP-ABORT, THE POSITIVE. One dispatch wave (run-090)
   #     booking three agents; all three heartbeat lines frozen at the
   #     identical end stamp 2026-09-08T10:43:46Z — the canary's photographed
   #     signature — with no completion record anywhere. The alarm MUST fire,
@@ -1830,103 +1972,103 @@ selftest() {
   #     not checklist boxes, so they add no runnable count either. S6 WILL
   #     also fire on the stale wave units — a dead agent is both stale and
   #     group-aborted, and the case does not assert S6's absence.
-  mk_home "$T/c19"
-  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c19/CONTROL/dispatch-log.md"
+  mk_home "$T/c29"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c29/CONTROL/dispatch-log.md"
   {
     printf '2026-09-08T10:43:46Z | WF04 builder-a | U-11 | build\n'
     printf '2026-09-08T10:43:46Z | WF04 builder-b | U-12 | build\n'
     printf '2026-09-08T10:43:46Z | WF04 builder-c | U-13 | build\n'
-  } > "$T/c19/CONTROL/HEARTBEAT.md"
-  runw "$T/c19"
+  } > "$T/c29/CONTROL/HEARTBEAT.md"
+  runw "$T/c29"
   ok=0
   if (( RC == 3 )) \
      && printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM group-abort: 3 agents of dispatch row run-090 ended at the identical timestamp 2026-09-08T10:43:46Z' \
      && printf '%s' "$OUT" | "$GREP" -q '^ACTION|redispatch-from-checkpoint|U-11,U-12,U-13|' \
-     && "$GREP" -q 'DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z' "$T/c19/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 19 "group-abort-positive" "$ok" "rc=${RC} (want 3); DRIFT-ALARM group-abort naming row=run-090 agents=3 at=2026-09-08T10:43:46Z written; ACTION|redispatch-from-checkpoint for U-11,U-12,U-13 emitted"
+     && "$GREP" -q 'DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z' "$T/c29/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 29 "group-abort-positive" "$ok" "rc=${RC} (want 3); DRIFT-ALARM group-abort naming row=run-090 agents=3 at=2026-09-08T10:43:46Z written; ACTION|redispatch-from-checkpoint for U-11,U-12,U-13 emitted"
 
-  # --- case 20: THE DISCRIMINATING CONTROL. The same wave, but the three
+  # --- case 30: THE DISCRIMINATING CONTROL. The same wave, but the three
   #     agents ended seconds apart (10:43:44Z, 10:43:46Z, 10:43:51Z) and each
   #     carries a completion record. No shared death stamp, no missing
   #     completion — the alarm MUST stay silent. An implementation that alarms
   #     on any three agents of one row passes 19 and fails here.
-  mk_home "$T/c20"
-  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c20/CONTROL/dispatch-log.md"
+  mk_home "$T/c30"
+  printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c30/CONTROL/dispatch-log.md"
   {
     printf '2026-09-08T10:43:44Z | WF04 builder-a | U-11 | build\n'
     printf '2026-09-08T10:43:46Z | WF04 builder-b | U-12 | build\n'
     printf '2026-09-08T10:43:51Z | WF04 builder-c | U-13 | build\n'
-  } > "$T/c20/CONTROL/HEARTBEAT.md"
+  } > "$T/c30/CONTROL/HEARTBEAT.md"
   {
     printf '2026-09-08T10:44:00Z | RESULT | unit=U-11 | PASS | evidence=repos/a.ts\n'
     printf '2026-09-08T10:44:01Z | RESULT | unit=U-12 | PASS | evidence=repos/b.ts\n'
     printf '2026-09-08T10:44:02Z | RESULT | unit=U-13 | PASS | evidence=repos/c.ts\n'
-  } > "$T/c20/CONTROL/LEDGER.md"
-  runw "$T/c20"
+  } > "$T/c30/CONTROL/LEDGER.md"
+  runw "$T/c30"
   ok=0
   if ! printf '%s' "$OUT" | "$GREP" -q 'group-abort' \
-     && ! "$GREP" -q 'group-abort' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 20 "group-abort-staggered-control" "$ok" "rc=${RC}; staggered end stamps with a RESULT per unit raised no group-abort on stdout or on the ledger — the check discriminates instead of firing on every wave"
+     && ! "$GREP" -q 'group-abort' "$T/c30/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 30 "group-abort-staggered-control" "$ok" "rc=${RC}; staggered end stamps with a RESULT per unit raised no group-abort on stdout or on the ledger — the check discriminates instead of firing on every wave"
 
-  # --- case 21: THE SECOND CONTROL. One lone agent with no completion
+  # --- case 31: THE SECOND CONTROL. One lone agent with no completion
   #     record. The rule is about the SHARED timestamp, not merely about a
   #     missing completion: the lone agent is the existing stall path's
   #     business (S6 fires on it below), never this alarm's.
-  mk_home "$T/c21"
-  printf '2026-09-08T10:40:00Z | U-11 build | build | [opus x10] WF04 builder | run=run-091 | units=1 | agents=1 | cap=10 | floor=1 | stages=4 | dep=none | executions_total=1\n' > "$T/c21/CONTROL/dispatch-log.md"
-  printf '2026-09-08T10:43:46Z | WF04 builder-a | U-11 | build\n' > "$T/c21/CONTROL/HEARTBEAT.md"
-  runw "$T/c21"
+  mk_home "$T/c31"
+  printf '2026-09-08T10:40:00Z | U-11 build | build | [opus x10] WF04 builder | run=run-091 | units=1 | agents=1 | cap=10 | floor=1 | stages=4 | dep=none | executions_total=1\n' > "$T/c31/CONTROL/dispatch-log.md"
+  printf '2026-09-08T10:43:46Z | WF04 builder-a | U-11 | build\n' > "$T/c31/CONTROL/HEARTBEAT.md"
+  runw "$T/c31"
   ok=0
   if ! printf '%s' "$OUT" | "$GREP" -q 'group-abort' \
-     && ! "$GREP" -q 'group-abort' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -q 'group-abort' "$T/c31/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reap-and-redispatch|U-11|'; then ok=1; fi
-  report 21 "group-abort-lone-agent-control" "$ok" "rc=${RC}; one agent with no RESULT raised no group-abort anywhere, and S6 still fired ACTION|reap-and-redispatch for U-11 — the stall path kept its jurisdiction"
+  report 31 "group-abort-lone-agent-control" "$ok" "rc=${RC}; one agent with no RESULT raised no group-abort anywhere, and S6 still fired ACTION|reap-and-redispatch for U-11 — the stall path kept its jurisdiction"
 
-  # --- case 22: STALLED-TURN. A BUILD row stands open and every file under
+  # --- case 32: STALLED-TURN. A BUILD row stands open and every file under
   #     the project folder is 20 minutes old, past the 15-minute ceiling. The
   #     mtimes are SET with touch -t and READ BACK with stat -f %m, so the
   #     ages are measured, not assumed. The row is labelled and freshly
   #     stamped with a fresh heartbeat, so S3, S6 and S13 stay silent: the
   #     case isolates the stalled-turn check.
-  mk_home "$T/c22"
-  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-022\n' "$(stamp 1)" > "$T/c22/CONTROL/dispatch-log.md"
-  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c22/CONTROL/HEARTBEAT.md"
-  printf 'build output\n' > "$T/c22/work.txt"
+  mk_home "$T/c32"
+  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-032\n' "$(stamp 1)" > "$T/c32/CONTROL/dispatch-log.md"
+  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c32/CONTROL/HEARTBEAT.md"
+  printf 'build output\n' > "$T/c32/work.txt"
   OUT22_OLD="$(date -u -v-20M +%Y%m%d%H%M 2>/dev/null || date -u -d '20 minutes ago' +%Y%m%d%H%M)"
-  TZ=UTC touch -t "${OUT22_OLD}" "$T/c22/work.txt" "$T/c22/CONTROL/dispatch-log.md" "$T/c22/CONTROL/HEARTBEAT.md" "$T/c22/CONTROL/CHECKLIST.md" "$T/c22/CONTROL/TODO.md" "$T/c22/CONTROL/setup_progress.json" "$T/c22/SPEC/GOAL.md"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c32/work.txt" "$T/c32/CONTROL/dispatch-log.md" "$T/c32/CONTROL/HEARTBEAT.md" "$T/c32/CONTROL/CHECKLIST.md" "$T/c32/CONTROL/TODO.md" "$T/c32/CONTROL/setup_progress.json" "$T/c32/SPEC/GOAL.md"
   local c22_mtime c22_age
-  c22_mtime="$(stat -f %m "$T/c22/work.txt" 2>/dev/null || stat -c %Y "$T/c22/work.txt")"
+  c22_mtime="$(stat -f %m "$T/c32/work.txt" 2>/dev/null || stat -c %Y "$T/c32/work.txt")"
   c22_age=$(( ($(date -u +%s) - c22_mtime) / 60 ))
-  runw "$T/c22"
+  runw "$T/c32"
   ok=0
   if (( RC == 3 )) \
      && (( c22_age >= 15 )) \
      && printf '%s' "$OUT" | "$GREP" -q '^ACTION|stalled-turn|' \
      && printf '%s' "$OUT" | "$GREP" -q 'stalled-turn=stalled(elapsed=' \
-     && "$GREP" -q 'DRIFT-ALARM | stalled-turn | elapsed=' "$T/c22/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 22 "stalled-turn-fires" "$ok" "rc=${RC} (want 3); work.txt mtime read back as ${c22_age}m old (want >= 15, set by touch -t ${OUT22_OLD}); ACTION|stalled-turn emitted; DRIFT-ALARM | stalled-turn | elapsed= on the ledger"
+     && "$GREP" -q 'DRIFT-ALARM | stalled-turn | elapsed=' "$T/c32/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 32 "stalled-turn-fires" "$ok" "rc=${RC} (want 3); work.txt mtime read back as ${c22_age}m old (want >= 15, set by touch -t ${OUT22_OLD}); ACTION|stalled-turn emitted; DRIFT-ALARM | stalled-turn | elapsed= on the ledger"
 
-  # --- case 23: THE CONTROL FOR 19. Byte for byte the same fixture, backdated
+  # --- case 33: THE CONTROL FOR 19. Byte for byte the same fixture, backdated
   #     5 minutes. The ceiling must stay silent: a check that fires on a fresh
   #     write measures nothing. This pair is the discrimination for the whole
   #     stalled-turn section.
-  mk_home "$T/c23"
-  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-023\n' "$(stamp 1)" > "$T/c23/CONTROL/dispatch-log.md"
-  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c23/CONTROL/HEARTBEAT.md"
-  printf 'build output\n' > "$T/c23/work.txt"
+  mk_home "$T/c33"
+  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-033\n' "$(stamp 1)" > "$T/c33/CONTROL/dispatch-log.md"
+  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c33/CONTROL/HEARTBEAT.md"
+  printf 'build output\n' > "$T/c33/work.txt"
   OUT23_OLD="$(date -u -v-5M +%Y%m%d%H%M 2>/dev/null || date -u -d '5 minutes ago' +%Y%m%d%H%M)"
-  TZ=UTC touch -t "${OUT23_OLD}" "$T/c23/work.txt" "$T/c23/CONTROL/dispatch-log.md" "$T/c23/CONTROL/HEARTBEAT.md" "$T/c23/CONTROL/CHECKLIST.md" "$T/c23/CONTROL/TODO.md" "$T/c23/CONTROL/setup_progress.json" "$T/c23/SPEC/GOAL.md"
+  TZ=UTC touch -t "${OUT23_OLD}" "$T/c33/work.txt" "$T/c33/CONTROL/dispatch-log.md" "$T/c33/CONTROL/HEARTBEAT.md" "$T/c33/CONTROL/CHECKLIST.md" "$T/c33/CONTROL/TODO.md" "$T/c33/CONTROL/setup_progress.json" "$T/c33/SPEC/GOAL.md"
   local c23_mtime c23_age
-  c23_mtime="$(stat -f %m "$T/c23/work.txt" 2>/dev/null || stat -c %Y "$T/c23/work.txt")"
+  c23_mtime="$(stat -f %m "$T/c33/work.txt" 2>/dev/null || stat -c %Y "$T/c33/work.txt")"
   c23_age=$(( ($(date -u +%s) - c23_mtime) / 60 ))
-  runw "$T/c23"
+  runw "$T/c33"
   ok=0
   if (( RC == 0 )) \
      && (( c23_age < 15 )) \
      && ! printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM stalled-turn' \
-     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c23/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c33/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q 'stalled-turn=ok('; then ok=1; fi
-  report 23 "stalled-turn-control" "$ok" "rc=${RC} (want 0); work.txt mtime read back as ${c23_age}m old (want < 15, set by touch -t ${OUT23_OLD}); no stalled-turn anywhere; the S-CHECK line carries stalled-turn=ok(…); no DRIFT-ALARM on the ledger"
+  report 33 "stalled-turn-control" "$ok" "rc=${RC} (want 0); work.txt mtime read back as ${c23_age}m old (want < 15, set by touch -t ${OUT23_OLD}); no stalled-turn anywhere; the S-CHECK line carries stalled-turn=ok(…); no DRIFT-ALARM on the ledger"
   # --- case 24: THE SNAPSHOT WITNESS (RC-29b). A project past step 6.5 (the
   #     CAPACITY-LEDGER.md file) with no task-graph-snapshot.json: the first
   #     tick counts the miss in silence (one tick of grace), the second tick
@@ -1962,6 +2104,60 @@ selftest() {
      && ! "$GREP" -q 'tasks-snapshot-absent' "$T/c24/CONTROL/LEDGER.md" 2>/dev/null \
      && [[ ! -f "$T/c24/CONTROL/.snapshot-missing" ]]; then ok=1; fi
   report 25 "snapshot-present-control" "$ok" "rc=${RC}; no tasks-snapshot-absent on stdout or the ledger, and no .snapshot-missing flag file — the witness discriminates"
+
+  # --- case 26: PUBLISHED-UNGUARDED. The row is open, labelled and freshly
+  #     stamped, so nothing else can fire: the case isolates the publish check.
+  mk_home "$T/c26"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-026\n' "$(stamp 1)" > "$T/c26/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c26/CONTROL/HEARTBEAT.md"
+  printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-026.vercel.app domain=none status=200\n' > "$T/c26/CONTROL/LEDGER.md"
+  runw "$T/c26"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|ship-guard|CONTROL/LEDGER.md|DRIFT-ALARM published-unguarded:' \
+     && printf '%s' "$OUT" | "$GREP" -q 'published=unguarded(publish 2026-09-08T10:29:28Z, no SHIP-GUARD: rc=0 line at all)' \
+     && "$GREP" -q 'DRIFT-ALARM | published-unguarded |' "$T/c26/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 26 "published-unguarded" "$ok" "rc=${RC} (want 3); DRIFT-ALARM | published-unguarded written for the PUBLISHED: line with no guard line; ACTION|ship-guard emitted; the S-CHECK line carries published=unguarded(…)"
+
+  # --- case 27: THE CONTROL FOR 26. Byte for byte the same fixture plus the
+  #     guard line at an EARLIER timestamp. The alarm must go silent: a check
+  #     that fires whether or not the guard ran is not a check.
+  mk_home "$T/c27"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-027\n' "$(stamp 1)" > "$T/c27/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c27/CONTROL/HEARTBEAT.md"
+  {
+    printf '2026-09-08T10:20:00Z | SHIP-GUARD: rc=0 checks=14 at=2026-09-08T10:20:00Z\n'
+    printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-027.vercel.app domain=none status=200\n'
+  } > "$T/c27/CONTROL/LEDGER.md"
+  runw "$T/c27"
+  ok=0
+  if (( RC == 0 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'published-unguarded' \
+     && printf '%s' "$OUT" | "$GREP" -q 'published=ok(guard 2026-09-08T10:20:00Z earlier than publish 2026-09-08T10:29:28Z)' \
+     && ! "$GREP" -q 'DRIFT-ALARM' "$T/c27/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 27 "published-guarded-control" "$ok" "rc=${RC} (want 0); the earlier SHIP-GUARD: rc=0 line silenced the alarm; no DRIFT-ALARM on the ledger; the S-CHECK line carries published=ok(guard … earlier than publish …)"
+
+  # --- case 28: THE DISCRIMINATING CASE. Both lines are present, but the
+  #     guard is stamped 10:35:00Z — AFTER the 10:29:28Z publish. A guard
+  #     written after the publish is a receipt, not a guard, so the alarm
+  #     MUST fire. A presence-only implementation passes 19 and 20 and fails
+  #     HERE, which is the leg that would have caught the canary shape (a
+  #     page published while its guard sat unused in the same tree).
+  mk_home "$T/c28"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-028\n' "$(stamp 1)" > "$T/c28/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c28/CONTROL/HEARTBEAT.md"
+  {
+    printf '2026-09-08T10:29:28Z | PUBLISHED: https://example-028.vercel.app domain=none status=200\n'
+    printf '2026-09-08T10:35:00Z | SHIP-GUARD: rc=0 checks=14 at=2026-09-08T10:35:00Z\n'
+  } > "$T/c28/CONTROL/LEDGER.md"
+  runw "$T/c28"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|ship-guard|CONTROL/LEDGER.md|DRIFT-ALARM published-unguarded:' \
+     && printf '%s' "$OUT" | "$GREP" -q 'newest SHIP-GUARD: rc=0 at 2026-09-08T10:35:00Z is AFTER it' \
+     && "$GREP" -q 'DRIFT-ALARM | published-unguarded |' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -q 'a later guard is a receipt, not a guard' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 28 "published-guard-after-publish" "$ok" "rc=${RC} (want 3); both lines present but the guard at 10:35:00Z is AFTER the publish at 10:29:28Z — DRIFT-ALARM | published-unguarded still written, because order is the guard"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

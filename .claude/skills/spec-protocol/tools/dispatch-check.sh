@@ -131,6 +131,28 @@
 #              and re-decide a verdict this gate does not own. Like 4 and 6 it
 #              is a fact about the RUN, not a broken tool, so it is kept out of
 #              exit 2.
+#  13  NO-SHIP-GUARD — a PUBLISH dispatch was attempted while
+#              CONTROL/LEDGER.md carries no `SHIP-GUARD: rc=0` line. SKILL.md's
+#              publish sequence runs tools/ship-guard.sh AGAIN at the live
+#              origin, and rc 0 is a precondition of the `PUBLISHED:` line
+#              (references/publish.md): `SHIP-GUARD: rc=0 checks=<n>
+#              at=<ISO8601Z>` through tools/ledger.sh, with `<n>` read off
+#              ship-checks/public-surface.json. The 2026-09-07 canary proved the
+#              guard can be skipped in silence — it shipped, it had a selftest,
+#              and the ledger carried PUBLISHED: with no such line above it.
+#              This is what makes it unskippable: the run cannot reach a publish
+#              dispatch without it. The match is on the LINE SHAPE with rc=0,
+#              never on the word "guard" — a ledger that merely discusses the
+#              guard in prose has not run it. Exit 13, not 12: WI-60 already
+#              spent 12 on the audit gate, and reusing it would make two
+#              different refusals indistinguishable to a caller reading only the
+#              exit code. ABSENCE IS NOT A PASS: a missing or unreadable ledger
+#              refuses the same way, because a publish is irreversible and the
+#              guard is the last thing between a run and the live page. ORDER
+#              (guard earlier than publish) is judged by the tick, not here —
+#              see tools/watch-tick.sh's published-unguarded S-check. Like 4, 6
+#              and 12 it is a fact about the RUN, not a broken tool, so it is
+#              kept out of exit 2.
 #
 # THE OPERATOR OVERRIDE. CONTROL/OPERATOR-OVERRIDE.json is read BEFORE
 # CONTROL/project_state.json and its `first_pause` REPLACES agents.first_pause
@@ -142,12 +164,12 @@
 # never a pass. See "THE OPERATOR OVERRIDE" below the width helpers for the
 # contract in full.
 #
-# The four the row enumerates are 0/3/5/2. Exits 4, 6, 10, 11 and 12 are the
-# fail-closed precondition refusals — a missing Parallelism Plan, a missing
-# over-engineering check, a conductor off the Opus lane, a missing seat probe
-# and a missing step-20 audit gate; all five are kept separate from 2 on
-# purpose, because calling a
-# real refusal a tooling failure would let it read as a broken tool.
+# The four the row enumerates are 0/3/5/2. Exits 4, 6, 10, 11, 12 and 13
+# are the fail-closed precondition refusals — a missing Parallelism Plan, a
+# missing over-engineering check, a conductor off the Opus lane, a missing
+# seat probe, a missing step-20 audit gate and a missing ship-guard pass; all
+# six are kept separate from 2 on purpose, because calling a real refusal a
+# tooling failure would let it read as a broken tool.
 # Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
 # reason: the instrument worked perfectly, the RUN is out of budget. When the
 # four budget keys cannot be READ, though, the gate does not fall through to a
@@ -214,8 +236,17 @@
 # line; the same build dispatch after a resolved=sonnet line exits 10 and spends
 # nothing; after a resolved=opus line it passes again; and a JUDGE dispatch under
 # that same resolved=sonnet line passes, which is what proves the gate reads the
-# BUILD phase and is not a class-wide refusal. A gate whose known-positive comes
-# back negative reports BROKEN INSTRUMENT, never "clean".
+# BUILD phase and is not a class-wide refusal. The ship-guard refusal (exit 13)
+# is proven on one more fixture, eight legs: a publish dispatch with no
+# SHIP-GUARD: rc=0 line exits 13 naming the missing line and spending nothing;
+# a ledger that only says the word "guard" in prose still exits 13 — the leg a
+# word-search implementation fails; the canonical line added passes; an rc=01
+# line still refuses; a BUILD dispatch on the bare ledger passes; phase=publish
+# names the phase without the word in the label; no ledger at all still exits
+# 13 with no PASS; and the 12/13 pair on one bare ledger answers 12 naming the
+# AUDIT-GATE line for build and 13 naming the SHIP-GUARD line for publish. A
+# gate whose known-positive comes back negative reports BROKEN INSTRUMENT,
+# never "clean".
 
 set -uo pipefail
 
@@ -469,6 +500,55 @@ has_audit_gate_line() {
   [[ -f "${f}" ]] || return 1
   [[ -r "${f}" ]] || return 1
   "${GREP}" -qE "${AUDIT_GATE_RE}" "${f}" 2>/dev/null && return 0
+  return 1
+}
+
+# --- The ship-guard line (fail-closed; WI-69 wires in WI-60's guard) -----------
+# references/publish.md runs tools/ship-guard.sh AGAIN at the live origin and
+# requires rc 0 BEFORE the PUBLISHED: line, recorded through tools/ledger.sh as
+#
+#   SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>
+#
+# The SHAPE is the proof the guard RAN and PASSED: the word "guard" in prose is
+# not, and neither is a non-zero rc. The rc=0 class is closed on the right —
+# `rc=01` or `rc=0x` is not a pass — because a looser match would let a
+# suffixed value read as the clean verdict. ORDER (guard earlier than publish)
+# is judged by tools/watch-tick.sh's published-unguarded S-check, which can see
+# both timestamps; this gate judges EXISTENCE, which is all a pre-dispatch
+# refusal needs: no rc-0 line, no publish dispatch.
+SHIP_GUARD_RE='SHIP-GUARD: rc=0( |$)'
+has_ship_guard_line() {
+  local f="$1" rc
+  [[ -f "${f}" ]] || return 1
+  [[ -r "${f}" ]] || return 1
+  # grep rc discipline, said out loud: 0 is a match, 1 is a proven zero match,
+  # and rc>=2 is an ERROR (missing/unreadable mid-read), never a zero. An error
+  # refuses exactly like a zero match does — ABSENCE IS NOT A PASS — because a
+  # publish is irreversible and the guard is the last thing between a run and a
+  # client's live page. No set toggling here: this script runs without -e.
+  "${GREP}" -qE "${SHIP_GUARD_RE}" "${f}" 2>/dev/null; rc=$?
+  if (( rc >= 2 )); then return 1; fi
+  return "${rc}"
+}
+
+# Deliberately broad, like is_build_label: any label carrying "publish" in any
+# case is a publish dispatch. Fail-closed is the safe direction — the cost of
+# gating one extra dispatch is running ship-guard.sh; the cost of missing one
+# is an unguarded publish, which cannot be taken back.
+is_publish_label() {
+  printf '%s' "$1" | "${GREP}" -qi 'publish'
+}
+
+# is_publish_dispatch <label> <unit> <phase> — the publish phase however the
+# caller named it: an explicit phase=publish, a publish word in the label, or
+# the first phase word derived from the label and unit. A dispatch that reaches
+# a client-visible address through any of those namings is refused alike.
+is_publish_dispatch() {
+  [[ "${3:-}" == "publish" ]] && return 0
+  is_publish_label "$1" && return 0
+  local dp
+  dp="$(derive_phase "$1" "$2" 2>/dev/null)" || dp=""
+  [[ "${dp}" == "publish" ]] && return 0
   return 1
 }
 
@@ -1032,6 +1112,30 @@ run_check() {
       printf 'DISPATCH-CHECK NOTE | read: %s | run tools/audit-gate.sh %s first (SKILL.md step 20). It writes "AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<v>" through tools/ledger.sh on every run that reaches a verdict. A ledger that mentions an audit in prose has not run the gate, and a CARRY-only audit PASSES with its findings still open (references/gauntlet.md 7.1) — so this refusal is about the missing RUN, never about the findings.\n' \
         "${audit_doc}" "${project}" >&2
       exit 12
+    fi
+  fi
+
+  # --- Fail-closed precondition: no ship-guard pass, no publish dispatch (WI-69)
+  # Same shape as the audit block above and for the same reason. The guard is a
+  # shipped, selftested instrument (tools/ship-guard.sh) that the 2026-09-07
+  # canary never ran, because nothing refused a publish over its absence: the
+  # ledger carried PUBLISHED: with no SHIP-GUARD: rc=0 line above it. This
+  # refuses it. It sits AFTER the audit gate so the step-20 omission is still
+  # reported as exit 12 rather than masked by the publish one, and BEFORE the
+  # state creation, the budget wall and the width arithmetic, because a
+  # dispatch that should never fire is refused before a counter moves, a row is
+  # written, or its shape is argued about. Order inside the tick is
+  # tools/watch-tick.sh's published-unguarded S-check; existence here. A
+  # missing or unreadable CONTROL/LEDGER.md refuses rather than failing open:
+  # grep rc>=2 is an error, never a zero match, and a publish is irreversible,
+  # so the conservative direction is to refuse and say why.
+  if is_publish_dispatch "${label}" "${unit}" "${phase}"; then
+    local ship_doc="${project}/CONTROL/LEDGER.md"
+    if ! has_ship_guard_line "${ship_doc}"; then
+      printf 'DISPATCH-CHECK NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line\n' >&2
+      printf 'DISPATCH-CHECK NOTE | read: %s | run tools/ship-guard.sh %s <the deployed origin> first (references/publish.md). On rc 0 — and only then — record "SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>" through tools/ledger.sh, with <n> read off ship-checks/public-surface.json. A missing or unreadable ledger refuses the same way: absence is not a pass, because a publish is irreversible and the guard is the last thing between a run and the live page.\n' \
+        "${ship_doc}" "${project}" >&2
+      exit 13
     fi
   fi
 
@@ -1802,9 +1906,135 @@ run_selftest() {
   "${GREP}" -qE '\| CLAIM \| unit=1-units \| agent=\[Opus x1\] build unit-9 \| model=Opus \| plan=land the parser' "${P18}/CONTROL/LEDGER.md" 2>/dev/null || ok=0
   report 46 "claim-feeds-last-intents" "${ok}" "rc=${rc} (want 0); CONTROL/last-intents.txt ${int_before} -> ${int_after} lines (want 0 -> 1) with last line [${int_last}] (want [land the parser]); the ledger carries the shaped CLAIM line for unit=1-units"
 
+  # --- WI-69: the ship-guard refusal (exit 13), on one fixture, four legs -----
+  # The publish dispatch carries its own fixture because it must reach the new
+  # gate clean: the seat line and the audit line are present throughout, so the
+  # step-2, step-13 and step-20 refusals cannot fire and every answer below is
+  # attributable to the SHIP-GUARD: rc=0 line and to nothing else. The four
+  # legs are, in order: a publish dispatch with no guard line; a ledger that
+  # says the word "guard" in prose and nothing more; the canonical SHIP-GUARD
+  # line added and nothing else changed; and a BUILD dispatch against the bare
+  # ledger. A gate that answered all four alike would be a broken test, not a
+  # finding.
+  local P28="${T}/proj-shipguard"
+  mkdir -p "${P28}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' > "${P28}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P28}/CONTROL/LEDGER.md"
+
+  # (a) no SHIP-GUARD line → rc 13, the missing line named, no budget spent.
+  out="$(bash "${SELF}" "${P28}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
+  local p28_total
+  p28_total="$(read_state_total "${P28}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "13" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "${P28}/CONTROL/LEDGER.md" || ok=0
+  [[ "${p28_total}" == "0" ]] || ok=0
+  report 47 "no-ship-guard-refused" "${ok}" "rc=${rc} (want 13) for a publish dispatch whose CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line; the message names the missing line and the exact path read, and no counter moved (executions_total still ${p28_total}, want 0)"
+
+  # (b) THE DISCRIMINATING CONTROL FOR A WORD-SEARCH: the ledger now says the
+  #     word "guard" in prose, and the gate must STILL refuse. An
+  #     implementation that greps for the word rather than the line shape
+  #     passes leg (a) and fails here.
+  printf '2026-09-08T00:07:00Z | the guard sweep looked fine, will rerun the ship guard tomorrow\n' >> "${P28}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P28}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
+  local guard_words
+  guard_words="$("${GREP}" -ci guard "${P28}/CONTROL/LEDGER.md")"
+  ok=0; [[ "${rc}" == "13" ]] && ok=1
+  [[ "${guard_words}" -ge 1 ]] || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD' || ok=0
+  report 48 "prose-guard-still-refused" "${ok}" "rc=${rc} (want 13) on a ledger whose own control count says ${guard_words} line(s) contain the word 'guard' (want >= 1) — the gate matches the LINE SHAPE with rc=0, so a word-search implementation passes leg (a) and fails this one"
+
+  # (c) the canonical line added, nothing else changed → rc 0. The rc=0 class
+  #     is closed on the right on purpose: an rc=01 ledger (leg d below) must
+  #     not read as the clean verdict.
+  printf '2026-09-08T00:09:00Z | SHIP-GUARD: rc=0 checks=14 at=2026-09-08T00:09:00Z\n' >> "${P28}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P28}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
+  p28_total="$(read_state_total "${P28}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p28_total}" == "1" ]] && ok=1
+  report 49 "ship-guard-line-allows" "${ok}" "rc=${rc} (want 0) on the SAME fixture with 'SHIP-GUARD: rc=0 checks=14 at=…' added and nothing else changed; executions_total 0 -> ${p28_total} (want 1). This half is what proves exit 13 is a fact about the missing line and not a class-wide refusal of publish dispatches"
+
+  # (d) rc=01 is NOT rc=0: the same fixture with only a suffixed rc line still
+  #     refuses. Without this leg a looser match reads rc=01 as the pass.
+  local P28B="${T}/proj-shipguard-rc"
+  mkdir -p "${P28B}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28B}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28B}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28B}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' > "${P28B}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P28B}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:09:00Z | SHIP-GUARD: rc=01 checks=14 at=2026-09-08T00:09:00Z\n' >> "${P28B}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P28B}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "13" ]] && ok=1
+  report 50 "ship-guard-rc01-still-refused" "${ok}" "rc=${rc} (want 13) for a publish dispatch whose only guard line reads rc=01 — the rc=0 class is closed on the right, so a suffixed value is not the clean verdict"
+
+  # (e) a BUILD dispatch against the bare ledger passes: the ship-guard gate is
+  #     scoped to the publish phase, exactly as exit 12 is scoped to build.
+  #     The P15 ledger carries OVER-ENGINEERING-CHECK plus AUDIT-GATE, so a
+  #     build dispatch on a ledger with no SHIP-GUARD line is the exact shape.
+  out="$(bash "${SELF}" "${P15}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  if printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD'; then ok=0; fi
+  report 51 "non-publish-not-ship-gated" "${ok}" "rc=${rc} (want 0) for a BUILD dispatch on a ledger with no SHIP-GUARD line — the guard gate is a PUBLISH-phase refusal, so it must not fire here: ${out}"
+
+  # (f) phase=publish names the phase even when the label does not: the
+  #     refusal fires on the NAMING, not on one spelling of it.
+  local P28C="${T}/proj-shipguard-phase"
+  mkdir -p "${P28C}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28C}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28C}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28C}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' > "${P28C}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P28C}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P28C}" 1 1 '[Opus x1] release wave-1' phase=publish 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "13" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD' || ok=0
+  report 52 "phase-arg-names-publish" "${ok}" "rc=${rc} (want 13) for phase=publish with a label carrying no publish word — the gate reads the phase however the caller named it"
+
+  # (g) NO LEDGER AT ALL refuses rather than passing: absence is not a pass,
+  #     because a publish is irreversible. The fixture has no CONTROL/LEDGER.md
+  #     and the refusal must still be exit 13 naming the ledger, never an
+  #     all-clear and never a silent pass.
+  local P28D="${T}/proj-shipguard-noledger"
+  mkdir -p "${P28D}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28D}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28D}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28D}/CONTROL/project_state.json" 0 200 0 2000
+  out="$(bash "${SELF}" "${P28D}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "13" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line' || ok=0
+  if printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK PASS'; then ok=0; fi
+  report 53 "no-ledger-still-refuses" "${ok}" "rc=${rc} (want 13) for a publish dispatch with NO CONTROL/LEDGER.md at all — a missing ledger refuses, and no PASS line is printed: ${out}"
+
+  # (h) 12 AND 13 ARE DIFFERENT REFUSALS: a bare ledger (no AUDIT-GATE, no
+  #     SHIP-GUARD) answers a build dispatch with 12 naming the AUDIT-GATE
+  #     line and a publish dispatch with 13 naming the SHIP-GUARD line. Same
+  #     file, same shape discipline, two distinguishable answers.
+  local P28E="${T}/proj-shipguard-both"
+  mkdir -p "${P28E}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28E}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28E}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28E}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'CONDUCTOR-SEAT: expected=opus resolved=opus launcher=claude-nine source=session-env\n' > "${P28E}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=1 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' >> "${P28E}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:10:00Z | SEAT-PROBE: seats=2 callable=2 dead=0 undetermined=0\n' >> "${P28E}/CONTROL/LEDGER.md"
+  local out12 out13 rc12 rc13
+  out12="$(bash "${SELF}" "${P28E}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc12=$?
+  out13="$(bash "${SELF}" "${P28E}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc13=$?
+  ok=0; [[ "${rc12}" == "12" && "${rc13}" == "13" ]] && ok=1
+  printf '%s' "${out12}" | "${GREP}" -q 'NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line' || ok=0
+  printf '%s' "${out13}" | "${GREP}" -q 'NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line' || ok=0
+  if printf '%s' "${out12}" | "${GREP}" -q 'NO-SHIP-GUARD'; then ok=0; fi
+  if printf '%s' "${out13}" | "${GREP}" -q 'NO-AUDIT-GATE'; then ok=0; fi
+  report 54 "audit-vs-ship-distinguishable" "${ok}" "rc=${rc12} (want 12) for build and rc=${rc13} (want 13) for publish on the SAME bare ledger — the build message names the AUDIT-GATE line and only that line, the publish message names the SHIP-GUARD: rc=0 line and only that line"
+
+
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (47 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (55 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"
