@@ -631,7 +631,8 @@ A second line follows only when there is genuinely something for them; nothing e
 spoken as status — no lanes, no ledger lines, no token counters
 (`references/progress-visibility.md`).
 
-No part of a client message ever carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name. There is no operator channel in the client's transcript; operator detail goes to `CONTROL/SESSION-LOG.md`. A status message that would repeat the previous message's counts unchanged is not sent — the next thing the client hears is either a changed count or the one question, and three consecutive unchanged counts is a stall raised through the tick, never narrated.
+No client-visible message carries a file path, a document name, a workflow id, a rule number, a count of findings, a trend, a cost or a model name. There is no operator channel in a client-visible message — not a parenthetical, not an italic block, not a line labelled 'Operator note', not a footnote. Machine detail goes to `CONTROL/SESSION-LOG.md`; `tools/speech-check.sh`'s operator-heading class is the instrument that refuses the aside.
+A status message whose piece count is identical to the previous status message is either not sent or leads with what DID change — the count is the headline, so a headline that has not moved is not a status. Three consecutive unchanged counts is a stall raised through the tick's speech-unchecked alarm, never narrated.
 
 **The morning report (step 22, document 14)** is the honest close, and it opens with the
 live thing, not with the work:

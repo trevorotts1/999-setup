@@ -31,7 +31,7 @@ pages, `references/funnel-architecture.md` Stage 7).
 
 **Outputs:** a live address that answers 200; the two DNS records handed to the
 client when they own a web address; one screenshot pair per published page in
-`captures/publish/`.
+`<project>/captures/publish/`.
 
 **Ledger line** — the canonical field order is the LEDGER VOCABULARY table in
 `references/documents.md`. This file carries the shape because the stage that
@@ -54,7 +54,8 @@ resuming session that reads the first one reads the platform address after the
 domain has already answered.
 
 **Pass/fail check:** the final address returns 200, and
-`captures/publish/<page>-375.png` and `captures/publish/<page>-1440.png` exist
+`<project>/captures/publish/<page>-375.png` and
+`<project>/captures/publish/<page>-1440.png` exist
 and are non-empty for every published page.
 
 ---
@@ -213,11 +214,12 @@ the line when it answers (`references/loops.md`).
 Per published page, at the FINAL address (the custom domain when it answers,
 the platform address otherwise):
 
-- `captures/publish/<page>-375.png` — 375 px wide (the phone width).
-- `captures/publish/<page>-1440.png` — 1440 px wide (the desktop width).
+- `<project>/captures/publish/<page>-375.png` — 375 px wide (the phone width).
+- `<project>/captures/publish/<page>-1440.png` — 1440 px wide (the desktop width).
 
 Taken with the proven capture tool (Playwright by default,
-`references/environment-sweep.md`), full page, after the page settles. Both
+`references/environment-sweep.md`), full page, after the page settles, into the
+project folder — never the session working directory. Both
 files present and non-empty for every page is half of section 1's pass check;
 the 200 is the other half.
 

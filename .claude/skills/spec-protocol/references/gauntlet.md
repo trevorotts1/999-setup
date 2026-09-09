@@ -230,7 +230,8 @@ document** (project document 15 — `references/documents.md`), which already ow
 measured facts, as a dated finding with its capture command. The frozen
 package's ARTIFACTS — the actual screenshots, diffs, and other binary capture
 output — cannot live inside that markdown document, so they land in
-**`captures/<unit-id>/`**, the sanctioned infrastructure directory
+**`<project>/captures/<unit-id>/`** — under the project folder, never the
+session working directory — the sanctioned infrastructure directory
 (`references/documents.md`, "Infrastructure that is NOT one of the seventeen
 documents"); the current-state document cites those paths by reference rather than inlining
 them.
@@ -243,7 +244,9 @@ never just detected and reported — before the build
 viewport-pinned, unlabeled, deterministic screenshots) — installed with
 `npx playwright install chromium` if it is not already present, and proved
 with a real probe screenshot (the environment sweep's capture preflight owns
-the exact command) before anything is dispatched against it. If Playwright
+the exact command) before anything is dispatched against it. Whichever tool is
+used, its output directory is set explicitly to `<project>/captures/`
+(`references/environment-sweep.md`) — never the session working directory. If Playwright
 genuinely cannot be installed (a real, captured
 failure — never a name-resolution check like `command -v`), the fallback is
 **any browser-automation tool the harness offers**; the operator's fleet tool
@@ -294,9 +297,10 @@ stages. No page or screen unit is dispatched until it lands.
 | Console capture | Records the browser console through a full page walk | The captured log — the pass line is zero errors |
 
 Each instrument writes JSON or image files to disk under the run's
-`captures/` tree; each is runnable by a cold session from the command written
-into the execution plan, and each is proved by one real run before the gate
-line is written.
+`<project>/captures/` tree — resolved from the project folder, never the
+session working directory; each is runnable by a cold session from the command
+written into the execution plan, and each is proved by one real run before the
+gate line is written.
 
 **Judges receive harness output and nothing else** — no source, no builder
 reasoning, no live URL, no file the harness did not produce. That is what makes

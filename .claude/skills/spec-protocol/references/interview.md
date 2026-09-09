@@ -152,7 +152,9 @@ question.** The page builder is driven by a real browser; the Convert and Flow
 browser-free path. On a Mac the run installs or verifies the page-building
 browser tool the way the pack's `06-ghl-install-pages` folder pins it, then
 **proves it by taking one real screenshot of a real page and reading the image
-file back**. Installed is not proven; a version string is not proven; one
+file back** — written under `<project>/captures/`
+(`references/environment-sweep.md`), never the session working directory.
+Installed is not proven; a version string is not proven; one
 screenshot on disk is proven. If it cannot be proven, say this and nothing more:
 
 > Funnels need a page-building tool I couldn't set up on this computer. A Mac is
