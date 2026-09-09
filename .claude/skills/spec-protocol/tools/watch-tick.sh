@@ -625,6 +625,8 @@ run_tick() {
 
   #--------------------------------------------------------------------------
   # (2) THE THREE COUNTS.
+  #     (The (1b) snapshot-witness lives in section (4) beside emit(), which
+  #     it calls — it cannot run inline here because emit() is defined there.)
   #--------------------------------------------------------------------------
   local UNDET=""
   add_undet() { if [[ -z "$UNDET" ]]; then UNDET="$1"; else UNDET="${UNDET},$1"; fi; }
@@ -779,6 +781,44 @@ run_tick() {
     V=$(( V + 1 ))
     VERBS="anchor-drift"
   fi
+
+  #--------------------------------------------------------------------------
+  # (1b) THE SNAPSHOT PRODUCER'S WITNESS (RC-29b). The reconcile's classes 1-4
+  #     read CONTROL/task-graph-snapshot.json, which anchor.sh --write-tasks
+  #     exports. When the Capacity Ledger exists the run is past step 6.5, so
+  #     the snapshot is due: missing more than one tick after that mark is a
+  #     gap that would otherwise degrade silently into `undetermined` on every
+  #     RECONCILE line. One tick of grace, then DRIFT-ALARM tasks-snapshot-
+  #     absent at exit 3 with ACTION|write-task-snapshot. The flag file carries
+  #     the count across ticks; a present snapshot clears it. The mark is the
+  #     same two witnesses anchor.sh's pre-plan gate reads (the CAPACITY-
+  #     LEDGER.md file, or a CAPACITY-LEDGER: line in CONTROL/LEDGER.md), so
+  #     the two gates agree on what "past step 6.5" means. Before the mark this
+  #     block is silent: the snapshot is not due yet.
+  #--------------------------------------------------------------------------
+  {
+    local SNAP="$HOME_DIR/CONTROL/task-graph-snapshot.json" SNAPFLAG="$HOME_DIR/CONTROL/.snapshot-missing"
+    local cap_mark=0
+    [[ -f "$HOME_DIR/CAPACITY-LEDGER.md" ]] && cap_mark=1
+    if [[ -f "$LED" ]] && "$GREP" -qE '(^|[|][[:space:]]*)CAPACITY-LEDGER:' "$LED" 2>/dev/null; then cap_mark=1; fi
+    if (( cap_mark == 1 )) && [[ ! -f "$SNAP" ]]; then
+      local miss=1
+      if [[ -f "$SNAPFLAG" ]]; then
+        miss="$(cat "$SNAPFLAG" 2>/dev/null || printf '1')"
+        [[ "$miss" =~ ^[0-9]+$ ]] || miss=1
+        miss=$(( miss + 1 ))
+      fi
+      printf '%s\n' "$miss" > "$SNAPFLAG" 2>/dev/null || true
+      if (( miss > 1 )); then
+        ledger_write "CONTROL/LEDGER.md" \
+          "$(iso_now) | DRIFT-ALARM | tasks-snapshot-absent | CONTROL/task-graph-snapshot.json missing ${miss} ticks after the Capacity Ledger exists (anchor.sh --write-tasks <project> exports it; reconcile classes 1-4 are UNDETERMINED until it exists)"
+        emit "write-task-snapshot" "CONTROL/task-graph-snapshot.json" \
+          "DRIFT-ALARM tasks-snapshot-absent: the snapshot is missing ${miss} ticks after the Capacity Ledger exists — export it with tools/anchor.sh --write-tasks (reconcile classes 1-4 UNDETERMINED without it)"
+      fi
+    elif [[ -f "$SNAP" ]]; then
+      rm -f "$SNAPFLAG" 2>/dev/null || true
+    fi
+  }
 
   # S2 — ZERO-WORKFLOW, the worst violation. Only on a PROVEN zero: an absent
   # or unparseable dispatch log is undetermined, and this check does not fire
@@ -1062,6 +1102,10 @@ run_tick() {
 #  18  THE CONTROL FOR 17 — the same draft WITH its SPEECH-CHECK line -> exit 0
 #      and no alarm. 17 and 18 differ by one ledger line, which is the whole
 #      discrimination: a check that fires on both measures nothing.
+#  19  THE SNAPSHOT WITNESS (RC-29b) — a project past step 6.5 with no
+#      task-graph-snapshot.json: first tick silent (one tick of grace), second
+#      tick DRIFT-ALARM tasks-snapshot-absent at exit 3; the control with the
+#      snapshot present stays silent.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1415,7 +1459,41 @@ selftest() {
      && ! "$GREP" -q 'DRIFT-ALARM' "$T/c20/CONTROL/LEDGER.md" 2>/dev/null \
      && printf '%s' "$OUT" | "$GREP" -q 'stalled-turn=ok('; then ok=1; fi
   report 20 "stalled-turn-control" "$ok" "rc=${RC} (want 0); work.txt mtime read back as ${c20_age}m old (want < 15, set by touch -t ${OUT20_OLD}); no stalled-turn anywhere; the S-CHECK line carries stalled-turn=ok(…); no DRIFT-ALARM on the ledger"
-
+  # --- case 21: THE SNAPSHOT WITNESS (RC-29b). A project past step 6.5 (the
+  #     CAPACITY-LEDGER.md file) with no task-graph-snapshot.json: the first
+  #     tick counts the miss in silence (one tick of grace), the second tick
+  #     raises DRIFT-ALARM tasks-snapshot-absent at exit 3 with
+  #     ACTION|write-task-snapshot. The control is the SAME project with the
+  #     snapshot present: no alarm, no flag file, no ACTION. A witness that
+  #     fires on both measures nothing.
+  mk_home "$T/c21"
+  printf 'CLIENT_CAP=10\n' > "$T/c21/CAPACITY-LEDGER.md"
+  set +e
+  OUT="$(bash "$SELF" "$T/c21" 2>&1)"; RC=$?
+  set -e
+  local rc21a="$RC" alarm21a=0
+  "$GREP" -q 'tasks-snapshot-absent' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null && alarm21a=1
+  set +e
+  OUT="$(bash "$SELF" "$T/c21" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 3 )) && (( alarm21a == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|write-task-snapshot|CONTROL/task-graph-snapshot.json|' \
+     && "$GREP" -q 'DRIFT-ALARM | tasks-snapshot-absent' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 21 "snapshot-absent-alarm" "$ok" "first tick rc=${rc21a} silent (alarm on ledger=${alarm21a}, want 0 — one tick of grace); second tick rc=${RC} (want 3) with DRIFT-ALARM | tasks-snapshot-absent and ACTION|write-task-snapshot"
+  # the control: the snapshot present, the SAME project stays silent.
+  bash "${SCRIPT_DIR}/anchor.sh" --write-tasks "$T/c21" >/dev/null 2>&1
+  rm -f "$T/c21/CONTROL/.snapshot-missing"
+  "$GREP" -v 'tasks-snapshot-absent' "$T/c21/CONTROL/LEDGER.md" > "$T/c21/CONTROL/LEDGER.md.clean" 2>/dev/null \
+    && mv "$T/c21/CONTROL/LEDGER.md.clean" "$T/c21/CONTROL/LEDGER.md" || true
+  set +e
+  OUT="$(bash "$SELF" "$T/c21" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if ! printf '%s' "$OUT" | "$GREP" -q 'tasks-snapshot-absent' \
+     && ! "$GREP" -q 'tasks-snapshot-absent' "$T/c21/CONTROL/LEDGER.md" 2>/dev/null \
+     && [[ ! -f "$T/c21/CONTROL/.snapshot-missing" ]]; then ok=1; fi
+  report 22 "snapshot-present-control" "$ok" "rc=${RC}; no tasks-snapshot-absent on stdout or the ledger, and no .snapshot-missing flag file — the witness discriminates"
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then return 1; fi

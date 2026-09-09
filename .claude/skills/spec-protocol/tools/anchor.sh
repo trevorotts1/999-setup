@@ -94,6 +94,9 @@
 #             [--tasks <task-graph-snapshot.json>]
 #             [--state <project_state.json>]
 #             [--intents <file of the last K stated-intent lines>]
+#   anchor.sh --write-tasks <project-home>
+#             (export CONTROL/task-graph-snapshot.json from CONTROL/CHECKLIST.md
+#             in the shape the --tasks reader parses, then exit 0)
 #   anchor.sh --selftest
 #
 # ENVIRONMENT KNOBS (all optional; defaults are the doctrine's numbers)
@@ -150,6 +153,7 @@ TASKS=""
 STATE=""
 INTENTS=""
 DO_SELFTEST=0
+DO_WRITE_TASKS=0
 
 MAX_AGE_MIN="${ANCHOR_MAX_AGE_MIN:-35}"
 TERMINAL_N="${ANCHOR_TERMINAL_N:-6}"
@@ -538,6 +542,7 @@ usage() {
 while (( $# )); do
   case "$1" in
     --selftest) DO_SELFTEST=1; shift ;;
+    --write-tasks) DO_WRITE_TASKS=1; shift ;;
     --mode)     (( $# >= 2 )) || die_tool "--mode needs a value (anchor|reconcile)"; MODE="$2"; shift 2 ;;
     --tasks)    (( $# >= 2 )) || die_tool "--tasks needs a path"; TASKS="$2"; shift 2 ;;
     --state)    (( $# >= 2 )) || die_tool "--state needs a path"; STATE="$2"; shift 2 ;;
@@ -1492,10 +1497,14 @@ run_anchor() {
   local CLASSES="skipped(mode=anchor)"
   if [[ "$MODE" == "reconcile" ]]; then
     if [[ -z "$TASKS" || -z "$STATE" ]]; then
-      CLASSES="undetermined(no --tasks and/or --state given; classes 1-4 NOT checked)"
+      # The line names the classes it COULD check, not one combined word: a
+      # run missing --tasks/--state still gets class 6 (state file), 7 and 8
+      # (ledger) below, and the missing half is named per-class. The
+      # pre-existing token for the gap is kept verbatim — readers grep it.
+      CLASSES="checked(6,7,8)+unchecked(1,2,3,4:no --tasks and/or --state given)"
       note "anchor.sh: classes 1-4 UNDETERMINED — run with --tasks <snapshot> --state <project_state.json> to check them."
     else
-      CLASSES="checked"
+      CLASSES="checked(1,2,3,4)"
       # one JSON object per line (jq-free; jq is not required anywhere here)
       tr -d '\n\r' < "$TASKS" | sed -e 's/}[[:space:]]*,[[:space:]]*{/}\
 {/g' > "$WORKDIR/tasks.lines"
@@ -1601,7 +1610,17 @@ run_anchor() {
 
     # CLASS 6 — THE BUDGET AUDIT. Its own gate: --state is enough.
     budget_audit
-    CLASSES="${CLASSES},${BUDGET_NOTE}"
+    # When classes 1-4 never ran, the budget note rides INSIDE the named gap
+    # instead of beside it: the checked(6,7,8) prefix above claimed class 6 as
+    # checked, so an undetermined budget that printed as a sibling token would
+    # contradict the line's own prefix. The note keeps its exact pre-existing
+    # shape either way — it moves, it never changes.
+    if [[ "$CLASSES" == checked\(6,7,8\)+unchecked* && "$BUDGET_NOTE" == budget-undetermined* ]]; then
+      CLASSES="checked(7,8)+unchecked(1,2,3,4:no --tasks and/or --state given;6:${BUDGET_NOTE#budget-undetermined})"
+      CLASSES="${CLASSES//:((/:((}"
+    else
+      CLASSES="${CLASSES},${BUDGET_NOTE}"
+    fi
     # The operator override goes on the RECONCILE line whenever one is in
     # force, whatever the budget branch decided — including the undetermined
     # ones. A pause line moved by an override that the ledger does not record
@@ -1642,6 +1661,7 @@ run_anchor() {
             -type f \
             ! -name 'LEDGER.md' \
             ! -name '.anchor-fingerprint' \
+            ! -name '.snapshot-missing' \
             ! -name 'TERMINAL-DRIFT.flag' \
             ! -name '.ledger-pinned' \
             ! -name '*.lock' \
@@ -1966,6 +1986,12 @@ intent_stall() {
 #         MUST REPAIR NOTHING (sha256 of the fixture's own lines identical
 #         before and after); and a SECOND reconcile MUST still say n=3, which
 #         is what rules out a quiet backfill behind the alarm
+#   21    RC-19 PRE-PLAN DEGRADATION (four legs: pre-plan rc 0 with no verdict,
+#         the step-6.5 FILE witness at rc 2, the ledger-LINE witness at rc 2,
+#         the healthy control with a verdict)
+#   22    RC-29 THE ROUND TRIP — --write-tasks produces a file the --tasks
+#         reader parses at rc 0 with classes=checked(1,2,3,4); the control
+#         with no --tasks names unchecked(1,2,3,4)
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0
@@ -2860,10 +2886,118 @@ EOF
   if (( pp21a == 1 && pp21b == 1 && pp21c == 1 && pp21d == 1 )); then ok=1; fi
   report 21 "pre-plan-degradation" "$ok" \
     "pre-plan project (no CHECKLIST/TODO, no step-6.5 mark): rc=${rc21a} (want 0), PRE-PLAN lines name every unchecked class undetermined(pre-plan), NO clean verdict, NO violations count, ledger line result=pre-plan=${pp21a}. THE DISCRIMINATOR, the same missing files with CAPACITY-LEDGER.md present: rc=${rc21b} (want 2), the original die_tool message unchanged=${pp21b}. Second witness, the mark as a ledger LINE: rc=${rc21c} (want 2)=${pp21c}. Healthy control, full plan: rc=${rc21d} (want 0) WITH a RE-ANCHOR verdict and no PRE-PLAN lines=${pp21d} — leg (a)'s silence is the phase, not a broken writer."
-  printf 'SELFTEST COMPLETE | %s of 24 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  #--------------------------------------------------------------------------
+  # --- RC-29 (case 25): THE ROUND TRIP. --write-tasks produces a file the
+  #     --tasks reader parses at rc 0 with classes 1-4 CHECKED — a writer
+  #     whose output its own reader cannot parse passes a file-exists check
+  #     and fails here. TWO legs, because one leg alone cannot prove the two
+  #     halves agree:
+  #       a  THE ROUND TRIP — mk_home fixture (both boxes present, one [x]),
+  #          --write-tasks, then a reconcile with --tasks pointed at that very
+  #          file: the line carries classes=checked(1,2,3,4) AND the reader
+  #          proves it parsed the file by firing false-complete on the [x]-
+  #          completed task with no verdict (rc 3). The discriminating half is
+  #          the shape assertion: the file's tasks carry exactly
+  #          taskId/subject/status, the tokens the reader parses.
+  #       b  THE CONTROL — the SAME fixture reconciled with NO --tasks: the
+  #          line names unchecked(1,2,3,4), never the checked word. A writer
+  #          that always reports checked passes (a) and fails here.
+  #--------------------------------------------------------------------------
+  mk_home "$T/c25"
+  printf '{"schema":"spec-protocol/project-state@1","run_status":"RUNNING","workstreams":{"passed":[],"failed":[],"in_repair":[]}}\n' > "$T/c25/CONTROL/project_state.json"
+  : > "$T/c25/CONTROL/LEDGER.md"
+  runa --write-tasks "$T/c25"
+  local rc25w="$RC" ok25a=0 ok25b=0
+  local c25snap="$T/c25/CONTROL/task-graph-snapshot.json"
+  if (( rc25w == 0 )) && [[ -f "$c25snap" ]] \
+     && "$GREP" -q '"taskId":"U-01"' "$c25snap" 2>/dev/null \
+     && "$GREP" -q '"taskId":"U-02"' "$c25snap" 2>/dev/null \
+     && "$GREP" -q '"status":"completed"' "$c25snap" 2>/dev/null \
+     && "$GREP" -q '"status":"pending"' "$c25snap" 2>/dev/null; then
+    # U-01 is [x]-completed with no verdict on disk, so the round trip FIRES
+    # false-complete (rc 3) — and that IS the proof the reader parsed the
+    # file: an unreadable snapshot could never produce a class verdict. The
+    # pass is the classes token on the line, not a clean rc.
+    runa "$T/c25" "U-02" --mode reconcile --tasks "$c25snap" --state "$T/c25/CONTROL/project_state.json"
+    if printf '%s' "$OUT" | "$GREP" -q 'classes=checked(1,2,3,4)' \
+       && "$GREP" -qE 'DRIFT-ALARM \| false-complete' "$T/c25/CONTROL/LEDGER.md" 2>/dev/null; then ok25a=1; fi
+  fi
+  runa "$T/c25" "IDLE" --mode reconcile --state "$T/c25/CONTROL/project_state.json"
+  if printf '%s' "$OUT" | "$GREP" -q 'unchecked(1,2,3,4' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'classes=checked(1,2,3,4)'; then ok25b=1; fi
+  ok=0
+  if (( ok25a == 1 && ok25b == 1 )); then ok=1; fi
+  report 25 "write-tasks-round-trip" "$ok" \
+    "write rc=${rc25w} (want 0); round trip reconcile carries classes=checked(1,2,3,4) with a proven false-complete=${ok25a} (the file's taskId/subject/status shape is what the reader parses — a drifted shape fails here, not at file-exists). Control with no --tasks names unchecked(1,2,3,4)=${ok25b} — the checked word is earned, not printed"
+  printf 'SELFTEST COMPLETE | %s of 25 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }
+
+#==============================================================================
+# THE SNAPSHOT PRODUCER (RC-29a). --write-tasks <project> exports the task
+# graph the --tasks reader parses to CONTROL/task-graph-snapshot.json, so the
+# reconcile's classes 1-4 have an input. The reader keys on taskId (or id),
+# subject (or name), and status — and ONLY those three — so the writer emits
+# exactly those three. The source is CONTROL/CHECKLIST.md: the reader matches
+# each task against the checklist box and needs the same tokens on both sides,
+# so each row's taskId is the row's FIRST whitespace token (the unit id the
+# tick's own unit_of rule reads) and the subject is the rest of the row. The
+# status rule is the only judgement here and it is stated, not guessed: [x] is
+# completed, anything else is pending. IN_PROGRESS is never emitted — the
+# checklist has two states and a snapshot that invents a third from prose
+# would be the writer disagreeing with both its reader and its source.
+# No new shape, no second mechanism: round trip through the reader at rc 0 is
+# the whole contract, and case 22 of the selftest proves it on every run.
+#==============================================================================
+write_tasks() {  # write_tasks <project-home>
+  local home="$1" chk out
+  [[ -n "$home" ]] || die_tool "--write-tasks needs a project home. Usage: anchor.sh --write-tasks <project-home>"
+  [[ -d "$home" ]] || die_tool "--write-tasks: project home does not exist: ${home}"
+  home="$(cd "$home" && pwd)"
+  chk="${home}/CONTROL/CHECKLIST.md"
+  out="${home}/CONTROL/task-graph-snapshot.json"
+  [[ -f "$chk" ]] || die_tool "--write-tasks: no checklist to export at ${chk} — the snapshot is derived from CONTROL/CHECKLIST.md, never invented; write the plan first (SKILL.md steps 13-16)"
+  mkdir -p "${home}/CONTROL" || die_tool "--write-tasks: could not create ${home}/CONTROL"
+  "$AWK" '
+    /^[ \t]*[-*][ \t]*\[[ xX]\]/ {
+      rest = $0
+      sub(/^[ \t]*[-*][ \t]*\[[ xX]\][ \t]*/, "", rest)
+      box = $0
+      sub(/^[ \t]*[-*][ \t]*\[/, "", box); sub(/\].*$/, "", box)
+      gsub(/^[ \t]+|[ \t]+$/, "", box)
+      id = rest; sub(/[ \t].*$/, "", id)
+      subj = rest; sub(/^[^ \t]+[ \t]+/, "", subj)
+      gsub(/"/, "\\\"", id); gsub(/"/, "\\\"", subj)
+      if (box == "x" || box == "X") st = "completed"; else st = "pending"
+      printf("%s{\"taskId\":\"%s\",\"subject\":\"%s\",\"status\":\"%s\"}", (n++ ? "," : ""), id, subj, st)
+    }
+    END { printf("\n") }
+  ' "$chk" > "${out}.tasks.$$" 2>/dev/null \
+    || die_tool "--write-tasks: the checklist export failed on ${chk}"
+  { printf '{"tasks":['; cat "${out}.tasks.$$"; printf ']}\n'; } > "${out}.tmp.$$" 2>/dev/null \
+    || die_tool "--write-tasks: could not stage ${out}"
+  rm -f "${out}.tasks.$$"
+  # Fail closed on an empty graph: the task-count gate below refuses a snapshot
+  # with no "status" field as a PARSE FAILURE, so an empty write would turn
+  # every later reconcile into exit 2. A checklist with no rows is a plan that
+  # is not written yet, not an empty project — say so and write nothing.
+  if ! "$GREP" -q '"status"' "${out}.tmp.$$" 2>/dev/null; then
+    rm -f "${out}.tmp.$$"
+    die_tool "--write-tasks: ${chk} carries no checklist rows — nothing to export, and ${out} was NOT written (an empty snapshot would fail every later reconcile as a parse failure, not an empty graph)"
+  fi
+  mv "${out}.tmp.$$" "$out" || die_tool "--write-tasks: could not install ${out}"
+  printf 'WRITE-TASKS | wrote %s (%s task(s))\n' "$out" "$("$GREP" -c '"status"' "$out" 2>/dev/null || printf '?')"
+}
+
+if (( DO_WRITE_TASKS == 1 )); then
+  if [[ -z "$HOME_DIR" ]]; then
+    die_tool "--write-tasks needs a project home. Usage: anchor.sh --write-tasks <project-home>"
+  fi
+  self_prove
+  write_tasks "$HOME_DIR"
+  exit 0
+fi
 
 #==============================================================================
 if (( DO_SELFTEST == 1 )); then
