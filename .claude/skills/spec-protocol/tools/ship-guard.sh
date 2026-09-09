@@ -5,12 +5,24 @@
 #
 # It answers two questions no other instrument in references/ship-checks.md can:
 #
-#   1. OWNERSHIP — does every declared form destination belong to the CLIENT?
+#   1. OWNERSHIP — does every declared form destination belong to the CLIENT,
+#      and can it receive mail at all?
 #      Instrument 6 proves a submission ARRIVES. Arrival at the wrong person's
 #      mailbox is still an arrival, so instrument 6 passes it. Ownership is
 #      declared on the FORM-DESTINATION ledger line and checked HERE, at the
 #      stage gate, before the form is built — never at publish, by which time
 #      the form is wired to a real inbox.
+#      Two things are read off that line. The `owner=` field, which is never
+#      omitted and never carries a third value: absent or unrecognised reads as
+#      `operator` and is FOREIGN. And the destination's DOMAIN: an address under
+#      the reserved names of RFC 2606 and RFC 6761 — `.example`, `.invalid`,
+#      `.test`, `.localhost` — exists precisely so it can never resolve, so a
+#      CONFIRMED destination there is UNDELIVERABLE. It is recorded
+#      `=BLOCKED owner=client reason=…` instead, never confirmed and never
+#      repointed at a substitute inbox: that swap is the exact 2026-09-07 canary
+#      harm, where the only address the client gave sat at a `.example` name, was
+#      correctly BLOCKED, and the form was then wired to the machine owner's real
+#      inbox anyway.
 #      (references/ship-checks.md section 3)
 #
 #   2. PUBLIC SURFACE — does the LIVE origin serve any internal path?
@@ -54,15 +66,21 @@
 #   report, and never copied anywhere. The tool prints the form name, the
 #   destination TYPE and the owner. That is enough to name the defect and not
 #   enough to republish the thing that made it a defect.
+#   The one addition is the undeliverable DOMAIN, which the exit-5 line has to
+#   name for the defect to be actionable — the half after the `@` only. The
+#   mailbox name before it is dropped with everything else, and a reserved-suffix
+#   domain routes nowhere by definition.
 #
 # OUTPUT
 #   Human lines on stdout, and one JSON report at
 #   <project>/ship-checks/public-surface.json carrying the origin, the control
 #   request that proved the origin answers at all, one row per fetched path
 #   (path, url, status, verdict), one row per form destination
-#   (form, type, owner, verdict) and one fabrication_guard block (the content
-#   inventory it read, the four counts, and one row per guarded fact). The
-#   FABRICATION-GUARD counts also go to <project>/CONTROL/LEDGER.md as
+#   (form, type, owner, domain, verdict) — `domain` is empty unless the row is
+#   an UNDELIVERABLE-DESTINATION defect, and carries only the half after the
+#   `@` — and one fabrication_guard block (the content inventory it read, the
+#   four counts, and one row per guarded fact). The FABRICATION-GUARD counts
+#   also go to <project>/CONTROL/LEDGER.md as
 #   `FABRICATION-GUARD: facts=<n> sourced=<n> omitted=<n> unsourced=<n>`,
 #   written through tools/ledger.sh. `unsourced` must be 0.
 #
@@ -80,7 +98,17 @@
 #       client (owner=operator, an unrecognised owner, a missing owner field, or
 #       a line too malformed to parse — none of which is proof of client
 #       ownership).
-#   5 — FABRICATED. At least one FABRICATION-GUARD fact is rendered by a built
+#   5 — UNDELIVERABLE DESTINATION, or FABRICATED third-party attribution. The
+#       code is shared because both are LOCAL facts that an unreachable origin
+#       cannot erase, so both outrank 2; the verdict line names which one fired.
+#       UNDELIVERABLE: at least one FORM-DESTINATION is owned by the client and
+#       CONFIRMED, but its address sits under a reserved suffix (.example,
+#       .invalid, .test, .localhost) that can never receive mail. The domain is
+#       named. A line already recorded =BLOCKED is NOT this defect — BLOCKED
+#       with the reason is the correct record for exactly this case, and naming
+#       the reserved domain inside that reason is what the run is asked to do
+#       (references/ship-checks.md section 3).
+#       FABRICATED: at least one FABRICATION-GUARD fact is rendered by a built
 #       page while its 00-INPUT/CONTENT.md entry is not SOURCED, or carries
 #       there the one state that class may never carry, `DRAFT — write one`.
 #       Every one is named with its fact key, its page and the state found.
@@ -88,25 +116,29 @@
 #
 #   PRECEDENCE, stated so it is never a surprise: a live 200 is public harm
 #   happening now, so 3 outranks 5 and 4 when they are all true (each is
-#   printed either way). Ownership and fabrication are LOCAL facts that an
-#   unreachable origin cannot erase, so 5 and 4 both outrank 2 — an unreachable
-#   origin never downgrades a defect the tool already proved. Between the two
-#   local defects 5 outranks 4: a substitute inbox misroutes the client's own
-#   mail, an invented testimonial puts words in a stranger's mouth.
+#   printed either way). Ownership, deliverability and fabrication are LOCAL
+#   facts that an unreachable origin cannot erase, so 5 and 4 both outrank 2 —
+#   an unreachable origin never downgrades a defect the tool already proved.
+#   Between the two local defects a substitute inbox misroutes the client's own
+#   mail, an invented testimonial puts words in a stranger's mouth: each is
+#   printed either way and the verdict names the one checked first.
 #
-# SELFTEST — seven fixtures against a server this script starts and stops
+# SELFTEST — thirteen fixtures against a server this script starts and stops
 #   itself: clean origin -> 0 | origin serving .har files -> 3 |
 #   owner=operator -> 4 | unreachable origin -> 2 | a page rendering a
 #   testimonial whose CONTENT.md entry reads SOURCED -> 0 | THE DISCRIMINATING
 #   CASE, the same page whose entry reads `DRAFT — write one` -> 5, naming both
 #   the fact and the page | the same page with NO CONTENT.md at all -> non-zero,
-#   never 0 by default. Two PAIRED CONTROLS: clean vs .har, and SOURCED vs
-#   DRAFT. If either pair returns the same code the TEST is broken, not the
-#   target, and the selftest says so and fails. It also greps the SOURCED
-#   fixture's own CONTROL/LEDGER.md for the FABRICATION-GUARD line shape, so
-#   the ledger contract is proved rather than assumed. Set
-#   SHIP_GUARD_SELFTEST_DIR=<dir> to keep the fixture tree, and its ledger, for
-#   inspection instead of deleting it.
+#   never 0 by default | a real domain with owner=client -> 0 | the same line at
+#   each of the four reserved suffixes -> 5, each naming its own domain | the
+#   SAME .example domain recorded =BLOCKED with the reason -> 0. Three PAIRED
+#   CONTROLS: clean vs .har, SOURCED vs DRAFT, and real-domain vs BLOCKED — if
+#   any pair returns the same code the TEST is broken, not the target, and the
+#   selftest says so and fails. It also greps the SOURCED fixture's own
+#   CONTROL/LEDGER.md for the FABRICATION-GUARD line shape, so the ledger
+#   contract is proved rather than assumed. Set SHIP_GUARD_SELFTEST_DIR=<dir>
+#   to keep the fixture tree, and its ledger, for inspection instead of
+#   deleting it.
 set -u
 
 TIMEOUT="${SHIP_GUARD_TIMEOUT:-15}"
@@ -146,7 +178,9 @@ say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 
 usage() {
-  sed -n '2,109p' "$0" | sed 's/^# \{0,1\}//'
+  # The header through the end of the SELFTEST note, so every exit code this
+  # tool can return is printed with --help.
+  sed -n '2,141p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 undetermined() { # undetermined <reason-line> [extra lines...]
@@ -173,10 +207,12 @@ json_escape() { # json_escape <string>
 # ---------------------------------------------------------------- ownership --
 
 # parse_destinations <ledger-file>
-# Prints one row per FORM-DESTINATION line: <form>|<type>|<owner>|<verdict>
-# The destination detail is deliberately reduced to a TYPE and dropped.
+# Prints one row per FORM-DESTINATION line:
+#   <form>|<type>|<owner>|<verdict>|<undeliverable-domain-or-empty>
+# The destination detail is deliberately reduced to a TYPE and dropped; the
+# fifth field is set ONLY on the exit-5 defect and carries no mailbox name.
 parse_destinations() {
-  local ledger="$1" line rest form after destword type owner verdict
+  local ledger="$1" line rest form after destword type owner verdict dom tok cand
   while IFS= read -r line || [ -n "${line}" ]; do
     case "${line}" in
       *FORM-DESTINATION:*) ;;
@@ -196,6 +232,7 @@ parse_destinations() {
         ;;
       *)
         form="$(printf '%s' "${rest}" | awk '{print $1}')"
+        after=""
         destword=""
         ;;
     esac
@@ -210,15 +247,45 @@ parse_destinations() {
       *)                   type="other" ;;
     esac
 
+    # The DOMAIN read, on the destination half of the line only — never on the
+    # form name, which is before the first '=' and is free text. A BLOCKED line
+    # is skipped on purpose: BLOCKED with the reason IS the correct record for
+    # an address that cannot receive mail, and that reason will usually name the
+    # reserved domain out loud. Only a CONFIRMED destination can be
+    # undeliverable. The local part of an address is dropped with '${tok##*@}'
+    # before anything is compared or printed.
+    dom=""
+    if [ "${type}" != "BLOCKED" ] && [ "${type}" != "unparsed" ]; then
+      for tok in $(printf '%s' "${after}" | tr -c 'A-Za-z0-9.@_%+-' ' '); do
+        cand="${tok##*@}"
+        cand="$(printf '%s' "${cand}" | tr 'A-Z' 'a-z')"
+        while [ "${cand}" != "${cand%.}" ]; do cand="${cand%.}"; done
+        case "${cand}" in
+          # RFC 2606 (.example/.invalid/.test) and RFC 6761 (.localhost). The
+          # bare label 'localhost' is the zero-label case of the same class.
+          *.example|*.invalid|*.test|*.localhost|localhost)
+            dom="${cand}"; break ;;
+        esac
+      done
+    fi
+
     if [ "${type}" = "unparsed" ]; then
       # A line too malformed to carry a destination is not proof of anything.
       verdict="FOREIGN"
     elif [ "${owner}" = "client" ]; then
-      verdict="OK"
+      if [ -n "${dom}" ]; then
+        # Owned by the client and confirmed, at an address that can never
+        # receive mail. Not FOREIGN — nobody else's inbox is involved — and not
+        # OK either, because it reports a working destination for messages that
+        # will be lost.
+        verdict="UNDELIVERABLE"
+      else
+        verdict="OK"
+      fi
     else
       verdict="FOREIGN"
     fi
-    printf '%s|%s|%s|%s\n' "${form}" "${type}" "${owner}" "${verdict}"
+    printf '%s|%s|%s|%s|%s\n' "${form}" "${type}" "${owner}" "${verdict}" "${dom}"
   done < "${ledger}"
 }
 
@@ -468,7 +535,7 @@ run_guard() {
   trap "rm -rf '${workdir}'" EXIT
 
   # ---- 1. ownership, from the ledger (a local fact; always determinable) ----
-  local dest_rows foreign=0 dest_json="" form type owner verdict
+  local dest_rows foreign=0 undeliverable=0 dest_json="" form type owner verdict dom
   dest_rows="$(parse_destinations "${ledger}")"
   say "SHIP-GUARD | project=${project}"
   say "SHIP-GUARD | origin=${origin}"
@@ -479,15 +546,18 @@ run_guard() {
   if [ -z "${dest_rows}" ]; then
     say "  (no FORM-DESTINATION lines in the ledger — nothing to own)"
   else
-    while IFS='|' read -r form type owner verdict; do
+    while IFS='|' read -r form type owner verdict dom; do
       [ -z "${form}" ] && continue
       if [ "${verdict}" = "OK" ]; then
         say "  ok      | form=${form} type=${type} owner=${owner}"
+      elif [ "${verdict}" = "UNDELIVERABLE" ]; then
+        say "  UNDELIVERABLE | form=${form} type=${type} owner=${owner} domain=${dom} — ${dom} is a reserved name (RFC 2606 / RFC 6761) and can never receive mail, so this destination is not confirmed. Record it as '<form>=BLOCKED owner=client reason=<the reason>' (references/ship-checks.md section 3) — never a substitute inbox."
+        undeliverable=$((undeliverable + 1))
       else
         say "  FOREIGN | form=${form} type=${type} owner=${owner} — not the client's; refused at the stage gate"
         foreign=$((foreign + 1))
       fi
-      dest_json="${dest_json}    {\"form\": \"$(json_escape "${form}")\", \"type\": \"$(json_escape "${type}")\", \"owner\": \"$(json_escape "${owner}")\", \"verdict\": \"${verdict}\"},
+      dest_json="${dest_json}    {\"form\": \"$(json_escape "${form}")\", \"type\": \"$(json_escape "${type}")\", \"owner\": \"$(json_escape "${owner}")\", \"domain\": \"$(json_escape "${dom}")\", \"verdict\": \"${verdict}\"},
 "
     done <<EOF
 ${dest_rows}
@@ -524,9 +594,14 @@ EOF
       exit 5
     fi
     if [ "${foreign}" -gt 0 ]; then
-      say "SHIP-GUARD | verdict=FOREIGN-DESTINATION | foreign=${foreign} | public-surface=UNDETERMINED"
+      say "SHIP-GUARD | verdict=FOREIGN-DESTINATION | foreign=${foreign} | undeliverable=${undeliverable} | public-surface=UNDETERMINED"
       say "  An unreachable origin does not erase a destination defect already proved from the ledger."
       exit 4
+    fi
+    if [ "${undeliverable}" -gt 0 ]; then
+      say "SHIP-GUARD | verdict=UNDELIVERABLE-DESTINATION | undeliverable=${undeliverable} | public-surface=UNDETERMINED"
+      say "  An unreachable origin does not erase a destination defect already proved from the ledger."
+      exit 5
     fi
     undetermined "origin-unreachable" \
       "the connection attempt that failed: ${ctrl_cmd}" \
@@ -599,9 +674,11 @@ EOF
     printf '  },\n'
     printf '  "exposed": %d,\n' "${exposed}"
     printf '  "foreign_destinations": %d,\n' "${foreign}"
+    printf '  "undeliverable_destinations": %d,\n' "${undeliverable}"
     if [ "${exposed}" -gt 0 ]; then printf '  "verdict": "EXPOSED"\n'
     elif [ "${FAB_UNSOURCED}" -gt 0 ]; then printf '  "verdict": "FABRICATED"\n'
     elif [ "${foreign}" -gt 0 ]; then printf '  "verdict": "FOREIGN-DESTINATION"\n'
+    elif [ "${undeliverable}" -gt 0 ]; then printf '  "verdict": "UNDELIVERABLE-DESTINATION"\n'
     else printf '  "verdict": "CLEAN"\n'; fi
     printf '}\n'
   } > "${outfile}" 2>/dev/null || undetermined "report-unwritable" \
@@ -610,7 +687,7 @@ EOF
   say ""
   say "SHIP-GUARD | report=${outfile}"
   if [ "${exposed}" -gt 0 ]; then
-    say "SHIP-GUARD | verdict=EXPOSED | exposed=${exposed} | unsourced=${FAB_UNSOURCED} | foreign=${foreign}"
+    say "SHIP-GUARD | verdict=EXPOSED | exposed=${exposed} | unsourced=${FAB_UNSOURCED} | foreign=${foreign} | undeliverable=${undeliverable}"
     say "  Fix by taking those files OUT of the deploy root. A redirect, a robots.txt"
     say "  line or a rename does not stop the bytes being served."
     exit 3
@@ -622,12 +699,19 @@ EOF
     exit 5
   fi
   if [ "${foreign}" -gt 0 ]; then
-    say "SHIP-GUARD | verdict=FOREIGN-DESTINATION | exposed=0 | unsourced=0 | foreign=${foreign}"
+    say "SHIP-GUARD | verdict=FOREIGN-DESTINATION | exposed=0 | unsourced=0 | foreign=${foreign} | undeliverable=${undeliverable}"
     say "  A destination that is not the client's is refused at the stage gate. Correct it,"
     say "  or build the form and leave it BLOCKED with the reason — never a substitute inbox."
     exit 4
   fi
-  say "SHIP-GUARD | verdict=CLEAN | exposed=0 | unsourced=0 | foreign=0 | fabrication-facts=${FAB_FACTS} | paths=$(printf '%s\n' "${paths}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  if [ "${undeliverable}" -gt 0 ]; then
+    say "SHIP-GUARD | verdict=UNDELIVERABLE-DESTINATION | exposed=0 | unsourced=0 | foreign=0 | undeliverable=${undeliverable}"
+    say "  A confirmed destination at a reserved name can never receive mail. Correct it to a"
+    say "  deliverable address the client owns, or record it BLOCKED with the reason — never a"
+    say "  substitute inbox (references/ship-checks.md section 3)."
+    exit 5
+  fi
+  say "SHIP-GUARD | verdict=CLEAN | exposed=0 | unsourced=0 | foreign=0 | undeliverable=0 | fabrication-facts=${FAB_FACTS} | paths=$(printf '%s\n' "${paths}" | sed '/^$/d' | wc -l | tr -d ' ')"
   exit 0
 }
 
@@ -753,6 +837,27 @@ selftest() {
     printf '</section>\n'
   } > "${fabroot}/index.html"
 
+  # mk_dest <dir> <the text after 'FORM-DESTINATION: '> — the deliverability
+  # fixtures need the whole destination clause, not just the owner. They also
+  # carry an OMIT CONTENT.md: the fabrication guard runs before the network
+  # sweep, so a fixture with no inventory would fail as content-inventory-
+  # unreadable before its deliverability leg is ever reached.
+  mk_dest() {
+    mkdir -p "$1/CONTROL" "$1/00-INPUT"
+    {
+      printf '2026-09-08T00:00:00Z | STAGE-BUILD | pass\n'
+      printf '2026-09-08T00:00:01Z | FORM-DESTINATION: %s\n' "$2"
+    } > "$1/CONTROL/LEDGER.md"
+    {
+      printf '# CONTENT — fixture\n'
+      printf '## Business name\n'
+      printf 'SOURCED\n'
+      printf 'Fixture Bakery\n'
+      printf '## Testimonials\n'
+      printf 'OMIT\n'
+      printf 'Left off on purpose.\n'
+    } > "$1/00-INPUT/CONTENT.md"
+  }
   local p_clean="${SELFTEST_TMP}/p-clean"
   local p_har="${SELFTEST_TMP}/p-har"
   local p_owner="${SELFTEST_TMP}/p-owner"
@@ -846,6 +951,21 @@ selftest() {
     fails=$((fails + 1))
   fi
 
+  # ---- deliverability legs on the CLEAN origin ----
+  # Every leg below runs against the same clean origin and the same owner=client
+  # line. The ONLY thing that changes is the destination address, so a pass/fail
+  # split is attributable to the address and to nothing else.
+  local p_real="${SELFTEST_TMP}/p-real" out8 rc8
+  mk_dest "${p_real}" 'contact=email hello@clients-own-domain.com owner=client'
+  out8="$("$0" "${p_real}" "${live}" "${doc}" 2>&1)"; rc8=$?
+  if [ "${rc8}" -eq 0 ] && printf '%s' "${out8}" | grep -q 'owner=client'; then
+    say "SELFTEST ok   | real-domain-client     | rc=0 CLEAN for contact=email hello@clients-own-domain.com owner=client"
+  else
+    say "SELFTEST FAIL | real-domain-client     | rc=${rc8} (want 0)"
+    say "${out8}" | sed 's/^/    /'
+    fails=$((fails + 1))
+  fi
+
   # ---- fixture 6: THE DISCRIMINATING CASE. The SAME page, the SAME deploy root,
   # ---- CONTENT.md reading `DRAFT — write one` -> 5, naming the fact AND the page.
   # An implementation that treats FABRICATION-GUARD items like every other
@@ -861,6 +981,55 @@ selftest() {
     say "SELFTEST FAIL | fab-drafted            | rc=${rc6} (want 5), or it did not name both the fact and the page, or it claimed clean"
     say "${out6}" | sed 's/^/    /'
     fails=$((fails + 1))
+  fi
+
+  # All four reserved suffixes, each its own fixture, each reported by name.
+  local sfx dom pr outr rcr
+  local rcr_example="" outr_example=""
+  for sfx in example invalid test localhost; do
+    dom="clientsite.${sfx}"
+    pr="${SELFTEST_TMP}/p-rsv-${sfx}"
+    mk_dest "${pr}" "contact=email hello@${dom} owner=client"
+    outr="$("$0" "${pr}" "${live}" "${doc}" 2>&1)"; rcr=$?
+    if [ "${sfx}" = "example" ]; then rcr_example="${rcr}"; outr_example="${outr}"; fi
+    if [ "${rcr}" -eq 5 ] \
+       && printf '%s' "${outr}" | grep -q "${dom}" \
+       && printf '%s' "${outr}" | grep -q 'UNDELIVERABLE' \
+       && ! printf '%s' "${outr}" | grep -q 'verdict=CLEAN'; then
+      say "SELFTEST ok   | reserved-.${sfx}$(printf '%*s' $((13 - ${#sfx})) '')| rc=5 UNDELIVERABLE, naming ${dom}, for a CONFIRMED owner=client destination"
+    else
+      say "SELFTEST FAIL | reserved-.${sfx}$(printf '%*s' $((13 - ${#sfx})) '')| rc=${rcr} (want 5), or it did not name ${dom}, or it claimed clean"
+      say "${outr}" | sed 's/^/    /'
+      fails=$((fails + 1))
+    fi
+  done
+
+  # THE PAIRED CONTROL for the set: the SAME .example domain, recorded BLOCKED
+  # with the reason, must PASS. A check that refused this too would be refusing
+  # the domain rather than the false confirmation, and BLOCKED-with-the-reason is
+  # the record references/ship-checks.md section 3 asks for.
+  local p_blocked="${SELFTEST_TMP}/p-blocked" out9 rc9
+  mk_dest "${p_blocked}" 'contact=BLOCKED owner=client reason=the only address given is hello@clientsite.example, a reserved name that can never receive mail'
+  out9="$("$0" "${p_blocked}" "${live}" "${doc}" 2>&1)"; rc9=$?
+  if [ "${rc9}" -eq 0 ] && printf '%s' "${out9}" | grep -q 'verdict=CLEAN'; then
+    say "SELFTEST ok   | blocked-reserved-ok    | rc=0 CLEAN for '=BLOCKED owner=client reason=…clientsite.example…' — the SAME domain as the rc=5 leg above, honestly recorded"
+  else
+    say "SELFTEST FAIL | blocked-reserved-ok    | rc=${rc9} (want 0) — a BLOCKED record naming a reserved domain in its reason is the CORRECT record, not a defect"
+    say "${out9}" | sed 's/^/    /'
+    fails=$((fails + 1))
+  fi
+
+  # ---- the deliverability paired control: .example CONFIRMED vs .example BLOCKED ----
+  # The CONFIRMED .example leg must refuse (rc=5) while the SAME domain recorded
+  # BLOCKED passes (rc=0). A check that answered those two alike would be
+  # refusing the domain rather than the false confirmation — a broken TEST.
+  if [ "${rcr_example}" = "${rc9}" ]; then
+    say "SELFTEST FAIL | deliverability-paired-control | .example CONFIRMED and .example BLOCKED BOTH returned rc=${rcr_example}"
+    say "    The check does not discriminate between a false confirmation and an honest BLOCKED record."
+    say "    That is a broken TEST, not a finding."
+    fails=$((fails + 1))
+  else
+    say "SELFTEST ok   | deliverability-paired-control | .example CONFIRMED rc=${rcr_example} vs .example BLOCKED rc=${rc9} — the check discriminates"
   fi
 
   # ---- the FABRICATION-GUARD paired control ----
@@ -922,8 +1091,9 @@ selftest() {
   trap - EXIT INT TERM
 
   if [ "${fails}" -eq 0 ]; then
-    say "SELFTEST PASS | 10 checks | 7 fixtures: clean=0 har=3 owner=4 unreachable=2"
+    say "SELFTEST PASS | 18 checks | 13 fixtures: clean=0 har=3 owner=4 unreachable=2"
     say "SELFTEST PASS | fabrication: sourced=0 drafted=5 no-content=${rc7}, plus BOTH paired controls and the ledger line shape"
+    say "SELFTEST PASS | deliverability: real-domain=0, .example/.invalid/.test/.localhost=5 each, BLOCKED-at-.example=0, plus the real-vs-BLOCKED paired control"
     exit 0
   fi
   warn "SELFTEST FAILED | ${fails} check(s) failed — this guard may not be believed until it is fixed"

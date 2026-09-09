@@ -695,7 +695,9 @@ one ledger line per integration point
 - Form submissions post to GHL. **The destination is a ledger line before the
   build, and a proven arrival before the ship:** one `FORM-DESTINATION` line per
   form, to the field order in the LEDGER VOCABULARY table
-  (`references/documents.md`).
+  (`references/documents.md`), always carrying `owner=<client|operator>` — a
+  destination at a reserved name is recorded BLOCKED with the reason rather
+  than confirmed (both rules live in `references/ship-checks.md` section 3).
   This is not a funnel-only contract — it is the same line every target writes
   (`references/ship-checks.md` section 3), and instrument 6 of
   `STAGE-SHIP-CHECKS` submits one real entry, proves it arrived, then deletes

@@ -101,9 +101,12 @@ defect (a page nobody can verify is not a built page).
 **Every form's destination is declared BEFORE this stage opens, for EVERY
 target** — one `FORM-DESTINATION` ledger line per form on any page or screen,
 to the field order in the LEDGER VOCABULARY table
-(`references/documents.md`); the rule is `references/ship-checks.md`
-section 3, and the funnel wiring at `references/funnel-architecture.md` Stage 4
-generalized. A contact form on a website and a sign-up form in an app carry
+(`references/documents.md`), always carrying `owner=<client|operator>` — a line
+with no `owner=` is read as `operator` and refused — and a destination at a
+reserved name that can never receive mail is recorded BLOCKED with the reason
+rather than confirmed (both rules live in `references/ship-checks.md`
+section 3 and both are checked by `tools/ship-guard.sh`). A contact form on a
+website and a sign-up form in an app carry
 the same contract as a funnel's opt-in: a named destination before a single
 field is built, and a proven arrival before it ships.
 
@@ -335,7 +338,9 @@ order mechanically:
   does not open `STAGE-LOGO`.
 - A page carrying a form opens only when that form's `FORM-DESTINATION` line
   already exists, in the field order the LEDGER VOCABULARY table gives
-  (`references/documents.md`) — a form with no named destination is not built
+  (`references/documents.md`) — a form with no named destination is not built,
+  a line carrying no `owner=` is read as `operator` and refused, and an address
+  at a reserved name is recorded BLOCKED with the reason rather than confirmed
   (`references/ship-checks.md` section 3).
 - The gate does not end here: `STAGE-SHIP-CHECKS` opens only after
   `STAGE-BUILD` passes, and `STAGE-PUBLISH` opens only after

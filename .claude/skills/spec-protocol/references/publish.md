@@ -86,14 +86,31 @@ line is not enough on its own to start a deploy — the report itself is read,
 because publishing is the step that turns an internal file into a public one,
 and that cannot be taken back.
 
-**After the deploy, before `PUBLISHED:` — the guard runs AGAIN, at the live
-origin:**
+**After the deploy, before `PUBLISHED:` — the guard is a REQUIRED step, run
+AGAIN at the live origin.** It is not optional, not "if there is time", and not
+satisfied by the pre-deploy report above: that one measured a staging address,
+and this one measures the address the client will type. The command is run, not
+described:
 
 ```
 tools/ship-guard.sh <project> <the deployed origin>
 ```
 
-- **Exit 0** — clean; the `PUBLISHED:` line may be written.
+**rc 0 is a precondition of the `PUBLISHED:` line.** No rc 0, no `PUBLISHED:`
+line, and no address handed to the client. On rc 0 — and only then — write this
+line through `tools/ledger.sh`, ABOVE the `PUBLISHED:` line and in the same
+stage:
+
+`SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>`
+
+`<n>` is the number of rows the guard's own report carries — every swept path
+plus every destination row in `ship-checks/public-surface.json` — so the count
+is read off the report rather than asserted. A run that reaches `PUBLISHED:`
+with no `SHIP-GUARD: rc=0` line above it published unguarded, and says exactly
+that in the morning report instead of claiming a sweep it never ran. This is the
+guard the 2026-09-07 canary shipped, selftested, and then never called.
+
+- **Exit 0** — clean; the `SHIP-GUARD: rc=0` line, then the `PUBLISHED:` line.
 - **Exit 3** — the live origin served an internal path. The stage STOPS: every
   path it named comes OUT of the deploy root, the deploy is re-run, and the
   guard re-runs from the top. No `PUBLISHED:` line is written and the address
@@ -102,6 +119,13 @@ tools/ship-guard.sh <project> <the deployed origin>
 - **Exit 4** — a form's destination is not the client's
   (`references/ship-checks.md` section 3). The stage stops the same way; the
   destination is corrected or the form is left BLOCKED with its reason.
+- **Exit 5** — a form's destination IS the client's, is recorded as confirmed,
+  and sits at a reserved name that can never receive mail (`.example`,
+  `.invalid`, `.test`, `.localhost`). The stage stops the same way: the line is
+  corrected to a deliverable address the client owns, or recorded
+  `FORM-DESTINATION: <form>=BLOCKED owner=client reason=<the reason>`
+  (`references/ship-checks.md` section 3). It is never repointed at a substitute
+  inbox.
 - **Exit 2** — the guard could not reach the origin. UNDETERMINED, never a
   pass: the stage stops until a request to that origin succeeds and the guard
   returns a real verdict.
