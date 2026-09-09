@@ -100,8 +100,8 @@
 # The four the row enumerates are 0/3/5/2. Exits 4, 6 and 12 are the fail-closed
 # precondition refusals — a missing Parallelism Plan, a missing
 # over-engineering check and a missing step-20 audit gate; all three are kept
-# separate from 2 on purpose, because
-# calling a real refusal a tooling failure would let it read as a broken tool.
+# separate from 2 on purpose, because calling a real refusal a tooling failure
+# would let it read as a broken tool.
 # Exits 7 and 8 are the BUDGET refusals and are kept out of 2 for the same
 # reason: the instrument worked perfectly, the RUN is out of budget. When the
 # four budget keys cannot be READ, though, the gate does not fall through to a
