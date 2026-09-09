@@ -3,7 +3,9 @@
 #
 # Usage:
 #   dispatch-check.sh <project> <units> <agents> <label> [dep=<reason>] [stages=<n>]
-#                     [unit=<work item>] [run=<run id>]
+#                     [unit=<work item>] [phase=<word>] [run=<run id>] [cite=<text>]
+#   run= is OPTIONAL. With no run= this gate MINTS wf-<phase>-<NN> itself, from
+#   phase= (or the phase word in the label or unit) and CONTROL/.run-counter.
 #   dispatch-check.sh --selftest
 #   dispatch-check.sh --help
 #
@@ -34,7 +36,10 @@
 #   4  REFUSED — the dispatch is malformed or its preconditions are missing:
 #              the label does not match [<model> x<N>], or CONTROL/EXECUTION-PLAN.md
 #              carries no "Parallelism Plan" heading ("no Parallelism Plan, no
-#              dispatch" — references/execution-architecture.md, fail-closed).
+#              dispatch" — references/execution-architecture.md, fail-closed), or
+#              a CALLER-SUPPLIED run= is malformed or carries a timestamp LATER
+#              than this machine's UTC clock (RC-23a: the 2026-09-07 canary
+#              booked ids 55 minutes ahead of the clock and nothing caught it).
 #   5  PADDED — agents > units × stages. More seats than the work has stages to
 #              put them in; someone inflated the number to satisfy the floor.
 #   6  NO-RIGHTSIZE — a BUILD dispatch was attempted while CONTROL/LEDGER.md
@@ -88,6 +93,32 @@
 # pass — it exits 2 and names tools/state-check.sh, because a gate that cannot
 # read the budget cannot licence a dispatch against it.
 #
+# THE RUN ID (RC-23a). `run=` is OPTIONAL and, when absent, is MINTED here:
+# wf-<phase>-<NN>, where <phase> is phase= when given, otherwise the first phase
+# word found in the label and the unit, and <NN> is a per-project counter
+# persisted in CONTROL/.run-counter, zero-padded to two digits. The counter is
+# spent only by a dispatch that PASSES every gate, so a refusal never burns an
+# id. When no phase can be determined the minted id NAMES that — wf-pending-<NN>,
+# with a note saying so — instead of passing the old bare `pending` default off
+# as a run id. A CALLER-SUPPLIED run= is validated rather than trusted: it must
+# match wf-<phase>-<suffix> (the shape tools/audit-gate.sh:123 already reads as
+# run=wf-fix-*), and any timestamp component later than this machine's own UTC
+# clock is REFUSED with exit 4. That refusal is the one that would have caught
+# the canary's 55-minute forward skew. `cite=<text>` appends its text to the end
+# of the row verbatim, which is how a research dispatch carries the two
+# RESEARCH-READY citations (SKILL.md section 5) inside a booked row instead of a
+# hand-written one.
+#
+# THE STATE FILE (RC-23c). CONTROL/project_state.json is CREATED by this gate at
+# the first dispatch when it is absent, carrying the canonical budget block —
+# agents.initial, agents.warn_at, agents.first_pause, agents.pause_blocks_granted
+# and agents.ceiling, the five paths tools/state-check.sh validates — so a run
+# cannot reach its first dispatch without a state file and CONTROL/
+# OPERATOR-OVERRIDE.json is readable on every launcher. The numbers are the
+# documented formulas computed from THIS dispatch's unit count (SKILL.md section
+# 6 rewrites them with the run's own figures); the floors, max(150, …) and
+# max(200, …), mean the created file is never laxer than the schema's minimum.
+#
 # CLIENT_CAP is read from <project>/CAPACITY-LEDGER.md, never declared, never
 # asked, never inherited from the environment (finding S1). Two shapes are
 # accepted, in this order:
@@ -132,8 +163,19 @@ LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
 DEFAULT_STAGES=4
 LABEL_RE='\[[A-Za-z0-9.-]+ x[0-9]+\]'
 
+# --- THE RUN ID (RC-23a) ----------------------------------------------------
+RUN_COUNTER_REL="CONTROL/.run-counter"
+# The minted shape, and the only shape a caller may pass. Deliberately the same
+# family tools/audit-gate.sh:123 counts as run=wf-fix-<...>, so an id this gate
+# mints is an id that gate can already read.
+RUN_ID_RE='^wf-[a-z][a-z0-9]*-[A-Za-z0-9._-]+$'
+# The phase vocabulary a minted id draws on, in priority order. A label or unit
+# carrying none of these words is not guessed at: the id names the phase
+# "pending" and says so on stderr.
+PHASE_WORDS="research build rebuild fix judge pen merge audit council repair deploy publish qc plan design scaffold content verify ship"
+
 usage() {
-  sed -n '2,12p' "${SELF}"
+  sed -n '2,14p' "${SELF}"
 }
 
 # --- Exit helpers. Every one of them says WHICH path it read. ----------------
@@ -145,6 +187,112 @@ is_uint() {
     ''|*[!0-9]*) return 1 ;;
     *) return 0 ;;
   esac
+}
+
+# derive_phase <label> <unit> — the first PHASE_WORDS word appearing in either,
+# or rc 1 when neither names a phase. The [<model> x<N>] bracket is stripped
+# first so a model name can never be read as a phase.
+derive_phase() {
+  local text w
+  text="$(printf '%s %s' "$1" "$2" \
+          | tr '[:upper:]' '[:lower:]' \
+          | sed -e 's/\[[^]]*\]//g' -e 's/[^a-z][^a-z]*/ /g')"
+  for w in ${PHASE_WORDS}; do
+    case " ${text} " in *" ${w} "*) printf '%s' "${w}"; return 0 ;; esac
+  done
+  return 1
+}
+
+# mint_run_seq <project> — the per-project counter in CONTROL/.run-counter,
+# incremented under a mkdir lock and written tmp+rename, printed zero-padded to
+# two digits. rc 1 (never a guessed number) when it cannot be read or written.
+mint_run_seq() {
+  local f="${1%/}/${RUN_COUNTER_REL}" d waited=0 n tmp
+  mkdir -p "$(dirname "${f}")" 2>/dev/null || return 1
+  d="${f}.lock.d"
+  while ! mkdir "${d}" 2>/dev/null; do
+    if (( waited >= 20 )); then return 1; fi
+    if (( waited >= 10 )); then
+      printf 'DISPATCH-CHECK NOTE | reclaiming stale run-counter lock %s after %ss\n' "${d}" "${waited}" >&2
+      rm -rf "${d}" 2>/dev/null || true
+      waited=$(( waited + 1 ))
+      continue
+    fi
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+  n="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\).*$/\1/p' "${f}" 2>/dev/null | head -n 1)"
+  is_uint "${n}" || n=0
+  n=$(( n + 1 ))
+  tmp="${f}.tmp.$$"
+  if printf '%s\n' "${n}" > "${tmp}" 2>/dev/null && mv "${tmp}" "${f}" 2>/dev/null; then
+    rm -rf "${d}" 2>/dev/null || true
+    printf '%02d' "${n}"
+    return 0
+  fi
+  rm -f "${tmp}" 2>/dev/null || true
+  rm -rf "${d}" 2>/dev/null || true
+  return 1
+}
+
+# reference_now — the UTC clock this gate dates a caller-supplied id against,
+# as YYYYMMDDHHMMSS. It is `date -u`, with ONE injection point that can only
+# ever make the check STRICTER: SPEC_PROTOCOL_NOW_UTC is honoured only when it
+# parses AND is EARLIER than the real clock. A value in the future is IGNORED
+# and named on stderr, so the variable can never be used to walk a
+# forward-stamped id past this gate — it can only pull "now" backwards, which
+# refuses MORE ids, never fewer. That is what makes the forward-skew refusal
+# reproducible on any date: set the clock back to the canary's 2026-09-08T13:14Z
+# and the canary's own id is refused, exactly as it should have been that day.
+reference_now() {
+  local real inj
+  real="$(date -u +%Y%m%d%H%M%S 2>/dev/null)"
+  is_uint "${real}" || return 1
+  inj="${SPEC_PROTOCOL_NOW_UTC:-}"
+  if [[ -n "${inj}" ]]; then
+    inj="$(printf '%s' "${inj}" | tr -d 'TZ:- ')"
+    while (( ${#inj} < 14 )); do inj="${inj}0"; done
+    inj="${inj:0:14}"
+    if ! is_uint "${inj}"; then
+      printf 'DISPATCH-CHECK NOTE | SPEC_PROTOCOL_NOW_UTC=%s does not parse as a UTC stamp and is IGNORED; the real clock %s is used.\n' \
+        "${SPEC_PROTOCOL_NOW_UTC}" "${real}" >&2
+    elif (( 10#${inj} > 10#${real} )); then
+      printf 'DISPATCH-CHECK NOTE | SPEC_PROTOCOL_NOW_UTC=%s is LATER than the real clock %s and is IGNORED — this variable may only move the reference clock BACKWARDS, so it can never walk a forward-stamped run id past this gate.\n' \
+        "${SPEC_PROTOCOL_NOW_UTC}" "${real}" >&2
+    else
+      printf 'DISPATCH-CHECK NOTE | reference clock moved BACK to SPEC_PROTOCOL_NOW_UTC=%s (real clock %s); this only refuses MORE ids, never fewer.\n' \
+        "${inj}" "${real}" >&2
+      printf '%s' "${inj}"
+      return 0
+    fi
+  fi
+  printf '%s' "${real}"
+  return 0
+}
+
+# validate_run_id <id> — a caller-supplied run= is CHECKED, never trusted. It
+# refuses (exit 4) the old bare `pending`, any id outside RUN_ID_RE, and any id
+# whose timestamp component is later than this machine's UTC clock. A clock it
+# cannot read is exit 2: an id this gate cannot date never books a dispatch.
+validate_run_id() {
+  local id="$1" stamp d t now cand
+  [[ "${id}" != "pending" ]] \
+    || refuse "run=pending is not a run id — it was this gate's old default, and every dispatch booked under it is untraceable (RC-23). Omit run= and the gate mints wf-<phase>-<NN>, naming the phase it used."
+  printf '%s' "${id}" | "${GREP}" -qE "${RUN_ID_RE}" \
+    || refuse "run='${id}' does not match ${RUN_ID_RE} — the shape is wf-<phase>-<suffix>, minted here as wf-<phase>-<NN> and read by tools/audit-gate.sh as run=wf-fix-*. Omit run= to have this gate mint one."
+  stamp="$(printf '%s' "${id}" | sed -n 's/.*[^0-9]\([0-9]\{8\}T[0-9]\{4,6\}\)Z\{0,1\}.*$/\1/p')"
+  [[ -n "${stamp}" ]] || return 0
+  d="${stamp%%T*}"; t="${stamp#*T}"
+  while (( ${#t} < 6 )); do t="${t}0"; done
+  cand="${d}${t}"
+  now="$(reference_now)" \
+    || tooling "date -u failed, so whether run=${id} is stamped in the future is UNDETERMINED — and an id this gate cannot date never books a dispatch"
+  is_uint "${now}" \
+    || tooling "date -u failed, so whether run=${id} is stamped in the future is UNDETERMINED — and an id this gate cannot date never books a dispatch"
+  if (( 10#${cand} > 10#${now} )); then
+    refuse "run='${id}' carries the timestamp ${stamp}, which is LATER than this machine's UTC clock (${now}). A booking stamped in the future is a skewed clock or a hand-written id; it is refused rather than logged. The 2026-09-07 canary carried a 55-minute forward skew and nothing caught it."
+  fi
+  return 0
 }
 
 # --- CLIENT_CAP, read from the Capacity Ledger ------------------------------
@@ -490,14 +638,45 @@ acquire_state_lock() {
   return 0
 }
 
+# create_state_file <state-path> <units> — RC-23c. The state file is written by
+# THIS SCRIPT at the first dispatch, not waited for: on 2026-09-07 the routed
+# launcher never wrote one, so the pause line, the ceiling and the operator
+# override had nowhere to live and no dispatch could be measured against them.
+#
+# The block is the CANONICAL one tools/state-check.sh validates — the five
+# integer keys DIRECTLY under "agents" — computed with the documented formulas
+# from this dispatch's unit count, WF01 unknown at this point and therefore
+# omitted rather than invented:
+#
+#     initial               = units × 3 + 4
+#     warn_at               = max(150, 3 × initial)
+#     first_pause           = max(200, 4 × initial)
+#     pause_blocks_granted  = 0
+#     ceiling               = 2000 (DEFAULT_CEILING; a later write may lower it)
+#
+# The two max() floors are why a file created here is never LAXER than the
+# schema's minimum. SKILL.md section 6 overwrites these with the run's own
+# numbers when it computes them; until it does, the run has a real budget block
+# instead of none.
 create_state_file() {
-  local sp="$1" total="$2" tmp="$1.tmp.$$"
+  local sp="$1" u="$2" tmp="$1.tmp.$$" initial warn_at first_pause
+  is_uint "${u}" || return 1
+  initial=$(( u * 3 + 4 ))
+  warn_at=$(( 3 * initial ));     (( warn_at < 150 ))     && warn_at=150
+  first_pause=$(( 4 * initial )); (( first_pause < 200 )) && first_pause=200
   mkdir -p "$(dirname "${sp}")" 2>/dev/null || return 1
   {
     printf '{\n'
     printf '  "schema": "spec-protocol/project-state@1",\n'
     printf '  "run_status": "RUNNING",\n'
-    printf '  "agents": { "executions_total": %s }\n' "${total}"
+    printf '  "agents": {\n'
+    printf '    "executions_total": 0,\n'
+    printf '    "initial": %s,\n' "${initial}"
+    printf '    "warn_at": %s,\n' "${warn_at}"
+    printf '    "first_pause": %s,\n' "${first_pause}"
+    printf '    "pause_blocks_granted": 0,\n'
+    printf '    "ceiling": %s\n' "${DEFAULT_CEILING}"
+    printf '  }\n'
     printf '}\n'
   } > "${tmp}" || return 1
   mv "${tmp}" "${sp}" || return 1
@@ -580,15 +759,20 @@ run_check() {
   project="$1"; units="$2"; agents="$3"; label="$4"
   shift 4
 
-  local dep="" stages="${DISPATCH_STAGES:-${DEFAULT_STAGES}}" unit="" run_id="pending"
+  # run_id starts EMPTY, not "pending": an empty id is the signal to MINT one
+  # below (RC-23a). "pending" survives only as the phase NAME a minted id carries
+  # when no phase can be determined, and it is never a run id in its own right.
+  local dep="" stages="${DISPATCH_STAGES:-${DEFAULT_STAGES}}" unit="" run_id="" phase="" cite=""
   local a
   for a in "$@"; do
     case "${a}" in
       dep=*)    dep="${a#dep=}" ;;
       stages=*) stages="${a#stages=}" ;;
       unit=*)   unit="${a#unit=}" ;;
+      phase=*)  phase="${a#phase=}" ;;
+      cite=*)   cite="${a#cite=}" ;;
       run=*)    run_id="${a#run=}" ;;
-      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, run=" ;;
+      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, phase=, run=, cite=" ;;
     esac
   done
 
@@ -596,6 +780,16 @@ run_check() {
     || tooling "usage: dispatch-check.sh <project> <units> <agents> <label> [dep=<reason>] [stages=<n>]"
   [[ -n "${GREP}" && -x "${GREP}" ]] \
     || tooling "no usable grep (/usr/bin/grep, /bin/grep, PATH) — the gate cannot read its own inputs, so it claims nothing"
+
+  # A caller-supplied run= is validated HERE, before anything is read or
+  # written, so a malformed or forward-stamped id costs nothing and books
+  # nothing. A phase= is checked the same way: it becomes part of an id other
+  # instruments grep for, so it may not carry surprises.
+  if [[ -n "${run_id}" ]]; then validate_run_id "${run_id}"; fi
+  if [[ -n "${phase}" ]]; then
+    printf '%s' "${phase}" | "${GREP}" -qE '^[a-z][a-z0-9]*$' \
+      || refuse "phase='${phase}' is not a lowercase word — the minted id is wf-<phase>-<NN> and tools/audit-gate.sh greps that shape, so the phase may only be [a-z][a-z0-9]*"
+  fi
   is_uint "${units}"  || tooling "units must be a non-negative integer, got '${units}'"
   is_uint "${agents}" || tooling "agents must be a non-negative integer, got '${agents}'"
   is_uint "${stages}" || tooling "stages must be a non-negative integer, got '${stages}'"
@@ -647,6 +841,18 @@ run_check() {
     fi
   fi
 
+  # --- The state file is CREATED, not waited for (RC-23c) -------------------
+  # Ahead of the budget wall on purpose: the wall reads five keys and refuses
+  # (exit 2) when it cannot, which on the 2026-09-07 routed launcher would have
+  # been every dispatch of the run. A run may not reach its first dispatch
+  # without a state file, so the gate writes one rather than refusing forever.
+  if [[ ! -e "${state_json}" ]]; then
+    create_state_file "${state_json}" "${units}" \
+      || tooling "could not create ${state_json} — the pause line, the ceiling and the executions counter have nowhere to live, and an undetermined budget never licences a dispatch"
+    printf 'DISPATCH-CHECK NOTE | created %s with the canonical budget block (agents.initial, agents.warn_at, agents.first_pause, agents.pause_blocks_granted, agents.ceiling — the five paths tools/state-check.sh validates), computed from units=%s. SKILL.md section 6 overwrites these with the numbers the run computes for itself; CONTROL/OPERATOR-OVERRIDE.json is read before them either way.\n' \
+      "${state_json}" "${units}" >&2
+  fi
+
   # --- Fail-closed precondition: the budget wall (RC-4b) --------------------
   # WI-31 reserved this point between the over-engineering gate above and the
   # width arithmetic below, and this is the block it reserved it for. The order
@@ -681,6 +887,23 @@ run_check() {
   [[ -x "${LEDGER_SH}" ]] \
     || tooling "tools/ledger.sh is missing or not executable at ${LEDGER_SH} — every project write goes through it, so an unlogged dispatch is refused rather than written unlocked"
 
+  # --- The run id (RC-23a). Minted HERE, after every refusal, so a dispatch
+  # that never fires never spends a number from CONTROL/.run-counter.
+  if [[ -z "${run_id}" ]]; then
+    local seq=""
+    if [[ -z "${phase}" ]]; then phase="$(derive_phase "${label}" "${unit}")" || phase=""; fi
+    if [[ -z "${phase}" ]]; then
+      phase="pending"
+      printf 'DISPATCH-CHECK NOTE | no phase= was given and neither the label nor the unit carries one of: %s. The id names the phase as "pending" (run=wf-pending-<NN>) rather than booking under a bare "pending" — pass phase=<word> to name it.\n' \
+        "${PHASE_WORDS}" >&2
+    fi
+    seq="$(mint_run_seq "${project}")" \
+      || tooling "could not mint a run id: ${project}/${RUN_COUNTER_REL} could not be read or written (or its lock could not be taken within 20s). A dispatch with no id is exactly the unbookable dispatch this gate exists to end, so nothing was written."
+    run_id="wf-${phase}-${seq}"
+    printf 'DISPATCH-CHECK NOTE | minted run=%s (phase=%s, counter=%s)\n' \
+      "${run_id}" "${phase}" "${project}/${RUN_COUNTER_REL}" >&2
+  fi
+
   local total=""
   if [[ -f "${state_json}" ]]; then
     acquire_state_lock "${state_json}" \
@@ -692,16 +915,21 @@ run_check() {
     fi
     release_state_lock
   else
-    create_state_file "${state_json}" "${agents}" \
-      || tooling "could not create ${state_json} — the 200-pause counter has nowhere to live"
-    total="${agents}"
-    printf 'DISPATCH-CHECK NOTE | created %s — it did not exist; the executions counter starts at this dispatch\n' "${state_json}" >&2
+    # Unreachable on a healthy run: the block above created this file before the
+    # budget wall read it. Reaching it means something removed the file mid-
+    # dispatch, which is a fact about the RUN's disk, not a licence to write a
+    # second, uncounted state file over the top of it.
+    tooling "${state_json} was present at the budget wall and is gone now — something removed it mid-dispatch. Nothing was written and no dispatch is gated; re-run tools/state-check.sh ${project} and look at what is deleting CONTROL/."
   fi
 
   local ts row out rc
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   [[ -n "${unit}" ]] || unit="${units}-units"
   row="${ts} | ${unit} | dispatch | ${label} | run=${run_id} | units=${units} | agents=${agents} | cap=${cap} | floor=${floor} | stages=${stages} | dep=${dep:-none} | executions_total=${total}"
+  # cite= travels at the END of the row, verbatim. It is how a research dispatch
+  # carries its two RESEARCH-READY citations (SKILL.md section 5) inside a row
+  # this gate wrote, instead of the hand-written row RC-23(b) retires.
+  [[ -z "${cite}" ]] || row="${row} | ${cite}"
   out="$("${LEDGER_SH}" "${project}" "CONTROL/dispatch-log.md" "${row}" 2>&1)"; rc=$?
   if (( rc != 0 )); then
     # Un-bump: the counter moved for a dispatch that has no row. A counter
@@ -981,17 +1209,33 @@ run_selftest() {
   [[ "${p10_total}" == "5" ]] || ok=0
   report 21 "no-budget-keys-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a state file carrying executions_total alone; the message names tools/state-check.sh and every missing key, and the counter did not move (${p10_total}, want 5): ${out}"
 
-  # --- 17: no state file at all is the same answer --------------------------
+  # --- 17: no state file at all — the gate CREATES one (RC-23c) -------------
+  # This case is the inverse of what it asserted before wave 7. It used to
+  # prove the gate refused (exit 2) and seeded nothing. RC-23 measured what
+  # that produced on the routed launcher: no state file was ever written by
+  # anything, so the pause line, the ceiling and CONTROL/OPERATOR-OVERRIDE.json
+  # had nowhere to live and no dispatch could be measured. The gate now writes
+  # the canonical block itself, and tools/state-check.sh — the instrument that
+  # owns that schema — is what says the file is right, not this script's
+  # opinion of its own output.
   local P11="${T}/proj-nostate"
   mkdir -p "${P11}/CONTROL"
   printf 'CLIENT_CAP=10\n' > "${P11}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P11}/CONTROL/EXECUTION-PLAN.md"
   out="$(bash "${SELF}" "${P11}" 1 1 '[Sonnet x1] judge unit-1' 2>&1)"; rc=$?
-  ok=0; [[ "${rc}" == "2" ]] && ok=1
-  printf '%s' "${out}" | "${GREP}" -q "${P11}/CONTROL/project_state.json" || ok=0
-  printf '%s' "${out}" | "${GREP}" -q 'tools/state-check.sh' || ok=0
-  if [[ -f "${P11}/CONTROL/project_state.json" ]]; then ok=0; fi
-  report 22 "no-state-file-undetermined" "${ok}" "rc=${rc} (want 2) when CONTROL/project_state.json does not exist: the gate names the exact path and tools/state-check.sh, and it does NOT seed a file to dispatch against — the budget block is written at SKILL.md section 6, before the first dispatch"
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  [[ -f "${P11}/CONTROL/project_state.json" ]] || ok=0
+  printf '%s' "${out}" | "${GREP}" -q "created ${P11}/CONTROL/project_state.json" || ok=0
+  local p11_total sc_rc=127 sc_out="state-check.sh not run"
+  p11_total="$(read_state_total "${P11}/CONTROL/project_state.json")"
+  [[ "${p11_total}" == "1" ]] || ok=0
+  if [[ -f "${SCRIPT_DIR}/state-check.sh" ]]; then
+    sc_out="$(bash "${SCRIPT_DIR}/state-check.sh" "${P11}" 2>&1)"; sc_rc=$?
+  else
+    sc_out="BROKEN INSTRUMENT: ${SCRIPT_DIR}/state-check.sh is absent, so the created file's schema is UNDETERMINED"
+  fi
+  [[ "${sc_rc}" == "0" ]] || ok=0
+  report 22 "no-state-file-is-created" "${ok}" "rc=${rc} (want 0) when CONTROL/project_state.json does not exist: the gate CREATED it (note names the path), the counter starts at this dispatch (executions_total=${p11_total}, want 1), and tools/state-check.sh scores the created file rc=${sc_rc} (want 0): ${sc_out}"
 
   # --- 18: THE OPERATOR OVERRIDE — five legs on ONE fixture (WI-35) ---------
   # The fixture says first_pause=200 and executions_total=20, which is a run
@@ -1054,9 +1298,100 @@ run_selftest() {
   report 27 "malformed-override-undetermined" "${ok}" "rc=${rc} (want 2, NEVER 0) for a nested first_pause; the message says MALFORMED OPERATOR OVERRIDE and names the path, and the counter did not move (${p12_total}, want 20): ${out}"
   rm -f "${ovf}"
 
+  # --- 19: THE RUN ID IS MINTED, and counts (RC-23a) ------------------------
+  # A fresh fixture, because the point is the FIRST two ids a project ever mints.
+  local P13="${T}/proj-mint"
+  mkdir -p "${P13}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P13}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P13}/CONTROL/EXECUTION-PLAN.md"
+  printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=1 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P13}/CONTROL/LEDGER.md"
+  write_state "${P13}/CONTROL/project_state.json" 0 200 0 2000
+  local mlog="${P13}/CONTROL/dispatch-log.md"
+
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-1' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  "${GREP}" -q 'run=wf-build-01' "${mlog}" 2>/dev/null || ok=0
+  report 28 "run-id-minted-01" "${ok}" "rc=${rc} (want 0) with NO run= argument at all; the row in ${mlog} carries the literal run=wf-build-01, minted from the label's phase word and ${P13}/${RUN_COUNTER_REL}: ${out}"
+
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-2' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  "${GREP}" -q 'run=wf-build-02' "${mlog}" 2>/dev/null || ok=0
+  report 29 "run-id-minted-02" "${ok}" "rc=${rc} (want 0); the SECOND dispatch on the SAME fixture carries run=wf-build-02 — the counter advanced rather than repeating an id: ${out}"
+
+  # --- 20: A CALLER-SUPPLIED id is CHECKED — the pass leg first -------------
+  # The control half. Without it, a gate that refused every caller-supplied id
+  # would look identical to a gate that catches a forward-stamped one.
+  local past_id future_id nowstamp
+  nowstamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  past_id="wf-build-$(date -u -v-1d +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -d '1 day ago' +%Y%m%dT%H%M%SZ 2>/dev/null || printf '20200101T000000Z')"
+  future_id="wf-build-$(date -u -v+30M +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -d '+30 minutes' +%Y%m%dT%H%M%SZ 2>/dev/null || printf '%s%s' "$(( ${nowstamp:0:4} + 1 ))" "${nowstamp:4}")"
+
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-3' "run=${past_id}" 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  "${GREP}" -q "run=${past_id}" "${mlog}" 2>/dev/null || ok=0
+  report 30 "past-run-id-accepted" "${ok}" "rc=${rc} (want 0) for run=${past_id}, a well-shaped id stamped BEFORE this machine's clock (${nowstamp}); it is written to the log as given. This is the control for the refusal below: ${out}"
+
+  # --- 21: THE DISCRIMINATING CASE — a forward-stamped id is REFUSED --------
+  local rows_before rows_after
+  rows_before="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-4' "run=${future_id}" 2>&1)"; rc=$?
+  rows_after="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  ok=0; [[ "${rc}" == "4" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'LATER than this machine' || ok=0
+  [[ "${rows_before}" == "${rows_after}" ]] || ok=0
+  report 31 "future-run-id-refused" "${ok}" "rc=${rc} (want 4, NEVER 0) for run=${future_id} against a clock reading ${nowstamp}; the message says the id is LATER than the machine's clock and the log did not grow (${rows_before} rows before, ${rows_after} after). An implementation that mints correctly but still trusts a caller-supplied id passes case 28 and fails HERE — this is the leg that would have caught the 2026-09-07 55-minute forward skew: ${out}"
+
+  # --- 21b: THE CANARY'S OWN ID, on the day it was written ------------------
+  # Case 31 dates its id forward from whatever clock the test runs on, which is
+  # the general rule. This leg is the SPECIFIC one: the canary's literal id,
+  # `wf-build-20260908T1410Z`, against a reference clock of 2026-09-08T13:14Z —
+  # a 56-minute forward skew, the thing that actually happened. It is
+  # reproducible on any date because reference_now() honours
+  # SPEC_PROTOCOL_NOW_UTC only when it moves the clock BACKWARDS.
+  local canary_id="wf-build-20260908T1410Z"
+  rows_before="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  out="$(SPEC_PROTOCOL_NOW_UTC=20260908T131400Z bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-5' "run=${canary_id}" 2>&1)"; rc=$?
+  rows_after="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  ok=0; [[ "${rc}" == "4" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'LATER than this machine' || ok=0
+  [[ "${rows_before}" == "${rows_after}" ]] || ok=0
+  report 32 "canary-forward-skew-refused" "${ok}" "rc=${rc} (want 4, NEVER 0) for the canary's literal run=${canary_id} against a reference clock of 20260908T131400Z — the 56-minute forward skew of 2026-09-08, refused, and the log did not grow (${rows_before} rows before, ${rows_after} after): ${out}"
+
+  # --- 21c: the injection can only TIGHTEN — the anti-bypass control --------
+  # Without this leg SPEC_PROTOCOL_NOW_UTC would be a hole: a caller could set
+  # it forward and walk any id through. It is honoured only when EARLIER than
+  # the real clock, so a forward value is ignored and the refusal still fires.
+  rows_before="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  out="$(SPEC_PROTOCOL_NOW_UTC=20991231T235959Z bash "${SELF}" "${P13}" 1 1 '[Opus x1] build unit-6' "run=${future_id}" 2>&1)"; rc=$?
+  rows_after="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  ok=0; [[ "${rc}" == "4" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'may only move the reference clock BACKWARDS' || ok=0
+  [[ "${rows_before}" == "${rows_after}" ]] || ok=0
+  report 33 "forward-clock-injection-ignored" "${ok}" "rc=${rc} (want 4, NEVER 0) for run=${future_id} with SPEC_PROTOCOL_NOW_UTC set to 20991231T235959Z: the variable is IGNORED because it is later than the real clock, the gate says so, and the log did not grow (${rows_before} rows before, ${rows_after} after). This is what stops the test hook from being a bypass: ${out}"
+
+  # --- 22: a RESEARCH dispatch books like every other one (RC-23b) ----------
+  out="$(bash "${SELF}" "${P13}" 1 1 '[Haiku x1] reader — three competitor sites' \
+        'unit=research website' \
+        'cite=BUILD-TARGET: website | INPUT-CAPTURED: 00-INPUT/brainstorm-verbatim.md' 2>&1)"; rc=$?
+  ok=0; [[ "${rc}" == "0" ]] && ok=1
+  "${GREP}" -q 'run=wf-research-' "${mlog}" 2>/dev/null || ok=0
+  "${GREP}" -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*research website.*agents=1' "${mlog}" 2>/dev/null || ok=0
+  "${GREP}" -q 'BUILD-TARGET: website | INPUT-CAPTURED: 00-INPUT/brainstorm-verbatim.md' "${mlog}" 2>/dev/null || ok=0
+  report 34 "research-dispatch-books" "${ok}" "rc=${rc} (want 0) for a reader dispatch at agents=1: the row carries agents=1, a minted run=wf-research-NN, and both RESEARCH-READY citations passed through cite= — the hand-written research row format is retired, which is what closes PROOF M's gap without loosening its tolerance-zero rule: ${out}"
+
+  # --- 23: EVERY row this gate wrote carries agents= ------------------------
+  # The measurement RC-23 made on the run: corner-post-framing's log had 6 rows
+  # and zero carried agents=, which is how it was proven that not one dispatch
+  # went through this gate. On a log this gate wrote, the two counts are equal.
+  local all_rows agents_rows
+  all_rows="$("${GREP}" -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${mlog}" 2>/dev/null || printf '0')"
+  agents_rows="$("${GREP}" -c 'agents=' "${mlog}" 2>/dev/null || printf '0')"
+  ok=0; [[ "${all_rows}" == "${agents_rows}" ]] && (( all_rows >= 4 )) && ok=1
+  report 35 "every-row-carries-agents" "${ok}" "${mlog}: ${all_rows} timestamped rows, ${agents_rows} carrying agents= (want equal, and at least 4 rows so the equality is not vacuous)"
+
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (28 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (36 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

@@ -14,13 +14,18 @@ set -uo pipefail
 # --- arguments --------------------------------------------------------
 # --selftest runs ONLY the knowledge-pack resolver against fixture
 # directories and exits; it installs nothing and touches no real store.
+# --hooks-only runs ONLY the dispatch gate hook install (RC-23d) against the
+# ACTIVE config root and exits, running no other group.
 KP_SELFTEST=0
+HOOK_ONLY=0
 while [ $# -gt 0 ]; do
   case "${1:-}" in
     --selftest) KP_SELFTEST=1 ;;
+    --hooks-only) HOOK_ONLY=1 ;;
     -h|--help)
-      printf '%s\n' "usage: bootstrap-companions.sh [--selftest]"
-      printf '%s\n' "  --selftest  resolve every knowledge-pack folder against fixtures; install nothing"
+      printf '%s\n' "usage: bootstrap-companions.sh [--selftest] [--hooks-only]"
+      printf '%s\n' "  --selftest    resolve every knowledge-pack folder against fixtures; install nothing"
+      printf '%s\n' "  --hooks-only  install and register the dispatch gate hook in the ACTIVE config root, then stop"
       exit 0 ;;
     *) printf '%s\n' "unknown argument: ${1:-}" >&2; exit 2 ;;
   esac
@@ -428,9 +433,254 @@ kp_selftest() {
   return "$rc"
 }
 
+# --- the dispatch gate hook (RC-23d) ----------------------------------
+#
+# tools/hooks/dispatch-gate.py is the wall that refuses an unbooked Workflow
+# launch (SHAPE 7) and a launch past the budget (SHAPE 6). Before this block
+# NOTHING installed it: references/workflows.md documented a manual `cp` into
+# ~/.claude/hooks/ for an operator to run once. On the 2026-09-07 routed
+# launcher no one ran it, so every dispatch bypassed tools/dispatch-check.sh
+# and CONTROL/dispatch-log.md ended the run with six rows and not one `agents=`
+# field (RC-23). A wall that installs itself is the only kind that is there.
+#
+# ONE ROOT ONLY. The install goes into the ACTIVE config root — CLAUDE_CONFIG_DIR
+# when it is set, $HOME/.claude otherwise — and NEVER into the sibling root.
+# Writing the other launcher's store is the exact act RC-20 forbids: it would
+# change enforcement for sessions this run is not part of, silently. The sibling
+# root is NAMED in the output, as the thing deliberately not written.
+#
+# DETECT FIRST, NEVER DESTROY. A byte-identical hook already in place is reported
+# as already current and nothing is copied. A DIFFERENT file is backed up beside
+# itself, with the backup path printed, before it is replaced. settings.json is
+# backed up the same way and only ever GAINS one entry in its Workflow matcher.
+# The hook must print ALL PASS from its own --selftest before it is wired
+# (references/workflows.md, "Installing it") — an unproven wall is not wired.
+#
+# A FAILED INSTALL IS A FINDING, NEVER A STOPPED BUILD. Every failure path calls
+# warn(), files a HOOK-INSTALL finding to the project ledger when a project can
+# be resolved, and returns 0. The build continues without the wall and says so.
+
+HOOK_GREP="/usr/bin/grep"
+[ -x "$HOOK_GREP" ] || HOOK_GREP="$(command -v grep 2>/dev/null || true)"
+
+HOOK_SRC="$SKILL_ROOT/tools/hooks/dispatch-gate.py"
+HOOK_ACTIVE_ROOT="${CLAUDE_CONFIG_DIR_ACTUAL%/}"
+HOOK_DEST_DIR="$HOOK_ACTIVE_ROOT/hooks"
+HOOK_DEST="$HOOK_DEST_DIR/dispatch-gate.py"
+HOOK_SETTINGS="$HOOK_ACTIVE_ROOT/settings.json"
+HOOK_STATUS=""
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  HOOK_ROOT_SOURCE="CLAUDE_CONFIG_DIR"
+else
+  HOOK_ROOT_SOURCE="\$HOME/.claude (CLAUDE_CONFIG_DIR is unset)"
+fi
+
+# The root this install must NOT touch. Named, never written.
+hook_sibling_root() {
+  if [ "$HOOK_ACTIVE_ROOT" = "${HOME%/}/.claude" ]; then
+    printf '%s' "${CC9_CONFIG_DIR%/}"
+  else
+    printf '%s' "${HOME%/}/.claude"
+  fi
+}
+
+# A finding goes to the project ledger when a project can be resolved, and is
+# reported here either way: a finding that cannot be filed is never dropped.
+hook_finding() {
+  local line="$1" proj="" led="$SKILL_ROOT/tools/ledger.sh"
+  if [ -n "${SPEC_PROJECT:-}" ] && [ -d "${SPEC_PROJECT%/}/CONTROL" ]; then
+    proj="${SPEC_PROJECT%/}"
+  elif [ -d "$PWD/CONTROL" ]; then
+    proj="$PWD"
+  fi
+  if [ -z "$proj" ]; then
+    say "    finding NOT filed to a ledger: no CONTROL/ resolved from SPEC_PROJECT or \$PWD ($PWD). It stands in this report."
+    return 0
+  fi
+  if [ ! -x "$led" ]; then
+    say "    finding NOT filed to a ledger: $led is missing or not executable. It stands in this report."
+    return 0
+  fi
+  if "$led" "$proj" "CONTROL/LEDGER.md" "$line" >/dev/null 2>&1; then
+    say "    finding filed: $proj/CONTROL/LEDGER.md"
+  else
+    say "    finding NOT filed: $led returned non-zero for $proj/CONTROL/LEDGER.md. It stands in this report."
+  fi
+  return 0
+}
+
+# cmp decides whether the installed copy is the same file; the sha256 is what
+# the report quotes. A box with neither shasum nor sha256sum says UNDETERMINED
+# rather than printing a number it did not compute.
+hook_sha() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$f" 2>/dev/null | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$f" 2>/dev/null | awk '{print $1}'
+  else
+    printf 'UNDETERMINED(no shasum, no sha256sum)'
+  fi
+}
+
+# The registrar. Appends ONE command to the Workflow matcher's hooks array and
+# changes nothing else in the file; the syntax gate already there keeps its
+# place, first. It refuses (exit 3) rather than repairing a settings.json whose
+# shape it does not recognise, because rewriting an operator's store on a guess
+# is worse than an unwired hook plus a finding.
+read -r -d '' HOOK_REGISTER_PY <<'HOOKPYEOF'
+import json, os, shutil, sys, time
+
+settings, command = sys.argv[1], sys.argv[2]
+try:
+    data = {}
+    if os.path.exists(settings):
+        with open(settings, "r", encoding="utf-8") as fh:
+            text = fh.read().strip()
+        if text:
+            data = json.loads(text)
+        if not isinstance(data, dict):
+            print("REFUSED the top level of %s is a %s, not an object" % (settings, type(data).__name__))
+            sys.exit(3)
+    pre = data.setdefault("PreToolUse", [])
+    if not isinstance(pre, list):
+        print("REFUSED PreToolUse in %s is not a list" % settings)
+        sys.exit(3)
+    entry = None
+    for candidate in pre:
+        if isinstance(candidate, dict) and candidate.get("matcher") == "Workflow":
+            entry = candidate
+            break
+    if entry is None:
+        entry = {"matcher": "Workflow", "hooks": []}
+        pre.append(entry)
+    hooks = entry.setdefault("hooks", [])
+    if not isinstance(hooks, list):
+        print("REFUSED the Workflow matcher's hooks in %s is not a list" % settings)
+        sys.exit(3)
+    for hook in hooks:
+        if isinstance(hook, dict) and "dispatch-gate.py" in str(hook.get("command", "")):
+            print("ALREADY-REGISTERED %s" % hook.get("command"))
+            sys.exit(0)
+    hooks.append({"type": "command", "command": command, "timeout": 30})
+    if os.path.exists(settings):
+        backup = settings + ".bak-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        shutil.copy2(settings, backup)
+        print("BACKUP %s" % backup)
+    tmp = "%s.tmp.%d" % (settings, os.getpid())
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+    os.replace(tmp, settings)
+    print("REGISTERED %s" % command)
+except Exception as exc:
+    print("REFUSED %s: %s" % (type(exc).__name__, exc))
+    sys.exit(3)
+HOOKPYEOF
+
+install_dispatch_gate_hook() {
+  local sib ts out rc reg copied="" sha_src sha_dst
+  sib="$(hook_sibling_root)"
+  say ""
+  say "Checking the dispatch gate hook (SHAPE 6/7 — RC-23d)..."
+  say "Source: $HOOK_SRC"
+  say "Active config root: $HOOK_ACTIVE_ROOT (resolved from $HOOK_ROOT_SOURCE)"
+  say "NOT written, by rule (RC-20, own root only): $sib"
+
+  if [ ! -f "$HOOK_SRC" ]; then
+    HOOK_STATUS="FINDING — source absent, SHAPE 6/7 not installed"
+    warn "FINDING: the hook source $HOOK_SRC is absent, so SHAPE 6/7 cannot be installed. The build continues WITHOUT the write-ahead wall; every dispatch must still book itself through tools/dispatch-check.sh."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=source-absent path=$HOOK_SRC — SHAPE 6/7 not installed, dispatch bookings unenforced"
+    return 0
+  fi
+
+  mkdir -p "$HOOK_DEST_DIR" 2>/dev/null
+  if [ ! -d "$HOOK_DEST_DIR" ]; then
+    HOOK_STATUS="FINDING — $HOOK_DEST_DIR not creatable"
+    warn "FINDING: could not create $HOOK_DEST_DIR, so the hook has nowhere to live and SHAPE 6/7 is not installed. Nothing else was touched."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=dest-dir-uncreatable path=$HOOK_DEST_DIR — SHAPE 6/7 not installed"
+    return 0
+  fi
+
+  sha_src="$(hook_sha "$HOOK_SRC")"
+  if [ -f "$HOOK_DEST" ] && cmp -s "$HOOK_SRC" "$HOOK_DEST"; then
+    copied="already current"
+    say "Already current: $HOOK_DEST is byte-identical to the skill's copy (sha256 $sha_src) — nothing copied."
+  else
+    if [ -e "$HOOK_DEST" ]; then
+      sha_dst="$(hook_sha "$HOOK_DEST")"
+      ts="$(date -u +%Y%m%dT%H%M%SZ)"
+      if cp -p "$HOOK_DEST" "$HOOK_DEST.bak-$ts" 2>/dev/null; then
+        say "A DIFFERENT hook was already installed (sha256 $sha_dst). Backed up, never destroyed: $HOOK_DEST.bak-$ts"
+      else
+        HOOK_STATUS="FINDING — existing hook could not be backed up, nothing overwritten"
+        warn "FINDING: $HOOK_DEST exists and differs from the skill's copy (sha256 $sha_dst), and the backup to $HOOK_DEST.bak-$ts FAILED. Nothing was overwritten — a stale wall is still a wall, and destroying the operator's file to install ours is never the trade."
+        hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=backup-failed path=$HOOK_DEST installed_sha=$sha_dst skill_sha=$sha_src — the installed hook may be stale and was left in place"
+        return 0
+      fi
+    fi
+    if cp "$HOOK_SRC" "$HOOK_DEST.tmp.$$" 2>/dev/null \
+       && chmod +x "$HOOK_DEST.tmp.$$" 2>/dev/null \
+       && mv "$HOOK_DEST.tmp.$$" "$HOOK_DEST" 2>/dev/null; then
+      copied="installed"
+      say "Installed: $HOOK_DEST (sha256 $sha_src)"
+    else
+      rm -f "$HOOK_DEST.tmp.$$" 2>/dev/null
+      HOOK_STATUS="FINDING — copy into the active root failed"
+      warn "FINDING: copying $HOOK_SRC to $HOOK_DEST failed, so SHAPE 6/7 is not installed. The build continues without the wall."
+      hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=copy-failed path=$HOOK_DEST — SHAPE 6/7 not installed"
+      return 0
+    fi
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    HOOK_STATUS="FINDING — python3 absent, hook in place but UNPROVEN and NOT wired"
+    warn "FINDING: python3 is not on PATH, so $HOOK_DEST could not run its own --selftest and is NOT registered. An unproven wall is never wired (references/workflows.md, 'Installing it')."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=python3-absent path=$HOOK_DEST — hook copied, unproven, not wired"
+    return 0
+  fi
+  out="$(python3 "$HOOK_DEST" --selftest 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | "$HOOK_GREP" -q 'ALL PASS'; then
+    HOOK_STATUS="FINDING — selftest failed, NOT wired"
+    warn "FINDING: python3 $HOOK_DEST --selftest exited $rc without printing ALL PASS, so it is NOT registered — a hook that fails its own selftest is a BROKEN INSTRUMENT and wiring it would block launches for the wrong reason. Last lines: $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=selftest-failed rc=$rc path=$HOOK_DEST — hook copied, not wired"
+    return 0
+  fi
+  say "Proven: python3 $HOOK_DEST --selftest exited 0 with ALL PASS."
+
+  out="$(python3 -c "$HOOK_REGISTER_PY" "$HOOK_SETTINGS" "python3 $HOOK_DEST" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    HOOK_STATUS="FINDING — proven but NOT wired"
+    warn "FINDING: $HOOK_SETTINGS was NOT changed (exit $rc): $out. The hook file is in place and proven but not wired, so SHAPE 6/7 will not fire. Wire it by hand — references/workflows.md, 'Installing it' — and leave the other root alone."
+    hook_finding "HOOK-INSTALL: root=$HOOK_ACTIVE_ROOT verdict=registration-refused rc=$rc settings=$HOOK_SETTINGS — hook present and proven, SHAPE 6/7 not wired"
+    return 0
+  fi
+  printf '%s\n' "$out" | "$HOOK_GREP" '^BACKUP ' | sed 's|^BACKUP |    settings backup: |' || true
+  if printf '%s' "$out" | "$HOOK_GREP" -q '^ALREADY-REGISTERED'; then
+    reg="already registered"
+  else
+    reg="registered"
+    say "Registered in $HOOK_SETTINGS: PreToolUse -> matcher Workflow -> python3 $HOOK_DEST (appended after the syntax gate, which keeps its place)"
+  fi
+  ok "Dispatch gate hook: $copied, proven, $reg — in $HOOK_ACTIVE_ROOT only"
+  HOOK_STATUS="$copied, proven, $reg at $HOOK_DEST (sibling root $sib untouched)"
+  return 0
+}
+
 if [ "$KP_SELFTEST" -eq 1 ]; then
   kp_selftest
   exit $?
+fi
+
+# --hooks-only: the wall, and nothing else. Exits 0 even on a finding — RC-23d
+# says a failed hook install is a finding, never a stopped build.
+if [ "$HOOK_ONLY" -eq 1 ]; then
+  install_dispatch_gate_hook
+  say ""
+  say "Result: $PASS ok, $FAIL failed, $WARN warnings (hook install only)."
+  say "Dispatch gate hook: ${HOOK_STATUS:-not run}"
+  exit 0
 fi
 
 # --- report -----------------------------------------------------------
@@ -453,6 +703,7 @@ report() {
   say "11. Agnes AI configuration status: Agnes is the APPROVED ALTERNATIVE — configured only when the project chooses it; never required, never auto-subscribed."
   say "11b. OpenClaw knowledge pack (group 5, openclaw-skills): ${KP_OK:-0} of ${KP_TOTAL:-0} folders resolved, ${KP_PULL:-0} pull-required. Manifest: references/knowledge-pack.json. Source: $KP_SOURCE (pin $KP_PIN). Cache: $KP_CACHE_DIR/<folder>/. Per-folder source and tag:"
   if [ -n "${KP_REPORT:-}" ]; then printf '%s' "$KP_REPORT"; else say "    (group not run)"; fi
+  say "11c. Dispatch gate hook (SHAPE 6/7): ${HOOK_STATUS:-not run}. Installed and registered in the ACTIVE config root ONLY (${HOOK_ACTIVE_ROOT:-unresolved}); the sibling root is named and never written (RC-20)."
   say "12. Manual client action: Supabase account/dashboard onboarding when the client lacks one (https://supabase.com/dashboard); browser OAuth for Supabase MCP and for any MCP server that requires it."
   say ""
   say "Result: $PASS ok, $FAIL failed, $WARN warnings."
@@ -713,6 +964,13 @@ else
   say "No separate claude-nine config dir on this box — shared-config install-once rule applies. Validate by launching both plain 'claude' and 'claude-nine' and confirming discovery."
 fi
 say "9Router rule: DO NOT modify model-routing rules merely to make a skill available."
+
+# =====================================================================
+# 8. THE DISPATCH GATE HOOK — tools/hooks/dispatch-gate.py (RC-23d)
+#    Active config root only. Detect first, back up, never destroy, and a
+#    failed install is a finding in the ledger rather than a stopped build.
+# =====================================================================
+install_dispatch_gate_hook
 
 # =====================================================================
 report
