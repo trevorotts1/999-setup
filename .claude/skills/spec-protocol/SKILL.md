@@ -668,7 +668,15 @@ however identical the rest is. The references, `SPEC.md`, `PROJECT-MANIFEST.md` 
 bar package do not change during a run — they go first, and they must reach every agent as
 byte-identical leading text. `CAPACITY-LEDGER.md`, `CONTROL/project_state.json`, the TODO/QC
 surfaces and every status file change constantly and can never cache — they go last, and an
-agent reads only the rows for its own tasks. When dispatching, the shared immutable text goes
+agent reads only the rows for its own tasks.
+
+**Do not slice the spec per agent.** Handing all agents the identical full document is
+cheaper than giving each one its own extract: one agent pays the full input rate and every
+other reads from cache. Per-agent extracts share no prefix, so each one pays full price for
+its own slice and nothing is amortised. This is counterintuitive and it is load-bearing —
+the smaller per-agent payload is the more expensive one.
+
+When dispatching, the shared immutable text goes
 at the TOP of the agent prompt and the per-agent assignment at the BOTTOM; writing it the
 natural way round ('You own task 7 — here is the spec') breaks the cache on the first token
 and every agent pays full price for the same bytes. Stagger the first agent of a fan-out so
