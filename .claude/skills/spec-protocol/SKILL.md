@@ -662,6 +662,18 @@ prove. These are the ones no script can refuse for you:
 
 ## 14. References — read in this order, at the step that cites them
 
+**The fixed set before the moving set — and never re-read the fixed set.** Prompt caching
+matches on an exact prefix: everything after the first differing byte is billed at full rate,
+however identical the rest is. The references, `SPEC.md`, `PROJECT-MANIFEST.md` and the frozen
+bar package do not change during a run — they go first, and they must reach every agent as
+byte-identical leading text. `CAPACITY-LEDGER.md`, `CONTROL/project_state.json`, the TODO/QC
+surfaces and every status file change constantly and can never cache — they go last, and an
+agent reads only the rows for its own tasks. When dispatching, the shared immutable text goes
+at the TOP of the agent prompt and the per-agent assignment at the BOTTOM; writing it the
+natural way round ('You own task 7 — here is the spec') breaks the cache on the first token
+and every agent pays full price for the same bytes. Stagger the first agent of a fan-out so
+the cache exists before the rest start: release them all at once and every one of them misses.
+
 1. `references/audience.md` — the non-technical-adult UX rules; binds every client-facing word (all steps).
 2. `references/platform.md` — detection before anything platform-shaped runs, the capability matrix, the PLATFORM-SKIP line, the skip-with-a-named-reason rule (step 2, and every step that shells out).
 3. `references/openclaw-ingest.md` — OpenClaw detection, ingestion, precedence, question-shrink (step 2.8 and the opening); `references/companion-skills.md` and `references/dependency-sources.md` — the companion contract, the installation report, and the locked source for every third-party dependency (step 2.9, and every install).
