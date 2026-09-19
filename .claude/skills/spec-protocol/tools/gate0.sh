@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 # gate0.sh — the mechanical half of GATE 0 (SKILL.md section 2, "ultracode, hard
-# stop"). GATE 0 tests three signals in order and stops at the first affirmative:
+# stop"). GATE 0 tests four signals in order and stops at the first affirmative:
 #
 #   1. an ultracode system reminder in this turn        (read by the model, not here)
 #   2. the word `ultracode` in the invoking message     (read by the model, not here)
 #   3. CONTROL/.gate0-proven in the project folder      (THIS SCRIPT owns signal 3)
+#   4. live session effort state                         (THIS SCRIPT owns signal 4 via --check-session)
 #
 # Signal 3 exists so a RESUMED run passes without the client typing anything
 # technical: their one restart sentence is `<launcher> --resume` and carries no
-# keyword. The marker is written by `--record` only after signal 1 or 2 genuinely
+# keyword. The marker is written by `--record` only after signal 1, 2 or 4 genuinely
 # passed in some earlier turn, and it is written INTO THE PROJECT FOLDER, so it can
 # never make a FRESH run skip the gate — a new project has no marker and the hard
 # stop fires exactly as before.
 #
-# `--effort ultracode` on the command line is NOT a detectable signal: the flag is
-# accepted by the launcher (a bogus value warns on stderr, `ultracode` does not) but
-# it leaves nothing this skill can read, which is why a headless driver puts the word
-# in the first message instead (references/terminals.md, RESUME-INVOCATION).
+# `--effort ultracode` on the command line is NOT a detectable signal: the flag takes
+# only low through max, so a headless driver puts the word in the first message instead
+# (references/terminals.md, RESUME-INVOCATION). An interactive `/effort ultracode` from an
+# earlier turn in the SAME session IS detectable as signal 4: the binary keeps session
+# effort in the environment (CLAUDE_EFFORT / CLAUDE_CODE_EFFORT_LEVEL) and the `ultracode`
+# settings key, which is what --check-session reads.
 #
 # THE MARKER — <project>/CONTROL/.gate0-proven, exactly three lines:
 #
-#   signal=<reminder|keyword>
+#   signal=<reminder|keyword|session>
 #   recorded=<ISO8601Z>
 #   project=<project folder's own name>
 #
@@ -30,7 +33,8 @@
 #
 # USAGE
 #   gate0.sh <project> --check              is signal 3 present in THAT folder?
-#   gate0.sh <project> --record <signal>    record a genuine pass by signal 1 or 2
+#   gate0.sh --check-session                   is signal 4 live in THIS session?
+#   gate0.sh <project> --record <signal>    record a genuine pass by signal 1, 2 or 4
 #   gate0.sh --check <project>              same, flags first
 #   gate0.sh --record <signal> <project>    same, flags first
 #   gate0.sh --open <dir>                   first-turn engagement marker (RC-16)
@@ -96,7 +100,7 @@ fi
 
 MARKER_REL="CONTROL/.gate0-proven"
 LEDGER_REL="CONTROL/LEDGER.md"
-VALID_SIGNALS="reminder keyword"
+VALID_SIGNALS="reminder keyword session"
 ISO_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
 
 iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -133,6 +137,9 @@ slug_of() {  # slug_of <path> — the project folder's own name, resolved when i
 # ============================================================================
 do_check() {
   local project="$1" marker slug sig ts owner
+  if [ -f "${project%/}/.spec-protocol.json" ]; then
+    undetermined "PROFILE-OWNED: a supplied profile has no legacy CONTROL GATE 0 marker. Only project-profile.mjs resume-authorized may prove its explicit saved-resume exception."
+  fi
   marker="${project%/}/${MARKER_REL}"
   slug="$(slug_of "${project}")"
 
@@ -163,10 +170,55 @@ do_check() {
 }
 
 # ============================================================================
-# --record — a genuine pass by signal 1 or 2 becomes signal 3 for every later turn
+# --check-session — is signal 4 live in THIS session?
+# ============================================================================
+# Signal 4 is the session-persistent half of the fix: an interactive
+# `/effort ultracode` from an earlier turn lives ONLY in the running session,
+# never in the invoking message and never in the project folder. The binary
+# has two independent affirmative witnesses: the live environment
+# (CLAUDE_EFFORT or CLAUDE_CODE_EFFORT_LEVEL set to `ultracode`) and the
+# `ultracode` key in launcher-own settings resolved via CLAUDE_CONFIG_DIR
+# (default: ~/.claude). Either affirmative witness passes (exit 0); neither is
+# a plain failure (exit 1). An existing but unreadable settings file is
+# undetermined (exit 2), because the checker cannot honestly inspect that
+# witness. A session that armed ultracode, compacted, then resumed may retain
+# either witness.
+do_check_session() {
+  local cfg_root cfg effort_env
+  [ -n "${GGREP}" ] || undetermined "no usable grep — session effort state is UNKNOWN, and unknown is not a pass"
+  cfg_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+  cfg="${cfg_root}/settings.json"
+  effort_env="${CLAUDE_EFFORT:-${CLAUDE_CODE_EFFORT_LEVEL:-}}"
+  # Witness 1: the live session environment. `/effort ultracode` sets it to the
+  # literal value `ultracode` for the session; either variable name counts.
+  if [ "${effort_env}" = "ultracode" ]; then
+    echo "GATE0 SESSION | verdict=PASS | via=session | witness=env | config=${cfg}"
+    return 0
+  fi
+  # Witness 2: the `ultracode` key in the launcher-own config root's
+  # settings.json (resolved via CLAUDE_CONFIG_DIR, never hardcoded, never a
+  # sibling root, never a project file). Either witness alone is a PASS.
+  if [ -e "${cfg}" ] && [ ! -r "${cfg}" ]; then
+    undetermined "settings at ${cfg} exists but is not readable — the config witness is UNKNOWN, and unknown is not a pass"
+  fi
+  if [ -r "${cfg}" ]; then
+    if "${GGREP}" -qE '"ultracode"[[:space:]]*:[[:space:]]*true' "${cfg}" 2>/dev/null; then
+      echo "GATE0 SESSION | verdict=PASS | via=session | witness=config | config=${cfg}"
+      return 0
+    fi
+  fi
+  echo "GATE0 SESSION | verdict=NO-SESSION-ULTRACODE | env=${effort_env:-empty} | config=${cfg}"
+  return 1
+}
+
+# ============================================================================
+# --record — a genuine pass by signal 1, 2 or 4 becomes signal 3 for later turns
 # ============================================================================
 do_record() {
   local project="$1" signal="$2" marker slug ts tmp out rc existing
+  if [ -f "${project%/}/.spec-protocol.json" ]; then
+    undetermined "PROFILE-OWNED: do not write a legacy CONTROL GATE 0 marker beside profile-bound state. Use the profile's explicit saved-resume authorization only when applicable."
+  fi
   if ! signal_ok "${signal}"; then
     echo "GATE0 RECORD | verdict=REFUSED | signal=${signal} | valid=${VALID_SIGNALS}" >&2
     echo "Only a signal GATE 0 actually tests may be recorded as one. Nothing was written." >&2
@@ -262,11 +314,11 @@ st_ok()  { echo "SELFTEST ok   | $1"; }
 st_bad() { echo "SELFTEST FAIL | $1"; ST_FAILS=$((ST_FAILS + 1)); }
 
 selftest() {
-  local tmp A B C rc out
+  local tmp A B C D rc out
   tmp="$(mktemp -d)" || { echo "SELFTEST | UNDETERMINED | cannot mktemp" >&2; exit 6; }
   trap 'rm -rf "${tmp}"' EXIT
-  A="${tmp}/alpha-bakery"; B="${tmp}/beta-framing"; C="${tmp}/gamma-garage"
-  mkdir -p "${A}" "${B}" "${C}"
+  A="${tmp}/alpha-bakery"; B="${tmp}/beta-framing"; C="${tmp}/gamma-garage"; D="${tmp}/delta-session"
+  mkdir -p "${A}" "${B}" "${C}" "${D}"
   echo "gate0.sh --selftest | self=${SELF} | fixtures=${tmp}"
 
   # ---- FIXTURE 1: no marker -> rc 1, and it is NOT called an error -------------
@@ -395,8 +447,33 @@ selftest() {
   [ "${rc}" = "2" ] && st_ok "USAGE no-arguments | rc=2 UNDETERMINED" \
                     || st_bad "USAGE no-arguments | rc=${rc} (want 2) | ${out}"
 
+  # ---- FIXTURE 6 (THE SESSION FIX): armed session passes, cold one fails ------
+  local sess_dir cold_sess_dir
+  sess_dir="$(mktemp -d)" || { echo "SELFTEST | UNDETERMINED | cannot mktemp session dir" >&2; exit 6; }
+  cold_sess_dir="$(mktemp -d)" || { echo "SELFTEST | UNDETERMINED | cannot mktemp cold session dir" >&2; exit 6; }
+  printf '{"ultracode": true}' > "${sess_dir}/settings.json"
+  out="$(CLAUDE_CONFIG_DIR="${sess_dir}" CLAUDE_EFFORT=ultracode "${SELF}" --check-session 2>&1)"; rc=$?
+  if [ "${rc}" = "0" ] && printf '%s' "${out}" | "${GGREP}" -q 'verdict=PASS | via=session'; then
+    st_ok "FIXTURE 6 check-session-armed | rc=0 PASS via=session (env + config witnesses)"
+  else
+    st_bad "FIXTURE 6 check-session-armed | rc=${rc} (want 0) | ${out}"
+  fi
+  out="$(CLAUDE_CONFIG_DIR="${cold_sess_dir}" CLAUDE_EFFORT=low "${SELF}" --check-session 2>&1)"; rc=$?
+  if [ "${rc}" = "1" ] && printf '%s' "${out}" | "${GGREP}" -q 'verdict=NO-SESSION-ULTRACODE'; then
+    st_ok "FIXTURE 6b check-session-cold | rc=1 NO-SESSION-ULTRACODE (no witness, plain failure)"
+  else
+    st_bad "FIXTURE 6b check-session-cold | rc=${rc} (want 1) | ${out}"
+  fi
+  rm -rf "${sess_dir}" "${cold_sess_dir}"
+  out="$("${SELF}" "${D}" --record session 2>&1)"; rc=$?
+  if [ "${rc}" = "0" ] && [ "$(field "${D}/${MARKER_REL}" signal)" = "session" ]; then
+    st_ok "CONTROL record-session | rc=0 | signal=session is a legal gate signal"
+  else
+    st_bad "CONTROL record-session | rc=${rc} (want 0) | ${out}"
+  fi
+
   if [ "${ST_FAILS}" -eq 0 ]; then
-    echo "SELFTEST PASS | 5 fixtures (marker-absent, record+ledger, cross-project, malformed, first-turn-open) + 9 supporting checks | marker=${MARKER_REL} | open=.spec-protocol-opened-<ISO8601Z>"
+    echo "SELFTEST PASS | 6 fixtures (marker-absent, record+ledger, cross-project, malformed, first-turn-open, session-effort) + 10 supporting checks | marker=${MARKER_REL} | open=.spec-protocol-opened-<ISO8601Z>"
     exit 0
   fi
   echo "SELFTEST FAILED | ${ST_FAILS} check(s) failed — this checker may not be believed" >&2
@@ -417,19 +494,23 @@ while [ "$#" -gt 0 ]; do
     --open)     MODE="open" ;;
     --record)   MODE="record"; shift; SIGNAL="${1:-}"
                 [ -n "${SIGNAL}" ] || undetermined "--record needs a signal name (${VALID_SIGNALS})" ;;
+    --check-session) MODE="check-session" ;;
     --selftest) selftest ;;
-    -*)         undetermined "unknown option '$1' (usage: gate0.sh <project> --check | <project> --record <signal> | --open <dir> | --selftest)" ;;
+    -*)         undetermined "unknown option '$1' (usage: gate0.sh <project> --check | --check-session | <project> --record <signal> | --open <dir> | --selftest)" ;;
     *)          [ -z "${PROJECT}" ] || undetermined "two project paths given ('${PROJECT}' and '$1')"
                 PROJECT="$1" ;;
   esac
   shift
 done
 
-[ -n "${MODE}" ]    || undetermined "no mode given (usage: gate0.sh <project> --check | <project> --record <signal> | --open <dir> | --selftest)"
-[ -n "${PROJECT}" ] || undetermined "no project folder given — GATE 0's signal 3 is per project folder and cannot be answered without one"
+[ -n "${MODE}" ]    || undetermined "no mode given (usage: gate0.sh <project> --check | --check-session | <project> --record <signal> | --open <dir> | --selftest)"
+if [ "${MODE}" != "check-session" ]; then
+  [ -n "${PROJECT}" ] || undetermined "no project folder given — GATE 0's signal 3 is per project folder and cannot be answered without one"
+fi
 
 case "${MODE}" in
   check)  do_check  "${PROJECT}" ;;
+  check-session) do_check_session ;;
   record) do_record "${PROJECT}" "${SIGNAL}" ;;
   open)   do_open   "${PROJECT}" ;;
 esac
