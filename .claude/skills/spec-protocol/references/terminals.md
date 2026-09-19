@@ -403,8 +403,9 @@ RESUME-INVOCATION: <launcher> --resume   (first message: ultracode continue)
 
 Same two interpolations, filled the same way. The keyword is in the first message
 because `--effort ultracode` on the command line is not a signal GATE 0 can read
-(SKILL.md section 2), and a driver resuming headlessly has no other way to answer the
-gate. The client's sentence above is unchanged and stays unchanged: their plain
+(SKILL.md section 2: the flag takes only low through max), and a driver resuming headlessly
+has no other way to answer the gate — an interactive `/effort ultracode` from an earlier
+turn in the same session is instead signal 4 (`tools/gate0.sh --check-session`). The client's sentence above is unchanged and stays unchanged: their plain
 `<launcher> --resume` passes on GATE 0's third signal — the `CONTROL/.gate0-proven`
 marker `tools/gate0.sh --record` wrote in this project folder when the run's first
 turn passed the gate — so the client is never asked to carry a technical word.
