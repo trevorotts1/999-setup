@@ -144,6 +144,13 @@ $__ to $__." Use a range whenever the retry count is uncertain.
 
 ## 8. The cost guardrail — the client approves MONEY, never technology
 
+Where a decision engine is present (step 2.7), it is the early trigger on this guardrail: one
+`noul` before a paid generation — *"is this about to cost materially more than the client
+approved or would reasonably expect?"* — stopping and asking at 0.70 or above
+(`references/decision-engine.md` §4.3). The arithmetic in §7 remains the authority in both
+cases; the engine can raise the alarm sooner and can never silence it.
+
+
 Never let a small, simple-sounding request quietly become an expensive generation run. When the
 estimated spend materially exceeds what the client has approved or would reasonably expect,
 **stop before the expensive step** and say three things in plain words: what it will cost, why it

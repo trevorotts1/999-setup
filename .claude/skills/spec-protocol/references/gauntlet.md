@@ -436,6 +436,12 @@ and never written, because a hole in the curve is worse than a loud refusal.
 `bash tools/ledger.sh --selftest` proves both halves — the well-formed line
 accepted, the malformed one refused and absent from the file.
 
+**Scoring the rounds.** Where a decision engine is present (step 2.7), each round is scored
+`no measurable improvement | slight | clear | gap closed`, and three consecutive bottom
+readings trigger the rule below; with no engine the rule's existing judgement decides, exactly
+as before (`references/decision-engine.md` §4.6). The engine measures movement — it never
+issues a verdict, never sees the artifact, and never ends a unit on its own.
+
 **The plateau rule — three flat rounds end the unit honestly.** A unit whose
 `best` rises by **less than 0.3 for three consecutive rounds** has PLATEAUED:
 the loop for that unit ENDS at that round, without a legacy twentieth cycle and

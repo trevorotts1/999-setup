@@ -258,6 +258,12 @@ itself.
 **BINDING — the check that runs (RC-21, the 2026-09-08 canary).** The two rules
 above are not enforced by remembering them. Every client-visible message is
 drafted to a file under `CONTROL/.speech/` and put through
+When a decision engine is present (step 2.7), the same draft also gets one `noul` —
+*"does this sentence contain a word a non-technical adult of sixty-five would have to ask the
+meaning of?"* — and is rewritten at 0.60 or above. It catches what a fixed word list cannot:
+the jargon nobody thought to add. With no engine the word list alone decides, exactly as
+before (`references/decision-engine.md` §4.2).
+
 `tools/speech-check.sh <file>` before it is spoken, on the terms **SKILL.md's
 RULE 5** sets out: RULE 5 names this tool as the sixth instrument and owns the
 procedure — which verdicts may be spoken, which must be recorded, and which are

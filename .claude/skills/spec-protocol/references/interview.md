@@ -69,6 +69,18 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
 
 ### Step 1c — the Build Target taxonomy
 
+**When a profile declares `targets`, those decide it and no engine is consulted** (SKILL.md
+section 3). Only for a fresh project, with nothing but the client's own words, may a decision
+engine propose the value — a `choice` over these six. **Its answer is only ever a
+PROPOSAL for the confirm sentence — the client confirmation is mandatory at every confidence,
+and the engine never records the value itself.** Below 0.85 the either/or is offered as well.
+Measured: the bare sentence "recreating the Higgsfield app" returns `MOBILE_APP` at 0.96 —
+confidently wrong — so a threshold alone protects nothing and the state must carry every piece
+of evidence the run already holds (`references/decision-engine.md` §4.1). With no engine, classify from the signals below as
+this skill always has. The engine never overrules a declared target and never skips the
+confirmation sentence.
+
+
 The exchange records exactly one of six values:
 
 `MOBILE_APP | WEB_APP | MOBILE_AND_WEB | DESKTOP_SOFTWARE | WEBSITE | FUNNEL`
