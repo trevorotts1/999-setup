@@ -75,8 +75,9 @@
 #   SCORE | unit=<id> | round=<n> | score=<x.x> | best=<x.x> | delta=<d>
 #
 # optionally carrying the usual "<ISO8601Z> | " prefix every other ledger line
-# carries. `score` is that round's 0-10 trend score, `best` is the best score
-# the unit has reached in any round, and `delta` is how far `best` rose since
+# carries. `score` is that round's 0-10 ten-category score; PASS also requires
+# it to meet the universal 8.5 floor alongside the separate mandatory checks.
+# `best` is the best score the unit has reached in any round, and `delta` is how far `best` rose since
 # the previous round (0.0 on round 1) — the number the plateau rule reads.
 # The class is CHECKED HERE, before the lock is taken: a line that opens the
 # SCORE class but does not carry all five fields in that order, with a numeric
@@ -466,6 +467,13 @@ HOME_DIR="${1:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 FILE="${2:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 LINE="${3:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 UPSERT_KEY="${4:-}"
+
+# A supplied profile has one packet-owned state/ledger writer. Do not create a
+# parallel CONTROL ledger merely because a legacy caller reached this primitive.
+if [[ -f "${HOME_DIR%/}/.spec-protocol.json" ]]; then
+  printf 'LEDGER PROFILE-OWNED | %s has .spec-protocol.json; use its declared packet writer, not ledger.sh.\n' "$HOME_DIR" >&2
+  exit 2
+fi
 
 # ============================================================================
 # The SCORE class gate — runs BEFORE the lock and before any file is touched,

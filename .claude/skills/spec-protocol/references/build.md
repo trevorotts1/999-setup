@@ -1,8 +1,8 @@
 # Build — STAGE-BUILD-DRAFT and STAGE-BUILD (Issue 8, FIX step 1 — the draft stage and the final stage of the staged pipeline)
 
-**When this file applies:** every target — the staged pipeline runs for all
-targets (WEBSITE, FUNNEL, WEB_APP, MOBILE_APP, MOBILE_AND_WEB,
-DESKTOP_SOFTWARE), not websites and funnels only. This file carries TWO stages
+**When this file applies:** every target with a build stage — the dependency
+pipeline is adapted to the declared targets (WEBSITE, FUNNEL, WEB_APP,
+MOBILE_APP, MOBILE_AND_WEB, DESKTOP_SOFTWARE), not websites and funnels only. This file carries TWO stages
 of the order: **BUILD-DRAFT** (`STAGE-BUILD-DRAFT`, section 2 — declared
 placeholder slots and the first client-visible link) and **BUILD-FINAL**
 (`STAGE-BUILD`, sections 1 and 3–5 — the ledger line keeps its name; BUILD-FINAL
@@ -14,12 +14,13 @@ placement", and placement is the build). With no client logo, `STAGE-LOGO`
 writes `STAGE-LOGO: none (no client logo supplied)` — a marked absence, never a
 skipped stage.
 
-**The stage order — written identically in every stage file, all targets:**
+**The dependency order — adapted by target evidence, not a forced web flow:**
 
-DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → BUILD-DRAFT → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
+DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → [BUILD-DRAFT, served targets only] → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
 
-Every stage applies to every page and every screen on every target — same
-pipeline, no per-page and no per-target exceptions.
+Each applicable stage covers the declared page, screen, or artifact inventory.
+Web-only checks (URLs, SEO, forms) are `n/a` with a target reason for native
+products; a native harness or artifact proof is never downgraded for lacking a URL.
 
 **On an app target the evidence is the same, captured from the running app.**
 The three check groups below do not change. "Screen capture of the rendered
@@ -112,22 +113,20 @@ field is built, and a proven arrival before it ships.
 
 **What follows the build — BUILD-FINAL → SHIP-CHECKS → PUBLISH.** This stage's
 pass bar is a BUILD bar, not the ship bar, and passing it is not the finish
-line. When the build passes, `STAGE-SHIP-CHECKS` runs
-(`references/ship-checks.md`: Lighthouse CI mobile, axe-core, the HTML meta
-checker, the link crawler, console capture, the form probe, the analytics
-request, the token census, the content-fact check, and the Tab-walk — each with
-its command, its JSON report, and its threshold), and then `STAGE-PUBLISH`
-(`references/publish.md`: deploy, prove 200, the domain question, the two
-records, the poll). Nothing is published until
+line. When the build passes, `STAGE-SHIP-CHECKS` runs target-applicable
+instruments (`references/ship-checks.md`: a served target may use Lighthouse,
+HTML/meta, crawl, public-surface and applicable form checks; a native target
+uses local runtime, install, signing, export, console, accessibility and other
+frozen evidence), and then `STAGE-PUBLISH` (`references/publish.md`). Nothing is published until
 `SHIP-CHECKS: pass=<n>/<n>` is in the ledger with both numbers equal, and the
-run is not done until the `PUBLISHED:` line is written — its exact field order is
-the LEDGER VOCABULARY table in `references/documents.md`.
+run is not done until the target-specific release record is written — its exact
+field order is the LEDGER VOCABULARY table in `references/documents.md`.
 
 ---
 
-## 2. STAGE-BUILD-DRAFT — the first thing the client can click
+## 2. STAGE-BUILD-DRAFT — the first thing a served target can click
 
-**When it runs:** after `STAGE-SCAFFOLDING` passes and BEFORE any paid image
+**When it applies:** a target that serves a URL. It runs after `STAGE-SCAFFOLDING` passes and BEFORE any paid image
 stage. This is why `STAGE-HERO` and `STAGE-IMAGES` moved: money is spent on
 pictures only for a layout the client has already seen, and the first
 client-visible link is a page of ours, never a media provider's availability.
@@ -161,10 +160,11 @@ when the stage passes. It is the first client-visible link of the run.
 4. No paid image exists yet: a run that reaches `DRAFT-LIVE:` with image spend
    already booked has run the stages out of order.
 
-**Fail-closed:** a draft that cannot be deployed does not open `STAGE-HERO`.
-The paid image lane stays shut until a client-visible draft exists — never
-"generate the images while we sort the hosting out", which is exactly how money
-gets spent on a layout nobody approved.
+**Fail-closed:** a draft that cannot be deployed does not open `STAGE-HERO` on a
+served target. A desktop/no-URL target instead proves the fixture harness and its
+runnable local screen/artifact path before dependent work; it is never blocked for
+lacking a `DRAFT-LIVE:` URL. The paid image lane stays shut until its applicable
+layout evidence exists — never "generate the images while we sort the hosting out".
 
 ---
 
@@ -315,14 +315,16 @@ opted in — the honest absence, never a skipped check).
 Each stage's output is the next stage's input, and the stage gate enforces the
 order mechanically:
 
-- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless the prior stage
+- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless its applicable prior stage
   lines exist — `STAGE-WIREFRAMES` (any per-page `STAGE-WIREFRAMES-<page>` line
-  counts), `STAGE-SCAFFOLDING`, `STAGE-BUILD-DRAFT` (its `DRAFT-LIVE: <url>`
+  counts), `STAGE-SCAFFOLDING`, and, only for a served target, `STAGE-BUILD-DRAFT` (its `DRAFT-LIVE: <url>`
   line), `STAGE-HERO`, `STAGE-IMAGES` among them (and `STAGE-LOGO` where a
   client logo exists). Lacking any prior stage line, the build does not open.
-- `STAGE-BUILD-DRAFT` opens only after `STAGE-SCAFFOLDING` passes, and
-  `STAGE-HERO` opens only after `DRAFT-LIVE: <url>` is in the ledger. The two
-  paid stages never open before the draft the client can click.
+- On a served target, `STAGE-BUILD-DRAFT` opens only after `STAGE-SCAFFOLDING`
+  passes, and `STAGE-HERO` opens only after `DRAFT-LIVE: <url>` is in the ledger.
+  On a no-URL native target, the equivalent gate is the target-selected fixture/
+  runnable screen proof. The two paid stages never open before applicable layout
+  evidence exists.
 - The stage gate checks each stage's acceptance bar before admitting the next
   stage — stage N must pass before stage N+1 is opened. `STAGE-BUILD` opens
   only after `STAGE-IMAGES` passes — and after `STAGE-LOGO` passes when a

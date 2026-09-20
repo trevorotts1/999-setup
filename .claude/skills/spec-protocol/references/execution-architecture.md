@@ -225,10 +225,10 @@ COMPLETE
 - **F.** REQUIRED PROJECT STATE WAS UPDATED
 
 **If any required condition is false, THE TASK IS NOT COMPLETE.** "The agent
-returned successfully" is none of the six. A quality score alone is none of the
-six either: passing the 8.5 gate feeds the landing queue, but no task and no
-checklist box flips to COMPLETE on a score (`references/pipeline.md`, the 8.5
-gate).
+  returned successfully" is none of the six. A quality score alone is none of the
+  six either, but a PASS cannot omit it: the existing ten-category score must be
+  at least 8.5 alongside every required condition, the frozen independent
+  comparison, and candidate-bound evidence (`references/pipeline.md`).
 
 Condition F is not an afterthought. Updating `CONTROL/project_state.json` is PART
 of completing the task, in the same turn, before the task is marked COMPLETED.
@@ -625,7 +625,7 @@ enforcement point without guessing, and so that no file duplicates another's job
 | §4 | TASK is not WORKFLOW | `references/workflows.md` §0 | This file, Section 6 |
 | §5 | Eleven workflow triggers; fourteen declared fields; exact integers | `references/workflows.md` §0 | This file, Section 6; SKILL.md step 12.7; `references/capacity.md` |
 | §6 | Subagent ownership, ten fields, isolation boundaries | `references/workflows.md` §0 | This file, Section 6; `references/gauntlet.md` §13 |
-| §7 | A builder finishing is not completion | This file, Section 5 | `references/pipeline.md` (the 8.5 gate) |
+| §7 | A builder finishing is not completion | This file, Section 5 | `references/pipeline.md` (binary frozen-bar verdict) |
 | §8 | Verification built into the spec; twelve evidence types; independent verifier | This file, Section 7 | `references/gauntlet.md` §15; `references/documents.md` Doc 1 |
 | §9 | Acceptance criteria written before implementation | This file, Section 7 | `references/documents.md` Doc 1; the bar step of the interview |
 | §10 | The project manifest, eighteen contents | `references/documents.md` Doc 17 | This file, Section 2; SKILL.md step 16.2 |

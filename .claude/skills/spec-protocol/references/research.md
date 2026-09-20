@@ -310,8 +310,9 @@ passed.
   One plain-language question, the user picks the bar, and the pick is ratified in
   the decision register (document 10, Law 46). If no comparable reference exists
   for the domain, that is recorded as INFEASIBLE (GL-007) and escalated — it is
-  never a silent skip of Gate 3. The 8.5 gate remains the sole quality floor, but
-  it is a floor, never a substitute for the comparative gate.
+  never a silent skip of Gate 3. A PASS also requires the ten-category score floor
+  of 8.5 and mandatory behavior/scope/evidence; the verdict reports those
+  conditions and never substitutes for the comparative gate.
 
 **The bar is a benchmark, not permission to copy.** Selecting a reference as the
 bar does not change the modeling purpose: the reference apps remain material to

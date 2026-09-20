@@ -92,7 +92,9 @@ verdicts, never trusted as state.
          rule is per RUN, and a resumed session is a new run. Context-window
          research is re-verified when the ledger's [RESEARCHED] date is more
          than 7 days old; otherwise the per-project cache stands.
-     (d) The profile is NOT consulted on resume — the project's own confirmed
+     (d) Re-read and hash the profile on resume — its bound documents and command
+         contract remain authoritative; a changed profile requires re-validation.
+         The project's own confirmed
          ledger (plus fresh measurement) outranks it. The profile is for
          starting projects, not resuming them.
      (e) Re-run the RIG-FITNESS checks (capacity.md §13) against the
@@ -129,36 +131,34 @@ verdicts, never trusted as state.
    holding-pen items ready-to-apply. Never report a bare number. Too many
    to read directly → dispatch a reader agent. Never grep.
 
-4. DETECT THE HUNG AND THE DEAD. A heartbeat line stale per the thresholds
-   (10 minutes builder/judge, 20 minutes merge-writer) = dead. Dispatched
-   with no heartbeat line at all = died at launch (see step 2). Workflow
-   agents and subagents are NOT operating-system processes, so a process
-   matcher finds nothing and a session that trusts it reports "swept" having
-   killed nothing: TaskStop every dispatch-log row that has no RESULT line;
-   record each stop in the session log.
-   In Agent-Team mode both of those readings are a HYPOTHESIS about a
-   teammate, not a verdict: the heartbeat is an application-level artifact,
-   and a commander can be alive and working while writing nothing to it.
-   Close it through `references/agent-team.md` §10 before recording DEAD or
-   died-at-launch, and before anything is killed, adopted or re-spawned on
-   the strength of it.
+4. DETECT THE HUNG AND THE DEAD. A stale or absent heartbeat is a HYPOTHESIS,
+   never proof of death. Before TaskStop, replacement, writer adoption, or any
+   Agent-Team rehydration, reconcile actual native workflow/session/run identity through
+   the applicable host driver and record its result. This applies equally to workflow and
+   Agent-Team mode: a slow worker can be alive without a heartbeat. A proven-live identity
+   is left alone; proven-absent may be stopped/replaced once; unknown ownership is unresolved
+   and escalated, never called healthy or duplicated. An OS process matcher is evidence only
+   for an OS-owned driver. Record the driver scope honestly (logged-in restart versus
+   reboot-before-login, for example); do not claim a host capability that was not probed.
 
-5. SWEEP THE WORKSPACES. A dead builder's uncommitted work → stash it to a
-   rescue location FIRST, then reset hard. Rescue before you reset: the
-   reset is unrecoverable and the stash costs nothing. Remove stale locks.
-   Never let a dead agent's half-edit contaminate the next item. NEVER
+5. SWEEP THE WORKSPACES. Only after step 4 proves the owner absent, a dead
+   builder's uncommitted work → stash it to a rescue location FIRST, then reset
+   hard. Rescue before you reset: the reset is unrecoverable and the stash costs
+   nothing. Retire a lock atomically only after its exact owner is proven absent;
+   retain a live owner and escalate unknown ownership. Never let a proven-dead
+   agent's half-edit contaminate the next item. NEVER
    delete a shared working copy to "start clean" — other items are queued
    behind it. Abandon the branch; keep the working copy.
 
 6. CHECK EACH WRITER BEFORE ADOPTING ITS LANE. A push to the trunk OR a
    heartbeat stamp within the merge-writer's staleness window (20 minutes)
-   means ALIVE — feed it, do NOT adopt. Stale → adopt, announce it in the
-   session log, sweep, and continue.
-   In Agent-Team mode, STALE IS NOT PROOF OF DEATH. Adopting a lane whose
-   writer is still alive puts two writers on one trunk — a worse collision
-   than the re-spawn one, and unrecoverable once both have pushed. Confirm
-   the writer through `references/agent-team.md` §10 before adopting; if
-   §10 cannot close it, the lane is OWNED — escalate, do not adopt.
+   means ALIVE — feed it, do NOT adopt. A stale heartbeat is still only a
+   hypothesis in every mode. Reconcile the native workflow/session/run identity
+   first: proven-live → retain; proven-absent → record and adopt once; unknown →
+   lane remains OWNED and escalates. Adopting a live lane puts two writers on one
+   trunk and is unrecoverable once both push. In Agent-Team mode use
+   `references/agent-team.md` §10 as the identity authority; its silence cannot
+   close a negative result.
 
 7. RESUME ANY CRASHED MERGE — never restart it. An integration branch is a
    durable artifact. Adopt it and continue from the first unlanded item in
@@ -169,10 +169,9 @@ verdicts, never trusted as state.
    (read-only unless you are the merge-writer). Where prose disagrees with
    the primary source, correct the prose.
 
-8.5. RE-HYDRATE THE COMMAND LAYER (Agent-Team mode only — teammates DO NOT
-    survive a crash, a resume, or the lead's exit; assume NONE are alive).
-    (i)   CENSUS WITH THE PRIMARY INSTRUMENT — and still assume none are
-          alive. The primary liveness instrument is the commander's OWN
+8.5. RE-HYDRATE THE COMMAND LAYER (Agent-Team mode only). A crash, resume, or
+    lead exit does not establish absence; reconcile before any re-spawn.
+    (i)   CENSUS WITH THE PRIMARY INSTRUMENT. The primary liveness instrument is the commander's OWN
           SESSION TRANSCRIPT under the active config root
           (`{active config root}/projects/{cwd-slug}/{uuid}.jsonl`, whose
           message lines carry "teamName" and "agentName"). The full
@@ -323,7 +322,8 @@ The five survival loops (in `loops.md`, loops 5–9) are what notice an interrup
 and keep a run alive overnight:
 
 1. **Stall detection** — reads the heartbeat and the dispatch log;
-   anything stale is dead, not slow; re-dispatch from the slice.
+   stale evidence is a timeout signal, not proof a worker is dead; reconcile its
+   actual native runtime identity before any stop, resume, or re-dispatch.
 2. **Session-limit park and resume** — on the limit warning, stop claiming
    new work first, write a park record for every in-flight agent, then run
    the restart steps on resume.

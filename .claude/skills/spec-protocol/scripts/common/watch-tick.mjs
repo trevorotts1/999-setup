@@ -120,8 +120,8 @@ function unitOf(line, fallback) {
 const ROW_RE = /^[ \t]*(- )?\d{4}-\d{2}-\d{2}/;
 
 function parseRows(text) {
-  // Keyed by unit + stage; the LATEST row wins, so a re-dispatch after a reap
-  // replaces the dead agent's row instead of counting twice.
+  // Keyed by unit + stage; the LATEST row wins, so a post-reconciliation
+  // re-dispatch replaces a proven-absent worker's row instead of counting twice.
   const order = [];
   const rec = new Map();
   for (const line of text.split(/\r?\n/)) {
@@ -455,7 +455,7 @@ function runTick(homeArg, wantCronLine) {
     let src = 'heartbeat';
     if (ep === null) {
       ep = isoToEpoch(r.ts);
-      src = 'dispatch row (no heartbeat line at all — died at launch, or never stamped)';
+      src = 'dispatch row (no heartbeat line — identity must be reconciled)';
     }
     if (ep === null) {
       addUndet(`S6=undetermined(unit=${r.unit}: neither a parseable heartbeat nor a parseable dispatch timestamp '${r.ts}')`);
@@ -463,8 +463,8 @@ function runTick(homeArg, wantCronLine) {
     }
     const age = Math.floor((now - ep) / 60);
     if (age > thr) {
-      emit('reap-and-redispatch', r.unit,
-        `S6 stale: unit=${r.unit} stage=${r.stage} last stamped ${age} min ago by its ${src}, past the ${thr}-minute threshold — stale is DEAD, not slow; TaskStop it and re-dispatch from its slice (SKILL.md RULE 5 S6)`);
+      emit('reconcile-native-identity', r.unit,
+        `S6 stale: unit=${r.unit} stage=${r.stage} last stamped ${age} min ago by its ${src}, past the ${thr}-minute threshold — stale is identity-unverified, not dead. Reconcile actual Workflow/session/run or Agent-Team identity through the host driver: proven absent → retire and re-dispatch; proven live → retain; unknown → escalate without replacement (SKILL.md RULE 5 S6).`);
     }
   }
 
@@ -475,8 +475,8 @@ function runTick(homeArg, wantCronLine) {
     if (ep === null) continue;
     const age = Math.floor((now - ep) / 60);
     if (age <= thr) {
-      emit('reap', r.unit,
-        `S13 finished-but-alive: unit=${r.unit} has a RESULT line on CONTROL/LEDGER.md and its heartbeat is still fresh (${age} min old, threshold ${thr}) — TaskStop it and note the reap in the ledger (SKILL.md RULE 5 S13)`);
+      emit('reconcile-native-identity', r.unit,
+        `S13 finished-but-alive: unit=${r.unit} has a RESULT line on CONTROL/LEDGER.md and its heartbeat is still fresh (${age} min old, threshold ${thr}) — reconcile the matching Workflow/session/run or Agent-Team identity before any TaskStop; unknown identity is retained and escalated (SKILL.md RULE 5 S13)`);
     }
   }
 
@@ -548,8 +548,8 @@ function selftest() {
   w(d, 'CONTROL/HEARTBEAT.md', `${stamp(11)} | WF01 judge | U-02 | qc\n`);
   r = run([d]);
   report(3, 'S6-stale-heartbeat',
-    r.rc === 3 && /^ACTION\|reap-and-redispatch\|U-02\|/m.test(r.out) && /S6 stale/.test(r.out) && !/^ACTION\|relabel-and-redispatch/m.test(r.out),
-    `rc=${r.rc} (want 3); reap-and-redispatch at 11 min > 10; the [sonnet x4] label was ACCEPTED (S3's negative control held)`);
+    r.rc === 3 && /^ACTION\|reconcile-native-identity\|U-02\|/m.test(r.out) && /S6 stale/.test(r.out) && !/^ACTION\|relabel-and-redispatch/m.test(r.out),
+    `rc=${r.rc} (want 3); reconcile-native-identity at 11 min > 10; stale evidence alone cannot kill or replace a worker`);
 
   // 4 — clean
   d = mkHome('c4');
@@ -576,8 +576,8 @@ function selftest() {
   w(d, 'CONTROL/LEDGER.md', `${stamp(4)} | CLAIM | unit=U-01 | plan=build the parser\n${stamp(2)} | RESULT | unit=U-01 | verdict=PASS\n`);
   r = run([d]);
   report(6, 'S13-finished-but-alive',
-    r.rc === 3 && /^ACTION\|reap\|U-01\|/m.test(r.out) && /S13 finished-but-alive/.test(r.out),
-    `rc=${r.rc} (want 3); ACTION|reap for U-01 — RESULT on the ledger, heartbeat still fresh`);
+    r.rc === 3 && /^ACTION\|reconcile-native-identity\|U-01\|/m.test(r.out) && /S13 finished-but-alive/.test(r.out),
+    `rc=${r.rc} (want 3); ACTION|reconcile-native-identity for U-01 — RESULT on the ledger, heartbeat still fresh`);
 
   // 7 — S5
   d = mkHome('c7');

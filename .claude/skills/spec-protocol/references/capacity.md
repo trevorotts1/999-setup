@@ -243,7 +243,7 @@ contract, never recited from memory):
 
 - **Session total: NO documented limit.** Verbatim: *"There's no limit on the
   total number of subagents Claude can spawn over a session."*
-- **Concurrency: a default of 20 subagents running at once**, changed with
+- **Concurrency: an unprofiled default of 20 subagents running at once**, changed with
   `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` — and *"Sessions with ultracode active
   are exempt: the limit isn't enforced there."* GATE 0 requires ultracode, so in
   every spec-protocol run that platform limiter is OFF (see AXIS 3).
@@ -309,7 +309,7 @@ probe proves otherwise (section 12).
   subscription account: the account is window-metered and opaque, so the runtime
   rate-limit response IS the meter — park on 429s and resume (Loop 6), never
   hammer, and never pre-shrink a wave against a number nobody measured. (The
-  platform's own default limit of 20 simultaneous subagents is **not in force
+  platform's own unprofiled default limit of 20 simultaneous subagents is **not in force
   here** either: the documentation exempts ultracode sessions from it, and
   GATE 0 requires ultracode.)
 - **9Router paths on the user's own provider keys:** provider ceiling minus the
@@ -698,7 +698,7 @@ max_tokens` with EMPTY assistant text means the whole token budget went to
 reasoning. Retry ONCE at 4× the budget; still starved → once more at the model's
 documented output ceiling; still starved → that seat is UNDETERMINED-instrument
 and the next candidate is selected (section 11). **A starved empty is a
-NON-VERDICT** — never PASS, never FAIL, never INDETERMINATE; it is reissued. A
+NON-VERDICT** — never PASS, never FAIL, never UNVERIFIABLE; it is reissued. A
 judge lane producing repeated empties is diagnosed as budget-before-model.
 
 ### 6.3 The response ladder when capacity shrinks
@@ -1411,7 +1411,8 @@ membership as if it were doctrine.
    confirmed THIS run; back up first and announce both the write and the backup
    path in the same message.
 
-**On a RESUME the profile is NOT consulted.** The project's own confirmed ledger
+**On a RESUME the profile is re-read and hashed.** Its supplied bindings and commands
+remain authoritative; a changed profile requires re-validation. The project's own confirmed ledger
 plus fresh measurement outranks it: the profile is for starting projects, not
 resuming them (`references/resume.md` step 0.5).
 

@@ -552,7 +552,7 @@ reconciler reads and emits actions. This file is what a cold session reads first
   "run_status": "PASS",
   "round": 2,
   "phase": "T-07",
-  "scores": { "current": 8.8, "best": 8.8, "trend_only": true,
+  "scores": { "current": 8.8, "best": 8.8, "quality_floor": 8.5,
               "history": [ {"round":1,"score":7.9,"ts":"2026-08-12T15:41:02Z"},
                            {"round":2,"score":8.8,"ts":"2026-08-12T16:20:33Z"} ] },
   "best_stable_build": { "checkpoint": "checkpoint/recipe-box-003",
@@ -672,7 +672,7 @@ either cites a doctrine constant or shows the operation on one.
 | Analyze / hard stop | 150 / 200 | doctrine constants; 36 is far below both |
 | Repair width N | 2 | N = failed workstreams (u7-card-grid, u3-search), one repairer each, ≤12/wave |
 | Task total | 7 | `tasks=3/3/1` at 14:35 and `0/0/7` at close both sum to 7 |
-| Quality gate / score | 8.5 / 8.8 | the standing gate; the council-round score clears it |
+| Quality gate / score | PASS / 8.8 | the score clears the universal 8.5 floor, while the frozen comparison and mandatory checks independently clear |
 | Drift census | 2,366 / 740 / 31.3% / 139 / line 2,338 / 6.95 h | measured first-hand on the operator's real ledger, 2026-08-12; 740 ÷ 2,366 = 31.3%, 139 ticks × 3 min = 6.95 h |
 | TERMINAL-DRIFT N | 6 | `max(3, ceil(30 min ÷ cadence))` at the 5-minute reconcile cadence |
 

@@ -1,12 +1,14 @@
-# The 17-Document Closed List (v4 Part 13 + Law 39)
+# The default 17-Document List (v4 Part 13 + Law 39)
 
-This is the complete, closed manifest. A spec-protocol project creates these
+This is the default manifest for a newly created generic project. A spec-protocol project creates these
 seventeen documents and nothing else. Not sixteen, not eighteen. An eighteenth
 requires asking the user first, in plain words, naming what it is for, what it
 would hold that none of the seventeen can, and what it will cost to keep
 current. You do not create it and report it afterwards — a yes is recorded in
 the decision register; no yes, no file.
-The list moved from sixteen to seventeen on 2026-08-11, through that same ask,
+When a supplied project has `.spec-protocol.json`, its `documents` bindings are adopted
+instead; do not force this list or create parallel `CONTROL/` state. The list moved from
+sixteen to seventeen on 2026-08-11, through that same ask,
 not around it: the operator's binding doctrine is the recorded yes — "For
 substantial applications, create or recommend a project manifest that acts as
 the durable architectural source of truth" — naming what it is for (how the
@@ -120,7 +122,7 @@ FAIL if: <exact condition> → incomplete because <reason>
   repeats VERIFY has not been written. A slice missing CURRENT STATE, VERIFY, QC,
   ROLLBACK or DONE WHEN is not a slice — do not dispatch it.
 - **EXECUTION ARCHITECTURE (required top-level section — the 2026-08-11
-  doctrine, §23).** Every master specification this skill emits contains a
+  doctrine, §23).** Every *unprofiled* master specification this skill emits contains a
   section literally titled `EXECUTION ARCHITECTURE`, carrying (compactly, with
   pointers into PROJECT-MANIFEST.md for the full field blocks — pointers, never
   copies) all seventeen enumerated contents: task graph; task dependencies;
@@ -133,7 +135,9 @@ FAIL if: <exact condition> → incomplete because <reason>
   The self-audit (SKILL.md step 20) checks the literal title and all seventeen
   contents; a spec without the section, or with a vague count in it, FAILS.
   Do not leave Claude Code to invent this architecture from scratch when the
-  specification can define it intentionally.
+  specification can define it intentionally. A supplied profile's bound `spec`, `protocol`,
+  and canonical state already own the execution architecture: preserve their exact task/workflow
+  counts and policy instead of adding a generic section or a second global count.
 - **Minimum viable (Law 42):** the master spec must describe the MINIMUM viable
   version of what the user asked for. If the user asked for a simple task
   tracker, the spec describes a simple task tracker — not a Notion clone with
@@ -214,17 +218,19 @@ FAIL if: <exact condition> → incomplete because <reason>
   tickets and digest live); (c) the restart steps (the literal resume procedure,
   verbatim with real paths; this is where the refused resume playbook lives).
   **Every verdict block records the per-finding cycle count AND the finding's
-  full history** — which cycle this finding is on, of the 20-cycle fix cap
+  full history** — which cycle this finding is on, of the legacy 20-cycle fix cap
   (`references/pipeline.md`), as "cycle count: n of 20", plus every
   prior cycle's exact finding, fix applied (commit/branch), and re-judge
   result, appended as the loop runs — so a session resuming cold after a crash
   or a compaction reads which cycle a finding is on AND what has already been
   tried directly from the block instead of reconstructing it from ledger
-  history. The history IS the payload of the escalation: after the 20th failed
+  history. The history IS the payload of the legacy escalation: after the 20th failed
   loop, the item escalates to the operator with the full finding history, never
   a relabeled pass (the QC protocol's loop mechanics). Recorded by whichever
   role writes that verdict block (the judge on a Gate 1/2 finding; the critic
-  on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5).
+  on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5). An adopted profile
+  does not create this CONTROL ledger: its bound state records the root-budget count and
+  escalation evidence instead of a generic `n of 20` record.
   **Every verdict block opens with the QC RECORD** — the six-field format
   defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`,
   whose exact field order is the LEDGER VOCABULARY table in this file — read it
@@ -395,12 +401,13 @@ FAIL if: <exact condition> → incomplete because <reason>
   > Here's what got built, what I checked, and the one or two things only you can
   > decide.
 
-  `<URL>` is read from the LAST `PUBLISHED:` ledger line, whose field order is
+  The usable release reference is read from the LAST `PUBLISHED:` ledger line, whose field order is
   the LEDGER VOCABULARY table in this file — written by `STAGE-PUBLISH`
   (`references/publish.md`), never retyped from memory, and it is the custom
   domain when one answers. The LAST one, not the first, for the reason that
   row records: a late domain APPENDS its line, so the first is the stale
-  platform address. When the run has no
+  platform address for a served target; a no-URL target records its artifact/install
+  reference instead. When the run has no
   `PUBLISHED:` line, the opening says so in the same plain voice — what is
   built, and the one thing that stopped it going live — and never implies an
   address that does not answer.
@@ -423,9 +430,10 @@ FAIL if: <exact condition> → incomplete because <reason>
   Sign-up page: 6.4 → 8.1, passed: as good as the example on every point I measured.
   ```
 
-  The numbers are trend data and decide nothing (`references/pipeline.md` Stage 2
-  — the binary verdict decides and the 0–10 score is recorded for trend only).
-  The curve is there so the client can SEE the climb and where it flattened, and
+  The numbers record the ten-category quality floor: a PASS needs a score of at
+  least 8.5 as well as mandatory behavior/scope/evidence and the independent
+  comparison (`references/pipeline.md` Stage 2). The curve lets the client SEE
+  the climb and where it flattened, and
   decide for themselves whether to accept the piece as it is, ask for one more
   round on that one gap, or pick an easier example to measure against — the three
   choices the promise at `SKILL.md` lines 75–80 gives them.
@@ -606,17 +614,17 @@ substitute, never text to type.
 | `run=wf-fix-<NN>` | `run=wf-fix-<NN>` — a field of the dispatch row, matched as `run=wf-fix-[A-Za-z0-9._-]+` | `tools/dispatch-check.sh:704` writes it into `CONTROL/dispatch-log.md`; `tools/audit-gate.sh:123,308` counts the DISTINCT trees. A fix pass is dispatched as a workflow, never performed by the conductor |
 | the dispatch row | `<ISO8601Z> \| <unit> \| dispatch \| <label> \| run=<run-id> \| units=<n> \| agents=<n> \| cap=<n> \| floor=<n> \| stages=<n> \| dep=<reason\|none> \| executions_total=<n>` | `tools/dispatch-check.sh:704`, through `tools/ledger.sh`, into `CONTROL/dispatch-log.md` — written BEFORE the agents fire, on the same pass that increments `agents.executions_total`. Two fields read wrong if transcribed from prose: `dep=` carries the stated dependency REASON, never a unit id, and the `<unit>` slot falls back to `<units>-units` when the optional `unit=` argument is absent |
 | the heartbeat line (`CONTROL/HEARTBEAT.md`) | `<ISO8601Z> \| <agent label> \| <unit> \| <stage>` | each agent, its OWN line only, through `tools/ledger.sh`'s UPSERT mode with the agent label as the key (`tools/ledger.sh:14-15` states it, `:427-431` implements it by removing any existing line containing the literal `\| <key> \|`, `:203-208` proves it) — one line per live agent, overwritten on every real progress step, never appended. Parsed by `tools/watch-tick.sh`'s heartbeat map (`:280`, `:537`) for S6 freshness and S13 reaping; a stamp that map cannot parse makes that row's age UNDETERMINED (`:555`), never fresh |
-| `QC RECORD` | SIX lines, one field each, handed to `ledger.sh` as ONE payload. The first token is `QC-RECORD` with a HYPHEN: `QC-RECORD unit=<id> judge=<seat label> bar=<the bar, named>` / `bar-fetch=<URL \| capture path \| file path \| answer-key reference>` / `verdict=<PASS\|FAIL\|BLOCKED\|INFEASIBLE\|LIMIT-REACHED>` / `outcome=<PASSED\|CLIENT-ACCEPTED gap=<…>\|LOOPED cycle n of 20\|ESCALATED…>` / `blind=<yes> model-independence=<PROVEN\|UNPROVEN> self-qc=<no>` / `provenance=<STRIPPED\|VIOLATION>` | the judge, the moment the verdict is reached (`references/pipeline.md` Stage 2, `PROMPT-QC-INSTRUCTIONS.md`) — the ONE row here with no script that fixes its shape, so Stage 2's block is its authority and this row is that block transcribed. `tools/ledger.sh` selftest case 10 (`:225`) proves only that a six-LINE payload lands whole, using an abbreviated stand-in payload, never this field order |
-| `SCORE` | `SCORE \| unit=<id> \| round=<n> \| score=<x.x> \| best=<x.x> \| delta=<d>`, optionally behind the usual `<ISO8601Z> \| ` prefix | every judge verdict, beside its QC RECORD (`references/gauntlet.md` §5). **`tools/ledger.sh:85` REFUSES a line of this class that does not carry all five fields in this order with numeric `round`, `score`, `best` and `delta`** — the only shape `ledger.sh` judges |
+| `QC RECORD` | Six lines: `QC-RECORD unit=<id> judge=<seat> bar=<bar>` / `bar-fetch=<proof>` / `verdict=<PASS\|FAIL\|BLOCKED\|INFEASIBLE\|LIMIT-REACHED>` / `outcome=<PASSED\|LOOPED cycle n of <cap>\|ESCALATED…>` / `blind=<yes> model-independence=<PROVEN\|UNPROVEN> self-qc=<no>` / `provenance=<STRIPPED\|VIOLATION>`. `<cap>` is the declared repair bound (legacy default 20); a profile uses its canonical state writer, not this CONTROL record. |
+| `SCORE` | `SCORE \| unit=<id> \| round=<n> \| score=<x.x> \| best=<x.x> \| delta=<d>`, optionally behind the usual `<ISO8601Z> \| ` prefix | every judge verdict, beside its QC RECORD (`references/gauntlet.md` §5). A PASS needs a finite 0–10 `score` of at least **8.5**, but that score cannot override a failed mandatory behavior/scope/evidence check or independent comparison. **`tools/ledger.sh:85` REFUSES a line of this class that does not carry all five fields in this order with numeric `round`, `score`, `best` and `delta`** — the only shape `ledger.sh` judges |
 | `RECONCILE` | `<ISO8601Z> \| RECONCILE \| anchor=<8-hex> \| unit=<id\|IDLE> \| result=<clean\|alarm\|actions:<n>\|TERMINAL-DRIFT> \| tasks=<…> \| counts=<…> \| classes=<…> \| ledger=<…> \| intents=<…> \| ticks=<n> \| stateful-heartbeats=<n> \| fp=<8-hex> \| nodelta=<n> \| rung=<n>/4 \| age=<…> \| next=<…>` | `tools/anchor.sh:1588` (`--mode reconcile`). The anchor mode writes `<ISO8601Z> \| RE-ANCHOR \| anchor=<…> \| unit=<…> \| next=<…> \| counts=<…> \| tasks=<…> \| manifest=<…> \| age=<…>` (`:1582`) |
 | `S-CHECK` | `<ISO8601Z> \| S-CHECK \| violations=<n> \| runnable=<n> open=<n> trees=<n> \| cap=<…> \| anchor=<…> \| bar=<…> \| trees-detail=<…> \| actions=<…> \| undetermined=<…>` | `tools/watch-tick.sh:735`, one per five-minute tick. A tick that finds `CONTROL/TERMINAL-DRIFT.flag` writes NO S-CHECK line — the flag is the state |
 | `BUDGET-PAUSE` | `<ISO8601Z> \| BUDGET-PAUSE \| executions=<n> \| pause_at=<n> \| ceiling=<n> \| remaining=<n\|undetermined> \| unit=<id> \| required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'` | `tools/anchor.sh:1052`. Its sibling at the absolute ceiling is `<ISO8601Z> \| BUDGET-CAP \| executions=<n> \| cap=<n> \| remaining=<…> \| unit=<id> \| required=run_status=STOPPED_CAP; …` (`:1045`) |
-| `DRIFT-ALARM group-abort` | `<ISO8601Z> \| DRIFT-ALARM \| group-abort \| row=<run-id> agents=<n> at=<ISO8601Z> \| units=<u1,u2,…>` | `tools/watch-tick.sh` (the group-abort check), through `tools/ledger.sh`, one per dead row per tick; `tools/anchor.sh` recovery-ladder rung 1 answers it with `RECOVERY-LADDER \| rung=1/4 \| … trigger=group-abort(row=<run-id> at=<ts>)` plus the rung-1 `ACTION\|redispatch-from-checkpoint` lines. Named consistently with the alarm roster in `references/enforcement.md` §3 |
+| `DRIFT-ALARM group-abort` | `<ISO8601Z> \| DRIFT-ALARM \| group-abort \| row=<run-id> agents=<n> at=<ISO8601Z> \| units=<u1,u2,…>` | `tools/watch-tick.sh` (the group-abort check), through `tools/ledger.sh`, one per candidate row per tick; `tools/anchor.sh` recovery-ladder rung 1 answers it with `RECOVERY-LADDER \| rung=1/4 \| … trigger=group-abort(row=<run-id> at=<ts>)` plus rung-1 `ACTION\|reconcile-native-identity` lines. The conductor confirms each actual Workflow/session/run or Agent-Team identity before any retirement or replacement. Named consistently with the alarm roster in `references/enforcement.md` §3 |
 | `FORM-DESTINATION` | `FORM-DESTINATION: <form>=<GHL \| email \| Supabase table> owner=<client\|operator>`, one line per form; the honest no-address form is `FORM-DESTINATION: <form>=BLOCKED owner=client reason=<the reason, in plain words>` | the conductor, BEFORE `STAGE-BUILD` opens (`references/ship-checks.md` section 3). Parsed by `tools/ship-guard.sh:119-126`, which exits 4 on a destination that is not the client's |
 | `ACCOUNT-REGISTERED` | **NO SUCH LEDGER LINE.** Nothing in this skill writes one, and this table does not mint one. The contract it is mistaken for — no third-party account opened in the client's name without a spoken yes — is `references/ship-checks.md` section 3, and its record is a row in the decision register (`SPEC/DECISIONS.md`, document 10), in the client's own words | — no writer. A grader looking for `ACCOUNT-REGISTERED` in a ledger is looking for a string this skill never emits |
-| `SHIP-GUARD` | a STDOUT verdict, not a ledger line: `SHIP-GUARD \| verdict=<CLEAN\|EXPOSED\|FOREIGN-DESTINATION\|UNDETERMINED> \| <the counts or the reason>`, preceded by `SHIP-GUARD \| project=<…>`, `\| origin=<…>`, `\| deploy-root=<…>`, `\| ledger=<…>` | `tools/ship-guard.sh` (`:103,220-223,259,333-346`). Its exit code, not its text, is what gates the publish (0 clean, 2 UNDETERMINED, 3 exposed path, 4 foreign destination) |
+| `SHIP-GUARD` | a STDOUT verdict, not a ledger line: `SHIP-GUARD \| verdict=<CLEAN\|EXPOSED\|FOREIGN-DESTINATION\|UNDETERMINED> \| <the counts or the reason>`, preceded by `SHIP-GUARD \| project=<…>`, `\| origin=<…>`, `\| deploy-root=<…>`, `\| ledger=<…>` | `tools/ship-guard.sh` (`:103,220-223,259,333-346`) is a served-target instrument only. Its exit code, not its text, gates that publication (0 clean, 2 UNDETERMINED, 3 exposed path, 4 foreign destination). A no-URL target records the target-specific artifact/install evidence instead. |
 | `CONTENT-TRUTH` | `CONTENT-TRUTH: facts=<n> matched=<n> drafted=<n> unmatched=<n>` — `unmatched` must be `0` | the content-truth ship check, after the build is final and before anything publishes (`references/build.md` section 6) |
-| `PUBLISHED` | `PUBLISHED: <url> domain=<name\|none> status=<code>` | `STAGE-PUBLISH` (`references/publish.md`), composed by the conductor and handed to `tools/ledger.sh`. `status=` is the HTTP code the section-2 `curl` proof measured — `200` on a clean publish, and the machine-readable half of a claim the ledger used to make only in prose. **The upsert key does NOT deduplicate this shape, measured:** `ledger.sh`'s upsert removes an existing line only where the key appears as the literal `\| <key> \|` (`:431`), and this line is colon-delimited, so re-writing it for a late custom domain with `PUBLISHED` as the key appends a SECOND line rather than replacing the first. Controls on the same instrument in the same run: the same key against a pipe-delimited `\| PUBLISHED \|` line dedups to 1, and a `builder-a` heartbeat dedups to 1 — so the instrument is sound and the mismatch is this shape's. Until that is reconciled, a run that re-writes the line reads the LAST `PUBLISHED:` line, never the first |
+| `PUBLISHED` | `PUBLISHED: <release-ref> target=<target> domain=<name\|none> status=<code\|n/a>` | `STAGE-PUBLISH` (`references/publish.md`), composed by the conductor and handed to `tools/ledger.sh`. A served target records the measured HTTP `200`; a no-URL target records `status=n/a` plus its artifact/signing/install/local-runtime/export evidence. **The upsert key does NOT deduplicate this shape, measured:** `ledger.sh`'s upsert removes an existing line only where the key appears as the literal `\| <key> \|` (`:431`), and this line is colon-delimited, so re-writing it for a late custom domain with `PUBLISHED` as the key appends a SECOND line rather than replacing the first. Controls on the same instrument in the same run: the same key against a pipe-delimited `\| PUBLISHED \|` line dedups to 1, and a `builder-a` heartbeat dedups to 1 — so the instrument is sound and the mismatch is this shape's. Until that is reconciled, a run that re-writes the line reads the LAST `PUBLISHED:` line, never the first |
 
 **Two events that are named here and are NOT ledger lines** — `CAPACITY-LEDGER`
 (a file) and `SHIP-GUARD` (a stdout verdict) — are in the table precisely so that
@@ -752,7 +760,8 @@ not count against the closed seventeen and never need the added-document ask:
   agent-budget declaration, the Agent Team line, request budget and burn
   governor. RATIFIED as INFRASTRUCTURE — generated from measurement, never
   hand-edited; written at step 6.5 BEFORE any dispatch; every dispatch cites it.
-- **CONTROL/project_state.json** — the machine-readable project state (the
+- **CONTROL/project_state.json** — the machine-readable project state for an
+  unprofiled project (the
   2026-08-11 doctrine's layer 3). INFRASTRUCTURE: generated and updated by the
   conductor at station 15 of every revolution, read by the reconciler, every
   commander, and every resuming session. It survives context windows on disk —
@@ -766,7 +775,7 @@ not count against the closed seventeen and never need the added-document ask:
     "run_status": "RUNNING|PASS|PAUSED_CAP|STOPPED_CAP|STOPPED_STALL|STOPPED_USER|BLOCKED_HUMAN",
     "round": <int>,
     "phase": "<current task id>",
-    "scores": { "current": <float>, "best": <float>, "trend_only": true,
+    "scores": { "current": <float>, "best": <float>, "quality_floor": 8.5,
                 "history": [ {"round":<int>,"score":<float>,"ts":"<ISO>"} ] },
     "best_stable_build": { "checkpoint": "checkpoint/<slug>-<NNN>",
                            "commit": "<sha>", "score": <float>, "ts": "<ISO>" },
@@ -814,9 +823,9 @@ not count against the closed seventeen and never need the added-document ask:
   }
   ```
 
-  `scores` is trend data only: the binary PASS/FAIL verdict against the frozen
-  bar relationship decides every gate, and the 0–10 score recorded here is
-  recorded for trend only and never decides (`references/pipeline.md` Stage 2).
+  `scores.current` is the existing ten-category score. PASS requires it to be
+  finite, within 0–10, and at least 8.5, alongside the frozen comparison and
+  all mandatory behavior/scope/evidence checks (`references/pipeline.md` Stage 2).
 
   **The budget block, in full** (`references/gauntlet.md` §13.2,
   `references/capacity.md` §3 AXIS 2 and §10 — the operator's decision of

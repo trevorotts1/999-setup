@@ -8,9 +8,13 @@ section 2), and runs before `STAGE-IMAGES`; `STAGE-IMAGES` runs after the hero
 lands and before `STAGE-LOGO` and BUILD-FINAL (`STAGE-BUILD`, which consumes
 the placed images).
 
-**The stage order — written identically in every stage file, all targets:**
+**The served-target stage order:**
 
 DESIGN-BRIEF → DESIGN-DIRECTION → WIREFRAMES → SCAFFOLDING → BUILD-DRAFT → HERO → IMAGES → LOGO → BUILD-FINAL → SHIP-CHECKS → PUBLISH
+
+A no-URL native target uses its target-selected fixture/runnable-screen proof in
+place of `DRAFT-LIVE:`. It does not pay for a web-only image stage or invent a URL
+unless its frozen requirements actually include that surface.
 
 Both stages draw their rows from the image manifest (Issue 7 — every planned
 image is a manifest row: slot, page, size, aspect, generation prompt, provider,
@@ -125,16 +129,16 @@ Never a silent skip, never a stock stand-in passed off as final art.
 Each stage's output is the next stage's input, and the stage gate enforces the
 order mechanically:
 
-- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless the prior stage
-  lines exist — `STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, `STAGE-BUILD-DRAFT`
+- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless applicable prior stage
+  lines exist — `STAGE-WIREFRAMES`, `STAGE-SCAFFOLDING`, and, for a served target, `STAGE-BUILD-DRAFT`
   (its `DRAFT-LIVE: <url>` line), `STAGE-HERO`, `STAGE-IMAGES` among them (and
   `STAGE-LOGO` where a client logo exists). Lacking any prior stage line, the
   build does not open.
 - The stage gate checks each stage's acceptance bar before admitting the next
-  stage — stage N must pass before stage N+1 is opened. **`STAGE-HERO` opens
-  only after `STAGE-BUILD-DRAFT` passes** — the paid image lane never opens
-  before `DRAFT-LIVE: <url>` is in the ledger; `STAGE-IMAGES` opens only after
-  `STAGE-HERO` passes.
+  stage — stage N must pass before stage N+1 is opened. On a served target,
+  **`STAGE-HERO` opens only after `STAGE-BUILD-DRAFT` passes** — the paid image
+  lane never opens before `DRAFT-LIVE: <url>` is in the ledger; `STAGE-IMAGES`
+  opens only after `STAGE-HERO` passes.
 - `STAGE-HERO`'s pass bar is section 1's: a manifest row with a real file for
   every page. `STAGE-IMAGES`'s pass bar is section 2's: all remaining rows
   generated and placed. A stage line that names rows whose files do not exist

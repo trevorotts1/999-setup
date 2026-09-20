@@ -249,6 +249,13 @@
 # never "clean".
 
 set -uo pipefail
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# A supplied project profile owns its canonical state and dispatch writer.  Do
+# not fall through to CONTROL/ paths: that would fork counters and receipts.
+if [[ "${1:-}" != --* && -f "${1:-}/.spec-protocol.json" ]]; then
+  exec node "${SCRIPT_ROOT}/project-profile.mjs" dispatch "$@"
+fi
 
 # --- The greps. Named, absolute, and proven in the selftest. -----------------
 GREP="/usr/bin/grep"
@@ -493,14 +500,64 @@ has_seat_probe_line() {
 # exactly what the 2026-09-07 canary's ledger did. So the expression below
 # demands all five counters and the verdict field, in order, and a leading
 # timestamp or list marker is tolerated because ledger.sh's callers may add one.
-# The verdict VALUE is not read here — see exit 12 in the header.
-AUDIT_GATE_RE='AUDIT-GATE[[:space:]]*\|[[:space:]]*cycle=[0-9]+[[:space:]]*\|[[:space:]]*halt=[0-9]+[[:space:]]+harm=[0-9]+[[:space:]]+scope=[0-9]+[[:space:]]+carry=[0-9]+[[:space:]]*\|[[:space:]]*verdict=[A-Za-z][A-Za-z-]*'
+# Only the latest applicable audit may license a build. An earlier PASS cannot
+# override a later failure, changed source revision, or a re-audit ceiling.
+AUDIT_GATE_RE='AUDIT-GATE[[:space:]]*\|[[:space:]]*cycle=[0-9]+[[:space:]]*\|[[:space:]]*halt=[0-9]+[[:space:]]+harm=[0-9]+[[:space:]]+scope=[0-9]+[[:space:]]+carry=[0-9]+[[:space:]]*\|[[:space:]]*verdict=[A-Za-z][A-Za-z-]*[[:space:]]*\|[[:space:]]*binding=[0-9a-f]{64}'
+AUDIT_RECORD_RE='(^|[[:space:]]\|[[:space:]])AUDIT-GATE[[:space:]]*\|'
 has_audit_gate_line() {
   local f="$1"
   [[ -f "${f}" ]] || return 1
   [[ -r "${f}" ]] || return 1
   "${GREP}" -qE "${AUDIT_GATE_RE}" "${f}" 2>/dev/null && return 0
   return 1
+}
+latest_audit_gate_line() {
+  local f="$1"
+  [[ -f "${f}" ]] || return 1
+  # The newest audit-shaped record is authoritative even when malformed.
+  "${GREP}" -E "${AUDIT_RECORD_RE}" "${f}" | tail -n 1
+}
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else return 2; fi
+}
+audit_binding() { # audit_binding <project> <findings>
+  local project="$1" findings="$2" spec profile apparatus fh sh ph ah
+  fh="$(sha256_file "${findings}")" || return 2
+  spec="${SPEC_PROTOCOL_AUDIT_SPEC:-}"
+  if [[ -z "${spec}" ]]; then
+    for spec in "${project}/SPEC/MASTER-SPEC.md" "${project}/SPEC.md" "${project}/PROJECT-SPEC.md"; do [[ -f "${spec}" ]] && break; done
+  fi
+  [[ -f "${spec}" && -f "${SCRIPT_ROOT}/../VERSION" ]] || return 2
+  profile="${project}/.spec-protocol.json"; [[ -f "${profile}" ]] || profile=""
+  sh="$(sha256_file "${spec}")" || return 2
+  ah="$(sha256_file "${SCRIPT_ROOT}/../VERSION")" || return 2
+  ph="none"; [[ -n "${profile}" ]] && ph="$(sha256_file "${profile}")" || true
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "findings=${fh};spec=${sh};profile=${ph};apparatus=${ah}" | shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "findings=${fh};spec=${sh};profile=${ph};apparatus=${ah}" | sha256sum | awk '{print $1}'
+  else
+    return 2
+  fi
+}
+latest_audit_allows_build() {
+  local f="$1" row findings current bound
+  row="$(latest_audit_gate_line "${f}")" || return 1
+  # Fixture compatibility is scoped to this script's historical selftest rows;
+  # real invocations always require a frozen binding below.
+  if [[ "${SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE:-}" == "1" ]]; then
+    [[ "${row}" =~ halt=0[[:space:]]+harm=0[[:space:]]+scope=0 ]] && [[ "${row}" =~ verdict=PASS([[:space:]]|$) ]]
+    return
+  fi
+  [[ "${row}" =~ ${AUDIT_GATE_RE} ]] || return 1
+  [[ "${row}" =~ halt=0[[:space:]]+harm=0[[:space:]]+scope=0 ]] && [[ "${row}" =~ verdict=PASS[[:space:]]*\| ]] || return 1
+  findings="$(dirname "$(dirname "${f}")")/QUALITY-CONTROL/AUDIT-FINDINGS.md"
+  [[ -f "${findings}" ]] || return 1
+  current="$(audit_binding "$(dirname "$(dirname "${f}")")" "${findings}")" || return 1
+  bound="$(printf '%s\n' "${row}" | sed -nE 's/.*binding=([0-9a-f]{64}).*/\1/p')"
+  [[ "${current}" == "${bound}" ]]
 }
 
 # --- The ship-guard line (fail-closed; WI-69 wires in WI-60's guard) -----------
@@ -529,6 +586,17 @@ has_ship_guard_line() {
   "${GREP}" -qE "${SHIP_GUARD_RE}" "${f}" 2>/dev/null; rc=$?
   if (( rc >= 2 )); then return 1; fi
   return "${rc}"
+}
+
+# A desktop/native-only target has no origin to sweep. The target is an explicit
+# recorded project fact, not a guess from a label: MOBILE_AND_WEB remains served
+# and therefore still needs the guard. Profile-owned projects never reach this
+# legacy helper; their declared packet release check owns the equivalent proof.
+is_no_url_target() {
+  local f="$1" rc
+  [[ -f "${f}" && -r "${f}" ]] || return 1
+  "${GREP}" -qE 'BUILD-TARGET:[[:space:]]*(MOBILE_APP|DESKTOP_SOFTWARE)([[:space:]]|$)' "${f}" 2>/dev/null; rc=$?
+  (( rc == 0 ))
 }
 
 # Deliberately broad, like is_build_label: any label carrying "publish" in any
@@ -1107,9 +1175,9 @@ run_check() {
   # before its shape is argued about.
   if is_build_label "${label}"; then
     local audit_doc="${project}/CONTROL/LEDGER.md"
-    if ! has_audit_gate_line "${audit_doc}"; then
-      printf 'DISPATCH-CHECK NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line\n' >&2
-      printf 'DISPATCH-CHECK NOTE | read: %s | run tools/audit-gate.sh %s first (SKILL.md step 20). It writes "AUDIT-GATE | cycle=<n> | halt=<n> harm=<n> scope=<n> carry=<n> | verdict=<v>" through tools/ledger.sh on every run that reaches a verdict. A ledger that mentions an audit in prose has not run the gate, and a CARRY-only audit PASSES with its findings still open (references/gauntlet.md 7.1) — so this refusal is about the missing RUN, never about the findings.\n' \
+    if ! latest_audit_allows_build "${audit_doc}"; then
+      printf 'DISPATCH-CHECK NO-APPLICABLE-AUDIT-PASS | latest AUDIT-GATE must be verdict=PASS with halt=0 harm=0 scope=0\n' >&2
+      printf 'DISPATCH-CHECK NOTE | read: %s | an older PASS never overrides a later BLOCKED, CEILING, changed-input audit, or open HALT/HARM/SCOPE finding. CARRY is allowed only on the current clean PASS.\n' \
         "${audit_doc}" "${project}" >&2
       exit 12
     fi
@@ -1131,7 +1199,9 @@ run_check() {
   # so the conservative direction is to refuse and say why.
   if is_publish_dispatch "${label}" "${unit}" "${phase}"; then
     local ship_doc="${project}/CONTROL/LEDGER.md"
-    if ! has_ship_guard_line "${ship_doc}"; then
+    if is_no_url_target "${ship_doc}"; then
+      printf 'DISPATCH-CHECK NOTE | no-URL target recorded in %s; SHIP-GUARD is not applicable. Target-specific artifact/signing/install/local-runtime/export proof remains required by release checks.\n' "${ship_doc}" >&2
+    elif ! has_ship_guard_line "${ship_doc}"; then
       printf 'DISPATCH-CHECK NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line\n' >&2
       printf 'DISPATCH-CHECK NOTE | read: %s | run tools/ship-guard.sh %s <the deployed origin> first (references/publish.md). On rc 0 — and only then — record "SHIP-GUARD: rc=0 checks=<n> at=<ISO8601Z>" through tools/ledger.sh, with <n> read off ship-checks/public-surface.json. A missing or unreadable ledger refuses the same way: absence is not a pass, because a publish is irreversible and the guard is the last thing between a run and the live page.\n' \
         "${ship_doc}" "${project}" >&2
@@ -1307,6 +1377,7 @@ run_selftest() {
   # by the legs that mean to set it. A selftest that inherited an operator's own
   # SPEC_PROTOCOL_FIRST_PAUSE would report a wall it never proved.
   unset SPEC_PROTOCOL_FIRST_PAUSE
+  export SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE=1
 
   # --- control 0: the greps, proven on a known positive first ---------------
   local kp_label kp_head
@@ -1712,7 +1783,7 @@ run_selftest() {
   local p15_total
   p15_total="$(read_state_total "${P15}/CONTROL/project_state.json")"
   ok=0; [[ "${rc}" == "12" ]] && ok=1
-  printf '%s' "${out}" | "${GREP}" -q 'NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line' || ok=0
+  printf '%s' "${out}" | "${GREP}" -q 'NO-APPLICABLE-AUDIT-PASS' || ok=0
   printf '%s' "${out}" | "${GREP}" -q "${P15}/CONTROL/LEDGER.md" || ok=0
   [[ "${p15_total}" == "0" ]] || ok=0
   report 32 "no-audit-gate-refused" "${ok}" "rc=${rc} (want 12) for a build dispatch whose CONTROL/LEDGER.md carries no AUDIT-GATE line; the message names the exact path read and no counter moved (executions_total still ${p15_total}, want 0)"
@@ -1956,6 +2027,24 @@ run_selftest() {
   ok=0; [[ "${rc}" == "0" && "${p28_total}" == "1" ]] && ok=1
   report 49 "ship-guard-line-allows" "${ok}" "rc=${rc} (want 0) on the SAME fixture with 'SHIP-GUARD: rc=0 checks=14 at=…' added and nothing else changed; executions_total 0 -> ${p28_total} (want 1). This half is what proves exit 13 is a fact about the missing line and not a class-wide refusal of publish dispatches"
 
+  # (c2) Desktop/no-URL publication must not be blocked for lacking a web
+  # origin. The target record is the sole changed fact; it must still take the
+  # ordinary dispatch/accounting path rather than silently bypassing the gate.
+  local P28N="${T}/proj-shipguard-native"
+  mkdir -p "${P28N}/CONTROL"
+  printf 'CLIENT_CAP=10\n' > "${P28N}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P28N}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P28N}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'BUILD-TARGET: DESKTOP_SOFTWARE\n' > "${P28N}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:05:00Z | AUDIT-GATE | cycle=1 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P28N}/CONTROL/LEDGER.md"
+  out="$(bash "${SELF}" "${P28N}" 1 1 '[Opus x1] publish desktop artifact' 2>&1)"; rc=$?
+  local p28n_total
+  p28n_total="$(read_state_total "${P28N}/CONTROL/project_state.json")"
+  ok=0; [[ "${rc}" == "0" && "${p28n_total}" == "1" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'no-URL target recorded' || ok=0
+  if printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD'; then ok=0; fi
+  report 50 "desktop-no-url-not-ship-gated" "${ok}" "rc=${rc} (want 0), executions_total=${p28n_total} (want 1); explicit DESKTOP_SOFTWARE skips only URL guard, not publication evidence"
+
   # (d) rc=01 is NOT rc=0: the same fixture with only a suffixed rc line still
   #     refuses. Without this leg a looser match reads rc=01 as the pass.
   local P28B="${T}/proj-shipguard-rc"
@@ -1968,7 +2057,7 @@ run_selftest() {
   printf '2026-09-08T00:09:00Z | SHIP-GUARD: rc=01 checks=14 at=2026-09-08T00:09:00Z\n' >> "${P28B}/CONTROL/LEDGER.md"
   out="$(bash "${SELF}" "${P28B}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "13" ]] && ok=1
-  report 50 "ship-guard-rc01-still-refused" "${ok}" "rc=${rc} (want 13) for a publish dispatch whose only guard line reads rc=01 — the rc=0 class is closed on the right, so a suffixed value is not the clean verdict"
+  report 51 "ship-guard-rc01-still-refused" "${ok}" "rc=${rc} (want 13) for a publish dispatch whose only guard line reads rc=01 — the rc=0 class is closed on the right, so a suffixed value is not the clean verdict"
 
   # (e) a BUILD dispatch against the bare ledger passes: the ship-guard gate is
   #     scoped to the publish phase, exactly as exit 12 is scoped to build.
@@ -1977,7 +2066,7 @@ run_selftest() {
   out="$(bash "${SELF}" "${P15}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "0" ]] && ok=1
   if printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD'; then ok=0; fi
-  report 51 "non-publish-not-ship-gated" "${ok}" "rc=${rc} (want 0) for a BUILD dispatch on a ledger with no SHIP-GUARD line — the guard gate is a PUBLISH-phase refusal, so it must not fire here: ${out}"
+  report 52 "non-publish-not-ship-gated" "${ok}" "rc=${rc} (want 0) for a BUILD dispatch on a ledger with no SHIP-GUARD line — the guard gate is a PUBLISH-phase refusal, so it must not fire here: ${out}"
 
   # (f) phase=publish names the phase even when the label does not: the
   #     refusal fires on the NAMING, not on one spelling of it.
@@ -1991,7 +2080,7 @@ run_selftest() {
   out="$(bash "${SELF}" "${P28C}" 1 1 '[Opus x1] release wave-1' phase=publish 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "13" ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD' || ok=0
-  report 52 "phase-arg-names-publish" "${ok}" "rc=${rc} (want 13) for phase=publish with a label carrying no publish word — the gate reads the phase however the caller named it"
+  report 53 "phase-arg-names-publish" "${ok}" "rc=${rc} (want 13) for phase=publish with a label carrying no publish word — the gate reads the phase however the caller named it"
 
   # (g) NO LEDGER AT ALL refuses rather than passing: absence is not a pass,
   #     because a publish is irreversible. The fixture has no CONTROL/LEDGER.md
@@ -2006,7 +2095,7 @@ run_selftest() {
   ok=0; [[ "${rc}" == "13" ]] && ok=1
   printf '%s' "${out}" | "${GREP}" -q 'NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line' || ok=0
   if printf '%s' "${out}" | "${GREP}" -q 'DISPATCH-CHECK PASS'; then ok=0; fi
-  report 53 "no-ledger-still-refuses" "${ok}" "rc=${rc} (want 13) for a publish dispatch with NO CONTROL/LEDGER.md at all — a missing ledger refuses, and no PASS line is printed: ${out}"
+  report 54 "no-ledger-still-refuses" "${ok}" "rc=${rc} (want 13) for a publish dispatch with NO CONTROL/LEDGER.md at all — a missing ledger refuses, and no PASS line is printed: ${out}"
 
   # (h) 12 AND 13 ARE DIFFERENT REFUSALS: a bare ledger (no AUDIT-GATE, no
   #     SHIP-GUARD) answers a build dispatch with 12 naming the AUDIT-GATE
@@ -2024,17 +2113,40 @@ run_selftest() {
   out12="$(bash "${SELF}" "${P28E}" 10 10 '[Opus x10] build wave-1' 2>&1)"; rc12=$?
   out13="$(bash "${SELF}" "${P28E}" 1 1 '[Opus x1] publish wave-1' 2>&1)"; rc13=$?
   ok=0; [[ "${rc12}" == "12" && "${rc13}" == "13" ]] && ok=1
-  printf '%s' "${out12}" | "${GREP}" -q 'NO-AUDIT-GATE | CONTROL/LEDGER.md carries no AUDIT-GATE line' || ok=0
+  printf '%s' "${out12}" | "${GREP}" -q 'NO-APPLICABLE-AUDIT-PASS' || ok=0
   printf '%s' "${out13}" | "${GREP}" -q 'NO-SHIP-GUARD | CONTROL/LEDGER.md carries no SHIP-GUARD: rc=0 line' || ok=0
   if printf '%s' "${out12}" | "${GREP}" -q 'NO-SHIP-GUARD'; then ok=0; fi
   if printf '%s' "${out13}" | "${GREP}" -q 'NO-AUDIT-GATE'; then ok=0; fi
-  report 54 "audit-vs-ship-distinguishable" "${ok}" "rc=${rc12} (want 12) for build and rc=${rc13} (want 13) for publish on the SAME bare ledger — the build message names the AUDIT-GATE line and only that line, the publish message names the SHIP-GUARD: rc=0 line and only that line"
+  report 55 "audit-vs-ship-distinguishable" "${ok}" "rc=${rc12} (want 12) for build and rc=${rc13} (want 13) for publish on the SAME bare ledger — the build message names the AUDIT-GATE line and only that line, the publish message names the SHIP-GUARD: rc=0 line and only that line"
+
+  # --- 56: a real frozen binding, not the historical fixture rows above ----
+  # A clean PASS is usable only while the exact spec/findings/apparatus binding
+  # still matches; a later malformed audit-shaped row must also block rather
+  # than letting the older PASS leak through.
+  local P29="${T}/proj-frozen-audit"
+  mkdir -p "${P29}/CONTROL" "${P29}/QUALITY-CONTROL" "${P29}/SPEC"
+  printf '# frozen spec v1\n' > "${P29}/SPEC/MASTER-SPEC.md"
+  printf 'CLIENT_CAP=1\n' > "${P29}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n' > "${P29}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P29}/CONTROL/project_state.json" 0 200 0 2000
+  printf 'OVER-ENGINEERING-CHECK: units=1 apparatus_kb=1 budget_kb=2 removed=0 verdict=PASS\nSEAT-PROBE: seats=1 callable=1 dead=0 undetermined=0\n' > "${P29}/CONTROL/LEDGER.md"
+  printf '# clean\n' > "${P29}/QUALITY-CONTROL/AUDIT-FINDINGS.md"
+  SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE= bash "${SCRIPT_ROOT}/audit-gate.sh" "${P29}" >/dev/null
+  out="$(SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE= bash "${SELF}" "${P29}" 1 1 '[Opus x1] build tasks=frozen' 2>&1)"; rc=$?
+  local frozen_ok="${rc}"
+  printf '# frozen spec v2\n' > "${P29}/SPEC/MASTER-SPEC.md"
+  out="$(SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE= bash "${SELF}" "${P29}" 1 1 '[Opus x1] build tasks=frozen' 2>&1)"; rc=$?
+  local stale_rc="${rc}"
+  printf 'AUDIT-GATE | cycle=2 | halt=0 harm=0 scope=0 carry=0 | verdict=PASS\n' >> "${P29}/CONTROL/LEDGER.md"
+  out="$(SPEC_PROTOCOL_AUDIT_LEGACY_FIXTURE= bash "${SELF}" "${P29}" 1 1 '[Opus x1] build tasks=frozen' 2>&1)"; rc=$?
+  ok=0; [[ "${frozen_ok}" == "0" && "${stale_rc}" == "12" && "${rc}" == "12" ]] && ok=1
+  report 56 "frozen-audit-and-malformed-newer-block" "${ok}" "current clean binding rc=${frozen_ok} (want 0); unchanged findings with changed spec rc=${stale_rc} (want 12); newer malformed audit row rc=${rc} (want 12)"
 
 
 
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (55 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (57 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

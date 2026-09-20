@@ -314,14 +314,16 @@ row=<run-id> agents=<n> at=<ts>` when two or more agents of one dispatch row
 end at an identical timestamp with no completion record — the shared last
 stamp on `CONTROL/HEARTBEAT.md`, one `run=` row on `CONTROL/dispatch-log.md`,
 no RESULT line on the ledger. `tools/anchor.sh` recovery-ladder rung 1 reads
-that alarm and emits the rung-1 `ACTION|redispatch-from-checkpoint` lines for
-the named row FIRST, re-BOOKED through `tools/dispatch-check.sh` from the
-checkpoints, with the rung-1 ledger line carrying
+that alarm and emits rung-1 `ACTION|reconcile-native-identity` lines for the
+named row FIRST. The conductor reconciles each actual Workflow/session/run or
+Agent-Team identity through the applicable host driver; only a proven-absent
+identity may be re-BOOKED through `tools/dispatch-check.sh` from its checkpoint.
+The rung-1 ledger line carries
 `trigger=group-abort(row=<run-id> at=<ts>)`. The ladder's detect-and-log
 contract holds: the script emits the ACTION lines, the conductor executes
 them. Honest limit, stated here and in `references/loops.md` Loop 9: this
 detector does NOT stop the process deaths, whose cause is undetermined; it
-makes them visible within five minutes and re-books the work.
+makes them visible within five minutes and requests identity reconciliation.
 
 ---
 
@@ -438,11 +440,13 @@ sleeps. Law 8 says never quit — re-fire, resume — and a stop that fires befo
 anything has been re-fired is that law broken by the instrument meant to
 enforce it.
 
-1. **`ACTION|redispatch-from-checkpoint`, for every unit still in flight.**
+1. **`ACTION|reconcile-native-identity`, for every unit still in flight.**
    In flight means: a row in `CONTROL/dispatch-log.md` with no `RESULT` line
    in the ledger — the same census `references/resume.md` step 4 uses. The
-   conductor TaskStops each one and re-dispatches it from its last checkpoint.
-   Most stalls are one dead agent, and this rung ends them.
+   conductor first reconciles each native Workflow/session/run or Agent-Team identity through
+   the applicable host driver. Only a proven-absent identity is retired and re-dispatched from
+   its last checkpoint; live and unknown identities remain owned and are recorded/escalated.
+   This rung names the identity check; it never declares a stale worker dead.
 2. **The capacity grace.** If the last recorded state change is a
    `CAPACITY-EVENT`, the counter does not count toward drift until N rises to
    `max(6, ceil(120 min / cadence))` or two hours of wall clock pass, whichever

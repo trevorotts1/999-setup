@@ -292,8 +292,10 @@ unit is re-done by a dispatched agent and the violation is logged (S9).
 ## Stage 2 — QC + REVIEW (streaming, adversarial, different model)
 
 **PASS at Gate 3 is decided by the bar's declared relationship, frozen at
-selection: wins-or-ties → OURS or TIE passes; meet-all-requirements → every
-requirement checked passes. The judge never raises the relationship.** The
+selection: wins-or-ties → the neutral result privately mapped to the candidate
+(`A` or `B`), or `TIE`, passes; `UNVERIFIABLE` blocks. Meet-all-requirements →
+every requirement checked passes. The judge never
+sees the mapping or raises the relationship.** The
 relationship is the client's own D1/D2 answers (`references/interview.md`
 Block D — the example the client would be happy matching, and whether the
 standard is "shoulder to shoulder" or the rulebook), frozen with the bar
@@ -301,9 +303,11 @@ package at selection and binding on every verdict in this pipeline.
 
 Under **wins-or-ties** (the default) the judge compares the work against the
 item's bar (Law 48 — the named, fetchable bar on the build card's QC section
-or the B2H) the way a customer would, and a verdict of OURS or TIE is a PASS,
-with the comparison evidence quoted in the verdict; only BAR — the bar clearly
-ahead — is a FAIL, and the single largest gap is what returns to the builder.
+or the B2H) the way a customer would, and returns only `A` / `B` / `TIE` /
+`UNVERIFIABLE`, with comparison evidence. The private adjudicator maps the neutral
+side: its candidate side (`A` or `B`) or `TIE` passes; the mapped bar side fails and
+returns the single largest gap; `UNVERIFIABLE` is BLOCKED. The visible verdict does not disclose which
+side was the candidate.
 "Meets the bar exactly" IS a pass under this relationship and is never sent
 back to "exceed it". Under **meet-all-requirements** the bar is an answer-key
 (used when no existing product can serve as the bar) and the pass standard
@@ -311,13 +315,14 @@ is the answer-key's binary PASS: every requirement checked passes. The
 objectivity guard stands under both: an answer-key line the judge cannot run
 to pass/fail is BLOCKED (Law 50) and rewritten by the lead before the build.
 
-**One verdict type — the binary verdict decides, and the 0–10 score is
-recorded for trend only and never decides.** Every verdict also carries a
-0–10 score across the ten categories, written to the ledger as trend data; no
-score, at any value, passes or fails an item. PASS/FAIL is set by the frozen
-relationship above and by nothing else, and no client answer lowers the
-judge's standard (Law 43) — the client's own acceptance has its own outcome,
-`CLIENT-ACCEPTED`, in the QC RECORD below.
+**One PASS condition — all gates are required together.** Every verdict carries
+the existing 0–10 score across the ten categories. PASS requires a finite score
+from 8.5 through 10, the frozen relationship above, every mandatory behavior,
+scope, and evidence check, and the independent reference comparison. PASS/FAIL
+reports that conjunction; it cannot replace a missing score or make a high score
+override another failed condition. No client answer lowers the judge's standard
+(Law 43) — the client's own acceptance has its own outcome, `CLIENT-ACCEPTED`,
+in the QC RECORD below.
 
 **Model:** the technical-judge seat from the seat table (`references/capacity.md`
 §11 — the one place seats are written), resolved live and recorded in the Capacity
@@ -346,7 +351,7 @@ QC-RECORD unit=<unit id> judge=<judge seat label> bar=<the bar, named>
 bar-fetch=<how the bar was obtained: URL | capture path | file path | the
 answer-key block reference — a bar with no fetch proof is not a bar>
 verdict=<PASS|FAIL|BLOCKED|INFEASIBLE|LIMIT-REACHED>
-outcome=<PASSED|CLIENT-ACCEPTED gap=<the one named gap>|LOOPED cycle n of 20|ESCALATED after 20|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — fix cap, timeout, budget, rate limit>>
+outcome=<PASSED|CLIENT-ACCEPTED gap=<the one named gap>|LOOPED cycle n of <cap>|ESCALATED after <cap>|ESCALATED-BLOCKED reason=<the bar or comparison failure>|ESCALATED-INFEASIBLE reason=<no comparable bar>|ESCALATED-LIMIT-REACHED reason=<the operational limit — repair cap, timeout, budget, rate limit>>
 blind=<yes> model-independence=<PROVEN|UNPROVEN> self-qc=<no>
 provenance=<STRIPPED|VIOLATION>
 ```
@@ -369,10 +374,11 @@ run against a QC RECORD without judging anything:
    LIMIT-REACHED** — binary for the purpose of the loop: PASS vs everything
    else, and the non-success states are never relabeled PASS (Law 50).
 5. **`outcome=` must be PASSED, CLIENT-ACCEPTED with a `gap=`, LOOPED
-   `cycle n of 20`, ESCALATED, or one of ESCALATED-BLOCKED /
+   `cycle n of <cap>`, ESCALATED, or one of ESCALATED-BLOCKED /
    ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the fix
-   loop's cap — 20 cycles per finding, operator ruling 2026-08-14;
-   a 21st pass carries ESCALATED with the full finding history) — a FAIL
+   loop's cap — legacy: 20 cycles per finding, operator ruling 2026-08-14;
+   profile: its canonical root-bound submission/verdict budget — and the next attempt after
+   that bound carries ESCALATED with the full finding history) — a FAIL
    verdict with no LOOPED outcome line, an ESCALATED line with no finding
    history attached, or a Law-50 verdict (BLOCKED / INFEASIBLE /
    LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a broken record.
@@ -411,14 +417,16 @@ send it back; do not invent a generic check and call it the card's rubric.
 ### The ONE way — a blind critic, a binary verdict
 
 QC is ONE way: a blind critic reviews the work; PASS = the
-frozen bar relationship met (wins-or-ties → OURS or TIE passes;
-meet-all-requirements → every requirement checked passes); FAIL = looped to
-the builder with the exact finding, max 20 fix-loop cycles per finding, then
+frozen bar relationship met (wins-or-ties → private candidate-side `A` or `B`, or
+`TIE`, passes; meet-all-requirements → every requirement checked passes); FAIL = looped to
+the builder with the exact finding, the declared bounded repair cap (legacy default 20), then
 escalation to the operator with the full finding history (operator
-ruling 2026-08-14). **The verdict is binary — there is no numeric pass lane,
-no "at or above a score" pass; the binary verdict decides and the 0–10 score
-is recorded for trend only and never decides.** The non-success states
-BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
+ruling 2026-08-14). **PASS is a verdict format, not a bypass.** It requires the
+0–10 ten-category score floor of 8.5, the frozen bar relationship, mandatory
+behavior/scope/evidence checks, and an independent comparison. Missing scores
+are UNVERIFIED; a high score cannot override another failed condition. The
+non-success states BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS
+(Law 50).
 
 The ten categories below are the critic's rubric surface — quoted proof
 beside every judgement. Each category's judgement maps to the binary verdict:
@@ -543,7 +551,8 @@ ADDITION TO the ten-category score, never as a replacement:
   empty pool** — re-run pool discovery with its control, name what was checked,
   and only then report.
 - It strips labels (the critic never sees which side is ours), randomizes order,
-  and makes a binary decision: **OURS / BAR / INDETERMINATE**.
+  and makes a neutral decision: **A / B / TIE / UNVERIFIABLE**; only the
+  adjudicator holds the private mapping to ours/bar.
 - On ITERATE it names the single largest gap between ours and the bar — one gap,
   the biggest, stated as a fixable defect.
 - It records evidence and any dissent into the verdict, in the same shape as every
@@ -551,7 +560,7 @@ ADDITION TO the ten-category score, never as a replacement:
 - **Law 50 — the bar wins by default.** A comparison the critic cannot run (bar
   unreachable, format mismatch, critic cannot render both artifacts) is
   BLOCKED, never passed — "could not compare" is a fail, not a pass. A
-  comparison that runs and loses is ITERATE (the fix loop). INDETERMINATE is
+  comparison that runs and loses is ITERATE (the fix loop). UNVERIFIABLE is
   recorded as undetermined, never assumed to be a pass (below). BLOCKED /
   INFEASIBLE / LIMIT REACHED / USER STOPPED are non-success states, never
   relabeled PASS.
@@ -567,11 +576,11 @@ ADDITION TO the ten-category score, never as a replacement:
   BUDGET-STARVED, retry once at 4× the budget, then once at the model's
   documented output ceiling (16k when unknown); still empty ⇒ that seat is
   UNDETERMINED-instrument and the next candidate is selected. **A starved empty
-  is a NON-VERDICT: never PASS, never FAIL, never INDETERMINATE — it is
+  is a NON-VERDICT: never PASS, never FAIL, never UNVERIFIABLE — it is
   reissued**, never recorded as a verdict.
 
 The comparative sub-stage is additive: it cannot overturn a PASS, and an
-INDETERMINATE is recorded as undetermined, never assumed to be a pass. **The
+UNVERIFIABLE comparison is recorded as blocked/undetermined, never assumed to be a pass. **The
 binary Gate 1 verdict remains the per-unit floor** — the comparative layer
 sits on top of it and never lowers or replaces it.
 
@@ -595,7 +604,7 @@ decides which drives:
    dispatches its own fixer, in parallel, exactly as this stage already runs.
 2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
    single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME per-finding 20-cycle cap. It is
+   same fix list, under the SAME applicable repair bound. It is
    one more row in the fix list, never a second, competing cycle counter.
 3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
    correctness is the floor; re-judging a comparison against a build that has
@@ -603,8 +612,9 @@ decides which drives:
    always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
 
 Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their OWN 20-cycle counter,
-because they are different findings, not because they are different gates.
+Gate-3 largest-gap finding each carry their own legacy 20-cycle counter because they are
+different findings, not because they are different gates. For an adopted profile, both findings
+spend the same canonical root builder/QC counters; no separate twenty-cycle counter exists.
 
 ---
 
@@ -614,7 +624,7 @@ because they are different findings, not because they are different gates.
 dispatched concurrently (Law 32). The attempt bound is per finding, not per work
 item.
 
-### The fix loop (bounded at 20 cycles per finding, and recorded)
+### The fix loop (bounded by the applicable project policy, and recorded)
 
 On FAIL: write the six-part finding — (1) which category and the finding, (2) the
 specific defect quoted with its path and line, (3) why it fails (the rule cited),
@@ -633,22 +643,23 @@ previous verifier's judgment; a judge shown its own prior verdict anchors on it
 instead of re-judging). Earlier verdicts never carry. Every re-judge writes its
 own `SCORE` line through `tools/ledger.sh` — its five fields, in order, are a
 row of the LEDGER VOCABULARY table (`references/documents.md`), and `tools/ledger.sh` REFUSES the line if they are not all there
-(`references/gauntlet.md` Section 5; the score is trend only and decides
-nothing), and three consecutive rounds whose `best` rose
+(`references/gauntlet.md` Section 5; a PASS also requires score >=8.5), and
+three consecutive rounds whose `best` rose
 by less than 0.3 end the unit on the plateau rule — honestly, with its best
 checkpoint preserved and its one gap named — instead of running to the
-twentieth cycle.
+declared repair-cap cycle (legacy default: twentieth; profile: canonical root budget).
 
 **The loop is bounded and recorded (binding):**
-- **Bound:** max 20 fix-loop cycles per finding (operator ruling 2026-08-14).
-  The counter is per finding — never per work item, never per gate.
+- **Bound:** the declared repair cap per finding (legacy default: 20). An adopted profile
+  instead uses its canonical root-wide `maxBuilderSubmissions` / `maxQCVerdicts` counters;
+  the one-largest-gap repair consumes that same root budget, never a second per-finding 20.
 - **Recorded:** every cycle appends to the finding's history — cycle number
-  (n of 20), the exact finding, the fix applied (commit/branch), the re-judge
+  (n of <cap>), the exact finding, the fix applied (commit/branch), the re-judge
   result — written to the finding's verdict block in the live ledger (document
   6) as it happens, so a session resuming cold reads which cycle a finding is
   on and what has already been tried directly from the block (documents.md,
   document 6).
-- **Escalation, never a quiet give-up:** after the 20th failed loop on one
+- **Escalation, never a quiet give-up:** after the final permitted attempt on one
   finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
   FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
   relabeled pass, never a silent move-on. Escalation feeds the Named Stops
@@ -676,7 +687,7 @@ goes at once.
 
 Reviews arrive as fixes land — not batched at the end. Up to 5×5 = 25 concurrent
 reviewers. Self-repair: if the reviewer rejects, a higher-reasoning model confirms
-(cap 20 cycles — operator ruling, 2026-08-14). A fix that clears review stages in the holding pen.
+(within the applicable repair bound; legacy cap 20 cycles). A fix that clears review stages in the holding pen.
 
 ---
 
@@ -772,9 +783,11 @@ one; this is the re-check, not the arrangement), create or use existing.
 ### Law 3 — one merge-writer per repo
 
 Two writers on one main branch corrupt each other, always, eventually. Before
-adopting a lane: has the writer pushed to main or stamped its heartbeat within the
-last 20 minutes? Yes = it LIVES — feed it, do not adopt. No = adopt, announce,
-sweep, continue. Two writers in one lane is the one concurrency mistake this
+adopting a lane, reconcile the actual native workflow/session/run or Agent-Team identity
+through the applicable host driver: a recent push or heartbeat is corroboration, never proof
+of absence. Proven live = feed it, do not adopt; proven absent = retire its identity/lock and
+adopt once; unknown or driver-unavailable = retain ownership and escalate. A stale heartbeat
+never licenses adoption. Two writers in one lane is the one concurrency mistake this
 protocol never forgives. Two writers on two DIFFERENT repos is expected and correct.
 
 ### Law 20 — serialize the merges, batch the verifications
@@ -1109,8 +1122,8 @@ autonomously and recorded.
    operator-provided remote — so it is never a Named Stop at merge time** (Stage 5,
    "GitHub is arranged at MINUTE ONE"). The stop covers access the skill has no way
    to arrange, not access it simply had not got round to arranging.
-8. **Twenty failed fix loops on the same finding** (20 cycles per
-   finding, operator ruling 2026-08-14). Not because the agent gave up — because
+8. **The applicable repair bound is exhausted on the same finding** (legacy: 20 cycles per
+   finding, operator ruling 2026-08-14; profile: canonical root submission/verdict budget). Not because the agent gave up — because
    twenty independent attempts failing is information the human needs. The stop
    escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and
    re-judge result, never a quiet give-up and never a relabeled pass (the QC

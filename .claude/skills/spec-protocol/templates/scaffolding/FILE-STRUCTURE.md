@@ -1,6 +1,8 @@
 # FILE-STRUCTURE — project scaffolding template (STAGE-SCAFFOLDING)
 
-Copy this tree into the project folder and fill the page names from the design
+For a new, unprofiled project, create this tree and fill the page names from the design.
+For a supplied/profiled project, adopt its bound documents and add only an actually missing
+capability; never copy this tree over the existing apparatus.
 brief's page inventory. One folder per page; shared assets in `assets/`.
 
 ```

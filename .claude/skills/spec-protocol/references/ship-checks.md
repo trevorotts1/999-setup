@@ -1,13 +1,13 @@
 # Ship checks — STAGE-SHIP-CHECKS (W7, W8, W15; SPEC 8.4.5)
 
-**When this file applies:** EVERY target — WEBSITE, WEB_APP, MOBILE_APP,
-MOBILE_AND_WEB, DESKTOP_SOFTWARE, FUNNEL. `STAGE-SHIP-CHECKS` runs AFTER the
+**When this file applies:** every declared target has ship checks, but only
+target-applicable instruments run. `STAGE-SHIP-CHECKS` runs AFTER the
 build passes its own bar (`STAGE-BUILD` / BUILD-FINAL, `references/build.md`)
 and BEFORE anything is published (`STAGE-PUBLISH`, `references/publish.md`).
-The build's pass bar is a build bar; this is the ship bar — the table-stakes
-checks a web shop runs before it calls a site done.
+The build's pass bar is a build bar; this is the ship bar — target-specific
+table-stakes checks before it calls a deliverable done.
 
-**Every check here is a command with a JSON report and a number.** Never an
+**Every applying check here is a command with a JSON report and a threshold.** Never an
 eye, never a claim. An instrument that did not run is not a pass: an
 unprovable zero is written UNDETERMINED and fails the stage
 (`references/environment-sweep.md` RULE 2 — a negative carries a claim's
@@ -25,7 +25,8 @@ whenever the build re-opens (the freshness rule every staged-pipeline
 reference carries — `references/build.md` section 5).
 
 **Inputs:**
-- the built pages or screens **served at a running address** — deployed to a
+- the built pages or screens rendered on their declared target. A served target is
+  **served at a running address** — deployed to a
   draft deployment or served locally, the mechanism this skill already names:
   "the moment the site's pages are served (deployed or locally served)"
   (`references/pipeline.md`, Stage 4, the media-lane completion gate). The
@@ -38,12 +39,14 @@ reference carries — `references/build.md` section 5).
   lands — SPEC 8.4.5's stage order, not in this tree yet — its
   `DRAFT-LIVE: <url>` ledger line names that same address and this stage reads
   it instead of standing one up. No stage writes `DRAFT-LIVE:` today, so this
-  stage never waits on it.)
+  stage never waits on it.) A no-URL native target instead supplies its installed
+  local runtime/fixture harness and artifact/signing/export evidence; it does not
+  invent an address merely to reuse web instruments.
 - each page's wireframe focus order (`references/wireframes.md` section 2 item
   5, the accessibility skeleton) — the Tab-walk's expected order;
 - `00-INPUT/CONTENT.md` — the client's own business facts
   (`references/interview.md`, the content inventory);
-- every `FORM-DESTINATION:` ledger line (section 3 below);
+- every `FORM-DESTINATION:` ledger line for a form the frozen requirements actually include (section 3 below);
 - the tracking plan's named analytics endpoint (`FUNNEL-TRACKING: <events>` for
   funnels; the website/app equivalent in the execution plan).
 
@@ -69,7 +72,7 @@ a FAIL, never a skip.
 
 ## 2. The instruments — command, report, threshold
 
-Run them against that served address, page by page (`<url>` is the page's live
+For a served target, run these web instruments against that served address, page by page (`<url>` is the page's live
 served URL, `<page>` its brief page name). Every command writes JSON; the judge
 reads the JSON, not the terminal. Every relative report path below resolves
 from the project folder, never the session working directory.
@@ -159,7 +162,7 @@ and `matched` into the report. A mismatch is a defect in the build, not a
 correction to the wireframe — the wireframe is the contract; if the wireframe
 is wrong, the wireframe is re-opened and the page rebuilt.
 
-### 2.5 The public-surface guard — what the origin must NOT serve
+### 2.5 Served targets only: the public-surface guard — what the origin must NOT serve
 
 Instruments 1-10 all ask whether the site works. This one asks what ELSE the
 site is handing out. The named list, fetched from the live origin this stage is
@@ -205,7 +208,7 @@ against the published origin, before the `PUBLISHED:` line is written
 
 ## 3. FORM-DESTINATION — declared before the build, owned by the client, proven here
 
-**The ledger line, written BEFORE `STAGE-BUILD` opens, for EVERY target** — the
+**The ledger line, written BEFORE `STAGE-BUILD` opens, for EVERY declared form** — the
 field order is a row of the LEDGER VOCABULARY table (`references/documents.md`), which is where every other file reads it; this
 section is the only other place it is spelled out, because the contract it
 belongs to is defined here:
@@ -334,8 +337,10 @@ pass (the same honest-absence rule as `PLATFORM-SKIP`,
   reach its rendered screens — axe-core against the web build where one exists,
   the console/log capture, the form probe, the analytics check, the token
   census, the content-fact check, and the Tab-walk (keyboard traversal of the
-  running app) — and records the URL-only instruments (Lighthouse, the meta
-  fields, the link crawler, the public-surface guard) `n/a` with the reason.
+  running app), plus the target-required artifact digest, signing, install,
+  local-runtime, and export checks — and records the URL-only instruments
+  (Lighthouse, the meta fields, the link crawler, the public-surface guard)
+  `n/a` with the reason.
   The public-surface guard is URL-only because it IS a fetch: with no origin
   there is nothing to fetch from, and `n/a` with that reason is the honest
   record — never a pass.

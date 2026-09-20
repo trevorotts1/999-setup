@@ -236,7 +236,7 @@ The Agent Team does not change the fundamental Gauntlet philosophy. The philosop
 remains **TASK + BUILD METHOD + BAR**. The Agent Team improves WHO MANAGES THE
 PROCESS; the dynamic workflows improve HOW THE PROCESS SCALES; the subagents perform
 THE ACTUAL WORK; the independent judges determine WHETHER THE BAR WAS MET. Nothing in
-this file relaxes the 8.5 gate, the blind-judge rules, or any fail-closed law.
+this file relaxes the frozen binary bar verdict, the blind-judge rules, or any fail-closed law.
 
 ---
 
@@ -740,10 +740,12 @@ is not a healthy teammate.
 
 **The unstick — two moves, choose deliberately.** (a) `tmux -L <socket>
 send-keys -t <pane-id> Enter` accepts the trust prompt, and the teammate
-proceeds with its ORIGINAL task — right only when that task is still current;
-a stale task waking hours late causes damage, not progress. (b) Kill it
-through the lead (the manage panel or `TaskStop`) and re-spawn after the
-pre-flight. Never leave a frozen teammate in place: its ticking timer reads as
+  proceeds with its ORIGINAL task — right only when that task is still current;
+  a stale task waking hours late causes damage, not progress. (b) First reconcile
+  the actual Agent-Team identity and current task through the lead. Only the
+  proven matching frozen teammate may be stopped through the manage panel or
+  `TaskStop` and re-spawned after the pre-flight; a live/unknown identity stays
+  owned and is escalated. Never leave a proven frozen teammate in place: its ticking timer reads as
 work to every observer, and §10's negative-branch verdicts get harder the
 longer it sits.
 
@@ -1228,7 +1230,7 @@ The Team Lead resolves the disagreement using:
 written into the same entry (`adjudication`), so the reasoning is auditable later by a
 session that was not there.
 
-The adjudication floor is the machinery the skill already has: the **8.5** quality
+The adjudication floor is the machinery the skill already has: the frozen binary quality
 gate does not move, a blind visual challenge IS a Gate 3 style verdict (independent,
 evidence-carrying), a technical challenge IS a Gate 1 finding, and every fail-closed
 rule still binds. **The protocol adds WHO ARGUES — it does not add a new court and it

@@ -53,9 +53,10 @@
 #   Exit 4 is the LAST rung, never the first. When the no-delta counter reaches
 #   N the script climbs, one rung per reconcile, and each rung is a thing the
 #   run can do for itself while the client sleeps:
-#     rung 1  ACTION|redispatch-from-checkpoint for every in-flight unit (a
-#             dispatch-log row with no RESULT line) — TaskStop it, then re-fire
-#             it from its last checkpoint. A `DRIFT-ALARM group-abort` line on
+#     rung 1  ACTION|reconcile-native-identity for every in-flight unit (a
+#             dispatch-log row with no RESULT line) — reconcile actual Workflow
+#             or Agent-Team identity first; only a proven-absent identity is
+#             retired and re-fired from its last checkpoint. A `DRIFT-ALARM group-abort` line on
 #             the ledger (tools/watch-tick.sh, RC-26) names the dead row
 #             directly: those units re-dispatch FIRST, before the general
 #             in-flight census, and the rung-1 ledger line carries
@@ -764,6 +765,11 @@ run_anchor() {
   [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: anchor.sh <project-home> [current-unit] [--mode anchor|reconcile]"
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
+  # Profiled projects have one canonical state/observer. This legacy
+  # reconciler writes CONTROL records, so do not let a direct invocation fork
+  # them beside profile-bound state or task identity.
+  [[ ! -f "$HOME_DIR/.spec-protocol.json" ]] \
+    || die_tool "PROFILE-OWNED | ${HOME_DIR} has .spec-protocol.json; refusing legacy anchor mutation. Use the profile-declared observer."
   [[ -n "$UNIT" ]] || UNIT="IDLE"
 
   self_prove
@@ -1670,7 +1676,7 @@ run_anchor() {
                 action "redispatch-or-revert" "$tid" "no dispatch-log row; heartbeat age=${hb_age}"
               elif [[ "$hb_age" != "undetermined" ]] && (( hb_age > STALE_MIN )); then
                 alarm "stale-in-progress" "task=${tid} is IN_PROGRESS and the heartbeat is ${hb_age}m old (threshold ${STALE_MIN}m)"
-                action "redispatch-or-revert" "$tid" "heartbeat stale ${hb_age}m > ${STALE_MIN}m"
+                action "reconcile-native-identity" "$tid" "heartbeat stale ${hb_age}m > ${STALE_MIN}m: reconcile the actual Workflow/session/run or Agent-Team identity through the host driver before any stop, revert, or re-dispatch. Proven absent → retire/re-dispatch from checkpoint; proven live → retain; unknown → escalate without replacement."
               fi
             fi
             ;;
@@ -1867,11 +1873,11 @@ run_anchor() {
     if (( NEWN >= TERMINAL_N )); then
       local ts; ts="$(iso_now)"
       if (( RUNG < 1 )); then
-        # --- RUNG 1: TaskStop and re-fire what is in flight.
-        #     A group-abort alarm (tools/watch-tick.sh, RC-26) names the dead
-        #     row directly: those units re-dispatch FIRST, re-BOOKED through
-        #     tools/dispatch-check.sh from their checkpoints rather than
-        #     re-derived by a model reading the ledger, and the rung-1 ledger
+        # --- RUNG 1: identify first; a stale/missing record is not death.
+        #     A group-abort alarm (tools/watch-tick.sh, RC-26) names the
+        #     candidate row directly. Reconcile each actual native identity
+        #     FIRST; only a proven-absent identity may be re-BOOKED through
+        #     tools/dispatch-check.sh from its checkpoint. The rung-1 ledger
         #     line carries trigger=group-abort naming the row. Detect-and-log
         #     holds: this rung emits ACTION lines; the conductor executes them.
         local inf n_inf=0 u shown=0 dl_note ga_line="none" ga_row="" ga_units="" ga_at=""
@@ -1893,12 +1899,12 @@ run_anchor() {
             [[ -n "$u" ]] || continue
             shown=$(( shown + 1 ))
             if (( shown > 20 )); then break; fi
-            action "redispatch-from-checkpoint" "$u" "group-abort row ${ga_row} at ${ga_at:-unknown}: re-BOOK through tools/dispatch-check.sh from its last checkpoint, never re-derived by a model reading the ledger. This is rung 1 of the recovery ladder — it runs BEFORE any escalation."
+            action "reconcile-native-identity" "$u" "group-abort row ${ga_row} at ${ga_at:-unknown}: reconcile its actual Workflow/session/run or Agent-Team identity through the applicable host driver before any TaskStop, retirement, or replacement. Proven absent → re-BOOK through tools/dispatch-check.sh from its last checkpoint; proven live → retain; unknown → escalate without replacement. This is rung 1 of the recovery ladder."
           done <<< "$ga_units"
           local ga_total=0
           ga_total="$(printf '%s\n' "$ga_units" | "$GREP" -c '[^[:space:]]' || true)"
           if (( ga_total > shown )); then
-            action "redispatch-from-checkpoint" "+$(( ga_total - shown )) more" "the group-abort list for row ${ga_row} was truncated at ${shown} ACTION lines; the full row census follows the alarm line in ${LED}"
+            action "reconcile-native-identity" "+$(( ga_total - shown )) more" "the group-abort list for row ${ga_row} was truncated at ${shown} ACTION lines; reconcile each remaining native identity before any retirement or replacement. The full row census follows the alarm line in ${LED}"
           fi
         fi
         inf="$(inflight_units)"
@@ -1913,17 +1919,17 @@ run_anchor() {
             [[ -n "$u" ]] || continue
             shown=$(( shown + 1 ))
             if (( shown > 20 )); then break; fi
-            action "redispatch-from-checkpoint" "$u" "in flight: a row in ${DL} with no RESULT line in ${LED}. TaskStop it, then re-dispatch it from its last checkpoint. This is rung 1 of the recovery ladder — it runs BEFORE any escalation."
+            action "reconcile-native-identity" "$u" "in flight: a row in ${DL} with no RESULT line in ${LED}. Reconcile its actual Workflow/session/run or Agent-Team identity through the applicable host driver. Proven absent → retire and re-dispatch from its last checkpoint; proven live → retain; unknown → escalate without replacement. This is rung 1 of the recovery ladder."
           done <<< "$inf"
           if (( n_inf > shown )); then
-            action "redispatch-from-checkpoint" "+$(( n_inf - shown )) more" "the in-flight list was truncated at ${shown} ACTION lines; the full census is ${DL} rows with no RESULT line in ${LED}"
+            action "reconcile-native-identity" "+$(( n_inf - shown )) more" "the in-flight list was truncated at ${shown} ACTION lines; reconcile each remaining native identity before any retirement or replacement. The full census is ${DL} rows with no RESULT line in ${LED}"
           fi
         else
-          action "redispatch-from-checkpoint" "$UNIT" "no dispatch row is missing its RESULT line (census read: ${dl_note}). Re-dispatch the current unit from its last checkpoint anyway — rung 1 runs before any escalation."
+          action "reconcile-native-identity" "$UNIT" "no dispatch row is missing its RESULT line (census read: ${dl_note}). Reconcile the current unit's actual Workflow/session/run or Agent-Team identity before any retirement or replacement; unknown identity is escalated, never presumed absent. This is rung 1 before any escalation."
         fi
         local ga_trig="trigger=none"
         if [[ -n "$ga_units" ]]; then ga_trig="trigger=group-abort(row=${ga_row} at=${ga_at:-unknown})"; fi
-        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=1/4 | action=redispatch-from-checkpoint | in-flight=${n_inf} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=capacity-grace-then-fallback-seats-then-flag | ${ga_trig}"
+        ledger_write "CONTROL/LEDGER.md" "${ts} | RECOVERY-LADDER | rung=1/4 | action=reconcile-native-identity | in-flight=${n_inf} | no-delta-reconciles=${NEWN} | window=${WINDOW_MIN}min | fp=${FP} | unit=${UNIT} | next-rung=capacity-grace-then-fallback-seats-then-flag | ${ga_trig}"
         RUNG=1
         if (( SEVERITY < 3 )); then SEVERITY=3; fi
       elif capacity_grace_holds "$NEWN" "$WINDOW_MIN"; then
@@ -1960,7 +1966,7 @@ run_anchor() {
           printf 'contentless-ticks-in-ledger=%s (banned writes)\n' "$TICKS"
           printf 'stateful-heartbeats-in-ledger=%s (the required kind — not drift)\n' "$TICKS_FULL"
           printf 'capacity-events-in-ledger=%s\n' "$CAPEV"
-          printf 'recovery-ladder=rung 1 redispatch-from-checkpoint CLIMBED; rung 2 capacity-grace %s; rung 3 switch-to-fallback-seats CLIMBED; rung 4 this flag\n' "$CAPACITY_GRACE_NOTE"
+          printf 'recovery-ladder=rung 1 reconcile-native-identity CLIMBED; rung 2 capacity-grace %s; rung 3 switch-to-fallback-seats CLIMBED; rung 4 this flag\n' "$CAPACITY_GRACE_NOTE"
           printf 'REQUIRED: set run_status=STOPPED_STALL, stop dispatching, produce the\n'
           printf 'diagnose-the-blocker report (what was in flight, what each of the three\n'
           printf 'layers claims, where they disagree, the last real state change, and the\n'
@@ -2138,7 +2144,7 @@ intent_stall() {
 #         with no --tasks names unchecked(1,2,3,4)
 #   28    RC-26 THE GROUP-ABORT WIRING — a ledger carrying a DRIFT-ALARM
 #         group-abort line reconciled with the no-delta counter primed to
-#         N-1 emits rung-1 ACTION|redispatch-from-checkpoint for the lost
+#         N-1 emits rung-1 ACTION|reconcile-native-identity for the lost
 #         units with trigger=group-abort naming the row
 #==============================================================================
 selftest() {
@@ -2247,7 +2253,7 @@ selftest() {
   # --- case 6: TERMINAL-DRIFT with the counter primed to N-1 — and the
   #     RECOVERY LADDER that now runs before it, IN ORDER. The flag is the
   #     LAST rung, never the first: crossing N emits
-  #     ACTION|redispatch-from-checkpoint (rung 1), the next no-delta pass
+  #     ACTION|reconcile-native-identity (rung 1), the next no-delta pass
   #     emits ACTION|switch-to-fallback-seats (rung 3 — rung 2, the capacity
   #     grace, does not apply here because this ledger carries no
   #     CAPACITY-EVENT), and only the pass after that writes the flag. Each
@@ -2273,8 +2279,8 @@ selftest() {
   runa "${c6args[@]}"                     # crossing N -> rung 1
   local rc_r1="$RC" ok_r1=0
   if (( RC == 3 )) && [[ ! -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-001|' \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=2 \|' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null; then ok_r1=1; fi
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-native-identity|U-001|' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=reconcile-native-identity \| in-flight=2 \|' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null; then ok_r1=1; fi
 
   runa "${c6args[@]}"                     # still nothing moved -> rung 3
   local rc_r3="$RC" ok_r3=0
@@ -2288,8 +2294,8 @@ selftest() {
      && [[ -f "$T/c6/CONTROL/TERMINAL-DRIFT.flag" ]] \
      && "$GREP" -qE '\| TERMINAL-DRIFT \| no-delta-reconciles=' "$T/c6/CONTROL/LEDGER.md" 2>/dev/null \
      && "$GREP" -q 'OPERATOR-ESCALATION' "$T/c6/CONTROL/TODO.md" 2>/dev/null \
-     && "$GREP" -q 'recovery-ladder=rung 1 redispatch-from-checkpoint CLIMBED' "$T/c6/CONTROL/TERMINAL-DRIFT.flag" 2>/dev/null; then ok=1; fi
-  report 6 "terminal-drift-after-the-ladder" "$ok" "rung 1 rc=${rc_r1} (want 3, no flag, ACTION|redispatch-from-checkpoint for the 2 in-flight dispatch rows); rung 3 rc=${rc_r3} (want 3, no flag, ACTION|switch-to-fallback-seats); rung 4 rc=${RC} (want 4); flag created only on the third crossing and it records the ladder it climbed; escalation in LEDGER.md and TODO.md"
+     && "$GREP" -q 'recovery-ladder=rung 1 reconcile-native-identity CLIMBED' "$T/c6/CONTROL/TERMINAL-DRIFT.flag" 2>/dev/null; then ok=1; fi
+  report 6 "terminal-drift-after-the-ladder" "$ok" "rung 1 rc=${rc_r1} (want 3, no flag, ACTION|reconcile-native-identity for the 2 in-flight dispatch rows); rung 3 rc=${rc_r3} (want 3, no flag, ACTION|switch-to-fallback-seats); rung 4 rc=${RC} (want 4); flag created only on the third crossing and it records the ladder it climbed; escalation in LEDGER.md and TODO.md"
 
   # --- case 7: repeated-intent stall, WITH its known-negative control
   mk_home "$T/c7"
@@ -2684,7 +2690,7 @@ EOF
   c16_win="$("$GREP" -oE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds\([^)]*\)' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null | tail -1 || true)"
   local ok15a=0
   if (( c16_flag == 0 )) && (( c16_rc != 4 )) && [[ -n "$c16_count" ]] && (( c16_count > TERMINAL_N )) \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=reconcile-native-identity' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
      && "$GREP" -qE '\| RECOVERY-LADDER \| rung=2/4 \| action=capacity-grace \| grace=holds' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
      && ! "$GREP" -qE '\| TERMINAL-DRIFT \|' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null \
      && ! "$GREP" -qE 'rung=3/4' "$T/c16/CONTROL/LEDGER.md" 2>/dev/null; then ok15a=1; fi
@@ -3206,7 +3212,7 @@ EOF
   # --- RC-26 (case 28): THE GROUP-ABORT WIRING. A ledger carrying a
   #     DRIFT-ALARM group-abort line for a dead row, reconciled with the
   #     no-delta counter primed to N-1, MUST emit a rung-1
-  #     ACTION|redispatch-from-checkpoint line for the row's lost units on the
+  #     ACTION|reconcile-native-identity line for the row's lost units on the
   #     crossing pass, and the rung-1 RECOVERY-LADDER ledger line MUST carry
   #     trigger=group-abort naming the row. Detect-and-log holds: the script
   #     emits the ACTION lines and mutates no task state — the fixture
@@ -3234,10 +3240,10 @@ EOF
   runa "${c28args[@]}"                            # crossing N -> rung 1 with the group-abort trigger
   local c28_rc="$RC" ok28a=0 ok28b=0 ok28c=0
   if (( RC == 3 )) \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-11|group-abort row run-090 at 2026-09-08T10:43:46Z' \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-12|group-abort row run-090 at 2026-09-08T10:43:46Z' \
-     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|redispatch-from-checkpoint|U-13|group-abort row run-090 at 2026-09-08T10:43:46Z' \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=group-abort\(row=run-090 at=2026-09-08T10:43:46Z\)' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null; then ok28a=1; fi
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-native-identity|U-11|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-native-identity|U-12|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION|reconcile-native-identity|U-13|group-abort row run-090 at 2026-09-08T10:43:46Z' \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=reconcile-native-identity \| in-flight=[0-9]+ \|.*trigger=group-abort\(row=run-090 at=2026-09-08T10:43:46Z\)' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null; then ok28a=1; fi
   if (cd "$T/c28" && sha256sum -c "$T/c28.taskstate.before.sha" >/dev/null 2>&1) \
      || (cd "$T/c28" && shasum -a 256 -c "$T/c28.taskstate.before.sha" >/dev/null 2>&1); then ok28b=1; fi
   # The negative control: the SAME crossing with NO group-abort line carries
@@ -3253,12 +3259,12 @@ EOF
   runa "${c28cargs[@]}"
   local c28_rc_ctl="$RC"
   if (( RC == 3 )) \
-     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=redispatch-from-checkpoint \| in-flight=[0-9]+ \|.*trigger=none' "$T/c28ctl/CONTROL/LEDGER.md" 2>/dev/null \
+     && "$GREP" -qE '\| RECOVERY-LADDER \| rung=1/4 \| action=reconcile-native-identity \| in-flight=[0-9]+ \|.*trigger=none' "$T/c28ctl/CONTROL/LEDGER.md" 2>/dev/null \
      && ! printf '%s' "$OUT" | "$GREP" -q 'group-abort'; then ok28c=1; fi
   ok=0
   if (( ok28a == 1 && ok28b == 1 && ok28c == 1 )); then ok=1; fi
   report 28 "group-abort-rung-1" "$ok" \
-    "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c28_rc} (want 3), rung-1 ACTION|redispatch-from-checkpoint for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok28a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok28b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c28_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok28c} — the trigger names the alarm, never a default."
+    "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c28_rc} (want 3), rung-1 ACTION|reconcile-native-identity for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok28a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok28b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c28_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok28c} — the trigger names the alarm, never a default."
   printf 'SELFTEST COMPLETE | %s of 28 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0

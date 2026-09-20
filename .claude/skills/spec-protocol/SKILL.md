@@ -525,11 +525,13 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    barrier (Law 4): each unit is judged when IT finishes and lands when IT passes.
 2. **Judge.** A judge that never built it (Law 7), blind: the critic receives both
    comparison artifacts with all provenance stripped and picks without knowing
-   which is ours (Law 49). **The verdict is binary and it decides** — PASS against
-   the frozen bar relationship (wins-or-ties → the privately mapped winning side or TIE passes;
-   meet-all-requirements → every requirement checked passes) — and the 0–10 score
-   across the ten categories is recorded for trend only, never deciding. A
-   comparison that cannot run is BLOCKED, and BLOCKED / INFEASIBLE / LIMIT REACHED
+   which is ours (Law 49). **PASS names a mandatory conjunction**: a recorded
+   0–10 ten-category score of at least 8.5, every mandatory behavior, scope, and
+   evidence check, and the frozen independent bar relationship (wins-or-ties →
+   the privately mapped winning side or TIE passes; meet-all-requirements → every
+   requirement checked passes). A missing score is UNVERIFIED; a high score does
+   not override a failed check or comparison. A comparison that cannot run is
+   BLOCKED, and BLOCKED / INFEASIBLE / LIMIT REACHED
    / USER STOPPED are never relabelled PASS (Law 50). Every verdict writes one QC
    RECORD through `tools/ledger.sh` — `judge=` differing from the unit's builder
    seat, `provenance=STRIPPED`, the named bar with its fetch proof, the binary
@@ -542,7 +544,7 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    rather than looping on a gap that has stopped closing (`references/gauntlet.md`
    §5). An unprofiled loop is bounded at 20 cycles per finding, every cycle recorded, and the
    twenty-first escalates with the full history. A supplied profile instead spends its canonical
-   root-bound builder/QC counters (four builder submissions for the supplied profile); its
+   root-bound builder/QC counters; its
    packet refuses the next reservation at that bound. Neither path quietly gives up or relabels
    a failure as PASS. Fixes run in parallel only within the applicable policy (Law 32).
 4. **Holding pen.** Passing work stages in a pen (one per repo) — a table in the

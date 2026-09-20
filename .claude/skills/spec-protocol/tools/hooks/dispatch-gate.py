@@ -37,6 +37,14 @@ through find_state_file and fails open on whatever it cannot measure. Shapes
 1-5 are facts about the SCRIPT and are not scoped: they hold wherever a
 Workflow launches.
 
+PROFILED PROJECTS are detected before any CONTROL lookup. They have one narrow,
+read-only branch: the hook requires the actual Workflow `args.specProtocol`
+identity and asks the profile's packet checker for an exact `RESERVED` intent.
+It does not reserve, consume, increment a counter, or claim that launch equals
+native receipt; the packet writer records consumption after its observed native
+receipt. A missing, malformed, mismatched, or already-consumed reservation
+fails closed. This branch deliberately does not read legacy CONTROL state.
+
 FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
 unreadable input, an unparseable script, an undetermined item count, a state
 file it cannot find or whose budget keys are absent, any exception at all ->
@@ -159,6 +167,8 @@ SCOPE_NOTE = "SHAPE 7: not a spec-protocol project, not evaluated"
 # cwd plus forty parents: a workflow may launch from a nested build directory,
 # and a short walk would strand it outside its own project.
 SCOPE_MAX_PARENTS = 40
+PROFILE_FILE = ".spec-protocol.json"
+PROFILE_ROLES = ("builder", "qc", "repair")
 
 
 def allow():
@@ -173,6 +183,18 @@ def block(lines):
         + "\n\nRe-author the script and launch again. If the narrow shape is CORRECT because a\n"
         "wave dependency forces it, say so in the script -- a comment containing `dep=<reason>`\n"
         "-- and this gate stands down on the width check.\n"
+    )
+    sys.exit(2)
+
+
+def profile_block(message):
+    """A profile has one state writer, so an uncheckable launch fails closed."""
+    sys.stderr.write(
+        "BLOCKED: profiled workflow launch does not match its packet reservation.\n\n"
+        + message
+        + "\n\nRun the profile dispatch command with the exact task, role, label, units, "
+          "agents, and native workflow identity first. The hook only checks that "
+          "reservation; it never creates or consumes one.\n"
     )
     sys.exit(2)
 
@@ -355,6 +377,34 @@ def declared_agents(code, stages):
     return total or None
 
 
+def visible_declared_agents(script):
+    """Return an exact visible agent count, or None when the script is dynamic.
+
+    This is intentionally the same conservative parser used by legacy Shape 7.
+    A profiled reservation is a real capacity promise, so a script that visibly
+    declares more direct agents than it reserved must stop before launch. But a
+    named/dynamic fan-out or a name-only Workflow gives this hook no honest
+    count; it remains reservation-checked rather than being assigned a guessed
+    number.
+    """
+    code = sanitize(script)
+    stages = []
+    for kind in ("parallel", "pipeline"):
+        for start, args in find_calls(code, kind):
+            stages.append(
+                {
+                    "kind": kind,
+                    "start": start,
+                    "span": call_span(code, start, args),
+                    "args": args,
+                    "class": classify(args),
+                    "items": count_items(args, code),
+                }
+            )
+    stages.sort(key=lambda stage: stage["start"])
+    return declared_agents(code, stages)
+
+
 def has_any(text, words):
     low = text.lower()
     return any(w in low for w in words)
@@ -419,6 +469,102 @@ def find_state_file(start_dir):
         if nd == d:
             return None
         d, seen = nd, seen + 1
+    return None
+
+
+def profile_project(start_dir):
+    """Return the nearest profile root without consulting legacy CONTROL paths."""
+    d = os.path.abspath(start_dir or os.getcwd())
+    for _ in range(SCOPE_MAX_PARENTS + 1):
+        if os.path.isfile(os.path.join(d, PROFILE_FILE)):
+            return d
+        nd = os.path.dirname(d)
+        if nd == d:
+            return None
+        d = nd
+    return None
+
+
+def profile_launch_identity(tool_input):
+    """Read only the supported Workflow `args` payload; never invent input keys.
+
+    The native Workflow input carries an arbitrary JSON `args` value to its
+    script. The profile contract reserves `args.specProtocol` for the stable
+    pre-launch identity. A returned native run/task ID does not exist yet, so a
+    PreToolUse hook must not pretend one does.
+    """
+    args = tool_input.get("args")
+    if not isinstance(args, dict):
+        return None, "Workflow args must be an object containing args.specProtocol."
+    identity = args.get("specProtocol")
+    if not isinstance(identity, dict):
+        return None, "Workflow args.specProtocol is required for a profiled launch."
+    required_strings = ("taskId", "role", "intentId", "nativeWorkflowId", "label")
+    if any(not isinstance(identity.get(k), str) or not identity[k] for k in required_strings):
+        return None, "args.specProtocol must carry non-empty taskId, role, intentId, nativeWorkflowId, and label."
+    if identity["role"] not in PROFILE_ROLES:
+        return None, "args.specProtocol.role must be builder, qc, or repair."
+    if not isinstance(identity.get("units"), int) or not isinstance(identity.get("agents"), int):
+        return None, "args.specProtocol must carry integer units and agents."
+    if identity["units"] < 1 or identity["agents"] < 1:
+        return None, "args.specProtocol units and agents must be positive."
+    return identity, None
+
+
+def profile_reservation_check(root, identity):
+    """Ask the packet's checker read-only whether this exact intent is reserved."""
+    candidates = []
+    configured = os.environ.get("SPEC_PROTOCOL_PROFILE_ADAPTER")
+    if configured:
+        candidates.append(os.path.abspath(configured))
+    # Source skill location: tools/hooks/dispatch-gate.py -> tools/project-profile.mjs.
+    candidates.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "project-profile.mjs")))
+    # Installed hook location: ~/.claude/hooks/dispatch-gate.py, while the
+    # skill stays at ~/.claude/skills/spec-protocol. No shell evaluation or
+    # project-local copy is used; an explicit env path wins for custom roots.
+    candidates.append(os.path.expanduser("~/.claude/skills/spec-protocol/tools/project-profile.mjs"))
+    adapter = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
+    if adapter is None:
+        return "profile adapter unavailable; set SPEC_PROTOCOL_PROFILE_ADAPTER to the installed project-profile.mjs path."
+    command = [
+        "node", adapter, "dispatch", root,
+        str(identity["units"]), str(identity["agents"]), identity["label"],
+        "--check", "--task", identity["taskId"], "--role", identity["role"],
+        "--native-workflow", identity["nativeWorkflowId"],
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, cwd=root, timeout=25)
+    except Exception as exc:
+        return "profile checker could not run: %s" % exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "profile checker refused without detail").strip()
+        return "profile checker refused the read-only exact request: %s" % detail
+    try:
+        report = json.loads(result.stdout)
+    except Exception:
+        return "profile checker must emit one JSON reservation report."
+    authorization = report.get("taskAuthorization") if isinstance(report, dict) else None
+    if not isinstance(authorization, dict):
+        return "profile checker report lacks taskAuthorization."
+    expected = {
+        "taskId": identity["taskId"],
+        "role": identity["role"],
+        "intentId": identity["intentId"],
+        "nativeWorkflowId": identity["nativeWorkflowId"],
+        "label": identity["label"],
+        "units": identity["units"],
+        "agents": identity["agents"],
+    }
+    if (authorization.get("approved") is not True
+            or authorization.get("kind") != "reservation-check"
+            or authorization.get("readOnly") is not True
+            or any(authorization.get(key) != value for key, value in expected.items())):
+        return "profile checker did not approve the exact reserved intent."
+    reservation = authorization.get("reservation")
+    if not isinstance(reservation, dict) or reservation.get("id") != identity["intentId"] or reservation.get("state") != "RESERVED":
+        return "profile checker did not prove this intent remains RESERVED."
+    if not isinstance(authorization.get("stateRevision"), int) or not authorization.get("sourceSpecHash"):
+        return "profile checker omitted revision-bound state/source evidence."
     return None
 
 
@@ -548,7 +694,7 @@ def dispatch_log_booking(control_dir, now):
 # ---------------------------------------------------------------------------
 # The evaluation. Returns a list of findings; an empty list means "allow".
 # ---------------------------------------------------------------------------
-def evaluate(script, cwd=None):
+def evaluate(script, cwd=None, profiled=False):
     findings = []
     code = sanitize(script)
 
@@ -619,7 +765,7 @@ def evaluate(script, cwd=None):
                 break
 
     # --- 4. under-width against the machine's own measured cap ---------------
-    if not re.search(r"dep\s*=", script):
+    if not profiled and not re.search(r"dep\s*=", script):
         ledger = find_capacity_ledger(cwd or os.getcwd())
         cap = parse_client_cap(ledger) if ledger else None
         counts = [s["items"] for s in stages if s["items"]]
@@ -644,7 +790,7 @@ def evaluate(script, cwd=None):
     # the conductor never calls tools/dispatch-check.sh -- which is this hook.
     # SHAPE 6 is NOT scoped: budget_state() returns None when the state file is
     # absent, and that None is already the fail-open answer this hook owes.
-    st = budget_state(cwd)
+    st = None if profiled else budget_state(cwd)
     if st:
         path, execs, pause, ceil = st
         if execs >= ceil:
@@ -671,30 +817,31 @@ def evaluate(script, cwd=None):
     # CONTROL/ the marker came out of, never from a nearer or farther one: the
     # marker that proves this IS a spec-protocol project says which log books
     # its dispatches.
-    control = spec_protocol_project(cwd or os.getcwd())
-    if control is None:
-        sys.stderr.write(SCOPE_NOTE + "\n")
-    else:
-        declared = declared_agents(code, stages)
-        if declared:
-            log = dispatch_log_booking(control, time.time())
-            if log is not None:
-                booked, rows, newest = log
-                if booked is None or booked < declared:
-                    if rows == 0:
-                        detail = "no row carries both a timestamp and an agents= field"
-                    else:
-                        detail = "%d booking row%s, newest %s old" % (
-                            rows, "" if rows == 1 else "s",
-                            "unknown age" if newest is None else "%ds" % int(newest),
+    if not profiled:
+        control = spec_protocol_project(cwd or os.getcwd())
+        if control is None:
+            sys.stderr.write(SCOPE_NOTE + "\n")
+        else:
+            declared = declared_agents(code, stages)
+            if declared:
+                log = dispatch_log_booking(control, time.time())
+                if log is not None:
+                    booked, rows, newest = log
+                    if booked is None or booked < declared:
+                        if rows == 0:
+                            detail = "no row carries both a timestamp and an agents= field"
+                        else:
+                            detail = "%d booking row%s, newest %s old" % (
+                                rows, "" if rows == 1 else "s",
+                                "unknown age" if newest is None else "%ds" % int(newest),
+                            )
+                        findings.append(
+                            "SHAPE 7 -- DISPATCH-LOG UNBOOKED | declared=%d booked=%s | window=%ds\n"
+                            "  (read: %s -- %s)\n%s"
+                            % (declared, "none" if booked is None else booked,
+                               BOOKING_WINDOW_SECONDS,
+                               os.path.join(control, "dispatch-log.md"), detail, FIX_7)
                         )
-                    findings.append(
-                        "SHAPE 7 -- DISPATCH-LOG UNBOOKED | declared=%d booked=%s | window=%ds\n"
-                        "  (read: %s -- %s)\n%s"
-                        % (declared, "none" if booked is None else booked,
-                           BOOKING_WINDOW_SECONDS,
-                           os.path.join(control, "dispatch-log.md"), detail, FIX_7)
-                    )
     return findings
 
 
@@ -713,10 +860,23 @@ def main():
     if not isinstance(ti, dict):
         allow()
 
+    event_cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else os.getcwd()
+    profiled_root = profile_project(event_cwd)
+    if profiled_root:
+        identity, problem = profile_launch_identity(ti)
+        if problem:
+            profile_block(problem)
+        problem = profile_reservation_check(profiled_root, identity)
+        if problem:
+            profile_block(problem)
+
     script = ti.get("script")
     if not script:
         path = ti.get("scriptPath")
         if not path or not isinstance(path, str) or not os.path.isfile(path):
+            # A profiled name-only launch was reservation-checked above. It has
+            # no local bytes for shape analysis, which remains intentionally
+            # fail-open just as it was for legacy launches.
             allow()  # name-based launch: nothing local to read
         try:
             if os.path.getsize(path) > MAX_SCRIPT_BYTES:
@@ -729,8 +889,22 @@ def main():
     if not isinstance(script, str) or not script.strip():
         allow()
 
+    if profiled_root:
+        try:
+            declared = visible_declared_agents(script)
+        except Exception:
+            declared = None
+        if declared is not None and declared > identity["agents"]:
+            profile_block(
+                "Workflow script explicitly declares %d direct agent() calls, but the "
+                "matching reservation authorizes only %d agent(s). Reserve at least the "
+                "visible declared count, or use a script whose dynamic fan-out cannot be "
+                "counted here; this hook never invents a count."
+                % (declared, identity["agents"])
+            )
+
     try:
-        findings = evaluate(script, os.getcwd())
+        findings = evaluate(script, event_cwd, profiled=bool(profiled_root))
     except Exception:
         allow()  # a gate that cannot see the shape claims nothing about it
 
@@ -791,6 +965,17 @@ const done = await pipeline(
   (judged, u) => agent('pen ' + u.id, { label: `[Sonnet x1] pen ${u.id}`, phase: 'Pen', model: 'sonnet' }),
 )
 return done
+"""
+
+FIXTURE_PROFILE_SIX_AGENT = """export const meta = { name: 'profiled-visible-six', description: 'six direct agents' }
+const ITEMS = [
+  { id: 'u01' }, { id: 'u02' }, { id: 'u03' },
+  { id: 'u04' }, { id: 'u05' }, { id: 'u06' },
+]
+return await pipeline(
+  ITEMS,
+  (unit) => agent('build ' + unit.id, { label: `build:${unit.id}`, phase: 'Build', model: 'opus' }),
+)
 """
 
 
@@ -1081,10 +1266,70 @@ def selftest():
               "yes" if "booked=none" in out_in else "NO",
               "yes" if SCOPE_NOTE not in out_in else "NO -- still noted"))
 
+    # 12 -- a profile has no CONTROL marker or generic booking. Its packet
+    # checker receives the identity through the observed Workflow `args`
+    # surface and answers read-only about one pre-existing reservation.
+    profiled = tempfile.mkdtemp(prefix="dispatch-gate-profile.", dir=sandbox)
+    os.makedirs(os.path.join(profiled, "scripts"), exist_ok=True)
+    os.makedirs(os.path.join(profiled, ".studio"), exist_ok=True)
+    with open(os.path.join(profiled, ".studio", "build-state.json"), "w", encoding="utf-8") as fh:
+        fh.write("{}\n")
+    with open(os.path.join(profiled, PROFILE_FILE), "w", encoding="utf-8") as fh:
+        json.dump({
+            "schema": "spec-protocol.project-profile/v1",
+            "documents": {"spec": "SPEC.md", "protocol": "PROTOCOL.md", "state": ".studio/build-state.json", "ledger": "LEDGER.md", "todo": "TODO.md", "checklist": "CHECKLIST.md", "qc": "QC.md"},
+            "policy": {"maxActiveWorkflows": 10, "maxAgentsPerWorkflow": 10, "maxWorkingAgents": 100, "maxBuilderSubmissions": 4, "maxQCVerdicts": 4, "builderRoute": "opus-chain", "qcRoute": "sonnet-chain"},
+            "targets": ["desktop"],
+            "commands": {"validate": ["node", "scripts/state.mjs", "validate"], "dispatch": ["node", "scripts/state.mjs", "dispatch-check"], "release": ["node", "scripts/state.mjs", "release-check"]},
+        }, fh)
+    with open(os.path.join(profiled, "scripts", "state.mjs"), "w", encoding="utf-8") as fh:
+        fh.write(
+            "const [cmd,...a]=process.argv.slice(2);\n"
+            "if(cmd==='validate'){console.log(JSON.stringify({ok:true,bootstrapReady:true,dispatchReady:false}));process.exit(0)}\n"
+            "const get=k=>{const i=a.indexOf(k);return i<0?null:a[i+1]};\n"
+            "const task=get('--task'), role=get('--role'), nativeWorkflowId=get('--native-workflow'), label=a[2];\n"
+            "const intentId=task==='W01-01'?'intent-live':'intent-consumed';\n"
+            "console.log(JSON.stringify({ok:true,taskAuthorization:{approved:true,kind:'reservation-check',readOnly:true,taskId:task,role,intentId,nativeWorkflowId,label,units:Number(a[0]),agents:Number(a[1]),stateRevision:7,sourceSpecHash:'a'.repeat(64),reservation:{id:intentId,state:intentId==='intent-live'?'RESERVED':'CONSUMED'}}}));\n"
+        )
+    identity = {"taskId": "W01-01", "role": "builder", "intentId": "intent-live", "nativeWorkflowId": "wf-canvas", "label": "[Opus x10] build canvas", "units": 10, "agents": 10}
+    profile_event = {"tool_name": "Workflow", "cwd": profiled, "tool_input": {"script": FIXTURE_WAVE1, "args": {"specProtocol": identity}}}
+    before = sorted(os.path.relpath(os.path.join(base, name), profiled) for base, _dirs, names in os.walk(profiled) for name in names)
+    rc_profile, out_profile = _run_child(json.dumps(profile_event), profiled)
+    after = sorted(os.path.relpath(os.path.join(base, name), profiled) for base, _dirs, names in os.walk(profiled) for name in names)
+    report(23, "profile-reservation-read-only", rc_profile == 0 and before == after,
+           "profile with no CONTROL marker and one matching RESERVED intent -> rc=%d (want 0), files unchanged: %s"
+           % (rc_profile, "yes" if before == after and rc_profile == 0 else "NO: " + out_profile[:180]))
+    consumed_event = json.loads(json.dumps(profile_event))
+    consumed_event["tool_input"]["args"]["specProtocol"]["taskId"] = "W01-02"
+    consumed_event["tool_input"]["args"]["specProtocol"]["intentId"] = "intent-consumed"
+    rc_consumed, out_consumed = _run_child(json.dumps(consumed_event), profiled)
+    report(24, "profile-consumed-refused", rc_consumed == 2 and "remains RESERVED" in out_consumed,
+           "same read-only bridge with a consumed intent -> rc=%d (want 2), reservation state named: %s"
+           % (rc_consumed, "yes" if "remains RESERVED" in out_consumed else "NO"))
+    missing_event = json.loads(json.dumps(profile_event))
+    missing_event["tool_input"]["args"] = {}
+    rc_missing, out_missing = _run_child(json.dumps(missing_event), profiled)
+    report(25, "profile-identity-required", rc_missing == 2 and "args.specProtocol" in out_missing,
+           "profiled launch with no supported args identity -> rc=%d (want 2), missing identity named: %s"
+           % (rc_missing, "yes" if "args.specProtocol" in out_missing else "NO"))
+
+    underbooked_event = json.loads(json.dumps(profile_event))
+    underbooked_event["tool_input"]["script"] = FIXTURE_PROFILE_SIX_AGENT
+    underbooked_event["tool_input"]["args"]["specProtocol"]["units"] = 6
+    underbooked_event["tool_input"]["args"]["specProtocol"]["agents"] = 5
+    rc_underbooked, out_underbooked = _run_child(json.dumps(underbooked_event), profiled)
+    report(26, "profile-visible-underbooking-refused",
+           rc_underbooked == 2 and "declares 6 direct agent() calls" in out_underbooked
+           and "authorizes only 5" in out_underbooked,
+           "profiled script visibly declaring six agents against a five-agent reservation -> "
+           "rc=%d (want 2), both counts named: %s"
+           % (rc_underbooked,
+              "yes" if "declares 6 direct agent() calls" in out_underbooked and "authorizes only 5" in out_underbooked else "NO"))
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (23 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (27 checks)")
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)

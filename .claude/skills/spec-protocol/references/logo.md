@@ -117,9 +117,9 @@ and does not close the stage.
 
 The stage gate's ordering check treats `STAGE-LOGO` as follows:
 
-- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless the prior stage
+- A `STAGE-BUILD` (BUILD-FINAL) ledger line is REJECTED unless applicable prior stage
   lines exist — `STAGE-WIREFRAMES` (any per-page `STAGE-WIREFRAMES-<page>` line
-  counts), `STAGE-SCAFFOLDING`, `STAGE-BUILD-DRAFT` (its `DRAFT-LIVE: <url>`
+  counts), `STAGE-SCAFFOLDING`, and, for a served target, `STAGE-BUILD-DRAFT` (its `DRAFT-LIVE: <url>`
   line), `STAGE-HERO`, `STAGE-IMAGES` — and, when a client logo exists,
   `STAGE-LOGO`.
 - "When a client logo exists" is decided mechanically: if ANY ledger line in

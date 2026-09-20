@@ -1,0 +1,89 @@
+# Project profiles
+
+A provided project may declare `.spec-protocol.json` with schema
+`spec-protocol.project-profile/v1`. It adopts supplied documents rather than copying them
+into generic apparatus. `documents.state` is the one canonical state; no universal helper
+may create or write `CONTROL/project_state.json`, a parallel task graph, or a replacement
+ledger for that project. Bound document paths are relative to the project root. An absent
+capability document is recorded by the project validator; universal tools do not recreate it.
+
+`commands.validate`, `commands.dispatch`, and `commands.release` are non-empty argv arrays;
+`commands.init` is optional. They execute at the project root with no shell evaluation.
+An optional `runtime` object is packet-owned declarative data. The universal adapter only
+checks that it is an object, then delegates its fields to the project validator. It never
+requires Ponytail, a router, or a launcher; installs, enables, changes, and duplicate runtime
+configuration are outside the adapter.
+`project-profile.mjs bootstrap <project>` checks the bound `documents.state`: only when it
+is absent does it run `commands.init`, then it always runs the read-only validator. Init never
+overwrites progressed state. A profile with no init command may be adopted when state exists;
+a missing state then fails explicitly rather than being guessed or reset.
+
+The validator emits exactly one JSON report. It must contain `ok:true` plus either
+`dispatchReady:true` or an explicit `structuralReady:true` / `bootstrapReady:true`. The latter
+means only that the packet can decide an exact controlled bootstrap, audit, or route-probe
+request; it is not a blanket product-dispatch pass. `dispatchReady:true` additionally means
+the current frozen source/profile/policy binding has a current applicable PASS audit (zero
+HALT/HARM/SCOPE) and the task lifecycle, route, and policy are ready.
+
+`project-profile.mjs dispatch <project> <units> <agents> <label> ...` forwards the original
+positional arguments and flags unchanged to `commands.dispatch` after that structural check.
+The packet checker, not the adapter, decides a task-scoped bootstrap/audit/probe exception or
+a production request. It is the sole write-ahead intent and attempt-reservation writer; the
+adapter does not increment a second counter. `--check` is read-only and `--reserve` is the
+packet's explicit lifecycle mutation. Missing, malformed, or non-ready reports fail closed.
+
+The Workflow hook detects this profile before searching for `CONTROL`. A profiled native
+Workflow must use the existing supported `tool_input.args` object with this identity:
+
+```json
+{
+  "specProtocol": {
+    "taskId": "<task>",
+    "role": "builder|qc|repair",
+    "intentId": "<reserved intent>",
+    "nativeWorkflowId": "<packet workflow identity>",
+    "label": "<reserved label>",
+    "units": 1,
+    "agents": 1
+  }
+}
+```
+
+Before launch the hook calls the declared checker with the exact identity and `--check`. Its
+single JSON response must prove a matching, revision/source-bound `RESERVED` intent using
+`taskAuthorization.kind="reservation-check"`, `readOnly:true`, and the exact echoed fields.
+The hook neither creates nor consumes an intent. A native launch is not a receipt; the packet
+writer consumes only after an observed native receipt. One reservation maps to one task and
+one native workflow and bounds that workflow's direct helpers. When inline script bytes reveal
+an exact direct `agent()` count greater than the reserved `agents` count, the hook refuses
+before launch and names both counts. Dynamic/named fan-out and name-only workflows have no
+honest static count, so they remain exact-reservation checked without a fabricated number. A
+batch uses separately reserved task launches. A missing identity, mismatch, consumed intent,
+or unreadable report refuses the profiled launch. Legacy hook behavior remains unchanged for
+projects without a profile.
+
+Profiled projects skip legacy `CONTROL/` helpers (`gate0`, width, ledger, anchor, watch-tick,
+state-check, audit-gate) and their default seat checks. They use their declared bootstrap,
+validate, dispatch, release, and observer path instead. `project-profile.mjs resume-authorized
+<project>` is the sole narrow GATE 0 resume exception: it requires the current validator to
+return `savedResumeAuthorized:true`. It authorizes only that saved profile-bound resumption;
+it does not enable a general human-gate bypass.
+
+**The quality floor is universal.** Every profile retains the ten-category score floor of at
+least 8.5 plus mandatory behavior, scope, evidence, and independent reference comparison.
+Profiles cannot lower, disable, or replace any of those PASS conditions; their validator may
+add project-specific conditions.
+
+**Profile repair and delivery bounds are state-owned.** Do not apply the universal legacy
+twenty-cycle finding counter to an adopted profile. Its canonical state applies
+`policy.maxBuilderSubmissions` and `policy.maxQCVerdicts` across every child of one root task;
+for an adopted profile that is at most its declared builder deliveries for that root, not per
+child and not an additional twenty largest-gap retries. The one-largest-gap rule
+still determines the next repair payload, but it spends the same root-bound builder/QC budget
+and the packet writer rejects a further reservation. The profile may expose a different explicit
+repair bound through its validator/state; if it does not, no universal default is inferred.
+
+Profiles are optional. Generic projects retain normal defaults. Record the profile path,
+schema, source skill version, and source hash at startup; an active-project migration needs a
+durable migration record. A profile is a binding and policy declaration, not a second state
+file, ledger, scheduler, router configuration, or a closed document-count requirement.

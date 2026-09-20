@@ -427,11 +427,12 @@ schedule, nothing dispatches, and the ledger goes quiet while every clock looks 
   reconciles the live ledger against the plan every 5 minutes. A violation stops the
   violating workstream the same cycle — one `ACTION|<verb>|<target>|<evidence>` line
   and exit 3, with the count carried in its `S-CHECK | violations=<n>` ledger line,
-  restart from the last clean checkpoint in `CONTROL/project_state.json`
+  identity reconciliation before any restart from the last clean checkpoint in `CONTROL/project_state.json`
   (`references/pipeline.md` Checkpoints; `references/execution-architecture.md`
-  §11). The conductor reads the stop file at every dispatch point and TaskStops
-  the named workstream before re-dispatching it from that checkpoint the required
-  way. While `CONTROL/TERMINAL-DRIFT.flag` exists, no restart and no dispatch —
+  §11). The conductor reads the stop file at every dispatch point and reconciles
+  the actual Workflow/session/run or Agent-Team identity through the applicable
+  host driver. Only a proven-absent identity may be retired and re-dispatched from
+  that checkpoint. While `CONTROL/TERMINAL-DRIFT.flag` exists, no restart and no dispatch —
   the flag is lifted only by naming the blocker and removing it
   (`references/anti-drift.md` §6).
 - A tick that re-derives the plan from a decayed context is the disease itself. The
@@ -711,8 +712,8 @@ Write the QC-RECORD (the one format every verdict is written in,
 references/pipeline.md Stage 2): your judge seat label in judge=, the bar you
 judged against - NAMED - in bar=, how you obtained the bar (URL / capture path /
 file path / answer-key reference) in bar_fetch, the verdict in verdict=, the
-outcome in outcome= (PASSED on PASS; LOOPED cycle n of 20 on FAIL - the loop cap
-is 20 cycles per finding; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
+outcome in outcome= (PASSED on PASS; LOOPED cycle n of <cap> on FAIL - the declared repair cap
+is legacy 20 cycles per finding, while an adopted profile uses its canonical root budget; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
 ESCALATED-LIMIT-REACHED with reason= on the three Law-50 non-success verdicts),
 and provenance in provenance= (STRIPPED -
 the package you received carried no timestamps, authorship, history, builder
@@ -865,9 +866,9 @@ this second hook closes. Two hooks, same matcher, different questions:
 | Hook | Question | Blocks on |
 |---|---|---|
 | `workflow-syntax-gate.py` (§5) | will it parse? | a real `node --check` failure |
-| `dispatch-gate.py` (this section) | is the shape allowed? | the five forbidden shapes below |
+| `dispatch-gate.py` (this section) | is the shape/reservation allowed? | the legacy shapes below, or an unmatched profiled reservation |
 
-**The five shapes it refuses, with the fix it prints for each.**
+**The legacy shapes it refuses, with the fix it prints for each.**
 
 1. `parallel(build)` followed by `parallel(qc)` → `pipeline(units, build, qc)`.
 2. A judge stage passing fewer items than the build stage → one judge per landed unit.
@@ -877,6 +878,18 @@ this second hook closes. Two hooks, same matcher, different questions:
    comment → pass every dispatchable unit to one `pipeline()` call.
 5. A merge agent inside a build tree → Law 3's single writer runs OUTSIDE the tree,
    so it never holds a build slot.
+6. A legacy run at its pause wall or execution ceiling → the budget wall holds.
+7. A marked legacy project without a current write-ahead booking → launch only after
+   its dispatch checker records the matching tree.
+
+A project with `.spec-protocol.json` does not use the legacy capacity, budget, or
+`CONTROL/dispatch-log.md` tests. Before any `CONTROL` lookup, the hook reads the
+supported Workflow `tool_input.args.specProtocol` identity and calls the profile's
+declared checker read-only. It allows only the exact `RESERVED` intent bound to task,
+role, units, agents, label, native workflow identity, state revision, and source hash.
+It never creates or consumes a reservation; the packet writer consumes it after an
+observed native receipt. A missing/mismatched/consumed profile identity refuses rather
+than falling through to a legacy state graph (`references/project-profile.md`).
 
 **It fails open, exactly like the syntax gate.** An unreadable input, an
 unparseable script, an item count it cannot determine statically (`pipeline(args,
@@ -937,6 +950,11 @@ records the dispatch. Called once per wave, before the tree fires:
 tools/dispatch-check.sh <project> <units> <agents> "[<Model> x<N>] <what>" [dep=<reason>]
 ```
 
+When `<project>` has `.spec-protocol.json`, this wrapper invokes
+`project-profile.mjs dispatch` and leaves the original positional arguments and flags
+unchanged. The profile command is the only counter and reservation writer; legacy exit
+meanings and `CONTROL` files are not synthesized for it.
+
 | Exit | Meaning |
 |---|---|
 | 0 | PASS — the dispatch-log row is written through `ledger.sh` and `agents.executions_total` in `CONTROL/project_state.json` is incremented by `<agents>`, atomically |
@@ -952,14 +970,16 @@ declared, never asked, never taken from the environment. Two line shapes parse:
 else, an unfilled template placeholder included, is UNDETERMINED and exits 2.
 
 `scripts/common/dispatch-check.mjs` is the Node twin for boxes without Git Bash;
-it answers with the same exit code for the same inputs and writes the same row.
+it answers with the same exit code for the same legacy inputs and writes the same row.
+When it detects `.spec-protocol.json`, it refuses before reading or creating any
+`CONTROL` path and names `project-profile.mjs dispatch` as the profile-owned route.
 
 **Prove both instruments before believing either:**
 
 ```bash
-bash tools/dispatch-check.sh --selftest        # 15 checks, must print ALL PASS
-node scripts/common/dispatch-check.mjs --selftest   # the same 14 numbered cases
-python3 tools/hooks/dispatch-gate.py --selftest     # 13 checks, must print ALL PASS
+bash tools/dispatch-check.sh --selftest        # legacy regression suite, must print ALL PASS
+node scripts/common/dispatch-check.mjs --selftest   # 15 checks, including profile refusal
+python3 tools/hooks/dispatch-gate.py --selftest     # 26 checks, must print ALL PASS
 python3 tools/hooks/dispatch-gate.py --check <script.js>   # the shape check, by hand
 ```
 

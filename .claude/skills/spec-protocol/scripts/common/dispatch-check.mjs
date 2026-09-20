@@ -101,14 +101,15 @@ function withLock(target, fn) {
       if (Date.now() > deadline) {
         throw new Error(`could not acquire ${dir} within 20s — inspect its owner file before removing it`)
       }
-      try {
-        const st = fs.statSync(dir)
-        if (Date.now() - st.mtimeMs > 60000) {
-          process.stderr.write(`DISPATCH-CHECK NOTE | reclaiming stale state lock ${dir}\n`)
-          fs.rmSync(dir, { recursive: true, force: true })
-          continue
-        }
-      } catch { /* the holder released it mid-check: not staleness */ }
+      let lockStat
+      try { lockStat = fs.statSync(dir) } catch { /* holder released it mid-check */ }
+      if (lockStat && Date.now() - lockStat.mtimeMs > 60000) {
+        // Age alone proves neither that a prior writer is gone nor that this
+        // process owns its recovery.  The legacy state format has no stable
+        // workflow/AgentTeam identity, so reclaiming this lock would risk a
+        // second writer.  Leave it for identity-aware reconciliation.
+        throw new Error(`state lock ${dir} is older than 60s but its live owner identity cannot be verified; leave it intact and reconcile before retrying`)
+      }
       execFileSync(process.execPath, ['-e', 'setTimeout(()=>{},250)'], { stdio: 'ignore' })
     }
   }
@@ -175,6 +176,13 @@ export function runCheck(argv) {
   if (stageN < 1) tooling('stages=0 — the padding ceiling would be zero')
   if (!fs.existsSync(project) || !fs.statSync(project).isDirectory()) {
     tooling(`project directory does not exist: ${project}`)
+  }
+
+  // A supplied profile binds canonical state and its own packet checker.  This
+  // legacy helper must never synthesize CONTROL state beside it: send callers
+  // to the adapter (or fail loudly), rather than silently forking counters.
+  if (fs.existsSync(path.join(project, '.spec-protocol.json'))) {
+    tooling(`profile-owned project: refusing legacy mutation; invoke tools/project-profile.mjs dispatch ${JSON.stringify(project)} with the original arguments`)
   }
 
   const ledgerMd = path.join(project, 'CAPACITY-LEDGER.md')
@@ -358,9 +366,16 @@ function selftest() {
   r = run([path.join(T, 'does-not-exist'), '10', '10', '[Opus x10] x'])
   report(13, 'missing-project-named', r.rc === 2, `rc=${r.rc} (want 2)`)
 
+  const P6 = path.join(T, 'profile-owned')
+  fs.mkdirSync(P6, { recursive: true })
+  fs.writeFileSync(path.join(P6, '.spec-protocol.json'), '{"schema":"spec-protocol.project-profile/v1"}\n')
+  r = run([P6, '1', '1', '[Opus x1] profile task'])
+  report(14, 'profile-refuses-legacy-mutation', r.rc === 2 && /profile-owned project/.test(r.out),
+    `rc=${r.rc} (want 2; legacy helper must not create CONTROL state)`)
+
   process.stdout.write('\n')
   if (fails === 0) {
-    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (14 checks)\n')
+    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (15 checks)\n')
     return 0
   }
   process.stdout.write(`dispatch-check.mjs selftest: ${fails} FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n`)

@@ -53,10 +53,9 @@
 #                 them is printed, with its line number, on stderr. Fix pass,
 #                 re-judge, run the gate again.
 #   5  CEILING  — a third cycle was attempted with blocking findings still
-#                 open. Two cycles is the ceiling. The run proceeds with its
-#                 full CARRY list and the open blocking findings escalate in
-#                 writing with their history (GL-007, Law 50: an operational
-#                 limit is never a PASS).
+#                 open. Two cycles is the re-audit ceiling, never build
+#                 permission: preserve and escalate the blockers; no dispatch
+#                 is licensed by this outcome.
 #   9  REFUSED  — the ledger records a fix pass with no matching run=wf-fix-*
 #                 rows in CONTROL/dispatch-log.md. That is the conductor fixing
 #                 the apparatus in its own context instead of dispatching a
@@ -97,6 +96,13 @@
 
 set -uo pipefail
 
+# A profiled project has its own canonical ledger and audit implementation. Do
+# not manufacture CONTROL/LEDGER.md beside its supplied state.
+if [[ "${1:-}" != --* && -f "${1:-}/.spec-protocol.json" ]]; then
+  printf 'AUDIT-GATE PROFILE-OWNED | %s owns audit/state paths; invoke its declared project command, not this legacy CONTROL helper.\n' "$1" >&2
+  exit 2
+fi
+
 # --- The greps. Named, absolute, and proven before any count is believed. ---
 GREP="/usr/bin/grep"
 if [[ ! -x "${GREP}" ]]; then
@@ -107,6 +113,7 @@ SELF_SRC="${BASH_SOURCE[0]}"
 SCRIPT_DIR="$(cd "$(dirname "${SELF_SRC}")" && pwd)"
 SELF="${SCRIPT_DIR}/$(basename "${SELF_SRC}")"
 LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
+APPARATUS_VERSION_FILE="${SCRIPT_DIR}/../VERSION"
 
 DEFAULT_FINDINGS_REL="QUALITY-CONTROL/AUDIT-FINDINGS.md"
 LEDGER_REL="CONTROL/LEDGER.md"
@@ -129,6 +136,33 @@ usage() {
 tooling() {
   printf 'AUDIT-GATE UNDETERMINED | tooling | %s\n' "$1" >&2
   exit 2
+}
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else return 2; fi
+}
+audit_binding() { # audit_binding <project> <findings>
+  local project="$1" findings="$2" spec profile apparatus fh sh ph ah
+  fh="$(sha256_file "${findings}")" || return 2
+  spec="${SPEC_PROTOCOL_AUDIT_SPEC:-}"
+  if [[ -z "${spec}" ]]; then
+    for spec in "${project}/SPEC/MASTER-SPEC.md" "${project}/SPEC.md" "${project}/PROJECT-SPEC.md"; do [[ -f "${spec}" ]] && break; done
+  fi
+  [[ -f "${spec}" ]] || return 2
+  profile="${project}/.spec-protocol.json"
+  [[ -f "${profile}" ]] || profile=""
+  [[ -f "${APPARATUS_VERSION_FILE}" ]] || return 2
+  sh="$(sha256_file "${spec}")" || return 2
+  ah="$(sha256_file "${APPARATUS_VERSION_FILE}")" || return 2
+  ph="none"; [[ -n "${profile}" ]] && ph="$(sha256_file "${profile}")" || true
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "findings=${fh};spec=${sh};profile=${ph};apparatus=${ah}" | shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "findings=${fh};spec=${sh};profile=${ph};apparatus=${ah}" | sha256sum | awk '{print $1}'
+  else
+    return 2
+  fi
 }
 
 # count_matches <regex> <file> — prints the count. Returns 2 when grep itself
@@ -203,7 +237,8 @@ write_ledger_line() {
   local project="$1" cycle="$2" h="$3" a="$4" s="$5" c="$6" v="$7" row out rc
   [[ -x "${LEDGER_SH}" ]] \
     || tooling "tools/ledger.sh is missing or not executable at ${LEDGER_SH} — every project write goes through it, so an unrecorded verdict is refused rather than written unlocked"
-  row="AUDIT-GATE | cycle=${cycle} | halt=${h} harm=${a} scope=${s} carry=${c} | verdict=${v}"
+  [[ -n "${CURRENT_BINDING_SHA256:-}" ]] || tooling "audit input binding is absent; a verdict cannot outlive an unknown spec/profile/apparatus revision"
+  row="AUDIT-GATE | cycle=${cycle} | halt=${h} harm=${a} scope=${s} carry=${c} | verdict=${v} | binding=${CURRENT_BINDING_SHA256}"
   out="$("${LEDGER_SH}" "${project}" "${LEDGER_REL}" "${row}" 2>&1)"; rc=$?
   (( rc == 0 )) \
     || tooling "ledger.sh failed (rc=${rc}) writing ${LEDGER_REL}: ${out}"
@@ -248,6 +283,9 @@ run_gate() {
     || tooling "no findings file at ${findings} — that path is the only source this gate reads (pass findings=<path> if the auditor wrote it elsewhere). An absent file is UNDETERMINED, never zero findings."
   [[ -f "${findings}" && -r "${findings}" ]] \
     || tooling "findings file is not a readable regular file: ${findings}"
+  local CURRENT_BINDING_SHA256
+  CURRENT_BINDING_SHA256="$(audit_binding "${project}" "${findings}")" \
+    || tooling "cannot bind findings to the frozen spec, optional profile, and apparatus VERSION; set SPEC_PROTOCOL_AUDIT_SPEC or provide a canonical spec file"
 
   local ledger_md="${project}/${LEDGER_REL}"
   [[ -e "${ledger_md}" ]] \
@@ -336,7 +374,7 @@ run_gate() {
     write_ledger_line "${project}" "${cycle}" "${halt}" "${harm}" "${scope}" "${carry}" "CEILING"
     printf 'AUDIT-GATE CEILING | cycle=%s | halt=%s harm=%s scope=%s carry=%s | two cycles is the ceiling; a third is refused\n' \
       "${cycle}" "${halt}" "${harm}" "${scope}" "${carry}" >&2
-    printf 'AUDIT-GATE CEILING | the run PROCEEDS with its full CARRY list. These findings stay open and escalate in writing with their full history — an operational limit is never a PASS (GL-007, Law 50):\n' >&2
+    printf 'AUDIT-GATE CEILING | re-auditing stops, but blocking findings remain blocking. Preserve the full history and escalate; no build dispatch is licensed by this verdict.\n' >&2
     show_matches "$(class_re HALT)"  "${findings}" >&2
     show_matches "$(class_re HARM)"  "${findings}" >&2
     show_matches "$(class_re SCOPE)" "${findings}" >&2
@@ -384,7 +422,8 @@ run_selftest() {
   # mkproj <name> <cycles> — a project fixture with <cycles> AUDIT-CYCLE lines
   mkproj() {
     local p="${T}/$1" n="$2" i
-    mkdir -p "${p}/CONTROL" "${p}/QUALITY-CONTROL"
+    mkdir -p "${p}/CONTROL" "${p}/QUALITY-CONTROL" "${p}/SPEC"
+    printf '# Frozen fixture spec\n' > "${p}/SPEC/MASTER-SPEC.md"
     printf '# Ledger\n\nENTRY-MODE: interview\n' > "${p}/CONTROL/LEDGER.md"
     for (( i = 1; i <= n; i++ )); do
       printf 'AUDIT-CYCLE: %s\n' "${i}" >> "${p}/CONTROL/LEDGER.md"
@@ -471,8 +510,8 @@ run_selftest() {
   out="$(bash "${SELF}" "${P}" 2>&1)"; rc=$?
   line="$(gate_line "${P}")"
   ok=0; [[ "${rc}" == "5" && "${line}" == *"AUDIT-GATE | cycle=3 | halt=1 harm=0 scope=0 carry=1 | verdict=CEILING"* ]] && ok=1
-  printf '%s' "${out}" | "${GREP}" -q 'PROCEEDS with its full CARRY list' || ok=0
-  report 6 "third-cycle-ceiling" "${ok}" "rc=${rc} (want 5) and the ledger says verdict=CEILING; ledger line: ${line:-NONE}"
+  printf '%s' "${out}" | "${GREP}" -q 'no build dispatch is licensed' || ok=0
+  report 6 "third-cycle-ceiling" "${ok}" "rc=${rc} (want 5); CEILING stops re-auditing but does not license a build with HALT findings; ledger line: ${line:-NONE}"
 
   # --- 7: a tooling failure is named, never reported as a clean zero -------
   P="$(mkproj proj-nofindings 1)"

@@ -66,7 +66,7 @@ against the live `cc_board.py` module rather than assumed.
 **THE PRODUCER RULE — terminate at REVIEW, never at done.** The module hard-
 blocks `move_task(task_id, 'done')`: it logs a warning and returns False. The
 only path to `done` is the Command Center's own QC gate, which promotes a card
-from `review` on a PASS at **≥ 8.5** — the same floor this skill already
+from `review` on an evidence-backed binary PASS — the same decision this skill already
 enforces. A builder moves a card to `review` when the artifact is ready and lets
 the sweep do the rest. Do not work around this; it is the mechanism that keeps
 the board's `done` column honest, and it agrees with this skill's own gate.
@@ -88,9 +88,9 @@ worse dashboard than no dashboard.
 
 ```
 post_activity('building', 'Wave 1: 16 items dispatched across 2 workflows [DS-Max ×16] stream-a, [DS-Max ×16] stream-b')
-post_activity('qc', 'Item 3 passed Gate 1 (8.7/10), Gate 2 (on-brief), Gate 3 (OURS vs bar)')
+post_activity('qc', 'Item 3 passed Gate 1, Gate 2 (on-brief), and the privately adjudicated blind Gate 3 comparison')
 register_deliverable('preview', '<URL>', {item: 'landing-page'})
-post_qc_score(task_id, 8.7, '8.5', true, 'QUALITY-CONTROL/verdicts/item-3.md')
+post_qc_score(task_id, 8.7, 'frozen-binary-bar', true, 'QUALITY-CONTROL/verdicts/item-3.md')
 ```
 
 **Verified call signatures — use these, and put the human words in the message,
@@ -102,7 +102,7 @@ parameters are:
 | `move_task` | `move_task(task_id, status, note=None)` | `status` from the verified set in section 2; `done` is blocked for producers |
 | `post_activity` | `post_activity(task_id, activity_type, message, metadata=None)` | **`activity_type` is an enum**: `spawned`, `updated`, `completed`, `file_created`, `status_changed`. "building" and "qc" are not members — carry them in the `message` and the `metadata` |
 | `register_deliverable` | `register_deliverable(task_id, url, meta=None)` | Registers a built artifact; the card stays where it is. A 404 on the endpoint fail-softs and the build continues unregistered |
-| `post_qc_score` | `post_qc_score(task_id, score, gate, *, passed=None, scorecard_path=None, note="")` | `gate` is the gate LABEL (e.g. `qc-built-form`), not the 8.5 threshold; `passed` and `scorecard_path` are keyword-only. It writes a `completed` activity carrying `{qc_score, qc_gate, qc_passed, scorecard_path}` — the machine-readable record the Command Center QC sweep reads to promote `review` → `done` **from the same scorecard the gate scored**, so the two can never drift |
+| `post_qc_score` | `post_qc_score(task_id, score, gate, *, passed=None, scorecard_path=None, note="")` | `gate` identifies the frozen bar (e.g. `qc-built-form`); `passed` and `scorecard_path` are keyword-only. A promotion needs `passed=true`, a finite 0–10 score of at least 8.5, and the associated mandatory behavior/scope/evidence and independent-comparison record. It writes a `completed` activity carrying `{qc_score, qc_gate, qc_passed, scorecard_path}` — the machine-readable evidence the Command Center QC sweep reads. |
 
 **Probe the interface before the first call, never assume it.** Copies of
 `cc_board.py` differ by age: an older copy on this machine exposes only

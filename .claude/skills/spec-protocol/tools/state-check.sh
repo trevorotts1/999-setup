@@ -70,6 +70,11 @@
 
 set -uo pipefail
 
+if [[ "${1:-}" != --* && -d "${1:-}" && -f "${1:-}/.spec-protocol.json" ]]; then
+  printf 'STATE-CHECK PROFILE-OWNED | %s supplies canonical state through .spec-protocol.json; refusing legacy CONTROL mutation/check.\n' "$1" >&2
+  exit 2
+fi
+
 # --- Instruments. Absolute where the doctrine requires it, proven in --selftest.
 GREP="/usr/bin/grep"
 if [[ ! -x "${GREP}" ]]; then
@@ -295,6 +300,18 @@ resolve_state() {  # resolve_state <arg> -> prints the state file path
   printf '%s\n' "$a"
 }
 
+profile_root_for() {  # profile_root_for <project-or-path> -> profile root, if any
+  local d="$1" n=0
+  [[ -d "$d" ]] || d="$(dirname "$d")"
+  d="$(cd "$d" 2>/dev/null && pwd)" || return 1
+  while (( n <= 40 )); do
+    [[ -f "$d/.spec-protocol.json" ]] && { printf '%s\n' "$d"; return 0; }
+    [[ "$(dirname "$d")" != "$d" ]] || return 1
+    d="$(dirname "$d")"; n=$(( n + 1 ))
+  done
+  return 1
+}
+
 # CONTROL/OPERATOR-OVERRIDE.json IS OUT OF SCOPE FOR THIS INSTRUMENT (WI-35).
 #
 # It is the operator's own file, not a state file: a flat object whose only
@@ -461,6 +478,11 @@ case "$1" in
   --help|-h) usage; exit 0 ;;
   --selftest) selftest; exit $? ;;
 esac
+
+if PROFILE_ROOT="$(profile_root_for "$1")"; then
+  printf 'STATE-CHECK PROFILE-OWNED | %s has a profile-bound canonical state; invoke its declared validate command, not this legacy CONTROL checker.\n' "$PROFILE_ROOT" >&2
+  exit 2
+fi
 
 STATE_FILE="$(resolve_state "$1")"
 # The operator override is refused by name, before the parser runs: this gate

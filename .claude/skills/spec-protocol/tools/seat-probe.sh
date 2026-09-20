@@ -221,6 +221,8 @@ run_probe() {
   local project="$1" capled seats n role model
   [[ -n "${project}" ]] || tooling "no project path given. Usage: seat-probe.sh <project>"
   [[ -d "${project}" ]] || tooling "project directory does not exist: ${project}"
+  [[ ! -f "${project%/}/.spec-protocol.json" ]] \
+    || tooling "PROFILE-OWNED | ${project} supplies a canonical packet observer; legacy Capacity Ledger/SEAT-PROBE writes are not applicable."
   capled="${project}/CAPACITY-LEDGER.md"
   [[ -f "${capled}" ]] || tooling "no Capacity Ledger at ${capled} — there are no seats to read (that file is the only source this probe reads; the environment is never one)"
   [[ -r "${capled}" ]] || tooling "Capacity Ledger is unreadable: ${capled}"

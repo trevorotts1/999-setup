@@ -436,7 +436,7 @@ rather than the reverse.
    the automation work item presents the plan and waits for both answers. A
    dispatched agent that answers them on the user's behalf is a defect.
 3. **Respect the QC gate.** Skill 44's Step 9 QC is binding: an independent QC
-   sub-agent must pass WF-1..21 AND score the rubric at **≥ 8.5**. This skill's
+   sub-agent must pass WF-1..21 AND meet the frozen binary rubric. This skill's
    own QC treats a Skill 44 workflow as a **sub-deliverable that carries its own
    QC pass** before the item may enter the pen. Two gates, both real; neither
    substitutes for the other.

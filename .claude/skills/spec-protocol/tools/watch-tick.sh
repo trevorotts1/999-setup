@@ -39,9 +39,9 @@
 #   S5       open rows < CLIENT_CAP x running trees while runnable > 0
 #                                                  -> ACTION|widen
 #   S6       an open row whose CONTROL/HEARTBEAT.md line is older than 10
-#            minutes (20 for a merge stage)        -> ACTION|reap-and-redispatch
+#            minutes (20 for a merge stage)        -> ACTION|reconcile-native-identity
 #   S13      a RESULT is written for the unit and its heartbeat is STILL fresh
-#                                                  -> ACTION|reap
+#                                                  -> ACTION|reconcile-native-identity
 #   bar      the two files the client status bar reads, through
 #            tools/bar-check.sh: CONTROL/setup_progress.json and
 #            CONTROL/project_state.json tasks.counts
@@ -73,7 +73,7 @@
 #            never one slow write. The BUILD-phase read is the dispatch log's
 #            own census (a build-stage open row), never a state word any model
 #            may rewrite at will.
-#   published every `PUBLISHED:` line on CONTROL/LEDGER.md has a
+#   published every served `PUBLISHED:` line on CONTROL/LEDGER.md has a
 #            `SHIP-GUARD: rc=0` line at an EARLIER timestamp (WI-69 wires in
 #            WI-60's guard: references/publish.md runs tools/ship-guard.sh
 #            AGAIN at the live origin and rc 0 is a precondition of the
@@ -86,8 +86,10 @@
 #            comparison is on timestamps, never on mere presence — the LAST
 #            publish line is the live address (references/publish.md's
 #            measured upsert caveat) and a guard counts only when strictly
-#            earlier than it. A missing or unreadable ledger is UNDETERMINED,
-#            never a pass: absence is not proof nothing published.
+#            earlier than it. A `status=n/a` no-URL release is excluded: its
+#            artifact/signing/install/runtime/export evidence is the release
+#            guard, not an invented origin. A missing or unreadable ledger is
+#            UNDETERMINED, never a pass: absence is not proof nothing published.
 #
 #   speech-lint  the tick RUNS tools/speech-check.sh on the newest unchecked
 #            draft under CONTROL/.speech/ (one file per tick, default timeout
@@ -105,7 +107,7 @@
 #            timestamp with no completion record (the RC-26 kill signature:
 #            the three WAVE4 builders sharing 10:43:46.087Z)
 #                                              -> DRIFT-ALARM group-abort
-#                                              -> ACTION|redispatch-from-checkpoint
+#                                              -> ACTION|reconcile-native-identity
 #            Also not an S-number, and deliberately evidence-only: the row is
 #            named by its run id, the shared stamp is read off
 #            CONTROL/HEARTBEAT.md (one line per live agent — a killed agent's
@@ -120,7 +122,8 @@
 #             `timestamp | work item | stage | full label | run id`) whose unit
 #             has no `| RESULT |` line in CONTROL/LEDGER.md. Rows are keyed by
 #             unit + stage and the LATEST row wins, so a re-dispatch after a
-#             reap replaces the dead agent's row instead of counting twice.
+#             identity-first re-dispatch replaces a proven-absent worker's row
+#             instead of counting twice.
 #   trees     distinct run ids among the open rows — one workflow tree per run
 #             id. A row with no run id falls into one `(unkeyed)` bucket and the
 #             S-CHECK line says how many rows that was; it is never silently
@@ -308,6 +311,14 @@ iso_to_epoch() {  # prints epoch, or nothing + rc 1 when UNDETERMINED
 
 sanitize() {  # one line, no pipes (the field separator), bounded length
   printf '%s' "$1" | tr -d '\n\r' | tr '|' '/' | cut -c1-160
+}
+
+# The canonical PUBLISHED line records no-URL releases as status=n/a. They do
+# not have an HTTP origin and must not be marked unguarded merely because the
+# URL-only ship guard cannot run. This helper deliberately keys only on that
+# explicit release field; a missing/ambiguous target remains fail-closed.
+published_is_no_url() {
+  printf '%s' "$1" | "$GREP" -qE '(^|[[:space:]])status=n/a([[:space:]]|$)'
 }
 
 # The same, with room for two or three notes. The `undetermined=` field is the
@@ -695,6 +706,13 @@ run_tick() {
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 
+  # A supplied profile owns observation and canonical state. Refuse before
+  # --arm or any CONTROL lookup so this legacy tick cannot create a second
+  # scheduler/ledger path beside it.
+  if [[ -f "$HOME_DIR/.spec-protocol.json" ]]; then
+    die_tool "PROFILE-OWNED | ${HOME_DIR} has .spec-protocol.json; refusing legacy watch-tick/cron mutation. Use the profile-declared observer."
+  fi
+
   if (( DO_CRON_LINE )); then cron_line "$HOME_DIR"; exit 0; fi
 
   # --arm is the step-3 half and runs BEFORE self_prove and before any project
@@ -1006,7 +1024,9 @@ run_tick() {
 
   # S6 — heartbeat freshness on every OPEN row. A row with no heartbeat AT ALL
   # is judged by its own dispatch timestamp: an agent that died before its
-  # first stamp leaves no line, so the heartbeat can never be the only witness
+  # first stamp leaves no line, so the heartbeat can never be the only witness.
+  # It is still not death: only the applicable host driver can resolve actual
+  # Workflow/session/run or Agent-Team identity.
   # (references/loops.md Loop 5's trap). A row younger than the threshold with
   # no stamp yet is not late; it is new.
   while IFS=$'\t' read -r u stage lok tree ts label; do
@@ -1014,15 +1034,15 @@ run_tick() {
     local thr age src ep
     thr="$(stale_min_for "$stage")"
     if ep="$(hb_epoch_for "$u" "$label")"; then src="heartbeat"
-    elif ep="$(iso_to_epoch "$ts")"; then src="dispatch row (no heartbeat line at all — died at launch, or never stamped)"
+    elif ep="$(iso_to_epoch "$ts")"; then src="dispatch row (no heartbeat line — identity must be reconciled)"
     else
       add_undet "S6=undetermined(unit=${u}: neither a parseable heartbeat nor a parseable dispatch timestamp '${ts}')"
       continue
     fi
     age=$(( (NOW - ep) / 60 ))
     if (( age > thr )); then
-      emit "reap-and-redispatch" "$u" \
-        "S6 stale: unit=${u} stage=${stage} last stamped ${age} min ago by its ${src}, past the ${thr}-minute threshold — stale is DEAD, not slow; TaskStop it and re-dispatch from its slice (SKILL.md RULE 5 S6)"
+      emit "reconcile-native-identity" "$u" \
+        "S6 stale: unit=${u} stage=${stage} last stamped ${age} min ago by its ${src}, past the ${thr}-minute threshold — stale is identity-unverified, not dead. Reconcile the actual Workflow/session/run or Agent-Team identity through the host driver: proven absent → retire and re-dispatch from its slice; proven live → retain; unknown → escalate without replacement (SKILL.md RULE 5 S6)."
     fi
   done < "$WORKDIR/open.tsv"
 
@@ -1036,8 +1056,8 @@ run_tick() {
     if ep="$(hb_epoch_for "$u" "$label")"; then
       age=$(( (NOW - ep) / 60 ))
       if (( age <= thr )); then
-        emit "reap" "$u" \
-          "S13 finished-but-alive: unit=${u} has a RESULT line on CONTROL/LEDGER.md and its heartbeat is still fresh (${age} min old, threshold ${thr}) — TaskStop it and note the reap in the ledger (SKILL.md RULE 5 S13)"
+        emit "reconcile-native-identity" "$u" \
+          "S13 finished-but-alive: unit=${u} has a RESULT line on CONTROL/LEDGER.md and its heartbeat is still fresh (${age} min old, threshold ${thr}) — reconcile the matching Workflow/session/run or Agent-Team identity before any TaskStop; unknown identity is retained and escalated (SKILL.md RULE 5 S13)."
       fi
     fi
   done < "$WORKDIR/closed.tsv"
@@ -1058,7 +1078,7 @@ run_tick() {
   #
   # The honest limit, written down and not hidden: this detector does NOT stop
   # the process deaths — their cause is UNDETERMINED. It makes them visible
-  # within five minutes and re-books the work through the rung-1 ACTION below.
+  # within five minutes and asks the rung-1 identity reconciliation below.
   local GA_NOTE=""
   if [[ -f "$HB" && -f "$DL" ]]; then
     local ga_ts ga_units ga_row ga_n
@@ -1079,9 +1099,9 @@ run_tick() {
       if [[ -z "$ga_row" ]]; then continue; fi
       GA_NOTE="row=${ga_row} agents=${ga_n} at=${ga_ts}"
       ledger_write "CONTROL/LEDGER.md" \
-        "$(iso_now) | DRIFT-ALARM | group-abort | row=${ga_row} agents=${ga_n} at=${ga_ts} | $(sanitize "units=${ga_units}") | $(sanitize "two or more agents of one dispatch row ending at an identical timestamp with no completion record — re-dispatch from the checkpoint through tools/dispatch-check.sh, never re-derived by a model reading the ledger")"
-      emit "redispatch-from-checkpoint" "$ga_units" \
-        "DRIFT-ALARM group-abort: ${ga_n} agents of dispatch row ${ga_row} ended at the identical timestamp ${ga_ts} with no RESULT line on CONTROL/LEDGER.md — TaskStop the row's survivors and re-BOOK the units through tools/dispatch-check.sh from their checkpoints (anchor.sh recovery-ladder rung 1)"
+        "$(iso_now) | DRIFT-ALARM | group-abort | row=${ga_row} agents=${ga_n} at=${ga_ts} | $(sanitize "units=${ga_units}") | $(sanitize "two or more agents of one dispatch row ending at an identical timestamp with no completion record — reconcile native identity before any re-dispatch")"
+      emit "reconcile-native-identity" "$ga_units" \
+        "DRIFT-ALARM group-abort: ${ga_n} agents of dispatch row ${ga_row} ended at the identical timestamp ${ga_ts} with no RESULT line on CONTROL/LEDGER.md — reconcile the row's actual Workflow/session/run or Agent-Team identity first; only proven-absent workers may be re-booked through tools/dispatch-check.sh from checkpoints (anchor.sh recovery-ladder rung 1)"
     done < <(ga_stamp_groups "$WORKDIR/hb-all.tsv")
   fi
 
@@ -1335,7 +1355,7 @@ run_tick() {
           STALL_NOTE="stalled(elapsed=${stall_age}m)"
           STALL_ELAPSED="${stall_age}"
           ledger_write "CONTROL/LEDGER.md" \
-            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | $(sanitize "no file write under the project folder for ${stall_age} minutes while an open BUILD row stands (ceiling ${STALLED_MIN}m) — a turn that writes nothing for this long is hung, not slow; TaskStop the hung tree and re-dispatch from its slice")"
+            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | $(sanitize "no file write under the project folder for ${stall_age} minutes while an open BUILD row stands (ceiling ${STALLED_MIN}m) — reconcile the actual Workflow/session/run or Agent-Team identity before retirement; stale files are not proof of death")"
           emit "stalled-turn" "elapsed=${stall_age}m" \
             "DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${stall_age} minutes old (ceiling ${STALLED_MIN}) while a BUILD row stands open — the turn is hung, not slow (RC-17)"
         else
@@ -1357,7 +1377,7 @@ run_tick() {
   # first), and a SHIP-GUARD: rc=0 line counts only when its timestamp is
   # strictly EARLIER than that publish's.
   #
-  #   LAST PUBLISHED: with no SHIP-GUARD: rc=0 earlier -> DRIFT-ALARM
+  #   LAST served PUBLISHED: with no SHIP-GUARD: rc=0 earlier -> DRIFT-ALARM
   #                                                    published-unguarded
   #   guard earlier than the last publish              -> silent
   #   no PUBLISHED: line at all                        -> silent (nothing
@@ -1404,6 +1424,9 @@ run_tick() {
     elif [[ -z "$pub_line" ]]; then
       PUB_NOTE="ok(no PUBLISHED: line — nothing published yet)"
     else
+      if published_is_no_url "$pub_line"; then
+        PUB_NOTE="n/a(no-URL release; target-specific artifact evidence owns its guard)"
+      else
       pub_ts="$(printf '%s' "$pub_line" | "$GREP" -oE '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' | head -n 1)"
       local pub_ep="" sg_line sg_ep
       if [[ -n "$pub_ts" ]] && pub_ep="$(iso_to_epoch "$pub_ts")"; then
@@ -1444,6 +1467,7 @@ run_tick() {
         PUB_ALARM=1
         PUB_WHY="the last PUBLISHED: line carries no parseable ISO8601Z timestamp — an undateable publish cannot be proven guarded, so this fires rather than passing"
       fi
+      fi
     fi
   fi
   if (( PUB_ALARM == 1 )); then
@@ -1481,11 +1505,11 @@ run_tick() {
 #
 #   1  S2  runnable > 0 and open == 0            -> exit 3, ACTION|dispatch-now
 #   2  S3  an open row with no [<model> x<N>]    -> exit 3, ACTION|relabel-…
-#   3  S6  a heartbeat 11 minutes old            -> exit 3, ACTION|reap-and-redispatch
+#   3  S6  a heartbeat 11 minutes old            -> exit 3, ACTION|reconcile-native-identity
 #   4  CLEAN — an open, labelled, freshly-stamped row and nothing runnable
 #          -> exit 0 and exactly one `S-CHECK | violations=0` ledger line
 #   5  THE FLAG — CONTROL/TERMINAL-DRIFT.flag present -> exit 4
-#   6  S13 a RESULT on the ledger and a fresh heartbeat -> exit 3, ACTION|reap
+#   6  S13 a RESULT on the ledger and a fresh heartbeat -> exit 3, ACTION|reconcile-native-identity
 #   7  S5  open rows below CLIENT_CAP x trees while runnable > 0 -> ACTION|widen
 #   8  BROKEN INSTRUMENT — the label detector sabotaged MUST be caught (exit 2)
 #   9  A MISSING PROJECT is exit 2 NAMING THE PATH, never a verdict
@@ -1523,7 +1547,7 @@ run_tick() {
 #  29  GROUP-ABORT, THE POSITIVE — three agents of one dispatch row sharing
 #      the end timestamp 2026-09-08T10:43:46Z with no completion record ->
 #      exit 3, DRIFT-ALARM group-abort naming the row and agents=3, plus
-#      ACTION|redispatch-from-checkpoint. The canary's photographed signature.
+#      ACTION|reconcile-native-identity. The canary's photographed signature.
 #  30  THE DISCRIMINATING CONTROL — three agents of one row ending at
 #      10:43:44Z, 10:43:46Z and 10:43:51Z each WITH a completion record ->
 #      NO group-abort. 29 and 30 differ by the shared stamp and the RESULT
@@ -1626,10 +1650,10 @@ selftest() {
   runw "$T/c3"
   ok=0
   if (( RC == 3 )) \
-     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reap-and-redispatch|U-02|' \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reconcile-native-identity|U-02|' \
      && printf '%s' "$OUT" | "$GREP" -q 'S6 stale' \
      && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|relabel-and-redispatch'; then ok=1; fi
-  report 3 "S6-stale-heartbeat" "$ok" "rc=${RC} (want 3); ACTION|reap-and-redispatch for U-02 at 11 min > 10; the [sonnet x4] label was ACCEPTED (negative control for S3 held)"
+  report 3 "S6-stale-heartbeat" "$ok" "rc=${RC} (want 3); ACTION|reconcile-native-identity for U-02 at 11 min > 10; stale evidence alone cannot kill or replace it"
 
   # --- case 4: THE CLEAN PATH. One open unit, labelled, stamped a minute ago,
   #     nothing runnable behind it. Exit 0 and exactly ONE
@@ -1664,9 +1688,9 @@ selftest() {
   } > "$T/c6/CONTROL/LEDGER.md"
   runw "$T/c6"
   ok=0
-  if (( RC == 3 )) && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reap|U-01|' \
+  if (( RC == 3 )) && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reconcile-native-identity|U-01|' \
      && printf '%s' "$OUT" | "$GREP" -q 'S13 finished-but-alive'; then ok=1; fi
-  report 6 "S13-finished-but-alive" "$ok" "rc=${RC} (want 3); ACTION|reap for U-01 — RESULT on the ledger, heartbeat still fresh"
+  report 6 "S13-finished-but-alive" "$ok" "rc=${RC} (want 3); ACTION|reconcile-native-identity for U-01 — RESULT on the ledger, heartbeat still fresh"
 
   # --- case 7: S5 — one tree at cap 10 holding one open row while three units
   #     wait. Idle capacity with dispatchable work is a violation.
@@ -1966,12 +1990,12 @@ selftest() {
   #     booking three agents; all three heartbeat lines frozen at the
   #     identical end stamp 2026-09-08T10:43:46Z — the canary's photographed
   #     signature — with no completion record anywhere. The alarm MUST fire,
-  #     naming the row and agents=3, with the rung-1 re-dispatch ACTION.
+  #     naming the row and agents=3, with the rung-1 identity-reconcile ACTION.
   #     NOTE on the checklist: U-02 stays open with no dispatch row so S2
   #     cannot fire (runnable=1 needs open=0); the wave units U-11..U-13 are
   #     not checklist boxes, so they add no runnable count either. S6 WILL
-  #     also fire on the stale wave units — a dead agent is both stale and
-  #     group-aborted, and the case does not assert S6's absence.
+  #     also fire on the stale wave units — an identity-unverified agent is both
+  #     stale and group-aborted, and the case does not assert S6's absence.
   mk_home "$T/c29"
   printf '2026-09-08T10:40:00Z | U-11 build U-12 build U-13 build | build | [opus x10] WF04 builders | run=run-090 | units=3 | agents=3 | cap=10 | floor=3 | stages=4 | dep=none | executions_total=3\n' > "$T/c29/CONTROL/dispatch-log.md"
   {
@@ -1983,9 +2007,9 @@ selftest() {
   ok=0
   if (( RC == 3 )) \
      && printf '%s' "$OUT" | "$GREP" -q 'DRIFT-ALARM group-abort: 3 agents of dispatch row run-090 ended at the identical timestamp 2026-09-08T10:43:46Z' \
-     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|redispatch-from-checkpoint|U-11,U-12,U-13|' \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reconcile-native-identity|U-11,U-12,U-13|' \
      && "$GREP" -q 'DRIFT-ALARM | group-abort | row=run-090 agents=3 at=2026-09-08T10:43:46Z' "$T/c29/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
-  report 29 "group-abort-positive" "$ok" "rc=${RC} (want 3); DRIFT-ALARM group-abort naming row=run-090 agents=3 at=2026-09-08T10:43:46Z written; ACTION|redispatch-from-checkpoint for U-11,U-12,U-13 emitted"
+  report 29 "group-abort-positive" "$ok" "rc=${RC} (want 3); DRIFT-ALARM group-abort naming row=run-090 agents=3 at=2026-09-08T10:43:46Z written; ACTION|reconcile-native-identity for U-11,U-12,U-13 emitted"
 
   # --- case 30: THE DISCRIMINATING CONTROL. The same wave, but the three
   #     agents ended seconds apart (10:43:44Z, 10:43:46Z, 10:43:51Z) and each
@@ -2021,8 +2045,8 @@ selftest() {
   ok=0
   if ! printf '%s' "$OUT" | "$GREP" -q 'group-abort' \
      && ! "$GREP" -q 'group-abort' "$T/c31/CONTROL/LEDGER.md" 2>/dev/null \
-     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reap-and-redispatch|U-11|'; then ok=1; fi
-  report 31 "group-abort-lone-agent-control" "$ok" "rc=${RC}; one agent with no RESULT raised no group-abort anywhere, and S6 still fired ACTION|reap-and-redispatch for U-11 — the stall path kept its jurisdiction"
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|reconcile-native-identity|U-11|'; then ok=1; fi
+  report 31 "group-abort-lone-agent-control" "$ok" "rc=${RC}; one agent with no RESULT raised no group-abort anywhere, and S6 still fired ACTION|reconcile-native-identity for U-11 — the stall path kept its jurisdiction"
 
   # --- case 32: STALLED-TURN. A BUILD row stands open and every file under
   #     the project folder is 20 minutes old, past the 15-minute ceiling. The
@@ -2158,6 +2182,21 @@ selftest() {
      && "$GREP" -q 'DRIFT-ALARM | published-unguarded |' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null \
      && "$GREP" -q 'a later guard is a receipt, not a guard' "$T/c28/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 28 "published-guard-after-publish" "$ok" "rc=${RC} (want 3); both lines present but the guard at 10:35:00Z is AFTER the publish at 10:29:28Z — DRIFT-ALARM | published-unguarded still written, because order is the guard"
+
+  # --- case 34: a no-URL artifact release has status=n/a by contract. It has
+  # no HTTP origin, so the URL-only guard must be n/a rather than an alarm; the
+  # target's artifact/signing/install/runtime evidence is checked at release.
+  mk_home "$T/c29"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-029\n' "$(stamp 1)" > "$T/c29/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c29/CONTROL/HEARTBEAT.md"
+  printf '2026-09-08T10:29:28Z | PUBLISHED: studio-nerds-macos-arm64.pkg target=desktop-macos-arm64 domain=none status=n/a\n' > "$T/c29/CONTROL/LEDGER.md"
+  runw "$T/c29"
+  ok=0
+  if (( RC == 0 )) \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'published-unguarded' \
+     && printf '%s' "$OUT" | "$GREP" -q 'published=n/a(no-URL release; target-specific artifact evidence owns its guard)' \
+     && ! "$GREP" -q 'DRIFT-ALARM.*published-unguarded' "$T/c29/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
+  report 34 "published-no-url-not-ship-gated" "$ok" "rc=${RC} (want 0); status=n/a skips only the URL-origin guard and raises no published-unguarded alarm"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

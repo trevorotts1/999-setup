@@ -214,7 +214,7 @@ not a new loop; only the register row's naming makes the B2H visible:
 
 | Loop | Trigger | Interval | Owns this transition | Stop condition |
 |---|---|---|---|---|
-| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else blocked-repeated-fail at the 20-cycle cap, reported NOT PASSED, never PASS |
+| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else blocked-repeated-fail at the applicable repair bound (legacy 20 cycles; profile canonical root budget), reported NOT PASSED, never PASS |
 
 ---
 
@@ -232,24 +232,25 @@ additional repository adds one. The middle term varies with the repository count
 nothing else. The last line is what stops the count being the same ten on every
 project regardless of what the project is.
 
-### Never a fixed round count — the B2H success exit vs the 20-cycle cap
+### Never a fixed round count — the B2H success exit vs the applicable repair cap
 
 A loop's stop condition is a MEASURABLE SUCCESS, never a fixed number of rounds
 (Law 35, clause 4). The B2H is the success stop: the review/gate loop stops when the
 final comparative gate passes with evidence, however many rounds that takes. The
-20-cycle cap is NOT a competing success exit — it is an OPERATIONAL
-escalation trigger. It fires on blocked-repeated-fail: twenty cycles on the same
-finding (operator ruling 2026-08-14) and the item is marked blocked, NOT passed,
+applicable repair cap is NOT a competing success exit — it is an OPERATIONAL
+escalation trigger. On legacy projects it fires after twenty cycles on the same
+finding (operator ruling 2026-08-14); an adopted profile's canonical root budget fires
+instead. The item is marked blocked, NOT passed,
 and the finding ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every
 cycle's finding, fix, and re-judge result — never a quiet give-up, never a
 relabeled pass (the QC protocol's loop mechanics, `references/pipeline.md`).
 
 The two do not conflict:
 
-| | B2H success exit | 20-cycle cap |
+| | B2H success exit | applicable repair cap |
 |---|---|---|
 | What it is | The SUCCESS stop — what PASS means | An OPERATIONAL escalation trigger — when to stop spending on a stuck finding |
-| When it fires | The final comparative gate passes with evidence | Twenty cycles on the same finding with no convergence; the item escalates with the full finding history |
+| When it fires | The final comparative gate passes with evidence | Legacy: twenty cycles on one finding with no convergence. Profile: its canonical root budget is exhausted. The item escalates with the full finding history |
 | What the run reports | PASS | NOT PASSED, never PASS |
 
 A limit-hit run reports NOT PASSED, never PASS. Blocked-repeated-fail, infeasible,
@@ -299,12 +300,12 @@ Each row is a loop. Each owns exactly one transition and nothing else (Law 36).
 | **1. Spec** | Interviews (4.5), runs the current-state pass, writes each work item as a section of the master specification in the build-card shape. Runs before the others and normally finishes. | *nothing → specified* | Every work item is written in the build-card shape and passes the structural check. |
 | **2. Build** | Claims the first dispatchable item, builds it, pushes, marks it *built*. Pipeline not barrier — each item judged when IT finishes. | *unbuilt → built* | No dispatchable unbuilt item remains and nothing is in a fixing state. |
 | **3. Review** | Takes a *built* item and actually runs it — the break-it pass, the mutation proof, the end-to-end run. Opens the change for approval on the remote (Law 37). Records a link a human can open and the exact steps to test it. | *built → reviewed* | No *built*-and-unreviewed item remains. |
-| **4. Gate** | Scores a *reviewed* item against the QC rulebook: ten categories, the item's own rubric, the fail-closed rules. Writes the durable verdict into the ledger. On a pass, puts it in the landing queue. On a fail, writes the six-part finding with run-evidence and fans out one fixer per finding, in parallel (Law 32), bounded at twenty per finding. | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
+| **4. Gate** | Judges a *reviewed* item against the QC rulebook: ten categories with a mandatory 8.5 floor, its frozen independent bar, mandatory behavior/scope/evidence, and fail-closed rules. On a fail, writes the six-part finding and fans out one fixer per finding, bounded by the declared repair cap (legacy default: twenty). | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
 
 **The gate loop's verdict carries the three-gate B2H result — every work item
 carries a Bar to Hit (references/gauntlet.md, Section 12).** The durable verdict
 records all three gates of the Gauntlet stack, not just the rubric score: Gate 1
-(hard, 8.5), Gate 2 (on-brief, GOAL.md fidelity), Gate 3 (comparative, the blind
+(hard, frozen binary acceptance), Gate 2 (on-brief, GOAL.md fidelity), Gate 3 (comparative, the blind
 A/B against the frozen bar). The rubric score and the three gates are both written
 to the ledger; the B2H result is what the review/gate loop's stop condition reads.
 Full protocol: `references/gauntlet.md`.
@@ -347,7 +348,7 @@ watches something it is not part of.
 | Property | Value |
 |---|---|
 | **Why it cannot be an error handler** | A hung call throws nothing. It does not return, does not fail, does not time out on its own. There is no exception to catch. The only evidence a stall produces is time passing — only something watching the clock can see it. |
-| **The tick** | Read the heartbeat and the dispatch log. Anything stale beyond the thresholds (10 minutes for builder/judge, 20 for merge-writer) is dead, not slow — there is no third category. Anything in the dispatch log with no outcome and no heartbeat at all died at launch. Respond: presume dead, kill by run identifier, sweep, re-dispatch from the slice, log it. |
+| **The tick** | Read the heartbeat and the dispatch log. Anything stale beyond the thresholds (10 minutes for builder/judge, 20 for merge-writer), or with no heartbeat, is an identity-reconciliation signal — never proof of death. Query the actual Workflow/session/run or Agent-Team identity through the applicable host driver: proven absent → retire and re-dispatch from the slice; proven live → retain; unknown/driver-unavailable → keep ownership and escalate. |
 | **Owns** | No item's state transition. It restores an item to the state it was already in so the owning loop can pick it up again. |
 | **Interval** | Shorter than the shortest staleness threshold, or it can miss a whole stall between ticks. |
 | **Stop condition** | No loop remains registered as running. |
@@ -399,7 +400,7 @@ watches something it is not part of.
 | **Stop condition** | Same as loop 6. |
 | **Skip condition** | None. This loop is never omitted: every run dispatches to agents no person is reading, and this loop is what makes RULE 3–5 fail-closed. |
 | **The trap** | A watch that writes contentless heartbeats is itself the disease (references/anti-drift.md — 740 of 2,366 real ledger lines were exactly that). Every watch line carries the violation count, even when it is zero — `S-CHECK | violations=0 | runnable=<n> open=<n> trees=<n>` is the line `tools/watch-tick.sh` writes on every pass, and it is state; `heartbeat (auto-tick)` is noise. The second trap is roster-shaped: reading an empty `ListAgents` — or an absent `inboxes/{name}.json` — as proof a commander died, and re-spawning a live one on top of itself, two writers on one domain. A negative here is a CLAIM and carries a positive's burden of proof: absence is proven from the transcripts (references/agent-team.md §10) or it is not proven, and UNDETERMINED is the correct verdict until it is. |
-| **The honest limit (RC-26)** | This detector does NOT stop the process deaths, whose cause is undetermined; it makes them visible within five minutes and re-books the work, and if the next canary shows the same signature with the detector firing, that measurement becomes the input to a real root-cause item in a later wave. The tick raises `DRIFT-ALARM group-abort` when two or more agents of one dispatch row end at an identical timestamp with no completion record, and `tools/anchor.sh` recovery-ladder rung 1 re-BOOKS those units through `tools/dispatch-check.sh` — no remedy is written here for a cause nobody has measured, and the deaths are not claimed fixed anywhere in this skill. |
+| **The honest limit (RC-26)** | This detector does NOT prove process death, whose cause is undetermined; it makes the candidate row visible within five minutes and requests native identity reconciliation. The tick raises `DRIFT-ALARM group-abort` when two or more agents of one dispatch row end at an identical timestamp with no completion record, and `tools/anchor.sh` recovery-ladder rung 1 asks the conductor to reconcile each actual Workflow/session/run or Agent-Team identity. Only a proven-absent identity may be re-BOOKED through `tools/dispatch-check.sh`; live and unknown identities remain owned/escalated. No remedy is claimed for a cause nobody has measured. |
 
 ### Two rules for all five
 
