@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.21.1] — 2026-09-20
+
+### Call it by its name
+
+A third real run did almost everything right: ultracode was already on, the opening was plain,
+eight readers covered **all 33 documents in the folder before a word was said back**, the
+declared targets produced `DESKTOP_SOFTWARE` rather than the phone app of two runs ago, and the
+finding was stated rather than asked — "your notes say a desktop program for Mac with a browser
+version as well; that's what I'll build unless you tell me otherwise."
+
+Then it said: *"From here on I'll call it your computer program."*
+
+The product is named **Studio Nerds** — in the profile's `project.name`, in the bound state, in
+`goal.md`, in the specification's title, and in the folder's own name. All of it had just been
+read. The naming line interpolated the six-way taxonomy's category word because that is all
+1.20.0 ever told it to interpolate, and the owner's reply was that he hated the name and had
+already given one. Reading everything and then calling the thing "your computer program" reads
+exactly like having read nothing — the naming defect discredited the reading fix that had just
+worked.
+
+**Before speaking the naming line, look for the thing's actual name** in what was already read:
+the profile's `project.name`, the bound state, the goal document, the specification title, the
+folder name, or the client's own words. If it has a name, use it. The category word survives
+only for a genuinely unnamed project, and then as "until you give it a name."
+
+**`00-INPUT/ANSWERS.md` is created before the opening script is spoken, not later.** The run
+reached the naming line with no such file, so 1.20.3's interrupted-question tracking had nothing
+to write to and no record of the entry-mode question still owed. On a supplied folder it is
+created inside that folder — the one MISSING document RULE 1 permits writing there.
+
 ## [1.21.0] — 2026-09-20
 
 ### The decision engine — small typed judgements, never a dependency

@@ -53,6 +53,11 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    repeated, shortened, or restated later in the run.
 2. **The idea question** — the opening's own last line: tell me your idea the
    way you'd tell a friend; what is it, and who is it for?
+   **The thing's NAME is a pre-statement read, never a question and never a
+   category.** If the profile, the bound state, the goal document, the
+   specification title, the folder name or the client's own words already name
+   it, that IS its name — say it back, do not substitute "your computer program"
+   or any other bucket label (SKILL.md section 3).
 3. **Classify-and-confirm** — they describe it in their own words; the skill
    classifies it into one of the six recorded values below and confirms in one
    plain sentence. **The six-item list is never rendered to the client as a

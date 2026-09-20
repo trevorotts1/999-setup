@@ -287,9 +287,20 @@ sorted. Verbatim frames, their own words interpolated:
 - `WEBSITE` — "Got it. You want a website where people can <what they said>. Did I get that right?"
 - `FUNNEL` — "Got it. You want pages that help turn visitors into <their word: customers, appointments, members> and then help move them to the next step. Did I get that right?"
 
-On **yes**: "Wonderful — that's exactly what I'll build for you. From here on I'll call it
-your <app for phones / website you sign into / app for phones and computers / computer program /
-website / selling pages>." One plain naming, once; it seeds every later mention of the thing.
+**⛔ CALL IT BY ITS NAME. THE CATEGORY WORD IS THE LAST RESORT.** Before speaking the naming
+line, look for the thing's actual name in what you have already read — the profile's
+`project.name`, the bound state, the goal document, the specification's title, the folder's own
+name, or the client's own words. **If the thing has a name, USE IT**, and never replace it with
+a category: telling someone who wrote "Studio Nerds" across thirty-three documents that you will
+call it "your computer program" reads as though you read none of them, and it is the exact
+defect this rule removes. A name found this way is stated back so they can correct it, and a
+client who then says they dislike it is asked once what to call it instead.
+
+On **yes**, with a name found: "Wonderful — that's exactly what I'll build for you. From here on
+I'll call it <their name for it>." On **yes**, with genuinely no name anywhere: "Wonderful —
+that's exactly what I'll build for you. From here on I'll call it your <app for phones / website
+you sign into / app for phones and computers / computer program / website / selling pages>, until
+you give it a name." One plain naming, once; it seeds every later mention of the thing.
 On **no**: "Then I didn't hear it right, and that's on me. Tell me a little more — what would
 somebody actually be doing when they use it? — and I'll get it this time." Re-classify. If
 exactly two candidates remain live, ask ONE either/or from the bank — never three
@@ -314,6 +325,11 @@ is what I would build for you: <the plain phrase>, because <one reason drawn fro
 they just said>. We will go with that — and if it ever feels wrong to you, say so and I
 will change the plan. Nothing gets locked in today." A target reached this way is
 recorded as a DEFAULT they confirmed, never as their answer.
+
+**⛔ `00-INPUT/ANSWERS.md` IS CREATED BEFORE THE OPENING SCRIPT IS SPOKEN, NOT LATER.** On a
+supplied folder it is created inside that folder; it is the one MISSING document RULE 1 permits
+writing there. A run that has spoken the opening without it has already lost its only record of
+what was asked, and the rule below cannot work without the file.
 
 **⛔ AN INTERRUPTED QUESTION IS UNANSWERED, AND IT COMES BACK.** A question that was spoken
 but overtaken — by a correction, a re-classification, a new instruction, a compaction — was
