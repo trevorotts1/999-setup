@@ -212,6 +212,23 @@ platform. It is given when the client asks how to come back, and written into
 
 > If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
+**⛔ READ THE SUPPLIED MATERIAL BEFORE THE FIRST CONFIRM SENTENCE.** When the run starts in a
+folder that already holds a profile or documents, those are READ — through a `reader` dispatch,
+in full, never grepped — BEFORE a single word is said back to the client about what they want.
+Confirming from a guess while the answer sits unread in a file is the defect this rule removes,
+and asking again AFTER reading is the same defect twice. The order is fixed: read, then state
+what was found, then let them correct it.
+
+**What is stated versus what is asked.** A fact the documents answer — what the thing is, its
+surfaces, its features, its scope — is STATED BACK in one line and counted ANSWERED: "your notes
+say a desktop program for Mac with a browser version as well; that's what I'll build unless you
+tell me otherwise." One sentence, correctable, not a question. Only what documents CANNOT answer
+is asked: money, accounts, taste, and whether the proposals written in the packet are actually
+decisions the client made or a previous draft's suggestions. **A written spec is never proof the
+client approved it** — that distinction is the whole reason the interview still runs on a
+profiled project, and it is also why the interview must never re-ask what the spec already
+settles. Both halves, or the rule is broken.
+
 **⛔ A PROFILE'S `targets` DECIDE THE TAXONOMY — never guess past a declared answer.** When
 `.spec-protocol.json` carries a `targets` array, that array IS the build target and the
 classification is DERIVED from it, not inferred from the client's sentence. Map each declared
@@ -326,18 +343,29 @@ create a replacement beside it, and never create `CONTROL/` or a second state gr
 named documents are the input and its bound state is canonical (`references/project-profile.md`).
 **Everything the client hears still happens.** The opening script, classify-and-confirm, the
 funnel gate, entry mode, the brainstorm, the interview, the bar and the design stages are NOT
-skipped: a profile is a binding, not a consent form. **Entry mode is still asked, in the SAME two-way words, as its OWN message.** A supplied
-folder does not shrink the choice to a lopsided add-on and does not get bundled onto the end
-of the naming line — a statement plus a question in one message is a wall
-(`references/audience.md` §1, BINDING). Speak the naming line, stop. Then speak the entry-mode
-question by itself, with the folder named so the choice is real:
+skipped: a profile is a binding, not a consent form. **⛔ THE WORKING DIRECTORY IS NOT AN ANSWER. ENTRY MODE IS ALWAYS ASKED.** Starting the run
+inside a folder is not a pointing gesture, and a `.spec-protocol.json` sitting there is not the
+client saying "this is all my material". Never tell the client what they have already given
+you — "you've already pointed me at notes in this folder" ANSWERS the question on their behalf
+and is the defect this rule removes. Ask; do not assume; and never bundle it onto the naming
+line, because a statement plus a question in one message is a wall (`references/audience.md`
+§1, BINDING). Speak the naming line, stop. Then speak this, by itself, verbatim:
 
 > I can learn about your idea in one of two ways.
 >
-> You can tell me about it in your own words, or I can start from the notes and documents
-> already in <folder name> and you tell me anything they are missing.
+> You can tell me about it in your own words, or you can point me at anything you already
+> have — notes, documents, a folder, something you have already started. Either is fine, and
+> you can do both.
 >
 > Which would you rather do?
+
+**They may point ANYWHERE.** The material does not have to be in the project folder and does
+not have to be the profiled folder: a path on the desktop, another folder, a single document,
+several. Ask where it is, read all of it, and copy it into `00-INPUT/` untouched. A supplied
+profiled folder is material this run ALREADY HAS — it is never a reason to skip the question,
+because the client may have more somewhere else, and only they know. When they do point at
+something, confirm what was read in one line naming the count — "I've read the 9 documents in
+<folder>" — so they can tell you what is missing.
 
 `00-INPUT/` is created inside the supplied folder if it is missing, because a
 MISSING document is the one thing ever written into a provided folder (RULE 1). Where a packet

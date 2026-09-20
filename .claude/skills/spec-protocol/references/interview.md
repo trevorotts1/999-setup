@@ -61,7 +61,11 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
 4. **The funnel gate**, when and only when the confirmed target is `FUNNEL` —
    the gate written out below.
 5. **The entry-mode question** — SKILL.md owns the words. Its answer creates
-   the project folder and `00-INPUT/` immediately.
+   the project folder and `00-INPUT/` immediately. **It is ALWAYS asked.** The
+   working directory is not an answer to it, a supplied folder is not an answer
+   to it, and the client is never told what they have already pointed at. They
+   may point at material anywhere on the machine, in any number of places, and
+   they may do both halves — tell you AND point.
 
 ### Step 1c — the Build Target taxonomy
 

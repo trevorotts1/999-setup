@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.20.3] — 2026-09-20
+
+### Read first, state what you found, and always ask where the material is
+
+A second real run exposed the parent bug behind 1.20.2's misclassification: nothing forced the
+run to READ the supplied material before it said its first sentence back to the client. It
+guessed "an app people use on their phone" at 10:30 with nothing read, was corrected, read the
+folder only when ordered to at 10:35, and then asked the same confirm question again at 10:42.
+Asking before reading and asking after reading are the same defect.
+
+**Read before the first confirm sentence.** When a run starts in a folder holding a profile or
+documents, they are read in full through a `reader` dispatch — never grepped — before a word is
+said back about what the client wants. The order is fixed: read, state what was found, let them
+correct it.
+
+**Stated versus asked, written down.** A fact the documents answer — what the thing is, its
+surfaces, its features, its scope — is STATED in one correctable line and counted ANSWERED, not
+put as a question. Only what documents cannot answer is asked: money, accounts, taste, and
+whether the proposals in the packet are decisions the client actually made. A written spec is
+never proof the client approved it — that is why the interview still runs on a profiled project,
+and it is equally why the interview must not re-ask what the spec settles. Both halves, or the
+rule is broken.
+
+**The working directory is not an answer.** Starting inside a folder is not a pointing gesture,
+and a `.spec-protocol.json` sitting there is not the client saying "this is all my material".
+The previous wording told the client what they had already given — "you've already pointed me at
+notes in this folder" — which answers the entry-mode question on their behalf. Entry mode is now
+always asked, in open words that presuppose nothing, and the client may point at material
+anywhere on the machine, in any number of places, or do both halves: tell you AND point. What
+was read is confirmed back with a count so they can say what is missing.
+
 ## [1.20.2] — 2026-09-20
 
 ### Three defects found by the first real 1.20.0 run
