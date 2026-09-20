@@ -105,6 +105,12 @@ try {
     if ($state.lastEffortSelection) { $lastEffort = [string]$state.lastEffortSelection }
     if (-not $env:CLAUDE_NINE_FORCE_EFFORT -and $lastEffort -eq 'ultracode') {
         $EffortFlag = '--effort ultracode'
+        # The binary exports only the effort LEVEL to child processes, and
+        # ultracode's level is plain xhigh -- so no subprocess can tell
+        # ultracode from xhigh by environment alone. Export an explicit marker
+        # next to the flag so in-session checks (spec-protocol GATE 0
+        # witness 1) can see what was actually requested.
+        $childEnv['CLAUDE_NINE_ULTRACODE'] = '1'
     } elseif (-not $env:CLAUDE_NINE_FORCE_EFFORT -and $lastEffort -in @('low','medium','high','xhigh','max')) {
         $childEnv['CLAUDE_CODE_EFFORT_LEVEL'] = $lastEffort
     }

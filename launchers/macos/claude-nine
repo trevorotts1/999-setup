@@ -165,9 +165,15 @@ NODE
   # 6b. lastEffortSelection = ultracode -> --effort ultracode CLI flag on the
   #     exec line (session-only by product design; the flag is the only way to
   #     re-enter it across a session boundary).
+  #     The binary exports only the effort LEVEL to child processes, and
+  #     ultracode's level is plain `xhigh` -- so no subprocess can tell
+  #     ultracode from xhigh by environment alone. Export an explicit marker
+  #     next to the flag so in-session checks (spec-protocol GATE 0 witness 1)
+  #     can see what was actually requested.
   EFFORT_ARGS=()
   if [ "${LASTEFFORT:-}" = "ultracode" ]; then
     EFFORT_ARGS=(--effort ultracode)
+    export CLAUDE_NINE_ULTRACODE=1
   fi
 
   # 7. Assert the routing boundary is actually armed before exec — never launch

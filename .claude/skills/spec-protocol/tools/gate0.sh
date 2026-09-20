@@ -189,10 +189,15 @@ do_check_session() {
   cfg_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
   cfg="${cfg_root}/settings.json"
   effort_env="${CLAUDE_EFFORT:-${CLAUDE_CODE_EFFORT_LEVEL:-}}"
-  # Witness 1: the live session environment. `/effort ultracode` sets it to the
-  # literal value `ultracode` for the session; either variable name counts.
-  if [ "${effort_env}" = "ultracode" ]; then
-    echo "GATE0 SESSION | verdict=PASS | via=session | witness=env | config=${cfg}"
+  # Witness 1: the launcher's ultracode marker. The Claude Code binary models
+  # ultracode as xhigh PLUS a separate session-only boolean, and exports only
+  # the level (`CLAUDE_EFFORT=xhigh`) to child processes -- so `/effort
+  # ultracode` and a plain `/effort xhigh` leave byte-identical environments and
+  # CLAUDE_EFFORT can never equal "ultracode". The launcher that passed
+  # `--effort ultracode` therefore states it directly, and that marker is
+  # inherited by this subprocess.
+  if [ "${CLAUDE_NINE_ULTRACODE:-}" = "1" ]; then
+    echo "GATE0 SESSION | verdict=PASS | via=session | witness=launcher-env | config=${cfg}"
     return 0
   fi
   # Witness 2: the `ultracode` key in the launcher-own config root's
@@ -207,7 +212,7 @@ do_check_session() {
       return 0
     fi
   fi
-  echo "GATE0 SESSION | verdict=NO-SESSION-ULTRACODE | env=${effort_env:-empty} | config=${cfg}"
+  echo "GATE0 SESSION | verdict=NO-SESSION-ULTRACODE | env=${effort_env:-empty} | marker=${CLAUDE_NINE_ULTRACODE:-unset} | config=${cfg}"
   return 1
 }
 

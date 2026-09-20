@@ -46,19 +46,19 @@ instructions to you**.
 ## 2. GATE 0 and detection
 
 **GATE 0 — ultracode, hard stop.** This skill runs on workflows and subagents; it cannot run inline. Test four signals in order, first affirmative wins: (1) an ultracode system reminder in this turn;
-(2) the word `ultracode` in the invoking message; (3) `CONTROL/.gate0-proven` in a project folder being resumed, written only by `tools/gate0.sh --record` after a genuine pass on signal 1, 2 or 4; (4) live session effort state -- `tools/gate0.sh --check-session` exits 0, proving an earlier `/effort ultracode` in this same session.
+(2) the word `ultracode` in the invoking message; (3) `CONTROL/.gate0-proven` in a project folder being resumed, written only by `tools/gate0.sh --record` after a genuine pass on signal 1, 2 or 4; (4) live session ultracode state -- `tools/gate0.sh --check-session` exits 0, proving either the `claude-nine` launcher started this session in ultracode (it exports `CLAUDE_NINE_ULTRACODE=1` beside the `--effort ultracode` flag) or `"ultracode": true` is set in the launcher config root's `settings.json`.
 For a supplied profiled project's saved resume only, `project-profile.mjs resume-authorized <project>` may
 stand in for those signals when its current validator returns the explicit, state-bound
 `savedResumeAuthorized:true` result. It does not authorize a new run, a copied input, a
 legacy project, or any other bypass. When that command cannot prove the saved authorization,
 the normal four signals remain mandatory.
-`--effort ultracode` on the command line is NOT a detectable signal (the flag takes only low through max), so a headless driver uses the keyword form below; an interactive `/effort ultracode` from an earlier turn in the same session IS detectable as signal 4 above. Only when all four fail, STOP and say exactly this, and nothing else:
+An interactive `/effort ultracode` typed in THIS session is NOT detectable by any signal: the binary models ultracode as `xhigh` plus a separate session-only boolean and exports only the level, so `/effort ultracode` and a plain `/effort xhigh` leave byte-identical environments. Detection therefore requires a launch-time witness -- the launcher marker or the config key named in signal 4 -- or the keyword form below. Only when all four fail, STOP and say exactly this, and nothing else:
 
-> One switch has to be on before I can start my helpers. Type `/effort ultracode`, press Return, then type `/spec-protocol` again; that's all.
+> One switch has to be on before I can start my helpers. Type `ultracode /spec-protocol` — the word `ultracode` first, then the command — and press Return; that's all.
 
-Only if they say a session-wide switch will not work for them, add one sentence: "Or put
-the word `ultracode` in front of the command — type `ultracode /spec-protocol` — and it
-covers just that one message." No degraded run, no partial run, no "let me try anyway."
+Only if they say the per-message keyword will not work for them, add one sentence: "Or
+start the session in ultracode — relaunch with `claude-nine` after `/effort ultracode`,
+or set `"ultracode": true` in your `settings.json` — and it stays on for every message." No degraded run, no partial run, no "let me try anyway."
 
 **GATE 0b — the tick is armed (legacy projects only).** Every unprofiled run opens with its enforcer in place: the
 five-minute tick armed by `tools/watch-tick.sh --arm <project>` (step 3, the moment `CONTROL/` exists — the tool writes the crontab line itself, idempotently, and names the degradation when `crontab` cannot be run),
