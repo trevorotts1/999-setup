@@ -39,7 +39,7 @@ Workflow must use the existing supported `tool_input.args` object with this iden
 {
   "specProtocol": {
     "taskId": "<task>",
-    "role": "builder|qc|repair",
+    "role": "builder|qc|repair|reader",
     "intentId": "<reserved intent>",
     "nativeWorkflowId": "<packet workflow identity>",
     "label": "<reserved label>",
@@ -49,7 +49,15 @@ Workflow must use the existing supported `tool_input.args` object with this iden
 }
 ```
 
-Before launch the hook calls the declared checker with the exact identity and `--check`. Its
+**The `reader` role is reservation-exempt.** A reader inspects and reports; it writes nothing,
+owns no path, spends no builder or QC counter, and therefore has nothing to reserve. The hook
+accepts `role: "reader"` with no intent id and no reservation check, and the packet writer
+records no attempt for it. This is not a loophole — it is the fix for one: SKILL.md forbids the
+conductor from reading a project document in full in its own context, so a gate that refused
+readers would force exactly that, and burn the conductor's context on documents a Haiku agent
+should have summarized. A reader that attempts a write, a dispatch, or a state event is a
+violation the packet rejects at the writer, where it belongs. Every OTHER role is reserved
+first; before launch the hook calls the declared checker with the exact identity and `--check`. Its
 single JSON response must prove a matching, revision/source-bound `RESERVED` intent using
 `taskAuthorization.kind="reservation-check"`, `readOnly:true`, and the exact echoed fields.
 The hook neither creates nor consumes an intent. A native launch is not a receipt; the packet
@@ -62,9 +70,14 @@ batch uses separately reserved task launches. A missing identity, mismatch, cons
 or unreadable report refuses the profiled launch. Legacy hook behavior remains unchanged for
 projects without a profile.
 
-Profiled projects skip legacy `CONTROL/` helpers (`gate0`, width, ledger, anchor, watch-tick,
-state-check, audit-gate) and their default seat checks. They use their declared bootstrap,
-validate, dispatch, release, and observer path instead. `project-profile.mjs resume-authorized
+**A profile REDIRECTS the helpers; it never switches them off.** `gate0`, width, ledger,
+anchor, watch-tick, state-check and audit-gate all still run on a profiled project — they read
+and write the bound `documents.state` instead of `CONTROL/`, and the packet's declared
+bootstrap/validate/dispatch/release/observer commands are how they reach it. The five-minute
+tick, the three-way reconciler and the measured width are NEVER skipped: an unwatched run is
+the exact failure these instruments exist to prevent. What a profile forbids is a SECOND copy —
+no parallel ledger, no parallel task graph, no `CONTROL/project_state.json` beside the bound
+state. `project-profile.mjs resume-authorized
 <project>` is the sole narrow GATE 0 resume exception: it requires the current validator to
 return `savedResumeAuthorized:true`. It authorizes only that saved profile-bound resumption;
 it does not enable a general human-gate bypass.

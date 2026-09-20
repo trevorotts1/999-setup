@@ -218,29 +218,30 @@ Cover four things and then stop. Each gets two or three open probes — use the
 ones that fit, in their own register, one at a time:
 
 1. **What is it, and who is it for?** Plain sentences; no structure, no numbers.
-   - "Tell me about the last time you did this by hand."
-   - "Who do you picture using it — walk me through what they would do."
+   - "Tell me about the last time you had to do this without the thing we're building. What happened?"
+   - "Who do you picture using this?"
+   - "What would they do first?" … then "And then what would they do next?"
    - If OpenClaw was ingested (`openclaw-ingest.md` §5 owns the shrink map, §4
      the precedence), these become ONE recall-and-confirm, not a cold ask.
 2. **What already exists?** Anything running, anything written, anything
    half-finished. This is where the current-state pass gets its list of things
    to go and measure. Collect; do not measure yet.
-   - "Where does this live right now — a spreadsheet, a notebook, another app?"
-   - "What have you tried before that did not work?"
+   - "Are you doing any part of this already? Maybe with a spreadsheet, notebook, website, another program, or just by hand?"
+   - "Have you tried anything before that you didn't like or that didn't work?"
 3. **What is deliberately not in it?** The non-goals are worth more than the
    goals here: they are the only thing that stops the unit list growing by a
    third during the build.
-   - "What does a bad version of this look like?"
-   - "If it could do only three things, which three would you keep?"
+   - "What's something you definitely do not want this to become?"
+   - "If we could only make it do three important things, which three would you keep?"
 4. **What would make this obviously finished?** Not a definition of done yet —
    the picture in their head, which section 3's last question turns into the
    stop condition every loop needs (Law 35, clause 4).
-   - "Picture the day it is finished — what do you see on the screen?"
-   - "What would make you show it to someone?"
+   - "Imagine it's completely finished and you're looking at it. What would you be able to see or do that would make you say, 'Yes. That's what I wanted'?"
+   - "What would make you excited enough to show it to somebody else?"
 
-**The reflection prompt.** After about fifteen minutes, stop and read it back:
-"Here is what I heard — did I get it right?" followed by a plain-language
-summary of the four things in their words. Correct it on the spot if they
+**The reflection prompt.** After about fifteen minutes, stop and read it back: "Okay. Let me
+make sure I understood you." — then a short, plain-language summary of the four things in their
+own words, ending with "Did I get that right?" Correct it on the spot if they
 correct it, and record the correction verbatim. The reflection is the gate to
 the questions: a list built on a misheard goal produces answers to the wrong
 questions.
@@ -283,10 +284,14 @@ number — "Question N of no more than C" — per section 6.
 
 1. **The mode question**, first, in these words:
 
-   > I can make every technical decision myself and just build it — you'd
-   > answer only the few questions about your accounts, your money, and what
-   > you like. Or you can make the detailed calls with me as we go. Which do
-   > you want?
+   > I can handle most of the decisions for you, or I can stop and let you
+   > choose more of the details as we go.
+   >
+   > Which would you prefer: should I handle most of it for you, or would you
+   > like to make more of the choices with me?
+
+   The client is NEVER asked to understand what a "technical decision" is. The first half
+   records DEFAULT MODE, the second ADVANCED MODE — internal names they never hear.
 
    The first half records DEFAULT MODE; the second records ADVANCED MODE
    (section 4). Write the ledger line `INTERVIEW-MODE: simple|advanced` through
@@ -296,33 +301,38 @@ number — "Question N of no more than C" — per section 6.
 runs in BOTH modes** — these are the product questions, not technical ones, and
 a website built without them has no page list.
 
-- **Website:** "What pages do you picture — home, about, services, contact,
-  maybe a blog?"; "Is it mostly for reading and getting in touch, or do people
-  sign in to do something?"; "Do you already have a place online for it, or
-  should I set that up?"
-- **Funnel:** the one action you want someone to take by the end; the offer and
-  its price, and what happens after someone says yes; what already exists (a
-  lead magnet, a list, a payment processor connected to Convert and Flow); then
-  the recommended shape from the research — stages, page types, email and text
-  follow-ups — put as a recommendation with a real choice attached: does this
-  look right, or would you like to adjust it?
-- **App:** "Does it need to remember things between visits (a database), or
-  does it work with what's in front of it?"; "Do people sign in, or is it open
-  to anyone?"; for a phone app, the store question — I will build it so anyone
-  can open it on their phone and keep it on their home screen right away; is it
-  important to you that people can also find it in the app store? (the store
-  makes everyone wait days and asks for an Apple or Google account, so most
-  people start without it; "not sure" records the home-screen app, marked as a
-  default, and a store listing is never promised for tonight); for
-  mobile-and-web, the same-people question — are the phone people and the
-  computer people doing the same things in the same place, or is each side for
-  a different job? ("same things", "not sure" and "I don't know" record one
-  responsive build, marked as a default).
-- **Desktop:** the window-or-quiet-helper question — "When you picture using
-  it, is it a program with a window — buttons and things you can see and click?
-  Or more of a quiet helper that just runs and does its job when you ask it to?
-  If you are not sure, I will make it the kind with a window — that is the
-  friendlier kind."
+- **Website:** "What would you like people to find on your website? For example, you might
+  want a home page, information about you, your services, and a way to contact you. What comes
+  to mind for yours?"; "Will people mostly read about you and contact you, or do they need to
+  log in and do something?"; "Do you already have somewhere your website is supposed to go, or
+  would you like me to handle that for you?"
+- **Funnel**, in these words: "What's the one main thing you want someone to do? For example:
+  buy something, book an appointment, sign up, request information, or join something."; "What
+  are you offering them? And how much does it cost, if there is a price?"; "After someone buys,
+  books, or signs up, what should happen next?"; "Do you already have anything for this? That
+  could be a customer list, something you give away for free, a way to take payments, emails
+  you've written, or pages you've already made. It's okay if the answer is no." Then the shape,
+  researched internally and offered as a recommendation, never a menu: "I've looked at what
+  normally works well for something like this. Here's the setup I'd recommend: <the plain-language
+  recommendation>. Does that sound right to you, or is there anything you'd like changed?"
+- **App:** the remembering question — "When someone comes back later, does the app need to
+  remember anything they did before? For example, their account, appointments, saved
+  information, purchases, or progress. Or can it start fresh each time?" (the word *database*
+  is never spoken); the sign-in question — "Do people need their own account and password, or
+  should anyone be able to open it and use it?"; for a phone app, the store question — "I can
+  make this work on people's phones without putting it in an app store. Do you also want people
+  to be able to find it in the Apple or Google app store, or is that not important right now?
+  If you're not sure, I'll start with the easier option and we can add the app store later."
+  ("not sure" records the home-screen app as a DEFAULT, and a store listing is never promised
+  for tonight); for mobile-and-web, the same-people question — "Should people be doing basically
+  the same things whether they're on their phone or computer? Or does the phone version have one
+  job and the computer version have another?" ("same things", "not sure" and "I don't know" all
+  record one build that works on both, marked as a default; the word *responsive* is never
+  spoken).
+- **Desktop:** the window-or-quiet-helper question — "When you use this on your computer, do
+  you picture seeing a regular program with screens, buttons, and things you can click? Or do
+  you picture something that mostly works behind the scenes when you tell it what to do? If
+  you're not sure, I'll give you the easier version with screens and buttons."
 
 Record every branch answer in their own words. A branch answer the
 pre-statement reads already settled is stated back, never asked.
@@ -342,25 +352,32 @@ business fact that is not in `00-INPUT/CONTENT.md` and not marked there as a
 draft (`references/build.md` section 6). That is why "I don't know" must reach
 the file as a marked draft and never as a blank:
 
-7. "What is the business or project called, and is there a line you say under the name?"
-8. "What do you offer, and at what prices, if you're happy to share them?"
-9. "How should people reach you — a phone number, an email, an address, hours?"
-10. "Do you have a logo or photos you want used? Tell me where they are, or say none."
-11. "Any real words from happy customers I can quote?"
-12. "Do you already own a web address, like yourbusiness.com?"
+**Spoken once, before question 7:** "If you don't know one of these answers, that's okay. I can
+help you with it."
 
-13. **Artwork:** "Do you want me to make the pictures for your pages, or will
-    you supply them?" The provider question follows only when both keys exist,
-    in the words section 5 owns.
+7. "What is the name of your business or project? And is there a short saying or phrase you normally put underneath the name?"
+8. "What do you sell or offer? And what do you charge, if you already know the prices?"
+9. "How should people contact you? You can give me whatever applies: your phone number, email, address, or business hours."
+10. "Do you already have a logo or any pictures you want me to use? If you do, just tell me where they are. If not, that's okay."
+11. "Do you have any real comments or reviews from happy customers that you'd like me to use? If you have them, I'll use their real words. If you don't, we'll simply leave that part out. I won't make up a customer or a review."
+12. "Do you already own a website address, something like yourbusiness.com? If you don't know, that's okay."
+
+13. **Artwork:** "Would you like me to create the pictures we need, or do you already have
+    pictures you want me to use?" The client is NEVER asked which picture model to use — that
+    is Candace's job, and `references/media-model-selection.md` owns how she decides and what
+    she says. Any money question that follows is an approval of SPEND, never a choice of
+    technology.
 
 14. **D1, the example:**
-    "Is there a website or app you already look at and think, if mine is as good as that, I'd be happy? Name it if one comes to mind; if not, I'll show you two or three good ones and you pick."
+    "Can you think of a website or app you've seen that you really like? Something that makes you think, 'I'd be happy if mine looked and worked this well.' If nothing comes to mind, that's okay. I'll find a few good examples and show them to you."
 
 15. **D4, the don't-wants:**
-    "Anything about that example, or things like it, you specifically do not want?"
+    "Is there anything about that example, or other websites and apps you've seen, that you definitely do not want in yours?"
 
-16. **The done-condition:** "Here's how I'll know it's finished: … Does that
-    match what you want?" One yes or no — never an open essay question.
+16. **The done-condition:** "Before we start building, let me make sure we agree on what
+    finished means. Here's what I believe you want: <two to four simple sentences describing
+    the finished result>. If I deliver that, would you consider the job finished?" One yes or
+    no — never an open essay question.
 
 **That is sixteen at most; the pre-statement reads (a supplied folder, an
 OpenClaw box, an existing domain found) remove items, so most runs land near
@@ -440,18 +457,23 @@ only when its trigger is live — a plan that needs no artwork, a run whose
 never-push list applies to nothing, and a folder already at the default each
 remove their own item. They are numbered and counted under the same C.
 
-17. **The helpers cap:** "This computer can run N helpers at once. Use the
-    maximum, or set a lower number?" N is the measured `clientCap`; nobody is
-    ever asked how many their computer supports.
-18. **The three seats:** "Here's who does what: <the resolved planner, builder,
-    and checker>. Keep, or change?" The checker seat is named every time —
-    never a two-seat picture.
-19. **The picture model:** three live-catalog options — the newest GPT-Image
-    family member always among them — or name your own (section 5).
-20. **The folder:** "I'll keep the project in Downloads/projects. Somewhere
-    else?"
-21. **The never-push list:** "Is there anywhere I must never send code — a
-    branch, a server, an account?"
+17. **The helpers cap:** "I can have several helpers working on different parts at the same
+    time. Would you like me to use as many as I safely can so the work moves faster, or would
+    you rather use fewer?" The safe maximum is the measured `clientCap`; nobody is ever asked
+    how many helpers their computer supports, and the number is never put to them as a
+    technical figure to judge.
+18. **The three seats:** "Here's how I'm planning to divide the work. One helper plans it.
+    Other helpers build it. Then separate helpers check the work. Would you like me to keep it
+    that way?" The checking helper is named every time — never a two-seat picture — and no
+    model name is ever spoken.
+19. **The pictures:** a RECOMMENDATION, never a catalog. `references/media-model-selection.md`
+    owns the decision and the words; the client hears one recommendation, at most one cheaper
+    alternative, and an ordinary-language reason.
+20. **The folder:** "I'm planning to save your project in a folder on your computer called
+    Projects. Is that okay, or would you like it saved somewhere else?"
+21. **The protected locations:** "Is there anywhere you do not want me to put or publish
+    anything? If you're not sure, that's okay. I'll only use the normal safe places for this
+    project."
 
 Everything else stays decided-and-reported in both modes.
 
@@ -464,34 +486,40 @@ always does; an app or a website does whenever it needs front-page pictures,
 icons, or a short clip showing it off. Skip it entirely when it does not, and
 say nothing about it.
 
-**Item 13 of the list is this block's opening**, spoken in the build's own
-words ("Your site is going to need some artwork — pictures for the front page,
-maybe a short video showing it off. Do you want me to create those for you, or
-will you be supplying your own?"). Do not then ask it a second time.
+**⛔ `references/media-model-selection.md` OWNS every media recommendation.** How Candace picks
+a picture or video service, how she estimates what it will cost, and the exact words she says
+are all written there. This file owns only WHEN the block is spoken and the one opening
+question. Never recite a model name, a version number, a price-per-second or a benchmark to a
+client.
 
-Then, and only these:
+**Item 13 of the list is this block's opening**, spoken in the build's own words: "Would you
+like me to create the pictures we need, or do you already have pictures you want me to use?"
+Do not then ask it a second time.
 
-> **Which account.** You have two accounts I can use for artwork. I'd suggest
-> Kie.ai — it has the strongest set of picture models — but it charges real
-> money for each picture, a few cents apiece. Your Agnes account includes a big
-> daily allowance instead, at no extra charge today. Which would you like me to
-> use? …and if your free Agnes allowance runs out mid-build, may I spill the
-> rest onto Kie.ai — real money, a few cents a picture — or wait for the
-> allowance to reset?
+Then, and only these — and both are questions about MONEY and TASTE, never about technology:
 
-**Asked only when BOTH keys are present** — with one key that provider is used
-automatically and you say which one. If they told you last time
-(`MEDIA_PROVIDER_PREF`, `capacity.md` §13.3), offer it as the default: "last
-time you preferred Kie.ai — same again?" An offer, never a silent application.
-Verify the Agnes allowance and the Kie.ai prices against their own current
-pages before quoting any figure, and say which source each figure came from.
+> **Which account**, asked only when the client genuinely has more than one and the choice
+> costs them something. Candace recommends first: "For the pictures you need, I recommend
+> <service>. It should give us the best result for this kind of project, and you already have
+> access through it. Would you like me to use that?" When the included allowance is good enough:
+> "Since you already have Agnes, I'd start there for these pictures. It should handle what we
+> need without adding another charge. If the results aren't good enough, I can move the
+> important ones to the stronger option. Is that okay?" And when the paid option is materially
+> better: "For these particular pictures, I'd use the stronger option. It will cost a little
+> extra, but this is one of the places where the quality difference is worth it. Is that okay?"
 
-> **Which picture model.** DEFAULT MODE auto-picks the recommended family
-> member and says so, with the name and price its own catalog research and
-> smoke test returned this time — never recited from this page. ADVANCED MODE
-> offers three live-catalog options or name-your-own: "Want me to go with that,
-> or is there a particular model you'd like me to use instead? If you're not
-> sure, I'll choose for you — that's a fine answer."
+With only one account available, that account is simply used and the client is told which one
+in one sentence — never asked. If they chose last time (`MEDIA_PROVIDER_PREF`, `capacity.md`
+§13.3), offer it as the default: "last time you preferred <service> — same again?" An offer,
+never a silent application. Verify every allowance and every price against the provider's own
+current pages before quoting a figure, and say which source each figure came from; an
+unverifiable figure is not quoted at all.
+
+> **Which picture or video service.** Never put as a menu, in EITHER mode. Candace inspects the
+> live catalog, compares internally, and speaks ONE recommendation plus at most ONE cheaper
+> alternative with a single ordinary-language tradeoff. ADVANCED MODE adds only the offer to
+> override: "Want me to go with that, or is there a particular one you'd like me to use
+> instead? If you're not sure, I'll choose for you — that's a fine answer."
 
 A model named by its BUILDER ("the Google one", "the OpenAI picture model") is
 a lineage reference to a Kie.ai catalog member, never a reference to another
