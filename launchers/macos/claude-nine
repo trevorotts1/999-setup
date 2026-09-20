@@ -1,200 +1,246 @@
-#!/usr/bin/env bash
-# claude-nine — macOS launcher: start/verify 9Router, load protected routed-session
-# state, export routing env vars only into the child process, and exec the same
-# Claude Code installation through 9Router.
+#!/bin/bash
+# `claude-nine` (also `claude-9`) — Claude Code routed through 9Router.
 #
-# Never echoes API keys, the router token, or the dashboard password.
-set -euo pipefail
+# Config lives in its own dir, ~/.claude-nine, so the router's base URL, model
+# map and history stay completely separate from the real CLI's ~/.claude. The
+# router token is read from the macOS Keychain by the `apiKeyHelper` in
+# ~/.claude-nine/settings.json — never stored in plaintext here.
+#
+# Execs the native binary directly rather than calling `claude`, so it does not
+# matter which `claude` is first on PATH.
+set -uo pipefail
 
-PORT="${NINEROUTER_PORT:-20128}"
-BASE="http://127.0.0.1:$PORT"
-STATE_DIR="$HOME/Library/Application Support/BlackCEO/999"
-STATE_FILE="$STATE_DIR/router-session.json"
-KEYCHAIN_SERVICE="BlackCEO-999"
-KEYCHAIN_ACCOUNT="9router-api-token"
-LOG_DIR="$HOME/Library/Logs/BlackCEO-999"
-DUPFIX_GUARD="$HOME/.local/bin/9router-dupfix-guard.sh"
+# Resolve through symlinks: this script is reached via ~/.local/bin/claude-nine
+# and ~/bin/claude-9, so dirname on $0 alone points at the wrong directory and
+# the library next to the real script would not be found.
+_cc_src="${BASH_SOURCE[0]}"
+while [ -L "$_cc_src" ]; do
+  _cc_target="$(readlink "$_cc_src")"
+  case "$_cc_target" in
+    /*) _cc_src="$_cc_target" ;;
+    *) _cc_src="$(dirname "$_cc_src")/$_cc_target" ;;
+  esac
+done
+SELF_DIR="$(cd "$(dirname "$_cc_src")" && pwd)"
+unset _cc_src _cc_target
+# shellcheck source=claude-code-lib.sh
+. "$SELF_DIR/claude-code-lib.sh"
 
-port_healthy() {
-  curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null
-}
+PORT=20128
+# Respect a caller-provided config dir (e.g. claude-kimi's own profile);
+# default to claude-nine so behaviour is unchanged for normal launches.
+export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
 
-start_router() {
-  local launchctl_bin="/bin/launchctl"
-  if [ -x "$launchctl_bin" ] && \
-     "$launchctl_bin" print "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1; then
-    "$launchctl_bin" kickstart -k "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1 || true
+# GitHub MCP plugin needs GITHUB_PERSONAL_ACCESS_TOKEN present in the LAUNCH
+# environment: its .mcp.json expands ${GITHUB_PERSONAL_ACCESS_TOKEN} into the
+# Bearer header at session start. A SessionStart hook runs too late (plugin
+# MCP servers spawn before hooks). Token comes from the gh CLI keyring
+# (trevorotts1, copilot scope). Never printed.
+if [ -z "${GITHUB_PERSONAL_ACCESS_TOKEN:-}" ]; then
+  GH_TOKEN_FOR_MCP="$(gh auth token 2>/dev/null || true)"
+  if [ -n "$GH_TOKEN_FOR_MCP" ]; then
+    export GITHUB_PERSONAL_ACCESS_TOKEN="$GH_TOKEN_FOR_MCP"
   else
-    local bin="${NINEROUTER_BINARY:-}"
-    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-      bin="$HOME/.local/share/999/npm/bin/9router"
-    fi
-    if [ ! -x "$bin" ]; then
-      bin="$(command -v 9router 2>/dev/null || true)"
-    fi
-    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-      echo "claude-nine: 9router binary not found. Re-run /nine-router-setup." >&2
-      return 1
-    fi
-    mkdir -p "$LOG_DIR"
-    # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
-    # exposes the dashboard + /v1 (holding provider keys) to the LAN.
-    nohup "$bin" --no-browser --host 127.0.0.1 > "$LOG_DIR/9router.log" 2>&1 &
+    echo "⚠️  gh auth token unavailable — github MCP plugin will fail auth." >&2
   fi
-  local i
-  for i in $(seq 1 40); do
-    port_healthy && return 0
+  unset GH_TOKEN_FOR_MCP
+fi
+
+if [ ! -f "$CLAUDE_CONFIG_DIR/settings.json" ]; then
+  echo "claude-nine: missing $CLAUDE_CONFIG_DIR/settings.json — router config is gone." >&2
+  echo "  It should set env.ANTHROPIC_BASE_URL to http://127.0.0.1:$PORT/v1 and" >&2
+  echo "  apiKeyHelper to ~/.local/bin/get-9router-key.sh" >&2
+  exit 1
+fi
+
+# Keep the 9Router stream-translator fix applied. An `npm i -g 9router` or a
+# 9router self-update silently overwrites it and restores a ~50% tool-call
+# corruption rate (doubled tool-argument JSON). This re-applies it if missing.
+if [ -x "$HOME/.local/bin/9router-dupfix-guard.sh" ]; then
+  "$HOME/.local/bin/9router-dupfix-guard.sh" --quiet || \
+    echo "⚠️  9router dup-fix could not be applied — expect tool-call errors." >&2
+fi
+
+# Keep the 9Router codex→Claude terminal-event fix applied. Codex is the only
+# provider that needs TWO format hops to reach Anthropic wire format
+# (openai-responses → openai → claude), and 9router runs both hops on ONE
+# shared state object. The dup-fix guard above keys its idempotency on
+# `finishReason`, which hop 1 has already set — so hop 2 skipped emitting
+# content_block_stop / message_delta / message_stop AND the tool-argument
+# flush. Every cx/* model then failed with "API returned an empty or malformed
+# response (HTTP 200)". This re-namespaces that flag so both fixes hold.
+#
+# MUST run AFTER the dup-fix guard: it converts the flag the dup-fix guard
+# writes, so on a fresh 9router install the dup-fix patch has to land first.
+if [ -x "$HOME/.local/bin/9router-codex-terminal-guard.sh" ]; then
+  "$HOME/.local/bin/9router-codex-terminal-guard.sh" --quiet || \
+    echo "⚠️  9router codex terminal fix could not be applied — expect cx/* models to return empty responses." >&2
+fi
+
+# Keep the 9Router unscoped-kill fix applied. 9router's killAllAppProcesses()
+# SIGKILLs every process whose `ps aux` line contains "next-server" — which is
+# EVERY Next.js app on the machine, not just its own — on each start, kickstart
+# and reboot. An `npm i -g 9router` or a self-update restores that behaviour.
+if [ -x "$HOME/.local/bin/9router-nextserver-guard.sh" ]; then
+  "$HOME/.local/bin/9router-nextserver-guard.sh" --quiet || \
+    echo "⚠️  9router next-server scope fix could not be applied — other Next.js apps may be killed." >&2
+fi
+
+# Keep the 9Router cache_control passthrough fix applied. 9router's CLAUDE->OPENAI
+# translator strips every `cache_control` breakpoint Claude Code sends, because the
+# `preserveCacheControl` quirk is set only on Alibaba's own direct endpoints — not
+# on `openai-compatible`, which is how OpenRouter/DeepSeek/Ollama are reached.
+# Providers that REQUIRE an explicit breakpoint (Alibaba Qwen, Google Gemini,
+# Anthropic via OpenRouter) then cache nothing and bill every token at the
+# cache-miss rate, ~31x the cache-hit rate. An `npm i -g 9router` or self-update
+# restores the stripping.
+if [ -x "$HOME/.local/bin/9router-cachecontrol-guard.sh" ]; then
+  "$HOME/.local/bin/9router-cachecontrol-guard.sh" --quiet || \
+    echo "⚠️  9router cache_control fix could not be applied — Qwen/Gemini/Anthropic will not cache." >&2
+fi
+
+# Keep the 9Router GLM 5.3 / GLM 5.3 Flash thinking-effort fixes applied. The
+# stock capability table omits thinkingEffortSupported on the GLM 5.3 Flash
+# entry, scopes the low/high/max level rule to CodeBuddy only, and never
+# translates reasoning effort into OpenRouter's envelope — so low vs max
+# reasoning is flat or inverted through 9router even though it spreads ~10x
+# direct to the model. An `npm i -g 9router` or self-update restores all three.
+if [ -x "$HOME/.local/bin/9router-glm53-thinking-guard.sh" ]; then
+  "$HOME/.local/bin/9router-glm53-thinking-guard.sh" --quiet || \
+    echo "⚠️  9router GLM 5.3 thinking fix could not be applied — low/high/max reasoning will not scale." >&2
+fi
+
+# Keep the 9Router DeepSeek effort mapping applied. DeepSeek's documented
+# efforts are low/high/max; the repaired serializer maps low/minimal to low,
+# max/ultra to max, and all other non-none levels to high. A bare npm update
+# restores the old collapse of low to high-rewrite and xhigh misrouting.
+# This serializer lives in the same bundle as the GLM repair above; the GLM
+# guard does not own it, so it is checked separately and refuses quiet success.
+if ! node "$HOME/.9router/verification/glm-acceptance-20260918/final-dispatch.cjs" >/dev/null 2>&1; then
+  echo "⚠️  DeepSeek effort mapping check failed — low/xhigh suffixes may misroute." >&2
+fi
+
+# Keep the 9Router Ollama streaming terminator fix applied. Native Ollama
+# completion arrives as done:true, but the OpenAI translator flush did not emit
+# the client SSE [DONE] sentinel. A bare update restores the omitted sentinel.
+#
+# Anchored ONLY on tokens a minifier cannot rename -- the OLLAMA enum member,
+# the finishReason property and the literal sentinel -- and scanned across the
+# whole build dir. The previous check hardcoded chunk 8895.js and the minified
+# locals `p`/`C`; broadening the fix to also cover ollama-local and the OLLAMA
+# enum left that literal substring nowhere on disk, so it warned on every launch
+# about a fix that was present and in fact more complete than it expected.
+#
+# Exit codes are kept distinct on purpose: absent is not the same claim as
+# could-not-look, and this must never report the second as the first.
+_ollama_rc=0
+node -e '
+const fs=require("fs"),path=require("path");
+const root=process.env.HOME+"/.npm-global/lib/node_modules/9router/app/.next-cli-build";
+const RE=/\.OLLAMA\)&&[A-Za-z_$]+\.finishReason\)\{[^{}]*data: \[DONE\]/;
+let ok=false;
+function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){if(ok)return;
+const q=path.join(d,e.name);
+if(e.isDirectory())walk(q);
+else if(e.name.endsWith(".js")){let s;try{s=fs.readFileSync(q,"utf8")}catch(_){continue}
+if(RE.test(s)){ok=true;return}}}}
+try{walk(root)}catch(_){process.exit(2)}
+process.exit(ok?0:1);
+' >/dev/null 2>&1 || _ollama_rc=$?
+case "$_ollama_rc" in
+  0) ;;
+  1) echo "⚠️  Ollama streaming terminator fix missing — Ollama streams may omit [DONE]." >&2 ;;
+  *) echo "⚠️  Ollama streaming terminator fix UNVERIFIED — could not scan $HOME/.npm-global/lib/node_modules/9router/app/.next-cli-build" >&2 ;;
+esac
+unset _ollama_rc
+
+# Keep the 9Router agnes-3.0-flash capability entry applied. Without it, the
+# Agnes AI provider node's agnes-3.0-flash model falls back to
+# DEFAULT_CAPABILITIES (reasoning off, no tool-call support signalled). An
+# `npm i -g 9router` or self-update wipes this hand-added entry.
+if [ -x "$HOME/.local/bin/9router-agnes30-caps-guard.sh" ]; then
+  "$HOME/.local/bin/9router-agnes30-caps-guard.sh" --quiet || \
+    echo "⚠️  9router agnes-3.0-flash caps fix could not be applied — reasoning/tools will not signal for it." >&2
+fi
+
+# Keep the 9Router OpenCode (oc/*) non-streaming fix applied. OpenCode's
+# transformRequest always forces stream:true upstream, but its buildHeaders
+# advertises Accept:*/* whenever the CLIENT asked for a non-streaming reply, and
+# the upstream SSE body then arrives truncated; the shared OPENAI_RESPONSES
+# non-stream aggregator turns that truncation into HTTP 200 with
+# finish_reason:"in_progress", empty content and zero usage. oc/muse-spark-1.3-
+# contributor-free is the first member of opus-chain, so the chain could hand
+# back an empty answer silently. An `npm i -g 9router` or self-update reverts it.
+if [ -x "$HOME/.local/bin/9router-opencode-poll-guard.sh" ]; then
+  "$HOME/.local/bin/9router-opencode-poll-guard.sh" --quiet || \
+    echo "⚠️  9router OpenCode non-stream fix could not be applied — oc/* may return empty 200s on long generations." >&2
+fi
+
+# claude-nine loads skills from ~/.claude-nine/skills, a different dir from the
+# regular CLI's ~/.claude/skills. Without this, any skill added to the regular CLI
+# is invisible here. Links in what's missing and prunes links to deleted skills.
+# Never blocks the launch — claude-nine still starts if this fails.
+if [ -x "$HOME/.local/bin/sync-nine-skills.sh" ]; then
+  "$HOME/.local/bin/sync-nine-skills.sh" --quiet || true
+fi
+
+# Start 9router if nothing is listening, rather than just refusing to launch.
+if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
+  echo "🔌 9router not running on :${PORT} — starting it..." >&2
+  mkdir -p "$HOME/.9router"
+  nohup 9router --no-browser >"$HOME/.9router/cli-launch.log" 2>&1 &
+  for _ in $(seq 1 40); do
+    /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 && break
     sleep 0.5
   done
-  echo "claude-nine: 9Router did not become healthy on $BASE." >&2
-  return 1
-}
-
-main() {
-  # 1. Resolve the same claude binary plain `claude` uses.
-  local claude
-  claude="$(command -v claude 2>/dev/null || true)"
-  if [ -z "$claude" ] && [ -x "$HOME/.local/bin/claude" ]; then
-    claude="$HOME/.local/bin/claude"
-  fi
-  if [ -z "$claude" ] || ! "$claude" --version >/dev/null 2>&1; then
-    echo "claude-nine: claude not found on PATH. Install Claude Code first." >&2
+  if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
+    echo "❌ 9router did not come up on :${PORT}. See ~/.9router/cli-launch.log" >&2
     exit 1
   fi
+fi
 
-  # 2. Protected state + Keychain token.
-  if [ ! -f "$STATE_FILE" ]; then
-    echo "claude-nine: routed session state missing: $STATE_FILE. Re-run /nine-router-setup." >&2
-    exit 1
-  fi
-  local token
-  token="$(security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null || true)"
-  if [ -z "$token" ]; then
-    echo "claude-nine: Keychain token missing (service $KEYCHAIN_SERVICE, account $KEYCHAIN_ACCOUNT). Re-run /nine-router-setup." >&2
-    exit 1
-  fi
+echo "🚀 Claude Code via 9Router (config: ~/.claude-nine)" >&2
 
-  # 3. Keep the stream-translator dup-fix applied; npm i -g 9router or a
-  #    self-update silently reverts it. Never blocks the launch.
-  if [ -x "$DUPFIX_GUARD" ]; then
-    "$DUPFIX_GUARD" --quiet || \
-      echo "claude-nine: 9router dup-fix could not be applied — expect tool-call errors." >&2
-  fi
+CC_BIN="$(cc_resolve_binary)" || exit 1
 
-  # 4. Ensure 9Router is up (never a second instance when healthy).
-  if ! port_healthy; then
-    echo "claude-nine: 9Router not healthy on :$PORT — starting it..." >&2
-    start_router || exit 1
-  fi
-
-  # 5. Routing env — export only into this process (child inherits it).
-  export ANTHROPIC_BASE_URL="http://127.0.0.1:$PORT/v1"
-  export ANTHROPIC_AUTH_TOKEN="$token"
-  unset token
-
-  # Production-default routes (see references/model-routing.md). The (max) suffix
-  # is 9Router's thinking-effort mechanism, parsed per-route. A router-session
-  # state file that resolves routes overrides these per-launch (see step 6).
-  export ANTHROPIC_DEFAULT_FABLE_MODEL="ds/deepseek-v4-flash(max)"
-  export ANTHROPIC_DEFAULT_OPUS_MODEL="ds-max/deepseek-v4-pro(max)"
-  export ANTHROPIC_DEFAULT_SONNET_MODEL="ds/deepseek-v4-flash(max)"
-  export ANTHROPIC_DEFAULT_HAIKU_MODEL="ds-light/deepseek-v4-flash"
-  export CLAUDE_CODE_SUBAGENT_MODEL="ds/deepseek-v4-flash(max)"
-  # Haiku fallback: Agnes AI when the DS Light lane is down (provider-level).
-  export ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK="agnes/agnes-2.5-flash"
-
-  # 6. Parse the state file once into exported vars (single node call, no secrets).
-  #    A corrupt/unparseable state file MUST fail loudly — never launch claude
-  #    unrouted with no routing vars set (that silently behaves like plain claude
-  #    and defeats the activation boundary). Resolved routes override the static
-  #    defaults above; unresolvable routes fall back to the static defaults.
-  #    Effort level is NOT exported (it would override the in-session /effort
-  #    picker); set CLAUDE_NINE_FORCE_EFFORT=<level> to pin it for one launch.
-  local exports
-  if ! exports="$(node - "$STATE_FILE" <<'NODE'
-const fs = require("fs");
-let s = fs.readFileSync(process.argv[2], "utf8");
-let st;
-try { st = JSON.parse(s); } catch { throw new Error("corrupt router-session.json"); }
-const r = st.routes || {};
-if (!r.fable && !r.opus && !r.sonnet && !r.haiku) {
-  throw new Error("router-session.json has no resolved routes");
-}
-const out = [];
-const pairs = [
-  ["F", "ANTHROPIC_DEFAULT_FABLE_MODEL", r.fable],
-  ["OP", "ANTHROPIC_DEFAULT_OPUS_MODEL", r.opus],
-  ["SN", "ANTHROPIC_DEFAULT_SONNET_MODEL", r.sonnet],
-  ["HK", "ANTHROPIC_DEFAULT_HAIKU_MODEL", r.haiku],
-  ["SUB", "CLAUDE_CODE_SUBAGENT_MODEL", r.subagent],
-  ["MO", "CLAUDE_CODE_MAX_OUTPUT_TOKENS", String(st.maxOutputTokens || 32000)],
-  ["CON", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY", String(st.concurrency || 10)],
-];
-// CLAUDE_CODE_EFFORT_LEVEL is deliberately NOT exported from the state file's
-// effortLevel. A forced env export overrides the picker (the 2026-08-11
-// ultracode-revert bug). Router thinking hints live in the route suffixes
-// ((max)), not here.
-// Opt back in per launch with CLAUDE_NINE_FORCE_EFFORT=<level>.
-if (process.env.CLAUDE_NINE_FORCE_EFFORT) {
-  pairs.push(["EFF", "CLAUDE_CODE_EFFORT_LEVEL", process.env.CLAUDE_NINE_FORCE_EFFORT]);
-}
-// lastEffortSelection (Issue 1 persistence): the user's last /effort selection
-// is re-applied at exec time. ultracode becomes the --effort ultracode CLI
-// flag on the exec line (the ONLY mechanism that survives a session boundary
-// for ultracode); a persistable level becomes a per-launch env export here.
-// CLAUDE_NINE_FORCE_EFFORT wins over lastEffortSelection (checked above).
-const last = st.lastEffortSelection;
-if (typeof last === "string" && !process.env.CLAUDE_NINE_FORCE_EFFORT) {
-  if (last === "ultracode") {
-    process.stdout.write("LASTEFFORT=ultracode\n");
-  } else if (["low", "medium", "high", "xhigh", "max"].includes(last)) {
-    pairs.push(["EFF", "CLAUDE_CODE_EFFORT_LEVEL", last]);
-  }
-}
-for (const [, envName, val] of pairs) {
-  if (val) out.push(`export ${envName}=${JSON.stringify(String(val))}`);
-}
-process.stdout.write(out.join("\n") + "\n");
-NODE
-)"; then
-    echo "claude-nine: could not parse routed session state at $STATE_FILE. Re-run /nine-router-setup." >&2
-    exit 1
-  fi
-  eval "$exports"
-
-  # 6b. lastEffortSelection = ultracode -> --effort ultracode CLI flag on the
-  #     exec line (session-only by product design; the flag is the only way to
-  #     re-enter it across a session boundary).
-  #     The binary exports only the effort LEVEL to child processes, and
-  #     ultracode's level is plain `xhigh` -- so no subprocess can tell
-  #     ultracode from xhigh by environment alone. Export an explicit marker
-  #     next to the flag so in-session checks (spec-protocol GATE 0 witness 1)
-  #     can see what was actually requested.
-  EFFORT_ARGS=()
-  if [ "${LASTEFFORT:-}" = "ultracode" ]; then
-    EFFORT_ARGS=(--effort ultracode)
+# Ultracode opt-in. The binary models ultracode as `xhigh` PLUS a separate
+# session-only boolean and exports only the LEVEL to child processes, so
+# CLAUDE_EFFORT reads plain "xhigh" and no subprocess can tell ultracode from
+# xhigh. Export an explicit marker beside the flag so in-session checks
+# (spec-protocol GATE 0 witness 1) can see what was actually requested.
+# Opt in with `claude-nine --ultracode ...` or CLAUDE_NINE_ULTRACODE=1.
+#
+# STICKY (fixes the GATE 0 loop). `/effort ultracode` typed inside a session is
+# invisible to every subprocess -- the binary exports only the LEVEL (`xhigh`),
+# so a later `claude-nine` could not know ultracode had ever been chosen, and
+# spec-protocol GATE 0 told the user to enable what they already had. The choice
+# is therefore remembered here, in this launcher's own config root, and re-applied
+# on every launch until it is explicitly cleared:
+#   claude-nine --ultracode      turn it on, and remember it
+#   claude-nine --no-ultracode   turn it off, and forget it
+# CLAUDE_NINE_ULTRACODE in the environment always wins over the remembered value.
+CC_EFFORT_ARGS=()
+CC_ULTRA_STATE="$CLAUDE_CONFIG_DIR/.last-effort"
+case "${1:-}" in
+  --ultracode)
+    shift
     export CLAUDE_NINE_ULTRACODE=1
-  fi
+    printf 'ultracode\n' >"$CC_ULTRA_STATE" 2>/dev/null || true
+    ;;
+  --no-ultracode)
+    shift
+    export CLAUDE_NINE_ULTRACODE=0
+    rm -f "$CC_ULTRA_STATE" 2>/dev/null || true
+    ;;
+esac
+if [ -z "${CLAUDE_NINE_ULTRACODE:-}" ] \
+   && [ -r "$CC_ULTRA_STATE" ] \
+   && [ "$(cat "$CC_ULTRA_STATE" 2>/dev/null)" = "ultracode" ]; then
+  export CLAUDE_NINE_ULTRACODE=1
+fi
+if [ "${CLAUDE_NINE_ULTRACODE:-}" = "1" ]; then
+  CC_EFFORT_ARGS=(--effort ultracode)
+  echo "   effort:         ultracode (xhigh + dynamic workflow orchestration)" >&2
+fi
 
-  # 7. Assert the routing boundary is actually armed before exec — never launch
-  #    claude unrouted. If a required var is missing, the state is corrupt.
-  : "${ANTHROPIC_DEFAULT_FABLE_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
-  : "${ANTHROPIC_DEFAULT_OPUS_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
-  : "${ANTHROPIC_DEFAULT_SONNET_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
-  : "${ANTHROPIC_DEFAULT_HAIKU_MODEL:?routed session state is corrupt; re-run /nine-router-setup}"
-
-  # 8. Banner: show which models are wired (model ids only — never tokens).
-  echo "🚀 claude-nine via 9Router (http://127.0.0.1:$PORT/v1)" >&2
-  echo "   fable/subagent: $ANTHROPIC_DEFAULT_FABLE_MODEL" >&2
-  echo "   opus:           $ANTHROPIC_DEFAULT_OPUS_MODEL" >&2
-  echo "   sonnet:         $ANTHROPIC_DEFAULT_SONNET_MODEL" >&2
-  echo "   haiku:          $ANTHROPIC_DEFAULT_HAIKU_MODEL" >&2
-  echo "   haiku fallback: ${ANTHROPIC_DEFAULT_HAIKU_MODEL_FALLBACK:-none}" >&2
-
-  # 9. Exec the same claude binary, forwarding all args. The ultracode flag
-  #    (when lastEffortSelection says so) rides first; a user-passed --effort
-  #    still wins (claude's CLI takes the last flag).
-  exec "$claude" "${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"}" "$@"
-}
-
-main "$@"
+exec "$CC_BIN" ${CC_EFFORT_ARGS[@]+"${CC_EFFORT_ARGS[@]}"} "$@"

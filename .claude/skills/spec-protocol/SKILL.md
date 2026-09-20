@@ -63,8 +63,9 @@ An interactive `/effort ultracode` typed in THIS session is NOT detectable by an
 > One switch has to be on before I can start my helpers. Type `ultracode /spec-protocol` — the word `ultracode` first, then the command — and press Return; that's all.
 
 Only if they say the per-message keyword will not work for them, add one sentence: "Or
-start the session in ultracode — relaunch with `claude-nine` after `/effort ultracode`,
-or set `"ultracode": true` in your `settings.json` — and it stays on for every message." No degraded run, no partial run, no "let me try anyway."
+start the session in ultracode — relaunch with `claude-nine --ultracode`, which remembers the
+choice and re-applies it on every later launch, or set `"ultracode": true` in your
+`settings.json` — and it stays on for every message." No degraded run, no partial run, no "let me try anyway."
 
 **GATE 0b — the tick is armed (EVERY project, profiled or not).** Every run opens with its enforcer in place: the
 five-minute tick armed by `tools/watch-tick.sh --arm <project>` (step 3, the moment the project's state root exists — `CONTROL/` unprofiled, the profile's `documents.state` directory profiled — the tool writes the crontab line itself, idempotently, and names the degradation when `crontab` cannot be run),

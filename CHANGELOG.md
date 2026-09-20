@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.20.1] — 2026-09-20
+
+### The macOS launcher: one launcher, and ultracode that sticks
+
+Two macOS launchers had diverged. The one this repo shipped requires a
+`router-session.json` state file; the one actually installed and in daily use
+(`~/.local/bin/claude-nine`) does not, and that file does not exist on the
+reference box — so the repo's copy could not have run there at all, and the
+`fff4773` ultracode fix landed in a file nobody executes. The repo now carries
+the launcher that is genuinely in service; the previous one remains in history.
+
+**Ultracode is now sticky.** `/effort ultracode` typed inside a session is
+invisible to every subprocess — the binary exports only the LEVEL (`xhigh`), so
+a later launch could not know ultracode had ever been chosen, and spec-protocol
+GATE 0 told the user to switch on what they already had. The launcher now
+remembers the choice in its own config root and re-applies it every launch:
+
+    claude-nine --ultracode      turn it on, and remember it
+    claude-nine --no-ultracode   turn it off, and forget it
+
+`CLAUDE_NINE_ULTRACODE` in the environment still wins over the remembered value,
+and user arguments pass through untouched. Verified across all five states —
+off, on, sticky-on, off again, sticky-off — plus argument passthrough; GATE 0
+`--check-session` moves from `NO-SESSION-ULTRACODE (rc=1)` to
+`PASS | witness=launcher-env (rc=0)`.
+
+`SKILL.md`'s GATE 0 advice was still pointing at the dead route
+("relaunch with `claude-nine` after `/effort ultracode`"); it now names
+`claude-nine --ultracode`. The Windows launcher is deliberately unchanged — it
+cannot be tested from here.
+
 ## [1.20.0] — 2026-09-20
 
 ### spec-protocol 1.20.0 — the protocol is universal again, and Candace speaks plainly
