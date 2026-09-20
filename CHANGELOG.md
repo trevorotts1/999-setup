@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.20.2] — 2026-09-20
+
+### Three defects found by the first real 1.20.0 run
+
+The opening script, classify-and-confirm and entry mode all fired — the 1.19.5/1.19.6
+bypass is genuinely gone. Three faults in the 1.20.0 edit itself surfaced instead.
+
+**A declared `targets` array now DECIDES the taxonomy.** The profile said
+`["desktop-macos-arm64","linux-vps-web"]` and the run still classified `MOBILE_APP` from
+the client's word "app", then had to be corrected. 1.20.0 said packet documents are a
+pre-statement read but never wired `targets` to `BUILD-TARGET`. Each declared target now
+maps to its taxonomy value (`desktop-*` → DESKTOP_SOFTWARE, `*-web` → WEB_APP, mobile →
+MOBILE_APP, mobile+web → MOBILE_AND_WEB), the FIRST entry is primary, every other declared
+target is recorded as an additional delivery surface, and the client is CONFIRMED rather
+than interrogated. "App" is ordinary English for any program and is never evidence about a
+surface.
+
+**Entry mode is its own message, in the same two-way words.** 1.20.0's profiled framing
+turned the choice into a lopsided add-on — "want to add anything in your own words?" —
+bundled onto the end of the naming line, which is a statement plus a question in one
+message and a standing violation of the one-question rule. The naming line is spoken and
+stopped; the entry-mode question follows alone, in the canonical wording, with the supplied
+folder named so the choice is real.
+
+**An interrupted question is UNANSWERED, and it comes back.** The entry-mode question was
+overtaken by a classification correction thirty-two seconds later and never returned.
+Questions are now written to `00-INPUT/ANSWERS.md` under their stable key the moment they
+are SPOKEN, with the answer blank; a blank is the re-ask list, read before every question
+and after every re-classification. The file exists before the first counted question — on a
+supplied folder, inside that folder — and reaching the counted list without it is a defect
+the step-20 self-audit rejects. Never re-asking an answered question and never abandoning an
+unanswered one are the same rule; only the file distinguishes them.
+
 ## [1.20.1] — 2026-09-20
 
 ### The macOS launcher: one launcher, and ultracode that sticks

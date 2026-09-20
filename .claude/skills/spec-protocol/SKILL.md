@@ -212,7 +212,21 @@ platform. It is given when the client asks how to come back, and written into
 
 > If your computer restarts or we get disconnected: open the <Terminal app | PowerShell>, type `<launcher> --resume`, press Return, pick this project from the list, and I carry on from where I was.
 
-**Classify-and-confirm.** The person describes; the skill classifies. The six-way
+**⛔ A PROFILE'S `targets` DECIDE THE TAXONOMY — never guess past a declared answer.** When
+`.spec-protocol.json` carries a `targets` array, that array IS the build target and the
+classification is DERIVED from it, not inferred from the client's sentence. Map each declared
+target to its taxonomy value — `desktop-*` → `DESKTOP_SOFTWARE`, `*-web` / `web-*` →
+`WEB_APP`, `ios-*` / `android-*` / `mobile-*` → `MOBILE_APP`, a mobile and a web target
+together → `MOBILE_AND_WEB` — and **the FIRST entry is the primary value**; every other
+declared target is recorded as an additional delivery surface, never dropped. The client is
+then CONFIRMED, not interrogated: one sentence built from the declared target and their own
+words. Guessing `MOBILE_APP` from the word "app" while the profile two rooms away says
+`desktop-macos-arm64` is the exact defect this rule removes — the client's word "app" is
+ordinary English for any program, and it is never evidence about a surface. This same
+precedence holds for any other question a packet document already answers.
+
+**Classify-and-confirm.** With no declared target, the person describes and the skill
+classifies. The six-way
 taxonomy is this skill's filing system and is NEVER rendered to the client — not as a
 menu, not trimmed to three, not "to help them along" (`references/audience.md` §1–§2
 bind every word of this exchange). Classify their description into exactly one of
@@ -264,6 +278,18 @@ they just said>. We will go with that — and if it ever feels wrong to you, say
 will change the plan. Nothing gets locked in today." A target reached this way is
 recorded as a DEFAULT they confirmed, never as their answer.
 
+**⛔ AN INTERRUPTED QUESTION IS UNANSWERED, AND IT COMES BACK.** A question that was spoken
+but overtaken — by a correction, a re-classification, a new instruction, a compaction — was
+never answered, and the run may not move past it. Write every question to
+`00-INPUT/ANSWERS.md` under its stable key the moment it is SPOKEN, with the answer left
+blank, and fill the blank when it arrives; a key with a blank answer is the re-ask list, read
+before every question. `00-INPUT/ANSWERS.md` exists before the FIRST counted question is
+spoken — on a supplied folder it is created inside that folder — and a run that reached the
+counted list without it is a defect the step-20 self-audit rejects. "Never re-ask an ANSWERED
+question" and "always return to an UNANSWERED one" are the same rule; only the file can tell
+them apart, which is why the file is not optional. After any re-classification, re-read that
+file and resume at the first blank before asking anything new.
+
 Record the taxonomy value, their description verbatim and how it was reached in the
 decision register, and write `BUILD-TARGET: <taxonomy>` through `tools/ledger.sh` the
 moment it is confirmed — the first precondition of the research gate (step 3.5). On the
@@ -300,9 +326,20 @@ create a replacement beside it, and never create `CONTROL/` or a second state gr
 named documents are the input and its bound state is canonical (`references/project-profile.md`).
 **Everything the client hears still happens.** The opening script, classify-and-confirm, the
 funnel gate, entry mode, the brainstorm, the interview, the bar and the design stages are NOT
-skipped: a profile is a binding, not a consent form. Entry mode is still offered — on a profiled
-folder the honest framing is "you have already pointed me at notes; want to add anything in your
-own words?" — and `00-INPUT/` is created inside the supplied folder if it is missing, because a
+skipped: a profile is a binding, not a consent form. **Entry mode is still asked, in the SAME two-way words, as its OWN message.** A supplied
+folder does not shrink the choice to a lopsided add-on and does not get bundled onto the end
+of the naming line — a statement plus a question in one message is a wall
+(`references/audience.md` §1, BINDING). Speak the naming line, stop. Then speak the entry-mode
+question by itself, with the folder named so the choice is real:
+
+> I can learn about your idea in one of two ways.
+>
+> You can tell me about it in your own words, or I can start from the notes and documents
+> already in <folder name> and you tell me anything they are missing.
+>
+> Which would you rather do?
+
+`00-INPUT/` is created inside the supplied folder if it is missing, because a
 MISSING document is the one thing ever written into a provided folder (RULE 1). Where a packet
 document already answers a question, that is a PRE-STATEMENT READ: say it back in one line and
 count the question ANSWERED — never assume it, and never call a written decision the client's

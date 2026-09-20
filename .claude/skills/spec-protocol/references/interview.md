@@ -20,7 +20,15 @@ skill. It has six sections and nothing else:
 - **Measure it, do not ask it** (Law 28). The harness, the machine's width, the
   keys present by name, the repository state, and the provider plan tiers are
   all measured. Nobody is asked what a machine or an account already knows.
-- **Never re-ask.** Every answer is written to `00-INPUT/ANSWERS.md` the moment
+- **Never re-ask — and never abandon.** Every question is written to
+  `00-INPUT/ANSWERS.md` under its stable key the moment it is **SPOKEN**, with the
+  answer left blank, and the blank is filled when the answer arrives. A key with a
+  blank answer is UNANSWERED: the run returns to it before asking anything new. A
+  question overtaken by a correction, a re-classification, a new instruction or a
+  compaction was never answered, and dropping it is the same defect as asking it
+  twice — only this file can tell the two apart, which is why it is not optional and
+  exists before the first counted question. Every answer is written to
+  `00-INPUT/ANSWERS.md` the moment
   it is given, under a stable question key. Before ANY question, re-read the
   brief and that file; after a compaction or a resume, re-read them again. A
   question whose answer is on disk is ANSWERED: say it back in one line — "you
