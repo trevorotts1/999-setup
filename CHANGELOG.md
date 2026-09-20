@@ -1,5 +1,82 @@
 # Changelog
 
+## [1.20.0] — 2026-09-20
+
+### spec-protocol 1.20.0 — the protocol is universal again, and Candace speaks plainly
+
+**The regression.** 1.19.5 and 1.19.6 introduced a second path: any folder containing
+`.spec-protocol.json` skipped steps 3 through 22 entirely. On that path `/spec-protocol` became
+four commands — bootstrap, validate, dispatch, release — with no opening script, no
+classify-and-confirm, no entry mode, no brainstorm, no interview, no Capacity Ledger, no
+research, no ratified bar, no design direction, and no five-minute tick. A real run reached
+three hours, four compactions and zero lines of application code, having asked the client one
+question. This release ends that fork.
+
+**A profile binds state and dispatch. It never cancels the conversation.** It changes exactly
+three things inside the one sequence: the canonical state file is `documents.state` rather than
+`CONTROL/project_state.json`; dispatch authorization goes through `commands.dispatch` rather
+than `tools/dispatch-check.sh`; release proof goes through `commands.release`. Every other step
+runs on every project. Where a packet document already answers an interview question, that is a
+PRE-STATEMENT READ — stated back in one line and counted ANSWERED — never an assumption, and
+never the client's approval of a decision they never made.
+
+**The helpers are redirected, not switched off.** `gate0`, width, ledger, anchor, watch-tick,
+state-check and audit-gate all still run on a profiled project, reading and writing the bound
+state. GATE 0b now reads "EVERY project, profiled or not"; RULE 5 reads "EVERY dispatch". An
+unwatched run was the exact failure these instruments exist to prevent.
+
+**The `reader` role.** SKILL.md forbids the conductor from reading a project document in full in
+its own context, yet the profiled dispatch gate accepted only `builder|qc|repair` — so a
+profiled run could not dispatch a reader at all, and burned its context on whole documents. A
+reservation-exempt `reader` role now exists in `tools/hooks/dispatch-gate.py` and in the profile
+contract: it writes nothing, owns no path, spends no counter, and therefore reserves nothing.
+Every other role is still reservation-checked; the hook's selftest covers 27 cases.
+
+**The PROFILE-DEFECT escape.** When a packet's own contract is self-contradictory, that is a
+defect in the packet, not a blocked run and not a question for the client to unblock. It is
+proven once, written to the bound state as `PROFILE-DEFECT: <file>:<line> vs <file>:<line>`, and
+raised to the client in one plain sentence within five minutes. Re-validating a proven
+contradiction is the drift the tick exists to catch.
+
+### Candace speaks to a sixty-five-year-old, not to an engineer
+
+The client-facing language throughout `SKILL.md` section 3, `references/interview.md` and
+`references/audience.md` is rewritten. The engineering logic, the routing, the question keys,
+the counters, DEFAULT and ADVANCED mode, the capture behavior and GOAL.md generation are all
+unchanged; no required question was removed and none was added.
+
+- **A banned-word list is now binding** (`audience.md` §2): database, hosting, deployment,
+  repository, Git, branch, server, provider, API, token, responsive, frontend, backend, CLI,
+  environment, runtime, framework, model, endpoint, workflow, agent, context window,
+  authentication, OAuth, webhook, DNS. Each has a plain-English replacement that says what the
+  thing DOES. "Does the application need a database?" becomes "When someone comes back later,
+  does it need to remember anything they did before — their account, appointments, saved work,
+  purchases, or progress?" The one standing exception is a label the client must FIND inside
+  their own account, such as the Convert and Flow Private Integration Token.
+- **Two silent checks run before any question is spoken.** Could a sixty-five-year-old business
+  owner understand this immediately? And: am I asking them to decide something I should be
+  deciding? A no and a yes each force a rewrite.
+- **The recommend-first rule.** When Candace knows enough to choose well, she recommends with one
+  ordinary-language reason and asks only for a yes. "I don't know", "whatever you think" and
+  "you choose" mean Candace chooses — the decision is never handed back.
+- The opening script, all six classify-and-confirm frames, the five either/or questions, entry
+  mode, the brainstorm probes, the reflection, the mode question, every Step 1d branch, the six
+  content-inventory questions, the artwork question, D1, D4, the done-condition and all five
+  advanced-mode questions are rewritten in plain speech.
+
+### New: `references/media-model-selection.md`
+
+The single owner of every image- and video-service recommendation. Candace recommends; the
+client never researches AI models and never sees a catalog, a model ID, a benchmark or a
+price-per-second. No model version is hard-coded — the live catalog and current pricing are
+inspected before any recommendation that costs money, and an unverifiable figure is never
+quoted. Images weight quality over small price differences; video is scored on quality, length,
+cost, resolution, audio, control and speed with a per-job weighting, estimated as
+`shots × seconds × retries × cost-per-second`, and run up a three-level escalation ladder so a
+project spends premium money only on the shots that need it. A cost guardrail stops before any
+generation that materially exceeds what the client approved. The client approves MONEY; Candace
+chooses the technology.
+
 ## [1.19.0] — 2026-09-07
 
 ### spec-protocol 1.19.0 — the Gauntlet Loop update

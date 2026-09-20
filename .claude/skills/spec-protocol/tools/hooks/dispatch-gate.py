@@ -168,7 +168,14 @@ SCOPE_NOTE = "SHAPE 7: not a spec-protocol project, not evaluated"
 # and a short walk would strand it outside its own project.
 SCOPE_MAX_PARENTS = 40
 PROFILE_FILE = ".spec-protocol.json"
-PROFILE_ROLES = ("builder", "qc", "repair")
+PROFILE_ROLES = ("builder", "qc", "repair", "reader")
+# A reader inspects and reports: it writes nothing, owns no path, and spends no
+# builder or QC counter, so it has nothing to reserve and is reservation-exempt.
+# Without this, a profiled project cannot dispatch a reader at all -- which forces
+# the conductor to read whole project documents in its own context, the exact thing
+# SKILL.md section 13 forbids. A reader that tries to write is rejected by the
+# packet's state writer, where that check belongs.
+PROFILE_EXEMPT_ROLES = ("reader",)
 
 
 def allow():
@@ -499,11 +506,17 @@ def profile_launch_identity(tool_input):
     identity = args.get("specProtocol")
     if not isinstance(identity, dict):
         return None, "Workflow args.specProtocol is required for a profiled launch."
-    required_strings = ("taskId", "role", "intentId", "nativeWorkflowId", "label")
+    if identity.get("role") in PROFILE_EXEMPT_ROLES:
+        # A reader carries no intent id because no intent is ever reserved for it.
+        required_strings = ("taskId", "role", "label")
+    else:
+        required_strings = ("taskId", "role", "intentId", "nativeWorkflowId", "label")
     if any(not isinstance(identity.get(k), str) or not identity[k] for k in required_strings):
-        return None, "args.specProtocol must carry non-empty taskId, role, intentId, nativeWorkflowId, and label."
+        return None, (
+            "args.specProtocol must carry non-empty %s." % ", ".join(required_strings)
+        )
     if identity["role"] not in PROFILE_ROLES:
-        return None, "args.specProtocol.role must be builder, qc, or repair."
+        return None, "args.specProtocol.role must be builder, qc, repair, or reader."
     if not isinstance(identity.get("units"), int) or not isinstance(identity.get("agents"), int):
         return None, "args.specProtocol must carry integer units and agents."
     if identity["units"] < 1 or identity["agents"] < 1:
@@ -866,9 +879,10 @@ def main():
         identity, problem = profile_launch_identity(ti)
         if problem:
             profile_block(problem)
-        problem = profile_reservation_check(profiled_root, identity)
-        if problem:
-            profile_block(problem)
+        if identity["role"] not in PROFILE_EXEMPT_ROLES:
+            problem = profile_reservation_check(profiled_root, identity)
+            if problem:
+                profile_block(problem)
 
     script = ti.get("script")
     if not script:
