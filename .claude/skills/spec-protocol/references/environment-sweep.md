@@ -111,6 +111,13 @@ machinery and repeats no alias table, and this file remains their single owner.
 
 ## What to look for (by NAME only)
 
+**The decision engine (step 2.7).** Two names, direct first: `JEV_TYPESAFE_API_KEY`, then
+`OPENROUTER_API_KEY`. Resolved and PROVEN by `tools/jev-check.sh`, never by reading a model
+list — `GET /api/v1/models` omits a decisions-modality model, so its absence there proves
+nothing (`references/decision-engine.md` §2). Absent is a fact, not a gap: the run continues
+unchanged and the client hears one optional sentence.
+
+
 Ask what kind of app/site they are building, then check the relevant keys:
 
 | If the project uses... | Look for (by name) | Smoke test |

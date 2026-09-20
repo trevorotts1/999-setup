@@ -319,7 +319,17 @@ to pass/fail is BLOCKED (Law 50) and rewritten by the lead before the build.
 the existing 0–10 score across the ten categories. PASS requires a finite score
 from 8.5 through 10, the frozen relationship above, every mandatory behavior,
 scope, and evidence check, and the independent reference comparison. PASS/FAIL
-reports that conjunction; it cannot replace a missing score or make a high score
+**Turning the written verdict into the ten numbers.** Where a decision engine is present
+(step 2.7), the judge's OWN written verdict — with its quoted evidence — is the state, and the
+engine returns the ten category levels, so a judge cannot return prose where a number was
+required and leave the verdict UNVERIFIED. **The engine never judges**: it does not see the
+artifact, the bar, or a rendered page, and it never issues PASS. The 8.5 floor, the mandatory
+conjunction, the quoted evidence, the named bar with its fetch proof and the builder-versus-judge
+seat difference are unchanged and still come from the judge. A record whose numbers came this
+way names it: `score_source=decision-engine verdict_source=<judge seat>`. With no engine the
+judge returns its own ten numbers, exactly as before (`references/decision-engine.md` §4.7).
+
+It reports that conjunction; it cannot replace a missing score or make a high score
 override another failed condition. No client answer lowers the judge's standard
 (Law 43) — the client's own acceptance has its own outcome, `CLIENT-ACCEPTED`,
 in the QC RECORD below.
@@ -1031,7 +1041,11 @@ The fence exists to prevent the two mirror-image drift failures:
 
 Both are the same defect: working outside the scope set. A finding, fix, or review
 concerning something not in the scope set and not flagged out-of-scope-suspected is
-DRIFT — reject it, log drift-rejected, do not re-dispatch. The fence also FORCES the
+DRIFT — reject it, log drift-rejected, do not re-dispatch. Where a decision engine is present
+it may TRIAGE this: in-scope at 0.90 or above and out at 0.10 or below route automatically,
+and everything between goes to a reviewer; with no engine every finding goes to the reviewer,
+as before (`references/decision-engine.md` §4.5). A rejection is logged the same way either
+way, so a wrong call stays visible. The fence also FORCES the
 relevant external systems in: anything the project references is in scope and must
 be verified.
 

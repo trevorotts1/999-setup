@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.21.0] — 2026-09-20
+
+### The decision engine — small typed judgements, never a dependency
+
+spec-protocol can now use a System One decision model (TypeSafe's Jev) for the small typed
+judgements that recur all run: which of six things is being built, whether a sentence carries a
+word the client will not know, whether a paid generation is about to exceed what was approved,
+whether a repair loop has stopped improving. Roughly 250ms and a hundredth of a cent per call.
+
+**Nothing depends on it.** Every one of the seven call sites carries a named fallback to the
+behaviour this skill had before, and `references/decision-engine.md` refuses a new site that
+does not add one. A client with no key gets the same finished product by the same route.
+
+**The ladder, resolved silently at step 2.7** by the new `tools/jev-check.sh`: a direct
+`JEV_TYPESAFE_API_KEY` always beats a brokered `OPENROUTER_API_KEY` serving `typesafe/jev-1.13`;
+neither is ABSENT, which is a fact and not a failure. Keys are resolved by NAME and parsed,
+never sourced, and no value reaches a log, a receipt, or a command line. Exit 0 PRESENT, 1
+ABSENT, 2 UNDETERMINED — a key that exists but could not be tested is never reported ABSENT, and
+HTTP 402 is "the account needs credit", never "no engine".
+
+**`GET /api/v1/models` does not list Jev, and that proves nothing** — the listing covers models
+whose output is text, and Jev's modality is `decisions`. Reachability is decided by a real call.
+This is written into the tool and the reference because the author of both fell for it first.
+
+**The client hears one sentence, or none.** Present or undetermined: silence, because setup
+outcomes are never put to the client. Absent: one plain offer after the opening script, because
+credit on an account is the client's money. A decline is a recorded default, never raised again.
+The sentence names **typesafe.ai** — `jev.ai` is a parked domain-for-sale listing and is never
+given to a client.
+
+### A threshold alone does not protect you
+
+The classification site was built with an 0.85 auto-accept line and then tested against the case
+that caused this morning's bug. Bare sentence, no other evidence: `MOBILE_APP` at **0.96
+confidence — confidently wrong** for a macOS program. The same sentence with the profile's
+targets in the state: 0.61, and correctly uncertain.
+
+So the rule shipped is not the rule designed. **The engine's answer is a PROPOSAL for the confirm
+sentence and never a decision; the client confirmation is mandatory at every confidence, and the
+engine never records `BUILD-TARGET:` itself.** The threshold governs only whether the either/or
+is ALSO offered. The state must carry every piece of evidence the run already holds, and a
+declared `targets` array outranks the engine outright and stops it being called at all.
+
+### Where it is never used
+
+No blind visual comparison — it cannot see a rendered page. No PASS verdict, no release council,
+no gate of record: ~68% accuracy with no attached evidence cannot license a client's work to
+ship. No repair payload — it gives no explanations, so it can say a thing failed and never what
+to fix. No builder, fixer or merge writer. And never anything a deterministic instrument already
+decides: a script that can prove a fact outranks a model that can only estimate one. The dispatch
+risk gate is advisory in one direction only — it may add a refusal and may never turn a gate's
+refusal into a pass.
+
 ## [1.20.3] — 2026-09-20
 
 ### Read first, state what you found, and always ask where the material is

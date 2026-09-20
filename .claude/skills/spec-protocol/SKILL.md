@@ -132,6 +132,19 @@ is UNDETERMINED, never a number. Then detect OpenClaw from file evidence only
 (`references/openclaw-ingest.md`): nothing is read and nothing written until the
 paragraph in section 3 is spoken and the project folder exists.
 
+**The decision engine (step 2.7).** Run `tools/jev-check.sh` once, here, silently. It resolves
+a System One decision model by key NAME — `JEV_TYPESAFE_API_KEY` direct first, then
+`OPENROUTER_API_KEY` for `typesafe/jev-1.13` — and PROVES it with one real call, because
+`GET /api/v1/models` does not list a decisions-modality model and its absence there proves
+nothing. Exit 0 PRESENT, 1 ABSENT, 2 UNDETERMINED; a key that could not be tested is never
+reported ABSENT, and a check that never reached its source never reports current. Record
+`DECISION-ENGINE: verdict=… source=… model=… latency_ms=…` and say NOTHING to the client on 0
+or 2. On 1 — and only on 1 — one plain sentence is spoken after the opening script
+(`references/decision-engine.md` §3), because credit on an account is the client's money and
+therefore theirs to decide. **Nothing in this skill depends on it**: every call site named in
+that file carries the fallback it degrades to, and a run with no engine produces the same
+finished product by the same route.
+
 **Companions (step 2.9).** Run `scripts/bootstrap-companions.sh` once, in the
 background, the moment the harness is known: it detects first and installs only what is
 missing, from the locked sources in `references/dependency-sources.md` — never a search,
@@ -197,6 +210,13 @@ block. The FIRST action of step 3, before a word of it is spoken, is `tools/gate
 > If your computer restarts or we get disconnected, your work is saved.
 
 > First question: Tell me about your idea the same way you would explain it to a friend. What do you want to create, and who is it for?
+
+**When the decision engine is ABSENT** (step 2.7 returned exit 1), speak the one sentence in
+`references/decision-engine.md` §3 immediately AFTER the opening script and BEFORE the first
+counted question — never before the opening, because nothing precedes the opening. It is an
+offer about their own account and money, not a setup report; a yes files the key through
+`tools/place-key.sh` and re-runs the check, a no is recorded as a DEFAULT and never raised
+again (Law 46), and either way it is uncounted. Exit 0 and exit 2 are silent.
 
 **When OpenClaw was detected** (`references/openclaw-ingest.md`), speak this paragraph
 verbatim as part of the script, immediately BEFORE its last line:
@@ -560,7 +580,7 @@ and repair bounds; it does not make any of them optional, and it never makes a c
 optional.
 
 1. GATE 0 (ultracode), GATE 0b (the tick armed), GATE 0c (Git Bash on Windows).
-2. Detect platform, then harness, then launcher — and report both in one line. **2.5** version check. **2.6** auto-compaction. **2.8** OpenClaw detection. **2.9** companions. **2.10** progress visibility.
+2. Detect platform, then harness, then launcher — and report both in one line. **2.5** version check. **2.6** auto-compaction. **2.7** the decision engine. **2.8** OpenClaw detection. **2.9** companions. **2.10** progress visibility.
 3. Speak THE OPENING SCRIPT; classify and confirm the target; the funnel gate if it fires; offer entry mode; create the folder; write `ENTRY-MODE:` and `BUILD-TARGET:`. **3.5** the RESEARCH-READY gate and the just-in-time reader dispatch. **Profiled projects do all of this too** — the supplied folder is used as-is (RULE 1), `00-INPUT/` is added only if missing, and the two ledger lines go into the bound state instead of a parallel record.
 4. Capture the brainstorm verbatim into `00-INPUT/`; write `INPUT-CAPTURED:`. **5.** Pick the job archetype. **6.** The interview (`references/interview.md`); write `INTERVIEW-MODE:`. **6.5** compute the Capacity Ledger — no dispatch before this file exists, and every dispatch cites it. **A supplied profile never answers these on the client's behalf.** Where a packet document already carries an answer it is a PRE-STATEMENT READ — stated back in one line and counted ANSWERED; everything else is still asked. A written spec is not the client's approval of it.
 7. Domain research. **8.** Reference apps and the ratified bar. **9.** Environment sweep with `tools/env-sweep.sh` plus the capture-tooling preflight (install-then-prove, never detect-and-warn). **10.** Current state, measured (Law 28). **11.** Confirm the plain-language feature list. **12.** Close every human decision (Law 46).
@@ -818,6 +838,7 @@ prove. These are the ones no script can refuse for you:
 - Never lower the quality gate or suggest lowering it (Law 43) — only the client lowers their own standard, for their own build — and never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS (Law 50).
 - Never create an eighteenth document, never bring a refused artifact back under a new name, and never cite a document you wrote as authority (Law 39).
 - Never give a role irrelevant mutable context or another role's provenance; use the stable relevant prefix plus its role slice (Law 5).
+- Never let the decision engine decide anything of record. It may raise a refusal, a rewrite, a re-ask or an escalation; it may never convert a deterministic gate's refusal into a pass, never judge an artifact, never issue a PASS, and never see a rendered page (`references/decision-engine.md` §5). A script that can PROVE a fact outranks a model that can only estimate one.
 - Never grep for content or verdicts (Law 12) — structured query, Read, or a cheap reader agent.
 - Never print, echo or log a secret value; confirm by NAME only, and file keys through `tools/place-key.sh`.
 - Never perform an irreversible action without explicit permission for that specific action (Law 43).
@@ -864,7 +885,8 @@ BOTTOM. Cache warming is optional and must never delay otherwise-ready work.
 18. `references/terminals.md` — the handover rule, the seats, the labelled last-resort three-window rung (step 19); `references/if-the-power-goes-out.md` — the client's copy of the restart sentence, written into the project folder; `references/resume.md` — the cold-start RESUME path and the restart steps (every resumed session).
 19. `references/wireframes.md`, `references/scaffolding.md`, `references/build.md`, `references/hero-images.md`, `references/logo.md`, `references/ship-checks.md`, `references/publish.md` — target-applicable build stages, in dependency order. Evidence matches the actual target: a served URL only where the product has one; a desktop/mobile artifact or native harness otherwise. `ship-checks.md` carries applicable instruments and target-specific thresholds; `publish.md` carries only a real release proof, not a forced web/domain step.
 20. `references/funnel-architecture.md` — **funnel builds only**: page types, the email and SMS matrices, the Convert and Flow build path; it reaches `references/command-center-integration.md` for the project card, the lifecycle and the fail-soft rule (section 11).
-21. `references/media-model-selection.md` — **the single owner of every image- and video-service recommendation**: the recommend-first rule, the never-hard-code-latest rule, the image and video decision rules, the escalation ladder, the cost estimate and the cost guardrail, and the exact words spoken. Read it before any media recommendation, and never name a model to a client (section 11, step 13 of the interview).
-22. `references/media-pipeline.md` — **media builds only**: catalog research, provider polling, the persistence contract, duration × resolution, the image manifest. The largest file in the set — read the SECTION a step cites, never the whole file (step 6.5 and every media item). `references/media-video.md` — **CONDITIONAL: video only**, loaded ONLY when the plan actually contains video; `references/media-research-log.md` — **NEVER loaded at runtime**, the research diary.
-23. `references/worked-example.md` — the end-to-end worked example, read once before the first real run.
-24. `references/optional/agent-team.md` — **OPTIONAL, off by default**: the team path, the trust pre-flight, the probe and consent flow, and §10, the single owner of teammate-liveness verification. Loaded only when the client asks for a team in their own words (step 16.9); `references/agent-team.md` is the stub that says so.
+21. `references/decision-engine.md` — **the single owner of every System One decision-model call**: the resolution ladder and its proof-by-real-call, the client sentence spoken only when none is present, the seven call sites with their thresholds and — required for each — the named fallback it degrades to, plus the places it is never used (step 2.7, and every site that calls it).
+22. `references/media-model-selection.md` — **the single owner of every image- and video-service recommendation**: the recommend-first rule, the never-hard-code-latest rule, the image and video decision rules, the escalation ladder, the cost estimate and the cost guardrail, and the exact words spoken. Read it before any media recommendation, and never name a model to a client (section 11, step 13 of the interview).
+23. `references/media-pipeline.md` — **media builds only**: catalog research, provider polling, the persistence contract, duration × resolution, the image manifest. The largest file in the set — read the SECTION a step cites, never the whole file (step 6.5 and every media item). `references/media-video.md` — **CONDITIONAL: video only**, loaded ONLY when the plan actually contains video; `references/media-research-log.md` — **NEVER loaded at runtime**, the research diary.
+24. `references/worked-example.md` — the end-to-end worked example, read once before the first real run.
+25. `references/optional/agent-team.md` — **OPTIONAL, off by default**: the team path, the trust pre-flight, the probe and consent flow, and §10, the single owner of teammate-liveness verification. Loaded only when the client asks for a team in their own words (step 16.9); `references/agent-team.md` is the stub that says so.
