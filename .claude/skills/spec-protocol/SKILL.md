@@ -197,6 +197,17 @@ question — it is a remark the client scrolls past, and a run that asks and kee
 asked nothing at all. This is the rule that was missing while three separate runs "asked" a
 dozen things and the client was never once handed the turn.
 
+**⛔ AND THE OTHER HALF: A CLIENT-FACING TURN ENDS **ON** A QUESTION.** The two halves are one
+rule. Nothing may follow a question — and the run may not yield on a full stop while anything
+is still owed. A short acknowledgement of what they just said MAY open the message; the
+question closes it, and the message ends there. **"Wonderful — that's exactly what I'll build
+for you. From here on I'll call it Studio Nerds." and then silence is a STALL, not a turn:** it
+hands the client a statement to stare at while the next question sits unasked. An
+acknowledgement plus the next question is ONE screen and ONE thing to answer, which is what
+`audience.md` §1 has always meant; two QUESTIONS, or a question with prose after it, is the
+wall it forbids. If the run has genuinely nothing left to ask, it does not yield at all — it
+keeps working.
+
 **⛔ A GENUINE FORK IS ASKED, NEVER SELF-RESOLVED.** When two readings of what the client said
 produce materially different products — is that reference the BAR we measure against, or the
 thing we rebuild FROM? — that is a decision only they can make (Law 46). Put it to them in two
@@ -429,7 +440,9 @@ client saying "this is all my material". Never tell the client what they have al
 you — "you've already pointed me at notes in this folder" ANSWERS the question on their behalf
 and is the defect this rule removes. Ask; do not assume; and never bundle it onto the naming
 line, because a statement plus a question in one message is a wall (`references/audience.md`
-§1, BINDING). Speak the naming line, stop. Then speak this, by itself, verbatim:
+§1, BINDING). The naming line and this question are ONE message, in this order, ending on the
+question mark — "stop" means stop the sentence, never end the turn. Yielding after the naming
+line and leaving this unasked is the stall the turn-yield rule forbids:
 
 > I can learn about your idea in one of two ways.
 >

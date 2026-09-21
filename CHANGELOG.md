@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.21.5] — 2026-09-21
+
+### The other half: a turn ends ON a question
+
+1.21.4 landed and immediately half-worked. The confirm question ended its message and waited —
+the client answered "yes" — and then the run said:
+
+> "Wonderful — that's exactly what I'll build for you. From here on I'll call it Studio Nerds."
+
+…and ended the turn on that full stop. The entry-mode question, which `00-INPUT/ANSWERS.md` was
+correctly holding as `_not yet spoken — comes immediately after build-target confirms_`, was
+never asked. The session sat idle with nothing pending and the client staring at a statement.
+
+Two things caused it, both introduced the same day. Section 3 said "Speak the naming line,
+stop. Then speak this, by itself" — "stop" was meant as *stop the sentence*, and was read as
+*end the turn*. And 1.21.4's rule said a question ends the turn, which implies a statement may
+end one too.
+
+**The rule has two halves and they are one rule.** Nothing may follow a question — **and a
+client-facing turn ends ON a question.** The run never yields on a full stop while anything is
+still owed. A short acknowledgement of what the client just said MAY open the message; the
+question closes it, and the message ends there. An acknowledgement plus the next question is
+ONE screen and ONE thing to answer, which is what the one-question rule always meant; two
+QUESTIONS, or a question with prose after it, is the wall it forbids. When the run genuinely
+has nothing left to ask, it does not yield at all — it keeps working.
+
+The naming line and the entry-mode question are now explicitly ONE message, in that order,
+ending on the question mark.
+
 ## [1.21.4] — 2026-09-21
 
 ### A question ends the message and ends the turn

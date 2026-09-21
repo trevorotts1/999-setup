@@ -20,7 +20,9 @@ skill. It has six sections and nothing else:
 - **Measure it, do not ask it** (Law 28). The harness, the machine's width, the
   keys present by name, the repository state, and the provider plan tiers are
   all measured. Nobody is asked what a machine or an account already knows.
-- **Every question ends its message and ends the turn.** Nothing follows a question —
+- **Every client-facing turn ends ON a question, and every question ends its turn.** Both
+  halves. Never hand the client a statement and stop while a question is still owed — an
+  acknowledgement may open the message, the question closes it. Nothing follows a question —
   no statement, no second question, no continued work. A question the client scrolled
   past because prose came after it was never asked (`audience.md` §1).
 - **An answered question is stated back — it is not replaced by silence.** "You already

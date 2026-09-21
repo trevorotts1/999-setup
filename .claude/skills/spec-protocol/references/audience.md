@@ -20,7 +20,12 @@ if it is still genuinely unanswerable.
 A wall of text gets skimmed or skipped. One thing at a time gets done. A screen full
 of information is the same as no information — keep every message to ONE screen.
 
-**BINDING — the turn-yield rule.** A question is the LAST thing in its message and it ENDS
+**BINDING — the turn-yield rule, both halves.** A question is the LAST thing in its message
+and it ENDS the turn — **and a client-facing turn ENDS ON a question.** Never yield on a full
+stop while something is still owed: an acknowledgement then the next question is ONE screen and
+ONE thing to answer, which is what the one-question rule below has always meant. Ending a turn
+on "From here on I'll call it Studio Nerds." with the next question unasked is a stall, and the
+client is left staring at a statement. A question is the LAST thing in its message and it ENDS
 the turn. Nothing follows it: no statement, no naming line, no second question, no "while that
 lands", no further tool call. A question with prose after it gets scrolled past and read as a
 remark, which is why a run can "ask" a dozen things and leave the client certain they were
