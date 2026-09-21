@@ -104,11 +104,33 @@ def _speech_check(message, home):
 
 
 def _answers_path(cwd):
-    """The run's own ledger, or None. This is the whole scope gate."""
+    """The run's own ledger, or None. This is the whole scope gate.
+
+    A direct cwd join is not enough: on the UNPROFILED path the skill creates
+    ~/Downloads/projects/<slug>/ and the session may sit in a parent or a
+    sibling, so a cwd-only check silently no-ops on exactly the runs that most
+    need watching. Look at cwd, up to three ancestors, and one level down --
+    bounded, so this can never wander the disk.
+    """
     if not cwd or not os.path.isdir(cwd):
         return None
-    p = os.path.join(cwd, ANSWERS_REL)
-    return p if os.path.isfile(p) else None
+    here = os.path.abspath(cwd)
+    for _ in range(4):
+        p = os.path.join(here, ANSWERS_REL)
+        if os.path.isfile(p):
+            return p
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
+    try:
+        for entry in sorted(os.listdir(cwd)):
+            p = os.path.join(cwd, entry, ANSWERS_REL)
+            if os.path.isfile(p):
+                return p
+    except Exception:
+        pass
+    return None
 
 
 def _last_client_message(transcript_path):
@@ -151,13 +173,28 @@ def _ends_on_question(text):
     return bool(TRAILING_NOISE.match(after)), after
 
 
+UNANSWERED_CELL = re.compile(
+    r"^\|\s*([^|]+?)\s*\|\s*(_*(?:blank|not\s*yet|pending|awaiting)[^|]*|—|-{1,3})?\s*\|",
+    re.I | re.M)
+
+
 def _owed(answers_text):
-    """Question keys the RUN still owes -- asked-side blank, not client-side."""
+    """Question keys the RUN still owes -- asked-side blank, not client-side.
+
+    TWO ledger shapes exist in the wild and both are legitimate: the key/value
+    form this skill writes today, and the markdown TABLE the 2026-09-08 runs
+    wrote. A reader that knows only one shape silently reports nothing owed on
+    the other, which disables the stall guard exactly where it is needed.
+    """
     out = []
     for block in re.split(r"\n(?=## )", answers_text):
         if UNSPOKEN.search(block):
             head = block.splitlines()[0].strip()
             out.append(head.lstrip("# ").strip())
+    for m in UNANSWERED_CELL.finditer(answers_text):
+        key = m.group(1).strip()
+        if key and key.lower() not in ("key", "question", "---"):
+            out.append(key)
     return out
 
 
@@ -187,6 +224,9 @@ SELF_RESOLVED_FORK = re.compile(
     r"(unless you (say|tell me) otherwise|I'?m going with the|I'?ll go with the|"
     r"going with (the )?(first|second|option))", re.I)
 GENERIC_DIRS = {"projects", "downloads", "documents", "desktop", "tmp", "src", "work"}
+# A progress report is not a conversational turn. Without this, ONE stale
+# "not yet spoken" line nags every status message for the rest of a long build.
+STATUS_SHAPE = re.compile(r"^\s*(still working|working\s*[:✓]|i'?m still|progress:)", re.I)
 
 
 def _project_name(cwd):
@@ -229,7 +269,8 @@ def evaluate(message, answers_text, project_name=None):
                     "paragraphs. One question at a time (audience.md §1): ask the first, let "
                     "the client answer, then ask the next. An either/or inside a single "
                     "paragraph is one question and is fine; these are two.")
-        pending = re.search(r"\*\*Answer:\*\*\s*_?(blank|not yet)", answers_text, re.I)
+        pending = (re.search(r"\*\*Answer:\*\*\s*_?(blank|not yet)", answers_text, re.I)
+                   or UNANSWERED_CELL.search(answers_text))
         if answers_text and not pending and not _recorded(clean, answers_text):
             return ("QUESTION SPOKEN BUT NOT RECORDED. You asked the client something and "
                     "00-INPUT/ANSWERS.md shows nothing awaiting an answer, so this question "
@@ -239,13 +280,22 @@ def evaluate(message, answers_text, project_name=None):
         return None
 
     # Did not end on a question.
-    if after is not None and len(after.strip()) > PROSE_AFTER_Q_CHARS:
-        return ("PROSE AFTER THE QUESTION MARK. %d characters follow your last question, "
-                "so it reads as a remark the client scrolls past rather than something to "
-                "answer. The question is the LAST thing in the message and the message ends "
-                "there. Move what follows it to before it, or to the next turn."
-                % len(after.strip()))
-    if owed:
+    # What must not follow a question is a NEW STATEMENT ON A NEW TOPIC -- the
+    # naming line after "Did I get that right?". A trailing reassurance or example
+    # list in the SAME paragraph belongs to the question and is the house style for
+    # a non-technical client: "...something like yourbusiness.com? If you don't
+    # know, that's okay." Measured against references/interview.md, a naive
+    # character count blocks 15 of 48 mandated wordings -- the gate would jam the
+    # interview it exists to protect. Paragraph separation is the real signal.
+    if after is not None and re.search(r"\n\s*\n\s*\S", after):
+        tail = after.strip().split("\n\n")[-1].strip()
+        return ("NEW PARAGRAPH AFTER THE QUESTION. Your last question is followed by a "
+                "separate paragraph (%r...), so it reads as a remark the client scrolls "
+                "past rather than something to answer. The question is the LAST thing in "
+                "the message. A reassurance or an example list in the SAME paragraph is "
+                "fine and is the house style; a new paragraph is not."
+                % tail[:60])
+    if owed and not STATUS_SHAPE.match(clean):
         return ("TURN ENDED ON A STATEMENT WHILE A QUESTION IS OWED: %s. "
                 "A client-facing turn ends ON a question. You have handed the client a "
                 "statement and stopped, so they have nothing to answer and the run waits "
@@ -379,6 +429,21 @@ def _selftest():
     t("auto-slug folder supplies no name",
       "I'll call it your website.\n\nWhich would you rather do?", OWED, False, None)
 
+    # --- the three holes the adversarial agents found ------------------------
+    TABLE = ("# ANSWERS\n\n| Key | Answer | Status |\n|---|---|---|\n"
+             "| idea | \"a website\" | confirmed |\n| entry-mode | _blank_ | |\n")
+    t2("table-shaped ledger is read (2026-09-08 runs)", _owed(TABLE) != [], True)
+    t("table ledger: stall still caught",
+      "Wonderful. From here on I'll call it Corner Post Framing.", TABLE, True, None)
+    t("status line does not trip the stall guard on a stale line",
+      "Still working: 14 of 40 pieces done, nothing waiting on you.", OWED, False)
+    t2("scope: cwd itself", bool(_answers_path(
+        "/Users/blackceomacmini/Downloads/Studio Nerds Program")), True)
+    t2("scope: one level DOWN from a parent", bool(_answers_path(
+        "/Users/blackceomacmini/Downloads/projects")), True)
+    t2("scope: an unrelated folder is still never evaluated",
+       bool(_answers_path("/tmp")), False)
+
     # --- G: the jargon lint that existed for weeks and never ran -------------
     dirty = _speech_check("I wrote it to /Users/x/CONTROL/state.json using claude-opus-5.", "/tmp")
     t2("jargon: paths and a model id are blocked", bool(dirty), True)
@@ -409,7 +474,7 @@ def _selftest():
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("conversation-gate.py selftest: ALL PASS (25 checks)")
+    print("conversation-gate.py selftest: ALL PASS (31 checks)")
 
 
 if __name__ == "__main__":

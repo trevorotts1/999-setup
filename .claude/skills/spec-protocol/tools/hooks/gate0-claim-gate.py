@@ -40,7 +40,7 @@ import sys
 # and smart quotes, tightly enough that ordinary prose cannot trip it.
 REFUSAL = re.compile(
     r"one switch has to be on before i can start my helpers", re.I)
-RAN_CHECK = re.compile(r"gate0\.sh['\"]?\s+--check-session|--check-session", re.I)
+RAN_CHECK = re.compile(r"gate0\.sh[^\n]{0,200}--check-session", re.I)
 
 CANDIDATES = [
     os.path.expanduser("~/.claude-nine/skills/spec-protocol/tools/gate0.sh"),
@@ -49,17 +49,23 @@ CANDIDATES = [
 ]
 
 
-def _text_of(content):
+def _text_of(content, tools_only=False):
+    """Text of a message. With tools_only, ONLY tool_use inputs -- never prose.
+
+    Prose is not evidence that a command ran. Pooling it let a turn satisfy the
+    gate by merely WRITING "gate0.sh --check-session" in a sentence, which is
+    precisely the failure this hook exists to prevent.
+    """
     if isinstance(content, str):
-        return content
+        return "" if tools_only else content
     out = []
     for b in content or []:
         if not isinstance(b, dict):
             continue
-        if b.get("type") == "text":
-            out.append(b.get("text", ""))
-        elif b.get("type") == "tool_use":
+        if b.get("type") == "tool_use":
             out.append(json.dumps(b.get("input", {})))
+        elif b.get("type") == "text" and not tools_only:
+            out.append(b.get("text", ""))
     return "\n".join(out)
 
 
@@ -88,13 +94,11 @@ def _this_turn(transcript_path):
             # A tool result is not the user speaking; keep walking back.
             if isinstance(c, list) and any(
                     isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
-                called.append(_text_of(c))
-                continue
+                continue     # a tool RESULT is not a tool CALL; never evidence
             break
         if t == "assistant":
-            body = _text_of(msg.get("content"))
-            said.append(body)
-            called.append(body)
+            said.append(_text_of(msg.get("content")))
+            called.append(_text_of(msg.get("content"), tools_only=True))
     return "\n".join(said), "\n".join(called)
 
 
@@ -168,6 +172,15 @@ def _selftest():
       bool(RAN_CHECK.search('{"command":"bash tools/gate0.sh --check-session"}')), True)
     t("an unrelated command is not",
       bool(RAN_CHECK.search('{"command":"ls -la"}')), False)
+    t("the bare flag without the script is not proof",
+      bool(RAN_CHECK.search('{"command":"echo --check-session"}')), False)
+    t("PROSE naming the command is not evidence it ran",
+      bool(_text_of([{"type": "text", "text": "I would run gate0.sh --check-session here."}],
+                    tools_only=True)), False)
+    t("a real tool_use IS evidence",
+      bool(_text_of([{"type": "tool_use", "name": "Bash",
+                      "input": {"command": "bash gate0.sh --check-session"}}],
+                    tools_only=True)), True)
     d = tempfile.mkdtemp()
     tp = os.path.join(d, "t.jsonl")
     with open(tp, "w") as fh:
@@ -184,7 +197,7 @@ def _selftest():
     if fails:
         print(f"gate0-claim-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("gate0-claim-gate.py selftest: ALL PASS (8 checks)")
+    print("gate0-claim-gate.py selftest: ALL PASS (11 checks)")
 
 
 if __name__ == "__main__":

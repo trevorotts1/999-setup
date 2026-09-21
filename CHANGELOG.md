@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.22.2] — 2026-09-21
+
+### Four holes the adversarial agents found in yesterday's enforcement
+
+Five Opus agents were dispatched under Fable discipline to attack the day's work. Every finding
+below was re-verified by hand with a discriminating control before it was acted on; two agent
+claims were corrected in the process.
+
+**The gate would have jammed the next interview.** Check B blocked **15 of 48** mandated
+question wordings in `references/interview.md` — every one for "prose after the question mark",
+where the prose is the trailing reassurance that makes a question answerable by a
+non-technical client: *"Do you already own a website address, something like yourbusiness.com?
+If you don't know, that's okay."* The rule was aimed at the naming line and caught the house
+style instead. B now fires only on a **new paragraph** after the question; a reassurance or
+example list in the same paragraph is correct and passes. 48 wordings, 0 blocked; both real
+defects still caught.
+
+**Prose defeated the GATE 0 gate.** `_this_turn` pooled assistant TEXT into the evidence that
+the check had run, so a turn could satisfy the gate by merely writing "I would run
+`gate0.sh --check-session`" in a sentence — the exact failure the hook exists to prevent.
+Evidence now comes from `tool_use` blocks only, a tool RESULT is no longer mistaken for a
+tool CALL, and the pattern requires the script and the flag together rather than the bare flag.
+Verified with a control: bypass blocked, genuine run still silent.
+
+**Two ledger formats exist and the reader knew one.** The 2026-09-08 runs
+(`corner-post-framing`, `maple-street-bakery` — both of which built real output) write
+`00-INPUT/ANSWERS.md` as a markdown TABLE; today's runs write key/value. The parser read only
+key/value, so on a table ledger the stall guard reported nothing owed and check D fired on
+every question. Both shapes are now read. Verified against both real files.
+
+**The scope gate was blind to unprofiled runs.** `_answers_path` joined cwd directly, but the
+unprofiled path creates `~/Downloads/projects/<slug>/` while the session may sit in a parent.
+It now searches cwd, up to three ancestors, and one level down — bounded, never wandering.
+
+**One stale line nagged every status message.** A leftover "not yet spoken" entry made check A
+fire on progress reports for the rest of a build. Messages matching the status contract are
+exempt from the stall guard.
+
 ## [1.22.1] — 2026-09-21
 
 ### The jargon lint finally runs
