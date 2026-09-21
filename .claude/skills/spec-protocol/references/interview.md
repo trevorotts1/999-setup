@@ -20,6 +20,13 @@ skill. It has six sections and nothing else:
 - **Measure it, do not ask it** (Law 28). The harness, the machine's width, the
   keys present by name, the repository state, and the provider plan tiers are
   all measured. Nobody is asked what a machine or an account already knows.
+- **Every question ends its message and ends the turn.** Nothing follows a question —
+  no statement, no second question, no continued work. A question the client scrolled
+  past because prose came after it was never asked (`audience.md` §1).
+- **An answered question is stated back — it is not replaced by silence.** "You already
+  told me, so I won't ask again" followed by statements ends a turn on a full stop and
+  hands the client nothing to answer. State it back in one line, then ask the NEXT
+  question actually owed, and end there.
 - **Never re-ask — and never abandon.** Every question is written to
   `00-INPUT/ANSWERS.md` under its stable key the moment it is **SPOKEN**, with the
   answer left blank, and the blank is filled when the answer arrives. A key with a
