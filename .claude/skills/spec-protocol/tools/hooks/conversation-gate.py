@@ -58,6 +58,51 @@ ASKED_LINE = re.compile(r"^\*\*Asked:\*\*\s*(.+)$", re.M)
 PROSE_AFTER_Q_CHARS = 20
 
 
+SPEECH_CANDIDATES = [
+    os.path.expanduser("~/.claude-nine/skills/spec-protocol/tools/speech-check.sh"),
+    os.path.expanduser("~/.claude/skills/spec-protocol/tools/speech-check.sh"),
+    os.path.join(os.path.dirname(__file__), "..", "speech-check.sh"),
+]
+
+
+def _speech_check(message, home):
+    """Lint what the client is about to read. Returns a block reason, or None.
+
+    `speech-check.sh` has existed and worked for weeks and NOTHING ever ran it.
+    Its own tick alarm was conditioned on a drafted file under CONTROL/.speech/,
+    so speaking without drafting produced no draft, therefore no alarm, therefore
+    a silent pass -- a hole shaped exactly like the GATE 0 failure the instrument
+    was built to prevent. It accepts stdin, so the message can be linted here,
+    where it is already in hand.
+
+    ONLY exit 3 (REJECT) blocks. Exit 2 is UNDETERMINED and 4 is a selftest
+    failure: an instrument that could not run proves nothing and must never be
+    reported as a fault in the message.
+    """
+    import subprocess
+    import shutil
+    for path in SPEECH_CANDIDATES:
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            continue
+        try:
+            r = subprocess.run([shutil.which("bash") or "/bin/bash", path, "-", "--home", home],
+                               input=message, capture_output=True, text=True, timeout=15)
+        except Exception:
+            return None                      # could not run it: prove nothing
+        if r.returncode != 3:
+            return None
+        head = (r.stdout or "").splitlines()
+        verdict = head[0] if head else "SPEECH-CHECK | verdict=REJECT"
+        hits = [ln.strip() for ln in head[1:8] if ln.strip()]
+        return ("CLIENT-FACING JARGON. This message carries wording a non-technical "
+                "client cannot act on.\n\n%s\n%s\n\nSay what the thing DOES instead of "
+                "naming it (references/audience.md §2). File paths, workflow ids, law "
+                "numbers, model names and dollar figures never reach the client; machine "
+                "detail goes to the session log." % (verdict, "\n".join(hits)))
+    return None
+
+
 def _answers_path(cwd):
     """The run's own ledger, or None. This is the whole scope gate."""
     if not cwd or not os.path.isdir(cwd):
@@ -227,8 +272,10 @@ def main():
             answers_text = fh.read()
     except Exception:
         return
-    reason = evaluate(message, answers_text,
-                      _project_name(payload.get("cwd") or os.getcwd()))
+    cwd = payload.get("cwd") or os.getcwd()
+    reason = evaluate(message, answers_text, _project_name(cwd))
+    if not reason:
+        reason = _speech_check(_strip_quote_markers(message), cwd)
     if reason:
         print(json.dumps({"decision": "block", "reason": reason}))
 
@@ -259,6 +306,13 @@ SETTLED = """# Answers
 
 def _selftest():
     fails = 0
+
+    def t2(name, got, want):
+        nonlocal fails
+        ok = got == want
+        print(("PASS  " if ok else "FAIL  ") + name + ("" if ok else f"  (got {got}, want {want})"))
+        if not ok:
+            fails += 1
 
     def t(name, msg, answers, want_block, project=None):
         nonlocal fails
@@ -325,6 +379,17 @@ def _selftest():
     t("auto-slug folder supplies no name",
       "I'll call it your website.\n\nWhich would you rather do?", OWED, False, None)
 
+    # --- G: the jargon lint that existed for weeks and never ran -------------
+    dirty = _speech_check("I wrote it to /Users/x/CONTROL/state.json using claude-opus-5.", "/tmp")
+    t2("jargon: paths and a model id are blocked", bool(dirty), True)
+    for clean in ["I can learn about your idea in one of two ways. Which would you rather do?",
+                  "Wonderful - from here on I will call it Studio Nerds.",
+                  "What would you like people to find on your website?",
+                  "Does it need to remember anything they did before? Or can it start fresh?",
+                  "I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token."]:
+        t2("jargon: real interview wording passes -- %s..." % clean[:34],
+           bool(_speech_check(clean, "/tmp")), False)
+
     # --- safety -------------------------------------------------------------
     t("empty message is never blocked", "", OWED, False)
     t("no ledger content is never blocked", "Anything at all.", "", False)
@@ -344,7 +409,7 @@ def _selftest():
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("conversation-gate.py selftest: ALL PASS (19 checks)")
+    print("conversation-gate.py selftest: ALL PASS (25 checks)")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.22.1] — 2026-09-21
+
+### The jargon lint finally runs
+
+A Fable diagnostic agent was asked to find every remaining instance of the failure shape that
+cost this project a day — *a capable instrument exists and nothing forces the model to run it*.
+Its structural finding is the day's bug class in one sentence: a grep for imperative verbs
+against tool paths returns **four hits in 87KB of SKILL.md**. Every other instrument is named in
+descriptive voice — "`width.sh` measures", "`seat-probe.sh` proves". **Descriptive voice is the
+GATE 0 shape in grammar form.** Real enforcement reaches only two carriers: the PreToolUse hook
+and the five-minute tick. Anything unreachable from those is advisory, however well written.
+
+**`speech-check.sh` was the worst case, and worse than suspected.** It lints client-facing text
+for file paths, workflow ids, law numbers, model names and dollar figures — the exact leakage a
+non-technical client must never see. Nothing ever ran it. Its own tick alarm was conditioned on
+a drafted message under `CONTROL/.speech/`, so speaking *without* drafting produced no draft,
+therefore no alarm, therefore a silent pass: a hole shaped precisely like the failure the
+instrument was built to prevent.
+
+`conversation-gate.py` now lints every client-facing message through it. The gate already had
+the message in hand and already resolved the project home, so this is one pipe and no new
+artifact. Verified directly rather than taken on report: `speech-check.sh - --home <dir>` reads
+stdin (`speech-check.sh:43`, `:231`); rc 3 REJECT, rc 0 CLEAN, rc 2 UNDETERMINED.
+
+**Only rc 3 blocks.** An instrument that could not run proves nothing and must never be
+reported as a fault in the message — the negative-result rule applies to this gate as much as to
+anything else. Its detail lines print the matched token only, never the surrounding sentence, so
+a block reason cannot re-leak the message it is objecting to.
+
+Every real question in the interview bank was run through it and passes clean, including the
+Convert and Flow key ask that contains the word "Token" — the one sanctioned exception. 25
+selftest checks. The gate still catches the 1:47 PM stall by name, is still silent on a session
+that merely discusses spec-protocol, and costs 23ms per stop.
+
+### Also found, not yet fixed
+
+`watch-tick.sh --arm` is never forced and is the master dependency — `anchor.sh`, `bar-check.sh`
+and every drift alarm are invoked only by the tick. On a PROFILED project `--arm` refuses
+outright by design (`watch-tick.sh:712`, PROFILE-OWNED), so a naive crontab check would
+false-positive there; the correct detection for a profiled observer is still open.
+`seat-probe.sh` is transitively dead: `dispatch-check.sh:1164` exits 11 on a missing
+`SEAT-PROBE:` line, but nothing forces `dispatch-check.sh` and the hook that IS forced carries no
+such check. `dispatch-gate.py` is registered on the `Workflow` matcher only, so `Agent`/`Task`
+dispatches bypass shapes 1-7.
+
 ## [1.22.0] — 2026-09-21
 
 ### The conversation contract moves out of prose and into a script
