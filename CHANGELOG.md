@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.21.3] — 2026-09-20
+
+### The GATE 0 rule moves out of the document and into a script
+
+1.21.2 wrote the rule down for the third time. A rule that has been rewritten three times and
+broken four is not a wording problem, so it is now enforced by
+`tools/hooks/gate0-claim-gate.py`, a Stop hook registered in both config roots.
+
+When a turn speaks the GATE 0 refusal and no `--check-session` call appears anywhere in that
+turn, **the hook runs the check itself** and blocks the stop:
+
+- **The check passes** — the refusal was false. Blocked, with the real verdict line handed
+  back, and instructions to delete it and continue with the opening script. A session that
+  already has ultracode can no longer be told to switch it on.
+- **The check fails** — the refusal was right but unproven. Blocked once, to be restated citing
+  the verdict line, so the transcript carries the evidence the protocol requires.
+- **The check cannot run** — UNDETERMINED, named as such, never "the switch is off".
+
+It never opens a genuinely closed gate; it only ever refuses an UNPROVEN refusal. It follows
+the claim-gate contract already on this machine: always exits 0, blocks only by printing
+`{"decision":"block","reason":…}`, honours `stop_hook_active`, and fails silent, because a
+broken gate must never wedge a session. Eight selftest checks, plus six end-to-end fixtures
+covering the real failure, a legitimate refusal, an ordinary turn, re-entrancy, a genuinely
+absent ultracode, and malformed input.
+
+Registration preserved every existing Stop hook in both roots — five became six in `~/.claude`,
+one became two in `~/.claude-nine`, none lost.
+
 ## [1.21.2] — 2026-09-20
 
 ### GATE 0 signals 3 and 4 are commands, not judgements

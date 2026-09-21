@@ -65,7 +65,12 @@ MUST BE EXECUTED — every run, before any verdict — and signal 3's `--check` 
 whenever a project folder exists. A model cannot see its own environment variables by
 introspection; it must ask the shell.
 
-**⛔ THE HARD STOP IS FORBIDDEN UNTIL THAT COMMAND HAS RUN IN THIS TURN AND EXITED NON-ZERO.**
+**⛔ THE HARD STOP IS FORBIDDEN UNTIL THAT COMMAND HAS RUN IN THIS TURN AND EXITED NON-ZERO,
+AND A SCRIPT NOW ENFORCES IT.** `tools/hooks/gate0-claim-gate.py` is a Stop hook: when a turn
+speaks the refusal and no `--check-session` call appears in that turn, the hook RUNS the check
+itself and blocks the stop, handing back the real verdict. A wrong refusal can no longer reach
+the client, and a correct one is sent back to be restated with its evidence cited. The rule
+lives in a script because three releases of prose did not hold it.
 Speaking the refusal with no `gate0.sh --check-session` call in this turn's transcript is a
 DEFECT, not a gate — it tells a client to switch on something they already have, which is the
 single most common way this skill has failed. If the command cannot be run at all, that is
