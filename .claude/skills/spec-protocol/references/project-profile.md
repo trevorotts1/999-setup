@@ -70,12 +70,16 @@ batch uses separately reserved task launches. A missing identity, mismatch, cons
 or unreadable report refuses the profiled launch. Legacy hook behavior remains unchanged for
 projects without a profile.
 
-**A profile REDIRECTS the helpers; it never switches them off.** `gate0`, width, ledger,
-anchor, watch-tick, state-check and audit-gate all still run on a profiled project — they read
-and write the bound `documents.state` instead of `CONTROL/`, and the packet's declared
-bootstrap/validate/dispatch/release/observer commands are how they reach it. The five-minute
-tick, the three-way reconciler and the measured width are NEVER skipped: an unwatched run is
-the exact failure these instruments exist to prevent. What a profile forbids is a SECOND copy —
+**A profile REDIRECTS the helpers; it never switches them off.** On a profiled project the
+bound `documents.state` is canonical and the packet's declared `commands` (bootstrap, validate,
+dispatch, release) are how the helpers reach it, through `tools/project-profile.mjs`. The
+five-minute tick is NEVER skipped: `tools/watch-tick.sh` (and its Node twin) arms the same cron
+line on a profiled project, runs `commands.validate` every tick and logs beside the bound state
+— an unwatched run is the exact failure these instruments exist to prevent. The legacy
+`CONTROL/`-writing helpers (anchor, ledger, state-check, audit-gate, seat-probe, and the legacy
+GATE 0 marker) REFUSE on a profiled project by design, naming the refusal `PROFILE-OWNED`:
+their job — reconcile, ledger, state, audit — is the packet validator's, and a second copy of
+that state beside the bound one is what a profile forbids. What a profile forbids is a SECOND copy —
 no parallel ledger, no parallel task graph, no `CONTROL/project_state.json` beside the bound
 state. `project-profile.mjs resume-authorized
 <project>` is the sole narrow GATE 0 resume exception: it requires the current validator to

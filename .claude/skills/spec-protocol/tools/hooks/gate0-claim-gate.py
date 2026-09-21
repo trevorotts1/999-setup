@@ -38,8 +38,13 @@ import sys
 
 # The refusal, as SKILL.md fixes it. Matched loosely enough to survive wrapping
 # and smart quotes, tightly enough that ordinary prose cannot trip it.
-REFUSAL = re.compile(
-    r"one switch has to be on before i can start my helpers", re.I)
+# A LITERAL single space between the words did NOT survive wrapping: a newline,
+# a double space or a non-breaking space between any two words made the refusal
+# invisible to this gate. `\s+` covers all three — Python's `\s` matches U+00A0
+# (and every other Unicode space) for str patterns.
+REFUSAL = re.compile(r"\s+".join(
+    ["one", "switch", "has", "to", "be", "on",
+     "before", "i", "can", "start", "my", "helpers"]), re.I)
 RAN_CHECK = re.compile(r"gate0\.sh[^\n]{0,200}--check-session", re.I)
 
 CANDIDATES = [
@@ -49,12 +54,16 @@ CANDIDATES = [
 ]
 
 
-def _text_of(content, tools_only=False):
-    """Text of a message. With tools_only, ONLY tool_use inputs -- never prose.
+def _text_of(content, tools_only=False, prose_only=False):
+    """Text of a message. tools_only: ONLY tool_use inputs. prose_only: ONLY
+    text blocks -- what a client actually reads.
 
     Prose is not evidence that a command ran. Pooling it let a turn satisfy the
     gate by merely WRITING "gate0.sh --check-session" in a sentence, which is
-    precisely the failure this hook exists to prevent.
+    precisely the failure this hook exists to prevent. The mirror holds for the
+    refusal itself: a tool INPUT that quotes the refusal wording (an operator
+    probing this very regex) was never spoken to anyone, and treating it as
+    speech blocked the session that maintains this hook.
     """
     if isinstance(content, str):
         return "" if tools_only else content
@@ -62,11 +71,45 @@ def _text_of(content, tools_only=False):
     for b in content or []:
         if not isinstance(b, dict):
             continue
-        if b.get("type") == "tool_use":
+        if b.get("type") == "tool_use" and not prose_only:
             out.append(json.dumps(b.get("input", {})))
         elif b.get("type") == "text" and not tools_only:
             out.append(b.get("text", ""))
     return "\n".join(out)
+
+
+SKILL_INVOKED = re.compile(
+    r"Base directory for this skill:\s*\S*spec-protocol|<command-name>/?spec-protocol",
+    re.I)
+
+
+def _is_spec_protocol_run(transcript_path):
+    """Is THIS SESSION a spec-protocol run? Same test as conversation-gate.py:
+    only the harness's own skill injection in a user-role string/text record
+    counts. A tool_result or tool_use that merely quotes the marker does not."""
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not SKILL_INVOKED.search(line):
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                msg = rec.get("message") or {}
+                if rec.get("type") != "user" or msg.get("role") != "user":
+                    continue
+                content = msg.get("content")
+                if isinstance(content, str) and SKILL_INVOKED.search(content):
+                    return True
+                if isinstance(content, list):
+                    for block in content:
+                        if (isinstance(block, dict) and block.get("type") == "text"
+                                and SKILL_INVOKED.search(block.get("text") or "")):
+                            return True
+    except Exception:
+        return False
+    return False
 
 
 def _this_turn(transcript_path):
@@ -97,7 +140,7 @@ def _this_turn(transcript_path):
                 continue     # a tool RESULT is not a tool CALL; never evidence
             break
         if t == "assistant":
-            said.append(_text_of(msg.get("content")))
+            said.append(_text_of(msg.get("content"), prose_only=True))
             called.append(_text_of(msg.get("content"), tools_only=True))
     return "\n".join(said), "\n".join(called)
 
@@ -124,6 +167,8 @@ def main():
         return
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return
+    if not _is_spec_protocol_run(payload.get("transcript_path", "")):
+        return                      # an operator session is not a client run
     said, called = _this_turn(payload.get("transcript_path", ""))
     if not said or not REFUSAL.search(said):
         return                      # no GATE 0 refusal spoken; nothing to police
@@ -168,6 +213,16 @@ def _selftest():
     REF = "One switch has to be on before I can start my helpers."
     t("refusal text is recognised", bool(REFUSAL.search(REF)), True)
     t("ordinary prose is not", bool(REFUSAL.search("Hi, I'm Candace.")), False)
+    # The three ways a real transcript breaks the phrase apart. Before \s+ each
+    # of these MISSED, and a refusal spoken that way walked straight past.
+    t("a LINE-WRAPPED refusal is recognised",
+      bool(REFUSAL.search("One switch has to be on before I can\nstart my helpers.")), True)
+    t("a DOUBLE-SPACED refusal is recognised",
+      bool(REFUSAL.search("One switch has to be on  before I can start my helpers.")), True)
+    t("a NON-BREAKING-SPACE refusal is recognised",
+      bool(REFUSAL.search("One switch has to be on" + chr(0xA0) + "before I can start my helpers.")), True)
+    t("prose about a switch is still not the refusal",
+      bool(REFUSAL.search("The switch is on, so I can start my helpers.")), False)
     t("a run of the check is recognised",
       bool(RAN_CHECK.search('{"command":"bash tools/gate0.sh --check-session"}')), True)
     t("an unrelated command is not",
@@ -191,13 +246,34 @@ def _selftest():
     t("this turn's speech is read back", bool(said and REFUSAL.search(said)), True)
     t("no check is seen when none was run", bool(called and RAN_CHECK.search(called)), False)
     t("a missing transcript is survived", _this_turn("/nope/none.jsonl"), (None, None))
+    # The scope escape that blocked this hook's own maintainer: the refusal
+    # wording inside a tool INPUT is not speech, and a session that never
+    # invoked the skill is not a client run.
+    tq = os.path.join(d, "quoted.jsonl")
+    with open(tq, "w") as fh:
+        fh.write(json.dumps({"type": "user", "message": {"role": "user", "content": "probe the regex"}}) + "\n")
+        fh.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": "python3 -c 'print(\"%s\")'" % REF}}]}}) + "\n")
+    said_q, _ = _this_turn(tq)
+    t("the refusal inside a tool INPUT is not speech", bool(said_q and REFUSAL.search(said_q)), False)
+    t("a session that never invoked the skill is not a run", _is_spec_protocol_run(tq), False)
+    tr = os.path.join(d, "run.jsonl")
+    with open(tr, "w") as fh:
+        fh.write(json.dumps({"type": "user", "message": {"role": "user",
+                 "content": "<command-name>/spec-protocol</command-name>"}}) + "\n")
+    t("a session that invoked the skill IS a run", _is_spec_protocol_run(tr), True)
+    tm = os.path.join(d, "mention.jsonl")
+    with open(tm, "w") as fh:
+        fh.write(json.dumps({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "content": "<command-name>/spec-protocol</command-name>"}]}}) + "\n")
+    t("a marker quoted in a tool_result is not an invocation", _is_spec_protocol_run(tm), False)
     rc, line = _run_check()
     t("gate0.sh is locatable and runnable", rc in (0, 1, 2), True)
     print(f"  (live check said: {line})")
     if fails:
         print(f"gate0-claim-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("gate0-claim-gate.py selftest: ALL PASS (11 checks)")
+    print("gate0-claim-gate.py selftest: ALL PASS (19 checks)")
 
 
 if __name__ == "__main__":
