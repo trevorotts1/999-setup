@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.22.0] — 2026-09-21
+
+### The conversation contract moves out of prose and into a script
+
+Seven releases in one day rewrote this contract in `SKILL.md`, and **every one produced a new
+conversational defect on the next run**: a category word where the product had a name; the
+entry-mode question bundled onto the naming line; an interrupted question dropped; `ANSWERS.md`
+missing; a GATE 0 check reasoned about instead of run; a question that ended its message and
+then a turn that stalled on a full stop.
+
+One fix never regressed: `gate0-claim-gate.py`, because it is not prose. Prose in a skill file
+is advisory to a model. A Stop hook is not.
+
+**`tools/hooks/conversation-gate.py`** now enforces six invariants when a run yields the turn:
+
+| | Blocks | The defect it would have caught |
+|---|---|---|
+| **A** | turn ends on a statement while `ANSWERS.md` shows a question `not yet spoken` | 1.21.5 — the 1:47 PM stall |
+| **B** | more than 20 characters of prose after the last question mark | 1.21.4 — "Did I get that right?" then the naming line |
+| **C** | question marks in two separate paragraphs | the two-question wall |
+| **D** | a question asked while the ledger shows nothing awaiting an answer | the unrecorded question |
+| **E** | "call it your <category>" where the folder supplies a real name | 1.21.1 — "your computer program" for Studio Nerds |
+| **F** | a fork announced and self-resolved in the same breath, turn ending on it | 1.21.4 — "I'm going with the first one unless you say otherwise" |
+
+**C is deliberately not a count of question marks.** "Does it need to remember anything they did
+before? Or can it start fresh each time?" is ONE either/or question and must pass; two questions
+in separate paragraphs is the wall. **D is deliberately not "is this question in the ledger?"** —
+that fires on a question legitimately just asked and would jam the run. It fires only when the
+ledger shows nothing pending at all, which is the provable staleness.
+
+**Scope.** Every check is gated on `00-INPUT/ANSWERS.md` existing beneath the session's working
+directory — a file that exists only inside a real project folder. A session merely *discussing*
+spec-protocol, including the one that wrote this hook, is never evaluated. Verified against this
+session's own transcript: silent.
+
+Same contract as the proven gate: always exits 0, blocks only via
+`{"decision":"block","reason":…}`, honours `stop_hook_active`, fails silent. 19 selftest checks
+plus end-to-end fixtures driven by the real 1:47 PM stalled transcript, which it catches by name
+("entry-mode (step 3)"). Registration preserved every existing Stop hook: 6→7 in `~/.claude`,
+2→3 in `~/.claude-nine`, none lost.
+
+### Still prose, and honestly at risk
+
+The jargon check is the next GATE 0: `tools/speech-check.sh` exists and nothing forces it to run
+before a message is spoken — a capable instrument nobody invokes, which is exactly how the GATE 0
+failure worked. The opening script's verbatim text and the question counter (`Question N of no
+more than C`) are also unenforced. The hook also sees only the FINAL assistant message of a turn,
+so a question buried in an earlier message of the same turn is invisible to it.
+
 ## [1.21.5] — 2026-09-21
 
 ### The other half: a turn ends ON a question

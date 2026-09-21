@@ -197,6 +197,15 @@ question — it is a remark the client scrolls past, and a run that asks and kee
 asked nothing at all. This is the rule that was missing while three separate runs "asked" a
 dozen things and the client was never once handed the turn.
 
+**⛔ ALL OF THIS IS ENFORCED BY A SCRIPT, NOT BY THIS PARAGRAPH.**
+`tools/hooks/conversation-gate.py` is a Stop hook. When a run yields the turn to its client it
+blocks a turn that ends on a statement while a question is owed, a question with prose after
+it, two questions in separate paragraphs, a question absent from `00-INPUT/ANSWERS.md`, a
+category word used where the thing has a name, and a fork announced and self-resolved in the
+same breath. Seven releases wrote these rules in prose and each one produced a new defect on
+the next run; the only rule that ever held was the one in a script. The paragraphs below say
+WHY, and the hook is WHAT.
+
 **⛔ AND THE OTHER HALF: A CLIENT-FACING TURN ENDS **ON** A QUESTION.** The two halves are one
 rule. Nothing may follow a question — and the run may not yield on a full stop while anything
 is still owed. A short acknowledgement of what they just said MAY open the message; the
