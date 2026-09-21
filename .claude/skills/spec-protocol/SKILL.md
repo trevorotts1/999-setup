@@ -58,7 +58,21 @@ stand in for those signals when its current validator returns the explicit, stat
 `savedResumeAuthorized:true` result. It does not authorize a new run, a copied input, a
 legacy project, or any other bypass. When that command cannot prove the saved authorization,
 the normal four signals remain mandatory.
-An interactive `/effort ultracode` typed in THIS session is NOT detectable by any signal: the binary models ultracode as `xhigh` plus a separate session-only boolean and exports only the level, so `/effort ultracode` and a plain `/effort xhigh` leave byte-identical environments. Detection therefore requires a launch-time witness -- the launcher marker or the config key named in signal 4 -- or the keyword form below. Only when all four fail, STOP and say exactly this, and nothing else:
+**⛔ SIGNALS 3 AND 4 ARE COMMANDS. THEY ARE RUN, NEVER REASONED ABOUT.** Signals 1 and 2 are
+read from this turn's text. Signals 3 and 4 are NOT: they are facts on disk and in this
+process's environment that no amount of thinking can observe. `tools/gate0.sh --check-session`
+MUST BE EXECUTED — every run, before any verdict — and signal 3's `--check` MUST BE EXECUTED
+whenever a project folder exists. A model cannot see its own environment variables by
+introspection; it must ask the shell.
+
+**⛔ THE HARD STOP IS FORBIDDEN UNTIL THAT COMMAND HAS RUN IN THIS TURN AND EXITED NON-ZERO.**
+Speaking the refusal with no `gate0.sh --check-session` call in this turn's transcript is a
+DEFECT, not a gate — it tells a client to switch on something they already have, which is the
+single most common way this skill has failed. If the command cannot be run at all, that is
+UNDETERMINED: say so in one line and treat it as a fail, but never claim the switch is off from
+a check that was never made.
+
+An interactive `/effort ultracode` typed in THIS session is NOT detectable by any signal: the binary models ultracode as `xhigh` plus a separate session-only boolean and exports only the level, so `/effort ultracode` and a plain `/effort xhigh` leave byte-identical environments. Detection therefore requires a launch-time witness -- the launcher marker or the config key named in signal 4 -- or the keyword form below. Only when all four fail, **and only after signal 4's command has actually run and failed**, STOP and say exactly this, and nothing else:
 
 > One switch has to be on before I can start my helpers. Type `ultracode /spec-protocol` — the word `ultracode` first, then the command — and press Return; that's all.
 
@@ -595,7 +609,7 @@ cancel a step is being read wrong. The profile preserves explicit product outcom
 and repair bounds; it does not make any of them optional, and it never makes a client question
 optional.
 
-1. GATE 0 (ultracode), GATE 0b (the tick armed), GATE 0c (Git Bash on Windows).
+1. GATE 0 (ultracode) — **RUN `tools/gate0.sh --check-session` before any verdict; the hard stop is forbidden without it in this turn's transcript**. GATE 0b (the tick armed), GATE 0c (Git Bash on Windows).
 2. Detect platform, then harness, then launcher — and report both in one line. **2.5** version check. **2.6** auto-compaction. **2.7** the decision engine. **2.8** OpenClaw detection. **2.9** companions. **2.10** progress visibility.
 3. Speak THE OPENING SCRIPT; classify and confirm the target; the funnel gate if it fires; offer entry mode; create the folder; write `ENTRY-MODE:` and `BUILD-TARGET:`. **3.5** the RESEARCH-READY gate and the just-in-time reader dispatch. **Profiled projects do all of this too** — the supplied folder is used as-is (RULE 1), `00-INPUT/` is added only if missing, and the two ledger lines go into the bound state instead of a parallel record.
 4. Capture the brainstorm verbatim into `00-INPUT/`; write `INPUT-CAPTURED:`. **5.** Pick the job archetype. **6.** The interview (`references/interview.md`); write `INTERVIEW-MODE:`. **6.5** compute the Capacity Ledger — no dispatch before this file exists, and every dispatch cites it. **A supplied profile never answers these on the client's behalf.** Where a packet document already carries an answer it is a PRE-STATEMENT READ — stated back in one line and counted ANSWERED; everything else is still asked. A written spec is not the client's approval of it.
@@ -846,6 +860,7 @@ The scripts already refuse under-width and padded dispatches, bare `agent()` cal
 four forbidden shapes, unlogged state changes, and a tick that reports a zero it cannot
 prove. These are the ones no script can refuse for you:
 
+- Never speak the GATE 0 refusal without having RUN `tools/gate0.sh --check-session` in that same turn and seen it exit non-zero. Signals 3 and 4 are commands, not judgements: a model cannot observe its own environment by thinking about it, and a refusal issued from an unrun check tells the client to enable what they already have.
 - Never proceed past GATE 0 without ultracode ON, except the exact profile-bound
   `resume-authorized` saved-resume result described in section 2. Hard stop.
 - Never do the work in the main loop; subagents do all work (Law 41) — the one exception is a single command to verify one subagent claim before repeating it — and never send one out with partial context, because a failed subagent is the dispatcher's defect first.

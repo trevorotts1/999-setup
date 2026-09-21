@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.21.2] — 2026-09-20
+
+### GATE 0 signals 3 and 4 are commands, not judgements
+
+A genuine ultracode session was refused at GATE 0 and told to switch on what it already had.
+The launcher had worked perfectly: the title bar read `claude.exe --effort ultracode`, the
+status line read `ultracode`, and the process environment carried `CLAUDE_NINE_ULTRACODE=1`
+and `CLAUDE_CONFIG_DIR=/Users/…/.claude-nine`. Run by hand,
+`gate0.sh --check-session` returns `PASS | witness=launcher-env` with exit 0.
+
+**It was never run.** The whole turn was six seconds and zero tool calls, the thinking reading
+"Enforcing GATE0 by stopping and requesting the required ultracode keyword before proceeding".
+
+Root cause is the wording, not the code. GATE 0 listed four signals as one uniform sequence.
+Signals 1 and 2 are read from the turn's own text — things a model evaluates in its head — so
+signals 3 and 4 were evaluated the same way and came back "no". But 3 and 4 are facts on disk
+and in the process environment, and **a model cannot observe its own environment variables by
+introspection; it has to ask the shell.** `fff4773` fixed the witness and 1.20.1 made the
+launcher set it, yet neither mattered while the check that reads them went unexecuted.
+
+- Signals 3 and 4 are now marked as COMMANDS that are RUN, never reasoned about.
+- **The hard stop is forbidden until `gate0.sh --check-session` has run in that turn and exited
+  non-zero.** A refusal with no such call in the transcript is a defect, not a gate. A check
+  that cannot be run at all is UNDETERMINED — said in one line, treated as a fail, and never
+  reported as "the switch is off".
+- The rule is repeated where it is acted on: the ordered step list and the never-do list.
+
 ## [1.21.1] — 2026-09-20
 
 ### Call it by its name
