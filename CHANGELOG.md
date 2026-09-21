@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.21.4] — 2026-09-21
+
+### A question ends the message and ends the turn
+
+A fourth run got the machinery right and the conversation wrong. GATE 0 ran its check and
+passed, the decision engine resolved, four `reader` agents dispatched on a profiled project,
+`00-INPUT/ANSWERS.md` tracked what was owed, the target came from the declared `targets` array,
+and it said "From here on I'll call it Studio Nerds, which is the name already on your notes."
+
+The owner's verdict: **"it never asks me any question."** He was right, and three separate
+defects made it true.
+
+**The idea question was deleted.** The client had typed his description into the command
+arguments, so the opening's last line — the question itself — was replaced with "You already
+told me the idea, so I won't ask you to say it twice", followed by statements. Two rules
+written on the same day collided: "the opening script is verbatim, never shortened" lost to
+"an answered question is stated back, never re-asked". The opening ended on a full stop. The
+idea question is now NEVER deleted, however the idea arrived; a supplied description is
+acknowledged in one line before it, and **every opening turn ends on a question mark**.
+
+**The one real question was buried and then talked past.** "Did I get that right?" sat in the
+middle of a long message with statements before it and the naming line after it.
+
+**A genuine fork was self-resolved.** The run found a real ambiguity — is Higgsfield the BAR
+Studio Nerds is measured against, or the thing to rebuild FROM, two materially different
+products — laid out both, and said "I'm going with the first one unless you say otherwise." It
+announced a decision only the owner could make and walked on before he could answer.
+
+### The root cause: a hundred rules about what to say, none about when to stop
+
+**THE TURN-YIELD RULE.** A question is the LAST thing in its message and it ENDS the turn.
+Nothing follows it: no statement, no naming line, no second question, no "while that lands", no
+further tool call, no continued work. A question with prose after it is not a question — it is
+a remark the client scrolls past, which is how a run can "ask" a dozen things and leave the
+client certain it asked nothing. Bound in `SKILL.md` section 3, `audience.md` §1 and
+`interview.md`'s rule list, because it is violated in all three places.
+
+**A genuine fork is asked, never self-resolved.** Two plain options, one sentence saying which
+you would pick and why, then STOP. Only after the question has been asked and left unanswered
+in a LATER turn may the stated default be taken — and it is then recorded as a DEFAULT, never
+as the client's answer.
+
 ## [1.21.3] — 2026-09-20
 
 ### The GATE 0 rule moves out of the document and into a script
