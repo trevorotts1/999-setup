@@ -69,8 +69,9 @@ are never put to the client (`references/audience.md` §7). The ledger line is t
 
 **UNDETERMINED.** Nothing to the client. One ledger line, and the run proceeds as ABSENT.
 
-**ABSENT.** Exactly one plain sentence, spoken immediately AFTER the opening script and before
-the first counted question — never before the opening, because nothing precedes the opening
+**ABSENT.** Exactly one plain sentence, spoken INSIDE the opening turn as part of the script —
+after the greeting and immediately BEFORE its last line, which is the idea question. Never as a
+turn of its own and never after the question, because the opening ends ON the question
 (SKILL.md section 3). It is a money-and-accounts matter, which is the client's alone, so it is
 a real offer and not a setup report:
 

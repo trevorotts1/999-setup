@@ -7,7 +7,7 @@ were prose. A conductor that resolved the ambiguity conservatively dispatched
 says no, at launch, in the one place the model cannot talk its way past.
 
 It reads the script the launch is about to run (inline `script` or `scriptPath`)
-and blocks (exit 2) seven shapes, naming the fix for each:
+and blocks (exit 2) eight shapes, naming the fix for each:
 
   1. parallel(build) followed by parallel(qc)      -> pipeline(units, build, qc)
   2. a judge stage with fewer items than the build stage  -> one judge per unit
@@ -24,15 +24,20 @@ and blocks (exit 2) seven shapes, naming the fix for each:
      seconds -> the write-ahead rule of SKILL.md section 5, made mechanical.
      The message names both numbers: `declared=<n> booked=<n>`, or
      `booked=none` when nothing booked it at all.
+  8. a BUILD dispatch out of a project whose CONTROL/LEDGER.md carries no
+     `SEAT-PROBE: seats=<n> callable=<n> dead=<n> undetermined=<n>` line ->
+     no seat was ever proven CALLABLE. tools/dispatch-check.sh refuses the
+     same dispatch with exit 11; a ledger that discusses seats in PROSE is
+     what the 2026-09-08 canary had instead of a probe.
 
-SHAPE 7 IS SCOPED to spec-protocol projects. It is evaluated only when cwd,
-or a parent up to forty levels above it, carries the GATE 0 marker -- the file
-tools/gate0.sh --record writes after a genuine GATE 0 pass, present before any
-dispatch and absent from any folder that merely has a CONTROL/ directory.
-Everywhere else it fails OPEN and says so on stderr in one line, so an
-operator's own orchestration folder -- which may carry a
-CONTROL/dispatch-log.md of its own and no marker -- is never refused for a
-booking rule it never agreed to. SHAPE 6 is NOT scoped: it reads the budget
+SHAPES 7 AND 8 ARE SCOPED to spec-protocol projects. They are evaluated only
+when cwd, or a parent up to forty levels above it, carries the GATE 0 marker
+-- the file tools/gate0.sh --record writes after a genuine GATE 0 pass,
+present before any dispatch and absent from any folder that merely has a
+CONTROL/ directory. Everywhere else they fail OPEN -- SHAPE 7 saying so on
+stderr in one line -- so an operator's own orchestration folder, which may
+carry a CONTROL/dispatch-log.md of its own and no marker, is never refused for
+a booking rule it never agreed to. SHAPE 6 is NOT scoped: it reads the budget
 through find_state_file and fails open on whatever it cannot measure. Shapes
 1-5 are facts about the SCRIPT and are not scoped: they hold wherever a
 Workflow launches.
@@ -43,7 +48,9 @@ identity and asks the profile's packet checker for an exact `RESERVED` intent.
 It does not reserve, consume, increment a counter, or claim that launch equals
 native receipt; the packet writer records consumption after its observed native
 receipt. A missing, malformed, mismatched, or already-consumed reservation
-fails closed. This branch deliberately does not read legacy CONTROL state.
+fails closed. This branch deliberately does not read legacy CONTROL state --
+and tools/seat-probe.sh itself refuses a profiled project (PROFILE-OWNED), so
+SHAPE 8 never applies to one either.
 
 FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
 unreadable input, an unparseable script, an undetermined item count, a state
@@ -131,6 +138,17 @@ FIX_7 = (
     "  the cross-check, and a divergence between the two is a finding, never a rounding error."
 )
 
+FIX_8 = (
+    "FIX: run  tools/seat-probe.sh <project>  first (SKILL.md step 21). It proves every seat\n"
+    "  CALLABLE with a known-answer smoke call and writes exactly one line through\n"
+    "  tools/ledger.sh:  SEAT-PROBE: seats=<n> callable=<n> dead=<n> undetermined=<n>\n"
+    "  The SHAPE of that line is the proof the probe RAN, which is why this gate matches it and\n"
+    "  never reads its counters. A ledger that DISCUSSES seats in prose has not run the probe.\n"
+    "  WHY: on 2026-09-08 a run dispatched builders with no seat ever proven callable, behind a\n"
+    "  ledger that talked about seat capacity at length. tools/dispatch-check.sh refuses the same\n"
+    "  dispatch with exit 11; this hook is the half that holds when the conductor never calls it."
+)
+
 # SHAPE 7's booking window. A row older than this booked a tree that has already
 # fired, so it is not a booking for THIS launch. Two minutes is the same order as
 # the step it enforces: write the row, then launch.
@@ -140,6 +158,19 @@ BOOKING_WINDOW_SECONDS = 120
 #   <ISO8601Z> | <unit> | dispatch | <label> | run=… | units=… | agents=<n> | …
 ROW_TS = re.compile(r"(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})")
 ROW_AGENTS = re.compile(r"(?<![A-Za-z0-9_-])agents\s*=\s*(\d+)")
+
+# SHAPE 8's proof-of-probe. tools/dispatch-check.sh's SEAT_PROBE_RE, character
+# for character, with [[:space:]] as \s -- and matched line by line, the way
+# grep -E reads it, so no newline can bridge two fields. The counters are
+# deliberately NOT read: the SHAPE is the proof the probe ran (dispatch-check.sh
+# exit 11 and its comment at SEAT_PROBE_RE say the same).
+SEAT_PROBE_RE = re.compile(
+    r"SEAT-PROBE:\s*seats=\d+\s+callable=\d+\s+dead=\d+\s+undetermined=\d+"
+)
+
+# tools/dispatch-check.sh's is_build_label(), which is deliberately broad: any
+# label carrying "build" in any case is a build dispatch, "rebuild" included.
+BUILD_LABEL_RE = re.compile(r"build", re.I)
 
 # The absolute per-project ceiling. A state file may lower it and may never
 # raise it, which is why the state value is taken only when it is SMALLER --
@@ -704,6 +735,44 @@ def dispatch_log_booking(control_dir, now):
     return booked, rows, newest
 
 
+def has_seat_probe_line(control_dir):
+    """True / False for the SEAT-PROBE: line, or None when it cannot be READ.
+
+    False is an ANSWER, not a shrug: a project with a CONTROL/ directory and no
+    SEAT-PROBE: line in its ledger -- an absent ledger included -- is exactly the
+    run that never proved a seat callable, which is what SHAPE 8 refuses. It is
+    the same three-way split dispatch_log_booking() makes for the same reason.
+    Only an unreadable path is UNDETERMINED, and that one fails open.
+    """
+    path = os.path.join(control_dir, "LEDGER.md")
+    if not os.path.exists(path):
+        return False
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except Exception:
+        return None
+    return any(SEAT_PROBE_RE.search(line) for line in text.splitlines())
+
+
+def is_build_dispatch(code):
+    """True when any agent() this script declares carries a build label.
+
+    tools/dispatch-check.sh is handed ONE label on the command line and tests it
+    with is_build_label(); a Workflow launch carries one per agent(), so the same
+    broad test is applied to every label:/phase: value this parser can see -- the
+    same pair SHAPE 5 reads. Fail-closed is the safe direction there and here:
+    the cost of gating one extra dispatch is a run of tools/seat-probe.sh.
+    """
+    for _start, args in find_calls(code, "agent"):
+        for value in option_values(args, "label") + option_values(args, "phase"):
+            if BUILD_LABEL_RE.search(value):
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # The evaluation. Returns a list of findings; an empty list means "allow".
 # ---------------------------------------------------------------------------
@@ -835,6 +904,21 @@ def evaluate(script, cwd=None, profiled=False):
         if control is None:
             sys.stderr.write(SCOPE_NOTE + "\n")
         else:
+            # --- 8. no seat proven callable, no builder ---------------------
+            # tools/seat-probe.sh is a shipped, selftested instrument that the
+            # 2026-09-08 canary never ran, because nothing refused a builder
+            # over its absence: its ledger DISCUSSED seat capacity in prose and
+            # dispatched anyway. tools/dispatch-check.sh now refuses that with
+            # exit 11 -- but it is a script the conductor is merely TOLD to
+            # call, and prose fails here roughly always. This is the half that
+            # intercepts the launch itself. Same scope as SHAPE 7 and the same
+            # CONTROL/ it came out of: the marker that proves this IS a
+            # spec-protocol project says which ledger records its probe.
+            if is_build_dispatch(code) and has_seat_probe_line(control) is False:
+                findings.append(
+                    "SHAPE 8 -- NO-SEAT-PROBE | CONTROL/LEDGER.md carries no SEAT-PROBE: line\n"
+                    "  (read: %s)\n%s" % (os.path.join(control, "LEDGER.md"), FIX_8)
+                )
             declared = declared_agents(code, stages)
             if declared:
                 log = dispatch_log_booking(control, time.time())
@@ -977,6 +1061,15 @@ const done = await pipeline(
   (u) => agent('build ' + u.id, { label: `[Opus x1] build ${u.id}`, phase: 'Build', model: 'opus' }),
   (built, u) => agent('judge ' + u.id, { label: `[Sonnet x1] judge ${u.id}`, phase: 'Judge', model: 'sonnet' }),
   (judged, u) => agent('pen ' + u.id, { label: `[Sonnet x1] pen ${u.id}`, phase: 'Pen', model: 'sonnet' }),
+)
+return done
+"""
+
+FIXTURE_NO_BUILD_LABEL = """export const meta = { name: 'audit-only', description: 'three units, one auditor each' }
+const UNITS = [ { id: 'u01' }, { id: 'u02' }, { id: 'u03' } ]
+const done = await pipeline(
+  UNITS,
+  (u) => agent('inspect ' + u.id, { label: `[Sonnet x1] audit ${u.id}`, phase: 'Audit', model: 'sonnet' }),
 )
 return done
 """
@@ -1177,15 +1270,32 @@ def selftest():
            "with exit 2 naming tools/state-check.sh -- that is the gate that refuses, and the "
            "conductor owns the difference" % rc_nb)
 
+    def write_ledger(d, kind):
+        path = os.path.join(d, "CONTROL", "LEDGER.md")
+        if kind == "none":
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        body = ("- 2026-09-08T00:00:00Z | SEAT-PROBE: seats=12 callable=12 dead=0 undetermined=0\n"
+                if kind == "probe" else
+                "- 2026-09-08T00:00:00Z | we have 12 seats, all callable -- seat probe looks fine\n")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("# ledger\n\n" + body)
+
     # 10 -- SHAPE 7, the write-ahead rule: ONE fixture, three answers. Three
     #       stages over ten units declares thirty agents. Booked at thirty it is
     #       allowed; booked at ten it is blocked naming both numbers; booked
     #       nowhere it is blocked naming booked=none. If all three returned the
     #       same code the TEST would be broken, not the target -- which is why
     #       the allowed case is the first of the three and asserted first.
-    def log_dir(name, agents, age_seconds=0, write_log=True):
+    # `ledger` is SHAPE 8's one variable: "probe" writes the proven line,
+    # "prose" writes a ledger that only TALKS about seats, "none" writes no
+    # ledger at all. Every pre-SHAPE-8 fixture keeps the default so the checks
+    # above keep testing what they were written to test.
+    def log_dir(name, agents, age_seconds=0, write_log=True, ledger="probe"):
         d = tempfile.mkdtemp(prefix="dispatch-gate-%s." % name, dir=sandbox)
         os.makedirs(os.path.join(d, "CONTROL"), exist_ok=True)
+        write_ledger(d, ledger)
         # The GATE 0 marker is what puts these fixtures IN SCOPE for SHAPE 7
         # (WI-64). It is also what a real project has before its first
         # dispatch: tools/gate0.sh --record writes it at the GATE 0 pass.
@@ -1253,6 +1363,7 @@ def selftest():
             "2026-01-04T09:15:00Z | box-update-B | dispatch | [Sonnet x10] roll 10 boxes | "
             "agents=10\n"
         )
+    write_ledger(scope, "probe")  # so leg 11b isolates SHAPE 7, not SHAPE 8
     rc_out, out_out = _run_child(payload(FIXTURE_THREE_STAGE), scope)
     ok = rc_out == 0 and SCOPE_NOTE in out_out
     report(21, "foreign-log-not-in-scope", ok,
@@ -1340,10 +1451,88 @@ def selftest():
            % (rc_underbooked,
               "yes" if "declares 6 direct agent() calls" in out_underbooked and "authorizes only 5" in out_underbooked else "NO"))
 
+    # 13 -- SHAPE 8, the seat probe: ONE directory, ONE script, three answers,
+    #       and the ONLY thing that changes between them is the ledger's line.
+    #       The tree is booked at 30 throughout, so SHAPE 7 is satisfied and
+    #       anything that blocks here blocked for SHAPE 8 -- asserted, not
+    #       assumed. The PROSE leg is the discriminating control: a ledger that
+    #       talks about seats at length is what the 2026-09-08 canary had, and a
+    #       gate that keyed on the word "seat" instead of the line's SHAPE would
+    #       let it through.
+    seatdir = log_dir("seatprobe", 30, ledger="none")
+    rc_s0, out_s0 = _run_child(payload(FIXTURE_THREE_STAGE), seatdir)
+    ok = rc_s0 == 2 and "SHAPE 8" in out_s0 and "SHAPE 7" not in out_s0
+    report(27, "no-seat-probe-blocked", ok,
+           "a booked build tree whose CONTROL/LEDGER.md carries no SEAT-PROBE line -> rc=%d "
+           "(want 2), SHAPE 8 named: %s, and NOT a SHAPE 7 booking refusal: %s"
+           % (rc_s0, "yes" if "SHAPE 8" in out_s0 else "NO",
+              "correct" if "SHAPE 7" not in out_s0 else "NO -- blocked for the other rule"))
+
+    write_ledger(seatdir, "prose")
+    rc_s1, out_s1 = _run_child(payload(FIXTURE_THREE_STAGE), seatdir)
+    ok = rc_s1 == 2 and "SHAPE 8" in out_s1
+    report(28, "prose-ledger-still-blocked", ok,
+           "the SAME dir once the ledger SAYS 'we have 12 seats, all callable' in prose -> "
+           "rc=%d (want 2): prose is not a probe, the line's shape is the proof" % rc_s1)
+
+    write_ledger(seatdir, "probe")
+    rc_s2, out_s2 = _run_child(payload(FIXTURE_THREE_STAGE), seatdir)
+    report(29, "seat-probe-line-allows", rc_s2 == 0,
+           "the SAME dir once ONE real SEAT-PROBE: seats=12 callable=12 dead=0 undetermined=0 "
+           "line exists -> rc=%d (want 0). Without this leg the two above would score a gate "
+           "that refused every build%s"
+           % (rc_s2, "" if rc_s2 == 0 else " -- output: " + out_s2.strip()[:400]))
+
+    # 13b -- not a build dispatch: SHAPE 8 is silent. is_build_label() is
+    #        deliberately broad, so the negative case has to be a tree whose
+    #        labels carry no "build" anywhere -- three auditors, no ledger.
+    nobuild = log_dir("nobuild", 3, ledger="none")
+    rc_nb2, out_nb2 = _run_child(payload(FIXTURE_NO_BUILD_LABEL), nobuild)
+    report(30, "non-build-label-silent", rc_nb2 == 0 and "SHAPE 8" not in out_nb2,
+           "an audit-labelled tree in the SAME ledger-less project -> rc=%d (want 0) and no "
+           "SHAPE 8: %s" % (rc_nb2, "yes" if "SHAPE 8" not in out_nb2 else "NO -- refused"))
+
+    # 13c -- no GATE 0 marker: out of scope, exactly like SHAPE 7. A folder
+    #        that merely owns a CONTROL/ directory never agreed to this rule.
+    unmarked = tempfile.mkdtemp(prefix="dispatch-gate-unmarked.", dir=sandbox)
+    os.makedirs(os.path.join(unmarked, "CONTROL"), exist_ok=True)
+    rc_um, out_um = _run_child(payload(FIXTURE_THREE_STAGE), unmarked)
+    report(31, "unmarked-project-silent", rc_um == 0 and "SHAPE 8" not in out_um,
+           "a CONTROL/ directory with no %s and no ledger -> rc=%d (want 0) and no SHAPE 8: %s"
+           % (GATE0_MARKER, rc_um, "yes" if "SHAPE 8" not in out_um else "NO -- refused"))
+
+    # 13d -- a profiled project: tools/seat-probe.sh itself refuses one
+    #        (PROFILE-OWNED), so SHAPE 8 must not demand a line that instrument
+    #        will never write. Marker and prose ledger added to the SAME
+    #        profiled fixture that passed check 23, so only the profile branch
+    #        can be what keeps it at rc 0.
+    os.makedirs(os.path.join(profiled, "CONTROL"), exist_ok=True)
+    with open(os.path.join(profiled, "CONTROL", GATE0_MARKER), "w", encoding="utf-8") as fh:
+        fh.write("signal=keyword\nrecorded=2026-09-08T00:00:00Z\nproject=selftest\n")
+    write_ledger(profiled, "prose")
+    rc_pp, out_pp = _run_child(json.dumps(profile_event), profiled)
+    report(32, "profiled-project-silent", rc_pp == 0 and "SHAPE 8" not in out_pp,
+           "a profiled build launch with a GATE 0 marker and a prose-only ledger -> rc=%d "
+           "(want 0) and no SHAPE 8: %s -- seat-probe.sh answers a profiled project "
+           "PROFILE-OWNED and never writes the line"
+           % (rc_pp, "yes" if "SHAPE 8" not in out_pp else "NO -- refused"))
+
+    # 13e -- an UNREADABLE ledger is UNDETERMINED, never a verdict. A path
+    #        that exists and is not a file is the cheapest way to prove the
+    #        third branch of has_seat_probe_line() is wired: without it the
+    #        fail-open claim in this file's docstring is untested code.
+    unreadable = log_dir("unreadable", 30, ledger="none")
+    os.makedirs(os.path.join(unreadable, "CONTROL", "LEDGER.md"), exist_ok=True)
+    rc_ur, out_ur = _run_child(payload(FIXTURE_THREE_STAGE), unreadable)
+    report(33, "unreadable-ledger-fails-open", rc_ur == 0 and "SHAPE 8" not in out_ur,
+           "a CONTROL/LEDGER.md that cannot be read as a file -> rc=%d (want 0) and no "
+           "SHAPE 8: %s -- a gate that cannot read the ledger says NOTHING about the probe"
+           % (rc_ur, "yes" if "SHAPE 8" not in out_ur else "NO -- refused"))
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (27 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (34 checks)")
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)

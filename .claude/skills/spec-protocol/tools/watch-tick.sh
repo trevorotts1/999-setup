@@ -27,6 +27,33 @@
 #   arming is an instrument rather than a snippet a model is asked to paste,
 #   and `--cron-line` still prints it verbatim for step 21 to prove against.
 #
+#   A PROFILED PROJECT REDIRECTS THIS TICK; IT NEVER SWITCHES IT OFF.
+#   references/project-profile.md: "A profile REDIRECTS the helpers; it never
+#   switches them off ... watch-tick ... all still run on a profiled project ...
+#   The five-minute tick ... NEVER skipped: an unwatched run is the exact
+#   failure these instruments exist to prevent." When the project home holds
+#   `.spec-protocol.json`, the tick binds to that profile instead of to CONTROL/:
+#     --cron-line / --arm  write the SAME */5 line, logging beside the BOUND
+#       state — `<home>/<dirname of documents.state>/watch-tick.log` rather than
+#       `<home>/CONTROL/watch-tick.log`. Arming stays the same idempotent
+#       instrument: 0 armed, 3 already present, 2 crontab unavailable (named).
+#     THE TICK ITSELF  runs the profile's own `commands.validate` argv at the
+#       project root — an argv array, never a shell line, so a value in the
+#       profile can NAME a program and can never be evaluated as one — and
+#       prints exactly one line:
+#         PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>
+#         PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr, 200 chars>
+#       exit 0 on rc 0, exit 3 on any other rc — the SAME "something needs
+#       attention" code the S-checks already use, because inventing a second
+#       one would make one tick's stall unreadable to a reader of the other's.
+#       It WRITES NOTHING: no ledger line, no CONTROL/ directory, no second
+#       task graph. The cron line's own `>>` is the only appender, which is
+#       what keeps the profile's "no parallel copy" rule intact.
+#     A PROFILE IT CANNOT READ IS UNDETERMINED AND LOUD: unparseable JSON, a
+#       missing `documents.state`, or a missing `commands.validate` is exit 2
+#       naming the file and the key — never a silent fall back to CONTROL/,
+#       which would be the second copy the profile forbids.
+#
 # WHAT IT CHECKS (the standards it owns; the table in SKILL.md RULE 5 is the
 # roster's only owner and this header never restates it)
 #   first    tools/anchor.sh --mode reconcile — the three-way reconcile (S10),
@@ -189,6 +216,10 @@
 #                                                #   0 armed, 3 already present,
 #                                                #   2 crontab unavailable (named)
 #   watch-tick.sh --selftest
+#   Every form takes the SAME arguments on a profiled project (one holding
+#   `.spec-protocol.json`); what changes is where the line logs and what the
+#   tick runs — see the profiled-tick note above. There is no flag to turn the
+#   tick off, on either path: an unwatched run is the failure it exists to stop.
 #
 # ENVIRONMENT KNOBS (all optional; defaults are the doctrine's numbers)
 #   WATCH_STALE_MIN=10          heartbeat freshness threshold, minutes (S6/S13)
@@ -336,6 +367,77 @@ ledger_write() {  # ledger_write <relative-file> <line>
   out="$("$LEDGER_SH" "$HOME_DIR" "$f" "$line" 2>&1)"; rc=$?
   set -e
   if (( rc != 0 )); then die_tool "ledger.sh failed (rc=${rc}) writing ${f}: ${out}"; fi
+}
+
+#------------------------------------------------------------------------------
+# 2b. THE PROFILE READ (references/project-profile.md). A supplied project may
+#     bind its own canonical state and its own commands through
+#     `.spec-protocol.json`. This tick REDIRECTS onto that binding; it never
+#     switches itself off and it never creates a second CONTROL/ beside it.
+#
+#     THE PROFILE IS DATA, NEVER SCRIPT. It is parsed by a JSON parser and no
+#     value in it is ever shell-evaluated: a value may NAME a path or an argv
+#     element and can never run as a command line. python3 is that parser — the
+#     one interpreter present on both the fleet's macOS boxes and its Linux
+#     ones. A box with none is UNDETERMINED and LOUD (exit 2 naming what was
+#     tried), never a silent fall back to CONTROL/: a tick that quietly watched
+#     the wrong tree would be exactly the unwatched run this file exists to stop.
+#------------------------------------------------------------------------------
+PYTHON3="$(command -v python3 2>/dev/null || true)"
+[[ -n "$PYTHON3" && -x "$PYTHON3" ]] || PYTHON3=""
+[[ -n "$PYTHON3" || ! -x /usr/bin/python3 ]] || PYTHON3="/usr/bin/python3"
+
+# Reads ONE key and validates its shape there, so a caller that needs only the
+# state path never dies for a command it was not going to run.
+#   exit 3 unparseable | exit 4 the key is missing or malformed | exit 5 a value
+#   carries a newline (it would forge a second line of whatever it is written to)
+PROFILE_PY='
+import json,sys
+path,key=sys.argv[1],sys.argv[2]
+try:
+    d=json.load(open(path))
+except Exception as e:
+    sys.stderr.write(str(e))
+    sys.exit(3)
+if not isinstance(d,dict):
+    sys.stderr.write("the top level is not a JSON object")
+    sys.exit(3)
+if key=="state":
+    v=(d.get("documents") or {}).get("state")
+    ok=isinstance(v,str) and v.strip()!=""
+    vals=[v.strip()] if ok else []
+else:
+    v=(d.get("commands") or {}).get("validate")
+    ok=isinstance(v,list) and len(v)>0 and all(isinstance(x,str) and x!="" for x in v)
+    vals=list(v) if ok else []
+if not ok:
+    sys.exit(4)
+for x in vals:
+    if "\n" in x or "\r" in x:
+        sys.stderr.write("a value carries a newline")
+        sys.exit(5)
+sys.stdout.write("\n".join(vals)+"\n")
+'
+
+is_profiled() { [[ -f "$1/.spec-protocol.json" ]]; }
+
+profile_values() {  # profile_values <project-home> <state|validate> -> one value per line
+  local pf="$1/.spec-protocol.json" key="$2" out rc
+  [[ -n "$PYTHON3" ]] || die_tool "PROFILE | ${pf} needs a JSON parser and none ran. Tried: \`command -v python3\` and /usr/bin/python3. The profile is DATA and is never shell-evaluated, so it cannot be read without one — UNDETERMINED, and never a fall back to CONTROL/ on a project whose profile forbids it."
+  set +e
+  out="$("$PYTHON3" -c "$PROFILE_PY" "$pf" "$key" 2>&1)"; rc=$?
+  set -e
+  case "$rc" in
+    0) printf '%s\n' "$out" ;;
+    3) die_tool "PROFILE | ${pf} is not parseable JSON: ${out}. Checked: that one file with ${PYTHON3}. UNDETERMINED — the tick claims nothing about this project." ;;
+    4) if [[ "$key" == "state" ]]; then
+         die_tool "PROFILE | ${pf} carries no usable documents.state (a non-empty string is required; references/project-profile.md). The profiled tick logs BESIDE the bound state and has no honest path without it — UNDETERMINED, never CONTROL/watch-tick.log."
+       else
+         die_tool "PROFILE | ${pf} carries no usable commands.validate (a non-empty argv array of non-empty strings is required; references/project-profile.md). The profiled tick has nothing to run — UNDETERMINED, never a legacy CONTROL/ reconcile in its place."
+       fi ;;
+    5) die_tool "PROFILE | ${pf} ${key} carries a newline in a value: ${out}. A value that spans lines would forge a second line of whatever it is written into — refused." ;;
+    *) die_tool "PROFILE | reading ${pf} (${key}) with ${PYTHON3} exited ${rc}: ${out}" ;;
+  esac
 }
 
 #------------------------------------------------------------------------------
@@ -571,9 +673,22 @@ self_prove() {
 #------------------------------------------------------------------------------
 usage() { sed -n '2,140p' "$SELF" | sed 's/^# \{0,1\}//'; }
 
-cron_line() {  # cron_line <project-home>
-  printf '*/5 * * * * bash %s/watch-tick.sh %s >> %s/CONTROL/watch-tick.log 2>&1\n' \
-    "$SCRIPT_DIR" "$1" "$1"
+cron_line() {  # cron_line <project-home> -> the */5 line; rc 2 when a profile cannot be read
+  # THE REDIRECT. A profiled project's tick logs beside its BOUND state, never
+  # into a CONTROL/ the profile forbids. `documents.state` is the ONLY source
+  # for that folder: without it the line has no honest path, so this refuses
+  # (profile_values names the file and the key) rather than inventing CONTROL/.
+  local home="$1" log="CONTROL/watch-tick.log" st dir rc
+  if is_profiled "$home"; then
+    set +e
+    st="$(profile_values "$home" state)"; rc=$?
+    set -e
+    (( rc == 0 )) || return "$rc"
+    dir="$(dirname "$st")"
+    if [[ -z "$dir" || "$dir" == "." ]]; then log="watch-tick.log"; else log="${dir}/watch-tick.log"; fi
+  fi
+  printf '*/5 * * * * bash %s/watch-tick.sh %s >> %s/%s 2>&1\n' \
+    "$SCRIPT_DIR" "$home" "$home" "$log"
 }
 
 #------------------------------------------------------------------------------
@@ -630,8 +745,14 @@ arm_unavailable() {  # arm_unavailable <reason> <cron-line>; the degradation on 
 }
 
 arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavailable
-  local home="$1" line table wrc
-  line="$(cron_line "$home")"
+  local home="$1" line table wrc lrc
+  # cron_line runs in a SUBSHELL here, so its die_tool exits that subshell and
+  # not this one: the rc is the only thing that crosses back, and an unarmed
+  # tick that reported success would be the worst failure this file has.
+  set +e
+  line="$(cron_line "$home")"; lrc=$?
+  set -e
+  (( lrc == 0 )) || return "$lrc"
 
   if [[ -n "$CRONTAB_FILE" ]]; then
     # FIXTURE MODE. The file IS the table. No crontab process runs unless the
@@ -699,6 +820,59 @@ done
 [[ "$STALLED_MIN"     =~ ^[0-9]+$ ]] || die_tool "WATCH_STALLED_MIN must be a non-negative integer (got: ${STALLED_MIN})"
 
 #==============================================================================
+# THE PROFILED TICK
+#
+#   A profiled project's five-minute tick is the PROFILE'S OWN validator, run
+#   read-only at the project root from its declared argv, and one line printed.
+#   It writes nothing anywhere: the cron line's `>>` is the only appender, and
+#   `documents.state` stays the single canonical state — no CONTROL/, no second
+#   ledger, no second task graph (references/project-profile.md).
+#
+#     rc 0      PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>  -> 0
+#     rc non-0  PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr, …> -> 3
+#
+#   The argv is EXECUTED, never evaluated: `"${PV[@]}"` after a `cd` to the
+#   project root, so a profile value can name a program and can never smuggle a
+#   shell line past it. An rc of 127 is therefore a shell abort NAMED in the
+#   stall line's stderr snippet, never a fact about the project's state.
+#==============================================================================
+snip200() {  # snip200 <file> -> its first 200 chars, newlines collapsed
+  local s
+  s="$(tr '\n\r\t' '   ' < "$1" | tr -s ' ' | sed 's/^ *//; s/ *$//' | cut -c1-200)"
+  [[ -n "$s" ]] || s="(no output)"
+  printf '%s' "$s"
+}
+
+run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile cannot be read
+  local vout vrc rc a
+  # profile_values runs in a SUBSHELL, so its die_tool ends that subshell only:
+  # its message is already on stderr and the rc is what crosses back. Exiting
+  # on it is the point — an unreadable profile is UNDETERMINED, and a tick that
+  # carried on with an empty argv would report a validator it never ran.
+  set +e
+  vout="$(profile_values "$HOME_DIR" validate)"; vrc=$?
+  set -e
+  (( vrc == 0 )) || exit "$vrc"
+  local -a PV=()
+  while IFS= read -r a; do [[ -n "$a" ]] || continue; PV+=("$a"); done <<< "$vout"
+  (( ${#PV[@]} > 0 )) || die_tool "PROFILE | ${HOME_DIR}/.spec-protocol.json commands.validate parsed to an empty argv — nothing to run, so nothing is claimed"
+
+  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/watch-tick.XXXXXX")"
+  set +e
+  ( cd "$HOME_DIR" && exec "${PV[@]}" ) > "$WORKDIR/validate.out" 2> "$WORKDIR/validate.err"
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    printf 'PROFILE-TICK | %s | home=%s | validate_rc=0 | %s\n' \
+      "$(iso_now)" "$HOME_DIR" "$(snip200 "$WORKDIR/validate.out")"
+    return 0
+  fi
+  printf 'PROFILE-TICK STALL | %s | home=%s | validate_rc=%s | %s\n' \
+    "$(iso_now)" "$HOME_DIR" "$rc" "$(snip200 "$WORKDIR/validate.err")"
+  return 3
+}
+
+#==============================================================================
 # THE TICK
 #==============================================================================
 run_tick() {
@@ -706,14 +880,21 @@ run_tick() {
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 
-  # A supplied profile owns observation and canonical state. Refuse before
-  # --arm or any CONTROL lookup so this legacy tick cannot create a second
-  # scheduler/ledger path beside it.
-  if [[ -f "$HOME_DIR/.spec-protocol.json" ]]; then
-    die_tool "PROFILE-OWNED | ${HOME_DIR} has .spec-protocol.json; refusing legacy watch-tick/cron mutation. Use the profile-declared observer."
-  fi
+  # A supplied profile REDIRECTS this tick; it never switches it off. The
+  # redirect lives in exactly three places and nowhere else: cron_line logs
+  # beside the bound state, --arm installs THAT line through the same
+  # idempotent path, and the tick itself runs the profile's declared validator
+  # instead of the CONTROL/ reconcile. None of the three creates a CONTROL/
+  # directory, a second ledger or a second task graph — what a profile forbids
+  # is the SECOND COPY, never the watching (references/project-profile.md).
+  # There is no arm here that a profiled project does not get: an unwatched run
+  # is the exact failure these instruments exist to prevent.
 
-  if (( DO_CRON_LINE )); then cron_line "$HOME_DIR"; exit 0; fi
+  if (( DO_CRON_LINE )); then
+    local crc=0
+    set +e; cron_line "$HOME_DIR"; crc=$?; set -e
+    exit "$crc"
+  fi
 
   # --arm is the step-3 half and runs BEFORE self_prove and before any project
   # file is read: arming a project the plan has not reached yet is the whole
@@ -725,6 +906,17 @@ run_tick() {
   fi
 
   self_prove
+
+  # THE PROFILED TICK. self_prove runs FIRST on both paths: it proves this
+  # script's own parser and label detector against embedded fixtures and reads
+  # nothing of the project, so a profiled run is a proven instrument before it
+  # reports, exactly as a legacy one is. Everything below this line reads
+  # CONTROL/ and belongs to the legacy path alone.
+  if is_profiled "$HOME_DIR"; then
+    local prc=0
+    set +e; run_profile_tick; prc=$?; set -e
+    return "$prc"
+  fi
 
   local CHK DL LED HB FLAG CAPLED
   CHK="$HOME_DIR/CONTROL/CHECKLIST.md"
@@ -1570,6 +1762,28 @@ run_tick() {
 #      guard written after the publish is a receipt, not a guard. Cases 1-25
 #      carry no PUBLISHED: line at all, so none of them can fire this check —
 #      that silence is the negative control for the whole section.
+#  35  THE PROFILED CRON LINE — a home holding .spec-protocol.json logs beside
+#      its BOUND state: documents.state "state/build-state.json" makes the line
+#      end in state/watch-tick.log, never CONTROL/watch-tick.log.
+#  36  --arm ON A PROFILED PROJECT — that same line installed into a FIXTURE
+#      crontab at exit 0. A profile redirects the arming; it never removes it.
+#  37  --arm AGAIN — exit 3, nothing written, the count still 1: the profiled
+#      path carries the same idempotency guard the legacy one does.
+#  38  THE PROFILED TICK — the profile's own commands.validate argv runs at the
+#      project root and the tick prints ONE `PROFILE-TICK | … | validate_rc=0`
+#      line at exit 0, having created no CONTROL/ and written no ledger line.
+#  39  THE STALL — a validate argv that exits non-zero gives `PROFILE-TICK
+#      STALL` and exit 3, the same "something needs attention" code the
+#      S-checks use. 38 and 39 differ by the argv alone.
+#  40  A PROFILE WITH NO commands.validate — exit 2 NAMING the key. An
+#      unreadable profile is UNDETERMINED and loud, never a silent fall back to
+#      the legacy CONTROL/ path (which would watch the wrong tree in silence).
+#  41  THE DISCRIMINATING CONTROL — ONE fixture home, one file's difference.
+#      With .spec-protocol.json it takes the profiled path; with that one file
+#      removed the SAME home prints the legacy CONTROL/watch-tick.log line and
+#      a legacy S-CHECK verdict with no PROFILE-TICK anywhere. Cases 1-34 are
+#      the same control at scale: not one of them carries a profile, so every
+#      legacy assertion above is also proof the redirect does not leak.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -1588,6 +1802,15 @@ selftest() {
     printf '{"step":4,"of":9}\n' > "$1/CONTROL/setup_progress.json"
     printf -- '- [x] U-01 build the parser\n- [ ] U-02 qc the parser\n' > "$1/CONTROL/CHECKLIST.md"
     printf -- '- [ ] U-02 qc the parser\n' > "$1/CONTROL/TODO.md"
+  }
+  mk_profile_home() {  # mk_profile_home <dir> [validate-argv-json]
+    # A profiled home is its profile: no CONTROL/, no plan files, no ledger.
+    # documents.state binds the log folder; commands.validate binds the tick.
+    local d="$1" va="${2:-[\"/bin/echo\",\"validate-ok\"]}"
+    mkdir -p "$d/state"
+    printf '{"schema":"spec-protocol.project-profile/v1","documents":{"state":"state/build-state.json"},"commands":{"validate":%s}}\n' \
+      "$va" > "$d/.spec-protocol.json"
+    printf '{}\n' > "$d/state/build-state.json"
   }
   stamp() {  # stamp <minutes-ago> -> an ISO8601 UTC timestamp
     local m="$1" e
@@ -2197,6 +2420,111 @@ selftest() {
      && printf '%s' "$OUT" | "$GREP" -q 'published=n/a(no-URL release; target-specific artifact evidence owns its guard)' \
      && ! "$GREP" -q 'DRIFT-ALARM.*published-unguarded' "$T/c29/CONTROL/LEDGER.md" 2>/dev/null; then ok=1; fi
   report 34 "published-no-url-not-ship-gated" "$ok" "rc=${RC} (want 0); status=n/a skips only the URL-origin guard and raises no published-unguarded alarm"
+
+  # --- case 35: THE PROFILED CRON LINE. references/project-profile.md: a
+  #     profile REDIRECTS the helpers and never switches them off. The line is
+  #     the same */5 line; only the log moves, to sit beside the BOUND state.
+  mk_profile_home "$T/c35"
+  runw "$T/c35" --cron-line
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^\*/5 \* \* \* \* bash .*watch-tick.sh .*>> .*/state/watch-tick.log 2>&1$' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'CONTROL/watch-tick.log'; then ok=1; fi
+  report 35 "profile-cron-line" "$ok" "rc=${RC} (want 0); the line logs to state/watch-tick.log beside the bound documents.state and names no CONTROL/ anywhere — line: [$(printf '%s' "$OUT" | tail -1)]"
+
+  # --- case 36: --arm ON A PROFILED PROJECT, against a FIXTURE table. The
+  #     profiled tick is armed by the SAME instrument as the legacy one: the
+  #     gap this closes is a profiled project reaching step 21 never having
+  #     ticked at all, because nothing would arm it.
+  local CF36="$T/c35/crontab.fixture" n36
+  : > "$CF36"
+  set +e
+  OUT="$(WATCH_TICK_CRONTAB_FILE="$CF36" bash "$SELF" --arm "$T/c35" 2>&1)"; RC=$?
+  set -e
+  n36="$("$GREP" -c 'watch-tick.sh' "$CF36" || true)"
+  ok=0
+  if (( RC == 0 )) && [[ "$n36" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
+     && "$GREP" -q '/state/watch-tick.log 2>&1$' "$CF36"; then ok=1; fi
+  report 36 "profile-arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n36} watch-tick.sh line (want 1) and it ends at the profile's own state/watch-tick.log"
+
+  # --- case 37: THE SECOND ARM. The guard is the same one case 14 proves on
+  #     the legacy path: a profile changes where the line points, never whether
+  #     a second arm may double the tick.
+  set +e
+  OUT="$(WATCH_TICK_CRONTAB_FILE="$CF36" bash "$SELF" --arm "$T/c35" 2>&1)"; RC=$?
+  set -e
+  local n37; n37="$("$GREP" -c 'watch-tick.sh' "$CF36" || true)"
+  ok=0
+  if (( RC == 3 )) && [[ "$n37" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^ARM | ALREADY PRESENT (exit 3)'; then ok=1; fi
+  report 37 "profile-arm-idempotent" "$ok" "rc=${RC} (want 3); the count stayed at ${n37} (want 1) — a second arm on a profiled project adds nothing and says so"
+
+  # --- case 38: THE PROFILED TICK. The profile's declared validator runs at the
+  #     project root and ONE line is printed. The assertions that matter most
+  #     are the two absences: no CONTROL/ directory and no S-CHECK line — the
+  #     second copy a profile forbids is exactly what a redirect must not build.
+  mk_profile_home "$T/c38"
+  runw "$T/c38"
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^PROFILE-TICK | .* | home=.*c38 | validate_rc=0 | validate-ok$' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'S-CHECK' \
+     && [[ ! -d "$T/c38/CONTROL" ]]; then ok=1; fi
+  report 38 "profile-tick-runs" "$ok" "rc=${RC} (want 0); one PROFILE-TICK line carrying the validator's own stdout; no S-CHECK line and no CONTROL/ directory created — line: [$(printf '%s' "$OUT" | tail -1)]"
+
+  # --- case 39: THE STALL. Byte for byte the same fixture but for the validate
+  #     argv, which now exits 1. That one difference is the whole discrimination.
+  mk_profile_home "$T/c39" '["/usr/bin/false"]'
+  runw "$T/c39"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^PROFILE-TICK STALL | .* | home=.*c39 | validate_rc=1 | ' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^PROFILE-TICK |'; then ok=1; fi
+  report 39 "profile-tick-stall" "$ok" "rc=${RC} (want 3 — the same code the S-checks use for 'something needs attention'); PROFILE-TICK STALL naming validate_rc=1, and NOT the clean PROFILE-TICK line"
+
+  # --- case 40: A PROFILE WITH NO commands.validate. The tick has nothing to
+  #     run, and the one thing it may never do is quietly run the legacy
+  #     CONTROL/ path instead — that would watch the wrong tree and report it
+  #     clean. Exit 2 NAMING the key, and no CONTROL/ left behind.
+  mkdir -p "$T/c40"
+  printf '{"schema":"spec-protocol.project-profile/v1","documents":{"state":"state/build-state.json"},"commands":{"init":["/bin/echo","x"]}}\n' \
+    > "$T/c40/.spec-protocol.json"
+  runw "$T/c40"
+  ok=0
+  if (( RC == 2 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'TOOLING FAILURE (exit 2): PROFILE |' \
+     && printf '%s' "$OUT" | "$GREP" -q 'commands.validate' \
+     && printf '%s' "$OUT" | "$GREP" -q 'NOT an all-clear' \
+     && [[ ! -d "$T/c40/CONTROL" ]]; then ok=1; fi
+  report 40 "profile-validate-missing" "$ok" "rc=${RC} (want 2); the failure NAMES commands.validate and the profile file, says it is not an all-clear, and left no CONTROL/ behind"
+
+  # --- case 41: THE DISCRIMINATING CONTROL. ONE home, ONE file's difference.
+  #     A legacy fixture gains a profile and takes the profiled path; the same
+  #     home with that one file removed prints the legacy CONTROL/ line and a
+  #     legacy S-CHECK verdict. An implementation that redirected on something
+  #     other than the profile's presence passes 35-40 and fails HERE.
+  mk_home "$T/c41"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-041\n' "$(stamp 1)" > "$T/c41/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c41/CONTROL/HEARTBEAT.md"
+  printf '{"schema":"spec-protocol.project-profile/v1","documents":{"state":"state/build-state.json"},"commands":{"validate":["/bin/echo","validate-ok"]}}\n' \
+    > "$T/c41/.spec-protocol.json"
+  runw "$T/c41" --cron-line
+  local prof41="$OUT" prc41="$RC"
+  runw "$T/c41"
+  local proftick41="$OUT"
+  rm -f "$T/c41/.spec-protocol.json"
+  runw "$T/c41" --cron-line
+  local leg41="$OUT" lrc41="$RC"
+  runw "$T/c41"
+  ok=0
+  if (( prc41 == 0 )) && (( lrc41 == 0 )) && (( RC == 0 )) \
+     && printf '%s' "$prof41"     | "$GREP" -q '/state/watch-tick.log 2>&1$' \
+     && printf '%s' "$proftick41" | "$GREP" -q '^PROFILE-TICK |' \
+     && printf '%s' "$leg41"      | "$GREP" -q '/CONTROL/watch-tick.log 2>&1$' \
+     && printf '%s' "$OUT"        | "$GREP" -q 'S-CHECK | violations=0 | runnable=0 open=1 trees=1' \
+     && ! printf '%s' "$OUT"      | "$GREP" -q 'PROFILE-TICK'; then ok=1; fi
+  report 41 "profile-vs-legacy-control" "$ok" "one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${RC}, want 0) with no PROFILE-TICK anywhere"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

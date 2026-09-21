@@ -257,9 +257,9 @@ block. The FIRST action of step 3, before a word of it is spoken, is `tools/gate
 the client typed a description into the command arguments, not when a document answers it, not
 for any reason. A supplied description is acknowledged in ONE line immediately before it
 ("You've already given me the shape of it — I have that") and the question is still the last
-thing spoken, because it invites what a one-line argument never contains. If the run genuinely
-judges the idea fully answered, it does not get to end the turn on a statement instead: it moves
-to the NEXT question it actually owes the client and ends there. **Every opening turn ends on a
+thing spoken, because it invites what a one-line argument never contains. The run does not get to judge the
+idea answered before the client has spoken — that judgement is not its to make: the question is
+asked regardless, and the client's reply, even "yes, that's it", is the answer. **Every opening turn ends on a
 question mark.** "You already told me the idea, so I won't ask you to say it twice" followed by
 statements is the exact failure this sentence forbids.
 
@@ -276,8 +276,9 @@ statements is the exact failure this sentence forbids.
 > First question: Tell me about your idea the same way you would explain it to a friend. What do you want to create, and who is it for?
 
 **When the decision engine is ABSENT** (step 2.7 returned exit 1), speak the one sentence in
-`references/decision-engine.md` §3 immediately AFTER the opening script and BEFORE the first
-counted question — never before the opening, because nothing precedes the opening. It is an
+`references/decision-engine.md` §3 INSIDE the opening turn, as part of the script: after the
+greeting and immediately BEFORE its last line, which is the idea question. Never as a turn of
+its own and never after the question, because the opening ends ON the question. It is an
 offer about their own account and money, not a setup report; a yes files the key through
 `tools/place-key.sh` and re-runs the check, a no is recorded as a DEFAULT and never raised
 again (Law 46), and either way it is uncounted. Exit 0 and exit 2 are silent.
@@ -390,10 +391,14 @@ they just said>. We will go with that — and if it ever feels wrong to you, say
 will change the plan. Nothing gets locked in today." A target reached this way is
 recorded as a DEFAULT they confirmed, never as their answer.
 
-**⛔ `00-INPUT/ANSWERS.md` IS CREATED BEFORE THE OPENING SCRIPT IS SPOKEN, NOT LATER.** On a
-supplied folder it is created inside that folder; it is the one MISSING document RULE 1 permits
-writing there. A run that has spoken the opening without it has already lost its only record of
-what was asked, and the rule below cannot work without the file.
+**⛔ `00-INPUT/ANSWERS.md` IS CREATED BEFORE THE FIRST COUNTED QUESTION IS SPOKEN, NOT LATER —
+AND ON A SUPPLIED FOLDER BEFORE THE OPENING.** A supplied folder exists from the first second,
+so the file is created inside it before a word is spoken; it is the one MISSING document RULE 1
+permits writing there. Unprofiled there is no folder until the client has picked an entry mode —
+the slug comes from what they say — so the file is created with that folder, and the opening's
+idea question and the entry-mode question are written into it the moment it exists, which is the
+same turn they pick. A run that reached the counted list without it has already lost its only
+record of what was asked, and the rule below cannot work without the file.
 
 **⛔ AN INTERRUPTED QUESTION IS UNANSWERED, AND IT COMES BACK.** A question that was spoken
 but overtaken — by a correction, a re-classification, a new instruction, a compaction — was
@@ -401,8 +406,8 @@ never answered, and the run may not move past it. Write every question to
 `00-INPUT/ANSWERS.md` under its stable key the moment it is SPOKEN, with the answer left
 blank, and fill the blank when it arrives; a key with a blank answer is the re-ask list, read
 before every question. `00-INPUT/ANSWERS.md` exists before the FIRST counted question is
-spoken — on a supplied folder it is created inside that folder — and a run that reached the
-counted list without it is a defect the step-20 self-audit rejects. "Never re-ask an ANSWERED
+spoken — on a supplied folder it is created inside that folder, before the opening — and a run
+that reached the counted list without it is a defect the step-20 self-audit rejects. "Never re-ask an ANSWERED
 question" and "always return to an UNANSWERED one" are the same rule; only the file can tell
 them apart, which is why the file is not optional. After any re-classification, re-read that
 file and resume at the first blank before asking anything new.
@@ -433,7 +438,9 @@ The rest of the funnel path is `references/funnel-architecture.md`.
 
 > I can learn about your idea in one of two ways.
 >
-> You can tell me about it in your own words, or if you already have notes, documents, or something you've started, you can show me what you already have.
+> You can tell me about it in your own words, or you can point me at anything you already
+> have — notes, documents, a folder, something you have already started. Either is fine, and
+> you can do both.
 >
 > Which would you rather do?
 
@@ -673,7 +680,7 @@ optional.
 17. Determine GitHub (new or existing) and smoke-test the token. **18.** Derive the loops. **19.** Write the launch command and the run plan (`references/terminals.md`).
 20. Self-audit the apparatus with a DIFFERENT agent (Law 30): the ten categories with quoted proof and the break-it pass, the by-command census (prove the instrument on a known-positive first, `/usr/bin/grep` explicitly), the QC-RECORD audit, the entry-gate audit for the `ENTRY-MODE:` line, and the GL-001…GL-008 separation audit. Any FAIL → ONE fix pass dispatched as a workflow of fixer agents, then ONE re-judge. Then RUN the applicable profile or legacy audit gate as an executed command. Only its latest applicable verdict may license build: HALT, HARM and SCOPE must be zero and verdict must be PASS; CARRY travels as named work. Two cycles is the re-audit ceiling, not permission to build with blockers (`references/gauntlet.md` §7.1).
 20.5. **Step 21 does not open until that run is provable.** On legacy projects, `CONTROL/LEDGER.md` carries the auditor cycle, CARRY state, and latest bound `AUDIT-GATE` record; its binding covers findings, frozen spec, optional profile and apparatus revision. On a profiled project, `commands.validate` must return `ok:true` and explicit `structuralReady:true` or `bootstrapReady:true`; the packet's exact task-scoped checker, not a global `dispatchReady` bit, authorizes any bootstrap or audit task. Production work still requires the profile's own production-ready verdict. CARRY is never blocking; a later malformed, failed, or revision-mismatched audit never falls back to an earlier PASS.
-21. Legacy only: prove the tick has been running since step 3. Profiled projects use their declared runtime observer instead; do not arm the generic tick. **22.** Monitor, and write the morning report.
+21. Prove the tick has been running since step 3 — on EVERY project. On a profiled project the same tick runs the profile's `commands.validate` every five minutes and logs beside its bound `documents.state` (`tools/watch-tick.sh` redirects; it never refuses). A profile-declared observer is additional, never a replacement. **22.** Monitor, and write the morning report.
 
 ## 8. The gauntlet
 
@@ -969,7 +976,8 @@ BOTTOM. Cache warming is optional and must never delay otherwise-ready work.
 19. `references/wireframes.md`, `references/scaffolding.md`, `references/build.md`, `references/hero-images.md`, `references/logo.md`, `references/ship-checks.md`, `references/publish.md` — target-applicable build stages, in dependency order. Evidence matches the actual target: a served URL only where the product has one; a desktop/mobile artifact or native harness otherwise. `ship-checks.md` carries applicable instruments and target-specific thresholds; `publish.md` carries only a real release proof, not a forced web/domain step.
 20. `references/funnel-architecture.md` — **funnel builds only**: page types, the email and SMS matrices, the Convert and Flow build path; it reaches `references/command-center-integration.md` for the project card, the lifecycle and the fail-soft rule (section 11).
 21. `references/decision-engine.md` — **the single owner of every System One decision-model call**: the resolution ladder and its proof-by-real-call, the client sentence spoken only when none is present, the seven call sites with their thresholds and — required for each — the named fallback it degrades to, plus the places it is never used (step 2.7, and every site that calls it).
-22. `references/media-model-selection.md` — **the single owner of every image- and video-service recommendation**: the recommend-first rule, the never-hard-code-latest rule, the image and video decision rules, the escalation ladder, the cost estimate and the cost guardrail, and the exact words spoken. Read it before any media recommendation, and never name a model to a client (section 11, step 13 of the interview).
+22. `references/media-model-selection.md` — **the single owner of every image- and video-service recommendation**: the recommend-first rule, the never-hard-code-latest rule, the image and video decision rules, the escalation ladder, the cost estimate and the cost guardrail, and the exact words spoken. Read it before any media recommendation, and never name a model to a client (section 11, and item 19 of `references/interview.md`).
 23. `references/media-pipeline.md` — **media builds only**: catalog research, provider polling, the persistence contract, duration × resolution, the image manifest. The largest file in the set — read the SECTION a step cites, never the whole file (step 6.5 and every media item). `references/media-video.md` — **CONDITIONAL: video only**, loaded ONLY when the plan actually contains video; `references/media-research-log.md` — **NEVER loaded at runtime**, the research diary.
 24. `references/worked-example.md` — the end-to-end worked example, read once before the first real run.
 25. `references/optional/agent-team.md` — **OPTIONAL, off by default**: the team path, the trust pre-flight, the probe and consent flow, and §10, the single owner of teammate-liveness verification. Loaded only when the client asks for a team in their own words (step 16.9); `references/agent-team.md` is the stub that says so.
+26. `references/project-profile.md` — read whenever `.spec-protocol.json` exists: the profile schema, what a profile redirects (never switches off), the one canonical bound state, and the reservation-exempt `reader` role (RULE 1, step 3, and every dispatch on a profiled project).

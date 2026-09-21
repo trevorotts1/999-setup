@@ -15,7 +15,7 @@
 //   same ACTION verbs, same `S-CHECK` line, same exit-code contract as
 //   tools/watch-tick.sh — which stays the reference implementation and the
 //   one the crontab line names. Where the two could differ they must not:
-//   `--selftest` runs the same ten fixtures here, so a drift between the twins
+//   `--selftest` runs the same fixtures here, so a drift between the twins
 //   fails a test rather than passing quietly.
 //
 // WHAT IS DIFFERENT, HONESTLY
@@ -26,6 +26,21 @@
 //   - The ledger write prefers tools/ledger.sh — the locked, atomic, verified
 //     primitive — and only falls back to an equivalent lock-directory +
 //     temp-file + rename write of its own where bash cannot be reached.
+//
+// A PROFILED PROJECT REDIRECTS THIS TICK; IT NEVER SWITCHES IT OFF
+//   references/project-profile.md: the five-minute tick is NEVER skipped, and
+//   a profile redirects it rather than refusing it. A home holding
+//   `.spec-protocol.json` logs beside its BOUND state
+//   (`<home>/<dirname of documents.state>/watch-tick.log`, not CONTROL/), and the
+//   tick runs the profile's own `commands.validate` argv at the project root —
+//   spawned as argv with no shell, so a profile value can NAME a program and can
+//   never be evaluated as one — printing exactly one line:
+//     PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>   -> 0
+//     PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr…>   -> 3
+//   It writes NOTHING: no ledger line, no CONTROL/, no second task graph — the
+//   cron line's own `>>` is the only appender. Unparseable JSON or a missing
+//   documents.state / commands.validate is exit 2 NAMING the file and the key,
+//   never a silent fall back to CONTROL/. Identical to tools/watch-tick.sh.
 //
 // USAGE
 //   node scripts/common/watch-tick.mjs <project-home>
@@ -268,8 +283,63 @@ function ledgerWrite(home, relFile, line) {
 //-----------------------------------------------------------------------------
 // THE TICK.
 //-----------------------------------------------------------------------------
+// A supplied project may bind its own canonical state and its own commands
+// (references/project-profile.md). The profile is DATA, never script: JSON.parse
+// reads it and nothing in it is ever evaluated.
+const isProfiled = (home) => fs.existsSync(path.join(home, '.spec-protocol.json'));
+
+function profileValues(home, key) {   // 'state' -> string; 'validate' -> string[]
+  const pf = path.join(home, '.spec-protocol.json');
+  let d;
+  try { d = JSON.parse(fs.readFileSync(pf, 'utf8')); } catch (e) {
+    dieTool(`PROFILE | ${pf} is not parseable JSON: ${e.message}. Checked: that one file. UNDETERMINED — the tick claims nothing about this project.`);
+  }
+  if (!d || typeof d !== 'object' || Array.isArray(d)) dieTool(`PROFILE | ${pf}: the top level is not a JSON object`);
+  if (key === 'state') {
+    const v = (d.documents || {}).state;
+    if (typeof v !== 'string' || v.trim() === '') {
+      dieTool(`PROFILE | ${pf} carries no usable documents.state (a non-empty string is required; references/project-profile.md). The profiled tick logs BESIDE the bound state and has no honest path without it — UNDETERMINED, never CONTROL/watch-tick.log.`);
+    }
+    if (/[\r\n]/.test(v)) dieTool(`PROFILE | ${pf} documents.state carries a newline — refused`);
+    return v.trim();
+  }
+  const v = (d.commands || {}).validate;
+  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === 'string' && x !== '')) {
+    dieTool(`PROFILE | ${pf} carries no usable commands.validate (a non-empty argv array of non-empty strings is required; references/project-profile.md). The profiled tick has nothing to run — UNDETERMINED, never a legacy CONTROL/ reconcile in its place.`);
+  }
+  if (v.some((x) => /[\r\n]/.test(x))) dieTool(`PROFILE | ${pf} commands.validate carries a newline in a value — refused`);
+  return v;
+}
+
 function cronLine(home) {
-  return `*/5 * * * * bash ${TOOLS}/watch-tick.sh ${home} >> ${home}/CONTROL/watch-tick.log 2>&1`;
+  // THE REDIRECT: a profiled project's tick logs beside its BOUND state, never
+  // into a CONTROL/ the profile forbids. documents.state is the only source for
+  // that folder; without it profileValues refuses rather than inventing CONTROL/.
+  let log = 'CONTROL/watch-tick.log';
+  if (isProfiled(home)) {
+    const dir = path.dirname(profileValues(home, 'state'));
+    log = (dir === '' || dir === '.') ? 'watch-tick.log' : `${dir}/watch-tick.log`;
+  }
+  return `*/5 * * * * bash ${TOOLS}/watch-tick.sh ${home} >> ${home}/${log} 2>&1`;
+}
+
+const snip200 = (s) => String(s || '').replace(/[\r\n\t]/g, ' ').replace(/ +/g, ' ').trim().slice(0, 200) || '(no output)';
+
+// THE PROFILED TICK: the profile's OWN validator, run read-only at the project
+// root, and one line printed. spawnSync without `shell` is execve — the argv is
+// EXECUTED, never evaluated. A missing program is rc 127 NAMED in the stall
+// line's stderr snippet, never a fact about the project's state.
+function runProfileTick(home) {
+  const argv = profileValues(home, 'validate');
+  const r = spawnSync(argv[0], argv.slice(1), { cwd: home, encoding: 'utf8' });
+  const rc = r.error ? 127 : r.status;
+  const err = r.error ? r.error.message : r.stderr;
+  if (rc === 0) {
+    process.stdout.write(`PROFILE-TICK | ${isoNow()} | home=${home} | validate_rc=0 | ${snip200(r.stdout)}\n`);
+    return 0;
+  }
+  process.stdout.write(`PROFILE-TICK STALL | ${isoNow()} | home=${home} | validate_rc=${rc} | ${snip200(err)}\n`);
+  return 3;
 }
 
 function runTick(homeArg, wantCronLine) {
@@ -281,6 +351,11 @@ function runTick(homeArg, wantCronLine) {
   if (wantCronLine) { process.stdout.write(`${cronLine(home)}\n`); return 0; }
 
   selfProve();
+
+  // selfProve runs FIRST on both paths: it proves this file's own parser against
+  // embedded fixtures and reads nothing of the project. Everything below reads
+  // CONTROL/ and belongs to the legacy path alone.
+  if (isProfiled(home)) return runProfileTick(home);
 
   const CHK = path.join(home, 'CONTROL', 'CHECKLIST.md');
   const DL = path.join(home, 'CONTROL', 'dispatch-log.md');
@@ -495,7 +570,7 @@ function runTick(homeArg, wantCronLine) {
 }
 
 //=============================================================================
-// SELFTEST — the same ten fixtures as tools/watch-tick.sh, so a drift between
+// SELFTEST — the same fixtures as tools/watch-tick.sh, so a drift between
 // the twins fails a test instead of passing quietly.
 //=============================================================================
 function selftest() {
@@ -611,6 +686,80 @@ function selftest() {
     r.rc === 0 && !/^ACTION\|dispatch-now\|/m.test(r.out) && /no-dispatch-log/.test(r.out)
       && /S5=undetermined\(no CAPACITY-LEDGER\.md\)/.test(r.out) && /S-CHECK \| violations=0/.test(led(d)),
     `rc=${r.rc} (want 0); S2 did NOT fire on an absent dispatch log; the line names both undetermined counts`);
+
+  // 11-15 — THE PROFILED PATH. A profile REDIRECTS this tick and never switches
+  // it off (references/project-profile.md), and the twins must agree byte for
+  // byte on the shape: tools/watch-tick.sh cases 35-41 are these same fixtures.
+  const mkProfileHome = (name, validate = ['/bin/echo', 'validate-ok']) => {
+    const dd = path.join(T, name);
+    fs.mkdirSync(path.join(dd, 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dd, '.spec-protocol.json'), JSON.stringify({
+      schema: 'spec-protocol.project-profile/v1',
+      documents: { state: 'state/build-state.json' },
+      commands: { validate },
+    }));
+    fs.writeFileSync(path.join(dd, 'state', 'build-state.json'), '{}\n');
+    return dd;
+  };
+
+  // 11 — the profiled cron line logs beside the BOUND state, never CONTROL/.
+  d = mkProfileHome('c11');
+  r = run([d, '--cron-line']);
+  report(11, 'profile-cron-line',
+    r.rc === 0 && /^\*\/5 \* \* \* \* bash .*watch-tick\.sh .*>> .*\/state\/watch-tick\.log 2>&1$/m.test(r.out)
+      && !/CONTROL\/watch-tick\.log/.test(r.out),
+    `rc=${r.rc} (want 0); the line ends at state/watch-tick.log beside documents.state and names no CONTROL/ — line: [${r.out.trim()}]`);
+
+  // 12 — the profiled tick runs the profile's own validator. The two absences
+  // matter most: no CONTROL/ directory and no S-CHECK line, because the second
+  // copy a profile forbids is exactly what a redirect must not build.
+  d = mkProfileHome('c12');
+  r = run([d]);
+  report(12, 'profile-tick-runs',
+    r.rc === 0 && /^PROFILE-TICK \| .* \| home=.*c12 \| validate_rc=0 \| validate-ok$/m.test(r.out)
+      && !/S-CHECK/.test(r.out) && !fs.existsSync(path.join(d, 'CONTROL')),
+    `rc=${r.rc} (want 0); one PROFILE-TICK line carrying the validator's own stdout; no S-CHECK line and no CONTROL/ created — line: [${r.out.trim()}]`);
+
+  // 13 — THE STALL. The same fixture but for the validate argv, which exits 1.
+  d = mkProfileHome('c13', ['/usr/bin/false']);
+  r = run([d]);
+  report(13, 'profile-tick-stall',
+    r.rc === 3 && /^PROFILE-TICK STALL \| .* \| home=.*c13 \| validate_rc=1 \| /m.test(r.out)
+      && !/^PROFILE-TICK \| /m.test(r.out),
+    `rc=${r.rc} (want 3 — the same code the S-checks use); PROFILE-TICK STALL naming validate_rc=1, and NOT the clean line`);
+
+  // 14 — a profile with no commands.validate. The one thing it may never do is
+  // quietly run the legacy CONTROL/ path instead, watching the wrong tree.
+  d = path.join(T, 'c14');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, '.spec-protocol.json'),
+    JSON.stringify({ schema: 'spec-protocol.project-profile/v1', documents: { state: 'state/build-state.json' }, commands: { init: ['/bin/echo', 'x'] } }));
+  r = run([d]);
+  report(14, 'profile-validate-missing',
+    r.rc === 2 && /TOOLING FAILURE \(exit 2\): PROFILE \|/.test(r.out) && /commands\.validate/.test(r.out)
+      && /NOT an all-clear/.test(r.out) && !fs.existsSync(path.join(d, 'CONTROL')),
+    `rc=${r.rc} (want 2); the failure NAMES commands.validate and the profile file, says it is not an all-clear, and left no CONTROL/ behind`);
+
+  // 15 — THE DISCRIMINATING CONTROL. ONE home, ONE file's difference. An
+  // implementation that redirected on anything but the profile's presence
+  // passes 11-14 and fails HERE.
+  d = mkHome('c15');
+  w(d, 'CONTROL/dispatch-log.md', `${stamp(1)} | U-02 qc | qc | [opus x10] WF01 judge | run-015\n`);
+  w(d, 'CONTROL/HEARTBEAT.md', `${stamp(1)} | WF01 judge | U-02 | qc\n`);
+  fs.writeFileSync(path.join(d, '.spec-protocol.json'),
+    JSON.stringify({ schema: 'spec-protocol.project-profile/v1', documents: { state: 'state/build-state.json' }, commands: { validate: ['/bin/echo', 'validate-ok'] } }));
+  const profCron = run([d, '--cron-line']);
+  const profTick = run([d]);
+  fs.rmSync(path.join(d, '.spec-protocol.json'));
+  const legCron = run([d, '--cron-line']);
+  const legTick = run([d]);
+  report(15, 'profile-vs-legacy-control',
+    profCron.rc === 0 && /\/state\/watch-tick\.log 2>&1$/m.test(profCron.out)
+      && /^PROFILE-TICK \| /m.test(profTick.out)
+      && legCron.rc === 0 && /\/CONTROL\/watch-tick\.log 2>&1$/m.test(legCron.out)
+      && legTick.rc === 0 && /S-CHECK \| violations=0 \| runnable=0 open=1 trees=1/.test(legTick.out)
+      && !/PROFILE-TICK/.test(legTick.out),
+    `one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${legTick.rc}, want 0) with no PROFILE-TICK anywhere`);
 
   fs.rmSync(T, { recursive: true, force: true });
   process.stdout.write(`\n-------------------------------------------------------------\n`);

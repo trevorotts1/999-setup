@@ -33,6 +33,24 @@ WHAT IT CHECKS, when a spec-protocol run yields the turn to its client:
      text does not appear under any "**Asked:**" line in ANSWERS.md, so the
      interrupted-question ledger cannot bring it back.
 
+  H  AN INTERRUPTED QUESTION DROPPED. A question was SPOKEN and its answer is
+     still blank, and the turn ends on a DIFFERENT question. That is the
+     2026-09-20 10:34 failure: entry-mode was asked, the client corrected
+     something, the run asked "Did I get that right?" and entry-mode never came
+     back. A spoken-but-unanswered question returns before any new one.
+
+  J  LAST TURN'S QUESTION WAS NEVER RECORDED. The PREVIOUS client-facing
+     message ended on a question that appears under no "**Asked:**" entry. That
+     is the 10:33 half of the same failure and the one H cannot see: with no
+     Asked text there is nothing for H to compare, and D is switched off by
+     some other entry's blank. The question is already lost when this fires.
+
+  I  BUILD TARGET CONTRADICTS THE PROFILE. The run confirms a surface back to
+     the client ("an app people can use on their phone") that the project's own
+     .spec-protocol.json targets deny. That is the 2026-09-20 10:30 failure.
+     The targets DECIDE the taxonomy; the surface is never re-guessed from the
+     word "app".
+
 SCOPE -- and why this cannot fire on an ordinary session. Every check is gated
 on `00-INPUT/ANSWERS.md` existing beneath the session's working directory. That
 file exists only inside a real spec-protocol project folder. A session merely
@@ -179,13 +197,24 @@ def _is_spec_protocol_run(transcript_path):
     return False
 
 
-def _last_client_message(transcript_path):
-    """The final assistant prose of this turn -- what the client actually read."""
+def _client_prose(transcript_path, back=0):
+    """Assistant prose of THIS turn (back=0) or the turn before it (back=1).
+
+    The walk must STOP at the user's own message. Without that boundary a turn
+    that produced only tool_use blocks (a build step, a file write) falls
+    through to the PREVIOUS turn's prose and the gate judges a message the
+    client read and already answered -- blocking work on a settled sentence.
+    A `tool_result` record is the harness handing a tool's output back, not the
+    user speaking, so the walk continues through those. Same boundary idiom as
+    gate0-claim-gate.py `_this_turn`. Counting those boundaries is also how the
+    PREVIOUS turn is reached, which is what check J needs.
+    """
     try:
         with open(transcript_path, encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
     except Exception:
         return None
+    crossed = 0
     for line in reversed(lines):
         line = line.strip()
         if not line:
@@ -194,16 +223,32 @@ def _last_client_message(transcript_path):
             d = json.loads(line)
         except Exception:
             continue
-        if d.get("isSidechain") or d.get("type") != "assistant":
+        if d.get("isSidechain"):
+            continue
+        if d.get("type") == "user":
+            c = (d.get("message") or {}).get("content")
+            if isinstance(c, list) and all(
+                    isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
+                continue            # a tool RESULT is not the user speaking
+            crossed += 1
+            if crossed > back:
+                return None         # walked past the turn asked for
+            continue
+        if d.get("type") != "assistant":
             continue
         content = (d.get("message") or {}).get("content")
         if not isinstance(content, list):
             continue
         text = "\n".join(b.get("text", "") for b in content
                          if isinstance(b, dict) and b.get("type") == "text").strip()
-        if text:
+        if text and crossed == back:
             return text
     return None
+
+
+def _last_client_message(transcript_path):
+    """The final assistant prose of THIS TURN -- what the client actually read."""
+    return _client_prose(transcript_path, 0)
 
 
 def _strip_quote_markers(text):
@@ -244,9 +289,87 @@ def _owed(answers_text):
     return out
 
 
+FENCED_BLOCK = re.compile(r"```.*?```", re.S)
+QUOTED_SPAN = re.compile(r"\"[^\"\n]*\"")
+
+
+def _countable(text):
+    """The text as the TWO-QUESTION count must see it.
+
+    A "?" inside a ``` fenced block is an EXAMPLE, not a question put to the
+    client. A "?" inside double quotes is the CLIENT's own words said back to
+    them -- which references/interview.md requires ("say the answer back in
+    their words"). Counting either as a second question blocks two shapes the
+    interview mandates. This trims the COUNT only; `_ends_on_question` still
+    reads the real text, so a message genuinely ending on a quoted question is
+    unaffected.
+    """
+    return QUOTED_SPAN.sub(" ", FENCED_BLOCK.sub(" ", text))
+
+
 def _two_paragraph_questions(text):
     paras = [p for p in re.split(r"\n\s*\n", text) if "?" in p]
     return len(paras) >= 2
+
+
+ANSWER_BLANK = re.compile(r"\*\*Answer:\*\*\s*[_\s]*(blank|not\s*yet|pending|awaiting|—)", re.I)
+
+
+def _pending(answers_text):
+    """Questions SPOKEN and still unanswered -- the interrupted-question set.
+
+    Distinct from `_owed`, which is the asked-side blank ("not yet spoken").
+    These were said OUT LOUD to the client and the answer slot is still empty,
+    so they are what the run must come back to. Both ledger shapes again: the
+    key/value blocks this skill writes, and the markdown table the 2026-09-08
+    runs wrote, where the key cell IS the question text.
+    """
+    out = []
+    for block in re.split(r"\n(?=## )", answers_text):
+        if UNSPOKEN.search(block):
+            continue                        # never spoken: that is _owed's job
+        m = ASKED_LINE.search(block)
+        if not m:
+            continue
+        asked = m.group(1).strip().strip('"').strip()
+        if not asked or asked.startswith("_"):
+            continue                        # a placeholder, not a spoken question
+        if not ANSWER_BLANK.search(block):
+            continue
+        out.append((block.splitlines()[0].lstrip("# ").strip(), asked))
+    for line in answers_text.splitlines():
+        m = UNANSWERED_CELL.match(line)
+        if not m:
+            continue
+        key = m.group(1).strip()
+        if not key or key.lower() in ("key", "question", "---") or "?" not in key:
+            continue                        # a row whose key carries no question
+        out.append((key, key))
+    return out
+
+
+def _ellipsis(text, n):
+    """Quote the first n chars, and SAY it was cut -- a mid-word truncation
+    followed by the sentence's own full stop reads as the whole question."""
+    return text if len(text) <= n else text[:n].rstrip() + "..."
+
+
+def _final_question_para(text):
+    paras = [p for p in re.split(r"\n\s*\n", text) if "?" in p]
+    return paras[-1] if paras else text
+
+
+def _matches_pending(message, pend):
+    """Is the question this turn ends on one of the hanging ones?"""
+    tail = re.sub(r"\s+", " ", _final_question_para(message)).strip()[-40:]
+    flat_msg = re.sub(r"\s+", " ", message)
+    for _key, asked in pend:
+        flat = re.sub(r"\s+", " ", asked).strip()
+        if tail and tail in flat:
+            return True
+        if flat and flat[-40:] in flat_msg:
+            return True
+    return False
 
 
 def _recorded(question_text, answers_text):
@@ -269,7 +392,33 @@ AUTO_SLUG = re.compile(r"^[a-z]+(-[a-z]+)*-\d{4}-\d{2}-\d{2}$")
 SELF_RESOLVED_FORK = re.compile(
     r"(unless you (say|tell me) otherwise|I'?m going with the|I'?ll go with the|"
     r"going with (the )?(first|second|option))", re.I)
+# A DEFAULT taken in a LATER turn is the shape interview.md MANDATES ("I don't
+# know earns a default"). It reads like a self-resolved fork because it IS the
+# same sentence -- one turn later, after the question went unanswered. The
+# marker is what separates the two, so F must stand down when it is present.
+DEFAULT_TAKEN = re.compile(
+    r"(didn['’]?t say|no answer|went unanswered|"
+    r"recorded as (a |the )?default|as (a|the) default)", re.I)
+# Fullwidth and variant question marks. A client pasting from a phone keyboard
+# or a CJK IME produces these, and every "?" test in this file then reads the
+# turn as ending on a statement -- the exact stall the gate exists to catch,
+# caused by the gate itself.
+ODD_QUESTION_MARK = re.compile(r"[？⁇﹖]")
+# SKILL.md ORDERS this sentence onto the end of every either/or question, and
+# interview.md orders the second onto the end of a reassured one. Both end on a
+# full stop, so without this the gate blocks the wording it mandates.
+MANDATED_TAILS = re.compile(
+    r"\s*(?:"
+    r"Not sure\?\s*That['’]?s okay\.\s*I['’]?ll choose what makes the most sense\."
+    r"|If you don['’]?t know,?\s*that['’]?s okay\."
+    r")\s*$", re.I)
 GENERIC_DIRS = {"projects", "downloads", "documents", "desktop", "tmp", "src", "work"}
+# A folder named after the CATEGORY supplies no name. Without this, a project in
+# .../projects/Website is told off by check E for saying "your website" -- the
+# only words available to it.
+CATEGORY_DIRS = {"website", "web app", "webapp", "app", "mobile app", "funnel",
+                 "software", "desktop software", "computer program", "site",
+                 "program", "project"}
 # A progress report is not a conversational turn. Without this, ONE stale
 # "not yet spoken" line nags every status message for the rest of a long build.
 STATUS_SHAPE = re.compile(r"^\s*(still working|working\s*[:✓]|i'?m still|progress:)", re.I)
@@ -280,17 +429,76 @@ def _project_name(cwd):
     base = os.path.basename(os.path.normpath(cwd or ""))
     if not base or base.lower() in GENERIC_DIRS or AUTO_SLUG.match(base):
         return None
+    if re.sub(r"[-_]+", " ", base).strip().lower() in CATEGORY_DIRS:
+        return None              # the folder IS the category; it is not a name
     trimmed = re.sub(r"\s+(Program|Project|Folder|App)$", "", base).strip()
     return trimmed or None
 
 
-def evaluate(message, answers_text, project_name=None):
+# --- I: the declared profile decides the surface, not the word "app" --------
+CONFIRM_SENTENCE = re.compile(
+    r"call it your|you want an?\b|did I get that right|what I['’]?ll build", re.I)
+SURFACE_CLAIM = (
+    ("mobile", re.compile(r"app for phones\b(?! and)|on their phones?\b|phone app|mobile app", re.I)),
+    ("desktop", re.compile(r"computer program|desktop software|lives on your computer|"
+                           r"on your computer\b", re.I)),
+    ("web", re.compile(r"website|web app|selling pages|funnel|sign into", re.I)),
+)
+
+
+def _target_family(target):
+    t = str(target or "").lower()
+    if t.startswith("desktop-"):
+        return "desktop"
+    if t.endswith("-web") or t.startswith("web-"):
+        return "web"
+    if re.match(r"(ios|android|mobile)-", t):
+        return "mobile"
+    return None                  # an unrecognised target decides nothing
+
+
+def _target_clash(clean, targets):
+    """(claim family, target, profile family) when the spoken surface is wrong.
+
+    Only a CONFIRM or NAMING sentence counts. "People can use it on their
+    phones" said in passing about a desktop program is a description of reach,
+    not a claim about what is being built; "You want an app people can use on
+    their phone" is the claim, and it is the one that ships a phone app to a
+    client who asked for a Mac program.
+    """
+    if not isinstance(targets, list) or not targets:
+        return None
+    primary = str(targets[0])
+    fam = _target_family(primary)
+    if not fam:
+        return None
+    for sentence in re.split(r"(?<=[.!?])\s+", clean):
+        if not CONFIRM_SENTENCE.search(sentence):
+            continue
+        for claim, rx in SURFACE_CLAIM:
+            if claim != fam and rx.search(sentence):
+                return claim, primary, fam
+    return None
+
+
+def evaluate(message, answers_text, project_name=None, targets=None, prev_message=None):
     """Return a block reason, or None. Pure -- this is what the selftest drives."""
+    message = ODD_QUESTION_MARK.sub("?", message or "")
     clean = _strip_quote_markers(message)
     if not clean:
         return None
-    ends_q, after = _ends_on_question(clean)
+    # A MANDATED closer is part of the question it follows, not prose after it.
+    ends_q, after = _ends_on_question(MANDATED_TAILS.sub("", clean).strip() or clean)
     owed = _owed(answers_text)
+
+    # I -- the 10:30 defect: a surface confirmed that the profile denies.
+    clash = _target_clash(clean, targets)
+    if clash:
+        return ("BUILD TARGET CONTRADICTS THE PROFILE. You described %s while "
+                ".spec-protocol.json declares targets[0] = %s (%s). A profile's targets "
+                "DECIDE the taxonomy (SKILL.md); the client is confirmed from the declared "
+                "target, never re-guessed from the word 'app'. Restate it from the profile."
+                % (clash[0], clash[1], clash[2]))
 
     # E -- the 1.21.1 defect: a category label where a real name exists.
     m = CATEGORY_NAMING.search(clean)
@@ -302,19 +510,51 @@ def evaluate(message, answers_text, project_name=None):
                 % (m.group(1), project_name))
 
     # F -- the 1.21.4 defect: a fork announced and decided in the same breath.
-    if not ends_q and SELF_RESOLVED_FORK.search(clean):
+    # A LATER-turn default carries its marker and is the mandated shape, not this.
+    if not ends_q and SELF_RESOLVED_FORK.search(clean) and not DEFAULT_TAKEN.search(clean):
         return ("FORK SELF-RESOLVED. You have announced a choice the client never got to "
                 "make and ended the turn on it. A genuine fork is ASKED: two plain options, "
                 "one sentence saying which you would pick and why, then the question -- and "
                 "the message ends there. The default may only be taken in a LATER turn, "
                 "after the question has gone unanswered, and is recorded as a DEFAULT.")
 
+    # J -- the 10:33 half of the same failure, and the one H cannot see: the
+    # question was SPOKEN last turn and never written down, so the ledger still
+    # says "not yet spoken" and there is no Asked text for H to find. D is off
+    # because some OTHER entry is blank. Runs whatever shape this turn takes.
+    if prev_message:
+        prev = _strip_quote_markers(ODD_QUESTION_MARK.sub("?", prev_message))
+        prev_q = _final_question_para(prev)
+        if prev and _ends_on_question(MANDATED_TAILS.sub("", prev).strip() or prev)[0] \
+                and not _recorded(prev_q, answers_text):
+            return ("QUESTION SPOKEN LAST TURN WAS NEVER RECORDED. Last turn you asked: \"%s\". "
+                    "00-INPUT/ANSWERS.md carries no **Asked:** entry for it, so it was never "
+                    "on the re-ask list and it is about to be lost. Record it now under its "
+                    "key with the client's reply, or with a blank answer if they did not "
+                    "answer it, BEFORE asking anything else."
+                    % _ellipsis(re.sub(r"\s+", " ", prev_q).strip(), 80))
+
     if ends_q:
-        if _two_paragraph_questions(clean):
+        if _two_paragraph_questions(_countable(clean)):
             return ("TWO QUESTIONS IN ONE MESSAGE. Question marks appear in two separate "
                     "paragraphs. One question at a time (audience.md §1): ask the first, let "
                     "the client answer, then ask the next. An either/or inside a single "
                     "paragraph is one question and is fine; these are two.")
+
+        # H -- the 10:34 defect: a spoken question left hanging while a NEW one
+        # is asked. Check A cannot see this (the turn DID end on a question) and
+        # check D is switched off by the very blank that proves the problem.
+        # UNCONDITIONAL on what else is planned: SKILL.md makes a key with a
+        # blank answer the re-ask list, "read before every question", so at
+        # yield time a spoken-and-blank entry IS hanging no matter what else the
+        # run intends to ask next.
+        pend = _pending(answers_text)
+        if pend and not _matches_pending(clean, pend):
+            return ("RETURN TO THE UNANSWERED QUESTION: %s. A question that was spoken and "
+                    "never answered comes back before any new one (SKILL.md: an interrupted "
+                    "question is unanswered, and it comes back). Ask it again now, in the "
+                    "same words." % ", ".join(k for k, _ in pend))
+
         pending = (re.search(r"\*\*Answer:\*\*\s*_?(blank|not yet)", answers_text, re.I)
                    or UNANSWERED_CELL.search(answers_text))
         if answers_text and not pending and not _recorded(clean, answers_text):
@@ -371,7 +611,18 @@ def main():
     except Exception:
         return
     cwd = payload.get("cwd") or os.getcwd()
-    reason = evaluate(message, answers_text, _project_name(cwd))
+    targets = None
+    try:
+        # The profile sits beside 00-INPUT/, never beside the session's cwd.
+        with open(os.path.join(os.path.dirname(os.path.dirname(answers)),
+                               ".spec-protocol.json"), encoding="utf-8") as fh:
+            declared = (json.load(fh) or {}).get("targets")
+        if isinstance(declared, list) and declared:
+            targets = declared
+    except Exception:
+        targets = None            # no profile, or unreadable: check I stands down
+    reason = evaluate(message, answers_text, _project_name(cwd), targets,
+                      _client_prose(payload.get("transcript_path", ""), 1))
     if not reason:
         reason = _speech_check(_strip_quote_markers(message), cwd)
     if reason:
@@ -381,7 +632,23 @@ def main():
 # ---------------------------------------------------------------------------
 # The selftest -- every fixture is a real message from a real run
 # ---------------------------------------------------------------------------
+# The ordinary mid-interview state: the last question is ANSWERED and written
+# down, and the next one is planned but not yet spoken. A run that acknowledges
+# an answer has, by contract, recorded it before yielding -- so this, not
+# HANGING, is the ledger behind a turn that moves on to the next question.
 OWED = """# Answers
+## build-target (step 3)
+**Asked:** "Got it. You want a program people use directly on their computer. Did I get that right?"
+**Answer:** ANSWERED yes
+
+## entry-mode (step 3)
+**Asked:** _not yet spoken — comes immediately after build-target confirms_
+**Answer:** _blank_
+"""
+
+# The same ledger with build-target still SPOKEN AND BLANK. That entry is the
+# re-ask list, so any new question yielded against this ledger drops it.
+HANGING = """# Answers
 ## build-target (step 3)
 **Asked:** "Got it. You want a program people use directly on their computer. Did I get that right?"
 **Answer:** _blank — spoken, awaiting reply_
@@ -401,6 +668,28 @@ SETTLED = """# Answers
 **Answer:** ANSWERED own words
 """
 
+# The 2026-09-20 10:34 failure: entry-mode was SPOKEN, the client corrected
+# something else, and it was never answered. Nothing is left unspoken, so the
+# run has no planned question to move to -- any new question drops this one.
+INTERRUPTED = """# Answers
+## build-target (step 3)
+**Asked:** "You want a program people use directly on their computer. Did I get that right?"
+**Answer:** ANSWERED yes
+
+## entry-mode (step 4)
+**Asked:** "I can learn about your idea in one of two ways: you tell me in your own words, or I ask you a short list. Which would you rather do?"
+**Answer:** _blank — spoken, awaiting reply_
+"""
+
+ENTRY_MODE_Q = ("I can learn about your idea in one of two ways: you tell me in your own "
+                "words, or I ask you a short list. Which would you rather do?")
+
+# The table shape, with the question living in the key cell and no answer yet.
+PENDING_TABLE = ("# ANSWERS\n\n| Question | Answer |\n|---|---|\n"
+                 "| What is your business name? | Studio Nerds |\n"
+                 "| Do you picture people using this on their phones, or on a computer? "
+                 "| _blank_ |\n")
+
 
 def _selftest():
     fails = 0
@@ -412,9 +701,9 @@ def _selftest():
         if not ok:
             fails += 1
 
-    def t(name, msg, answers, want_block, project=None):
+    def t(name, msg, answers, want_block, project=None, targets=None, prev=None):
         nonlocal fails
-        r = evaluate(msg, answers, project)
+        r = evaluate(msg, answers, project, targets, prev)
         got = bool(r)
         ok = got == want_block
         print(("PASS  " if ok else "FAIL  ") + name +
@@ -503,6 +792,144 @@ def _selftest():
         t2("jargon: real interview wording passes -- %s..." % clean[:34],
            bool(_speech_check(clean, "/tmp")), False)
 
+    # --- the nine defects reproduced against 1.21.x, each with its control ---
+
+    # 1 -- a default taken in a LATER turn is the shape interview.md mandates.
+    t("1 later-turn default is allowed",
+      "You didn't say, so I'm going with the first one, recorded as a default.",
+      SETTLED, False)
+    t("1 control: the same-turn self-resolve still blocks",
+      "Here are two options: Higgsfield as the bar, or rebuilding from it. I'm going with "
+      "the first one unless you say otherwise.", SETTLED, True)
+
+    # 2 -- the turn boundary: a tool-only turn must not be judged on old prose.
+    import tempfile
+    dturn = tempfile.mkdtemp()
+
+    def _transcript(name, *records):
+        p = os.path.join(dturn, name)
+        with open(p, "w") as fh:
+            for r in records:
+                fh.write(json.dumps(r) + "\n")
+        return p
+
+    def _asst(*blocks):
+        return {"type": "assistant", "message": {"role": "assistant", "content": list(blocks)}}
+
+    _TXT = {"type": "text", "text": "PREVIOUS TURN statement."}
+    _USE = {"type": "tool_use", "name": "Write", "input": {"file_path": "/x/y"}}
+    leak = _transcript("leak.jsonl", _asst(_TXT),
+                       {"type": "user", "message": {"role": "user", "content": "ok"}},
+                       _asst(_USE))
+    t2("2 tool-only turn does not leak the previous turn's prose",
+       _last_client_message(leak), None)
+    spoke = _transcript("spoke.jsonl", _asst(_TXT),
+                        {"type": "user", "message": {"role": "user", "content": "ok"}},
+                        _asst(_USE, {"type": "text", "text": "THIS TURN. Which would you rather do?"}))
+    t2("2 control: this turn's own prose is still returned",
+       _last_client_message(spoke), "THIS TURN. Which would you rather do?")
+    carried = _transcript("carried.jsonl",
+                          {"type": "user", "message": {"role": "user", "content": "ok"}},
+                          _asst({"type": "text", "text": "THIS TURN spoke first."}),
+                          _asst(_USE),
+                          {"type": "user", "message": {"role": "user", "content":
+                           [{"type": "tool_result", "content": "done"}]}})
+    t2("2 control: a tool_result does not end the turn",
+       _last_client_message(carried), "THIS TURN spoke first.")
+
+    # 3 -- a fullwidth question mark is still a question mark.
+    t("3 fullwidth ? ends the turn on a question", "What should I call it？", OWED, False)
+    t("3 control: two fullwidth questions still hit the wall",
+      "What would you like people to find on your website？\n\n"
+      "And do you already own a web address？", SETTLED, True)
+
+    # 4 -- a "?" inside a code fence is an example, not a second question.
+    t("4 a fenced block is not a second question",
+      "What is your business name?\n\n```\nAnd do you own a domain?\n```", OWED, False)
+    t("4 control: two real paragraphs still hit the wall",
+      "What is your business name?\n\n```\nsome notes\n```\n\nAnd do you own a domain?",
+      OWED, True)
+
+    # 5 -- the client's own words said back carry their own "?".
+    t("5 a quoted client question is not a second question",
+      "You said \"what if nobody can find it?\" -- got it.\n\nDo you own a domain?",
+      OWED, False)
+    t("5 control: the same second question unquoted still hits the wall",
+      "You said what if nobody can find it? -- got it.\n\nDo you own a domain?",
+      OWED, True)
+
+    # 6 -- a folder named for the category supplies no name.
+    t2("6 a category folder supplies no name", _project_name("/x/projects/Website"), None)
+    t2("6 control: a real folder name still supplies a name",
+       _project_name("/x/projects/Studio Nerds"), "Studio Nerds")
+    t("6 the category line is allowed when the folder IS the category",
+      "I'll call it your website.\n\nWhich would you rather do?",
+      OWED, False, _project_name("/x/projects/Website"))
+
+    # 7 -- the closer SKILL.md orders onto every either/or question.
+    t("7 the mandated either/or closer still ends on the question",
+      "Do you picture people using this on their phones, or on a computer? Not sure? "
+      "That's okay. I'll choose what makes the most sense.", OWED, False)
+    t("7 the mandated reassurance closer is allowed",
+      "Do you already own a web address, something like yourbusiness.com? If you don't "
+      "know, that's okay.", OWED, False)
+    t("7 control: any other trailing sentence still blocks",
+      "Do you picture people using this on their phones, or on a computer? From here on "
+      "I'll call it Studio Nerds.", OWED, True)
+
+    # 8 -- the interrupted question, dropped for a different one (10:34).
+    t("8 a new question while a spoken one hangs must return to it",
+      "Got it — you'd rather I use the notes you already wrote. Did I get that right?",
+      INTERRUPTED, True)
+    t("8 control a: re-asking the hanging question is silent", ENTRY_MODE_Q, INTERRUPTED, False)
+    t("8 control b: no pending entries, H never fires",
+      "I can learn about your idea in one of two ways. Which would you rather do?",
+      SETTLED, False)
+    t2("8 table ledger: the pending row is read",
+       [k for k, _ in _pending(PENDING_TABLE)],
+       ["Do you picture people using this on their phones, or on a computer?"])
+    t("8 control c: a table ledger names the pending row",
+      "Got it — you'd rather start fresh. Did I get that right?", PENDING_TABLE, True)
+    t2("8 a recorded answer leaves nothing pending", [k for k, _ in _pending(OWED)], [])
+    t2("8 a spoken-and-blank entry is pending",
+       [k for k, _ in _pending(HANGING)], ["build-target (step 3)"])
+    t("8 the next planned question while a spoken one is blank -> H blocks",
+      "Wonderful — that's exactly what I'll build for you.\n\n"
+      "I can learn about your idea in one of two ways. Which would you rather do?",
+      HANGING, True)
+
+    # J -- the 10:33 half: a question spoken last turn and never written down.
+    t("J last turn's question was never recorded",
+      "Then I didn't hear it right, and that's on me.\n\nGot it. You want a program people "
+      "use directly on their computer. Did I get that right?",
+      OWED, True, None, None, "I can learn about your idea in one of two ways. "
+      "Which would you rather do?")
+    t("J control a: the previous question IS on the ledger", "Did I get that right?",
+      SETTLED, False, None, None,
+      "I can learn about your idea in one of two ways. Which would you rather do?")
+    t("J control b: no previous prose (first turn)",
+      "I can learn about your idea in one of two ways. Which would you rather do?",
+      OWED, False, None, None, None)
+    t("J control c: the previous turn ended on a statement",
+      "I can learn about your idea in one of two ways. Which would you rather do?",
+      OWED, False, None, None, "From here on I'll call it Studio Nerds.")
+    t("J control d: a table ledger carrying the question text",
+      "Do you picture people using this on their phones, or on a computer?",
+      PENDING_TABLE, False, None, None,
+      "Do you picture people using this on their phones, or on a computer?")
+    t2("J the previous turn's prose is reachable", _client_prose(spoke, 1), "PREVIOUS TURN statement.")
+
+    # 9 -- the declared profile decides the surface (10:30).
+    _CLAIM = "Got it. You want an app people can use on their phone. Did I get that right?"
+    t("9 a phone claim against a desktop profile is blocked",
+      _CLAIM, SETTLED, True, None, ["desktop-macos-arm64", "web"])
+    t("9 control: no profile, check I never fires", _CLAIM, SETTLED, False, None, None)
+    t("9 control: the profile agrees, silent", _CLAIM, SETTLED, False, None, ["ios-arm64"])
+    t("9 control: the claim outside a confirm sentence is silent",
+      "People can use it on their phones whenever they like.",
+      SETTLED, False, None, ["desktop-macos-arm64"])
+    t2("9 an unrecognised target decides nothing", _target_family("frobnicator"), None)
+
     # --- safety -------------------------------------------------------------
     t("empty message is never blocked", "", OWED, False)
     t("no ledger content is never blocked", "Anything at all.", "", False)
@@ -547,7 +974,7 @@ def _selftest():
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("conversation-gate.py selftest: ALL PASS (35 checks)")
+    print("conversation-gate.py selftest: ALL PASS (71 checks)")
 
 
 if __name__ == "__main__":

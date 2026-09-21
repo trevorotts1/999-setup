@@ -1,5 +1,74 @@
 # Changelog
 
+## [1.23.0] — 2026-09-21
+
+### What the five adversarial agents found, fixed by six more
+
+Five Opus agents (contradictions, hook attack, regression replay, build path, unenforced
+invariants) audited the day's releases under Fable discipline. Their three truncated reports were
+recovered from disk and every finding re-verified on the instrument before six Opus agents were
+dispatched, one per file, to fix them. Nothing below was fixed in prose alone.
+
+**The Stop hooks now know whose session they are in.** Both `gate0-claim-gate.py` and
+`conversation-gate.py` fired on the operator session that maintains them — the first because a
+tool INPUT quoting the refusal wording counted as speech, the second (1.22.3) because a ledger
+near cwd counted as a run. Refusal evidence is now text blocks only, and both hooks require the
+harness's own `/spec-protocol` invocation in a user-role record. Proven on both sides: the
+operator transcript silent, the real 2026-09-20 refusal and the real 2026-09-21 stall still
+blocked. `hook-check.sh` — the staleness guard that knew one hook — now checks all three
+(`dispatch-gate`, `gate0-claim-gate`, `conversation-gate`) per root; its live run named the
+gate0 copy stale the moment the repo copy changed, which yesterday's script could not see.
+
+**`conversation-gate.py`: eleven fixes, 35 → 71 selftest checks.** The two real failures
+the replay agent proved were MISSED are now checks: **I** (a spoken build surface that contradicts
+`.spec-protocol.json` `targets[0]` — "an app for their phone" against `desktop-macos-arm64`,
+the 10:30 failure) and **J** (the previous turn's question must be on the ledger as *Asked* —
+entry-mode was spoken at 10:33 and never written, so nothing owed it, the 10:34 failure). **H**
+returns to a spoken-and-blank question before any new one, in both ledger shapes. Seven false
+positives removed: the mandated later-turn DEFAULT, the mandated either/or closer, a fullwidth
+`？`, a question inside a code fence, the client's own quoted question, a folder literally named
+`Website`, and the previous turn's prose leaking into a tool-only turn.
+
+**`gate0-claim-gate.py`: the refusal regex survives wrapping.** A newline, a double space or a
+non-breaking space inside the phrase evaded it entirely; it is now whitespace-tolerant. 11 → 19.
+
+**`dispatch-gate.py`: SHAPE 8.** The seat probe was enforced only by `dispatch-check.sh`, a
+script the conductor is told to run; the hook that actually intercepts the Workflow call never
+asked for it — the 2026-09-08 canary dispatched builders behind a ledger that discussed seats
+in prose. A build dispatch in scope now requires the `SEAT-PROBE: seats= callable= dead=
+undetermined=` line in `CONTROL/LEDGER.md`; prose about seats still refuses. 27 → 34.
+
+**A profiled project finally has a tick.** `references/project-profile.md` said "a profile
+REDIRECTS the helpers; it never switches them off"; `watch-tick.sh` and seven other tools
+refused with "use the profile-declared observer" — an observer with no schema key, no validator
+and no runner. The tick now redirects: on a profiled project `--arm` installs the same
+five-minute cron line logging beside the bound `documents.state`, and each tick runs the
+profile's `commands.validate` as argv (no shell) and prints one `PROFILE-TICK` line; a missing
+key is UNDETERMINED, never a silent fallback to `CONTROL/`. Shell 35 → 42 selftest cases; the
+Node twin `scripts/common/watch-tick.mjs` carries the same path, byte-identical cron line and tick line against the live packet, 10 → 15 selftest cases.
+`project-profile-selftest.sh` asserted the old refusal and now asserts the redirect.
+
+**Seven prose contradictions the hook would have blocked.** The Jev offer moved INSIDE the
+opening turn before the idea question (it was ordered "after the opening", which ends on a
+question); the escape-hatch sentence after "NEVER DELETED" is gone — the client's reply, even
+"yes, that's it", is the answer; the two differing "verbatim" entry-mode scripts are now one;
+`ANSWERS.md` has one deadline (first counted question; on a supplied folder, before the
+opening — the unprofiled folder cannot exist before the client speaks); step 21 arms the tick on
+EVERY project; "step 13 of the interview" points at the pictures item that exists; §14 lists
+`project-profile.md` as item 26.
+
+**Closed on evidence, no change:** `dispatch-gate` registered on `Workflow` only is correct —
+SKILL.md dispatches through Workflow alone (Agent: 0 references). The entry-mode question on
+the naming line is the mandated ONE-message shape since 1.21.5, not a defect. A stale
+`_not yet spoken_` line nagging every build-phase statement is correct behaviour on a correct
+ledger: a question still unspoken during the build was skipped.
+
+**Studio Nerds packet (outside this repo, reported for the record):** the qc-coverage bypass
+in `scripts/state.mjs` is closed (a builder probe may carry builder provenance only —
+`PROBE_PROVENANCE_ROLE`; the test fixture that taught the bypass is split and a negative test
+added); the packet is now a git repository on `main` (the state machine's QC handoff needs a
+commit to bind to; no remote yet); `PACKET-MANIFEST.sha256` regenerated, 47/47 OK.
+
 ## [1.22.3] — 2026-09-21
 
 ### The conversation gate caught its own author
