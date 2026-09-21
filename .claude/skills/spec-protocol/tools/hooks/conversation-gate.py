@@ -133,6 +133,52 @@ def _answers_path(cwd):
     return None
 
 
+SKILL_INVOKED = re.compile(
+    r"Base directory for this skill:\s*\S*spec-protocol|<command-name>/?spec-protocol",
+    re.I)
+
+
+def _is_spec_protocol_run(transcript_path):
+    """Is THIS SESSION a spec-protocol client conversation?
+
+    A ledger under cwd is not enough. An operator session that merely `cd`s into
+    a project folder to repair it inherits that folder's `00-INPUT/ANSWERS.md`
+    and gets policed as though it were talking to a client -- which is exactly
+    what happened to the session that wrote this hook, mid-repair. The run must
+    also have actually INVOKED the skill: the harness writes the skill's base
+    directory into the transcript when it does, and nothing else produces that
+    line. Discussing spec-protocol, editing it, or standing in its folder does
+    not.
+    """
+    # Only the harness's own injection counts: a `user` record whose content is
+    # a plain string or a `text` block. A `tool_result` or `tool_use` block that
+    # QUOTES the marker (an operator reading a run's transcript, or SKILL.md)
+    # is not an invocation -- that is precisely how this hook caught its author.
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not SKILL_INVOKED.search(line):
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                msg = rec.get("message") or {}
+                if rec.get("type") != "user" or msg.get("role") != "user":
+                    continue
+                content = msg.get("content")
+                if isinstance(content, str) and SKILL_INVOKED.search(content):
+                    return True
+                if isinstance(content, list):
+                    for block in content:
+                        if (isinstance(block, dict) and block.get("type") == "text"
+                                and SKILL_INVOKED.search(block.get("text") or "")):
+                            return True
+    except Exception:
+        return False
+    return False
+
+
 def _last_client_message(transcript_path):
     """The final assistant prose of this turn -- what the client actually read."""
     try:
@@ -313,7 +359,9 @@ def main():
         return
     answers = _answers_path(payload.get("cwd") or os.getcwd())
     if not answers:
-        return                       # not a spec-protocol run; never evaluated
+        return                       # no ledger anywhere near: never evaluated
+    if not _is_spec_protocol_run(payload.get("transcript_path", "")):
+        return                       # an operator session standing in the folder
     message = _last_client_message(payload.get("transcript_path", ""))
     if not message:
         return
@@ -459,6 +507,31 @@ def _selftest():
     t("empty message is never blocked", "", OWED, False)
     t("no ledger content is never blocked", "Anything at all.", "", False)
 
+    # --- the scope escape that caught its own author -------------------------
+    import tempfile
+    d2 = tempfile.mkdtemp()
+    op = os.path.join(d2, "operator.jsonl")
+    with open(op, "w") as fh:
+        fh.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "I repaired the deadlock in scripts/state.mjs."}]}}) + "\n")
+    t2("operator session standing in a project folder is NOT policed",
+       _is_spec_protocol_run(op), False)
+    run = os.path.join(d2, "run.jsonl")
+    with open(run, "w") as fh:
+        fh.write(json.dumps({"type": "user", "message": {"role": "user", "content":
+                 "Base directory for this skill: /x/skills/spec-protocol"}}) + "\n")
+    t2("a session that actually invoked the skill IS policed",
+       _is_spec_protocol_run(run), True)
+    t2("a missing transcript is not a run", _is_spec_protocol_run("/nope.jsonl"), False)
+    quoted = os.path.join(d2, "quoted.jsonl")
+    with open(quoted, "w") as fh:
+        fh.write(json.dumps({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "content": "<command-name>/spec-protocol</command-name>"}]}}) + "\n")
+        fh.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "input": {"command": "grep 'Base directory for this skill: x/spec-protocol'"}}]}}) + "\n")
+    t2("a session that merely QUOTES the marker in tool traffic is NOT a run",
+       _is_spec_protocol_run(quoted), False)
+
     # --- scope gate ---------------------------------------------------------
     import tempfile
     d = tempfile.mkdtemp()
@@ -474,7 +547,7 @@ def _selftest():
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("conversation-gate.py selftest: ALL PASS (31 checks)")
+    print("conversation-gate.py selftest: ALL PASS (35 checks)")
 
 
 if __name__ == "__main__":

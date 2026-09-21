@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.22.3] — 2026-09-21
+
+### The conversation gate caught its own author
+
+The 1.22.2 scope widening (cwd + three ancestors + one level down) made `conversation-gate.py`
+decide "this is a spec-protocol run" from **file presence alone**: any session whose `cwd` is
+near a folder holding `00-INPUT/ANSWERS.md` was policed as though it were talking to a client.
+The operator session that shipped 1.22.2 then `cd`'d into a client packet to repair its build
+state — and was blocked on its own Stop with *"TURN ENDED ON A STATEMENT WHILE A QUESTION IS
+OWED: entry-mode (step 3)"*. A ledger under cwd is evidence a project exists there, not evidence
+that THIS SESSION is the interview.
+
+The gate now also requires proof the session actually **invoked the skill**: a `user`-role
+record carrying the harness's own `<command-name>/spec-protocol</command-name>` injection (or
+the skill's `Base directory for this skill:` line) as a plain string or `text` block. A
+`tool_result` or `tool_use` block that merely *quotes* the marker — an operator reading a run's
+transcript, or `SKILL.md` — does not count; the first draft of this fix accepted those and still
+blocked the operator, so that case is now a selftest fixture.
+
+Verified live on both sides of the boundary: the operator session's own transcript, cwd'd into
+the packet → silent, rc 0. The real stalled 2026-09-21 run → still blocked on the same owed
+question. Selftest 31 → 35 checks. No client-facing wording changed.
+
 ## [1.22.2] — 2026-09-21
 
 ### Four holes the adversarial agents found in yesterday's enforcement
