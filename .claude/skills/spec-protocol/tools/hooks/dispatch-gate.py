@@ -7,7 +7,7 @@ were prose. A conductor that resolved the ambiguity conservatively dispatched
 says no, at launch, in the one place the model cannot talk its way past.
 
 It reads the script the launch is about to run (inline `script` or `scriptPath`)
-and blocks (exit 2) eight shapes, naming the fix for each:
+and blocks (exit 2) nine shapes, naming the fix for each:
 
   1. parallel(build) followed by parallel(qc)      -> pipeline(units, build, qc)
   2. a judge stage with fewer items than the build stage  -> one judge per unit
@@ -29,6 +29,21 @@ and blocks (exit 2) eight shapes, naming the fix for each:
      no seat was ever proven CALLABLE. tools/dispatch-check.sh refuses the
      same dispatch with exit 11; a ledger that discusses seats in PROSE is
      what the 2026-09-08 canary had instead of a probe.
+  9. a BUILD dispatch with no PROVEN repository behind it -- no
+     tools/repo-anchor.sh receipt beside the project's state, or a receipt
+     whose remote is no longer what `git remote get-url origin` says. The
+     skill's own description promises "merged-to-GitHub" and nothing in it
+     ever created the repository or the remote; a run reached its first QC
+     handoff on a folder that was not a git repository at all.
+
+SHAPE 9 IS SCOPED TOO, but to BOTH project shapes: a marked legacy CONTROL/
+and a profiled `.spec-protocol.json` alike, because the promise it enforces is
+made to every client on every run. Its receipt lives at CONTROL/repo-anchor.json
+on a legacy project and beside the profile's own `documents.state` on a profiled
+one -- tools/ledger.sh refuses a profiled project by design, so there the receipt
+IS the record. The `git remote get-url origin` it runs is a CONFIG READ with a
+five-second timeout: SHAPE 9 never touches the network, and a git that will not
+run, a timeout, or a malformed receipt is UNDETERMINED and fails open in silence.
 
 SHAPES 7 AND 8 ARE SCOPED to spec-protocol projects. They are evaluated only
 when cwd, or a parent up to forty levels above it, carries the GATE 0 marker
@@ -147,6 +162,15 @@ FIX_8 = (
     "  WHY: on 2026-09-08 a run dispatched builders with no seat ever proven callable, behind a\n"
     "  ledger that talked about seat capacity at length. tools/dispatch-check.sh refuses the same\n"
     "  dispatch with exit 11; this hook is the half that holds when the conductor never calls it."
+)
+
+FIX_9 = (
+    "  FIX: run  tools/repo-anchor.sh <project>  first (SKILL.md step 17). It creates the\n"
+    "  repository if there is none, arranges the remote on the client's own GitHub login (or\n"
+    "  the operator-provided remote when they declined), proves it with ls-remote and writes\n"
+    "  the receipt this gate reads.\n"
+    "  WHY: the skill promises merged-to-GitHub; a run once reached its first QC handoff on a\n"
+    "  folder that was not a git repository at all, and nothing had refused the builders."
 )
 
 # SHAPE 7's booking window. A row older than this booked a tree that has already
@@ -757,6 +781,78 @@ def has_seat_probe_line(control_dir):
     return any(SEAT_PROBE_RE.search(line) for line in text.splitlines())
 
 
+# A credential embedded in a remote URL, stripped before any comparison so a
+# working copy whose origin carries one is never refused for carrying it. The
+# URL itself is never printed by this hook -- tools/env-sweep.sh:164 is the rule.
+CRED_IN_URL = re.compile(r"://[^/@]*@")
+REPO_ANCHOR_RECEIPT = "repo-anchor.json"
+
+
+def strip_cred(url):
+    return CRED_IN_URL.sub("://", (url or "").strip())
+
+
+def repo_anchor_receipt_path(cwd, profiled):
+    """Where tools/repo-anchor.sh files its receipt, or None when out of scope.
+
+    Profiled: beside the profile's own `documents.state`, which is the directory
+    a packet owns -- tools/ledger.sh refuses a profiled project (ledger.sh:471),
+    so there the receipt IS the record. Legacy: the CONTROL/ the GATE 0 marker
+    came out of, the same directory SHAPES 7 and 8 read.
+    """
+    if profiled:
+        root = profile_project(cwd)
+        if not root:
+            return None
+        try:
+            with open(os.path.join(root, PROFILE_FILE), encoding="utf-8", errors="replace") as fh:
+                doc = json.load(fh)
+            state = doc["documents"]["state"]
+        except Exception:
+            return None
+        if not isinstance(state, str) or not state or state.startswith("/") or ".." in state:
+            return None
+        return os.path.join(root, os.path.dirname(state), REPO_ANCHOR_RECEIPT)
+    control = spec_protocol_project(cwd)
+    if not control:
+        return None
+    return os.path.join(control, REPO_ANCHOR_RECEIPT)
+
+
+def repo_anchor_proven(path):
+    """True / False for the receipt, or None when it cannot be MEASURED.
+
+    False is an ANSWER, the same three-way split has_seat_probe_line() makes: no
+    receipt at all is exactly the unanchored build this shape refuses, and a
+    receipt whose repoRoot no longer has that origin is a receipt describing a
+    repository that is no longer there. Only a malformed receipt, a git that will
+    not run, or a timeout is UNDETERMINED -- and that one fails open in silence.
+
+    `git remote get-url origin` is a CONFIG READ. It reaches no network, which is
+    what lets a PreToolUse hook call it on every build launch.
+    """
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            doc = json.load(fh)
+        root, want = doc["repoRoot"], doc["remote"]
+    except Exception:
+        return None
+    if not isinstance(root, str) or not isinstance(want, str) or not root or not want:
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "-C", root, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return False  # the receipt names a working copy that has no origin today
+    return strip_cred(proc.stdout) == strip_cred(want)
+
+
 def is_build_dispatch(code):
     """True when any agent() this script declares carries a build label.
 
@@ -884,6 +980,29 @@ def evaluate(script, cwd=None, profiled=False):
             findings.append(
                 "SHAPE 6 -- DISPATCH-CHECK PAUSED | executions=%d | pause_at=%d | ceiling=%d\n"
                 "  (read: %s)\n%s" % (execs, pause, ceil, path, FIX_6_PAUSE)
+            )
+
+    # --- 9. no proven repository behind the build ---------------------------
+    # The skill's own description promises "merged-to-GitHub". SKILL.md section 6
+    # says GitHub is arranged at minute one and `gh auth status` proves it before
+    # the first builder; step 17 says "Determine GitHub (new or existing)";
+    # references/documents.md:63 places the working copies at
+    # `<project>/repos/<repository-name>/`; references/pipeline.md:942 proves a
+    # merge as an ancestor of remote main. And a grep for `git init`, `gh repo`
+    # and `git remote` across SKILL.md, references/, tools/, scripts/ and
+    # templates/ found exactly one hit -- a COMMENT in tools/env-sweep.sh:164.
+    # Nothing created the repository. Nothing created the remote. A run reached
+    # its first QC handoff on a folder that was not a git repository at all,
+    # because prose said "determine GitHub" and nothing refused the builders.
+    # Unlike SHAPES 7 and 8 this one is scoped to BOTH project shapes: the
+    # promise is made to every client on every run, and tools/repo-anchor.sh
+    # writes its receipt on either.
+    if is_build_dispatch(code):
+        receipt = repo_anchor_receipt_path(cwd or os.getcwd(), profiled)
+        if receipt is not None and repo_anchor_proven(receipt) is False:
+            findings.append(
+                "SHAPE 9 -- NO-REPO-ANCHOR | no proven repository behind this build "
+                "(read: %s)\n%s" % (receipt, FIX_9)
             )
 
     # --- 7. the write-ahead rule: a tree that was never booked ---------------
@@ -1270,6 +1389,38 @@ def selftest():
            "with exit 2 naming tools/state-check.sh -- that is the gate that refuses, and the "
            "conductor owns the difference" % rc_nb)
 
+    def git_ok():
+        try:
+            return subprocess.run(["git", "--version"], capture_output=True,
+                                  text=True, timeout=20).returncode == 0
+        except Exception:
+            return False
+
+    def git_repo_with_origin(parent, name, origin):
+        """A REAL git repo whose origin is `origin`. None when git will not run.
+
+        SHAPE 9's proof is `git remote get-url origin`, so the fixture has to be
+        a real repository -- a mocked one would test the mock.
+        """
+        root = os.path.join(parent, name)
+        os.makedirs(root, exist_ok=True)
+        try:
+            for cmd in (["git", "init", "-q", root],
+                        ["git", "-C", root, "remote", "add", "origin", origin]):
+                if subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode != 0:
+                    return None
+        except Exception:
+            return None
+        return root
+
+    def write_anchor_receipt(state_dir, repo_root, remote):
+        """The receipt tools/repo-anchor.sh writes after its ls-remote proof."""
+        os.makedirs(state_dir, exist_ok=True)
+        with open(os.path.join(state_dir, "repo-anchor.json"), "w", encoding="utf-8") as fh:
+            json.dump({"repoRoot": repo_root, "remote": remote, "branch": "main",
+                       "head": "0" * 40, "provedAt": "2026-09-22T00:00:00Z",
+                       "source": "client-gh"}, fh, indent=2)
+
     def write_ledger(d, kind):
         path = os.path.join(d, "CONTROL", "LEDGER.md")
         if kind == "none":
@@ -1292,10 +1443,19 @@ def selftest():
     # "prose" writes a ledger that only TALKS about seats, "none" writes no
     # ledger at all. Every pre-SHAPE-8 fixture keeps the default so the checks
     # above keep testing what they were written to test.
-    def log_dir(name, agents, age_seconds=0, write_log=True, ledger="probe"):
+    def log_dir(name, agents, age_seconds=0, write_log=True, ledger="probe", anchor="ok"):
         d = tempfile.mkdtemp(prefix="dispatch-gate-%s." % name, dir=sandbox)
         os.makedirs(os.path.join(d, "CONTROL"), exist_ok=True)
         write_ledger(d, ledger)
+        # `anchor` is SHAPE 9's one variable, added the same way `ledger` was
+        # added for SHAPE 8: "ok" gives every pre-SHAPE-9 fixture a valid
+        # repo-anchor receipt so 8 and 9 never score each other, "none" writes
+        # no receipt at all.
+        if anchor == "ok":
+            repo = git_repo_with_origin(d, "repo", os.path.join(d, "origin.git"))
+            if repo:
+                write_anchor_receipt(os.path.join(d, "CONTROL"), repo,
+                                     os.path.join(d, "origin.git"))
         # The GATE 0 marker is what puts these fixtures IN SCOPE for SHAPE 7
         # (WI-64). It is also what a real project has before its first
         # dispatch: tools/gate0.sh --record writes it at the GATE 0 pass.
@@ -1364,6 +1524,10 @@ def selftest():
             "agents=10\n"
         )
     write_ledger(scope, "probe")  # so leg 11b isolates SHAPE 7, not SHAPE 8
+    _scope_repo = git_repo_with_origin(scope, "repo", os.path.join(scope, "origin.git"))
+    if _scope_repo:  # and SHAPE 9 either: only the marker may change the answer
+        write_anchor_receipt(os.path.join(scope, "CONTROL"), _scope_repo,
+                             os.path.join(scope, "origin.git"))
     rc_out, out_out = _run_child(payload(FIXTURE_THREE_STAGE), scope)
     ok = rc_out == 0 and SCOPE_NOTE in out_out
     report(21, "foreign-log-not-in-scope", ok,
@@ -1416,6 +1580,15 @@ def selftest():
             "const intentId=task==='W01-01'?'intent-live':'intent-consumed';\n"
             "console.log(JSON.stringify({ok:true,taskAuthorization:{approved:true,kind:'reservation-check',readOnly:true,taskId:task,role,intentId,nativeWorkflowId,label,units:Number(a[0]),agents:Number(a[1]),stateRevision:7,sourceSpecHash:'a'.repeat(64),reservation:{id:intentId,state:intentId==='intent-live'?'RESERVED':'CONSUMED'}}}));\n"
         )
+    # A profiled project's repo is rooted at the project home itself and its
+    # repo-anchor receipt sits beside documents.state, which is .studio/ here.
+    # Without it SHAPE 9 would refuse every profiled build fixture below, and
+    # checks 23-26 and 32 would stop testing what they were written to test.
+    _profiled_repo = git_repo_with_origin(os.path.dirname(profiled), os.path.basename(profiled),
+                                          os.path.join(sandbox, "profiled-origin.git"))
+    if _profiled_repo:
+        write_anchor_receipt(os.path.join(profiled, ".studio"), profiled,
+                             os.path.join(sandbox, "profiled-origin.git"))
     identity = {"taskId": "W01-01", "role": "builder", "intentId": "intent-live", "nativeWorkflowId": "wf-canvas", "label": "[Opus x10] build canvas", "units": 10, "agents": 10}
     profile_event = {"tool_name": "Workflow", "cwd": profiled, "tool_input": {"script": FIXTURE_WAVE1, "args": {"specProtocol": identity}}}
     before = sorted(os.path.relpath(os.path.join(base, name), profiled) for base, _dirs, names in os.walk(profiled) for name in names)
@@ -1529,10 +1702,79 @@ def selftest():
            "SHAPE 8: %s -- a gate that cannot read the ledger says NOTHING about the probe"
            % (rc_ur, "yes" if "SHAPE 8" not in out_ur else "NO -- refused"))
 
+    # 14 -- SHAPE 9, the repository behind the build. The known-good control
+    #       comes FIRST: every fixture below is a REAL git repository, so if git
+    #       will not run here the fixtures are broken and their refusals prove
+    #       nothing about the gate.
+    have_git = git_ok()
+    report(34, "git-runs-for-fixtures", have_git,
+           "git --version rc 0: %s -- SHAPE 9's proof is `git remote get-url origin`, so "
+           "every fixture below is a real repository and not a mock of one"
+           % ("yes" if have_git else "NO -- the SHAPE 9 fixtures below are UNDETERMINED, "
+              "not evidence"))
+
+    # ONE marked, booked, seat-proven project. ONE build script. Three answers,
+    # and the only thing that changes is the receipt.
+    anchorless = log_dir("anchorless", 30, anchor="none")
+    rc_r0, out_r0 = _run_child(payload(FIXTURE_THREE_STAGE), anchorless)
+    ok = (rc_r0 == 2 and "SHAPE 9" in out_r0
+          and "SHAPE 7" not in out_r0 and "SHAPE 8" not in out_r0)
+    report(35, "no-repo-anchor-blocked", ok,
+           "a booked, seat-proven build tree with no CONTROL/repo-anchor.json -> rc=%d "
+           "(want 2), SHAPE 9 named: %s, and NOT a SHAPE 7 or SHAPE 8 refusal: %s"
+           % (rc_r0, "yes" if "SHAPE 9" in out_r0 else "NO",
+              "correct" if "SHAPE 7" not in out_r0 and "SHAPE 8" not in out_r0
+              else "NO -- blocked for another rule"))
+
+    anchored = log_dir("anchored", 30)
+    rc_r1, out_r1 = _run_child(payload(FIXTURE_THREE_STAGE), anchored)
+    report(36, "repo-anchor-allows", rc_r1 == 0,
+           "the SAME script once a receipt proves the repository's origin -> rc=%d (want 0). "
+           "Without this leg the two around it would score a gate that refused every build%s"
+           % (rc_r1, "" if rc_r1 == 0 else " -- output: " + out_r1.strip()[:400]))
+
+    # THE DISCRIMINATING CONTROL: the receipt is PRESENT and origin has moved.
+    # A gate that tested only for the FILE passes both legs above and fails here.
+    moved = log_dir("movedorigin", 30)
+    try:
+        subprocess.run(["git", "-C", os.path.join(moved, "repo"), "remote", "set-url",
+                        "origin", os.path.join(moved, "somewhere-else.git")],
+                       capture_output=True, text=True, timeout=20)
+    except Exception:
+        pass
+    rc_r2, out_r2 = _run_child(payload(FIXTURE_THREE_STAGE), moved)
+    report(37, "moved-origin-blocked", rc_r2 == 2 and "SHAPE 9" in out_r2,
+           "the SAME receipt with origin re-pointed somewhere else -> rc=%d (want 2) and "
+           "SHAPE 9 named: %s -- a receipt that is merely PRESENT proves nothing"
+           % (rc_r2, "yes" if "SHAPE 9" in out_r2 else "NO"))
+
+    # 14b -- the profiled half. Check 32 above already proved a profiled build
+    #        ALLOWED with its receipt beside documents.state; this removes that
+    #        one file and nothing else.
+    try:
+        os.remove(os.path.join(profiled, ".studio", "repo-anchor.json"))
+    except Exception:
+        pass
+    rc_r3, out_r3 = _run_child(json.dumps(profile_event), profiled)
+    report(38, "profiled-missing-anchor-blocked", rc_r3 == 2 and "SHAPE 9" in out_r3,
+           "the profiled fixture that passed check 32 with a receipt, once .studio/"
+           "repo-anchor.json is removed -> rc=%d (want 2) and SHAPE 9 named: %s. SHAPE 9 is "
+           "scoped to BOTH project shapes because the merged-to-GitHub promise is made on "
+           "every run" % (rc_r3, "yes" if "SHAPE 9" in out_r3 else "NO"))
+
+    # 14c -- not a build dispatch: SHAPE 9 is silent even with no receipt at all,
+    #        the same negative case SHAPE 8 owes.
+    nobuild9 = log_dir("nobuild9", 3, anchor="none")
+    rc_r4, out_r4 = _run_child(payload(FIXTURE_NO_BUILD_LABEL), nobuild9)
+    report(39, "non-build-anchor-silent", rc_r4 == 0 and "SHAPE 9" not in out_r4,
+           "an audit-labelled tree in a project with NO repo-anchor receipt -> rc=%d (want 0) "
+           "and no SHAPE 9: %s"
+           % (rc_r4, "yes" if "SHAPE 9" not in out_r4 else "NO -- refused"))
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (34 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (40 checks)")
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)

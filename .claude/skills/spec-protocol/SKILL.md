@@ -624,7 +624,18 @@ and `references/gauntlet.md` §13.2.
 **GitHub is arranged at minute one, not at merge time** — one plain sentence and one
 click, driven by the skill through `gh auth login --web`; the client never types a token
 or opens a terminal, `gh auth status` proves it before the first builder, and a refusal
-is a recorded DEFAULT on the operator-provided remote (`references/pipeline.md`).
+is a recorded DEFAULT on the operator-provided remote (`references/pipeline.md`). The
+repository and the remote themselves are not arranged in prose either: step 17 runs
+`tools/repo-anchor.sh <project>` on every project — it creates the repository if there is
+none, puts the remote on the client's own login or on the operator-provided one, proves it,
+and writes the `repo-anchor.json` receipt. A folder with no repository never reaches a
+builder, because the dispatch hook's SHAPE 9 refuses every build dispatch until that
+receipt exists and matches the remote it names.
+
+What the client hears, spoken inside the turn that runs step 17 — it ends nothing, and the
+turn still closes on whatever question is owed:
+
+> I've set up a private, safe place online where every version of your work is kept as I build it — it's under your own account, so it's yours.
 
 ## 7. The apparatus
 
@@ -677,7 +688,7 @@ optional.
 13. Write the specification as numbered atomic work items, each a SECTION with its own rubric and binary acceptance; prove the dependency graph acyclic; run the over-engineering check (Law 42) through `tools/right-size.sh` and write its `OVER-ENGINEERING-CHECK: units=<n> apparatus_kb=<n> budget_kb=<n> removed=<n> verdict=<PASS|TRIMMED>` line before step 14 opens.
 14. Prepare a stable, relevant shared prefix plus per-unit role slices, assembled at dispatch time (Law 5). The immutable prefix may include frozen requirements shared by the role; the role slice contains only its owned boundaries, evidence and repair delta. **15.** Build `SCOPE.md` and fence every subagent. **16.** Write the execution plan — waves from the graph, lanes, the pen and landing queue, the loop register, the budget, and the IMAGE-MANIFEST when the build generates images.
 16.2. PROJECT-MANIFEST.md. **16.4** the native task graph. **16.6** `project_state.json` and the checkpoint strategy. **16.9** orchestration mode. **DEFAULT: single-session lead plus workflow trees.** A team is formed ONLY when the client asks for one in their own words — everything a team supervises, the tick and the gauntlet already enforce deterministically. The team path is OPTIONAL and lives in `references/optional/agent-team.md`; load it only on that explicit ask, and answer the three-question core rule (subagents only / dynamic workflows / Agent Team) in writing in the execution plan either way.
-17. Determine GitHub (new or existing) and smoke-test the token. **18.** Derive the loops. **19.** Write the launch command and the run plan (`references/terminals.md`).
+17. Anchor the repository with `tools/repo-anchor.sh <project>` — on EVERY project, before any builder: it creates the repository if there is none, arranges the remote on the client's own GitHub login (minute-one rule) or the operator-provided remote if they declined, proves it with `ls-remote`, and writes the `repo-anchor.json` receipt. The dispatch hook's SHAPE 9 refuses every build dispatch until that receipt exists (`--check` proves it). Determining GitHub is not a judgement; it is this command's exit code. **18.** Derive the loops. **19.** Write the launch command and the run plan (`references/terminals.md`).
 20. Self-audit the apparatus with a DIFFERENT agent (Law 30): the ten categories with quoted proof and the break-it pass, the by-command census (prove the instrument on a known-positive first, `/usr/bin/grep` explicitly), the QC-RECORD audit, the entry-gate audit for the `ENTRY-MODE:` line, and the GL-001…GL-008 separation audit. Any FAIL → ONE fix pass dispatched as a workflow of fixer agents, then ONE re-judge. Then RUN the applicable profile or legacy audit gate as an executed command. Only its latest applicable verdict may license build: HALT, HARM and SCOPE must be zero and verdict must be PASS; CARRY travels as named work. Two cycles is the re-audit ceiling, not permission to build with blockers (`references/gauntlet.md` §7.1).
 20.5. **Step 21 does not open until that run is provable.** On legacy projects, `CONTROL/LEDGER.md` carries the auditor cycle, CARRY state, and latest bound `AUDIT-GATE` record; its binding covers findings, frozen spec, optional profile and apparatus revision. On a profiled project, `commands.validate` must return `ok:true` and explicit `structuralReady:true` or `bootstrapReady:true`; the packet's exact task-scoped checker, not a global `dispatchReady` bit, authorizes any bootstrap or audit task. Production work still requires the profile's own production-ready verdict. CARRY is never blocking; a later malformed, failed, or revision-mismatched audit never falls back to an earlier PASS.
 21. Prove the tick has been running since step 3 — on EVERY project. On a profiled project the same tick runs the profile's `commands.validate` every five minutes and logs beside its bound `documents.state` (`tools/watch-tick.sh` redirects; it never refuses). A profile-declared observer is additional, never a replacement. **22.** Monitor, and write the morning report.

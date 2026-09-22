@@ -59,6 +59,7 @@ MERGE-LOG.md anywhere — its content is a section of the ledger (document 6).
 │   ├── dispatch-log.md                    # 12 — one line written before each agent is sent
 │   ├── project_state.json                 # machine state — INFRASTRUCTURE, not one of the seventeen
 │   ├── task-graph-snapshot.json           # transient TaskList export — INFRASTRUCTURE
+│   ├── repo-anchor.json                   # repo + remote receipt from tools/repo-anchor.sh — NOT one of the seventeen
 │   └── HEARTBEAT.md                       # 13 — one line per agent, stamped on progress
 ├── repos/<repository-name>/               # persistent working copies — NOT one of the seventeen
 └── MORNING-REPORT-YYYY-MM-DD.md           # 14 — the honest close at the end of a run

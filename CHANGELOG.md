@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.24.0] — 2026-09-22
+
+### The skill promised merged-to-GitHub and never made a repository
+
+Line 3 of `SKILL.md` promises a "merged-to-GitHub" build. Section 6 arranges the client's GitHub
+login at minute one. Step 17 said "Determine GitHub (new or existing) and smoke-test the token".
+`references/pipeline.md` proves every merge as an ancestor of remote main and records an
+operator-provided remote when the client declines their own account. `references/documents.md`
+places working copies at `repos/<repository-name>/`. And across `SKILL.md`, `references/`,
+`tools/`, `scripts/` and `templates/` there was no `git init`, no `gh repo create`, no
+`git remote add` — on any project. A real run reached its first QC handoff on a folder that was
+not a git repository at all, and nothing had refused the builders. "Determine GitHub" was a
+judgement left to the model, and prose fails here roughly always.
+
+**`tools/repo-anchor.sh <project>` — step 17 is now a command with an exit code.** On every
+project, before any builder: resolves the repo root (`<project>/repos/<slug>/` on a legacy
+project; the project home, or the profile's `documents.repo`, on a profiled one); `git init -b
+main` and a first commit if there is none; keeps an existing `origin`; otherwise creates a
+PRIVATE repository on the client's own GitHub login (`gh repo create … --remote origin --push`,
+the token never in a URL) or takes `--operator-remote <url>` when they declined; proves it with
+`git ls-remote`; writes the receipt `repo-anchor.json` beside the state (`CONTROL/` legacy, the
+`documents.state` directory profiled) and, on legacy, one `REPO-ANCHOR:` ledger line. Exit 0
+anchored / 3 already anchored / 2 UNDETERMINED naming the source / 4 declined with no fallback.
+`--check` is read-only and cheap. The selftest drives a stub `gh` (`REPO_ANCHOR_GH_CMD`) so no
+test ever creates a real repository. 15 selftest checks.
+
+**`dispatch-gate.py` SHAPE 9 — no repository, no builder.** Every build dispatch, legacy or
+profiled, is refused until the receipt exists AND `git remote get-url origin` matches the
+remote it names. A stale receipt whose remote no longer matches is the discriminating fixture.
+34 → 40 selftest checks.
+
+**What the client hears** is one plain sentence inside the turn that runs step 17 — *"I've set
+up a private, safe place online where every version of your work is kept as I build it — it's
+under your own account, so it's yours."* — proven clean by `tools/speech-check.sh`. Step 17,
+the minute-one paragraph, `pipeline.md`'s "new or pre-existing?" section and the `GITHUB:`
+ledger paragraph now all point at the tool; the receipt is listed in the storage layout as NOT
+one of the seventeen documents.
+
 ## [1.23.0] — 2026-09-21
 
 ### What the five adversarial agents found, fixed by six more
