@@ -783,12 +783,32 @@ the first builder is dispatched, and the proof is recorded in the ledger.
 use the operator-provided remote, and carry on. The run never blocks on this and
 never asks twice.
 
+**The step that actually makes the repository is `tools/repo-anchor.sh <project>`**
+(SKILL.md step 17), not a judgement call in prose. It resolves the repo root,
+initialises it if there is none, keeps an existing `origin`, and otherwise creates a
+PRIVATE repository on the client's own GitHub login with
+`gh repo create --private --source --remote origin --push` — the token never goes into
+a URL. On the declined path above it is handed the operator's remote as
+`--operator-remote <url>` instead. It proves the result with `git ls-remote`, writes the
+receipt `repo-anchor.json` beside the state (`CONTROL/` on a legacy project, the
+`documents.state` directory on a profiled one), and on legacy adds the ledger line
+`REPO-ANCHOR: root=<path> remote=OK branch=main source=<client-gh|--remote|operator-remote|existing>`.
+`--check` is read-only and cheap. Exit 0 anchored, 3 already anchored, 2 UNDETERMINED,
+4 declined with no fallback. That receipt and that ledger line are the record the
+trunk-ancestry merge proof below ("Land vs Merged") builds on — there is no remote to
+prove an ancestor against until this has run — and the dispatch hook's SHAPE 9 refuses
+every build dispatch, legacy or profiled, until the receipt exists and matches
+`git remote get-url origin`.
+
 ### GitHub repo — new or pre-existing?
 
-Before any merge runs, determine: NEW GitHub repo or pre-existing? Ask plainly: "Do
-you want me to create a GitHub repo for this project?" Tell the theorized name,
-confirm the smoke-tested token works (`gh auth status` — already proven at minute
-one; this is the re-check, not the arrangement), create or use existing.
+This is not determined by asking and deciding, and not at merge time: it is
+`tools/repo-anchor.sh <project>` at step 17, run before the first builder. An existing
+`origin` is kept as-is; where there is none the tool creates the private repository on
+the client's own login, or uses the operator remote on the declined path above. The
+`gh auth status` re-check still runs — the login was already proven at minute one — but
+it re-checks the login, never the repository: the repository's existence is the tool's
+exit code and its `repo-anchor.json` receipt.
 
 ### Law 3 — one merge-writer per repo
 
