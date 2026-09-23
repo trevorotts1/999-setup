@@ -34,6 +34,9 @@
 #   3 — the selftest FAILED: this checker may not be believed until it is fixed.
 set -u
 
+# Absolute path to this script, so the selftest re-runs itself by bare name too (#39).
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
 FLOOR=5000
 TARGET=9000
 MAX=18000
@@ -103,7 +106,7 @@ selftest() {
     # not merely the counting: every fixture carries newlines and spaces that
     # must not be counted.
     awk -v n="${count}" 'BEGIN{ for(i=0;i<n;i++){ printf "x"; if(i%40==39) printf " \n\t" } }' > "${f}"
-    out=$("$0" "${f}"); rc=$?
+    out=$(bash "${SELF}" "${f}"); rc=$?
     got=$(printf '%s' "${out}" | sed -n 's/.*verdict=\([A-Z-]*\).*/\1/p')
     local gotn
     gotn=$(printf '%s' "${out}" | sed -n 's/.*stripped=\([0-9]*\).*/\1/p')
@@ -127,7 +130,7 @@ selftest() {
   # The instrument must refuse to answer about a file it cannot read, and must
   # NOT call that a REJECT.
   local out rc
-  out=$("$0" "${tmp}/does-not-exist.txt" 2>&1); rc=$?
+  out=$(bash "${SELF}" "${tmp}/does-not-exist.txt" 2>&1); rc=$?
   if [ "${rc}" = "2" ]; then
     echo "SELFTEST ok   | missing-file | rc=2 UNDETERMINED, not a reject"
   else
@@ -138,7 +141,7 @@ selftest() {
   # Whitespace-only input strips to zero and is therefore below the floor —
   # proving the strip really happens rather than the raw length being used.
   printf '   \n\t\n   \n' > "${tmp}/ws.txt"
-  out=$("$0" "${tmp}/ws.txt"); rc=$?
+  out=$(bash "${SELF}" "${tmp}/ws.txt"); rc=$?
   if [ "${rc}" = "1" ] && printf '%s' "${out}" | grep -q 'stripped=0 '; then
     echo "SELFTEST ok   | whitespace-only | stripped=0 rc=1"
   else
@@ -148,8 +151,8 @@ selftest() {
 
   # stdin path answers the same as the file path for the same bytes.
   local a b
-  a=$("$0" "${tmp}/target-exact.txt")
-  b=$("$0" - < "${tmp}/target-exact.txt")
+  a=$(bash "${SELF}" "${tmp}/target-exact.txt")
+  b=$(bash "${SELF}" - < "${tmp}/target-exact.txt")
   if [ "${a}" = "${b}" ]; then
     echo "SELFTEST ok   | stdin-equals-file"
   else
