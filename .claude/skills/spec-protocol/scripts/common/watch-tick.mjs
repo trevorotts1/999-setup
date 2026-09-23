@@ -288,7 +288,7 @@ function ledgerWrite(home, relFile, line) {
 // AUTO-RESUME (the port of tools/watch-tick.sh 4d, F1-F3) — so a machine with
 // no Git Bash also resumes a hung run. Same file (CONTROL/auto-resume.txt),
 // same 30-minute lock (CONTROL/auto-resume.lock), same command:
-//   <launcher> -p --resume <id> "/spec-protocol resume"
+//   <launcher> -p --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"
 // The launcher is claude-nine when this session is routed (a .claude-nine
 // config root on macOS; on Windows the launcher keeps the shared root and
 // points ANTHROPIC_BASE_URL at the loopback router), else claude. It is
@@ -394,22 +394,39 @@ function autoResume(home, elapsed, phase) {
   } catch { /* no lock yet */ }
   const cmd = process.env.WATCH_TICK_LAUNCHER_CMD || rec.launcher_path || rec.launcher || 'claude';
   const cwd = rec.cwd && fs.existsSync(rec.cwd) ? rec.cwd : home;
+  // PATH is set HERE on the resumed process (the scheduled line stays PATH-free),
+  // same as watch-tick.sh's resume_path: a scheduler's PATH is minimal, and the
+  // launcher's children need node (9Router's cli is `#!/usr/bin/env node`),
+  // claude (~/.local/bin) and the 999 npm bin. The node running this tick is
+  // the surest node dir; missing dirs are skipped.
+  const H = os.homedir();
+  let nodePathRec = '';
+  try { nodePathRec = fs.readFileSync(path.join(H, '.local', 'share', '999', 'node-path'), 'utf8').split(/\r?\n/)[0].trim(); } catch { /* none recorded */ }
+  try { if (nodePathRec && fs.statSync(nodePathRec).isFile()) nodePathRec = path.dirname(nodePathRec); } catch { /* checked below */ }
+  const pre = [
+    ...(/[\\/]/.test(cmd) ? [path.dirname(cmd)] : []),
+    path.dirname(process.execPath), nodePathRec,
+    path.join(H, '.local', 'share', '999', 'node', 'bin'), path.join(H, '.local', 'bin'),
+    path.join(process.env.NINE_ROUTER_NPM_PREFIX || path.join(H, '.local', 'share', '999', 'npm'), 'bin'),
+    ...(IS_WIN ? [process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : ''] : ['/opt/homebrew/bin', '/usr/local/bin']),
+  ].filter((d) => { try { return d && fs.statSync(d).isDirectory(); } catch { return false; } });
   const env = { ...process.env };
-  if (/[\\/]/.test(cmd)) env.PATH = `${path.dirname(cmd)}${path.delimiter}${process.env.PATH || ''}`;
+  env.PATH = [...pre, process.env.PATH || ''].join(path.delimiter);
   fs.writeFileSync(lock, '');
   const log = fs.openSync(path.join(home, 'CONTROL', 'auto-resume.log'), 'a');
-  const args = ['-p', '--resume', rec.session_id, '/spec-protocol resume'];
+  // bypassPermissions: the run is unattended, a permission prompt would stall it forever.
+  const args = ['-p', '--permission-mode', 'bypassPermissions', '--resume', rec.session_id, '/spec-protocol resume'];
   // A .cmd/.bat cannot be spawned without a shell on Windows; the only
   // argument with a space is the fixed slash command, and the id is [A-Za-z0-9-].
   const viaShell = IS_WIN && /\.(cmd|bat)$/i.test(cmd);
   const child = viaShell
-    ? spawn(`"${cmd}" -p --resume ${rec.session_id} "/spec-protocol resume"`, { cwd, env, shell: true, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
+    ? spawn(`"${cmd}" -p --permission-mode bypassPermissions --resume ${rec.session_id} "/spec-protocol resume"`, { cwd, env, shell: true, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
     : spawn(cmd, args, { cwd, env, detached: true, windowsHide: true, stdio: ['ignore', log, log] });
   child.on('error', () => { /* recorded in the log by the absence of output; the ledger line names the attempt */ });
   child.unref();
   ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'),
-    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --resume with /spec-protocol resume (log CONTROL/auto-resume.log)`);
-  process.stdout.write(`AUTO-RESUME | launched | ${rec.launcher || 'claude'} -p --resume ${rec.session_id} "/spec-protocol resume" (stalled ${elapsed}m in ${phase})\n`);
+    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log CONTROL/auto-resume.log)`);
+  process.stdout.write(`AUTO-RESUME | launched | ${rec.launcher || 'claude'} -p --permission-mode bypassPermissions --resume ${rec.session_id} "/spec-protocol resume" (stalled ${elapsed}m in ${phase})\n`);
 }
 
 // The widened stall check (F2): build, or an open spec/apparatus/audit/merge/
@@ -1042,7 +1059,7 @@ function selftest() {
   report(17, 'auto-resume-post-interview',
     rec17.rc === 0 && /^interview=done$/m.test(rec17txt) && rec17txt.includes(`cwd=${launch17}`)
       && t1.rc === 3 && /AUTO-RESUME \| launched/.test(t1.out) && /AUTO-RESUME \| held/.test(t2.out)
-      && got17.length === 1 && got17[0].endsWith('|-p --resume sess-17 /spec-protocol resume')
+      && got17.length === 1 && got17[0].endsWith('|-p --permission-mode bypassPermissions --resume sess-17 /spec-protocol resume')
       && fs.realpathSync(got17[0].split('|')[0]) === fs.realpathSync(launch17)
       && /phase=post-interview\(pre-plan\)/.test(led(d)),
     `record rc=${rec17.rc} (want 0); tick rc=${t1.rc} (want 3) then held; stub calls=${got17.length} (want 1): [${got17[0] || ''}]`);

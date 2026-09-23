@@ -228,8 +228,11 @@
 #                                                #   line is installed, 3 it is not,
 #                                                #   2 the table could not be read
 #   watch-tick.sh --selftest
-#   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p --resume <id>
-#   "/spec-protocol resume"` once, detached, lock-guarded for 30 minutes
+#   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p
+#   --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"`
+#   (nobody is there to answer a permission prompt; the resumed process gets
+#   node + ~/.local/bin + the 999 npm bin on PATH — see resume_path, 4d; the
+#   cron line itself stays PATH-free) once, detached, lock-guarded for 30 minutes
 #   (CONTROL/auto-resume.lock), and writes an AUTO-RESUME ledger line. The
 #   alarm covers EVERY post-interview phase, not only build: an open build,
 #   spec, apparatus, audit, merge or publish row, or `interview=done` in
@@ -907,10 +910,30 @@ newest_write_epoch() {
   printf '%s' "$newest"
 }
 
+# The PATH the resumed session runs with. Cron's PATH is minimal (/usr/bin:/bin),
+# and the launcher's children need node (9Router's cli is `#!/usr/bin/env node`,
+# so is the catalog fix), claude (~/.local/bin) and the 999 npm bin. PATH is set
+# HERE, on the resumed process, not on the cron line — one place, both tick
+# forms. Order: the node dir setup recorded (~/.local/share/999/node-path, a dir
+# or the node binary), setup's own node, ~/.local/bin, the 999 npm bin, then the
+# common node dirs, then the inherited PATH. Missing dirs are skipped.
+resume_path() {  # resume_path <inherited-PATH>
+  local d nd="" pre=""
+  nd="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
+  [[ -f "$nd" ]] && nd="$(dirname "$nd")"
+  for d in "$nd" "$HOME/.local/share/999/node/bin" "$HOME/.local/bin" \
+           "${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}/bin" /opt/homebrew/bin /usr/local/bin; do
+    [[ -n "$d" && -d "$d" ]] && pre="${pre}${d}:"
+  done
+  printf '%s%s' "$pre" "$1"
+}
+
 # Called by the stalled-turn check once it fires. Launches
-# `<launcher> -p --resume <id> "/spec-protocol resume"` detached, at most once
-# per 30 minutes (CONTROL/auto-resume.lock mtime). WATCH_TICK_LAUNCHER_CMD
-# replaces the launcher (selftest stub only; nothing else should).
+# `<launcher> -p --permission-mode bypassPermissions --resume <id>
+# "/spec-protocol resume"` detached, at most once per 30 minutes
+# (CONTROL/auto-resume.lock mtime). The run is unattended, so a permission
+# prompt would stall it forever. WATCH_TICK_LAUNCHER_CMD replaces the launcher
+# (selftest stub only; nothing else should).
 auto_resume() {  # auto_resume <elapsed-minutes> [phase]
   local rec="$HOME_DIR/CONTROL/auto-resume.txt" lock="$HOME_DIR/CONTROL/auto-resume.lock"
   local k v sid="" name="" lpath="" cwd="" cmd lm age p="$PATH"
@@ -932,14 +955,15 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
     fi
   fi
   cmd="${WATCH_TICK_LAUNCHER_CMD:-${lpath:-$name}}"
-  [[ "$cmd" == */* ]] && p="$(dirname "$cmd"):$PATH"
+  p="$(resume_path "$PATH")"
+  [[ "$cmd" == */* ]] && p="$(dirname "$cmd"):$p"
   [[ -d "$cwd" ]] || cwd="$HOME_DIR"
   touch "$lock"
-  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --resume "$sid" "/spec-protocol resume" \
+  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --permission-mode bypassPermissions --resume "$sid" "/spec-protocol resume" \
       </dev/null >> "$HOME_DIR/CONTROL/auto-resume.log" 2>&1 & )
   ledger_write "CONTROL/LEDGER.md" \
-    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --resume with /spec-protocol resume (log CONTROL/auto-resume.log)"
-  printf 'AUTO-RESUME | launched | %s -p --resume %s "/spec-protocol resume" (stalled %sm in %s)\n' "$name" "$sid" "$1" "${2:-build}"
+    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log CONTROL/auto-resume.log)"
+  printf 'AUTO-RESUME | launched | %s -p --permission-mode bypassPermissions --resume %s "/spec-protocol resume" (stalled %sm in %s)\n' "$name" "$sid" "$1" "${2:-build}"
 }
 
 #==============================================================================
@@ -2729,7 +2753,7 @@ selftest() {
 
   # --- case 43 (#48): AUTO-RESUME. Arm inside a (fake) claude-nine session,
   #     stall the build like case 32, tick twice: the stub launcher runs ONCE
-  #     with -p --resume <id> /spec-protocol resume, the ledger says AUTO-RESUME,
+  #     with -p --permission-mode bypassPermissions --resume <id> /spec-protocol resume, the ledger says AUTO-RESUME,
   #     and the second tick is held by the lock.
   mk_home "$T/c43"
   printf '%s | U-01 build | build | [opus x10] WF01 builder | run-043\n' "$(stamp 1)" > "$T/c43/CONTROL/dispatch-log.md"
@@ -2745,11 +2769,11 @@ selftest() {
   sleep 0.5
   ok=0
   if "$GREP" -q '^launcher=claude-nine$' "$T/c43/CONTROL/auto-resume.txt" 2>/dev/null \
-     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --resume sess-43 /spec-protocol resume" ]] \
+     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --permission-mode bypassPermissions --resume sess-43 /spec-protocol resume" ]] \
      && printf '%s' "$out43a" | "$GREP" -q '^AUTO-RESUME | launched' \
      && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | held' \
      && "$GREP" -q '| AUTO-RESUME | session=sess-43' "$T/c43/CONTROL/LEDGER.md"; then ok=1; fi
-  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --resume sess-43 /spec-protocol resume'); second tick held by the lock; AUTO-RESUME on the ledger"
+  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --permission-mode bypassPermissions --resume sess-43 /spec-protocol resume'); second tick held by the lock; AUTO-RESUME on the ledger"
 
   # --- case 44 (#40): the unavailable-crontab reason survives a long path.
   #     sanitize() cuts at 160 chars; the rc must come BEFORE the command path
@@ -2780,9 +2804,9 @@ selftest() {
   if (( r45rec == 0 && RC == 3 )) \
      && "$GREP" -qx 'interview=done' "$T/c45/CONTROL/auto-resume.txt" \
      && "$GREP" -qx "cwd=$T/launch45" "$T/c45/CONTROL/auto-resume.txt" \
-     && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --resume sess-45 /spec-protocol resume" ]] \
+     && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume" ]] \
      && "$GREP" -q 'stalled-turn | elapsed=.* | phase=post-interview(pre-plan)' "$T/c45/CONTROL/LEDGER.md"; then ok=1; fi
-  report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --resume sess-45 /spec-protocol resume)"
+  report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume)"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
