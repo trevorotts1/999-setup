@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.25.0] — 2026-09-23
+
+### The 51-issue review fixes
+
+Ten fix branches, one per area, merged in sequence with a full selftest pass after every merge.
+
+**Installer / hooks.** `#1 #2 #3 #6 #8 #33 #34 #37 #38` — `install-hooks.sh` and
+`install-hooks.ps1` are new: they register the four hooks idempotently, merge foreign keys
+instead of clobbering them, and back up `settings.json` once. `hook-check.sh` gained the
+missing STALE / ABSENT legs for the stop hooks. `scripts/setup-macos.sh` and
+`setup-windows.ps1` and `launchers/macos/claude-nine` picked up the launcher-side half of the
+same fixes.
+
+**Conversation hooks.** `#4 #17 #18 #20 #21 #22 #23 #24 #25 #39` — `conversation-gate.py`
+now reads the project only from this session's own `answers.sh init` call, runs the jargon
+lint before any project exists, stands a statement-yield block down when a HANGING entry is
+pending, resets its 3-per-turn block counter on a new turn, and blocks when `ANSWERS.md` goes
+missing after this session created it. `gate0-claim-gate.py` and `speech-check.sh` got the
+matching evidence and counter fixes.
+
+**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-9: a
+project must be booked in `CONTROL/dispatch-log.md` (not just claimed), it must show a real
+`SEAT-PROBE:` line before a build dispatches, and it must carry a proven `repo-anchor.json`
+receipt (scoped to both legacy and profiled projects) before any builder runs.
+
+**Repo anchor.** `#6` (repo-anchor side), `#49`, `#50` — `repo-anchor.sh` and `anchor.sh`:
+a profiled project no longer gets refused outright by the drift reconciler; it now redirects
+through the profile's own `commands.validate` and reports a `PROFILE-ANCHOR` line, the same
+pattern `watch-tick.sh` already used for `PROFILE-TICK`.
+
+**Tick.** `#32 #35 #40 #48` — `watch-tick.sh` and `scripts/common/watch-tick.mjs` gained the
+group-abort, stalled-turn, task-snapshot, and unguarded-publish checks, plus the profiled-project
+redirect and cron/schtasks arm-and-check plumbing.
+
+**Preflight / answers.** `#7`, `#51(1)`, `#23`, `#29/#30` (tool side), `#39` — `preflight.sh`
+and `answers.sh` are new: a one-line GO/no-go gate and the ledger-backed question/answer
+recorder the conversation gate now depends on. `prompt-band.sh` and `ship-guard.sh` picked up
+the matching floor/ceiling and fabrication-guard fixes.
+
+**Deploy / templates.** `#41 #42 #45 #46 #47` — `publish.sh`, `provision-db.sh`, and
+`merge-train.sh` are new, the 17 apparatus document templates and 4 workflow templates were
+added, and the knowledge-pack pin (`references/knowledge-pack.json`) was corrected; a
+follow-up fix to the same issue (`#45`) made `scripts/bootstrap-companions.sh` pull
+knowledge-pack folders anonymously and refuse a placeholder pin instead of caching it.
+
+**SKILL.md restructure.** `#3 #5 #7 #10 #11 #12 #15 #23 #25 #26 #27 #29 #30 #31 #34 #41 #42
+#46 #47 #51(2)(3)(4)` — `SKILL.md` cut from over a thousand lines to a thin dispatcher; the
+conductor logic it used to carry inline now lives in the new `references/conductor.md`.
+
+**References.** `5 9 10 11 12 13 14 15 16 19 28 34 41 43 44 45 46` — `audience.md`,
+`capacity.md`, `decision-engine.md`, `documents.md`, `environment-sweep.md`,
+`funnel-architecture.md`, `gauntlet.md`, `interview.md`, `pipeline.md`, `platform.md`,
+`publish.md`, `research.md`, and `workflows.md` all received their matching fixes.
+
+**Integration.** Merging the SKILL.md restructure and the references branch together
+surfaced one real interaction: `interview.md`'s three credential-key turns (Private
+Integration Token, Firebase refresh token, Location ID) were written as three blockquotes
+separated only by a blank line, which the gate's own quote extractor read as a single
+four-question turn and correctly rejected. Fixed by inserting one plain-prose line between
+each blockquote. Separately, `project-profile-selftest.sh` still asserted the pre-fix
+invariant that `anchor.sh` refuses outright on a profiled project; updated it to expect the
+new `PROFILE-ANCHOR` redirect instead, matching the assertion already in place for
+`watch-tick.sh`.
+
 ## [1.24.0] — 2026-09-22
 
 ### The skill promised merged-to-GitHub and never made a repository
@@ -96,7 +160,12 @@ EVERY project; "step 13 of the interview" points at the pictures item that exist
 `project-profile.md` as item 26.
 
 **Closed on evidence, no change:** `dispatch-gate` registered on `Workflow` only is correct —
-SKILL.md dispatches through Workflow alone (Agent: 0 references). The entry-mode question on
+SKILL.md dispatches through Workflow alone (Agent: 0 references). **CORRECTION (recorded after
+release): this finding was wrong.** `references/workflows.md` §6 degrades a failed Workflow probe
+to `Agent` fan-out, and real runs made Agent calls 102 times against 43 Workflow calls — every
+one of them outside the hook. A zero count of the word "Agent" in SKILL.md was evidence about the
+prose, not about what runs dispatched. The fix (hook handles `Agent`/`Task` payloads, registered
+on `Workflow|Agent|Task`) ships in the next release. The entry-mode question on
 the naming line is the mandated ONE-message shape since 1.21.5, not a defect. A stale
 `_not yet spoken_` line nagging every build-phase statement is correct behaviour on a correct
 ledger: a question still unspoken during the build was skipped.
@@ -3754,3 +3823,31 @@ no personal path beyond `/Users/yourname` placeholders.
   still report OK. Mitigation: `providerThinking` is also set per provider as belt-and-braces.
 - Dashboard URL is reconstructed from the port with `127.0.0.1` — correct for the
   loopback-only default; a remote `NINEROUTER_BASE` would need the host preserved.
+
+## Background: why these rules exist
+
+History moved out of `SKILL.md` when it was cut to its rules (the "this was the defect on date X"
+narratives). Each paragraph names the rule it explains; the rule itself stays in `SKILL.md`.
+
+- **The turn-yield rule** (a question ends the message and the turn) was missing while three
+  separate runs "asked" a dozen things and the client was never once handed the turn.
+- **The conversation Stop hook** exists because seven releases wrote the conversation rules in
+  prose and each one produced a new defect on the next run; the only rule that ever held was the
+  one in a script.
+- **The GATE 0 claim hook** exists because three releases of prose did not stop a refusal spoken
+  from an unrun check. Telling a client to switch on something they already have was the single
+  most common way this skill failed.
+- **The naming rule** ("call it by its name"): a run told someone who wrote "Studio Nerds" across
+  thirty-three documents that it would call it "your computer program" — which read as though it
+  had read none of them.
+- **The targets precedence rule**: a run guessed `MOBILE_APP` from the word "app" while the
+  profile beside it said `desktop-macos-arm64` (the 2026-09-21 10:30 failure).
+- **The never-deleted idea question**: a run said "You already told me the idea, so I won't ask
+  you to say it twice" and followed it with statements — the client was never handed the turn.
+- **The stall rule** (a turn ends ON a question): "Wonderful — that's exactly what I'll build for
+  you. From here on I'll call it Studio Nerds." followed by silence left the entry-mode question
+  unasked (the 2026-09-21 10:34 failure).
+- **Entry mode is always asked**: a run said "you've already pointed me at notes in this folder",
+  answering the question on the client's behalf because the session started inside the folder.
+- **Read before confirming**: runs confirmed from a guess while the answer sat unread in a
+  supplied file, then asked again after reading it — the same defect twice.

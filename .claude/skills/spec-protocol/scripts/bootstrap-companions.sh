@@ -252,15 +252,17 @@ kp_cache_folder() {
   return 0
 }
 
-# The pull. Runs ONLY when kp_token_present said yes.
+# The pull. The knowledge-pack repo is public: clone anonymously, no token.
 kp_pull_folder() {
-  local folder="$1" tag="$2" tok work
-  tok="$(kp_token_value)" || return 1
+  local folder="$1" tag="$2" work
   command -v git >/dev/null 2>&1 || return 1
   [ "$tag" = "unset" ] && return 1
+  case "$tag" in
+    *'<'*) bad "Knowledge pack: pin \"$tag\" is a placeholder (contains \"<\") — refusing to pull. Set a real released tag in $KP_MANIFEST first."; return 1 ;;
+  esac
   work="$(mktemp -d "${TMPDIR:-/tmp}/spec-protocol-kp.XXXXXX")" || return 1
-  KP_GH_TOKEN="$tok" GIT_TERMINAL_PROMPT=0 git \
-    -c credential.helper='!f(){ printf "username=x-access-token\npassword=%s\n" "$KP_GH_TOKEN"; }; f' \
+  GIT_TERMINAL_PROMPT=0 git \
+    -c credential.helper= \
     -c advice.detachedHead=false \
     clone --depth 1 --branch "$tag" --filter=blob:none --sparse \
     "$KP_SOURCE.git" "$work/repo" >/dev/null 2>&1 || { rm -rf "$work"; return 1; }
@@ -291,20 +293,17 @@ kp_run_group() {
         kp_cache_folder "$folder" "$path" || warn "$folder resolved at $path but could not be cached into $KP_CACHE_DIR/$folder"
         ;;
       pull-required)
-        if kp_token_present; then
-          if kp_pull_folder "$folder" "$KP_PIN"; then
-            src="github@$KP_PIN"
-            path="$KP_CACHE_DIR/$folder"
-          else
-            src="pull-failed"
-          fi
+        if kp_pull_folder "$folder" "$KP_PIN"; then
+          src="github@$KP_PIN"
+          path="$KP_CACHE_DIR/$folder"
+        else
+          src="pull-failed"
         fi
         ;;
     esac
     case "$src" in
       pull-required)
         KP_PULL=$((KP_PULL + 1))
-        warn "$folder: pull-required — $path (pin $KP_PIN). No GitHub token present, so no pull was attempted."
         ;;
       pull-failed)
         bad "$folder: pull failed from $KP_SOURCE at pin $KP_PIN — report this failure; do not substitute another repository."

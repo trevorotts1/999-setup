@@ -388,7 +388,9 @@ FAIL if: <exact condition> → incomplete because <reason>
   that emits such lines is a defect to delete, not a discipline.
 
 ### Document 14 — Morning report
-- **Path:** `MORNING-REPORT-YYYY-MM-DD.md`
+- **Path:** `MORNING-REPORT-YYYY-MM-DD.md`, plus a copy of the same content on the
+  client's Desktop as `Your project is ready.txt` (the walk-away promise,
+  `references/audience.md` §3)
 - **Writer:** the orchestrator (written when the run ends, or at the stated handover
   time)
 - **Readers:** the human

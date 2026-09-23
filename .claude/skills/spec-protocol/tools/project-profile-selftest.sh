@@ -45,11 +45,12 @@ READY=1 bash "$ROOT/dispatch-check.sh" "$T" 2 3 '[Opus x3] build tasks=W02-01' p
 if READY=0 RESUME=0 node "$ROOT/project-profile.mjs" resume-authorized "$T" >/dev/null 2>&1; then exit 1; fi
 READY=0 RESUME=1 node "$ROOT/project-profile.mjs" resume-authorized "$T" >/dev/null
 
-# The tick REDIRECTS on a profile: it runs commands.validate and reports a
-# PROFILE-TICK line instead of synthesizing CONTROL/ state. The reconciler
-# still refuses (it writes CONTROL records and a profile owns its own state).
+# The tick and the anchor reconciler both REDIRECT on a profile: each runs
+# commands.validate and reports its own PROFILE-TICK / PROFILE-ANCHOR line
+# instead of synthesizing CONTROL/ state. The remaining legacy helpers below
+# still refuse (they write CONTROL records and a profile owns its own state).
 bash "$ROOT/watch-tick.sh" "$T" | grep -q '^PROFILE-TICK | '
-if bash "$ROOT/anchor.sh" "$T" >/dev/null 2>&1; then exit 1; fi
+bash "$ROOT/anchor.sh" "$T" | grep -q '^PROFILE-ANCHOR | '
 if bash "$ROOT/state-check.sh" "$T" >/dev/null 2>&1; then exit 1; fi
 if bash "$ROOT/ledger.sh" "$T" CONTROL/LEDGER.md 'legacy write must refuse' >/dev/null 2>&1; then exit 1; fi
 if bash "$ROOT/seat-probe.sh" "$T" >/dev/null 2>&1; then exit 1; fi

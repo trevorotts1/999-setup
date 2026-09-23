@@ -203,6 +203,25 @@ model to the default Fusion panel on Pro.
 - Ollama's 32K output cap is an **application policy**, not a vendor maximum.
 - Do not confuse `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (context) with output tokens.
 
+### DeepSeek context window — live reading (fix #37)
+
+Read 2026-09-23 from the operator box's live 9Router `GET /v1/models` (router token read
+by name, never printed; 608 models listed). Values are what 9Router REPORTS in
+`capabilities.contextWindow` / `maxOutput`:
+
+| Route on that router | contextWindow | maxOutput |
+|---|---|---|
+| `ds/deepseek-flash` (the `ds` DeepSeek Direct node there) | 128,000 | 64,000 |
+| `ollama/deepseek-v4.1-flash` | 1,000,000 | 384,000 |
+| `openrouter/deepseek/deepseek-v4-flash-0731:free` | 1,000,000 | 384,000 |
+
+**UNVERIFIED (2026-09-23): the client routes this setup wires — `ds/deepseek-v4-flash`,
+`ds-max/deepseek-v4-pro`, `ds-light/deepseek-v4-flash` — are not present on that router,
+so their window was not read.** The 128,000 reported for `ds/deepseek-flash` may be
+9Router's default capability for an unlisted model rather than DeepSeek's real window.
+Re-read on a client box after setup (`/v1/models`, the three routes above) before sizing
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` or an auto-compact window from any DeepSeek figure.
+
 ## Combo definitions
 
 ```text

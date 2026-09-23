@@ -243,4 +243,26 @@ if [ "${CLAUDE_NINE_ULTRACODE:-}" = "1" ]; then
   echo "   effort:         ultracode (xhigh + dynamic workflow orchestration)" >&2
 fi
 
-exec "$CC_BIN" ${CC_EFFORT_ARGS[@]+"${CC_EFFORT_ARGS[@]}"} "$@"
+# MODEL PIN. Claude Code loads <cwd>/.claude/settings.json as PROJECT settings,
+# which beat user settings. Launching from $HOME therefore picks up plain Claude
+# Code's ~/.claude/settings.json (a raw Anthropic model id) and overrides
+# this profile's own model, sending a raw Anthropic id to the router where the
+# ANTHROPIC_DEFAULT_*_MODEL alias map never fires. A CLI flag beats every
+# settings file, so pass this profile's own model explicitly unless the caller
+# already gave one. Aliases (fable/opus/sonnet/haiku) still resolve through
+# ~/.claude-nine/settings.json env to fable-chain/opus-chain/etc.
+CC_MODEL_ARGS=()
+cc_has_model_flag=0
+for _a in "$@"; do
+  case "$_a" in --model|--model=*|-m) cc_has_model_flag=1; break ;; esac
+done
+if [ "$cc_has_model_flag" = 0 ]; then
+  CC_PIN_MODEL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("model") or "")' "$CLAUDE_CONFIG_DIR/settings.json" 2>/dev/null || true)"
+  if [ -n "$CC_PIN_MODEL" ]; then
+    CC_MODEL_ARGS=(--model "$CC_PIN_MODEL")
+    echo "   model:          $CC_PIN_MODEL (pinned from ~/.claude-nine/settings.json)" >&2
+  fi
+fi
+unset _a cc_has_model_flag
+
+exec "$CC_BIN" ${CC_EFFORT_ARGS[@]+"${CC_EFFORT_ARGS[@]}"} ${CC_MODEL_ARGS[@]+"${CC_MODEL_ARGS[@]}"} "$@"

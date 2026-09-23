@@ -146,8 +146,10 @@ MAX_DERIVED="${SHIP_GUARD_MAX_DERIVED:-50}"
 MAX_PAGES="${SHIP_GUARD_MAX_PAGES:-200}"
 
 # This script's own directory, so tools/ledger.sh is found however we were run.
-SELF_DIR="$(cd -- "$(dirname -- "$0")" >/dev/null 2>&1 && pwd)"
+SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 [ -n "${SELF_DIR}" ] || SELF_DIR="."
+# Absolute path to this script, so the selftest re-runs itself by bare name too (#39).
+SELF="${SELF_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
 
 # A grep that is certainly a grep, for the counting the selftest does of its
 # own ledger. An empty result is never read as "no match" — see below.
@@ -180,7 +182,7 @@ warn() { printf '%s\n' "$*" >&2; }
 usage() {
   # The header through the end of the SELFTEST note, so every exit code this
   # tool can return is printed with --help.
-  sed -n '2,141p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,141p' "${SELF}" | sed 's/^# \{0,1\}//'
 }
 
 undetermined() { # undetermined <reason-line> [extra lines...]
@@ -877,7 +879,7 @@ selftest() {
   local out5 rc5 out6 rc6 out7 rc7
 
   # ---- fixture 1: clean origin -> 0 (the PAIRED CONTROL) ----
-  out1="$("$0" "${p_clean}" "${live}" "${doc}" 2>&1)"; rc1=$?
+  out1="$(bash "${SELF}" "${p_clean}" "${live}" "${doc}" 2>&1)"; rc1=$?
   if [ "${rc1}" -eq 0 ]; then
     say "SELFTEST ok   | clean-origin           | rc=0 CLEAN"
   else
@@ -893,7 +895,7 @@ selftest() {
   mkdir -p "${doc}/captures" "${doc}/evidence"
   printf '{"log":{"entries":[{"note":"fixture only - no real data"}]}}\n' > "${doc}/captures/submit-proof.har"
   printf '{"log":{"entries":[{"note":"fixture only - no real data"}]}}\n' > "${doc}/evidence/run-42.har"
-  out2="$("$0" "${p_har}" "${live}" "${doc}" 2>&1)"; rc2=$?
+  out2="$(bash "${SELF}" "${p_har}" "${live}" "${doc}" 2>&1)"; rc2=$?
   if [ "${rc2}" -eq 3 ] \
      && printf '%s' "${out2}" | grep -q 'captures/submit-proof.har' \
      && printf '%s' "${out2}" | grep -q 'evidence/run-42.har'; then
@@ -916,7 +918,7 @@ selftest() {
   fi
 
   # ---- fixture 3: owner=operator against the CLEAN origin -> 4 ----
-  out3="$("$0" "${p_owner}" "${live}" "${doc}" 2>&1)"; rc3=$?
+  out3="$(bash "${SELF}" "${p_owner}" "${live}" "${doc}" 2>&1)"; rc3=$?
   if [ "${rc3}" -eq 4 ] && printf '%s' "${out3}" | grep -q 'FOREIGN'; then
     say "SELFTEST ok   | owner-operator         | rc=4 FOREIGN-DESTINATION on an otherwise clean origin"
   else
@@ -926,7 +928,7 @@ selftest() {
   fi
 
   # ---- fixture 4: unreachable origin -> 2, naming the failed connection ----
-  out4="$("$0" "${p_dead}" "${dead}" "${p_dead}" 2>&1)"; rc4=$?
+  out4="$(bash "${SELF}" "${p_dead}" "${dead}" "${p_dead}" 2>&1)"; rc4=$?
   if [ "${rc4}" -eq 2 ] \
      && printf '%s' "${out4}" | grep -q 'connection attempt that failed' \
      && printf '%s' "${out4}" | grep -q 'curl exit status' \
@@ -942,7 +944,7 @@ selftest() {
   # ---- fixture 5: a page rendering a testimonial, CONTENT.md SOURCED -> 0 ----
   # The FABRICATION-GUARD half of the second PAIRED CONTROL. A guard that failed
   # every page carrying a <blockquote> would pass fixture 6 and fail right here.
-  out5="$("$0" "${p_src}" "${live}" "${fabroot}" 2>&1)"; rc5=$?
+  out5="$(bash "${SELF}" "${p_src}" "${live}" "${fabroot}" 2>&1)"; rc5=$?
   if [ "${rc5}" -eq 0 ] && printf '%s' "${out5}" | grep -q 'sourced    | fact=testimonial'; then
     say "SELFTEST ok   | fab-sourced            | rc=0 CLEAN — a SOURCED testimonial may be rendered"
   else
@@ -957,7 +959,7 @@ selftest() {
   # split is attributable to the address and to nothing else.
   local p_real="${SELFTEST_TMP}/p-real" out8 rc8
   mk_dest "${p_real}" 'contact=email hello@clients-own-domain.com owner=client'
-  out8="$("$0" "${p_real}" "${live}" "${doc}" 2>&1)"; rc8=$?
+  out8="$(bash "${SELF}" "${p_real}" "${live}" "${doc}" 2>&1)"; rc8=$?
   if [ "${rc8}" -eq 0 ] && printf '%s' "${out8}" | grep -q 'owner=client'; then
     say "SELFTEST ok   | real-domain-client     | rc=0 CLEAN for contact=email hello@clients-own-domain.com owner=client"
   else
@@ -970,7 +972,7 @@ selftest() {
   # ---- CONTENT.md reading `DRAFT — write one` -> 5, naming the fact AND the page.
   # An implementation that treats FABRICATION-GUARD items like every other
   # drafted fact passes fixture 5 and fails HERE, which is the whole point of it.
-  out6="$("$0" "${p_draft}" "${live}" "${fabroot}" 2>&1)"; rc6=$?
+  out6="$(bash "${SELF}" "${p_draft}" "${live}" "${fabroot}" 2>&1)"; rc6=$?
   if [ "${rc6}" -eq 5 ] \
      && printf '%s' "${out6}" | grep -q 'fact=testimonial' \
      && printf '%s' "${out6}" | grep -q "${fabroot}/index.html" \
@@ -990,7 +992,7 @@ selftest() {
     dom="clientsite.${sfx}"
     pr="${SELFTEST_TMP}/p-rsv-${sfx}"
     mk_dest "${pr}" "contact=email hello@${dom} owner=client"
-    outr="$("$0" "${pr}" "${live}" "${doc}" 2>&1)"; rcr=$?
+    outr="$(bash "${SELF}" "${pr}" "${live}" "${doc}" 2>&1)"; rcr=$?
     if [ "${sfx}" = "example" ]; then rcr_example="${rcr}"; outr_example="${outr}"; fi
     if [ "${rcr}" -eq 5 ] \
        && printf '%s' "${outr}" | grep -q "${dom}" \
@@ -1010,7 +1012,7 @@ selftest() {
   # the record references/ship-checks.md section 3 asks for.
   local p_blocked="${SELFTEST_TMP}/p-blocked" out9 rc9
   mk_dest "${p_blocked}" 'contact=BLOCKED owner=client reason=the only address given is hello@clientsite.example, a reserved name that can never receive mail'
-  out9="$("$0" "${p_blocked}" "${live}" "${doc}" 2>&1)"; rc9=$?
+  out9="$(bash "${SELF}" "${p_blocked}" "${live}" "${doc}" 2>&1)"; rc9=$?
   if [ "${rc9}" -eq 0 ] && printf '%s' "${out9}" | grep -q 'verdict=CLEAN'; then
     say "SELFTEST ok   | blocked-reserved-ok    | rc=0 CLEAN for '=BLOCKED owner=client reason=…clientsite.example…' — the SAME domain as the rc=5 leg above, honestly recorded"
   else
@@ -1045,7 +1047,7 @@ selftest() {
   # ---- fixture 7: the SAME page with NO 00-INPUT/CONTENT.md -> non-zero ----
   # An absent file proves nothing about the page (references/build.md section 6),
   # so it is the CHECK'S OWN failure and never a pass by default.
-  out7="$("$0" "${p_none}" "${live}" "${fabroot}" 2>&1)"; rc7=$?
+  out7="$(bash "${SELF}" "${p_none}" "${live}" "${fabroot}" 2>&1)"; rc7=$?
   if [ "${rc7}" -ne 0 ] \
      && printf '%s' "${out7}" | grep -q 'content-inventory-unreadable' \
      && printf '%s' "${out7}" | grep -q "${p_none}/00-INPUT/CONTENT.md" \

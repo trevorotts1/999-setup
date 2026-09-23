@@ -41,8 +41,9 @@ skill. It has six sections and nothing else:
   it is given, under a stable question key. Before ANY question, re-read the
   brief and that file; after a compaction or a resume, re-read them again. A
   question whose answer is on disk is ANSWERED: say it back in one line — "you
-  already told me <their words>; if anything changed, tell me" — and move on. A
-  question key asked twice in the session log is a violation.
+  already told me <their words>; if anything changed, tell me" — and move on.
+  Asking an ANSWERED key again is a violation; returning to an unanswered one is
+  required.
 - **Decided and reported, never asked.** Everything not on the lists in
   sections 3, 4 and 5 is decided by the run and REPORTED in the recap: "here is
   what I decided; say the word to change any of it."
@@ -73,13 +74,18 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    menu.** SKILL.md owns the spoken wording (THE BUILD TARGET QUESTION); this
    section owns the taxonomy, the routing, and the gates.
 4. **The funnel gate**, when and only when the confirmed target is `FUNNEL` —
-   the gate written out below.
+   the gate written out below. The gate SPEECH and Checks 1 and 3 happen here; the
+   three key asks (Check 2) wait until AFTER the entry-mode question, one per turn.
 5. **The entry-mode question** — SKILL.md owns the words. Its answer creates
    the project folder and `00-INPUT/` immediately. **It is ALWAYS asked.** The
    working directory is not an answer to it, a supplied folder is not an answer
    to it, and the client is never told what they have already pointed at. They
    may point at material anywhere on the machine, in any number of places, and
-   they may do both halves — tell you AND point.
+   they may do both halves — tell you AND point. **Pointing never means typing a
+   path.** The run creates a folder called `<Name> pictures` on the client's
+   Desktop first, and the client drags files into it and says done; the run copies
+   what lands there into `00-INPUT/`. A typed path is accepted when offered, never
+   asked for.
 
 ### Step 1c — the Build Target taxonomy
 
@@ -107,12 +113,33 @@ register in their own words.
 
 | Target | Recorded as | What it means | Credential gates | Skill dependencies |
 |---|---|---|---|---|
-| **Mobile app** | `MOBILE_APP` | An app used on a phone or tablet. Built with code in a repository. Delivery form decided in Step 1d (installable web app vs native project). | GitHub token required. Hosting token(s) per the environment sweep when the delivery form needs hosting. | Standard spec-protocol build pipeline, mobile-first: stack research constrained to mobile delivery; Gate 3 captures run at MOBILE viewports (e.g. 390×844). No GHL dependency. |
-| **Web app** | `WEB_APP` | An app used in a web browser — a tool or service, not a brochure site. Built with code in a repository. | GitHub token required. Vercel token (or the user's named host) per the environment sweep. | Standard build pipeline. Gate 3 captures at desktop AND mobile viewports. No GHL dependency. |
-| **Mobile AND web app** | `MOBILE_AND_WEB` | The same product on phones and in browsers. Shape decided in Step 1d (one responsive build vs two builds sharing data). | GitHub token required. Hosting per the sweep. TWO repositories is a live possibility — B1's consequence (two merge trains) applies if the dual-build shape is chosen. | Standard build pipeline; the spec carries TWO delivery surfaces and the bar is judged at both viewports. No GHL dependency. |
-| **Desktop / command-line software** | `DESKTOP_SOFTWARE` | A standalone program — desktop software or a CLI tool. Built with code in a repository. | GitHub token required. No hosting gate. | Standard spec-protocol build pipeline. No GHL dependency. |
-| **Website** | `WEBSITE` | A website with one or more pages (home, about, services, contact, blog, etc.). Could be simple (static HTML) or complex (JavaScript, frameworks, backend). | GitHub token required. For complex sites: Vercel token (hosting). For simple sites deployed into GHL: GHL credentials. | Standard build pipeline. Skill 6 for GHL deployment if the site goes into GHL. Skill 08 (Vercel) for complex hosting. |
+| **Mobile app** | `MOBILE_APP` | An app used on a phone or tablet. Built with code in a repository. Delivery form decided in Step 1d (installable web app vs native project). | GitHub via the installer's `gh` login (operator remote or local-only otherwise). Hosted on the operator's Vercel — the home-screen web app is always published. Never a client token ask. | Standard spec-protocol build pipeline, mobile-first: stack research constrained to mobile delivery; Gate 3 captures run at MOBILE viewports (e.g. 390×844). No GHL dependency. |
+| **Web app** | `WEB_APP` | An app used in a web browser — a tool or service, not a brochure site. Built with code in a repository. | GitHub via the installer's `gh` login (operator remote or local-only otherwise). Hosted on the operator's Vercel (or a host the client volunteers). Never a client token ask. | Standard build pipeline. Gate 3 captures at desktop AND mobile viewports. No GHL dependency. |
+| **Mobile AND web app** | `MOBILE_AND_WEB` | The same product on phones and in browsers. Shape decided in Step 1d (one responsive build vs two builds sharing data). | GitHub via the installer's `gh` login. Hosted on the operator's Vercel. TWO repositories is a live possibility — B1's consequence (two merge trains) applies if the dual-build shape is chosen. | Standard build pipeline; the spec carries TWO delivery surfaces and the bar is judged at both viewports. No GHL dependency. |
+| **Desktop / command-line software** | `DESKTOP_SOFTWARE` | A standalone program — desktop software or a CLI tool. Built with code in a repository. | GitHub via the installer's `gh` login. No hosting gate; the desktop toolchain check (`environment-sweep.md`). | Standard spec-protocol build pipeline. No GHL dependency. |
+| **Website** | `WEBSITE` | A website with one or more pages (home, about, services, contact, blog, etc.). Could be simple (static HTML) or complex (JavaScript, frameworks, backend). | GitHub via the installer's `gh` login. Hosted on the operator's Vercel; for simple sites deployed into GHL: GHL credentials. Never a client token ask. | Standard build pipeline. Skill 6 for GHL deployment if the site goes into GHL. Skill 08 (Vercel) for complex hosting. |
 | **Sales funnel** | `FUNNEL` | A multi-step marketing funnel with landing pages, upsell/downsell pages, checkout, thank you pages, email sequences, and text message sequences. Built inside Convert and Flow / GoHighLevel (GHL). | **HARD GATE:** the GHL Location PIT, the GHL Location ID, and the GHL Firebase refresh token are ALL required. If any is missing, stop and ask for it — the funnel cannot be built without them. | Skill 6 (ghl-install-pages) for page building. Skill 44 (convert-and-flow-operator) for workflow and automation building. Skill 38 (conversation playbook) for email and SMS copy. Kie.ai or Agnes-AI for images and videos. |
+
+**The honest end states — what "finished" means per target, and what the client
+hears.** Nothing beyond these is promised for tonight.
+
+- **Mobile app (`MOBILE_APP`):** an installable home-screen web app, published by
+  `tools/publish.sh` (a served target — its URL must return 200), PLUS the native
+  Expo project committed in the repository. The client hears: "Your app works on
+  phones from a link. Putting it in the App Store is a separate step we can do
+  next." A store release (Expo EAS build and submission) is a later OPERATOR step,
+  written into the morning report's operator notes — never run tonight and never
+  promised.
+- **Desktop software (`DESKTOP_SOFTWARE`):** an UNSIGNED installer — a `.dmg` on a
+  Mac, an `.exe` on Windows — built with the toolchain the environment sweep checked
+  and installed (Rust + Tauri by default, or Electron), copied to the client's
+  Desktop, with one plain install instruction. On a Mac: "Your program is on your
+  Desktop. Double-click it, then drag it into Applications. The first time you open
+  it, your Mac may ask you to allow it: open <menu path: verify in live app> and
+  choose to open it anyway." On Windows: "Your program is on your Desktop.
+  Double-click it to install it. If Windows shows a warning, choose <menu path:
+  verify in live app> to run it anyway." Signing and notarization are a later
+  OPERATOR step, written into the operator notes.
 
 The credential gates are NAMED here and CHECKED in `environment-sweep.md` — the
 variable names, the alias lists, the resolution order, and the per-operating-
@@ -161,20 +188,38 @@ instructions I build funnels from, and I couldn't fetch them from here — I can
 tell you exactly which ones, and we can get them, or I can build this as a
 website instead."
 
-**Check 2 — the three keys, one at a time, in this exact wording.** Never two in
-one message, never a list, never a paste into the conversation. Each key is
+**Check 2 — the three keys, one at a time, in this exact wording, AFTER the
+entry-mode question.** One key per turn, each turn ending on "Can you find that for
+me now?" Never two in one message, never a list, never a paste into the conversation. Each key is
 copied by the person, placed by `tools/place-key.sh`, and re-detected BY NAME;
 the only thing this run ever learns about a key is "present" or "absent". Ask
 for them in this order:
 
 > I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token.
+> In your Convert and Flow account, open <menu path: verify in live app>.
 > Copy it, then say ready, and I'll file it without ever reading it out loud.
+> Can you find that for me now?
 
-> I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Copy
-> it, then say ready, and I'll file it without ever reading it out loud.
+When they've given it (or said they can't find it), the next turn is:
 
-> I need your Convert and Flow (GoHighLevel, GHL) Location ID. Copy it, then say
-> ready, and I'll file it without ever reading it out loud.
+> I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Open
+> the Token Grabber Chrome extension that Black CEO gave you, click 'Grab the
+> token', then 'Copy the token'. Then say ready, and I'll file it without ever
+> reading it out loud. Can you find that for me now?
+
+When they've given it (or said they can't find it), the next turn is:
+
+> I need your Convert and Flow (GoHighLevel, GHL) Location ID. In your Convert
+> and Flow account, open Settings, then Business Profile, where it is listed.
+> Copy it, then say ready, and I'll file it without ever reading it out loud.
+> Can you find that for me now?
+
+**Where each key lives is said in the same breath (`audience.md` §2).** The
+Firebase steps and the Location ID's place are the ones `environment-sweep.md`
+records (Gate 1). The Private Integration Token's menu path is NOT verified in any
+document this skill ships, so it stays marked `<menu path: verify in live app>`
+until someone confirms it in a live Convert and Flow account and writes it here —
+a guessed path sends the client hunting through menus that do not exist.
 
 Wait for "ready" after each one, place it, re-detect it by name, say only that
 it landed, and then ask for the next. The never-paste rule is universal: it
@@ -252,8 +297,9 @@ capture file there — `00-INPUT/BRAINSTORM-YYYY-MM-DD.md` — and write what th
 say, verbatim, as it is said. A spoken word with no durable home is a word
 already lost (Law 25).
 
-Cover four things and then stop. Each gets two or three open probes — use the
-ones that fit, in their own register, one at a time:
+Cover four things and then stop. **At most two probes per topic** — one, and a
+second only when the first answer is thin. Use the ones that fit, in their own
+register, one at a time; a third probe on a topic is a defect:
 
 1. **What is it, and who is it for?** Plain sentences; no structure, no numbers.
    - "Tell me about the last time you had to do this without the thing we're building. What happened?"
@@ -292,9 +338,10 @@ translate the goal into agent vocabulary. Then move on; do not design here.
 ### The job archetype — derived, never asked
 
 A brief that says "build me X" IS the answer (greenfield). DERIVE the archetype
-from the brief and the brainstorm, and ask only when the brief genuinely does
-not say — then in one plain sentence. Asking what the brief already answered is
-the defect this rule removes. The archetype pre-sets three things — what "done"
+from the brief and the brainstorm — it is NEVER asked and costs no question
+number. When the brief genuinely does not say, default to greenfield, record it
+as a DEFAULT, and report it in the recap. Asking what the brief already answered
+is the defect this rule removes. The archetype pre-sets three things — what "done"
 means, which tier does which job, and where work fans out versus serializes —
 and it is recorded in the decision register.
 
@@ -317,8 +364,9 @@ decide."
 
 This list IS the default-mode interview. **C is the length of this list after
 the pre-statement reads remove what is already known**, and the promise spoken
-up front is "about a dozen, usually fewer." Every item is spoken with its
-number — "Question N of no more than C" — per section 6.
+up front is the greeting's: "I'll ask you about fifteen short questions, one at a
+time. It takes about half an hour, then you can walk away." Every item is spoken
+with its number — "Question N of no more than C" — per section 6.
 
 1. **The mode question**, first, in these words:
 
@@ -342,8 +390,11 @@ a website built without them has no page list.
 - **Website:** "What would you like people to find on your website? For example, you might
   want a home page, information about you, your services, and a way to contact you. What comes
   to mind for yours?"; "Will people mostly read about you and contact you, or do they need to
-  log in and do something?"; "Do you already have somewhere your website is supposed to go, or
-  would you like me to handle that for you?"
+  log in and do something?"; "Do you already own a website address, something like
+  yourbusiness.com? If you don't know, that's okay." (This IS question 12 for a website —
+  asked once, here, and stated back at 12, never re-asked. Where the site will live is
+  decided and REPORTED in the recap, never asked — `environment-sweep.md`, "Where it
+  will live".)
 - **Funnel**, in these words: "What's the one main thing you want someone to do? For example:
   buy something, book an appointment, sign up, request information, or join something."; "What
   are you offering them? And how much does it cost, if there is a price?"; "After someone buys,
@@ -396,18 +447,33 @@ help you with it."
 7. "What is the name of your business or project? And is there a short saying or phrase you normally put underneath the name?"
 8. "What do you sell or offer? And what do you charge, if you already know the prices?"
 9. "How should people contact you? You can give me whatever applies: your phone number, email, address, or business hours."
-10. "Do you already have a logo or any pictures you want me to use? If you do, just tell me where they are. If not, that's okay."
+10. *(Merged into 13 — never asked on its own. The logo-and-photos ask is question 13's
+    second half, so the number is not spoken and the list is one shorter.)*
 11. "Do you have any real comments or reviews from happy customers that you'd like me to use? If you have them, I'll use their real words. If you don't, we'll simply leave that part out. I won't make up a customer or a review."
 12. "Do you already own a website address, something like yourbusiness.com? If you don't know, that's okay."
 
-13. **Artwork:** "Would you like me to create the pictures we need, or do you already have
-    pictures you want me to use?" The client is NEVER asked which picture model to use — that
+13. **Artwork, logo and photos (question 10 merged in):** "Would you like me to create the
+    pictures we need, or do you already have a logo or pictures you want me to use?" When they
+    have some, the run first creates the folder `<Name> pictures` on the client's Desktop
+    (`<Name>` is the name from question 7), then says, as part of the same question: "If you
+    have a logo or photos, drag them into the folder called '<Name> pictures' on your Desktop,
+    then say done. If not, that's fine." The run copies what lands there into `00-INPUT/` and
+    records each file in `00-INPUT/CONTENT.md`; the client never types a path. The client is
+    NEVER asked which picture model to use — that
     is Candace's job, and `references/media-model-selection.md` owns how she decides and what
     she says. Any money question that follows is an approval of SPEND, never a choice of
     technology.
 
-14. **D1, the example:**
-    "Can you think of a website or app you've seen that you really like? Something that makes you think, 'I'd be happy if mine looked and worked this well.' If nothing comes to mind, that's okay. I'll find a few good examples and show them to you."
+14. **D1, the example — and the reference pick, folded in as a recommendation.** When the
+    background research (Step 1c-bis) is back, D1 carries its recommendation, and this one
+    question IS the reference-app pick and the bar pick (`research.md`) — there is no
+    separate ask for either:
+    "I looked at a few <websites | apps> like yours, and the one I'd suggest we aim to match is <name>, because <one plain reason>. Is there a website or app you like better, or should I use that one?"
+    When the research is not back yet:
+    "Can you think of a website or app you've seen that you really like? Something that makes you think, 'I'd be happy if mine looked and worked this well.' If nothing comes to mind, that's okay. I'll pick a good one for you."
+    "Use that one", "not sure" and "nothing comes to mind" record the recommendation as the
+    bar, marked as a DEFAULT; the good ideas borrowed from the other examples are decided
+    and REPORTED in the recap, never asked one by one.
 
 15. **D4, the don't-wants:**
     "Is there anything about that example, or other websites and apps you've seen, that you definitely do not want in yours?"
@@ -417,9 +483,21 @@ help you with it."
     the finished result>. If I deliver that, would you consider the job finished?" One yes or
     no — never an open essay question.
 
-**That is sixteen at most; the pre-statement reads (a supplied folder, an
-OpenClaw box, an existing domain found) remove items, so most runs land near
-twelve.** D1's answer seeds the bar candidates in `research.md` and never
+**The spend question — the last counted question, in both modes** (asked after section
+4's items in ADVANCED MODE). `capacity.md` §10, THE SPEND LINE, owns `<X>` and what the
+answer does:
+"I'll keep going until it's finished. If it's going to cost more than about $<X> in AI usage, I'll stop and ask you first. Is that okay?"
+Its answer writes the `COST-LINE:` ledger line. Skipped when the run has no metered spend. When the balance may run low, `capacity.md`
+§9's low-balance question takes this slot instead — money is asked about once.
+
+**After the last question, the walk-away line — a statement, and the end of the
+interview** (`audience.md` §5 owns it):
+"That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop."
+
+**That is sixteen at most — fifteen list items once question 10 merged into 13,
+plus the spend question — and the pre-statement reads (a supplied folder, an
+OpenClaw box, an existing domain found) and the branch answers remove items, so most
+runs land near thirteen.** D1's answer seeds the bar candidates in `research.md` and never
 replaces the selection step there; D4's is the avoid-that delta, frozen into
 the blind-comparison dimensions at bar selection. Both go to the decision
 register verbatim, along with the target, the branch answers, the media choice,
@@ -440,8 +518,8 @@ is REPLACED, by the honest pair — spoken in these words:
 > If you have real ones, I'll use them exactly. If not, I'll leave that part
 > off — I won't make up a customer.
 
-Question 11 is always one of these; question 10 is one whenever the answer would
-be a staff member's photograph or another company's logo. An "I don't know"
+Question 11 is always one of these; question 13's logo-and-photos half is one
+whenever the answer would be a staff member's photograph or another company's logo. An "I don't know"
 there is written to `00-INPUT/CONTENT.md` as `OMIT`, never as `DRAFT — write
 one`, and that part is simply left off the built page — an omission is a PASS,
 not a gap, and it is said that way: "I've left the customer-words part off, and
@@ -483,7 +561,9 @@ not taken. Anything still genuinely unknown stays priced in.
 - **Everything else is decided and reported** — the helper count (the measured
   `clientCap`), the three seats, the fallback table read from the router's own
   wiring, the reserve, one new repository on `main` with the tool pushing, the
-  standing loop shape, the project folder, and the busy-signal backoff ladder.
+  standing loop shape, the project folder, where the work will live online
+  (`environment-sweep.md`), the reference apps' borrowed ideas, and the
+  busy-signal backoff ladder.
   They appear as statements in the recap, never as questions.
 
 ---
@@ -531,7 +611,8 @@ question. Never recite a model name, a version number, a price-per-second or a b
 client.
 
 **Item 13 of the list is this block's opening**, spoken in the build's own words: "Would you
-like me to create the pictures we need, or do you already have pictures you want me to use?"
+like me to create the pictures we need, or do you already have a logo or pictures you want me
+to use?" (with the Desktop-folder half from section 3 when they have some)
 Do not then ask it a second time.
 
 Then, and only these — and both are questions about MONEY and TASTE, never about technology:
@@ -599,9 +680,10 @@ said plainly, naming what was checked.
 1. Every counted question is spoken with its number: "**Question N of no more than C** — <the question>".
 2. N never resets, never repeats, never decreases.
 3. C is the length of the mode's list — section 3, plus section 4 in advanced mode — after the pre-statement reads.
-4. In DEFAULT MODE say "about a dozen, usually fewer" with it: the list is sixteen at most and most runs land near twelve.
+4. The greeting promises "about fifteen short questions, one at a time … about half an hour": the DEFAULT MODE list is sixteen at most (spend question included) and most runs land near thirteen.
 5. C is stated ONCE, before question 1, and may only ever be LOWERED.
 6. Every lowering is ANNOUNCED before the next question: "Good news — it will be at most <C'> now, because <the reason>."
 7. C is never raised; a question asked past the stated C, with no correction spoken first, is a defect.
-8. Uncounted: the opening, the idea question, classify-and-confirm, the funnel gate, entry mode, and the brainstorm probes.
+8. Uncounted: the opening, the idea question, classify-and-confirm, the funnel gate, entry mode, and the brainstorm probes (at most two per topic).
 9. This file is the ONLY owner of a count claim in this skill — no other file states, restates, or invents a number.
+10. **Count every ask.** No other file adds a question outside this list. Anything another file wants from the client is either folded into a counted question here (the reference-app and bar pick into D1, the low-balance warning into the spend question), decided and REPORTED in the recap (hosting, the borrowed ideas), or added to this list and counted. An ask that appears nowhere in this file is a defect.
