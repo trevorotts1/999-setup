@@ -243,22 +243,40 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    a failure as PASS. Fixes run in parallel only within the applicable policy (Law 32).
 4. **Holding pen.** Passing work stages in a pen (one per repo) — a table in the
    execution plan, never a file (Law 39), and the pen has no writer.
-5. **Merge train — in BATCHES, never one at a time.** One writer per repository (Law 3),
-   time-triggered by the tick every `MERGE_BATCH_MINUTES` (default 15) with no count cap:
-   whenever anything is waiting, the tick runs `tools/merge-train.sh <project> --batch`
-   under a lock, so two batches never overlap. One batch takes EVERY unit branch that has
-   passed its judges, merges each with `--no-ff` into the integration branch in one pass,
-   runs the build/test gate ONCE for the whole batch and pushes ONCE. A red batch is
-   bisected — halves retried until the unit(s) that broke it are found — the good ones
-   land, and the bad ones go back to repair with the failing output. A merge CONFLICT
-   skips that unit and records it for the conflict-resolver seat (a haiku chain); it
-   never blocks the rest of the batch. Then ripple one version bump, one changelog entry
-   and one annotated tag in the same commit (Laws 10, 20), with zero Co-Authored-By
-   trailers. A merge is never a barrier — builders, judges and repair agents keep running
-   while the train drains. On a profiled project each merged unit is also recorded in the
-   project's own state by `commands.merged` (`{taskId}` `{commit}` `{branch}` filled in).
-   The train keeps the Land-vs-Merged truth gates of `references/pipeline.md`; it is run,
-   never re-written per project, and its single-unit mode remains for a manual landing.
+5. **Merge trains — one per repository, in BATCHES, never one at a time.** A project may
+   have more than one repository; each one registered in `repos.json` (beside the
+   repo-anchor receipt: `CONTROL/`, or `<statedir>/spec-protocol/` on a profiled project;
+   no registry means the one anchored repository) gets its own train, one writer each
+   (Law 3), each under its own lock, so trains for different repositories never block each
+   other. The tick is the watcher: every `MERGE_BATCH_MINUTES` (default 10), with no count
+   cap, it runs `tools/merge-train.sh <project> --batch` with no `--repo`, which runs every
+   repository's train. The SCRIPT drives the train; nobody merges by hand. One batch takes
+   EVERY unit branch that has passed its judges, merges each with `--no-ff` into the
+   integration branch in one pass, runs the build/test gate ONCE for the whole batch and
+   pushes ONCE. A red batch is bisected — halves retried until the unit(s) that broke it
+   are found — the good ones land, and the bad ones go back to repair with the failing
+   output. A merge CONFLICT skips that unit, never blocking the rest of the batch. The ONLY
+   seat a train ever gets is the conflict-resolver seat (a haiku chain), dispatched for a
+   conflict or a re-queued unit (`MERGE-UNPROVEN:`, `MERGE-CLAIM-FALSE:`,
+   `STALE-UNMERGED:`) — never a builder seat. Each batch appends one line per proven unit
+   under `## [Unreleased]` in that repository's CHANGELOG.md; version numbers and tags are
+   written only by `tools/release.sh` (item 7). Sequential merging — one unit merged, gated
+   and pushed at a time — is never done. A merge is never a barrier — builders, judges and
+   repair agents keep running while the trains drain. On a profiled project each merged
+   unit is also recorded in the project's own state by `commands.merged` (`{taskId}`
+   `{commit}` `{branch}` filled in). The train keeps the Land-vs-Merged truth gates of
+   `references/pipeline.md`; it is run, never re-written per project, and its single-unit
+   mode remains for a manual landing.
+   **Merged means the proof of merge, and nothing else:** after the push and a `git fetch`,
+   the unit's commit is an ancestor of `<remote>/<trunk>` (of the local trunk on a
+   local-only repository). A unit without that proof is never recorded merged; it is
+   re-queued with `MERGE-UNPROVEN:`. Every tick re-proves each unit the ledger or state
+   calls merged, and a claim that fails is `MERGE-CLAIM-FALSE:` and re-queued.
+   **Cleanup right after the proof, every time:** each proven unit's worktree, local branch
+   and pushed remote branch, and the scratch files the skill made for it, are deleted, and
+   `git worktree prune` runs; the tick's orphan sweep removes any merged worktree left
+   behind. Work that is not proven merged is NEVER deleted: it is reported
+   (`KEPT-UNMERGED:`, `STALE-UNMERGED:`) and re-queued.
 6. **The finish line.** LANDED (integration branch) is never reported as MERGED.
    Done means MERGED — the merge commit a proven ancestor of the trunk — AND
    verified at HEAD: the key artifact exists (`git cat-file -e HEAD:<path>`) and
@@ -276,6 +294,21 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    not-online-yet line (§12). A served target still needs its `PUBLISHED:` line to be live;
    when `tools/publish.sh` writes `HOSTING-BLOCKED: <reason>` instead, that is a named
    non-success (Law 50) — the report opens with the not-live line and names the next step.
+7. **Release — every repository minted.** At the Release Council's PASS, and at any
+   milestone the run declares, run `tools/release.sh <project> --bump <patch|minor|major>`
+   (or `--version <x.y.z>`) with no `--repo`, so EVERY registered repository is released.
+   Per repository it refuses (`RELEASE-REFUSED:`) a dirty trunk, a unit still waiting in
+   that repository's train, a red gate, or a tag that already exists (a tag is never
+   moved); then it sets VERSION, moves the CHANGELOG's `[Unreleased]` into
+   `## [x.y.z] — <date>`, updates the README's version line, commits, creates the ANNOTATED
+   tag `vx.y.z` (Laws 10, 20; zero Co-Authored-By trailers), pushes trunk and tag, and
+   proves the mint from the remote: the tag is there, annotated, on the release commit, and
+   VERSION, CHANGELOG and README on that commit carry the version. Only then does it print
+   `MINTED: repo=… version=… tag=… commit=…` (`MINTED-LOCAL:` on a local-only repository,
+   which does everything but the push). **The run is not done until every repository has
+   printed `MINTED:` or `MINTED-LOCAL:`**; a `MINT-FAILED:` or `RELEASE-REFUSED:` line is
+   a named non-success, fixed and re-run, never reported as released. Every tick re-proves
+   a claimed release, and one that fails is `MINT-CLAIM-FALSE:` in the operator notes.
 
 A profiled project runs this SAME pipeline against its bound task state, audit, repair limits
 and release checks. Its declared policy may narrow the generic repair allowance; universal
@@ -413,7 +446,10 @@ Then what got built, what was checked and how, the run's score curve, what is bl
 and why, and the one or two decisions only they can make — each written down so none of
 it waits up for them. Operator-only notes (a `DECISION-ENGINE: absent` result, a
 `HOOKS-ABSENT:` line, anything about keys or accounts the client never needs to act on) go
-in the report's operator notes, never in the client's opening lines.
+in the report's operator notes, never in the client's opening lines. The operator notes
+always list every repository's released version and tag, copied from its `MINTED:` /
+`MINTED-LOCAL:` line, plus any `MINT-FAILED:`, `MINT-CLAIM-FALSE:` or
+`MERGE-CLAIM-FALSE:` line still open.
 
 ## 13. What you never do
 
@@ -427,6 +463,7 @@ prove. These are the ones no script can refuse for you:
 - Never do the work in the main loop; subagents do all work (Law 41) — the one exception is a single command to verify one subagent claim before repeating it — and never send one out with partial context, because a failed subagent is the dispatcher's defect first.
 - Never read a project document, an audit report or a ledger in full in the main loop; dispatch a Haiku reader for the extract you need. The conductor holds the ledger's last line, the gate verdict and the counts — nothing longer. On a profiled project the reader dispatches under the reservation-exempt `reader` role (`references/project-profile.md`); a gate that refuses readers would force the main-loop reading this rule forbids, so a refused reader is a gate defect, never a licence to read it yourself.
 - Never report something as done without independent proof; a subagent's claim is a claim (Laws 1, 14), and a number no command measured is a rumour.
+- Never merge units one at a time or by hand, never call a unit merged without the proof of merge, never delete a worktree or branch whose commits are not proven merged, and never call a release done without its `MINTED:` / `MINTED-LOCAL:` line (§9 items 5 and 7).
 - Never lower the quality gate or suggest lowering it (Law 43) — only the client lowers their own standard, for their own build — and never relabel BLOCKED / INFEASIBLE / LIMIT REACHED / USER STOPPED as PASS (Law 50).
 - Never create an eighteenth document, never bring a refused artifact back under a new name, and never cite a document you wrote as authority (Law 39).
 - Never give a role irrelevant mutable context or another role's provenance; use the stable relevant prefix plus its role slice (Law 5).
