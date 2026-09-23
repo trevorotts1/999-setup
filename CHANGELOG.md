@@ -1,5 +1,72 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 6: merge trains, proof of merge, cleanup, release hygiene
+
+Four failures closed: old git worktrees left behind eating disk; units reported "merged" or
+releases reported "minted" that never landed; merges run one after another for hours and
+colliding; tags, changelogs and READMEs never updated. Batch cadence: `MERGE_BATCH_MINUTES`,
+default now **10** (was 15). A project may now have more than one repository: the registry is
+`repos.json` beside the repo-anchor receipt (`CONTROL/`, or `<statedir>/spec-protocol/` on a
+profiled project), one `{"name","root","trunk","remote"}` entry per repository; with no
+registry the one repository in `repo-anchor.json` is used, as before. **Proof of merge** — the
+only meaning of "merged" — is: after `git fetch`, the unit's commit is an ancestor of
+`<remote>/<trunk>` (of the local trunk on a local-only repository). **Proof of mint** is: the
+annotated tag is on the remote (`git ls-remote --tags`), points at the release commit, and
+VERSION, CHANGELOG and README on that commit carry the same version.
+
+**A — one merge train per repository (`merge-train.sh`, `repo-anchor.sh`, `references/pipeline.md`).**
+`merge-train.sh <project> --batch [--repo <name>]`: without `--repo` it runs every registered
+repository's train, each under its own lock, so one repository's red gate never stops another's.
+`repo-anchor.sh` writes or updates the registry entry for the repository it anchors and keeps
+the single `repo-anchor.json` receipt. After every push each unit is proven merged; a unit that
+fails the proof is not recorded merged and is re-queued with `MERGE-UNPROVEN: unit=… repo=…
+reason=…`. Cleanup follows every proof: the unit's worktree (`--force` only when it holds no
+uncommitted changes the merge does not already contain), its local branch, its pushed remote
+branch and the scratch files the skill made for it are deleted, and `git worktree prune` runs.
+A worktree or branch whose commits are not proven merged is never deleted: `KEPT-UNMERGED: …`.
+Each batch appends one line per proven unit under `## [Unreleased]` in that repository's
+CHANGELOG.md (created when missing); nothing in the train writes a version number.
+
+**B — the watcher (`watch-tick.sh`, `watch-tick.mjs`).** Every 10 minutes the tick runs every
+repository's train with one `merge-train.sh <project> --batch` call, under the same lock. Each
+tick also runs a reconcile sweep — every unit the ledger or profiled state calls MERGED,
+MERGED_VERIFIED or landed is re-proven, and a failure is `MERGE-CLAIM-FALSE: unit=… repo=…`
+and re-queued (a profiled project's state is never written); an orphan sweep per repository —
+a worktree whose branch is proven merged is removed with its branch, and one that is not merged
+and has had no commits for two hours is `STALE-UNMERGED: …` and re-queued, never deleted, then
+`git worktree prune`; and a mint check — a release or tag the ledger or state claims is
+re-proven, and a failure is `MINT-CLAIM-FALSE: …` in the log and in the morning report's
+operator notes.
+
+**C — release hygiene (`tools/release.sh`, new; `SKILL.md`, `references/conductor.md`,
+`templates/workflows/merge-train.js`).** `release.sh <project> [--repo <name>] --version
+<x.y.z> | --bump patch|minor|major` releases every registered repository (or the one named).
+Per repository it refuses (`RELEASE-REFUSED: repo=… reason=…`) unless the trunk is checked out
+and clean, the remote trunk is already in the local one, no passed unit still waits in that
+repository's train, the gate is green (the same test command the train runs), and the tag does
+not already exist (a tag is never moved). It then sets VERSION (created when missing), moves
+CHANGELOG `[Unreleased]` into `## [x.y.z] — <date>` under a fresh empty `[Unreleased]`, updates
+the README's version line (or adds `Version: x.y.z` near the top), commits, creates the
+annotated tag `vx.y.z`, pushes trunk and tag in one atomic push, and proves the mint from the
+remote before it prints `MINTED: repo=… version=… tag=… commit=…`; any failure is
+`MINT-FAILED: repo=… reason=…` and a non-zero exit. A local-only repository gets everything
+but the push, proven on the local tag, and `MINTED-LOCAL: …`. Results are recorded in the
+ledger (profiled: `<statedir>/spec-protocol/release.log`). `--selftest` mints and proves one
+release against a local bare remote and refuses a dirty trunk. `SKILL.md` step 21–22 and
+`conductor.md` §9 (items 5 and 7), §12 and §13 now say: one merge train per repository,
+driven by the script, batching every 10 minutes, never sequential merging; "merged" means the
+proof of merge only; worktrees and branches are deleted right after the proof and unmerged
+work never is; the only seat a train gets is the haiku-chain conflict-resolver, for conflicts
+and re-queued units, never a builder seat; at the Release Council's PASS (and any declared
+milestone) `release.sh` runs for every repository and the run is not done until each prints
+`MINTED:` or `MINTED-LOCAL:`; the morning report's operator notes list each repository's
+version and tag. The merge-train workflow template runs all repositories' trains (no
+`--repo`) and hands any `CONFLICT:` or `MERGE-UNPROVEN:` unit to the conflict-resolver seat
+(`args.seats.conflict`, the haiku chain), which fixes the unit branch and never merges or
+deletes anything.
+
 ## [1.28.0] — 2026-09-23
 
 ### Round 5: a supplied, profiled project runs all night unattended
