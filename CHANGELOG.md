@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.28.0] — 2026-09-23
 
 ### Round 5: a supplied, profiled project runs all night unattended
 
