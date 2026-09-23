@@ -785,14 +785,13 @@ main() {
 
   # Skill visibility: an actual filesystem check, not an assumption.
   #
-  # TOPOLOGY. The shipped claude-nine launcher never sets CLAUDE_CONFIG_DIR. It
-  # injects routing — base URL, Keychain token, alias exports — into the child
-  # process only, and leaves the Claude config root exactly as it found it
-  # (CLAUDE.md rule 10; nine-router-setup SKILL.md step 10). The config root is
-  # therefore the ordinary $HOME/.claude, and that is where the skills must
-  # land for a claude-nine session to see them. An operator whose own wrapper
-  # exports CLAUDE_CONFIG_DIR is honored automatically by resolving from the
-  # live environment, so no topology is assumed in either direction.
+  # TOPOLOGY. The shipped claude-nine launcher sets CLAUDE_CONFIG_DIR to
+  # ${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}; routing (base URL, apiKeyHelper
+  # for the Keychain token, lane pins) lives in that root's settings.json,
+  # which step 9 above creates when absent. Plain `claude` keeps the ordinary
+  # $HOME/.claude, so the skills are linked there first, and into
+  # $HOME/.claude-nine as the secondary root below. A CLAUDE_CONFIG_DIR in the
+  # live environment is honored as the primary root.
   CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -859,9 +858,10 @@ main() {
   #     (a) Hooks (fix #1): copy + MERGE-register spec-protocol's four
   #     enforcement hooks into each root that already holds a settings.json
   #     chain (the same two roots the skills were linked into). install-hooks.sh
-  #     backs settings.json up first, keeps every existing entry, and never
-  #     creates a settings.json in the claude-nine root (that file is the
-  #     launcher's "router config present" guard). Never fatal.
+  #     backs settings.json up first and keeps every existing entry. The
+  #     claude-nine root's settings.json already exists here (step 9 creates
+  #     it when absent), so the hooks merge into it; install-hooks.sh itself
+  #     never creates one. Never fatal.
   HOOKS_DETAIL=""
   HOOKS_STATUS="OK"
   SPEC_SRC="$(resolve_skill_source spec-protocol)"

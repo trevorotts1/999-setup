@@ -34,8 +34,8 @@ export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
 # GitHub MCP plugin needs GITHUB_PERSONAL_ACCESS_TOKEN present in the LAUNCH
 # environment: its .mcp.json expands ${GITHUB_PERSONAL_ACCESS_TOKEN} into the
 # Bearer header at session start. A SessionStart hook runs too late (plugin
-# MCP servers spawn before hooks). Token comes from the gh CLI keyring
-# (trevorotts1, copilot scope). Never printed.
+# MCP servers spawn before hooks). Token comes from the signed-in gh CLI
+# account's keyring. Never printed.
 if [ -z "${GITHUB_PERSONAL_ACCESS_TOKEN:-}" ]; then
   GH_TOKEN_FOR_MCP="$(gh auth token 2>/dev/null || true)"
   if [ -n "$GH_TOKEN_FOR_MCP" ]; then
@@ -116,9 +116,13 @@ fi
 # restores the old collapse of low to high-rewrite and xhigh misrouting.
 # This serializer lives in the same bundle as the GLM repair above; the GLM
 # guard does not own it, so it is checked separately and refuses quiet success.
-if ! node "$HOME/.9router/verification/glm-acceptance-20260918/final-dispatch.cjs" >/dev/null 2>&1; then
+# The acceptance script exists only where that repair was applied; elsewhere
+# (a stock client install) there is nothing to check, so this is a silent no-op.
+_ds_check="$HOME/.9router/verification/glm-acceptance-20260918/final-dispatch.cjs"
+if [ -f "$_ds_check" ] && ! node "$_ds_check" >/dev/null 2>&1; then
   echo "⚠️  DeepSeek effort mapping check failed — low/xhigh suffixes may misroute." >&2
 fi
+unset _ds_check
 
 # Keep the 9Router Ollama streaming terminator fix applied. Native Ollama
 # completion arrives as done:true, but the OpenAI translator flush did not emit
@@ -133,8 +137,10 @@ fi
 #
 # Exit codes are kept distinct on purpose: absent is not the same claim as
 # could-not-look, and this must never report the second as the first.
+# Only scanned where that patched build lives (~/.npm-global); nine-router-setup
+# installs 9Router under its own prefix, so on a client this is a silent no-op.
 _ollama_rc=0
-node -e '
+[ ! -d "$HOME/.npm-global/lib/node_modules/9router/app/.next-cli-build" ] || node -e '
 const fs=require("fs"),path=require("path");
 const root=process.env.HOME+"/.npm-global/lib/node_modules/9router/app/.next-cli-build";
 const RE=/\.OLLAMA\)&&[A-Za-z_$]+\.finishReason\)\{[^{}]*data: \[DONE\]/;
