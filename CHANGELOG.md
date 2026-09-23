@@ -61,10 +61,11 @@ pending, resets its 3-per-turn block counter on a new turn, and blocks when `ANS
 missing after this session created it. `gate0-claim-gate.py` and `speech-check.sh` got the
 matching evidence and counter fixes.
 
-**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-9: a
+**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-10: a
 project must be booked in `CONTROL/dispatch-log.md` (not just claimed), it must show a real
-`SEAT-PROBE:` line before a build dispatches, and it must carry a proven `repo-anchor.json`
-receipt (scoped to both legacy and profiled projects) before any builder runs.
+`SEAT-PROBE:` line before a build dispatches, it must carry a proven `repo-anchor.json`
+receipt (scoped to both legacy and profiled projects) before any builder runs, and it must
+have its start marker and an armed tick (`watch-tick.sh --check` rc 0) before a build dispatches.
 
 **Repo anchor.** `#6` (repo-anchor side), `#49`, `#50` — `repo-anchor.sh` and `anchor.sh`:
 a profiled project no longer gets refused outright by the drift reconciler; it now redirects
