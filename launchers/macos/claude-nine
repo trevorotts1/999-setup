@@ -190,6 +190,43 @@ if [ -x "$HOME/.local/bin/sync-nine-skills.sh" ]; then
   "$HOME/.local/bin/sync-nine-skills.sh" --quiet || true
 fi
 
+# Keep the 9Router model catalog limits correct (DeepSeek V4 Flash is 1M
+# context, not the 128K the package ships). An `npm i -g 9router` restores the
+# wrong value, so re-apply it every launch (a ~50ms scan). Exit 10 = patched:
+# the running router still holds the old catalog, so restart it. The restart
+# finds whatever launchd job owns the listener (no hardcoded label); with no
+# launchd job it stops the listener and the start block below brings it back.
+# Exit 2 (undetermined) never blocks the launch.
+_cat_fix=""
+for _f in "$SELF_DIR/fix-9router-catalog.mjs" \
+          "$SELF_DIR/../../.claude/skills/nine-router-setup/scripts/common/fix-9router-catalog.mjs"; do
+  [ -f "$_f" ] && { _cat_fix="$_f"; break; }
+done
+_cat_rc=0
+[ -z "$_cat_fix" ] || node "$_cat_fix" --quiet >/dev/null 2>&1 || _cat_rc=$?
+if [ "$_cat_rc" = 10 ] && /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
+  echo "🔧 9router catalog corrected — restarting 9router to load it..." >&2
+  _lpid="$(/usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1)"
+  if [ -n "$_lpid" ]; then
+    _ppid="$(ps -o ppid= -p "$_lpid" 2>/dev/null | tr -d ' ')"
+    _label="$(launchctl list 2>/dev/null | awk -v a="$_lpid" -v b="${_ppid:-x}" '$1==a||$1==b{print $3; exit}')"
+    if [ -n "$_label" ]; then
+      launchctl kickstart -k "gui/$(id -u)/$_label" >/dev/null 2>&1 || true
+    else
+      kill "$_lpid" 2>/dev/null || true
+    fi
+    # Wait until the old listener is gone and (launchd case) a new one answers.
+    for _ in $(seq 1 40); do
+      _now="$(/usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1)"
+      if [ -n "$_label" ]; then [ -n "$_now" ] && [ "$_now" != "$_lpid" ] && break
+      else [ "$_now" != "$_lpid" ] && break; fi
+      sleep 0.5
+    done
+  fi
+  unset _lpid _ppid _label _now
+fi
+unset _cat_fix _cat_rc _f
+
 # Start 9router if nothing is listening, rather than just refusing to launch.
 if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
   echo "🔌 9router not running on :${PORT} — starting it..." >&2

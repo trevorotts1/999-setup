@@ -75,6 +75,28 @@ try {
     $tokenStr = [System.Text.Encoding]::UTF8.GetString($token)
     if (-not $tokenStr) { throw 'Protected token is empty. Re-run /nine-router-setup.' }
 
+    # 2.5 Keep 9Router's catalog limits correct (DeepSeek V4 Flash is 1M context,
+    #     not the 128K the package ships). An npm update restores the wrong value,
+    #     so re-apply it every launch. Exit 10 = patched: restart the running
+    #     router so it loads the fix. Any other exit never blocks the launch.
+    #     EAP Continue: under 5.1, stderr from a native command with EAP Stop
+    #     would throw.
+    $catFix = Join-Path $PSScriptRoot 'fix-9router-catalog.mjs'
+    if ((Test-Path $catFix) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & node $catFix --quiet 2>&1 | Out-Null
+        $catRc = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($catRc -eq 10 -and (Test-Health)) {
+            Write-Host '9Router catalog corrected - restarting 9Router to load it...' -ForegroundColor Yellow
+            $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($conn) { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue }
+            for ($i = 0; $i -lt 20 -and (Test-Health); $i++) { Start-Sleep -Milliseconds 500 }
+            Start-Router
+        }
+    }
+
     # 3. Ensure 9Router is up (router is not a service; this is the daily path).
     if (-not (Test-Health)) {
         Write-Host "9Router not healthy on :$Port - starting it..." -ForegroundColor Yellow
