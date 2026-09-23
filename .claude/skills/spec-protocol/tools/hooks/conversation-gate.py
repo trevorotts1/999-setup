@@ -877,7 +877,7 @@ ENTRY_MODE_Q = ("I can learn about your idea in one of two ways: you tell me in 
 
 # The table shape, with the question living in the key cell and no answer yet.
 PENDING_TABLE = ("# ANSWERS\n\n| Question | Answer |\n|---|---|\n"
-                 "| What is your business name? | Studio Nerds |\n"
+                 "| What is your business name? | Brightside Studio |\n"
                  "| Do you picture people using this on their phones, or on a computer? "
                  "| _blank_ |\n")
 
@@ -941,16 +941,16 @@ def _selftest():
 
     # --- the two defects that actually shipped today -------------------------
     t("1.21.5 stall: statement-yield, entry-mode unspoken",
-      "Wonderful — that's exactly what I'll build for you. From here on I'll call it Studio Nerds.",
+      "Wonderful — that's exactly what I'll build for you. From here on I'll call it Brightside Studio.",
       OWED, True)
     t("1.21.4 defect: prose after the question mark",
       "Got it. You want a program people use on their computer. Did I get that right?\n\n"
-      "From here on I'll call it Studio Nerds, which is the name already on your notes.",
+      "From here on I'll call it Brightside Studio, which is the name already on your notes.",
       OWED, True)
 
     # --- the shapes that MUST be allowed through ----------------------------
     t("correct: acknowledgement then the owed question, ends on ?",
-      "Wonderful — that's exactly what I'll build for you. From here on I'll call it Studio Nerds.\n\n"
+      "Wonderful — that's exactly what I'll build for you. From here on I'll call it Brightside Studio.\n\n"
       "I can learn about your idea in one of two ways. Which would you rather do?",
       OWED, False)
     t("either/or in ONE paragraph is one question, not two",
@@ -975,20 +975,20 @@ def _selftest():
     # --- E and F: the other two defects that shipped today ------------------
     t("1.21.1 defect: category word while the thing has a name",
       "Wonderful. From here on I'll call it your computer program.\n\nWhich would you rather do?",
-      OWED, True, "Studio Nerds")
+      OWED, True, "Brightside Studio")
     t("the same line is fine when nothing supplies a name",
       "Wonderful. From here on I'll call it your computer program, until you give it a name.\n\n"
       "Which would you rather do?", OWED, False, None)
     t("using the real name is never blocked",
-      "Wonderful. From here on I'll call it Studio Nerds.\n\nWhich would you rather do?",
-      OWED, False, "Studio Nerds")
+      "Wonderful. From here on I'll call it Brightside Studio.\n\nWhich would you rather do?",
+      OWED, False, "Brightside Studio")
     t("1.21.4 defect: fork announced and self-resolved",
       "There are two different jobs hiding in your sentence. I'm going with the first one "
-      "unless you say otherwise.", OWED, True, "Studio Nerds")
+      "unless you say otherwise.", OWED, True, "Brightside Studio")
     t("the same fork, properly ASKED, is allowed",
-      "There are two different jobs hiding in your sentence: Higgsfield as the bar, or "
+      "There are two different jobs hiding in your sentence: PixelForge as the bar, or "
       "rebuilding from it. I'd pick the first. Which would you rather?",
-      OWED, False, "Studio Nerds")
+      OWED, False, "Brightside Studio")
     t("auto-slug folder supplies no name",
       "I'll call it your website.\n\nWhich would you rather do?", OWED, False, None)
 
@@ -1007,7 +1007,7 @@ def _selftest():
     dirty = _speech_check("I wrote it to /Users/x/CONTROL/state.json using claude-opus-5.", "/tmp")
     t2("jargon: paths and a model id are blocked", bool(dirty), True)
     for clean in ["I can learn about your idea in one of two ways. Which would you rather do?",
-                  "Wonderful - from here on I will call it Studio Nerds.",
+                  "Wonderful - from here on I will call it Brightside Studio.",
                   "What would you like people to find on your website?",
                   "Does it need to remember anything they did before? Or can it start fresh?",
                   "I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token."]:
@@ -1021,7 +1021,7 @@ def _selftest():
       "You didn't say, so I'm going with the first one, recorded as a default.",
       SETTLED, False)
     t("1 control: the same-turn self-resolve still blocks",
-      "Here are two options: Higgsfield as the bar, or rebuilding from it. I'm going with "
+      "Here are two options: PixelForge as the bar, or rebuilding from it. I'm going with "
       "the first one unless you say otherwise.", SETTLED, True)
 
     # 2 -- the turn boundary: a tool-only turn must not be judged on old prose.
@@ -1083,7 +1083,7 @@ def _selftest():
     # 6 -- a folder named for the category supplies no name.
     t2("6 a category folder supplies no name", _project_name("/x/projects/Website"), None)
     t2("6 control: a real folder name still supplies a name",
-       _project_name("/x/projects/Studio Nerds"), "Studio Nerds")
+       _project_name("/x/projects/Brightside Studio"), "Brightside Studio")
     t("6 the category line is allowed when the folder IS the category",
       "I'll call it your website.\n\nWhich would you rather do?",
       OWED, False, _project_name("/x/projects/Website"))
@@ -1099,7 +1099,7 @@ def _selftest():
     # (the house style check B allows); a NEW paragraph after it still blocks.
     t("7 a same-paragraph trailing sentence belongs to the question",
       "Do you picture people using this on their phones, or on a computer? From here on "
-      "I'll call it Studio Nerds.", OWED, False)
+      "I'll call it Brightside Studio.", OWED, False)
 
     # 8 -- the interrupted question, dropped for a different one (10:34).
     t("8 a new question while a spoken one hangs must return to it",
@@ -1136,7 +1136,7 @@ def _selftest():
       OWED, False, None, None, None)
     t("J control c: the previous turn ended on a statement",
       "I can learn about your idea in one of two ways. Which would you rather do?",
-      OWED, False, None, None, "From here on I'll call it Studio Nerds.")
+      OWED, False, None, None, "From here on I'll call it Brightside Studio.")
     t("J control d: a table ledger carrying the question text",
       "Do you picture people using this on their phones, or on a computer?",
       PENDING_TABLE, False, None, None,

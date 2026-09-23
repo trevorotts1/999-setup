@@ -98,11 +98,11 @@ nothing more. It never records `BUILD-TARGET:` on its own, at any score. The thr
 only whether the run ALSO offers the either/or: **below 0.85, ask the either/or as well**;
 at or above it, the single confirm sentence stands on its own.
 
-*Measured, on this exact skill, against the real case that caused the bug:*
+*Measured, on this exact skill, against the real case that caused the bug (the reference app is shown here as PixelForge, an imaginary media-creation app):*
 
 | State given to the engine | Answer | Confidence |
 |---|---|---|
-| "…recreating the Higgsfield **app**…" alone | `MOBILE_APP` | **0.96 — confidently WRONG** |
+| "…recreating the PixelForge **app**…" alone | `MOBILE_APP` | **0.96 — confidently WRONG** |
 | the same sentence + `targets:[desktop-macos-arm64, linux-vps-web]` | `MOBILE_AND_WEB` | 0.61 — wrong, and knew it |
 | "a simple website for my landscaping business…" | `WEBSITE` | 1.00 — right |
 | "runs on my Mac, edits video on my own hard drive, no internet" | `DESKTOP_SOFTWARE` | 1.00 — right |
