@@ -278,12 +278,9 @@ a way that can itself download or hang.**
 **Step 2 — if none of the above answered, INSTALL, then prove it with a real
 capture.**
 
-Check the decision register for the D3 answer BEFORE installing. D3 = yes →
-proceed. D3 = no → do NOT download; use only a browser tool already proven
-present (real probe screenshot); if none exists, record the capture row as
-BLOCKED-BY-USER-CHOICE and report plainly that visual comparisons cannot be
-proven — never silently skip, never pass unproven. D3 unasked (older project)
-→ ask it now, before the download, in Block D's exact wording.
+There is no download-consent question (D3 is never asked — `references/interview.md`
+§3, "Measured or defaulted"): the install runs silently, is recorded
+`[DEFAULT-CONFIRMED]`, and is mentioned once in the one sentence that section owns.
 
 1. Run, foreground, with a timeout:
    ```

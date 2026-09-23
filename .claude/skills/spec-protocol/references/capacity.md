@@ -481,7 +481,8 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
 1. **Detect the launcher and the mode.** `claude`, `claude-nine`, or
    `claude-codex` — the detection table is in SKILL.md's harness auto-detect
    section. Record HOW it was detected, not just the answer. If it cannot be
-   determined, ask one plain question (section 8).
+   determined, record it UNDETERMINED and size conservatively (section 8) —
+   never asked.
 2. **Run the CLIENT-MACHINE PROBE (Issue 19 FIX step 6 — at Capacity-Ledger
    time, i.e. HERE).** Measure cores (`sysctl -n hw.ncpu` on macOS, `nproc` on
    Linux), RAM (`sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`), free disk
@@ -774,27 +775,26 @@ named fallback takes it and the fact is recorded" and nothing else.
 
 ## 8. When the provider path cannot be determined
 
-State what was checked, state what could not be determined, then ask ONE plain
-question. Never silently assume a provider path — a wrong assumption here sizes
-the entire run wrong and the error surfaces hours later as a stall.
+UNDETERMINED is the answer — **the client is never asked**
+(`references/interview.md` owns every question and this is not on its list; a
+client cannot say which plan a key belongs to any better than the probes can).
+Never silently assume a provider path either — a wrong assumption here sizes the
+entire run wrong and the error surfaces hours later as a stall. So the run records
+the unknown and sizes to the most conservative option in play.
 
-The shape, written into the ledger before the question is asked:
+The shape, written into the ledger (operator-facing, never spoken):
 
-> I checked the environment for provider keys (the files listed in
-> `references/environment-sweep.md`) and for the session's model routing. I found
-> [what was found, by NAME only, never by value]. I could not determine
-> [the specific unknown — for example which Ollama Cloud plan the key belongs to].
-> Until I know, I cannot size the build honestly.
->
-> One question: [the single plain question, with the two or three real options].
+> PROVIDER-PATH: UNDETERMINED checked=<the stores and the routing read, by NAME
+> only, never by value> found=<what was found, by NAME> unknown=<the specific
+> unknown — for example which Ollama Cloud plan the key belongs to>
+> sized=<the most conservative option in play> tripwire=<which, or none>
 
 Rules for this path:
 
-- The ledger records the reasoning, not just the answer.
-- One question, not a form. The interview owns questions; this is a repair.
-- An UNDETERMINED provider path is a legitimate ledger entry when the client is
-  unavailable — the run then sizes to the most conservative option in play and
-  says, in the ledger and to the client, that it did so and why.
+- The ledger records the reasoning, not just the verdict.
+- The smallest option in play is planned on, marked `[ASSUMED smallest-tier]`,
+  and the tripwire (13.6) promotes it when the run proves more is available.
+- The morning report's operator notes name it once; the client hears nothing.
 
 ---
 
@@ -1229,7 +1229,7 @@ illustration of why, not a source to read from.**
     report. Never "the pool is empty." On plain Claude Code the finding remains
     genuinely possible, and the built-in tier separation is the answer there.
 - A resolution that cannot be read from config is UNDETERMINED, written as such,
-  and asked about (section 8) — never guessed.
+  and sized conservatively (section 8) — never guessed, never asked.
 
 ---
 
@@ -1278,7 +1278,9 @@ command reveals in under a few seconds is measured on EVERY run and is FORBIDDEN
 to remember as an input. Memory is reserved for the one class the machine cannot
 observe: billing facts (which plan a human pays for) and user policy (how much
 headroom to leave; what to do at 2 a.m. when a limit hits). Even those are only
-ever the starting point for a QUESTION, never a source of truth.
+ever a starting point that a runtime tripwire checks — never a source of truth,
+and never a question to the client (`references/interview.md` owns every ask;
+these are not on its list).
 
 **P2 — EVERY NUMBER CARRIES ITS PROVENANCE AND ITS DATE.** A value nobody can
 trace is a value nobody should trust.
@@ -1293,8 +1295,11 @@ regardless of what anyone does. **The two are never treated alike.**
 Classes: **M-RUN** measured every run (a fresh run OR a resume measures it before
 anything dispatches; includes web research for VERIFY-LIVE facts) · **M-TICK**
 measured at intervals during a run (the burn governor owns it) · **R+C**
-remembered and confirmed (the profile proposes; the user confirms; a runtime
-tripwire catches a wrong confirm) · **ASK** asked every time, never stored, never
+remembered and checked (the profile proposes; the run plans on it, marked
+`[RECALLED-UNCONFIRMED …]`, and a runtime tripwire catches a wrong recall — the
+client is NOT asked to confirm it; `[RECALLED-CONFIRMED …]` is used only when the
+client volunteered the fact in their own words this run) · **ASK** asked every
+time as a counted question in `references/interview.md`, never stored, never
 defaulted.
 
 | # | Capacity input | Class | Why |
@@ -1310,13 +1315,13 @@ defaulted.
 | 9 | Ollama Cloud / DeepSeek tier VALUES (what a tier grants) | Operator doctrine constants (section 2) with their verify-at-runtime notes | Doctrine, not memory of the user. |
 | 10 | Balance (DeepSeek direct; OpenRouter credit) | M-RUN pre-dispatch + M-TICK at wave boundaries / ≥ every 30 min on token-metered paths | Pure runtime state; can hit zero overnight. **FORBIDDEN in the profile** — a remembered balance is a lie by lunchtime. |
 | 11 | Rate-limit consumption / window burn / 429 events / requests-per-agent-task | M-TICK | Pure runtime state. On resume the observed-rate columns RESET — the 5-hour window has certainly moved. |
-| 12 | Plan MEMBERSHIP: Ollama Cloud $20 vs $100 · Agnes free/$40/$100 (ANNUAL) · DeepSeek direct-vs-via-Ollama | **R+C** | The only genuinely unobservable inputs — no command reveals what a human pays. Stable within a project, changeable between projects: one recall-and-confirm each project, each with a runtime TRIPWIRE (13.6). The DeepSeek path is partly measurable (key presence + router base URL) — measure first, remember only the residue. |
+| 12 | Plan MEMBERSHIP: Ollama Cloud $20 vs $100 · Agnes free/$40/$100 (ANNUAL) · DeepSeek direct-vs-via-Ollama | **M-RUN, never asked** | MEASURED per `references/interview.md` §3 ("The provider plan tiers are MEASURED"): the Ollama concurrency probe, the Agnes smallest-tier assumption plus its window-probe mirror, DeepSeek key presence + router base URL + balance read. A profile value is only a planning hint, re-checked by the TRIPWIRE (13.6). When every probe fails the tier is UNDETERMINED: plan on the smallest tier, marked `[ASSUMED smallest-tier — probes failed]` — never a question to the client. |
 | 13 | Reserve preference | R+C (default 25% / two free slots, marked `[DEFAULT-CONFIRMED]` when defaulted) | User policy, unobservable; the cost of being wrong is bounded by the conservative default. |
 | 14 | Usage window + reset time | R+C | Unobservable billing fact; the governor watches real limit responses anyway. |
 | 15 | Fallback table | R+C as a PROPOSAL, re-validated each run against the live resolution | Half policy, half config — and the config half is measurable, so measurement wins. |
 | 16 | Effort / reasoning setting | M-RUN where the config exposes it; else R+C | Measure first; ask only the residue. |
 | 17 | Desired concurrency + model split | Recalled as the OFFERED default only ("last time you chose X — same again?"), never silently applied | A per-project preference, not a machine fact. |
-| 18 | The bar, the relationship, capture consent, the avoid-list · loop shape · repos · feature list · Agent-Team consent | **ASK** every project | The user's own taste and this project's own structure. Never defaulted, never profiled. |
+| 18 | The bar and the avoid-list (ASKED: `interview.md` questions 14 and 15) · the feature list (confirmed inside question 16, never its own ask) · the relationship, capture consent, loop shape and repos (DECIDED and reported — `interview.md` §3, never asked) · Agent-Team consent (only when the client raises a team in their own words — `references/agent-team.md`) | **ASK** only as listed | The user's own taste and this project's own structure. Never profiled. Nothing in this row adds a question outside `interview.md`'s counted list. |
 | 19 | Session agent budget remaining · gauntlet counters | Internal counters in `project_state.json`, audited by the reconciler | Self-measured; never profiled. |
 | 20 | Ultracode gate | M-RUN (GATE 0) | Unchanged. |
 | 21 | Router MODEL POOL (the gateway's model list + per-seat callability + resolved-model verification) | M-RUN, re-taken at every seat-assignment decision | One local GET, seconds (section 11). Wrong ⇒ every independence finding and every per-seat ceiling is fiction, and a stale pool re-creates the four-slot fallacy. |
@@ -1430,31 +1435,32 @@ membership as if it were doctrine.
    MISMATCHED** — fail toward asking.
 4. **Read the profile.** ABSENT → the full interview, and write the profile at
    the end. CORRUPT → quarantine, full interview. PRESENT → continue.
-5. **Compare fingerprints.**
-   - **MATCH** → say so, and ask ONE bundled confirm that lists what memory holds,
-     dated, in plain words: *"Last time we worked together (on <date>), you told
-     me: <the remembered answers>. Nothing on this machine has changed since then.
-     Is all of that still right?"* **Yes** → every recalled value enters the ledger
-     `[RECALLED-CONFIRMED …]`. **No** → "Which part changed?" and re-ask ONLY the
-     named items. **"I don't know"** → step 7.
-   - **MISMATCH** → name every diff in plain words from the stored inputs, re-ask
-     the questions the diff touches, and carry the untouched answers into the same
-     bundled confirm. **A new run finding a different rig is the DESIGNED-FOR
-     case, not an exception** — the profile's only job in that moment is to make
-     the question specific.
+5. **Compare fingerprints — nothing here is asked.** There is no bundled confirm:
+   `references/interview.md` owns every question and a recall-confirm is not on its
+   list.
+   - **MATCH** → every recalled value enters the ledger as a planning default,
+     `[RECALLED-UNCONFIRMED … tripwire=<which>]`, and step 7 governs it.
+   - **MISMATCH** → the diff is written to the ledger by name; the values the diff
+     touches are dropped and re-measured (rows 1–6, 12, 16, 21), and the untouched
+     ones are carried as in MATCH. **A new run finding a different rig is the
+     DESIGNED-FOR case, not an exception.**
+   - A recalled value the interview DOES ask anyway (row 17's helpers offer in
+     ADVANCED MODE, the media-provider preference) is offered inside that counted
+     question as "last time you chose X — same again?", never as a separate ask.
 6. **VERIFY-LIVE research runs exactly as it does today** (section 1). The profile
    stores none of it.
-7. **"I don't know" at the confirm:** the previous answer is evidence, not proof.
-   Where a tripwire exists (13.6), plan on the remembered value marked
-   `[RECALLED-UNCONFIRMED … tripwire=<which>]` and say so: *"I'll plan on what you
-   told me last time, and the run will notice within minutes if that's changed."*
-   Where NO tripwire exists, drop to the smallest tier the evidence allows, marked
-   `[ASSUMED smallest-tier — recall unconfirmed, no tripwire]`.
+7. **A recalled value is evidence, not proof.** Where a tripwire exists (13.6),
+   plan on the remembered value marked `[RECALLED-UNCONFIRMED … tripwire=<which>]`;
+   the tripwire notices within minutes if it has changed. Where NO tripwire exists,
+   drop to the smallest tier the evidence allows, marked
+   `[ASSUMED smallest-tier — recall unconfirmed, no tripwire]`. Neither is spoken
+   to the client.
 8. **Compute the ledger** with `capacity-resolver.sh`, passing the `<KEY>_SOURCE`
    marks and `CONFIG_FP` so the card prints its own provenance.
-9. **Write the profile LAST** — after the ledger exists, from the answers as
-   confirmed THIS run; back up first and announce both the write and the backup
-   path in the same message.
+9. **Write the profile LAST** — after the ledger exists, from what was measured,
+   recalled and answered THIS run; back up first and record both the write and the
+   backup path in the ledger. Neither is ever announced to the client
+   (`references/audience.md` §7 — a path is never spoken).
 
 **On a RESUME the profile is re-read and hashed.** Its supplied bindings and commands
 remain authoritative; a changed profile requires re-validation. The project's own confirmed ledger

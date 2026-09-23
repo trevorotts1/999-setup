@@ -388,21 +388,21 @@ FAIL if: <exact condition> → incomplete because <reason>
   that emits such lines is a defect to delete, not a discipline.
 
 ### Document 14 — Morning report
-- **Path:** `MORNING-REPORT-YYYY-MM-DD.md`, plus a copy of the same content on the
-  client's Desktop as `Your project is ready.txt` (the walk-away promise,
-  `references/audience.md` §3)
+- **Path:** `MORNING-REPORT-YYYY-MM-DD.md`, plus a copy on the client's Desktop as
+  `Your project is ready.txt` (the walk-away promise, `references/audience.md` §3) —
+  the same report WITHOUT its operator notes. `audience.md`, "The morning report",
+  owns the one template and what the Desktop copy leaves out.
 - **Writer:** the orchestrator (written when the run ends, or at the stated handover
   time)
 - **Readers:** the human
 - **Shape:** the honest close. What was built, what landed, what is blocked, what
   questions need answers, what the next steps are. No green lies. "Still broken"
   beats a false green. Written in plain language (see `audience.md`).
-- **The opening — the live address first, verbatim.** The report's FIRST line is
-  the address the client can type, never a summary of the night's work:
-
-  > Your <target word> is live at <URL> and a safe copy is saved on GitHub.
-  > Here's what got built, what I checked, and the one or two things only you can
-  > decide.
+- **The opening — the live address first.** The report's FIRST line is the
+  address the client can type, never a summary of the night's work — one of the
+  three opening lines in `audience.md`'s template, chosen by whether a
+  `PUBLISHED:` line exists and whether the repository receipt is `source=local-only`
+  (GitHub is mentioned only when a remote exists).
 
   The usable release reference is read from the LAST `PUBLISHED:` ledger line, whose field order is
   the LEDGER VOCABULARY table in this file — written by `STAGE-PUBLISH`

@@ -45,8 +45,9 @@ skill. It has six sections and nothing else:
   Asking an ANSWERED key again is a violation; returning to an unanswered one is
   required.
 - **Decided and reported, never asked.** Everything not on the lists in
-  sections 3, 4 and 5 is decided by the run and REPORTED in the recap: "here is
-  what I decided; say the word to change any of it."
+  sections 3, 4 and 5 is decided by the run and REPORTED in the recap. The
+  recap has no turn of its own: it is spoken INSIDE question 16, in plain
+  words, and question 16's yes covers it (section 3).
 - The project folder and `00-INPUT/` exist BEFORE the brainstorm (Law 23) — the
   entry-mode answer creates them, so a spoken word always has a durable home
   (Law 25).
@@ -82,8 +83,9 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    to it, and the client is never told what they have already pointed at. They
    may point at material anywhere on the machine, in any number of places, and
    they may do both halves — tell you AND point. **Pointing never means typing a
-   path.** The run creates a folder called `<Name> pictures` on the client's
-   Desktop first, and the client drags files into it and says done; the run copies
+   path.** The folder called `<Name> pictures` on the client's Desktop is created
+   ONCE, at turn 3, from the naming line (SKILL.md), and the client drags files into
+   it and says done; the run copies
    what lands there into `00-INPUT/`. A typed path is accepted when offered, never
    asked for.
 
@@ -135,10 +137,10 @@ hears.** Nothing beyond these is promised for tonight.
   and installed (Rust + Tauri by default, or Electron), copied to the client's
   Desktop, with one plain install instruction. On a Mac: "Your program is on your
   Desktop. Double-click it, then drag it into Applications. The first time you open
-  it, your Mac may ask you to allow it: open <menu path: verify in live app> and
-  choose to open it anyway." On Windows: "Your program is on your Desktop.
-  Double-click it to install it. If Windows shows a warning, choose <menu path:
-  verify in live app> to run it anyway." Signing and notarization are a later
+  it, your Mac may say it can't check it. If that happens, open System Settings,
+  click Privacy and Security, scroll down, and click 'Open Anyway'." On Windows: "Your program is on your Desktop.
+  Double-click it to install it. If Windows shows a blue warning box, click
+  'More info', then 'Run anyway'." Signing and notarization are a later
   OPERATOR step, written into the operator notes.
 
 The credential gates are NAMED here and CHECKED in `environment-sweep.md` — the
@@ -196,16 +198,17 @@ the only thing this run ever learns about a key is "present" or "absent". Ask
 for them in this order:
 
 > I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token.
-> In your Convert and Flow account, open <menu path: verify in live app>.
-> Copy it, then say ready, and I'll file it without ever reading it out loud.
-> Can you find that for me now?
+> Look in your account's Settings for 'Private Integrations'; if you can't find
+> it, tell me and I'll walk you through it. Copy it, then say ready, and I'll
+> file it without ever reading it out loud. Can you find that for me now?
 
 When they've given it (or said they can't find it), the next turn is:
 
 > I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Open
 > the Token Grabber Chrome extension that Black CEO gave you, click 'Grab the
-> token', then 'Copy the token'. Then say ready, and I'll file it without ever
-> reading it out loud. Can you find that for me now?
+> token', then 'Copy the token'. If you don't have the helper tool, tell me and
+> I'll walk you through getting it. Then say ready, and I'll file it without
+> ever reading it out loud. Can you find that for me now?
 
 When they've given it (or said they can't find it), the next turn is:
 
@@ -216,10 +219,11 @@ When they've given it (or said they can't find it), the next turn is:
 
 **Where each key lives is said in the same breath (`audience.md` §2).** The
 Firebase steps and the Location ID's place are the ones `environment-sweep.md`
-records (Gate 1). The Private Integration Token's menu path is NOT verified in any
-document this skill ships, so it stays marked `<menu path: verify in live app>`
-until someone confirms it in a live Convert and Flow account and writes it here —
-a guessed path sends the client hunting through menus that do not exist.
+records (Gate 1). The Private Integration Token's exact menu path is NOT verified in
+any document this skill ships, so the spoken line names only the label to look for
+in Settings and offers a walk-through — never a guessed menu path, and never an
+unfilled placeholder read out loud. A client who says they can't find it, or has
+no helper tool, is walked through it one step per turn.
 
 Wait for "ready" after each one, place it, re-detect it by name, say only that
 it landed, and then ask for the next. The never-paste rule is universal: it
@@ -364,9 +368,10 @@ decide."
 
 This list IS the default-mode interview. **C is the length of this list after
 the pre-statement reads remove what is already known**, and the promise spoken
-up front is the greeting's: "I'll ask you about fifteen short questions, one at a
-time. It takes about half an hour, then you can walk away." Every item is spoken
-with its number — "Question N of no more than C" — per section 6.
+up front is the greeting's: "First we'll have a short chat about your idea, then
+about a dozen quick questions, one at a time — about half an hour, then you can
+walk away." Every item is spoken with its number — "Question N of no more than
+C" — per section 6.
 
 1. **The mode question**, first, in these words:
 
@@ -389,12 +394,12 @@ a website built without them has no page list.
 
 - **Website:** "What would you like people to find on your website? For example, you might
   want a home page, information about you, your services, and a way to contact you. What comes
-  to mind for yours?"; "Will people mostly read about you and contact you, or do they need to
-  log in and do something?"; "Do you already own a website address, something like
+  to mind for yours?"; "Do you already own a website address, something like
   yourbusiness.com? If you don't know, that's okay." (This IS question 12 for a website —
   asked once, here, and stated back at 12, never re-asked. Where the site will live is
   decided and REPORTED in the recap, never asked — `environment-sweep.md`, "Where it
-  will live".)
+  will live".) The read-or-log-in either/or is NOT asked here: classify-and-confirm
+  already settled website versus web app, and asking it again is a re-ask.
 - **Funnel**, in these words: "What's the one main thing you want someone to do? For example:
   buy something, book an appointment, sign up, request information, or join something."; "What
   are you offering them? And how much does it cost, if there is a price?"; "After someone buys,
@@ -454,8 +459,8 @@ help you with it."
 
 13. **Artwork, logo and photos (question 10 merged in):** "Would you like me to create the
     pictures we need, or do you already have a logo or pictures you want me to use?" When they
-    have some, the run first creates the folder `<Name> pictures` on the client's Desktop
-    (`<Name>` is the name from question 7), then says, as part of the same question: "If you
+    have some, the run points at the folder `<Name> pictures` already on the client's Desktop
+    (created ONCE at turn 3 from the naming line — never created again here), then says, as part of the same question: "If you
     have a logo or photos, drag them into the folder called '<Name> pictures' on your Desktop,
     then say done. If not, that's fine." The run copies what lands there into `00-INPUT/` and
     records each file in `00-INPUT/CONTENT.md`; the client never types a path. The client is
@@ -463,6 +468,12 @@ help you with it."
     is Candace's job, and `references/media-model-selection.md` owns how she decides and what
     she says. Any money question that follows is an approval of SPEND, never a choice of
     technology.
+
+13b. **The pictures account (section 5), counted.** Asked right after 13, as its own
+    numbered question, ONLY when the client genuinely has more than one account and the
+    choice costs them something. It is priced into C whenever the plan calls for artwork;
+    when it turns out not to be live, C is lowered and the lowering announced (section 6).
+    The two picture-folder turns of 13 (make the folder, "say done") are one question, not two.
 
 14. **D1, the example — and the reference pick, folded in as a recommendation.** When the
     background research (Step 1c-bis) is back, D1 carries its recommendation, and this one
@@ -478,10 +489,18 @@ help you with it."
 15. **D4, the don't-wants:**
     "Is there anything about that example, or other websites and apps you've seen, that you definitely do not want in yours?"
 
-16. **The done-condition:** "Before we start building, let me make sure we agree on what
-    finished means. Here's what I believe you want: <two to four simple sentences describing
-    the finished result>. If I deliver that, would you consider the job finished?" One yes or
-    no — never an open essay question.
+16. **The done-condition — with the feature list and the recap folded in.** This ONE
+    question is also the plain-language feature confirmation (SKILL.md step 11) and the
+    recap of what was decided for them; neither gets a turn of its own:
+    "Before we start building, let me make sure we agree on what finished means. Here's
+    what I'll build: <three to six short plain items, in their words>. Here's what I
+    decided for you: <one or two plain sentences, e.g. 'I'll keep your work safe, put it
+    online for you, and have separate helpers check every piece'>. If I deliver that,
+    would you consider the job finished?" One yes or no — never an open essay question.
+    Every "I don't know" recorded as a default is named in the recap as a choice made for
+    them. The recap speaks only what the client can picture: never "fallback table",
+    "reserve", "repository", "backoff", "seats", a helper count or any other internal
+    setting — those go to the decision register, not the client.
 
 **The spend question — the last counted question, in both modes** (asked after section
 4's items in ADVANCED MODE). `capacity.md` §10, THE SPEND LINE, owns `<X>` and what the
@@ -492,12 +511,12 @@ Its answer writes the `COST-LINE:` ledger line. Skipped when the run has no mete
 
 **After the last question, the walk-away line — a statement, and the end of the
 interview** (`audience.md` §5 owns it):
-"That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop."
+"That's everything I need. Leave this window open — it's fine to turn the screen off. I'll work through the night, and in the morning I'll put a note called 'Your project is ready' on your Desktop."
 
-**That is sixteen at most — fifteen list items once question 10 merged into 13,
-plus the spend question — and the pre-statement reads (a supplied folder, an
-OpenClaw box, an existing domain found) and the branch answers remove items, so most
-runs land near thirteen.** D1's answer seeds the bar candidates in `research.md` and never
+**That is seventeen at most — fifteen list items once question 10 merged into 13,
+the pictures-account question when it is live, plus the spend question — and the
+pre-statement reads (a supplied folder, an OpenClaw box, an existing domain found)
+and the branch answers remove items, so most runs land near a dozen.** D1's answer seeds the bar candidates in `research.md` and never
 replaces the selection step there; D4's is the avoid-that delta, frozen into
 the blind-comparison dimensions at bar selection. Both go to the decision
 register verbatim, along with the target, the branch answers, the media choice,
@@ -557,14 +576,17 @@ not taken. Anything still genuinely unknown stays priced in.
   §13.6) confirm — it only ever shrinks a claim, and its mirror promotes one
   tier after a 5-hour window with zero 429s at the measured rate, recorded
   `[MEASURED window-probe]`. DeepSeek: key presence plus a balance read already
-  answers it. Ask only if all three probes fail, and then in one sentence.
+  answers it. If all three probes fail, plan on the smallest tier, marked
+  `[ASSUMED smallest-tier]` (`capacity.md` §8) — never asked.
 - **Everything else is decided and reported** — the helper count (the measured
   `clientCap`), the three seats, the fallback table read from the router's own
   wiring, the reserve, one new repository on `main` with the tool pushing, the
   standing loop shape, the project folder, where the work will live online
   (`environment-sweep.md`), the reference apps' borrowed ideas, and the
   busy-signal backoff ladder.
-  They appear as statements in the recap, never as questions.
+  They are written to the decision register and never asked. The client hears
+  them only as question 16's recap, in plain words (what they can picture —
+  "I'll keep your work safe and put it online for you"), never by these names.
 
 ---
 
@@ -615,7 +637,9 @@ like me to create the pictures we need, or do you already have a logo or picture
 to use?" (with the Desktop-folder half from section 3 when they have some)
 Do not then ask it a second time.
 
-Then, and only these — and both are questions about MONEY and TASTE, never about technology:
+Then, and only these — and both are questions about MONEY and TASTE, never about technology.
+Both are COUNTED: the account ask is question 13b of section 3, and the service override is
+ADVANCED MODE's question 19; neither is ever spoken without its "Question N of no more than C".
 
 > **Which account**, asked only when the client genuinely has more than one and the choice
 > costs them something. Candace recommends first: "For the pictures you need, I recommend
@@ -680,7 +704,7 @@ said plainly, naming what was checked.
 1. Every counted question is spoken with its number: "**Question N of no more than C** — <the question>".
 2. N never resets, never repeats, never decreases.
 3. C is the length of the mode's list — section 3, plus section 4 in advanced mode — after the pre-statement reads.
-4. The greeting promises "about fifteen short questions, one at a time … about half an hour": the DEFAULT MODE list is sixteen at most (spend question included) and most runs land near thirteen.
+4. The greeting promises "a short chat about your idea, then about a dozen quick questions … about half an hour": the DEFAULT MODE list is seventeen at most (pictures-account and spend questions included) and most runs land near a dozen. The spend question is always the LAST counted question, in both modes.
 5. C is stated ONCE, before question 1, and may only ever be LOWERED.
 6. Every lowering is ANNOUNCED before the next question: "Good news — it will be at most <C'> now, because <the reason>."
 7. C is never raised; a question asked past the stated C, with no correction spoken first, is a defect.
