@@ -11,13 +11,25 @@
 #   0  ANCHORED — the repo root exists, origin is set, `git ls-remote --exit-code`
 #      proved the branch on that remote, the receipt is written (and on a legacy
 #      project one REPO-ANCHOR line is filed through tools/ledger.sh)
+#      / ANCHORED LOCAL-ONLY — no remote could be arranged (no origin, no
+#      --remote, `gh auth status` failed, no --operator-remote, and no operator
+#      owner, or the operator-owner creation failed): the git repository and its
+#      first commit exist, the receipt says "source": "local-only" and
+#      "remote": null, and the ledger line says the work is NOT YET ONLINE.
+#      Declining GitHub never stops a build. A re-run tries again to go online.
+#      / --check: the receipt matches (a GitHub remote must also be PRIVATE)
 #   3  ALREADY ANCHORED (a run: the receipt already matches origin, nothing to do)
-#      / NOT ANCHORED (--check: no receipt at all, or a receipt whose remote no
-#      longer matches `git remote get-url origin`)
-#   2  UNDETERMINED — the named source could not be read or the proof failed.
+#      / NOT ANCHORED (--check: no receipt at all, a receipt whose remote no
+#      longer matches `git remote get-url origin`, or a GitHub remote whose
+#      `gh repo view --json visibility` is not PRIVATE)
+#   2  UNDETERMINED — the named source could not be read or the proof failed
+#      (including a `gh repo view` that failed on --check: never a pass).
 #      Never a verdict about the repository; the source is always named.
-#   4  DECLINED AND NO FALLBACK — no origin, no --remote, `gh auth status` did not
-#      succeed, and no --operator-remote. All three sources are named.
+#
+# REMOTE SOURCES, in order: existing origin; --remote; the client's own gh login;
+# --operator-remote; SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER (the environment, else a
+# KEY=value line in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env",
+# parsed, never sourced) -> `gh repo create <owner>/<slug> --private`; else local-only.
 #
 # WHY THIS EXISTS. The skill's own description promises "merged-to-GitHub".
 # SKILL.md section 6 says GitHub is arranged at minute one via `gh auth login --web`,
@@ -45,8 +57,9 @@
 # WHAT IT NEVER DOES. It never rewrites an existing repository's history, never
 # renames an existing repository's default branch (a different one is REPORTED and
 # kept), never pushes to a remote that was already there, and never creates a
-# repository on an account it was not pointed at. `--check` never touches the
-# network at all — the hook calls that path shape on every build launch.
+# repository on an account it was not pointed at. `--check` touches the network
+# for one thing only: `gh repo view --json visibility` on a GitHub remote (a
+# local-only receipt or a non-GitHub remote skips it).
 #
 # ENVIRONMENT KNOBS (the selftest's; a real run needs none)
 #   REPO_ANCHOR_GH_CMD    the `gh` to run (a fixture stub in the selftest), in the
@@ -66,7 +79,7 @@ LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
 
 GH_CMD="${REPO_ANCHOR_GH_CMD:-gh}"
 
-usage() { sed -n '2,20p' "${SELF}"; }
+usage() { sed -n '2,31p' "${SELF}"; }
 
 # --- named instruments -------------------------------------------------------
 # `command -v` proves a NAME resolves, never that the program RUNS, so each one
@@ -146,13 +159,13 @@ print(value)
 PY
 }
 
-write_receipt() { # write_receipt <path> <root> <remote> <branch> <head> <source>
+write_receipt() { # write_receipt <path> <root> <remote|""> <branch> <head> <source>
   "${PY}" - "$@" <<'PY'
 import datetime, json, os, sys, tempfile
 path, root, remote, branch, head, source = sys.argv[1:7]
 doc = {
     "repoRoot": root,
-    "remote": remote,
+    "remote": remote or None,
     "branch": branch,
     "head": head,
     "provedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -224,9 +237,22 @@ resolve_root() { # resolve_root <home> <slug-or-empty>
 check_receipt() { # check_receipt <receipt-path>
   local receipt="$1" want root live rc
   CHECK_DETAIL=""
+  CHECK_LOCAL=0
+  CHECK_REMOTE=""
   if [[ ! -e "${receipt}" ]]; then
     CHECK_STATUS="absent"
     CHECK_DETAIL="no receipt at ${receipt}"
+    return 0
+  fi
+  if [[ "$(receipt_field "${receipt}" "source" 2>/dev/null)" == "local-only" ]]; then
+    root="$(receipt_field "${receipt}" "repoRoot")" \
+      && "${GIT}" -C "${root}" rev-parse --verify HEAD >/dev/null 2>&1 || {
+      CHECK_STATUS="unreadable"
+      CHECK_DETAIL="local-only receipt ${receipt} names repoRoot '${root:-}' but git rev-parse HEAD failed there"
+      return 0
+    }
+    CHECK_STATUS="ok"; CHECK_LOCAL=1
+    CHECK_DETAIL="${root} -> local-only (not yet online)"
     return 0
   fi
   want="$(receipt_field "${receipt}" "remote")"; rc=$?
@@ -253,8 +279,31 @@ check_receipt() { # check_receipt <receipt-path>
     return 0
   fi
   CHECK_STATUS="ok"
-  CHECK_DETAIL="${root} -> $(redact "${want}")"
+  CHECK_REMOTE="$(redact "${want}")"
+  CHECK_DETAIL="${root} -> ${CHECK_REMOTE}"
   return 0
+}
+
+# owner/repo of a GitHub remote URL (https, ssh, scp-style); empty otherwise.
+github_slug() {
+  local s
+  s="$(printf '%s' "$1" | sed -n -E 's#^(https?://|ssh://)?([^@/]*@)?github\.com[:/]([^/]+/[^/]+)/?$#\3#p')"
+  printf '%s' "${s%.git}"
+}
+
+# The operator's owner: the environment first, else one KEY=value line of the
+# operator.env file. Parsed, never sourced. Empty when neither sets it.
+OWNER_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env"
+operator_owner() {
+  local v
+  v="${SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER:-}"
+  if [[ -z "${v}" && -r "${OWNER_FILE}" ]]; then
+    v="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER[[:space:]]*=[[:space:]]*//p' "${OWNER_FILE}" | tail -n 1 | tr -d '\r')"
+    v="${v%%[[:space:]]*}"; v="${v#[\"\']}"; v="${v%[\"\']}"
+  fi
+  [[ -z "${v}" || "${v}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]] \
+    || undetermined "SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER='${v}' (environment or ${OWNER_FILE}) is not a GitHub owner name — a set value that cannot be used is never ignored"
+  printf '%s' "${v}"
 }
 
 # --- gh, run for its RETURN CODE only ----------------------------------------
@@ -308,6 +357,21 @@ run_check() {
   check_receipt "${RECEIPT_PATH}"
   case "${CHECK_STATUS}" in
     ok)
+      local slug gh out rc vis
+      slug="$(github_slug "${CHECK_REMOTE}")"
+      if (( CHECK_LOCAL == 0 )) && [[ -n "${slug}" ]]; then
+        gh="$(command -v "${GH_CMD}" 2>/dev/null || true)"
+        [[ -n "${gh}" ]] || undetermined "the remote is GitHub (${slug}) but '${GH_CMD}' does not resolve, so its visibility is UNDETERMINED — never a pass"
+        out="$("${gh}" repo view "${slug}" --json visibility --jq .visibility 2>&1)"; rc=$?
+        vis="$(printf '%s' "${out}" | tr -d '[:space:]')"
+        (( rc == 0 )) && [[ -n "${vis}" ]] \
+          || undetermined "gh repo view ${slug} --json visibility returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 2 | tr '\n' ' ')") — visibility UNDETERMINED, never a pass"
+        if [[ "${vis}" != "PRIVATE" ]]; then
+          printf 'REPO-ANCHOR NOT PRIVATE | %s is %s on GitHub, not PRIVATE — fix: gh repo edit %s --visibility private --accept-visibility-change-consequences\n' "${slug}" "${vis}" "${slug}"
+          exit 3
+        fi
+        CHECK_DETAIL="${CHECK_DETAIL} (PRIVATE)"
+      fi
       printf 'REPO-ANCHOR OK | %s\n' "${CHECK_DETAIL}"
       exit 0 ;;
     absent)
@@ -332,7 +396,7 @@ run_anchor() {
 
   # Already anchored? Then this is a no-op, not a second anchoring.
   check_receipt "${RECEIPT_PATH}"
-  if [[ "${CHECK_STATUS}" == "ok" ]]; then
+  if [[ "${CHECK_STATUS}" == "ok" ]] && (( CHECK_LOCAL == 0 )); then
     printf 'REPO-ANCHOR ALREADY ANCHORED | %s | receipt=%s\n' "${CHECK_DETAIL}" "${RECEIPT_PATH}"
     exit 3
   fi
@@ -375,7 +439,7 @@ run_anchor() {
   fi
 
   # --- 3. the remote --------------------------------------------------------
-  local source added
+  local source="" added owner reason=""
   added=0
   url="$("${GIT}" -C "${ROOT}" remote get-url origin 2>/dev/null)"
   if [[ -n "${url}" ]]; then
@@ -404,31 +468,45 @@ run_anchor() {
     url="${OPT_OPERATOR_REMOTE}"; source="operator-remote"; added=1
     printf 'REPO-ANCHOR | GITHUB: operator-provided remote (client declined own account) — references/pipeline.md:782, a DEFAULT and never a stop\n'
   else
-    printf 'REPO-ANCHOR DECLINED | no remote could be arranged for %s. Three sources checked:\n' "${ROOT}" >&2
-    printf '  1. git -C %s remote get-url origin  -> no origin configured\n' "${ROOT}" >&2
-    printf '  2. %s auth status                   -> rc=%s (0 would have created the repository on the client'"'"'s own account)\n' "${GH_CMD}" "${GH_RC}" >&2
-    printf '  3. --remote / --operator-remote      -> neither was given\n' >&2
-    printf 'FIX: run  gh auth login --web  with the client (SKILL.md section 6: minute one, one sentence and one click),\n' >&2
-    printf '  or pass --operator-remote <url> to record the DEFAULT references/pipeline.md:782 names:\n' >&2
-    printf '  GITHUB: operator-provided remote (client declined own account). The run never blocks on this.\n' >&2
-    exit 4
+    # The client declined: the operator's own owner, else local-only. Never a stop.
+    owner="$(operator_owner)" || exit 2
+    if [[ -n "${owner}" && -n "${GH_BIN}" ]]; then
+      out="$("${GH_BIN}" repo create "${owner}/${SLUG}" --private --source "${ROOT}" --remote origin --push 2>&1)"; rc=$?
+      url="$("${GIT}" -C "${ROOT}" remote get-url origin 2>/dev/null)"
+      if (( rc == 0 )) && [[ -n "${url}" ]]; then
+        source="operator-owner"; added=1
+      else
+        reason="gh repo create ${owner}/${SLUG} --private returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 2 | tr '\n' ' ')")"
+      fi
+    elif [[ -n "${owner}" ]]; then
+      reason="operator owner ${owner} is set but '${GH_CMD}' does not resolve"
+    else
+      reason="SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER is set in neither the environment nor ${OWNER_FILE}"
+    fi
+    if [[ -z "${source}" ]]; then
+      url=""; source="local-only"
+      printf 'REPO-ANCHOR LOCAL-ONLY | no remote for %s — origin: none; %s auth status: rc=%s; --remote/--operator-remote: not given; %s. The work is saved on this computer and is NOT YET ONLINE.\n' \
+        "${ROOT}" "${GH_CMD}" "${GH_RC}" "${reason}"
+    fi
   fi
 
   # A remote WE added is pushed so the branch exists to prove. A remote that was
   # already there is never pushed to: it is not ours to change.
-  if (( added == 1 )) && [[ "${source}" != "client-gh" ]]; then
+  if (( added == 1 )) && [[ "${source}" != "client-gh" && "${source}" != "operator-owner" ]]; then
     "${GIT}" -C "${ROOT}" push -u origin "${branch}" >/dev/null 2>&1 || true
   fi
 
-  # --- 4. the proof ---------------------------------------------------------
-  "${GIT}" -C "${ROOT}" ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null 2>&1
-  rc=$?
+  # --- 4. the proof (local-only has no remote to prove) ---------------------
+  rc=0
+  [[ "${source}" == "local-only" ]] || { "${GIT}" -C "${ROOT}" ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null 2>&1; rc=$?; }
   (( rc == 0 )) || undetermined "git -C ${ROOT} ls-remote --exit-code origin refs/heads/${branch} returned rc=${rc} (remote=$(redact "${url}"), source=${source}) — a FAILED PROOF is never a claim that the repository is fine"
 
   head="$("${GIT}" -C "${ROOT}" rev-parse HEAD 2>/dev/null)"
   [[ -n "${head}" ]] || undetermined "git -C ${ROOT} rev-parse HEAD produced nothing after a proven push"
 
   # --- 5. the receipt (and, on a legacy project, the ledger line) -----------
+  local remote_word="OK"
+  [[ "${source}" != "local-only" ]] || remote_word="NONE (local-only: not yet online)"
   receipt_written="$(write_receipt "${RECEIPT_PATH}" "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}")" \
     || undetermined "the receipt could not be written to ${RECEIPT_PATH} — an unrecorded anchor is not an anchor"
 
@@ -436,12 +514,12 @@ run_anchor() {
     [[ -x "${LEDGER_SH}" ]] \
       || undetermined "tools/ledger.sh is missing or not executable at ${LEDGER_SH} — every legacy project write goes through it, so an unlogged anchor is refused rather than written unlocked"
     out="$("${LEDGER_SH}" "${home}" "CONTROL/LEDGER.md" \
-      "REPO-ANCHOR: root=${ROOT} remote=OK branch=${branch} source=${source}" 2>&1)"; rc=$?
+      "REPO-ANCHOR: root=${ROOT} remote=${remote_word} branch=${branch} source=${source}" 2>&1)"; rc=$?
     (( rc == 0 )) || undetermined "ledger.sh failed (rc=${rc}) writing CONTROL/LEDGER.md: ${out}"
   fi
 
   printf 'REPO-ANCHOR ANCHORED | root=%s | remote=%s | branch=%s | head=%s | source=%s | receipt=%s\n' \
-    "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}" "${receipt_written}"
+    "${ROOT}" "$(redact "${url:-none (not yet online)}")" "${branch}" "${head}" "${source}" "${receipt_written}"
   exit 0
 }
 
@@ -485,6 +563,7 @@ case "${1:-}" in
     echo "github.com: logged in to account stub-client (keyring)"
     exit "${STUB_GH_AUTH_RC:-0}" ;;
   repo)
+    if [ "${2:-}" = "view" ]; then echo "${STUB_GH_VISIBILITY:-PRIVATE}"; exit 0; fi
     [ "${2:-}" = "create" ] || exit 64
     name="${3:-}"; src=""; i=0
     for a in "$@"; do
@@ -492,6 +571,7 @@ case "${1:-}" in
       if [ "$a" = "--source" ]; then eval "src=\${$(( i + 1 ))}"; fi
     done
     [ -n "$name" ] && [ -n "$src" ] || exit 64
+    echo "$name" >> "${STUB_GH_BARE_DIR:?}/created.log"
     slug="${name##*/}"
     bare="${STUB_GH_BARE_DIR:?}/${slug}.git"
     git init --bare "$bare" >/dev/null 2>&1 || exit 1
@@ -505,6 +585,9 @@ exit 64
 STUB
   chmod +x "${stub}"
   export STUB_GH_BARE_DIR="${bare_dir}"
+  # Never read the operator's real owner: a sandbox config dir and no env value.
+  export CLAUDE_CONFIG_DIR="${T}/cfg"
+  unset SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER REPO_ANCHOR_GH_OWNER STUB_GH_VISIBILITY
 
   anchor() { # anchor <env-assignments-as-prefix...> -- runs this script
     REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "$@" 2>&1
@@ -585,19 +668,21 @@ JSON
     "$([ -e "${profiled}/CONTROL" ] && echo 0 || echo 1)" \
     "no CONTROL/ directory was created in a profiled project (tools/ledger.sh refuses one by design, ledger.sh:471): $([ -e "${profiled}/CONTROL" ] && echo NO -- one was created || echo yes)"
 
-  # --- 4. gh not authenticated and no fallback -> exit 4, three sources -----
+  # --- 4. gh not authenticated, no fallback, no operator owner -> local-only -
+  # (#6: this used to be exit 4, which stopped every build a client declined.)
   local declined
   declined="${T}/declined"
   mkdir -p "${declined}"
   out="$(STUB_GH_AUTH_RC=1 REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${declined}" 2>&1)"; rc=$?
-  local names3
-  names3=0
-  printf '%s' "${out}" | grep -q 'remote get-url origin' && \
-  printf '%s' "${out}" | grep -q 'auth status' && \
-  printf '%s' "${out}" | grep -q -- '--remote / --operator-remote' && names3=1
-  report 10 "declined-exit-4-names-three" \
-    "$([ "${rc}" = "4" ] && [ "${names3}" = "1" ] && echo 1 || echo 0)" \
-    "rc=${rc} (want 4) with gh auth rc 1 and no --remote; all three sources named: $([ "${names3}" = "1" ] && echo yes || echo NO)"
+  local lo=0
+  [ "$(receipt_field "${declined}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "local-only" ] \
+    && grep -q '"remote": null' "${declined}/CONTROL/repo-anchor.json" \
+    && grep -q 'source=local-only' "${declined}/CONTROL/LEDGER.md" \
+    && printf '%s' "${out}" | grep -q 'NOT YET ONLINE' \
+    && "${SELF}" "${declined}" --check >/dev/null 2>&1 && lo=1
+  report 10 "declined-local-only" \
+    "$([ "${rc}" = "0" ] && [ "${lo}" = "1" ] && echo 1 || echo 0)" \
+    "rc=${rc} (want 0) with gh auth rc 1 and no owner; receipt source=local-only remote=null, ledger line, 'not yet online', --check 0: $([ "${lo}" = "1" ] && echo yes || echo NO)"
 
   # --- 5. the operator-provided remote (the client declined) ---------------
   local opdir opbare
@@ -642,9 +727,35 @@ JSON
     "$([ -d "${bare_dir}" ] && echo 1 || echo 0)" \
     "every 'remote' in this run is a local bare repository under ${bare_dir} -- the stub gh never touches github.com"
 
+  # --- 10. #6: the client declined, the operator's owner is in operator.env --
+  local opown
+  opown="${T}/opown"
+  mkdir -p "${opown}" "${T}/cfg/spec-protocol"
+  printf '# operator\nSPEC_PROTOCOL_OPERATOR_REMOTE_OWNER="stub-operator"\n' > "${T}/cfg/spec-protocol/operator.env"
+  out="$(STUB_GH_AUTH_RC=1 REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${opown}" 2>&1)"; rc=$?
+  rm -f "${T}/cfg/spec-protocol/operator.env"
+  report 16 "operator-owner-from-file" \
+    "$([ "${rc}" = "0" ] && grep -qx 'stub-operator/opown' "${bare_dir}/created.log" && [ "$(receipt_field "${opown}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "operator-owner" ] && echo 1 || echo 0)" \
+    "rc=${rc} (want 0); gh repo create got stub-operator/opown and the receipt source is operator-owner"
+
+  # --- 11. #49: --check fails a GitHub remote that is not PRIVATE ----------
+  local pub
+  pub="${T}/pub"
+  mkdir -p "${pub}/repos/pub"
+  "${GIT}" init -q "${pub}/repos/pub"
+  "${GIT}" -C "${pub}/repos/pub" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+  "${GIT}" -C "${pub}/repos/pub" remote add origin https://github.com/stub-client/pub.git
+  write_receipt "${pub}/CONTROL/repo-anchor.json" "${pub}/repos/pub" https://github.com/stub-client/pub.git main x existing >/dev/null
+  local rcpriv rcpub
+  STUB_GH_VISIBILITY=PRIVATE REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${pub}" --check >/dev/null 2>&1; rcpriv=$?
+  out="$(STUB_GH_VISIBILITY=PUBLIC REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${pub}" --check 2>&1)"; rcpub=$?
+  report 17 "check-refuses-public-repo" \
+    "$([ "${rcpriv}" = "0" ] && [ "${rcpub}" = "3" ] && printf '%s' "${out}" | grep -q 'NOT PRIVATE' && echo 1 || echo 0)" \
+    "PRIVATE -> rc=${rcpriv} (want 0); PUBLIC -> rc=${rcpub} (want 3, NOT PRIVATE named)"
+
   printf '\n'
   if [ "${FAILS}" = "0" ]; then
-    printf 'repo-anchor.sh selftest: ALL PASS (15 checks, every fixture inside %s)\n' "${T}"
+    printf 'repo-anchor.sh selftest: ALL PASS (17 checks, every fixture inside %s)\n' "${T}"
     return 0
   fi
   printf 'repo-anchor.sh selftest: %s FAILED — this is a BROKEN INSTRUMENT; do not treat its verdicts as proof\n' "${FAILS}"
