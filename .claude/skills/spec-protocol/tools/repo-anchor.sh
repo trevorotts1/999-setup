@@ -9,8 +9,10 @@
 #
 # EXIT CODES
 #   0  ANCHORED — the repo root exists, origin is set, `git ls-remote --exit-code`
-#      proved the branch on that remote, the receipt is written (and on a legacy
-#      project one REPO-ANCHOR line is filed through tools/ledger.sh)
+#      proved the branch on that remote, the receipt is written, the repo's entry
+#      is upserted in the registry <workdir>/repos.json (one per repo; a second
+#      --slug is a second repo and leaves the first repo's receipt alone), and on a
+#      legacy project one REPO-ANCHOR line is filed through tools/ledger.sh
 #      / ANCHORED LOCAL-ONLY — no remote could be arranged (no origin, no
 #      --remote, `gh auth status` failed, no --operator-remote, and no operator
 #      owner, or every `gh repo create` attempt failed): the git repository and its
@@ -193,6 +195,36 @@ os.replace(tmp, path)
 print(path)
 PY
 }
+
+# THE REPO REGISTRY: a project may have more than one repository. <workdir>/repos.json
+# (workdir = CONTROL/, or <state dir>/spec-protocol/ on a profiled project, the same
+# folder `project-profile.mjs workdir` names) is {"repos": [...]} of
+# {"name","root","trunk","remote"}; remote is a remote name (or URL), null when
+# local-only. Readers also accept a bare array. tools/merge-train.sh runs one train
+# per entry, tools/release.sh mints per entry. Upserted by name, written atomically.
+write_registry() { # write_registry <name> <root> <trunk> <local-only:0|1>
+  local reg="${STATE_DIR%/}/repos.json"
+  (( IS_PROFILED == 0 )) || reg="${STATE_DIR%/}/spec-protocol/repos.json"
+  "${PY}" - "${reg}" "$@" <<'PY'
+import json, os, sys, tempfile
+path, name, root, trunk, local = sys.argv[1:6]
+try:
+    doc = json.load(open(path, encoding="utf-8"))
+except FileNotFoundError:
+    doc = {"repos": []}
+repos = doc.get("repos", []) if isinstance(doc, dict) else doc
+entry = {"name": name, "root": os.path.abspath(root), "trunk": trunk, "remote": None if local == "1" else "origin"}
+repos = [r for r in repos if r.get("name") != name] + [entry]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".repos.")
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump({"repos": repos}, fh, indent=2)
+    fh.write("\n")
+os.replace(tmp, path)
+PY
+}
+
+same_path() { "${PY}" -c 'import os,sys;sys.exit(os.path.realpath(sys.argv[1]) != os.path.realpath(sys.argv[2]))' "$1" "$2"; }
 
 # --- where the receipt lives -------------------------------------------------
 # Legacy: <home>/CONTROL/repo-anchor.json.
@@ -442,9 +474,16 @@ run_anchor() {
   resolve_statedir "${home}"
   resolve_root "${home}" "${OPT_SLUG}"
 
+  # The receipt describes the project's FIRST repository. Another repo root (a second
+  # --slug) is anchored into the registry only and leaves that receipt as it is.
+  local primary=1 rroot
+  rroot="$(receipt_field "${RECEIPT_PATH}" "repoRoot" 2>/dev/null)" && ! same_path "${rroot}" "${ROOT}" && primary=0
+
   # Already anchored? Then this is a no-op, not a second anchoring.
   check_receipt "${RECEIPT_PATH}"
-  if [[ "${CHECK_STATUS}" == "ok" ]] && (( CHECK_LOCAL == 0 )); then
+  if (( primary == 1 )) && [[ "${CHECK_STATUS}" == "ok" ]] && (( CHECK_LOCAL == 0 )); then
+    write_registry "${SLUG}" "${ROOT}" "$(receipt_field "${RECEIPT_PATH}" branch 2>/dev/null || echo main)" 0 \
+      || undetermined "the repo registry beside ${RECEIPT_PATH} could not be written"
     printf 'REPO-ANCHOR ALREADY ANCHORED | %s | receipt=%s\n' "${CHECK_DETAIL}" "${RECEIPT_PATH}"
     exit 3
   fi
@@ -570,8 +609,14 @@ run_anchor() {
   # --- 5. the receipt (and, on a legacy project, the ledger line) -----------
   local remote_word="OK"
   [[ "${source}" != "local-only" ]] || remote_word="NONE (local-only: not yet online)"
-  receipt_written="$(write_receipt "${RECEIPT_PATH}" "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}" "${LOCAL_REASON:-}")" \
-    || undetermined "the receipt could not be written to ${RECEIPT_PATH} — an unrecorded anchor is not an anchor"
+  if (( primary == 1 )); then
+    receipt_written="$(write_receipt "${RECEIPT_PATH}" "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}" "${LOCAL_REASON:-}")" \
+      || undetermined "the receipt could not be written to ${RECEIPT_PATH} — an unrecorded anchor is not an anchor"
+  else
+    receipt_written="${RECEIPT_PATH} (kept: it describes the first repository ${rroot}; this one is in the registry)"
+  fi
+  write_registry "${SLUG}" "${ROOT}" "${branch}" "$([[ "${source}" == "local-only" ]] && echo 1 || echo 0)" \
+    || undetermined "the repo registry beside ${RECEIPT_PATH} could not be written — an unrecorded anchor is not an anchor"
 
   if (( IS_PROFILED == 0 )); then
     [[ -x "${LEDGER_SH}" ]] \
@@ -701,6 +746,17 @@ STUB
     "$([ "${rc}" = "3" ] && echo 1 || echo 0)" \
     "rc=${rc} (want 3) on the SAME project: ALREADY ANCHORED, nothing re-created"
 
+  # --- 2b. the repo registry: a second --slug is a second repo, the receipt stays the first's
+  out="$(anchor "${legacy}" --slug api)"; rc=$?
+  local regok
+  regok="$("${PY}" -c 'import json,os,sys
+d={r["name"]:r for r in json.load(open(sys.argv[1]))["repos"]}
+print(int(set(d)=={"legacy","api"} and d["legacy"]["remote"]=="origin" and d["legacy"]["trunk"]=="main"
+  and os.path.realpath(d["api"]["root"])==os.path.realpath(sys.argv[2]+"/repos/api")))' "${legacy}/CONTROL/repos.json" "${legacy}" 2>/dev/null)"
+  report 22 "registry-two-repos" \
+    "$([ "${rc}" = "0" ] && [ "${regok}" = "1" ] && [ "$(receipt_field "${legacy}/CONTROL/repo-anchor.json" repoRoot)" = "${legacy}/repos/legacy" ] && echo 1 || echo 0)" \
+    "rc=${rc} (want 0); CONTROL/repos.json lists legacy (origin, main) and api; repo-anchor.json still names the first repo: ${regok:-0}"
+
   # --- 3. a profiled project -----------------------------------------------
   local profiled
   profiled="${T}/profiled"
@@ -738,6 +794,12 @@ JSON
   report 9 "profiled-no-control-created" \
     "$([ -e "${profiled}/CONTROL" ] && echo 0 || echo 1)" \
     "no CONTROL/ directory was created in a profiled project (a profile never gets a CONTROL/ folder): $([ -e "${profiled}/CONTROL" ] && echo NO -- one was created || echo yes)"
+
+  local preg
+  preg="$("${PY}" -c 'import json,sys;r=json.load(open(sys.argv[1]))["repos"];print(int(len(r)==1 and r[0]["remote"] is None and r[0]["trunk"]=="main"))' "${profiled}/state/spec-protocol/repos.json" 2>/dev/null)"
+  report 23 "registry-profiled-workdir" \
+    "$([ "${preg}" = "1" ] && echo 1 || echo 0)" \
+    "the profiled registry is at <state dir>/spec-protocol/repos.json with one local-only entry (remote null): ${preg:-0}"
 
   # --- 4. gh not authenticated, no fallback, no operator owner -> local-only -
   # (#6: this used to be exit 4, which stopped every build a client declined.)
@@ -863,7 +925,7 @@ JSON
 
   printf '\n'
   if [ "${FAILS}" = "0" ]; then
-    printf 'repo-anchor.sh selftest: ALL PASS (21 checks, every fixture inside %s)\n' "${T}"
+    printf 'repo-anchor.sh selftest: ALL PASS (23 checks, every fixture inside %s)\n' "${T}"
     return 0
   fi
   printf 'repo-anchor.sh selftest: %s FAILED — this is a BROKEN INSTRUMENT; do not treat its verdicts as proof\n' "${FAILS}"
