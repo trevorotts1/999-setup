@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 4
+
+**E — SKILL.md, conductor.md.** Turn 1 and step 3 plan the opening keys
+(`answers.sh … init --planned idea,confirm,entry-mode`, held and supplied-folder forms), and
+step 6 opens with `answers.sh <project> init --planned <the mode's counted keys>` (key lists
+owned by `references/interview.md`), then `skip`/`stated`. New resume route: `/spec-protocol
+resume` skips the greeting, reads the ledger, `CONTROL/auto-resume.txt` and the state file, and
+continues from the first open step (`references/resume.md`), speaking only when a question is
+genuinely owed. New rule: after the walk-away line the client is absent — the rig-fitness
+findings (step 6.5), the feature list and human decisions take the conservative choice and go
+into the morning report; the spend pause at the agreed dollar line is the one exception.
+Step 22 names `tools/morning-note.sh <project>`. The mode question is now uncounted and the
+count is stated only after it; the update offer, which comes before it, is uncounted too. conductor.md
+§6: the four budget values precede the first BOOKED dispatch (research-reader exemption), and
+the spend-pause question is recorded through `answers.sh`. The description drops "fast paths
+for small plans" and "the four Gauntlet questions", which the body no longer has.
+
 ## [1.26.0] — 2026-09-23
 
 ### Round 3: the next pass over the same nine sections
