@@ -140,11 +140,12 @@ wireframe against the scaffold, with every image slot present as a **declared
 placeholder of exact pixel size** — width × height in pixels, the aspect, the
 alt text the slot will carry, and the manifest row id it is reserved for —
 rendered as honest marked space. Never a stock stand-in passed off as art,
-never a collapsed section that hides the slot. The draft is deployed and the
+never a collapsed section that hides the slot. The draft is deployed by
+`tools/publish.sh --draft <project>` (the preview deploy — never `--prod`) and the
 client gets the link.
 
-**Ledger line:** `DRAFT-LIVE: <url>` — the deployed draft's address, written
-when the stage passes. It is the first client-visible link of the run.
+**Ledger line:** `DRAFT-LIVE: <url>` — the deployed draft's address, written by
+`tools/publish.sh --draft` once the preview answers 200. It is the first client-visible link of the run.
 
 **The pass bar — mechanical, never a hope:**
 

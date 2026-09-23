@@ -87,7 +87,11 @@ run's live address until a custom domain answers.
   supplied by the operator at setup. It is passed ONLY to the vercel child process,
   never printed, and never asked of the client.
 - **On any failure** the tool writes `HOSTING-BLOCKED: <reason>` to the ledger with
-  the named next step and exits 2 — a run is never left RUNNING with no line.
+  the named next step — a run is never left RUNNING with no line — and exits with
+  the code `tools/publish.sh` itself documents: **2** a deploy or tooling failure,
+  UNDETERMINED (no repo receipt, no Vercel tool, the deploy failed, the guard could
+  not decide); **3** not live (preconditions unmet, the guard refused, or the
+  address never answered 200); **1** bad usage; **0** live.
 - **`tools/publish.sh --draft <project>`** is the preview deploy (no `--prod`): it
   proves the preview address returns 200 and writes `DRAFT-LIVE: <url>`, the line
   `references/build.md` requires before STAGE-HERO. A draft is never `PUBLISHED:`.
@@ -220,8 +224,8 @@ The words that go with it, plain:
 > part is optional — your site already works at `<url>`. Sign in where you
 > bought `<name>` and open the settings for that web address, often a page
 > called Domain Records. Add these two rows exactly as written, and save. Then
-> come back to this window and tell me you've done it, and I'll check that it
-> works. It usually takes a few minutes; it can take a few hours.
+> start me again and say 'web address', and I'll check that it works. It usually
+> takes a few minutes; it can take a few hours.
 
 Nothing else is asked of them. No nameserver change, no transfer, no account
 handed over.
@@ -231,7 +235,9 @@ handed over.
 ## 5. Served targets only: poll once they say the rows are added
 
 A bounded, foreground poll — never a background watcher — started when the
-client says they have added the rows (never overnight, when nobody has):
+client says they have added the rows (never overnight, when nobody has). A session
+started with the words "web address" on a project that already has a `PUBLISHED:`
+line goes straight here:
 
 ```
 dig +short <name>
