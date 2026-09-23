@@ -200,10 +200,14 @@ for them in this order:
 > Copy it, then say ready, and I'll file it without ever reading it out loud.
 > Can you find that for me now?
 
+When they've given it (or said they can't find it), the next turn is:
+
 > I need your Convert and Flow (GoHighLevel, GHL) Firebase refresh token. Open
 > the Token Grabber Chrome extension that Black CEO gave you, click 'Grab the
 > token', then 'Copy the token'. Then say ready, and I'll file it without ever
 > reading it out loud. Can you find that for me now?
+
+When they've given it (or said they can't find it), the next turn is:
 
 > I need your Convert and Flow (GoHighLevel, GHL) Location ID. In your Convert
 > and Flow account, open Settings, then Business Profile, where it is listed.
