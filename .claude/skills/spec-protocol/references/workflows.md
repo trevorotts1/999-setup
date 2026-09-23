@@ -280,6 +280,31 @@ Shapes (a) and (b) are also rejected mechanically by the width gate
 script's `pipeline(`/`parallel(` item counts and labels; (c) is the floor rule of
 SKILL.md RULE 2 and RULE 3; (d) is Law 3.
 
+### Launch everything ready, visibly, at once (SKILL.md RULE 4)
+
+Every dispatchable stream is its OWN native `Workflow` tool run — visible in `/workflows` —
+and all of them are launched in the SAME turn, never one after another. Each run is filled up
+to the per-workflow agent cap (clientCap, or a supplied profile's
+`policy.maxAgentsPerWorkflow` when that is lower — SKILL.md RULE 2) with its independent
+units. Work is never hidden inside plain `Agent` calls, where nobody can see or count it;
+reader dispatches are the only plain-`Agent` exception. A workflow carrying fewer agents than
+its ready units allow is under-width — shape (c) above.
+
+Every tree filled from `templates/workflows/*.js` also carries, and keeps:
+
+- **The name** — `meta.name` = `<program>-W<wave>-<phase>-<firstID>[..<lastID>]-<lanes>L`:
+  `<program>` the project slug (2–12 lowercase letters or digits), `<phase>` one of
+  `build+qc | build | qc | repair | merge | test`, the first and last unit ids with dashes
+  removed (an id is 2–5 capital letters then 3 or more digits, for example `UNIT-001` →
+  `UNIT001`), and `<lanes>` the number of agents the tree runs at once — the units passed to a
+  `pipeline()`, or 1 for the merge train. The template's own name is a placeholder of that
+  shape; replace every part of it for each launch.
+- **SCRATCH ISOLATION** — every agent of a multi-lane tree shares one session scratchpad, so
+  each prompt tells its lane to write only inside `<scratchpad>/lanes/<UNIT-ID>-<box-slug>/`
+  and to prefix any temp file on another machine `/tmp/<box-slug>-<UNIT-ID>-`. Sibling lanes
+  that write a generic filename clobber each other and read another lane's results as their
+  own.
+
 ---
 
 ## 5. Pre-dispatch script validation (fail-closed)

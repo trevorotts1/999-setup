@@ -33,6 +33,13 @@
 # GH_TOKEN=<SPEC_PROTOCOL_OPERATOR_GH_TOKEN from that file> for that one call only;
 # else local-only. A failed create (name taken, ...) retries <slug>-2 .. <slug>-5.
 #
+# ON A PROFILED PROJECT (.spec-protocol.json) no GitHub repository is ever created
+# unless the profile names one: existing origin; --remote; the profile's repo.remote
+# (a git URL, added as origin); the profile's repo.createPrivate (<owner>/<name>,
+# created PRIVATE via the client's own gh login, exactly that name, no -2 retries);
+# else LOCAL-ONLY, with the reason in the receipt. --operator-remote, the operator
+# owner and gh's default owner are never used there.
+#
 # WHY THIS EXISTS. The skill's own description promises "merged-to-GitHub".
 # SKILL.md section 6 says GitHub is arranged at minute one via `gh auth login --web`,
 # with `gh auth status` proving it before the first builder; step 17 says "Determine
@@ -161,10 +168,11 @@ print(value)
 PY
 }
 
-write_receipt() { # write_receipt <path> <root> <remote|""> <branch> <head> <source>
+write_receipt() { # write_receipt <path> <root> <remote|""> <branch> <head> <source> [reason]
   "${PY}" - "$@" <<'PY'
 import datetime, json, os, sys, tempfile
 path, root, remote, branch, head, source = sys.argv[1:7]
+reason = sys.argv[7] if len(sys.argv) > 7 else ""
 doc = {
     "repoRoot": root,
     "remote": remote or None,
@@ -173,6 +181,8 @@ doc = {
     "provedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "source": source,
 }
+if reason:
+    doc["reason"] = reason
 directory = os.path.dirname(path) or "."
 os.makedirs(directory, exist_ok=True)
 fd, tmp = tempfile.mkstemp(dir=directory, prefix=".repo-anchor.")
@@ -187,8 +197,8 @@ PY
 # --- where the receipt lives -------------------------------------------------
 # Legacy: <home>/CONTROL/repo-anchor.json.
 # Profiled: beside the profile's own canonical state file, because a packet owns
-# its state directory and tools/ledger.sh refuses a profiled project by design
-# (ledger.sh:471-474, "LEDGER PROFILE-OWNED"). There the receipt IS the record.
+# its state directory and never gets a CONTROL/ folder. There the receipt IS the
+# record.
 # Sets RECEIPT_PATH, STATE_DIR, IS_PROFILED.
 resolve_statedir() { # resolve_statedir <home>
   local home="$1" profile state rel rc
@@ -331,15 +341,17 @@ gh_authenticated() {
   return "${rc}"
 }
 
-# gh_create <owner-or-empty> [token] — `gh repo create [<owner>/]<slug> --private`,
+# gh_create <owner-or-empty> [token] [exact] — `gh repo create [<owner>/]<slug> --private`,
 # then <slug>-2 .. <slug>-5 when that fails (a taken name is the usual cause).
+# "exact" (a profile's repo.createPrivate) tries that one name only.
 # The token, when given, reaches ONLY that gh child as GH_TOKEN (exported inside
 # the command substitution's subshell, never on an argv, never printed).
 # Sets CREATED (1/0), url, and reason (the last failure, redacted).
 gh_create() {
-  local owner="$1" tok="${2:-}" n name out rc
+  local owner="$1" tok="${2:-}" n name out rc suffixes=("" -2 -3 -4 -5)
+  [[ "${3:-}" != "exact" ]] || suffixes=("")
   CREATED=0
-  for n in "" -2 -3 -4 -5; do
+  for n in "${suffixes[@]}"; do
     name="${SLUG}${n}"
     [[ -z "${owner}" ]] || name="${owner}/${name}"
     out="$( [[ -z "${tok}" ]] || export GH_TOKEN="${tok}"
@@ -356,7 +368,7 @@ gh_create() {
     url=""
     reason="gh repo create ${name} --private returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 2 | tr '\n' ' ')")"
   done
-  reason="${reason} (tried ${SLUG} and ${SLUG}-2 .. ${SLUG}-5)"
+  [[ "${3:-}" == "exact" ]] || reason="${reason} (tried ${SLUG} and ${SLUG}-2 .. ${SLUG}-5)"
   return 1
 }
 
@@ -484,6 +496,29 @@ run_anchor() {
     "${GIT}" -C "${ROOT}" remote add origin "${OPT_REMOTE}" >/dev/null 2>&1 \
       || undetermined "git remote add origin failed in ${ROOT} for the --remote value"
     url="${OPT_REMOTE}"; source="--remote"; added=1
+  elif (( IS_PROFILED == 1 )); then
+    # A profiled project gets a GitHub repository ONLY when its profile names one.
+    local profile="${home%/}/.spec-protocol.json" p_remote p_create prc crc
+    p_remote="$(profile_field "${profile}" "repo.remote")"; prc=$?
+    p_create="$(profile_field "${profile}" "repo.createPrivate")"; crc=$?
+    (( prc != 2 && crc != 2 )) \
+      || undetermined "profile ${profile} carries a repo.remote or repo.createPrivate that is not a non-empty string — tools/project-profile.mjs refuses that profile too"
+    if (( prc == 0 )); then
+      "${GIT}" -C "${ROOT}" remote add origin "${p_remote}" >/dev/null 2>&1 \
+        || undetermined "git remote add origin failed in ${ROOT} for the profile's repo.remote"
+      url="${p_remote}"; source="profile-remote"; added=1
+    elif (( crc == 0 )); then
+      [[ "${p_create}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$ ]] \
+        || undetermined "profile repo.createPrivate='${p_create}' is not <owner>/<name>"
+      if gh_authenticated; then
+        SLUG="${p_create#*/}"
+        if gh_create "${p_create%%/*}" "" exact; then source="profile-create"; added=1; fi
+      else
+        reason="the profile's repo.createPrivate=${p_create} needs a logged-in gh, and ${GH_CMD} auth status returned rc=${GH_RC}"
+      fi
+    else
+      reason="the profile names no repo.remote or repo.createPrivate, so no GitHub repository is created for it"
+    fi
   elif gh_authenticated; then
     # The client's OWN account: gh's default owner is whoever is logged in
     # (SKILL.md section 6, minute one). The token is never interpolated into a
@@ -513,14 +548,14 @@ run_anchor() {
     fi
   fi
   if [[ -z "${source}" ]]; then
-    url=""; source="local-only"
+    url=""; source="local-only"; LOCAL_REASON="${reason}"
     printf 'REPO-ANCHOR LOCAL-ONLY | no remote for %s — origin: none; %s auth status: rc=%s; --remote/--operator-remote: not given; %s. The work is saved on this computer and is NOT YET ONLINE.\n' \
       "${ROOT}" "${GH_CMD}" "${GH_RC}" "${reason}"
   fi
 
   # A remote WE added is pushed so the branch exists to prove. A remote that was
   # already there is never pushed to: it is not ours to change.
-  if (( added == 1 )) && [[ "${source}" != "client-gh" && "${source}" != "operator-owner" ]]; then
+  if (( added == 1 )) && [[ "${source}" != "client-gh" && "${source}" != "operator-owner" && "${source}" != "profile-create" ]]; then
     "${GIT}" -C "${ROOT}" push -u origin "${branch}" >/dev/null 2>&1 || true
   fi
 
@@ -535,7 +570,7 @@ run_anchor() {
   # --- 5. the receipt (and, on a legacy project, the ledger line) -----------
   local remote_word="OK"
   [[ "${source}" != "local-only" ]] || remote_word="NONE (local-only: not yet online)"
-  receipt_written="$(write_receipt "${RECEIPT_PATH}" "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}")" \
+  receipt_written="$(write_receipt "${RECEIPT_PATH}" "${ROOT}" "$(redact "${url}")" "${branch}" "${head}" "${source}" "${LOCAL_REASON:-}")" \
     || undetermined "the receipt could not be written to ${RECEIPT_PATH} — an unrecorded anchor is not an anchor"
 
   if (( IS_PROFILED == 0 )); then
@@ -693,8 +728,8 @@ JSON
   printf '{}\n' > "${profiled}/state/build-state.json"
   out="$(anchor "${profiled}")"; rc=$?
   report 7 "profiled-anchored-at-home" \
-    "$([ "${rc}" = "0" ] && [ -d "${profiled}/.git" ] && echo 1 || echo 0)" \
-    "rc=${rc} (want 0) and the repository is rooted at the project home itself: $([ -d "${profiled}/.git" ] && echo yes || echo NO)"
+    "$([ "${rc}" = "0" ] && [ -d "${profiled}/.git" ] && [ "$(receipt_field "${profiled}/state/repo-anchor.json" source 2>/dev/null)" = "local-only" ] && grep -q '"reason": "the profile names no repo' "${profiled}/state/repo-anchor.json" && ! grep -q 'profiled' "${bare_dir}/created.log" && echo 1 || echo 0)" \
+    "rc=${rc} (want 0), rooted at the project home, and with gh logged in but no repo.* in the profile: LOCAL-ONLY with the reason in the receipt, no gh repo create"
 
   report 8 "profiled-receipt-beside-state" \
     "$([ -f "${profiled}/state/repo-anchor.json" ] && echo 1 || echo 0)" \
@@ -702,7 +737,7 @@ JSON
 
   report 9 "profiled-no-control-created" \
     "$([ -e "${profiled}/CONTROL" ] && echo 0 || echo 1)" \
-    "no CONTROL/ directory was created in a profiled project (tools/ledger.sh refuses one by design, ledger.sh:471): $([ -e "${profiled}/CONTROL" ] && echo NO -- one was created || echo yes)"
+    "no CONTROL/ directory was created in a profiled project (a profile never gets a CONTROL/ folder): $([ -e "${profiled}/CONTROL" ] && echo NO -- one was created || echo yes)"
 
   # --- 4. gh not authenticated, no fallback, no operator owner -> local-only -
   # (#6: this used to be exit 4, which stopped every build a client declined.)
@@ -799,6 +834,18 @@ JSON
     "$([ "${rc}" = "0" ] && [ "$(receipt_field "${full}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "local-only" ] && printf '%s' "${out}" | grep -q 'full-5' && echo 1 || echo 0)" \
     "rc=${rc} (want 0, never 2 with no receipt); five taken names -> local-only receipt naming the last try"
 
+  # --- 13. C2: a profile that NAMES repo.createPrivate gets exactly that repo --
+  local prof2
+  prof2="${T}/prof2"
+  mkdir -p "${prof2}/state"
+  sed 's#"targets": \["desktop"\],#"targets": ["desktop"], "repo": {"createPrivate": "acme/my-project"},#' \
+    "${profiled}/.spec-protocol.json" > "${prof2}/.spec-protocol.json"
+  printf '{}\n' > "${prof2}/state/build-state.json"
+  out="$(anchor "${prof2}")"; rc=$?
+  report 21 "profile-createprivate-exact" \
+    "$([ "${rc}" = "0" ] && [ "$(tail -n 1 "${bare_dir}/created.log")" = "acme/my-project" ] && [ "$(receipt_field "${prof2}/state/repo-anchor.json" source 2>/dev/null)" = "profile-create" ] && echo 1 || echo 0)" \
+    "rc=${rc} (want 0); gh repo create got exactly acme/my-project --private and the receipt source is profile-create"
+
   # --- 11. #49: --check fails a GitHub remote that is not PRIVATE ----------
   local pub
   pub="${T}/pub"
@@ -816,7 +863,7 @@ JSON
 
   printf '\n'
   if [ "${FAILS}" = "0" ]; then
-    printf 'repo-anchor.sh selftest: ALL PASS (20 checks, every fixture inside %s)\n' "${T}"
+    printf 'repo-anchor.sh selftest: ALL PASS (21 checks, every fixture inside %s)\n' "${T}"
     return 0
   fi
   printf 'repo-anchor.sh selftest: %s FAILED — this is a BROKEN INSTRUMENT; do not treat its verdicts as proof\n' "${FAILS}"

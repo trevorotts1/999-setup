@@ -45,10 +45,16 @@ hold_file() {
   printf '%s/spec-protocol/runs/%s/00-INPUT/ANSWERS.md' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "$1"
 }
 
+# A key's heading is "## <key>" alone, or followed by a space or "(" and more text
+# (an older file's "## idea (uncounted opening, step 3)" IS the idea block), so no
+# verb ever appends a duplicate block for a key that already has one.
+HEAD_AWK='function head(l, k) { return l == k || index(l, k " ") == 1 || index(l, k "(") == 1 }'
+has_key() { KEY="## $2" awk "${HEAD_AWK}"' head($0, ENVIRON["KEY"]) { f = 1; exit } END { exit !f }' "$1"; }
+
 # field <file> <key> <Asked|Answer> — the raw value after "**<field>:** " in that key's block.
 field() {
-  KEY="## $2" FIELD="**$3:** " awk '
-    $0 == ENVIRON["KEY"] { inb = 1; next }
+  KEY="## $2" FIELD="**$3:** " awk "${HEAD_AWK}"'
+    head($0, ENVIRON["KEY"]) { inb = 1; next }
     /^## / { inb = 0 }
     inb && index($0, ENVIRON["FIELD"]) == 1 { print substr($0, length(ENVIRON["FIELD"]) + 1); exit }' "$1"
 }
@@ -65,7 +71,7 @@ do_init() {
   for k in "${keys[@]+"${keys[@]}"}"; do
     k="$(printf '%s' "${k}" | sed 's/^ *//; s/ *$//')"
     [ -n "${k}" ] || continue
-    grep -qxF "## ${k}" "${tmp}" || block "${k}" >> "${tmp}"
+    has_key "${tmp}" "${k}" || block "${k}" >> "${tmp}"
   done
   commit "${f}" "${tmp}"
   echo "ANSWERS | init | $(abspath "${f}")"
@@ -77,9 +83,9 @@ do_set() { # do_set <file> <Asked|Answer> <key> <raw value: already quoted, or a
   [ -n "${key}" ] || die "empty key"
   tmp="$(mktemp "${f}.tmp.XXXXXX")" || die "cannot write beside ${f}"
   cat "${f}" > "${tmp}"
-  grep -qxF "## ${key}" "${tmp}" || block "${key}" >> "${tmp}"
-  KEY="## ${key}" FIELD="**${field}:**" VAL="$4" awk '
-    $0 == ENVIRON["KEY"] { inb = 1; print; next }
+  has_key "${tmp}" "${key}" || block "${key}" >> "${tmp}"
+  KEY="## ${key}" FIELD="**${field}:**" VAL="$4" awk "${HEAD_AWK}"'
+    head($0, ENVIRON["KEY"]) { inb = 1; print; next }
     /^## / { inb = 0 }
     inb && index($0, ENVIRON["FIELD"]) == 1 { print ENVIRON["FIELD"] " " ENVIRON["VAL"]; next }
     { print }' "${tmp}" > "${tmp}.2" && mv -f "${tmp}.2" "${tmp}" || { rm -f "${tmp}" "${tmp}.2"; die "rewrite failed"; }
@@ -100,7 +106,7 @@ do_flush() {
   else
     while IFS= read -r k; do
       k="${k#\#\# }"
-      grep -qxF "## ${k}" "${f}" || do_set "${f}" Answer "${k}" "_blank_" >/dev/null
+      has_key "${f}" "${k}" || do_set "${f}" Answer "${k}" "_blank_" >/dev/null
       for fld in Asked Answer; do
         v="$(field "${h}" "${k}" "${fld}")"
         placeholder "${v}" && continue
@@ -157,7 +163,16 @@ selftest() {
   CLAUDE_CONFIG_DIR="${T}/cfg" bash "${SELF}" --flush r2 "${T}/q" >/dev/null
   ok "flush merge" "$(grep -qx '\*\*Answer:\*\* "cakes"' "${T}/q/00-INPUT/ANSWERS.md" \
     && ! grep -q 'replaced' "${T}/q/00-INPUT/ANSWERS.md" && grep -qx '## extra' "${T}/q/00-INPUT/ANSWERS.md" && echo 1)"
-  [ "${fails}" = 0 ] && { echo "SELFTEST PASS | 6 cases"; exit 0; }
+  # init on an OLD file whose heading carries extra text after the key: recognised as
+  # that key, never a duplicate block; answer lands under the old heading.
+  mkdir -p "${T}/o/00-INPUT"
+  printf '# Answers\n\n## idea (uncounted opening, step 3)\n**Asked:** _not yet spoken_\n**Answer:** _blank_\n' > "${T}/o/00-INPUT/ANSWERS.md"
+  bash "${SELF}" "${T}/o" init --planned idea,idea-2 >/dev/null
+  bash "${SELF}" "${T}/o" answer idea "a bakery site" >/dev/null
+  ok "init old heading" "$([ "$(grep -c '^## idea' "${T}/o/00-INPUT/ANSWERS.md")" = 2 ] \
+    && grep -qx '## idea-2' "${T}/o/00-INPUT/ANSWERS.md" && ! grep -qx '## idea' "${T}/o/00-INPUT/ANSWERS.md" \
+    && [ "$(grep -c '"a bakery site"' "${T}/o/00-INPUT/ANSWERS.md")" = 1 ] && echo 1)"
+  [ "${fails}" = 0 ] && { echo "SELFTEST PASS | 7 cases"; exit 0; }
   echo "SELFTEST FAIL | ${fails} case(s)"; exit 1
 }
 

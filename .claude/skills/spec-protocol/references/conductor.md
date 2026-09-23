@@ -41,6 +41,16 @@ refuses an under-width dispatch (exit 3) and a padded one (exit 5), writing the 
 row through `tools/ledger.sh` and incrementing `agents.executions_total` atomically on a
 pass. Width is counted as items passed in the script, never agents on screen.
 
+**A supplied profile's policy is a CEILING, never a suggestion.** When `.spec-protocol.json`
+carries `policy.maxActiveWorkflows`, `policy.maxAgentsPerWorkflow` or
+`policy.maxWorkingAgents`, each is the project's own enforced cap: workflows in flight =
+min(harness/provider width, `maxActiveWorkflows`), agents per workflow = min(clientCap,
+`maxAgentsPerWorkflow`), agents working at once = min(governing width, `maxWorkingAgents`).
+`node tools/project-profile.mjs policy <project>` prints whichever of the three are present, as
+JSON. The Capacity Ledger records the measured number, the profile's number and the winner; no plan
+and no dispatch ever goes above the ceiling. The floor still holds INSIDE it: never dispatch
+fewer streams than the work allows up to that ceiling. A field that is absent changes nothing.
+
 **Step 6.5 — compute the ledger before anything dispatches.** Profile with
 `tools/capacity-profile.sh` (recall-and-confirm on a repeat project), resolve disputed
 values with `tools/capacity-resolver.sh`, and write `<project>/CAPACITY-LEDGER.md` to
@@ -108,7 +118,8 @@ declined) on `--remote`/`--operator-remote` or the operator's owner from
 `SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER` (env or `${CLAUDE_CONFIG_DIR}/spec-protocol/operator.env`,
 a private `<owner>/<slug>`), and with none of those it anchors LOCAL-ONLY
 (receipt `source=local-only`); it proves what it made and writes the `repo-anchor.json`
-receipt. A folder with no repository never reaches a builder, because the dispatch hook's
+receipt. On a profiled project it creates nothing the profile does not name: `repo.remote` or
+`repo.createPrivate` when present, otherwise LOCAL-ONLY, said in the receipt. A folder with no repository never reaches a builder, because the dispatch hook's
 SHAPE 9 refuses every build dispatch until that receipt exists and matches the remote it
 names (a local-only receipt is accepted; the morning report then says the work is saved on
 this computer and not yet online).
@@ -170,6 +181,17 @@ a Law 5 violation (`references/gauntlet.md` §6, §7).
 
 **RULE 3** (the one swarm shape — five workflow types) and **RULE 4** (dispatch, decomposed then launched in the same turn) are stated in `SKILL.md` §1. The workflow skeletons are `templates/workflows/*.js` (build wave, judge wave, fix wave, merge train), each taking a JSON unit list — fill them; never hand-write a tree from nothing.
 
+**Dispatch: launch everything ready, visibly, at once.** Every dispatchable stream is launched
+in the SAME turn as its OWN native `Workflow` tool run, so each one is visible in `/workflows`;
+each is filled up to the per-workflow agent cap (clientCap, or the profile's
+`maxAgentsPerWorkflow` when lower) with its independent units. Streams are never serialised —
+never "launch one, wait, launch the next" — and never hidden inside plain `Agent` calls; a
+reader dispatch is the only plain-`Agent` exception. A workflow carrying fewer agents than its
+ready units allow is UNDER-WIDTH, the same defect as forbidden shape (c) in
+`references/workflows.md` §4. Each tree's `meta.name` follows
+`<program>-W<wave>-<phase>-<firstID>[..<lastID>]-<lanes>L`, and every multi-lane prompt carries
+the SCRATCH ISOLATION line the templates already hold.
+
 **SEAT PINNING and the four properties.** Every `agent()` call carries an explicit
 `model:` for its seat — a bare call inherits the session model, which lands judges on
 the builder's brain and voids independence (Laws 7, 30), and the dispatch gate refuses
@@ -221,15 +243,22 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    a failure as PASS. Fixes run in parallel only within the applicable policy (Law 32).
 4. **Holding pen.** Passing work stages in a pen (one per repo) — a table in the
    execution plan, never a file (Law 39), and the pen has no writer.
-5. **Merge train.** One writer per repository (Law 3), time-triggered every fifteen
-   minutes with no count cap: land each unit serially with `--no-ff` into the
-   integration branch, verify ONCE per batch, fast-forward the trunk, then ripple
-   one version bump, one changelog entry and one annotated tag in the same commit
-   (Laws 10, 20), with zero Co-Authored-By trailers. A merge is never a barrier —
-   builders, judges and repair agents keep running while the train drains, and a
-   merge failure parks that unit and raises it through the reconciler. The train is
-   `tools/merge-train.sh`, which merges one unit at a time with the Land-vs-Merged truth
-   gates of `references/pipeline.md`; it is run, never re-written per project.
+5. **Merge train — in BATCHES, never one at a time.** One writer per repository (Law 3),
+   time-triggered by the tick every `MERGE_BATCH_MINUTES` (default 15) with no count cap:
+   whenever anything is waiting, the tick runs `tools/merge-train.sh <project> --batch`
+   under a lock, so two batches never overlap. One batch takes EVERY unit branch that has
+   passed its judges, merges each with `--no-ff` into the integration branch in one pass,
+   runs the build/test gate ONCE for the whole batch and pushes ONCE. A red batch is
+   bisected — halves retried until the unit(s) that broke it are found — the good ones
+   land, and the bad ones go back to repair with the failing output. A merge CONFLICT
+   skips that unit and records it for the conflict-resolver seat (a haiku chain); it
+   never blocks the rest of the batch. Then ripple one version bump, one changelog entry
+   and one annotated tag in the same commit (Laws 10, 20), with zero Co-Authored-By
+   trailers. A merge is never a barrier — builders, judges and repair agents keep running
+   while the train drains. On a profiled project each merged unit is also recorded in the
+   project's own state by `commands.merged` (`{taskId}` `{commit}` `{branch}` filled in).
+   The train keeps the Land-vs-Merged truth gates of `references/pipeline.md`; it is run,
+   never re-written per project, and its single-unit mode remains for a manual landing.
 6. **The finish line.** LANDED (integration branch) is never reported as MERGED.
    Done means MERGED — the merge commit a proven ancestor of the trunk — AND
    verified at HEAD: the key artifact exists (`git cat-file -e HEAD:<path>`) and
@@ -285,7 +314,11 @@ For a profiled project the SAME instruments run — they read and write the prof
 state instead of `CONTROL/`. The five-minute tick, the reconciler and the width measurement are
 NEVER skipped: a run nobody is watching is exactly the failure this rule exists to prevent. Only
 the destination changes. Do not create a SECOND ledger, task graph or dispatch log beside the
-bound one.
+bound one. Concretely: `tools/ledger.sh` writes to `<statedir>/spec-protocol/LEDGER.md`
+(statedir = the directory of `documents.state`); the tick runs `commands.refresh` after every
+state-changing step and at least every five minutes (a failure is logged, never fatal); the
+batch merge records each merged unit with `commands.merged`; and `tools/repo-anchor.sh` follows
+the profile's `repo.remote` / `repo.createPrivate`, anchoring LOCAL-ONLY when it names neither.
 
 - `tools/anchor.sh --mode reconcile` runs at every wave boundary, every tick, after every compaction and before every dispatch: the three-way reconcile, the repeated-intent alarm (S14), the ledger-provenance pairing of every RESULT against its prior CLAIM, the budget audit and the pause decision, and the recovery ladder — reconcile the actual Workflow/session/run or Agent-Team identity first; only a proven-absent identity may be re-dispatched from its checkpoint, then back off up to two hours on capacity events, then use fallback seats with `SEAT-FALLBACK: role=<role> primary=<label> status=<code> substitute=<label> source=execution-plan-fallback-table` written through `tools/ledger.sh` before that re-dispatch, and only then the drift flag. Live or unknown identities remain owned/escalated. It honours `CONTROL/OPERATOR-OVERRIDE.json`, which no agent may edit and no audit finding may propose removing. `tools/seat-probe.sh <project>` proves every seat CALLABLE before the first build dispatch, and `tools/dispatch-check.sh` refuses the build phase with exit 11 while its `SEAT-PROBE:` line is absent.
 - `tools/dispatch-check.sh` and `tools/hooks/dispatch-gate.py` refuse the under-width and forbidden-shape dispatches before they fire, and refuse a dispatch at or past the pause line (exit 7) or the ceiling (exit 8), so the pause is a wall and not a reminder (below the client's dollar line the conductor records the next block itself, §6, before dispatching past it); `tools/width.sh` supplies the number both of them measure against.

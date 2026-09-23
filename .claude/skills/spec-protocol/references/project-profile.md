@@ -75,16 +75,43 @@ bound `documents.state` is canonical and the packet's declared `commands` (boots
 dispatch, release) are how the helpers reach it, through `tools/project-profile.mjs`. The
 five-minute tick is NEVER skipped: `tools/watch-tick.sh` (and its Node twin) arms the same cron
 line on a profiled project, runs `commands.validate` every tick and logs beside the bound state
-— an unwatched run is the exact failure these instruments exist to prevent. The legacy
-`CONTROL/`-writing helpers (anchor, ledger, state-check, audit-gate, seat-probe, and the legacy
-GATE 0 marker) REFUSE on a profiled project by design, naming the refusal `PROFILE-OWNED`:
-their job — reconcile, ledger, state, audit — is the packet validator's, and a second copy of
-that state beside the bound one is what a profile forbids. What a profile forbids is a SECOND copy —
+— an unwatched run is the exact failure these instruments exist to prevent. The remaining
+legacy `CONTROL/`-writing helpers (anchor, state-check, audit-gate, seat-probe, and the legacy
+GATE 0 marker) still REFUSE on a profiled project by design, naming the refusal `PROFILE-OWNED`:
+their job — reconcile, state, audit — is the packet validator's, and a second copy of that
+state beside the bound one is what a profile forbids. `tools/ledger.sh` is the one exception:
+it never refuses on a profiled project — every `write X through tools/ledger.sh` step in the
+skill works on a profiled project exactly as on a legacy one. It REDIRECTS instead: the same
+lock, the same atomic writer, the same clock and signature, but the file lands at
+`<statedir>/spec-protocol/LEDGER.md` (statedir = the directory of `documents.state`, resolved
+by `project-profile.mjs workdir <project>`), with a leading `CONTROL/` dropped from the path
+argument, and the resolved path is printed. What a profile forbids is a SECOND copy —
 no parallel ledger, no parallel task graph, no `CONTROL/project_state.json` beside the bound
 state. `project-profile.mjs resume-authorized
 <project>` is the sole narrow GATE 0 resume exception: it requires the current validator to
 return `savedResumeAuthorized:true`. It authorizes only that saved profile-bound resumption;
 it does not enable a general human-gate bypass.
+
+**Optional fields the profile may declare** (all argv arrays, run at the project root, never
+through a shell, validated by `project-profile.mjs` before any helper reads them):
+- `commands.refresh` regenerates the project's own human-readable views. `tools/watch-tick.sh`
+  (and its Node twin) runs it after every state-changing step and at least every
+  `MERGE_BATCH_MINUTES` (default 15) minutes; a failure is logged on the tick's own stdout and
+  is never fatal to the tick.
+- `commands.merged` records one merged unit in the project's own state, run once per unit by
+  `tools/merge-train.sh <project> --batch` with `{taskId}`, `{commit}`, `{branch}` substituted
+  — the only command allowed those placeholders.
+- `repo.remote` (a git URL) or `repo.createPrivate` (`owner/name`, created private via `gh`):
+  on a profiled project `tools/repo-anchor.sh` never creates or names a GitHub repository
+  unless one of these is present. Absent both, it anchors LOCAL-ONLY and records that in the
+  receipt — the existing unprofiled behavior (the client's own account, or an operator remote)
+  is otherwise unchanged.
+- `policy.maxActiveWorkflows`, `policy.maxAgentsPerWorkflow`, `policy.maxWorkingAgents`: when
+  present, each is the project's own CEILING. Width = `min(harness/provider width, the profile
+  ceiling)`, read via `project-profile.mjs policy <project>` (JSON, only the keys the profile
+  set) or the combined `project-profile.mjs fields <project>` (workDir, ceiling, refresh,
+  merged, repo). Never plan above the ceiling; when a key is absent, current (unprofiled)
+  behavior for that key.
 
 **The quality floor is universal.** Every profile retains the ten-category score floor of at
 least 8.5 plus mandatory behavior, scope, evidence, and independent reference comparison.

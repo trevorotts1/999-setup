@@ -40,15 +40,19 @@
 #     THE TICK ITSELF  runs the profile's own `commands.validate` argv at the
 #       project root — an argv array, never a shell line, so a value in the
 #       profile can NAME a program and can never be evaluated as one — and
-#       prints exactly one line:
+#       prints one verdict line:
 #         PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>
 #         PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr, 200 chars>
 #       exit 0 on rc 0, exit 3 on any other rc — the SAME "something needs
 #       attention" code the S-checks already use, because inventing a second
 #       one would make one tick's stall unreadable to a reader of the other's.
-#       It WRITES NOTHING: no ledger line, no CONTROL/ directory, no second
-#       task graph. The cron line's own `>>` is the only appender, which is
-#       what keeps the profile's "no parallel copy" rule intact.
+#       Then the batch merge when due (MERGE-BATCH), the profile's optional
+#       `commands.refresh` (PROFILE-REFRESH; a failure is logged, never fatal)
+#       and the post-interview stalled-turn check with AUTO-RESUME, exactly as
+#       on a legacy project (a stall is exit 3 too). It never creates CONTROL/
+#       or a second task graph: its records, locks and stamps live in
+#       `<statedir>/spec-protocol/` beside the bound state, and its ledger
+#       lines go through tools/ledger.sh to `<statedir>/spec-protocol/LEDGER.md`.
 #     A PROFILE IT CANNOT READ IS UNDETERMINED AND LOUD: unparseable JSON, a
 #       missing `documents.state`, or a missing `commands.validate` is exit 2
 #       naming the file and the key — never a silent fall back to CONTROL/,
@@ -216,14 +220,15 @@
 #                                                #   0 armed, 3 already present,
 #                                                #   2 crontab unavailable (named)
 #                                                #   (also records the session for
-#                                                #   AUTO-RESUME, legacy projects)
+#                                                #   AUTO-RESUME; profiled: in
+#                                                #   <statedir>/spec-protocol/)
 #   watch-tick.sh --record-session <project-home> # at INTERVIEW END (after the
 #                                                #   walk-away line), inside the
 #                                                #   conductor session: records the
 #                                                #   session id again + interview=done,
 #                                                #   so a window closed after the last
 #                                                #   question is still resumable.
-#                                                #   0 recorded, 2 no session id / profiled
+#                                                #   0 recorded, 2 no session id
 #   watch-tick.sh <project-home> --check         # READ-ONLY: 0 this project's tick
 #                                                #   line is installed, 3 it is not,
 #                                                #   2 the table could not be read
@@ -233,7 +238,8 @@
 #   (nobody is there to answer a permission prompt; the resumed process gets
 #   node + ~/.local/bin + the 999 npm bin on PATH — see resume_path, 4d; the
 #   cron line itself stays PATH-free) once, detached, lock-guarded for 30 minutes
-#   (CONTROL/auto-resume.lock), and writes an AUTO-RESUME ledger line. The
+#   (CONTROL/auto-resume.lock; `<statedir>/spec-protocol/auto-resume.lock`
+#   on a profiled project), and writes an AUTO-RESUME ledger line. The
 #   alarm covers EVERY post-interview phase, not only build: an open build,
 #   spec, apparatus, audit, merge or publish row, or `interview=done` in
 #   CONTROL/auto-resume.txt (research included), with no project write for
@@ -279,6 +285,15 @@
 #   WATCH_SPEECH_TIMEOUT=<secs>   fixture only: how long one lint run may take
 #                               before the tick moves on without it (default 25).
 #                               Nothing else should.
+#   MERGE_BATCH_MINUTES=15      batch merge cadence: every N minutes the tick runs
+#                               `tools/merge-train.sh <home> --batch` (lock-guarded,
+#                               never two at once; merge-train decides what waits)
+#   WATCH_MERGE_TRAIN_SH=<path>   selftest stub only: the merge train the batch runs
+#   WATCH_REFRESH_TIMEOUT=120   seconds one profile `commands.refresh` run may take
+#
+# PATHS WITH SPACES. Every path the crontab line carries (the skill folder, the
+# project home, the log) is single-quoted, so "My Project Folder" is one word to
+# cron's /bin/sh; a % is written \% because cron reads a bare % as a newline.
 #==============================================================================
 
 set -euo pipefail
@@ -338,6 +353,7 @@ SELFTEST_TMP=""
 cleanup() {
   [[ -n "$WORKDIR" && -d "$WORKDIR" ]] && rm -rf "$WORKDIR"
   [[ -n "$SELFTEST_TMP" && -d "$SELFTEST_TMP" ]] && rm -rf "$SELFTEST_TMP"
+  [[ -n "${MERGE_LOCK:-}" && -d "$MERGE_LOCK" ]] && rm -rf "$MERGE_LOCK"
   return 0
 }
 trap cleanup EXIT
@@ -390,6 +406,18 @@ sanitize_long() {
   printf '%s' "$1" | tr -d '\n\r' | tr '|' '/' | cut -c1-600
 }
 
+# sq <path> -> the path as ONE single-quoted sh word, for the crontab line. A
+# folder named "My Project Folder" is three words to cron's /bin/sh unquoted.
+# A ' inside becomes '\'' and a % becomes \% — cron turns a bare % into a newline
+# even inside quotes, and strips the backslash before handing the line to sh.
+sq() {
+  local s="${1//\'/\'\\\'\'}"
+  printf "'%s'" "${s//%/\\%}"
+}
+# glob_esc <path> -> the path with find(1) -path glob characters escaped, so a
+# folder named "[draft] app" still prunes the directory it names.
+glob_esc() { printf '%s' "$1" | sed 's/[][*?\\]/\\&/g'; }
+
 ledger_write() {  # ledger_write <relative-file> <line>
   local f="$1" line="$2" out rc
   [[ -x "$LEDGER_SH" ]] || die_tool "tools/ledger.sh is missing or not executable at ${LEDGER_SH} — every write goes through it"
@@ -436,6 +464,12 @@ if key=="state":
     v=(d.get("documents") or {}).get("state")
     ok=isinstance(v,str) and v.strip()!=""
     vals=[v.strip()] if ok else []
+elif key=="refresh":
+    v=(d.get("commands") or {}).get("refresh")
+    if v is None:
+        sys.exit(6)
+    ok=isinstance(v,list) and len(v)>0 and all(isinstance(x,str) and x!="" for x in v)
+    vals=list(v) if ok else []
 else:
     v=(d.get("commands") or {}).get("validate")
     ok=isinstance(v,list) and len(v)>0 and all(isinstance(x,str) and x!="" for x in v)
@@ -451,7 +485,7 @@ sys.stdout.write("\n".join(vals)+"\n")
 
 is_profiled() { [[ -f "$1/.spec-protocol.json" ]]; }
 
-profile_values() {  # profile_values <project-home> <state|validate> -> one value per line
+profile_values() {  # profile_values <project-home> <state|validate|refresh> -> one value per line; rc 6 = refresh absent
   local pf="$1/.spec-protocol.json" key="$2" out rc
   [[ -n "$PYTHON3" ]] || die_tool "PROFILE | ${pf} needs a JSON parser and none ran. Tried: \`command -v python3\` and /usr/bin/python3. The profile is DATA and is never shell-evaluated, so it cannot be read without one — UNDETERMINED, and never a fall back to CONTROL/ on a project whose profile forbids it."
   set +e
@@ -460,8 +494,11 @@ profile_values() {  # profile_values <project-home> <state|validate> -> one valu
   case "$rc" in
     0) printf '%s\n' "$out" ;;
     3) die_tool "PROFILE | ${pf} is not parseable JSON: ${out}. Checked: that one file with ${PYTHON3}. UNDETERMINED — the tick claims nothing about this project." ;;
+    6) return 6 ;;  # an OPTIONAL key (commands.refresh) that is absent: not an error
     4) if [[ "$key" == "state" ]]; then
          die_tool "PROFILE | ${pf} carries no usable documents.state (a non-empty string is required; references/project-profile.md). The profiled tick logs BESIDE the bound state and has no honest path without it — UNDETERMINED, never CONTROL/watch-tick.log."
+       elif [[ "$key" == "refresh" ]]; then
+         die_tool "PROFILE | ${pf} commands.refresh is present but is not a non-empty argv array of non-empty strings (references/project-profile.md)."
        else
          die_tool "PROFILE | ${pf} carries no usable commands.validate (a non-empty argv array of non-empty strings is required; references/project-profile.md). The profiled tick has nothing to run — UNDETERMINED, never a legacy CONTROL/ reconcile in its place."
        fi ;;
@@ -717,8 +754,17 @@ cron_line() {  # cron_line <project-home> -> the */5 line; rc 2 when a profile c
     dir="$(dirname "$st")"
     if [[ -z "$dir" || "$dir" == "." ]]; then log="watch-tick.log"; else log="${dir}/watch-tick.log"; fi
   fi
-  printf '*/5 * * * * bash %s/watch-tick.sh %s >> %s/%s 2>&1\n' \
-    "$SCRIPT_DIR" "$home" "$home" "$log"
+  # Every path is ONE quoted word (sq): the skill folder, the project home and
+  # the log may all carry spaces ("My Project Folder").
+  printf '*/5 * * * * bash %s %s >> %s 2>&1\n' \
+    "$(sq "${SCRIPT_DIR}/watch-tick.sh")" "$(sq "$home")" "$(sq "${home}/${log}")"
+}
+
+# tick_line_present <table-text> <project-home> -> 0 when THIS project's tick
+# line is in the table. Matches the quoted form cron_line writes AND the older
+# unquoted form, so a table armed by an earlier version is never armed twice.
+tick_line_present() {
+  printf '%s\n' "$1" | "$GREP" -qF -e "watch-tick.sh' $(sq "$2") " -e "watch-tick.sh $2 "
 }
 
 #------------------------------------------------------------------------------
@@ -730,7 +776,7 @@ cron_line() {  # cron_line <project-home> -> the */5 line; rc 2 when a profile c
 #     skill proves is byte-identical to the line it installs.
 #
 #     THE GUARD is exactly the one SKILL.md section 12 spells out: read the
-#     current table once, `grep -qF "watch-tick.sh <home> "` over it (THIS project only — a second project on the box still gets its own line), append only when
+#     current table once, tick_line_present over it (the quoted `watch-tick.sh' '<home>' ` or the older unquoted form; THIS project only — a second project on the box still gets its own line), append only when
 #     that finds nothing. A second arm therefore adds nothing and SAYS so
 #     (exit 3) rather than doubling the tick.
 #
@@ -791,7 +837,7 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
       arm_unavailable "rc=${CRONTAB_PROBE_RC} from \`${CRONTAB_CMD} -l\`: ${CRONTAB_PROBE_OUT}" "$line"
       return 2
     fi
-    if [[ -f "$CRONTAB_FILE" ]] && "$GREP" -qF -- "watch-tick.sh ${home} " "$CRONTAB_FILE"; then
+    if [[ -f "$CRONTAB_FILE" ]] && tick_line_present "$(cat "$CRONTAB_FILE")" "$home"; then
       printf 'ARM | ALREADY PRESENT (exit 3) | %s already carries a watch-tick.sh line; nothing written\n' "$CRONTAB_FILE"
       return 3
     fi
@@ -810,7 +856,7 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
   fi
   table="$CRONTAB_PROBE_OUT"
   (( CRONTAB_PROBE_RC == 0 )) || table=""   # it ran and had nothing: an EMPTY table
-  if printf '%s\n' "$table" | "$GREP" -qF -- "watch-tick.sh ${home} "; then
+  if tick_line_present "$table" "$home"; then
     printf 'ARM | ALREADY PRESENT (exit 3) | the crontab already carries a watch-tick.sh line; nothing written\n'
     return 3
   fi
@@ -832,10 +878,10 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
 # 4c. --check (read-only): is THIS project's tick line in the table?
 #     0 installed, 3 not installed, 2 the table could not be read. Same table
 #     source as --arm (WATCH_TICK_CRONTAB_FILE, else WATCH_TICK_CRONTAB_CMD).
-#     Matches "watch-tick.sh <home> " so another project's line never counts.
+#     tick_line_present matches this home only, so another project's line never counts.
 #------------------------------------------------------------------------------
 check_tick() {  # check_tick <project-home>
-  local pat="watch-tick.sh $1 " table=""
+  local table=""
   if [[ -n "$CRONTAB_FILE" ]]; then
     [[ -f "$CRONTAB_FILE" ]] && table="$(cat "$CRONTAB_FILE")"
   else
@@ -847,7 +893,7 @@ check_tick() {  # check_tick <project-home>
       else printf 'CHECK | UNREADABLE (exit 2) | rc=%s from `%s -l`: %s\n' "$CRONTAB_PROBE_RC" "$CRONTAB_CMD" "$(sanitize "$CRONTAB_PROBE_OUT")"; return 2; fi
     else table="$CRONTAB_PROBE_OUT"; fi
   fi
-  if printf '%s\n' "$table" | "$GREP" -qF -- "$pat"; then
+  if tick_line_present "$table" "$1"; then
     printf 'CHECK | INSTALLED (exit 0) | a watch-tick line for %s is in the table\n' "$1"; return 0
   fi
   printf 'CHECK | NOT INSTALLED (exit 3) | no watch-tick line for %s\n' "$1"; return 3
@@ -860,7 +906,10 @@ check_tick() {  # check_tick <project-home>
 #     (claude-nine when CLAUDE_CONFIG_DIR ends in .claude-nine, else claude,
 #     resolved to an absolute path because cron's PATH is minimal) and the cwd
 #     the session runs in (--resume looks the id up under that folder).
-#     Legacy projects only: a profile forbids CONTROL/ writes.
+#     THE STATE AREA (bind_paths) holds the record, the 30-minute lock and the
+#     launch log: CONTROL/ on a legacy project; `<statedir>/spec-protocol/` on a
+#     profiled one (statedir = the directory of documents.state), so a profiled
+#     project resumes exactly as a legacy one does and never grows a CONTROL/.
 #     `--record-session` (interview end) calls the same function with `done`,
 #     adding `interview=done` — the post-interview marker the widened stall
 #     check reads. A later re-arm keeps that marker.
@@ -869,9 +918,39 @@ check_tick() {  # check_tick <project-home>
 #     conductor cd's into the project folder and --resume looks the id up
 #     under the launch folder; $PWD only when no transcript is found.
 #------------------------------------------------------------------------------
+AREA=""        # absolute state area (see above)
+AREA_REL=""    # the same, relative to the home, for messages
+STATE_DIR=""   # profiled only: <home>/<dirname of documents.state>
+STATE_JSON=""  # where run_status is read: CONTROL/project_state.json or documents.state
+bind_paths() {  # bind_paths <home>; on a profiled home an unreadable profile is exit 2 (named)
+  local home="$1" st d
+  if is_profiled "$home"; then
+    st="$(profile_values "$home" state)" || exit $?
+    d="$(dirname "$st")"
+    if [[ -z "$d" || "$d" == "." ]]; then STATE_DIR="$home"; AREA_REL="spec-protocol"
+    else STATE_DIR="${home}/${d}"; AREA_REL="${d}/spec-protocol"; fi
+    STATE_JSON="${home}/${st}"
+  else
+    STATE_DIR=""; AREA_REL="CONTROL"; STATE_JSON="${home}/CONTROL/project_state.json"
+  fi
+  AREA="${home}/${AREA_REL}"
+}
+
+# tick_ledger <line>: legacy -> CONTROL/LEDGER.md through ledger.sh (a failure is
+# fatal, as it always was). Profiled -> the same call, which lands the line in
+# <statedir>/spec-protocol/LEDGER.md; a failure there is NAMED on stdout and the
+# tick goes on — the profiled tick's stdout (the cron log) is its record.
+tick_ledger() {
+  if ! is_profiled "$HOME_DIR"; then ledger_write "CONTROL/LEDGER.md" "$1"; return 0; fi
+  local out rc
+  set +e; out="$("$LEDGER_SH" "$HOME_DIR" "CONTROL/LEDGER.md" "$1" 2>&1)"; rc=$?; set -e
+  (( rc == 0 )) || printf 'LEDGER | not written (rc=%s): %s\n' "$rc" "$(sanitize "$out")"
+  return 0
+}
+
 record_session() {  # record_session <project-home> [done]
   local sid="${CLAUDE_CODE_SESSION_ID:-}" name="claude" lpath cwd="$PWD" tr c
-  local rec="$1/CONTROL/auto-resume.txt" done="${2:-}"
+  local rec="${AREA}/auto-resume.txt" done="${2:-}"
   [[ -n "$sid" ]] || return 0
   [[ "${CLAUDE_CONFIG_DIR:-}" == *.claude-nine ]] && name="claude-nine"
   lpath="$(command -v "$name" 2>/dev/null || printf '%s' "$name")"
@@ -881,32 +960,57 @@ record_session() {  # record_session <project-home> [done]
     [[ -n "$c" && -d "$c" ]] && cwd="$c"
   fi
   [[ -z "$done" ]] && "$GREP" -qx 'interview=done' "$rec" 2>/dev/null && done=done
-  mkdir -p "$1/CONTROL"
+  mkdir -p "$AREA"
   { printf 'session_id=%s\nlauncher=%s\nlauncher_path=%s\ncwd=%s\n' "$sid" "$name" "$lpath" "$cwd"
     [[ -z "$done" ]] || printf 'interview=done\n'; } > "$rec"
-  printf 'ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=%s%s)\n' "$name" "${done:+, interview=done}"
+  printf 'ARM | session recorded for auto-resume: %s/auto-resume.txt (launcher=%s%s)\n' "$AREA_REL" "$name" "${done:+, interview=done}"
 }
 
-# The stalled-turn check's three readings (F2), shared by the full tick and
-# the pre-plan tick so research/spec/apparatus stalls before step 6.5 are seen.
-interview_done() { "$GREP" -qx 'interview=done' "$HOME_DIR/CONTROL/auto-resume.txt" 2>/dev/null; }
+# The stalled-turn check's three readings (F2), shared by the full tick, the
+# pre-plan tick and the profiled tick, so research/spec/apparatus stalls before
+# step 6.5 are seen. On a profiled project run_status is read from the bound
+# documents.state (when it is JSON carrying one); absent reads as running.
+interview_done() { "$GREP" -qx 'interview=done' "${AREA}/auto-resume.txt" 2>/dev/null; }
+# A2 fix: some profiled states carry "status" instead of "run_status" -- read
+# run_status first, and only fall back to status when run_status is absent
+# (a state naming both is not a shape this reads, run_status wins).
 run_status_of() {
-  "$GREP" -o '"run_status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$HOME_DIR/CONTROL/project_state.json" 2>/dev/null \
-    | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true
+  local v
+  v="$("$GREP" -o '"run_status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$STATE_JSON" 2>/dev/null \
+    | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true)"
+  if [[ -z "$v" ]]; then
+    v="$("$GREP" -o '"status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$STATE_JSON" 2>/dev/null \
+      | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true)"
+  fi
+  printf '%s' "$v"
 }
-# The newest mtime under the project home, CONTROL excluded: the ledger this
-# tick writes is not progress, and counting it would make the check unable to
-# fire on a run whose only writer is the tick itself. The ledger's own lock and
-# pin sentinels are excluded for the same reason (tools/anchor.sh's census
-# excludes them too). Prints nothing when no mtime could be read.
+# A2 fix: these values mean the project is waiting ON PURPOSE -- auto-resume
+# must never fire for them, no matter how stale the session looks.
+run_status_is_terminal() {
+  case "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" in
+    RELEASE_COMPLETE|STOPPED_BY_OWNER|PAUSED_BLOCKED|PAUSED_CAP|STOPPED_CAP) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+# The newest mtime under the project home, the state area excluded: the ledger
+# and the records this tick writes are not progress, and counting them would
+# make the check unable to fire on a run whose only writer is the tick itself.
+# The ledger's own lock and pin sentinels are excluded for the same reason
+# (tools/anchor.sh's census excludes them too). A profiled project also
+# excludes the cron line's own <statedir>/watch-tick.log and the files the last
+# commands.refresh wrote (refresh-outputs.txt): regenerated views are the tick's
+# echo, not the run's progress. Prints nothing when no mtime could be read.
 newest_write_epoch() {
-  local p e newest=""
+  local p e newest="" outs="${AREA}/refresh-outputs.txt"
+  local -a skip=(-path "$(glob_esc "$AREA")" -prune -o)
+  [[ -n "$STATE_DIR" ]] && skip+=(-path "$(glob_esc "${STATE_DIR}/watch-tick.log")" -prune -o)
   while IFS= read -r p; do
     [[ -n "$p" ]] || continue
     e="$(stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null || true)"
     if [[ -n "$e" ]] && { [[ -z "$newest" ]] || (( e > newest )); }; then newest="$e"; fi
-  done < <(find "$HOME_DIR" -path "$HOME_DIR/CONTROL" -prune -o -type f \
-    ! -name '.ledger-pinned' ! -name '*.lock' ! -name '*.tmp.*' ! -name '*.lock.d' -print 2>/dev/null)
+  done < <(find "$HOME_DIR" "${skip[@]}" -type f \
+    ! -name '.ledger-pinned' ! -name '*.lock' ! -name '*.tmp.*' ! -name '*.lock.d' -print 2>/dev/null \
+    | if [[ -s "$outs" ]]; then "$GREP" -vxF -f "$outs" || true; else cat; fi)
   printf '%s' "$newest"
 }
 
@@ -931,14 +1035,14 @@ resume_path() {  # resume_path <inherited-PATH>
 # Called by the stalled-turn check once it fires. Launches
 # `<launcher> -p --permission-mode bypassPermissions --resume <id>
 # "/spec-protocol resume"` detached, at most once per 30 minutes
-# (CONTROL/auto-resume.lock mtime). The run is unattended, so a permission
+# (<area>/auto-resume.lock mtime). The run is unattended, so a permission
 # prompt would stall it forever. WATCH_TICK_LAUNCHER_CMD replaces the launcher
 # (selftest stub only; nothing else should).
 auto_resume() {  # auto_resume <elapsed-minutes> [phase]
-  local rec="$HOME_DIR/CONTROL/auto-resume.txt" lock="$HOME_DIR/CONTROL/auto-resume.lock"
+  local rec="${AREA}/auto-resume.txt" lock="${AREA}/auto-resume.lock"
   local k v sid="" name="" lpath="" cwd="" cmd lm age p="$PATH"
   if [[ ! -f "$rec" ]]; then
-    printf 'AUTO-RESUME | not run | no session recorded (CONTROL/auto-resume.txt is written by --arm inside the conductor session)\n'
+    printf 'AUTO-RESUME | not run | no session recorded (%s/auto-resume.txt is written by --arm inside the conductor session)\n' "$AREA_REL"
     return 0
   fi
   while IFS='=' read -r k v; do
@@ -960,10 +1064,112 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
   [[ -d "$cwd" ]] || cwd="$HOME_DIR"
   touch "$lock"
   ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --permission-mode bypassPermissions --resume "$sid" "/spec-protocol resume" \
-      </dev/null >> "$HOME_DIR/CONTROL/auto-resume.log" 2>&1 & )
-  ledger_write "CONTROL/LEDGER.md" \
-    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log CONTROL/auto-resume.log)"
+      </dev/null >> "${AREA}/auto-resume.log" 2>&1 & )
+  tick_ledger "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log ${AREA_REL}/auto-resume.log)"
   printf 'AUTO-RESUME | launched | %s -p --permission-mode bypassPermissions --resume %s "/spec-protocol resume" (stalled %sm in %s)\n' "$name" "$sid" "$1" "${2:-build}"
+}
+
+#------------------------------------------------------------------------------
+# 4e. THE BATCH MERGE CADENCE (A4). Every MERGE_BATCH_MINUTES (default 15) the
+#     tick runs `tools/merge-train.sh <home> --batch` at the project root.
+#     merge-train owns "what is waiting": with nothing waiting it says so and
+#     exits 0, so the tick never guesses. Cadence is <area>/merge-batch.stamp's
+#     mtime (touched when a batch STARTS). <area>/merge-batch.lock.d (mkdir is
+#     atomic) holds this tick's pid while the batch runs, so two batches never
+#     overlap; a lock whose pid is gone is reclaimed. A failure is logged,
+#     never fatal. WATCH_MERGE_TRAIN_SH replaces the script (selftest stub only).
+#------------------------------------------------------------------------------
+MERGE_BATCH_MIN="${MERGE_BATCH_MINUTES:-15}"
+MERGE_TRAIN_SH="${WATCH_MERGE_TRAIN_SH:-${SCRIPT_DIR}/merge-train.sh}"
+MERGE_LOCK=""
+MERGE_NOTE=""
+merge_batch() {  # prints one MERGE-BATCH line when it acts; sets MERGE_NOTE
+  local stamp="${AREA}/merge-batch.stamp" lock="${AREA}/merge-batch.lock.d" lm age pid out rc
+  if [[ -f "$stamp" ]]; then
+    lm="$(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp" 2>/dev/null || echo 0)"
+    age=$(( ($(epoch_now) - lm) / 60 ))
+    if (( age < MERGE_BATCH_MIN )); then MERGE_NOTE="not-due(last batch ${age}m ago, every ${MERGE_BATCH_MIN}m)"; return 0; fi
+  fi
+  mkdir -p "$AREA"
+  if ! mkdir "$lock" 2>/dev/null; then
+    pid="$(cat "$lock/pid" 2>/dev/null || true)"
+    # ponytail: pid liveness only; a recycled pid holds the lock until that process exits.
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      MERGE_NOTE="held(batch pid ${pid} still running)"
+      printf 'MERGE-BATCH | held | a batch is still running (pid %s); no second batch\n' "$pid"
+      return 0
+    fi
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || { MERGE_NOTE="held(lock taken by another tick)"; return 0; }
+  fi
+  MERGE_LOCK="$lock"
+  printf '%s\n' "$$" > "$lock/pid"
+  touch "$stamp"
+  set +e
+  if [[ -x "$MERGE_TRAIN_SH" ]]; then out="$(cd "$HOME_DIR" && "$MERGE_TRAIN_SH" "$HOME_DIR" --batch 2>&1)"; rc=$?
+  else out="$(cd "$HOME_DIR" && bash "$MERGE_TRAIN_SH" "$HOME_DIR" --batch 2>&1)"; rc=$?; fi
+  set -e
+  rm -rf "$lock"; MERGE_LOCK=""
+  [[ -z "$out" ]] || printf '%s\n' "$out"
+  out="$(printf '%s\n' "$out" | "$GREP" -v '^[[:space:]]*$' | tail -1 || true)"
+  MERGE_NOTE="ran(rc=${rc}: $(sanitize "${out:-no output}"))"
+  printf 'MERGE-BATCH | rc=%s | %s\n' "$rc" "$(sanitize "${out:-no output}")"
+}
+
+#------------------------------------------------------------------------------
+# 4f. THE PROFILE REFRESH (A3). When the profile carries commands.refresh, the
+#     tick runs that argv at the project root on EVERY tick (after the merge
+#     batch, so one refresh covers a state-changing merge too), through python3
+#     — never a shell — with a WATCH_REFRESH_TIMEOUT (default 120s) ceiling, and
+#     prints one PROFILE-REFRESH line. A failure or timeout is logged, never
+#     fatal. The files it wrote are listed in <area>/refresh-outputs.txt so the
+#     stall census does not read regenerated views as progress.
+#------------------------------------------------------------------------------
+REFRESH_TIMEOUT="${WATCH_REFRESH_TIMEOUT:-120}"
+# The runner also takes the census of what the refresh wrote (float mtimes: a
+# find -newer marker compares whole seconds on macOS and misses same-second
+# writes) into <area>/refresh-outputs.txt, the state area itself excluded.
+RUN_ARGV_PY='
+import os,subprocess,sys,time
+home,t,area=sys.argv[1],float(sys.argv[2]),sys.argv[3]; argv=sys.argv[4:]
+t0=time.time()
+try:
+    r=subprocess.run(argv,cwd=home,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=t)
+    rc,out=r.returncode,r.stdout
+except subprocess.TimeoutExpired as e:
+    rc,out=124,(e.output or b"")+b" (timed out)"
+except OSError as e:
+    rc,out=127,str(e).encode()
+wrote=[]
+for d,dirs,files in os.walk(home):
+    dirs[:]=[x for x in dirs if os.path.join(d,x)!=area]
+    for f in files:
+        p=os.path.join(d,f)
+        try:
+            if os.path.getmtime(p)>=t0: wrote.append(p)
+        except OSError: pass
+try:
+    open(os.path.join(area,"refresh-outputs.txt"),"w").write("".join(x+"\n" for x in wrote))
+except OSError: pass
+sys.stdout.write("RC=%d\n" % rc)
+sys.stdout.write(out.decode("utf-8","replace"))
+'
+run_refresh() {
+  local vout vrc a out rc
+  set +e; vout="$(profile_values "$HOME_DIR" refresh)"; vrc=$?; set -e
+  (( vrc == 6 )) && return 0
+  if (( vrc != 0 )); then printf 'PROFILE-REFRESH | not run | commands.refresh could not be read (rc=%s) — named above\n' "$vrc"; return 0; fi
+  local -a RV=()
+  while IFS= read -r a; do [[ -n "$a" ]] && RV+=("$a"); done <<< "$vout"
+  mkdir -p "$AREA"
+  set +e; out="$("$PYTHON3" -c "$RUN_ARGV_PY" "$HOME_DIR" "$REFRESH_TIMEOUT" "$AREA" "${RV[@]}" 2>&1)"; set -e
+  rc="$(printf '%s\n' "$out" | head -1 | sed -n 's/^RC=\([0-9-]*\)$/\1/p')"
+  printf '%s\n' "$out" | tail -n +2 > "${AREA}/refresh.out" 2>/dev/null || true
+  if [[ "$rc" == "0" ]]; then
+    printf 'PROFILE-REFRESH | %s | rc=0 | %s\n' "$(iso_now)" "$(snip200 "${AREA}/refresh.out")"
+  else
+    printf 'PROFILE-REFRESH FAILED | %s | rc=%s | %s (logged, not fatal)\n' "$(iso_now)" "${rc:-undetermined}" "$(snip200 "${AREA}/refresh.out")"
+  fi
 }
 
 #==============================================================================
@@ -988,15 +1194,23 @@ done
 [[ "$STALE_MIN"       =~ ^[0-9]+$ ]] || die_tool "WATCH_STALE_MIN must be a non-negative integer (got: ${STALE_MIN})"
 [[ "$MERGE_STALE_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_MERGE_STALE_MIN must be a non-negative integer (got: ${MERGE_STALE_MIN})"
 [[ "$STALLED_MIN"     =~ ^[0-9]+$ ]] || die_tool "WATCH_STALLED_MIN must be a non-negative integer (got: ${STALLED_MIN})"
+[[ "$MERGE_BATCH_MIN" =~ ^[0-9]+$ ]] || die_tool "MERGE_BATCH_MINUTES must be a non-negative integer (got: ${MERGE_BATCH_MIN})"
+[[ "$REFRESH_TIMEOUT" =~ ^[0-9]+$ && "$REFRESH_TIMEOUT" -gt 0 ]] || die_tool "WATCH_REFRESH_TIMEOUT must be a positive integer of seconds (got: ${REFRESH_TIMEOUT})"
 
 #==============================================================================
 # THE PROFILED TICK
 #
 #   A profiled project's five-minute tick is the PROFILE'S OWN validator, run
 #   read-only at the project root from its declared argv, and one line printed.
-#   It writes nothing anywhere: the cron line's `>>` is the only appender, and
-#   `documents.state` stays the single canonical state — no CONTROL/, no second
-#   ledger, no second task graph (references/project-profile.md).
+#   Then, in order: the batch merge when due (4e, MERGE-BATCH line), the
+#   profile's commands.refresh when present (4f, PROFILE-REFRESH line), and the
+#   post-interview stalled-turn check with AUTO-RESUME (4d) — the same check and
+#   the same resume a legacy project gets. Its only writes are the state area
+#   `<statedir>/spec-protocol/` (session record, locks, stamps, refresh list)
+#   and ledger lines through tools/ledger.sh, which lands them in
+#   `<statedir>/spec-protocol/LEDGER.md`. `documents.state` stays the single
+#   canonical state — no CONTROL/, no second task graph
+#   (references/project-profile.md).
 #
 #     rc 0      PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>  -> 0
 #     rc non-0  PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr, …> -> 3
@@ -1023,6 +1237,7 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
   vout="$(profile_values "$HOME_DIR" validate)"; vrc=$?
   set -e
   (( vrc == 0 )) || exit "$vrc"
+  bind_paths "$HOME_DIR"
   local -a PV=()
   while IFS= read -r a; do [[ -n "$a" ]] || continue; PV+=("$a"); done <<< "$vout"
   (( ${#PV[@]} > 0 )) || die_tool "PROFILE | ${HOME_DIR}/.spec-protocol.json commands.validate parsed to an empty argv — nothing to run, so nothing is claimed"
@@ -1032,14 +1247,41 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
   ( cd "$HOME_DIR" && exec "${PV[@]}" ) > "$WORKDIR/validate.out" 2> "$WORKDIR/validate.err"
   rc=$?
   set -e
+  local ret=0
   if (( rc == 0 )); then
     printf 'PROFILE-TICK | %s | home=%s | validate_rc=0 | %s\n' \
       "$(iso_now)" "$HOME_DIR" "$(snip200 "$WORKDIR/validate.out")"
-    return 0
+  else
+    printf 'PROFILE-TICK STALL | %s | home=%s | validate_rc=%s | %s\n' \
+      "$(iso_now)" "$HOME_DIR" "$rc" "$(snip200 "$WORKDIR/validate.err")"
+    ret=3
   fi
-  printf 'PROFILE-TICK STALL | %s | home=%s | validate_rc=%s | %s\n' \
-    "$(iso_now)" "$HOME_DIR" "$rc" "$(snip200 "$WORKDIR/validate.err")"
-  return 3
+
+  # A4 then A3: a merge is a state-changing step, so the refresh runs after it.
+  merge_batch
+  run_refresh
+
+  # A2: the same post-interview stall check and AUTO-RESUME a legacy project
+  # gets. The phase is interview=done in the state area's record; run_status
+  # (falling back to status, when the bound state carries only that) other
+  # than RUNNING is a run waiting on purpose -- and the five terminal/paused
+  # values below never auto-resume regardless of case or how stale the
+  # session looks.
+  local rs newest age
+  rs="$(run_status_of)"
+  if interview_done && ! run_status_is_terminal "$rs" && [[ -z "$rs" || "$rs" == RUNNING ]]; then
+    newest="$(newest_write_epoch)"
+    if [[ -n "$newest" ]]; then
+      age=$(( ($(epoch_now) - newest) / 60 ))
+      if (( age >= STALLED_MIN )); then
+        tick_ledger "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${age} | phase=post-interview(profiled) | $(sanitize "no file write under the project folder for ${age} minutes after the interview ended (ceiling ${STALLED_MIN}m)")"
+        printf 'ACTION|stalled-turn|elapsed=%sm|DRIFT-ALARM stalled-turn: no project write for %s minutes after the interview ended (ceiling %s)\n' "$age" "$age" "$STALLED_MIN"
+        auto_resume "$age" "post-interview(profiled)"
+        ret=3
+      fi
+    fi
+  fi
+  return "$ret"
 }
 
 #==============================================================================
@@ -1072,7 +1314,7 @@ run_tick() {
   if (( DO_ARM )); then
     local arc=0
     set +e; arm_tick "$HOME_DIR"; arc=$?; set -e
-    if (( arc == 0 || arc == 3 )) && ! is_profiled "$HOME_DIR"; then record_session "$HOME_DIR"; fi
+    if (( arc == 0 || arc == 3 )); then bind_paths "$HOME_DIR"; record_session "$HOME_DIR"; fi
     exit "$arc"
   fi
 
@@ -1080,8 +1322,8 @@ run_tick() {
   # interview=done. Loud when it cannot record: a silent no-op here is a
   # window closed after the last question that nothing can resume.
   if (( DO_RECORD )); then
-    is_profiled "$HOME_DIR" && { printf 'RECORD | not recorded (exit 2) | profiled project: a profile forbids CONTROL/ writes\n'; exit 2; }
     [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || { printf 'RECORD | not recorded (exit 2) | CLAUDE_CODE_SESSION_ID is not set — run this inside the conductor session\n'; exit 2; }
+    bind_paths "$HOME_DIR"
     record_session "$HOME_DIR" done
     exit 0
   fi
@@ -1104,6 +1346,7 @@ run_tick() {
     set +e; run_profile_tick; prc=$?; set -e
     return "$prc"
   fi
+  bind_paths "$HOME_DIR"
 
   local CHK DL LED HB FLAG CAPLED
   CHK="$HOME_DIR/CONTROL/CHECKLIST.md"
@@ -1190,6 +1433,10 @@ run_tick() {
   fi
 
   [[ -f "$CHK" ]] || die_tool "CONTROL/CHECKLIST.md is missing at ${CHK} — the runnable count has no source. Checked: ${CHK}. Not checked: the dispatch log and the heartbeat, because the run stopped here."
+
+  # A4: the batch merge cadence, once the plan exists (4e). Logged in the
+  # S-CHECK line's merge-batch= field; never a verdict and never fatal.
+  merge_batch
 
   #--------------------------------------------------------------------------
   # (2) THE THREE COUNTS.
@@ -1893,7 +2140,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | merge-batch=$(sanitize "${MERGE_NOTE:-not-run}") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -2001,6 +2248,9 @@ selftest() {
   # No selftest case may ever launch a real session: every AUTO-RESUME a
   # fixture reaches runs this no-op unless the case names its own stub.
   export WATCH_TICK_LAUNCHER_CMD=/usr/bin/true
+  # Nor may any case run the real merge train: the batch cadence (4e) runs this
+  # no-op stub in every fixture.
+  export WATCH_MERGE_TRAIN_SH=/usr/bin/true
 
   mk_home() {  # mk_home <dir>
     mkdir -p "$1/SPEC" "$1/CONTROL"
@@ -2217,7 +2467,7 @@ selftest() {
   ok=0
   if (( RC == 0 )) && [[ "$n13" == "1" && "$keep13" == "1" ]] \
      && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
-     && "$GREP" -q '^\*/5 \* \* \* \* bash .*watch-tick.sh .*watch-tick.log' "$CF13"; then ok=1; fi
+     && "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*watch-tick\.log' 2>&1\$" "$CF13"; then ok=1; fi
   report 13 "arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n13} watch-tick.sh line (want 1) in the shape --cron-line prints, and still carries its ${keep13} pre-existing line (want 1)"
 
   # --- case 14: THE SECOND ARM, same fixture. The guard SKILL.md section 12
@@ -2640,7 +2890,7 @@ selftest() {
   runw "$T/c35" --cron-line
   ok=0
   if (( RC == 0 )) \
-     && printf '%s' "$OUT" | "$GREP" -q '^\*/5 \* \* \* \* bash .*watch-tick.sh .*>> .*/state/watch-tick.log 2>&1$' \
+     && printf '%s' "$OUT" | "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*/state/watch-tick\.log' 2>&1\$" \
      && ! printf '%s' "$OUT" | "$GREP" -q 'CONTROL/watch-tick.log'; then ok=1; fi
   report 35 "profile-cron-line" "$ok" "rc=${RC} (want 0); the line logs to state/watch-tick.log beside the bound documents.state and names no CONTROL/ anywhere — line: [$(printf '%s' "$OUT" | tail -1)]"
 
@@ -2657,7 +2907,7 @@ selftest() {
   ok=0
   if (( RC == 0 )) && [[ "$n36" == "1" ]] \
      && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
-     && "$GREP" -q '/state/watch-tick.log 2>&1$' "$CF36"; then ok=1; fi
+     && "$GREP" -q "/state/watch-tick.log' 2>&1\$" "$CF36"; then ok=1; fi
   report 36 "profile-arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n36} watch-tick.sh line (want 1) and it ends at the profile's own state/watch-tick.log"
 
   # --- case 37: THE SECOND ARM. The guard is the same one case 14 proves on
@@ -2731,9 +2981,9 @@ selftest() {
   runw "$T/c41"
   ok=0
   if (( prc41 == 0 )) && (( lrc41 == 0 )) && (( RC == 0 )) \
-     && printf '%s' "$prof41"     | "$GREP" -q '/state/watch-tick.log 2>&1$' \
+     && printf '%s' "$prof41"     | "$GREP" -q "/state/watch-tick.log' 2>&1\$" \
      && printf '%s' "$proftick41" | "$GREP" -q '^PROFILE-TICK |' \
-     && printf '%s' "$leg41"      | "$GREP" -q '/CONTROL/watch-tick.log 2>&1$' \
+     && printf '%s' "$leg41"      | "$GREP" -q "/CONTROL/watch-tick.log' 2>&1\$" \
      && printf '%s' "$OUT"        | "$GREP" -q 'S-CHECK | violations=0 | runnable=0 open=1 trees=1' \
      && ! printf '%s' "$OUT"      | "$GREP" -q 'PROFILE-TICK'; then ok=1; fi
   report 41 "profile-vs-legacy-control" "$ok" "one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${RC}, want 0) with no PROFILE-TICK anywhere"
@@ -2807,6 +3057,24 @@ selftest() {
      && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume" ]] \
      && "$GREP" -q 'stalled-turn | elapsed=.* | phase=post-interview(pre-plan)' "$T/c45/CONTROL/LEDGER.md"; then ok=1; fi
   report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume)"
+
+  # --- case 46 (A2 fix): PROFILED TERMINAL STATUS. A profiled project whose
+  #     bound state carries ONLY "status":"RELEASE_COMPLETE" (no run_status
+  #     key at all) plus a stale, interview=done session must NEVER auto-
+  #     resume -- the exact bug this fix closes: an absent run_status alone
+  #     used to read as "running" even when the profile's own status field
+  #     said the run was finished.
+  mk_profile_home "$T/c46"
+  printf '{"status":"RELEASE_COMPLETE"}\n' > "$T/c46/state/build-state.json"
+  printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/c46.args" > "$T/c46.stub"; chmod +x "$T/c46.stub"
+  CLAUDE_CODE_SESSION_ID=sess-46 CLAUDE_CONFIG_DIR=/x/.claude-nine runw --record-session "$T/c46"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c46/state/build-state.json" "$T/c46/.spec-protocol.json"
+  WATCH_TICK_LAUNCHER_CMD="$T/c46.stub" runw "$T/c46"
+  ok=0
+  if (( RC == 0 )) \
+     && [[ ! -s "$T/c46.args" ]] \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'AUTO-RESUME\|ACTION|stalled-turn'; then ok=1; fi
+  report 46 "profiled-terminal-status-no-resume" "$ok" "rc=${RC} (want 0); launcher stub got [$(cat "$T/c46.args" 2>/dev/null)] (want nothing — RELEASE_COMPLETE via the status fallback must block auto-resume even though the session looks stale)"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

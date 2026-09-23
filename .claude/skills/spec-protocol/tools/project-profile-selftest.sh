@@ -45,18 +45,36 @@ READY=1 bash "$ROOT/dispatch-check.sh" "$T" 2 3 '[Opus x3] build tasks=W02-01' p
 if READY=0 RESUME=0 node "$ROOT/project-profile.mjs" resume-authorized "$T" >/dev/null 2>&1; then exit 1; fi
 READY=0 RESUME=1 node "$ROOT/project-profile.mjs" resume-authorized "$T" >/dev/null
 
-# The tick and the anchor reconciler both REDIRECT on a profile: each runs
-# commands.validate and reports its own PROFILE-TICK / PROFILE-ANCHOR line
-# instead of synthesizing CONTROL/ state. The remaining legacy helpers below
-# still refuse (they write CONTROL records and a profile owns its own state).
-bash "$ROOT/watch-tick.sh" "$T" | grep -q '^PROFILE-TICK | '
+# The tick, the anchor reconciler and the ledger writer REDIRECT on a profile:
+# the tick and anchor run commands.validate and report PROFILE-TICK /
+# PROFILE-ANCHOR; ledger.sh writes <statedir>/spec-protocol/<file minus CONTROL/>
+# and prints that path. The remaining legacy helpers below still refuse (they
+# write CONTROL records and a profile owns its own state).
+# Captured, not piped live: round 5's tick prints MERGE-BATCH (and, with
+# commands.refresh, PROFILE-REFRESH) lines after PROFILE-TICK, and a live
+# `grep -q` exits on the first match while the tick is still writing those —
+# SIGPIPE, silently aborting this whole script under set -e/pipefail.
+tick_out="$(bash "$ROOT/watch-tick.sh" "$T")"
+printf '%s\n' "$tick_out" | grep -q '^PROFILE-TICK | '
 bash "$ROOT/anchor.sh" "$T" | grep -q '^PROFILE-ANCHOR | '
 if bash "$ROOT/state-check.sh" "$T" >/dev/null 2>&1; then exit 1; fi
-if bash "$ROOT/ledger.sh" "$T" CONTROL/LEDGER.md 'legacy write must refuse' >/dev/null 2>&1; then exit 1; fi
+[[ "$(bash "$ROOT/ledger.sh" "$T" CONTROL/LEDGER.md 'NOTE | profiled ledger line')" == "LEDGER | "*/spec-protocol/LEDGER.md ]]
+grep -q 'NOTE | profiled ledger line | writer=ledger.sh$' "$T/spec-protocol/LEDGER.md"
+# The optional contract fields: a valid refresh/merged/repo/ceiling is read back;
+# a placeholder in refresh, an unknown one in merged, or a bad repo is refused.
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('$T/.spec-protocol.json'));p.commands.refresh=['node','scripts/state.mjs','render'];p.commands.merged=['node','scripts/state.mjs','merged','{taskId}','{commit}','{branch}'];p.repo={createPrivate:'acme/my-project'};delete p.policy.maxWorkingAgents;fs.writeFileSync('$T/.spec-protocol.json',JSON.stringify(p));"
+[[ "$(node "$ROOT/project-profile.mjs" policy "$T")" == '{"maxActiveWorkflows":10,"maxAgentsPerWorkflow":10}' ]]
+node "$ROOT/project-profile.mjs" fields "$T" | grep -q '"merged":\["node","scripts/state.mjs","merged","{taskId}","{commit}","{branch}"\].*"repo":{"createPrivate":"acme/my-project"}'
+for bad in "p.commands.refresh=['node','x','{taskId}']" "p.commands.merged=['node','x','{unit}']" "p.repo={createPrivate:'no-slash'}" "p.repo={remote:'https://u:secret@example.com/a.git'}" "p.policy.maxActiveWorkflows=0"; do
+  cp "$T/.spec-protocol.json" "$T/good.json"
+  node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('$T/.spec-protocol.json'));$bad;fs.writeFileSync('$T/.spec-protocol.json',JSON.stringify(p));"
+  if node "$ROOT/project-profile.mjs" policy "$T" >/dev/null 2>&1; then echo "accepted: $bad"; exit 1; fi
+  mv "$T/good.json" "$T/.spec-protocol.json"
+done
 if bash "$ROOT/seat-probe.sh" "$T" >/dev/null 2>&1; then exit 1; fi
 if bash "$ROOT/gate0.sh" "$T" --check >/dev/null 2>&1; then exit 1; fi
 [[ ! -d "$T/CONTROL" ]]
 
 printf '%s\n' '{"schema":"wrong"}' > "$T/.spec-protocol.json"
 if node "$ROOT/project-profile.mjs" dispatch "$T" 1 1 label >/dev/null 2>&1; then exit 1; fi
-printf 'project-profile selftest: PASS (fresh/existing bootstrap, optional generic runtime without Ponytail, task-scoped dispatch, read-only check, resume binding, legacy helper refusal, malformed refusal)\n'
+printf 'project-profile selftest: PASS (fresh/existing bootstrap, optional generic runtime without Ponytail, task-scoped dispatch, read-only check, resume binding, profiled ledger redirect, optional refresh/merged/repo/ceiling fields, legacy helper refusal, malformed refusal)\n'

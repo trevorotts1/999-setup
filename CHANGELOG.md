@@ -1,5 +1,83 @@
 # Changelog
 
+## [1.28.0] — 2026-09-23
+
+### Round 5: a supplied, profiled project runs all night unattended
+
+A project folder the client hands over — even one with spaces in its name, its own
+`.spec-protocol.json`, its own state writer and its own policy — now runs through the night
+under `claude-nine`: every ready stream launches at once as a visible native workflow, merges
+land in batches, and nothing stalls or dies silently. New optional profile fields (all argv
+arrays, run at the project root, never through a shell): `commands.refresh` (regenerates the
+project's own views), `commands.merged` (records one merged unit; `{taskId}` `{commit}`
+`{branch}` substituted), and `policy.maxActiveWorkflows` / `maxAgentsPerWorkflow` /
+`maxWorkingAgents`, which are a ceiling on width when present. Batch cadence:
+`MERGE_BATCH_MINUTES`, default 15.
+
+**A — the tick (`watch-tick.sh`, `watch-tick.mjs`).** The crontab line written by
+`--cron-line` / `--arm` single-quotes every path (skill dir, project home, log) and escapes a
+bare `%` to `\%` (cron reads an unescaped `%` as a newline), so a folder such as "My Project
+Folder" works; every other path use in both files was audited for the same bug. `--arm` and
+`--record-session` work on a profiled project, keeping the session record and the auto-resume
+lock and log beside the bound state (`<statedir>/spec-protocol/`), never in a `CONTROL/`
+folder, so auto-resume fires on profiled projects exactly as on unprofiled ones — and, fixed
+after this block first shipped, never fires when the bound state's `run_status` (or `status`,
+read as a fallback when `run_status` is absent) is `RELEASE_COMPLETE`, `STOPPED_BY_OWNER`,
+`PAUSED_BLOCKED`, `PAUSED_CAP`, or `STOPPED_CAP`, case-insensitive, no matter how stale the
+session looks. When the profile has `commands.refresh`, each tick runs it with a timeout and
+logs one `PROFILE-REFRESH | <ISO8601Z> | rc=0 | <output>` line on success or
+`PROFILE-REFRESH FAILED | ... (logged, not fatal)` on failure or timeout. Every
+`MERGE_BATCH_MINUTES` the tick runs `tools/merge-train.sh <project> --batch` when anything is
+waiting, under a lock so two batches never overlap, and prints one `MERGE-BATCH | rc=<n> |
+<output>` line (or `MERGE-BATCH | held | ...` when a batch is already running).
+
+**B — the batch merge train (`merge-train.sh`, `references/pipeline.md`).** New
+`merge-train.sh <project> --batch`: every unit branch that passed its judges is merged into the
+integration branch in one pass (each `--no-ff`), the build/test gate runs once for the batch,
+and the push happens once. A red batch is bisected to find the unit(s) that broke it; the good
+ones land and the bad ones go back to repair with the failing output. A merge conflict skips
+that unit and records it for a conflict-resolver seat (haiku chain) without blocking the rest.
+Exit codes: 0 (nothing waiting, a batch already running, or everything landed clean), 3 (a
+conflict, a red gate, or a push refusal — landed units are still recorded, never lost), 2
+(tooling failure). On a profiled project `commands.merged` runs once per merged unit —
+including when the repo has no `origin` yet: those units still land locally and are still
+recorded through `commands.merged`, just not pushed ("landed only, not merged"). The
+single-unit mode still works, and the pipeline's merge sections now say batches every 15
+minutes, not one at a time.
+
+**C — profiled-project tools (`ledger.sh`, `repo-anchor.sh`, `publish.sh`, `answers.sh`,
+`project-profile.mjs`).** `ledger.sh` writes to `<statedir>/spec-protocol/LEDGER.md` on a
+profiled project through the same atomic writer and prints the path, so every "write X through
+`tools/ledger.sh`" step works there. `repo-anchor.sh` never creates a GitHub repository for a
+profiled project unless the profile names one (`repo.remote`, or `repo.createPrivate` created
+private); otherwise it anchors local-only and says so in the receipt. `publish.sh` calls Vercel
+only for a web target meant to be hosted there: desktop targets record
+`PUBLISHED: <artifact path> target=<t> status=artifact`, and self-hosted/VPS/docker targets
+record `HOSTING-SELF: target=<t> package=<path or none> next=<install step>` — neither is a
+failure. `answers.sh init` recognises an existing heading with extra text after the key and
+never appends a duplicate block. `project-profile.mjs` validates the new `commands.refresh` /
+`commands.merged` / `repo.*` fields and gained three read commands the other tools call
+instead of re-parsing the profile: `policy <project>` (the ceiling, JSON), `workdir <project>`
+(the resolved `<statedir>/spec-protocol` path), and `fields <project>` (workDir, ceiling,
+refresh, merged and repo together).
+
+**D — conductor text and templates (`SKILL.md`, `references/conductor.md`,
+`references/capacity.md`, `references/workflows.md`, `templates/workflows/*.js`).** RULE 2 and
+the capacity doctrine: width = min(harness/provider width, the profile's policy ceiling when
+present); the ceiling is never exceeded, and inside it the run still never dispatches fewer
+streams than the work allows. RULE 4 and the conductor's dispatch: every dispatchable stream is
+launched in the same turn as its own native Workflow run, visible in `/workflows`, filled to
+the per-workflow agent cap, never serialised and never hidden in plain Agent calls (readers
+excepted); a workflow carrying fewer agents than its ready units allow is under-width. Step 21
+and the pipeline: merges run in batches through `merge-train.sh --batch` on the tick's
+15-minute cadence, with conflicts going to a haiku-chain resolver seat. RULE 1, step 17 and
+step 21 describe what a profile adds: the tick runs `commands.refresh`, merges are recorded
+with `commands.merged`, ledger lines land in `<statedir>/spec-protocol/LEDGER.md`, and
+repo-anchor follows `repo.*`. The four workflow templates now carry a
+`<program>-W<wave>-<phase>-<firstID>[..<lastID>]-<lanes>L` placeholder name and, in every
+multi-lane prompt, the SCRATCH ISOLATION line (a private `<scratchpad>/lanes/<UNIT-ID>-<box-slug>/`
+folder per lane); the merge-train template runs `merge-train.sh <project> --batch`.
+
 ## [1.27.0] — 2026-09-23
 
 ### Round 4: the next pass over seven sections
