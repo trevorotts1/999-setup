@@ -2,12 +2,13 @@
 # hook-check.sh — ARE THE ENFORCERS CURRENT? (RC-27; wave-7 WI-65)
 #
 # Usage:
-#   hook-check.sh [--root <path>]... [--refresh] [--home <dir>]
+#   hook-check.sh [--root <path>]... [--refresh] [--install-missing] [--home <dir>]
 #   hook-check.sh --selftest
 #   hook-check.sh --help
 #
-# WHAT IT IS FOR. This skill ships THREE enforcement hooks and both config roots
-# execute them: tools/hooks/dispatch-gate.py under a PreToolUse Workflow matcher,
+# WHAT IT IS FOR. This skill ships FOUR enforcement hooks and both config roots
+# execute them: tools/hooks/dispatch-gate.py and tools/hooks/workflow-syntax-gate.py
+# under a PreToolUse Workflow matcher,
 # and two Stop hooks registered with no matcher at all —
 # tools/hooks/gate0-claim-gate.py and tools/hooks/conversation-gate.py. For the
 # whole 2026-09-08 canary the running dispatch-gate.py carried SHAPE 1-5 while
@@ -56,14 +57,18 @@
 # Across roots and hooks the worst verdict wins, absent over stale over
 # UNDETERMINED over match: GATE 0b stops on any of them.
 #
+# --install-missing (fix #3): when any root reports absent, run
+# tools/install-hooks.sh --root <that root> (copy + merge-register, settings.json
+# backed up first), then re-run this check once and exit with ITS verdict.
+#
 # DIAGNOSTIC KNOBS (the selftest's, never a run's)
 #   HOOK_CHECK_SKILL_ROOT  compare against this tree's tools/hooks/<hook>
 #                          instead of the skill that ships this script
 #   HOOK_CHECK_HOME        project home for the ledger when --home is not given
 #
-# --selftest proves the instrument on six fixtures, all inside one mktemp -d.
-# Every fixture registers ALL THREE hooks (the Stop pair with no matcher key):
-#   1  all three registered byte-identical to the skill copies returns 0
+# --selftest proves the instrument on seven fixtures, all inside one mktemp -d.
+# Every fixture registers ALL FOUR hooks (the Stop pair with no matcher key):
+#   1  all four registered byte-identical to the skill copies returns 0
 #   2  a dispatch-gate fixture carrying SHAPES 1-5 against a skill copy carrying
 #      1-7 returns 3 naming BOTH hashes and the missing shapes 6 and 7 (2b then
 #      proves --refresh repairs that same-root copy: backup beside the file,
@@ -77,6 +82,7 @@
 #      conversation-gate.py is stale returns 3 and NAMES conversation-gate — an
 #      implementation that knows only dispatch-gate passes 1-4 and fails this one
 #   6  an absent registered Stop hook (gate0-claim-gate.py) returns 4
+#   7  --install-missing on a root with nothing registered installs and returns 0
 
 set -uo pipefail
 
@@ -91,6 +97,7 @@ LEDGER_SH="$SCRIPT_DIR/ledger.sh"
 # means the hook is registered with no matcher constraint (the Stop hooks).
 HOOKS=(
   "dispatch-gate.py|PreToolUse|Workflow"
+  "workflow-syntax-gate.py|PreToolUse|Workflow"
   "gate0-claim-gate.py|Stop|"
   "conversation-gate.py|Stop|"
 )
@@ -332,11 +339,13 @@ usage() { sed -n '2,40p' "${SELF}"; }
 
 # --- the run -----------------------------------------------------------------
 run_check() {
-  local allow_refresh=0 home_arg="" active=""
-  local -a roots=()
+  local allow_refresh=0 home_arg="" active="" install_missing=0 absent_roots="" a
+  local -a roots=() recheck=()
+  for a in "$@"; do [ "${a}" = "--install-missing" ] || recheck+=("${a}"); done
   while [ $# -gt 0 ]; do
     case "${1:-}" in
       --refresh) allow_refresh=1 ;;
+      --install-missing) install_missing=1 ;;
       --root) roots+=("${2:?--root needs a path}"); shift ;;
       --home) home_arg="${2:?--home needs a dir}"; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -373,9 +382,18 @@ run_check() {
       out="$(check_hook "${r}" "${allow_refresh}" "${active}" "${hook}" "${event}" "${msub}")"
       printf '%s\n' "${out}" | "${GREP}" -v '^=rc '
       rc="$(printf '%s\n' "${out}" | "${GREP}" '^=rc ' | tail -n 1 | awk '{print $2}')"
+      if [ "${rc}" = "4" ]; then
+        case "${absent_roots}" in *"|${r}|"*) ;; *) absent_roots="${absent_roots}|${r}|" ;; esac
+      fi
       case "${rc}" in 4) worst=4 ;; 3) [ "${worst}" != "4" ] && worst=3 ;; 2) [ "${worst}" = "0" ] && worst=2 ;; esac
     done
   done
+  if [ "${install_missing}" = "1" ] && [ -n "${absent_roots}" ]; then
+    for r in "${uniq[@]}"; do
+      case "${absent_roots}" in *"|${r}|"*) bash "${SCRIPT_DIR}/install-hooks.sh" --root "${r}" ;; esac
+    done
+    exec bash "${SELF}" ${recheck[@]+"${recheck[@]}"}
+  fi
   exit "${worst}"
 }
 
@@ -404,7 +422,8 @@ def cmd(path):
 data = {"model": "sonnet",
         "apiKeyHelper": "DECOY-MUST-NEVER-BE-PRINTED",
         "env": {"DECOY_ENV_KEY": "decoy-value"},
-        "hooks": {"PreToolUse": [{"matcher": "Workflow", "hooks": [cmd(dispatch)]}],
+        "hooks": {"PreToolUse": [{"matcher": "Workflow", "hooks": [cmd(dispatch)]},
+                                 {"matcher": "Workflow", "hooks": [cmd(gate0.replace("gate0-claim-gate.py", "workflow-syntax-gate.py"))]}],
                   "Stop": [{"hooks": [cmd(gate0)]},
                            {"hooks": [cmd(conv)]}]}}
 with open(root + "/settings.json", "w", encoding="utf-8") as fh:
@@ -420,6 +439,7 @@ copy_all() {
   cp "${src}/dispatch-gate.py" "${dst}/dispatch-gate.py"
   cp "${src}/gate0-claim-gate.py" "${dst}/gate0-claim-gate.py"
   cp "${src}/conversation-gate.py" "${dst}/conversation-gate.py"
+  cp "${src}/workflow-syntax-gate.py" "${dst}/workflow-syntax-gate.py"
 }
 
 run_selftest() {
@@ -432,6 +452,7 @@ run_selftest() {
   write_hook "$T/skill/tools/hooks/dispatch-gate.py" 1 2 3 4 5 6 7
   write_hook "$T/skill/tools/hooks/gate0-claim-gate.py" 1 2
   write_hook "$T/skill/tools/hooks/conversation-gate.py" 1 2 3
+  write_hook "$T/skill/tools/hooks/workflow-syntax-gate.py"
   export HOOK_CHECK_SKILL_ROOT="$T/skill" HOOK_CHECK_HOME="$T/proj"
   export CLAUDE_CONFIG_DIR="$T/active-unset-marker"
 
@@ -441,12 +462,12 @@ run_selftest() {
     "$T/rootA/hooks/gate0-claim-gate.py" "$T/rootA/hooks/conversation-gate.py"
   out="$(bash "${SELF}" --root "$T/rootA" 2>&1)"; rc=$?
   ok=0; [ "${rc}" = "0" ] && ok=1
-  [ "$(printf '%s\n' "${out}" | "${GREP}" -c 'verdict=match')" = "3" ] || ok=0
+  [ "$(printf '%s\n' "${out}" | "${GREP}" -c 'verdict=match')" = "4" ] || ok=0
   printf '%s' "${out}" | "${GREP}" -q 'hook=gate0-claim-gate.py' || ok=0
   printf '%s' "${out}" | "${GREP}" -q 'hook=conversation-gate.py' || ok=0
   case "${out}" in *DECOY*) ok=0 ;; esac
   case "${out}" in *apiKeyHelper*) ok=0 ;; esac
-  report 1 "match-exit-0" "${ok}" "rc=${rc} (want 0) on three byte-identical hooks, one verdict line each; neither the decoy key's name nor its value reached the output"
+  report 1 "match-exit-0" "${ok}" "rc=${rc} (want 0) on four byte-identical hooks, one verdict line each; neither the decoy key's name nor its value reached the output"
 
   # --- 2: dispatch-gate SHAPES 1-5 against 1-7 is stale, both hashes named ---
   copy_all "$T/skill/tools/hooks" "$T/rootB/hooks"
@@ -525,9 +546,18 @@ run_selftest() {
   case "${out}" in *DECOY*) ok=0 ;; esac
   report 6 "absent-stop-hook" "${ok}" "rc=${rc} (want 4) when the registered gate0-claim-gate.py file is gone while dispatch-gate still matches"
 
+  # --- 7: --install-missing registers an empty root, then re-checks ----------
+  # Compares against the REAL skill copies (install-hooks.sh copies those).
+  mkdir -p "$T/rootH"; printf '{"model": "sonnet"}\n' > "$T/rootH/settings.json"
+  out="$(env -u HOOK_CHECK_SKILL_ROOT bash "${SELF}" --root "$T/rootH" --install-missing 2>&1)"; rc=$?
+  ok=0; [ "${rc}" = "0" ] && ok=1
+  [ "$(printf '%s\n' "${out}" | "${GREP}" -c 'verdict=match')" = "4" ] || ok=0
+  ls "$T/rootH" | "${GREP}" -q '^settings.json.bak-spec-protocol-' || ok=0
+  report 7 "install-missing" "${ok}" "rc=${rc} (want 0): absent on an empty root, install-hooks.sh ran, the re-check found all four hooks matching, settings.json backed up"
+
   printf '\n'
   if [ "${FAILS}" = "0" ]; then
-    printf 'hook-check.sh selftest: ALL PASS (6 fixtures x 3 hooks, every check inside %s)\n' "${T}"
+    printf 'hook-check.sh selftest: ALL PASS (7 fixtures x 4 hooks, every check inside %s)\n' "${T}"
     exit 0
   fi
   printf 'hook-check.sh selftest: %s FAILED — this is a BROKEN INSTRUMENT\n' "${FAILS}"
