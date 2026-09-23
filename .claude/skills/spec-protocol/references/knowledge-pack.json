@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/trevorotts1/openclaw-onboarding",
-  "pin": "<tag, set at release>",
+  "pin": "v25.1.81",
   "lookup_order": ["~/.openclaw/skills/<folder>", "<local checkout>/<folder>", "github:<folder>@<pin>"],
   "cache": "<skill>/companions/openclaw-skills/<folder>/",
   "reading_list": ["SKILL.md", "INSTRUCTIONS.md", "INSTALL.md", "PREREQS.json", "models.json", "QC.md"],
