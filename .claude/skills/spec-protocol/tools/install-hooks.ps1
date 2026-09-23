@@ -1,7 +1,7 @@
 # install-hooks.ps1 - Windows entry for install-hooks.sh (fix #1).
 # Runs the SAME merge (tools/install-hooks.sh) through Git Bash with the
 # Windows Python interpreter, so both platforms register the hooks one way.
-# Registered commands read `python "<root>/hooks/<hook>.py"`.
+# Registered commands read `"<python path>" "<root>/hooks/<hook>.py"` (both quoted).
 #
 # Usage: install-hooks.ps1 [-Root <config-root>]   (default: $env:CLAUDE_CONFIG_DIR, else %USERPROFILE%\.claude)
 # Exit codes are install-hooks.sh's: 0 ok, 1 a hook selftest failed, 2 UNDETERMINED.
@@ -25,8 +25,11 @@ $python = $null
 foreach ($name in @('python', 'py')) {
     $c = Get-Command $name -ErrorAction SilentlyContinue
     if (-not $c) { continue }
-    & $c.Source --version *> $null
-    if ($LASTEXITCODE -eq 0) { $python = $c.Source; break }
+    # try/catch: under EAP Stop a failing alias (or stderr output) throws.
+    try {
+        & $c.Source --version *> $null
+        if ($LASTEXITCODE -eq 0) { $python = $c.Source; break }
+    } catch { continue }
 }
 if (-not $python) {
     Write-Host 'INSTALL-HOOKS UNDETERMINED | python not found - install Python.Python.3.12, then re-run.'

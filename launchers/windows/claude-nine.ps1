@@ -39,15 +39,30 @@ function Escape-Argument([string]$a) {
     return '"' + ($a -replace '"', '\"') + '"'
 }
 
+function Resolve-NineRouter {
+    # A bare `9router` may not be on PATH in a fresh session after a reboot, so
+    # resolve it explicitly: NINEROUTER_BINARY, the path setup recorded in the
+    # state file, the default npm global prefix, then PATH.
+    $cands = @($env:NINEROUTER_BINARY)
+    if ($state -and $state.nineRouterBinary) { $cands += [string]$state.nineRouterBinary }
+    if ($env:APPDATA) { $cands += (Join-Path $env:APPDATA 'npm\9router.cmd') }
+    $g = Get-Command 9router -ErrorAction SilentlyContinue
+    if ($g) { $cands += $g.Source }
+    foreach ($c in $cands) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    return $null
+}
+
 function Start-Router {
-    # Resolve the 9router binary. Get-Command resolves the npm .ps1 shim; pass it
-    # through Start-Process and it opens with the Edit verb (nothing runs). Target
-    # the .cmd shim instead. --host 127.0.0.1 keeps the router loopback-only.
-    $r = Get-Command 9router -ErrorAction SilentlyContinue
-    if (-not $r) { throw '9router executable not found on PATH.' }
-    $exe = [System.IO.Path]::ChangeExtension($r.Source, 'cmd')
-    if (-not (Test-Path $exe)) { $exe = $r.Source }
-    Start-Process -FilePath $exe -ArgumentList @('--no-browser','--host','127.0.0.1') -WindowStyle Hidden
+    # Get-Command resolves the npm .ps1 shim; pass it through Start-Process and
+    # it opens with the Edit verb (nothing runs). Target the .cmd shim instead.
+    # --host 127.0.0.1 keeps the router loopback-only.
+    $src = Resolve-NineRouter
+    if (-not $src) { throw '9router not found (looked at NINEROUTER_BINARY, the setup state file, %APPDATA%\npm, PATH).' }
+    $exe = [System.IO.Path]::ChangeExtension($src, 'cmd')
+    if (-not (Test-Path $exe)) { $exe = $src }
+    Start-Process -FilePath $exe -ArgumentList @('-p', "$Port", '--no-browser','--host','127.0.0.1') -WindowStyle Hidden
     for ($i = 0; $i -lt 40; $i++) {
         if (Test-Health) { return }
         Start-Sleep -Milliseconds 500
@@ -138,6 +153,12 @@ try {
     }
     if ($state.maxOutputTokens) { $childEnv['CLAUDE_CODE_MAX_OUTPUT_TOKENS']   = [string]$state.maxOutputTokens }
     if ($state.concurrency)     { $childEnv['CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY'] = [string]$state.concurrency }
+    # Same context values as the macOS launcher: a 1M context ceiling, and
+    # compaction at 200K - below the smallest window a fallback lane can reach
+    # (ollama/kimi-k2.6, 256K; 200K + 32K output fits). The env var outranks
+    # any settings.json autoCompactWindow. A caller-provided value wins.
+    $childEnv['CLAUDE_CODE_MAX_CONTEXT_TOKENS'] = if ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS) { $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS } else { '1000000' }
+    $childEnv['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = if ($env:CLAUDE_CODE_AUTO_COMPACT_WINDOW) { $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW } else { '200000' }
 
     # Never launch unrouted - a corrupt state file would silently behave like
     # plain claude. Assert the routing boundary is armed before starting.
@@ -165,6 +186,14 @@ try {
         $escaped += Escape-Argument $arg
     }
     $psi.Arguments = ($escaped -join ' ')
+    # Keep the PC awake while the session runs (display may sleep):
+    # ES_CONTINUOUS | ES_SYSTEM_REQUIRED on this thread, which stays alive in
+    # WaitForExit below; Windows drops it when this process exits.
+    # UNVERIFIED on real hardware; never blocks the launch.
+    try {
+        Add-Type -Namespace NineWake -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);' -ErrorAction Stop
+        [void][NineWake.Power]::SetThreadExecutionState([uint32]2147483649)
+    } catch { Write-Host 'claude-nine: could not keep the PC awake; it may sleep during long runs.' -ForegroundColor Yellow }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.WaitForExit()
     exit $proc.ExitCode
