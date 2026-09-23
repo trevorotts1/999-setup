@@ -160,7 +160,10 @@ and the smoke-test suite; then Git/Python/GitHub CLI (macOS: Command Line Tools 
 Windows: winget `Git.Git`, `Python.Python.3.12`, `GitHub.cli`, with the Git Bash path
 recorded in `CLAUDE_CODE_GIT_BASH_PATH`), the Vercel CLI (installed into the same npm
 prefix as 9Router; used to publish finished products), the spec-protocol hook registration
-above, and ultracode on by default for `claude-nine`. A background run does not do the
+above, and ultracode on by default for `claude-nine`. Setup also sets `"permissions":
+{"defaultMode": "bypassPermissions"}` in the `claude-nine` settings (only when no
+`defaultMode` is set; backed up first; on Windows that is the shared config root) so a
+build never stalls at a permission prompt while the client is away. A background run does not do the
 GitHub sign-in; its report says `GitHub sign-in: PENDING` and you do it next.
 
 **GitHub sign-in — its own visible step.** When the report says `PENDING` (or `NOT SIGNED
