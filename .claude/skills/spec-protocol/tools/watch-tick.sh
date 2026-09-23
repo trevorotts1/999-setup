@@ -921,7 +921,7 @@ resume_path() {  # resume_path <inherited-PATH>
   local d nd="" pre=""
   nd="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
   [[ -f "$nd" ]] && nd="$(dirname "$nd")"
-  for d in "$nd" "$HOME/.local/share/999/node/bin" "$HOME/.local/bin" \
+  for d in "$nd" "$HOME/.local/share/999/node/current/bin" "$HOME/.local/bin" \
            "${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}/bin" /opt/homebrew/bin /usr/local/bin; do
     [[ -n "$d" && -d "$d" ]] && pre="${pre}${d}:"
   done

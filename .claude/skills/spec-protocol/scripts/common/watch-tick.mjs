@@ -406,7 +406,7 @@ function autoResume(home, elapsed, phase) {
   const pre = [
     ...(/[\\/]/.test(cmd) ? [path.dirname(cmd)] : []),
     path.dirname(process.execPath), nodePathRec,
-    path.join(H, '.local', 'share', '999', 'node', 'bin'), path.join(H, '.local', 'bin'),
+    path.join(H, '.local', 'share', '999', 'node', 'current', 'bin'), path.join(H, '.local', 'bin'),
     path.join(process.env.NINE_ROUTER_NPM_PREFIX || path.join(H, '.local', 'share', '999', 'npm'), 'bin'),
     ...(IS_WIN ? [process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : ''] : ['/opt/homebrew/bin', '/usr/local/bin']),
   ].filter((d) => { try { return d && fs.statSync(d).isDirectory(); } catch { return false; } });
