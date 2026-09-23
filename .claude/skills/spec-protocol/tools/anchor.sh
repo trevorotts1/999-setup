@@ -104,6 +104,11 @@
 #             in the shape the --tasks reader parses, then exit 0)
 #   anchor.sh --selftest
 #
+#   A PROFILED project (.spec-protocol.json at the home) is redirected: the
+#   profile's commands.validate argv runs at the project root and ONE
+#   PROFILE-ANCHOR line is printed (exit 0 clean, 3 drift, 2 unreadable profile).
+#   Nothing is written; no CONTROL/ is created.
+#
 # ENVIRONMENT KNOBS (all optional; defaults are the doctrine's numbers)
 #   ANCHOR_MAX_AGE_MIN=35          stale-anchor threshold, minutes
 #   ANCHOR_TERMINAL_N=6            consecutive no-delta reconciles => the ladder
@@ -759,6 +764,47 @@ override_resolve() {
 }
 
 #==============================================================================
+# THE PROFILED RECONCILE (the same redirect tools/watch-tick.sh run_profile_tick
+# carries). The profile's commands.validate argv is EXECUTED at the project
+# root, never shell-evaluated, and ONE line is printed; nothing is written.
+#   rc 0      PROFILE-ANCHOR | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>   -> exit 0
+#   rc non-0  PROFILE-ANCHOR DRIFT | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr, 200> -> exit 3
+# An unreadable profile or a missing/malformed commands.validate is exit 2.
+#==============================================================================
+run_profile_anchor() {
+  local pf="$HOME_DIR/.spec-protocol.json" py vout rc a
+  py="$(command -v python3 2>/dev/null || true)"
+  [[ -n "$py" ]] || die_tool "PROFILE | ${pf} needs python3 to read commands.validate and none resolved — the profile is DATA and is never shell-evaluated"
+  set +e
+  vout="$("$py" -c '
+import json,sys
+try:
+    v=(json.load(open(sys.argv[1])).get("commands") or {}).get("validate")
+except Exception as e:
+    sys.exit("not parseable JSON: %s" % e)
+if not (isinstance(v,list) and v and all(isinstance(x,str) and x and "\n" not in x and "\r" not in x for x in v)):
+    sys.exit("commands.validate is not a non-empty argv array of one-line strings")
+print("\n".join(v))
+' "$pf" 2>&1)"; rc=$?
+  set -e
+  (( rc == 0 )) || die_tool "PROFILE | ${pf}: ${vout}. Nothing was run, so nothing is claimed about drift."
+  local -a PV=()
+  while IFS= read -r a; do [[ -n "$a" ]] || continue; PV+=("$a"); done <<< "$vout"
+  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/anchor-profile.XXXXXX")"
+  set +e
+  ( cd "$HOME_DIR" && exec "${PV[@]}" ) > "$WORKDIR/v.out" 2> "$WORKDIR/v.err"; rc=$?
+  set -e
+  if (( rc == 0 )); then
+    printf 'PROFILE-ANCHOR | %s | home=%s | validate_rc=0 | %s\n' "$(iso_now)" "$HOME_DIR" \
+      "$(tr '\n\r\t' '   ' < "$WORKDIR/v.out" | cut -c1-200 | sed 's/ *$//')"
+    exit 0
+  fi
+  printf 'PROFILE-ANCHOR DRIFT | %s | home=%s | validate_rc=%s | %s\n' "$(iso_now)" "$HOME_DIR" "$rc" \
+    "$(tr '\n\r\t' '   ' < "$WORKDIR/v.err" | cut -c1-200 | sed 's/ *$//')"
+  exit 3
+}
+
+#==============================================================================
 # THE MAIN RUN
 #==============================================================================
 run_anchor() {
@@ -766,10 +812,10 @@ run_anchor() {
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
   # Profiled projects have one canonical state/observer. This legacy
-  # reconciler writes CONTROL records, so do not let a direct invocation fork
-  # them beside profile-bound state or task identity.
-  [[ ! -f "$HOME_DIR/.spec-protocol.json" ]] \
-    || die_tool "PROFILE-OWNED | ${HOME_DIR} has .spec-protocol.json; refusing legacy anchor mutation. Use the profile-declared observer."
+  # reconciler writes CONTROL records, so a profiled project is REDIRECTED to
+  # the profile's own validator (the reconciler is never skipped; SKILL.md) —
+  # never a CONTROL/ fork beside profile-bound state.
+  if [[ -f "$HOME_DIR/.spec-protocol.json" ]]; then run_profile_anchor; fi
   [[ -n "$UNIT" ]] || UNIT="IDLE"
 
   self_prove
@@ -3265,7 +3311,18 @@ EOF
   if (( ok28a == 1 && ok28b == 1 && ok28c == 1 )); then ok=1; fi
   report 28 "group-abort-rung-1" "$ok" \
     "group-abort alarm on the ledger, counter primed to N-1, crossing pass: rc=${c28_rc} (want 3), rung-1 ACTION|reconcile-native-identity for U-11, U-12 AND U-13 naming group-abort row run-090 at 2026-09-08T10:43:46Z, rung-1 ledger line carrying trigger=group-abort(row=run-090 at=2026-09-08T10:43:46Z)=${ok28a}. Task-state manifest (snapshot, state, checklist, todo, dispatch log) identical before and after=${ok28b} — rung 1 mutates no task state. CONTROL, the same crossing with no alarm: rc=${c28_rc_ctl} (want 3), rung-1 line carrying trigger=none and no group-abort anywhere=${ok28c} — the trigger names the alarm, never a default."
-  printf 'SELFTEST COMPLETE | %s of 28 cases passed | %s failed\n' "$PASSES" "$FAILS"
+  # --- case 29 (#50): A PROFILED PROJECT IS REDIRECTED, NOT REFUSED. The
+  #     profile's validate argv runs at the root, one PROFILE-ANCHOR line, rc 0,
+  #     and no CONTROL/ is created beside the profile's own state.
+  mkdir -p "$T/c29"
+  printf '{"documents":{"state":"state/s.json"},"commands":{"validate":["/bin/echo","validate-ok"]}}\n' > "$T/c29/.spec-protocol.json"
+  runa "$T/c29"
+  ok=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q '^PROFILE-ANCHOR | .* | validate_rc=0 | validate-ok$' \
+     && [[ ! -d "$T/c29/CONTROL" ]]; then ok=1; fi
+  report 29 "profiled-redirect" "$ok" "rc=${RC} (want 0); one PROFILE-ANCHOR line carrying the validator's stdout; no CONTROL/ created — line: [$(printf '%s' "$OUT" | tail -1)]"
+
+  printf 'SELFTEST COMPLETE | %s of 29 cases passed | %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then exit 1; fi
   exit 0
 }
