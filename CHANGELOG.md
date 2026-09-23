@@ -1,5 +1,20 @@
 # Changelog
 
+## [nine-router-setup 1.17.2] — 2026-09-23
+
+### A 9Router update could silently shrink DeepSeek back to 128K
+
+9Router ships its own built-in model catalog, and an update to it could overwrite the
+DeepSeek V4 Flash entry this project depends on, silently reverting its 1M context / 384K
+output window back to the vendor default of 128K with no error anywhere. `scripts/common/fix-9router-catalog.mjs`
+is new: it re-applies the DeepSeek V4 Flash 1M context / 384K output patch to 9Router's
+built-in catalog, `--check` reports whether the patch is currently in place without writing
+anything, and repeated applies are idempotent no-ops once patched. The `claude-nine` launcher
+(macOS and Windows) now runs it before every launch and restarts the router only when it
+actually patched something; `setup-macos.sh` and `setup-windows.ps1` run it once right after
+installing 9Router. A 9Router update can no longer leave the window at 128K without anyone
+noticing.
+
 ## [1.25.1] — 2026-09-23
 
 ### Fresh-Mac launcher, self-granting below the cost line, and a universality scrub
