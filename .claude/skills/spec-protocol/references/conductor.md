@@ -52,15 +52,19 @@ count, the prefixes and the selected seats' ids only, never an enumeration. **Th
 are the one seat table in `references/capacity.md` §11** — read them there, never
 restate them, and never name a model to the client. Every value carries a provenance
 mark; a value without one is ASSUMED and sized conservatively. Then run the RIG-FITNESS
-checks, once, while the full picture exists and nothing is in flight: a failed check
-raises a plain-language recommendation with consent, and the builder lane is never
-rewired without a yes.
+checks, once, while the full picture exists and nothing is in flight. The client has
+walked away by now (SKILL.md section 4), so a failed check is never asked: the run takes
+the conservative choice, records `RIG-FITNESS | … | client=absent`, and puts the
+recommendation to them as a question in the morning report; the builder lane is never
+rewired without a yes (`references/capacity.md` §13.7).
 
 **The budget, and the pause that is never a stop.** From the project's own size:
 `initial = WF01 + units × 3 + 4`; `warn = max(150, 3 × initial)` (the conductor analyzes
 whether measurable progress is still happening, and records it); `first_pause = max(200,
 4 × initial)`; `ceiling = 2,000 executions per project`, counted per project and never
-per session. All four are written before the first dispatch to the ledger and to
+per session. All four are written before the first booked dispatch (a research reader —
+`phase=research`, `agents=1`, no build label — is exempt and may run before them; SKILL.md
+section 5) to the ledger and to
 `CONTROL/project_state.json` at exactly these paths — `agents.initial`, `agents.warn_at`,
 `agents.first_pause`, `agents.ceiling`, with `agents.pause_blocks_granted` at 0 — and
 `tools/state-check.sh` refuses any other spelling. `agents.budget_initial` and
@@ -79,7 +83,9 @@ line_usd=<X|unmetered> source=cost-line …` through `tools/ledger.sh`, raises
 `agents.pause_blocks_granted` by one, and the run resumes at FULL width — the client promised "overnight" is never woken by
 an execution count. Spend that cannot be measured is UNDETERMINED and is treated as AT the line.
 When the spend reaches the line, the run deploys the best stable build, writes the plain report,
-sets `run_status = PAUSED_CAP`, and asks one question:
+sets `run_status = PAUSED_CAP`, and asks one question, recorded like every other ask:
+`tools/answers.sh <project> ask spend-pause-<n> "<the words>"` as it is spoken, and
+`tools/answers.sh <project> answer spend-pause-<n> "<their reply>"` when it arrives:
 
 > I've done a lot of work and your <target> is live at <URL>. I've reached the point where I check in before spending more. Here's where it stands: <two lines>. Keep going?
 
