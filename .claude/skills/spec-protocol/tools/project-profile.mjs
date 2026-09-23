@@ -8,7 +8,7 @@
  * CONTROL state graph.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const [action, rootArg, ...forwarded] = process.argv.slice(2);
@@ -16,7 +16,13 @@ const root = resolve(rootArg || '.');
 const file = resolve(root, '.spec-protocol.json');
 const schema = 'spec-protocol.project-profile/v1';
 const documentKeys = ['spec', 'protocol', 'state', 'ledger', 'todo', 'checklist', 'qc'];
-const policyKeys = ['maxActiveWorkflows', 'maxAgentsPerWorkflow', 'maxWorkingAgents', 'maxBuilderSubmissions', 'maxQCVerdicts'];
+const policyKeys = ['maxBuilderSubmissions', 'maxQCVerdicts'];
+// The project's width CEILING (optional). Width = min(harness/provider width,
+// each key present here); an absent key means no profile ceiling for it.
+const ceilingKeys = ['maxActiveWorkflows', 'maxAgentsPerWorkflow', 'maxWorkingAgents'];
+// commands.merged may carry these, substituted per merged unit; no other command may.
+const mergedPlaceholders = ['{taskId}', '{commit}', '{branch}'];
+const PLACEHOLDER = /\{[A-Za-z]+\}/g;
 const fail = (message, code = 64) => {
   console.error(`SPEC-PROTOCOL PROFILE REFUSED | ${message}`);
   process.exit(code);
@@ -30,7 +36,7 @@ const isBoundPath = value => {
   return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`);
 };
 
-if (!action || !rootArg) fail('usage: project-profile.mjs <bootstrap|dispatch|validate|release|resume-authorized|detect> <project> [original args...]');
+if (!action || !rootArg) fail('usage: project-profile.mjs <bootstrap|dispatch|validate|release|resume-authorized|detect|policy|workdir|fields> <project> [original args...]');
 if (!existsSync(file)) process.exit(66);
 let profile;
 try { profile = JSON.parse(readFileSync(file, 'utf8')); } catch { fail(`invalid JSON: ${file}`); }
@@ -38,8 +44,10 @@ if (profile?.schema !== schema) fail(`unsupported schema in ${file}`);
 if (!profile.documents || documentKeys.some(key => !isBoundPath(profile.documents[key]))) {
   fail(`documents must bind in-root ${documentKeys.join(', ')} paths in ${file}`);
 }
-if (!profile.policy || policyKeys.some(key => !Number.isInteger(profile.policy[key]) || profile.policy[key] < 1)) {
-  fail(`policy must contain positive integer bounds in ${file}`);
+const positiveInt = value => Number.isInteger(value) && value >= 1;
+if (!profile.policy || policyKeys.some(key => !positiveInt(profile.policy[key]))
+  || ceilingKeys.some(key => profile.policy[key] !== undefined && !positiveInt(profile.policy[key]))) {
+  fail(`policy must contain positive integer bounds (${policyKeys.join(', ')} required; ${ceilingKeys.join(', ')} optional) in ${file}`);
 }
 if (typeof profile.policy.builderRoute !== 'string' || !profile.policy.builderRoute
   || typeof profile.policy.qcRoute !== 'string' || !profile.policy.qcRoute
@@ -53,11 +61,44 @@ if (!profile.commands || !['validate', 'dispatch', 'release'].every(key => valid
 if (profile.commands.init !== undefined && !validArgv(profile.commands.init)) {
   fail(`commands.init must be an argv array when supplied in ${file}`);
 }
+if (profile.commands.refresh !== undefined && (!validArgv(profile.commands.refresh)
+  || profile.commands.refresh.some(item => (item.match(PLACEHOLDER) || []).length))) {
+  fail(`commands.refresh must be an argv array with no {placeholders} when supplied in ${file}`);
+}
+if (profile.commands.merged !== undefined && (!validArgv(profile.commands.merged)
+  || profile.commands.merged.some(item => (item.match(PLACEHOLDER) || []).some(p => !mergedPlaceholders.includes(p))))) {
+  fail(`commands.merged must be an argv array whose only placeholders are ${mergedPlaceholders.join(' ')} when supplied in ${file}`);
+}
+const isObject = value => value && typeof value === 'object' && !Array.isArray(value);
+if (profile.repo !== undefined) {
+  const { remote, createPrivate } = isObject(profile.repo) ? profile.repo : {};
+  if (!isObject(profile.repo)
+    || (remote !== undefined && (typeof remote !== 'string' || !/^\S+$/.test(remote)
+      || /:\/\/[^/@]*:[^/@]*@/.test(remote)))
+    || (createPrivate !== undefined && (typeof createPrivate !== 'string'
+      || !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(createPrivate)))) {
+    fail(`repo must be an object; repo.remote a git URL with no embedded credential; repo.createPrivate an owner/name in ${file}`);
+  }
+}
 if (profile.runtime !== undefined && (!profile.runtime || typeof profile.runtime !== 'object'
   || Array.isArray(profile.runtime))) {
   fail(`runtime must be an object when supplied in ${file}`);
 }
 if (action === 'detect') { console.log(file); process.exit(0); }
+// Read commands for the tick, merge train, ledger, repo anchor and capacity:
+// the validated values, never re-parsed by each caller.
+const ceiling = Object.fromEntries(ceilingKeys.filter(key => profile.policy[key] !== undefined)
+  .map(key => [key, profile.policy[key]]));
+// Where universal helpers keep their own files on a profiled project: beside the
+// bound state, never a CONTROL/ folder.
+const workDir = resolve(dirname(resolve(root, profile.documents.state)), 'spec-protocol');
+if (action === 'policy') { console.log(JSON.stringify(ceiling)); process.exit(0); }
+if (action === 'workdir') { console.log(workDir); process.exit(0); }
+if (action === 'fields') {
+  console.log(JSON.stringify({ workDir, ceiling, refresh: profile.commands.refresh ?? null,
+    merged: profile.commands.merged ?? null, repo: profile.repo ?? null }));
+  process.exit(0);
+}
 if (!['bootstrap', 'validate', 'dispatch', 'release', 'resume-authorized'].includes(action)) fail(`unknown action: ${action}`);
 
 function run(command, args = [], capture = false) {

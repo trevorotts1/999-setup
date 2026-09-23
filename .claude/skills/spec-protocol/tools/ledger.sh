@@ -468,11 +468,22 @@ FILE="${2:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 LINE="${3:?Usage: ledger.sh <home> <file> <line> [upsert-key]}"
 UPSERT_KEY="${4:-}"
 
-# A supplied profile has one packet-owned state/ledger writer. Do not create a
-# parallel CONTROL ledger merely because a legacy caller reached this primitive.
+# A PROFILED project (.spec-protocol.json) owns its state; this primitive never
+# creates a CONTROL/ folder there. It REDIRECTS instead: the file lands in
+# <statedir>/spec-protocol/ (statedir = the directory of documents.state, resolved
+# and validated by tools/project-profile.mjs workdir), with a leading CONTROL/
+# dropped, so `CONTROL/LEDGER.md` becomes <statedir>/spec-protocol/LEDGER.md.
+# Same lock, same atomic writer, same clock and signature; the path is printed.
+INTENTS_FILE="${HOME_DIR}/CONTROL/last-intents.txt"
+PROFILED=0
 if [[ -f "${HOME_DIR%/}/.spec-protocol.json" ]]; then
-  printf 'LEDGER PROFILE-OWNED | %s has .spec-protocol.json; use its declared packet writer, not ledger.sh.\n' "$HOME_DIR" >&2
-  exit 2
+  if ! HOME_DIR="$(node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-profile.mjs" workdir "${HOME_DIR}")" || [[ -z "${HOME_DIR}" ]]; then
+    echo "ERROR: ledger.sh could not resolve the profiled work folder (node tools/project-profile.mjs workdir failed); wrote NOTHING" >&2
+    exit 2
+  fi
+  FILE="${FILE#CONTROL/}"
+  INTENTS_FILE="${HOME_DIR}/last-intents.txt"
+  PROFILED=1
 fi
 
 # ============================================================================
@@ -765,7 +776,7 @@ fi
 # before the lock); it is the same grep this block uses.
 
 append_intent() {
-  local intents_file="${HOME_DIR}/CONTROL/last-intents.txt"
+  local intents_file="${INTENTS_FILE}"
   local itmp="${intents_file}.tmp.$$"
   local plan
   # plan=<...> up to the next field separator. A CLAIM with no plan= field is
@@ -791,13 +802,14 @@ if [[ "${FILE}" != *last-intents.txt ]]; then
   if [[ -z "${LGREP}" ]]; then
     # No usable grep means this line's class is UNKNOWN, not "not a CLAIM".
     # Say so rather than skipping in silence and leaving class 5 quietly blind.
-    echo "WARNING: ledger.sh found no usable grep (/usr/bin/grep, /bin/grep, PATH), so it could not tell whether this was a CLAIM line; ${HOME_DIR}/CONTROL/last-intents.txt was NOT updated and anchor.sh's class 5 (repeated-intent) will be undetermined" >&2
+    echo "WARNING: ledger.sh found no usable grep (/usr/bin/grep, /bin/grep, PATH), so it could not tell whether this was a CLAIM line; ${INTENTS_FILE} was NOT updated and anchor.sh's class 5 (repeated-intent) will be undetermined" >&2
   elif printf '%s' "${LINE}" | "${LGREP}" -qE '[|][[:space:]]*CLAIM[[:space:]]*[|]'; then
     if ! append_intent; then
-      rm -f "${HOME_DIR}/CONTROL/last-intents.txt.tmp.$$" 2>/dev/null || true
-      echo "WARNING: ledger.sh wrote ${TARGET} but could not update ${HOME_DIR}/CONTROL/last-intents.txt — anchor.sh's class 5 (repeated-intent) will be undetermined until this is fixed" >&2
+      rm -f "${INTENTS_FILE}.tmp.$$" 2>/dev/null || true
+      echo "WARNING: ledger.sh wrote ${TARGET} but could not update ${INTENTS_FILE} — anchor.sh's class 5 (repeated-intent) will be undetermined until this is fixed" >&2
     fi
   fi
 fi
 
+(( PROFILED == 0 )) || printf 'LEDGER | %s\n' "${TARGET}"
 exit 0
