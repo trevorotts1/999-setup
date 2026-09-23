@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.25.0] — 2026-09-23
+
+### The 51-issue review fixes
+
+Ten fix branches, one per area, merged in sequence with a full selftest pass after every merge.
+
+**Installer / hooks.** `#1 #2 #3 #6 #8 #33 #34 #37 #38` — `install-hooks.sh` and
+`install-hooks.ps1` are new: they register the four hooks idempotently, merge foreign keys
+instead of clobbering them, and back up `settings.json` once. `hook-check.sh` gained the
+missing STALE / ABSENT legs for the stop hooks. `scripts/setup-macos.sh` and
+`setup-windows.ps1` and `launchers/macos/claude-nine` picked up the launcher-side half of the
+same fixes.
+
+**Conversation hooks.** `#4 #17 #18 #20 #21 #22 #23 #24 #25 #39` — `conversation-gate.py`
+now reads the project only from this session's own `answers.sh init` call, runs the jargon
+lint before any project exists, stands a statement-yield block down when a HANGING entry is
+pending, resets its 3-per-turn block counter on a new turn, and blocks when `ANSWERS.md` goes
+missing after this session created it. `gate0-claim-gate.py` and `speech-check.sh` got the
+matching evidence and counter fixes.
+
+**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-9: a
+project must be booked in `CONTROL/dispatch-log.md` (not just claimed), it must show a real
+`SEAT-PROBE:` line before a build dispatches, and it must carry a proven `repo-anchor.json`
+receipt (scoped to both legacy and profiled projects) before any builder runs.
+
+**Repo anchor.** `#6` (repo-anchor side), `#49`, `#50` — `repo-anchor.sh` and `anchor.sh`:
+a profiled project no longer gets refused outright by the drift reconciler; it now redirects
+through the profile's own `commands.validate` and reports a `PROFILE-ANCHOR` line, the same
+pattern `watch-tick.sh` already used for `PROFILE-TICK`.
+
+**Tick.** `#32 #35 #40 #48` — `watch-tick.sh` and `scripts/common/watch-tick.mjs` gained the
+group-abort, stalled-turn, task-snapshot, and unguarded-publish checks, plus the profiled-project
+redirect and cron/schtasks arm-and-check plumbing.
+
+**Preflight / answers.** `#7`, `#51(1)`, `#23`, `#29/#30` (tool side), `#39` — `preflight.sh`
+and `answers.sh` are new: a one-line GO/no-go gate and the ledger-backed question/answer
+recorder the conversation gate now depends on. `prompt-band.sh` and `ship-guard.sh` picked up
+the matching floor/ceiling and fabrication-guard fixes.
+
+**Deploy / templates.** `#41 #42 #45 #46 #47` — `publish.sh`, `provision-db.sh`, and
+`merge-train.sh` are new, the 17 apparatus document templates and 4 workflow templates were
+added, and the knowledge-pack pin (`references/knowledge-pack.json`) was corrected; a
+follow-up fix to the same issue (`#45`) made `scripts/bootstrap-companions.sh` pull
+knowledge-pack folders anonymously and refuse a placeholder pin instead of caching it.
+
+**SKILL.md restructure.** `#3 #5 #7 #10 #11 #12 #15 #23 #25 #26 #27 #29 #30 #31 #34 #41 #42
+#46 #47 #51(2)(3)(4)` — `SKILL.md` cut from over a thousand lines to a thin dispatcher; the
+conductor logic it used to carry inline now lives in the new `references/conductor.md`.
+
+**References.** `5 9 10 11 12 13 14 15 16 19 28 34 41 43 44 45 46` — `audience.md`,
+`capacity.md`, `decision-engine.md`, `documents.md`, `environment-sweep.md`,
+`funnel-architecture.md`, `gauntlet.md`, `interview.md`, `pipeline.md`, `platform.md`,
+`publish.md`, `research.md`, and `workflows.md` all received their matching fixes.
+
+**Integration.** Merging the SKILL.md restructure and the references branch together
+surfaced one real interaction: `interview.md`'s three credential-key turns (Private
+Integration Token, Firebase refresh token, Location ID) were written as three blockquotes
+separated only by a blank line, which the gate's own quote extractor read as a single
+four-question turn and correctly rejected. Fixed by inserting one plain-prose line between
+each blockquote. Separately, `project-profile-selftest.sh` still asserted the pre-fix
+invariant that `anchor.sh` refuses outright on a profiled project; updated it to expect the
+new `PROFILE-ANCHOR` redirect instead, matching the assertion already in place for
+`watch-tick.sh`.
+
 ## [1.24.0] — 2026-09-22
 
 ### The skill promised merged-to-GitHub and never made a repository
