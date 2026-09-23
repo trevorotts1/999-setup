@@ -34,7 +34,22 @@ and blocks (exit 2) nine shapes, naming the fix for each:
      whose remote is no longer what `git remote get-url origin` says. The
      skill's own description promises "merged-to-GitHub" and nothing in it
      ever created the repository or the remote; a run reached its first QC
-     handoff on a folder that was not a git repository at all.
+     handoff on a folder that was not a git repository at all. A receipt with
+     "source": "local-only" (the client declined GitHub and no operator owner
+     was set) is accepted without the origin comparison: the work is anchored
+     in a local repository and the morning report says it is not yet online.
+ 10. a BUILD dispatch out of a marked project with no run start marker
+     (<project>/.spec-protocol-opened-<ISO8601Z>, tools/gate0.sh --open) or
+     whose five-minute tick is not armed (tools/watch-tick.sh <project> --check
+     rc 3). Any other rc, a missing tool, or a 5 s timeout fails open.
+
+AGENT / TASK CALLS (fix #5). The same hook is registered on
+"Workflow|Agent|Task" because the degrade path of references/workflows.md fans
+out plain Agent calls, which never reached this gate. An Agent/Task call whose
+description, or the first line of its prompt, carries "build" gets SHAPES 8, 9
+and 10 exactly as a Workflow build does; every other Agent call (reader,
+researcher, judge) passes in silence. Shapes 1-7 are facts about a Workflow
+script and do not apply to a single agent.
 
 SHAPE 9 IS SCOPED TOO, but to BOTH project shapes: a marked legacy CONTROL/
 and a profiled `.spec-protocol.json` alike, because the promise it enforces is
@@ -836,10 +851,15 @@ def repo_anchor_proven(path):
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             doc = json.load(fh)
-        root, want = doc["repoRoot"], doc["remote"]
+        root, want = doc["repoRoot"], doc.get("remote")
     except Exception:
         return None
-    if not isinstance(root, str) or not isinstance(want, str) or not root or not want:
+    if not isinstance(root, str) or not root:
+        return None
+    if doc.get("source") == "local-only":
+        # fix #6: no remote exists by design -- a local repository is the anchor.
+        return os.path.isdir(root)
+    if not isinstance(want, str) or not want:
         return None
     try:
         proc = subprocess.run(
@@ -867,6 +887,90 @@ def is_build_dispatch(code):
             if BUILD_LABEL_RE.search(value):
                 return True
     return False
+
+
+# SHAPE 10 -- start marker and tick arming (fix #32).
+START_MARKER_PREFIX = ".spec-protocol-opened-"
+FIX_10 = (
+    "  FIX: the run must be opened and watched before anything is built.\n"
+    "  Start marker: tools/gate0.sh --open <project> (SKILL.md step 3).\n"
+    "  Tick: tools/watch-tick.sh --arm <project> (SKILL.md step 3); proven by\n"
+    "  tools/watch-tick.sh <project> --check returning 0."
+)
+
+
+def watch_tick_path():
+    """tools/watch-tick.sh: env override, source layout, then the installed skill."""
+    candidates = []
+    if os.environ.get("SPEC_PROTOCOL_WATCH_TICK"):
+        candidates.append(os.environ["SPEC_PROTOCOL_WATCH_TICK"])
+    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "watch-tick.sh"))
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    candidates.append(os.path.join(config, "skills", "spec-protocol", "tools", "watch-tick.sh"))
+    return next((c for c in candidates if os.path.isfile(c)), None)
+
+
+def tick_armed(project):
+    """True (rc 0) / False (rc 3) from watch-tick.sh --check; None on anything else."""
+    tick = watch_tick_path()
+    if not tick:
+        return None
+    try:
+        rc = subprocess.run(["bash", tick, project, "--check"],
+                            capture_output=True, text=True, timeout=5).returncode
+    except Exception:
+        return None
+    return {0: True, 3: False}.get(rc)
+
+
+def build_findings(cwd, profiled):
+    """SHAPES 8, 9 and 10 -- the gates every BUILD dispatch owes, Workflow or Agent."""
+    findings = []
+    # --- 9. no proven repository behind the build ---------------------------
+    # The skill's own description promises "merged-to-GitHub"; a run once
+    # reached its first QC handoff on a folder that was not a git repository at
+    # all, because prose said "determine GitHub" and nothing refused the
+    # builders. Unlike SHAPES 7 and 8 this one is scoped to BOTH project shapes:
+    # the promise is made to every client on every run, and
+    # tools/repo-anchor.sh writes its receipt on either.
+    receipt = repo_anchor_receipt_path(cwd, profiled)
+    if receipt is not None and repo_anchor_proven(receipt) is False:
+        findings.append(
+            "SHAPE 9 -- NO-REPO-ANCHOR | no proven repository behind this build "
+            "(read: %s)\n%s" % (receipt, FIX_9)
+        )
+    if profiled:
+        return findings
+    control = spec_protocol_project(cwd)
+    if control is None:
+        return findings
+    # --- 8. no seat proven callable, no builder -----------------------------
+    # tools/seat-probe.sh is a shipped instrument the 2026-09-08 canary never
+    # ran, because nothing refused a builder over its absence.
+    # tools/dispatch-check.sh refuses the same dispatch with exit 11; this is
+    # the half that intercepts the launch itself. Same scope and the same
+    # CONTROL/ as SHAPE 7. seat-probe.sh refuses a profiled project, hence the
+    # return above.
+    if has_seat_probe_line(control) is False:
+        findings.append(
+            "SHAPE 8 -- NO-SEAT-PROBE | CONTROL/LEDGER.md carries no SEAT-PROBE: line\n"
+            "  (read: %s)\n%s" % (os.path.join(control, "LEDGER.md"), FIX_8)
+        )
+    # --- SHAPE 10. start marker and armed tick ------------------------------
+    project = os.path.dirname(control)
+    try:
+        opened = any(n.startswith(START_MARKER_PREFIX) for n in os.listdir(project))
+    except Exception:
+        opened = None
+    armed = tick_armed(project)
+    missing = []
+    if opened is False:
+        missing.append("no %s<ISO8601Z> marker in %s" % (START_MARKER_PREFIX, project))
+    if armed is False:
+        missing.append("watch-tick.sh --check says the five-minute tick is not armed")
+    if missing:
+        findings.append("SHAPE 10 -- RUN-NOT-OPENED | %s\n%s" % ("; ".join(missing), FIX_10))
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -982,28 +1086,9 @@ def evaluate(script, cwd=None, profiled=False):
                 "  (read: %s)\n%s" % (execs, pause, ceil, path, FIX_6_PAUSE)
             )
 
-    # --- 9. no proven repository behind the build ---------------------------
-    # The skill's own description promises "merged-to-GitHub". SKILL.md section 6
-    # says GitHub is arranged at minute one and `gh auth status` proves it before
-    # the first builder; step 17 says "Determine GitHub (new or existing)";
-    # references/documents.md:63 places the working copies at
-    # `<project>/repos/<repository-name>/`; references/pipeline.md:942 proves a
-    # merge as an ancestor of remote main. And a grep for `git init`, `gh repo`
-    # and `git remote` across SKILL.md, references/, tools/, scripts/ and
-    # templates/ found exactly one hit -- a COMMENT in tools/env-sweep.sh:164.
-    # Nothing created the repository. Nothing created the remote. A run reached
-    # its first QC handoff on a folder that was not a git repository at all,
-    # because prose said "determine GitHub" and nothing refused the builders.
-    # Unlike SHAPES 7 and 8 this one is scoped to BOTH project shapes: the
-    # promise is made to every client on every run, and tools/repo-anchor.sh
-    # writes its receipt on either.
+    # --- 8, 9, 10. the gates every BUILD dispatch owes (see build_findings) ---
     if is_build_dispatch(code):
-        receipt = repo_anchor_receipt_path(cwd or os.getcwd(), profiled)
-        if receipt is not None and repo_anchor_proven(receipt) is False:
-            findings.append(
-                "SHAPE 9 -- NO-REPO-ANCHOR | no proven repository behind this build "
-                "(read: %s)\n%s" % (receipt, FIX_9)
-            )
+        findings.extend(build_findings(cwd or os.getcwd(), profiled))
 
     # --- 7. the write-ahead rule: a tree that was never booked ---------------
     # tools/dispatch-check.sh books the WHOLE tree write-ahead and rolls the
@@ -1023,21 +1108,6 @@ def evaluate(script, cwd=None, profiled=False):
         if control is None:
             sys.stderr.write(SCOPE_NOTE + "\n")
         else:
-            # --- 8. no seat proven callable, no builder ---------------------
-            # tools/seat-probe.sh is a shipped, selftested instrument that the
-            # 2026-09-08 canary never ran, because nothing refused a builder
-            # over its absence: its ledger DISCUSSED seat capacity in prose and
-            # dispatched anyway. tools/dispatch-check.sh now refuses that with
-            # exit 11 -- but it is a script the conductor is merely TOLD to
-            # call, and prose fails here roughly always. This is the half that
-            # intercepts the launch itself. Same scope as SHAPE 7 and the same
-            # CONTROL/ it came out of: the marker that proves this IS a
-            # spec-protocol project says which ledger records its probe.
-            if is_build_dispatch(code) and has_seat_probe_line(control) is False:
-                findings.append(
-                    "SHAPE 8 -- NO-SEAT-PROBE | CONTROL/LEDGER.md carries no SEAT-PROBE: line\n"
-                    "  (read: %s)\n%s" % (os.path.join(control, "LEDGER.md"), FIX_8)
-                )
             declared = declared_agents(code, stages)
             if declared:
                 log = dispatch_log_booking(control, time.time())
@@ -1069,7 +1139,7 @@ def main():
         data = json.load(sys.stdin)
     except Exception:
         allow()
-    if not isinstance(data, dict) or data.get("tool_name") != "Workflow":
+    if not isinstance(data, dict) or data.get("tool_name") not in ("Workflow", "Agent", "Task"):
         allow()
 
     ti = data.get("tool_input") or {}
@@ -1077,6 +1147,23 @@ def main():
         allow()
 
     event_cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else os.getcwd()
+
+    if data.get("tool_name") != "Workflow":
+        # fix #5: an Agent/Task call is a build dispatch when its description or
+        # the first line of its prompt says "build"; it then owes SHAPES 8-10.
+        desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
+        prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
+        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+        if not BUILD_LABEL_RE.search(desc + "\n" + first):
+            allow()
+        try:
+            findings = build_findings(event_cwd, bool(profile_project(event_cwd)))
+        except Exception:
+            allow()
+        if findings:
+            block(findings)
+        allow()
+
     profiled_root = profile_project(event_cwd)
     if profiled_root:
         identity, problem = profile_launch_identity(ti)
@@ -1228,6 +1315,14 @@ def selftest():
             fails += 1
 
     sandbox = tempfile.mkdtemp(prefix="dispatch-gate-selftest.")
+    # SHAPE 10 must never read the operator's real crontab: every child sees a
+    # stub watch-tick.sh (rc 0 = armed) unless a check swaps it for rc 3.
+    tick_ok = os.path.join(sandbox, "tick-ok.sh")
+    tick_unarmed = os.path.join(sandbox, "tick-unarmed.sh")
+    for _p, _rc in ((tick_ok, 0), (tick_unarmed, 3)):
+        with open(_p, "w", encoding="utf-8") as fh:
+            fh.write("exit %d\n" % _rc)
+    os.environ["SPEC_PROTOCOL_WATCH_TICK"] = tick_ok
 
     def payload(script):
         return json.dumps({"tool_name": "Workflow", "tool_input": {"script": script}})
@@ -1413,13 +1508,13 @@ def selftest():
             return None
         return root
 
-    def write_anchor_receipt(state_dir, repo_root, remote):
+    def write_anchor_receipt(state_dir, repo_root, remote, source="client-gh"):
         """The receipt tools/repo-anchor.sh writes after its ls-remote proof."""
         os.makedirs(state_dir, exist_ok=True)
         with open(os.path.join(state_dir, "repo-anchor.json"), "w", encoding="utf-8") as fh:
             json.dump({"repoRoot": repo_root, "remote": remote, "branch": "main",
                        "head": "0" * 40, "provedAt": "2026-09-22T00:00:00Z",
-                       "source": "client-gh"}, fh, indent=2)
+                       "source": source}, fh, indent=2)
 
     def write_ledger(d, kind):
         path = os.path.join(d, "CONTROL", "LEDGER.md")
@@ -1456,6 +1551,8 @@ def selftest():
             if repo:
                 write_anchor_receipt(os.path.join(d, "CONTROL"), repo,
                                      os.path.join(d, "origin.git"))
+        # SHAPE 10's start marker, which tools/gate0.sh --open writes at step 3.
+        open(os.path.join(d, ".spec-protocol-opened-2026-09-08T00:00:00Z"), "w").close()
         # The GATE 0 marker is what puts these fixtures IN SCOPE for SHAPE 7
         # (WI-64). It is also what a real project has before its first
         # dispatch: tools/gate0.sh --record writes it at the GATE 0 pass.
@@ -1771,10 +1868,48 @@ def selftest():
            "and no SHAPE 9: %s"
            % (rc_r4, "yes" if "SHAPE 9" not in out_r4 else "NO -- refused"))
 
+    # 15 -- fix #5: an Agent call labelled build owes SHAPES 8-10; a reader passes.
+    #       Same ledger-less marked project for both legs, only the label differs.
+    agentdir = log_dir("agentcall", 3, ledger="none")
+
+    def agent_event(desc):
+        return json.dumps({"tool_name": "Agent", "cwd": agentdir, "tool_input": {
+            "description": desc, "prompt": "do the unit\nmore", "subagent_type": "general-purpose"}})
+    rc_a1, out_a1 = _run_child(agent_event("build unit u01"), agentdir)
+    rc_a2, _ = _run_child(agent_event("research reference apps"), agentdir)
+    report(40, "agent-build-gated", rc_a1 == 2 and "SHAPE 8" in out_a1 and rc_a2 == 0,
+           "Agent 'build unit u01' in a probe-less project -> rc=%d (want 2, SHAPE 8); "
+           "Agent 'research reference apps' -> rc=%d (want 0)" % (rc_a1, rc_a2))
+
+    # 16 -- fix #6: a local-only receipt (no origin by design) is accepted.
+    #       Its remote field names something origin does not: the old origin
+    #       comparison would refuse it, so this leg fails without the fix.
+    localonly = log_dir("localonly", 30, anchor="none")
+    lrepo = os.path.join(localonly, "repo")
+    subprocess.run(["git", "init", "-q", lrepo], capture_output=True, timeout=20)
+    write_anchor_receipt(os.path.join(localonly, "CONTROL"), lrepo, lrepo, source="local-only")
+    rc_l, out_l = _run_child(payload(FIXTURE_THREE_STAGE), localonly)
+    report(41, "local-only-anchor-allows", rc_l == 0,
+           "receipt source=local-only on a repo with no origin -> rc=%d (want 0)%s"
+           % (rc_l, "" if rc_l == 0 else " -- output: " + out_l.strip()[:300]))
+
+    # 17 -- fix #32, SHAPE 10: an otherwise-allowed project (check 36's shape)
+    #       blocked once the tick reads unarmed, and once the start marker is gone.
+    opened = log_dir("shape10", 30)
+    os.environ["SPEC_PROTOCOL_WATCH_TICK"] = tick_unarmed
+    rc_t, out_t = _run_child(payload(FIXTURE_THREE_STAGE), opened)
+    os.environ["SPEC_PROTOCOL_WATCH_TICK"] = tick_ok
+    os.remove(os.path.join(opened, ".spec-protocol-opened-2026-09-08T00:00:00Z"))
+    rc_m, out_m = _run_child(payload(FIXTURE_THREE_STAGE), opened)
+    report(42, "shape10-open-and-armed", rc_t == 2 and "SHAPE 10" in out_t
+           and rc_m == 2 and "SHAPE 10" in out_m,
+           "tick --check rc 3 -> rc=%d (want 2); no start marker -> rc=%d (want 2); SHAPE 10 named"
+           % (rc_t, rc_m))
+
     print("\n".join(results))
     print("")
     if fails == 0:
-        print("dispatch-gate.py selftest: ALL PASS (40 checks)")
+        print("dispatch-gate.py selftest: ALL PASS (%d checks)" % len(results))
         return 0
     print("dispatch-gate.py selftest: %d FAILED -- this gate is a BROKEN INSTRUMENT; "
           "do not treat its silence as a verdict" % fails)
