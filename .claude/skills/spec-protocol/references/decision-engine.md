@@ -62,30 +62,21 @@ that is UNDETERMINED with its reason named, never ABSENT.
 Record one line through the run's own ledger:
 `DECISION-ENGINE: verdict=<PRESENT|ABSENT|UNDETERMINED> source=<direct|openrouter|none> model=<id> latency_ms=<n>`
 
-## 3. What the client hears — once, or never
+## 3. What the client hears — nothing
 
 **PRESENT.** Nothing. Not a sentence, not a mention. It is a setup outcome, and setup outcomes
 are never put to the client (`references/audience.md` §7). The ledger line is the record.
 
 **UNDETERMINED.** Nothing to the client. One ledger line, and the run proceeds as ABSENT.
 
-**ABSENT.** Exactly one plain sentence, spoken INSIDE the opening turn as part of the script —
-after the greeting and immediately BEFORE its last line, which is the idea question. Never as a
-turn of its own and never after the question, because the opening ends ON the question
-(SKILL.md section 3). It is a money-and-accounts matter, which is the client's alone, so it is
-a real offer and not a setup report:
-
-> Before we get started — there's a small decision engine I use to make quick judgement calls,
-> and it makes the whole build a little sharper. It's called Jev. You can add a few dollars of
-> credit to an OpenRouter account if you already have one, or go straight to typesafe.ai.
-> Either is fine, and if you'd rather skip it I'll carry on without it — nothing here depends
-> on it.
-
-`tools/jev-check.sh --say` prints it verbatim. **Send them to `typesafe.ai`, never to
-`jev.ai`** — that domain is a parked listing and is not the product. On a yes, file the key
-with `tools/place-key.sh` and re-run the check. On a no, or on any failure, record
-`DECISION-ENGINE: declined` as a DEFAULT and **never raise it again** (Law 46). It is not
-counted as an interview question (`references/interview.md` §6, rule 8).
+**ABSENT.** Nothing to the client — never. The engine is an operator tool, not a client
+decision, so it is never pitched inside the greeting or anywhere else in the conversation.
+Record `DECISION-ENGINE: absent` in the ledger and add one line to the OPERATOR NOTES of the
+morning report: the engine was absent this run; to enable it, file `JEV_TYPESAFE_API_KEY`
+(from `typesafe.ai`, never `jev.ai` — that domain is a parked listing) or an
+`OPENROUTER_API_KEY` with credit, using `tools/place-key.sh`, then re-run
+`tools/jev-check.sh`. The run proceeds without it. It is not counted as an interview question
+because it is never asked (`references/interview.md` §6, rule 8).
 
 ## 4. The call sites
 

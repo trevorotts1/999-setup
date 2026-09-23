@@ -163,11 +163,13 @@ file path) before the bar is accepted. No fetch proof, no bar.
 
 **Selection.** The reference-apps step (`references/research.md`) already offers
 three to five comparable apps as models to mirror. From those, the conductor
-offers the user TWO to THREE candidate bars in plain language, following the
-audience rules (`references/audience.md`): ONE question — never a menu — in the
-form "For this kind of app, here are three real ones people think are excellent.
-Which one should yours be as good as?", with a clear recommendation attached,
-then stop. The user's pick is REQUIRED — every work item has a bar (Section 12) —
+picks the candidate it recommends and puts it to the client inside interview
+question D1 (`references/interview.md` §3, item 14) — ONE question, one
+recommendation, never a menu and never a separate bar question: "I looked at a few
+<websites | apps> like yours, and the one I'd suggest we aim to match is <name>,
+because <one plain reason>. Is there a website or app you like better, or should I
+use that one?" A yes, "not sure" or no answer records the recommendation as a
+DEFAULT. The pick is REQUIRED — every work item has a bar (Section 12) —
 and is ratified in the decision register (`references/documents.md`, document 10,
 Law 46) before the spec is written.
 
@@ -1193,17 +1195,23 @@ declaration BEFORE the first dispatch:
 |---|---|---|
 | `initial` | **`WF01 + units × 3 + 4`** — the WF01 planner agents, three executions per unit (build, blind visual judge, technical judge), and the four release-council judges | The declared baseline, written to `agents.initial`. The reference shape's own figure is **52** (8+16+16+8+4) and a normal complete project has historically landed in the **75–125** band; both are expectations, never limits. |
 | `warn` | **`max(150, 3 × initial)`** | The orchestrator MUST analyze whether measurable progress is still occurring — and record the analysis. Written to `agents.warn_at`. |
-| `first_pause` | **`max(200, 4 × initial)`** | **PAUSE and ask — never stop.** Written to `agents.first_pause`. |
+| `first_pause` | **`max(200, 4 × initial)`** | **CHECKPOINT — never stop.** Below the spend line the run grants itself the next block; at it, PAUSE and ask (`references/capacity.md` §10, THE SPEND LINE). Written to `agents.first_pause`. |
 | `ceiling` | **2,000 agent executions per project** | **STOP.** `run_status = STOPPED_CAP`. Never crossed without the operator. Written to `agents.ceiling`. |
 
-At **`first_pause`: PAUSE.** In this order, the run (1) **deploys the best stable
-build**, so the client has something live to look at; (2) writes the plain report;
-(3) sets `run_status = PAUSED_CAP`; and (4) asks exactly one question, in these
-words:
+At **`first_pause`: CHECKPOINT.** The run compares metered spend with the spend line
+the client approved in the interview (`references/capacity.md` §10, THE SPEND LINE).
+**Below it**, the run grants itself the next block — `agents.pause_blocks_granted`
+increments, `BUDGET-PAUSE: self-granted …` is written — and continues at full width
+without a word to the client: the client's up-front yes IS the "keep going". **At or
+past it** (or projected to pass it before the next checkpoint), the run PAUSES. In
+this order, it (1) **deploys the best stable build**, so the client has something
+live to look at; (2) writes the plain report; (3) sets `run_status = PAUSED_CAP`; and
+(4) asks exactly one question, in these words:
 
 > I've done a lot of work and your <target> is live at <URL>. I've reached the point where I check in before spending more. Here's where it stands: <two lines>. Keep going?
 
-Each **"keep going" adds one more block of `first_pause` executions** —
+Each **"keep going" at a spend-line pause adds the same amount again to the spend
+line and one more block of `first_pause` executions** —
 `agents.pause_blocks_granted` increments and the next pause line becomes
 `first_pause × (blocks + 1)` — and the run resumes at FULL width, not throttled. A
 five-page site pauses near 200; a forty-unit app pauses near 530; nothing runs past

@@ -232,7 +232,11 @@ leaves a gap in the client's own facts, the gap is marked `DRAFT — write one` 
 `00-INPUT/CONTENT.md` and asked about in the morning report — it is never filled
 from a reference app.
 
-**Present to the user as REFERENCE MATERIAL — empowering, warm, concrete:**
+**Present to the user as REFERENCE MATERIAL — empowering, warm, concrete — and
+never as a question of its own.** The survey reaches the client inside interview
+question D1 (`references/interview.md` §3, item 14), which carries ONE
+recommendation; the pick is that question, not a separate ask. When the client asks
+to hear about the examples, or in the recap, it sounds like this:
 
 > I looked at three apps that do something like yours. You are going to build
 > your own, and these are useful to learn from — like looking at other people's
@@ -245,10 +249,11 @@ from a reference app.
 > [same for each app]
 >
 > None of these does exactly what you want — that is why yours is worth building.
-> Which of the good ideas would you like in yours?
+> Here are the good ideas I'm borrowing for yours; say the word to change any of them.
 
-That closing question turns the survey into the user's own choices, one at a
-time, and feeds the specification. It is never a question about WHETHER to build.
+The borrowed ideas are decided and REPORTED — the client's one answer is D1's, and
+the list feeds the specification. It is never a question about WHETHER to build,
+and it is never a separate question at all (`references/interview.md` §6, rule 10).
 
 **If the search finds nothing comparable:** say so plainly — "Nothing like yours
 exists yet, so we are designing from scratch; I will lean on the domain research
@@ -282,14 +287,15 @@ not fetchable, because what gets judged is the frozen screenshot package, never
 the live URL (`references/gauntlet.md` section 4). The capture happens at
 selection, in the same breath as the pick — see "Freezing the bar" below.
 
-**One user question, in plain language** (the audience rules — one question at a
-time, no jargon — one question presenting the candidates, never a menu):
+**No separate bar question — it is folded into D1 as a recommendation.** The
+conductor validates the candidates first, picks the one it recommends, and D1
+speaks it (`references/interview.md` §3, item 14):
 
-> For this kind of app, here are three real ones people think are excellent.
-> Which one should yours be as good as?
+> I looked at a few <websites | apps> like yours, and the one I'd suggest we aim to match is <name>, because <one plain reason>. Is there a website or app you like better, or should I use that one?
 
-(This is the same one-question form gauntlet.md Section 3 mandates for the
-conductor's bar selection — the two files state one question, not two.)
+A yes, "not sure", or "nothing comes to mind" makes the recommendation the bar,
+recorded as a DEFAULT; a named alternative is validated the same way. (gauntlet.md
+Section 3 states the same rule — one question, the D1 question, not two.)
 
 If interview question D1 named a gold standard, validate it first (Named /
 Fetchable / Comparable) and present it FIRST among the candidates — it is the
@@ -305,9 +311,10 @@ passed.
   with the survey's AVOID THAT findings) are ratified into the decision
   register with the bar (gauntlet.md, Section 3) — three decisions, one
   ratification moment.
-- **The user MUST pick one.** Bar selection is required (references/gauntlet.md,
+- **Every run HAS a bar.** Bar selection is required (references/gauntlet.md,
   Section 12) — there is no "select none" outcome that drops the comparative gate.
-  One plain-language question, the user picks the bar, and the pick is ratified in
+  D1 carries the recommendation, the client's answer (or the DEFAULT) picks the
+  bar, and the pick is ratified in
   the decision register (document 10, Law 46). If no comparable reference exists
   for the domain, that is recorded as INFEASIBLE (GL-007) and escalated — it is
   never a silent skip of Gate 3. A PASS also requires the ten-category score floor

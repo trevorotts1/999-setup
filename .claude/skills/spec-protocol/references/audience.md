@@ -98,7 +98,7 @@ client-facing sentence says what the thing DOES instead:
 |---|---|
 | "Does the application need a database?" | "Does it need to remember information when someone comes back later — like their account, appointments, saved work, purchases, or progress?" |
 | "Do you need authentication?" | "Will people need their own account and password, or can anyone open it and use it?" |
-| "Where should I deploy it?" | "Do you already have somewhere this should go online, or would you like me to handle that?" |
+| "Where should I deploy it?" | Never asked. Where it lives is decided and REPORTED in the recap (`environment-sweep.md`, "Where it will live"); the client hears only "I'll keep your work safe and put it online for you. You don't need to set anything up." |
 | "Do you want a responsive web application?" | "Should people be able to use the same thing comfortably on both their phone and computer?" |
 | "Which image model do you want?" | "Would you like me to create the pictures we need, or do you already have pictures you want me to use?" |
 | "Which framework / database / provider?" | Never asked. Candace decides and, if it costs money, asks only for a yes. |
@@ -148,11 +148,19 @@ The user should feel confident walking away. Use these phrases liberally:
 - "The work that is finished is safe. If your Mac restarts, it picks up where it
   left off."
 
-State the set-and-forget promise at the start and again at the end:
+State the set-and-forget promise at the start and again at the end. At the start it
+is the greeting's own line (the count and the time, `interview.md` §3):
 
-> Run /spec-protocol, answer a proper set of plain questions — a step at a time,
-> with a limit I give you up front — walk away, and come back to a finished,
-> deployed app. It works overnight while you sleep.
+> I'll ask you about fifteen short questions, one at a time. It takes about half an hour, then you can walk away.
+
+At the end — immediately after the last question is answered, as a statement that
+closes the interview — it is this, verbatim:
+
+> That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop.
+
+That promise is kept literally: the morning report is written to the project folder
+AND copied to the client's Desktop as `Your project is ready` (see "The morning
+report" below).
 
 When the user answers a question, confirm: "Got it. [one-line summary of what you
 heard]. Next question:" When they give you all the information (entry mode 2),
@@ -170,9 +178,9 @@ again (the mechanical mechanism is the never-re-ask law in `interview.md`'s
 opening rules, in four parts: the named answers file, stable question keys, the
 pre-question check, and the session-log ask line). When the check finds the answer, the conductor states it
 back in one line — "you already told me <their words>; if anything changed, tell
-me" — and never re-asks. A question key asked twice in the session log is a violation:
-the pre-question check above is what prevents it, and the session log is where it
-is proven.
+me" — and never re-asks. Asking an ANSWERED key again is a violation; returning to
+an unanswered one is required. The pre-question check above is what prevents the
+first, and the session log is where both are proven.
 
 ---
 
@@ -212,9 +220,7 @@ At the end of the launch instructions:
 > anything that is not good enough yet, and putting the finished pieces safely on
 > GitHub. You do not need to open anything, start anything, or watch anything.
 >
-> Go and have your evening. When you wake up, open the "Morning Report" file in
-> your project folder. It will tell you what was built, what is done, and whether
-> anything needs your attention.
+> That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop.
 
 Never offer windows first. Only if the user asks, unprompted, for separate windows
 of their own does `terminals.md`'s labelled last-resort rung come into play — and
@@ -313,7 +319,11 @@ catches every fixture is broken, not strict.
 ## The morning report — the user-facing close
 
 When the run finishes, the morning report (document 14) is what the user reads.
-Write it in plain language:
+**Write it in two places:** the project folder (document 14's own path) AND the
+client's Desktop as a plain-text note named `Your project is ready.txt` — the same
+content, so the walk-away promise is kept to the letter and nobody has to find a
+project folder. On Windows the Desktop is `%USERPROFILE%\Desktop`. Write it in plain
+language:
 
 ```
 # Morning Report — <project name> — <date>

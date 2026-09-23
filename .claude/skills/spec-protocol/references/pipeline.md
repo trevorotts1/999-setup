@@ -763,36 +763,48 @@ couple two lanes that the schedule went to some trouble to keep apart.
 §11 — the one place seats are written), resolved live and recorded in the Capacity
 Ledger. One merger per repository.
 
-### GitHub is arranged at MINUTE ONE, never at merge time
+**The merge train and the swarm waves are shipped, never hand-written per run.**
+`tools/merge-train.sh <project>` is the merge train: it merges one unit at a time
+with the existing truth gates ("Land vs Merged" below — landed on the integration
+branch, then merged only on proven trunk ancestry and the artifact at HEAD). The
+build wave, judge wave, fix wave and merge-train workflows come from
+`templates/workflows/`, each taking the JSON unit list; the run fills the unit list
+and launches the template, it does not write a new script. A hand-written merge or
+wave script in a run is a defect to replace with the shipped one.
+
+### GitHub is arranged at MINUTE ONE, never at merge time — and never asked
 
 **Before the first dispatch — not here, and not when the pen is full — the skill
-arranges the safe place to keep the work.** A client who has never had a GitHub
-account is the most likely client this skill has; discovering that at merge time
-fills the pen and never closes delivery. So the arrangement happens at the top of
-the run, in one plain sentence and one click:
+arranges the safe place to keep the work, without a question.** The one-click
+`gh auth login --web` is run once by the installer (`nine-router-setup`), so at run
+time `gh auth status` normally already passes. The client hears one sentence, once,
+and it is a statement, not an ask (`references/environment-sweep.md`, Gate 2):
 
-> I need a safe place on the internet to keep your work. I will open a page; sign in or create a free account and click Allow.
+> I'll keep your work safe and put it online for you. You don't need to set anything up.
 
-The skill then drives `gh auth login --web` itself — it reads the one-time code
-aloud, opens the page, and waits. The client never types a token, never opens a
-terminal, and never sees a credential. `gh auth status` proves the result before
-the first builder is dispatched, and the proof is recorded in the ledger.
+The client never types a token, never opens a terminal, never sees a credential, and
+is never asked to sign in or create an account during the run. `gh auth status` is
+proved before the first builder is dispatched and the proof is recorded in the ledger.
 
-**If the client declines, that is a DEFAULT, not a stop.** Record
-`GITHUB: operator-provided remote (client declined own account)` in the ledger,
-use the operator-provided remote, and carry on. The run never blocks on this and
-never asks twice.
+**When `gh auth status` fails, that is a DEFAULT, not a stop and not a question.**
+`tools/repo-anchor.sh` reads the operator's remote owner
+(`SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER`) and creates `<owner>/<slug>` private; with no
+owner it anchors local-only (receipt `source=local-only`) and the morning report says
+the work is not yet online. Record `GITHUB: operator-provided remote` or
+`GITHUB: local-only` in the ledger and carry on. The client's own GitHub account is
+offered in the morning report only.
 
 **The step that actually makes the repository is `tools/repo-anchor.sh <project>`**
 (SKILL.md step 17), not a judgement call in prose. It resolves the repo root,
 initialises it if there is none, keeps an existing `origin`, and otherwise creates a
 PRIVATE repository on the client's own GitHub login with
 `gh repo create --private --source --remote origin --push` — the token never goes into
-a URL. On the declined path above it is handed the operator's remote as
-`--operator-remote <url>` instead. It proves the result with `git ls-remote`, writes the
+a URL. When `gh auth` fails (above) it uses the operator's remote owner
+(`SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER`, or `--operator-remote <url>`), and with none it
+anchors local-only (`source=local-only`, which SHAPE 9 accepts). It proves the result with `git ls-remote`, writes the
 receipt `repo-anchor.json` beside the state (`CONTROL/` on a legacy project, the
 `documents.state` directory on a profiled one), and on legacy adds the ledger line
-`REPO-ANCHOR: root=<path> remote=OK branch=main source=<client-gh|--remote|operator-remote|existing>`.
+`REPO-ANCHOR: root=<path> remote=OK branch=main source=<client-gh|--remote|operator-remote|local-only|existing>`.
 `--check` is read-only and cheap. Exit 0 anchored, 3 already anchored, 2 UNDETERMINED,
 4 declined with no fallback. That receipt and that ledger line are the record the
 trunk-ancestry merge proof below ("Land vs Merged") builds on — there is no remote to
@@ -805,7 +817,7 @@ every build dispatch, legacy or profiled, until the receipt exists and matches
 This is not determined by asking and deciding, and not at merge time: it is
 `tools/repo-anchor.sh <project>` at step 17, run before the first builder. An existing
 `origin` is kept as-is; where there is none the tool creates the private repository on
-the client's own login, or uses the operator remote on the declined path above. The
+the installer's `gh` login, or uses the operator remote or local-only when that login fails. The
 `gh auth status` re-check still runs — the login was already proven at minute one — but
 it re-checks the login, never the repository: the repository's existence is the tool's
 exit code and its `repo-anchor.json` receipt.
