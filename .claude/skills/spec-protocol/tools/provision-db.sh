@@ -22,6 +22,9 @@
 # Idempotent: when DATABASE_URL or POSTGRES_URL is already set on the project,
 # nothing is created.
 #
+# Every failure after the project folder is found writes `DATABASE-BLOCKED: <reason>`
+# (ledger, or <state dir>/provision-db.log when profiled) and names the NEXT step.
+#
 # Exit: 0 provisioned or already present | 3 the add ran but no variable appeared |
 #       2 undetermined (no receipt, CLI failed, not linked, not logged in) | 1 usage
 #
@@ -43,6 +46,7 @@ DIR="$(dirname "$SELF")"
 
 say() { printf 'PROVISION-DB | %s\n' "$*"; }
 undetermined() { say "UNDETERMINED | $*"; exit 2; }
+HOME_DIR=""
 
 state_dir() { # CONTROL/ (legacy) or dirname(documents.state) (profiled)
   local home="$1" st
@@ -65,6 +69,13 @@ record() { # record <home> <line>
   fi
 }
 
+blocked() { # blocked <rc> <reason> <next step> — DATABASE-BLOCKED line, then exit
+  record "$HOME_DIR" "DATABASE-BLOCKED: $2" 2>/dev/null || say "could not record the DATABASE-BLOCKED line"
+  say "DATABASE-BLOCKED | $2"
+  say "NEXT | $3"
+  exit "$1"
+}
+
 db_vars() { # db_vars <root> -> prints the DB variable names present; rc 2 when env ls fails
   local out
   out="$(cd "$1" && vercel_run env ls production)" || { printf '%s\n' "$out" | tail -5 >&2; return 2; }
@@ -73,26 +84,29 @@ db_vars() { # db_vars <root> -> prints the DB variable names present; rc 2 when 
 
 provision() {
   local home="${1%/}" sd root vars out rc slug
+  HOME_DIR="$home"
   [[ -d "$home" ]] || undetermined "no project folder at $home"
   sd="$(state_dir "$home")" || undetermined "$home/.spec-protocol.json has no readable in-root documents.state"
   root="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["repoRoot"])' "$sd/repo-anchor.json" 2>/dev/null)" \
-    || undetermined "no repo-anchor receipt at $sd/repo-anchor.json — run tools/repo-anchor.sh $home first"
-  [[ -d "$root" ]] || undetermined "the receipt's repoRoot $root is not a folder"
+    || blocked 2 "no repo-anchor receipt at $sd/repo-anchor.json" "run tools/repo-anchor.sh $home, then rerun tools/provision-db.sh"
+  [[ -d "$root" ]] || blocked 2 "the receipt's repoRoot $root is not a folder" "rerun tools/repo-anchor.sh $home, then rerun tools/provision-db.sh"
 
   slug="$(basename "$root" | tr -cs 'a-zA-Z0-9-' '-' | sed 's/^-*//; s/-*$//' | tr 'A-Z' 'a-z')"
   vercel_resolve "${PROVISION_VERCEL_CMD:-}" \
-    || undetermined "no Vercel CLI (not on PATH, not in the 999 npm prefix, and no npx) — re-run nine-router-setup"
+    || blocked 2 "no Vercel CLI (not on PATH, not in the 999 npm prefix, and no npx)" \
+         "re-run nine-router-setup (it installs the Vercel CLI), then rerun tools/provision-db.sh"
   if [[ ! -f "$root/.vercel/project.json" ]]; then
     out="$(cd "$root" && vercel_run link --yes --project "${slug:-project}")"; rc=$?
     if (( rc != 0 )); then
-      say "vercel link --yes --project ${slug:-project} exited $rc. Last lines:"
       printf '%s\n' "$out" | tail -5
-      exit 2
+      blocked 2 "vercel link --yes --project ${slug:-project} exited $rc in $root" \
+        "give this machine the operator's Vercel credential (VERCEL_TOKEN in operator.env, or \`vercel login\`), then rerun tools/provision-db.sh"
     fi
     say "LINKED | $root -> Vercel project ${slug:-project}"
   fi
 
-  vars="$(db_vars "$root")" || undetermined "vercel env ls production failed in $root (not linked, or not logged in)"
+  vars="$(db_vars "$root")" || blocked 2 "vercel env ls production failed in $root (not linked, or not logged in)" \
+    "give this machine the operator's Vercel credential (VERCEL_TOKEN in operator.env, or \`vercel login\`), then rerun tools/provision-db.sh"
   if [[ -n "${vars// /}" ]]; then
     say "ALREADY | $vars set on the Vercel project; nothing created"
     exit 0
@@ -100,15 +114,15 @@ provision() {
 
   out="$(cd "$root" && vercel_run integration add neon --name "${slug:-project}-db" --non-interactive)"; rc=$?
   if (( rc != 0 )); then
-    say "vercel integration add neon exited $rc. Last lines:"
     printf '%s\n' "$out" | tail -5
-    exit 2
+    blocked 2 "vercel integration add neon exited $rc in $root" \
+      "if the lines above ask for Neon's terms, run \`vercel integration accept-terms neon\` once in a browser session; then rerun tools/provision-db.sh"
   fi
 
-  vars="$(db_vars "$root")" || undetermined "vercel env ls production failed after the add"
+  vars="$(db_vars "$root")" || blocked 2 "vercel env ls production failed after the add" "rerun tools/provision-db.sh (it is idempotent)"
   if [[ -z "${vars// /}" ]]; then
-    say "NOT PROVISIONED | the add exited 0 but no DATABASE_URL/POSTGRES_URL is on the project"
-    exit 3
+    blocked 3 "the add exited 0 but no DATABASE_URL/POSTGRES_URL is on the project" \
+      "open the Vercel project's Storage tab, connect the Neon database to it, then rerun tools/provision-db.sh"
   fi
   record "$home" "DATABASE: provider=neon via=vercel-marketplace vars=${vars% }" || undetermined "could not record the DATABASE line"
   say "PROVISIONED | $vars"

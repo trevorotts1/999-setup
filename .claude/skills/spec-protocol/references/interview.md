@@ -3,10 +3,11 @@
 This file owns every question a client hears and every count claim in this
 skill. It has six sections and nothing else:
 
-1. **The uncounted opening** — the idea, classify-and-confirm, the funnel gate, entry mode.
+1. **The uncounted opening** — the idea, classify-and-confirm, the funnel gate, entry mode, the update offer.
 2. **The brainstorm probes** — a conversation, never a questionnaire.
 3. **DEFAULT MODE** — the whole counted list.
 4. **ADVANCED MODE** — the five things it adds.
+   4b. **The answer keys** — every question's stable key, per mode.
 5. **The media questions.**
 6. **The counter rules.**
 
@@ -88,6 +89,9 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    it and says done; the run copies
    what lands there into `00-INPUT/`. A typed path is accepted when offered, never
    asked for.
+6. **The update offer**, only when `tools/check-update.sh` exited 1 — SKILL.md owns
+   the words (turn 5, after entry mode and any funnel keys). Setup, asked once,
+   UNCOUNTED: no count exists yet when it is spoken (section 6, rule 8).
 
 ### Step 1c — the Build Target taxonomy
 
@@ -370,10 +374,14 @@ This list IS the default-mode interview. **C is the length of this list after
 the pre-statement reads remove what is already known**, and the promise spoken
 up front is the greeting's: "First we'll have a short chat about your idea, then
 about a dozen quick questions, one at a time — about half an hour, then you can
-walk away." Every item is spoken with its number — "Question N of no more than
-C" — per section 6.
+walk away." Every counted item is spoken with its number — "Question N of no more
+than C" — per section 6. **The mode question (item 1) is UNCOUNTED:** it carries
+no number, and C is stated for the first time on the first counted question after
+it is answered — so C is the chosen mode's list and advanced mode never raises a
+ceiling already spoken. The item numbers below are labels for this file; the
+spoken N counts only the questions actually asked, starting at 1.
 
-1. **The mode question**, first, in these words:
+1. **The mode question**, first, uncounted, in these words:
 
    > I can handle most of the decisions for you, or I can stop and let you
    > choose more of the details as we go.
@@ -502,6 +510,13 @@ help you with it."
     "reserve", "repository", "backoff", "seats", a helper count or any other internal
     setting — those go to the decision register, not the client.
 
+15a. **When the brainstorm already captured a non-goal** (topic 3, "what is
+    deliberately not in it"), D4 is NOT asked again. It is a pre-statement read:
+    record it with `answers.sh stated dont-wants "<their words>"`, remove it from C
+    before C is first stated, and say it back in one line inside the next counted
+    question's turn — "You told me earlier you don't want <their words>; if anything
+    changed, tell me." — then ask that next question and end there.
+
 **The spend question — the last counted question, in both modes** (asked after section
 4's items in ADVANCED MODE). `capacity.md` §10, THE SPEND LINE, owns `<X>` and what the
 answer does:
@@ -513,8 +528,9 @@ Its answer writes the `COST-LINE:` ledger line. Skipped when the run has no mete
 interview** (`audience.md` §5 owns it):
 "That's everything I need. Leave this window open — it's fine to turn the screen off. I'll work through the night, and in the morning I'll put a note called 'Your project is ready' on your Desktop."
 
-**That is seventeen at most — fifteen list items once question 10 merged into 13,
-the pictures-account question when it is live, plus the spend question — and the
+**That is sixteen counted at most — fifteen list items once question 10 merged into 13,
+less the uncounted mode question, plus the pictures-account question when it is live
+and the spend question — and the
 pre-statement reads (a supplied folder, an OpenClaw box, an existing domain found)
 and the branch answers remove items, so most runs land near a dozen.** D1's answer seeds the bar candidates in `research.md` and never
 replaces the selection step there; D4's is the avoid-that delta, frozen into
@@ -619,6 +635,55 @@ Everything else stays decided-and-reported in both modes.
 
 ---
 
+## 4b. The answer keys — what `answers.sh init --planned` is given
+
+Every question in this file is recorded in `00-INPUT/ANSWERS.md` under ONE stable
+key, through `tools/answers.sh` (SKILL.md owns the verbs). These lists are the only
+owner of the key names; the ledger's order is not the speaking order — sections 1,
+3 and 4 own that.
+
+**Uncounted keys** (never carry a number):
+
+| Key | Question | Planned when |
+|---|---|---|
+| `idea` | the idea question (section 1) | turn 1 init, always |
+| `confirm` | classify-and-confirm (section 1) | turn 1 init, always |
+| `entry-mode` | the entry-mode question (section 1) | turn 1 init, always |
+| `funnel-pit`, `funnel-firebase`, `funnel-location` | the three funnel keys (Check 2) | target is `FUNNEL` (turn 5, after entry mode, one per turn) |
+| `update-offer` | the update offer (SKILL.md turn 5) | only when `tools/check-update.sh` exited 1 |
+| `mode` | the mode question (section 3, item 1) | step 6 init, always |
+
+**DEFAULT MODE counted keys** — the step-6 init is
+`answers.sh <project> init --planned mode,<branch keys for the confirmed target>,name,offer,contact,reviews,domain,pictures,pictures-account,example,dont-wants,done,spend`
+with these branch keys (items 2–6):
+
+| Confirmed target | Branch keys |
+|---|---|
+| `WEBSITE` | `site-pages` (its address question IS `domain`, item 12 — one key, asked once) |
+| `FUNNEL` | `funnel-action,funnel-offer,funnel-after,funnel-existing,funnel-shape` |
+| `MOBILE_APP` | `app-remember,app-signin,app-store` |
+| `WEB_APP` | `app-remember,app-signin` |
+| `MOBILE_AND_WEB` | `app-remember,app-signin,app-store,app-same` |
+| `DESKTOP_SOFTWARE` | `desktop-shape` |
+
+Content keys map one to one: `name` (7), `offer` (8), `contact` (9), `reviews` (11),
+`domain` (12), `pictures` (13), `pictures-account` (13b), `example` (D1, 14),
+`dont-wants` (D4, 15), `done` (16), `spend` (the spend question, or the low-balance
+question in its slot — one key either way).
+
+**ADVANCED MODE adds** — a second, idempotent init the moment the mode answer is
+advanced, before the first counted question:
+`answers.sh <project> init --planned helpers,seats,picture-service,folder,protected`
+(items 17–21, spoken before `spend`).
+
+**Then, before the first counted question:** `skip` every planned key whose trigger is
+not live (no artwork → `pictures`, `pictures-account`, `picture-service`; one account →
+`pictures-account`; no metered spend → `spend`), and `stated` every key a document, the
+brainstorm or a pre-statement read already answered. C is the count of counted keys
+left planned, stated for the first time on the first counted question.
+
+---
+
 ## 5. The media questions
 
 Run this block whenever the plan calls for artwork of its own — a funnel almost
@@ -704,10 +769,10 @@ said plainly, naming what was checked.
 1. Every counted question is spoken with its number: "**Question N of no more than C** — <the question>".
 2. N never resets, never repeats, never decreases.
 3. C is the length of the mode's list — section 3, plus section 4 in advanced mode — after the pre-statement reads.
-4. The greeting promises "a short chat about your idea, then about a dozen quick questions … about half an hour": the DEFAULT MODE list is seventeen at most (pictures-account and spend questions included) and most runs land near a dozen. The spend question is always the LAST counted question, in both modes.
-5. C is stated ONCE, before question 1, and may only ever be LOWERED.
+4. The greeting promises "a short chat about your idea, then about a dozen quick questions … about half an hour": the DEFAULT MODE list is sixteen counted at most (pictures-account and spend questions included, the mode question not) and most runs land near a dozen. The spend question is always the LAST counted question, in both modes.
+5. C is stated ONCE, on the first counted question — the turn right after the uncounted mode question is answered, so it is already the chosen mode's list — and may only ever be LOWERED.
 6. Every lowering is ANNOUNCED before the next question: "Good news — it will be at most <C'> now, because <the reason>."
 7. C is never raised; a question asked past the stated C, with no correction spoken first, is a defect.
-8. Uncounted: the opening, the idea question, classify-and-confirm, the funnel gate, entry mode, and the brainstorm probes (at most two per topic).
+8. Uncounted: the opening, the idea question, classify-and-confirm, the funnel gate and its three key asks, entry mode, the update offer (setup, asked once at turn 5, before any count exists), the brainstorm probes (at most two per topic), and the mode question. Each is still recorded under its key (section 4b).
 9. This file is the ONLY owner of a count claim in this skill — no other file states, restates, or invents a number.
 10. **Count every ask.** No other file adds a question outside this list. Anything another file wants from the client is either folded into a counted question here (the reference-app and bar pick into D1, the low-balance warning into the spend question), decided and REPORTED in the recap (hosting, the borrowed ideas), or added to this list and counted. An ask that appears nowhere in this file is a defect.

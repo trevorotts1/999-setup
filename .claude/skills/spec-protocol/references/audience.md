@@ -151,8 +151,8 @@ report" below).
 When the user answers a question, confirm: "Got it. [one-line summary of what you
 heard]. Next question:" When they give you all the information (entry mode 2),
 confirm: "I have read everything. Here is what I understood: [one-paragraph
-summary]. If that is right, I will start. If I got something wrong, tell me and I
-will fix it."
+summary]. If I got something wrong, tell me and I will fix it. Did I get that
+right?" — the confirm ends ON its question, like every client turn.
 
 **BINDING — never ask a question the user already answered (Issue 12 fix).** An
 answer the user has given lives in the project's answers file
@@ -202,9 +202,13 @@ and in the morning report, and written into `CONTROL/LAUNCH-COMMAND.md`
 
 At the end of the launch instructions:
 
-> I am doing all of it for you — building your app, checking the work and fixing
-> anything that is not good enough yet, and putting the finished pieces safely on
-> GitHub. You do not need to open anything, start anything, or watch anything.
+> I am doing all of it for you — building it, checking the work and fixing
+> anything that is not good enough yet, and keeping a safe copy of everything. You
+> do not need to open anything, start anything, or watch anything.
+
+(No online-copy promise is spoken here: whether the files also go online is not
+known until the run sets that up, and a local-only run never has one. The morning
+report's opening line says which it was.)
 >
 > That's everything I need. Leave this window open — it's fine to turn the screen off. I'll work through the night, and in the morning I'll put a note called 'Your project is ready' on your Desktop.
 
@@ -322,7 +326,7 @@ is `%USERPROFILE%\Desktop`. Write it in plain language:
 
 <the opening line — exactly ONE of these three, chosen from the ledger:>
   live, backup online:  Your <target word> is live at <URL>, and a safe backup copy is stored online (on a service called GitHub) so it can't be lost.
-  live, local-only:     Your <target word> is live at <URL>. Its files are saved on your computer, not online yet.
+  live, local-only:     Your <target word> is live at <URL>, and a copy of its files is kept on your computer.
   not live:             Your <target word> is built and saved on your computer, not online yet. <the one thing that stopped it, in plain words>
 Here's what got built, what I checked, and the one or two things only you can decide.
 

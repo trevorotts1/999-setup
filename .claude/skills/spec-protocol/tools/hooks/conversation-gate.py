@@ -56,9 +56,11 @@ WHAT IT CHECKS, when a spec-protocol run yields the turn to its client:
      refusal). Detection lines and update offers belong in the operator log.
 
   L  QUESTION COUNTER BROKEN. "Question N of no more than C": N rises by one
-     per turn (a same-words re-ask may repeat N); C never rises and is lowered
+     per turn (a same-words re-ask may repeat N); C rises only ONCE, on the count
+     right after the mode question (advanced mode's longer list), and is lowered
      only with interview.md's sentence "Good news -- it will be at most C' now";
      once counting has begun, a question before the last one carries its number.
+     After the walk-away (line or `watch-tick.sh --record-session`) L stands down.
 
   N  NAMING OR STATUS AFTER THE QUESTION in the same paragraph, or more than
      two "?" in one paragraph (an either/or is two; the mandated "Not sure?"
@@ -146,7 +148,8 @@ def _speech_check(message, home):
         verdict = head[0] if head else "SPEECH-CHECK | verdict=REJECT"
         hits = [ln.strip() for ln in head[1:8] if ln.strip()]
         return ("CLIENT-FACING JARGON. This message carries wording a non-technical "
-                "client cannot act on.\n\n%s\n%s\n\nSay what the thing DOES instead of "
+                "client cannot act on, or an unfilled <placeholder>.\n\n%s\n%s\n\nFill every "
+                "placeholder with the real words. Say what the thing DOES instead of "
                 "naming it (references/audience.md §2). File paths, workflow ids, law "
                 "numbers, model names and dollar figures never reach the client; machine "
                 "detail goes to the session log." % (verdict, "\n".join(hits)))
@@ -254,11 +257,24 @@ def _events(transcript_path):
     return out
 
 
+# D2 -- a MID-TURN load of the skill (an operator session reading it through the
+# Skill tool) is a run only when this session also opened one: `gate0.sh --open`
+# or `answers.sh ... init`. A typed /spec-protocol ('inv') is always a run.
+RUN_PROOF = re.compile(r"gate0\.sh['\"]?\s[^\n]*--open\b|answers\.sh['\"]?\s[^\n]*\binit\b")
+
+
+def _is_run(ev):
+    if any(k == "inv" for k, _, _ in ev):
+        return True
+    return any(k == "minv" for k, _, _ in ev) and \
+        any(k == "cmd" and RUN_PROOF.search(v) for k, v, _ in ev)
+
+
 def _is_spec_protocol_run(transcript_path):
     """Is THIS SESSION a spec-protocol client conversation? Only the harness's
     skill injection counts; discussing, editing or standing in the folder does
     not."""
-    return any(k in RUN_KINDS for k, _, _ in _events(transcript_path))
+    return _is_run(_events(transcript_path))
 
 
 def _project_from_events(ev, cwd=None):
@@ -366,6 +382,12 @@ def _opening_problem(text):
 
 # --- L: the question counter -------------------------------------------------
 COUNTER = re.compile(r"Question\s+(\d+)\s+of\s+no\s+more\s+than\s+(\d+)\W*(.{0,60})", re.I | re.S)
+# D3 -- the walk-away (audience.md §5) ends the interview; watch-tick records it.
+WALKED_CMD = re.compile(r"watch-tick\.sh['\"]?\s[^\n]*--record-session\b")
+WALKED_LINE = re.compile(r"That['’]s everything I need\.\s*Leave this window open", re.I)
+# D5 -- the mode question (interview.md §3 item 1). Its answer may set the list
+# length (advanced adds section 4), so C may rise ONCE, on the very next count.
+MODE_Q = re.compile(r"handle most of (?:it|the decisions) for you", re.I)
 
 
 def _counter_problem(message, prior_texts):
@@ -374,7 +396,7 @@ def _counter_problem(message, prior_texts):
     it will be at most C' now"), or -- once counting has begun and is not
     finished -- a question is asked without its number. A re-ask of the same
     question in the same words (check H demands it) may repeat N."""
-    prev, ceiling = None, None
+    prev, ceiling, after_mode = None, None, False
     for t in prior_texts:
         found = COUNTER.findall(t or "")
         if found:
@@ -382,6 +404,8 @@ def _counter_problem(message, prior_texts):
         low = LOWERING.findall(t or "")
         if low and ceiling is not None:
             ceiling = min(ceiling, int(low[-1]))
+        # D5: true only while the LATEST earlier message is the mode question.
+        after_mode = bool(MODE_Q.search(t or ""))
     if not prev:
         return None                  # counting has not begun
     msg = ODD_QUESTION_MARK.sub("?", message or "")
@@ -391,6 +415,8 @@ def _counter_problem(message, prior_texts):
         return ("QUESTION COUNT RAISED. The client was promised at most %d; \"at most %s\" "
                 "raises it. The ceiling may only ever be lowered." % (ceiling, low[-1]))
     allowed = int(low[-1]) if low else ceiling
+    if after_mode and cur and int(cur[-1][1]) > ceiling:
+        allowed = int(cur[-1][1])    # the one sanctioned raise: advanced mode's longer list
     if not cur:
         clean = _strip_quote_markers(msg)
         if int(prev[0]) < ceiling and not STATUS_SHAPE.match(clean) and \
@@ -663,6 +689,22 @@ def _project_name(cwd):
     return trimmed or None
 
 
+def _ledger_name(answers_text):
+    """D1 -- on a fresh run (held ledger, no folder name) the name comes from the
+    client's own recorded words: the `name` answer, else the `idea` answer. A bare
+    category ("an app", "a website") is not a name."""
+    for key in ("name", "idea"):
+        m = re.search(r"^## %s[ \t]*\n(?:(?!## ).*\n)*?\*\*Answer:\*\*\s*\"([^\"\n]+)\"" % key,
+                      answers_text or "", re.M)
+        if not m:
+            continue
+        v = m.group(1).strip()
+        bare = re.sub(r"^(an?|the|my)\s+", "", v.strip(" .!").lower())
+        if v and bare not in CATEGORY_DIRS:
+            return v
+    return None
+
+
 # --- I: the declared profile decides the surface, not the word "app" --------
 CONFIRM_SENTENCE = re.compile(
     r"call it your|you want an?\b|did I get that right|what I['’]?ll build", re.I)
@@ -731,11 +773,11 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
     # E -- the 1.21.1 defect: a category label where a real name exists.
     m = CATEGORY_NAMING.search(clean)
     if m and project_name:
-        return ("CATEGORY WORD INSTEAD OF THE NAME. You said \"call it your %s\" while this "
-                "thing is called \"%s\". Reading everything and then using a bucket label "
-                "reads exactly like having read nothing. Call it by its name; the category "
-                "word is only for a project that genuinely has no name."
-                % (m.group(1), project_name))
+        return ("CATEGORY WORD INSTEAD OF THE NAME. You said \"call it your %s\" while a "
+                "name is already in hand: \"%s\". Reading everything and then using a bucket "
+                "label reads exactly like having read nothing. Call it by its name; the "
+                "category word is only for a project that genuinely has no name."
+                % (m.group(1), _ellipsis(project_name, 80)))
 
     # F -- the 1.21.4 defect: a fork announced and decided in the same breath.
     # A LATER-turn default carries its marker and is the mandated shape, not this.
@@ -847,7 +889,7 @@ def _reason(payload):
     """The block reason for this Stop, or None."""
     tp = payload.get("transcript_path", "")
     ev = _events(tp)
-    if not any(k in RUN_KINDS for k, _, _ in ev):
+    if not _is_run(ev):
         return None                  # not a run: an operator session, a discussion
     message = _last_client_message(tp)
     if not message:
@@ -863,8 +905,12 @@ def _reason(payload):
 
     # L -- the question counter, against the last counted question of an
     # EARLIER turn (a blocked attempt in this turn is not a previous question).
+    # D3 -- after the walk-away the interview is over: nothing is counted.
     start = _turn_start(ev)
-    r = _counter_problem(message, [v for k, v, n in ev if k == "text" and n < start])
+    walked = any((k == "cmd" and WALKED_CMD.search(v)) or (k == "text" and WALKED_LINE.search(v))
+                 for k, v, _ in ev)
+    r = None if walked else _counter_problem(
+        message, [v for k, v, n in ev if k == "text" and n < start])
     if r:
         return r
 
@@ -894,9 +940,10 @@ def _reason(payload):
                     targets = declared
             except Exception:
                 targets = None        # no profile, or unreadable: check I stands down
-            # A HELD ledger's folder is a run id, never the thing's name.
-            r = evaluate(message, answers_text, None if held else _project_name(project),
-                         targets, _client_prose(tp, 1))
+            # A HELD ledger's folder is a run id, never the thing's name; then the
+            # client's recorded name/idea answer supplies it (D1).
+            name = (None if held else _project_name(project)) or _ledger_name(answers_text)
+            r = evaluate(message, answers_text, name, targets, _client_prose(tp, 1))
             if r:
                 return r
     if answers_text is None:
@@ -1464,6 +1511,48 @@ def _selftest():
         _last_client_message(_transcript("g7b.jsonl", _asst({"type": "text", "text": "THIS TURN."}),
                                          USER, _asst(_USE)))),
        ("THIS TURN.", None))
+
+    # --- round 4 (D1-D5): one case each, with its control --------------------
+    # D1 -- held ledger: the recorded idea answer is the name check E uses.
+    held2 = os.path.join(cfg, "spec-protocol", "runs", "r4", "00-INPUT", "ANSWERS.md")
+    os.makedirs(os.path.dirname(held2))
+    open(held2, "w").write('# Answers\n\n## idea\n**Asked:** "%s"\n**Answer:** "a booking page for '
+                           'Brightside Studio"\n\n## entry-mode\n**Asked:** _not yet spoken_\n'
+                           '**Answer:** _blank_\n' % OPEN)
+    t2("D1 held run: 'your website' blocks against the idea answer (control: bare category)",
+       ("CATEGORY WORD" in _run("d1", INV, _say(OPEN), _bash("bash tools/answers.sh init --hold r4"),
+                                _result("ANSWERS | init | " + held2), USER,
+                                _say("Wonderful. From here on I'll call it your website, until you give "
+                                     "it a name.\n\nI can learn about your idea in one of two ways. "
+                                     "Which would you rather do?")),
+        _ledger_name('## idea\n**Asked:** "x"\n**Answer:** "a website"\n')),
+       (True, None))
+
+    # D2 -- a mid-turn load of this skill is a run only with gate0 --open / answers init.
+    mload = {"type": "user", "sourceToolUseID": "call_2", "message": {"role": "user",
+             "content": [{"type": "text", "text": "Base directory for this skill: /x/skills/spec-protocol"}]}}
+    t2("D2 operator mid-turn load is silent (control: with gate0.sh --open it is a run)",
+       (_is_spec_protocol_run(_transcript("d2a.jsonl", USER, mload, _say("Read it."))),
+        _is_spec_protocol_run(_transcript("d2b.jsonl", USER, mload,
+                                          _bash('bash tools/gate0.sh --open "$HOLD"')))),
+       (False, True))
+
+    # D3 -- after the walk-away, an unnumbered question is no counter defect.
+    q15 = _say("Question 3 of no more than 15 — What do you sell?")
+    ask = _say("Your AI account is running low. Want me to keep going?")
+    t2("D3 counting stops after watch-tick --record-session (control: before it, it blocks)",
+       ("COUNTED QUESTION WITHOUT" in _run("d3a", INV, q15, USER, ask),
+        _run("d3b", INV, q15, _bash("bash tools/watch-tick.sh --record-session /p"), USER, ask)),
+       (True, ""))
+
+    # D5 -- C may rise once, right after the mode question; any other raise blocks.
+    modeq = "Question 1 of no more than 12 — Should I handle most of it for you, or would you like to choose?"
+    t2("D5 raise allowed once after the mode question (controls: elsewhere, or twice, blocks)",
+       (_counter_problem("Question 2 of no more than 17 — What do you sell?", [modeq]),
+        bool(_counter_problem("Question 4 of no more than 17 — x?", q3)),
+        bool(_counter_problem("Question 3 of no more than 19 — x?",
+                              [modeq, "Question 2 of no more than 17 — What do you sell?"]))),
+       (None, True, True))
 
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")

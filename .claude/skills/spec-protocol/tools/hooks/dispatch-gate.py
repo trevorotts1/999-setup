@@ -21,8 +21,9 @@ and blocks (exit 2) nine shapes, naming the fix for each:
      exit 7 and exit 8. Shape 6 is not about the tree: it is about the RUN.
   7. any launch whose DECLARED agent count, summed across every stage, is not
      booked by a CONTROL/dispatch-log.md row written within the last 120
-     seconds -> the write-ahead rule (references/conductor.md section 6:
-     dispatch-check.sh runs before every wave and writes the row), made mechanical.
+     seconds -> the write-ahead rule (references/enforcement.md section 1,
+     "SHAPE 7 — the write-ahead booking rule": dispatch-check.sh runs before
+     every wave and writes the row), made mechanical.
      The message names both numbers: `declared=<n> booked=<n>`, or
      `booked=none` when nothing booked it at all.
   8. a BUILD dispatch out of a project whose CONTROL/LEDGER.md carries no
@@ -165,7 +166,8 @@ FIX_7 = (
     "  writing the CONTROL/dispatch-log.md row and incrementing agents.executions_total by\n"
     "  that count in the same step, and rolling the increment back if the row fails to land\n"
     "  -- then launch again within the window. This is the write-ahead rule of\n"
-    "  references/conductor.md section 6 (every wave is booked before it fires) with a wall\n"
+    "  references/enforcement.md section 1, 'SHAPE 7 -- the write-ahead booking rule' (every\n"
+    "  wave is booked before it fires) with a wall\n"
     "  behind it. A research reader (one agent, phase research, no build label) is exempt.\n"
     "  WHY: on 2026-09-07 ten stage-2 verifiers fired with NO dispatch-log row at all, so\n"
     "  agents.executions_total read 6 while 17 agents had run and the pause line was short by\n"
@@ -1217,8 +1219,8 @@ def evaluate(script, cwd=None, profiled=False, run_args=None):
     # exact for every dispatch that CALLS it. On 2026-09-07 ten stage-2
     # verifiers fired without calling it at all -- no dispatch-log row, no
     # increment -- and the pause line was short by whole trees.
-    # references/conductor.md section 6 binds every wave to book before it
-    # fires; this is the half that holds when the conductor forgets.
+    # references/enforcement.md section 1 ("SHAPE 7 — the write-ahead booking
+    # rule") binds every wave to book before it fires; this is the half that holds when the conductor forgets.
     # --- 7 scope: outside a marked project the write-ahead rule does not ---
     # apply, so the launch proceeds unexamined. The log is read from the SAME
     # CONTROL/ the marker came out of, never from a nearer or farther one: the

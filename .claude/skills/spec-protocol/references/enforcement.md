@@ -56,6 +56,14 @@ its exit codes and its selftest are `references/workflows.md` §13. This skill
 never removes, disables or weakens a governance hook, and `disableAllHooks` is
 never set.
 
+### SHAPE 7 — the write-ahead booking rule
+
+**The rule:** every tree is booked BEFORE it fires. `tools/dispatch-check.sh`
+runs before every wave and writes the `CONTROL/dispatch-log.md` row for the whole
+tree's declared agent count; a launch with no such row written in the last 120
+seconds is refused. A research reader (one agent, phase research, no build label)
+is exempt from booking. `tools/hooks/dispatch-gate.py` points here.
+
 **SHAPE 7 and the residual limit it does NOT cover (written down, not hidden).**
 The same hook refuses a launch whose DECLARED agent count — summed across every
 stage, so a three-stage tree over ten units is thirty, not ten — is not booked by
