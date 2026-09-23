@@ -2,7 +2,9 @@ export const meta = {
   name: 'judge-wave',
   description: 'Judge every pushed-but-unjudged unit in the list, one blind judge per unit',
   phases: [{ title: 'Judge' }],
+  agentsPerUnit: 1,
 }
+// agents: args.units.length * 1   (one blind judge per unit; read by the dispatch gate)
 // args: { project: "<home>", seats: { judge: "<seat>" },
 //         units: [{ id: "U001", card: "<card path>", branch: "unit/U001", repo: "<path>", builtBy: "<builder seat>" }] }
 // One judge per unit (SHAPE 2). A judge on the builder's seat is refused (Law 7).
