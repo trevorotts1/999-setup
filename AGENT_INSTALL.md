@@ -141,6 +141,13 @@ directly in this session:
 
 Run the orchestrator for the detected OS only. Pass no secrets on the command line.
 
+**Run it in the background and monitor it.** On a fresh Mac the orchestrator waits for
+Apple's Command Line Tools installer (up to 60 minutes), which outlasts any single tool
+call's timeout. Start it with `run_in_background` and its output redirected to a log file,
+then watch that log (a Monitor, or re-reading it) until the `999 SETUP: COMPLETE` report or
+a `BLOCKER:` line appears. Relay progress to the client in plain words while you wait.
+Never re-launch it while a run is still going.
+
 The orchestrator performs, in order: OS + architecture verification; Claude Code
 existence check; Documents resolution; `API docs.md` locate/parse/validate; Node.js
 install/repair only when needed; 9Router install (an existing working install — proven by a real `--version` run — is kept as-is, no reinstall, no upgrade); first-run security (dashboard login,
@@ -151,13 +158,38 @@ resolution; provider connections; fallback + fusion combos; capacity auto-switch
 (vision only); `claude-nine` launcher install; routed-session concurrency guardrails;
 and the smoke-test suite; then Git/Python/GitHub CLI (macOS: Command Line Tools + `gh`;
 Windows: winget `Git.Git`, `Python.Python.3.12`, `GitHub.cli`, with the Git Bash path
-recorded in `CLAUDE_CODE_GIT_BASH_PATH`), the spec-protocol hook registration above,
-ultracode on by default for `claude-nine`, and a one-time `gh auth login --web`.
+recorded in `CLAUDE_CODE_GIT_BASH_PATH`), the Vercel CLI (installed into the same npm
+prefix as 9Router; used to publish finished products), the spec-protocol hook registration
+above, and ultracode on by default for `claude-nine`. A background run does not do the
+GitHub sign-in; its report says `GitHub sign-in: PENDING` and you do it next.
 
-Optional: pass the operator's GitHub org for client backups with
-`--operator-remote-owner <org>` (macOS) / `-OperatorRemoteOwner <org>` (Windows), or set
-`SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER`. It is recorded in
-`<config root>/spec-protocol/operator.env` only when supplied; never guess one.
+**GitHub sign-in — its own visible step.** When the report says `PENDING` (or `NOT SIGNED
+IN`), run, in the background with output to a log:
+
+```text
+gh auth login --web --hostname github.com --git-protocol https
+```
+
+Read the log for the line with the one-time code (`XXXX-XXXX`) and show the client that code
+and the address `https://github.com/login/device` in plain words: "Open this page, sign in
+to GitHub, and type this code." Wait until the command exits, then confirm with
+`gh auth status`. If the client declines, builds keep work on this computer only.
+
+**Operator keys (optional; supplied by the operator, never guessed, never printed).**
+Each is written to `<config root>/spec-protocol/operator.env` (macOS: mode 600, in both
+the `claude` and `claude-nine` roots) only when supplied; a re-run without one keeps the
+earlier value:
+
+- `SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER` — the GitHub org that holds client backups when the
+  client is not signed in. Flag `--operator-remote-owner <org>` (macOS) /
+  `-OperatorRemoteOwner <org>` (Windows), or the environment variable.
+- `SPEC_PROTOCOL_OPERATOR_GH_TOKEN` — a GitHub token that can create repos in that org.
+  Environment variable only.
+- `VERCEL_TOKEN` — the Vercel token used to publish finished products. Environment variable
+  only.
+
+Tokens go in the orchestrator's environment, never on its command line. Never read them
+back or echo them.
 
 ## 8. Install and validate the platform-native `claude-nine` command
 
