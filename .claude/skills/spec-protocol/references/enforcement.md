@@ -1,7 +1,7 @@
-# Enforcement — the standards, and the five instruments that check them
+# Enforcement — the standards, and the six instruments that check them
 
 SKILL.md states the rules in one sentence each and names the script that
-enforces them. This file is where the roster lives: the five instruments, what
+enforces them. This file is where the roster lives: the six instruments, what
 each one decides, and the S-table they and the conductor walk. Nothing here is
 client-facing.
 
@@ -12,7 +12,7 @@ cadence — there is no third category, and no standard is unassigned.
 
 ---
 
-## 1. The five instruments
+## 1. The six instruments
 
 | Instrument | What it decides | How it is called | Exit codes | Selftest | Node twin (bash absent) |
 |---|---|---|---|---|---|
@@ -21,6 +21,7 @@ cadence — there is no third category, and no standard is unassigned.
 | `tools/watch-tick.sh` | The five-minute state of the swarm: it reconciles, counts runnable units and open dispatch rows, and checks S2, S3, S5, S6 and S13 | `*/5 * * * * bash <skill>/tools/watch-tick.sh <project> >> <project>/CONTROL/watch-tick.log 2>&1`, written and announced at step 3, the moment `CONTROL/` exists | 0 clean (one `S-CHECK \| violations=0 \| runnable=<n> open=<n> trees=<n>` line); 3 findings, one `ACTION\|<verb>\|<target>\|<evidence>` line each; 4 `CONTROL/TERMINAL-DRIFT.flag` exists — nothing dispatches; 2 broken instrument, never an all-clear | `bash tools/watch-tick.sh --selftest` — ten fixtures, read-only | `node scripts/common/watch-tick.mjs` |
 | `tools/anchor.sh` | Drift: the three-way reconcile (manifest ↔ native task graph ↔ `project_state.json` ↔ the artifacts on disk), the repeated-intent alarm, the budget audit, the recovery ladder, and the pause-at-cap decision | `bash tools/anchor.sh <home> <unit-or-IDLE> --mode reconcile --tasks CONTROL/task-graph-snapshot.json --state CONTROL/project_state.json` before every dispatch, at every wave boundary, at every tick, after every compaction | 0 clean; 3 alarm with `RECONCILE-ACTIONS`; 4 TERMINAL-DRIFT (the run stops dispatching) | `bash tools/anchor.sh --selftest` | — |
 | `tools/ledger.sh` | That a state change is written before the next action: locked, atomic (`.tmp` + rename under a lock), append-only, with upsert-in-place for `HEARTBEAT.md`; and that the line carries its own origin — the WRITER OF RECORD supplies the ISO8601Z clock to any record that arrives without one (a caller's own stamp is kept, never doubled) and signs it ` | writer=ledger.sh` (§5) | `bash tools/ledger.sh <home> <file> <line> [upsert-key]` at every claim, result, score and check | 0 written; non-zero the write did NOT happen — never assume it did | `bash tools/ledger.sh --selftest` | `node scripts/common/ledger.mjs` |
+| `tools/speech-check.sh` | Whether a drafted client message may be spoken: it refuses the banned token classes (paths, workflow ids, rule numbers, document names, trends, money, model names, operator headings, scratch paths, backup announcements, jargon) | `bash tools/speech-check.sh <draft> --home <project>` before every client-visible message — SKILL.md RULE 5 owns the procedure, `references/audience.md` §7 the rule | 0 CLEAN; 3 REJECT, classes named; 2 UNDETERMINED; 4 selftest failed | `bash tools/speech-check.sh --selftest` | — |
 
 **A gate whose selftest fails is a BROKEN INSTRUMENT.** Do the arithmetic by
 hand, write that fact in the ledger, and never read a broken instrument's
