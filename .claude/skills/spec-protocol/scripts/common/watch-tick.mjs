@@ -45,6 +45,8 @@
 // USAGE
 //   node scripts/common/watch-tick.mjs <project-home>
 //   node scripts/common/watch-tick.mjs <project-home> --cron-line
+//   node scripts/common/watch-tick.mjs <project-home> --arm     # Windows: schtasks, idempotent
+//   node scripts/common/watch-tick.mjs <project-home> --check   # read-only, 0/3/2
 //   node scripts/common/watch-tick.mjs --selftest
 //
 // EXIT-CODE CONTRACT (identical to tools/watch-tick.sh)
@@ -323,6 +325,53 @@ function cronLine(home) {
   return `*/5 * * * * bash ${TOOLS}/watch-tick.sh ${home} >> ${home}/${log} 2>&1`;
 }
 
+//-----------------------------------------------------------------------------
+// --arm / --check. Windows has no crontab: the five-minute tick is a Scheduled
+// Task, `spec-protocol-tick-<slug>`, running THIS file with the project home.
+// WATCH_TICK_SCHTASKS_CMD names the schtasks program (selftest stub only; it
+// also forces this path off Windows so the stub can prove it). Anywhere else
+// both flags hand off to tools/watch-tick.sh, the crontab reference.
+//   --arm   0 armed, 3 already present (queried first), 2 unavailable
+//   --check 0 installed, 3 not installed, 2 could not query
+//-----------------------------------------------------------------------------
+const SCHTASKS = process.env.WATCH_TICK_SCHTASKS_CMD || (process.platform === 'win32' ? 'schtasks' : '');
+
+function taskName(home) {
+  return `spec-protocol-tick-${path.basename(home).replace(/[^A-Za-z0-9-]/g, '-')}`;
+}
+
+function schtasksQuery(name) {    // 0 present, 3 absent, 2 could not run
+  const r = spawnSync(SCHTASKS, ['/Query', '/TN', name], { encoding: 'utf8' });
+  if (r.error) return 2;
+  return r.status === 0 ? 0 : 3;
+}
+
+function armOrCheck(home, mode) {
+  if (!SCHTASKS) {
+    const r = spawnSync('bash', [path.join(TOOLS, 'watch-tick.sh'), ...(mode === 'arm' ? ['--arm', home] : [home, '--check'])], { stdio: 'inherit' });
+    if (r.error) dieTool(`could not run tools/watch-tick.sh for --${mode}: ${r.error.message}`);
+    return r.status;
+  }
+  const name = taskName(home);
+  const q = schtasksQuery(name);
+  if (mode === 'check') {
+    process.stdout.write(q === 0 ? `CHECK | INSTALLED (exit 0) | scheduled task ${name}\n`
+      : q === 3 ? `CHECK | NOT INSTALLED (exit 3) | no scheduled task ${name}\n`
+        : `CHECK | UNREADABLE (exit 2) | could not run ${SCHTASKS} /Query\n`);
+    return q;
+  }
+  if (q === 2) { process.stdout.write(`ARM | UNAVAILABLE (exit 2) | could not run ${SCHTASKS}; the tick is NOT armed\n`); return 2; }
+  if (q === 0) { process.stdout.write(`ARM | ALREADY PRESENT (exit 3) | scheduled task ${name}; nothing written\n`); return 3; }
+  const tr = `"${process.execPath}" "${fileURLToPath(import.meta.url)}" "${home}"`;
+  const r = spawnSync(SCHTASKS, ['/Create', '/SC', 'MINUTE', '/MO', '5', '/TN', name, '/TR', tr], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) {
+    process.stdout.write(`ARM | UNAVAILABLE (exit 2) | ${SCHTASKS} /Create failed (rc=${r.error ? 'spawn-error' : r.status}): ${snip200(r.stderr || r.stdout)}; the tick is NOT armed\n`);
+    return 2;
+  }
+  process.stdout.write(`ARM | ARMED (exit 0) | scheduled task ${name} every 5 minutes: ${tr}\n`);
+  return 0;
+}
+
 const snip200 = (s) => String(s || '').replace(/[\r\n\t]/g, ' ').replace(/ +/g, ' ').trim().slice(0, 200) || '(no output)';
 
 // THE PROFILED TICK: the profile's OWN validator, run read-only at the project
@@ -342,13 +391,14 @@ function runProfileTick(home) {
   return 3;
 }
 
-function runTick(homeArg, wantCronLine) {
-  if (!homeArg) dieTool('no project home given. Usage: watch-tick.mjs <project-home> [--cron-line]');
+function runTick(homeArg, wantCronLine, mode) {
+  if (!homeArg) dieTool('no project home given. Usage: watch-tick.mjs <project-home> [--cron-line|--arm|--check]');
   if (!fs.existsSync(homeArg) || !fs.statSync(homeArg).isDirectory()) {
     dieTool(`project home does not exist: ${homeArg}`);
   }
   const home = fs.realpathSync(homeArg);
   if (wantCronLine) { process.stdout.write(`${cronLine(home)}\n`); return 0; }
+  if (mode) return armOrCheck(home, mode);
 
   selfProve();
 
@@ -761,6 +811,22 @@ function selftest() {
       && !/PROFILE-TICK/.test(legTick.out),
     `one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${legTick.rc}, want 0) with no PROFILE-TICK anywhere`);
 
+  // 16 — #35 --arm / #32 --check on the Windows path, against a STUB schtasks
+  // (never the real one): check 3, arm 0, check 0, arm again 3, Create once.
+  d = mkHome('c16');
+  const st = path.join(T, 'c16.task');
+  const log16 = path.join(T, 'c16.create');
+  const stub = path.join(T, 'schtasks-stub');
+  fs.writeFileSync(stub, `#!/bin/sh\ncase "$1" in /Query) [ -f "${st}" ] ;; /Create) echo "$*" >> "${log16}"; touch "${st}" ;; *) exit 9 ;; esac\n`, { mode: 0o755 });
+  const env16 = { WATCH_TICK_SCHTASKS_CMD: stub };
+  const rcs = [run([d, '--check'], env16).rc, run([d, '--arm'], env16).rc, run([d, '--check'], env16).rc, run([d, '--arm'], env16).rc];
+  const created = (readLines(log16) || []).filter((l) => l);
+  report(16, 'schtasks-arm-check',
+    rcs.join(',') === '3,0,0,3' && created.length === 1
+      && created[0].startsWith('/Create /SC MINUTE /MO 5 /TN spec-protocol-tick-c16 /TR ')
+      && created[0].includes(fileURLToPath(import.meta.url)),
+    `rcs check,arm,check,arm = ${rcs.join(',')} (want 3,0,0,3); Create calls=${created.length} (want 1): [${created[0] || ''}]`);
+
   fs.rmSync(T, { recursive: true, force: true });
   process.stdout.write(`\n-------------------------------------------------------------\n`);
   process.stdout.write(`watch-tick.mjs selftest: ${passes} passed, ${fails} failed\n`);
@@ -774,15 +840,18 @@ const argv = process.argv.slice(2);
 let home = '';
 let wantCron = false;
 let wantSelftest = false;
+let mode = '';
 for (const a of argv) {
   if (a === '--selftest') wantSelftest = true;
   else if (a === '--cron-line') wantCron = true;
+  else if (a === '--arm') mode = 'arm';
+  else if (a === '--check') mode = 'check';
   else if (a === '-h' || a === '--help') {
-    process.stdout.write('Usage: node scripts/common/watch-tick.mjs <project-home> [--cron-line] | --selftest\n');
+    process.stdout.write('Usage: node scripts/common/watch-tick.mjs <project-home> [--cron-line|--arm|--check] | --selftest\n');
     process.exit(0);
   } else if (a.startsWith('--')) dieTool(`unknown option: ${a}`);
   else if (!home) home = a;
   else dieTool(`unexpected argument: ${a}`);
 }
 
-process.exit(wantSelftest ? selftest() : runTick(home, wantCron));
+process.exit(wantSelftest ? selftest() : runTick(home, wantCron, mode));

@@ -215,7 +215,15 @@
 #   watch-tick.sh --arm <project-home>           # WRITE it (step 3), idempotently:
 #                                                #   0 armed, 3 already present,
 #                                                #   2 crontab unavailable (named)
+#                                                #   (also records the session for
+#                                                #   AUTO-RESUME, legacy projects)
+#   watch-tick.sh <project-home> --check         # READ-ONLY: 0 this project's tick
+#                                                #   line is installed, 3 it is not,
+#                                                #   2 the table could not be read
 #   watch-tick.sh --selftest
+#   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p --resume <id>
+#   "/resume-after-limit"` once, detached, lock-guarded for 30 minutes
+#   (CONTROL/auto-resume.lock), and writes an AUTO-RESUME ledger line.
 #   Every form takes the SAME arguments on a profiled project (one holding
 #   `.spec-protocol.json`); what changes is where the line logs and what the
 #   tick runs — see the profiled-tick note above. There is no flag to turn the
@@ -239,6 +247,11 @@
 #                               that runs writes through the same command, so
 #                               a fixture command can never leak into the
 #                               operator's table.
+#                               Both also feed --check.
+#   WATCH_TICK_LAUNCHER_CMD=<cmd>  selftest only: the program AUTO-RESUME runs
+#                               instead of the recorded launcher. The selftest
+#                               sets it for every case so no real session is
+#                               ever launched; nothing else should.
 #   WATCH_STALLED_MIN=<n>       stalled-turn ceiling, minutes (default 15).
 #                               Same style as anchor.sh's BUDGET_TOL honored
 #                               through ANCHOR_BUDGET_TOL: the constant carries
@@ -294,6 +307,7 @@ HOME_DIR=""
 DO_SELFTEST=0
 DO_CRON_LINE=0
 DO_ARM=0
+DO_CHECK=0
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
@@ -700,7 +714,7 @@ cron_line() {  # cron_line <project-home> -> the */5 line; rc 2 when a profile c
 #     skill proves is byte-identical to the line it installs.
 #
 #     THE GUARD is exactly the one SKILL.md section 12 spells out: read the
-#     current table once, `grep -qF watch-tick.sh` over it, append only when
+#     current table once, `grep -qF "watch-tick.sh <home> "` over it (THIS project only — a second project on the box still gets its own line), append only when
 #     that finds nothing. A second arm therefore adds nothing and SAYS so
 #     (exit 3) rather than doubling the tick.
 #
@@ -758,10 +772,10 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
     # FIXTURE MODE. The file IS the table. No crontab process runs unless the
     # operator named one, and then it is PROVEN before anything is written.
     if [[ -n "${WATCH_TICK_CRONTAB_CMD:-}" ]] && ! crontab_probe; then
-      arm_unavailable "\`${CRONTAB_CMD} -l\` came back rc=${CRONTAB_PROBE_RC}: ${CRONTAB_PROBE_OUT}" "$line"
+      arm_unavailable "rc=${CRONTAB_PROBE_RC} from \`${CRONTAB_CMD} -l\`: ${CRONTAB_PROBE_OUT}" "$line"
       return 2
     fi
-    if [[ -f "$CRONTAB_FILE" ]] && "$GREP" -qF watch-tick.sh "$CRONTAB_FILE"; then
+    if [[ -f "$CRONTAB_FILE" ]] && "$GREP" -qF -- "watch-tick.sh ${home} " "$CRONTAB_FILE"; then
       printf 'ARM | ALREADY PRESENT (exit 3) | %s already carries a watch-tick.sh line; nothing written\n' "$CRONTAB_FILE"
       return 3
     fi
@@ -775,12 +789,12 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
 
   # LIVE MODE. The probe IS the read, so the table is read exactly once.
   if ! crontab_probe; then
-    arm_unavailable "\`${CRONTAB_CMD} -l\` came back rc=${CRONTAB_PROBE_RC}: ${CRONTAB_PROBE_OUT}" "$line"
+    arm_unavailable "rc=${CRONTAB_PROBE_RC} from \`${CRONTAB_CMD} -l\`: ${CRONTAB_PROBE_OUT}" "$line"
     return 2
   fi
   table="$CRONTAB_PROBE_OUT"
   (( CRONTAB_PROBE_RC == 0 )) || table=""   # it ran and had nothing: an EMPTY table
-  if printf '%s\n' "$table" | "$GREP" -qF watch-tick.sh; then
+  if printf '%s\n' "$table" | "$GREP" -qF -- "watch-tick.sh ${home} "; then
     printf 'ARM | ALREADY PRESENT (exit 3) | the crontab already carries a watch-tick.sh line; nothing written\n'
     return 3
   fi
@@ -798,6 +812,88 @@ arm_tick() {  # arm_tick <project-home> -> 0 armed, 3 already present, 2 unavail
   return 0
 }
 
+#------------------------------------------------------------------------------
+# 4c. --check (read-only): is THIS project's tick line in the table?
+#     0 installed, 3 not installed, 2 the table could not be read. Same table
+#     source as --arm (WATCH_TICK_CRONTAB_FILE, else WATCH_TICK_CRONTAB_CMD).
+#     Matches "watch-tick.sh <home> " so another project's line never counts.
+#------------------------------------------------------------------------------
+check_tick() {  # check_tick <project-home>
+  local pat="watch-tick.sh $1 " table=""
+  if [[ -n "$CRONTAB_FILE" ]]; then
+    [[ -f "$CRONTAB_FILE" ]] && table="$(cat "$CRONTAB_FILE")"
+  else
+    if ! crontab_probe; then
+      printf 'CHECK | UNREADABLE (exit 2) | rc=%s from `%s -l`\n' "$CRONTAB_PROBE_RC" "$CRONTAB_CMD"; return 2
+    fi
+    if (( CRONTAB_PROBE_RC != 0 )); then
+      if printf '%s' "$CRONTAB_PROBE_OUT" | "$GREP" -qi 'no crontab'; then table=""
+      else printf 'CHECK | UNREADABLE (exit 2) | rc=%s from `%s -l`: %s\n' "$CRONTAB_PROBE_RC" "$CRONTAB_CMD" "$(sanitize "$CRONTAB_PROBE_OUT")"; return 2; fi
+    else table="$CRONTAB_PROBE_OUT"; fi
+  fi
+  if printf '%s\n' "$table" | "$GREP" -qF -- "$pat"; then
+    printf 'CHECK | INSTALLED (exit 0) | a watch-tick line for %s is in the table\n' "$1"; return 0
+  fi
+  printf 'CHECK | NOT INSTALLED (exit 3) | no watch-tick line for %s\n' "$1"; return 3
+}
+
+#------------------------------------------------------------------------------
+# 4d. AUTO-RESUME. --arm runs INSIDE the conductor's session (step 3), the one
+#     place the session id is in the environment (CLAUDE_CODE_SESSION_ID), so
+#     it records what a cron-run tick cannot know: the id, the launcher
+#     (claude-nine when CLAUDE_CONFIG_DIR ends in .claude-nine, else claude,
+#     resolved to an absolute path because cron's PATH is minimal) and the cwd
+#     the session runs in (--resume looks the id up under that folder).
+#     Legacy projects only: a profile forbids CONTROL/ writes.
+#     ponytail: cwd is the arm call's PWD; a conductor that cd'd elsewhere
+#     before arming records the wrong folder — re-arm from the session root.
+#------------------------------------------------------------------------------
+record_session() {  # record_session <project-home>
+  local sid="${CLAUDE_CODE_SESSION_ID:-}" name="claude" lpath
+  [[ -n "$sid" ]] || return 0
+  [[ "${CLAUDE_CONFIG_DIR:-}" == *.claude-nine ]] && name="claude-nine"
+  lpath="$(command -v "$name" 2>/dev/null || printf '%s' "$name")"
+  mkdir -p "$1/CONTROL"
+  printf 'session_id=%s\nlauncher=%s\nlauncher_path=%s\ncwd=%s\n' "$sid" "$name" "$lpath" "$PWD" \
+    > "$1/CONTROL/auto-resume.txt"
+  printf 'ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=%s)\n' "$name"
+}
+
+# Called by the stalled-turn check once it fires. Launches
+# `<launcher> -p --resume <id> "/resume-after-limit"` detached, at most once
+# per 30 minutes (CONTROL/auto-resume.lock mtime). WATCH_TICK_LAUNCHER_CMD
+# replaces the launcher (selftest stub only; nothing else should).
+auto_resume() {  # auto_resume <elapsed-minutes>
+  local rec="$HOME_DIR/CONTROL/auto-resume.txt" lock="$HOME_DIR/CONTROL/auto-resume.lock"
+  local k v sid="" name="" lpath="" cwd="" cmd lm age p="$PATH"
+  if [[ ! -f "$rec" ]]; then
+    printf 'AUTO-RESUME | not run | no session recorded (CONTROL/auto-resume.txt is written by --arm inside the conductor session)\n'
+    return 0
+  fi
+  while IFS='=' read -r k v; do
+    case "$k" in session_id) sid="$v" ;; launcher) name="$v" ;; launcher_path) lpath="$v" ;; cwd) cwd="$v" ;; esac
+  done < "$rec"
+  if [[ ! "$sid" =~ ^[A-Za-z0-9-]+$ ]]; then
+    printf 'AUTO-RESUME | not run | the recorded session id is unusable\n'; return 0
+  fi
+  if [[ -f "$lock" ]]; then
+    lm="$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || echo 0)"
+    age=$(( ($(epoch_now) - lm) / 60 ))
+    if (( age < 30 )); then
+      printf 'AUTO-RESUME | held | lock is %sm old (< 30m): no second launch\n' "$age"; return 0
+    fi
+  fi
+  cmd="${WATCH_TICK_LAUNCHER_CMD:-${lpath:-$name}}"
+  [[ "$cmd" == */* ]] && p="$(dirname "$cmd"):$PATH"
+  [[ -d "$cwd" ]] || cwd="$HOME_DIR"
+  touch "$lock"
+  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --resume "$sid" "/resume-after-limit" \
+      </dev/null >> "$HOME_DIR/CONTROL/auto-resume.log" 2>&1 & )
+  ledger_write "CONTROL/LEDGER.md" \
+    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m — launched -p --resume with /resume-after-limit (log CONTROL/auto-resume.log)"
+  printf 'AUTO-RESUME | launched | %s -p --resume %s "/resume-after-limit" (stalled %sm)\n' "$name" "$sid" "$1"
+}
+
 #==============================================================================
 # ARGUMENT PARSING
 #==============================================================================
@@ -806,6 +902,7 @@ while (( $# )); do
     --selftest)  DO_SELFTEST=1; shift ;;
     --cron-line) DO_CRON_LINE=1; shift ;;
     --arm)       DO_ARM=1; shift ;;
+    --check)     DO_CHECK=1; shift ;;
     -h|--help)   usage; exit 0 ;;
     --*)         die_tool "unknown option: $1" ;;
     *)
@@ -902,7 +999,14 @@ run_tick() {
   if (( DO_ARM )); then
     local arc=0
     set +e; arm_tick "$HOME_DIR"; arc=$?; set -e
+    if (( arc == 0 || arc == 3 )) && ! is_profiled "$HOME_DIR"; then record_session "$HOME_DIR"; fi
     exit "$arc"
+  fi
+
+  if (( DO_CHECK )); then
+    local chk=0
+    set +e; check_tick "$HOME_DIR"; chk=$?; set -e
+    exit "$chk"
   fi
 
   self_prove
@@ -1550,6 +1654,7 @@ run_tick() {
             "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | $(sanitize "no file write under the project folder for ${stall_age} minutes while an open BUILD row stands (ceiling ${STALLED_MIN}m) — reconcile the actual Workflow/session/run or Agent-Team identity before retirement; stale files are not proof of death")"
           emit "stalled-turn" "elapsed=${stall_age}m" \
             "DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${stall_age} minutes old (ceiling ${STALLED_MIN}) while a BUILD row stands open — the turn is hung, not slow (RC-17)"
+          auto_resume "$stall_age"
         else
           STALL_NOTE="ok(newest write ${stall_age}m ago, ceiling ${STALLED_MIN}m)"
         fi
@@ -1789,6 +1894,9 @@ selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
   SELFTEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/watch-tick-selftest.XXXXXX")"
   T="$SELFTEST_TMP"
+  # No selftest case may ever launch a real session: every AUTO-RESUME a
+  # fixture reaches runs this no-op unless the case names its own stub.
+  export WATCH_TICK_LAUNCHER_CMD=/usr/bin/true
 
   mk_home() {  # mk_home <dir>
     mkdir -p "$1/SPEC" "$1/CONTROL"
@@ -2525,6 +2633,53 @@ selftest() {
      && printf '%s' "$OUT"        | "$GREP" -q 'S-CHECK | violations=0 | runnable=0 open=1 trees=1' \
      && ! printf '%s' "$OUT"      | "$GREP" -q 'PROFILE-TICK'; then ok=1; fi
   report 41 "profile-vs-legacy-control" "$ok" "one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${RC}, want 0) with no PROFILE-TICK anywhere"
+
+  # --- case 42 (#32): --check is read-only and per project. Another
+  #     project's line -> 3; after --arm -> 0; an unrunnable crontab -> 2.
+  mk_home "$T/c42"
+  local CF42="$T/c42.cron" r42a r42b r42c
+  printf '*/5 * * * * bash /x/watch-tick.sh /other/project >> /dev/null 2>&1\n' > "$CF42"
+  WATCH_TICK_CRONTAB_FILE="$CF42" runw "$T/c42" --check; r42a=$RC
+  WATCH_TICK_CRONTAB_FILE="$CF42" runw --arm "$T/c42"
+  WATCH_TICK_CRONTAB_FILE="$CF42" runw "$T/c42" --check; r42b=$RC
+  WATCH_TICK_CRONTAB_CMD="$T/no-such-crontab" runw "$T/c42" --check; r42c=$RC
+  ok=0
+  (( r42a == 3 && r42b == 0 && r42c == 2 )) && ok=1
+  report 42 "check-installed" "$ok" "rc before arm=${r42a} (want 3, another project's line does not count); after arm=${r42b} (want 0); unrunnable crontab=${r42c} (want 2)"
+
+  # --- case 43 (#48): AUTO-RESUME. Arm inside a (fake) claude-nine session,
+  #     stall the build like case 32, tick twice: the stub launcher runs ONCE
+  #     with -p --resume <id> /resume-after-limit, the ledger says AUTO-RESUME,
+  #     and the second tick is held by the lock.
+  mk_home "$T/c43"
+  printf '%s | U-01 build | build | [opus x10] WF01 builder | run-043\n' "$(stamp 1)" > "$T/c43/CONTROL/dispatch-log.md"
+  printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c43/CONTROL/HEARTBEAT.md"
+  printf 'build output\n' > "$T/c43/work.txt"
+  printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/c43.args" > "$T/c43.stub"; chmod +x "$T/c43.stub"
+  CLAUDE_CODE_SESSION_ID=sess-43 CLAUDE_CONFIG_DIR=/x/.claude-nine WATCH_TICK_CRONTAB_FILE="$T/c43.cron" runw --arm "$T/c43"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c43/work.txt" "$T/c43/SPEC/GOAL.md"
+  WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
+  local out43a="$OUT" i43
+  for i43 in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$T/c43.args" ]] && break; sleep 0.3; done
+  WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
+  sleep 0.5
+  ok=0
+  if "$GREP" -q '^launcher=claude-nine$' "$T/c43/CONTROL/auto-resume.txt" 2>/dev/null \
+     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --resume sess-43 /resume-after-limit" ]] \
+     && printf '%s' "$out43a" | "$GREP" -q '^AUTO-RESUME | launched' \
+     && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | held' \
+     && "$GREP" -q '| AUTO-RESUME | session=sess-43' "$T/c43/CONTROL/LEDGER.md"; then ok=1; fi
+  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --resume sess-43 /resume-after-limit'); second tick held by the lock; AUTO-RESUME on the ledger"
+
+  # --- case 44 (#40): the unavailable-crontab reason survives a long path.
+  #     sanitize() cuts at 160 chars; the rc must come BEFORE the command path
+  #     or a long TMPDIR pushes rc=127 off the end (case 15 failed that way).
+  mk_home "$T/c44"
+  local long44="$T/$(printf 'p%.0s' {1..150})/no-such-crontab"
+  WATCH_TICK_CRONTAB_FILE="$T/c44.cron" WATCH_TICK_CRONTAB_CMD="$long44" runw --arm "$T/c44"
+  ok=0
+  (( RC == 2 )) && printf '%s' "$OUT" | "$GREP" -q 'UNAVAILABLE (exit 2) | rc=127 from' && ok=1
+  report 44 "arm-unavailable-long-path" "$ok" "rc=${RC} (want 2); rc=127 leads the reason even with a 150+ char command path"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
