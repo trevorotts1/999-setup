@@ -610,7 +610,7 @@ has_ship_guard_line() {
 is_no_url_target() {
   local f="$1" rc
   [[ -f "${f}" && -r "${f}" ]] || return 1
-  "${GREP}" -qE 'BUILD-TARGET:[[:space:]]*(MOBILE_APP|DESKTOP_SOFTWARE)([[:space:]]|$)' "${f}" 2>/dev/null; rc=$?
+  "${GREP}" -qE 'BUILD-TARGET:[[:space:]]*(DESKTOP_SOFTWARE)([[:space:]]|$)' "${f}" 2>/dev/null; rc=$?
   (( rc == 0 ))
 }
 
