@@ -1,32 +1,46 @@
 #!/usr/bin/env bash
-# publish.sh — STAGE-PUBLISH for a served target (references/publish.md).
+# publish.sh — STAGE-PUBLISH for a served target (references/publish.md), and the
+# draft deploy of STAGE-DRAFT (references/build.md).
 #
-#   publish.sh <project>     deploy, guard, prove 200, record PUBLISHED
-#   publish.sh --selftest    prove it against a stub vercel, stub guard, stub curl
+#   publish.sh <project>           deploy --prod, guard, prove 200, record PUBLISHED
+#   publish.sh --draft <project>   preview deploy (no --prod), prove 200, record DRAFT-LIVE
+#   publish.sh --selftest          prove it against a stub vercel, stub guard, stub curl
 #
 # Steps, in order, each one a gate for the next:
 #   1. the repo root is read from the repo-anchor.json receipt (tools/repo-anchor.sh)
 #      — CONTROL/ on a legacy project, beside documents.state on a profiled one.
-#   2. `vercel deploy --prod --yes` in that root. The credential is the one already
-#      on this machine (`vercel login`, or VERCEL_TOKEN in the environment); it is
-#      never printed, never passed on the command line, never asked of the client.
-#   3. tools/ship-guard.sh <project> <url> <repo-root> at the LIVE address.
-#   4. curl the address until it answers 200 (PUBLISH_TRIES tries, PUBLISH_WAIT s apart).
-#   5. SHIP-GUARD: rc=0 … then PUBLISHED: <url> … through tools/ledger.sh (legacy),
-#      or appended to <state dir>/published.log (profiled: ledger.sh refuses those).
+#   2. (--prod only) publish.md §8 preconditions: the last `SHIP-CHECKS: pass=<n>/<n>`
+#      line has equal numbers, and ship-checks/public-surface.json has rows, every
+#      one 404 or 403.
+#   3. the Vercel CLI and credential (tools/deploy-auth.sh): CLI from PATH, the 999
+#      npm prefix, or `npx --yes vercel@latest`; VERCEL_TOKEN from the environment
+#      or parsed from operator.env, handed ONLY to the vercel child's environment,
+#      never printed, never on a command line, never asked of the client.
+#   4. `vercel deploy --prod --yes` (or `vercel deploy --yes` for --draft) in the root.
+#   5. (--prod only) tools/ship-guard.sh <project> <url> <repo-root> at the LIVE address.
+#   6. curl the address until it answers 200 (PUBLISH_TRIES tries, PUBLISH_WAIT s apart).
+#   7. --prod: SHIP-GUARD: rc=0 … then PUBLISHED: <url> …; --draft: DRAFT-LIVE: <url>.
+#      Through tools/ledger.sh (legacy), or appended to <state dir>/published.log
+#      (profiled: ledger.sh refuses those).
 #
-# Exit: 0 live (PUBLISHED written) | 3 not live (guard refused, or no 200) |
-#       2 undetermined (no receipt, deploy failed, guard could not decide) | 1 usage
+# Every failure after the project folder is found writes `HOSTING-BLOCKED: <reason>`
+# the same way and names the next step — a run is never left with no line.
+#
+# Exit: 0 live (PUBLISHED / DRAFT-LIVE written) | 3 not live (preconditions unmet,
+#       guard refused, or no 200) | 2 blocked/undetermined (no receipt, no CLI,
+#       deploy failed, guard could not decide) | 1 usage
 #
 # Test seams (the selftest uses them): PUBLISH_VERCEL_CMD, PUBLISH_GUARD_CMD.
 set -uo pipefail
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 DIR="$(dirname "$SELF")"
-VERCEL="${PUBLISH_VERCEL_CMD:-vercel}"
+# shellcheck source=deploy-auth.sh
+. "$DIR/deploy-auth.sh"
 GUARD="${PUBLISH_GUARD_CMD:-$DIR/ship-guard.sh}"
 TRIES="${PUBLISH_TRIES:-10}"
 WAIT="${PUBLISH_WAIT:-6}"
+HOME_DIR=""
 
 say() { printf 'PUBLISH | %s\n' "$*"; }
 undetermined() { say "UNDETERMINED | $*"; exit 2; }
@@ -52,50 +66,97 @@ record() { # record <home> <line>
   fi
 }
 
-publish() {
-  local home="${1%/}" sd root out rc url code checks target i
+blocked() { # blocked <rc> <reason> <next step> — HOSTING-BLOCKED line, then exit
+  record "$HOME_DIR" "HOSTING-BLOCKED: $2" 2>/dev/null || say "could not record the HOSTING-BLOCKED line"
+  say "HOSTING-BLOCKED | $2"
+  say "NEXT | $3"
+  exit "$1"
+}
+
+ship_ready() { # ship_ready <home> <state dir> — publish.md §8; prints the unmet one, rc 1
+  local line n m
+  line="$(grep -hEo 'SHIP-CHECKS: pass=[0-9]+/[0-9]+' "$1/CONTROL/LEDGER.md" "$2"/* 2>/dev/null | tail -1)"
+  n="${line#*=}"; m="${n#*/}"; n="${n%/*}"
+  if [[ -z "$line" || "$n" != "$m" || "$n" == 0 ]]; then
+    printf 'no SHIP-CHECKS: pass=<n>/<n> line with equal numbers (last: %s)' "${line:-none}"; return 1
+  fi
+  python3 -c 'import json,sys
+rows=json.load(open(sys.argv[1])).get("paths") or []
+sys.exit(0 if rows and all(str(r.get("status")) in ("404","403") for r in rows) else 1)' \
+    "$1/ship-checks/public-surface.json" 2>/dev/null \
+    || { printf 'ship-checks/public-surface.json is missing, empty, or has a row that is not 404/403'; return 1; }
+}
+
+prove_200() { # prove_200 <url> -> sets CODE
+  local i
+  CODE=000
+  for (( i = 1; i <= TRIES; i++ )); do
+    CODE="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 15 "$1" 2>/dev/null)" || CODE=000
+    [[ "$CODE" == 200 ]] && return 0
+    (( i < TRIES )) && sleep "$WAIT"
+  done
+  return 1
+}
+
+publish() { # publish <prod|draft> <project>
+  local mode="$1" home="${2%/}" sd root out rc url checks target reason
+  HOME_DIR="$home"
   [[ -d "$home" ]] || undetermined "no project folder at $home"
   sd="$(state_dir "$home")" || undetermined "$home/.spec-protocol.json has no readable in-root documents.state"
   root="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["repoRoot"])' "$sd/repo-anchor.json" 2>/dev/null)" \
-    || undetermined "no repo-anchor receipt at $sd/repo-anchor.json — run tools/repo-anchor.sh $home first"
-  [[ -d "$root" ]] || undetermined "the receipt's repoRoot $root is not a folder"
+    || blocked 2 "no repo-anchor receipt at $sd/repo-anchor.json" "run tools/repo-anchor.sh $home, then rerun tools/publish.sh"
+  [[ -d "$root" ]] || blocked 2 "the receipt's repoRoot $root is not a folder" "rerun tools/repo-anchor.sh $home"
 
-  # 2. deploy. Output is kept for the URL only; on failure the last lines are shown
-  #    (the Vercel CLI does not echo the credential).
-  out="$(cd "$root" && "$VERCEL" deploy --prod --yes 2>&1)"; rc=$?
-  if (( rc != 0 )); then
-    say "vercel deploy --prod --yes exited $rc in $root. Last lines:"
-    printf '%s\n' "$out" | tail -5
-    exit 2
+  if [[ "$mode" == prod ]]; then
+    reason="$(ship_ready "$home" "$sd")" \
+      || blocked 3 "preconditions unmet: $reason" "finish STAGE-SHIP-CHECKS (references/ship-checks.md) until it passes, then rerun tools/publish.sh"
   fi
-  # Prefer the production alias (public); fall back to the last https URL printed.
+
+  vercel_resolve "${PUBLISH_VERCEL_CMD:-}" \
+    || blocked 2 "no Vercel CLI (not on PATH, not in the 999 npm prefix, and no npx)" \
+         "re-run nine-router-setup (it installs the Vercel CLI), then rerun tools/publish.sh"
+
+  # deploy. Output is kept for the URL only; on failure the last lines are shown
+  # with the credential masked (tools/deploy-auth.sh).
+  if [[ "$mode" == prod ]]; then out="$(cd "$root" && vercel_run deploy --prod --yes)"; rc=$?
+  else out="$(cd "$root" && vercel_run deploy --yes)"; rc=$?; fi
+  if (( rc != 0 )); then
+    printf '%s\n' "$out" | tail -5
+    blocked 2 "vercel deploy exited $rc in $root (CLI: $VERCEL_WHERE)" \
+      "give this machine the operator's Vercel credential — VERCEL_TOKEN=... in ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env, or \`vercel login\` — then rerun tools/publish.sh"
+  fi
+  # Prefer the production alias (public); else the last deployment https URL printed
+  # (the vercel.com dashboard/inspect links are not the site).
   url="$(printf '%s\n' "$out" | grep -E 'Aliased:' | grep -Eo 'https://[^ ]+' | tail -1)"
-  [[ -n "$url" ]] || url="$(printf '%s\n' "$out" | grep -Eo 'https://[^ ]+' | tail -1)"
+  [[ -n "$url" ]] || url="$(printf '%s\n' "$out" | grep -Eo 'https://[^ ]+' | grep -v '^https://vercel\.com/' | tail -1)"
   url="${url%]}"
-  [[ -n "$url" ]] || undetermined "vercel deploy exited 0 but printed no https:// address"
+  [[ -n "$url" ]] || blocked 2 "vercel deploy exited 0 but printed no https:// address" "rerun tools/publish.sh and read the CLI output"
   say "deployed: $url"
 
-  # 3. the guard at the live origin.
+  if [[ "$mode" == draft ]]; then
+    if ! prove_200 "$url"; then
+      if [[ "$CODE" == 401 ]]; then
+        blocked 3 "draft $url answered 401 (Vercel Deployment Protection is on for previews)" \
+          "in the Vercel project's Settings > Deployment Protection, turn Vercel Authentication off for previews, then rerun tools/publish.sh --draft"
+      fi
+      blocked 3 "draft $url answered $CODE after $TRIES tries" "fix the build so the preview answers, then rerun tools/publish.sh --draft"
+    fi
+    record "$home" "DRAFT-LIVE: $url" || undetermined "could not record the DRAFT-LIVE line"
+    say "DRAFT | DRAFT-LIVE: $url status=200"
+    exit 0
+  fi
+
+  # the guard at the live origin.
   "$GUARD" "$home" "$url" "$root"; rc=$?
   case "$rc" in
     0) ;;
-    3|4|5) say "NOT LIVE | ship-guard.sh exited $rc — fix what it named, redeploy, rerun. No PUBLISHED line."; exit 3 ;;
-    *) undetermined "ship-guard.sh exited $rc — the guard could not decide; no PUBLISHED line" ;;
+    3|4|5) blocked 3 "ship-guard.sh exited $rc at $url" "fix what the guard named, then rerun tools/publish.sh" ;;
+    *) blocked 2 "ship-guard.sh exited $rc at $url — the guard could not decide" "make $url reachable, then rerun tools/publish.sh" ;;
   esac
 
-  # 4. prove 200.
-  code=000
-  for (( i = 1; i <= TRIES; i++ )); do
-    code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 15 "$url" 2>/dev/null)" || code=000
-    [[ "$code" == 200 ]] && break
-    (( i < TRIES )) && sleep "$WAIT"
-  done
-  if [[ "$code" != 200 ]]; then
-    say "NOT LIVE | $url answered $code after $TRIES tries. No PUBLISHED line."
-    exit 3
-  fi
+  prove_200 "$url" || blocked 3 "$url answered $CODE after $TRIES tries" "fix the deploy so the address answers 200, then rerun tools/publish.sh"
 
-  # 5. record: guard line first, then the address.
+  # record: guard line first, then the address.
   checks="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(len(d.get("paths",[]))+len(d.get("destinations",[])))' \
     "$home/ship-checks/public-surface.json" 2>/dev/null)" || checks=unknown
   target="$(grep -Eo 'BUILD-TARGET: [A-Z_]+' "$home/CONTROL/LEDGER.md" 2>/dev/null | tail -1 | sed 's/.*: //')"
@@ -106,38 +167,68 @@ publish() {
 }
 
 selftest() {
-  local t rc fails=0
+  local t rc fails=0 L
   t="$(mktemp -d "${TMPDIR:-/tmp}/publish-st.XXXXXX")" || exit 2
   trap 'rm -rf "$t"' EXIT
-  mkdir -p "$t/p/CONTROL" "$t/p/repos/site" "$t/bin"
-  : > "$t/p/CONTROL/LEDGER.md"
+  mkdir -p "$t/p/CONTROL" "$t/p/repos/site" "$t/p/ship-checks" "$t/bin" "$t/cfg/spec-protocol"
+  L="$t/p/CONTROL/LEDGER.md"
   printf '{"repoRoot":"%s","remote":"x"}\n' "$t/p/repos/site" > "$t/p/CONTROL/repo-anchor.json"
-  printf '#!/bin/sh\necho "Production: https://site-abc.vercel.app [2s]"\necho "Aliased: https://site.vercel.app [2s]"\n' > "$t/bin/vercel"
+  printf '{"paths":[{"path":"CONTROL/","status":"404"}],"destinations":[]}\n' > "$t/p/ship-checks/public-surface.json"
+  # stub vercel: records whether the credential reached it, prints a preview or prod address
+  cat > "$t/bin/vercel" <<EOF
+#!/bin/sh
+[ -n "\$VERCEL_TOKEN" ] && echo "\$VERCEL_TOKEN" > "$t/tok-seen"
+case " \$* " in *" --prod "*) echo "Production: https://site-abc.vercel.app [2s]"; echo "Aliased: https://site.vercel.app [2s]" ;;
+  *) echo "Inspect: https://vercel.com/team/site/xyz [1s]"; echo "Preview: https://site-git-draft.vercel.app [2s]" ;; esac
+EOF
   printf '#!/bin/sh\nexit 0\n' > "$t/bin/guard"
-  # stub curl: answers whatever code sits in $t/code
-  printf '#!/bin/sh\ncat "%s/code"\n' "$t" > "$t/bin/curl"
+  printf '#!/bin/sh\ncat "%s/code"\n' "$t" > "$t/bin/curl"   # stub curl: answers the code in $t/code
   chmod +x "$t/bin/"*
+  printf 'VERCEL_TOKEN="st-secret-123"\n' > "$t/cfg/spec-protocol/operator.env"
+  run() { env -u VERCEL_TOKEN PATH="$t/bin:$PATH" CLAUDE_CONFIG_DIR="$t/cfg" PUBLISH_VERCEL_CMD="$t/bin/vercel" \
+            PUBLISH_GUARD_CMD="$t/bin/guard" PUBLISH_WAIT=0 PUBLISH_TRIES=2 bash "$SELF" "$@"; }
 
-  # case 1: live -> rc 0, PUBLISHED line carries the ALIAS address
-  echo 200 > "$t/code"
-  PATH="$t/bin:$PATH" PUBLISH_VERCEL_CMD="$t/bin/vercel" PUBLISH_GUARD_CMD="$t/bin/guard" PUBLISH_WAIT=0 \
-    bash "$SELF" "$t/p" >/dev/null 2>&1; rc=$?
-  if (( rc == 0 )) && grep -q 'PUBLISHED: https://site.vercel.app ' "$t/p/CONTROL/LEDGER.md"; then
-    echo "SELFTEST ok   live deploy -> rc 0 and PUBLISHED line"
+  # case 1: live -> rc 0, PUBLISHED carries the ALIAS; credential reached the child, never the output
+  printf 'SHIP-CHECKS: pass=11/11\n' > "$L"; echo 200 > "$t/code"
+  out="$(run "$t/p" 2>&1)"; rc=$?
+  if (( rc == 0 )) && grep -q 'PUBLISHED: https://site.vercel.app ' "$L" \
+     && [[ "$(cat "$t/tok-seen" 2>/dev/null)" == st-secret-123 ]] && [[ "$out" != *st-secret-123* ]]; then
+    echo "SELFTEST ok   live deploy -> rc 0, PUBLISHED line, operator.env credential reached vercel only"
   else echo "SELFTEST FAIL live deploy: rc=$rc"; fails=1; fi
 
-  # case 2: never 200 -> rc 3, no new PUBLISHED line
-  : > "$t/p/CONTROL/LEDGER.md"; echo 404 > "$t/code"
-  PATH="$t/bin:$PATH" PUBLISH_VERCEL_CMD="$t/bin/vercel" PUBLISH_GUARD_CMD="$t/bin/guard" PUBLISH_WAIT=0 PUBLISH_TRIES=2 \
-    bash "$SELF" "$t/p" >/dev/null 2>&1; rc=$?
-  if (( rc == 3 )) && ! grep -q 'PUBLISHED:' "$t/p/CONTROL/LEDGER.md"; then
-    echo "SELFTEST ok   404 -> rc 3 and no PUBLISHED line"
+  # case 2: never 200 -> rc 3, no PUBLISHED line, a HOSTING-BLOCKED line
+  printf 'SHIP-CHECKS: pass=11/11\n' > "$L"; echo 404 > "$t/code"
+  run "$t/p" >/dev/null 2>&1; rc=$?
+  if (( rc == 3 )) && ! grep -q 'PUBLISHED:' "$L" && grep -q 'HOSTING-BLOCKED:' "$L"; then
+    echo "SELFTEST ok   404 -> rc 3, no PUBLISHED line, HOSTING-BLOCKED written"
   else echo "SELFTEST FAIL 404 case: rc=$rc"; fails=1; fi
+
+  # case 3: unequal SHIP-CHECKS -> refused before any deploy
+  printf 'SHIP-CHECKS: pass=10/11\n' > "$L"; echo 200 > "$t/code"; rm -f "$t/tok-seen"
+  run "$t/p" >/dev/null 2>&1; rc=$?
+  if (( rc == 3 )) && [[ ! -e "$t/tok-seen" ]] && grep -q 'HOSTING-BLOCKED: preconditions unmet' "$L"; then
+    echo "SELFTEST ok   SHIP-CHECKS 10/11 -> rc 3, no deploy"
+  else echo "SELFTEST FAIL precondition case: rc=$rc"; fails=1; fi
+
+  # case 4: --draft -> preview address (not the vercel.com inspect link), DRAFT-LIVE line
+  : > "$L"
+  run --draft "$t/p" >/dev/null 2>&1; rc=$?
+  if (( rc == 0 )) && grep -q 'DRAFT-LIVE: https://site-git-draft.vercel.app' "$L"; then
+    echo "SELFTEST ok   --draft -> rc 0 and DRAFT-LIVE line"
+  else echo "SELFTEST FAIL draft case: rc=$rc"; fails=1; fi
+
+  # case 5: deploy fails -> rc 2 and HOSTING-BLOCKED with the next step
+  : > "$L"; printf '#!/bin/sh\necho "Error: not authorized"\nexit 1\n' > "$t/bin/vercel"
+  out="$(run --draft "$t/p" 2>&1)"; rc=$?
+  if (( rc == 2 )) && grep -q 'HOSTING-BLOCKED: vercel deploy exited 1' "$L" && [[ "$out" == *"NEXT |"* ]]; then
+    echo "SELFTEST ok   failed deploy -> rc 2, HOSTING-BLOCKED and a named next step"
+  else echo "SELFTEST FAIL failed-deploy case: rc=$rc"; fails=1; fi
   exit "$fails"
 }
 
 case "${1:-}" in
   --selftest) selftest ;;
-  ""|-h|--help) sed -n '2,21p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
-  *) publish "$1" ;;
+  --draft) [[ -n "${2:-}" ]] || { echo "usage: publish.sh --draft <project>" >&2; exit 1; }; publish draft "$2" ;;
+  ""|-h|--help) sed -n '2,33p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) publish prod "$1" ;;
 esac
