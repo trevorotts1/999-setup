@@ -766,10 +766,27 @@ couple two lanes that the schedule went to some trouble to keep apart.
 Ledger. One merger per repository.
 
 **The merge train and the swarm waves are shipped, never hand-written per run.**
-`tools/merge-train.sh [--project <home>] <repo> <branch>...` is the merge train: it
-merges the named unit branches one at a time, in the order given,
-with the existing truth gates ("Land vs Merged" below — landed on the integration
-branch, then merged only on proven trunk ancestry and the artifact at HEAD). The
+`tools/merge-train.sh <home> --batch` is the merge train, and it runs in BATCHES,
+never one unit at a time: the tick (`tools/watch-tick.sh`) fires it every
+`MERGE_BATCH_MINUTES` (default 15). One batch takes EVERY unit branch that has
+passed its judges and is waiting (its latest QC-RECORD is PASS or CLIENT-ACCEPTED,
+it is not yet an ancestor of the integration branch, and it is not parked at its
+current tip), merges them all into the integration branch in ONE pass (each
+`--no-ff`, ledger order), runs the project's test gate ONCE for the whole batch, and
+pushes ONCE. A red gate is bisected: the batch is split in halves and each half is
+retried on top of what already passed, until the unit(s) that broke it are found;
+the good ones land, the bad ones are undone and sent back to repair with the
+failing output (`REPAIR: unit=<branch> reason=batch-gate-red log=<file>`). A merge
+CONFLICT skips that unit, never blocking the rest of the batch, and parks it for a
+conflict-resolver seat on the haiku chain (`CONFLICT: unit=<branch> against=<branch>
+seat=conflict-resolver`). A parked unit re-enters the next batch once its branch tip
+moves. On a profiled project every merged unit is also recorded in the project's own
+state through the profile's `commands.merged` (argv, `{taskId}` `{commit}`
+`{branch}` substituted). The truth gates are unchanged ("Land vs Merged" below —
+landed on the integration branch, then merged only on proven trunk ancestry and the
+artifact at HEAD). The single-unit form `tools/merge-train.sh [--project <home>]
+<repo> <branch>...` still exists for a named hand-off and stops at the first
+conflict or red test. The
 build wave, judge wave, fix wave and merge-train workflows come from
 `templates/workflows/`, each taking the JSON unit list; the run fills the unit list
 and launches the template, it does not write a new script. A hand-written merge or
@@ -838,8 +855,9 @@ protocol never forgives. Two writers on two DIFFERENT repos is expected and corr
 
 ### Law 20 — serialize the merges, batch the verifications
 
-Merges stay one-at-a-time (they must); the expensive verification happens once per
-batch. The mechanics:
+One writer merges a whole batch in one sitting (each unit `--no-ff`, in order); the
+expensive verification happens once per batch, and the push happens once per batch.
+Units are never merged, tested and pushed one at a time. The mechanics:
 1. One frozen base per wave per lane — every unit cuts its branch from the same
    commit, frozen for the whole wave.
 2. Nobody rebases mid-wave (prohibited, not discouraged).
@@ -863,7 +881,9 @@ trigger, no count cap — unchanged). SERIALIZED MERGE-WRITER ≠ SERIALIZED
 PIPELINE: one writer draining a queue must never idle the other agents — a merge
 train that halts the build is a sequential stall wearing a safety costume. A
 merge failure — conflict, red suite, network error, unreachable remote — parks
-THAT unit (`merge.parked_failures[]` in project_state.json, with the reason),
+THAT unit (`merge.parked_failures[]` in project_state.json, with the reason; the
+batch train prints each as a `REPAIR:` or `CONFLICT:` line and keeps it in
+`merge-train/parked.tsv` beside the ledger until the branch tip moves),
 raises it through the reconciler on the next pass, and the loop keeps going on
 everything else; after the drain conveyor's bounded retries the parked unit is a
 blocked item like any other, never a brake on its neighbors. Task COMPLETION
@@ -884,13 +904,17 @@ loop:
   #   (2) the queue has reached the derived batch size;
   #   (3) the wave closed.
   if no trigger fired: write heartbeat; sleep; continue
-  for each ready item (ONE AT A TIME, oldest first):
-    truth gates: standing alarm? provenance (structured query)? branch on remote?
-    merge --no-ff --no-commit into the integration branch
-  run the gate suite ONCE, foreground with timeout
-    red or timeout: bisect the batch's own unpushed commit range, drop the offender,
-                    push the clean prefix, re-queue the items staged after it
-  fetch again; push; non-fast-forward -> fetch, reset, re-apply, retry (<=3); NEVER force
+  tools/merge-train.sh <home> --batch     # the tick runs this every MERGE_BATCH_MINUTES
+    for each ready item in the batch (one pass, oldest first):
+      truth gates: standing alarm? provenance (structured query)?
+      merge --no-ff into the integration branch
+      conflict: abort that merge, park it for the conflict-resolver seat, go on
+    run the gate suite ONCE for the whole batch, foreground with timeout
+      red or timeout: bisect — halves retried on top of what already passed —
+                      land the good units, undo and park the offender(s) for repair
+                      with the failing output
+    push ONCE; prove trunk ancestry per unit; commands.merged per unit (profiled)
+  non-fast-forward -> fetch, reset, re-apply, retry (<=3); NEVER force
   RIPPLE: one commit (version bump + changelog + annotated tag) pushed
 ```
 
