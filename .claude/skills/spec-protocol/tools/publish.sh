@@ -9,14 +9,14 @@
 # Steps, in order, each one a gate for the next:
 #   1. the repo root is read from the repo-anchor.json receipt (tools/repo-anchor.sh)
 #      — CONTROL/ on a legacy project, beside documents.state on a profiled one.
-#   2. (--prod only) publish.md §8 preconditions: the last `SHIP-CHECKS: pass=<n>/<n>`
-#      line has equal numbers, and ship-checks/public-surface.json has rows, every
-#      one 404 or 403.
+#   2. (--prod only) publish.md §8: the last `SHIP-CHECKS: pass=<n>/<n>` line has
+#      equal numbers; ship-checks/public-surface.json has rows, all 404 or 403.
 #   3. the Vercel CLI and credential (tools/deploy-auth.sh): CLI from PATH, the 999
 #      npm prefix, or `npx --yes vercel@latest`; VERCEL_TOKEN from the environment
 #      or parsed from operator.env, handed ONLY to the vercel child's environment,
 #      never printed, never on a command line, never asked of the client.
-#   4. `vercel deploy --prod --yes` (or `vercel deploy --yes` for --draft) in the root.
+#   4. `vercel deploy --prod --yes` (or `vercel deploy --yes` for --draft) in the root;
+#      --draft then turns Vercel's default preview protection off (API PATCH, same token).
 #   5. (--prod only) tools/ship-guard.sh <project> <url> <repo-root> at the LIVE address.
 #   6. curl the address until it answers 200 (PUBLISH_TRIES tries, PUBLISH_WAIT s apart).
 #   7. --prod: SHIP-GUARD: rc=0 … then PUBLISHED: <url> …; --draft: DRAFT-LIVE: <url>.
@@ -134,9 +134,13 @@ publish() { # publish <prod|draft> <project>
   say "deployed: $url"
 
   if [[ "$mode" == draft ]]; then
+    # Vercel protects previews by default (401). Turned off here, after the deploy so a
+    # first deploy's fresh .vercel/project.json exists; protection is checked per request.
+    if vercel_unprotect_previews "$root"; then say "preview protection off"
+    else say "could not turn preview protection off: $UNPROTECT_WHY"; fi
     if ! prove_200 "$url"; then
       if [[ "$CODE" == 401 ]]; then
-        blocked 3 "draft $url answered 401 (Vercel Deployment Protection is on for previews)" \
+        blocked 3 "draft $url answered 401 (Vercel Deployment Protection is on for previews; ${UNPROTECT_WHY:-the PATCH succeeded})" \
           "in the Vercel project's Settings > Deployment Protection, turn Vercel Authentication off for previews, then rerun tools/publish.sh --draft"
       fi
       blocked 3 "draft $url answered $CODE after $TRIES tries" "fix the build so the preview answers, then rerun tools/publish.sh --draft"
@@ -182,7 +186,12 @@ case " \$* " in *" --prod "*) echo "Production: https://site-abc.vercel.app [2s]
   *) echo "Inspect: https://vercel.com/team/site/xyz [1s]"; echo "Preview: https://site-git-draft.vercel.app [2s]" ;; esac
 EOF
   printf '#!/bin/sh\nexit 0\n' > "$t/bin/guard"
-  printf '#!/bin/sh\ncat "%s/code"\n' "$t" > "$t/bin/curl"   # stub curl: answers the code in $t/code
+  # stub curl: the PATCH saves its stdin/argv and flips the site to 200; else answers $t/code
+  cat > "$t/bin/curl" <<EOF
+#!/bin/sh
+case " \$* " in *" PATCH "*) cat > "$t/patch-in"; echo "\$*" > "$t/patch-args"; echo 200 > "$t/code"; echo 200; exit 0 ;; esac
+cat "$t/code"
+EOF
   chmod +x "$t/bin/"*
   printf 'VERCEL_TOKEN="st-secret-123"\n' > "$t/cfg/spec-protocol/operator.env"
   run() { env -u VERCEL_TOKEN PATH="$t/bin:$PATH" CLAUDE_CONFIG_DIR="$t/cfg" PUBLISH_VERCEL_CMD="$t/bin/vercel" \
@@ -210,11 +219,15 @@ EOF
     echo "SELFTEST ok   SHIP-CHECKS 10/11 -> rc 3, no deploy"
   else echo "SELFTEST FAIL precondition case: rc=$rc"; fails=1; fi
 
-  # case 4: --draft -> preview address (not the vercel.com inspect link), DRAFT-LIVE line
-  : > "$L"
+  # case 4: --draft on a protected preview (401) -> PATCH turns protection off (token on
+  # stdin only, teamId from orgId), then 200 and DRAFT-LIVE with the preview address
+  : > "$L"; echo 401 > "$t/code"; mkdir -p "$t/p/repos/site/.vercel"
+  printf '{"projectId":"prj_st1","orgId":"team_st9"}\n' > "$t/p/repos/site/.vercel/project.json"
   run --draft "$t/p" >/dev/null 2>&1; rc=$?
-  if (( rc == 0 )) && grep -q 'DRAFT-LIVE: https://site-git-draft.vercel.app' "$L"; then
-    echo "SELFTEST ok   --draft -> rc 0 and DRAFT-LIVE line"
+  if (( rc == 0 )) && grep -q 'DRAFT-LIVE: https://site-git-draft.vercel.app' "$L" \
+     && grep -q 'v9/projects/prj_st1?teamId=team_st9' "$t/patch-args" && grep -q 'ssoProtection' "$t/patch-args" \
+     && grep -q st-secret-123 "$t/patch-in" && ! grep -q st-secret-123 "$t/patch-args"; then
+    echo "SELFTEST ok   --draft 401 -> protection PATCHed off (token on stdin only) -> DRAFT-LIVE"
   else echo "SELFTEST FAIL draft case: rc=$rc"; fails=1; fi
 
   # case 5: deploy fails -> rc 2 and HOSTING-BLOCKED with the next step

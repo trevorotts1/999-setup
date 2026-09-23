@@ -43,6 +43,26 @@ _vercel_token() { # prints the credential into a command substitution only
   printf '%s' "$v"
 }
 
+vercel_unprotect_previews() { # <repo root> — turn off Vercel Authentication on previews
+  # PATCH /v9/projects/<projectId>[?teamId=<orgId>] {"ssoProtection":null}, ids read from
+  # .vercel/project.json. The bearer header goes to curl on STDIN (-K -), never argv.
+  # rc 0 on 2xx; else rc 1 with the reason in UNPROTECT_WHY.
+  local tok ids pid org q code
+  UNPROTECT_WHY=""
+  tok="$(_vercel_token)"
+  [[ -n "$tok" ]] || { UNPROTECT_WHY="no VERCEL_TOKEN to call the Vercel API with"; return 1; }
+  ids="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["projectId"],d.get("orgId",""))' \
+    "$1/.vercel/project.json" 2>/dev/null)" || { UNPROTECT_WHY="no readable .vercel/project.json"; return 1; }
+  pid="${ids%% *}"; org="${ids#* }"
+  q=""; [[ "$org" == team_* ]] && q="?teamId=$org"
+  code="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" \
+    | curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -K - -X PATCH \
+        -H 'Content-Type: application/json' -d '{"ssoProtection":null}' \
+        "https://api.vercel.com/v9/projects/$pid$q" 2>/dev/null)" || code=000
+  [[ "$code" == 2?? ]] && return 0
+  UNPROTECT_WHY="the project PATCH answered $code"; return 1
+}
+
 vercel_run() { # vercel_run <args...> — output is the CLI's, with the credential masked
   local tok out rc
   tok="$(_vercel_token)"
