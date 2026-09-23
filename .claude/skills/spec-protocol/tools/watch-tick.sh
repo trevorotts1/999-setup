@@ -217,13 +217,25 @@
 #                                                #   2 crontab unavailable (named)
 #                                                #   (also records the session for
 #                                                #   AUTO-RESUME, legacy projects)
+#   watch-tick.sh --record-session <project-home> # at INTERVIEW END (after the
+#                                                #   walk-away line), inside the
+#                                                #   conductor session: records the
+#                                                #   session id again + interview=done,
+#                                                #   so a window closed after the last
+#                                                #   question is still resumable.
+#                                                #   0 recorded, 2 no session id / profiled
 #   watch-tick.sh <project-home> --check         # READ-ONLY: 0 this project's tick
 #                                                #   line is installed, 3 it is not,
 #                                                #   2 the table could not be read
 #   watch-tick.sh --selftest
 #   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p --resume <id>
-#   "/resume-after-limit"` once, detached, lock-guarded for 30 minutes
-#   (CONTROL/auto-resume.lock), and writes an AUTO-RESUME ledger line.
+#   "/spec-protocol resume"` once, detached, lock-guarded for 30 minutes
+#   (CONTROL/auto-resume.lock), and writes an AUTO-RESUME ledger line. The
+#   alarm covers EVERY post-interview phase, not only build: an open build,
+#   spec, apparatus, audit, merge or publish row, or `interview=done` in
+#   CONTROL/auto-resume.txt (research included), with no project write for
+#   STALLED_MIN minutes. Outside build it is skipped while project_state.json
+#   says run_status is anything but RUNNING (a finished or paused run waits).
 #   Every form takes the SAME arguments on a profiled project (one holding
 #   `.spec-protocol.json`); what changes is where the line logs and what the
 #   tick runs — see the profiled-tick note above. There is no flag to turn the
@@ -308,6 +320,7 @@ DO_SELFTEST=0
 DO_CRON_LINE=0
 DO_ARM=0
 DO_CHECK=0
+DO_RECORD=0
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
@@ -845,25 +858,60 @@ check_tick() {  # check_tick <project-home>
 #     resolved to an absolute path because cron's PATH is minimal) and the cwd
 #     the session runs in (--resume looks the id up under that folder).
 #     Legacy projects only: a profile forbids CONTROL/ writes.
-#     ponytail: cwd is the arm call's PWD; a conductor that cd'd elsewhere
-#     before arming records the wrong folder — re-arm from the session root.
+#     `--record-session` (interview end) calls the same function with `done`,
+#     adding `interview=done` — the post-interview marker the widened stall
+#     check reads. A later re-arm keeps that marker.
+#     The cwd is the one the session was LAUNCHED in (the first "cwd" of its
+#     own transcript, <config root>/projects/*/<id>.jsonl), because the
+#     conductor cd's into the project folder and --resume looks the id up
+#     under the launch folder; $PWD only when no transcript is found.
 #------------------------------------------------------------------------------
-record_session() {  # record_session <project-home>
-  local sid="${CLAUDE_CODE_SESSION_ID:-}" name="claude" lpath
+record_session() {  # record_session <project-home> [done]
+  local sid="${CLAUDE_CODE_SESSION_ID:-}" name="claude" lpath cwd="$PWD" tr c
+  local rec="$1/CONTROL/auto-resume.txt" done="${2:-}"
   [[ -n "$sid" ]] || return 0
   [[ "${CLAUDE_CONFIG_DIR:-}" == *.claude-nine ]] && name="claude-nine"
   lpath="$(command -v "$name" 2>/dev/null || printf '%s' "$name")"
+  tr="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"${sid}.jsonl" 2>/dev/null | head -1 || true)"
+  if [[ -n "$tr" ]]; then
+    c="$("$GREP" -m1 -o '"cwd":"[^"]*"' "$tr" 2>/dev/null | sed 's/^"cwd":"//; s/"$//' || true)"
+    [[ -n "$c" && -d "$c" ]] && cwd="$c"
+  fi
+  [[ -z "$done" ]] && "$GREP" -qx 'interview=done' "$rec" 2>/dev/null && done=done
   mkdir -p "$1/CONTROL"
-  printf 'session_id=%s\nlauncher=%s\nlauncher_path=%s\ncwd=%s\n' "$sid" "$name" "$lpath" "$PWD" \
-    > "$1/CONTROL/auto-resume.txt"
-  printf 'ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=%s)\n' "$name"
+  { printf 'session_id=%s\nlauncher=%s\nlauncher_path=%s\ncwd=%s\n' "$sid" "$name" "$lpath" "$cwd"
+    [[ -z "$done" ]] || printf 'interview=done\n'; } > "$rec"
+  printf 'ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=%s%s)\n' "$name" "${done:+, interview=done}"
+}
+
+# The stalled-turn check's three readings (F2), shared by the full tick and
+# the pre-plan tick so research/spec/apparatus stalls before step 6.5 are seen.
+interview_done() { "$GREP" -qx 'interview=done' "$HOME_DIR/CONTROL/auto-resume.txt" 2>/dev/null; }
+run_status_of() {
+  "$GREP" -o '"run_status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$HOME_DIR/CONTROL/project_state.json" 2>/dev/null \
+    | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true
+}
+# The newest mtime under the project home, CONTROL excluded: the ledger this
+# tick writes is not progress, and counting it would make the check unable to
+# fire on a run whose only writer is the tick itself. The ledger's own lock and
+# pin sentinels are excluded for the same reason (tools/anchor.sh's census
+# excludes them too). Prints nothing when no mtime could be read.
+newest_write_epoch() {
+  local p e newest=""
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    e="$(stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null || true)"
+    if [[ -n "$e" ]] && { [[ -z "$newest" ]] || (( e > newest )); }; then newest="$e"; fi
+  done < <(find "$HOME_DIR" -path "$HOME_DIR/CONTROL" -prune -o -type f \
+    ! -name '.ledger-pinned' ! -name '*.lock' ! -name '*.tmp.*' ! -name '*.lock.d' -print 2>/dev/null)
+  printf '%s' "$newest"
 }
 
 # Called by the stalled-turn check once it fires. Launches
-# `<launcher> -p --resume <id> "/resume-after-limit"` detached, at most once
+# `<launcher> -p --resume <id> "/spec-protocol resume"` detached, at most once
 # per 30 minutes (CONTROL/auto-resume.lock mtime). WATCH_TICK_LAUNCHER_CMD
 # replaces the launcher (selftest stub only; nothing else should).
-auto_resume() {  # auto_resume <elapsed-minutes>
+auto_resume() {  # auto_resume <elapsed-minutes> [phase]
   local rec="$HOME_DIR/CONTROL/auto-resume.txt" lock="$HOME_DIR/CONTROL/auto-resume.lock"
   local k v sid="" name="" lpath="" cwd="" cmd lm age p="$PATH"
   if [[ ! -f "$rec" ]]; then
@@ -887,11 +935,11 @@ auto_resume() {  # auto_resume <elapsed-minutes>
   [[ "$cmd" == */* ]] && p="$(dirname "$cmd"):$PATH"
   [[ -d "$cwd" ]] || cwd="$HOME_DIR"
   touch "$lock"
-  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --resume "$sid" "/resume-after-limit" \
+  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --resume "$sid" "/spec-protocol resume" \
       </dev/null >> "$HOME_DIR/CONTROL/auto-resume.log" 2>&1 & )
   ledger_write "CONTROL/LEDGER.md" \
-    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m — launched -p --resume with /resume-after-limit (log CONTROL/auto-resume.log)"
-  printf 'AUTO-RESUME | launched | %s -p --resume %s "/resume-after-limit" (stalled %sm)\n' "$name" "$sid" "$1"
+    "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --resume with /spec-protocol resume (log CONTROL/auto-resume.log)"
+  printf 'AUTO-RESUME | launched | %s -p --resume %s "/spec-protocol resume" (stalled %sm in %s)\n' "$name" "$sid" "$1" "${2:-build}"
 }
 
 #==============================================================================
@@ -903,6 +951,7 @@ while (( $# )); do
     --cron-line) DO_CRON_LINE=1; shift ;;
     --arm)       DO_ARM=1; shift ;;
     --check)     DO_CHECK=1; shift ;;
+    --record-session) DO_RECORD=1; shift ;;
     -h|--help)   usage; exit 0 ;;
     --*)         die_tool "unknown option: $1" ;;
     *)
@@ -1003,6 +1052,16 @@ run_tick() {
     exit "$arc"
   fi
 
+  # --record-session: interview end (F3). Same record as --arm, plus
+  # interview=done. Loud when it cannot record: a silent no-op here is a
+  # window closed after the last question that nothing can resume.
+  if (( DO_RECORD )); then
+    is_profiled "$HOME_DIR" && { printf 'RECORD | not recorded (exit 2) | profiled project: a profile forbids CONTROL/ writes\n'; exit 2; }
+    [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || { printf 'RECORD | not recorded (exit 2) | CLAUDE_CODE_SESSION_ID is not set — run this inside the conductor session\n'; exit 2; }
+    record_session "$HOME_DIR" done
+    exit 0
+  fi
+
   if (( DO_CHECK )); then
     local chk=0
     set +e; check_tick "$HOME_DIR"; chk=$?; set -e
@@ -1085,6 +1144,24 @@ run_tick() {
   if (( PRE_PLAN == 1 )); then
     printf 'PRE-PLAN | the tick takes no counts before step 6.5: runnable/open/trees=undetermined(pre-plan: CONTROL/CHECKLIST.md not yet written — the runnable count has no source) | S2,S3,S5,S6,S13,bar=undetermined(pre-plan: the plan files they read do not exist yet)\n'
     printf 'PRE-PLAN | this line carries no verdict — an all-clear before the plan exists is not provable, and a TOOLING FAILURE for files the run has not reached is the failure RC-19 closed. Exit 0.\n'
+    # F2: research/spec/apparatus run before the plan exists. Once the
+    # interview is over (interview=done) and the run is RUNNING, a project
+    # with no write for STALLED_MIN minutes is hung — alarm and resume once.
+    local pp_rs pp_new pp_age
+    pp_rs="$(run_status_of)"
+    if interview_done && [[ -z "$pp_rs" || "$pp_rs" == RUNNING ]]; then
+      pp_new="$(newest_write_epoch)"
+      if [[ -n "$pp_new" ]]; then
+        pp_age=$(( ($(epoch_now) - pp_new) / 60 ))
+        if (( pp_age >= STALLED_MIN )); then
+          ledger_write "CONTROL/LEDGER.md" \
+            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${pp_age} | phase=post-interview(pre-plan) | $(sanitize "no file write under the project folder for ${pp_age} minutes after the interview ended (ceiling ${STALLED_MIN}m)")"
+          printf 'ACTION|stalled-turn|elapsed=%sm|DRIFT-ALARM stalled-turn: no project write for %s minutes after the interview ended, before the plan exists (ceiling %s)\n' "$pp_age" "$pp_age" "$STALLED_MIN"
+          auto_resume "$pp_age" "post-interview(pre-plan)"
+          return 3
+        fi
+      fi
+    fi
     return 0
   fi
 
@@ -1617,31 +1694,34 @@ run_tick() {
   # is not stalled-turn material (apparatus work writes elsewhere and slower),
   # and a run with no readable clock is UNDETERMINED, never a pass and never
   # an alarm.
+  #
+  # WIDENED (F2): every post-interview phase, not only build. The phase is
+  # `build` when an open build row stands (unchanged), else the stage of an
+  # open spec/apparatus/audit/merge/publish row, else `post-interview` when
+  # CONTROL/auto-resume.txt carries interview=done (written by
+  # --record-session at interview end — this is what covers research, whose
+  # step-3.5 reader rows run DURING the interview and so prove nothing).
+  # Outside build, a project_state.json run_status other than RUNNING (a
+  # finished, paused or stopped run) is waiting on purpose: no alarm, no resume.
   local STALL_NOTE="" STALL_ELAPSED=""
   {
-    local stall_build=0 stall_newest="" stall_now stall_age=0 stall_path=""
-    local su sstage
+    local stall_phase="" stall_newest="" stall_now stall_age=0
+    local su sstage sl srs=""
     while IFS=$'\t' read -r su sstage _slok _stree _sts _slabel; do
       [[ -n "$su" ]] || continue
-      case "$(printf '%s' "${sstage}" | tr 'A-Z' 'a-z')" in *build*) stall_build=1; break ;; esac
+      sl="$(printf '%s' "${sstage}" | tr 'A-Z' 'a-z')"
+      case "$sl" in
+        *build*) stall_phase=build; break ;;
+        *spec*|*apparatus*|*audit*|*merge*|*publish*) [[ -n "$stall_phase" ]] || stall_phase="$(sanitize "$sl")" ;;
+      esac
     done < "$WORKDIR/open.tsv"
-    if (( stall_build == 1 )); then
+    [[ -n "$stall_phase" ]] || ! interview_done || stall_phase="post-interview"
+    if [[ -n "$stall_phase" && "$stall_phase" != build ]]; then
+      srs="$(run_status_of)"; [[ -z "$srs" || "$srs" == RUNNING ]] || stall_phase=""
+    fi
+    if [[ -n "$stall_phase" ]]; then
       stall_now="$(epoch_now)"
-      # The newest mtime under the project home, CONTROL excluded: the ledger
-      # this tick writes is not progress, and counting it would make the check
-      # unable to fire on a run whose only writer is the tick itself. The
-      # ledger's own lock and pin sentinels are excluded for the same reason
-      # (tools/anchor.sh's census excludes them too): a sentinel this tick's
-      # own ledger write created is not a project write.
-      while IFS= read -r stall_path; do
-        [[ -n "$stall_path" ]] || continue
-        local se
-        se="$(stat -f %m "$stall_path" 2>/dev/null || stat -c %Y "$stall_path" 2>/dev/null || true)"
-        if [[ -n "$se" ]] && { [[ -z "$stall_newest" ]] || (( se > stall_newest )); }; then
-          stall_newest="$se"
-        fi
-      done < <(find "$HOME_DIR" -path "$HOME_DIR/CONTROL" -prune -o -type f \
-        ! -name '.ledger-pinned' ! -name '*.lock' ! -name '*.tmp.*' ! -name '*.lock.d' -print 2>/dev/null)
+      stall_newest="$(newest_write_epoch)"
       if [[ -z "$stall_newest" ]]; then
         STALL_NOTE="undetermined(no readable file mtime under the project folder — the clock has no witness)"
         add_undet "stalled-turn=undetermined(no file mtime could be read under ${HOME_DIR} — an unreadable clock is not proof of progress)"
@@ -1651,17 +1731,17 @@ run_tick() {
           STALL_NOTE="stalled(elapsed=${stall_age}m)"
           STALL_ELAPSED="${stall_age}"
           ledger_write "CONTROL/LEDGER.md" \
-            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | $(sanitize "no file write under the project folder for ${stall_age} minutes while an open BUILD row stands (ceiling ${STALLED_MIN}m) — reconcile the actual Workflow/session/run or Agent-Team identity before retirement; stale files are not proof of death")"
+            "$(iso_now) | DRIFT-ALARM | stalled-turn | elapsed=${stall_age} | phase=${stall_phase} | $(sanitize "no file write under the project folder for ${stall_age} minutes in phase ${stall_phase} (ceiling ${STALLED_MIN}m) — reconcile the actual Workflow/session/run or Agent-Team identity before retirement; stale files are not proof of death")"
           emit "stalled-turn" "elapsed=${stall_age}m" \
-            "DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${stall_age} minutes old (ceiling ${STALLED_MIN}) while a BUILD row stands open — the turn is hung, not slow (RC-17)"
-          auto_resume "$stall_age"
+            "DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${stall_age} minutes old (ceiling ${STALLED_MIN}) in phase ${stall_phase} — the turn is hung, not slow (RC-17)"
+          auto_resume "$stall_age" "$stall_phase"
         else
           STALL_NOTE="ok(newest write ${stall_age}m ago, ceiling ${STALLED_MIN}m)"
         fi
       fi
     else
-      STALL_NOTE="undetermined(no open BUILD row — the ceiling applies to the build phase only)"
-      add_undet "stalled-turn=undetermined(no open BUILD row in CONTROL/dispatch-log.md — outside the build phase the wall-clock ceiling does not apply)"
+      STALL_NOTE="undetermined(no running post-interview phase — no open build/spec/apparatus/audit/merge/publish row, no interview=done record, or run_status=${srs:-?} is not RUNNING)"
+      add_undet "stalled-turn=undetermined(no running post-interview phase in CONTROL/dispatch-log.md, CONTROL/auto-resume.txt or CONTROL/project_state.json — before the interview ends, or while a run waits on purpose, the wall-clock ceiling does not apply)"
     fi
   }
   # THE PUBLISHED-UNGUARDED CHECK (WI-69) — the guard's wall, on the tick side.
@@ -2649,7 +2729,7 @@ selftest() {
 
   # --- case 43 (#48): AUTO-RESUME. Arm inside a (fake) claude-nine session,
   #     stall the build like case 32, tick twice: the stub launcher runs ONCE
-  #     with -p --resume <id> /resume-after-limit, the ledger says AUTO-RESUME,
+  #     with -p --resume <id> /spec-protocol resume, the ledger says AUTO-RESUME,
   #     and the second tick is held by the lock.
   mk_home "$T/c43"
   printf '%s | U-01 build | build | [opus x10] WF01 builder | run-043\n' "$(stamp 1)" > "$T/c43/CONTROL/dispatch-log.md"
@@ -2665,11 +2745,11 @@ selftest() {
   sleep 0.5
   ok=0
   if "$GREP" -q '^launcher=claude-nine$' "$T/c43/CONTROL/auto-resume.txt" 2>/dev/null \
-     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --resume sess-43 /resume-after-limit" ]] \
+     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --resume sess-43 /spec-protocol resume" ]] \
      && printf '%s' "$out43a" | "$GREP" -q '^AUTO-RESUME | launched' \
      && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | held' \
      && "$GREP" -q '| AUTO-RESUME | session=sess-43' "$T/c43/CONTROL/LEDGER.md"; then ok=1; fi
-  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --resume sess-43 /resume-after-limit'); second tick held by the lock; AUTO-RESUME on the ledger"
+  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --resume sess-43 /spec-protocol resume'); second tick held by the lock; AUTO-RESUME on the ledger"
 
   # --- case 44 (#40): the unavailable-crontab reason survives a long path.
   #     sanitize() cuts at 160 chars; the rc must come BEFORE the command path
@@ -2680,6 +2760,29 @@ selftest() {
   ok=0
   (( RC == 2 )) && printf '%s' "$OUT" | "$GREP" -q 'UNAVAILABLE (exit 2) | rc=127 from' && ok=1
   report 44 "arm-unavailable-long-path" "$ok" "rc=${RC} (want 2); rc=127 leads the reason even with a 150+ char command path"
+
+  # --- case 45 (F2+F3): a PRE-PLAN project (research/spec, no build row) whose
+  #     session was recorded at INTERVIEW END with --record-session. The
+  #     recorded cwd is the transcript's launch folder, not $PWD; a stale
+  #     project resumes once with /spec-protocol resume from that folder.
+  mk_home "$T/c45"
+  rm -f "$T/c45/CONTROL/CHECKLIST.md" "$T/c45/CONTROL/TODO.md"
+  mkdir -p "$T/cfg45/projects/x" "$T/launch45"
+  printf '{"cwd":"%s","sessionId":"sess-45"}\n' "$T/launch45" > "$T/cfg45/projects/x/sess-45.jsonl"
+  printf '#!/bin/sh\necho "$PWD|$*" >> "%s"\n' "$T/c45.args" > "$T/c45.stub"; chmod +x "$T/c45.stub"
+  CLAUDE_CODE_SESSION_ID=sess-45 CLAUDE_CONFIG_DIR="$T/cfg45" runw --record-session "$T/c45"
+  local r45rec="$RC"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c45/SPEC/GOAL.md" "$T/c45/CONTROL/setup_progress.json"
+  WATCH_TICK_LAUNCHER_CMD="$T/c45.stub" runw "$T/c45"
+  local i45
+  for i45 in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$T/c45.args" ]] && break; sleep 0.3; done
+  ok=0
+  if (( r45rec == 0 && RC == 3 )) \
+     && "$GREP" -qx 'interview=done' "$T/c45/CONTROL/auto-resume.txt" \
+     && "$GREP" -qx "cwd=$T/launch45" "$T/c45/CONTROL/auto-resume.txt" \
+     && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --resume sess-45 /spec-protocol resume" ]] \
+     && "$GREP" -q 'stalled-turn | elapsed=.* | phase=post-interview(pre-plan)' "$T/c45/CONTROL/LEDGER.md"; then ok=1; fi
+  report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --resume sess-45 /spec-protocol resume)"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
