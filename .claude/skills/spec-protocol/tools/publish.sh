@@ -163,7 +163,8 @@ publish() { # publish <prod|draft> <project>
   # record: guard line first, then the address.
   checks="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(len(d.get("paths",[]))+len(d.get("destinations",[])))' \
     "$home/ship-checks/public-surface.json" 2>/dev/null)" || checks=unknown
-  target="$(grep -Eo 'BUILD-TARGET: [A-Z_]+' "$home/CONTROL/LEDGER.md" 2>/dev/null | tail -1 | sed 's/.*: //')"
+  # BUILD-TARGET lives in CONTROL/LEDGER.md (legacy) or the bound state beside documents.state (profiled)
+  target="$(grep -hEo 'BUILD-TARGET: [A-Z_]+' "$home/CONTROL/LEDGER.md" "$sd"/* 2>/dev/null | tail -1 | sed 's/.*: //')"
   record "$home" "SHIP-GUARD: rc=0 checks=${checks} at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" || undetermined "could not record the SHIP-GUARD line"
   record "$home" "PUBLISHED: $url target=${target:-served} domain=none status=200" || undetermined "could not record the PUBLISHED line"
   say "LIVE | PUBLISHED: $url status=200"

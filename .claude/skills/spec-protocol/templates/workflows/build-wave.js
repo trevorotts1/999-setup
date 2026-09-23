@@ -37,7 +37,7 @@ return await pipeline(units,
     `git -C "${u.repo}" worktree add "${wt(u)}" -b ${u.branch} ${u.base || 'HEAD'} (the wave's frozen base; if ${wt(u)} ` +
     `already exists, reuse it; if only the branch exists, run the same command without -b and the base; on a git lock error wait a few seconds and retry). ` +
     `cd into ${wt(u)} and do all work there. Touch only the paths your card lists. ` +
-    `Run the card's VERIFY commands, commit (no AI trailers), push the branch. Return id, status, commit sha.`,
+    `Run the card's VERIFY commands, commit on your branch (no AI trailers); do not push (the merge train publishes). Return id, status, commit sha.`,
     { model: seats.build, phase: 'Build', label: `build:${u.id}`, schema: RESULT }),
   (built, u) => agent(
     `Judge unit ${u.id} blind: you are not told how it was built. Card: ${u.card}. Branch ${u.branch} in ${u.repo}, checked out at ${wt(u)}` +
