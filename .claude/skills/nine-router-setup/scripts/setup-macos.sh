@@ -342,7 +342,9 @@ install_launcher_support() {
     [ -f "$REPO_ROOT/launchers/macos/$f" ] || fail "launcher helper missing from the repo: launchers/macos/$f"
     install -m 755 "$REPO_ROOT/launchers/macos/$f" "$HOME/.local/bin/$f"
   done
-  log "installed claude-code-lib.sh and get-9router-key.sh in $HOME/.local/bin"
+  # The launcher re-applies the 9Router catalog fix on every launch.
+  install -m 644 "$COMMON/fix-9router-catalog.mjs" "$HOME/.local/bin/fix-9router-catalog.mjs"
+  log "installed claude-code-lib.sh, get-9router-key.sh and fix-9router-catalog.mjs in $HOME/.local/bin"
 }
 
 # Create $HOME/.claude-nine/settings.json ONLY when absent (never overwrites a
@@ -500,6 +502,18 @@ main() {
     fresh-install) NINE_MODE="freshly installed" ;;
     *) NINE_MODE="unknown" ;;
   esac
+  # Correct 9Router's catalog limits (DeepSeek V4 Flash 1M context) BEFORE the
+  # router starts, so no restart is needed. A router that is already running
+  # keeps its loaded catalog, so leave it: the claude-nine launcher applies the
+  # fix and restarts the router on its next launch. Never fatal.
+  if ! curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null; then
+    CAT_RC=0
+    "$NODE_BIN" "$COMMON/fix-9router-catalog.mjs" >&2 || CAT_RC=$?
+    case "$CAT_RC" in
+      0|10) DEP_SUMMARY+=("$(printf '%-14s OK   catalog limits correct' '9router fix')") ;;
+      *) DEP_SUMMARY+=("$(printf '%-14s WARN catalog fix undetermined (exit %s) - see above' '9router fix' "$CAT_RC")") ;;
+    esac
+  fi
 
   log "Dependency preflight complete:"
   for line in "${DEP_SUMMARY[@]}"; do

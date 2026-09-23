@@ -383,6 +383,17 @@ try {
             'fresh-install'       { $nineMode = 'freshly installed' }
             default               { $nineMode = 'unknown' }
         }
+        # Correct 9Router's catalog limits (DeepSeek V4 Flash 1M context) now,
+        # before the router starts, so no restart is needed. 0/10 = correct;
+        # anything else is reported, never fatal. A router that was already
+        # running is left alone: claude-nine applies the fix + restart on launch.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & $NodeBin (Join-Path $Common 'fix-9router-catalog.mjs') 2>&1 | Out-Host
+        $catRc = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($catRc -eq 0 -or $catRc -eq 10) { $DepSummary += '9router fix     OK   catalog limits correct' }
+        else { $DepSummary += "9router fix     WARN catalog fix undetermined (exit $catRc) - see above" }
     }
     if (-not $nineBin) { $nineBin = (Get-Command 9router -ErrorAction SilentlyContinue).Source }
     if (-not $nineBin) { Write-Blocker '9router executable could not be resolved.' }
@@ -548,6 +559,9 @@ else {
     # 10. Install launcher (Install-ClaudeNine.ps1 resolves the repo launcher path itself).
     & (Join-Path $Win 'Install-ClaudeNine.ps1')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'claude-nine launcher install failed.' }
+    # The launcher re-applies the 9Router catalog fix on every launch; it looks
+    # for the patcher next to itself (%LOCALAPPDATA%\BlackCEO\999\lib).
+    Copy-Item -Force (Join-Path $Common 'fix-9router-catalog.mjs') (Join-Path $StateDir 'lib\fix-9router-catalog.mjs')
     Refresh-Path
 
     # 10.5 Enable Agent Teams (merge-only, backed up; never disturbs running work).
