@@ -399,9 +399,21 @@ function recordSession(home, done) {
   return true;
 }
 
+// A2 fix: some profiled states carry "status" instead of "run_status" -- read
+// run_status first, and only fall back to status when run_status is absent.
 const runStatusOf = (home) => {
-  try { const m = /"run_status"\s*:\s*"([A-Za-z_]*)"/.exec(fs.readFileSync(bindPaths(home).stateJson, 'utf8')); return m ? m[1] : ''; } catch { return ''; }
+  try {
+    const txt = fs.readFileSync(bindPaths(home).stateJson, 'utf8');
+    const m = /"run_status"\s*:\s*"([A-Za-z_]*)"/.exec(txt);
+    if (m) return m[1];
+    const m2 = /"status"\s*:\s*"([A-Za-z_]*)"/.exec(txt);
+    return m2 ? m2[1] : '';
+  } catch { return ''; }
 };
+// A2 fix: these values mean the project is waiting ON PURPOSE -- auto-resume
+// must never fire for them, no matter how stale the session looks.
+const TERMINAL_RUN_STATUSES = new Set(['RELEASE_COMPLETE', 'STOPPED_BY_OWNER', 'PAUSED_BLOCKED', 'PAUSED_CAP', 'STOPPED_CAP']);
+const runStatusIsTerminal = (rs) => TERMINAL_RUN_STATUSES.has(String(rs || '').toUpperCase());
 
 // Newest mtime under the project home, the state area and the ledger's
 // sentinels excluded (the tick's own writes are not progress). A profiled
@@ -486,7 +498,8 @@ function stallCheck(home, openRows) {
   }
   if (!phase && readRecord(home).interview === 'done') phase = openRows === 'profiled' ? 'post-interview(profiled)' : openRows === null ? 'post-interview(pre-plan)' : 'post-interview';
   const rs = runStatusOf(home);
-  if (phase && phase !== 'build' && rs && rs !== 'RUNNING') phase = '';
+  if (phase && runStatusIsTerminal(rs)) phase = '';
+  else if (phase && phase !== 'build' && rs && rs !== 'RUNNING') phase = '';
   if (!phase) return { note: `undetermined(no running post-interview phase — run_status=${rs || '?'})`, fired: false };
   const newest = newestWriteEpoch(home);
   if (newest === null) return { note: 'undetermined(no readable file mtime under the project folder)', fired: false };
@@ -1204,6 +1217,31 @@ function selftest() {
       && fs.realpathSync(got17[0].split('|')[0]) === fs.realpathSync(launch17)
       && /phase=post-interview\(pre-plan\)/.test(led(d)),
     `record rc=${rec17.rc} (want 0); tick rc=${t1.rc} (want 3) then held; stub calls=${got17.length} (want 1): [${got17[0] || ''}]`);
+
+  // 18 (A2 fix) — PROFILED TERMINAL STATUS. A profiled project whose bound
+  // state carries ONLY "status":"RELEASE_COMPLETE" (no run_status key at
+  // all) plus a stale, interview=done session must NEVER auto-resume — the
+  // exact bug this fix closes: an absent run_status alone used to read as
+  // "running" even when the profile's own status field said the run was
+  // finished.
+  d = mkProfileHome('c18');
+  fs.writeFileSync(path.join(d, 'state', 'build-state.json'), '{"status":"RELEASE_COMPLETE"}\n');
+  const args18 = path.join(T, 'c18.args');
+  const stub18 = path.join(T, 'launcher-stub18.mjs');
+  fs.writeFileSync(stub18, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(args18)}, process.argv.slice(2).join(' ') + '\\n');\n`);
+  const wrap18 = path.join(T, process.platform === 'win32' ? 'launcher-stub18.cmd' : 'launcher-stub18');
+  fs.writeFileSync(wrap18, process.platform === 'win32'
+    ? `@"${process.execPath}" "${stub18}" %*\r\n`
+    : `#!/bin/sh\nexec "${process.execPath}" "${stub18}" "$@"\n`, { mode: 0o755 });
+  const rec18 = run([d, '--record-session'], { CLAUDE_CODE_SESSION_ID: 'sess-18', CLAUDE_CONFIG_DIR: '/x/.claude-nine' });
+  const old18 = new Date(Date.now() - 20 * 60000);
+  fs.utimesSync(path.join(d, 'state', 'build-state.json'), old18, old18);
+  fs.utimesSync(path.join(d, '.spec-protocol.json'), old18, old18);
+  const t18 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap18 });
+  report(18, 'profiled-terminal-status-no-resume',
+    rec18.rc === 0 && t18.rc === 0 && !fs.existsSync(args18)
+      && !/AUTO-RESUME/.test(t18.out) && !/ACTION\|stalled-turn/.test(t18.out),
+    `record rc=${rec18.rc} (want 0); tick rc=${t18.rc} (want 0); launcher stub called=${fs.existsSync(args18)} (want false — RELEASE_COMPLETE via the status fallback must block auto-resume even though the session looks stale)`);
 
   fs.rmSync(T, { recursive: true, force: true });
   process.stdout.write(`\n-------------------------------------------------------------\n`);

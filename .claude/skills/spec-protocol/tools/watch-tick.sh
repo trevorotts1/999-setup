@@ -971,9 +971,26 @@ record_session() {  # record_session <project-home> [done]
 # step 6.5 are seen. On a profiled project run_status is read from the bound
 # documents.state (when it is JSON carrying one); absent reads as running.
 interview_done() { "$GREP" -qx 'interview=done' "${AREA}/auto-resume.txt" 2>/dev/null; }
+# A2 fix: some profiled states carry "status" instead of "run_status" -- read
+# run_status first, and only fall back to status when run_status is absent
+# (a state naming both is not a shape this reads, run_status wins).
 run_status_of() {
-  "$GREP" -o '"run_status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$STATE_JSON" 2>/dev/null \
-    | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true
+  local v
+  v="$("$GREP" -o '"run_status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$STATE_JSON" 2>/dev/null \
+    | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true)"
+  if [[ -z "$v" ]]; then
+    v="$("$GREP" -o '"status"[[:space:]]*:[[:space:]]*"[A-Za-z_]*"' "$STATE_JSON" 2>/dev/null \
+      | sed 's/.*"\([A-Za-z_]*\)"$/\1/' | head -1 || true)"
+  fi
+  printf '%s' "$v"
+}
+# A2 fix: these values mean the project is waiting ON PURPOSE -- auto-resume
+# must never fire for them, no matter how stale the session looks.
+run_status_is_terminal() {
+  case "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" in
+    RELEASE_COMPLETE|STOPPED_BY_OWNER|PAUSED_BLOCKED|PAUSED_CAP|STOPPED_CAP) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 # The newest mtime under the project home, the state area excluded: the ledger
 # and the records this tick writes are not progress, and counting them would
@@ -1246,11 +1263,13 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
 
   # A2: the same post-interview stall check and AUTO-RESUME a legacy project
   # gets. The phase is interview=done in the state area's record; run_status
-  # (when the bound state carries one) other than RUNNING is a run waiting on
-  # purpose.
+  # (falling back to status, when the bound state carries only that) other
+  # than RUNNING is a run waiting on purpose -- and the five terminal/paused
+  # values below never auto-resume regardless of case or how stale the
+  # session looks.
   local rs newest age
   rs="$(run_status_of)"
-  if interview_done && [[ -z "$rs" || "$rs" == RUNNING ]]; then
+  if interview_done && ! run_status_is_terminal "$rs" && [[ -z "$rs" || "$rs" == RUNNING ]]; then
     newest="$(newest_write_epoch)"
     if [[ -n "$newest" ]]; then
       age=$(( ($(epoch_now) - newest) / 60 ))
@@ -3038,6 +3057,24 @@ selftest() {
      && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume" ]] \
      && "$GREP" -q 'stalled-turn | elapsed=.* | phase=post-interview(pre-plan)' "$T/c45/CONTROL/LEDGER.md"; then ok=1; fi
   report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume)"
+
+  # --- case 46 (A2 fix): PROFILED TERMINAL STATUS. A profiled project whose
+  #     bound state carries ONLY "status":"RELEASE_COMPLETE" (no run_status
+  #     key at all) plus a stale, interview=done session must NEVER auto-
+  #     resume -- the exact bug this fix closes: an absent run_status alone
+  #     used to read as "running" even when the profile's own status field
+  #     said the run was finished.
+  mk_profile_home "$T/c46"
+  printf '{"status":"RELEASE_COMPLETE"}\n' > "$T/c46/state/build-state.json"
+  printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/c46.args" > "$T/c46.stub"; chmod +x "$T/c46.stub"
+  CLAUDE_CODE_SESSION_ID=sess-46 CLAUDE_CONFIG_DIR=/x/.claude-nine runw --record-session "$T/c46"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c46/state/build-state.json" "$T/c46/.spec-protocol.json"
+  WATCH_TICK_LAUNCHER_CMD="$T/c46.stub" runw "$T/c46"
+  ok=0
+  if (( RC == 0 )) \
+     && [[ ! -s "$T/c46.args" ]] \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'AUTO-RESUME\|ACTION|stalled-turn'; then ok=1; fi
+  report 46 "profiled-terminal-status-no-resume" "$ok" "rc=${RC} (want 0); launcher stub got [$(cat "$T/c46.args" 2>/dev/null)] (want nothing — RELEASE_COMPLETE via the status fallback must block auto-resume even though the session looks stale)"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

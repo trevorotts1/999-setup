@@ -50,7 +50,12 @@ READY=0 RESUME=1 node "$ROOT/project-profile.mjs" resume-authorized "$T" >/dev/n
 # PROFILE-ANCHOR; ledger.sh writes <statedir>/spec-protocol/<file minus CONTROL/>
 # and prints that path. The remaining legacy helpers below still refuse (they
 # write CONTROL records and a profile owns its own state).
-bash "$ROOT/watch-tick.sh" "$T" | grep -q '^PROFILE-TICK | '
+# Captured, not piped live: round 5's tick prints MERGE-BATCH (and, with
+# commands.refresh, PROFILE-REFRESH) lines after PROFILE-TICK, and a live
+# `grep -q` exits on the first match while the tick is still writing those —
+# SIGPIPE, silently aborting this whole script under set -e/pipefail.
+tick_out="$(bash "$ROOT/watch-tick.sh" "$T")"
+printf '%s\n' "$tick_out" | grep -q '^PROFILE-TICK | '
 bash "$ROOT/anchor.sh" "$T" | grep -q '^PROFILE-ANCHOR | '
 if bash "$ROOT/state-check.sh" "$T" >/dev/null 2>&1; then exit 1; fi
 [[ "$(bash "$ROOT/ledger.sh" "$T" CONTROL/LEDGER.md 'NOTE | profiled ledger line')" == "LEDGER | "*/spec-protocol/LEDGER.md ]]

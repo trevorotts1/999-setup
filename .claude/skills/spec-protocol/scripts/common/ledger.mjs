@@ -63,6 +63,41 @@ const SCORE_CLASS_RE = /(^|\|)\s*SCORE\s*\|/;
 const SCORE_SHAPE_RE = /^([^|]*\|\s*)?SCORE\s*\|\s*unit=[^|]+\|\s*round=[0-9]+\s*\|\s*score=-?[0-9]+(\.[0-9]+)?\s*\|\s*best=-?[0-9]+(\.[0-9]+)?\s*\|\s*delta=-?[0-9]+(\.[0-9]+)?\s*$/;
 const CLAIM_RE = /\|\s*CLAIM\s*\|/;
 
+// C5/twin fix: the clock and the writer signature, ported from ledger.sh's
+// FIRST_LINE/REST_LINES stamp-and-sign block. Only the payload's FIRST line is
+// stamped and signed; a multi-line payload's remaining lines travel unchanged.
+// Markdown STRUCTURE (#, >, ---, a table row, a "- [ ]"/"- [x]" checklist row)
+// and a blank first line are never stamped and never signed -- a live reader
+// of those rows (tools/anchor.sh) would be blinded by a prefix. A payload that
+// already carries an ISO8601Z timestamp or the signature keeps it exactly,
+// never stamped or signed a second time.
+const LEDGER_STRUCT_RE = /^[ \t]*([#>]|-{3,}|\||[-*+][ \t]*\[[ xX]\])/;
+const LEDGER_ISO8601Z_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/;
+const LEDGER_WRITER_SIG = ' | writer=ledger.sh';
+// Port of ledger.sh's st_written_ok: what a write MEANS now -- the payload's
+// first line, prefixed with an ISO8601Z stamp ONLY when the caller supplied
+// none, and always signed. A caller-supplied timestamp survives byte-for-byte;
+// nothing else changes. Selftest cases assert THROUGH this, never against the
+// raw payload, so a writer that quietly stopped stamping or signing fails here.
+const LEDGER_ISO8601Z_PREFIX_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \| /;
+function writtenOk(actual, expectedFirstLine) {
+  if (!actual.endsWith(LEDGER_WRITER_SIG)) return false;
+  const w = actual.slice(0, -LEDGER_WRITER_SIG.length);
+  if (LEDGER_ISO8601Z_RE.test(expectedFirstLine)) return w === expectedFirstLine;
+  if (!LEDGER_ISO8601Z_PREFIX_RE.test(w)) return false;
+  return w.replace(LEDGER_ISO8601Z_PREFIX_RE, '') === expectedFirstLine;
+}
+
+function stampAndSign(payload) {
+  const nl = payload.indexOf('\n');
+  let firstLine = nl === -1 ? payload : payload.slice(0, nl);
+  const rest = nl === -1 ? '' : payload.slice(nl);   // keeps its own leading \n
+  const isRecord = firstLine.trim() !== '' && !LEDGER_STRUCT_RE.test(firstLine);
+  if (isRecord && !LEDGER_ISO8601Z_RE.test(firstLine)) firstLine = `${nowUtc()} | ${firstLine}`;
+  if (isRecord && !firstLine.endsWith(LEDGER_WRITER_SIG)) firstLine += LEDGER_WRITER_SIG;
+  return firstLine + rest;
+}
+
 const LOCK_DEADLINE_SECS = 45;
 const STALE_LOCK_SECS = 60;
 const SLEEP_CHOICES_MS = [50, 70, 90, 110, 130, 150, 170, 190, 210, 230];
@@ -211,6 +246,12 @@ export function ledgerWrite(homeDir, file, line, upsertKey = '') {
     return { code: 2, err };
   }
 
+  // --- the clock and the signature (twin fix): everything below this line —
+  //     the file write, the tail verification, and the CLAIM/last-intents.txt
+  //     append — reads the STAMPED line, exactly as ledger.sh reassigns LINE
+  //     before its own write.
+  line = stampAndSign(line);
+
   const target = path.join(homeDir, file);
   const tmp = `${target}.tmp.${process.pid}`;
 
@@ -342,13 +383,13 @@ function selftest() {
   // 1 — SCORE, well formed, bare: the exact shape gauntlet.md section 5 writes
   let L = 'SCORE | unit=U1 | round=2 | score=7.1 | best=7.1 | delta=1.3';
   write(home, LEDGER, L);
-  if (rc === 0 && last(LEDGER) === L) ok(`SCORE class accepted and written: ${L}`);
+  if (rc === 0 && writtenOk(last(LEDGER), L)) ok(`SCORE class accepted and written: ${L}`);
   else bad('SCORE class accepted and written', `rc=${rc} last=[${last(LEDGER)}] err=${errOut}`);
 
   // 2 — SCORE with the ISO8601Z prefix every other ledger line carries
   L = '2026-09-07T04:11:00Z | SCORE | unit=U1 | round=3 | score=8.2 | best=8.2 | delta=1.1';
   write(home, LEDGER, L);
-  if (rc === 0 && last(LEDGER) === L) ok('SCORE class accepted with a timestamp prefix');
+  if (rc === 0 && writtenOk(last(LEDGER), L)) ok('SCORE class accepted with a timestamp prefix, which is KEPT as given');
   else bad('SCORE class accepted with a timestamp prefix', `rc=${rc} last=[${last(LEDGER)}] err=${errOut}`);
 
   // 3 — SCORE missing a field: REFUSED, exit 2, and NOT written
@@ -368,7 +409,7 @@ function selftest() {
   //     in CONTROL/last-intents.txt, class 5's only input
   L = '2026-09-07T04:12:00Z | CLAIM | unit=U1 | agent=builder-a | model=builder | plan=build the home page';
   write(home, LEDGER, L);
-  if (rc === 0 && last(LEDGER) === L && last('CONTROL/last-intents.txt') === 'build the home page') {
+  if (rc === 0 && writtenOk(last(LEDGER), L) && last('CONTROL/last-intents.txt') === 'build the home page') {
     ok('CLAIM shape written and its plan= appended to CONTROL/last-intents.txt');
   } else {
     bad('CLAIM shape written and intent appended', `rc=${rc} last=[${last(LEDGER)}] intent=[${last('CONTROL/last-intents.txt')}] err=${errOut}`);
@@ -380,7 +421,7 @@ function selftest() {
   L = '2026-09-07T04:20:00Z | RESULT | unit=U1 | PASS | evidence=CONTROL/LEDGER.md';
   write(home, LEDGER, L);
   const after = nlines('CONTROL/last-intents.txt');
-  if (rc === 0 && last(LEDGER) === L && before === after) {
+  if (rc === 0 && writtenOk(last(LEDGER), L) && before === after) {
     ok(`RESULT shape written and the intent window left alone (${before} lines)`);
   } else {
     bad('RESULT shape written, intent window unchanged', `rc=${rc} last=[${last(LEDGER)}] before=${before} after=${after} err=${errOut}`);
@@ -389,8 +430,8 @@ function selftest() {
   // 7 — the control that keeps the SCORE check honest: a line of no class at all
   L = '2026-09-07T04:21:00Z | NOTE | unit=U1 | a line of no class at all';
   write(home, LEDGER, L);
-  if (rc === 0 && last(LEDGER) === L) ok('control: an unclassed line is written untouched (the SCORE check is class-specific)');
-  else bad('control: an unclassed line is written untouched', `rc=${rc} last=[${last(LEDGER)}] err=${errOut}`);
+  if (rc === 0 && writtenOk(last(LEDGER), L)) ok('control: an unclassed line is written unaltered but for the clock and the signature (the SCORE check is class-specific)');
+  else bad('control: an unclassed line is written unaltered but for the clock and the signature', `rc=${rc} last=[${last(LEDGER)}] err=${errOut}`);
 
   // 8 — upsert mode still holds one line per key (HEARTBEAT's contract)
   write(home, 'CONTROL/HEARTBEAT.md', '2026-09-07T04:22:00Z | builder-a | U1 | build', 'builder-a');
@@ -424,7 +465,7 @@ function selftest() {
     const sameLedger = rd(hb, LEDGER).equals(rd(hn, LEDGER));
     const sameIntents = rd(hb, 'CONTROL/last-intents.txt').equals(rd(hn, 'CONTROL/last-intents.txt'));
     if (shRc === 0 && rc === 0 && sameLedger && sameIntents
-        && rd(hn, LEDGER).toString('utf8') === `${CL}\n`) {
+        && rd(hn, LEDGER).toString('utf8') === `${CL}${LEDGER_WRITER_SIG}\n`) {
       ok(`twin proof: the CLAIM line and the intent window are BYTE-IDENTICAL to tools/ledger.sh's (${rd(hn, LEDGER).length} bytes, LF-terminated)`);
     } else {
       bad('twin proof: byte-identical to tools/ledger.sh',
