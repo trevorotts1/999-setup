@@ -96,7 +96,12 @@ EVERY project; "step 13 of the interview" points at the pictures item that exist
 `project-profile.md` as item 26.
 
 **Closed on evidence, no change:** `dispatch-gate` registered on `Workflow` only is correct —
-SKILL.md dispatches through Workflow alone (Agent: 0 references). The entry-mode question on
+SKILL.md dispatches through Workflow alone (Agent: 0 references). **CORRECTION (recorded after
+release): this finding was wrong.** `references/workflows.md` §6 degrades a failed Workflow probe
+to `Agent` fan-out, and real runs made Agent calls 102 times against 43 Workflow calls — every
+one of them outside the hook. A zero count of the word "Agent" in SKILL.md was evidence about the
+prose, not about what runs dispatched. The fix (hook handles `Agent`/`Task` payloads, registered
+on `Workflow|Agent|Task`) ships in the next release. The entry-mode question on
 the naming line is the mandated ONE-message shape since 1.21.5, not a defect. A stale
 `_not yet spoken_` line nagging every build-phase statement is correct behaviour on a correct
 ledger: a question still unspoken during the build was skipped.
@@ -3754,3 +3759,31 @@ no personal path beyond `/Users/yourname` placeholders.
   still report OK. Mitigation: `providerThinking` is also set per provider as belt-and-braces.
 - Dashboard URL is reconstructed from the port with `127.0.0.1` — correct for the
   loopback-only default; a remote `NINEROUTER_BASE` would need the host preserved.
+
+## Background: why these rules exist
+
+History moved out of `SKILL.md` when it was cut to its rules (the "this was the defect on date X"
+narratives). Each paragraph names the rule it explains; the rule itself stays in `SKILL.md`.
+
+- **The turn-yield rule** (a question ends the message and the turn) was missing while three
+  separate runs "asked" a dozen things and the client was never once handed the turn.
+- **The conversation Stop hook** exists because seven releases wrote the conversation rules in
+  prose and each one produced a new defect on the next run; the only rule that ever held was the
+  one in a script.
+- **The GATE 0 claim hook** exists because three releases of prose did not stop a refusal spoken
+  from an unrun check. Telling a client to switch on something they already have was the single
+  most common way this skill failed.
+- **The naming rule** ("call it by its name"): a run told someone who wrote "Studio Nerds" across
+  thirty-three documents that it would call it "your computer program" — which read as though it
+  had read none of them.
+- **The targets precedence rule**: a run guessed `MOBILE_APP` from the word "app" while the
+  profile beside it said `desktop-macos-arm64` (the 2026-09-21 10:30 failure).
+- **The never-deleted idea question**: a run said "You already told me the idea, so I won't ask
+  you to say it twice" and followed it with statements — the client was never handed the turn.
+- **The stall rule** (a turn ends ON a question): "Wonderful — that's exactly what I'll build for
+  you. From here on I'll call it Studio Nerds." followed by silence left the entry-mode question
+  unasked (the 2026-09-21 10:34 failure).
+- **Entry mode is always asked**: a run said "you've already pointed me at notes in this folder",
+  answering the question on the client's behalf because the session started inside the folder.
+- **Read before confirming**: runs confirmed from a guess while the answer sat unread in a
+  supplied file, then asked again after reading it — the same defect twice.
