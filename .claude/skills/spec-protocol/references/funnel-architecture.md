@@ -508,6 +508,9 @@ Flow page builder headless on a VPS. Until it is proven, the funnel gate
 (`references/interview.md`, Step 1c) says **a Mac is preferred** for funnel
 builds, and this file claims nothing in either direction. An untested capability
 is not a capability (Law 14), and an untested failure is not a fact either.
+**Still UNTESTED as of 2026-09-23** (re-checked in the 51-fix pass): no run has
+driven the Convert and Flow page builder headless on a VPS, so the Mac preference
+stands and no fix in that pass changed it.
 
 ---
 

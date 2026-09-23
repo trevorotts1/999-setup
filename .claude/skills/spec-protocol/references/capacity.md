@@ -81,8 +81,8 @@ rows below standing unchanged as the fallback when research fails.
 | DeepSeek v4 Flash, direct (9Router) | 2,500 concurrent requests per account [[RESEARCHED](https://api-docs.deepseek.com/quick_start/rate_limit) 2026-08-16] | usable = ceiling − 25% reserve = 1,875 (harness almost always binds first — see delivery layer) | Balance/liveness only |
 | DeepSeek v4 Pro, direct (9Router) | 500 concurrent requests per account [RESEARCHED same page 2026-08-16] | usable = 375 | Balance/liveness only |
 | DeepSeek via Ollama Cloud | never the builder (behind version) | — | — |
-| Ollama Cloud, $20/mo plan (any model) | 3 concurrent | **USE 2** (the operator's reserve — never consume 100%) | Plan tier: ask if undetectable |
-| Ollama Cloud, $100/mo plan (any model) | 10 concurrent | **USE 8** | Plan tier: ask if undetectable |
+| Ollama Cloud, $20/mo plan (any model) | 3 concurrent | **USE 2** (the operator's reserve — never consume 100%) | Plan tier: measured (concurrency probe), never asked — §9 |
+| Ollama Cloud, $100/mo plan (any model) | 10 concurrent | **USE 8** | Plan tier: measured (concurrency probe), never asked — §9 |
 | Agnes AI, free | 20 requests/minute | budget 15/min (25% reserve) | **VERIFY-LIVE: web-research agnes-ai.com rate rules at run time; these figures are the FALLBACK when research fails, and the ledger records which was used** |
 | Agnes AI, $40/year plan | 1,500 requests / 5 hours (= 5/min sustained) | budget 1,125 / 5h (= 3.75/min) | VERIFY-LIVE (same) |
 | Agnes AI, $100/year plan | 7,500 requests / 5 hours (= 25/min sustained) | budget 5,625 / 5h (= 18.75/min) | VERIFY-LIVE (same) |
@@ -276,10 +276,14 @@ it ever needed.
   (allocated per phase, spent, remaining). Never discovered at exhaustion.
 - The reconciler (`references/anti-drift.md`) audits the ledger's claimed spend
   against actual executions; a wrong budget silently caps a run late.
-- Reaching the project's computed pause line **pauses and asks** with the best
-  stable build deployed (`run_status = PAUSED_CAP`, section 10 and
-  `references/gauntlet.md` §13.2); only the 2,000-per-project ceiling exits with
-  the named status **STOPPED_CAP**. Neither is ever a silent stall.
+- The client is asked about money ONCE, during the interview, and the run pauses
+  for money only at that dollar line — **THE SPEND LINE** (section 10). Reaching the
+  project's computed execution pause line is a CHECKPOINT, not a client pause: below
+  the spend line the run grants itself the next block, records it, and keeps going;
+  at the spend line it **pauses and asks** with the best stable build deployed
+  (`run_status = PAUSED_CAP`, `references/gauntlet.md` §13.2). Only the
+  2,000-per-project ceiling exits with the named status **STOPPED_CAP**. Neither is
+  ever a silent stall.
 
 **Two counters, not one.** The OPERATOR's budget counts this PROJECT's executions,
 whichever session spawned them; the Workflow tool's 1,000-agents-lifetime cap
@@ -438,7 +442,8 @@ AGENT BUDGET DECLARATION (§17 — computed FROM this ledger, before dispatch):
   selective-repair formula: N = failed workstreams, one repairer each, ≤12/wave
   SOFT BUDGET=<the 75–125 band scaled to this task graph>
   initial=<WF01 + units × 3 + 4>  warn=<max(150, 3 × initial)>
-  first_pause=<max(200, 4 × initial)> (PAUSE and ask — never a stop)
+  first_pause=<max(200, 4 × initial)> (checkpoint — self-granted below the spend line; PAUSE and ask only at it)
+  spend_line=<$X approved in the interview | unmetered — no money pause>
   ceiling=2000 (per PROJECT; the only hard stop; never crossed without the operator)
 Request budget per 5h window: <n or "not window-metered — token/balance governed">
   [RESEARCHED <url> <date>] | [operator doctrine fallback — research failed: <error>]
@@ -799,9 +804,10 @@ Rules for this path:
 - Check all env files for a GitHub token (see `references/environment-sweep.md`
   for where to look). If found: smoke-test it (`gh auth status` or a read-only
   REST call) and report only pass/fail — **never print the token**.
-- If missing: a plain-English recommendation to create one, with the exact
-  steps. The skill can write the token-flow instructions but never asks the user
-  to paste a secret into chat.
+- If missing: never a client ask. The installer's one-click `gh auth login --web`
+  is the normal path; when it fails, `tools/repo-anchor.sh` uses the operator's
+  remote owner or anchors local-only (`references/pipeline.md`, Stage 5). A missing
+  GitHub credential is an operator note in the morning report, never a question.
 
 ### DeepSeek direct
 - Check for `DEEPSEEK_API_KEY` and its aliases (`DEEPSEEK_API_KEY`,
@@ -823,15 +829,17 @@ Rules for this path:
   remembered balance is a lie by lunchtime (section 13).
 
 ### Ollama Cloud
-- Check for its key(s) and the plan. Ask the user if the plan cannot be
-  detected: "$20/month or $100/month?" — from the answer, set the 3-vs-10
-  ceiling, and the skill uses 2-vs-8 (section 2).
+- Check for its key(s). **The plan is MEASURED, never asked** (`references/interview.md`
+  §3, "Measured or defaulted — never asked"): four concurrent cheap requests — the
+  fourth accepted means the ten-slot plan, otherwise the three-slot one — and the skill
+  uses 2-vs-8 (section 2). A probe that cannot run assumes the smaller plan and lets
+  the tripwire (§13.6) correct it. The client is never asked which plan they pay for.
 
 ### Agnes AI
-- Check for the Agnes key and ask which plan (free / $40 a year / $100 a year —
-  Agnes tiers are ANNUAL, not monthly). Then
-  web-research agnes-ai.com for the current rate rules and record the source
-  line; the section 2 quotas are the fallback.
+- Check for the Agnes key. **The plan is never asked:** assume the smallest tier
+  (Agnes tiers are ANNUAL, not monthly), web-research agnes-ai.com for the current
+  rate rules and record the source line, and let the tripwire (§13.6) promote it;
+  the section 2 quotas are the fallback.
 - **When the build generates media, check the two media meters as well** — images
   per day and video-seconds per day. They are SEPARATE from the request window
   and separate from each other; research their current caps with the rate rules
@@ -859,24 +867,23 @@ Rules for this path:
 
 ### OpenRouter
 - Check for `OPENROUTER_API_KEY`. If present, estimate the **token burn** of the
-  chosen models for this project (approximate — "not a final number") and warn
-  if the account may run low. Clients often hold OpenRouter accounts with very
-  little money on them.
+  chosen models for this project (approximate — "not a final number") and, when
+  the balance may not cover it, warn once. Clients often hold OpenRouter accounts
+  with very little money on them.
 
-The warning is a plain, honest statement — never pressure (Law 40):
+The warning is a plain, honest question — never pressure (Law 40), never a menu,
+never a model or provider name, nothing after the question. It takes the place of
+the spend question (section 10, THE SPEND LINE) in the same interview slot, so it
+costs no extra question:
 
-> I found an OpenRouter key on your machine. OpenRouter is pay-as-you-go —
-> every AI answer costs a little money. Based on the models we chose, this
-> build will roughly use about $[X]. That is not a final number — it is a
-> rough estimate. If your OpenRouter account has less than that on it, the
-> build could stop partway. Here is what you can do:
-> 1. Add credit to your OpenRouter account (openrouter.ai > Settings > Add
->    credit).
-> 2. Or get a DeepSeek direct key instead (platform.deepseek.com, add at
->    least $20) — it is far cheaper for a build this size and much faster.
->
-> Which would you like to do? (Either way, I will keep going with what is
-> ready.)
+> Your AI account might run low partway through; about $<X> should cover it. Want me to keep going and tell you in the morning if it runs out?
+
+`<X>` is the same estimate the spend line uses. A yes records the spend line at
+`<X>` and the run continues; if the balance runs out, the run stops the metered work
+cleanly and the morning report says so, with how much more would finish it. A no
+records the spend line at the current balance, and the run pauses and asks when it
+reaches it. Adding credit or changing provider is an OPERATOR note in the morning
+report, never a client instruction.
 
 If they need wiring help, point them at the `nine-router-setup` skill
 (`~/.claude/skills/nine-router-setup/`) — reference it, do not inline it.
@@ -901,7 +908,37 @@ Before dispatch, the ledger DECLARES all eight quantities:
 | 5 | Expected total agent executions | Summed across the declared workflows and the repair reserve |
 | 6 | Selective-repair agent formula | N = failed workstreams, one repairer each, ≤12 per wave |
 | 7 | Soft budget | `initial = WF01 + units × 3 + 4`, with the warn line at `warn = max(150, 3 × initial)`; the 75–125 band is the historical expectation, not the limit |
-| 8 | Pause line and ceiling | `first_pause = max(200, 4 × initial)` — PAUSE and ask, never stop; **ceiling = 2,000 executions per project** — the only hard stop. Each "keep going" grants one more block of `first_pause` |
+| 8 | Pause line, spend line and ceiling | `first_pause = max(200, 4 × initial)` — a CHECKPOINT: below the spend line the run grants itself one more block of `first_pause` and records it; at the spend line (THE SPEND LINE, below) it PAUSES and asks, never stops; **ceiling = 2,000 executions per project** — the only hard stop |
+
+### THE SPEND LINE — the one money question, and the only client pause
+
+The overnight promise holds only if the run does not stop to ask "keep going?"
+while the client sleeps. So the money question is asked ONCE, during the interview
+(`references/interview.md` §3, the spend question — counted like any other), in
+these words:
+
+> I'll keep going until it's finished. If it's going to cost more than about $<X> in AI usage, I'll stop and ask you first. Is that okay?
+
+- **`<X>`** is the run's estimated AI spend for the whole build — the section 6 burn
+  estimate for the declared budget, rounded UP to a round figure. It is an estimate
+  and said as one ("about").
+- **Yes** → record `COST-LINE: usd=<X> answer=yes` through `tools/ledger.sh` (the
+  ledger line is the durable record a resume reads). **No, or a
+  different amount** → the amount they name is the line (one follow-up, "What amount
+  would you be comfortable with?", which is part of the same question); record it
+  the same way.
+- **Only metered spend counts** (a pay-as-you-go balance: DeepSeek direct, OpenRouter,
+  any per-token account). A run with no metered spend — a flat subscription only —
+  does not ask the question (it records `COST-LINE: unmetered`), and its execution
+  checkpoints are self-granted up to the 2,000 ceiling.
+- **When the balance itself may run low** (section 9, OpenRouter), the low-balance
+  question takes this question's place in the same slot, so money is still asked
+  about once.
+
+The execution pause line (row 8) is a checkpoint against this line — never a client
+pause of its own. The run PAUSES and asks only when metered spend reaches the spend
+line (or is projected to pass it before the next checkpoint). The line is never
+raised without the client's answer, and the 2,000 ceiling stands above it.
 
 ### The project-budget arithmetic that accompanies the declaration
 
@@ -920,10 +957,14 @@ predicted here, in writing, before dispatch — never discovered at the wall.
 - Normal complete project: **75–125** — the historical expectation, not a limit.
 - At **`warn = max(150, 3 × initial)`**: the orchestrator must analyze whether
   measurable progress is still occurring.
-- At **`first_pause = max(200, 4 × initial)`: PAUSE, never stop.** Deploy the best
-  stable build, write the plain report, set `run_status=PAUSED_CAP`, and ask the
-  one question (`references/gauntlet.md` §13.2). Each "keep going" grants another
-  block of the same size and the run resumes at full width.
+- At **`first_pause = max(200, 4 × initial)`: CHECKPOINT, never stop.** Compare the
+  metered spend (section 6 burn table) with THE SPEND LINE. Below it: the run grants
+  itself another block of the same size (`agents.pause_blocks_granted` + 1), writes
+  `BUDGET-PAUSE: self-granted spend=<$> spend_line=<$X>` through `tools/ledger.sh`,
+  and continues at full width without a word to the client. At or past it, or
+  projected to pass it before the next checkpoint: deploy the best stable build,
+  write the plain report, set `run_status=PAUSED_CAP`, and ask the one question
+  (`references/gauntlet.md` §13.2).
 - At **2,000 executions per project: HARD STOP.** Preserve the best stable build,
   produce a blocker report, and exit with `run_status=STOPPED_CAP` — a LIMIT
   REACHED non-success, never relabelled as a pass. The ceiling is never crossed

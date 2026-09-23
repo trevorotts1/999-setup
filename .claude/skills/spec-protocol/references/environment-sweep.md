@@ -115,7 +115,7 @@ machinery and repeats no alias table, and this file remains their single owner.
 `OPENROUTER_API_KEY`. Resolved and PROVEN by `tools/jev-check.sh`, never by reading a model
 list — `GET /api/v1/models` omits a decisions-modality model, so its absence there proves
 nothing (`references/decision-engine.md` §2). Absent is a fact, not a gap: the run continues
-unchanged and the client hears one optional sentence.
+unchanged, the client hears nothing, and the absence goes to the ledger and the morning report's operator notes (`references/decision-engine.md` §3).
 
 
 Ask what kind of app/site they are building, then check the relevant keys:
@@ -362,40 +362,38 @@ exited 0" — never the value.
 
 ---
 
-## Where it will live — ONE recommendation, derived from the target, answered yes or no
+## Where it will live — decided and REPORTED, never asked
 
-**⛔ Never hand the client a menu of hosting options.** A four-way choice between
-Vercel, a VPS, this Mac and GoHighLevel asks a non-technical adult to make an
-infrastructure decision they have no way to evaluate, and it is a decision the
-BUILD TARGET has already made. Derive the answer, name it in one sentence with a
-plain-words gloss, and ask for a yes.
+**⛔ Never ask the client where it should live, and never hand them a menu of
+hosting options.** A choice between Vercel, a VPS, this Mac and GoHighLevel asks a
+non-technical adult to make an infrastructure decision they have no way to
+evaluate, and it is a decision the BUILD TARGET has already made. Derive the
+answer, record it in the decision register, and REPORT it in the recap as a
+statement — "here is what I decided; say the word to change any of it"
+(`references/interview.md`, "Decided and reported, never asked"). It is not a
+question and it costs no question number.
 
 **The derivation (Step 1c's target, `references/interview.md` — never a guess):**
 
 | Target | Where it goes | Why it is not a choice |
 |---|---|---|
-| Website, web app, or mobile-and-web | **Vercel** | it is the road already wired into the build pipeline, and the deploy step is already written for it |
+| Website, web app, or mobile-and-web | **the operator's Vercel** (`tools/publish.sh`) | it is the road already wired into the build pipeline, and the publish tool is already written for it |
 | Sales funnel, or a GHL-hosted website | **the client's own GoHighLevel account** | the pages and automations only exist there; Gate 1 already proved the credentials |
-| Mobile app on the `home-screen-app` road | **Vercel** | that road IS a hosted web app; the store road needs no hosting at all |
-| Desktop software, or anything the client says is just for them | **this computer** | nothing needs to be on the internet, so nothing is put there |
+| Mobile app | **the operator's Vercel** (`tools/publish.sh`) | the end state is an installable home-screen web app plus the native project in the repository (`references/interview.md`, the honest end states); a store release is a later operator step |
+| Desktop software, or anything the client says is just for them | **this computer** — an unsigned installer on the client's Desktop | nothing needs to be on the internet, so nothing is put there |
 
-**The ask, in the client's voice — one sentence, one yes:**
+**What the client hears** is the one sentence the environment sweep already owns —
+"I'll keep your work safe and put it online for you. You don't need to set anything
+up." — and, in the recap, one statement of where it went. Nothing else.
 
-> *"I'll put it live on Vercel — a service that puts websites on the internet.
-> Fine by you?"*
-
-Substitute the derived destination in the same shape: *"…in your Convert and
-Flow account, where your pages already live. Fine by you?"* / *"…just on this
-computer, since it's only for you. Fine by you?"*
-
-**A "no" is the only branch that opens a conversation**, and it opens the
-smallest one: *"No problem — where would you rather it lived?"* Whatever they
-name becomes the destination, its credential need is checked by the gate table
-below, and the answer is recorded in the decision register in their words.
-**Credentials follow the destination, never the reverse:** Vercel needs
-`VERCEL_TOKEN` (+ `GITHUB_TOKEN`), a VPS needs SSH access or a deploy key with
-the deploy step as a Named Stop unless automatic deploy is authorized, GHL needs
-the Gate 1 credentials, and this computer needs none.
+**If the client volunteers a different home** (they name their own host, or say it
+must not go online), that becomes the destination, its credential need is checked
+by the gate table below as an OPERATOR matter, and the answer is recorded in the
+decision register in their words. **Credentials follow the destination, never the
+reverse, and they are never asked of the client:** the operator's Vercel is
+reached by `tools/publish.sh` with the stored credential, a VPS needs SSH access or
+a deploy key with the deploy step as a Named Stop unless automatic deploy is
+authorized, GHL needs the Gate 1 credentials, and this computer needs none.
 
 ---
 
@@ -407,10 +405,10 @@ answer, never from a guess:
 
 | Build target (Step 1c, `references/interview.md`) | Which gates run |
 |---|---|
-| Mobile app (`MOBILE_APP`) | The general sweep above. PLUS Gate 2's hosting half (`VERCEL_TOKEN` + `GITHUB_TOKEN`) when `MOBILE_DELIVERY = home-screen-app` — that road is hosted. The store-app road needs no hosting gate; getting into a store is the user's own action, not a credential check. |
+| Mobile app (`MOBILE_APP`) | The general sweep above PLUS Gate 2's hosting half (the operator's `VERCEL_TOKEN` + GitHub) — every mobile build ends as a hosted home-screen web app. A store release (Expo EAS) is a later operator step, not a credential check in this run. |
 | Web app (`WEB_APP`) | The general sweep above PLUS Gate 2's hosting half (`VERCEL_TOKEN` + `GITHUB_TOKEN`) — a web app lives on a host. Its GHL half never runs for an app target. |
 | Mobile AND web app (`MOBILE_AND_WEB`) | As Web app — the general sweep plus Gate 2's hosting half. One hosting gate covers both surfaces, and both repositories when the two-builds shape was chosen. |
-| Desktop / command-line software (`DESKTOP_SOFTWARE`) | None of the three gates. The general sweep above is the whole credential check. |
+| Desktop / command-line software (`DESKTOP_SOFTWARE`) | None of the three gates. The general sweep above is the whole credential check, PLUS the desktop toolchain check below. |
 | Website (`WEBSITE`) | Gate 2 (website credentials) — and its GHL half only when the site lands in GoHighLevel. |
 | Sales funnel (`FUNNEL`) | Gate 1 (GHL, always) and Gate 3 (media keys) only when the user asked for generated media in Step 1d. |
 
@@ -626,14 +624,10 @@ written into any project document.
   resolved each), NEVER the values.
 - **ANY missing → STOP the funnel path.** Tell the user exactly which credential
   is missing and how to get it:
-  - **Location PIT:** "I need your Convert and Flow API key. It is in your
-    Convert and Flow settings under Integrations > API Keys."
-  - **Location ID:** "I need your Convert and Flow Location ID. It is in your
-    Convert and Flow settings under Business Profile."
-  - **Firebase Token:** "I need your Convert and Flow secure connection token.
-    Open the Token Grabber Chrome extension — the one Black CEO gave you — click
-    'Grab the token,' copy it, then say ready, and I'll file it without ever
-    reading it out loud."
+  - The ask for each missing key is spoken in `references/interview.md`'s exact
+    words (the funnel gate, Check 2), each with where the key lives in the same
+    breath — one key per turn, never a list. This file never restates them, so
+    the two can never disagree.
 - **Do NOT proceed with a partial credential set.** A funnel with no automation
   wiring is not a funnel.
 
@@ -670,19 +664,23 @@ this; for VPS users check the Docker environment; for Windows users, manual ask.
 The names, stores, and instructions are Gate 1's — a website that lands in GHL
 runs Gate 1's GHL half rather than a second, divergent copy of it.
 
-**Vercel token.** All clients should have `VERCEL_TOKEN` in their secrets
-environment. If missing: "I need your Vercel token to host your site. You can
-find it in your Vercel account under Settings > Tokens."
+**Hosting and GitHub — never a token ask.** The client is never asked for a
+Vercel token, a GitHub token, or any developer credential, and is never sent to a
+settings page to make one. Hosting is the operator's Vercel by default, published
+by `tools/publish.sh` with the stored credential (`references/publish.md`). GitHub is
+the one-click `gh auth login --web` the installer already ran; when `gh auth status`
+fails, `tools/repo-anchor.sh` uses the operator's remote owner
+(`SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER`) and, with none, anchors local-only
+(`references/pipeline.md`, Stage 5). The client hears one sentence, once, and no
+question:
 
-**GitHub token.** All clients should have `GITHUB_TOKEN` (or `GH_TOKEN`) in
-their secrets environment. If missing: "I need your GitHub token to store your
-site's code. You can create one at github.com/settings/tokens — it needs the
-'repo' permission." Note the order of operations: `gh auth status` is the
-PRIMARY GitHub check (see "GitHub CLI" above) — run it first; the
-`GITHUB_TOKEN` / `GH_TOKEN` name check is the fallback when `gh` itself cannot
-be made to work, and both paths are legitimate.
+> I'll keep your work safe and put it online for you. You don't need to set anything up.
 
-Each of these asks fires only when the permutation actually requires the
+The client's own Vercel or GitHub account is offered in the morning report only,
+never during the run. A missing operator credential is an OPERATOR finding (ledger
+plus the morning report's operator notes), never a client ask.
+
+Each of these checks fires only when the permutation actually requires the
 credential: a simple site going into GHL is never stopped for a missing
 `VERCEL_TOKEN`. And each missing-credential report carries RULE 2's evidence —
 names, paths read, paths not read, control result — before it stops anything.
@@ -826,6 +824,28 @@ generation skipped because the warehouse is missing.
 Everything past presence and this one smoke — the per-project folder, the
 capture-then-persist contract, the upload calls, and the permanent reference
 URL — belongs to `references/media-pipeline.md` section 13, not to this file.
+
+---
+
+### Desktop toolchain (`DESKTOP_SOFTWARE` only) — check, install, prove
+
+The desktop build needs the toolchain the stack chose (`references/research.md`:
+Tauri by default, Electron when research overrode it). Check it by RUNNING it, never by
+resolving a name, before the first builder:
+
+- **Tauri:** `rustc --version`, `cargo --version`, `node --version`. A missing Rust is
+  installed with the official `rustup` installer (never Homebrew, `999-setup` rule 11);
+  on Windows `winget install Rustlang.Rustup` plus the build tools and WebView2 Tauri's
+  own prerequisites page names. The Tauri CLI goes into the project as a dev
+  dependency, never globally.
+- **Electron:** `node --version` and `npm --version`; Electron and its packager go
+  into the project as dev dependencies.
+
+Re-run the same commands after an install and record `DESKTOP-TOOLCHAIN:
+<tauri|electron> rustc=<ver|n/a> node=<ver> rc=0`. A toolchain that cannot be
+installed or proven is a named operator blocker, never a client question. The end
+state it serves is the unsigned installer on the client's Desktop
+(`references/interview.md`, the honest end states); signing is a later operator step.
 
 ---
 

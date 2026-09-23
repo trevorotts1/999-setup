@@ -82,7 +82,7 @@ always carries the test that would settle it (§8 lists them together).
 
 | Capability | macOS | Windows | Notes |
 |---|---|---|---|
-| **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash is a HARD PREREQUISITE on Windows, installed ONCE by the Windows installer** — `nine-router-setup`'s `setup-windows.ps1` (the TODO block below names the exact installer change). Native PowerShell **CANNOT** run these scripts. | **GATE 0 checks for it on Windows** — RUN `bash --version`, read `$LASTEXITCODE` (§3) — and when it is missing says one plain sentence and stops: *"One small helper program needs installing first. It takes two minutes; here is the one thing to click."* Until it is installed the **four Node twins (§2.1)** carry the width gate, the dispatch gate, the five-minute tick and the ledger, and **every other bash-tool verdict is UNDETERMINED** and the run says so — it never pretends the checks ran, never converts a missing interpreter into a clean result, and the client hears the §4.4 sentence. |
+| **Shell for this skill's tool scripts** (`tools/anchor.sh`, `tools/ledger.sh`, `tools/env-sweep.sh`, `tools/capacity-resolver.sh`, `tools/capacity-profile.sh`) | bash/zsh — **AVAILABLE** | **Git Bash is a HARD PREREQUISITE on Windows, installed ONCE by the Windows installer** — `nine-router-setup`'s `setup-windows.ps1` runs `winget install Git.Git` and records the `bash.exe` path for the launcher (the block below). Native PowerShell **CANNOT** run these scripts. | **GATE 0 checks for it on Windows** — RUN `bash --version`, read `$LASTEXITCODE` (§3) — and when it is missing says one plain sentence and stops: *"One small helper program needs installing first. It takes two minutes; here is the one thing to click."* Until it is installed the **four Node twins (§2.1)** carry the width gate, the dispatch gate, the five-minute tick and the ledger, and **every other bash-tool verdict is UNDETERMINED** and the run says so — it never pretends the checks ran, never converts a missing interpreter into a clean result, and the client hears the §4.4 sentence. |
 | **Core count and RAM** (feed width clientCap = `max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))`) | `/usr/sbin/sysctl -n hw.ncpu` — **AVAILABLE**. The `/usr/bin/sysctl` path returns **rc=127**, a shell abort, never an answer. Alternate: `getconf _NPROCESSORS_ONLN` | PowerShell `[Environment]::ProcessorCount`; or `%NUMBER_OF_PROCESSORS%`; or `nproc` under Git Bash — **AVAILABLE** | The FORMULA is identical everywhere; only the instrument changes. Cores are measured, never inherited (`tools/capacity-resolver.sh` enforces this itself). |
 | **Home / config root** | `$HOME`, `~/.claude` — **AVAILABLE** | `$env:USERPROFILE`, `%USERPROFILE%\.claude` — **AVAILABLE** | Separator differs (`/` vs `\`). **Never hardcode `/Users/…`** or a drive letter. Resolve the config root from `CLAUDE_CONFIG_DIR` when set, else the platform default. |
 | **tmux / split-pane teammate display** | **AVAILABLE where measured** — see the dated one-box exhibit in §7. Probe per run: run `tmux -V` and read its exit code | **NOT AVAILABLE** — split panes are unsupported in Windows Terminal; tmux is a Unix assumption | **`teammateMode: "tmux"` must NEVER be written on Windows** (§5.1 — this file is the single owner of that rule). In-process mode is the Windows answer if teams run at all. **The per-box half of §5.1 binds BOTH columns**: on ANY OS the key is written only where tmux (or iTerm2 + `it2`) is PROVEN present on that box **AND** the session's LAUNCH CONTEXT is an attached tmux session or iTerm2 with `it2` — **presence is NECESSARY, never SUFFICIENT; the gate is launch context, not box inventory (§5.1)**; absent, or the launch context not guaranteed → the key is OMITTED and in-process applies. This is a DISPLAY verdict only — a box without tmux is DEGRADED-DISPLAY, never BLOCKED. |
@@ -95,19 +95,16 @@ always carries the test that would settle it (§8 lists them together).
 | **Process inspection for the pre-flight** | `ps aux \| grep '[c]laude'`, `tmux list-sessions` | `Get-Process`, `tasklist` — no tmux equivalent | Observation ONLY on both platforms (`references/agent-team.md` §4): never terminate, attach, or send anything into what you find. |
 | **Video stitching / transcoding** (`ffmpeg` + `ffprobe`, for joining multi-clip video items) | **PER-BOX — detected by EXECUTION, never assumed**: run `ffmpeg -version` AND `ffprobe -version`, both, and require exit 0 with a parsed version line. Install offered only with the client's consent and only via a package manager **already present** (`brew install ffmpeg` where Homebrew already exists — never install Homebrew to get it) | **PER-BOX detection is the same** under Git Bash; the **INSTALL path is UNDETERMINED** — no consented, platform-proven install route has been established here | Presence is a fact about a machine, not about an OS, so **no fleet-wide assumption is made in either direction** and the verdict is re-taken every run that stitches (`references/capacity.md` volatility row 24). **Absent, declined, or unattended → degrade to CLIPS-PLUS-GAP**: every clip still generates and persists, and the MEDIA-GAPS manifest carries a `NEEDS-JOINING` entry. `references/media-pipeline.md` 6d owns the ladder and the client wording; this row owns only the platform verdict. |
 
-> **TODO — NAMED HERE BECAUSE IT IS OUT OF THIS SKILL'S WRITE SCOPE.** The
-> installer that must install Git Bash is `setup-windows.ps1`, and it lives in
-> the `nine-router-setup` skill, not in this one. This file therefore cannot
-> make the change; it can only name it exactly, so that it is not lost:
-> **`winget install Git.Git` where `winget` is present** — presence PROVEN by
-> RUNNING `winget --version` and reading `$LASTEXITCODE`, never by name
-> resolution (§3, §8 item 6) — **and where `winget` is not present, name the
-> download** instead of bootstrapping a package manager to get there (§2,
-> package-manager row): the Git for Windows installer at
-> `https://git-scm.com/download/win`, reported as BLOCKED-with-a-manual-step and
-> never as a silent skip. Until that installer change ships, GATE 0's Windows
-> check is the only thing between a client and a run with no enforcement, and
-> §2.1 is what keeps such a run honest.
+> **THE INSTALLER OWNS IT.** `nine-router-setup`'s `setup-windows.ps1` installs Git
+> Bash with **`winget install Git.Git`** — `winget` presence PROVEN by RUNNING
+> `winget --version` and reading `$LASTEXITCODE`, never by name resolution (§3, §8
+> item 6) — and records the resulting `bash.exe` path for the `claude-nine` launcher,
+> so the launcher never has to find bash by guessing. Where `winget` is not present it
+> names the download instead of bootstrapping a package manager (§2, package-manager
+> row): the Git for Windows installer at `https://git-scm.com/download/win`, reported
+> as BLOCKED-with-a-manual-step and never as a silent skip. GATE 0's Windows check
+> still runs every time — an installer that ran is not proof bash is there today —
+> and §2.1 is what keeps a run honest on a box where it is not.
 
 ### 2.1 THE NODE TWINS — the fallback that runs when bash is absent
 
