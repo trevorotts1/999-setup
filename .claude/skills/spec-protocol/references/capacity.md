@@ -320,6 +320,14 @@ probe proves otherwise (section 12).
   reserve, from section 2. No policy cap beyond the reserve.
 - **Agnes AI:** request rate is a SEPARATE burn budget, counted per 5-hour
   window — not a concurrency number at all (section 6).
+- **A supplied project profile's policy — the one ceiling this skill honours above
+  the arithmetic.** When `.spec-protocol.json` carries `policy.maxActiveWorkflows`,
+  `policy.maxAgentsPerWorkflow` or `policy.maxWorkingAgents`, that number is the
+  project's own enforced cap: width = min(harness/provider width, the profile's
+  ceiling) on each axis it names, and no plan or dispatch is ever above it. It is
+  the project's policy, not this skill's, so "no policy wave cap" below means this
+  skill adds none of its own. A field that is absent changes nothing. Inside the
+  ceiling the floor still binds: never dispatch fewer streams than the work allows.
 
 ### The reconciliation rule (state this verbatim wherever wave width is computed)
 
@@ -330,9 +338,12 @@ probe proves otherwise (section 12).
 > read; unmeasurable cores fall back to 4 and the run keeps going);
 > (2) the provider ceiling minus the reserve (Law 44) — and on a metered
 > Anthropic subscription there is no such figure to compute, so the harness
-> governs and the burn governor holds the run inside the window. There is NO
-> policy wave cap on any path. The smaller number always governs, and the
-> Capacity Ledger records both with the winner marked."*
+> governs and the burn governor holds the run inside the window. This skill adds
+> NO policy wave cap on any path; a supplied project profile's
+> `policy.maxActiveWorkflows` / `maxAgentsPerWorkflow` / `maxWorkingAgents`, when
+> present, is a third number and a ceiling that is never exceeded. The smallest
+> number always governs, and the Capacity Ledger records each with the winner
+> marked."*
 
 On Anthropic Claude Code the harness governs: workflows-in-flight × clientCap,
 with the burn governor parking on 429s and resuming — that is the only limiter
@@ -512,9 +523,11 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
    plans. Usable = ceiling − reserve.
 6. **Compute the governing number.** Write both candidates —
    harness = workflows × k (≤50 workflows) and provider usable — and mark the
-   winner. The smaller governs. There is no policy wave cap on any path, and on
+   winner. The smaller governs. This skill adds no policy wave cap on any path, and on
    a metered Anthropic subscription there is no provider figure either, so the
-   harness governs and the burn governor holds the window.
+   harness governs and the burn governor holds the window. On a profiled project,
+   write the profile's `policy.*` ceilings as a third candidate: width = min(that
+   number, the profile's ceiling), and the ceiling is never exceeded.
 7. **Deduct the persistent occupants.** Lead + N commanders = N+1 slots, taken
    off the governing number BEFORE any workflow width is allocated (section 12).
 8. **Derive WAVE SIZE, WORKFLOW COUNT, AGENTS PER WORKFLOW** from what remains.
