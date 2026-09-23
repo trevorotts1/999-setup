@@ -27,6 +27,7 @@
 #   script-name       a script or data file name (install.sh, gate.py, tick.mjs, state.json)
 #   run-internal      the run's own machinery (preflight, hook, ledger, tick, cron,
 #                     status line, worktree)
+#   placeholder       an unfilled template slot (<Name>, <target>, $<X>, <URL>)
 # Never refused (WHITELIST_SED, LABELS_SED): an https:// link with its path -- the one address a
 # client can act on; the on-screen labels a client must FIND ("Token Grabber", "Grab
 # the token", "Copy the token", "API Keys"); and the verb in "tick the" box.
@@ -89,7 +90,7 @@ if [ ! -x "${GREP}" ]; then
   if [ -x /bin/grep ]; then GREP="/bin/grep"; else GREP="$(command -v grep 2>/dev/null || true)"; fi
 fi
 
-CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement jargon script-name run-internal"
+CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement jargon script-name run-internal placeholder"
 
 # ---------------------------------------------------------------------------
 # The patterns. POSIX ERE only (no \b, no \d) so BSD grep and GNU grep agree.
@@ -149,7 +150,7 @@ RE_jargon='(^|[^A-Za-z])([Dd]atabases?|[Dd]eploy(s|ed|ing|ments?)?|[Ss]ervers?|A
 # Also the two mandated cost sentences (#11, #13), whose "$<X>" is the only
 # dollar figure a client ever hears; any other dollar figure is still money.
 # An https link is neutralised first, so no class sees its path.
-WHITELIST_SED='s#https://[^[:space:]<>)]+#LINK#g; s#`?ultracode /spec-protocol`?#ultracode#g; s#`?claude(-[a-z]+)? --resume`?#resume#g; s#(Private Integration|[Ff]irebase refresh|[Rr]efresh) [Tt]okens?#label#g; s#cost more than about \$[0-9]+(\.[0-9][0-9])? in AI usage#cost more than about X in AI usage#g; s#about \$[0-9]+(\.[0-9][0-9])? should cover it#about X should cover it#g'
+WHITELIST_SED='s#<?https://[^[:space:]<>)]+>?#LINK#g; s#`?ultracode /spec-protocol`?#ultracode#g; s#`?claude(-[a-z]+)? --resume`?#resume#g; s#(Private Integration|[Ff]irebase refresh|[Rr]efresh) [Tt]okens?#label#g; s#cost more than about \$[0-9]+(\.[0-9][0-9])? in AI usage#cost more than about X in AI usage#g; s#about \$[0-9]+(\.[0-9][0-9])? should cover it#about X should cover it#g'
 
 # The on-screen labels a client must FIND, matched across a line break (the
 # interview's Firebase ask wraps "Grab the / token"): the whole message is read
@@ -159,6 +160,11 @@ LABELS_SED='s#(Grab|Copy)([[:space:]>]+)the([[:space:]>]+)[Tt]oken#\1\2the\3labe
 RE_script_name='[A-Za-z0-9_.-]+\.(sh|py|mjs|json)([^A-Za-z0-9]|$)'
 
 RE_run_internal='(^|[^A-Za-z])([Pp]re-?flights?|[Hh]ooks?|[Ll]edgers?|[Tt]icks?|[Cc]ron(tab)?s?|[Ss]tatus line|[Ww]orktrees?)([^A-Za-z]|$)'
+
+# placeholder -- a template slot the run never filled: "I'll call it <Name>." An
+# email address or a link in angle brackets is not one (no @ or . allowed inside;
+# an https link is already LINK, and WHITELIST_SED drops its brackets).
+RE_placeholder="<[A-Za-z][A-Za-z0-9 _/'-]{0,60}>"
 
 re_for() {
   case "$1" in
@@ -175,6 +181,7 @@ re_for() {
     jargon)           printf '%s' "${RE_jargon}" ;;
     script-name)      printf '%s' "${RE_script_name}" ;;
     run-internal)     printf '%s' "${RE_run_internal}" ;;
+    placeholder)      printf '%s' "${RE_placeholder}" ;;
     *)                return 1 ;;
   esac
 }
@@ -414,26 +421,30 @@ Your AI account might run low partway through; about \$25 should cover it. Want 
     'I checked everything with install.sh and wrote the result into notes.json.'
   _fixture banned-run-internal 3 run-internal \
     'The tick fired, the hook caught it, and the ledger says the worktree is clean.'
+  # --- D4: an unfilled template slot reaches the client (the 2026-09-21 naming
+  # line). The link and email controls above/below keep their angle brackets legal.
+  _fixture banned-placeholder 3 placeholder \
+    "Wonderful — that's exactly what I'll build for you. From here on I'll call it <Name>. It will cost about \$<X>."
   _fixture control-links-and-labels 0 none \
-    "I've done a lot of work and your website is live at https://brightside-studio.vercel.app/about/menu. Keep going?
+    "I've done a lot of work and your website is live at https://brightside-studio.vercel.app/about/menu. Keep going? Or write to <help@example.com>.
 Open the Token Grabber Chrome extension, click 'Grab the
 token', then 'Copy the token'.
 Look for a section called 'API Keys' (usually under your account settings).
 Open its integration settings, tick the Media permissions, and tell me when it's done."
 
-  # --- The ledger really was written: seventeen lines, five of them `clean`.
+  # --- The ledger really was written: eighteen lines, five of them `clean`.
   local total clean
   total="$("${GREP}" -c 'SPEECH-CHECK: ' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
   clean="$("${GREP}" -c 'SPEECH-CHECK: clean' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
-  if [ "${total}" = "17" ] && [ "${clean}" = "5" ]; then
-    echo "SELFTEST ok   | ledger-written | lines=17 clean=5"
+  if [ "${total}" = "18" ] && [ "${clean}" = "5" ]; then
+    echo "SELFTEST ok   | ledger-written | lines=18 clean=5"
   else
-    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 17) clean=${clean} (want 5)"
+    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 18) clean=${clean} (want 5)"
     fails=$((fails + 1))
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    echo "SELFTEST PASS | ${n} fixtures (5 controls PASS, 12 banned lines caught) + ledger check"
+    echo "SELFTEST PASS | ${n} fixtures (5 controls PASS, 13 banned lines caught) + ledger check"
     exit 0
   fi
   echo "SELFTEST FAILED | ${fails} check(s) failed — this checker may not be believed until it is fixed" >&2
