@@ -96,7 +96,7 @@ it does not enable a general human-gate bypass.
 through a shell, validated by `project-profile.mjs` before any helper reads them):
 - `commands.refresh` regenerates the project's own human-readable views. `tools/watch-tick.sh`
   (and its Node twin) runs it after every state-changing step and at least every
-  `MERGE_BATCH_MINUTES` (default 15) minutes; a failure is logged on the tick's own stdout and
+  `MERGE_BATCH_MINUTES` (default 10) minutes; a failure is logged on the tick's own stdout and
   is never fatal to the tick.
 - `commands.merged` records one merged unit in the project's own state, run once per unit by
   `tools/merge-train.sh <project> --batch` with `{taskId}`, `{commit}`, `{branch}` substituted

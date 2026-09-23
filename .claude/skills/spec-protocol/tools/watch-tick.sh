@@ -146,6 +146,18 @@
 #            stamp), and completion is the ledger's RESULT set. A lone agent
 #            with no completion record is the existing stall path's business
 #            (S6), never this alarm's.
+#   sweeps   every tick, after the merge batch, per registered repo (4g):
+#            a MERGED/landed claim that fails proof of merge
+#                                              -> MERGE-CLAIM-FALSE, re-queued
+#                                              -> ACTION|requeue
+#            a worktree whose branch is proven merged -> removed with its
+#            branch (ORPHAN-CLEANED); a dirty one KEPT-UNMERGED; an unmerged
+#            one with no commit for 2 hours -> STALE-UNMERGED, re-queued
+#                                              -> ACTION|requeue
+#            a release/tag claim that fails proof of mint
+#                                              -> MINT-CLAIM-FALSE (ledger and
+#                                                 the morning report's operator
+#                                                 notes) -> ACTION|mint-check
 # THE DEFINITIONS, MECHANICALLY (so two readers count the same numbers)
 #   runnable  an OPEN box in CONTROL/CHECKLIST.md (`- [ ] …`) whose unit id has
 #             no open dispatch row.
@@ -232,6 +244,8 @@
 #   watch-tick.sh <project-home> --check         # READ-ONLY: 0 this project's tick
 #                                                #   line is installed, 3 it is not,
 #                                                #   2 the table could not be read
+#   watch-tick.sh <project-home> --sweep         # the repo sweeps (4g) ALONE: 0 nothing
+#                                                #   found, 3 findings (the Node twin runs this)
 #   watch-tick.sh --selftest
 #   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p
 #   --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"`
@@ -285,9 +299,14 @@
 #   WATCH_SPEECH_TIMEOUT=<secs>   fixture only: how long one lint run may take
 #                               before the tick moves on without it (default 25).
 #                               Nothing else should.
-#   MERGE_BATCH_MINUTES=15      batch merge cadence: every N minutes the tick runs
-#                               `tools/merge-train.sh <home> --batch` (lock-guarded,
-#                               never two at once; merge-train decides what waits)
+#   MERGE_BATCH_MINUTES=10      batch merge cadence: every N minutes the tick runs
+#                               `tools/merge-train.sh <home> --batch` with no --repo,
+#                               so merge-train runs EVERY registered repo's train,
+#                               each under its own lock (lock-guarded here too,
+#                               never two batches at once; merge-train decides what waits)
+#   WATCH_SWEEP_NET_TIMEOUT=60  seconds one fetch / ls-remote / push of the repo sweeps may take
+#   WATCH_STALE_UNMERGED_MIN=120  minutes without a commit before an unmerged worktree
+#                               branch is STALE-UNMERGED (the orphan sweep, 4g)
 #   WATCH_MERGE_TRAIN_SH=<path>   selftest stub only: the merge train the batch runs
 #   WATCH_REFRESH_TIMEOUT=120   seconds one profile `commands.refresh` run may take
 #
@@ -339,6 +358,7 @@ DO_CRON_LINE=0
 DO_ARM=0
 DO_CHECK=0
 DO_RECORD=0
+DO_SWEEP=0
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
@@ -1070,8 +1090,10 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
 }
 
 #------------------------------------------------------------------------------
-# 4e. THE BATCH MERGE CADENCE (A4). Every MERGE_BATCH_MINUTES (default 15) the
-#     tick runs `tools/merge-train.sh <home> --batch` at the project root.
+# 4e. THE BATCH MERGE CADENCE (A4). Every MERGE_BATCH_MINUTES (default 10) the
+#     tick runs `tools/merge-train.sh <home> --batch` at the project root, with
+#     no --repo: merge-train loops every repo in <area>/repos.json (one train
+#     per repo, each under its own lock, so one repo never blocks another).
 #     merge-train owns "what is waiting": with nothing waiting it says so and
 #     exits 0, so the tick never guesses. Cadence is <area>/merge-batch.stamp's
 #     mtime (touched when a batch STARTS). <area>/merge-batch.lock.d (mkdir is
@@ -1079,7 +1101,7 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
 #     overlap; a lock whose pid is gone is reclaimed. A failure is logged,
 #     never fatal. WATCH_MERGE_TRAIN_SH replaces the script (selftest stub only).
 #------------------------------------------------------------------------------
-MERGE_BATCH_MIN="${MERGE_BATCH_MINUTES:-15}"
+MERGE_BATCH_MIN="${MERGE_BATCH_MINUTES:-10}"
 MERGE_TRAIN_SH="${WATCH_MERGE_TRAIN_SH:-${SCRIPT_DIR}/merge-train.sh}"
 MERGE_LOCK=""
 MERGE_NOTE=""
@@ -1172,6 +1194,443 @@ run_refresh() {
   fi
 }
 
+#------------------------------------------------------------------------------
+# 4g. THE REPO SWEEPS (every tick, after the merge batch). Three sweeps, one
+#     definition of merged — PROOF OF MERGE: after `git fetch`, the commit is
+#     an ancestor of <remote>/<trunk> (of the local trunk on a local-only repo).
+#     Nothing else is merged, whatever a ledger or a state file says.
+#
+#     THE REPOS. <area>/repos.json, {"repos":[{"name","root","trunk","remote"}]}
+#     (a bare array is read too); remote is a remote NAME, a URL (fetched
+#     straight into FETCH_HEAD, whose sha is then the trunk to prove against),
+#     or null for a local-only repo. No registry = one repo from the repo-anchor receipt
+#     (CONTROL/repo-anchor.json, or <statedir>/repo-anchor.json profiled):
+#     root = repoRoot, name = its basename, trunk = MERGE_TRAIN_TRUNK or main,
+#     remote = origin (none on a local-only receipt). No receipt either = the
+#     project home itself when it is a git top level, else nothing to sweep.
+#     Each repo is fetched ONCE per tick (+refs/heads/<trunk> into
+#     refs/remotes/<remote>/<trunk>, WATCH_SWEEP_NET_TIMEOUT seconds, never
+#     prompting). A fetch that fails makes that repo's verdicts UNDETERMINED,
+#     never false: a network error is not a fact about the merge.
+#
+#     B2 RECONCILE. Every unit the ledger (CONTROL/LEDGER.md; profiled:
+#       <area>/LEDGER.md and <statedir>/merge-train.log) or the profiled state
+#       (documents.state, walked for status/state MERGED, MERGED_VERIFIED or
+#       landed) claims — its LATEST claim — is re-proved on its commit= (else
+#       its branch tip). A failed proof prints and records
+#         MERGE-CLAIM-FALSE: unit=<branch> repo=<name> reason=…
+#       and re-queues the branch (<area>/merge-train/requeue.tsv, the format
+#       merge-train reads: repo<TAB>branch<TAB>reason<TAB>ISO time). A claim
+#       naming no commit whose branch is gone is UNDETERMINED (cleanup deletes
+#       proven branches, so absence proves nothing). The profiled state is only
+#       READ: the line goes to the tick's own ledger, never into the state.
+#     B3 ORPHANS. Per repo, `git worktree list`: a worktree whose branch is
+#       proven merged is removed (`git worktree remove`; --force only on a
+#       clean tree), its local branch deleted only while its tip is still the
+#       proven sha (update-ref -d <old>), its remote branch deleted only when
+#       that tip is proven too (push --force-with-lease=<ref>:<sha> :<ref>), and
+#       the unit's gate log under <area>/merge-train/ removed. A dirty one is
+#       KEPT-UNMERGED, never forced. A branch NOT proven merged with no commit
+#       for WATCH_STALE_UNMERGED_MIN (120) minutes is STALE-UNMERGED and
+#       re-queued, never deleted. Then `git worktree prune`.
+#     B4 MINT. A ledger line `MINTED:|MINTED-LOCAL:|RELEASED:|TAGGED:` (tag=,
+#       version=, commit=, repo=) or a profiled-state object carrying a
+#       semver "tag" is a mint claim. PROOF OF MINT: `git ls-remote --tags`
+#       shows the tag AND its peeled ^{} line (annotated), the peeled commit is
+#       the claimed one, and VERSION, a CHANGELOG.md heading and README on that
+#       commit carry the version (local-only or MINTED-LOCAL: the local tag,
+#       same checks). A failure is MINT-CLAIM-FALSE, on the ledger, on stdout
+#       and appended to the newest MORNING-REPORT-*.md under "Operator notes".
+#
+#     Each finding is written ONCE (<area>/sweep-reported.txt keys it by unit and
+#     commit / tag), so a false claim is not re-queued every five minutes. The
+#     findings reach the model half as ACTION|requeue|… and ACTION|mint-check|…
+#     A sweep never deletes anything that is not proven merged.
+#------------------------------------------------------------------------------
+SWEEP_NET_TIMEOUT="${WATCH_SWEEP_NET_TIMEOUT:-60}"
+STALE_UNMERGED_MIN="${WATCH_STALE_UNMERGED_MIN:-120}"
+SWEEP_NOTE="not-run"
+SWEEP_ACTS=""      # file: verb<TAB>target<TAB>evidence, one per finding
+RP_NAME=() RP_ROOT=() RP_TRUNK=() RP_REMOTE=() RP_TARGET=() RP_WHY=() RP_TOK=()
+SW_TOKEN=""
+SW_FALSE=0 SW_STALE=0 SW_CLEANED=0 SW_KEPT=0 SW_MINTF=0 SW_UND=0 SW_CLAIMS=0 SW_UNDWHY=""
+
+SWEEP_PY='
+import json,os,re,sys
+def out(*f): sys.stdout.write("\t".join(str(x).replace("\t"," ").replace("\n"," ").replace("\r"," ") for x in f)+"\n")
+SAFE=re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._/-]*$")
+HEX=re.compile(r"^[0-9a-f]{7,40}$")
+REMOTE=re.compile(r"^[A-Za-z0-9._@~][^\s]*$")
+SEMVER=re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$")
+mode=sys.argv[1]
+if mode=="repos":
+    area,receipt,trunk,home=sys.argv[2:6]
+    reg=os.path.join(area,"repos.json")
+    if os.path.isfile(reg):
+        try: d=json.load(open(reg))
+        except Exception as e:
+            sys.stderr.write("%s is not parseable JSON: %s" % (reg,e)); sys.exit(3)
+        if isinstance(d,dict): d=d.get("repos")
+        if not isinstance(d,list):
+            sys.stderr.write("%s is neither an array nor {\"repos\":[...]}" % reg); sys.exit(3)
+        for e in d:
+            if not isinstance(e,dict) or not isinstance(e.get("root"),str) or not e["root"].strip(): continue
+            root=e["root"] if os.path.isabs(e["root"]) else os.path.join(home,e["root"])
+            name=e.get("name") if isinstance(e.get("name"),str) and e.get("name") else os.path.basename(root.rstrip("/"))
+            tr=e.get("trunk") if isinstance(e.get("trunk"),str) and SAFE.match(e.get("trunk") or "") else trunk
+            rm=e.get("remote") if isinstance(e.get("remote"),str) and REMOTE.match(e.get("remote") or "") else ""
+            out(name,root,tr,rm)
+        sys.exit(0)
+    if os.path.isfile(receipt):
+        try: r=json.load(open(receipt))
+        except Exception as e:
+            sys.stderr.write("%s is not parseable JSON: %s" % (receipt,e)); sys.exit(3)
+        root=r.get("repoRoot") if isinstance(r,dict) else None
+        if isinstance(root,str) and root:
+            local=r.get("source")=="local-only" or r.get("remote") in (None,"")
+            out(os.path.basename(root.rstrip("/")),root,trunk,"" if local else "origin")
+    sys.exit(0)
+# mode == claims: <state-json or -> <file>...
+SKIP=re.compile(r"\| S-CHECK \||DRIFT-ALARM|MERGE-CLAIM-FALSE|MINT-CLAIM-FALSE|STALE-UNMERGED|KEPT-UNMERGED|ORPHAN-CLEANED|MERGE-UNPROVEN|MERGE-BATCH|MINT-FAILED|SWEEP \|")
+MC=re.compile(r"(^|[\s|])(MERGED:|MERGED_VERIFIED\b|LANDED:)")
+MS=re.compile(r"(^|[\s|])status=(merged|merged_verified|landed)\b",re.I)
+MT=re.compile(r"(^|[\s|])(MINTED|MINTED-LOCAL|RELEASED|TAGGED):")
+def fld(line,*names):
+    for n in names:
+        m=re.search(r"(?:^|[\s|])"+n+r"=([^\s|]+)",line)
+        if m: return m.group(1)
+    return ""
+merges={}; mints={}
+def add_merge(unit,commit,repo,branch):
+    unit=str(unit)
+    br=branch if branch else (unit if "/" in unit else "unit/"+unit)
+    if not SAFE.match(br): return
+    commit=commit if isinstance(commit,str) and HEX.match(commit) else ""
+    repo=repo if isinstance(repo,str) and SAFE.match(repo) else ""
+    merges.pop(br,None); merges[br]=(unit,br,commit,repo)
+def add_mint(repo,tag,ver,commit,local):
+    tag=tag if isinstance(tag,str) else ""; ver=ver if isinstance(ver,str) else ""
+    if not tag and ver: tag="v"+ver
+    if not ver and tag: ver=tag[1:] if tag[:1]=="v" else tag
+    if not SEMVER.match(ver) or not SAFE.match(tag): return
+    commit=commit if isinstance(commit,str) and HEX.match(commit) else ""
+    repo=repo if isinstance(repo,str) and SAFE.match(repo) else ""
+    k=(repo,tag); mints.pop(k,None); mints[k]=(repo,tag,ver,commit,local)
+def walk(o,key=""):
+    if isinstance(o,dict):
+        st=next((o[k] for k in ("status","state") if isinstance(o.get(k),str)),None)
+        if st and st.upper() in ("MERGED","MERGED_VERIFIED","LANDED"):
+            u=next((o[k] for k in ("unit","taskId","task_id","id") if isinstance(o.get(k),(str,int)) and str(o.get(k))),key)
+            if u: add_merge(u,o.get("commit") or o.get("sha") or o.get("mergeCommit") or "",o.get("repo") or "",o.get("branch") if isinstance(o.get("branch"),str) else "")
+        if isinstance(o.get("tag"),str) and re.match(r"^v?[0-9]+\.[0-9]+\.[0-9]+",o["tag"]):
+            add_mint(o.get("repo") or "",o["tag"],o.get("version") if isinstance(o.get("version"),str) else "",o.get("commit") or "","0")
+        for k,v in o.items(): walk(v,str(k))
+    elif isinstance(o,list):
+        for v in o: walk(v,key)
+st=sys.argv[2]
+if st!="-" and os.path.isfile(st):
+    try: walk(json.load(open(st)))
+    except Exception: pass
+for f in sys.argv[3:]:
+    try: lines=open(f,errors="replace").read().splitlines()
+    except OSError: continue
+    for line in lines:
+        if SKIP.search(line): continue
+        if MC.search(line) or MS.search(line):
+            u=fld(line,"unit","taskId","task","id")
+            if u: add_merge(u,fld(line,"commit"),fld(line,"repo"),"")
+        elif MT.search(line):
+            add_mint(fld(line,"repo"),fld(line,"tag"),fld(line,"version"),fld(line,"commit"),"1" if "MINTED-LOCAL:" in line else "0")
+for v in merges.values(): out("M",*v)
+for v in mints.values(): out("T",*v)
+'
+
+sw_und() { SW_UND=$(( SW_UND + 1 )); [[ -n "$SW_UNDWHY" ]] || SW_UNDWHY="$1"; }
+sw_seen() { "$GREP" -qxF -- "$1" "${AREA}/sweep-reported.txt" 2>/dev/null; }
+sw_mark() { mkdir -p "$AREA"; printf '%s\n' "$1" >> "${AREA}/sweep-reported.txt"; }
+sw_act()  { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SWEEP_ACTS"; }
+sw_say()  { printf '%s\n' "$1"; tick_ledger "$(iso_now) | $1"; }
+sw_requeue() {  # sw_requeue <repo> <branch> <reason> — merge-train's re-queue file
+  mkdir -p "${AREA}/merge-train"
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$(iso_now)" >> "${AREA}/merge-train/requeue.tsv"
+}
+
+# A network git call: never prompts, killed at WATCH_SWEEP_NET_TIMEOUT. A repo
+# anchored under the operator's owner (receipt "source":"operator-owner") gets
+# the operator token the way merge-train pushes with it: GH_TOKEN in THAT git
+# process only, through a one-shot credential helper, and only toward a
+# github.com remote. Never printed, never in a URL or a config file.
+sw_net() {  # sw_net <repo-index> <git args...>
+  local i="$1"; shift
+  if [[ "${RP_TOK[$i]}" == 1 ]]; then
+    GH_TOKEN="$SW_TOKEN" GIT_TERMINAL_PROMPT=0 perl -e 'alarm shift; exec @ARGV' "$SWEEP_NET_TIMEOUT" \
+      git -C "${RP_ROOT[$i]}" -c credential.helper= \
+      -c 'credential.helper=!f(){ echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' "$@"
+  else
+    GIT_TERMINAL_PROMPT=0 perl -e 'alarm shift; exec @ARGV' "$SWEEP_NET_TIMEOUT" git -C "${RP_ROOT[$i]}" "$@"
+  fi
+}
+sw_token() {
+  local f="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env" v="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
+  if [[ -z "$v" && -r "$f" ]]; then
+    v="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?SPEC_PROTOCOL_OPERATOR_GH_TOKEN[[:space:]]*=[[:space:]]*//p' "$f" | tail -n 1 | tr -d '\r')"
+    v="${v%%[[:space:]]*}"; v="${v#[\"\']}"; v="${v%[\"\']}"
+  fi
+  printf '%s' "$v"
+}
+
+sweep_bind() {  # fills RP_*; rc 1 when the registry itself cannot be read
+  local rec out rc name root trunk remote i top src
+  RP_NAME=() RP_ROOT=() RP_TRUNK=() RP_REMOTE=() RP_TARGET=() RP_WHY=() RP_TOK=()
+  if [[ -n "$STATE_DIR" ]]; then rec="${STATE_DIR}/repo-anchor.json"; else rec="${HOME_DIR}/CONTROL/repo-anchor.json"; fi
+  [[ -n "$PYTHON3" ]] || { sw_und "no python3: the registry and the claims are JSON"; return 1; }
+  set +e; out="$("$PYTHON3" -c "$SWEEP_PY" repos "$AREA" "$rec" "${MERGE_TRAIN_TRUNK:-main}" "$HOME_DIR" 2>&1)"; rc=$?; set -e
+  if (( rc != 0 )); then sw_und "registry unreadable: $(sanitize "$out")"; return 1; fi
+  if [[ -z "$out" ]]; then
+    top="$(git -C "$HOME_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "$top" && "$(cd "$top" && pwd -P)" == "$(cd "$HOME_DIR" && pwd -P)" ]]; then
+      out="$(basename "$HOME_DIR")"$'\t'"$HOME_DIR"$'\t'"${MERGE_TRAIN_TRUNK:-main}"$'\t'"origin"
+    fi
+  fi
+  [[ -n "$out" ]] || return 0
+  src="$(receipt_source_of "$rec")"
+  [[ "$src" == operator-owner ]] && SW_TOKEN="$(sw_token)"
+  while IFS=$'\t' read -r name root trunk remote; do
+    [[ -n "$root" ]] || continue
+    RP_NAME+=("$name"); RP_ROOT+=("$root"); RP_TRUNK+=("$trunk"); RP_REMOTE+=("$remote")
+    RP_TARGET+=(""); RP_WHY+=(""); RP_TOK+=(0)
+  done <<< "$out"
+  for (( i = 0; i < ${#RP_ROOT[@]}; i++ )); do
+    root="${RP_ROOT[$i]}"; trunk="${RP_TRUNK[$i]}"; remote="${RP_REMOTE[$i]}"
+    if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      RP_WHY[$i]="${root} is not a git working copy"; continue
+    fi
+    # remote is a configured NAME, or a URL (then the target is the fetched sha)
+    local url="$remote" isurl=0
+    if [[ -n "$remote" ]]; then
+      if git -C "$root" remote get-url "$remote" >/dev/null 2>&1; then url="$(git -C "$root" remote get-url "$remote" 2>/dev/null)"
+      elif [[ "$remote" == *:* || "$remote" == /* ]]; then isurl=1
+      else remote=""; RP_REMOTE[$i]=""; fi
+    fi
+    if [[ -z "$remote" ]]; then
+      if git -C "$root" show-ref --verify --quiet "refs/heads/${trunk}"; then RP_TARGET[$i]="refs/heads/${trunk}"
+      else RP_WHY[$i]="local-only repo has no trunk ${trunk}"; fi
+      continue
+    fi
+    [[ -n "$SW_TOKEN" && "$url" == *github.com* ]] && RP_TOK[$i]=1
+    if (( isurl == 1 )); then
+      if sw_net "$i" fetch --quiet --no-tags "$remote" "refs/heads/${trunk}" >/dev/null 2>&1; then
+        RP_TARGET[$i]="$(git -C "$root" rev-parse --verify --quiet FETCH_HEAD 2>/dev/null || true)"
+        [[ -n "${RP_TARGET[$i]}" ]] || RP_WHY[$i]="fetch of ${trunk} from the registry URL left no FETCH_HEAD"
+      else RP_WHY[$i]="fetch of ${trunk} from the registry URL failed"; fi
+    elif sw_net "$i" fetch --quiet --no-tags "$remote" "+refs/heads/${trunk}:refs/remotes/${remote}/${trunk}" >/dev/null 2>&1; then
+      RP_TARGET[$i]="refs/remotes/${remote}/${trunk}"
+    else
+      RP_WHY[$i]="fetch of ${remote}/${trunk} failed"
+    fi
+  done
+  return 0
+}
+receipt_source_of() { "$PYTHON3" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("source") or "")' "$1" 2>/dev/null || true; }
+
+prove_rev() {  # prove_rev <repo-index> <rev> -> 0 proven merged, 1 not, 2 undetermined
+  local i="$1" sha rc
+  [[ -n "${RP_TARGET[$i]}" ]] || return 2
+  sha="$(git -C "${RP_ROOT[$i]}" rev-parse --verify --quiet "${2}^{commit}" 2>/dev/null)" || return 1
+  set +e; git -C "${RP_ROOT[$i]}" merge-base --is-ancestor "$sha" "${RP_TARGET[$i]}" 2>/dev/null; rc=$?; set -e
+  case "$rc" in 0) return 0 ;; 1) return 1 ;; *) return 2 ;; esac
+}
+
+claim_merge() {  # claim_merge <unit> <branch> <commit> <repo>
+  local unit="$1" br="$2" cm="$3" rn="$4" i r rev="" tip any=0 und=0 where="" name key line tgt reason
+  SW_CLAIMS=$(( SW_CLAIMS + 1 ))
+  for (( i = 0; i < ${#RP_ROOT[@]}; i++ )); do
+    [[ -z "$rn" || "$rn" == "${RP_NAME[$i]}" ]] || continue
+    any=1
+    if [[ -n "$cm" ]]; then rev="$cm"
+    elif tip="$(git -C "${RP_ROOT[$i]}" rev-parse --verify --quiet "refs/heads/${br}^{commit}" 2>/dev/null)"; then rev="$tip"
+    else und=1; continue; fi
+    set +e; prove_rev "$i" "$rev"; r=$?; set -e
+    case "$r" in
+      0) return 0 ;;
+      1) if [[ -z "$where" ]] && git -C "${RP_ROOT[$i]}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1; then where="$i"; fi ;;
+      *) und=1 ;;
+    esac
+  done
+  if (( any == 0 )); then sw_und "unit=${br}: repo ${rn} is not registered"; return 0; fi
+  if (( und == 1 )); then sw_und "unit=${br}: no commit named and no branch, or the fetch failed"; return 0; fi
+  [[ -z "$where" && ${#RP_ROOT[@]} -eq 1 ]] && where=0
+  name="unknown"; [[ -n "$where" ]] && name="${RP_NAME[$where]}"
+  key="merge|${br}|${cm:-${rev:-none}}"
+  sw_seen "$key" && return 0
+  SW_FALSE=$(( SW_FALSE + 1 ))
+  if [[ -n "$where" ]] && git -C "${RP_ROOT[$where]}" rev-parse --verify --quiet "${rev}^{commit}" >/dev/null 2>&1; then
+    tgt="${RP_TARGET[$where]#refs/remotes/}"; tgt="${tgt#refs/heads/}"
+    # a URL remote's target is a fetched sha; name the trunk, never the URL (it may carry credentials)
+    [[ "$tgt" =~ ^[0-9a-f]{40}$ ]] && tgt="remote-${RP_TRUNK[$where]}"
+    reason="not-an-ancestor-of-${tgt}"
+  else reason="commit-absent-after-fetch"; fi
+  line="MERGE-CLAIM-FALSE: unit=${br} repo=${name} commit=${cm:-${rev:-none}} reason=${reason}"
+  sw_say "$line"
+  [[ -n "$where" ]] && sw_requeue "$name" "$br" merge-claim-false
+  sw_act requeue "$br" "${line} — re-queued for the next batch; merged means proof of merge only"
+  sw_mark "$key"
+}
+
+sweep_orphans() {  # sweep_orphans <repo-index>
+  local i="$1" root="${RP_ROOT[$i]}" wt="" head="" br="" locked=0 first=1 l
+  [[ -n "${RP_TARGET[$i]}" ]] || return 0
+  while IFS= read -r l; do
+    case "$l" in
+      "worktree "*) wt="${l#worktree }" ;;
+      "HEAD "*) head="${l#HEAD }" ;;
+      "branch refs/heads/"*) br="${l#branch refs/heads/}" ;;
+      locked*) locked=1 ;;
+      "")
+        if (( first == 0 )) && [[ -n "$wt" && -n "$br" && "$br" != "${RP_TRUNK[$i]}" ]] && (( locked == 0 )); then
+          orphan_one "$i" "$wt" "$head" "$br"
+        fi
+        first=0; wt="" head="" br="" locked=0 ;;
+    esac
+  done < <(git -C "$root" worktree list --porcelain 2>/dev/null; printf '\n')
+  git -C "$root" worktree prune 2>/dev/null || true
+}
+
+orphan_one() {  # orphan_one <repo-index> <worktree> <head> <branch>
+  local i="$1" wt="$2" head="$3" br="$4" root="${RP_ROOT[$1]}" name="${RP_NAME[$1]}" r ct age key rs note=""
+  set +e; prove_rev "$i" "$head"; r=$?; set -e
+  if (( r == 0 )); then
+    # ponytail: a tip on the trunk's FIRST-PARENT line is a branch with no work of
+    # its own yet (a builder's fresh worktree) or a fast-forward; both are left
+    # alone. Only --no-ff merged units (the merge train's shape) are cleaned.
+    # (no grep -q at a pipe's end: under pipefail an early exit SIGPIPEs the
+    # writer and a match would read as a miss, cleaning a live builder's tree)
+    git -C "$root" rev-list --first-parent "${RP_TARGET[$i]}" 2>/dev/null | "$GREP" -x -- "$head" >/dev/null && return 0
+    if [[ -d "$wt" && -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]]; then
+      key="kept|${br}|${head}"; sw_seen "$key" && return 0
+      SW_KEPT=$(( SW_KEPT + 1 ))
+      sw_say "KEPT-UNMERGED: unit=${br} repo=${name} worktree=${wt} reason=uncommitted-changes (the branch is merged; the uncommitted work is not, so nothing was removed)"
+      sw_mark "$key"; return 0
+    fi
+    if [[ -d "$wt" ]]; then
+      git -C "$root" worktree remove "$wt" >/dev/null 2>&1 || git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 \
+        || { sw_und "unit=${br}: worktree ${wt} could not be removed"; return 0; }
+    fi
+    git -C "$root" update-ref -d "refs/heads/${br}" "$head" >/dev/null 2>&1 || note=" local-branch-kept(tip moved)"
+    if [[ -n "${RP_REMOTE[$i]}" ]]; then
+      rs="$(sw_net "$i" ls-remote --heads "${RP_REMOTE[$i]}" "refs/heads/${br}" 2>/dev/null | awk 'NR==1{print $1}')" || rs=""
+      if [[ -n "$rs" ]]; then
+        set +e; prove_rev "$i" "$rs"; r=$?; set -e
+        if (( r == 0 )); then
+          sw_net "$i" push --quiet "${RP_REMOTE[$i]}" "--force-with-lease=refs/heads/${br}:${rs}" ":refs/heads/${br}" >/dev/null 2>&1 \
+            || note="${note} remote-branch-delete-refused"
+        else note="${note} remote-branch-kept(not proven merged)"; fi
+      fi
+    fi
+    rm -f "${AREA}/merge-train/${br//\//_}.gate.log" "${AREA}/merge-train/${name}/${br//\//_}.gate.log" 2>/dev/null || true
+    SW_CLEANED=$(( SW_CLEANED + 1 ))
+    sw_say "ORPHAN-CLEANED: unit=${br} repo=${name} worktree=${wt} commit=${head}${note}"
+    return 0
+  fi
+  (( r == 1 )) || { sw_und "unit=${br}: merge proof undetermined"; return 0; }
+  ct="$(git -C "$root" log -1 --format=%ct "$head" 2>/dev/null || true)"
+  [[ "$ct" =~ ^[0-9]+$ ]] || { sw_und "unit=${br}: last commit time unreadable"; return 0; }
+  age=$(( ($(epoch_now) - ct) / 60 ))
+  (( age >= STALE_UNMERGED_MIN )) || return 0
+  key="stale|${br}|${head}"; sw_seen "$key" && return 0
+  SW_STALE=$(( SW_STALE + 1 ))
+  sw_say "STALE-UNMERGED: unit=${br} repo=${name} worktree=${wt} idle=${age}m (no commit for ${age} minutes and not proven merged; kept, re-queued)"
+  sw_requeue "$name" "$br" stale-unmerged
+  sw_act requeue "$br" "STALE-UNMERGED: unit=${br} repo=${name} idle=${age}m — re-queued; judge or finish it, never delete it"
+  sw_mark "$key"
+}
+
+sweep_actions_print() {  # the findings as ACTION lines, for paths with no emit()
+  [[ -n "$SWEEP_ACTS" && -s "$SWEEP_ACTS" ]] || return 0
+  local v g e
+  while IFS=$'\t' read -r v g e; do
+    [[ -n "$v" ]] && printf 'ACTION|%s|%s|%s\n' "$v" "$(sanitize "$g")" "$(sanitize "$e")"
+  done < "$SWEEP_ACTS"
+  return 0
+}
+
+report_note() {  # report_note <line> -> appended under the newest morning report's Operator notes
+  local f
+  f="$(ls -1 "$HOME_DIR"/MORNING-REPORT-*.md 2>/dev/null | sort | tail -n 1 || true)"
+  [[ -n "$f" && -w "$f" ]] || return 0
+  "$GREP" -qF -- "$1" "$f" 2>/dev/null && return 0
+  "$GREP" -qE '^#+[[:space:]]*Operator notes' "$f" 2>/dev/null || printf '\n## Operator notes\n\n' >> "$f"
+  printf -- '- %s\n' "$1" >> "$f"
+}
+
+claim_mint() {  # claim_mint <repo> <tag> <version> <commit> <local 0/1>
+  local rn="$1" tag="$2" ver="$3" cm="$4" loc="$5" i=-1 j root out obj peeled why="" typ vre key line
+  for (( j = 0; j < ${#RP_ROOT[@]}; j++ )); do
+    if [[ "$rn" == "${RP_NAME[$j]}" ]] || [[ -z "$rn" && ${#RP_ROOT[@]} -eq 1 ]]; then i="$j"; fi
+  done
+  if (( i < 0 )); then sw_und "mint ${tag}: repo ${rn:-(none named)} not resolvable"; return 0; fi
+  root="${RP_ROOT[$i]}"
+  key="mint|${RP_NAME[$i]}|${tag}|${cm}"
+  sw_seen "$key" && return 0
+  sw_seen "mint-ok|${key}" && return 0
+  if [[ "$loc" == 1 || -z "${RP_REMOTE[$i]}" ]]; then
+    typ="$(git -C "$root" cat-file -t "refs/tags/${tag}" 2>/dev/null || true)"
+    if [[ "$typ" != tag ]]; then why="tag ${tag} is ${typ:-absent} locally, not an annotated tag"
+    else peeled="$(git -C "$root" rev-parse "refs/tags/${tag}^{commit}" 2>/dev/null || true)"; fi
+  else
+    out="$(sw_net "$i" ls-remote --tags "${RP_REMOTE[$i]}" "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)" \
+      || { sw_und "mint ${tag}: ls-remote on ${RP_NAME[$i]} failed"; return 0; }
+    obj="$(printf '%s\n' "$out" | awk -v r="refs/tags/${tag}" '$2==r{print $1}')"
+    peeled="$(printf '%s\n' "$out" | awk -v r="refs/tags/${tag}^{}" '$2==r{print $1}')"
+    if [[ -z "$obj" ]]; then why="tag ${tag} is not on ${RP_REMOTE[$i]}"
+    elif [[ -z "$peeled" ]]; then why="tag ${tag} on ${RP_REMOTE[$i]} is lightweight, not annotated"; fi
+    if [[ -z "$why" ]] && ! git -C "$root" cat-file -e "${peeled}^{commit}" 2>/dev/null; then
+      sw_net "$i" fetch --quiet --no-tags "${RP_REMOTE[$i]}" "refs/tags/${tag}" >/dev/null 2>&1 \
+        || { sw_und "mint ${tag}: the tagged commit could not be fetched"; return 0; }
+    fi
+  fi
+  if [[ -z "$why" && -n "$cm" && "$peeled" != "$cm"* ]]; then why="tag ${tag} points at ${peeled}, the claim says ${cm}"; fi
+  if [[ -z "$why" ]]; then
+    vre="$(printf '%s' "$ver" | sed 's/[.+]/\\&/g')"
+    if [[ "$(git -C "$root" show "${peeled}:VERSION" 2>/dev/null | tr -d ' \r\n\t')" != "$ver" ]]; then why="VERSION at ${peeled} is not ${ver}"
+    elif ! git -C "$root" show "${peeled}:CHANGELOG.md" 2>/dev/null | "$GREP" -E '^#' | "$GREP" -E "(^|[^0-9.])${vre}([^0-9.]|$)" >/dev/null; then why="CHANGELOG.md at ${peeled} has no ${ver} heading"
+    elif ! { git -C "$root" show "${peeled}:README.md" 2>/dev/null || git -C "$root" show "${peeled}:README" 2>/dev/null; } | "$GREP" -E "(^|[^0-9.])${vre}([^0-9.]|$)" >/dev/null; then why="README at ${peeled} does not carry ${ver}"
+    fi
+  fi
+  if [[ -z "$why" ]]; then sw_mark "mint-ok|${key}"; return 0; fi
+  SW_MINTF=$(( SW_MINTF + 1 ))
+  line="MINT-CLAIM-FALSE: repo=${RP_NAME[$i]} tag=${tag} version=${ver} reason=${why}"
+  sw_say "$line"
+  report_note "$line"
+  sw_act mint-check "${RP_NAME[$i]} ${tag}" "${line} — not minted until tools/release.sh proves it from the remote"
+  sw_mark "$key"
+}
+
+repo_sweeps() {  # sets SWEEP_NOTE; findings to $SWEEP_ACTS; never fatal
+  local i out rc kind a b c d e st
+  SWEEP_ACTS="${WORKDIR:-$AREA}/sweep-acts.tsv"; : > "$SWEEP_ACTS"
+  SW_FALSE=0 SW_STALE=0 SW_CLEANED=0 SW_KEPT=0 SW_MINTF=0 SW_UND=0 SW_CLAIMS=0 SW_UNDWHY=""
+  if ! sweep_bind; then SWEEP_NOTE="undetermined(${SW_UNDWHY})"; return 0; fi
+  if (( ${#RP_ROOT[@]} == 0 )); then SWEEP_NOTE="none(no repository registered: no repos.json, no repo-anchor receipt)"; return 0; fi
+  for (( i = 0; i < ${#RP_ROOT[@]}; i++ )); do
+    [[ -n "${RP_TARGET[$i]}" ]] || sw_und "repo ${RP_NAME[$i]}: ${RP_WHY[$i]}"
+  done
+  local -a files=()
+  if [[ -n "$STATE_DIR" ]]; then st="$STATE_JSON"; files=("${AREA}/LEDGER.md" "${STATE_DIR}/merge-train.log")
+  else st="-"; files=("${HOME_DIR}/CONTROL/LEDGER.md"); fi
+  set +e; out="$("$PYTHON3" -c "$SWEEP_PY" claims "$st" "${files[@]}" 2>&1)"; rc=$?; set -e
+  if (( rc != 0 )); then sw_und "claims unreadable: $(sanitize "$out")"; out=""; fi
+  while IFS=$'\t' read -r kind a b c d e; do
+    case "$kind" in
+      M) claim_merge "$a" "$b" "$c" "$d" ;;
+      T) claim_mint "$a" "$b" "$c" "$d" "$e" ;;
+    esac
+  done <<< "$out"
+  for (( i = 0; i < ${#RP_ROOT[@]}; i++ )); do sweep_orphans "$i"; done
+  SWEEP_NOTE="repos=${#RP_ROOT[@]} claims=${SW_CLAIMS} claim-false=${SW_FALSE} stale-unmerged=${SW_STALE} cleaned=${SW_CLEANED} kept=${SW_KEPT} mint-false=${SW_MINTF} undetermined=${SW_UND}${SW_UNDWHY:+(first: ${SW_UNDWHY})}"
+  printf 'SWEEP | %s\n' "$(sanitize_long "$SWEEP_NOTE")"
+}
+
 #==============================================================================
 # ARGUMENT PARSING
 #==============================================================================
@@ -1182,6 +1641,7 @@ while (( $# )); do
     --arm)       DO_ARM=1; shift ;;
     --check)     DO_CHECK=1; shift ;;
     --record-session) DO_RECORD=1; shift ;;
+    --sweep)     DO_SWEEP=1; shift ;;
     -h|--help)   usage; exit 0 ;;
     --*)         die_tool "unknown option: $1" ;;
     *)
@@ -1195,6 +1655,8 @@ done
 [[ "$MERGE_STALE_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_MERGE_STALE_MIN must be a non-negative integer (got: ${MERGE_STALE_MIN})"
 [[ "$STALLED_MIN"     =~ ^[0-9]+$ ]] || die_tool "WATCH_STALLED_MIN must be a non-negative integer (got: ${STALLED_MIN})"
 [[ "$MERGE_BATCH_MIN" =~ ^[0-9]+$ ]] || die_tool "MERGE_BATCH_MINUTES must be a non-negative integer (got: ${MERGE_BATCH_MIN})"
+[[ "$SWEEP_NET_TIMEOUT" =~ ^[0-9]+$ && "$SWEEP_NET_TIMEOUT" -gt 0 ]] || die_tool "WATCH_SWEEP_NET_TIMEOUT must be a positive integer of seconds (got: ${SWEEP_NET_TIMEOUT})"
+[[ "$STALE_UNMERGED_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_STALE_UNMERGED_MIN must be a non-negative integer (got: ${STALE_UNMERGED_MIN})"
 [[ "$REFRESH_TIMEOUT" =~ ^[0-9]+$ && "$REFRESH_TIMEOUT" -gt 0 ]] || die_tool "WATCH_REFRESH_TIMEOUT must be a positive integer of seconds (got: ${REFRESH_TIMEOUT})"
 
 #==============================================================================
@@ -1258,7 +1720,11 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
   fi
 
   # A4 then A3: a merge is a state-changing step, so the refresh runs after it.
+  # The repo sweeps (4g) follow the batch: they re-prove what it claimed.
   merge_batch
+  repo_sweeps || true
+  sweep_actions_print
+  [[ -s "$SWEEP_ACTS" ]] && ret=3
   run_refresh
 
   # A2: the same post-interview stall check and AUTO-RESUME a legacy project
@@ -1332,6 +1798,18 @@ run_tick() {
     local chk=0
     set +e; check_tick "$HOME_DIR"; chk=$?; set -e
     exit "$chk"
+  fi
+
+  # --sweep: the repo sweeps ALONE (4g), for the Node twin, which runs this
+  # rather than keeping a second copy of the git logic. Prints the sweep's
+  # lines and its ACTION lines; 0 nothing found, 3 findings.
+  if (( DO_SWEEP )); then
+    bind_paths "$HOME_DIR"
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/watch-tick.XXXXXX")"
+    repo_sweeps || true
+    sweep_actions_print
+    [[ -s "$SWEEP_ACTS" ]] && exit 3
+    exit 0
   fi
 
   self_prove
@@ -1436,7 +1914,9 @@ run_tick() {
 
   # A4: the batch merge cadence, once the plan exists (4e). Logged in the
   # S-CHECK line's merge-batch= field; never a verdict and never fatal.
+  # Then the repo sweeps (4g): their findings are emitted with the S-checks.
   merge_batch
+  repo_sweeps || true
 
   #--------------------------------------------------------------------------
   # (2) THE THREE COUNTS.
@@ -2062,7 +2542,10 @@ run_tick() {
   else
     local pub_ts="" pub_line sg_ts="" grc
     set +e
-    pub_line="$("$GREP" -h 'PUBLISHED:' "$LED" 2>/dev/null | tail -n 1)"; grc=$?
+    # The tick's own S-CHECK line ("published=ok(no PUBLISHED: line …)") and its
+    # DRIFT-ALARM line quote the word; they are never a publish. awk keeps a read
+    # error at rc 2 (a `grep | grep -v` pipe would mask it as a no-match 1).
+    pub_line="$("$AWK" '/PUBLISHED:/ && !/[|] (S-CHECK|DRIFT-ALARM) [|]/' "$LED" 2>/dev/null | tail -n 1)"; grc=$?
     set -e
     if (( grc >= 2 )); then
       PUB_NOTE="undetermined(ledger read error)"
@@ -2127,6 +2610,14 @@ run_tick() {
       "DRIFT-ALARM ${PUB_ALARM_NAME}: ${PUB_WHY}"
   fi
 
+  # The repo sweeps' findings (4g): MERGE-CLAIM-FALSE / STALE-UNMERGED ->
+  # ACTION|requeue, MINT-CLAIM-FALSE -> ACTION|mint-check.
+  if [[ -n "$SWEEP_ACTS" && -s "$SWEEP_ACTS" ]]; then
+    local sv stg sev
+    while IFS=$'\t' read -r sv stg sev; do [[ -n "$sv" ]] && emit "$sv" "$stg" "$sev"; done < "$SWEEP_ACTS"
+  fi
+  (( SW_UND == 0 )) || add_undet "sweeps=undetermined(${SW_UND}: ${SW_UNDWHY})"
+
   #--------------------------------------------------------------------------
   # (5) THE LINE. Every watch line carries the violation count, even when it
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
@@ -2140,7 +2631,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | merge-batch=$(sanitize "${MERGE_NOTE:-not-run}") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | merge-batch=$(sanitize "${MERGE_NOTE:-not-run}") | sweeps=$(sanitize_long "$SWEEP_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -2240,6 +2731,16 @@ run_tick() {
 #      a legacy S-CHECK verdict with no PROFILE-TICK anywhere. Cases 1-34 are
 #      the same control at scale: not one of them carries a profile, so every
 #      legacy assertion above is also proof the redirect does not leak.
+#  47  THE REPO SWEEPS (4g) — a two-repo registry of LOCAL BARE repos: a false
+#      MERGED claim -> MERGE-CLAIM-FALSE + re-queue; a merged clean worktree ->
+#      worktree, local and remote branch removed; a 3h-idle unmerged one ->
+#      STALE-UNMERGED, kept, re-queued; a fresh no-commit worktree untouched;
+#      a lightweight tag claimed minted -> MINT-CLAIM-FALSE (ledger and the
+#      morning report's operator notes). The proven claim and the proven
+#      annotated tag in the same fixture stay silent: the negative controls.
+#  48  THE SAME TICK AGAIN — every finding is written once: exit 0.
+#  49  THE PROFILED SWEEP — a state claiming MERGED on an unmerged commit is
+#      MERGE-CLAIM-FALSE and re-queued; the state file stays byte-identical.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -3075,6 +3576,98 @@ selftest() {
      && [[ ! -s "$T/c46.args" ]] \
      && ! printf '%s' "$OUT" | "$GREP" -q 'AUTO-RESUME\|ACTION|stalled-turn'; then ok=1; fi
   report 46 "profiled-terminal-status-no-resume" "$ok" "rc=${RC} (want 0); launcher stub got [$(cat "$T/c46.args" 2>/dev/null)] (want nothing — RELEASE_COMPLETE via the status fallback must block auto-resume even though the session looks stale)"
+
+
+  # --- cases 47-49: THE REPO SWEEPS (4g, r6 B2-B4). Local bare repos only: no
+  #     network, no real remote. Git runs with no global or system config.
+  #     47 the full legacy tick over a TWO-repo registry: a false MERGED claim
+  #        (unit/A2) -> MERGE-CLAIM-FALSE + re-queue; a --no-ff merged, pushed,
+  #        clean worktree (unit/A1) -> worktree, local and remote branch gone;
+  #        a 3h-idle unmerged worktree (unit/A3) -> STALE-UNMERGED, kept,
+  #        re-queued; a fresh builder worktree with no commits (unit/A4) ->
+  #        untouched; an annotated, proven tag (a v0.9.0) -> silent; a
+  #        LIGHTWEIGHT tag claimed MINTED-LOCAL (b v1.0.0) -> MINT-CLAIM-FALSE,
+  #        also in the morning report's operator notes. The proven claim and
+  #        the proven tag in the SAME fixture are the negative controls.
+  #     48 the same tick again: every finding is written once, exit 0.
+  #     49 a PROFILED project whose state claims status MERGED on an unmerged
+  #        commit: MERGE-CLAIM-FALSE + re-queue, and the state file untouched.
+  export GIT_AUTHOR_NAME=st GIT_AUTHOR_EMAIL=st@example.invalid GIT_COMMITTER_NAME=st \
+         GIT_COMMITTER_EMAIL=st@example.invalid GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  local G="$T/c47g" mA1="" cA2="" base="" c49="" old3h
+  old3h="$(( $(date +%s) - 10800 )) +0000"
+  mkdir -p "$G"
+  if ( set -e
+       git init -q --bare "$G/a.git"; git init -q -b main "$G/a"; cd "$G/a"
+       printf '0.9.0\n' > VERSION; printf '# Changelog\n\n## [0.9.0] - 2026-01-01\n' > CHANGELOG.md
+       printf '# App\n\nVersion: 0.9.0\n' > README.md
+       git add -A; git commit -qm base; git remote add origin "$G/a.git"; git push -q origin main
+       git tag -a v0.9.0 -m v0.9.0; git push -q origin v0.9.0
+       git worktree add -q .worktrees/A1 -b unit/A1
+       ( cd .worktrees/A1 && echo a1 > a1 && git add a1 && git commit -qm A1 )
+       git push -q origin unit/A1; git merge -q --no-ff --no-edit unit/A1; git push -q origin main
+       git branch unit/A2 main; git checkout -q unit/A2; echo a2 > a2; git add a2; git commit -qm A2; git checkout -q main
+       git worktree add -q .worktrees/A3 -b unit/A3
+       ( cd .worktrees/A3 && echo a3 > a3 && git add a3 && GIT_COMMITTER_DATE="$old3h" git commit -qm A3 )
+       git worktree add -q .worktrees/A4 -b unit/A4
+       git init -q -b main "$G/b"; cd "$G/b"; echo b > f; git add f; git commit -qm b; git tag v1.0.0
+       git init -q -b main "$G/p"; cd "$G/p"; echo p > f; git add f; git commit -qm p
+       git checkout -q -b unit/P1; echo p1 > p1; git add p1; git commit -qm P1; git checkout -q main
+     ) >/dev/null 2>&1; then
+    mA1="$(git -C "$G/a" rev-parse main)"; cA2="$(git -C "$G/a" rev-parse unit/A2)"
+    base="$(git -C "$G/a" rev-parse 'v0.9.0^{commit}')"; c49="$(git -C "$G/p" rev-parse unit/P1)"
+  fi
+
+  mk_home "$T/c47"
+  printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-047\n' "$(stamp 1)" > "$T/c47/CONTROL/dispatch-log.md"
+  printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c47/CONTROL/HEARTBEAT.md"
+  printf '{"repos":[{"name":"a","root":"%s","trunk":"main","remote":"origin"},{"name":"b","root":"%s","trunk":"main","remote":null}]}\n' \
+    "$G/a" "$G/b" > "$T/c47/CONTROL/repos.json"
+  { printf '%s | MERGED: unit=unit/A1 commit=%s trunk=origin/main repo=a\n' "$(stamp 3)" "$mA1"
+    printf '%s | MERGED: unit=unit/A2 commit=%s trunk=origin/main repo=a\n' "$(stamp 3)" "$cA2"
+    printf '%s | MINTED: repo=a version=0.9.0 tag=v0.9.0 commit=%s\n' "$(stamp 2)" "$base"
+    printf '%s | MINTED-LOCAL: repo=b version=1.0.0 tag=v1.0.0\n' "$(stamp 2)"; } > "$T/c47/CONTROL/LEDGER.md"
+  printf '# Report\n\nAll done.\n\n## Operator notes\n\n- earlier note\n' > "$T/c47/MORNING-REPORT-2026-01-01.md"
+  runw "$T/c47"
+  local rq47="$T/c47/CONTROL/merge-train/requeue.tsv"
+  ok=0
+  if [[ -n "$mA1" ]] && (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q "^MERGE-CLAIM-FALSE: unit=unit/A2 repo=a commit=${cA2} reason=not-an-ancestor-of-origin/main" \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|requeue|unit/A2|' \
+     && printf '%s' "$OUT" | "$GREP" -q '^ORPHAN-CLEANED: unit=unit/A1 repo=a ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^STALE-UNMERGED: unit=unit/A3 repo=a ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^MINT-CLAIM-FALSE: repo=b tag=v1.0.0 version=1.0.0 reason=.*not an annotated tag' \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|mint-check|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'CLAIM-FALSE: unit=unit/A1\|MINT-CLAIM-FALSE: repo=a\|unit/A4' \
+     && [[ ! -e "$G/a/.worktrees/A1" && -d "$G/a/.worktrees/A3" && -d "$G/a/.worktrees/A4" ]] \
+     && ! git -C "$G/a" show-ref --verify --quiet refs/heads/unit/A1 \
+     && [[ -z "$(git -C "$G/a.git" for-each-ref refs/heads/unit/A1)" ]] \
+     && git -C "$G/a" show-ref --verify --quiet refs/heads/unit/A3 \
+     && "$GREP" -q "^a	unit/A2	merge-claim-false	" "$rq47" 2>/dev/null \
+     && "$GREP" -q "^a	unit/A3	stale-unmerged	" "$rq47" 2>/dev/null \
+     && "$GREP" -q '^- MINT-CLAIM-FALSE: repo=b tag=v1.0.0' "$T/c47/MORNING-REPORT-2026-01-01.md" \
+     && "$GREP" -q 'S-CHECK | .*| sweeps=repos=2 claims=2 claim-false=1 stale-unmerged=1 cleaned=1 kept=0 mint-false=1 undetermined=0' "$T/c47/CONTROL/LEDGER.md"; then ok=1; fi
+  report 47 "repo-sweeps" "$ok" "rc=${RC} (want 3); A2 claim false + re-queued, A1 worktree/local/remote branch removed after proof, A3 STALE-UNMERGED kept + re-queued, A4 untouched, b's lightweight tag MINT-CLAIM-FALSE (ledger + morning report), a's proven claim and tag silent$( [[ -n "$mA1" ]] || printf ' — FIXTURE FAILED')"
+
+  runw "$T/c47"
+  ok=0
+  if (( RC == 0 )) && ! printf '%s' "$OUT" | "$GREP" -q 'CLAIM-FALSE\|STALE-UNMERGED\|ORPHAN-CLEANED\|^ACTION|' \
+     && [[ "$(wc -l < "$rq47" | tr -d ' ')" == 2 ]]; then ok=1; fi
+  report 48 "repo-sweeps-once" "$ok" "rc=${RC} (want 0); the second tick wrote no finding again and the re-queue file still has 2 lines (got $(wc -l < "$rq47" 2>/dev/null | tr -d ' '))"
+
+  mk_profile_home "$T/c49"
+  printf '{"tasks":{"P1":{"status":"MERGED","commit":"%s"}}}\n' "$c49" > "$T/c49/state/build-state.json"
+  printf '{"repoRoot":"%s","remote":null,"source":"local-only"}\n' "$G/p" > "$T/c49/state/repo-anchor.json"
+  local ck49; ck49="$(cksum < "$T/c49/state/build-state.json")"
+  runw "$T/c49"
+  ok=0
+  if [[ -n "$c49" ]] && (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^PROFILE-TICK | ' \
+     && printf '%s' "$OUT" | "$GREP" -q "^MERGE-CLAIM-FALSE: unit=unit/P1 repo=p commit=${c49} reason=not-an-ancestor-of-main" \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|requeue|unit/P1|' \
+     && "$GREP" -q "^p	unit/P1	merge-claim-false	" "$T/c49/state/spec-protocol/merge-train/requeue.tsv" 2>/dev/null \
+     && [[ "$(cksum < "$T/c49/state/build-state.json")" == "$ck49" && ! -e "$T/c49/CONTROL" ]]; then ok=1; fi
+  report 49 "repo-sweeps-profiled" "$ok" "rc=${RC} (want 3); the state's MERGED claim on an unmerged commit is MERGE-CLAIM-FALSE and re-queued under state/spec-protocol/, the state file byte-identical, no CONTROL/"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

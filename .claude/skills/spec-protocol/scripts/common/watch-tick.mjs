@@ -47,6 +47,14 @@
 //   Identical to tools/watch-tick.sh (MERGE_BATCH_MINUTES, WATCH_MERGE_TRAIN_SH
 //   and WATCH_REFRESH_TIMEOUT mean the same here).
 //
+// THE REPO SWEEPS (watch-tick.sh 4g) run every tick after the merge batch:
+//   proof of merge re-checked on every MERGED/landed claim (MERGE-CLAIM-FALSE +
+//   re-queue), merged worktrees and branches cleaned, stale unmerged ones
+//   reported (STALE-UNMERGED + re-queue), and release claims proven from the
+//   remote (MINT-CLAIM-FALSE). The git logic lives ONCE, in the bash twin:
+//   this file runs `bash tools/watch-tick.sh <home> --sweep` and emits its
+//   ACTION lines. No bash -> `sweeps=undetermined(no bash …)`, never a pass.
+//
 // USAGE
 //   node scripts/common/watch-tick.mjs <project-home>
 //   node scripts/common/watch-tick.mjs <project-home> --cron-line
@@ -74,7 +82,7 @@ const ANCHOR_SH = path.join(TOOLS, 'anchor.sh');
 const LEDGER_SH = path.join(TOOLS, 'ledger.sh');
 
 const STALE_MIN = intEnv('WATCH_STALE_MIN', 10);
-const MERGE_BATCH_MIN = intEnv('MERGE_BATCH_MINUTES', 15);
+const MERGE_BATCH_MIN = intEnv('MERGE_BATCH_MINUTES', 10);
 const REFRESH_TIMEOUT = intEnv('WATCH_REFRESH_TIMEOUT', 120);
 const MERGE_STALE_MIN = intEnv('WATCH_MERGE_STALE_MIN', 20);
 const BREAK_LABEL = process.env.WATCH_TICK_SELFTEST_BREAK_LABEL === '1';
@@ -610,6 +618,29 @@ function mergeBatch(home) {
 // ceiling; one PROFILE-REFRESH line; a failure is logged, never fatal. The
 // files it wrote go to <area>/refresh-outputs.txt for the stall census.
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// THE REPO SWEEPS (watch-tick.sh 4g), run through the bash twin's --sweep so
+// the git logic exists once. Its own lines (MERGE-CLAIM-FALSE, STALE-UNMERGED,
+// ORPHAN-CLEANED, MINT-CLAIM-FALSE, SWEEP) are echoed; its ACTION lines are
+// returned for the caller to emit. Never fatal.
+//-----------------------------------------------------------------------------
+function sweeps(home) {
+  if (!haveBash()) return { note: 'undetermined(no bash on this machine — the repo sweeps could not run)', acts: [], und: true };
+  const r = spawnSync('bash', [path.join(TOOLS, 'watch-tick.sh'), home, '--sweep'], { encoding: 'utf8' });
+  if (r.error) return { note: `undetermined(${sanitize(r.error.message)})`, acts: [], und: true };
+  const lines = `${r.stdout || ''}${r.stderr || ''}`.split(/\r?\n/).filter((l) => l.trim());
+  const acts = [];
+  let note = r.status === 2 ? 'undetermined(the sweep exited 2)' : 'not-run';
+  for (const l of lines) {
+    const m = /^ACTION\|([^|]*)\|([^|]*)\|(.*)$/.exec(l);
+    if (m) { acts.push({ verb: m[1], target: m[2], evidence: m[3] }); continue; }
+    const s = /^SWEEP \| (.*)$/.exec(l);
+    if (s) note = s[1];
+    process.stdout.write(`${l}\n`);
+  }
+  return { note, acts, und: /undetermined(\(|=[1-9])/.test(note) };
+}
+
 function runRefresh(home) {
   const pf = path.join(home, '.spec-protocol.json');
   let v;
@@ -707,6 +738,9 @@ function runProfileTick(home) {
     ret = 3;
   }
   mergeBatch(home);   // A4, then A3: a merge is a state-changing step
+  const sw = sweeps(home);   // 4g: re-prove what the batch claimed
+  for (const a of sw.acts) process.stdout.write(`ACTION|${a.verb}|${sanitize(a.target)}|${sanitize(a.evidence)}\n`);
+  if (sw.acts.length) ret = 3;
   runRefresh(home);
   const st = stallCheck(home, 'profiled');   // A2: the same stall + AUTO-RESUME
   if (st.fired) { process.stdout.write(`ACTION|stalled-turn|elapsed=${st.age}m|${sanitize(st.alarm)}\n`); ret = 3; }
@@ -804,6 +838,8 @@ function runTick(homeArg, wantCronLine, mode) {
 
   // A4: the batch merge cadence, once the plan exists.
   const mergeNote = mergeBatch(home);
+  const sw = sweeps(home);   // 4g: the repo sweeps, after the batch
+  if (sw.und) addUndet(`sweeps=${sw.note}`);
 
   // --- (2) the three counts
   const ledText = fs.existsSync(LED) ? fs.readFileSync(LED, 'utf8') : '';
@@ -952,6 +988,9 @@ function runTick(homeArg, wantCronLine, mode) {
   const stall = stallCheck(home, openRows);
   if (stall.fired) emit('stalled-turn', `elapsed=${stall.age}m`, stall.alarm);
 
+  // the repo sweeps' findings (4g)
+  for (const a of sw.acts) emit(a.verb, a.target, a.evidence);
+
   V += actions.length;
 
   // --- (5) the line
@@ -960,6 +999,7 @@ function runTick(homeArg, wantCronLine, mode) {
     + ` | cap=${capNote} | anchor=${anchorNote} | trees-detail=${treeNote}`
     + ` | stalled-turn=${sanitize(stall.note)}`
     + ` | merge-batch=${sanitize(mergeNote)}`
+    + ` | sweeps=${sanitizeLong(sw.note)}`
     + ` | actions=${sanitize(verbs.length ? verbs.join(',') : 'none')}`
     + ` | undetermined=${sanitizeLong(undetermined.length ? undetermined.join(',') : 'none')}`;
   ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'), line);
@@ -1242,6 +1282,37 @@ function selftest() {
     rec18.rc === 0 && t18.rc === 0 && !fs.existsSync(args18)
       && !/AUTO-RESUME/.test(t18.out) && !/ACTION\|stalled-turn/.test(t18.out),
     `record rc=${rec18.rc} (want 0); tick rc=${t18.rc} (want 0); launcher stub called=${fs.existsSync(args18)} (want false — RELEASE_COMPLETE via the status fallback must block auto-resume even though the session looks stale)`);
+
+  // 19 — THE REPO SWEEPS through the bash twin (4g): a local-only repo whose
+  // ledger claims MERGED on a commit that is not on the trunk -> exit 3,
+  // MERGE-CLAIM-FALSE and ACTION|requeue, the re-queue line written, and the
+  // S-CHECK line carrying sweeps=. The claim on the trunk's own commit, in the
+  // same ledger, stays silent: the negative control.
+  if (haveBash()) {
+    d = mkHome('c19');
+    const g = path.join(T, 'c19repo');
+    const genv = { ...process.env, GIT_AUTHOR_NAME: 'st', GIT_AUTHOR_EMAIL: 'st@example.invalid', GIT_COMMITTER_NAME: 'st', GIT_COMMITTER_EMAIL: 'st@example.invalid', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    const git = (...a) => spawnSync('git', ['-C', g, ...a], { encoding: 'utf8', env: genv });
+    fs.mkdirSync(g);
+    git('init', '-q', '-b', 'main'); fs.writeFileSync(path.join(g, 'f'), 'f\n'); git('add', 'f'); git('commit', '-qm', 'base');
+    git('checkout', '-q', '-b', 'unit/N1'); fs.writeFileSync(path.join(g, 'n1'), 'n1\n'); git('add', 'n1'); git('commit', '-qm', 'N1'); git('checkout', '-q', 'main');
+    const cN1 = (git('rev-parse', 'unit/N1').stdout || '').trim();
+    const cMain = (git('rev-parse', 'main').stdout || '').trim();
+    w(d, 'CONTROL/repos.json', JSON.stringify({ repos: [{ name: 'n', root: g, trunk: 'main', remote: null }] }));
+    w(d, 'CONTROL/LEDGER.md', `${stamp(3)} | MERGED: unit=unit/N1 commit=${cN1} repo=n\n${stamp(3)} | MERGED: unit=unit/N0 commit=${cMain} repo=n\n`);
+    w(d, 'CONTROL/dispatch-log.md', `${stamp(1)} | U-02 qc | qc | [opus x10] WF01 judge | run-019\n`);
+    w(d, 'CONTROL/HEARTBEAT.md', `${stamp(1)} | WF01 judge | U-02 | qc\n`);
+    r = run([d]);
+    let rq = '';
+    try { rq = fs.readFileSync(path.join(d, 'CONTROL', 'merge-train', 'requeue.tsv'), 'utf8'); } catch { /* none */ }
+    report(19, 'repo-sweeps-via-bash-twin',
+      r.rc === 3 && cN1 !== '' && new RegExp(`^MERGE-CLAIM-FALSE: unit=unit/N1 repo=n commit=${cN1} reason=not-an-ancestor-of-main`, 'm').test(r.out)
+        && /^ACTION\|requeue\|unit\/N1\|/m.test(r.out) && !/unit\/N0/.test(r.out) && /^n\tunit\/N1\tmerge-claim-false\t/m.test(rq)
+        && /S-CHECK \| .*\| sweeps=repos=1 claims=2 claim-false=1 /.test(led(d)),
+      `rc=${r.rc} (want 3); MERGE-CLAIM-FALSE + ACTION|requeue for unit/N1, re-queue line written, the proven N0 claim silent, S-CHECK carries sweeps=`);
+  } else {
+    process.stdout.write('SKIP | case 19 | repo-sweeps-via-bash-twin | PLATFORM-SKIP: no bash on this machine, so the sweep did not run (never counted as a pass)\n');
+  }
 
   fs.rmSync(T, { recursive: true, force: true });
   process.stdout.write(`\n-------------------------------------------------------------\n`);
