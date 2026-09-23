@@ -214,7 +214,7 @@ build tree (Law 3: one writer per repo; a merge agent inside a build tree is a
 forbidden shape because it holds a build slot):
 
 ```
-Workflow [reader-seat ×1] merge-train — drains the pen on the 15-minute batch trigger
+Workflow [reader-seat ×1] merge-train — drains the pen on the 10-minute batch trigger
 ```
 
 Four trees running SIMULTANEOUSLY during the build. Wall-clock: the slowest
@@ -737,7 +737,7 @@ The pen lives in the execution plan as a table, not as a file (Law 39 — the
 The batch size is a derived quantity, stated with its reasoning. It is a drain
 THRESHOLD, never a cap: RULE 2 removed the 10-merge count cap, so whatever is
 ready merges as ONE batch however many that is. The merge-train loop tests three
-independent triggers on every tick: has 15 minutes passed since the last drain
+independent triggers on every tick: has 10 minutes passed since the last drain
 (the operator's time trigger — RULE 2, the one that always fires); is the queue at
 or above the derived batch size; is the wave closed? If none fired, the loop does
 nothing and sleeps — the correct, cheap outcome.
@@ -767,11 +767,26 @@ Ledger. One merger per repository.
 
 **The merge train and the swarm waves are shipped, never hand-written per run.**
 `tools/merge-train.sh <home> --batch` is the merge train, and it runs in BATCHES,
-never one unit at a time: the tick (`tools/watch-tick.sh`) fires it every
-`MERGE_BATCH_MINUTES` (default 15). One batch takes EVERY unit branch that has
-passed its judges and is waiting (its latest QC-RECORD is PASS or CLIENT-ACCEPTED,
-it is not yet an ancestor of the integration branch, and it is not parked at its
-current tip), merges them all into the integration branch in ONE pass (each
+never one unit at a time and never sequentially: the tick (`tools/watch-tick.sh`)
+fires it every `MERGE_BATCH_MINUTES` (default **10**).
+
+**One train per repo.** A project may have more than one repository. The registry is
+`<workdir>/repos.json` (workdir = `CONTROL/`, or `<state dir>/spec-protocol/` on a
+profiled project, as `tools/project-profile.mjs workdir` prints), `{"repos": [...]}` of
+`{"name","root","trunk","remote"}` entries, written by `tools/repo-anchor.sh` for each
+repo it anchors (a second `--slug` is a second repo; the single `repo-anchor.json`
+receipt stays and still names the first). No registry means one repo, taken from
+`repo-anchor.json`. `--batch` without `--repo` runs EVERY registered repo's train at
+once, each in its own process under its own lock (`merge-train/<name>/batch.lock`), so
+one repo's red gate or slow suite never blocks another; `--batch --repo <name>` runs
+one. The watcher re-queues a unit by appending
+`<repo>\t<branch>\t<reason>\t<time>` to `<workdir>/merge-train/requeue.tsv`; that
+repo's next batch takes it even if it is parked.
+
+One batch takes EVERY unit branch that has
+passed its judges and is waiting (its latest QC-RECORD is PASS or CLIENT-ACCEPTED, or
+it was re-queued; it is not yet PROVEN MERGED, i.e. not an ancestor of
+`<remote>/<trunk>` after a fetch; and it is not parked at its current tip), merges them all into the integration branch in ONE pass (each
 `--no-ff`, ledger order), runs the project's test gate ONCE for the whole batch, and
 pushes ONCE. A red gate is bisected: the batch is split in halves and each half is
 retried on top of what already passed, until the unit(s) that broke it are found;
@@ -782,11 +797,37 @@ conflict-resolver seat on the haiku chain (`CONFLICT: unit=<branch> against=<bra
 seat=conflict-resolver`). A parked unit re-enters the next batch once its branch tip
 moves. On a profiled project every merged unit is also recorded in the project's own
 state through the profile's `commands.merged` (argv, `{taskId}` `{commit}`
-`{branch}` substituted). The truth gates are unchanged ("Land vs Merged" below —
+`{branch}` substituted).
+
+**Proof of merge — the only definition of merged.** After the push the train runs
+`git fetch` and checks EACH landed unit: its commit must be an ancestor of
+`<remote>/<trunk>` (on a local-only repo whose checked-out branch is the trunk, of that
+local trunk). Only then does it print
+`MERGED: unit=<branch> commit=<sha> trunk=<remote>/<trunk> repo=<name>`. A unit that
+fails the proof is never recorded merged:
+`MERGE-UNPROVEN: unit=<branch> repo=<name> reason=<why>`, and it stays waiting for the
+next batch. A report, a ledger line or an agent saying "merged" is not a proof.
+
+**Cleanup after proof, every time.** For each proven unit the train removes its
+worktree (`git worktree remove`; `--force` only when every uncommitted change in it is
+already in the proven trunk), deletes its local branch, deletes its remote unit branch
+when one was pushed, runs `git worktree prune`, and deletes the files it made for that
+unit (its gate log and parked row): `CLEANED: unit=… repo=…`. A worktree or branch
+whose commits are not proven merged is NEVER deleted:
+`KEPT-UNMERGED: unit=… repo=… reason=…`. Nothing is removed before the proof.
+
+**CHANGELOG per batch.** The proven units get one line each under `## [Unreleased]`
+in that repo's `CHANGELOG.md` (file and heading created when missing), in one
+follow-up commit in the same batch, pushed and proven like the units. The train never
+writes a version number: `tools/release.sh` moves `[Unreleased]` into a version, sets
+VERSION and the README, and mints the annotated tag at a release.
+
+The truth gates are unchanged ("Land vs Merged" below —
 landed on the integration branch, then merged only on proven trunk ancestry and the
 artifact at HEAD). The single-unit form `tools/merge-train.sh [--project <home>]
 <repo> <branch>...` still exists for a named hand-off and stops at the first
-conflict or red test. The
+conflict or red test; what landed before the stop is still pushed, proven, cleaned
+and changelogged. The
 build wave, judge wave, fix wave and merge-train workflows come from
 `templates/workflows/`, each taking the JSON unit list; the run fills the unit list
 and launches the template, it does not write a new script. A hand-written merge or
@@ -876,7 +917,7 @@ verdicts and never waits for a judge.
 THE BUILD NEVER WAITS FOR THE TRAIN.** Builders, QC judges, and repair agents
 keep running while merges drain. Passing units land in the pen and the loop
 advances IMMEDIATELY; the
-merge-writer drains the pen on its own cadence (the operator's 15-minute batch
+merge-writer drains the pen on its own cadence (the operator's 10-minute batch
 trigger, no count cap — unchanged). SERIALIZED MERGE-WRITER ≠ SERIALIZED
 PIPELINE: one writer draining a queue must never idle the other agents — a merge
 train that halts the build is a sequential stall wearing a safety costume. A
@@ -899,12 +940,13 @@ loop:
   fetch; reset --hard origin/main
   ready = passing items whose branch is pushed and not yet an ancestor, oldest first
   # THREE independent drain triggers (any one fires; RULE 2 governs the first):
-  #   (1) the operator's TIME trigger — 15 minutes since the last drain, whatever
+  #   (1) the operator's TIME trigger — 10 minutes since the last drain, whatever
   #       is ready merges as ONE batch, NO count cap (SKILL.md RULE 2);
   #   (2) the queue has reached the derived batch size;
   #   (3) the wave closed.
   if no trigger fired: write heartbeat; sleep; continue
-  tools/merge-train.sh <home> --batch     # the tick runs this every MERGE_BATCH_MINUTES
+  tools/merge-train.sh <home> --batch     # the tick runs this every MERGE_BATCH_MINUTES;
+                                          # one train per registered repo, in parallel
     for each ready item in the batch (one pass, oldest first):
       truth gates: standing alarm? provenance (structured query)?
       merge --no-ff into the integration branch
@@ -913,9 +955,14 @@ loop:
       red or timeout: bisect — halves retried on top of what already passed —
                       land the good units, undo and park the offender(s) for repair
                       with the failing output
-    push ONCE; prove trunk ancestry per unit; commands.merged per unit (profiled)
+    push ONCE; fetch; PROOF OF MERGE per unit (ancestor of <remote>/<trunk>)
+      proven: MERGED + commands.merged (profiled); unproven: MERGE-UNPROVEN, stays waiting
+    CHANGELOG: one line per proven unit under [Unreleased], one commit, pushed, proven
+    CLEANUP per proven unit: worktree, local branch, remote unit branch, prune, its files
+      never before proof; anything unproven is KEPT-UNMERGED
   non-fast-forward -> fetch, reset, re-apply, retry (<=3); NEVER force
-  RIPPLE: one commit (version bump + changelog + annotated tag) pushed
+  RELEASE (tools/release.sh, per repo, at the release council's PASS or a milestone):
+    VERSION + CHANGELOG [Unreleased] -> [x.y.z] + README + annotated tag, proof of mint
 ```
 
 A partial batch is a correct batch — if a wave closes with 3 items pending, run the
@@ -954,10 +1001,13 @@ ship a batch that failed its suite or dropped a pen item.
 
 ### Law 10 — batch the ripple
 
-One version bump, one changelog entry, one annotated tag per batch, and every other
-downstream artifact the batch touched (readme, generated docs, installer scripts).
-Never per unit. Per-unit bumps put every merge in contention on the same version
-lines, causing conflicts and re-fetch loops.
+One CHANGELOG commit per batch (a line per proven unit under `## [Unreleased]`,
+written by the merge train), and every other downstream artifact the batch touched
+(generated docs, installer scripts). The version bump, the README version line and the
+annotated tag are one per RELEASE, per repo, by `tools/release.sh` (proof of mint:
+the tag exists on the remote, points at the release commit, and VERSION, CHANGELOG
+and README there carry the same version). Never per unit. Per-unit bumps put every
+merge in contention on the same version lines, causing conflicts and re-fetch loops.
 
 ### Checkpoints — the best stable build is never destroyed (the seven moments)
 
@@ -999,7 +1049,7 @@ Two words that look alike and are not:
 | Term | What it means | Proof |
 |---|---|---|
 | **Land / landed** | The unit is merged into the INTEGRATION branch — the batch's staging branch. It is NOT on the trunk yet. | The merge commit exists on the integration branch. |
-| **Merged** | The unit is on the TRUNK — its merge commit is a proven ancestor of remote main (Law 1). | `git merge-base --is-ancestor` returns 0 against the remote trunk, AND the batch's annotated tag resolves on the remote. |
+| **Merged** | The unit is on the TRUNK — its merge commit is a proven ancestor of the remote trunk (Law 1). | PROOF OF MERGE, the only one: after `git fetch`, `git merge-base --is-ancestor <commit> <remote>/<trunk>` returns 0 (the local trunk on a local-only repo). The train prints `MERGED:` only then. The annotated tag is proof of MINT, at release (`tools/release.sh`), not of merge. |
 
 "Landed" is never reported as "merged" — in prose, in ledger states, or anywhere.
 A unit can be landed and still fail the batch gate and never merge. Done means
@@ -1055,12 +1105,12 @@ holds merge records. Record shape:
 - Repository: <repo>
 - Units landed: <list, each with branch and review verdict>
 - Merge commit hash: <sha>
-- Ancestor-of-trunk proven: YES (git merge-base --is-ancestor = 0)
-- Version bumped: <from> to <to>
-  - Surfaces bumped: <list each>
-- Changelog entry added: YES
-- README updated: YES — <what changed>
-- Annotated tag created: <tag> — resolves on remote: YES
+- Ancestor-of-trunk proven: YES (git merge-base --is-ancestor = 0, after fetch, per unit)
+- Unproven (MERGE-UNPROVEN, re-queued): NONE or list
+- Cleaned after proof: <list>; kept unmerged (KEPT-UNMERGED): NONE or list with reasons
+- Changelog lines added under [Unreleased]: YES — <commit>
+- Release batches only (tools/release.sh): version <from> to <to>, surfaces bumped,
+  README updated, annotated tag <tag> — MINTED (proof of mint on the remote)
 - Full-test-file gate result: PASS (or FAIL — <which files failed>)
 - Nothing-dropped reconciliation:
   - Pen items for <repo>: <count> total
@@ -1075,9 +1125,10 @@ with reason, or ALARM. An ALARM is a data-integrity defect.
 
 ### Truth gates (run at merge time, per batch)
 
-1. **"Verified" is a git state, never a prose state.** Record verified only when the
-   merge commit is a proven ancestor of the remote trunk AND the batch's annotated
-   tag resolves on the remote (Law 1).
+1. **"Merged" is a git state, never a prose state.** Record merged only on proof of
+   merge: after a fetch, the unit's commit is a proven ancestor of the remote trunk
+   (Law 1). A release is recorded only on proof of mint: its annotated tag is on the
+   remote, points at the release commit, and VERSION, CHANGELOG and README there agree.
 2. **Fold the ledger update in before landing.** Regenerate, then land with the
    update in the same commit.
 3. **An integrity alarm freezes the lane.** Any verified-but-unmerged mismatch
