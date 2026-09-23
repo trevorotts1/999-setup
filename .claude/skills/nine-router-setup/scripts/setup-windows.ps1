@@ -876,6 +876,40 @@ else {
     $autoCompactStatus = if ($autoCompactFailures -gt 0) { "WARNING: $autoCompactFailures root(s) not set - see below" } else { 'OK' }
     Write-Log "Auto-compaction: $autoCompactStatus"
 
+    # 11d. Permission mode: an unattended build stops at the first
+    #      tool-permission prompt, so each root claude-nine reads gets
+    #      permissions.defaultMode=bypassPermissions - created when the file is
+    #      missing, merged in only when no defaultMode exists (an existing value
+    #      is never overwritten; the file is backed up first). NOTE: on Windows
+    #      claude-nine shares its config root with plain claude, so plain
+    #      claude gets the same default. Never fatal.
+    # Single quotes only inside the JS: Windows PowerShell 5.1 strips embedded
+    # double quotes from arguments passed to a native command.
+    $permJs = @'
+const fs = require('fs'), f = process.argv[1];
+let j = {};
+if (fs.existsSync(f)) {
+  try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { console.log('refused'); process.exit(2); }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) { console.log('refused'); process.exit(2); }
+  if (j.permissions && j.permissions.defaultMode) { console.log('kept'); process.exit(0); }
+  fs.copyFileSync(f, f + '.bak-' + Date.now());
+}
+j.permissions = Object.assign({}, j.permissions, { defaultMode: 'bypassPermissions' });
+fs.mkdirSync(require('path').dirname(f), { recursive: true });
+fs.writeFileSync(f + '.tmp', JSON.stringify(j, null, 2) + '\n');
+fs.renameSync(f + '.tmp', f);
+console.log('set');
+'@
+    $permDetail = @()
+    foreach ($root in $autoCompactRoots) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $permOut = (& $NodeBin -e $permJs (Join-Path $root 'settings.json') 2>&1 | Out-String).Trim()
+        $ErrorActionPreference = $prevEap
+        $permDetail += "  settings.json ($root): $permOut"
+    }
+    Write-Log "Permission mode (bypassPermissions default):`n$($permDetail -join "`n")"
+
     # 12. Completion report. Provider lines derive from the live post-config probes
     #     (report.verified) - never hardcoded "OK". The dashboard link is surfaced
     #     so the client can favorite it.

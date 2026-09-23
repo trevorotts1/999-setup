@@ -31,6 +31,22 @@ PORT=20128
 # default to claude-nine so behaviour is unchanged for normal launches.
 export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
 
+# NODE ON PATH. 9Router's cli is `#!/usr/bin/env node`, and the catalog fix
+# below runs `node` — but a launch from cron (auto-resume) gets PATH=/usr/bin:/bin
+# with no node on it. Setup records the node dir it proved in
+# ~/.local/share/999/node-path; put that and the 999 npm bin first, then add the
+# common node dirs only when they are not already on PATH.
+_np="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
+for _d in /usr/local/bin /opt/homebrew/bin "$HOME/.local/share/999/node/current/bin"; do
+  [ -d "$_d" ] || continue
+  case ":$PATH:" in *":$_d:"*) ;; *) PATH="$PATH:$_d" ;; esac
+done
+for _d in "$HOME/.local/share/999/npm/bin" "$_np"; do
+  [ -n "$_d" ] && [ -d "$_d" ] && PATH="$_d:$PATH"
+done
+export PATH
+unset _np _d
+
 # GitHub MCP plugin needs GITHUB_PERSONAL_ACCESS_TOKEN present in the LAUNCH
 # environment: its .mcp.json expands ${GITHUB_PERSONAL_ACCESS_TOKEN} into the
 # Bearer header at session start. A SessionStart hook runs too late (plugin
@@ -250,7 +266,9 @@ if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
     exit 1
   }
   mkdir -p "$HOME/.9router"
-  nohup "$_nine_bin" -p "$PORT" --no-browser >"$HOME/.9router/cli-launch.log" 2>&1 &
+  # </dev/null + --skip-update: 9Router's cli then runs in tray (background)
+  # mode and never reads from or takes over this terminal.
+  nohup "$_nine_bin" -p "$PORT" --no-browser --skip-update </dev/null >"$HOME/.9router/cli-launch.log" 2>&1 &
   unset _nine_bin
   for _ in $(seq 1 40); do
     /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 && break

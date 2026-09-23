@@ -353,10 +353,28 @@ install_launcher_support() {
 # tool-concurrency caps follow model-routing.md's policy. The context cap is
 # 1M (DeepSeek V4). Reads the config report on stdin. No secret is written:
 # the token stays in the Keychain, fetched by the apiKeyHelper.
+#
+# PERMISSION MODE: an unattended build stops at the first tool-permission
+# prompt, so the file carries permissions.defaultMode=bypassPermissions. An
+# EXISTING file gets it merged in only when it has no permissions.defaultMode
+# (an existing value is never overwritten; the file is backed up first).
 write_nine_settings() {
   local dir="$HOME/.claude-nine"
   if [ -f "$dir/settings.json" ]; then
-    log "claude-nine settings.json already present — left untouched"
+    SETTINGS="$dir/settings.json" "$NODE_BIN" -e '
+      const fs = require("fs"), f = process.env.SETTINGS;
+      let j;
+      try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch { console.error("unparseable"); process.exit(2); }
+      if (!j || typeof j !== "object" || Array.isArray(j)) { console.error("not an object"); process.exit(2); }
+      if (j.permissions && j.permissions.defaultMode) { console.log("kept"); process.exit(0); }
+      fs.copyFileSync(f, f + ".bak-" + Date.now());
+      j.permissions = Object.assign({}, j.permissions, { defaultMode: "bypassPermissions" });
+      fs.writeFileSync(f + ".tmp", JSON.stringify(j, null, 2) + "\n", { mode: 0o600 });
+      fs.renameSync(f + ".tmp", f);
+      console.log("set");
+    ' >/dev/null 2>&1 \
+      && log "claude-nine settings.json already present — only permissions.defaultMode added if it was missing" \
+      || log "WARNING: claude-nine settings.json unreadable — permission mode not set (unattended runs may stop at a permission prompt)"
     return 0
   fi
   mkdir -p "$dir"
@@ -371,6 +389,7 @@ write_nine_settings() {
       const out = {
         apiKeyHelper: process.env.HELPER,
         model: "opus",
+        permissions: { defaultMode: "bypassPermissions" },
         env: {
           ANTHROPIC_BASE_URL: "http://127.0.0.1:" + process.env.PORT + "/v1",
           ANTHROPIC_DEFAULT_FABLE_MODEL: r.fable,
@@ -492,6 +511,10 @@ main() {
   # setup-macos.sh's OWN process — the parent of everything that follows —
   # not a grandchild whose export dies on exit.
   export PATH="$NODE_DIR:$PATH"
+  # Record the proven node dir for the claude-nine launcher: a launch from cron
+  # has no node on PATH, and 9Router's cli is `#!/usr/bin/env node`.
+  { mkdir -p "$HOME/.local/share/999" && printf '%s\n' "$NODE_DIR" > "$HOME/.local/share/999/node-path"; } \
+    || log "WARNING: could not record the node dir in ~/.local/share/999/node-path (launches from cron may not find node)"
   DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' node "$NODE_VER" "$NODE_BIN")")
   DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' npm "$NPM_VER" "$NPM_BIN")")
   # If install-node.sh had to fall back to a repo-managed runtime (no system

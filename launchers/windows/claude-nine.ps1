@@ -18,6 +18,18 @@ Add-Type -AssemblyName System.Security
 $ForwardedArgs = $args
 $EffortFlag = $null
 
+# Ultracode opt-in/opt-out, matching the macOS launcher (first argument only,
+# consumed here, never forwarded). The choice is remembered in the state
+# file's lastEffortSelection, which the effort logic below re-applies:
+#   claude-nine --ultracode      turn it on, and remember it
+#   claude-nine --no-ultracode   turn it off, and remember the opt-out ('off',
+#                                so a setup re-run never re-seeds ultracode)
+$UltraChoice = $null
+if ($ForwardedArgs.Count -gt 0 -and ($ForwardedArgs[0] -eq '--ultracode' -or $ForwardedArgs[0] -eq '--no-ultracode')) {
+    $UltraChoice = if ($ForwardedArgs[0] -eq '--ultracode') { 'ultracode' } else { 'off' }
+    $ForwardedArgs = @($ForwardedArgs | Select-Object -Skip 1)
+}
+
 $Port = 20128
 $Base = "http://127.0.0.1:$Port"
 $StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
@@ -80,6 +92,14 @@ try {
         throw "Routed session state missing: $StateFile. Re-run /nine-router-setup."
     }
     $state = Get-Content $StateFile -Raw | ConvertFrom-Json
+    if ($UltraChoice) {
+        $state | Add-Member -NotePropertyName lastEffortSelection -NotePropertyValue $UltraChoice -Force
+        try {
+            $tmp = "$StateFile.tmp"
+            [System.IO.File]::WriteAllText($tmp, ($state | ConvertTo-Json -Depth 6))
+            Move-Item -Force $tmp $StateFile
+        } catch { Write-Host "claude-nine: could not remember the $UltraChoice choice; it applies to this launch only." -ForegroundColor Yellow }
+    }
     if (-not (Test-Path $TokenFile)) {
         throw "Protected router token missing: $TokenFile. Re-run /nine-router-setup."
     }
@@ -173,7 +193,15 @@ try {
     #    ProcessStartInfo.ArgumentList and .Environment do NOT exist. Use
     #    EnvironmentVariables and a quoted Arguments string instead.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $claude.Source
+    # npm installs claude as a .ps1 shim beside a .cmd shim; a .ps1 cannot be
+    # started through ProcessStartInfo, so start the .cmd sibling (the same
+    # pattern Start-Router uses for 9Router).
+    $claudeExe = $claude.Source
+    if ($claudeExe -like '*.ps1') {
+        $claudeCmd = [System.IO.Path]::ChangeExtension($claudeExe, 'cmd')
+        if (Test-Path $claudeCmd) { $claudeExe = $claudeCmd }
+    }
+    $psi.FileName = $claudeExe
     $psi.UseShellExecute = $false
     foreach ($kv in $childEnv.GetEnumerator()) {
         $psi.EnvironmentVariables[$kv.Key] = $kv.Value
