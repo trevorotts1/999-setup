@@ -1,8 +1,58 @@
 # Changelog
 
-## [Unreleased]
+## [1.27.0] — 2026-09-23
 
-### Round 4
+### Round 4: the next pass over seven sections
+
+**A — launchers, setup scripts, AGENT_INSTALL.** Setup now writes
+`permissions.defaultMode: bypassPermissions` into each root `claude-nine` reads, so an
+unattended walk-away run no longer stalls at the first tool-permission prompt — created when
+the file is missing, merged in only when no `defaultMode` already exists, backed up first, and
+never fatal. On Windows, `claude-nine` shares its config root with plain `claude`, so plain
+`claude` picks up the same default. `setup-macos.sh` records the resolved Node directory at
+`~/.local/share/999/node-path`, which the macOS launcher prepends along with the 999 npm bin
+and common Node locations; the launcher starts 9Router with `</dev/null` and `--skip-update`
+for a clean tray start. The Windows launcher gained a `.cmd` sibling shim for plain `claude`
+and `--ultracode` / `--no-ultracode` flags, remembered in `lastEffortSelection`.
+
+**B — watch-tick auto-resume, dispatch-gate SHAPE 7 pointer.** Auto-resume now launches with
+`-p --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"` (both
+`watch-tick.sh` and `watch-tick.mjs`) and sets `PATH` on the resumed process itself — the
+recorded node dir, setup's node, `~/.local/bin`, the 999 npm bin, and common node locations —
+rather than on the cron line; the fallback node directory is `node/current/bin`, matching what
+`setup-macos.sh` writes. `dispatch-gate.py`'s SHAPE 7 refusal now points at
+`references/enforcement.md` section 1, "SHAPE 7 — the write-ahead booking rule" (it never lived
+in `conductor.md` section 6).
+
+**C — templates, merge-train, provision-db, publish.** `build-wave.js` and `fix-wave.js`
+builders now commit on their own branch and never push — the merge train is the only
+publisher. `merge-train.sh` runs `gh auth setup-git` before pushing to a `github.com` origin
+when `gh` is logged in. `provision-db.sh` writes `DATABASE-BLOCKED` + a next step on every
+failure once the project folder is found, instead of failing silently. `publish.sh` also reads
+`BUILD-TARGET` from a profiled project's state directory, not only the legacy ledger.
+
+**D — conversation gate, speech-check.** Check E now falls back to the recorded name/idea
+answer on a held ledger instead of refusing outright; a mid-turn Skill load only counts as a
+run with `gate0.sh --open` or an `answers.sh init` behind it; check L stands down after the
+walk-away line or a `watch-tick --record-session`; `speech-check.sh` refuses an unfilled
+angle-bracket placeholder (`<Name>`, `$<X>`, `<URL>`) reaching the client; and the counted
+question ceiling may rise exactly once, right after the mode question answers whether advanced
+mode's extra items apply.
+
+**F — references (except conductor.md).** `interview.md` section 4b lists the answer keys per
+mode for `answers.sh init --planned`, the mode question and the update offer are uncounted, and
+`C` is stated for the first time only after the mode answer; a stated non-goal is read back
+instead of re-asked. `capacity.md`: an undetectable plan tier is recorded UNDETERMINED rather
+than asked, and step 6.5's rig-fitness findings are client-absent by design (the conservative
+choice, reported in the morning note). `audience.md` gained a local-only opening line and
+dropped the GitHub promise from the walk-away speech. `publish.md`'s exit codes now match
+`publish.sh` exactly (2 tooling, 3 not live). `build.md` names `tools/publish.sh --draft` as
+the draft deploy. `enforcement.md` gave "SHAPE 7 — the write-ahead booking rule" its own
+subsection under section 1 for `dispatch-gate.py` to point at (seam-checked against B above).
+
+**G — tools/morning-note.sh (new).** Cuts the Operator Notes section off the morning report,
+lints the client-facing copy through `speech-check.sh`, and only then places "Your project is
+ready.txt" on the Desktop — exit 3 and nothing written when the lint refuses it.
 
 **E — SKILL.md, conductor.md.** Turn 1 and step 3 plan the opening keys
 (`answers.sh … init --planned idea,confirm,entry-mode`, held and supplied-folder forms), and
