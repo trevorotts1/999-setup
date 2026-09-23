@@ -505,8 +505,8 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
    model, its provider node, its ceiling CLASS and figure, and its REAL context
    ceiling.
 4. **Establish the provider path and its ceiling.** Detect keys via
-   `references/environment-sweep.md`; ask when a plan tier cannot be detected
-   (section 9). Web-research VERIFY-LIVE providers FIRST and record the source
+   `references/environment-sweep.md`; when a plan tier cannot be detected, record
+   it UNDETERMINED and size conservatively (section 8) — never asked. Web-research VERIFY-LIVE providers FIRST and record the source
    line; fall back to section 2 only on a failed research attempt, and say so.
 5. **Apply the reserve.** 25% by default, two free slots as the floor on small
    plans. Usable = ceiling − reserve.
@@ -1529,6 +1529,14 @@ the only door into one. On resume, step 0.5 re-runs the same checks.
 user's own words what it means for THEIR build → RECOMMEND with a real choice
 attached (never persuasion, no second ask) → CONSENT, one question, once.
 
+**Step 6.5 comes AFTER the walk-away line, so the client is ABSENT here on every
+run.** After the walk-away line the run never asks the client anything until the
+morning report — the spend-cap pause, asked only at the dollar line, is the one
+exception (`references/conductor.md` §6). So at step 6.5 every raised finding is
+recorded `client=absent`, the run proceeds on the conservative choice, and the
+EXPLAIN, the RECOMMEND and the one consent question are written into the morning
+report for the client to answer there. Nothing is rewired in the meantime.
+
 **The binding constraints:**
 
 - **The skill NEVER rewires without an explicit yes.** A recommendation is words;
@@ -1543,9 +1551,12 @@ attached (never persuasion, no second ask) → CONSENT, one question, once.
   client=<accepted|declined|absent|deferred>`, with the client's answer in their
   own words in the decision register. **A declined recommendation is NEVER
   re-raised in the same run.**
-- **Absent client (unattended start):** R4/R5 findings that make the build
-  impossible stop it honestly before dispatch; R1–R3, R6, R7 proceed conservative
-  with the finding queued for the human and marked in the ledger.
+- **The absent client (every step-6.5 run, and every unattended start):** R4/R5
+  findings that make the build impossible stop it honestly before dispatch and are
+  explained in the morning report; R1 takes its first remedy (a dispatch parameter,
+  no write, no consent); R2, R3, R6, R7 proceed on the measured rig, conservative,
+  with the finding and its one consent question queued for the morning report and
+  marked in the ledger.
 
 ### 13.8 Media meters and the media catalog
 
