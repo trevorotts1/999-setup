@@ -218,6 +218,15 @@ entry was patched on the operator box to 1,000,000 / 384,000 and re-verified liv
 value. Setup must therefore **not** read the window from `/v1/models`; it uses the
 documented 1M figure above.
 
+**The catalog fix survives updates.** `scripts/common/fix-9router-catalog.mjs` rewrites
+only the catalog entry (`"deepseek-flash":{…contextWindow…}`) in every
+`app/.next-cli-build/server/chunks/*.js` to 1,000,000 / 384,000 (price tables under the
+same key are untouched; a one-time `.orig` copy is kept). Setup runs it right after 9Router
+is installed, before the router starts. The `claude-nine` launcher (macOS and Windows)
+runs it on every launch, so after any 9Router update it re-applies the fix and restarts
+the router once to load it. `--check` reports without writing (0 correct, 3 needs
+fixing, 2 undetermined); `--selftest` proves it against a fixture.
+
 ## Combo definitions
 
 ```text
