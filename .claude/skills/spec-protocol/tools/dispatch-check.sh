@@ -4,7 +4,10 @@
 # Usage:
 #   dispatch-check.sh <project> <units> <agents> <label> [dep=<reason>] [stages=<n>]
 #                     [unit=<work item>] [phase=<word>] [run=<run id>] [cite=<text>]
-#                     [model=<role>] [plan=<one line>]
+#                     [model=<role>] [plan=<one line>] [spend_usd=<y>]
+#   spend_usd= is the run's metered AI spend in dollars, projected to the next
+#   checkpoint (capacity.md section 6 burn table). It is read ONLY at the pause
+#   line, where it decides the self-grant (exit 7 below).
 #   model= and plan= feed the CLAIM line this gate writes for every dispatch
 #   it books (RC-29c): `<ts> | CLAIM | unit=<unit> | agent=<label> | model=<role>
 #   | plan=<plan>`. Defaults are READ off the dispatch, never invented — the
@@ -72,6 +75,18 @@
 #              (SKILL.md section 6). Each "keep going" increments
 #              agents.pause_blocks_granted, which moves the wall up by one block
 #              and the run resumes at full width. A PAUSE is never a STOP.
+#              THE SPEND LINE (capacity.md section 10): the pause line is a
+#              CHECKPOINT, not a client pause. When CONTROL/LEDGER.md carries a
+#              COST-LINE: and the dispatch's spend_usd= is BELOW its usd= (or the
+#              line reads `COST-LINE: unmetered`), this gate SELF-GRANTS the next
+#              block: it writes `PAUSE-GRANT: block=<n> spend_usd=<y>
+#              line_usd=<X> source=cost-line` through tools/ledger.sh, raises
+#              agents.pause_blocks_granted by one, and the dispatch proceeds.
+#              It still exits 7 when no COST-LINE is recorded (the old
+#              behaviour), when spend_usd= is at or over the line, and when
+#              spend_usd= is absent or not a number — unmeasured spend is
+#              UNDETERMINED and counts as AT the line. No tool here measures
+#              dollars; spend_usd= is the conductor's burn-table figure.
 #   8  BUDGET CEILING — agents.executions_total >= agents.ceiling (2,000 per
 #              project; operator decision 2026-09-07, finding G6). The absolute
 #              stop: stop dispatching, run_status=STOPPED_CAP, preserve the best
@@ -811,6 +826,18 @@ jnum() {  # jnum <flat-json-file> <key> -> integer on stdout, or rc 1
 # is only taken when it is SMALLER — the same clamp anchor.sh applies.
 DEFAULT_CEILING=2000
 
+# cost_line_of <ledger> — the NEWEST COST-LINE: as its usd= number, the word
+# "unmetered", or nothing (no line, or no readable ledger).
+SPEND_USD=""   # spend_usd= from the dispatch, numeric only; "" is UNDETERMINED
+cost_line_of() {
+  local l
+  [[ -r "$1" ]] || return 0
+  l="$("${GREP}" -h 'COST-LINE:' "$1" 2>/dev/null | tail -n 1)"
+  [[ -n "${l}" ]] || return 0
+  case "${l}" in *'COST-LINE: unmetered'*) printf 'unmetered'; return 0 ;; esac
+  printf '%s' "${l}" | sed -n 's/.*usd=\$\{0,1\}\([0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p' | head -n 1
+}
+
 # budget_gate <state-json> <project> — exits 8 at the ceiling, 7 at the pause
 # line, and 2 when the budget cannot be read. Returns 0 only when the run is
 # PROVABLY under both lines. It never returns 0 on a file it could not measure:
@@ -877,7 +904,42 @@ budget_gate() {
     printf 'DISPATCH-CHECK NOTE | read: %s | the absolute per-project ceiling is reached: stop dispatching, set run_status=STOPPED_CAP, preserve the best stable build and write the blocker report. A LIMIT REACHED stop is never a PASS and never drift, and it is never crossed without the operator.\n' "${sp}" >&2
     exit 8
   fi
+  # THE SPEND LINE (capacity.md section 10): at the pause line, below the
+  # client's COST-LINE, the run grants itself the next block and keeps going.
+  local cost="" grant=""
   if (( exec_t >= pause )); then
+    cost="$(cost_line_of "${project}/CONTROL/LEDGER.md")"
+    if [[ "${cost}" == "unmetered" ]]; then
+      grant="spend_usd=0 line_usd=unmetered"
+    elif [[ -n "${cost}" && -n "${SPEND_USD}" ]] \
+      && awk -v s="${SPEND_USD}" -v l="${cost}" 'BEGIN { exit !(s + 0 < l + 0) }'; then
+      grant="spend_usd=${SPEND_USD} line_usd=${cost}"
+    fi
+  fi
+  if [[ -n "${grant}" ]]; then
+    local gout
+    gout="$("${LEDGER_SH}" "${project}" "CONTROL/LEDGER.md" "$(date -u +%Y-%m-%dT%H:%M:%SZ) | PAUSE-GRANT: block=$(( blocks + 1 )) ${grant} source=cost-line executions=${exec_t}" 2>&1)" \
+      || tooling "ledger.sh could not record the PAUSE-GRANT in ${project}/CONTROL/LEDGER.md: ${gout}. No block was granted."
+    acquire_state_lock "${sp}" \
+      || tooling "could not acquire ${sp}.lock.d within 20s to raise agents.pause_blocks_granted after writing the PAUSE-GRANT"
+    gout="$(bump_state "${sp}" 1 pause_blocks_granted)" \
+      || { release_state_lock; tooling "could not raise agents.pause_blocks_granted in ${sp}: ${gout}. The PAUSE-GRANT line is written but the block is not; fix the state file."; }
+    release_state_lock
+    blocks=$(( blocks + 1 ))
+    pause=$(( pause_src * ( blocks + 1 ) ))
+    (( pause > ceil )) && pause="${ceil}"
+    printf 'DISPATCH-CHECK NOTE | SELF-GRANTED block %s under the COST-LINE (%s) — pause_at is now %s; the dispatch proceeds at full width without asking the client.\n' \
+      "${blocks}" "${grant}" "${pause}" >&2
+  fi
+  # ponytail: one self-grant per dispatch; a run more than one block past the
+  # line pauses and the next dispatch grants the next block.
+  if (( exec_t >= pause )); then
+    if [[ -z "${cost}" ]]; then
+      printf 'DISPATCH-CHECK NOTE | no COST-LINE: in %s/CONTROL/LEDGER.md, so this checkpoint cannot self-grant — it pauses as before.\n' "${project}" >&2
+    else
+      printf 'DISPATCH-CHECK NOTE | COST-LINE usd=%s; spend_usd=%s is AT or OVER it (absent or not a number counts as AT the line). Below the line, re-run this dispatch with spend_usd=<projected metered spend> and the gate self-grants the next block.\n' \
+        "${cost}" "${SPEND_USD:-UNDETERMINED}" >&2
+    fi
     printf 'DISPATCH-CHECK PAUSED | executions=%s | pause_at=%s | ceiling=%s%s\n' \
       "${exec_t}" "${pause}" "${ceil}" "${OVERRIDE_TAG:+ | ${OVERRIDE_TAG}}" >&2
     if [[ -n "${OVERRIDE_TAG}" ]]; then
@@ -966,16 +1028,17 @@ create_state_file() {
   return 0
 }
 
-# bump_state <state-path> <delta> — prints the new total on success.
+# bump_state <state-path> <delta> [key] — prints the new value on success. key
+# defaults to executions_total; the self-grant passes pause_blocks_granted.
 bump_state() {
-  local sp="$1" delta="$2" tmp="$1.tmp.$$" out=""
+  local sp="$1" delta="$2" key="${3:-executions_total}" tmp="$1.tmp.$$" out=""
   # DISPATCH_NO_PYTHON=1 forces the awk path. It exists so the selftest can
   # PROVE the fallback on a box that has python3 — an untested fallback is a
   # fallback that fails the first time it is needed.
   if [[ "${DISPATCH_NO_PYTHON:-0}" != "1" ]] && command -v python3 >/dev/null 2>&1; then
-    out="$(python3 - "${sp}" "${tmp}" "${delta}" <<'PY' 2>&1
+    out="$(python3 - "${sp}" "${tmp}" "${delta}" "${key}" <<'PY' 2>&1
 import json, sys
-src, tmp, delta = sys.argv[1], sys.argv[2], int(sys.argv[3])
+src, tmp, delta, key = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 with open(src, encoding="utf-8") as fh:
     doc = json.load(fh)
 if not isinstance(doc, dict):
@@ -984,14 +1047,14 @@ agents = doc.get("agents")
 if not isinstance(agents, dict):
     agents = {}
     doc["agents"] = agents
-cur = agents.get("executions_total", 0)
+cur = agents.get(key, 0)
 if isinstance(cur, bool) or not isinstance(cur, int):
-    raise SystemExit("agents.executions_total is not an integer: %r" % (cur,))
-agents["executions_total"] = cur + delta
+    raise SystemExit("agents.%s is not an integer: %r" % (key, cur))
+agents[key] = cur + delta
 with open(tmp, "w", encoding="utf-8") as fh:
     json.dump(doc, fh, indent=2)
     fh.write("\n")
-print(agents["executions_total"])
+print(agents[key])
 PY
 )"
     if [[ $? -ne 0 || -z "${out}" ]]; then rm -f "${tmp}" 2>/dev/null || true; printf '%s' "${out}"; return 1; fi
@@ -999,10 +1062,10 @@ PY
     # No python3: line-based edit of the one field, same atomicity. Exits 3 when
     # the field is not on a line of its own — an unparseable state file is
     # UNDETERMINED, never a silent no-op.
-    awk -v d="${delta}" '
+    awk -v d="${delta}" -v k="${key}" '
       BEGIN { done = 0 }
       {
-        if (!done && match($0, /"executions_total"[[:space:]]*:[[:space:]]*[0-9]+/)) {
+        if (!done && match($0, "\"" k "\"[[:space:]]*:[[:space:]]*[0-9]+")) {
           seg = substr($0, RSTART, RLENGTH)
           pre = substr($0, 1, RSTART - 1)
           post = substr($0, RSTART + RLENGTH)
@@ -1020,7 +1083,7 @@ PY
     ' "${sp}" > "${tmp}" 2>"${tmp}.n"
     if [[ $? -ne 0 ]]; then
       rm -f "${tmp}" "${tmp}.n" 2>/dev/null || true
-      printf 'agents.executions_total is not on a parseable line and python3 is absent'
+      printf 'agents.%s is not on a parseable line and python3 is absent' "${key}"
       return 1
     fi
     out="$(tail -n 1 "${tmp}.n" 2>/dev/null)"
@@ -1057,7 +1120,9 @@ run_check() {
       run=*)    run_id="${a#run=}" ;;
       model=*)  model="${a#model=}" ;;
       plan=*)   plan="${a#plan=}" ;;
-      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, phase=, run=, cite=, model=, plan=" ;;
+      # Not a number (e.g. UNDETERMINED) → "": unmeasured spend counts as AT the line.
+      spend_usd=*) SPEND_USD="${a#spend_usd=}"; [[ "${SPEND_USD}" =~ ^[0-9]+(\.[0-9]+)?$ ]] || SPEND_USD="" ;;
+      *) tooling "unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, phase=, run=, cite=, model=, plan=, spend_usd=" ;;
     esac
   done
 
@@ -1590,6 +1655,22 @@ run_selftest() {
   out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-3' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "0" ]] && ok=1
   report 19 "granted-block-moves-the-wall" "${ok}" "rc=${rc} (want 0) at the SAME executions_total=20 with agents.pause_blocks_granted=1 — the wall is 20 × (1+1) = 40, so a granted block resumes the run at full width rather than raising a new number"
+
+  # --- 57: THE SPEND LINE — self-grant under the COST-LINE, pause at it ------
+  # Same fixture at the pause line (20/20, 0 blocks). No COST-LINE → 7 even with
+  # spend_usd= given; COST-LINE usd=50 and spend_usd=50 → 7; spend_usd=12 → 0,
+  # PAUSE-GRANT written, pause_blocks_granted 0 → 1.
+  local c1=0 c2=0 c3=0 g3=0
+  write_state "${P8}/CONTROL/project_state.json" 20 20 0 2000
+  : > "${P8}/CONTROL/LEDGER.md"
+  bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-4' spend_usd=12 >/dev/null 2>&1; c1=$?
+  printf '2026-09-08T00:00:00Z | COST-LINE: usd=50 answer=yes\n' >> "${P8}/CONTROL/LEDGER.md"
+  bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-5' spend_usd=50 >/dev/null 2>&1; c2=$?
+  out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-6' spend_usd=12 2>&1)"; c3=$?
+  "${GREP}" -q 'PAUSE-GRANT: block=1 spend_usd=12 line_usd=50 source=cost-line' "${P8}/CONTROL/LEDGER.md" && g3=1
+  ok=0; [[ "${c1}" == "7" && "${c2}" == "7" && "${c3}" == "0" && "${g3}" == "1" ]] && ok=1
+  sed -n 's/.*"pause_blocks_granted"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "${P8}/CONTROL/project_state.json" | "${GREP}" -qx 1 || ok=0
+  report 57 "spend-line-self-grant" "${ok}" "no COST-LINE rc=${c1} (want 7); spend_usd=50 at COST-LINE usd=50 rc=${c2} (want 7); spend_usd=12 under it rc=${c3} (want 0) with PAUSE-GRANT line=${g3} (want 1) and pause_blocks_granted raised to 1: ${out}"
 
   # --- 15: the ceiling outranks the pause -----------------------------------
   # At the ceiling a run is ALSO past its pause line. Reporting that as a pause
@@ -2146,7 +2227,7 @@ run_selftest() {
 
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (57 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (58 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

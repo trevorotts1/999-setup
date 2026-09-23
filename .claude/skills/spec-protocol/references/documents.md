@@ -621,7 +621,9 @@ substitute, never text to type.
 | `SCORE` | `SCORE \| unit=<id> \| round=<n> \| score=<x.x> \| best=<x.x> \| delta=<d>`, optionally behind the usual `<ISO8601Z> \| ` prefix | every judge verdict, beside its QC RECORD (`references/gauntlet.md` §5). A PASS needs a finite 0–10 `score` of at least **8.5**, but that score cannot override a failed mandatory behavior/scope/evidence check or independent comparison. **`tools/ledger.sh:85` REFUSES a line of this class that does not carry all five fields in this order with numeric `round`, `score`, `best` and `delta`** — the only shape `ledger.sh` judges |
 | `RECONCILE` | `<ISO8601Z> \| RECONCILE \| anchor=<8-hex> \| unit=<id\|IDLE> \| result=<clean\|alarm\|actions:<n>\|TERMINAL-DRIFT> \| tasks=<…> \| counts=<…> \| classes=<…> \| ledger=<…> \| intents=<…> \| ticks=<n> \| stateful-heartbeats=<n> \| fp=<8-hex> \| nodelta=<n> \| rung=<n>/4 \| age=<…> \| next=<…>` | `tools/anchor.sh:1588` (`--mode reconcile`). The anchor mode writes `<ISO8601Z> \| RE-ANCHOR \| anchor=<…> \| unit=<…> \| next=<…> \| counts=<…> \| tasks=<…> \| manifest=<…> \| age=<…>` (`:1582`) |
 | `S-CHECK` | `<ISO8601Z> \| S-CHECK \| violations=<n> \| runnable=<n> open=<n> trees=<n> \| cap=<…> \| anchor=<…> \| bar=<…> \| trees-detail=<…> \| actions=<…> \| undetermined=<…>` | `tools/watch-tick.sh:735`, one per five-minute tick. A tick that finds `CONTROL/TERMINAL-DRIFT.flag` writes NO S-CHECK line — the flag is the state |
-| `BUDGET-PAUSE` | `<ISO8601Z> \| BUDGET-PAUSE \| executions=<n> \| pause_at=<n> \| ceiling=<n> \| remaining=<n\|undetermined> \| unit=<id> \| required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'` | `tools/anchor.sh:1052`. Its sibling at the absolute ceiling is `<ISO8601Z> \| BUDGET-CAP \| executions=<n> \| cap=<n> \| remaining=<…> \| unit=<id> \| required=run_status=STOPPED_CAP; …` (`:1045`) |
+| `BUDGET-PAUSE` | `<ISO8601Z> \| BUDGET-PAUSE \| executions=<n> \| pause_at=<n> \| ceiling=<n> \| remaining=<n\|undetermined> \| unit=<id> \| required=checkpoint; below the COST-LINE self-grant the next block (…PAUSE-GRANT:); at it or with no COST-LINE, run_status=PAUSED_CAP, deploy the best stable build, write the plain report, ask the one question` | `tools/anchor.sh:1322`. A CHECKPOINT, not a client pause (`references/capacity.md` §10). Its sibling at the absolute ceiling is `<ISO8601Z> \| BUDGET-CAP \| executions=<n> \| cap=<n> \| remaining=<…> \| unit=<id> \| required=run_status=STOPPED_CAP; …` (`:1315`) |
+| `COST-LINE` | `COST-LINE: usd=<X> …` or `COST-LINE: unmetered` — the NEWEST one counts | the interview's spend question (`references/interview.md`), through `tools/ledger.sh`. Read by `tools/dispatch-check.sh` at the pause line; with none recorded the pause line pauses and asks as before |
+| `PAUSE-GRANT` | `<ISO8601Z> \| PAUSE-GRANT: block=<n> spend_usd=<y> line_usd=<X\|unmetered> source=cost-line executions=<n>` | `tools/dispatch-check.sh` (budget_gate), through `tools/ledger.sh`, when a dispatch at the pause line carries `spend_usd=<y>` below the newest COST-LINE (or the line is `unmetered`); it also raises `agents.pause_blocks_granted` by one. Spend at or over the line, absent, or not a number → exit 7, no grant |
 | `DRIFT-ALARM group-abort` | `<ISO8601Z> \| DRIFT-ALARM \| group-abort \| row=<run-id> agents=<n> at=<ISO8601Z> \| units=<u1,u2,…>` | `tools/watch-tick.sh` (the group-abort check), through `tools/ledger.sh`, one per candidate row per tick; `tools/anchor.sh` recovery-ladder rung 1 answers it with `RECOVERY-LADDER \| rung=1/4 \| … trigger=group-abort(row=<run-id> at=<ts>)` plus rung-1 `ACTION\|reconcile-native-identity` lines. The conductor confirms each actual Workflow/session/run or Agent-Team identity before any retirement or replacement. Named consistently with the alarm roster in `references/enforcement.md` §3 |
 | `FORM-DESTINATION` | `FORM-DESTINATION: <form>=<GHL \| email \| Supabase table> owner=<client\|operator>`, one line per form; the honest no-address form is `FORM-DESTINATION: <form>=BLOCKED owner=client reason=<the reason, in plain words>` | the conductor, BEFORE `STAGE-BUILD` opens (`references/ship-checks.md` section 3). Parsed by `tools/ship-guard.sh:119-126`, which exits 4 on a destination that is not the client's |
 | `ACCOUNT-REGISTERED` | **NO SUCH LEDGER LINE.** Nothing in this skill writes one, and this table does not mint one. The contract it is mistaken for — no third-party account opened in the client's name without a spoken yes — is `references/ship-checks.md` section 3, and its record is a row in the decision register (`SPEC/DECISIONS.md`, document 10), in the client's own words | — no writer. A grader looking for `ACCOUNT-REGISTERED` in a ledger is looking for a string this skill never emits |
@@ -841,13 +843,18 @@ not count against the closed seventeen and never need the added-document ask:
   - `agents.warn_at` = `max(150, 3 × initial)` — the review threshold; the
     orchestrator analyses whether measurable progress is still occurring and
     records the analysis.
-  - `agents.first_pause` = `max(200, 4 × initial)` — the PAUSE line. At or past
-    it the run **deploys the best stable build**, writes the plain report, sets
-    `run_status = PAUSED_CAP`, and asks one question ("Keep going?"). It never
-    stops there.
-  - `agents.pause_blocks_granted` — starts at 0 and increments once per "keep
-    going". The live pause line is `first_pause × (pause_blocks_granted + 1)`,
-    so each yes buys one more block of the same size and the run resumes at full
+  - `agents.first_pause` = `max(200, 4 × initial)` — the pause line, a
+    CHECKPOINT (`references/capacity.md` §10, THE SPEND LINE). While metered
+    spend is below the newest `COST-LINE:`, the run grants itself the next
+    block (`tools/dispatch-check.sh … spend_usd=<y>` writes `PAUSE-GRANT:`) and
+    keeps going without asking the client. Only at the COST-LINE — or with no
+    COST-LINE recorded — does the run **deploy the best stable build**, write
+    the plain report, set `run_status = PAUSED_CAP`, and ask its one question.
+    It never stops there.
+  - `agents.pause_blocks_granted` — starts at 0 and increments once per granted
+    block: a self-grant below the COST-LINE, or the client's "keep going" at it.
+    The live pause line is `first_pause × (pause_blocks_granted + 1)`, so each
+    grant buys one more block of the same size and the run resumes at full
     width.
   - `agents.ceiling` = **2000** — the absolute per-project ceiling, and the only
     hard stop: `run_status = STOPPED_CAP`, never crossed without the operator.

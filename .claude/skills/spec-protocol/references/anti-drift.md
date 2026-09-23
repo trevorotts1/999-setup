@@ -248,12 +248,17 @@ into one word:
     `ACTION|stop-dispatching|…` and `ACTION|set-run-status|STOPPED_CAP|…`.
   - **The pause line, tested second.** `agents.first_pause` (falling back to a
     legacy `hard_stop_at`, then to `ANCHOR_HARD_CAP`, default 200), multiplied
-    by `agents.pause_blocks_granted + 1` so that each "keep going" moves the
-    line up by one block and never past the ceiling. At or past it the tool
-    writes `BUDGET-PAUSE | executions=<n> | pause_at=<p> | …` and emits
-    `ACTION|pause-and-ask|…` and `ACTION|set-run-status|PAUSED_CAP|…`. The
-    conductor's obligations in that order: deploy the best stable build, write
-    the plain report, set the status, ask the one question. **A pause is never
+    by `agents.pause_blocks_granted + 1` so that each granted block moves the
+    line up by one and never past the ceiling. At or past it the tool writes
+    `BUDGET-PAUSE | executions=<n> | pause_at=<p> | …` and emits
+    `ACTION|pause-and-ask|…` and `ACTION|set-run-status|PAUSED_CAP|…`. The line
+    is a CHECKPOINT (`references/capacity.md` §10, THE SPEND LINE): while
+    metered spend is below the newest `COST-LINE:`, the conductor passes
+    `spend_usd=<y>` on the next dispatch and `tools/dispatch-check.sh`
+    self-grants the block (`PAUSE-GRANT:` line, `pause_blocks_granted` + 1) —
+    no client question. Only at the COST-LINE, or with none recorded, are the
+    conductor's obligations, in order: deploy the best stable build, write the
+    plain report, set the status, ask the one question. **A pause is never
     `STOPPED_CAP`** — a run that still has ceiling left has not stopped.
   - **Reaching either line is a legitimate, declared event, not a defect**, so
     both exit **3**, not 4 — 4 belongs to the stall — and neither raises a

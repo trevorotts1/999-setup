@@ -1055,10 +1055,15 @@ run_anchor() {
   #     (ii) agents.executions_total against TWO lines. Reaching either is NOT
   #          drift: both are legitimate, declared events, and both exit 3 (so
   #          the conductor acts) rather than exit 4, which is reserved for the
-  #          stall. The PAUSE line (agents.first_pause × blocks+1) emits
-  #          pause-and-ask + set-run-status|PAUSED_CAP with the best stable
-  #          build deployed; only the per-project CEILING (agents.ceiling,
-  #          2,000) emits stop-dispatching + set-run-status|STOPPED_CAP.
+  #          stall. The PAUSE line (agents.first_pause × blocks+1) is a
+  #          CHECKPOINT (capacity.md section 10, THE SPEND LINE): below the
+  #          ledger's COST-LINE the run self-grants the next block through
+  #          tools/dispatch-check.sh spend_usd=<y> (PAUSE-GRANT: line) and
+  #          keeps going; only at the COST-LINE, or with none recorded, do
+  #          pause-and-ask + set-run-status|PAUSED_CAP apply, with the best
+  #          stable build deployed. Only the per-project CEILING
+  #          (agents.ceiling, 2,000) emits stop-dispatching +
+  #          set-run-status|STOPPED_CAP.
   #
   #   FAIL-CLOSED EVERYWHERE. An absent field, an absent dispatch log, or a
   #   dispatch log with content but no parseable row is UNDETERMINED and says
@@ -1279,7 +1284,8 @@ run_anchor() {
     #               The only hard stop. STOPPED_CAP lives here and nowhere else.
     #       PAUSE = agents.first_pause × (agents.pause_blocks_granted + 1),
     #               falling back to a legacy agents.hard_stop_at and then to
-    #               ANCHOR_HARD_CAP (200). Each "keep going" the client gives
+    #               ANCHOR_HARD_CAP (200). Each granted block — self-granted
+    #               below the COST-LINE, or the client's "keep going" at it —
     #               increments pause_blocks_granted, so the line walks up by one
     #               block at a time and is clamped at CEIL.
     #
@@ -1313,9 +1319,9 @@ run_anchor() {
       capnote="budget-cap(executions=${exec_t}/ceiling=${CEIL})"
     elif [[ -n "$exec_t" ]] && (( exec_t >= PAUSE )); then
       local pts; pts="$(iso_now)"
-      ledger_write "CONTROL/LEDGER.md" "${pts} | BUDGET-PAUSE | executions=${exec_t} | pause_at=${PAUSE} | ceiling=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=run_status=PAUSED_CAP; deploy the best stable build; write the plain report; ask 'Keep going?'"
-      action "pause-and-ask" "$UNIT" "pause line reached: executions=${exec_t} >= pause_at=${PAUSE} (ceiling=${CEIL}). Deploy the best stable build, write the plain report, then ask the one question. Each 'keep going' increments agents.pause_blocks_granted and the run resumes at full width."
-      action "set-run-status" "PAUSED_CAP" "executions=${exec_t} >= pause_at=${PAUSE}; ceiling=${CEIL} is not reached, so this is a PAUSE and the run has not stopped. The build is live and the run resumes on one word."
+      ledger_write "CONTROL/LEDGER.md" "${pts} | BUDGET-PAUSE | executions=${exec_t} | pause_at=${PAUSE} | ceiling=${CEIL} | remaining=${rem:-undetermined} | unit=${UNIT} | required=checkpoint; below the COST-LINE self-grant the next block (tools/dispatch-check.sh spend_usd=<y> writes PAUSE-GRANT:); at it or with no COST-LINE, run_status=PAUSED_CAP, deploy the best stable build, write the plain report, ask the one question"
+      action "pause-and-ask" "$UNIT" "pause line reached: executions=${exec_t} >= pause_at=${PAUSE} (ceiling=${CEIL}). This is a CHECKPOINT (capacity.md section 10): while metered spend is below the COST-LINE, re-run the next dispatch with spend_usd=<projected spend> and tools/dispatch-check.sh self-grants the next block without asking the client. Only at the COST-LINE, or with no COST-LINE recorded, deploy the best stable build, write the plain report, then ask the one question."
+      action "set-run-status" "PAUSED_CAP" "only if the checkpoint cannot self-grant (spend at the COST-LINE, or no COST-LINE): executions=${exec_t} >= pause_at=${PAUSE}; ceiling=${CEIL} is not reached, so this is a PAUSE and the run has not stopped. The build is live and the run resumes on one word."
       if (( SEVERITY < 3 )); then SEVERITY=3; fi
       capnote="budget-pause(executions=${exec_t}/pause_at=${PAUSE}/ceiling=${CEIL})"
     elif [[ -n "$exec_t" ]] && (( exec_t >= WARN )); then
@@ -2536,9 +2542,10 @@ EOF
   #--------------------------------------------------------------------------
   # --- CLASS 6, control C (case 11): the FIRST PAUSE. executions_total has
   #     reached agents.first_pause exactly, and the per-project ceiling (2,000)
-  #     is nowhere near. The decided behaviour (finding G6, 2026-09-07) is
-  #     PAUSE AND ASK — deploy the best stable build, write the plain report,
-  #     set run_status=PAUSED_CAP, ask "Keep going?" — so the case asserts
+  #     is nowhere near. The line is a CHECKPOINT: below the COST-LINE the
+  #     run self-grants through tools/dispatch-check.sh; at it (or with none)
+  #     it PAUSES AND ASKS — deploy the best stable build, write the plain
+  #     report, set run_status=PAUSED_CAP, ask the one question — so the case asserts
   #     ACTION|pause-and-ask and, as the negative control that matters most,
   #     that STOPPED_CAP is NOT emitted: a run with ceiling left has not
   #     stopped, and reporting it as stopped is the failure this replaced.
