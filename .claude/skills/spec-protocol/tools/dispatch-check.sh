@@ -1907,7 +1907,7 @@ run_selftest() {
   report 42 "research-dispatch-books" "${ok}" "rc=${rc} (want 0) for a reader dispatch at agents=1: the row carries agents=1, a minted run=wf-research-NN, and both RESEARCH-READY citations passed through cite= — the hand-written research row format is retired, which is what closes PROOF M's gap without loosening its tolerance-zero rule: ${out}"
 
   # --- 25: EVERY row this gate wrote carries agents= ------------------------
-  # The measurement RC-23 made on the run: corner-post-framing's log had 6 rows
+  # The measurement RC-23 made on the run: that project's log had 6 rows
   # and zero carried agents=, which is how it was proven that not one dispatch
   # went through this gate. On a log this gate wrote, the two counts are equal.
   local all_rows agents_rows

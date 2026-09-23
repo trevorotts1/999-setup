@@ -94,7 +94,7 @@ section 3). Only for a fresh project, with nothing but the client's own words, m
 engine propose the value — a `choice` over these six. **Its answer is only ever a
 PROPOSAL for the confirm sentence — the client confirmation is mandatory at every confidence,
 and the engine never records the value itself.** Below 0.85 the either/or is offered as well.
-Measured: the bare sentence "recreating the Higgsfield app" returns `MOBILE_APP` at 0.96 —
+Measured: the bare sentence "recreating the PixelForge app" returns `MOBILE_APP` at 0.96 —
 confidently wrong — so a threshold alone protects nothing and the state must carry every piece
 of evidence the run already holds (`references/decision-engine.md` §4.1). With no engine, classify from the signals below as
 this skill always has. The engine never overrules a declared target and never skips the
