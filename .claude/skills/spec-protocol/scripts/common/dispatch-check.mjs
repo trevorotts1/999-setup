@@ -148,6 +148,16 @@ function writeRow(project, row) {
   return 'native'
 }
 
+// tools/dispatch-check.sh's derive_phase, reduced to the one question D3 asks:
+// is the phase research? phase= wins; otherwise "research" is the first word of
+// the bash PHASE_WORDS priority list, so its presence as a word in the label or
+// unit (the [<model> xN] bracket stripped) decides it.
+export function isResearch(phase, label, unit) {
+  if (phase) return phase === 'research'
+  const words = `${label} ${unit}`.toLowerCase().replace(/\[[^\]]*\]/g, '').split(/[^a-z]+/)
+  return words.includes('research')
+}
+
 // ---------------------------------------------------------------------------
 export function runCheck(argv) {
   if (argv.length < 4) {
@@ -158,12 +168,14 @@ export function runCheck(argv) {
   let stages = process.env.DISPATCH_STAGES || String(DEFAULT_STAGES)
   let unit = ''
   let runId = 'pending'
+  let phase = ''
   for (const a of argv.slice(4)) {
     if (a.startsWith('dep=')) dep = a.slice(4)
     else if (a.startsWith('stages=')) stages = a.slice(7)
     else if (a.startsWith('unit=')) unit = a.slice(5)
     else if (a.startsWith('run=')) runId = a.slice(4)
-    else tooling(`unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, run=`)
+    else if (a.startsWith('phase=')) phase = a.slice(6)
+    else tooling(`unrecognised argument '${a}' — the optional arguments are dep=, stages=, unit=, run=, phase=`)
   }
   if (!isUint(unitsRaw)) tooling(`units must be a non-negative integer, got '${unitsRaw}'`)
   if (!isUint(agentsRaw)) tooling(`agents must be a non-negative integer, got '${agentsRaw}'`)
@@ -189,25 +201,39 @@ export function runCheck(argv) {
   const planMd = path.join(project, 'CONTROL', 'EXECUTION-PLAN.md')
   const stateJson = path.join(project, 'CONTROL', 'project_state.json')
 
-  if (!fs.existsSync(ledgerMd)) {
-    tooling(`no Capacity Ledger at ${ledgerMd} — CLIENT_CAP is UNDETERMINED (that file is the only source this gate reads; the environment is never one). Write it at step 6.5 with tools/width.sh.`)
-  }
-  let ledgerText
-  try {
-    ledgerText = fs.readFileSync(ledgerMd, 'utf8')
-  } catch (e) {
-    tooling(`Capacity Ledger is unreadable: ${ledgerMd} (${e.message})`)
-  }
-  const cap = parseClientCap(ledgerText)
-  if (cap === null) {
-    tooling(`CLIENT_CAP does not parse from ${ledgerMd} — looked for 'CLIENT_CAP=<n>' and for a clientCap line ending in '= <n>'. An unfilled template placeholder is not a number; fill the ledger.`)
+  // The research reader (D3, the bash tool's twin): one agent, phase research
+  // (phase= or the phase word in the label/unit), no build label. It fires at
+  // step 3.5, before the Capacity Ledger and the Parallelism Plan exist, so
+  // neither is required of it; it is still booked, at width 1.
+  const reader = agents === 1 && !/build/i.test(label) && isResearch(phase, label, unit)
+  let cap
+  let capShown
+  if (reader && !fs.existsSync(ledgerMd)) {
+    cap = 1
+    capShown = 'reader-exempt'
+    process.stderr.write('DISPATCH-CHECK NOTE | research reader (agents=1, phase=research, no build label) — no Capacity Ledger or Parallelism Plan is required of it; booked at width 1\n')
+  } else {
+    if (!fs.existsSync(ledgerMd)) {
+      tooling(`no Capacity Ledger at ${ledgerMd} — CLIENT_CAP is UNDETERMINED (that file is the only source this gate reads; the environment is never one). Write it at step 6.5 with tools/width.sh.`)
+    }
+    let ledgerText
+    try {
+      ledgerText = fs.readFileSync(ledgerMd, 'utf8')
+    } catch (e) {
+      tooling(`Capacity Ledger is unreadable: ${ledgerMd} (${e.message})`)
+    }
+    cap = parseClientCap(ledgerText)
+    if (cap === null) {
+      tooling(`CLIENT_CAP does not parse from ${ledgerMd} — looked for 'CLIENT_CAP=<n>' and for a clientCap line ending in '= <n>'. An unfilled template placeholder is not a number; fill the ledger.`)
+    }
+    capShown = cap
   }
 
   let planText = ''
   try {
     planText = fs.readFileSync(planMd, 'utf8')
   } catch { planText = '' }
-  if (!hasParallelismPlan(planText)) {
+  if (!reader && !hasParallelismPlan(planText)) {
     refuse(`no 'Parallelism Plan' heading in ${planMd} — no Parallelism Plan, no dispatch (references/execution-architecture.md). Write step 12.7's plan first; it is the document this dispatch has to cite.`)
   }
 
@@ -262,7 +288,7 @@ export function runCheck(argv) {
 
   const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
   const workItem = unit || `${units}-units`
-  const row = `${ts} | ${workItem} | dispatch | ${label} | run=${runId} | units=${units} | agents=${agents} | cap=${cap} | floor=${floor} | stages=${stageN} | dep=${dep || 'none'} | executions_total=${total}`
+  const row = `${ts} | ${workItem} | dispatch | ${label} | run=${runId} | units=${units} | agents=${agents} | cap=${capShown} | floor=${floor} | stages=${stageN} | dep=${dep || 'none'} | executions_total=${total}`
   try {
     writeRow(project, row)
   } catch (e) {
@@ -277,7 +303,7 @@ export function runCheck(argv) {
   }
 
   process.stdout.write(
-    `DISPATCH-CHECK PASS | project=${project} | units=${units} | agents=${agents} | cap=${cap} | floor=${floor} | ceiling=${padCeiling} | label=${label} | dep=${dep || 'none'} | executions_total=${total}\n`,
+    `DISPATCH-CHECK PASS | project=${project} | units=${units} | agents=${agents} | cap=${capShown} | floor=${floor} | ceiling=${padCeiling} | label=${label} | dep=${dep || 'none'} | executions_total=${total}\n`,
   )
   process.exit(0)
 }

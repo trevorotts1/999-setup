@@ -47,14 +47,16 @@
 //   node scripts/common/watch-tick.mjs <project-home> --cron-line
 //   node scripts/common/watch-tick.mjs <project-home> --arm     # Windows: schtasks, idempotent
 //   node scripts/common/watch-tick.mjs <project-home> --check   # read-only, 0/3/2
+//   node scripts/common/watch-tick.mjs <project-home> --record-session  # interview end: 0/2
 //   node scripts/common/watch-tick.mjs --selftest
+//   A stalled post-interview run auto-resumes (see AUTO-RESUME below).
 //
 // EXIT-CODE CONTRACT (identical to tools/watch-tick.sh)
 //   0 clean · 2 TOOLING FAILURE / BROKEN INSTRUMENT · 3 violations
 //   4 CONTROL/TERMINAL-DRIFT.flag exists
 //=============================================================================
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -283,6 +285,160 @@ function ledgerWrite(home, relFile, line) {
 }
 
 //-----------------------------------------------------------------------------
+// AUTO-RESUME (the port of tools/watch-tick.sh 4d, F1-F3) — so a machine with
+// no Git Bash also resumes a hung run. Same file (CONTROL/auto-resume.txt),
+// same 30-minute lock (CONTROL/auto-resume.lock), same command:
+//   <launcher> -p --resume <id> "/spec-protocol resume"
+// The launcher is claude-nine when this session is routed (a .claude-nine
+// config root on macOS; on Windows the launcher keeps the shared root and
+// points ANTHROPIC_BASE_URL at the loopback router), else claude. It is
+// resolved to an absolute path the way the shell does (PATH, plus PATHEXT on
+// Windows), and on Windows the installed claude-nine.cmd under
+// %LOCALAPPDATA%\BlackCEO\999\bin first — the path setup-windows.ps1 installs.
+// WATCH_TICK_LAUNCHER_CMD replaces the launcher (selftest stub only).
+//-----------------------------------------------------------------------------
+const STALLED_MIN = intEnv('WATCH_STALLED_MIN', 15);
+const IS_WIN = process.platform === 'win32';
+
+function whichOnPath(name) {
+  const exts = IS_WIN ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').concat(['']) : [''];
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    for (const e of exts) {
+      const p = path.join(dir, name + e);
+      try { if (fs.statSync(p).isFile()) return p; } catch { /* next */ }
+    }
+  }
+  return '';
+}
+
+function resolveLauncher() {
+  const cfg = process.env.CLAUDE_CONFIG_DIR || '';
+  const routed = /\.claude-nine[\\/]?$/.test(cfg) || /^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(process.env.ANTHROPIC_BASE_URL || '');
+  const name = routed ? 'claude-nine' : 'claude';
+  if (IS_WIN && name === 'claude-nine' && process.env.LOCALAPPDATA) {
+    const inst = path.join(process.env.LOCALAPPDATA, 'BlackCEO', '999', 'bin', 'claude-nine.cmd');
+    if (fs.existsSync(inst)) return { name, lpath: inst };
+  }
+  return { name, lpath: whichOnPath(name) || name };
+}
+
+// The folder the session was LAUNCHED in, from its own transcript — the
+// conductor cd's into the project, and --resume looks the id up by launch folder.
+function transcriptCwd(sid) {
+  const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+  let dirs = [];
+  try { dirs = fs.readdirSync(root); } catch { return ''; }
+  for (const d of dirs) {
+    const f = path.join(root, d, `${sid}.jsonl`);
+    if (!fs.existsSync(f)) continue;
+    for (const l of fs.readFileSync(f, 'utf8').split(/\r?\n/).slice(0, 200)) {
+      try { const j = JSON.parse(l); if (typeof j.cwd === 'string' && fs.existsSync(j.cwd)) return j.cwd; } catch { /* next */ }
+    }
+  }
+  return '';
+}
+
+function readRecord(home) {
+  const rec = {};
+  for (const l of readLines(path.join(home, 'CONTROL', 'auto-resume.txt')) || []) {
+    const i = l.indexOf('=');
+    if (i > 0) rec[l.slice(0, i)] = l.slice(i + 1);
+  }
+  return rec;
+}
+
+function recordSession(home, done) {
+  const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
+  if (!sid) return false;
+  const { name, lpath } = resolveLauncher();
+  const cwd = transcriptCwd(sid) || process.cwd();
+  const isDone = done || readRecord(home).interview === 'done';
+  fs.mkdirSync(path.join(home, 'CONTROL'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'CONTROL', 'auto-resume.txt'),
+    `session_id=${sid}\nlauncher=${name}\nlauncher_path=${lpath}\ncwd=${cwd}\n${isDone ? 'interview=done\n' : ''}`);
+  process.stdout.write(`ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=${name}${isDone ? ', interview=done' : ''})\n`);
+  return true;
+}
+
+const runStatusOf = (home) => {
+  try { const m = /"run_status"\s*:\s*"([A-Za-z_]*)"/.exec(fs.readFileSync(path.join(home, 'CONTROL', 'project_state.json'), 'utf8')); return m ? m[1] : ''; } catch { return ''; }
+};
+
+// Newest mtime under the project home, CONTROL/ and the ledger's sentinels
+// excluded (the tick's own writes are not progress). null when none was read.
+function newestWriteEpoch(home) {
+  let newest = null;
+  const walk = (dir) => {
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (p !== path.join(home, 'CONTROL') && !e.name.endsWith('.lock.d')) walk(p); continue; }
+      if (!e.isFile() || e.name === '.ledger-pinned' || e.name.endsWith('.lock') || e.name.includes('.tmp.')) continue;
+      try { const t = Math.floor(fs.statSync(p).mtimeMs / 1000); if (newest === null || t > newest) newest = t; } catch { /* next */ }
+    }
+  };
+  walk(home);
+  return newest;
+}
+
+function autoResume(home, elapsed, phase) {
+  const rec = readRecord(home);
+  const lock = path.join(home, 'CONTROL', 'auto-resume.lock');
+  if (!rec.session_id) { process.stdout.write('AUTO-RESUME | not run | no session recorded (CONTROL/auto-resume.txt is written by --arm / --record-session inside the conductor session)\n'); return; }
+  if (!/^[A-Za-z0-9-]+$/.test(rec.session_id)) { process.stdout.write('AUTO-RESUME | not run | the recorded session id is unusable\n'); return; }
+  try {
+    const age = Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 60000);
+    if (age < 30) { process.stdout.write(`AUTO-RESUME | held | lock is ${age}m old (< 30m): no second launch\n`); return; }
+  } catch { /* no lock yet */ }
+  const cmd = process.env.WATCH_TICK_LAUNCHER_CMD || rec.launcher_path || rec.launcher || 'claude';
+  const cwd = rec.cwd && fs.existsSync(rec.cwd) ? rec.cwd : home;
+  const env = { ...process.env };
+  if (/[\\/]/.test(cmd)) env.PATH = `${path.dirname(cmd)}${path.delimiter}${process.env.PATH || ''}`;
+  fs.writeFileSync(lock, '');
+  const log = fs.openSync(path.join(home, 'CONTROL', 'auto-resume.log'), 'a');
+  const args = ['-p', '--resume', rec.session_id, '/spec-protocol resume'];
+  // A .cmd/.bat cannot be spawned without a shell on Windows; the only
+  // argument with a space is the fixed slash command, and the id is [A-Za-z0-9-].
+  const viaShell = IS_WIN && /\.(cmd|bat)$/i.test(cmd);
+  const child = viaShell
+    ? spawn(`"${cmd}" -p --resume ${rec.session_id} "/spec-protocol resume"`, { cwd, env, shell: true, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
+    : spawn(cmd, args, { cwd, env, detached: true, windowsHide: true, stdio: ['ignore', log, log] });
+  child.on('error', () => { /* recorded in the log by the absence of output; the ledger line names the attempt */ });
+  child.unref();
+  ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'),
+    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --resume with /spec-protocol resume (log CONTROL/auto-resume.log)`);
+  process.stdout.write(`AUTO-RESUME | launched | ${rec.launcher || 'claude'} -p --resume ${rec.session_id} "/spec-protocol resume" (stalled ${elapsed}m in ${phase})\n`);
+}
+
+// The widened stall check (F2): build, or an open spec/apparatus/audit/merge/
+// publish row, or interview=done (covers research and the pre-plan tick).
+// Outside build it waits while run_status is anything but RUNNING.
+// Returns { note, fired, alarm } — alarm is the ACTION evidence when fired.
+function stallCheck(home, openRows) {
+  let phase = '';
+  for (const r of openRows || []) {
+    const s = String(r.stage || '').toLowerCase();
+    if (s.includes('build')) { phase = 'build'; break; }
+    if (!phase && /spec|apparatus|audit|merge|publish/.test(s)) phase = sanitize(s);
+  }
+  if (!phase && readRecord(home).interview === 'done') phase = openRows === null ? 'post-interview(pre-plan)' : 'post-interview';
+  const rs = runStatusOf(home);
+  if (phase && phase !== 'build' && rs && rs !== 'RUNNING') phase = '';
+  if (!phase) return { note: `undetermined(no running post-interview phase — run_status=${rs || '?'})`, fired: false };
+  const newest = newestWriteEpoch(home);
+  if (newest === null) return { note: 'undetermined(no readable file mtime under the project folder)', fired: false };
+  const age = Math.floor((epochNow() - newest) / 60);
+  if (age < STALLED_MIN) return { note: `ok(newest write ${age}m ago, ceiling ${STALLED_MIN}m)`, fired: false };
+  ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'),
+    `${isoNow()} | DRIFT-ALARM | stalled-turn | elapsed=${age} | phase=${phase} | ${sanitize(`no file write under the project folder for ${age} minutes in phase ${phase} (ceiling ${STALLED_MIN}m)`)}`);
+  const alarm = `DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${age} minutes old (ceiling ${STALLED_MIN}) in phase ${phase} — the turn is hung, not slow (RC-17)`;
+  autoResume(home, age, phase);
+  return { note: `stalled(elapsed=${age}m)`, fired: true, age, alarm };
+}
+
+//-----------------------------------------------------------------------------
 // THE TICK.
 //-----------------------------------------------------------------------------
 // A supplied project may bind its own canonical state and its own commands
@@ -398,7 +554,18 @@ function runTick(homeArg, wantCronLine, mode) {
   }
   const home = fs.realpathSync(homeArg);
   if (wantCronLine) { process.stdout.write(`${cronLine(home)}\n`); return 0; }
-  if (mode) return armOrCheck(home, mode);
+  if (mode === 'record') {
+    if (isProfiled(home)) { process.stdout.write('RECORD | not recorded (exit 2) | profiled project: a profile forbids CONTROL/ writes\n'); return 2; }
+    if (!recordSession(home, true)) { process.stdout.write('RECORD | not recorded (exit 2) | CLAUDE_CODE_SESSION_ID is not set — run this inside the conductor session\n'); return 2; }
+    return 0;
+  }
+  if (mode) {
+    const rc = armOrCheck(home, mode);
+    // --arm also records the session (legacy projects), as the bash twin does.
+    // Off Windows the bash --arm it handed off to already recorded it.
+    if (mode === 'arm' && SCHTASKS && (rc === 0 || rc === 3) && !isProfiled(home)) recordSession(home, false);
+    return rc;
+  }
 
   selfProve();
 
@@ -458,6 +625,14 @@ function runTick(homeArg, wantCronLine, mode) {
     return 4;
   }
 
+  // Pre-plan (no CHECKLIST yet) after the interview ended: research, spec and
+  // apparatus run here, so the stall check and auto-resume must too (F2).
+  if (!fs.existsSync(CHK) && readRecord(home).interview === 'done') {
+    const st = stallCheck(home, null);
+    process.stdout.write(`PRE-PLAN | the tick takes no counts before step 6.5 | stalled-turn=${st.note}\n`);
+    if (st.fired) { process.stdout.write(`ACTION|stalled-turn|elapsed=${st.age}m|${sanitize(st.alarm)}\n`); return 3; }
+    return 0;
+  }
   if (!fs.existsSync(CHK)) {
     dieTool(`CONTROL/CHECKLIST.md is missing at ${CHK} — the runnable count has no source. Checked: ${CHK}. Not checked: the dispatch log and the heartbeat, because the run stopped here.`);
   }
@@ -605,12 +780,17 @@ function runTick(homeArg, wantCronLine, mode) {
     }
   }
 
+  // stalled-turn — the widened post-interview check, with auto-resume.
+  const stall = stallCheck(home, openRows);
+  if (stall.fired) emit('stalled-turn', `elapsed=${stall.age}m`, stall.alarm);
+
   V += actions.length;
 
   // --- (5) the line
   if (actions.length) process.stdout.write(`${actions.join('\n')}\n`);
   const line = `${isoNow()} | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES}`
     + ` | cap=${capNote} | anchor=${anchorNote} | trees-detail=${treeNote}`
+    + ` | stalled-turn=${sanitize(stall.note)}`
     + ` | actions=${sanitize(verbs.length ? verbs.join(',') : 'none')}`
     + ` | undetermined=${sanitizeLong(undetermined.length ? undetermined.join(',') : 'none')}`;
   ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'), line);
@@ -625,6 +805,10 @@ function runTick(homeArg, wantCronLine, mode) {
 //=============================================================================
 function selftest() {
   const T = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-tick-mjs-selftest-'));
+  // No selftest case may launch a real session: every AUTO-RESUME a fixture
+  // reaches runs a no-op unless the case names its own stub (on Windows the
+  // path does not exist, so the spawn fails harmlessly — still never a session).
+  process.env.WATCH_TICK_LAUNCHER_CMD = '/usr/bin/true';
   let passes = 0;
   let fails = 0;
   const report = (n, name, ok, detail) => {
@@ -827,6 +1011,42 @@ function selftest() {
       && created[0].includes(fileURLToPath(import.meta.url)),
     `rcs check,arm,check,arm = ${rcs.join(',')} (want 3,0,0,3); Create calls=${created.length} (want 1): [${created[0] || ''}]`);
 
+  // 17 — AUTO-RESUME (F1-F3, the port of tools/watch-tick.sh case 45). A
+  // pre-plan project whose session was recorded at interview end; the recorded
+  // cwd is the transcript's launch folder; a stale project resumes ONCE through
+  // the stubbed launcher with /spec-protocol resume, and a second tick is held.
+  d = mkHome('c17');
+  fs.rmSync(path.join(d, 'CONTROL', 'CHECKLIST.md'));
+  fs.rmSync(path.join(d, 'CONTROL', 'TODO.md'));
+  const cfg17 = path.join(T, 'cfg17');
+  const launch17 = path.join(T, 'launch17');
+  fs.mkdirSync(path.join(cfg17, 'projects', 'x'), { recursive: true });
+  fs.mkdirSync(launch17);
+  fs.writeFileSync(path.join(cfg17, 'projects', 'x', 'sess-17.jsonl'), `${JSON.stringify({ cwd: launch17, sessionId: 'sess-17' })}\n`);
+  const args17 = path.join(T, 'c17.args');
+  const stub17 = path.join(T, 'launcher-stub.mjs');
+  fs.writeFileSync(stub17, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(args17)}, process.cwd() + '|' + process.argv.slice(2).join(' ') + '\\n');\n`);
+  // The stub is a node script, so the stub "launcher" is a tiny wrapper that runs it.
+  const wrap17 = path.join(T, process.platform === 'win32' ? 'launcher-stub.cmd' : 'launcher-stub');
+  fs.writeFileSync(wrap17, process.platform === 'win32'
+    ? `@"${process.execPath}" "${stub17}" %*\r\n`
+    : `#!/bin/sh\nexec "${process.execPath}" "${stub17}" "$@"\n`, { mode: 0o755 });
+  const rec17 = run([d, '--record-session'], { CLAUDE_CODE_SESSION_ID: 'sess-17', CLAUDE_CONFIG_DIR: cfg17 });
+  const old17 = new Date(Date.now() - 20 * 60000);
+  fs.utimesSync(path.join(d, 'SPEC', 'GOAL.md'), old17, old17);
+  const t1 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17 });
+  for (let i = 0; i < 20 && !fs.existsSync(args17); i += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+  const t2 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17 });
+  const rec17txt = (readLines(path.join(d, 'CONTROL', 'auto-resume.txt')) || []).join('\n');
+  const got17 = (readLines(args17) || []).filter((l) => l);
+  report(17, 'auto-resume-post-interview',
+    rec17.rc === 0 && /^interview=done$/m.test(rec17txt) && rec17txt.includes(`cwd=${launch17}`)
+      && t1.rc === 3 && /AUTO-RESUME \| launched/.test(t1.out) && /AUTO-RESUME \| held/.test(t2.out)
+      && got17.length === 1 && got17[0].endsWith('|-p --resume sess-17 /spec-protocol resume')
+      && fs.realpathSync(got17[0].split('|')[0]) === fs.realpathSync(launch17)
+      && /phase=post-interview\(pre-plan\)/.test(led(d)),
+    `record rc=${rec17.rc} (want 0); tick rc=${t1.rc} (want 3) then held; stub calls=${got17.length} (want 1): [${got17[0] || ''}]`);
+
   fs.rmSync(T, { recursive: true, force: true });
   process.stdout.write(`\n-------------------------------------------------------------\n`);
   process.stdout.write(`watch-tick.mjs selftest: ${passes} passed, ${fails} failed\n`);
@@ -846,6 +1066,7 @@ for (const a of argv) {
   else if (a === '--cron-line') wantCron = true;
   else if (a === '--arm') mode = 'arm';
   else if (a === '--check') mode = 'check';
+  else if (a === '--record-session') mode = 'record';
   else if (a === '-h' || a === '--help') {
     process.stdout.write('Usage: node scripts/common/watch-tick.mjs <project-home> [--cron-line|--arm|--check] | --selftest\n');
     process.exit(0);

@@ -43,24 +43,10 @@ without the second. The self-audit (step 20) and the swarm watch (standard S17)
 both hunt two-question messages; a user-facing message with two questions is a
 failable violation.
 
-The capacity interview is the long one, but the user sees the questions one at a
-time, in plain language, with the consequence of each answer stated before they
-answer. State the count up front, in the two-number form when `interview.md` computes
-two ("I will ask you at most <the larger number `interview.md` tells you to
-say> short questions — most people end up nearer <the smaller number it tells
-you to say>, because they let me choose the routine settings when I offer to —
-one at a time, and then you can walk away"), and in the single-number form
-when it computes one ("I will ask you at most <the number> short questions —
-usually fewer — one at a time, and then you can walk away").
-**`interview.md` owns every count claim in this skill** — take both numbers
-from there, never invent one on this page, and never state a ceiling you will
-then exceed. When the ceiling comes down mid-run, say so the moment it does —
-for a person deciding whether to keep going, the smaller number is the
-reassurance, and `interview.md` owns when saying it is required.
-Every counted question is spoken with its number against a ceiling — "Question <N> of no more than <C>" — per the per-question counter interview.md owns.
-Use the fast paths (the defaults
-offer, the small-plan collapse — block D never collapses) so a small plan is never
-asked the whole list.
+The user sees the interview's questions one at a time, in plain language.
+**`interview.md` owns every count claim in this skill** — the greeting's words,
+the ceiling C, the "Question <N> of no more than <C>" counter and the lowering
+sentence. This page states no number and never a ceiling the run will then exceed.
 
 ---
 
@@ -151,12 +137,12 @@ The user should feel confident walking away. Use these phrases liberally:
 State the set-and-forget promise at the start and again at the end. At the start it
 is the greeting's own line (the count and the time, `interview.md` §3):
 
-> I'll ask you about fifteen short questions, one at a time. It takes about half an hour, then you can walk away.
+> First we'll have a short chat about your idea, then about a dozen quick questions, one at a time — about half an hour, then you can walk away.
 
 At the end — immediately after the last question is answered, as a statement that
 closes the interview — it is this, verbatim:
 
-> That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop.
+> That's everything I need. Leave this window open — it's fine to turn the screen off. I'll work through the night, and in the morning I'll put a note called 'Your project is ready' on your Desktop.
 
 That promise is kept literally: the morning report is written to the project folder
 AND copied to the client's Desktop as `Your project is ready` (see "The morning
@@ -220,7 +206,7 @@ At the end of the launch instructions:
 > anything that is not good enough yet, and putting the finished pieces safely on
 > GitHub. You do not need to open anything, start anything, or watch anything.
 >
-> That's everything I need. I'll work through the night; you can close this window. In the morning I'll put a note called 'Your project is ready' on your Desktop.
+> That's everything I need. Leave this window open — it's fine to turn the screen off. I'll work through the night, and in the morning I'll put a note called 'Your project is ready' on your Desktop.
 
 Never offer windows first. Only if the user asks, unprompted, for separate windows
 of their own does `terminals.md`'s labelled last-resort rung come into play — and
@@ -319,63 +305,81 @@ catches every fixture is broken, not strict.
 ## The morning report — the user-facing close
 
 When the run finishes, the morning report (document 14) is what the user reads.
-**Write it in two places:** the project folder (document 14's own path) AND the
-client's Desktop as a plain-text note named `Your project is ready.txt` — the same
-content, so the walk-away promise is kept to the letter and nobody has to find a
-project folder. On Windows the Desktop is `%USERPROFILE%\Desktop`. Write it in plain
-language:
+**This is the ONE morning-report template in this skill** — `documents.md`
+(document 14), `publish.md` and `conductor.md` say what goes into it and point
+here for its shape; none of them carries a second template.
+
+**Written in two places, and the two are NOT the same.** The project folder copy
+(document 14's own path) is the whole report, operator notes included. The
+client's Desktop copy — a plain-text note named `Your project is ready.txt` — is
+the same report with the **Operator notes** section cut off: it never carries a
+key name, a tool or file path, a seat or width figure, a percentage of the
+machine, or anything else only the operator can act on. On Windows the Desktop
+is `%USERPROFILE%\Desktop`. Write it in plain language:
 
 ```
-# Morning Report — <project name> — <date>
+# Your project is ready — <project name> — <date>
 
-Your <target word> is live at <URL> and a safe copy is saved on GitHub. Here's
-what got built, what I checked, and the one or two things only you can decide.
+<the opening line — exactly ONE of these three, chosen from the ledger:>
+  live, backup online:  Your <target word> is live at <URL>, and a safe backup copy is stored online (on a service called GitHub) so it can't be lost.
+  live, local-only:     Your <target word> is live at <URL>. Its files are saved on your computer, not online yet.
+  not live:             Your <target word> is built and saved on your computer, not online yet. <the one thing that stopped it, in plain words>
+Here's what got built, what I checked, and the one or two things only you can decide.
 
 ## What was built
 
 [one-paragraph plain-English summary]
 
-## What is working
+## How each piece improved
 
-[plain-English list of what works, with a link to the GitHub repo]
+[the score curve, one line per piece — document 14 owns how it is read]
 
 ## What is blocked
 
 [plain-English list of anything that could not be finished, with the reason in
 plain language and what you can do about it]
 
-## How much of the machine was used
-
-[plain-English fan-out figures, read off the run's own records — never felt.
-The Capacity Ledger (`CAPACITY-LEDGER.md`) records the measured `clientCap`
-(the width this machine supports; `references/capacity.md` §3). The run's
-`S-CHECK` lines on `CONTROL/LEDGER.md` (one per five-minute tick,
-`tools/watch-tick.sh`) each carry `open=<n>`: peak concurrency is the largest
-`open=` in the run, mean concurrency is the arithmetic mean of `open=` across
-the run's `S-CHECK` lines. The report states both against the cap, e.g. "at
-its busiest the run used 6 of its 10 seats, 3 on average — 17% of the
-machine's width." A run that used a small fraction of its cap says so; today
-nothing counts it, so the report must.]
-
 ## Questions for you
 
 [any decisions that need your input, in plain language, with a recommendation]
 
-## Next steps
+## If you'd like your own web address
 
-[what to do next — deploy, test, share — in plain language]
+[ONLY for a served target published without a custom address — `publish.md`
+section 4 owns the words and the two rows. Optional; nothing is broken without it.]
 
 ## How to see it
 
-Your app is on GitHub at: [link]
-To see it on your Mac: [plain-English instructions]
+Open <URL> in your web browser.
+[ONLY when the repository is on the client's OWN GitHub account:]
+Your project's files are also in your own GitHub account at <link>.
+
+---- everything below this line is in the project folder copy ONLY ----
+
+## Operator notes
+
+[what only the operator acts on: a `DECISION-ENGINE: absent` result, a
+`HOOKS-ABSENT:` line, key and account notes, tool paths, the store-release and
+signing steps, and how much of the machine was used — peak and mean
+concurrency against the measured `clientCap` (Capacity Ledger,
+`references/capacity.md` §3), read off the run's `S-CHECK` lines' `open=<n>`
+(peak = largest, mean = arithmetic mean), e.g. "at its busiest the run used
+6 of its 10 seats, 3 on average — 17% of the machine's width". A run that used
+a small fraction of its cap says so.]
 ```
+
+**The opening line is read from the ledger, never from memory.** "Live" means a
+`PUBLISHED:` line (the LAST one — `documents.md` document 14). "Backup online"
+means a repository receipt that is not `source=local-only`; with a local-only
+receipt the local-only line is used, and nothing in the report mentions GitHub.
+The GitHub link line is printed only when that remote is on the client's own
+account — a repository on the operator's account is never handed to the client.
 
 When the user returns and asks "is it done?", do not show them the ledger. Give them
 the morning report in plain language:
 
-> Your app is [built and on GitHub / still building / blocked on a question].
-> [One-paragraph summary.] [Link to GitHub.] [What to do next.]
+> Your <target word> is [live at <URL> / still being built / waiting on one question from you].
+> [One-paragraph summary.] [What to do next.]
 
 If it is blocked on a question, state the question plainly, with your
 recommendation, and let them answer in their own words. Then write their answer into

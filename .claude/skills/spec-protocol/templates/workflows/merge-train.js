@@ -2,11 +2,14 @@ export const meta = {
   name: 'merge-train',
   description: 'The one merge writer: land passed units one at a time with tools/merge-train.sh',
   phases: [{ title: 'Merge' }],
+  agentsTotal: 1,
 }
+// agents: 1   (one merge writer, however many units; read by the dispatch gate)
 // args: { project: "<home>", repo: "<repo path>", skill: "<spec-protocol skill dir>", seats: { merge: "<seat>" },
 //         units: [{ id: "U001", branch: "unit/U001" }] }   -- PASS verdicts only, in merge order
 // Runs OUTSIDE every build tree (Law 3, SHAPE 5): launch it as its own workflow.
-// One agent, because merges are serial by definition; the script does the merging.
+// One agent, because merges are serial by definition; the script does the merging and
+// removes each landed unit's worktree (<repo>/.worktrees/<id>).
 const units = args.units
 const seats = args.seats
 if (!Array.isArray(units) || units.length === 0) throw new Error('args.units must be a non-empty array')

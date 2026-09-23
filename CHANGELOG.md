@@ -1,5 +1,81 @@
 # Changelog
 
+## [1.26.0] — 2026-09-23
+
+### Round 3: the next pass over the same nine sections
+
+**A — launchers / installer / install-hooks / AGENT_INSTALL.** The launchers resolve 9Router
+across more locations and start it headless (`-p PORT --no-browser`); setup stops only the
+router it started and the `claude-nine` probe cold-starts it back up; `install-hooks.sh` /
+`.ps1` quote the interpreter and guard the Python version check; both launchers export
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` (below the 256K fallback lane; `claude-codex` keeps
+350K); `AGENT_INSTALL.md` gained a background-run-and-monitor path and a visible
+`gh auth login --web` step; setup installs the Vercel CLI into the 9Router npm prefix and
+records `VERCEL_TOKEN` from the environment only; `claude-nine` runs under `caffeinate -i`
+(Windows: `SetThreadExecutionState`, unverified); the skill report checks the `claude-nine`
+root and seeds ultracode only when absent; `SPEC_PROTOCOL_OPERATOR_GH_TOKEN` is now accepted
+from the environment and merged into `operator.env` at mode 600.
+
+**B — deploy tools.** `publish.sh` locates the Vercel CLI and the operator credential and
+passes it only to the `vercel` child, with `HOSTING-BLOCKED` and a next step on any failure;
+`--draft` runs a preview deploy, proves a 200, and writes a `DRAFT-LIVE` line, and now also
+PATCHes Vercel's preview protection off for that deploy; `--prod` refuses unless
+`SHIP-CHECKS` are all passing and every `public-surface.json` row reads 404/403;
+`provision-db.sh` links the Vercel project when it is not linked; `dispatch-check.sh` treats
+`MOBILE_APP` as served rather than no-URL. New shared helper: `tools/deploy-auth.sh`.
+
+**C — repo anchor.** A failed `gh repo create` now retries `<slug>-2` through `-5` before
+falling through to a local-only receipt (`rc 0`) instead of failing with none; the
+operator-owner path passes `SPEC_PROTOCOL_OPERATOR_GH_TOKEN` to that one `gh` call only.
+`merge-train.sh` picked up the matching addendum: it pushes an operator-owned repo's receipt
+with the same operator token, scoped to that one git process, and stops (landed, not merged)
+when the token is missing.
+
+**D — dispatch gate + dispatch-check.** The project now resolves from this session's own
+`answers.sh` transcript line instead of only the cwd walk-up; a template's declared agent
+count (`meta.agentsPerUnit` / `agentsTotal`) now raises the count the gate sees; a one-agent
+research-phase dispatch with no build label is exempt from SHAPE 7 booking and from the
+Capacity Ledger / Parallelism Plan requirement (still booked, `cap=reader-exempt`) — ported to
+`dispatch-check.mjs` for the Windows twin; the write-ahead pointer now names
+`references/conductor.md` section 6.
+
+**E — templates + merge-train.** Build/fix-wave builders now work only inside
+`<repo>/.worktrees/<id>`, and `merge-train.sh` removes each landed branch's worktree after
+merging; every workflow template now declares its own agent count for the dispatch gate's
+count check.
+
+**F — watch-tick auto-resume.** `--record-session` records the session id and
+`interview=done` at interview end; the stalled-turn and auto-resume checks now cover every
+post-interview phase, not just an open build row; ported in full to `watch-tick.mjs` for
+Windows, including the launcher resolution and a Windows-installed `claude-nine.cmd`.
+
+**G — conversation gate, speech lint, answers.** The message-shape checks now run on every
+turn of a run whether or not a project ledger exists yet, backed by `answers.sh init/hold/flush`
+and read back by the ledger path in the hook's own result line; a naming or status sentence
+after the final question mark, or more than two question marks in one paragraph, now blocks;
+"app / application / program / platform / software" are recognized category words; a mid-turn
+Skill-load record no longer counts as a user turn boundary; the speech lint gained
+script-name and run-internal classes while letting on-screen UI labels through.
+
+**H1 — SKILL.md / conductor.md / CHANGELOG.** A new walk-away line, an honest question count
+in the greeting, `cd` into the project folder the moment it exists (with the matching
+`answers.sh init --hold` / `--flush`), a local-only done condition, corrected relaunch and
+config-root wording, and the preflight bullets moved out of `SKILL.md` into
+`references/conductor.md` §2P (read at step 2, not before the greeting).
+
+**H2 — references.** `interview.md`, `audience.md`, `capacity.md`, `environment-sweep.md`,
+`publish.md`, `pipeline.md`, and `enforcement.md` all received their round-3 fixes: the
+walk-away line and question count carried through, the spend question fixed as last in both
+modes, stale re-ask and defaults-offer language removed, the picture folder made once, and
+`publish.md` / `pipeline.md` brought in line with the B and E tool changes above.
+
+**Integration.** One doc fix follows from A4 above: `conductor.md` §2P still described the
+`claude-nine` / `claude-codex` compaction target as "the smaller of 500000 and the resolved
+seat's measured context ceiling" — the pre-A4 design. It now says what A4 actually ships: the
+`claude-nine` launcher sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` directly, ahead of and
+overriding whatever `compact-guard.sh` would raise, and `claude-codex` inherits it unless it
+sets its own via `--autocompact`.
+
 ## [nine-router-setup 1.17.2] — 2026-09-23
 
 ### A 9Router update could silently shrink DeepSeek back to 128K
@@ -61,10 +137,11 @@ pending, resets its 3-per-turn block counter on a new turn, and blocks when `ANS
 missing after this session created it. `gate0-claim-gate.py` and `speech-check.sh` got the
 matching evidence and counter fixes.
 
-**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-9: a
+**Dispatch gate.** `#5` (hook side), `#6`, `#32` — `dispatch-gate.py` gained SHAPE 7-10: a
 project must be booked in `CONTROL/dispatch-log.md` (not just claimed), it must show a real
-`SEAT-PROBE:` line before a build dispatches, and it must carry a proven `repo-anchor.json`
-receipt (scoped to both legacy and profiled projects) before any builder runs.
+`SEAT-PROBE:` line before a build dispatches, it must carry a proven `repo-anchor.json`
+receipt (scoped to both legacy and profiled projects) before any builder runs, and it must
+have its start marker and an armed tick (`watch-tick.sh --check` rc 0) before a build dispatches.
 
 **Repo anchor.** `#6` (repo-anchor side), `#49`, `#50` — `repo-anchor.sh` and `anchor.sh`:
 a profiled project no longer gets refused outright by the drift reconciler; it now redirects

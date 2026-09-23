@@ -610,7 +610,7 @@ has_ship_guard_line() {
 is_no_url_target() {
   local f="$1" rc
   [[ -f "${f}" && -r "${f}" ]] || return 1
-  "${GREP}" -qE 'BUILD-TARGET:[[:space:]]*(MOBILE_APP|DESKTOP_SOFTWARE)([[:space:]]|$)' "${f}" 2>/dev/null; rc=$?
+  "${GREP}" -qE 'BUILD-TARGET:[[:space:]]*(DESKTOP_SOFTWARE)([[:space:]]|$)' "${f}" 2>/dev/null; rc=$?
   (( rc == 0 ))
 }
 
@@ -1152,20 +1152,37 @@ run_check() {
   local plan_md="${project}/CONTROL/EXECUTION-PLAN.md"
   local state_json="${project}/CONTROL/project_state.json"
 
+  # --- The research reader (D3) ----------------------------------------------
+  # One agent, phase research (phase= or the phase word in the label/unit), no
+  # build label: the step-3.5 reader. It fires before step 6.5 writes the
+  # Capacity Ledger and step 12.7 writes the Parallelism Plan, so neither is
+  # required of it; a width of one needs no cap. It is still booked below.
+  local reader=0 rphase="${phase}"
+  if (( agents == 1 )) && ! is_build_label "${label}"; then
+    if [[ -z "${rphase}" ]]; then rphase="$(derive_phase "${label}" "${unit}")" || rphase=""; fi
+    [[ "${rphase}" == "research" ]] && reader=1
+  fi
+
+  local cap cap_shown
+  if (( reader )) && [[ ! -f "${ledger_md}" ]]; then
+    cap=1; cap_shown="reader-exempt"
+    printf 'DISPATCH-CHECK NOTE | research reader (agents=1, phase=research, no build label) — no Capacity Ledger or Parallelism Plan is required of it; booked at width 1\n' >&2
+  else
   [[ -f "${ledger_md}" ]] \
     || tooling "no Capacity Ledger at ${ledger_md} — CLIENT_CAP is UNDETERMINED (that file is the only source this gate reads; the environment is never one). Write it at step 6.5 with tools/width.sh."
   [[ -r "${ledger_md}" ]] || tooling "Capacity Ledger is unreadable: ${ledger_md}"
 
-  local cap
   cap="$(parse_cap "${ledger_md}")" || cap=""
   [[ -n "${cap}" ]] \
     || tooling "CLIENT_CAP does not parse from ${ledger_md} — looked for 'CLIENT_CAP=<n>' and for a clientCap line ending in '= <n>'. An unfilled template placeholder is not a number; fill the ledger."
   is_uint "${cap}" || tooling "CLIENT_CAP parsed as non-integer '${cap}' from ${ledger_md}"
   (( cap >= 1 && cap <= 64 )) \
     || tooling "CLIENT_CAP=${cap} from ${ledger_md} is outside 1..64 — that is a mis-parse or a corrupt ledger, not a width"
+  cap_shown="${cap}"
+  fi
 
   # --- Fail-closed precondition: no Parallelism Plan, no dispatch ------------
-  has_parallelism_plan "${plan_md}" \
+  (( reader )) || has_parallelism_plan "${plan_md}" \
     || refuse "no 'Parallelism Plan' heading in ${plan_md} — no Parallelism Plan, no dispatch (references/execution-architecture.md). Write step 12.7's plan first; it is the document this dispatch has to cite."
 
   # --- The label (S3): every dispatch is labelled [<model> x<N>] -------------
@@ -1358,7 +1375,7 @@ run_check() {
   local ts row out rc
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   [[ -n "${unit}" ]] || unit="${units}-units"
-  row="${ts} | ${unit} | dispatch | ${label} | run=${run_id} | units=${units} | agents=${agents} | cap=${cap} | floor=${floor} | stages=${stages} | dep=${dep:-none} | executions_total=${total}"
+  row="${ts} | ${unit} | dispatch | ${label} | run=${run_id} | units=${units} | agents=${agents} | cap=${cap_shown} | floor=${floor} | stages=${stages} | dep=${dep:-none} | executions_total=${total}"
   # cite= travels at the END of the row, verbatim. It is how a research dispatch
   # carries its two RESEARCH-READY citations (SKILL.md section 5) inside a row
   # this gate wrote, instead of the hand-written row RC-23(b) retires.
@@ -1417,7 +1434,7 @@ run_check() {
   # that was licensed against an operator-moved pause line must say so where the
   # row is read, or the override is silent on every turn it did not stop.
   printf 'DISPATCH-CHECK PASS | project=%s | units=%s | agents=%s | cap=%s | floor=%s | ceiling=%s | label=%s | dep=%s | executions_total=%s%s\n' \
-    "${project}" "${units}" "${agents}" "${cap}" "${floor}" "${pad_ceiling}" "${label}" "${dep:-none}" "${total}" \
+    "${project}" "${units}" "${agents}" "${cap_shown}" "${floor}" "${pad_ceiling}" "${label}" "${dep:-none}" "${total}" \
     "${OVERRIDE_TAG:+ | ${OVERRIDE_TAG}}"
   exit 0
 }

@@ -74,6 +74,11 @@ fi
 
 echo "🧠 claude-codex — claude-nine pinned to $CODEX_MODEL (autocompact $CODEX_AUTOCOMPACT)" >&2
 
+# claude-nine exports CLAUDE_CODE_AUTO_COMPACT_WINDOW (200K, below its smallest
+# fallback lane) unless the caller set one, and that env var takes precedence
+# over settings. Set Codex's window here so the env and --autocompact agree.
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="${CODEX_AUTOCOMPACT%k}000"
+
 exec "$CLAUDE_NINE_BIN" \
   --model "$CODEX_MODEL" \
   --autocompact "$CODEX_AUTOCOMPACT" \

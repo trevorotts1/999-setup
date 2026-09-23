@@ -249,8 +249,10 @@ fails parks its own unit without touching the other trees.
 
 ### Per-builder mechanics
 
-- Each builder works in its own git worktree (isolation: 'worktree'), cutting a
-  fresh branch from the frozen base.
+- Each builder works in its own git worktree, created by its prompt as
+  `git -C <repo> worktree add <repo>/.worktrees/<unit> -b <branch>` off the frozen
+  base, and works only there; a fix-wave agent does the same. The merge train
+  merges those branches and removes each worktree after its merge succeeds.
 - Builds, tests, pushes the branch.
 - Writes through (Law 23): pushes the branch the instant it is built.
 - Stamps the heartbeat on every real progress step.
@@ -764,7 +766,8 @@ couple two lanes that the schedule went to some trouble to keep apart.
 Ledger. One merger per repository.
 
 **The merge train and the swarm waves are shipped, never hand-written per run.**
-`tools/merge-train.sh <project>` is the merge train: it merges one unit at a time
+`tools/merge-train.sh [--project <home>] <repo> <branch>...` is the merge train: it
+merges the named unit branches one at a time, in the order given,
 with the existing truth gates ("Land vs Merged" below — landed on the integration
 branch, then merged only on proven trunk ancestry and the artifact at HEAD). The
 build wave, judge wave, fix wave and merge-train workflows come from
@@ -805,8 +808,9 @@ anchors local-only (`source=local-only`, which SHAPE 9 accepts). It proves the r
 receipt `repo-anchor.json` beside the state (`CONTROL/` on a legacy project, the
 `documents.state` directory on a profiled one), and on legacy adds the ledger line
 `REPO-ANCHOR: root=<path> remote=OK branch=main source=<client-gh|--remote|operator-remote|local-only|existing>`.
-`--check` is read-only and cheap. Exit 0 anchored, 3 already anchored, 2 UNDETERMINED,
-4 declined with no fallback. That receipt and that ledger line are the record the
+`--check` is read-only and cheap. Exit 0 anchored, 3 already anchored, 2 UNDETERMINED.
+A client with no GitHub login never stops the build: the tool falls through to the
+operator remote, then local-only. That receipt and that ledger line are the record the
 trunk-ancestry merge proof below ("Land vs Merged") builds on — there is no remote to
 prove an ancestor against until this has run — and the dispatch hook's SHAPE 9 refuses
 every build dispatch, legacy or profiled, until the receipt exists and matches

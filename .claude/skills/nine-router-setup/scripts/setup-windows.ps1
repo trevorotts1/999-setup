@@ -47,6 +47,20 @@ $StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
 $StateFile = Join-Path $StateDir 'router-session.json'
 
 function Write-Log([string]$m) { Write-Host "[setup-windows] $m" }
+
+# Set-OperatorKey <root> <key> <value>: merge ONE key into
+# <root>\spec-protocol\operator.env. Other keys are kept, an older value of
+# this key is replaced. The file lives under the user's own profile (the
+# per-user ACL is the protection on Windows). Never prints the value.
+function Set-OperatorKey([string]$Root, [string]$Key, [string]$Value) {
+    $dir = Join-Path $Root 'spec-protocol'
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $f = Join-Path $dir 'operator.env'
+    $lines = @()
+    if (Test-Path $f) { $lines = @(Get-Content $f | Where-Object { $_ -and ($_ -notlike "$Key=*") }) }
+    $lines += "$Key=$Value"
+    [System.IO.File]::WriteAllText($f, (($lines -join "`n") + "`n"))
+}
 function Write-Blocker([string]$m) { Write-Error "BLOCKER: $m"; exit 1 }
 
 function Mask([string]$v) {
@@ -334,6 +348,14 @@ try {
     if ($OperatorRemoteOwner -and ($OperatorRemoteOwner -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*$')) {
         Write-Blocker "-OperatorRemoteOwner must be a GitHub user or org name (letters, digits, hyphens); got '$OperatorRemoteOwner'"
     }
+    # Operator secrets come from the ENVIRONMENT only (never a parameter: the
+    # command line is visible to other processes). Recorded in operator.env
+    # only when supplied; never printed, never guessed.
+    $OperatorGhToken = $env:SPEC_PROTOCOL_OPERATOR_GH_TOKEN
+    $OperatorVercelToken = $env:VERCEL_TOKEN
+    if (("$OperatorGhToken$OperatorVercelToken") -match '\s') {
+        Write-Blocker 'SPEC_PROTOCOL_OPERATOR_GH_TOKEN / VERCEL_TOKEN must be a single token with no spaces or line breaks (value not shown)'
+    }
     if (-not (Ensure-WingetPackage 'Git.Git' 'git')) {
         Write-Blocker "Git for Windows is required (spec-protocol runs on Git Bash) and could not be installed. Run: winget install --id Git.Git --exact, then re-run."
     }
@@ -402,10 +424,30 @@ try {
     $nineVerStr = ($nineVerOut | Select-Object -Last 1).ToString()
     $DepSummary += "9router         OK   v$nineVerStr ($nineBin)"
 
+    # Vercel CLI, for publishing the finished product: the same npm global
+    # prefix 9Router uses. Never fatal - publishing reports HOSTING-BLOCKED
+    # by name, and spec-protocol falls back to `npx vercel`.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $vercelCmd = Get-Command vercel -ErrorAction SilentlyContinue
+    if (-not $vercelCmd) {
+        Write-Log 'Installing the Vercel CLI (npm global)...'
+        & $NpmBin install -g vercel@latest 2>&1 | Out-Host
+        Refresh-Path
+        $vercelCmd = Get-Command vercel -ErrorAction SilentlyContinue
+    }
+    $vercelVer = if ($vercelCmd) { (& $vercelCmd.Source --version 2>$null | Select-Object -Last 1) } else { $null }
+    $ErrorActionPreference = $prevEap
+    if ($vercelVer) { $DepSummary += "vercel          OK   $vercelVer ($($vercelCmd.Source))" }
+    else { $DepSummary += 'vercel          MISSING - npm install -g vercel@latest failed; publishing falls back to npx vercel' }
+
     Write-Log 'Dependency preflight complete:'
     foreach ($line in $DepSummary) { Write-Log "  $line" }
 
     # 6. Start + health + first-run security
+    # $setupRouterProc is set ONLY when this run started the router; the smoke
+    # test stops exactly that router to prove the launcher's cold start.
+    $setupRouterProc = $null
     if (-not (Wait-Health)) {
         # The npm '9router' name resolves to a .ps1 shim, which Start-Process
         # opens with the Edit verb (nothing runs). Target the .cmd shim instead.
@@ -413,7 +455,7 @@ try {
         if (-not (Test-Path $nineCmd)) { $nineCmd = $nineBin }
         # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
         # exposes the dashboard + /v1 (holding provider keys) to the LAN.
-        Start-Process -FilePath $nineCmd -ArgumentList @('--no-browser','--host','127.0.0.1') -WindowStyle Hidden
+        $setupRouterProc = Start-Process -FilePath $nineCmd -ArgumentList @('--no-browser','--host','127.0.0.1') -WindowStyle Hidden -PassThru
         if (-not (Wait-Health)) { Write-Blocker "9Router did not become healthy on $Base" }
     }
 
@@ -663,6 +705,26 @@ else {
     Remove-Item Env:NINEROUTER_TOKEN -ErrorAction SilentlyContinue
     Remove-Item Env:OPENROUTER_PROBE_ROUTE -ErrorAction SilentlyContinue
 
+    # COLD START. Stop ONLY the router this run started (one that was already
+    # running before setup is left alone), so the probe below must start it
+    # the way the client's next boot will. The .cmd shim's node child owns the
+    # listener, so stop the listener's process too.
+    $coldStartLine = 'not re-proven (9Router was already running before setup; it was left alone)'
+    if ($setupRouterProc) {
+        Write-Log 'Stopping the router this setup started, to prove claude-nine cold-starts it...'
+        Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+            ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+        Stop-Process -Id $setupRouterProc.Id -Force -ErrorAction SilentlyContinue
+        for ($i = 0; $i -lt 40; $i++) {
+            if (-not (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+            Write-Blocker "could not stop the 9Router this setup started (port $Port still listening), so the cold-start probe cannot run"
+        }
+        $coldStartLine = 'OK (claude-nine started 9Router itself)'
+    }
+
     # Launcher end-to-end: a real routed request through claude-nine. Use the
     # absolute installed path, not a bare PATH lookup — a fresh shell's PATH
     # may not have refreshed yet even though Install-ClaudeNine.ps1 just
@@ -728,14 +790,21 @@ else {
     }
     Write-Log "spec-protocol hooks: $hooksStatus"
 
-    #  (b) Operator remote owner (fix #6): written ONLY when supplied.
+    #  (b) Operator keys (fix #6, A6): each written ONLY when supplied; a key
+    #      not supplied on this run keeps whatever an earlier run wrote.
+    #        SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER  backup org (repo-anchor)
+    #        SPEC_PROTOCOL_OPERATOR_GH_TOKEN      token for that org (repo-anchor)
+    #        VERCEL_TOKEN                         publishing (publish.sh)
     $operatorRemoteLine = 'not supplied (builds keep work local-only when GitHub sign-in is declined)'
+    $opKeys = @()
     if ($OperatorRemoteOwner) {
-        $opDir = Join-Path $skillRoot 'spec-protocol'
-        New-Item -ItemType Directory -Path $opDir -Force | Out-Null
-        [System.IO.File]::WriteAllText((Join-Path $opDir 'operator.env'), "SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER=$OperatorRemoteOwner`n")
-        $operatorRemoteLine = "$OperatorRemoteOwner ($opDir\operator.env)"
+        Set-OperatorKey $skillRoot 'SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER' $OperatorRemoteOwner
+        $operatorRemoteLine = "$OperatorRemoteOwner ($(Join-Path $skillRoot 'spec-protocol\operator.env'))"
     }
+    if ($OperatorGhToken) { Set-OperatorKey $skillRoot 'SPEC_PROTOCOL_OPERATOR_GH_TOKEN' $OperatorGhToken; $opKeys += 'SPEC_PROTOCOL_OPERATOR_GH_TOKEN' }
+    if ($OperatorVercelToken) { Set-OperatorKey $skillRoot 'VERCEL_TOKEN' $OperatorVercelToken; $opKeys += 'VERCEL_TOKEN' }
+    $operatorKeysLine = if ($opKeys.Count) { "$($opKeys -join ', ') (values never shown)" } else { 'none supplied on this run (values never shown)' }
+    $OperatorGhToken = $null; $OperatorVercelToken = $null
 
     #  (c) Ultracode on by default (fix #8): the launcher turns
     #      lastEffortSelection=ultracode into `--effort ultracode`. Seeded only
@@ -751,6 +820,12 @@ else {
     #  (d) GitHub sign-in, once (fix #33). Skipped when already signed in.
     if (-not $ghOk) { $ghAuthLine = 'SKIPPED - gh is not installed (see the dependency summary)' }
     elseif (Test-Runs 'gh' @('auth', 'status')) { $ghAuthLine = 'OK (already signed in)' }
+    elseif ([Console]::IsInputRedirected) {
+        # Run in the background (AGENT_INSTALL.md step 7): the one-time code
+        # would land in a log nobody sees and the device flow would stall
+        # setup. The installing agent runs gh auth login as its own step.
+        $ghAuthLine = 'PENDING - run as its own step: gh auth login --web --hostname github.com --git-protocol https'
+    }
     else {
         Write-Log 'Signing in to GitHub: a browser window opens; enter the one-time code shown below.'
         $prevEap = $ErrorActionPreference
@@ -847,17 +922,19 @@ Operating system: Windows
 Claude Code: OK
 Personal skills (normal claude and claude-nine share one config root): $skillVisible
 Bundled skill links: $skillLinkStatus
-Auto-compaction: 500k tokens - $autoCompactStatus
+Auto-compaction: settings 500k tokens - $autoCompactStatus; claude-nine compacts at 200k (launcher env, below the 256K fallback lane)
 Auto-compaction per root:
 $($autoCompactDetail -join "`n")
 Per-skill visibility:
 $($skillVisibleDetail -join "`n")
 claude-nine launcher: OK
+claude-nine cold start (router stopped, launcher restarted it): $coldStartLine
 Ultracode default: $ultracodeDefaultLine
 spec-protocol hooks: $hooksStatus
 $($hooksDetail -join "`n")
 GitHub sign-in: $ghAuthLine
 Operator backup owner: $operatorRemoteLine
+Operator keys recorded: $operatorKeysLine
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK

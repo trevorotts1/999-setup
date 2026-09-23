@@ -75,7 +75,8 @@ if not isinstance(hooks, dict):
     sys.exit(2)
 
 def cmd_for(fname):
-    return '%s "%s"' % (py, os.path.join(hooks_dir, fname).replace("\\", "/"))
+    # Both quoted: an interpreter path with spaces (C:/Program Files/...) must survive the shell.
+    return '"%s" "%s"' % (py, os.path.join(hooks_dir, fname).replace("\\", "/"))
 
 def cmd_path(cmd, fname):
     try:

@@ -13,7 +13,7 @@
 #      project one REPO-ANCHOR line is filed through tools/ledger.sh)
 #      / ANCHORED LOCAL-ONLY — no remote could be arranged (no origin, no
 #      --remote, `gh auth status` failed, no --operator-remote, and no operator
-#      owner, or the operator-owner creation failed): the git repository and its
+#      owner, or every `gh repo create` attempt failed): the git repository and its
 #      first commit exist, the receipt says "source": "local-only" and
 #      "remote": null, and the ledger line says the work is NOT YET ONLINE.
 #      Declining GitHub never stops a build. A re-run tries again to go online.
@@ -29,7 +29,9 @@
 # REMOTE SOURCES, in order: existing origin; --remote; the client's own gh login;
 # --operator-remote; SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER (the environment, else a
 # KEY=value line in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env",
-# parsed, never sourced) -> `gh repo create <owner>/<slug> --private`; else local-only.
+# parsed, never sourced) -> `gh repo create <owner>/<slug> --private`, run with
+# GH_TOKEN=<SPEC_PROTOCOL_OPERATOR_GH_TOKEN from that file> for that one call only;
+# else local-only. A failed create (name taken, ...) retries <slug>-2 .. <slug>-5.
 #
 # WHY THIS EXISTS. The skill's own description promises "merged-to-GitHub".
 # SKILL.md section 6 says GitHub is arranged at minute one via `gh auth login --web`,
@@ -79,7 +81,7 @@ LEDGER_SH="${SCRIPT_DIR}/ledger.sh"
 
 GH_CMD="${REPO_ANCHOR_GH_CMD:-gh}"
 
-usage() { sed -n '2,31p' "${SELF}"; }
+usage() { sed -n '2,33p' "${SELF}"; }
 
 # --- named instruments -------------------------------------------------------
 # `command -v` proves a NAME resolves, never that the program RUNS, so each one
@@ -294,13 +296,18 @@ github_slug() {
 # The operator's owner: the environment first, else one KEY=value line of the
 # operator.env file. Parsed, never sourced. Empty when neither sets it.
 OWNER_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env"
+operator_env_value() { # operator_env_value <KEY> -> the last KEY=value in OWNER_FILE, or empty
+  local v=""
+  if [[ -r "${OWNER_FILE}" ]]; then
+    v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*//p" "${OWNER_FILE}" | tail -n 1 | tr -d '\r')"
+    v="${v%%[[:space:]]*}"; v="${v#[\"\']}"; v="${v%[\"\']}"
+  fi
+  printf '%s' "${v}"
+}
 operator_owner() {
   local v
   v="${SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER:-}"
-  if [[ -z "${v}" && -r "${OWNER_FILE}" ]]; then
-    v="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER[[:space:]]*=[[:space:]]*//p' "${OWNER_FILE}" | tail -n 1 | tr -d '\r')"
-    v="${v%%[[:space:]]*}"; v="${v#[\"\']}"; v="${v%[\"\']}"
-  fi
+  [[ -n "${v}" ]] || v="$(operator_env_value SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER)"
   [[ -z "${v}" || "${v}" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]] \
     || undetermined "SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER='${v}' (environment or ${OWNER_FILE}) is not a GitHub owner name — a set value that cannot be used is never ignored"
   printf '%s' "${v}"
@@ -322,6 +329,35 @@ gh_authenticated() {
   GH_RC="${rc}"
   GH_BIN="${gh}"
   return "${rc}"
+}
+
+# gh_create <owner-or-empty> [token] — `gh repo create [<owner>/]<slug> --private`,
+# then <slug>-2 .. <slug>-5 when that fails (a taken name is the usual cause).
+# The token, when given, reaches ONLY that gh child as GH_TOKEN (exported inside
+# the command substitution's subshell, never on an argv, never printed).
+# Sets CREATED (1/0), url, and reason (the last failure, redacted).
+gh_create() {
+  local owner="$1" tok="${2:-}" n name out rc
+  CREATED=0
+  for n in "" -2 -3 -4 -5; do
+    name="${SLUG}${n}"
+    [[ -z "${owner}" ]] || name="${owner}/${name}"
+    out="$( [[ -z "${tok}" ]] || export GH_TOKEN="${tok}"
+            GIT_TERMINAL_PROMPT=0 "${GH_BIN}" repo create "${name}" --private --source "${ROOT}" --remote origin --push 2>&1 )"; rc=$?
+    url="$("${GIT}" -C "${ROOT}" remote get-url origin 2>/dev/null)"
+    if (( rc == 0 )) && [[ -n "${url}" ]]; then
+      CREATED=1
+      [[ -z "${n}" ]] || printf 'REPO-ANCHOR | %s was not available on GitHub; created %s instead\n' "${SLUG}" "${name}"
+      return 0
+    fi
+    # A half-made attempt (created, push failed) leaves origin behind; drop it so
+    # the next name can be tried and a local-only receipt stays honest.
+    [[ -z "${url}" ]] || "${GIT}" -C "${ROOT}" remote remove origin >/dev/null 2>&1
+    url=""
+    reason="gh repo create ${name} --private returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 2 | tr '\n' ' ')")"
+  done
+  reason="${reason} (tried ${SLUG} and ${SLUG}-2 .. ${SLUG}-5)"
+  return 1
 }
 
 #------------------------------------------------------------------------------
@@ -452,16 +488,10 @@ run_anchor() {
     # The client's OWN account: gh's default owner is whoever is logged in
     # (SKILL.md section 6, minute one). The token is never interpolated into a
     # URL, and gh's own output is discarded except for its return code.
-    local target
-    target="${SLUG}"
-    [[ -z "${REPO_ANCHOR_GH_OWNER:-}" ]] || target="${REPO_ANCHOR_GH_OWNER}/${SLUG}"
-    out="$("${GH_BIN}" repo create "${target}" --private --source "${ROOT}" --remote origin --push 2>&1)"; rc=$?
-    (( rc == 0 )) \
-      || undetermined "gh repo create ${target} --private --source ${ROOT} --remote origin --push returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 3 | tr '\n' ' ')")"
-    url="$("${GIT}" -C "${ROOT}" remote get-url origin 2>/dev/null)"
-    [[ -n "${url}" ]] \
-      || undetermined "gh repo create returned 0 but ${ROOT} has no origin — the creation is not proven and is not recorded"
-    source="client-gh"; added=1
+    # Every create failing (name taken x5, network) is local-only, never a stop.
+    if gh_create "${REPO_ANCHOR_GH_OWNER:-}"; then
+      source="client-gh"; added=1
+    fi
   elif [[ -n "${OPT_OPERATOR_REMOTE}" ]]; then
     "${GIT}" -C "${ROOT}" remote add origin "${OPT_OPERATOR_REMOTE}" >/dev/null 2>&1 \
       || undetermined "git remote add origin failed in ${ROOT} for the --operator-remote value"
@@ -471,23 +501,21 @@ run_anchor() {
     # The client declined: the operator's own owner, else local-only. Never a stop.
     owner="$(operator_owner)" || exit 2
     if [[ -n "${owner}" && -n "${GH_BIN}" ]]; then
-      out="$("${GH_BIN}" repo create "${owner}/${SLUG}" --private --source "${ROOT}" --remote origin --push 2>&1)"; rc=$?
-      url="$("${GIT}" -C "${ROOT}" remote get-url origin 2>/dev/null)"
-      if (( rc == 0 )) && [[ -n "${url}" ]]; then
+      # The client is not logged in, so the operator's token (never printed,
+      # never on an argv) authenticates this one create and nothing else.
+      if gh_create "${owner}" "$(operator_env_value SPEC_PROTOCOL_OPERATOR_GH_TOKEN)"; then
         source="operator-owner"; added=1
-      else
-        reason="gh repo create ${owner}/${SLUG} --private returned rc=${rc}: $(redact "$(printf '%s' "${out}" | tail -n 2 | tr '\n' ' ')")"
       fi
     elif [[ -n "${owner}" ]]; then
       reason="operator owner ${owner} is set but '${GH_CMD}' does not resolve"
     else
       reason="SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER is set in neither the environment nor ${OWNER_FILE}"
     fi
-    if [[ -z "${source}" ]]; then
-      url=""; source="local-only"
-      printf 'REPO-ANCHOR LOCAL-ONLY | no remote for %s — origin: none; %s auth status: rc=%s; --remote/--operator-remote: not given; %s. The work is saved on this computer and is NOT YET ONLINE.\n' \
-        "${ROOT}" "${GH_CMD}" "${GH_RC}" "${reason}"
-    fi
+  fi
+  if [[ -z "${source}" ]]; then
+    url=""; source="local-only"
+    printf 'REPO-ANCHOR LOCAL-ONLY | no remote for %s — origin: none; %s auth status: rc=%s; --remote/--operator-remote: not given; %s. The work is saved on this computer and is NOT YET ONLINE.\n' \
+      "${ROOT}" "${GH_CMD}" "${GH_RC}" "${reason}"
   fi
 
   # A remote WE added is pushed so the branch exists to prove. A remote that was
@@ -571,9 +599,17 @@ case "${1:-}" in
       if [ "$a" = "--source" ]; then eval "src=\${$(( i + 1 ))}"; fi
     done
     [ -n "$name" ] && [ -n "$src" ] || exit 64
-    echo "$name" >> "${STUB_GH_BARE_DIR:?}/created.log"
+    # Like the real one: logged out and no GH_TOKEN -> no create at all.
+    if [ "${STUB_GH_AUTH_RC:-0}" != "0" ] && [ -z "${GH_TOKEN:-}" ]; then
+      echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 4
+    fi
     slug="${name##*/}"
     bare="${STUB_GH_BARE_DIR:?}/${slug}.git"
+    if [ -e "$bare" ]; then
+      echo "GraphQL: Name already exists on this account (createRepository)" >&2; exit 1
+    fi
+    echo "$name" >> "${STUB_GH_BARE_DIR:?}/created.log"
+    [ -z "${GH_TOKEN:-}" ] || echo "$name" >> "${STUB_GH_BARE_DIR:?}/token-used.log"
     git init --bare "$bare" >/dev/null 2>&1 || exit 1
     git -C "$src" remote add origin "$bare" >/dev/null 2>&1 || exit 1
     br="$(git -C "$src" symbolic-ref --short HEAD 2>/dev/null || echo main)"
@@ -731,12 +767,37 @@ JSON
   local opown
   opown="${T}/opown"
   mkdir -p "${opown}" "${T}/cfg/spec-protocol"
+  # C2: the stub refuses a logged-out create, as the real gh does. Owner but no
+  # operator token -> local-only (the control); then the token -> operator-owner.
+  local tok="ghp_stubOperatorToken0000"
   printf '# operator\nSPEC_PROTOCOL_OPERATOR_REMOTE_OWNER="stub-operator"\n' > "${T}/cfg/spec-protocol/operator.env"
+  STUB_GH_AUTH_RC=1 REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${opown}" >/dev/null 2>&1; local rcnotok=$?
+  local srcnotok
+  srcnotok="$(receipt_field "${opown}/CONTROL/repo-anchor.json" source 2>/dev/null)"
+  printf 'SPEC_PROTOCOL_OPERATOR_GH_TOKEN=%s\n' "${tok}" >> "${T}/cfg/spec-protocol/operator.env"
   out="$(STUB_GH_AUTH_RC=1 REPO_ANCHOR_GH_CMD="${stub}" "${SELF}" "${opown}" 2>&1)"; rc=$?
   rm -f "${T}/cfg/spec-protocol/operator.env"
   report 16 "operator-owner-from-file" \
-    "$([ "${rc}" = "0" ] && grep -qx 'stub-operator/opown' "${bare_dir}/created.log" && [ "$(receipt_field "${opown}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "operator-owner" ] && echo 1 || echo 0)" \
-    "rc=${rc} (want 0); gh repo create got stub-operator/opown and the receipt source is operator-owner"
+    "$([ "${rcnotok}" = "0" ] && [ "${srcnotok}" = "local-only" ] && [ "${rc}" = "0" ] && grep -qx 'stub-operator/opown' "${bare_dir}/token-used.log" && [ "$(receipt_field "${opown}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "operator-owner" ] && echo 1 || echo 0)" \
+    "no token: rc=${rcnotok} source=${srcnotok:-<none>} (want 0 local-only); token: rc=${rc} (want 0), gh got GH_TOKEN for stub-operator/opown, receipt source operator-owner"
+  report 18 "operator-token-never-leaks" \
+    "$(printf '%s' "${out}" | grep -q "${tok}" || grep -rq "${tok}" "${opown}/CONTROL" "${opown}/repos/opown/.git/config" || echo 1)" \
+    "the operator token is absent from the output, the receipt, the ledger and the git config"
+
+  # --- 12. C1: the name is taken -> <slug>-2; all five taken -> local-only ---
+  local taken full
+  taken="${T}/taken"; full="${T}/full"
+  mkdir -p "${taken}" "${full}"
+  "${GIT}" init -q --bare "${bare_dir}/taken.git"
+  for n in "" -2 -3 -4 -5; do "${GIT}" init -q --bare "${bare_dir}/full${n}.git"; done
+  out="$(anchor "${taken}")"; rc=$?
+  report 19 "name-taken-retries-slug-2" \
+    "$([ "${rc}" = "0" ] && grep -qx 'taken-2' "${bare_dir}/created.log" && [ "$(receipt_field "${taken}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "client-gh" ] && echo 1 || echo 0)" \
+    "rc=${rc} (want 0); taken exists so gh repo create got taken-2 and the receipt source is client-gh"
+  out="$(anchor "${full}")"; rc=$?
+  report 20 "all-names-taken-local-only" \
+    "$([ "${rc}" = "0" ] && [ "$(receipt_field "${full}/CONTROL/repo-anchor.json" source 2>/dev/null)" = "local-only" ] && printf '%s' "${out}" | grep -q 'full-5' && echo 1 || echo 0)" \
+    "rc=${rc} (want 0, never 2 with no receipt); five taken names -> local-only receipt naming the last try"
 
   # --- 11. #49: --check fails a GitHub remote that is not PRIVATE ----------
   local pub
@@ -755,7 +816,7 @@ JSON
 
   printf '\n'
   if [ "${FAILS}" = "0" ]; then
-    printf 'repo-anchor.sh selftest: ALL PASS (17 checks, every fixture inside %s)\n' "${T}"
+    printf 'repo-anchor.sh selftest: ALL PASS (20 checks, every fixture inside %s)\n' "${T}"
     return 0
   fi
   printf 'repo-anchor.sh selftest: %s FAILED — this is a BROKEN INSTRUMENT; do not treat its verdicts as proof\n' "${FAILS}"

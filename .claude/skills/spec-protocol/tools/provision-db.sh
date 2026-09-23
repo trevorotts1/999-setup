@@ -11,7 +11,9 @@
 #
 #   vercel integration add neon --name <slug>-db --non-interactive
 #
-# run in the repo root (the repo-anchor.json receipt names it), which creates the
+# run in the repo root (the repo-anchor.json receipt names it) — after
+# `vercel link --yes --project <slug>` when the root has no .vercel/project.json yet —
+# which creates the
 # database, connects it to the linked Vercel project and writes its connection
 # variables (DATABASE_URL and friends) into that project's environment for
 # production, preview and development. No value is ever read or printed here:
@@ -28,12 +30,16 @@
 # (`vercel integration accept-terms neon`); that surfaces here as rc 2 with the
 # CLI's own last lines.
 #
+# The CLI and the operator's credential come from tools/deploy-auth.sh (PATH, the 999
+# npm prefix, or npx; VERCEL_TOKEN handed only to the vercel child).
+#
 # Test seam (the selftest uses it): PROVISION_VERCEL_CMD.
 set -uo pipefail
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 DIR="$(dirname "$SELF")"
-VERCEL="${PROVISION_VERCEL_CMD:-vercel}"
+# shellcheck source=deploy-auth.sh
+. "$DIR/deploy-auth.sh"
 
 say() { printf 'PROVISION-DB | %s\n' "$*"; }
 undetermined() { say "UNDETERMINED | $*"; exit 2; }
@@ -61,7 +67,7 @@ record() { # record <home> <line>
 
 db_vars() { # db_vars <root> -> prints the DB variable names present; rc 2 when env ls fails
   local out
-  out="$(cd "$1" && "$VERCEL" env ls production 2>&1)" || { printf '%s\n' "$out" | tail -5 >&2; return 2; }
+  out="$(cd "$1" && vercel_run env ls production)" || { printf '%s\n' "$out" | tail -5 >&2; return 2; }
   { printf '%s\n' "$out" | grep -Eo '\b(DATABASE_URL|POSTGRES_URL)\b' || true; } | sort -u | tr '\n' ' '
 }
 
@@ -73,14 +79,26 @@ provision() {
     || undetermined "no repo-anchor receipt at $sd/repo-anchor.json — run tools/repo-anchor.sh $home first"
   [[ -d "$root" ]] || undetermined "the receipt's repoRoot $root is not a folder"
 
+  slug="$(basename "$root" | tr -cs 'a-zA-Z0-9-' '-' | sed 's/^-*//; s/-*$//' | tr 'A-Z' 'a-z')"
+  vercel_resolve "${PROVISION_VERCEL_CMD:-}" \
+    || undetermined "no Vercel CLI (not on PATH, not in the 999 npm prefix, and no npx) — re-run nine-router-setup"
+  if [[ ! -f "$root/.vercel/project.json" ]]; then
+    out="$(cd "$root" && vercel_run link --yes --project "${slug:-project}")"; rc=$?
+    if (( rc != 0 )); then
+      say "vercel link --yes --project ${slug:-project} exited $rc. Last lines:"
+      printf '%s\n' "$out" | tail -5
+      exit 2
+    fi
+    say "LINKED | $root -> Vercel project ${slug:-project}"
+  fi
+
   vars="$(db_vars "$root")" || undetermined "vercel env ls production failed in $root (not linked, or not logged in)"
   if [[ -n "${vars// /}" ]]; then
     say "ALREADY | $vars set on the Vercel project; nothing created"
     exit 0
   fi
 
-  slug="$(basename "$root" | tr -cs 'a-zA-Z0-9-' '-' | sed 's/^-*//; s/-*$//')"
-  out="$(cd "$root" && "$VERCEL" integration add neon --name "${slug:-project}-db" --non-interactive 2>&1)"; rc=$?
+  out="$(cd "$root" && vercel_run integration add neon --name "${slug:-project}-db" --non-interactive)"; rc=$?
   if (( rc != 0 )); then
     say "vercel integration add neon exited $rc. Last lines:"
     printf '%s\n' "$out" | tail -5
@@ -110,23 +128,24 @@ selftest() {
 case "\$1" in
   env) [ -f "$t/added" ] && echo "DATABASE_URL  Encrypted  Production"; exit 0 ;;
   integration) echo x >> "$t/adds"; touch "$t/added"; exit 0 ;;
+  link) echo x >> "$t/links"; mkdir -p .vercel && echo '{}' > .vercel/project.json; exit 0 ;;
 esac
 exit 1
 EOF
   chmod +x "$t/vercel"
 
-  # run twice: first provisions, second is a no-op -> exactly one add, two rc 0, one DATABASE line
+  # run twice: first links + provisions, second is a no-op -> one link, one add, two rc 0, one DATABASE line
   PROVISION_VERCEL_CMD="$t/vercel" bash "$SELF" "$t/p" >/dev/null 2>&1; rc=$?
   PROVISION_VERCEL_CMD="$t/vercel" bash "$SELF" "$t/p" >/dev/null 2>&1; rc=$((rc + $?))
-  if (( rc == 0 )) && [[ "$(wc -l < "$t/adds" | tr -d ' ')" == 1 ]] \
+  if (( rc == 0 )) && [[ "$(wc -l < "$t/adds" | tr -d ' ')" == 1 ]] && [[ "$(wc -l < "$t/links" | tr -d ' ')" == 1 ]] \
      && [[ "$(grep -c 'DATABASE: provider=neon' "$t/p/CONTROL/LEDGER.md")" == 1 ]]; then
-    echo "SELFTEST ok   provisions once, second run is a no-op, one DATABASE line"
+    echo "SELFTEST ok   links once, provisions once, second run is a no-op, one DATABASE line"
   else echo "SELFTEST FAIL idempotent provision: rc=$rc"; fails=1; fi
   exit "$fails"
 }
 
 case "${1:-}" in
   --selftest) selftest ;;
-  ""|-h|--help) sed -n '2,31p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  ""|-h|--help) sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
   *) provision "$1" ;;
 esac

@@ -227,11 +227,31 @@ if [ "$_cat_rc" = 10 ] && /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
 fi
 unset _cat_fix _cat_rc _f
 
+# resolve_nine_router — absolute path of the 9router binary. A bare `9router`
+# is not on a client's PATH after a reboot (setup installs it under its own npm
+# prefix), so resolve it explicitly: NINEROUTER_BINARY, the 999 npm prefix,
+# ~/.npm-global, then PATH.
+resolve_nine_router() {
+  local c
+  for c in "${NINEROUTER_BINARY:-}" \
+           "$HOME/.local/share/999/npm/bin/9router" \
+           "$HOME/.npm-global/bin/9router" \
+           "$(command -v 9router 2>/dev/null || true)"; do
+    [ -n "$c" ] && [ -x "$c" ] && { printf '%s\n' "$c"; return 0; }
+  done
+  return 1
+}
+
 # Start 9router if nothing is listening, rather than just refusing to launch.
 if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
   echo "🔌 9router not running on :${PORT} — starting it..." >&2
+  _nine_bin="$(resolve_nine_router)" || {
+    echo "❌ 9router not found (looked at \$NINEROUTER_BINARY, ~/.local/share/999/npm/bin, ~/.npm-global/bin, PATH). Re-run /nine-router-setup." >&2
+    exit 1
+  }
   mkdir -p "$HOME/.9router"
-  nohup 9router --no-browser >"$HOME/.9router/cli-launch.log" 2>&1 &
+  nohup "$_nine_bin" -p "$PORT" --no-browser >"$HOME/.9router/cli-launch.log" 2>&1 &
+  unset _nine_bin
   for _ in $(seq 1 40); do
     /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 && break
     sleep 0.5
@@ -260,7 +280,7 @@ CC_BIN="$(cc_resolve_binary)" || exit 1
 # is therefore remembered here, in this launcher's own config root, and re-applied
 # on every launch until it is explicitly cleared:
 #   claude-nine --ultracode      turn it on, and remember it
-#   claude-nine --no-ultracode   turn it off, and forget it
+#   claude-nine --no-ultracode   turn it off, and remember the opt-out
 # CLAUDE_NINE_ULTRACODE in the environment always wins over the remembered value.
 CC_EFFORT_ARGS=()
 CC_ULTRA_STATE="$CLAUDE_CONFIG_DIR/.last-effort"
@@ -273,7 +293,9 @@ case "${1:-}" in
   --no-ultracode)
     shift
     export CLAUDE_NINE_ULTRACODE=0
-    rm -f "$CC_ULTRA_STATE" 2>/dev/null || true
+    # Record the opt-out (never delete the file): setup seeds ultracode only
+    # when this file is ABSENT, so a re-run never re-enables it.
+    printf 'off\n' >"$CC_ULTRA_STATE" 2>/dev/null || true
     ;;
 esac
 if [ -z "${CLAUDE_NINE_ULTRACODE:-}" ] \
@@ -308,4 +330,18 @@ if [ "$cc_has_model_flag" = 0 ]; then
 fi
 unset _a cc_has_model_flag
 
-exec "$CC_BIN" ${CC_EFFORT_ARGS[@]+"${CC_EFFORT_ARGS[@]}"} ${CC_MODEL_ARGS[@]+"${CC_MODEL_ARGS[@]}"} "$@"
+# AUTO-COMPACTION BELOW THE SMALLEST FALLBACK WINDOW. The lane chains can fall
+# back to ollama/kimi-k2.6 (256K) and Agnes (window undocumented), while the
+# profile advertises a 1M context. A session that only compacts at 500K would
+# hit a fallback lane's wall first. The env var takes precedence over every
+# settings.json autoCompactWindow (spec-protocol's compact-guard raises that
+# key to a 500K floor), so compaction fires at 200K: 200K + 32K max output
+# stays under 256K. A caller-provided value wins (claude-codex sets 350K).
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-200000}"
+
+# Keep the Mac awake while the session runs (screen may sleep): an overnight
+# build must not stall on idle sleep. caffeinate returns the child's exit code.
+CC_WAKE=()
+[ -x /usr/bin/caffeinate ] && CC_WAKE=(/usr/bin/caffeinate -i)
+
+exec ${CC_WAKE[@]+"${CC_WAKE[@]}"} "$CC_BIN" ${CC_EFFORT_ARGS[@]+"${CC_EFFORT_ARGS[@]}"} ${CC_MODEL_ARGS[@]+"${CC_MODEL_ARGS[@]}"} "$@"

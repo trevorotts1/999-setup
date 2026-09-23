@@ -80,6 +80,18 @@ below are what the tool enforces, written out so a reader can check it; they are
 a second, manual path. The deploy returns the platform address; that address is the
 run's live address until a custom domain answers.
 
+- **Finding the Vercel tool:** `vercel` on PATH, then the 999 npm prefix
+  (`~/.local/share/999/npm/bin/`), then `~/.npm-global/bin/`, then `npx --yes vercel@latest`.
+- **The credential:** `VERCEL_TOKEN` from the environment, else the `VERCEL_TOKEN`
+  key parsed (never sourced) from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env`,
+  supplied by the operator at setup. It is passed ONLY to the vercel child process,
+  never printed, and never asked of the client.
+- **On any failure** the tool writes `HOSTING-BLOCKED: <reason>` to the ledger with
+  the named next step and exits 2 — a run is never left RUNNING with no line.
+- **`tools/publish.sh --draft <project>`** is the preview deploy (no `--prod`): it
+  proves the preview address returns 200 and writes `DRAFT-LIVE: <url>`, the line
+  `references/build.md` requires before STAGE-HERO. A draft is never `PUBLISHED:`.
+
 **No "done" without a `PUBLISHED:` line whose URL returns 200.** For a served target,
 nothing — the morning report, the status line, a `done` state, the client's closing
 message — calls the work finished, live, or online until the ledger carries a
@@ -167,50 +179,59 @@ while the address does not answer is not a publish.
 
 ---
 
-## 3. Served targets only: the domain question — asked once, in these words
+## 3. Served targets only: the domain answer — read, never asked overnight
 
-If `00-INPUT/CONTENT.md` already carries the answer (the content inventory asks
-it), state it back instead of asking again: "You told me earlier you own
-`<name>`. I'll point it at your new site." Otherwise ask, verbatim, and wait:
+The domain question is asked ONCE, in the interview (`references/interview.md`,
+question 12), and its answer is in `00-INPUT/CONTENT.md`. This stage runs while
+the client is asleep, so it asks nothing — it reads that answer:
 
-> Do you already own a web address, like yourbusiness.com?
-
-- **Yes** → take the name exactly as they say it, add it to the deployment
-  through the platform's MCP, and hand them section 4's one screen.
-- **No** → the platform address is the live address, the ledger line carries
-  `domain=none`, and the question is not raised again in this run. Never sell,
-  never register anything on their behalf, never ask for a card.
-- **"I don't know"** → treated as no, said back plainly: "No problem — your
-  site is live at `<url>` and we can point a web address at it any time."
+- **They own one** → take the name exactly as they said it, add it to the
+  deployment through the platform's tool, read the two record values back from
+  the platform's own response, and write section 4's optional step into the
+  morning report. The ledger line carries `domain=none` until the name answers
+  (section 5).
+- **No, "I don't know", or no answer on disk** → the platform address is the
+  live address, the ledger line carries `domain=none`, and the morning report
+  says only: "Your site is live at `<url>`, and we can point a web address at it
+  any time." Never sell, never register anything on their behalf, never ask for
+  a card.
 
 ---
 
-## 4. The two records — one screen, plain words
+## 4. Your own web address — an optional step in the morning report, never overnight
+
+The records screen is NEVER put to the client during the run: nobody is awake to
+act on it, and a live site does not need it. It goes into the morning report
+(`references/audience.md`, "The morning report", the section "If you'd like your
+own web address"), as a plain optional step.
 
 Read the record VALUES from the deployment platform's own response when the
-domain is added — never from memory. Hand the client exactly this shape, filled
-in, and nothing else:
+domain is added — never from memory. The report carries exactly this shape,
+filled in, and nothing else:
 
 | Type | Name (or Host) | Value |
 |---|---|---|
 | A | `@` | `<the A record value the platform returned>` |
 | CNAME | `www` | `<the CNAME value the platform returned>` |
 
-The words that go with it, one screen, plain:
+The words that go with it, plain:
 
-> Sign in where you bought `<name>`. Find the page called DNS or Domain
-> Records. Add these two rows exactly as written. Save. Then come back — I'll
-> watch for it and tell you when it works. It usually takes a few minutes; it
-> can take a few hours.
+> If you'd like people to reach your site at `<name>`, here's what to do. This
+> part is optional — your site already works at `<url>`. Sign in where you
+> bought `<name>` and open the settings for that web address, often a page
+> called Domain Records. Add these two rows exactly as written, and save. Then
+> come back to this window and tell me you've done it, and I'll check that it
+> works. It usually takes a few minutes; it can take a few hours.
 
 Nothing else is asked of them. No nameserver change, no transfer, no account
 handed over.
 
 ---
 
-## 5. Served targets only: poll until the domain answers
+## 5. Served targets only: poll once they say the rows are added
 
-A bounded, foreground poll — never a background watcher:
+A bounded, foreground poll — never a background watcher — started when the
+client says they have added the rows (never overnight, when nobody has):
 
 ```
 dig +short <name>
@@ -223,13 +244,12 @@ resolves AND returns 200, the stage re-writes its ledger line as
 (appended, not replaced — section 1's measured caveat; the LAST such line is the
 live address).
 
-If the hour passes without an answer, the run does NOT claim the domain and
-does NOT stop: the platform address stands as the live address, the line stays
-`PUBLISHED: <platform-url> target=<served-target> domain=none status=200`, and the morning report
-carries one
-plain sentence — "Your web address hasn't switched over yet. The two rows are
-added; it can take a few hours to spread." The next loop re-polls and re-writes
-the line when it answers (`references/loops.md`).
+If the hour passes without an answer, the run does NOT claim the domain: the
+platform address stands as the live address, the line stays
+`PUBLISHED: <platform-url> target=<served-target> domain=none status=200`, and the
+client hears one plain sentence — "Your web address hasn't switched over yet. It
+can take a few hours to spread; I'll keep checking." The next loop re-polls and
+re-writes the line when it answers (`references/loops.md`).
 
 ---
 
@@ -256,11 +276,11 @@ poll, and public-surface proof are `n/a` with the target reason.
 
 The morning report LEADS with the usable release reference — a served address
 when there is one, otherwise the named artifact/install handoff — before
-anything about what was built (`references/documents.md`, document 14):
-
-> Your <target word> is ready at <release reference> and a safe copy is saved on GitHub.
-> Here's what got built, what I checked, and the one or two things only you can
-> decide.
+anything about what was built — one of the three opening lines in
+`references/audience.md`'s morning-report template (the one template). "A safe
+backup copy is stored online" is said ONLY when the repository receipt shows a
+remote; with a `source=local-only` receipt the report says the files are saved on
+this computer, not online yet, and does not mention GitHub.
 
 `<release reference>` is read from the `PUBLISHED:` ledger line, never retyped from memory.
 A mobile app adds its honest-end-state sentence and a desktop program its one install

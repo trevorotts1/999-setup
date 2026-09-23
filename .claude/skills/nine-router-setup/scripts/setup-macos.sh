@@ -389,11 +389,28 @@ write_nine_settings() {
   log "created $dir/settings.json (routes from this run, key via Keychain helper)"
 }
 
+# set_operator_key <config-root> <KEY> <value> — merge ONE key into
+# <root>/spec-protocol/operator.env: other keys are kept, an older value of
+# this key is replaced, the file stays mode 600 (written via a 600 temp file
+# and renamed). Never prints the value.
+set_operator_key() {
+  local f="$1/spec-protocol/operator.env" tmp
+  mkdir -p "$1/spec-protocol" || return 1
+  tmp="$(mktemp "$f.XXXXXX")" || return 1
+  chmod 600 "$tmp"
+  { if [ -f "$f" ]; then grep -v "^$2=" "$f" || true; fi; printf '%s=%s\n' "$2" "$3"; } > "$tmp" && mv "$tmp" "$f"
+}
+
 main() {
   # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
   # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
   # never guessed. Validated as a GitHub owner name before anything is written.
   OPERATOR_REMOTE_OWNER="${SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER:-}"
+  # Operator secrets come from the ENVIRONMENT only (never a flag: argv is
+  # visible to every process on the machine). Written to operator.env (mode
+  # 600) only when supplied; never printed, never guessed.
+  OPERATOR_GH_TOKEN="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
+  OPERATOR_VERCEL_TOKEN="${VERCEL_TOKEN:-}"
   while [ $# -gt 0 ]; do
     case "$1" in
       --operator-remote-owner) OPERATOR_REMOTE_OWNER="${2:-}"; shift ;;
@@ -405,6 +422,9 @@ main() {
   case "$OPERATOR_REMOTE_OWNER" in
     "") ;;
     -*|*[!A-Za-z0-9-]*) fail "--operator-remote-owner must be a GitHub user or org name (letters, digits, hyphens); got '$OPERATOR_REMOTE_OWNER'" ;;
+  esac
+  case "$OPERATOR_GH_TOKEN$OPERATOR_VERCEL_TOKEN" in
+    *[[:space:]]*) fail "SPEC_PROTOCOL_OPERATOR_GH_TOKEN / VERCEL_TOKEN must be a single token with no spaces or line breaks (value not shown)" ;;
   esac
 
   # 1. OS + arch
@@ -515,6 +535,22 @@ main() {
     esac
   fi
 
+  # Vercel CLI, for publishing the finished product. Installed into the SAME
+  # npm prefix as 9Router (spec-protocol's publish.sh looks there, then falls
+  # back to `npx vercel`). Never fatal: publishing reports HOSTING-BLOCKED
+  # by name when the CLI is missing.
+  NINE_PREFIX="${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}"
+  VERCEL_BIN="$NINE_PREFIX/bin/vercel"
+  if ! "$VERCEL_BIN" --version >/dev/null 2>&1; then
+    log "Installing the Vercel CLI into $NINE_PREFIX..."
+    "$NPM_BIN" install -g --prefix "$NINE_PREFIX" vercel@latest >&2 || true
+  fi
+  if VERCEL_VER="$("$VERCEL_BIN" --version 2>/dev/null | tail -1)" && [ -n "$VERCEL_VER" ]; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' vercel "$VERCEL_VER" "$VERCEL_BIN")")
+  else
+    DEP_SUMMARY+=("$(printf '%-14s MISSING — npm install -g --prefix %s vercel@latest failed; publishing falls back to npx vercel' vercel "$NINE_PREFIX")")
+  fi
+
   log "Dependency preflight complete:"
   for line in "${DEP_SUMMARY[@]}"; do
     log "  $line"
@@ -544,11 +580,15 @@ main() {
   fi
 
   # 5. Start + health + first-run security
+  # SETUP_ROUTER_PID is set ONLY when this run started the router; the smoke
+  # test stops exactly that router to prove the launcher's cold start.
+  SETUP_ROUTER_PID=""
   if ! curl -fsS -o /dev/null "$BASE/api/health" 2>/dev/null; then
     mkdir -p "$HOME/Library/Logs/BlackCEO-999"
     # --host 127.0.0.1 is a security requirement: default binds 0.0.0.0 and
     # exposes the dashboard + /v1 (holding provider keys) to the LAN.
     nohup "$NINE_BIN" --no-browser --host 127.0.0.1 > "$HOME/Library/Logs/BlackCEO-999/9router.log" 2>&1 &
+    SETUP_ROUTER_PID=$!
     log "9Router starting on :$PORT"
   fi
   wait_for_health || fail "9Router did not become healthy on $BASE"
@@ -761,6 +801,24 @@ main() {
     OPENROUTER_PROBE_ROUTE="$OPENROUTER_PROBE_ROUTE" \
     "$NODE_BIN" "$COMMON/test-nine-router.mjs" || fail "Smoke tests failed"
 
+  # COLD START. A router that setup itself started would mask a launcher that
+  # cannot start one after a reboot. Stop ONLY the router this run started
+  # (a router that was already running before setup is left alone), so the
+  # probe below has to bring it up the way the client's next boot will.
+  COLD_START_LINE="not re-proven (9Router was already running before setup; it was left alone)"
+  if [ -n "$SETUP_ROUTER_PID" ]; then
+    log "Stopping the router this setup started, to prove claude-nine cold-starts it..."
+    kill "$SETUP_ROUTER_PID" $(/usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true
+    for _ in $(seq 1 40); do
+      /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 || break
+      sleep 0.5
+    done
+    if /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
+      fail "could not stop the 9Router this setup started (port $PORT still listening), so the cold-start probe cannot run"
+    fi
+    COLD_START_LINE="OK (claude-nine started 9Router itself)"
+  fi
+
   log "Executing claude-nine end-to-end..."
   NINE_OUT="$("$HOME/.local/bin/claude-nine" -p "Reply with exactly: routing works" 2>&1 || true)"
   if ! printf '%s' "$NINE_OUT" | grep -q "routing works"; then
@@ -808,6 +866,8 @@ main() {
   # live environment is honored as the primary root.
   CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  # The config dir the shipped claude-nine launcher uses.
+  NINE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
 
   # Secondary root, linked ONLY when $HOME/.claude-nine already exists as a real
   # config root — proved by its own settings.json, not by the bare directory.
@@ -847,6 +907,15 @@ main() {
   else
     SKILL_VISIBLE="MISSING: $SKILL_MISSING"
   fi
+  # claude-nine reads skills from ITS OWN root — check that root, not the
+  # plain-claude one.
+  NINE_SKILL_MISSING=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    [ -f "$NINE_ROOT/skills/$s/SKILL.md" ] || NINE_SKILL_MISSING="${NINE_SKILL_MISSING:+$NINE_SKILL_MISSING, }$s"
+  done < <(bundled_skills)
+  NINE_SKILL_VISIBLE="OK"
+  [ -z "$NINE_SKILL_MISSING" ] || NINE_SKILL_VISIBLE="MISSING in $NINE_ROOT: $NINE_SKILL_MISSING"
   # Per-skill visibility from the actual filesystem (OK/MISSING per manifest
   # entry), and the linker's own failure summary (Fix 10 idempotency report).
   SKILL_VISIBLE_DETAIL=""
@@ -865,9 +934,8 @@ main() {
   #     sign-in. All AFTER the claude-nine smoke probe above, so the probe runs
   #     exactly as before.
   #
-  #     NINE_ROOT is the config dir the shipped claude-nine launcher uses
-  #     (${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}, launchers/macos/claude-nine).
-  NINE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
+  #     NINE_ROOT (set above) is the config dir the shipped claude-nine
+  #     launcher uses (${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}).
 
   #     (a) Hooks (fix #1): copy + MERGE-register spec-protocol's four
   #     enforcement hooks into each root that already holds a settings.json
@@ -895,27 +963,40 @@ main() {
   fi
   log "spec-protocol hooks: $HOOKS_STATUS"
 
-  #     (b) Operator remote owner (fix #6): recorded ONLY when the operator
-  #     supplied it; otherwise nothing is written and builds anchor local-only
-  #     when GitHub sign-in is declined.
+  #     (b) Operator keys (fix #6, A6): each recorded ONLY when the operator
+  #     supplied it; a key not supplied on this run keeps whatever an earlier
+  #     run wrote. operator.env is mode 600; values are never printed.
+  #       SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER  backup org (repo-anchor)
+  #       SPEC_PROTOCOL_OPERATOR_GH_TOKEN      token for that org (repo-anchor)
+  #       VERCEL_TOKEN                         publishing (publish.sh)
   OPERATOR_REMOTE_LINE="not supplied (builds keep work local-only when GitHub sign-in is declined)"
-  if [ -n "$OPERATOR_REMOTE_OWNER" ]; then
-    while IFS= read -r root; do
-      [ -n "$root" ] || continue
-      mkdir -p "$root/spec-protocol"
-      printf 'SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER=%s\n' "$OPERATOR_REMOTE_OWNER" > "$root/spec-protocol/operator.env"
-    done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" "$NINE_ROOT" | awk '!seen[$0]++')
-    OPERATOR_REMOTE_LINE="$OPERATOR_REMOTE_OWNER (spec-protocol/operator.env in $CLAUDE_SKILLS_ROOT and $NINE_ROOT)"
-  fi
+  OPERATOR_KEYS_LINE=""
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    [ -z "$OPERATOR_REMOTE_OWNER" ] || set_operator_key "$root" SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER "$OPERATOR_REMOTE_OWNER"
+    [ -z "$OPERATOR_GH_TOKEN" ] || set_operator_key "$root" SPEC_PROTOCOL_OPERATOR_GH_TOKEN "$OPERATOR_GH_TOKEN"
+    [ -z "$OPERATOR_VERCEL_TOKEN" ] || set_operator_key "$root" VERCEL_TOKEN "$OPERATOR_VERCEL_TOKEN"
+  done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" "$NINE_ROOT" | awk '!seen[$0]++')
+  [ -z "$OPERATOR_REMOTE_OWNER" ] || OPERATOR_REMOTE_LINE="$OPERATOR_REMOTE_OWNER (spec-protocol/operator.env in $CLAUDE_SKILLS_ROOT and $NINE_ROOT)"
+  [ -z "$OPERATOR_GH_TOKEN" ] || OPERATOR_KEYS_LINE="SPEC_PROTOCOL_OPERATOR_GH_TOKEN"
+  [ -z "$OPERATOR_VERCEL_TOKEN" ] || OPERATOR_KEYS_LINE="${OPERATOR_KEYS_LINE:+$OPERATOR_KEYS_LINE, }VERCEL_TOKEN"
+  OPERATOR_KEYS_LINE="${OPERATOR_KEYS_LINE:-none supplied on this run} (values never shown)"
+  unset OPERATOR_GH_TOKEN OPERATOR_VERCEL_TOKEN
 
   #     (c) Ultracode on by default (fix #8): the launcher re-applies
   #     `--effort ultracode` whenever <config dir>/.last-effort reads
   #     "ultracode", so the client's first session already has it and
   #     spec-protocol's ultracode gate never opens with a refusal.
-  #     `claude-nine --no-ultracode` still turns it off.
+  #     `claude-nine --no-ultracode` turns it off and records "off" in the
+  #     same file, so it is seeded ONLY when absent: a re-run never re-enables
+  #     it for a client who opted out.
   mkdir -p "$NINE_ROOT"
-  printf 'ultracode\n' > "$NINE_ROOT/.last-effort"
-  ULTRACODE_DEFAULT_LINE="ON ($NINE_ROOT/.last-effort)"
+  if [ -e "$NINE_ROOT/.last-effort" ]; then
+    ULTRACODE_DEFAULT_LINE="kept (a saved effort choice already exists: $NINE_ROOT/.last-effort)"
+  else
+    printf 'ultracode\n' > "$NINE_ROOT/.last-effort"
+    ULTRACODE_DEFAULT_LINE="ON ($NINE_ROOT/.last-effort)"
+  fi
 
   #     (d) GitHub sign-in, once (fix #33): opens github.com in the browser
   #     with a one-time code. Skipped when already signed in; never fatal.
@@ -923,6 +1004,11 @@ main() {
     GH_AUTH_LINE="SKIPPED - gh is not installed (see the dependency summary)"
   elif gh auth status >/dev/null 2>&1; then
     GH_AUTH_LINE="OK (already signed in)"
+  elif [ ! -t 0 ]; then
+    # Run in the background (AGENT_INSTALL.md step 7): the one-time code would
+    # land in a log nobody sees and the device flow would stall setup. The
+    # installing agent runs `gh auth login --web` as its own visible step.
+    GH_AUTH_LINE="PENDING - run as its own step: gh auth login --web --hostname github.com --git-protocol https"
   else
     log "Signing in to GitHub: a browser window opens; enter the one-time code shown below."
     if gh auth login --web --hostname github.com --git-protocol https; then
@@ -932,7 +1018,10 @@ main() {
     fi
   fi
 
-  # 9.8 Auto-compaction at 500k tokens (both platforms). The shared helper
+  # 9.8 Auto-compaction settings key at 500k tokens (both platforms). The
+  #     claude-nine launcher additionally exports CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  #     =200000, which outranks this key, so routed sessions compact below the
+  #     smallest fallback lane's window (kimi-k2.6, 256K). The shared helper
   #     merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
   #     each config root's settings.json: it creates the file when missing,
   #     backs it up before changing it, preserves every other key, and REFUSES
@@ -1014,20 +1103,22 @@ Dashboard: the password is the default \`123456\`; change it yourself in the das
 Operating system: macOS (arm64)
 Claude Code: OK
 Personal skill in normal claude: $SKILL_VISIBLE
-Personal skill in claude-nine: $SKILL_VISIBLE
+Personal skill in claude-nine: $NINE_SKILL_VISIBLE
 Bundled skill links: $SKILL_LINK_STATUS
-Auto-compaction: 500k tokens — $AUTO_COMPACT_STATUS
+Auto-compaction: settings 500k tokens — $AUTO_COMPACT_STATUS; claude-nine compacts at 200k (launcher env, below the 256K fallback lane)
 Auto-compaction per root:
 $AUTO_COMPACT_DETAIL
 Per-skill visibility:
 $SKILL_VISIBLE_DETAIL
 claude-nine launcher: OK
+claude-nine cold start (router stopped, launcher restarted it): $COLD_START_LINE
 claude-codex launcher: $CODEX_LINE
 Ultracode default: $ULTRACODE_DEFAULT_LINE
 spec-protocol hooks: $HOOKS_STATUS
 $HOOKS_DETAIL
 GitHub sign-in: $GH_AUTH_LINE
 Operator backup owner: $OPERATOR_REMOTE_LINE
+Operator keys recorded: $OPERATOR_KEYS_LINE
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
