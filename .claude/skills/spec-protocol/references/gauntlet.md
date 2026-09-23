@@ -1201,7 +1201,8 @@ declaration BEFORE the first dispatch:
 At **`first_pause`: CHECKPOINT.** The run compares metered spend with the spend line
 the client approved in the interview (`references/capacity.md` §10, THE SPEND LINE).
 **Below it**, the run grants itself the next block — `agents.pause_blocks_granted`
-increments, `BUDGET-PAUSE: self-granted …` is written — and continues at full width
+increments and `PAUSE-GRANT: block=<n> spend_usd=<y> line_usd=<X|unmetered> …` is
+written (both by `tools/dispatch-check.sh … spend_usd=<y>`) — and continues at full width
 without a word to the client: the client's up-front yes IS the "keep going". **At or
 past it** (or projected to pass it before the next checkpoint), the run PAUSES. In
 this order, it (1) **deploys the best stable build**, so the client has something

@@ -53,9 +53,10 @@ going to cost more than about $<X> in AI usage, I'll stop and ask you first. Is 
 $<X> is the estimate from `references/capacity.md` §3, and the answer is written as
 `COST-LINE: usd=<X> source=answer|default` through `tools/ledger.sh`. At `first_pause` (and at
 every later block boundary) the run does NOT stop to ask while the measured AI spend is below
-that line: the conductor records `PAUSE-GRANT: block=<n> spend_usd=<y> line_usd=<X>
-source=cost-line` through `tools/ledger.sh`, raises `agents.pause_blocks_granted` by one through
-the state writer, and resumes at FULL width — the client promised "overnight" is never woken by
+that line (or the line is `COST-LINE: unmetered`): the conductor passes `spend_usd=<y>` on the
+next dispatch, and `tools/dispatch-check.sh` records `PAUSE-GRANT: block=<n> spend_usd=<y>
+line_usd=<X|unmetered> source=cost-line …` through `tools/ledger.sh`, raises
+`agents.pause_blocks_granted` by one, and the run resumes at FULL width — the client promised "overnight" is never woken by
 an execution count. Spend that cannot be measured is UNDETERMINED and is treated as AT the line.
 When the spend reaches the line, the run deploys the best stable build, writes the plain report,
 sets `run_status = PAUSED_CAP`, and asks one question:

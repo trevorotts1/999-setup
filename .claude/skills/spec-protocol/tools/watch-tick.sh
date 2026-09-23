@@ -2209,7 +2209,7 @@ selftest() {
   printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-018\n' "$(stamp 1)" > "$T/c18/CONTROL/dispatch-log.md"
   printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c18/CONTROL/HEARTBEAT.md"
   mkdir -p "$T/c18/CONTROL/.speech"
-  printf 'Details saved \xe2\x80\x94 backup at `/tmp/corner-post-framing-backup-20260908T1315Z`.\n' > "$T/c18/CONTROL/.speech/turn-06.txt"
+  printf 'Details saved \xe2\x80\x94 backup at `/tmp/brightside-studio-backup-20260908T1315Z`.\n' > "$T/c18/CONTROL/.speech/turn-06.txt"
   runw "$T/c18"
   ok=0
   if (( RC == 3 )) \
@@ -2520,7 +2520,7 @@ selftest() {
   mk_home "$T/c29"
   printf '%s | U-02 qc | qc | [opus x10] WF01 judge | run-029\n' "$(stamp 1)" > "$T/c29/CONTROL/dispatch-log.md"
   printf '%s | WF01 judge | U-02 | qc\n' "$(stamp 1)" > "$T/c29/CONTROL/HEARTBEAT.md"
-  printf '2026-09-08T10:29:28Z | PUBLISHED: studio-nerds-macos-arm64.pkg target=desktop-macos-arm64 domain=none status=n/a\n' > "$T/c29/CONTROL/LEDGER.md"
+  printf '2026-09-08T10:29:28Z | PUBLISHED: brightside-studio-macos-arm64.pkg target=desktop-macos-arm64 domain=none status=n/a\n' > "$T/c29/CONTROL/LEDGER.md"
   runw "$T/c29"
   ok=0
   if (( RC == 0 )) \

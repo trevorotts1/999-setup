@@ -330,6 +330,63 @@ link_skills_into_root() {
   return "$failures"
 }
 
+# Fix #52: the claude-nine launcher sources claude-code-lib.sh from its own
+# directory, refuses to start without $HOME/.claude-nine/settings.json, and
+# that settings file names get-9router-key.sh as its apiKeyHelper. Install
+# both helpers next to the launcher ($HOME/.local/bin, where
+# install-claude-nine.sh puts it).
+install_launcher_support() {
+  local f
+  mkdir -p "$HOME/.local/bin"
+  for f in claude-code-lib.sh get-9router-key.sh; do
+    [ -f "$REPO_ROOT/launchers/macos/$f" ] || fail "launcher helper missing from the repo: launchers/macos/$f"
+    install -m 755 "$REPO_ROOT/launchers/macos/$f" "$HOME/.local/bin/$f"
+  done
+  log "installed claude-code-lib.sh and get-9router-key.sh in $HOME/.local/bin"
+}
+
+# Create $HOME/.claude-nine/settings.json ONLY when absent (never overwrites a
+# user's file). Lane pins come from the configure report's resolvedRoutes (the
+# routes this run actually built — references/model-routing.md); output and
+# tool-concurrency caps follow model-routing.md's policy. The context cap is
+# 1M (DeepSeek V4). Reads the config report on stdin. No secret is written:
+# the token stays in the Keychain, fetched by the apiKeyHelper.
+write_nine_settings() {
+  local dir="$HOME/.claude-nine"
+  if [ -f "$dir/settings.json" ]; then
+    log "claude-nine settings.json already present — left untouched"
+    return 0
+  fi
+  mkdir -p "$dir"
+  SETTINGS_OUT="$dir/settings.json" HELPER="$HOME/.local/bin/get-9router-key.sh" \
+  PORT="$PORT" CONCURRENCY="$1" "$NODE_BIN" -e '
+    let s = "";
+    process.stdin.on("data", (c) => (s += c)).on("end", () => {
+      const r = (JSON.parse(s) || {}).resolvedRoutes || {};
+      for (const k of ["fable", "opus", "sonnet", "haiku", "subagent"]) {
+        if (!r[k]) { console.error("config report has no " + k + " route"); process.exit(1); }
+      }
+      const out = {
+        apiKeyHelper: process.env.HELPER,
+        model: "opus",
+        env: {
+          ANTHROPIC_BASE_URL: "http://127.0.0.1:" + process.env.PORT + "/v1",
+          ANTHROPIC_DEFAULT_FABLE_MODEL: r.fable,
+          ANTHROPIC_DEFAULT_OPUS_MODEL: r.opus,
+          ANTHROPIC_DEFAULT_SONNET_MODEL: r.sonnet,
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: r.haiku,
+          CLAUDE_CODE_SUBAGENT_MODEL: r.subagent,
+          CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1000000",
+          CLAUDE_CODE_MAX_OUTPUT_TOKENS: "32000",
+          CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: String(process.env.CONCURRENCY || 2),
+        },
+      };
+      require("fs").writeFileSync(process.env.SETTINGS_OUT, JSON.stringify(out, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+    });
+  ' || fail "could not create $dir/settings.json"
+  log "created $dir/settings.json (routes from this run, key via Keychain helper)"
+}
+
 main() {
   # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
   # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
@@ -591,6 +648,8 @@ main() {
   export CLAUDE_NINE_SOURCE="$REPO_ROOT/launchers/macos/claude-nine"
   export CLAUDE_CODEX_SOURCE="$REPO_ROOT/launchers/macos/claude-codex"
   bash "$MACOS/install-claude-nine.sh"
+  install_launcher_support
+  printf '%s' "$CONFIG_REPORT" | write_nine_settings "$CONCURRENCY"
 
   # 9.5. Enable Agent Teams (merge-only, backed up; never disturbs running work).
   #      Turns the experimental Agent Teams flag on in ~/.claude/settings.json and
@@ -726,14 +785,13 @@ main() {
 
   # Skill visibility: an actual filesystem check, not an assumption.
   #
-  # TOPOLOGY. The shipped claude-nine launcher never sets CLAUDE_CONFIG_DIR. It
-  # injects routing — base URL, Keychain token, alias exports — into the child
-  # process only, and leaves the Claude config root exactly as it found it
-  # (CLAUDE.md rule 10; nine-router-setup SKILL.md step 10). The config root is
-  # therefore the ordinary $HOME/.claude, and that is where the skills must
-  # land for a claude-nine session to see them. An operator whose own wrapper
-  # exports CLAUDE_CONFIG_DIR is honored automatically by resolving from the
-  # live environment, so no topology is assumed in either direction.
+  # TOPOLOGY. The shipped claude-nine launcher sets CLAUDE_CONFIG_DIR to
+  # ${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}; routing (base URL, apiKeyHelper
+  # for the Keychain token, lane pins) lives in that root's settings.json,
+  # which step 9 above creates when absent. Plain `claude` keeps the ordinary
+  # $HOME/.claude, so the skills are linked there first, and into
+  # $HOME/.claude-nine as the secondary root below. A CLAUDE_CONFIG_DIR in the
+  # live environment is honored as the primary root.
   CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -800,9 +858,10 @@ main() {
   #     (a) Hooks (fix #1): copy + MERGE-register spec-protocol's four
   #     enforcement hooks into each root that already holds a settings.json
   #     chain (the same two roots the skills were linked into). install-hooks.sh
-  #     backs settings.json up first, keeps every existing entry, and never
-  #     creates a settings.json in the claude-nine root (that file is the
-  #     launcher's "router config present" guard). Never fatal.
+  #     backs settings.json up first and keeps every existing entry. The
+  #     claude-nine root's settings.json already exists here (step 9 creates
+  #     it when absent), so the hooks merge into it; install-hooks.sh itself
+  #     never creates one. Never fatal.
   HOOKS_DETAIL=""
   HOOKS_STATUS="OK"
   SPEC_SRC="$(resolve_skill_source spec-protocol)"

@@ -21,7 +21,7 @@
 #   money             a cost              ($4.20, 12 dollars, 40 USD)
 #   model-id          a model name        (claude-sonnet-4-5, opus, haiku, gpt-4)
 #   operator-heading  a line that OPENS an operator aside ("Operator note.")
-#   tmp-path          a scratch path      (/tmp/corner-post-backup, %TEMP%\draft)
+#   tmp-path          a scratch path      (/tmp/brightside-studio-backup, %TEMP%\draft)
 #   backup-announcement  the words "backup at" and then a path
 #   jargon            audience.md §2 banned words (database, server, API, deploy...)
 #
@@ -363,7 +363,7 @@ selftest() {
   # client-visible text. BOTH names must appear in the report — `path` because
   # it is a path, `tmp-path` because of where it points.
   _fixture canary-tmp-backup 3 'path tmp-path' \
-    'Details saved — backup at `/tmp/corner-post-framing-backup-20260908T1315Z`.'
+    'Details saved — backup at `/tmp/brightside-studio-backup-20260908T1315Z`.'
 
   # --- CONTROL 3: THE DISCRIMINATING CONTROL. The verbatim opening script,
   # SKILL.md lines 148-152 — the first words the client ever hears. A lint that

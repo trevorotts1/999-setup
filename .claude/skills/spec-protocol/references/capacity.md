@@ -922,11 +922,11 @@ these words:
 - **`<X>`** is the run's estimated AI spend for the whole build — the section 6 burn
   estimate for the declared budget, rounded UP to a round figure. It is an estimate
   and said as one ("about").
-- **Yes** → record `COST-LINE: usd=<X> answer=yes` through `tools/ledger.sh` (the
+- **Yes** → record `COST-LINE: usd=<X> source=answer` through `tools/ledger.sh` (the
   ledger line is the durable record a resume reads). **No, or a
   different amount** → the amount they name is the line (one follow-up, "What amount
   would you be comfortable with?", which is part of the same question); record it
-  the same way.
+  the same way. A line the run sets without an answer is `source=default`.
 - **Only metered spend counts** (a pay-as-you-go balance: DeepSeek direct, OpenRouter,
   any per-token account). A run with no metered spend — a flat subscription only —
   does not ask the question (it records `COST-LINE: unmetered`), and its execution
@@ -959,9 +959,13 @@ predicted here, in writing, before dispatch — never discovered at the wall.
   measurable progress is still occurring.
 - At **`first_pause = max(200, 4 × initial)`: CHECKPOINT, never stop.** Compare the
   metered spend (section 6 burn table) with THE SPEND LINE. Below it: the run grants
-  itself another block of the same size (`agents.pause_blocks_granted` + 1), writes
-  `BUDGET-PAUSE: self-granted spend=<$> spend_line=<$X>` through `tools/ledger.sh`,
-  and continues at full width without a word to the client. At or past it, or
+  itself another block of the same size — it passes `spend_usd=<y>` on the next
+  dispatch and `tools/dispatch-check.sh` writes
+  `PAUSE-GRANT: block=<n> spend_usd=<y> line_usd=<X|unmetered> source=cost-line …`
+  through `tools/ledger.sh` and raises `agents.pause_blocks_granted` by one — and
+  continues at full width without a word to the client. No tool measures dollars:
+  `spend_usd=` is the burn-table figure, and spend that is absent or not a number
+  counts as AT the line. At or past it, or
   projected to pass it before the next checkpoint: deploy the best stable build,
   write the plain report, set `run_status=PAUSED_CAP`, and ask the one question
   (`references/gauntlet.md` §13.2).

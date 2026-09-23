@@ -203,24 +203,20 @@ model to the default Fusion panel on Pro.
 - Ollama's 32K output cap is an **application policy**, not a vendor maximum.
 - Do not confuse `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (context) with output tokens.
 
-### DeepSeek context window — live reading (fix #37)
+### DeepSeek context window (fix #37, corrected 2026-09-23)
 
-Read 2026-09-23 from the operator box's live 9Router `GET /v1/models` (router token read
-by name, never printed; 608 models listed). Values are what 9Router REPORTS in
-`capabilities.contextWindow` / `maxOutput`:
+DeepSeek V4 Flash and V4 Pro (`deepseek-v4-flash`, `deepseek-v4-pro`) have a
+**1,000,000-token context window** per DeepSeek's own documentation. That is the value
+this setup uses: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000` in `~/.claude-nine/settings.json`.
 
-| Route on that router | contextWindow | maxOutput |
-|---|---|---|
-| `ds/deepseek-flash` (the `ds` DeepSeek Direct node there) | 128,000 | 64,000 |
-| `ollama/deepseek-v4.1-flash` | 1,000,000 | 384,000 |
-| `openrouter/deepseek/deepseek-v4-flash-0731:free` | 1,000,000 | 384,000 |
+An earlier live reading (2026-09-23) of 9Router's `GET /v1/models` reported 128,000 /
+64,000 (contextWindow / maxOutput) for `ds/deepseek-flash`. That was a **wrong hardcoded
+value in 9Router's model catalog**, not DeepSeek's real window. On 2026-09-23 the catalog
+entry was patched on the operator box to 1,000,000 / 384,000 and re-verified live.
 
-**UNVERIFIED (2026-09-23): the client routes this setup wires — `ds/deepseek-v4-flash`,
-`ds-max/deepseek-v4-pro`, `ds-light/deepseek-v4-flash` — are not present on that router,
-so their window was not read.** The 128,000 reported for `ds/deepseek-flash` may be
-9Router's default capability for an unlisted model rather than DeepSeek's real window.
-Re-read on a client box after setup (`/v1/models`, the three routes above) before sizing
-`CLAUDE_CODE_MAX_CONTEXT_TOKENS` or an auto-compact window from any DeepSeek figure.
+⚠️ A 9Router update (`npm i -g 9router` or its self-update) can restore the wrong catalog
+value. Setup must therefore **not** read the window from `/v1/models`; it uses the
+documented 1M figure above.
 
 ## Combo definitions
 

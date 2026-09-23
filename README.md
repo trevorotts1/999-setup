@@ -102,6 +102,23 @@ The **first** time you run `claude-nine` on macOS, you may see a Keychain prompt
 whether to allow access to the stored router token — click **"Always Allow"** so future
 runs do not prompt again.
 
+### What setup does for you
+
+Beyond the router and `claude-nine`, setup prepares the computer for `spec-protocol`:
+
+- **Installs git, python3 and the GitHub CLI (`gh`)** if they are missing, and signs you
+  into GitHub **once** in the browser (`gh auth login --web`). Skip the sign-in and builds
+  still work — they just stay on this computer until you sign in.
+- **Installs and registers the four enforcement hooks** that keep a build honest
+  (`conversation-gate`, `dispatch-gate`, `gate0-claim-gate`, `workflow-syntax-gate`) by
+  running spec-protocol's `tools/install-hooks.sh` (`install-hooks.ps1` on Windows). It
+  merges them into your settings and never removes a hook you already had.
+- **Turns ultracode on** as the starting effort for `claude-nine`, so your first
+  `/spec-protocol` session is ready to go. You can still change it any time (below).
+- **Keeps spec-protocol current.** Every time it launches, spec-protocol checks whether a
+  newer version of any bundled skill is on GitHub and, if so, offers the update once. Say
+  yes and it updates; say no and it will not ask again.
+
 ### Effort and ultracode
 
 `claude-nine` does **not** pin an effort level, so the in-session picker is yours:
@@ -204,14 +221,13 @@ the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) 
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.19.0,
-`nine-router-setup` 1.17.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0). At every
+Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.25.1,
+`nine-router-setup` 1.17.1, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all five skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
 spec-protocol itself; the other four skills refresh by re-running the
-nine-router-setup installer (`/nine-router-setup`). Until this release is merged to
-`main`, skills whose `VERSION` files are not yet on `main` report UNDETERMINED — by
-design, never a false "current".
+nine-router-setup installer (`/nine-router-setup`). A skill whose `VERSION` cannot be
+read from `main` reports UNDETERMINED — by design, never a false "current".
 
 ### Kaizen tests
 

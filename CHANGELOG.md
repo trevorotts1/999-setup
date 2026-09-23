@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.25.1] — 2026-09-23
+
+### Fresh-Mac launcher, self-granting below the cost line, and a universality scrub
+
+**`#52` — `claude-nine` starts on a fresh Mac.** The launcher shipped nothing to source
+before Homebrew or Node existed: `launchers/macos/claude-code-lib.sh` is new — the shared
+helper library `claude-nine` and `get-9router-key.sh` now both source — and
+`.claude/skills/nine-router-setup/scripts/setup-macos.sh` writes `~/.claude-nine/settings.json`
+only when it is absent, never overwriting an operator's tuned config. The launcher's
+operator-only checks are guarded so a client box without those files skips them instead of
+failing. A follow-up pass removed stale comments and recorded the DeepSeek 1M context window
+in `references/model-routing.md`.
+
+**`#54` — below the client's dollar limit, the run grants itself the next block.**
+`dispatch-check.sh` reads the newest `COST-LINE:` in `CONTROL/LEDGER.md`; when the dispatch's
+projected `spend_usd=` is still below its `usd=` (or the line reads `COST-LINE: unmetered`),
+the checkpoint self-grants — it writes one `PAUSE-GRANT:` line, raises
+`agents.pause_blocks_granted`, and proceeds at full width without asking the client. At or
+over the line, it still pauses exactly as before. `dispatch-gate.py`'s refusal text,
+`anchor.sh`'s tick, and `dispatch-check.sh` now share one `PAUSE-GRANT:` / `COST-LINE:`
+vocabulary instead of three worded slightly differently.
+
+**Universality scrub.** Project names left over from earlier fixture and example work were
+removed from shipped `SKILL.md`, `references/`, and hook test data — the skill and its
+selftests no longer name any one client's project. `README.md` was refreshed to match.
+
 ## [1.25.0] — 2026-09-23
 
 ### The 51-issue review fixes
