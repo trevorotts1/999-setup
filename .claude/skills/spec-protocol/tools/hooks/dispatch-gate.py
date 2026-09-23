@@ -21,7 +21,8 @@ and blocks (exit 2) nine shapes, naming the fix for each:
      exit 7 and exit 8. Shape 6 is not about the tree: it is about the RUN.
   7. any launch whose DECLARED agent count, summed across every stage, is not
      booked by a CONTROL/dispatch-log.md row written within the last 120
-     seconds -> the write-ahead rule of SKILL.md section 5, made mechanical.
+     seconds -> the write-ahead rule (references/conductor.md section 6:
+     dispatch-check.sh runs before every wave and writes the row), made mechanical.
      The message names both numbers: `declared=<n> booked=<n>`, or
      `booked=none` when nothing booked it at all.
   8. a BUILD dispatch out of a project whose CONTROL/LEDGER.md carries no
@@ -163,8 +164,9 @@ FIX_7 = (
     "  with <agents> at least the declared count above -- one call books the WHOLE tree,\n"
     "  writing the CONTROL/dispatch-log.md row and incrementing agents.executions_total by\n"
     "  that count in the same step, and rolling the increment back if the row fails to land\n"
-    "  -- then launch again within the window. This is SKILL.md section 5's write-ahead rule\n"
-    "  (EVERY dispatch, research or build) with a wall behind it.\n"
+    "  -- then launch again within the window. This is the write-ahead rule of\n"
+    "  references/conductor.md section 6 (every wave is booked before it fires) with a wall\n"
+    "  behind it. A research reader (one agent, phase research, no build label) is exempt.\n"
     "  WHY: on 2026-09-07 ten stage-2 verifiers fired with NO dispatch-log row at all, so\n"
     "  agents.executions_total read 6 while 17 agents had run and the pause line was short by\n"
     "  whole trees. The counter was never the defect -- nothing forced the call that moves it.\n"
@@ -388,26 +390,41 @@ def count_array_elements(code, open_idx):
     return None
 
 
-def resolve_identifier(code, ident):
+def run_arg_len(run_args, key):
+    """len(tool_input.args[key]) when the launch passed that key as a list, else None."""
+    v = run_args.get(key) if isinstance(run_args, dict) else None
+    return len(v) if isinstance(v, list) else None
+
+
+def resolve_identifier(code, ident, run_args=None):
     m = re.search(
         r"(?:const|let|var)\s+" + re.escape(ident) + r"\s*=\s*\[", code
     )
-    if not m:
-        return None
-    return count_array_elements(code, m.end() - 1)
+    if m:
+        return count_array_elements(code, m.end() - 1)
+    # D2: the templates read their items from the launch's own args
+    # (`const units = args.units`), so the count lives in tool_input.args.
+    m = re.search(
+        r"(?:const|let|var)\s+" + re.escape(ident) + r"\s*=\s*args\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:[;\n]|$)",
+        code,
+    )
+    return run_arg_len(run_args, m.group(1)) if m else None
 
 
-def count_items(args, code):
+def count_items(args, code, run_args=None):
     """How many items this stage call passes. None = UNDETERMINED (never a verdict)."""
     a = args.lstrip()
     if a.startswith("["):
         return count_array_elements(args, args.index("["))
+    m = re.match(r"args\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.\s*map\b|,|$)", a)
+    if m:
+        return run_arg_len(run_args, m.group(1))
     m = re.match(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\b", a)
     if m:
-        return resolve_identifier(code, m.group(1))
+        return resolve_identifier(code, m.group(1), run_args)
     m = re.match(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:,|$)", a)
     if m:
-        return resolve_identifier(code, m.group(1))
+        return resolve_identifier(code, m.group(1), run_args)
     return None
 
 
@@ -424,7 +441,7 @@ def call_span(code, start, args):
     return open_idx, open_idx + 1 + len(args)
 
 
-def declared_agents(code, stages):
+def declared_agents(code, stages, run_args=None):
     """Every agent() this script declares, across ALL stages. None = UNDETERMINED.
 
     It reuses the per-stage item counts SHAPE 2 and SHAPE 4 already computed
@@ -440,6 +457,26 @@ def declared_agents(code, stages):
     that guessed high would block a launch that was booked correctly, and the
     count it prints has to be one the conductor can act on.
     """
+    # D2: a template declares its own count in `meta` -- agentsTotal: <n>, or
+    # agentsPerUnit: <k> (x len(args.units)). The larger of that and what the
+    # parser can see is the count: a declaration can raise the visible count
+    # (fan-out in a helper) but never lower it.
+    meta = None
+    m = re.search(r"(?<![A-Za-z0-9_$])agentsTotal\s*:\s*(\d+)", code)
+    if m:
+        meta = int(m.group(1))
+    else:
+        m = re.search(r"(?<![A-Za-z0-9_$])agentsPerUnit\s*:\s*(\d+)", code)
+        n = run_arg_len(run_args, "units")
+        if m and n is not None:
+            meta = int(m.group(1)) * n
+    visible = _visible_agents(code, stages)
+    if visible is None:
+        return meta or None
+    return max(visible, meta or 0) or None
+
+
+def _visible_agents(code, stages):
     agent_starts = [start for start, _args in find_calls(code, "agent")]
     if not agent_starts:
         return None
@@ -460,7 +497,7 @@ def declared_agents(code, stages):
     return total or None
 
 
-def visible_declared_agents(script):
+def visible_declared_agents(script, run_args=None):
     """Return an exact visible agent count, or None when the script is dynamic.
 
     This is intentionally the same conservative parser used by legacy Shape 7.
@@ -481,11 +518,11 @@ def visible_declared_agents(script):
                     "span": call_span(code, start, args),
                     "args": args,
                     "class": classify(args),
-                    "items": count_items(args, code),
+                    "items": count_items(args, code, run_args),
                 }
             )
     stages.sort(key=lambda stage: stage["start"])
-    return declared_agents(code, stages)
+    return declared_agents(code, stages, run_args)
 
 
 def has_any(text, words):
@@ -553,6 +590,64 @@ def find_state_file(start_dir):
             return None
         d, seen = nd, seen + 1
     return None
+
+
+# D1: the project comes from THIS session's transcript, the way
+# conversation-gate.py resolves it -- tools/answers.sh prints
+# `ANSWERS | init | <project>/00-INPUT/ANSWERS.md` (and `| flush |` when a held
+# interview moves into the project). The latest such result line wins; a held
+# file under spec-protocol/runs/ names no project yet and is skipped. With no
+# line at all the launch's cwd is walked, so an operator session that never ran
+# answers.sh stays exactly as scoped as before.
+ANSWERS_RESULT = re.compile(r"^ANSWERS \| (?:init|flush) \| (.+?)\s*$", re.M)
+ANSWERS_SUFFIX = os.path.join("00-INPUT", "ANSWERS.md")
+
+
+def _tool_result_texts(rec):
+    for b in (rec.get("message") or {}).get("content") or []:
+        if not isinstance(b, dict) or b.get("type") != "tool_result":
+            continue
+        c = b.get("content")
+        if isinstance(c, str):
+            yield c
+        elif isinstance(c, list):
+            for x in c:
+                if isinstance(x, dict) and isinstance(x.get("text"), str):
+                    yield x["text"]
+
+
+def transcript_project(transcript_path, cwd):
+    """The project this session's latest answers.sh result line names, or None."""
+    if not isinstance(transcript_path, str) or not os.path.isfile(transcript_path):
+        return None
+    found = None
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if "ANSWERS | " not in line:
+                    continue  # cheap pre-filter before any JSON parse
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(rec, dict) or rec.get("isSidechain") or rec.get("type") != "user":
+                    continue
+                for text in _tool_result_texts(rec):
+                    for m in ANSWERS_RESULT.finditer(text):
+                        path = os.path.expanduser(m.group(1).strip().strip("'\""))
+                        if "%sspec-protocol%sruns%s" % (os.sep, os.sep, os.sep) in path:
+                            continue  # a held interview, not a project
+                        if not path.endswith(ANSWERS_SUFFIX):
+                            continue
+                        found = path[: -len(ANSWERS_SUFFIX)].rstrip(os.sep) or os.sep
+    except Exception:
+        return None
+    if not found:
+        return None
+    if not os.path.isabs(found):
+        found = os.path.join(cwd or os.getcwd(), found)
+    found = os.path.abspath(found)
+    return found if os.path.isdir(found) else None
 
 
 def profile_project(start_dir):
@@ -895,6 +990,22 @@ def is_build_dispatch(code):
     return False
 
 
+def is_research_reader(code, declared):
+    """D3: one agent, a research phase or reader label, and no build label.
+
+    The step-3.5 reader dispatches before any Capacity Ledger, Parallelism Plan
+    or seat exists; booking it would refuse the one dispatch the run needs to
+    learn what to build. tools/dispatch-check.sh exempts the same shape.
+    """
+    if declared != 1 or is_build_dispatch(code):
+        return False
+    for _start, args in find_calls(code, "agent"):
+        for value in option_values(args, "phase") + option_values(args, "label"):
+            if re.search(r"research|reader", value, re.I):
+                return True
+    return False
+
+
 # SHAPE 10 -- start marker and tick arming (fix #32).
 START_MARKER_PREFIX = ".spec-protocol-opened-"
 FIX_10 = (
@@ -982,7 +1093,7 @@ def build_findings(cwd, profiled):
 # ---------------------------------------------------------------------------
 # The evaluation. Returns a list of findings; an empty list means "allow".
 # ---------------------------------------------------------------------------
-def evaluate(script, cwd=None, profiled=False):
+def evaluate(script, cwd=None, profiled=False, run_args=None):
     findings = []
     code = sanitize(script)
 
@@ -1013,7 +1124,7 @@ def evaluate(script, cwd=None, profiled=False):
                     "span": call_span(code, start, args),
                     "args": args,
                     "class": classify(args),
-                    "items": count_items(args, code),
+                    "items": count_items(args, code, run_args),
                 }
             )
     stages.sort(key=lambda s: s["start"])
@@ -1053,7 +1164,10 @@ def evaluate(script, cwd=None, profiled=False):
                 break
 
     # --- 4. under-width against the machine's own measured cap ---------------
-    if not profiled and not re.search(r"dep\s*=", script):
+    # A template launched by path cannot carry a dep= comment per launch, so
+    # args.dep (a non-empty reason string) stands the width check down the same way.
+    dep_arg = isinstance(run_args, dict) and isinstance(run_args.get("dep"), str) and run_args["dep"].strip()
+    if not profiled and not dep_arg and not re.search(r"dep\s*=", script):
         ledger = find_capacity_ledger(cwd or os.getcwd())
         cap = parse_client_cap(ledger) if ledger else None
         counts = [s["items"] for s in stages if s["items"]]
@@ -1066,7 +1180,8 @@ def evaluate(script, cwd=None, profiled=False):
                     "FIX: pass every dispatchable unit to one pipeline() call and let the harness\n"
                     "  queue the rest -- the queue is a rolling window, never a batch. If fewer\n"
                     "  units are dispatchable because a wave dependency blocks them, write the\n"
-                    "  reason in the script as a `dep=<reason>` comment and this check stands down."
+                    "  reason in the script as a `dep=<reason>` comment (or pass args.dep for a\n"
+                    "  template launched by path) and this check stands down."
                     % (widest, cap, ledger)
                 )
 
@@ -1101,8 +1216,8 @@ def evaluate(script, cwd=None, profiled=False):
     # booking back when the row fails to land, so agents.executions_total is
     # exact for every dispatch that CALLS it. On 2026-09-07 ten stage-2
     # verifiers fired without calling it at all -- no dispatch-log row, no
-    # increment -- and the pause line was short by whole trees. SKILL.md
-    # section 5 now binds EVERY dispatch, research or build, to book before it
+    # increment -- and the pause line was short by whole trees.
+    # references/conductor.md section 6 binds every wave to book before it
     # fires; this is the half that holds when the conductor forgets.
     # --- 7 scope: outside a marked project the write-ahead rule does not ---
     # apply, so the launch proceeds unexamined. The log is read from the SAME
@@ -1114,7 +1229,9 @@ def evaluate(script, cwd=None, profiled=False):
         if control is None:
             sys.stderr.write(SCOPE_NOTE + "\n")
         else:
-            declared = declared_agents(code, stages)
+            declared = declared_agents(code, stages, run_args)
+            if declared and is_research_reader(code, declared):
+                declared = None  # D3: a research reader is exempt from booking
             if declared:
                 log = dispatch_log_booking(control, time.time())
                 if log is not None:
@@ -1153,6 +1270,12 @@ def main():
         allow()
 
     event_cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else os.getcwd()
+    # D1: every lookup below starts from the session's own project when the
+    # transcript names one, so a conductor that is not cd'd into it is still gated.
+    try:
+        event_cwd = transcript_project(data.get("transcript_path"), event_cwd) or event_cwd
+    except Exception:
+        pass
 
     if data.get("tool_name") != "Workflow":
         # fix #5: an Agent/Task call is a build dispatch when its description or
@@ -1201,7 +1324,7 @@ def main():
 
     if profiled_root:
         try:
-            declared = visible_declared_agents(script)
+            declared = visible_declared_agents(script, ti.get("args"))
         except Exception:
             declared = None
         if declared is not None and declared > identity["agents"]:
@@ -1214,7 +1337,7 @@ def main():
             )
 
     try:
-        findings = evaluate(script, event_cwd, profiled=bool(profiled_root))
+        findings = evaluate(script, event_cwd, profiled=bool(profiled_root), run_args=ti.get("args"))
     except Exception:
         allow()  # a gate that cannot see the shape claims nothing about it
 
