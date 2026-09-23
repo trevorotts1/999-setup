@@ -46,7 +46,8 @@ carries `policy.maxActiveWorkflows`, `policy.maxAgentsPerWorkflow` or
 `policy.maxWorkingAgents`, each is the project's own enforced cap: workflows in flight =
 min(harness/provider width, `maxActiveWorkflows`), agents per workflow = min(clientCap,
 `maxAgentsPerWorkflow`), agents working at once = min(governing width, `maxWorkingAgents`).
-The Capacity Ledger records the measured number, the profile's number and the winner; no plan
+`node tools/project-profile.mjs policy <project>` prints whichever of the three are present, as
+JSON. The Capacity Ledger records the measured number, the profile's number and the winner; no plan
 and no dispatch ever goes above the ceiling. The floor still holds INSIDE it: never dispatch
 fewer streams than the work allows up to that ceiling. A field that is absent changes nothing.
 
