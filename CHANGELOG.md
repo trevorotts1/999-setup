@@ -36,9 +36,16 @@ MERGED_VERIFIED or landed is re-proven, and a failure is `MERGE-CLAIM-FALSE: uni
 and re-queued (a profiled project's state is never written); an orphan sweep per repository —
 a worktree whose branch is proven merged is removed with its branch, and one that is not merged
 and has had no commits for two hours is `STALE-UNMERGED: …` and re-queued, never deleted, then
-`git worktree prune`; and a mint check — a release or tag the ledger or state claims is
-re-proven, and a failure is `MINT-CLAIM-FALSE: …` in the log and in the morning report's
-operator notes.
+`git worktree prune`. Two limits on the sweep, both deliberate: it only recognizes a `--no-ff`
+merge commit on the trunk's first-parent line as proof a branch was landed by the train, so a
+tip reached by a fast-forward (or a fresh worktree with no commits of its own yet) is left
+alone rather than risk sweeping a live builder's tree; and a worktree with uncommitted changes
+is never removed even once its branch is proven merged — it is always kept and reported
+`KEPT-UNMERGED: … reason=uncommitted-changes`, with no force-remove path in the sweep (unlike
+`merge-train.sh`'s own post-batch cleanup, which may force-remove when the uncommitted changes
+are already provably contained in the merge). And a mint check — a release or tag the ledger or
+state claims is re-proven, and a failure is `MINT-CLAIM-FALSE: …` in the log and in the morning
+report's operator notes.
 
 **C — release hygiene (`tools/release.sh`, new; `SKILL.md`, `references/conductor.md`,
 `templates/workflows/merge-train.js`).** `release.sh <project> [--repo <name>] --version

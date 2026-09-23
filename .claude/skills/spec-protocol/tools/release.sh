@@ -16,9 +16,11 @@
 # Per repo it REFUSES (RELEASE-REFUSED: repo=<name> reason=<why>) unless:
 #   the trunk is checked out and clean (`git status --porcelain` empty);
 #   the remote trunk, after a fetch, is already contained in the local trunk;
-#   nothing waits in that repo's merge train: no unit/<id> branch whose latest ledger
-#     QC-RECORD passed (verdict=PASS or outcome=CLIENT-ACCEPTED) has a tip that is not
-#     on the trunk;
+#   nothing waits in that repo's merge train: "waiting" means NOT YET PROVEN MERGED,
+#     merge-train.sh's own rule -- no unit/<id> branch whose latest ledger QC-RECORD
+#     passed (verdict=PASS or outcome=CLIENT-ACCEPTED) has a tip that is not an
+#     ancestor of the just-fetched remote trunk (or of local HEAD, local-only), and
+#     no requeue.tsv entry for this repo either;
 #   the repo's gate is green: MERGE_TRAIN_TEST_CMD, else a real `npm test`, else none
 #     (the gate merge-train.sh runs), killed after MERGE_TRAIN_GATE_TIMEOUT s (1800);
 #   the tag v<x.y.z> is on neither the local repo nor the remote (a tag is never
@@ -139,13 +141,27 @@ ready_ids() { # unit ids whose latest QC-RECORD passed (the rule merge-train.sh 
     u != "" && /outcome=CLIENT-ACCEPTED/ { ok[u] = 1 }
     END { for (i = 1; i <= n; i++) if (ok[order[i]]) print order[i] }' "$1"
 }
-waiting() { # the passed unit branches in this repo that are not on HEAD
-  local u tip
-  [[ -r "$WORKDIR/LEDGER.md" ]] || return 0
-  while IFS= read -r u; do
-    tip="$(git rev-parse --verify --quiet "unit/$u^{commit}")" || continue
-    git merge-base --is-ancestor "$tip" HEAD || printf 'unit/%s ' "$u"
-  done < <(ready_ids "$WORKDIR/LEDGER.md")
+waiting() { # waiting <ref> <repo-name> -- units NOT YET PROVEN MERGED, matching
+            # merge-train.sh's own rule exactly: a unit's tip must be an ancestor
+            # of <ref> (FETCH_HEAD's resolved sha when a remote trunk was just
+            # fetched, else local HEAD) to count as merged, and a requeue.tsv
+            # entry for THIS repo (merge-train.sh's take_requeue()) counts as
+            # waiting too, the same as a ledger-ready unit.
+  local ref="${1:-HEAD}" rname="${2:-}" u tip rq rn branch rest
+  if [[ -r "$WORKDIR/LEDGER.md" ]]; then
+    while IFS= read -r u; do
+      tip="$(git rev-parse --verify --quiet "unit/$u^{commit}")" || continue
+      git merge-base --is-ancestor "$tip" "$ref" || printf 'unit/%s ' "$u"
+    done < <(ready_ids "$WORKDIR/LEDGER.md")
+  fi
+  rq="$WORKDIR/merge-train/requeue.tsv"
+  if [[ -n "$rname" && -f "$rq" ]]; then
+    while IFS=$'\t' read -r rn branch rest; do
+      [[ "$rn" == "$rname" && -n "$branch" ]] || continue
+      tip="$(git rev-parse --verify --quiet "$branch^{commit}")" || continue
+      git merge-base --is-ancestor "$tip" "$ref" || printf '%s ' "$branch"
+    done < "$rq"
+  fi
 }
 test_cmd() {
   if [[ -n "${MERGE_TRAIN_TEST_CMD:-}" ]]; then printf '%s' "$MERGE_TRAIN_TEST_CMD"; return; fi
@@ -225,15 +241,17 @@ release_one() { # release_one <name> <root> <trunk> <registry remote> <receipt s
 
   [[ "$(git rev-parse --abbrev-ref HEAD)" == "$trunk" ]] || { refuse "the trunk $trunk is not checked out ($(git rev-parse --abbrev-ref HEAD) is)"; return; }
   [[ -z "$(git status --porcelain)" ]] || { refuse "the trunk has uncommitted changes"; return; }
+  local wait_ref=HEAD
   if [[ -n "$rem" ]]; then
     remote_git ls-remote --exit-code --heads "$rem" "$trunk" >/dev/null 2>&1; case $? in
       0) remote_git fetch --quiet "$rem" "$trunk" 2>/dev/null || { printf 'RELEASE UNDETERMINED | repo=%s: fetch of %s/%s failed\n' "$name" "$rem" "$trunk"; worst 2; return; }
-         git merge-base --is-ancestor FETCH_HEAD HEAD || { refuse "$rem/$trunk has commits the local trunk lacks"; return; } ;;
+         wait_ref="$(git rev-parse FETCH_HEAD)"
+         git merge-base --is-ancestor "$wait_ref" HEAD || { refuse "$rem/$trunk has commits the local trunk lacks"; return; } ;;
       2) ;;  # the remote has no trunk yet: this push creates it
       *) printf 'RELEASE UNDETERMINED | repo=%s: git ls-remote %s failed\n' "$name" "$rem"; worst 2; return ;;
     esac
   fi
-  out="$(waiting)"
+  out="$(waiting "$wait_ref" "$name")"
   [[ -z "$out" ]] || { refuse "units still waiting in the merge train: ${out% }"; return; }
   gate="$(test_cmd)"
   if [[ -n "$gate" ]] && ! perl -e 'alarm shift; exec @ARGV' "${MERGE_TRAIN_GATE_TIMEOUT:-1800}" bash -c "$gate" >/dev/null 2>&1; then

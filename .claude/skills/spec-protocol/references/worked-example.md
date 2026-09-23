@@ -249,7 +249,7 @@ Unit Gauntlet A            [opus ×10]  parent T-03; units U1–U9 + integration
 Integrated Visual Gauntlet [sonnet ×5] parent T-04; after the units integrate: one blind judge per whole page/screen at every viewport (card-grid, mobile, search, add-form) + the global blind benchmark judge
 WF05 release-council       [sonnet ×4] parent T-07; 4/4 to pass  (parallel — BARRIER-JUSTIFIED: each judge must see the COMPLETE integrated build, and the council verdict needs all four)
 WF06 selective-repair      [opus ×N]   parent T-06; one repair seat per failed workstream, ≤12 per wave, then the council again  (pipeline; entry: failures>0; passing workstreams are LOCKED and never rerun)
-Merge train                [haiku ×1]  15-minute trigger, wave close always — CONCURRENT, OUTSIDE every build tree (a merge agent inside a build tree is a forbidden shape), never a station
+Merge train                [haiku ×1]  10-minute trigger, wave close always — CONCURRENT, OUTSIDE every build tree (a merge agent inside a build tree is a forbidden shape), never a station
 Concurrent at peak: lead+4 commanders (5) + Unit Gauntlet A (10) + train(1) + watch as lead duty = 16 ≤ 500 ✓ (ledger line: GOVERNS 500 harness)
 Widest moment: 5 persistent + Unit Gauntlet A (10) + Integrated Visual (5) + train(1) = 21, far inside the harness's 500 ✓
   (the wave is sized by this project's dispatchable set and the per-workflow width — never by a policy number)
@@ -526,7 +526,7 @@ LIMIT REACHED non-success state. It is never relabeled PASS.
 
 ## Step 7 — Merge and close
 
-The pen drains on the 15-minute trigger as ONE batch: serial `--no-ff` landings into
+The pen drains on the 10-minute trigger as ONE batch: serial `--no-ff` landings into
 the integration branch, the suite run once for the batch, trunk fast-forward, one
 ripple (version + changelog + annotated tag), post-merge artifact check at HEAD, and
 a merge record with a nothing-dropped reconciliation appended to the ledger. Parked
