@@ -20,7 +20,9 @@
 # prints   MERGED: unit=<branch> commit=<sha> trunk=origin/<trunk>
 # No origin (a local-only anchor) -> LANDED lines only: landed is never reported as
 # merged. With --project, each line also goes to CONTROL/LEDGER.md through
-# tools/ledger.sh (legacy) or <state dir>/merge-train.log (profiled).
+# tools/ledger.sh (legacy) or <state dir>/merge-train.log (profiled), and a project
+# whose repo-anchor receipt says "source": "operator-owner" pushes with the
+# operator's SPEC_PROTOCOL_OPERATOR_GH_TOKEN (operator.env), handed to git only.
 #
 # The test command: MERGE_TRAIN_TEST_CMD when set, else `npm test` when
 # package.json carries a real scripts.test (not npm's "no test specified"), else none.
@@ -59,6 +61,38 @@ wt_remove() { # wt_remove <branch> -- drop the worktree that has <branch> checke
   git worktree remove --force "$p" >/dev/null 2>&1 || printf 'MERGE-TRAIN | unit=%s landed; its worktree was not removed: %s\n' "$1" "$p"
 }
 
+# A repo that repo-anchor created under the operator's owner (receipt "source":
+# "operator-owner") only had credentials for its first push. Its push and fetch get
+# SPEC_PROTOCOL_OPERATOR_GH_TOKEN (environment first, else one KEY=value line of
+# operator.env -- parsed, never sourced) as GH_TOKEN in THAT git process's env only,
+# through a one-shot credential helper: never printed, never in a URL or git config.
+OPTOK=""
+receipt_source() { # the --project's repo-anchor receipt "source", empty when none
+  [[ -n "$PROJECT" ]] || return 0
+  local st r="$PROJECT/CONTROL/repo-anchor.json"
+  if [[ -f "$PROJECT/.spec-protocol.json" ]]; then
+    st="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["documents"]["state"])' "$PROJECT/.spec-protocol.json" 2>/dev/null)" || return 0
+    r="$PROJECT/$(dirname "$st")/repo-anchor.json"
+  fi
+  python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("source") or "")' "$r" 2>/dev/null
+}
+operator_token() {
+  local f="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env" v="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
+  if [[ -z "$v" && -r "$f" ]]; then
+    v="$(sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?SPEC_PROTOCOL_OPERATOR_GH_TOKEN[[:space:]]*=[[:space:]]*//p' "$f" | tail -n 1 | tr -d '\r')"
+    v="${v%%[[:space:]]*}"; v="${v#[\"\']}"; v="${v%[\"\']}"
+  fi
+  printf '%s' "$v"
+}
+remote_git() { # remote_git <git args...> -- push/fetch, with the operator token when the anchor needs it
+  if [[ -n "$OPTOK" ]]; then
+    GH_TOKEN="$OPTOK" git -c credential.helper= \
+      -c 'credential.helper=!f(){ echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' "$@"
+  else
+    git "$@"
+  fi
+}
+
 test_cmd() {
   if [[ -n "${MERGE_TRAIN_TEST_CMD:-}" ]]; then printf '%s' "$MERGE_TRAIN_TEST_CMD"; return; fi
   [[ -f package.json ]] && python3 -c 'import json,sys
@@ -67,8 +101,9 @@ sys.exit(0 if t and "no test specified" not in t else 1)' 2>/dev/null && printf 
 }
 
 train() {
-  local repo="$1" b sha tc tests ex landed=() units=() i halted=""
+  local repo="$1" b sha tc tests ex src landed=() units=() i halted=""
   shift
+  src="$(receipt_source)"   # read before cd: --project may be a relative path
   cd "$repo" 2>/dev/null || undetermined "cannot enter $repo"
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || undetermined "$repo is not a git working copy"
   ex="$(git rev-parse --git-path info/exclude)"
@@ -98,8 +133,12 @@ train() {
   # What landed before a stop is still pushed and proven; the stop is reported last.
   if (( ${#landed[@]} == 0 )); then [[ -n "$halted" ]] && stop "$halted"; exit 0; fi
   git remote get-url origin >/dev/null 2>&1 || { printf 'MERGE-TRAIN | no origin: landed only, not merged\n'; [[ -n "$halted" ]] && stop "$halted"; exit 0; }
-  git push --quiet origin "HEAD:refs/heads/$TRUNK" 2>&1 || stop "push to origin/$TRUNK refused; units are landed, not merged"
-  git fetch --quiet origin "$TRUNK" 2>&1 || undetermined "fetch of origin/$TRUNK failed after the push"
+  if [[ "$src" == operator-owner ]]; then
+    OPTOK="$(operator_token)"
+    [[ -n "$OPTOK" ]] || stop "the repo is under the operator's owner and SPEC_PROTOCOL_OPERATOR_GH_TOKEN is not set in operator.env; units are landed, not merged"
+  fi
+  remote_git push --quiet origin "HEAD:refs/heads/$TRUNK" 2>&1 || stop "push to origin/$TRUNK refused; units are landed, not merged"
+  remote_git fetch --quiet origin "$TRUNK" 2>&1 || undetermined "fetch of origin/$TRUNK failed after the push"
   for i in "${!landed[@]}"; do
     if git merge-base --is-ancestor "${landed[$i]}" FETCH_HEAD; then
       say "MERGED: unit=${units[$i]} commit=${landed[$i]} trunk=origin/$TRUNK"
@@ -143,5 +182,5 @@ case "${1:-}" in
   --selftest) selftest ;;
   --project) PROJECT="${2:-}"; shift 2 || exit 1 ;;
 esac
-[[ $# -ge 2 ]] || { sed -n '2,33p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
+[[ $# -ge 2 ]] || { sed -n '2,35p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
 train "$@"
