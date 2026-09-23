@@ -23,6 +23,8 @@
 # tools/ledger.sh (legacy) or <state dir>/merge-train.log (profiled), and a project
 # whose repo-anchor receipt says "source": "operator-owner" pushes with the
 # operator's SPEC_PROTOCOL_OPERATOR_GH_TOKEN (operator.env), handed to git only.
+# Any other github.com origin (the client's own account): when gh is logged in,
+# `gh auth setup-git` runs before the push so git has the client's credentials.
 #
 # The test command: MERGE_TRAIN_TEST_CMD when set, else `npm test` when
 # package.json carries a real scripts.test (not npm's "no test specified"), else none.
@@ -136,6 +138,10 @@ train() {
   if [[ "$src" == operator-owner ]]; then
     OPTOK="$(operator_token)"
     [[ -n "$OPTOK" ]] || stop "the repo is under the operator's owner and SPEC_PROTOCOL_OPERATOR_GH_TOKEN is not set in operator.env; units are landed, not merged"
+  elif [[ "$(git config --get remote.origin.url)" == *github.com* ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    # A repo on the client's own account: gh holds the login, git needs it as a
+    # credential helper. Idempotent; a failure here surfaces as the push refusal below.
+    gh auth setup-git >/dev/null 2>&1 || true
   fi
   remote_git push --quiet origin "HEAD:refs/heads/$TRUNK" 2>&1 || stop "push to origin/$TRUNK refused; units are landed, not merged"
   remote_git fetch --quiet origin "$TRUNK" 2>&1 || undetermined "fetch of origin/$TRUNK failed after the push"
