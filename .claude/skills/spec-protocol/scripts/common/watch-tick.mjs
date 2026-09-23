@@ -37,10 +37,15 @@
 //   never be evaluated as one — printing exactly one line:
 //     PROFILE-TICK | <ISO8601Z> | home=<home> | validate_rc=0 | <stdout, 200 chars>   -> 0
 //     PROFILE-TICK STALL | <ISO8601Z> | home=<home> | validate_rc=<rc> | <stderr…>   -> 3
-//   It writes NOTHING: no ledger line, no CONTROL/, no second task graph — the
-//   cron line's own `>>` is the only appender. Unparseable JSON or a missing
-//   documents.state / commands.validate is exit 2 NAMING the file and the key,
-//   never a silent fall back to CONTROL/. Identical to tools/watch-tick.sh.
+//   Then the batch merge when due (MERGE-BATCH), the optional commands.refresh
+//   (PROFILE-REFRESH; logged, never fatal) and the post-interview stalled-turn
+//   check with AUTO-RESUME, exactly as on a legacy project. It never creates
+//   CONTROL/: records, locks and stamps live in <statedir>/spec-protocol/, and
+//   ledger lines go through tools/ledger.sh to <statedir>/spec-protocol/LEDGER.md.
+//   Unparseable JSON or a missing documents.state / commands.validate is exit 2
+//   NAMING the file and the key, never a silent fall back to CONTROL/.
+//   Identical to tools/watch-tick.sh (MERGE_BATCH_MINUTES, WATCH_MERGE_TRAIN_SH
+//   and WATCH_REFRESH_TIMEOUT mean the same here).
 //
 // USAGE
 //   node scripts/common/watch-tick.mjs <project-home>
@@ -69,6 +74,8 @@ const ANCHOR_SH = path.join(TOOLS, 'anchor.sh');
 const LEDGER_SH = path.join(TOOLS, 'ledger.sh');
 
 const STALE_MIN = intEnv('WATCH_STALE_MIN', 10);
+const MERGE_BATCH_MIN = intEnv('MERGE_BATCH_MINUTES', 15);
+const REFRESH_TIMEOUT = intEnv('WATCH_REFRESH_TIMEOUT', 120);
 const MERGE_STALE_MIN = intEnv('WATCH_MERGE_STALE_MIN', 20);
 const BREAK_LABEL = process.env.WATCH_TICK_SELFTEST_BREAK_LABEL === '1';
 
@@ -339,9 +346,39 @@ function transcriptCwd(sid) {
   return '';
 }
 
+// THE STATE AREA: CONTROL/ on a legacy project; <statedir>/spec-protocol/ on a
+// profiled one (statedir = the directory of documents.state). It holds the
+// session record, the auto-resume lock and log, the batch stamp and lock and
+// the refresh list, so a profiled project never grows a CONTROL/.
+function bindPaths(home) {
+  if (!isProfiled(home)) {
+    return { area: path.join(home, 'CONTROL'), areaRel: 'CONTROL', stateDir: '', stateJson: path.join(home, 'CONTROL', 'project_state.json') };
+  }
+  const st = profileValues(home, 'state');
+  const d = path.dirname(st);
+  const areaRel = (d === '' || d === '.') ? 'spec-protocol' : `${d}/spec-protocol`;
+  return { area: path.join(home, areaRel), areaRel, stateDir: path.join(home, d), stateJson: path.join(home, st) };
+}
+
+// Legacy: CONTROL/LEDGER.md through ledgerWrite (fatal on failure, as always).
+// Profiled: tools/ledger.sh lands CONTROL/LEDGER.md in <statedir>/spec-protocol/;
+// a failure is NAMED on stdout and the tick goes on. With no bash, the line goes
+// to <area>/LEDGER.md directly — never a CONTROL/ on a profiled project.
+function tickLedger(home, line) {
+  if (!isProfiled(home)) { ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'), line); return; }
+  if (fs.existsSync(LEDGER_SH) && haveBash()) {
+    const r = spawnSync('bash', [LEDGER_SH, home, 'CONTROL/LEDGER.md', line], { encoding: 'utf8' });
+    if (r.error || r.status !== 0) process.stdout.write(`LEDGER | not written (rc=${r.error ? 'spawn-error' : r.status}): ${sanitize((r.stderr || r.stdout || '').trim())}\n`);
+    return;
+  }
+  const b = bindPaths(home);
+  fs.mkdirSync(b.area, { recursive: true });
+  fs.appendFileSync(path.join(b.area, 'LEDGER.md'), `${line}\n`);
+}
+
 function readRecord(home) {
   const rec = {};
-  for (const l of readLines(path.join(home, 'CONTROL', 'auto-resume.txt')) || []) {
+  for (const l of readLines(path.join(bindPaths(home).area, 'auto-resume.txt')) || []) {
     const i = l.indexOf('=');
     if (i > 0) rec[l.slice(0, i)] = l.slice(i + 1);
   }
@@ -354,28 +391,34 @@ function recordSession(home, done) {
   const { name, lpath } = resolveLauncher();
   const cwd = transcriptCwd(sid) || process.cwd();
   const isDone = done || readRecord(home).interview === 'done';
-  fs.mkdirSync(path.join(home, 'CONTROL'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'CONTROL', 'auto-resume.txt'),
+  const b = bindPaths(home);
+  fs.mkdirSync(b.area, { recursive: true });
+  fs.writeFileSync(path.join(b.area, 'auto-resume.txt'),
     `session_id=${sid}\nlauncher=${name}\nlauncher_path=${lpath}\ncwd=${cwd}\n${isDone ? 'interview=done\n' : ''}`);
-  process.stdout.write(`ARM | session recorded for auto-resume: CONTROL/auto-resume.txt (launcher=${name}${isDone ? ', interview=done' : ''})\n`);
+  process.stdout.write(`ARM | session recorded for auto-resume: ${b.areaRel}/auto-resume.txt (launcher=${name}${isDone ? ', interview=done' : ''})\n`);
   return true;
 }
 
 const runStatusOf = (home) => {
-  try { const m = /"run_status"\s*:\s*"([A-Za-z_]*)"/.exec(fs.readFileSync(path.join(home, 'CONTROL', 'project_state.json'), 'utf8')); return m ? m[1] : ''; } catch { return ''; }
+  try { const m = /"run_status"\s*:\s*"([A-Za-z_]*)"/.exec(fs.readFileSync(bindPaths(home).stateJson, 'utf8')); return m ? m[1] : ''; } catch { return ''; }
 };
 
-// Newest mtime under the project home, CONTROL/ and the ledger's sentinels
-// excluded (the tick's own writes are not progress). null when none was read.
+// Newest mtime under the project home, the state area and the ledger's
+// sentinels excluded (the tick's own writes are not progress). A profiled
+// project also excludes <statedir>/watch-tick.log and the files the last
+// commands.refresh wrote. null when none was read.
 function newestWriteEpoch(home) {
   let newest = null;
+  const b = bindPaths(home);
+  const skip = new Set((readLines(path.join(b.area, 'refresh-outputs.txt')) || []).filter((l) => l));
+  if (b.stateDir) skip.add(path.join(b.stateDir, 'watch-tick.log'));
   const walk = (dir) => {
     let ents = [];
     try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) { if (p !== path.join(home, 'CONTROL') && !e.name.endsWith('.lock.d')) walk(p); continue; }
-      if (!e.isFile() || e.name === '.ledger-pinned' || e.name.endsWith('.lock') || e.name.includes('.tmp.')) continue;
+      if (e.isDirectory()) { if (p !== b.area && !e.name.endsWith('.lock.d')) walk(p); continue; }
+      if (!e.isFile() || skip.has(p) || e.name === '.ledger-pinned' || e.name.endsWith('.lock') || e.name.includes('.tmp.')) continue;
       try { const t = Math.floor(fs.statSync(p).mtimeMs / 1000); if (newest === null || t > newest) newest = t; } catch { /* next */ }
     }
   };
@@ -385,8 +428,9 @@ function newestWriteEpoch(home) {
 
 function autoResume(home, elapsed, phase) {
   const rec = readRecord(home);
-  const lock = path.join(home, 'CONTROL', 'auto-resume.lock');
-  if (!rec.session_id) { process.stdout.write('AUTO-RESUME | not run | no session recorded (CONTROL/auto-resume.txt is written by --arm / --record-session inside the conductor session)\n'); return; }
+  const b = bindPaths(home);
+  const lock = path.join(b.area, 'auto-resume.lock');
+  if (!rec.session_id) { process.stdout.write(`AUTO-RESUME | not run | no session recorded (${b.areaRel}/auto-resume.txt is written by --arm / --record-session inside the conductor session)\n`); return; }
   if (!/^[A-Za-z0-9-]+$/.test(rec.session_id)) { process.stdout.write('AUTO-RESUME | not run | the recorded session id is unusable\n'); return; }
   try {
     const age = Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 60000);
@@ -413,7 +457,7 @@ function autoResume(home, elapsed, phase) {
   const env = { ...process.env };
   env.PATH = [...pre, process.env.PATH || ''].join(path.delimiter);
   fs.writeFileSync(lock, '');
-  const log = fs.openSync(path.join(home, 'CONTROL', 'auto-resume.log'), 'a');
+  const log = fs.openSync(path.join(b.area, 'auto-resume.log'), 'a');
   // bypassPermissions: the run is unattended, a permission prompt would stall it forever.
   const args = ['-p', '--permission-mode', 'bypassPermissions', '--resume', rec.session_id, '/spec-protocol resume'];
   // A .cmd/.bat cannot be spawned without a shell on Windows; the only
@@ -424,8 +468,8 @@ function autoResume(home, elapsed, phase) {
     : spawn(cmd, args, { cwd, env, detached: true, windowsHide: true, stdio: ['ignore', log, log] });
   child.on('error', () => { /* recorded in the log by the absence of output; the ledger line names the attempt */ });
   child.unref();
-  ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'),
-    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log CONTROL/auto-resume.log)`);
+  tickLedger(home,
+    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log ${b.areaRel}/auto-resume.log)`);
   process.stdout.write(`AUTO-RESUME | launched | ${rec.launcher || 'claude'} -p --permission-mode bypassPermissions --resume ${rec.session_id} "/spec-protocol resume" (stalled ${elapsed}m in ${phase})\n`);
 }
 
@@ -435,12 +479,12 @@ function autoResume(home, elapsed, phase) {
 // Returns { note, fired, alarm } — alarm is the ACTION evidence when fired.
 function stallCheck(home, openRows) {
   let phase = '';
-  for (const r of openRows || []) {
+  for (const r of Array.isArray(openRows) ? openRows : []) {
     const s = String(r.stage || '').toLowerCase();
     if (s.includes('build')) { phase = 'build'; break; }
     if (!phase && /spec|apparatus|audit|merge|publish/.test(s)) phase = sanitize(s);
   }
-  if (!phase && readRecord(home).interview === 'done') phase = openRows === null ? 'post-interview(pre-plan)' : 'post-interview';
+  if (!phase && readRecord(home).interview === 'done') phase = openRows === 'profiled' ? 'post-interview(profiled)' : openRows === null ? 'post-interview(pre-plan)' : 'post-interview';
   const rs = runStatusOf(home);
   if (phase && phase !== 'build' && rs && rs !== 'RUNNING') phase = '';
   if (!phase) return { note: `undetermined(no running post-interview phase — run_status=${rs || '?'})`, fired: false };
@@ -448,7 +492,7 @@ function stallCheck(home, openRows) {
   if (newest === null) return { note: 'undetermined(no readable file mtime under the project folder)', fired: false };
   const age = Math.floor((epochNow() - newest) / 60);
   if (age < STALLED_MIN) return { note: `ok(newest write ${age}m ago, ceiling ${STALLED_MIN}m)`, fired: false };
-  ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'),
+  tickLedger(home,
     `${isoNow()} | DRIFT-ALARM | stalled-turn | elapsed=${age} | phase=${phase} | ${sanitize(`no file write under the project folder for ${age} minutes in phase ${phase} (ceiling ${STALLED_MIN}m)`)}`);
   const alarm = `DRIFT-ALARM stalled-turn: newest file mtime under the project folder is ${age} minutes old (ceiling ${STALLED_MIN}) in phase ${phase} — the turn is hung, not slow (RC-17)`;
   autoResume(home, age, phase);
@@ -495,7 +539,93 @@ function cronLine(home) {
     const dir = path.dirname(profileValues(home, 'state'));
     log = (dir === '' || dir === '.') ? 'watch-tick.log' : `${dir}/watch-tick.log`;
   }
-  return `*/5 * * * * bash ${TOOLS}/watch-tick.sh ${home} >> ${home}/${log} 2>&1`;
+  // Every path is ONE single-quoted sh word ("My Project Folder"); a % is \%
+  // because cron reads a bare % as a newline even inside quotes.
+  const sq = (x) => `'${String(x).replace(/'/g, "'\\''").replace(/%/g, '\\%')}'`;
+  return `*/5 * * * * bash ${sq(`${TOOLS}/watch-tick.sh`)} ${sq(home)} >> ${sq(`${home}/${log}`)} 2>&1`;
+}
+
+//-----------------------------------------------------------------------------
+// THE BATCH MERGE CADENCE (watch-tick.sh 4e): every MERGE_BATCH_MINUTES the
+// tick runs `tools/merge-train.sh <home> --batch` at the project root under a
+// pid lock (<area>/merge-batch.lock.d), so two batches never overlap. The
+// stamp (<area>/merge-batch.stamp) is touched when a batch starts. merge-train
+// decides what is waiting. Logged, never fatal. Returns a note.
+//-----------------------------------------------------------------------------
+function mergeBatch(home) {
+  const { area } = bindPaths(home);
+  const stamp = path.join(area, 'merge-batch.stamp');
+  const lock = path.join(area, 'merge-batch.lock.d');
+  try {
+    const age = Math.floor((Date.now() - fs.statSync(stamp).mtimeMs) / 60000);
+    if (age < MERGE_BATCH_MIN) return `not-due(last batch ${age}m ago, every ${MERGE_BATCH_MIN}m)`;
+  } catch { /* never ran: due */ }
+  fs.mkdirSync(area, { recursive: true });
+  try { fs.mkdirSync(lock); } catch {
+    let pid = '';
+    try { pid = fs.readFileSync(path.join(lock, 'pid'), 'utf8').trim(); } catch { /* none */ }
+    let alive = false;
+    try { if (/^\d+$/.test(pid)) { process.kill(Number(pid), 0); alive = true; } } catch { /* gone */ }
+    if (alive) { process.stdout.write(`MERGE-BATCH | held | a batch is still running (pid ${pid}); no second batch\n`); return `held(batch pid ${pid} still running)`; }
+    fs.rmSync(lock, { recursive: true, force: true });
+    try { fs.mkdirSync(lock); } catch { return 'held(lock taken by another tick)'; }
+  }
+  fs.writeFileSync(path.join(lock, 'pid'), `${process.pid}\n`);
+  fs.writeFileSync(stamp, '');
+  const script = process.env.WATCH_MERGE_TRAIN_SH || path.join(TOOLS, 'merge-train.sh');
+  let r;
+  try {
+    let direct = false;
+    try { fs.accessSync(script, fs.constants.X_OK); direct = !IS_WIN; } catch { /* run through bash */ }
+    r = direct ? spawnSync(script, [home, '--batch'], { cwd: home, encoding: 'utf8' })
+      : haveBash() ? spawnSync('bash', [script, home, '--batch'], { cwd: home, encoding: 'utf8' })
+        : { status: null, error: new Error('no bash on this machine — merge-train.sh could not run') };
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+  const out = `${r.stdout || ''}${r.stderr || ''}`;
+  if (out.trim()) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
+  const last = r.error ? r.error.message : (out.split(/\r?\n/).filter((l) => l.trim()).pop() || 'no output');
+  const rc = r.error ? 'undetermined' : r.status;
+  process.stdout.write(`MERGE-BATCH | rc=${rc} | ${sanitize(last)}\n`);
+  return `ran(rc=${rc}: ${sanitize(last)})`;
+}
+
+//-----------------------------------------------------------------------------
+// THE PROFILE REFRESH (watch-tick.sh 4f): commands.refresh, when present, runs
+// as argv at the project root on every tick with a WATCH_REFRESH_TIMEOUT
+// ceiling; one PROFILE-REFRESH line; a failure is logged, never fatal. The
+// files it wrote go to <area>/refresh-outputs.txt for the stall census.
+//-----------------------------------------------------------------------------
+function runRefresh(home) {
+  const pf = path.join(home, '.spec-protocol.json');
+  let v;
+  try { v = (JSON.parse(fs.readFileSync(pf, 'utf8')).commands || {}).refresh; } catch { return; }
+  if (v === undefined || v === null) return;
+  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === 'string' && x !== '' && !/[\r\n]/.test(x))) {
+    process.stdout.write(`PROFILE-REFRESH | not run | ${pf} commands.refresh is not a non-empty argv array of non-empty strings\n`);
+    return;
+  }
+  const { area } = bindPaths(home);
+  fs.mkdirSync(area, { recursive: true });
+  const t0 = Date.now();
+  const r = spawnSync(v[0], v.slice(1), { cwd: home, encoding: 'utf8', timeout: REFRESH_TIMEOUT * 1000, stdio: ['ignore', 'pipe', 'pipe'] });
+  const rc = r.error ? (r.error.code === 'ETIMEDOUT' ? 124 : 127) : r.status;
+  const wrote = [];
+  const walk = (dir) => {
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (p !== area) walk(p); continue; }
+      try { if (e.isFile() && fs.statSync(p).mtimeMs >= t0) wrote.push(p); } catch { /* next */ }
+    }
+  };
+  walk(home);
+  fs.writeFileSync(path.join(area, 'refresh-outputs.txt'), wrote.length ? `${wrote.join('\n')}\n` : '');
+  const snip = snip200(r.error ? r.error.message : `${r.stdout || ''}${r.stderr || ''}`);
+  process.stdout.write(rc === 0 ? `PROFILE-REFRESH | ${isoNow()} | rc=0 | ${snip}\n`
+    : `PROFILE-REFRESH FAILED | ${isoNow()} | rc=${rc} | ${snip} (logged, not fatal)\n`);
 }
 
 //-----------------------------------------------------------------------------
@@ -556,12 +686,18 @@ function runProfileTick(home) {
   const r = spawnSync(argv[0], argv.slice(1), { cwd: home, encoding: 'utf8' });
   const rc = r.error ? 127 : r.status;
   const err = r.error ? r.error.message : r.stderr;
+  let ret = 0;
   if (rc === 0) {
     process.stdout.write(`PROFILE-TICK | ${isoNow()} | home=${home} | validate_rc=0 | ${snip200(r.stdout)}\n`);
-    return 0;
+  } else {
+    process.stdout.write(`PROFILE-TICK STALL | ${isoNow()} | home=${home} | validate_rc=${rc} | ${snip200(err)}\n`);
+    ret = 3;
   }
-  process.stdout.write(`PROFILE-TICK STALL | ${isoNow()} | home=${home} | validate_rc=${rc} | ${snip200(err)}\n`);
-  return 3;
+  mergeBatch(home);   // A4, then A3: a merge is a state-changing step
+  runRefresh(home);
+  const st = stallCheck(home, 'profiled');   // A2: the same stall + AUTO-RESUME
+  if (st.fired) { process.stdout.write(`ACTION|stalled-turn|elapsed=${st.age}m|${sanitize(st.alarm)}\n`); ret = 3; }
+  return ret;
 }
 
 function runTick(homeArg, wantCronLine, mode) {
@@ -572,15 +708,14 @@ function runTick(homeArg, wantCronLine, mode) {
   const home = fs.realpathSync(homeArg);
   if (wantCronLine) { process.stdout.write(`${cronLine(home)}\n`); return 0; }
   if (mode === 'record') {
-    if (isProfiled(home)) { process.stdout.write('RECORD | not recorded (exit 2) | profiled project: a profile forbids CONTROL/ writes\n'); return 2; }
     if (!recordSession(home, true)) { process.stdout.write('RECORD | not recorded (exit 2) | CLAUDE_CODE_SESSION_ID is not set — run this inside the conductor session\n'); return 2; }
     return 0;
   }
   if (mode) {
     const rc = armOrCheck(home, mode);
-    // --arm also records the session (legacy projects), as the bash twin does.
+    // --arm also records the session (in the state area), as the bash twin does.
     // Off Windows the bash --arm it handed off to already recorded it.
-    if (mode === 'arm' && SCHTASKS && (rc === 0 || rc === 3) && !isProfiled(home)) recordSession(home, false);
+    if (mode === 'arm' && SCHTASKS && (rc === 0 || rc === 3)) recordSession(home, false);
     return rc;
   }
 
@@ -653,6 +788,9 @@ function runTick(homeArg, wantCronLine, mode) {
   if (!fs.existsSync(CHK)) {
     dieTool(`CONTROL/CHECKLIST.md is missing at ${CHK} — the runnable count has no source. Checked: ${CHK}. Not checked: the dispatch log and the heartbeat, because the run stopped here.`);
   }
+
+  // A4: the batch merge cadence, once the plan exists.
+  const mergeNote = mergeBatch(home);
 
   // --- (2) the three counts
   const ledText = fs.existsSync(LED) ? fs.readFileSync(LED, 'utf8') : '';
@@ -808,6 +946,7 @@ function runTick(homeArg, wantCronLine, mode) {
   const line = `${isoNow()} | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES}`
     + ` | cap=${capNote} | anchor=${anchorNote} | trees-detail=${treeNote}`
     + ` | stalled-turn=${sanitize(stall.note)}`
+    + ` | merge-batch=${sanitize(mergeNote)}`
     + ` | actions=${sanitize(verbs.length ? verbs.join(',') : 'none')}`
     + ` | undetermined=${sanitizeLong(undetermined.length ? undetermined.join(',') : 'none')}`;
   ledgerWrite(home, path.join('CONTROL', 'LEDGER.md'), line);
@@ -826,6 +965,8 @@ function selftest() {
   // reaches runs a no-op unless the case names its own stub (on Windows the
   // path does not exist, so the spawn fails harmlessly — still never a session).
   process.env.WATCH_TICK_LAUNCHER_CMD = '/usr/bin/true';
+  // Nor may any case run the real merge train (the batch cadence).
+  process.env.WATCH_MERGE_TRAIN_SH = '/usr/bin/true';
   let passes = 0;
   let fails = 0;
   const report = (n, name, ok, detail) => {
@@ -957,7 +1098,7 @@ function selftest() {
   d = mkProfileHome('c11');
   r = run([d, '--cron-line']);
   report(11, 'profile-cron-line',
-    r.rc === 0 && /^\*\/5 \* \* \* \* bash .*watch-tick\.sh .*>> .*\/state\/watch-tick\.log 2>&1$/m.test(r.out)
+    r.rc === 0 && /^\*\/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*\/state\/watch-tick\.log' 2>&1$/m.test(r.out)
       && !/CONTROL\/watch-tick\.log/.test(r.out),
     `rc=${r.rc} (want 0); the line ends at state/watch-tick.log beside documents.state and names no CONTROL/ — line: [${r.out.trim()}]`);
 
@@ -1005,9 +1146,9 @@ function selftest() {
   const legCron = run([d, '--cron-line']);
   const legTick = run([d]);
   report(15, 'profile-vs-legacy-control',
-    profCron.rc === 0 && /\/state\/watch-tick\.log 2>&1$/m.test(profCron.out)
+    profCron.rc === 0 && /\/state\/watch-tick\.log' 2>&1$/m.test(profCron.out)
       && /^PROFILE-TICK \| /m.test(profTick.out)
-      && legCron.rc === 0 && /\/CONTROL\/watch-tick\.log 2>&1$/m.test(legCron.out)
+      && legCron.rc === 0 && /\/CONTROL\/watch-tick\.log' 2>&1$/m.test(legCron.out)
       && legTick.rc === 0 && /S-CHECK \| violations=0 \| runnable=0 open=1 trees=1/.test(legTick.out)
       && !/PROFILE-TICK/.test(legTick.out),
     `one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${legTick.rc}, want 0) with no PROFILE-TICK anywhere`);
