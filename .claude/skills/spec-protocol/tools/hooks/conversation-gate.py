@@ -51,16 +51,31 @@ WHAT IT CHECKS, when a spec-protocol run yields the turn to its client:
      The targets DECIDE the taxonomy; the surface is never re-guessed from the
      word "app".
 
-SCOPE -- and why this cannot fire on an ordinary session. Every check is gated
-on `00-INPUT/ANSWERS.md` existing beneath the session's working directory. That
-file exists only inside a real spec-protocol project folder. A session merely
-DISCUSSING spec-protocol -- including the one that wrote this hook -- has no such
-file and is never evaluated.
+  K  TURN 1 IS NOT THE OPENING. The first client-facing text after the
+     /spec-protocol invocation must begin "Hi, I'm Candace." (or be the GATE 0
+     refusal). Detection lines and update offers belong in the operator log.
+
+  L  QUESTION COUNTER BROKEN. "Question N of no more than C": N rises by one
+     per turn (a same-words re-ask may repeat N) and C never changes.
+
+  M  ANSWERS.md MISSING after this session ran `answers.sh <project> init`.
+
+  G  JARGON. tools/speech-check.sh runs on every client-facing turn of a run.
+
+SCOPE -- and why this cannot fire on an ordinary session. Nothing runs unless
+THIS session's transcript shows the harness invoking the skill. The ledger
+checks (A-J, M) additionally need the project, and the project comes ONLY from
+this session's own `answers.sh <project> init` tool call (latest wins). No such
+call -> the ledger checks are not evaluated. The old ancestor/child-folder
+search is gone: from ~/Downloads it read a different client's ledger.
 
 CONTRACT (identical to gate0-claim-gate.py, which is proven in service)
   - reads the hook payload on stdin, ALWAYS exits 0
   - blocks ONLY by printing {"decision":"block","reason":...} to stdout
-  - honours stop_hook_active, so a block can never re-trigger on itself
+  - at most 3 blocks per session-turn (counter file under
+    $CLAUDE_CONFIG_DIR/spec-protocol/blocks/<session_id>, shared with
+    gate0-claim-gate.py), then stands down -- so retries ARE checked, but a
+    block can never loop forever
   - any internal error is silent and non-blocking: a broken gate must never
     wedge a session, and a conversation gate that jams is worse than the bug
 """
@@ -76,11 +91,16 @@ ASKED_LINE = re.compile(r"^\*\*Asked:\*\*\s*(.+)$", re.M)
 PROSE_AFTER_Q_CHARS = 20
 
 
+# The repo copy beside this hook first (so the selftest tests the file being
+# edited), then the installed skill under the config root the hooks live in.
 SPEECH_CANDIDATES = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "speech-check.sh"),
+    os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+                 "skills", "spec-protocol", "tools", "speech-check.sh"),
     os.path.expanduser("~/.claude-nine/skills/spec-protocol/tools/speech-check.sh"),
     os.path.expanduser("~/.claude/skills/spec-protocol/tools/speech-check.sh"),
-    os.path.join(os.path.dirname(__file__), "..", "speech-check.sh"),
 ]
+MAX_BLOCKS = 3
 
 
 def _speech_check(message, home):
@@ -103,9 +123,11 @@ def _speech_check(message, home):
         path = os.path.abspath(path)
         if not os.path.isfile(path):
             continue
+        cmd = [shutil.which("bash") or "/bin/bash", path, "-"]
+        if home and os.path.isdir(home):
+            cmd += ["--home", home]
         try:
-            r = subprocess.run([shutil.which("bash") or "/bin/bash", path, "-", "--home", home],
-                               input=message, capture_output=True, text=True, timeout=15)
+            r = subprocess.run(cmd, input=message, capture_output=True, text=True, timeout=5)
         except Exception:
             return None                      # could not run it: prove nothing
         if r.returncode != 3:
@@ -121,80 +143,205 @@ def _speech_check(message, home):
     return None
 
 
-def _answers_path(cwd):
-    """The run's own ledger, or None. This is the whole scope gate.
-
-    A direct cwd join is not enough: on the UNPROFILED path the skill creates
-    ~/Downloads/projects/<slug>/ and the session may sit in a parent or a
-    sibling, so a cwd-only check silently no-ops on exactly the runs that most
-    need watching. Look at cwd, up to three ancestors, and one level down --
-    bounded, so this can never wander the disk.
-    """
-    if not cwd or not os.path.isdir(cwd):
+def _answers_path(project):
+    """<project>/00-INPUT/ANSWERS.md when it exists, else None. No searching:
+    the project is named by this session's own `answers.sh <project> init`."""
+    if not project or not os.path.isdir(project):
         return None
-    here = os.path.abspath(cwd)
-    for _ in range(4):
-        p = os.path.join(here, ANSWERS_REL)
-        if os.path.isfile(p):
-            return p
-        parent = os.path.dirname(here)
-        if parent == here:
-            break
-        here = parent
-    try:
-        for entry in sorted(os.listdir(cwd)):
-            p = os.path.join(cwd, entry, ANSWERS_REL)
-            if os.path.isfile(p):
-                return p
-    except Exception:
-        pass
-    return None
+    p = os.path.join(project, ANSWERS_REL)
+    return p if os.path.isfile(p) else None
 
 
 SKILL_INVOKED = re.compile(
     r"Base directory for this skill:\s*\S*spec-protocol|<command-name>/?spec-protocol",
     re.I)
+# `answers.sh <project> init` -- the project may be quoted.
+INIT_CALL = re.compile(
+    r"answers\.sh['\"]?\s+(?:\"([^\"]+)\"|'([^']+)'|([^\s;&|'\"]+))\s+init\b")
+
+
+def _user_kind(rec):
+    """For a `user` record: 'inv' (the harness invoking the skill), 'user' (a real
+    turn boundary), 'fb' (a Stop hook's own feedback) or None (a tool result).
+    Neither 'fb' nor None is the client speaking; treating hook feedback as a new
+    turn would reset the block counter and let a block loop forever."""
+    msg = rec.get("message") or {}
+    c = msg.get("content")
+    if isinstance(c, list) and all(isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
+        return None
+    if isinstance(c, str) and c.lstrip().startswith("Stop hook feedback"):
+        return "fb"
+    # Only the harness's own injection counts as an invocation: a plain string or
+    # a `text` block. A tool_result or tool_use QUOTING the marker is not one --
+    # that is precisely how this hook once caught its own author.
+    texts = [c] if isinstance(c, str) else [
+        b.get("text") or "" for b in (c or []) if isinstance(b, dict) and b.get("type") == "text"]
+    if msg.get("role") == "user" and any(SKILL_INVOKED.search(t) for t in texts):
+        return "inv"
+    return "user"
+
+
+def _events(transcript_path):
+    """This session's main chain, forward: (kind, value, line_no) with kind in
+    inv / user / fb (hook feedback) / text (assistant prose) / cmd (a tool_use
+    `command` string)."""
+    out = []
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            for n, line in enumerate(fh, 1):
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(d, dict) or d.get("isSidechain"):
+                    continue
+                if d.get("type") == "user":
+                    k = _user_kind(d)
+                    if k:
+                        out.append((k, None, n))
+                elif d.get("type") == "assistant":
+                    for b in (d.get("message") or {}).get("content") or []:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get("type") == "text" and (b.get("text") or "").strip():
+                            out.append(("text", b["text"], n))
+                        elif b.get("type") == "tool_use":
+                            cmd = (b.get("input") or {}).get("command")
+                            if isinstance(cmd, str):
+                                out.append(("cmd", cmd, n))
+    except Exception:
+        return []
+    return out
 
 
 def _is_spec_protocol_run(transcript_path):
-    """Is THIS SESSION a spec-protocol client conversation?
+    """Is THIS SESSION a spec-protocol client conversation? Only the harness's
+    skill injection counts; discussing, editing or standing in the folder does
+    not."""
+    return any(k == "inv" for k, _, _ in _events(transcript_path))
 
-    A ledger under cwd is not enough. An operator session that merely `cd`s into
-    a project folder to repair it inherits that folder's `00-INPUT/ANSWERS.md`
-    and gets policed as though it were talking to a client -- which is exactly
-    what happened to the session that wrote this hook, mid-repair. The run must
-    also have actually INVOKED the skill: the harness writes the skill's base
-    directory into the transcript when it does, and nothing else produces that
-    line. Discussing spec-protocol, editing it, or standing in its folder does
-    not.
+
+def _project_from_events(ev, cwd):
+    """The project named by this session's latest `answers.sh <project> init`,
+    as an absolute path, or None (then the ledger checks are not evaluated)."""
+    project = None
+    for k, v, _ in ev:
+        if k == "cmd":
+            for m in INIT_CALL.finditer(v):
+                project = next(g for g in m.groups() if g)
+    if not project or "$" in project:
+        return None                  # none, or an unexpanded variable: unknowable
+    project = os.path.expanduser(project)
+    if not os.path.isabs(project):
+        project = os.path.join(cwd or os.getcwd(), project)
+    return os.path.abspath(project)
+
+
+def _turn_start(ev):
+    return max((n for k, _, n in ev if k in ("inv", "user")), default=0)
+
+
+def _turn_key(transcript_path):
+    """Line number of the last real user record: every block and retry inside one
+    turn shares it. Same definition in gate0-claim-gate.py (shared counter)."""
+    return _turn_start(_events(transcript_path))
+
+
+def _spend_block(payload, turn):
+    """True when this session-turn may still block (and spends one block).
+
+    Replaces stop_hook_active, which left every retry unchecked. After
+    MAX_BLOCKS blocks in one turn the gate stands down. If the counter cannot be
+    kept, fall back to stop_hook_active so a block still cannot loop forever.
     """
-    # Only the harness's own injection counts: a `user` record whose content is
-    # a plain string or a `text` block. A `tool_result` or `tool_use` block that
-    # QUOTES the marker (an operator reading a run's transcript, or SKILL.md)
-    # is not an invocation -- that is precisely how this hook caught its author.
+    sid = re.sub(r"[^A-Za-z0-9_-]", "_", str(payload.get("session_id") or ""))
+    if not sid:
+        return not payload.get("stop_hook_active")
+    path = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
+                        "spec-protocol", "blocks", sid)
+    # ponytail: read-modify-write without a lock; two Stop hooks racing can lose
+    # one increment (4 blocks instead of 3). Add flock if that ever matters.
     try:
-        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if not SKILL_INVOKED.search(line):
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                msg = rec.get("message") or {}
-                if rec.get("type") != "user" or msg.get("role") != "user":
-                    continue
-                content = msg.get("content")
-                if isinstance(content, str) and SKILL_INVOKED.search(content):
-                    return True
-                if isinstance(content, list):
-                    for block in content:
-                        if (isinstance(block, dict) and block.get("type") == "text"
-                                and SKILL_INVOKED.search(block.get("text") or "")):
-                            return True
+        try:
+            with open(path, encoding="utf-8") as fh:
+                t, n = fh.read().split()
+            n = int(n) if t == str(turn) else 0
+        except Exception:
+            n = 0
+        if n >= MAX_BLOCKS:
+            return False
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("%s %d\n" % (turn, n + 1))
+        return True
     except Exception:
-        return False
-    return False
+        return not payload.get("stop_hook_active")
+
+
+# --- K: turn 1 of the run is the opening ------------------------------------
+GREETING = "Hi, I'm Candace."
+GATE0_REFUSAL = re.compile(r"\s+".join(
+    ["one", "switch", "has", "to", "be", "on",
+     "before", "i", "can", "start", "my", "helpers"]), re.I)
+
+
+def _opening_text(ev):
+    """The first client-facing text of the run when THIS turn is turn 1, else None.
+
+    Turn 1 = no assistant prose between the latest invocation and this turn's
+    start. Within the turn, the text after the latest Stop-hook block is judged,
+    so a corrected retry is not re-judged on the words it replaced.
+    """
+    last_inv = max((n for k, _, n in ev if k == "inv"), default=None)
+    if last_inv is None:
+        return None
+    start = _turn_start(ev)
+    if any(k == "text" and last_inv < n <= start for k, _, n in ev):
+        return None
+    start = max([start] + [n for k, _, n in ev if k == "fb"])
+    texts = [v for k, v, n in ev if k == "text" and n > start]
+    return texts[0] if texts else None
+
+
+def _opening_problem(text):
+    clean = re.sub(r"^[\s>*_#]+", "", _strip_quote_markers(text or "")).replace("’", "'")
+    if not clean or clean.startswith(GREETING) or GATE0_REFUSAL.search(clean):
+        return None
+    return ("TURN 1 IS NOT THE OPENING. The first thing the client reads in a run is the "
+            "opening script, beginning exactly \"%s\" (or the GATE 0 refusal). Detection "
+            "lines, update offers and setup notes go to the operator log, never to the "
+            "client. Say the opening script now, and nothing before it." % GREETING)
+
+
+# --- L: the question counter -------------------------------------------------
+COUNTER = re.compile(r"Question\s+(\d+)\s+of\s+no\s+more\s+than\s+(\d+)\W*(.{0,60})", re.I | re.S)
+
+
+def _counter_problem(message, prior_texts):
+    """Block when "Question N of no more than C" does not rise by exactly one, or
+    C changed. A re-ask of the same question in the same words (check H demands
+    it) may repeat N."""
+    cur = COUNTER.findall(message or "")
+    if not cur:
+        return None
+    prev = None
+    for t in prior_texts:
+        found = COUNTER.findall(t or "")
+        if found:
+            prev = found[-1]
+    if not prev:
+        return None
+    (n, c, q), (pn, pc, pq) = cur[-1], prev
+    flat = lambda s: re.sub(r"\s+", " ", s).strip()
+    if c != pc:
+        return ("QUESTION COUNT CHANGED. Last time you said \"of no more than %s\"; now \"of no "
+                "more than %s\". The ceiling the client was promised never moves. Keep it at %s."
+                % (pc, c, pc))
+    if int(n) == int(pn) + 1 or (n == pn and flat(q) == flat(pq)):
+        return None
+    return ("QUESTION NUMBER OUT OF ORDER. The last counted question was Question %s; this one "
+            "says Question %s. Each counted question is the next number, Question %d. (Re-asking "
+            "an unanswered question in the same words keeps its number.)" % (pn, n, int(pn) + 1))
 
 
 def _client_prose(transcript_path, back=0):
@@ -226,10 +373,8 @@ def _client_prose(transcript_path, back=0):
         if d.get("isSidechain"):
             continue
         if d.get("type") == "user":
-            c = (d.get("message") or {}).get("content")
-            if isinstance(c, list) and all(
-                    isinstance(b, dict) and b.get("type") == "tool_result" for b in c):
-                continue            # a tool RESULT is not the user speaking
+            if _user_kind(d) in (None, "fb"):
+                continue            # a tool RESULT or hook feedback is not the user speaking
             crossed += 1
             if crossed > back:
                 return None         # walked past the turn asked for
@@ -412,6 +557,10 @@ MANDATED_TAILS = re.compile(
     r"Not sure\?\s*That['’]?s okay\.\s*I['’]?ll choose what makes the most sense\."
     r"|If you don['’]?t know,?\s*that['’]?s okay\."
     r")\s*$", re.I)
+# A mandated REQUEST is a yield too: the key asks end "Copy it, then say ready,
+# and I'll file it..." and the pictures ask ends "...then say done." The client
+# has something to do and a word to reply with; that is not a stall.
+YIELD_REQUEST = re.compile(r"\bthen say (ready|done)\b", re.I)
 GENERIC_DIRS = {"projects", "downloads", "documents", "desktop", "tmp", "src", "work"}
 # A folder named after the CATEGORY supplies no name. Without this, a project in
 # .../projects/Website is told off by check E for saying "your website" -- the
@@ -534,7 +683,12 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
                     "answer it, BEFORE asking anything else."
                     % _ellipsis(re.sub(r"\s+", " ", prev_q).strip(), 80))
 
-    if ends_q:
+    # A question whose SAME paragraph carries a trailing reassurance or example
+    # ("...yourbusiness.com? If you don't know, that's okay.") still ends the
+    # turn on that question -- the house style check B already allows. Judging
+    # it as a statement-yield blocked 6 mandated wordings on a placeholder
+    # ledger (selftest case 22).
+    if ends_q or (after is not None and not re.search(r"\n\s*\n\s*\S", after)):
         if _two_paragraph_questions(_countable(clean)):
             return ("TWO QUESTIONS IN ONE MESSAGE. Question marks appear in two separate "
                     "paragraphs. One question at a time (audience.md §1): ask the first, let "
@@ -557,7 +711,9 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
 
         pending = (re.search(r"\*\*Answer:\*\*\s*_?(blank|not yet)", answers_text, re.I)
                    or UNANSWERED_CELL.search(answers_text))
-        if answers_text and not pending and not _recorded(clean, answers_text):
+        # Match the question itself, not a same-paragraph closer after it.
+        if answers_text and not pending and not _recorded(clean[:clean.rfind("?") + 1],
+                                                          answers_text):
             return ("QUESTION SPOKEN BUT NOT RECORDED. You asked the client something and "
                     "00-INPUT/ANSWERS.md shows nothing awaiting an answer, so this question "
                     "exists only in the conversation. Write it there under **Asked:** with a "
@@ -581,7 +737,11 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
                 "the message. A reassurance or an example list in the SAME paragraph is "
                 "fine and is the house style; a new paragraph is not."
                 % tail[:60])
-    if owed and not STATUS_SHAPE.match(clean):
+    # A stands down while H has a pending entry: A would demand the next UNSPOKEN
+    # question while H demands the spoken-and-unanswered one back -- two gates
+    # ordering two different questions. The hanging one wins.
+    if owed and not STATUS_SHAPE.match(clean) and not _pending(answers_text) \
+            and not YIELD_REQUEST.search(clean):
         return ("TURN ENDED ON A STATEMENT WHILE A QUESTION IS OWED: %s. "
                 "A client-facing turn ends ON a question. You have handed the client a "
                 "statement and stopped, so they have nothing to answer and the run waits "
@@ -590,42 +750,73 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
     return None
 
 
+def _reason(payload):
+    """The block reason for this Stop, or None."""
+    tp = payload.get("transcript_path", "")
+    ev = _events(tp)
+    if not any(k == "inv" for k, _, _ in ev):
+        return None                  # not a run: an operator session, a discussion
+    message = _last_client_message(tp)
+    if not message:
+        return None
+    cwd = payload.get("cwd") or os.getcwd()
+
+    # K -- turn 1 is the opening script.
+    opening = _opening_text(ev)
+    if opening is not None:
+        r = _opening_problem(opening)
+        if r:
+            return r
+
+    # L -- the question counter, against the last counted question of an
+    # EARLIER turn (a blocked attempt in this turn is not a previous question).
+    start = _turn_start(ev)
+    r = _counter_problem(message, [v for k, v, n in ev if k == "text" and n < start])
+    if r:
+        return r
+
+    project = _project_from_events(ev, cwd)
+    if project:
+        answers = os.path.join(project, ANSWERS_REL)
+        # M -- init was run in this session, so the ledger must exist.
+        if not os.path.isfile(answers):
+            return ("ANSWERS.MD IS MISSING. This session ran `answers.sh %s init`, but "
+                    "%s does not exist, so no question can be recorded and none can come "
+                    "back after an interruption. Run `tools/answers.sh <project> init` again "
+                    "and check it succeeded before speaking to the client."
+                    % (os.path.basename(project), os.path.join(os.path.basename(project), ANSWERS_REL)))
+        try:
+            with open(answers, encoding="utf-8", errors="replace") as fh:
+                answers_text = fh.read()
+        except Exception:
+            answers_text = None
+        if answers_text is not None:
+            targets = None
+            try:
+                with open(os.path.join(project, ".spec-protocol.json"), encoding="utf-8") as fh:
+                    declared = (json.load(fh) or {}).get("targets")
+                if isinstance(declared, list) and declared:
+                    targets = declared
+            except Exception:
+                targets = None        # no profile, or unreadable: check I stands down
+            r = evaluate(message, answers_text, _project_name(project), targets,
+                         _client_prose(tp, 1))
+            if r:
+                return r
+
+    # G -- the jargon lint, on every client-facing turn of a run.
+    return _speech_check(_strip_quote_markers(message), project)
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
     except Exception:
         return
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+    if not isinstance(payload, dict):
         return
-    answers = _answers_path(payload.get("cwd") or os.getcwd())
-    if not answers:
-        return                       # no ledger anywhere near: never evaluated
-    if not _is_spec_protocol_run(payload.get("transcript_path", "")):
-        return                       # an operator session standing in the folder
-    message = _last_client_message(payload.get("transcript_path", ""))
-    if not message:
-        return
-    try:
-        with open(answers, encoding="utf-8", errors="replace") as fh:
-            answers_text = fh.read()
-    except Exception:
-        return
-    cwd = payload.get("cwd") or os.getcwd()
-    targets = None
-    try:
-        # The profile sits beside 00-INPUT/, never beside the session's cwd.
-        with open(os.path.join(os.path.dirname(os.path.dirname(answers)),
-                               ".spec-protocol.json"), encoding="utf-8") as fh:
-            declared = (json.load(fh) or {}).get("targets")
-        if isinstance(declared, list) and declared:
-            targets = declared
-    except Exception:
-        targets = None            # no profile, or unreadable: check I stands down
-    reason = evaluate(message, answers_text, _project_name(cwd), targets,
-                      _client_prose(payload.get("transcript_path", ""), 1))
-    if not reason:
-        reason = _speech_check(_strip_quote_markers(message), cwd)
-    if reason:
+    reason = _reason(payload)
+    if reason and _spend_block(payload, _turn_key(payload.get("transcript_path", ""))):
         print(json.dumps({"decision": "block", "reason": reason}))
 
 
@@ -691,18 +882,53 @@ PENDING_TABLE = ("# ANSWERS\n\n| Question | Answer |\n|---|---|\n"
                  "| _blank_ |\n")
 
 
+# Placeholder-style ledgers: what `answers.sh init` leaves before anything is
+# spoken (every planned key "_not yet spoken_"), in both shapes.
+PLACEHOLDER_KV = ("# Answers\n\n## idea\n**Asked:** _not yet spoken_\n**Answer:** _blank_\n\n"
+                  "## entry-mode\n**Asked:** _not yet spoken_\n**Answer:** _blank_\n")
+PLACEHOLDER_TABLE = ("# ANSWERS\n\n| Key | Answer | Status |\n|---|---|---|\n"
+                     "| idea | _blank_ | |\n| entry-mode | _blank_ | |\n")
+
+
+def _quoted_scripts(doc):
+    """The client wordings a document mandates: each blockquote group (a
+    multi-paragraph quote is one message) that is spoken as a turn (carries a
+    "?" or asks for a reply), plus every double-quoted wording carrying a "?".
+    Operator notes quoted in bold and status-bar samples in backticks are not
+    client turns."""
+    out, cur = [], []
+    for ln in doc.splitlines() + ["."]:
+        if ln.startswith(">"):
+            cur.append(ln)
+        elif not ln.strip() and cur:
+            cur.append("")
+        else:
+            body = "\n".join(cur).strip()
+            first = body.lstrip("> ")
+            if body and not first.startswith(("**", "`")) and (
+                    "?" in body or YIELD_REQUEST.search(body)):
+                out.append(body)
+            cur = []
+    out += [m for m in re.findall(r"\"([^\"\n]*\?[^\"\n]*)\"", doc)]
+    return out
+
+
 def _selftest():
     fails = 0
 
+    total = 0
+
     def t2(name, got, want):
-        nonlocal fails
+        nonlocal fails, total
+        total += 1
         ok = got == want
         print(("PASS  " if ok else "FAIL  ") + name + ("" if ok else f"  (got {got}, want {want})"))
         if not ok:
             fails += 1
 
     def t(name, msg, answers, want_block, project=None, targets=None, prev=None):
-        nonlocal fails
+        nonlocal fails, total
+        total += 1
         r = evaluate(msg, answers, project, targets, prev)
         got = bool(r)
         ok = got == want_block
@@ -774,10 +1000,6 @@ def _selftest():
       "Wonderful. From here on I'll call it Corner Post Framing.", TABLE, True, None)
     t("status line does not trip the stall guard on a stale line",
       "Still working: 14 of 40 pieces done, nothing waiting on you.", OWED, False)
-    t2("scope: cwd itself", bool(_answers_path(
-        "/Users/blackceomacmini/Downloads/Studio Nerds Program")), True)
-    t2("scope: one level DOWN from a parent", bool(_answers_path(
-        "/Users/blackceomacmini/Downloads/projects")), True)
     t2("scope: an unrelated folder is still never evaluated",
        bool(_answers_path("/tmp")), False)
 
@@ -873,9 +1095,11 @@ def _selftest():
     t("7 the mandated reassurance closer is allowed",
       "Do you already own a web address, something like yourbusiness.com? If you don't "
       "know, that's okay.", OWED, False)
-    t("7 control: any other trailing sentence still blocks",
+    # #22 changed this: a sentence in the SAME paragraph belongs to the question
+    # (the house style check B allows); a NEW paragraph after it still blocks.
+    t("7 a same-paragraph trailing sentence belongs to the question",
       "Do you picture people using this on their phones, or on a computer? From here on "
-      "I'll call it Studio Nerds.", OWED, True)
+      "I'll call it Studio Nerds.", OWED, False)
 
     # 8 -- the interrupted question, dropped for a different one (10:34).
     t("8 a new question while a spoken one hangs must return to it",
@@ -962,19 +1186,107 @@ def _selftest():
     # --- scope gate ---------------------------------------------------------
     import tempfile
     d = tempfile.mkdtemp()
-    ok = _answers_path(d) is None
-    print(("PASS  " if ok else "FAIL  ") + "scope gate: a folder with no 00-INPUT/ANSWERS.md is never evaluated")
-    if not ok:
-        fails += 1
-    ok = _answers_path("/nonexistent-dir-xyz") is None
-    print(("PASS  " if ok else "FAIL  ") + "scope gate: a missing cwd is survived")
-    if not ok:
-        fails += 1
+    t2("scope gate: a folder with no 00-INPUT/ANSWERS.md is never evaluated",
+       _answers_path(d), None)
+    t2("scope gate: a missing cwd is survived", _answers_path("/nonexistent-dir-xyz"), None)
+
+    # --- v1.24.0 fixes: one case each ---------------------------------------
+    import subprocess
+    d3 = tempfile.mkdtemp()
+    cfg = os.path.join(d3, "cfg")
+    INV = {"type": "user", "message": {"role": "user",
+           "content": "<command-name>/spec-protocol</command-name>"}}
+
+    def _say(text):
+        return _asst({"type": "text", "text": text})
+
+    def _bash(cmd):
+        return _asst({"type": "tool_use", "name": "Bash", "input": {"command": cmd}})
+
+    def _run(name, *records):
+        """Drive the real main() in a child process; return what it printed."""
+        tp = _transcript(name, *records)
+        payload = {"session_id": name, "transcript_path": tp, "cwd": d3}
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=cfg)
+        r = subprocess.run([sys.executable, os.path.abspath(__file__)], input=json.dumps(payload),
+                           capture_output=True, text=True, timeout=30, env=env)
+        return r.stdout
+
+    # 4 -- the project comes ONLY from this session's `answers.sh <project> init`.
+    proj = os.path.join(d3, "Corner Post")
+    decoy = os.path.join(d3, "decoy")
+    for p in (proj, decoy):
+        os.makedirs(os.path.join(p, "00-INPUT"))
+        open(os.path.join(p, ANSWERS_REL), "w").write(OWED)
+    with_call = _transcript("p4a.jsonl", INV, _bash('bash tools/answers.sh "%s" init' % proj))
+    without = _transcript("p4b.jsonl", INV, _say("Hi, I'm Candace."))
+    t2("#4 project = this session's init call; a ledger beside cwd is ignored",
+       (_project_from_events(_events(with_call), decoy), _project_from_events(_events(without), decoy)),
+       (proj, None))
+
+    # 17 -- the jargon lint runs on a run's turn even before any project exists.
+    t2("#17 speech-check blocks a client turn (no project yet)",
+       "CLIENT-FACING JARGON" in _run("p17", INV, _say("Hi, I'm Candace. I saved it to /Users/x/CONTROL/state.json.")),
+       True)
+
+    # 20 -- 3 blocks per session-turn, then stand down; a new turn resets.
+    saved = os.environ.get("CLAUDE_CONFIG_DIR")
+    os.environ["CLAUDE_CONFIG_DIR"] = cfg
+    try:
+        spent = [_spend_block({"session_id": "s20"}, 7) for _ in range(4)] + \
+                [_spend_block({"session_id": "s20"}, 9)]
+    finally:
+        if saved is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = saved
+    t2("#20 block counter: 3 per turn, then stands down, resets next turn",
+       spent, [True, True, True, False, True])
+
+    # 21 -- A stands down while H has a pending entry (HANGING: one spoken and
+    # blank, one unspoken). Before the fix A demanded the unspoken one.
+    t("#21 statement-yield with a pending entry: A stands down",
+      "Wonderful — that's exactly what I'll build for you.", HANGING, False)
+
+    # 22 -- every mandated wording in SKILL.md / interview.md passes both
+    # placeholder ledger shapes. Skipped (not failed) where the docs are not
+    # beside the hook, i.e. an installed copy under <config>/hooks/.
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    docs = [os.path.join(root, "SKILL.md"), os.path.join(root, "references", "interview.md")]
+    if all(os.path.isfile(p) for p in docs):
+        scripts = [s for p in docs for s in _quoted_scripts(open(p, encoding="utf-8").read())]
+        tripped = [s[:50] for s in scripts for led in (PLACEHOLDER_KV, PLACEHOLDER_TABLE)
+                   if evaluate(s, led)]
+        t2("#22 %d mandated wordings pass both ledger shapes" % len(scripts),
+           (len(scripts) >= 10, tripped), (True, []))
+    else:
+        print("SKIP  #22 mandated wordings (SKILL.md not beside this hook)")
+
+    # 23 -- init ran in this session but the ledger file is missing.
+    gone = os.path.join(d3, "Never Made")
+    t2("#23 ANSWERS.md missing after this session's init call blocks",
+       "ANSWERS.MD IS MISSING" in _run("p23", INV, _bash("bash tools/answers.sh '%s' init" % gone),
+                                        _say("Hi, I'm Candace. I'm going to help.")), True)
+
+    # 24 -- the counter must rise by exactly one.
+    prior = ["Question 3 of no more than 15 — What do you sell?"]
+    t2("#24 counter: a jump blocks, the next number passes",
+       (bool(_counter_problem("Question 5 of no more than 15 — How do people reach you?", prior)),
+        _counter_problem("Question 4 of no more than 15 — How do people reach you?", prior)),
+       (True, None))
+
+    # 25 -- turn 1 must open with the greeting line.
+    t2("#25 turn 1: an update offer blocks, the greeting passes",
+       ("TURN 1 IS NOT THE OPENING" in _run("p25a", INV, _say(
+           "I have an update for my own tools. Take it now?")),
+        _run("p25b", INV, _say("> Hi, I'm Candace. I'm going to help turn your idea into "
+                               "something real.\n\n> First question: what do you want to create?"))),
+       (True, ""))
 
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
         sys.exit(2)
-    print("conversation-gate.py selftest: ALL PASS (71 checks)")
+    print("conversation-gate.py selftest: ALL PASS (%d checks)" % total)
 
 
 if __name__ == "__main__":

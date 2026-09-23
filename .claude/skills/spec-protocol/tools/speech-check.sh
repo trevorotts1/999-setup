@@ -23,6 +23,7 @@
 #   operator-heading  a line that OPENS an operator aside ("Operator note.")
 #   tmp-path          a scratch path      (/tmp/corner-post-backup, %TEMP%\draft)
 #   backup-announcement  the words "backup at" and then a path
+#   jargon            audience.md §2 banned words (database, server, API, deploy...)
 #
 # The word "operator" in ordinary prose is NOT banned and must not be flagged:
 # this tool matches the HEADING — the start of a line — never the word. The
@@ -67,7 +68,10 @@
 #   4 — the selftest FAILED: this checker may not be believed until it is fixed
 set -u
 
-SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+# Resolved from BASH_SOURCE to an absolute path: "$0" is a bare name when the
+# tool is run as `bash speech-check.sh`, and re-running a bare name is rc 127.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+SELF="${SELF_DIR}/$(basename "${BASH_SOURCE[0]}")"
 LEDGER_SH="${SELF_DIR}/ledger.sh"
 
 # ---------------------------------------------------------------------------
@@ -79,7 +83,7 @@ if [ ! -x "${GREP}" ]; then
   if [ -x /bin/grep ]; then GREP="/bin/grep"; else GREP="$(command -v grep 2>/dev/null || true)"; fi
 fi
 
-CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement"
+CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement jargon"
 
 # ---------------------------------------------------------------------------
 # The patterns. POSIX ERE only (no \b, no \d) so BSD grep and GNU grep agree.
@@ -124,6 +128,22 @@ RE_tmp_path='(^|[^A-Za-z0-9_.~-])/[Tt][Mm][Pp]/[A-Za-z0-9_.~-]|%[Tt][Ee][Mm][Pp]
 # plus a path are the canary line, and the client can do nothing with either.
 RE_backup_announcement='[Bb]ackups?[[:space:]]+at[[:space:]]+[^[:space:]]*[/\][^[:space:]]'
 
+# jargon — the banned-word list of references/audience.md §2. Words that are
+# also everyday English (model, agent, branch, environment, provider, hosting,
+# responsive) are left out: a bakery's "hosting a party" must not be refused.
+# "token" is here; the one standing exception (a label the client must FIND:
+# "Private Integration Token", "Firebase refresh token") is removed by
+# WHITELIST_SED before any class is matched.
+RE_jargon='(^|[^A-Za-z])([Dd]atabases?|[Dd]eploy(s|ed|ing|ments?)?|[Ss]ervers?|APIs?|[Rr]epositor(y|ies)|[Rr]epos|[Rr]epo|Git|[Ff]ront-?end|[Bb]ack-?end|CLI|[Rr]untimes?|[Ff]rameworks?|[Ee]ndpoints?|[Ww]orkflows?|[Cc]ontext window|[Aa]uthentication|OAuth|[Ww]ebhooks?|DNS|[Tt]okens?)([^A-Za-z]|$)'
+
+# Mandated sentences the classes above would refuse, neutralised before linting:
+# the GATE 0 refusal (SKILL.md: "Type `ultracode /spec-protocol`"), the restart
+# sentence ("type `claude-nine --resume`" -- the launcher, not a model name) and
+# the integration-token exception. Substitutions only, so line numbers hold.
+# Also the two mandated cost sentences (#11, #13), whose "$<X>" is the only
+# dollar figure a client ever hears; any other dollar figure is still money.
+WHITELIST_SED='s#`?ultracode /spec-protocol`?#ultracode#g; s#`?claude(-[a-z]+)? --resume`?#resume#g; s#(Private Integration|[Ff]irebase refresh|[Rr]efresh) [Tt]okens?#label#g; s#cost more than about \$[0-9]+(\.[0-9][0-9])? in AI usage#cost more than about X in AI usage#g; s#about \$[0-9]+(\.[0-9][0-9])? should cover it#about X should cover it#g'
+
 re_for() {
   case "$1" in
     path)             printf '%s' "${RE_path}" ;;
@@ -136,6 +156,7 @@ re_for() {
     operator-heading) printf '%s' "${RE_operator_heading}" ;;
     tmp-path)         printf '%s' "${RE_tmp_path}" ;;
     backup-announcement) printf '%s' "${RE_backup_announcement}" ;;
+    jargon)           printf '%s' "${RE_jargon}" ;;
     *)                return 1 ;;
   esac
 }
@@ -194,11 +215,16 @@ lint() {
 
   [ -n "${GREP}" ] || die_undetermined "no usable grep (/usr/bin/grep, /bin/grep, PATH) — this tool cannot answer"
 
+  local filtered
+  filtered="$(mktemp "${TMPDIR:-/tmp}/speech-check-wl.XXXXXX")" || die_undetermined "cannot mktemp for the whitelist pass"
+  sed -E "${WHITELIST_SED}" "${src}" > "${filtered}" 2>/dev/null || { rm -f "${filtered}"; die_undetermined "sed failed on the whitelist pass"; }
+
   for cls in ${CLASS_IDS}; do
     re="$(re_for "${cls}")"
-    out="$("${GREP}" -n -o -E -- "${re}" "${src}" 2>/dev/null)"
+    out="$("${GREP}" -n -o -E -- "${re}" "${filtered}" 2>/dev/null)"
     rc=$?
     if [ "${rc}" -ge 2 ]; then
+      rm -f "${filtered}"
       die_undetermined "grep exited ${rc} on class ${cls} — an error, not an empty result"
     fi
     if [ "${rc}" -eq 0 ] && [ -n "${out}" ]; then
@@ -211,6 +237,7 @@ lint() {
 "
     fi
   done
+  rm -f "${filtered}"
 
   if [ -z "${found}" ]; then
     echo "SPEECH-CHECK | verdict=CLEAN | classes=none | file=${label}"
@@ -270,7 +297,7 @@ selftest() {
     n=$((n + 1))
     f="${tmp}/${label}.txt"
     printf '%s\n' "${text}" > "${f}"
-    out="$("$0" "${f}" --home "${home}" 2>/dev/null)"; rc=$?
+    out="$(bash "${SELF}" "${f}" --home "${home}" 2>/dev/null)"; rc=$?
     gotcls="$(printf '%s\n' "${out}" | sed -n 's/^SPEECH-CHECK | verdict=[A-Z]* | classes=\([a-z,-]*\).*/\1/p' | head -n 1)"
     if [ "${rc}" != "${wantrc}" ]; then
       echo "SELFTEST FAIL | ${label} | rc=${rc} (want ${wantrc}) classes=${gotcls}"
@@ -349,19 +376,31 @@ selftest() {
 > Here's how it works. I ask you plain questions, one at a time. \"I don't know\" is always a fine answer; I'll choose. Then my helpers build it, check it, and put it online, around the clock. You can walk away.
 "
 
-  # --- The ledger really was written: twelve lines, three of them `clean`.
+  # --- #18: the jargon class, and the two MANDATED sentences it and the path /
+  # model-id classes used to refuse (the GATE 0 refusal, the restart sentence),
+  # plus the integration-token exception. The mandated lines must pass CLEAN.
+  _fixture banned-jargon 3 jargon \
+    'I set up the database on the server and will deploy it through the API tonight.'
+  _fixture control-mandated-sentences 0 none \
+    "One switch has to be on before I can start my helpers. Type \`ultracode /spec-protocol\` — the word \`ultracode\` first, then the command — and press Return; that's all.
+If your computer restarts or we get disconnected: open the Terminal app, type \`claude-nine --resume\`, press Return, pick this project from the list, and I carry on from where I was.
+I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token. Copy it, then say ready.
+I'll keep going until it's finished. If it's going to cost more than about \$25 in AI usage, I'll stop and ask you first. Is that okay?
+Your AI account might run low partway through; about \$25 should cover it. Want me to keep going and tell you in the morning if it runs out?"
+
+  # --- The ledger really was written: fourteen lines, four of them `clean`.
   local total clean
   total="$("${GREP}" -c 'SPEECH-CHECK: ' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
   clean="$("${GREP}" -c 'SPEECH-CHECK: clean' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
-  if [ "${total}" = "12" ] && [ "${clean}" = "3" ]; then
-    echo "SELFTEST ok   | ledger-written | lines=12 clean=3"
+  if [ "${total}" = "14" ] && [ "${clean}" = "4" ]; then
+    echo "SELFTEST ok   | ledger-written | lines=14 clean=4"
   else
-    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 12) clean=${clean} (want 3)"
+    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 14) clean=${clean} (want 4)"
     fails=$((fails + 1))
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    echo "SELFTEST PASS | ${n} fixtures (3 controls PASS, 9 banned lines caught) + ledger check"
+    echo "SELFTEST PASS | ${n} fixtures (4 controls PASS, 10 banned lines caught) + ledger check"
     exit 0
   fi
   echo "SELFTEST FAILED | ${fails} check(s) failed — this checker may not be believed until it is fixed" >&2
@@ -378,7 +417,7 @@ while [ "$#" -gt 0 ]; do
     --selftest) selftest ;;
     --classes)  for c in ${CLASS_IDS}; do echo "${c}"; done; exit 0 ;;
     --home)     shift; [ "$#" -gt 0 ] || die_undetermined "--home given with no directory"; HOME_ARG="$1" ;;
-    --help|-h)  sed -n '2,62p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h)  sed -n '2,62p' "${SELF}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -)          SRC="-" ;;
     -*)         die_undetermined "unknown option: $1" ;;
     *)          SRC="$1" ;;
