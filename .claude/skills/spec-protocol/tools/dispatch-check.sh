@@ -1664,7 +1664,7 @@ run_selftest() {
   write_state "${P8}/CONTROL/project_state.json" 20 20 0 2000
   : > "${P8}/CONTROL/LEDGER.md"
   bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-4' spend_usd=12 >/dev/null 2>&1; c1=$?
-  printf '2026-09-08T00:00:00Z | COST-LINE: usd=50 answer=yes\n' >> "${P8}/CONTROL/LEDGER.md"
+  printf '2026-09-08T00:00:00Z | COST-LINE: usd=50 source=answer\n' >> "${P8}/CONTROL/LEDGER.md"
   bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-5' spend_usd=50 >/dev/null 2>&1; c2=$?
   out="$(bash "${SELF}" "${P8}" 1 1 '[Sonnet x1] judge unit-6' spend_usd=12 2>&1)"; c3=$?
   "${GREP}" -q 'PAUSE-GRANT: block=1 spend_usd=12 line_usd=50 source=cost-line' "${P8}/CONTROL/LEDGER.md" && g3=1
