@@ -11,7 +11,7 @@
 # it; a lint that runs can. This is that lint: advisory to a model, mechanical
 # in what it measures.
 #
-# THE TEN BANNED CLASSES — the class id is what the tool prints and what the
+# THE BANNED CLASSES — the class id is what the tool prints and what the
 # ledger records:
 #   path              a path-like string  (captures/, tools/ledger.sh, 00-INPUT/bar/)
 #   workflow-id       a WF- / wf- id      (WF-AUDIT-20B)
@@ -24,6 +24,12 @@
 #   tmp-path          a scratch path      (/tmp/brightside-studio-backup, %TEMP%\draft)
 #   backup-announcement  the words "backup at" and then a path
 #   jargon            audience.md §2 banned words (database, server, API, deploy...)
+#   script-name       a script or data file name (install.sh, gate.py, tick.mjs, state.json)
+#   run-internal      the run's own machinery (preflight, hook, ledger, tick, cron,
+#                     status line, worktree)
+# Never refused (WHITELIST_SED, LABELS_SED): an https:// link with its path -- the one address a
+# client can act on; the on-screen labels a client must FIND ("Token Grabber", "Grab
+# the token", "Copy the token", "API Keys"); and the verb in "tick the" box.
 #
 # The word "operator" in ordinary prose is NOT banned and must not be flagged:
 # this tool matches the HEADING — the start of a line — never the word. The
@@ -43,7 +49,7 @@
 #   speech-check.sh <file>                  lint the drafted message in <file>
 #   speech-check.sh - [--home <dir>]        lint stdin
 #   speech-check.sh --selftest              prove the instrument, then exit
-#   speech-check.sh --classes               print the ten class ids, exit 0
+#   speech-check.sh --classes               print the class ids, exit 0
 #   speech-check.sh <file> --home <dir>     name the project home for the ledger
 #
 # OUTPUT — one verdict line, then one detail line per hit (the matched TOKEN
@@ -83,7 +89,7 @@ if [ ! -x "${GREP}" ]; then
   if [ -x /bin/grep ]; then GREP="/bin/grep"; else GREP="$(command -v grep 2>/dev/null || true)"; fi
 fi
 
-CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement jargon"
+CLASS_IDS="path workflow-id law-number md-filename trend money model-id operator-heading tmp-path backup-announcement jargon script-name run-internal"
 
 # ---------------------------------------------------------------------------
 # The patterns. POSIX ERE only (no \b, no \d) so BSD grep and GNU grep agree.
@@ -142,7 +148,17 @@ RE_jargon='(^|[^A-Za-z])([Dd]atabases?|[Dd]eploy(s|ed|ing|ments?)?|[Ss]ervers?|A
 # the integration-token exception. Substitutions only, so line numbers hold.
 # Also the two mandated cost sentences (#11, #13), whose "$<X>" is the only
 # dollar figure a client ever hears; any other dollar figure is still money.
-WHITELIST_SED='s#`?ultracode /spec-protocol`?#ultracode#g; s#`?claude(-[a-z]+)? --resume`?#resume#g; s#(Private Integration|[Ff]irebase refresh|[Rr]efresh) [Tt]okens?#label#g; s#cost more than about \$[0-9]+(\.[0-9][0-9])? in AI usage#cost more than about X in AI usage#g; s#about \$[0-9]+(\.[0-9][0-9])? should cover it#about X should cover it#g'
+# An https link is neutralised first, so no class sees its path.
+WHITELIST_SED='s#https://[^[:space:]<>)]+#LINK#g; s#`?ultracode /spec-protocol`?#ultracode#g; s#`?claude(-[a-z]+)? --resume`?#resume#g; s#(Private Integration|[Ff]irebase refresh|[Rr]efresh) [Tt]okens?#label#g; s#cost more than about \$[0-9]+(\.[0-9][0-9])? in AI usage#cost more than about X in AI usage#g; s#about \$[0-9]+(\.[0-9][0-9])? should cover it#about X should cover it#g'
+
+# The on-screen labels a client must FIND, matched across a line break (the
+# interview's Firebase ask wraps "Grab the / token"): the whole message is read
+# as one buffer and the whitespace is kept, so line numbers still hold.
+LABELS_SED='s#(Grab|Copy)([[:space:]>]+)the([[:space:]>]+)[Tt]oken#\1\2the\3label#g; s#Token([[:space:]>]+)Grabber#label\1label#g; s#API([[:space:]>]+)Keys#label\1label#g; s#[Tt]ick([[:space:]>]+)the([[:space:]])#check\1the\2#g'
+
+RE_script_name='[A-Za-z0-9_.-]+\.(sh|py|mjs|json)([^A-Za-z0-9]|$)'
+
+RE_run_internal='(^|[^A-Za-z])([Pp]re-?flights?|[Hh]ooks?|[Ll]edgers?|[Tt]icks?|[Cc]ron(tab)?s?|[Ss]tatus line|[Ww]orktrees?)([^A-Za-z]|$)'
 
 re_for() {
   case "$1" in
@@ -157,6 +173,8 @@ re_for() {
     tmp-path)         printf '%s' "${RE_tmp_path}" ;;
     backup-announcement) printf '%s' "${RE_backup_announcement}" ;;
     jargon)           printf '%s' "${RE_jargon}" ;;
+    script-name)      printf '%s' "${RE_script_name}" ;;
+    run-internal)     printf '%s' "${RE_run_internal}" ;;
     *)                return 1 ;;
   esac
 }
@@ -217,7 +235,8 @@ lint() {
 
   local filtered
   filtered="$(mktemp "${TMPDIR:-/tmp}/speech-check-wl.XXXXXX")" || die_undetermined "cannot mktemp for the whitelist pass"
-  sed -E "${WHITELIST_SED}" "${src}" > "${filtered}" 2>/dev/null || { rm -f "${filtered}"; die_undetermined "sed failed on the whitelist pass"; }
+  { sed -E "${WHITELIST_SED}" "${src}" | sed -E -e ':a' -e '$!N' -e '$!ba' -e "${LABELS_SED}"; } > "${filtered}" 2>/dev/null \
+    || { rm -f "${filtered}"; die_undetermined "sed failed on the whitelist pass"; }
 
   for cls in ${CLASS_IDS}; do
     re="$(re_for "${cls}")"
@@ -388,19 +407,33 @@ I need your Convert and Flow (GoHighLevel, GHL) Private Integration Token. Copy 
 I'll keep going until it's finished. If it's going to cost more than about \$25 in AI usage, I'll stop and ask you first. Is that okay?
 Your AI account might run low partway through; about \$25 should cover it. Want me to keep going and tell you in the morning if it runs out?"
 
-  # --- The ledger really was written: fourteen lines, four of them `clean`.
+  # --- G8: script / file names and the run's own machinery are caught; the
+  # https link in the pause/report sentence and the on-screen labels the client
+  # must find pass CLEAN.
+  _fixture banned-script-name 3 script-name \
+    'I checked everything with install.sh and wrote the result into notes.json.'
+  _fixture banned-run-internal 3 run-internal \
+    'The tick fired, the hook caught it, and the ledger says the worktree is clean.'
+  _fixture control-links-and-labels 0 none \
+    "I've done a lot of work and your website is live at https://brightside-studio.vercel.app/about/menu. Keep going?
+Open the Token Grabber Chrome extension, click 'Grab the
+token', then 'Copy the token'.
+Look for a section called 'API Keys' (usually under your account settings).
+Open its integration settings, tick the Media permissions, and tell me when it's done."
+
+  # --- The ledger really was written: seventeen lines, five of them `clean`.
   local total clean
   total="$("${GREP}" -c 'SPEECH-CHECK: ' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
   clean="$("${GREP}" -c 'SPEECH-CHECK: clean' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
-  if [ "${total}" = "14" ] && [ "${clean}" = "4" ]; then
-    echo "SELFTEST ok   | ledger-written | lines=14 clean=4"
+  if [ "${total}" = "17" ] && [ "${clean}" = "5" ]; then
+    echo "SELFTEST ok   | ledger-written | lines=17 clean=5"
   else
-    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 14) clean=${clean} (want 4)"
+    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 17) clean=${clean} (want 5)"
     fails=$((fails + 1))
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    echo "SELFTEST PASS | ${n} fixtures (4 controls PASS, 10 banned lines caught) + ledger check"
+    echo "SELFTEST PASS | ${n} fixtures (5 controls PASS, 12 banned lines caught) + ledger check"
     exit 0
   fi
   echo "SELFTEST FAILED | ${fails} check(s) failed — this checker may not be believed until it is fixed" >&2

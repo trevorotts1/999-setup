@@ -56,18 +56,28 @@ WHAT IT CHECKS, when a spec-protocol run yields the turn to its client:
      refusal). Detection lines and update offers belong in the operator log.
 
   L  QUESTION COUNTER BROKEN. "Question N of no more than C": N rises by one
-     per turn (a same-words re-ask may repeat N) and C never changes.
+     per turn (a same-words re-ask may repeat N); C never rises and is lowered
+     only with interview.md's sentence "Good news -- it will be at most C' now";
+     once counting has begun, a question before the last one carries its number.
+
+  N  NAMING OR STATUS AFTER THE QUESTION in the same paragraph, or more than
+     two "?" in one paragraph (an either/or is two; the mandated "Not sure?"
+     closer and the client's quoted words are not counted).
 
   M  ANSWERS.md MISSING after this session ran `answers.sh <project> init`.
 
   G  JARGON. tools/speech-check.sh runs on every client-facing turn of a run.
 
 SCOPE -- and why this cannot fire on an ordinary session. Nothing runs unless
-THIS session's transcript shows the harness invoking the skill. The ledger
-checks (A-J, M) additionally need the project, and the project comes ONLY from
-this session's own `answers.sh <project> init` tool call (latest wins). No such
-call -> the ledger checks are not evaluated. The old ancestor/child-folder
-search is gone: from ~/Downloads it read a different client's ledger.
+THIS session's transcript shows the harness invoking the skill (a mid-turn
+Skill load of it counts as the run, but never as a client turn boundary). The
+ledger checks (A, D, H, I, J, M) additionally need the ledger, and it comes ONLY
+from this session's own answers.sh result line `ANSWERS | init|flush | <abs>`
+(latest wins) -- including a HELD ledger (`answers.sh init --hold <run-id>`) on
+the turns before the project folder exists. No ledger -> the message-shape
+checks (B, C, F, K, L, N, G) still run; the ledger checks are not evaluated.
+The old ancestor/child-folder search is gone: from ~/Downloads it read a
+different client's ledger.
 
 CONTRACT (identical to gate0-claim-gate.py, which is proven in service)
   - reads the hook payload on stdin, ALWAYS exits 0
@@ -176,15 +186,41 @@ def _user_kind(rec):
     # that is precisely how this hook once caught its own author.
     texts = [c] if isinstance(c, str) else [
         b.get("text") or "" for b in (c or []) if isinstance(b, dict) and b.get("type") == "text"]
+    # A skill loaded MID-TURN by the Skill tool arrives as a user record carrying
+    # the sourceToolUseID of that call. It is the harness, not the client: never a
+    # turn boundary (G7). A mid-turn load of THIS skill still marks the run ('minv').
+    mid_turn = bool(rec.get("sourceToolUseID"))
     if msg.get("role") == "user" and any(SKILL_INVOKED.search(t) for t in texts):
-        return "inv"
+        return "minv" if mid_turn else "inv"
+    if mid_turn:
+        return None
     return "user"
+
+
+RUN_KINDS = ("inv", "minv")
+# answers.sh's own result line: the ledger it actually wrote, as an absolute path.
+RESULT_LINE = re.compile(r"^ANSWERS \| (?:init|flush) \| (/.*ANSWERS\.md)\s*$", re.M)
+HELD_MARK = os.sep + os.path.join("spec-protocol", "runs") + os.sep
+
+
+def _result_text(rec):
+    """The text of every tool_result block in a user record."""
+    out = []
+    for b in (rec.get("message") or {}).get("content") or []:
+        if not isinstance(b, dict) or b.get("type") != "tool_result":
+            continue
+        c = b.get("content")
+        if isinstance(c, str):
+            out.append(c)
+        elif isinstance(c, list):
+            out += [x.get("text") or "" for x in c if isinstance(x, dict)]
+    return "\n".join(out)
 
 
 def _events(transcript_path):
     """This session's main chain, forward: (kind, value, line_no) with kind in
-    inv / user / fb (hook feedback) / text (assistant prose) / cmd (a tool_use
-    `command` string)."""
+    inv / minv (mid-turn load of this skill) / user / fb (hook feedback) / text
+    (assistant prose) / cmd (a tool_use `command` string) / res (tool result text)."""
     out = []
     try:
         with open(transcript_path, encoding="utf-8", errors="replace") as fh:
@@ -199,6 +235,10 @@ def _events(transcript_path):
                     k = _user_kind(d)
                     if k:
                         out.append((k, None, n))
+                    else:
+                        res = _result_text(d)
+                        if "ANSWERS |" in res:
+                            out.append(("res", res, n))
                 elif d.get("type") == "assistant":
                     for b in (d.get("message") or {}).get("content") or []:
                         if not isinstance(b, dict):
@@ -218,23 +258,34 @@ def _is_spec_protocol_run(transcript_path):
     """Is THIS SESSION a spec-protocol client conversation? Only the harness's
     skill injection counts; discussing, editing or standing in the folder does
     not."""
-    return any(k == "inv" for k, _, _ in _events(transcript_path))
+    return any(k in RUN_KINDS for k, _, _ in _events(transcript_path))
 
 
-def _project_from_events(ev, cwd):
-    """The project named by this session's latest `answers.sh <project> init`,
-    as an absolute path, or None (then the ledger checks are not evaluated)."""
+def _project_from_events(ev, cwd=None):
+    """The project whose ledger this session's latest answers.sh init/flush wrote,
+    as an absolute path, or None (then only the message-shape checks run).
+
+    The path comes from answers.sh's own RESULT line in the tool result
+    (`ANSWERS | init | <abs>/00-INPUT/ANSWERS.md`), never from the command text:
+    `"$P"` or `.` after a cd cannot be resolved from the words typed (G2). An
+    absolute path in the command is the fallback for a call whose result is
+    missing (init that failed: check M). A HELD ledger (`init --hold`) resolves to
+    its run folder under the config root; `_is_held` names that case."""
     project = None
     for k, v, _ in ev:
-        if k == "cmd":
+        if k == "res":
+            for m in RESULT_LINE.finditer(v):
+                project = os.path.dirname(os.path.dirname(m.group(1).strip()))
+        elif k == "cmd":
             for m in INIT_CALL.finditer(v):
-                project = next(g for g in m.groups() if g)
-    if not project or "$" in project:
-        return None                  # none, or an unexpanded variable: unknowable
-    project = os.path.expanduser(project)
-    if not os.path.isabs(project):
-        project = os.path.join(cwd or os.getcwd(), project)
-    return os.path.abspath(project)
+                p = os.path.expanduser(next(g for g in m.groups() if g))
+                if "$" not in p and os.path.isabs(p):
+                    project = p
+    return os.path.abspath(project) if project else None
+
+
+def _is_held(project):
+    return bool(project) and HELD_MARK in project + os.sep
 
 
 def _turn_start(ev):
@@ -292,7 +343,7 @@ def _opening_text(ev):
     start. Within the turn, the text after the latest Stop-hook block is judged,
     so a corrected retry is not re-judged on the words it replaced.
     """
-    last_inv = max((n for k, _, n in ev if k == "inv"), default=None)
+    last_inv = max((n for k, _, n in ev if k in RUN_KINDS), default=None)
     if last_inv is None:
         return None
     start = _turn_start(ev)
@@ -319,24 +370,42 @@ COUNTER = re.compile(r"Question\s+(\d+)\s+of\s+no\s+more\s+than\s+(\d+)\W*(.{0,6
 
 def _counter_problem(message, prior_texts):
     """Block when "Question N of no more than C" does not rise by exactly one, or
-    C changed. A re-ask of the same question in the same words (check H demands
-    it) may repeat N."""
-    cur = COUNTER.findall(message or "")
-    if not cur:
-        return None
-    prev = None
+    C moved other than DOWN with interview.md's lowering sentence ("Good news --
+    it will be at most C' now"), or -- once counting has begun and is not
+    finished -- a question is asked without its number. A re-ask of the same
+    question in the same words (check H demands it) may repeat N."""
+    prev, ceiling = None, None
     for t in prior_texts:
         found = COUNTER.findall(t or "")
         if found:
-            prev = found[-1]
+            prev, ceiling = found[-1], int(found[-1][1])
+        low = LOWERING.findall(t or "")
+        if low and ceiling is not None:
+            ceiling = min(ceiling, int(low[-1]))
     if not prev:
+        return None                  # counting has not begun
+    msg = ODD_QUESTION_MARK.sub("?", message or "")
+    cur = COUNTER.findall(msg)
+    low = LOWERING.findall(msg)
+    if low and int(low[-1]) > ceiling:
+        return ("QUESTION COUNT RAISED. The client was promised at most %d; \"at most %s\" "
+                "raises it. The ceiling may only ever be lowered." % (ceiling, low[-1]))
+    allowed = int(low[-1]) if low else ceiling
+    if not cur:
+        clean = _strip_quote_markers(msg)
+        if int(prev[0]) < ceiling and not STATUS_SHAPE.match(clean) and \
+                _ends_on_question(MANDATED_TAILS.sub("", clean).strip() or clean)[0]:
+            return ("COUNTED QUESTION WITHOUT ITS NUMBER. Counting began at Question 1, so "
+                    "every question until the last is spoken as \"Question %d of no more "
+                    "than %d -- <the question>\" (interview.md §6)." % (int(prev[0]) + 1, allowed))
         return None
     (n, c, q), (pn, pc, pq) = cur[-1], prev
     flat = lambda s: re.sub(r"\s+", " ", s).strip()
-    if c != pc:
-        return ("QUESTION COUNT CHANGED. Last time you said \"of no more than %s\"; now \"of no "
-                "more than %s\". The ceiling the client was promised never moves. Keep it at %s."
-                % (pc, c, pc))
+    if int(c) != allowed:
+        return ("QUESTION COUNT CHANGED. The client was last told \"of no more than %d\"; now "
+                "\"of no more than %s\". The ceiling never rises, and it is lowered only by "
+                "saying first: \"Good news -- it will be at most <C'> now, because <the "
+                "reason>.\" Keep it at %d." % (ceiling, c, allowed))
     if int(n) == int(pn) + 1 or (n == pn and flat(q) == flat(pq)):
         return None
     return ("QUESTION NUMBER OUT OF ORDER. The last counted question was Question %s; this one "
@@ -373,8 +442,8 @@ def _client_prose(transcript_path, back=0):
         if d.get("isSidechain"):
             continue
         if d.get("type") == "user":
-            if _user_kind(d) in (None, "fb"):
-                continue            # a tool RESULT or hook feedback is not the user speaking
+            if _user_kind(d) in (None, "fb", "minv"):
+                continue            # a tool RESULT, hook feedback or mid-turn skill load is not the user speaking
             crossed += 1
             if crossed > back:
                 return None         # walked past the turn asked for
@@ -531,7 +600,8 @@ def _recorded(question_text, answers_text):
 
 CATEGORY_NAMING = re.compile(
     r"call it your\s+(app for phones|website you sign into|app for phones and computers|"
-    r"computer program|website|selling pages|mobile app|web app|desktop software|funnel)",
+    r"computer program|website|selling pages|mobile app|web app|desktop software|funnel|"
+    r"application|app|program|platform|software)\b",
     re.I)
 AUTO_SLUG = re.compile(r"^[a-z]+(-[a-z]+)*-\d{4}-\d{2}-\d{2}$")
 SELF_RESOLVED_FORK = re.compile(
@@ -552,11 +622,20 @@ ODD_QUESTION_MARK = re.compile(r"[？⁇﹖]")
 # SKILL.md ORDERS this sentence onto the end of every either/or question, and
 # interview.md orders the second onto the end of a reassured one. Both end on a
 # full stop, so without this the gate blocks the wording it mandates.
-MANDATED_TAILS = re.compile(
-    r"\s*(?:"
-    r"Not sure\?\s*That['’]?s okay\.\s*I['’]?ll choose what makes the most sense\."
-    r"|If you don['’]?t know,?\s*that['’]?s okay\."
-    r")\s*$", re.I)
+_TAIL_BODY = (r"(?:"
+              r"Not sure\?\s*That['’]?s okay\.\s*I['’]?ll choose what makes the most sense\."
+              r"|If you don['’]?t know,?\s*that['’]?s okay\."
+              r")")
+MANDATED_TAILS = re.compile(r"\s*" + _TAIL_BODY + r"\s*$", re.I)
+MANDATED_TAIL_ANY = re.compile(_TAIL_BODY, re.I)
+# G5 -- a naming or status sentence tucked after the final "?" in the SAME
+# paragraph turns the question into a remark (the 1.21.4 shape, one line down).
+NAMING_OR_STATUS = re.compile(
+    r"(from here on|I['’]?ll call it|\bcall it\b|\bI['’]?ve (named|saved|recorded|written|filed|noted)\b|"
+    r"\bI (named|saved|recorded|wrote|filed|noted)\b|still working|pieces done|\bprogress\b)", re.I)
+MAX_Q_PER_PARA = 2
+# G4 -- interview.md's lowering sentence: "Good news — it will be at most <C'> now".
+LOWERING = re.compile(r"it will be at most\s+(\d+)", re.I)
 # A mandated REQUEST is a yield too: the key asks end "Copy it, then say ready,
 # and I'll file it..." and the pictures ask ends "...then say done." The client
 # has something to do and a word to reply with; that is not a stall.
@@ -683,6 +762,20 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
                     "answer it, BEFORE asking anything else."
                     % _ellipsis(re.sub(r"\s+", " ", prev_q).strip(), 80))
 
+    # G5 -- a naming or status sentence after the final "?" in the same
+    # paragraph; and more than two "?" in one paragraph (an either/or is two;
+    # the mandated "Not sure?" closer and quoted client words do not count).
+    if after is not None and NAMING_OR_STATUS.search(re.split(r"\n\s*\n", after)[0]):
+        return ("NAMING OR STATUS AFTER THE QUESTION. After your last question the same "
+                "paragraph goes on to %r, so the client reads a remark, not a question. Say "
+                "the naming or status line FIRST, then ask; the question is the last thing "
+                "in the message." % _ellipsis(re.split(r"\n\s*\n", after)[0].strip(), 60))
+    for para in re.split(r"\n\s*\n", _countable(MANDATED_TAIL_ANY.sub(" ", clean))):
+        if para.count("?") > MAX_Q_PER_PARA:
+            return ("TOO MANY QUESTIONS IN ONE PARAGRAPH. One paragraph carries %d question "
+                    "marks. One question at a time (audience.md §1); an either/or is the "
+                    "most one paragraph may hold." % para.count("?"))
+
     # A question whose SAME paragraph carries a trailing reassurance or example
     # ("...yourbusiness.com? If you don't know, that's okay.") still ends the
     # turn on that question -- the house style check B already allows. Judging
@@ -754,7 +847,7 @@ def _reason(payload):
     """The block reason for this Stop, or None."""
     tp = payload.get("transcript_path", "")
     ev = _events(tp)
-    if not any(k == "inv" for k, _, _ in ev):
+    if not any(k in RUN_KINDS for k, _, _ in ev):
         return None                  # not a run: an operator session, a discussion
     message = _last_client_message(tp)
     if not message:
@@ -776,6 +869,8 @@ def _reason(payload):
         return r
 
     project = _project_from_events(ev, cwd)
+    held = _is_held(project)
+    answers_text = None
     if project:
         answers = os.path.join(project, ANSWERS_REL)
         # M -- init was run in this session, so the ledger must exist.
@@ -799,13 +894,21 @@ def _reason(payload):
                     targets = declared
             except Exception:
                 targets = None        # no profile, or unreadable: check I stands down
-            r = evaluate(message, answers_text, _project_name(project), targets,
-                         _client_prose(tp, 1))
+            # A HELD ledger's folder is a run id, never the thing's name.
+            r = evaluate(message, answers_text, None if held else _project_name(project),
+                         targets, _client_prose(tp, 1))
             if r:
                 return r
+    if answers_text is None:
+        # G1 -- no ledger yet (turns 2-3 of a run that never held one): the
+        # message-shape checks still run. No ledger means no owed/pending set and
+        # nothing for J to look up, so those stand down rather than guess.
+        r = evaluate(message, "")
+        if r:
+            return r
 
     # G -- the jargon lint, on every client-facing turn of a run.
-    return _speech_check(_strip_quote_markers(message), project)
+    return _speech_check(_strip_quote_markers(message), None if held else project)
 
 
 def main():
@@ -1095,11 +1198,13 @@ def _selftest():
     t("7 the mandated reassurance closer is allowed",
       "Do you already own a web address, something like yourbusiness.com? If you don't "
       "know, that's okay.", OWED, False)
-    # #22 changed this: a sentence in the SAME paragraph belongs to the question
-    # (the house style check B allows); a NEW paragraph after it still blocks.
-    t("7 a same-paragraph trailing sentence belongs to the question",
+    # #22 let a same-paragraph sentence belong to the question (a reassurance or
+    # an example); G5 still blocks a NAMING or STATUS line tucked in there.
+    t("7/G5 a naming line after the question in the same paragraph blocks",
       "Do you picture people using this on their phones, or on a computer? From here on "
-      "I'll call it Brightside Studio.", OWED, False)
+      "I'll call it Brightside Studio.", OWED, True)
+    t("7 control: a same-paragraph example after the question is allowed",
+      "Do you already own a web address? Something like yourbusiness.com.", OWED, False)
 
     # 8 -- the interrupted question, dropped for a different one (10:34).
     t("8 a new question while a spoken one hangs must return to it",
@@ -1282,6 +1387,83 @@ def _selftest():
         _run("p25b", INV, _say("> Hi, I'm Candace. I'm going to help turn your idea into "
                                "something real.\n\n> First question: what do you want to create?"))),
        (True, ""))
+
+    # --- round 3 (G1-G7): one case each, with its control --------------------
+    def _result(text):
+        return {"type": "user", "message": {"role": "user", "content":
+                [{"type": "tool_result", "content": text}]}}
+    USER = {"type": "user", "message": {"role": "user", "content": "a booking site for my bakery"}}
+    OPEN = "Hi, I'm Candace. First question: what do you want to create?"
+
+    # G1 -- turn 2, no project yet: the HELD ledger catches the 1.21.5 stall, and
+    # with no ledger at all the message-shape checks still run.
+    held = os.path.join(cfg, "spec-protocol", "runs", "r1", "00-INPUT", "ANSWERS.md")
+    os.makedirs(os.path.dirname(held))
+    open(held, "w").write('# Answers\n\n## idea\n**Asked:** "%s"\n**Answer:** "a booking site"\n\n'
+                          '## entry-mode\n**Asked:** _not yet spoken_\n**Answer:** _blank_\n' % OPEN)
+    stall = "Wonderful. From here on I'll call it Brightside Studio."
+    t2("G1 held ledger: the 1.21.5 stall is caught on turn 2 (control: re-asked properly passes)",
+       ("TURN ENDED ON A STATEMENT" in _run("g1a", INV, _say(OPEN),
+                                            _bash("bash tools/answers.sh init --hold r1 --planned entry-mode"),
+                                            _result("ANSWERS | init | " + held), USER, _say(stall)),
+        _run("g1b", INV, _say(OPEN), _bash("bash tools/answers.sh init --hold r1"),
+             _result("ANSWERS | init | " + held), USER,
+             _say(stall + "\n\nI can learn about your idea in one of two ways. Which would you rather do?"))),
+       (True, ""))
+    t2("G1 no ledger at all: prose after the question still blocks",
+       "NEW PARAGRAPH AFTER THE QUESTION" in _run(
+           "g1c", INV, _say(OPEN), USER,
+           _say("You want a booking site. Did I get that right?\n\nFrom here on I'll call it Brightside Studio.")),
+       True)
+
+    # G2 -- the project comes from answers.sh's RESULT line, so "$P" resolves.
+    g2a = _transcript("g2a.jsonl", INV, _bash('bash tools/answers.sh "$P" init'),
+                      _result("ANSWERS | init | %s/00-INPUT/ANSWERS.md" % proj))
+    g2b = _transcript("g2b.jsonl", INV, _bash("cd x && bash tools/answers.sh . init"))
+    t2("G2 result line resolves \"$P\"; a relative command alone resolves nothing",
+       (_project_from_events(_events(g2a)), _project_from_events(_events(g2b))), (proj, None))
+
+    # G3 -- stated and skipped keys are never owed and never hanging.
+    STATED = ("# Answers\n\n## idea\n**Asked:** _stated — read back from the client's documents_\n"
+              "**Answer:** \"a booking site\"\n\n## budget\n**Asked:** _skipped — does not apply_\n"
+              "**Answer:** _skipped_\n")
+    t2("G3 stated/skip are not owed or pending (control: a placeholder is owed)",
+       (_owed(STATED), _pending(STATED), _owed(PLACEHOLDER_KV) != []), ([], [], True))
+
+    # G4 -- a lowering WITH the sentence passes; unannounced lowering, a raise,
+    # and an unnumbered question mid-count block; after the last one, nothing.
+    q3 = ["Question 3 of no more than 15 — What do you sell?"]
+    t2("G4 counter: announced lowering ok; silent lowering, raise, missing number block",
+       (_counter_problem("Good news — it will be at most 12 now, because you told me already.\n\n"
+                         "Question 4 of no more than 12 — How do people reach you?", q3),
+        bool(_counter_problem("Question 4 of no more than 12 — How do people reach you?", q3)),
+        bool(_counter_problem("Question 4 of no more than 16 — How do people reach you?", q3)),
+        bool(_counter_problem("How do people reach you?", q3)),
+        _counter_problem("Anything else?", ["Question 15 of no more than 15 — Last one?"])),
+       (None, True, True, True, None))
+
+    # G5 -- three "?" in one paragraph block; either/or plus the mandated closer passes.
+    t("G5 three questions in one paragraph blocks",
+      "What do you sell? Who buys it? Where do they find you?", SETTLED, True)
+    t("G5 control: either/or plus the mandated closer is fine",
+      "Does it need to remember things? Or can it start fresh? Not sure? That's okay. "
+      "I'll choose what makes the most sense.", OWED, False)
+
+    # G6 -- "your app" / "your platform" is a category word when a name exists.
+    t("G6 'call it your app' with a real name blocks",
+      "From here on I'll call it your app.\n\nWhich would you rather do?", OWED, True, "Brightside Studio")
+    t("G6 control: 'your apple' is not the category word",
+      "From here on I'll call it your apple stand.\n\nWhich would you rather do?", OWED, False, "Brightside Studio")
+
+    # G7 -- a mid-turn Skill load is the harness, not the client: no boundary.
+    load = {"type": "user", "isMeta": True, "sourceToolUseID": "call_1", "message": {"role": "user",
+            "content": [{"type": "text", "text": "Base directory for this skill: /x/skills/eli5"}]}}
+    t2("G7 a mid-turn skill load does not end the turn (control: a real user message does)",
+       (_last_client_message(_transcript("g7a.jsonl", USER, _asst({"type": "text", "text": "THIS TURN."}),
+                                         load, _asst(_USE))),
+        _last_client_message(_transcript("g7b.jsonl", _asst({"type": "text", "text": "THIS TURN."}),
+                                         USER, _asst(_USE)))),
+       ("THIS TURN.", None))
 
     if fails:
         print(f"conversation-gate.py selftest: {fails} FAILED")
