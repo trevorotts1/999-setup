@@ -11,6 +11,9 @@
 #   A conflict or a red test STOPS the train: the merge is undone (the branch is
 #   left exactly as it was before that unit) and nothing after it is tried.
 #   A green unit prints   LANDED: unit=<branch> commit=<sha> tests=<pass|none>
+#   and the builder's worktree for that branch (<repo>/.worktrees/<id>, the one the
+#   workflow templates create) is removed; the branch itself is kept. `.worktrees/`
+#   goes in the repo's local info/exclude so live worktrees never dirty the tree.
 # Then (also after a stop, for the units that did land), when the repo has an
 # `origin`, HEAD is pushed to origin/<trunk> and every
 # landed commit that `git merge-base --is-ancestor` proves is on the remote trunk
@@ -49,6 +52,13 @@ record() { # record <home> <line>
   fi
 }
 
+wt_remove() { # wt_remove <branch> -- drop the worktree that has <branch> checked out
+  local p
+  p="$(git worktree list --porcelain | awk -v b="branch refs/heads/$1" '/^worktree /{w=substr($0,10)} $0==b{print w}')"
+  [[ -n "$p" && "$p" != "$(git rev-parse --show-toplevel)" ]] || return 0
+  git worktree remove --force "$p" >/dev/null 2>&1 || printf 'MERGE-TRAIN | unit=%s landed; its worktree was not removed: %s\n' "$1" "$p"
+}
+
 test_cmd() {
   if [[ -n "${MERGE_TRAIN_TEST_CMD:-}" ]]; then printf '%s' "$MERGE_TRAIN_TEST_CMD"; return; fi
   [[ -f package.json ]] && python3 -c 'import json,sys
@@ -57,10 +67,12 @@ sys.exit(0 if t and "no test specified" not in t else 1)' 2>/dev/null && printf 
 }
 
 train() {
-  local repo="$1" b sha tc tests landed=() units=() i halted=""
+  local repo="$1" b sha tc tests ex landed=() units=() i halted=""
   shift
   cd "$repo" 2>/dev/null || undetermined "cannot enter $repo"
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || undetermined "$repo is not a git working copy"
+  ex="$(git rev-parse --git-path info/exclude)"
+  grep -qx '.worktrees/' "$ex" 2>/dev/null || { mkdir -p "$(dirname "$ex")" && echo '.worktrees/' >> "$ex"; }
   [[ -z "$(git status --porcelain)" ]] || undetermined "$repo has uncommitted changes; the train merges onto a clean tree only"
   tc="$(test_cmd)"
   for b in "$@"; do
@@ -79,6 +91,7 @@ train() {
     fi
     sha="$(git rev-parse HEAD)"
     say "LANDED: unit=$b commit=$sha tests=$tests"
+    wt_remove "$b"
     landed+=("$sha"); units+=("$b")
   done
 
@@ -109,8 +122,8 @@ selftest() {
     && git remote add origin "$t/origin.git" && git push -q origin main \
     && git checkout -qb u1 && echo a > a && git add a && git commit -qm u1 \
     && git checkout -q main && git checkout -qb u2 && echo bad > bad && git add bad && git commit -qm u2 \
-    && git checkout -q main && git checkout -qb u3 && echo c > c && git add c && git commit -qm u3 \
-    && git checkout -q main ) || { echo "SELFTEST UNDETERMINED fixture"; exit 2; }
+    && git checkout -q main && git worktree add -q .worktrees/u3 -b u3 \
+    && ( cd .worktrees/u3 && echo c > c && git add c && git commit -qm u3 ) ) || { echo "SELFTEST UNDETERMINED fixture"; exit 2; }
   # test command goes red once u2's file is present: u1 lands+merges, u2 stops the train, u3 never runs
   out="$(MERGE_TRAIN_TEST_CMD='test ! -e bad' bash "$SELF" "$t/r" u1 u2 u3 2>&1)"; rc=$?
   if (( rc == 3 )) && grep -q '^MERGED: unit=u1 ' <<<"$out" \
@@ -120,8 +133,8 @@ selftest() {
   else echo "SELFTEST FAIL stop-on-red: rc=$rc"; printf '%s\n' "$out"; fails=1; fi
   # green run over u3 alone pushes and proves trunk ancestry -> MERGED line
   out="$(MERGE_TRAIN_TEST_CMD='true' bash "$SELF" "$t/r" u3 2>&1)"; rc=$?
-  if (( rc == 0 )) && grep -q '^MERGED: unit=u3 .* trunk=origin/main' <<<"$out"; then
-    echo "SELFTEST ok   green unit pushed and MERGED only after ancestry proof"
+  if (( rc == 0 )) && grep -q '^MERGED: unit=u3 .* trunk=origin/main' <<<"$out" && [[ ! -e "$t/r/.worktrees/u3" ]]; then
+    echo "SELFTEST ok   green unit pushed and MERGED only after ancestry proof; its worktree removed"
   else echo "SELFTEST FAIL merged: rc=$rc"; printf '%s\n' "$out"; fails=1; fi
   exit "$fails"
 }
@@ -130,5 +143,5 @@ case "${1:-}" in
   --selftest) selftest ;;
   --project) PROJECT="${2:-}"; shift 2 || exit 1 ;;
 esac
-[[ $# -ge 2 ]] || { sed -n '2,30p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
+[[ $# -ge 2 ]] || { sed -n '2,33p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
 train "$@"
