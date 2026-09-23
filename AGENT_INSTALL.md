@@ -11,6 +11,12 @@ this procedure exactly. Do not skip steps. Do not stop early.
 - ⛔ **Never commit credentials** to this repository or any other.
 - ⛔ **Never touch the user's normal Claude Code configuration** (`settings.json`,
   `.claude.json`, environment). Plain `claude` must stay Anthropic-direct and non-routed.
+  **One exception, owner-authorized:** the orchestrator runs spec-protocol's
+  `tools/install-hooks.sh` (Windows: `tools/install-hooks.ps1`), which backs `settings.json`
+  up to `settings.json.bak-spec-protocol-<timestamp>` first and then MERGES exactly four hook
+  registrations into it (Stop → `conversation-gate.py`, `gate0-claim-gate.py`; PreToolUse
+  `Workflow` → `workflow-syntax-gate.py`; PreToolUse `Workflow|Agent|Task` →
+  `dispatch-gate.py`), keeping every existing key and entry. Nothing else in the file changes.
 - ⛔ **Never infer the operating system from the current shell.** Detect it from the OS.
 - ⛔ **Prefer the bundled deterministic scripts** over improvising shell commands.
 - ⛔ **Do not stop until the validation suite passes, or you can name exactly one blocker**
@@ -53,7 +59,9 @@ Windows and macOS each have one orchestrator. There is no shared fallback path.
   winget install --id Git.Git --exact --accept-package-agreements --accept-source-agreements
   ```
   Refresh the current process PATH, then clone into the resolved Documents folder.
-- **macOS:** do not require Homebrew or Xcode Command Line Tools. If `xcode-select -p`
+- **macOS:** do not require Homebrew or Xcode Command Line Tools to FETCH the repo (the
+  orchestrator itself installs the Command Line Tools later, because spec-protocol runs on
+  their `git` and `python3`). If `xcode-select -p`
   succeeds and functional Git exists, clone. Otherwise download the public `main` archive
   with built-in `curl` and `tar`:
   ```bash
@@ -141,7 +149,15 @@ owns the dashboard password); provider credential import (including the optional
 OpenRouter lane when `OPENROUTER_API_KEY` is present); live model
 resolution; provider connections; fallback + fusion combos; capacity auto-switch
 (vision only); `claude-nine` launcher install; routed-session concurrency guardrails;
-and the smoke-test suite.
+and the smoke-test suite; then Git/Python/GitHub CLI (macOS: Command Line Tools + `gh`;
+Windows: winget `Git.Git`, `Python.Python.3.12`, `GitHub.cli`, with the Git Bash path
+recorded in `CLAUDE_CODE_GIT_BASH_PATH`), the spec-protocol hook registration above,
+ultracode on by default for `claude-nine`, and a one-time `gh auth login --web`.
+
+Optional: pass the operator's GitHub org for client backups with
+`--operator-remote-owner <org>` (macOS) / `-OperatorRemoteOwner <org>` (Windows), or set
+`SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER`. It is recorded in
+`<config root>/spec-protocol/operator.env` only when supplied; never guess one.
 
 ## 8. Install and validate the platform-native `claude-nine` command
 

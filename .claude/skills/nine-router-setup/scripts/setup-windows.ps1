@@ -12,14 +12,19 @@
 #   5. Start 9Router, wait for health, first-run security.
 #   6. Configure providers/routing/combos via shared Node helpers.
 #   7. Install the claude-nine launcher + DPAPI-protected state.
-#   8. Run smoke tests (including the launcher itself, end to end).
+#   8. Run smoke tests (including the launcher itself, end to end), then
+#      register spec-protocol's hooks, default claude-nine to ultracode,
+#      record the operator backup owner (only if given), and sign in to GitHub.
 #   9. Print the completion report (no secrets).
 #
 # Never prints API keys, the router token, or the dashboard password.
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [int]$Port = 20128
+    [int]$Port = 20128,
+    # Optional (fix #6): the operator's GitHub org for client backups. Taken ONLY
+    # from this flag or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER; never guessed.
+    [string]$OperatorRemoteOwner = $env:SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,6 +104,23 @@ function Resolve-Claude {
         return $c.Source
     }
     Write-Blocker 'Claude Code not found. Install it first (see README), then rerun.'
+}
+
+# Test-Runs <exe> <args> - real execution (exit 0), never a name lookup. The
+# Microsoft Store "python" alias resolves by name and does not run.
+function Test-Runs([string]$exe, [string[]]$a) {
+    try { & $exe @a *> $null; return ($LASTEXITCODE -eq 0) } catch { return $false }
+}
+
+# Ensure-WingetPackage <winget id> <command> (fixes #33/#34): leave a working
+# install alone; otherwise install via winget, refresh PATH, and re-prove it runs.
+# Returns $true only when <command> --version executes afterwards.
+function Ensure-WingetPackage([string]$id, [string]$cmd) {
+    if (Test-Runs $cmd @('--version')) { return $true }
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $false }
+    winget install --id $id --exact --accept-package-agreements --accept-source-agreements | Out-Host
+    Refresh-Path
+    return (Test-Runs $cmd @('--version'))
 }
 
 function Get-Concurrency([string]$plan) {
@@ -264,11 +286,10 @@ try {
     if ($openrouterKey) { Write-Log 'OpenRouter: optional key found - lane will be wired' }
     else { Write-Log 'OpenRouter: no OPENROUTER_API_KEY in API docs.md - lane will be skipped' }
 
-    # 4. Dependency preflight. git/repository-acquisition is intentionally NOT
-    #    probed here: this script only runs from an already-acquired
-    #    checkout (Claude Code performs acquisition per AGENT_INSTALL.md,
-    #    outside this script's scope) — matches setup-macos.sh's equivalent
-    #    scoping note, keeping the two platforms behaviourally equivalent.
+    # 4. Dependency preflight. Repository ACQUISITION is not this script's job
+    #    (Claude Code performs it per AGENT_INSTALL.md), but Git Bash and
+    #    Python are required to RUN spec-protocol, so step 4b proves both
+    #    (setup-macos.sh does the same through the Command Line Tools).
 
     # Node 20+ / npm 10+: Install-Node.ps1 installs/repairs ONLY when needed
     # (winget presence/execution is checked THERE, right when it is actually
@@ -304,6 +325,42 @@ try {
     $npmPingOut = & $NpmBin ping --registry https://registry.npmjs.org/ 2>&1
     if ($LASTEXITCODE -ne 0) { Write-Blocker "npm cannot reach the registry (required to install 9router): $npmPingOut" }
     $DepSummary += 'npm registry    OK   ping succeeded'
+
+    # 4b. Git for Windows (Git Bash), Python, GitHub CLI (fixes #33, #34).
+    #     spec-protocol's tools are bash scripts and its enforcement hooks are
+    #     Python: both are REQUIRED. gh is the one-click GitHub sign-in; without
+    #     it builds still run and keep work local-only, so it is reported by
+    #     name, never fatal.
+    if ($OperatorRemoteOwner -and ($OperatorRemoteOwner -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*$')) {
+        Write-Blocker "-OperatorRemoteOwner must be a GitHub user or org name (letters, digits, hyphens); got '$OperatorRemoteOwner'"
+    }
+    if (-not (Ensure-WingetPackage 'Git.Git' 'git')) {
+        Write-Blocker "Git for Windows is required (spec-protocol runs on Git Bash) and could not be installed. Run: winget install --id Git.Git --exact, then re-run."
+    }
+    $gitExe = (Get-Command git).Source
+    $DepSummary += "git             OK   $gitExe"
+    # Git Bash lives at <Git>\bin\bash.exe (git.exe is in <Git>\cmd). Record it
+    # in the user's CLAUDE_CODE_GIT_BASH_PATH - the variable Claude Code reads to
+    # find Git Bash - so claude-nine (which inherits the environment) and plain
+    # claude both use it. A value already set and working is left alone.
+    $bashExe = $env:CLAUDE_CODE_GIT_BASH_PATH
+    if (-not $bashExe -or -not (Test-Runs $bashExe @('--version'))) {
+        $bashExe = Join-Path (Split-Path (Split-Path $gitExe)) 'bin\bash.exe'
+        if (-not (Test-Runs $bashExe @('--version'))) { $bashExe = Join-Path $env:ProgramFiles 'Git\bin\bash.exe' }
+        if (-not (Test-Runs $bashExe @('--version'))) {
+            Write-Blocker "Git is installed but Git Bash was not found at $bashExe. Reinstall Git for Windows (winget install --id Git.Git --exact), then re-run."
+        }
+        [System.Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bashExe, 'User')
+        $env:CLAUDE_CODE_GIT_BASH_PATH = $bashExe
+    }
+    $DepSummary += "git bash        OK   $bashExe (CLAUDE_CODE_GIT_BASH_PATH)"
+    if (-not (Ensure-WingetPackage 'Python.Python.3.12' 'python')) {
+        Write-Blocker "Python is required (spec-protocol's enforcement hooks) and could not be installed. Run: winget install --id Python.Python.3.12 --exact, then re-run."
+    }
+    $DepSummary += "python          OK   $((Get-Command python).Source)"
+    $ghOk = Ensure-WingetPackage 'GitHub.cli' 'gh'
+    if ($ghOk) { $DepSummary += "gh              OK   $((Get-Command gh).Source)" }
+    else { $DepSummary += 'gh              MISSING - winget GitHub.cli did not install; GitHub backup runs local-only until gh is installed (https://cli.github.com)' }
 
     # 5. 9Router. Idempotent: if the router is already healthy, do NOT reinstall
     #    (npm EBUSY on the locked node_modules otherwise) - just resolve the binary.
@@ -630,6 +687,65 @@ else {
     }
     $skillVisible = if ($skillMissing.Count -eq 0) { 'OK' } else { "MISSING: $($skillMissing -join ', ')" }
 
+    # 11b2. spec-protocol enforcement, operator remote, ultracode default,
+    #       GitHub sign-in. All AFTER the claude-nine smoke probe above, so the
+    #       probe runs exactly as before. None of these is fatal.
+    #
+    #  (a) Hooks (fix #1): copy + MERGE-register spec-protocol's four hooks
+    #      (settings.json backed up first; existing entries kept). Roots: the
+    #      shared config root, plus a real .claude-nine root when one exists.
+    $hookRoots = @($skillRoot)
+    $altNine = Join-Path $env:USERPROFILE '.claude-nine'
+    if (-not $env:CLAUDE_CONFIG_DIR -and (Test-Path (Join-Path $altNine 'settings.json')) -and ($altNine -ne $skillRoot)) { $hookRoots += $altNine }
+    $hooksStatus = 'OK'
+    $hooksDetail = @()
+    $installHooks = Join-Path $skillRoot 'skills\spec-protocol\tools\install-hooks.ps1'
+    if (-not (Test-Path $installHooks)) {
+        $hooksStatus = 'NOT INSTALLED - spec-protocol tools\install-hooks.ps1 not found'
+    } else {
+        foreach ($root in $hookRoots) {
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $hooksDetail += (& $installHooks -Root $root 2>&1 | Out-String).Trim()
+            $hooksRc = $LASTEXITCODE
+            $ErrorActionPreference = $prevEap
+            if ($hooksRc -ne 0) { $hooksStatus = "WARNING: install-hooks exited $hooksRc for at least one root - see below" }
+        }
+    }
+    Write-Log "spec-protocol hooks: $hooksStatus"
+
+    #  (b) Operator remote owner (fix #6): written ONLY when supplied.
+    $operatorRemoteLine = 'not supplied (builds keep work local-only when GitHub sign-in is declined)'
+    if ($OperatorRemoteOwner) {
+        $opDir = Join-Path $skillRoot 'spec-protocol'
+        New-Item -ItemType Directory -Path $opDir -Force | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $opDir 'operator.env'), "SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER=$OperatorRemoteOwner`n")
+        $operatorRemoteLine = "$OperatorRemoteOwner ($opDir\operator.env)"
+    }
+
+    #  (c) Ultracode on by default (fix #8): the launcher turns
+    #      lastEffortSelection=ultracode into `--effort ultracode`. Seeded only
+    #      when unset, through the one sanctioned writer, so a later user
+    #      choice is never overwritten by a re-run.
+    $ultracodeDefaultLine = 'kept (a saved effort choice already exists)'
+    $st = Get-Content $StateFile -Raw | ConvertFrom-Json
+    if (-not $st.lastEffortSelection) {
+        & $NodeBin (Join-Path $Common 'record-effort-selection.mjs') $StateFile ultracode | Out-Host
+        $ultracodeDefaultLine = if ($LASTEXITCODE -eq 0) { 'ON (lastEffortSelection=ultracode)' } else { 'NOT SET - record-effort-selection failed' }
+    }
+
+    #  (d) GitHub sign-in, once (fix #33). Skipped when already signed in.
+    if (-not $ghOk) { $ghAuthLine = 'SKIPPED - gh is not installed (see the dependency summary)' }
+    elseif (Test-Runs 'gh' @('auth', 'status')) { $ghAuthLine = 'OK (already signed in)' }
+    else {
+        Write-Log 'Signing in to GitHub: a browser window opens; enter the one-time code shown below.'
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & gh auth login --web --hostname github.com --git-protocol https
+        $ghAuthLine = if ($LASTEXITCODE -eq 0) { 'OK (signed in during setup)' } else { 'NOT SIGNED IN - run: gh auth login --web (until then builds keep work local-only)' }
+        $ErrorActionPreference = $prevEap
+    }
+
     # 11c. Auto-compaction at 500k tokens (both platforms). The shared helper
     #      merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
     #      each config root's settings.json: it creates the file when missing,
@@ -723,6 +839,11 @@ $($autoCompactDetail -join "`n")
 Per-skill visibility:
 $($skillVisibleDetail -join "`n")
 claude-nine launcher: OK
+Ultracode default: $ultracodeDefaultLine
+spec-protocol hooks: $hooksStatus
+$($hooksDetail -join "`n")
+GitHub sign-in: $ghAuthLine
+Operator backup owner: $operatorRemoteLine
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK

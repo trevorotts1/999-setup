@@ -17,7 +17,9 @@
 #   5. Start 9Router, wait for health, first-run security.
 #   6. Configure providers/routing/combos via shared Node helpers.
 #   7. Install the claude-nine launcher + protected state.
-#   8. Run smoke tests (including the launcher itself, end to end).
+#   8. Run smoke tests (including the launcher itself, end to end), then
+#      register spec-protocol's hooks, default claude-nine to ultracode,
+#      record the operator backup owner (only if given), and sign in to GitHub.
 #   9. Print the completion report (no secrets; every line is either proven
 #      by a fail()-gated step above it or derived from report.verified).
 #
@@ -162,25 +164,56 @@ probe_install() {
   fail "install: /usr/bin/install did not perform a real file placement (needed to install the claude-nine launcher). This ships with stock macOS."
 }
 
-# probe_python3 — optional/soft dependency: used only by install-claude-nine.sh's
-# idempotent profile-block rerun-merge, which already has its own manual-
-# instruction fallback when python3 is absent. Recorded, never a hard blocker.
-probe_python3() {
-  local out
-  # Guard: on a fresh Mac with no Xcode Command Line Tools installed,
-  # /usr/bin/python3 is the CLT stub — invoking it pops the "Install command
-  # line developer tools?" GUI dialog mid-setup and returns nonzero. Check
-  # for the CLT first (xcode-select -p is a fast, side-effect-free probe);
-  # only run python3 --version when the CLT (and therefore a real python3,
-  # if any) is actually present.
+# require_clt (fix #33) — Xcode Command Line Tools are REQUIRED: spec-protocol's
+# tools and enforcement hooks run on git and python3, and on a fresh Mac both
+# are CLT stubs until the CLT is installed. Not needed to fetch this repo (the
+# curl+tar bootstrap stays CLT-free); needed to USE what it installs.
+# `xcode-select --install` opens Apple's installer dialog; wait for it (bounded),
+# then prove git and python3 by real execution.
+require_clt() {
+  local waited=0
   if ! xcode-select -p >/dev/null 2>&1; then
-    DEP_SUMMARY+=("$(printf '%-14s MISSING (optional — Xcode Command Line Tools not installed; profile rerun-merge falls back to a printed manual PATH line)' python3)")
-    return 0
+    log "Xcode Command Line Tools are required (git, python3). Opening Apple's installer — click Install and wait for it to finish."
+    xcode-select --install >/dev/null 2>&1 || true
+    while ! xcode-select -p >/dev/null 2>&1; do
+      [ "$waited" -lt 3600 ] || fail "Xcode Command Line Tools were not installed within 60 minutes. Finish Apple's installer (or run: xcode-select --install), then rerun setup."
+      sleep 15; waited=$((waited + 15))
+    done
   fi
-  if out="$(python3 --version 2>&1)"; then
-    DEP_SUMMARY+=("$(printf '%-14s OK   %s' python3 "$out")")
+  probe_tool git git --version
+  probe_tool python3 python3 --version
+}
+
+# ensure_gh (fix #33) — GitHub CLI, used for the one-click GitHub sign-in that
+# keeps a client's work backed up online. Homebrew when present, otherwise the
+# official release zip from github.com/cli/cli into $HOME/.local/bin (Homebrew
+# is never a prerequisite — CLAUDE.md rule 11). Never fatal: without gh the
+# build still runs and anchors locally (spec-protocol repo-anchor local-only),
+# so a failure is reported BY NAME in the dependency summary.
+ensure_gh() {
+  local v tmp why=""
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! gh --version >/dev/null 2>&1; then
+    if command -v brew >/dev/null 2>&1; then
+      brew install gh >&2 || why="brew install gh failed"
+    else
+      tmp="$(mktemp -d)"
+      v="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest 2>/dev/null)"; v="${v##*/v}"
+      if [ -n "$v" ] \
+         && curl -fsSL "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_macOS_arm64.zip" -o "$tmp/gh.zip" \
+         && unzip -q "$tmp/gh.zip" -d "$tmp" \
+         && mkdir -p "$HOME/.local/bin" \
+         && install -m 755 "$tmp/gh_${v}_macOS_arm64/bin/gh" "$HOME/.local/bin/gh"; then :
+      else
+        why="official gh release download failed (version '${v:-unresolved}')"
+      fi
+      rm -rf "$tmp"
+    fi
+  fi
+  if gh --version >/dev/null 2>&1; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' gh "$(gh --version 2>&1 | head -1)")")
   else
-    DEP_SUMMARY+=("$(printf '%-14s MISSING (optional — profile rerun-merge falls back to a printed manual PATH line)' python3)")
+    DEP_SUMMARY+=("$(printf '%-14s MISSING — %s; GitHub backup will run local-only until gh is installed (https://cli.github.com)' gh "${why:-gh did not execute after install}")")
   fi
 }
 
@@ -298,6 +331,23 @@ link_skills_into_root() {
 }
 
 main() {
+  # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
+  # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
+  # never guessed. Validated as a GitHub owner name before anything is written.
+  OPERATOR_REMOTE_OWNER="${SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER:-}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --operator-remote-owner) OPERATOR_REMOTE_OWNER="${2:-}"; shift ;;
+      --operator-remote-owner=*) OPERATOR_REMOTE_OWNER="${1#*=}" ;;
+      *) fail "unknown argument: $1 (the only option is --operator-remote-owner <github-org>)" ;;
+    esac
+    shift
+  done
+  case "$OPERATOR_REMOTE_OWNER" in
+    "") ;;
+    -*|*[!A-Za-z0-9-]*) fail "--operator-remote-owner must be a GitHub user or org name (letters, digits, hyphens); got '$OPERATOR_REMOTE_OWNER'" ;;
+  esac
+
   # 1. OS + arch
   [ "$(uname -s)" = "Darwin" ] || fail "This orchestrator is macOS-only (uname -s = $(uname -s))."
   [ "$(uname -m)" = "arm64" ] || fail "Unsupported Mac architecture $(uname -m); requires Apple Silicon (arm64)."
@@ -308,11 +358,11 @@ main() {
   CLAUDE_VER="$("$CLAUDE_BIN" --version 2>&1 | head -1)"
   DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' claude "$CLAUDE_VER" "$CLAUDE_BIN")")
 
-  # 3. Dependency preflight. git/repository-acquisition is intentionally NOT
-  #    probed here: this script only runs from an already-acquired checkout
-  #    (Claude Code performs acquisition per AGENT_INSTALL.md, outside this
-  #    script's scope). jq and openssl were audited and are unused by any
-  #    script in this repository.
+  # 3. Dependency preflight. Repository ACQUISITION is not this script's job
+  #    (Claude Code performs it per AGENT_INSTALL.md), but git and python3 are
+  #    required to RUN spec-protocol, so require_clt proves both below.
+  #    jq and openssl were audited and are unused by any script in this
+  #    repository.
   # Runs BEFORE step 4 (Documents + API docs.md) on purpose: get-api-docs.sh
   # calls osascript internally to resolve the real Documents folder, with a
   # silent try/fallback (2>/dev/null || true) — if osascript is broken, that
@@ -327,7 +377,8 @@ main() {
   probe_tool tar tar --version
   probe_tool security security list-keychains
   probe_install
-  probe_python3
+  require_clt
+  ensure_gh
 
   # Node 20+ / npm 10+: install-node.sh installs/repairs ONLY when needed and
   # prints the ABSOLUTE path to a proven-working node binary on stdout. Never
@@ -738,6 +789,76 @@ main() {
     fi
   done < <(bundled_skills)
 
+  # 9.7 spec-protocol enforcement, operator remote, ultracode default, GitHub
+  #     sign-in. All AFTER the claude-nine smoke probe above, so the probe runs
+  #     exactly as before.
+  #
+  #     NINE_ROOT is the config dir the shipped claude-nine launcher uses
+  #     (${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}, launchers/macos/claude-nine).
+  NINE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
+
+  #     (a) Hooks (fix #1): copy + MERGE-register spec-protocol's four
+  #     enforcement hooks into each root that already holds a settings.json
+  #     chain (the same two roots the skills were linked into). install-hooks.sh
+  #     backs settings.json up first, keeps every existing entry, and never
+  #     creates a settings.json in the claude-nine root (that file is the
+  #     launcher's "router config present" guard). Never fatal.
+  HOOKS_DETAIL=""
+  HOOKS_STATUS="OK"
+  SPEC_SRC="$(resolve_skill_source spec-protocol)"
+  if [ -z "$SPEC_SRC" ] || [ ! -f "$SPEC_SRC/tools/install-hooks.sh" ]; then
+    HOOKS_STATUS="NOT INSTALLED - spec-protocol tools/install-hooks.sh not found"
+  else
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      set +e
+      HOOKS_OUT="$(bash "$SPEC_SRC/tools/install-hooks.sh" --root "$root" 2>&1)"
+      HOOKS_RC=$?
+      set -e
+      HOOKS_DETAIL="${HOOKS_DETAIL}$(printf '%s\n' "$HOOKS_OUT" | sed 's/^/  /')
+"
+      [ "$HOOKS_RC" -eq 0 ] || HOOKS_STATUS="WARNING: install-hooks.sh exited $HOOKS_RC for at least one root - see below"
+    done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" ${CLAUDE_SKILLS_ROOT_ALT:+"$CLAUDE_SKILLS_ROOT_ALT"})
+  fi
+  log "spec-protocol hooks: $HOOKS_STATUS"
+
+  #     (b) Operator remote owner (fix #6): recorded ONLY when the operator
+  #     supplied it; otherwise nothing is written and builds anchor local-only
+  #     when GitHub sign-in is declined.
+  OPERATOR_REMOTE_LINE="not supplied (builds keep work local-only when GitHub sign-in is declined)"
+  if [ -n "$OPERATOR_REMOTE_OWNER" ]; then
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      mkdir -p "$root/spec-protocol"
+      printf 'SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER=%s\n' "$OPERATOR_REMOTE_OWNER" > "$root/spec-protocol/operator.env"
+    done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" "$NINE_ROOT" | awk '!seen[$0]++')
+    OPERATOR_REMOTE_LINE="$OPERATOR_REMOTE_OWNER (spec-protocol/operator.env in $CLAUDE_SKILLS_ROOT and $NINE_ROOT)"
+  fi
+
+  #     (c) Ultracode on by default (fix #8): the launcher re-applies
+  #     `--effort ultracode` whenever <config dir>/.last-effort reads
+  #     "ultracode", so the client's first session already has it and
+  #     spec-protocol's ultracode gate never opens with a refusal.
+  #     `claude-nine --no-ultracode` still turns it off.
+  mkdir -p "$NINE_ROOT"
+  printf 'ultracode\n' > "$NINE_ROOT/.last-effort"
+  ULTRACODE_DEFAULT_LINE="ON ($NINE_ROOT/.last-effort)"
+
+  #     (d) GitHub sign-in, once (fix #33): opens github.com in the browser
+  #     with a one-time code. Skipped when already signed in; never fatal.
+  if ! gh --version >/dev/null 2>&1; then
+    GH_AUTH_LINE="SKIPPED - gh is not installed (see the dependency summary)"
+  elif gh auth status >/dev/null 2>&1; then
+    GH_AUTH_LINE="OK (already signed in)"
+  else
+    log "Signing in to GitHub: a browser window opens; enter the one-time code shown below."
+    if gh auth login --web --hostname github.com --git-protocol https; then
+      GH_AUTH_LINE="OK (signed in during setup)"
+    else
+      GH_AUTH_LINE="NOT SIGNED IN - run: gh auth login --web (until then builds keep work local-only)"
+    fi
+  fi
+
   # 9.8 Auto-compaction at 500k tokens (both platforms). The shared helper
   #     merges exactly two keys (autoCompactEnabled, autoCompactWindow) into
   #     each config root's settings.json: it creates the file when missing,
@@ -829,6 +950,11 @@ Per-skill visibility:
 $SKILL_VISIBLE_DETAIL
 claude-nine launcher: OK
 claude-codex launcher: $CODEX_LINE
+Ultracode default: $ULTRACODE_DEFAULT_LINE
+spec-protocol hooks: $HOOKS_STATUS
+$HOOKS_DETAIL
+GitHub sign-in: $GH_AUTH_LINE
+Operator backup owner: $OPERATOR_REMOTE_LINE
 Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
