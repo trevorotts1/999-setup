@@ -83,8 +83,9 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    to it, and the client is never told what they have already pointed at. They
    may point at material anywhere on the machine, in any number of places, and
    they may do both halves — tell you AND point. **Pointing never means typing a
-   path.** The run creates a folder called `<Name> pictures` on the client's
-   Desktop first, and the client drags files into it and says done; the run copies
+   path.** The folder called `<Name> pictures` on the client's Desktop is created
+   ONCE, at turn 3, from the naming line (SKILL.md), and the client drags files into
+   it and says done; the run copies
    what lands there into `00-INPUT/`. A typed path is accepted when offered, never
    asked for.
 
@@ -458,8 +459,8 @@ help you with it."
 
 13. **Artwork, logo and photos (question 10 merged in):** "Would you like me to create the
     pictures we need, or do you already have a logo or pictures you want me to use?" When they
-    have some, the run first creates the folder `<Name> pictures` on the client's Desktop
-    (`<Name>` is the name from question 7), then says, as part of the same question: "If you
+    have some, the run points at the folder `<Name> pictures` already on the client's Desktop
+    (created ONCE at turn 3 from the naming line — never created again here), then says, as part of the same question: "If you
     have a logo or photos, drag them into the folder called '<Name> pictures' on your Desktop,
     then say done. If not, that's fine." The run copies what lands there into `00-INPUT/` and
     records each file in `00-INPUT/CONTENT.md`; the client never types a path. The client is
