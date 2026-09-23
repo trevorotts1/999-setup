@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.29.0] — 2026-09-23
 
 ### Round 6: merge trains, proof of merge, cleanup, release hygiene
 
