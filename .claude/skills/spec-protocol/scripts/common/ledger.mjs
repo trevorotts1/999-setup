@@ -153,8 +153,9 @@ function releaseLock(lockdir) {
 // The rolling stated-intent window — class 5's only input. It runs AFTER the
 // verified write of the real line and can never fail that write: a problem here
 // is a loud warning on stderr, never a non-zero exit.
-function appendIntent(homeDir, line, warn) {
-  const intentsFile = path.join(homeDir, 'CONTROL', 'last-intents.txt');
+function appendIntent(homeDir, line, warn, profiled = false) {
+  const intentsFile = profiled ? path.join(homeDir, 'last-intents.txt')
+    : path.join(homeDir, 'CONTROL', 'last-intents.txt');
   const itmp = `${intentsFile}.tmp.${process.pid}`;
   let plan = extractPlan(line);
   if (plan === '') {
@@ -184,6 +185,24 @@ function appendIntent(homeDir, line, warn) {
 export function ledgerWrite(homeDir, file, line, upsertKey = '') {
   const err = [];
   const warn = (m) => err.push(m);
+
+  // --- a PROFILED project (.spec-protocol.json): never a CONTROL/ folder. The
+  //     file lands in <statedir>/spec-protocol/ (tools/project-profile.mjs
+  //     workdir) with a leading CONTROL/ dropped, exactly as tools/ledger.sh.
+  let profiled = false;
+  if (fs.existsSync(path.join(homeDir, '.spec-protocol.json'))) {
+    try {
+      const profileTool = fileURLToPath(new URL('../../tools/project-profile.mjs', import.meta.url));
+      homeDir = execFileSync(process.execPath, [profileTool, 'workdir', homeDir],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    } catch (e) {
+      warn(`ERROR: ledger.mjs could not resolve the profiled work folder (tools/project-profile.mjs workdir failed); wrote NOTHING: ${String(e.stderr || e.message).trim()}`);
+      return { code: 2, err };
+    }
+    if (!homeDir) { warn('ERROR: ledger.mjs got an empty profiled work folder; wrote NOTHING'); return { code: 2, err }; }
+    file = file.replace(/^CONTROL\//, '');
+    profiled = true;
+  }
 
   // --- the SCORE class gate: before the lock, before any file is touched, so a
   //     refused line leaves nothing behind.
@@ -271,9 +290,9 @@ export function ledgerWrite(homeDir, file, line, upsertKey = '') {
     }
 
     if (!file.endsWith('last-intents.txt') && CLAIM_RE.test(line)) {
-      appendIntent(homeDir, line, warn);
+      appendIntent(homeDir, line, warn, profiled);
     }
-    return { code: 0, err };
+    return { code: 0, err, target: profiled ? target : undefined };
   } catch (e) {
     warn(`ERROR: ledger.mjs failed writing ${target}: ${e.message}`);
     return { code: 1, err };
@@ -438,5 +457,6 @@ if (invokedDirectly) {
   }
   const out = ledgerWrite(argv[0], argv[1], argv[2], argv[3] || '');
   for (const m of out.err) console.error(m);
+  if (out.target) console.log(`LEDGER | ${out.target}`);
   process.exit(out.code);
 }

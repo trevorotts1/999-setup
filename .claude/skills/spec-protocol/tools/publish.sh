@@ -23,6 +23,16 @@
 #      Through tools/ledger.sh (legacy), or appended to <state dir>/published.log
 #      (profiled: ledger.sh refuses those).
 #
+# TARGETS THAT ARE NOT VERCEL'S. The targets are the profile's `targets` (profiled) or
+# the last `BUILD-TARGET:` (legacy). Vercel is called ONLY for a web target. A desktop
+# target (`desktop`, `desktop-*`, `DESKTOP_SOFTWARE`) locates its installer under the
+# repo root (or $PUBLISH_ARTIFACT) and records `PUBLISHED: <path> target=<t>
+# status=artifact`; a self-hosted target (`linux-vps-*`, `*-docker`, `self-hosted-*`)
+# records `HOSTING-SELF: target=<t> package=<path|none> next=<install step>`. Neither
+# is a failure and neither touches Vercel or the public-surface guard (the equal
+# SHIP-CHECKS line is still required on --prod). --draft makes no preview for them.
+# A project that also has a web target goes on to the Vercel path for it.
+#
 # Every failure after the project folder is found writes `HOSTING-BLOCKED: <reason>`
 # the same way and names the next step — a run is never left with no line.
 #
@@ -73,18 +83,71 @@ blocked() { # blocked <rc> <reason> <next step> — HOSTING-BLOCKED line, then e
   exit "$1"
 }
 
-ship_ready() { # ship_ready <home> <state dir> — publish.md §8; prints the unmet one, rc 1
+ship_ready() { # ship_ready <home> <state dir> [checks-only] — publish.md §8; prints the unmet one, rc 1
   local line n m
   line="$(grep -hEo 'SHIP-CHECKS: pass=[0-9]+/[0-9]+' "$1/CONTROL/LEDGER.md" "$2"/* 2>/dev/null | tail -1)"
   n="${line#*=}"; m="${n#*/}"; n="${n%/*}"
   if [[ -z "$line" || "$n" != "$m" || "$n" == 0 ]]; then
     printf 'no SHIP-CHECKS: pass=<n>/<n> line with equal numbers (last: %s)' "${line:-none}"; return 1
   fi
+  [[ "${3:-}" != checks-only ]] || return 0
   python3 -c 'import json,sys
 rows=json.load(open(sys.argv[1])).get("paths") or []
 sys.exit(0 if rows and all(str(r.get("status")) in ("404","403") for r in rows) else 1)' \
     "$1/ship-checks/public-surface.json" 2>/dev/null \
     || { printf 'ship-checks/public-surface.json is missing, empty, or has a row that is not 404/403'; return 1; }
+}
+
+targets_of() { # targets_of <home> <state dir> -> one target per line (none: empty)
+  if [[ -f "$1/.spec-protocol.json" ]]; then
+    python3 -c 'import json,sys
+for t in json.load(open(sys.argv[1])).get("targets") or []: print(t)' "$1/.spec-protocol.json" 2>/dev/null
+  else
+    grep -hEo 'BUILD-TARGET: [A-Z_]+' "$1/CONTROL/LEDGER.md" 2>/dev/null | tail -1 | sed 's/.*: //'
+  fi
+}
+
+target_kind() { # target_kind <target> -> desktop | self | web
+  case "$1" in
+    desktop|desktop-*|DESKTOP_SOFTWARE) echo desktop ;;
+    linux-vps|linux-vps-*|docker|*-docker|self-hosted|self-hosted-*) echo self ;;
+    *) echo web ;;
+  esac
+}
+
+newest_installer() { # newest_installer <root> -> the newest installer file under it, or nothing
+  local f
+  find "$1" -maxdepth 8 \( -name node_modules -o -name .git \) -prune -o -type f \( -name '*.dmg' \
+    -o -name '*.pkg' -o -name '*.exe' -o -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
+    -print 2>/dev/null | while IFS= read -r f; do
+      printf '%s\t%s\n' "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)" "$f"
+    done | sort -rn | head -1 | cut -f2-
+}
+
+publish_local() { # publish_local <home> <root> <target> — rc 0 recorded, 1 HOSTING-BLOCKED recorded
+  local home="$1" root="$2" t="$3" art pkg="" next f
+  if [[ "$(target_kind "$t")" == desktop ]]; then
+    art="${PUBLISH_ARTIFACT:-$(newest_installer "$root")}"
+    if [[ -z "$art" || ! -f "$art" ]]; then
+      record "$home" "HOSTING-BLOCKED: no desktop installer for target=$t under $root" 2>/dev/null || say "could not record the HOSTING-BLOCKED line"
+      say "HOSTING-BLOCKED | no desktop installer (.dmg/.pkg/.exe/.msi/.AppImage/.deb/.rpm) for target=$t under $root"
+      say "NEXT | build the unsigned installer (references/publish.md, DESKTOP_SOFTWARE), then rerun tools/publish.sh"
+      return 1
+    fi
+    record "$home" "PUBLISHED: $art target=$t status=artifact" || undetermined "could not record the PUBLISHED line"
+    say "ARTIFACT | PUBLISHED: $art target=$t status=artifact"
+    return 0
+  fi
+  for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml Dockerfile; do
+    [[ -f "$root/$f" ]] && { pkg="$root/$f"; break; }
+  done
+  case "$pkg" in
+    "") next="run the project's own install step on the host (its README)" ;;
+    */Dockerfile) next="docker build and run $pkg on the host" ;;
+    *) next="docker compose -f $pkg up -d on the host" ;;
+  esac
+  record "$home" "HOSTING-SELF: target=$t package=${pkg:-none} next=$next" || undetermined "could not record the HOSTING-SELF line"
+  say "SELF-HOSTED | HOSTING-SELF: target=$t package=${pkg:-none} next=$next"
 }
 
 prove_200() { # prove_200 <url> -> sets CODE
@@ -106,6 +169,24 @@ publish() { # publish <prod|draft> <project>
   root="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["repoRoot"])' "$sd/repo-anchor.json" 2>/dev/null)" \
     || blocked 2 "no repo-anchor receipt at $sd/repo-anchor.json" "run tools/repo-anchor.sh $home, then rerun tools/publish.sh"
   [[ -d "$root" ]] || blocked 2 "the receipt's repoRoot $root is not a folder" "rerun tools/repo-anchor.sh $home"
+
+  # Targets that are not Vercel's are recorded here and never reach Vercel.
+  local t web=0 local_rc=0 nonweb=()
+  while IFS= read -r t; do
+    [[ -n "$t" ]] || continue
+    if [[ "$(target_kind "$t")" == web ]]; then web=1; else nonweb+=("$t"); fi
+  done < <(targets_of "$home" "$sd")
+  (( ${#nonweb[@]} > 0 )) || web=1
+  if (( ${#nonweb[@]} > 0 )); then
+    if [[ "$mode" == draft ]]; then
+      say "DRAFT | no Vercel preview for target(s) ${nonweb[*]} (not hosted on Vercel)"
+    else
+      reason="$(ship_ready "$home" "$sd" checks-only)" \
+        || blocked 3 "preconditions unmet: $reason" "finish STAGE-SHIP-CHECKS (references/ship-checks.md) until it passes, then rerun tools/publish.sh"
+      for t in "${nonweb[@]}"; do publish_local "$home" "$root" "$t" || local_rc=3; done
+    fi
+    (( web == 1 )) || exit "$local_rc"
+  fi
 
   if [[ "$mode" == prod ]]; then
     reason="$(ship_ready "$home" "$sd")" \
@@ -237,6 +318,23 @@ EOF
   if (( rc == 2 )) && grep -q 'HOSTING-BLOCKED: vercel deploy exited 1' "$L" && [[ "$out" == *"NEXT |"* ]]; then
     echo "SELFTEST ok   failed deploy -> rc 2, HOSTING-BLOCKED and a named next step"
   else echo "SELFTEST FAIL failed-deploy case: rc=$rc"; fails=1; fi
+
+  # case 6: a profiled project (a folder name with spaces) whose targets are desktop +
+  # self-hosted: Vercel is never called; PUBLISHED status=artifact and HOSTING-SELF land
+  # in the state dir's published.log; rc 0
+  local pp="$t/My Project Folder"
+  mkdir -p "$pp/state" "$pp/dist"
+  python3 -c 'import json,sys;json.dump({"documents":{"state":"state/state.json"},"targets":["desktop-macos-arm64","linux-vps-web"]},open(sys.argv[1],"w"))' "$pp/.spec-protocol.json"
+  printf '{"repoRoot":"%s","remote":null}\n' "$pp" > "$pp/state/repo-anchor.json"
+  printf 'SHIP-CHECKS: pass=4/4\n' > "$pp/state/notes.md"
+  : > "$pp/dist/My App.dmg"; : > "$pp/docker-compose.yml"
+  printf '#!/bin/sh\ntouch "%s/vercel-called"\n' "$t" > "$t/bin/vercel"
+  run "$pp" >/dev/null 2>&1; rc=$?
+  if (( rc == 0 )) && [[ ! -e "$t/vercel-called" ]] \
+     && grep -q "PUBLISHED: $pp/dist/My App.dmg target=desktop-macos-arm64 status=artifact" "$pp/state/published.log" \
+     && grep -q "HOSTING-SELF: target=linux-vps-web package=$pp/docker-compose.yml next=docker compose" "$pp/state/published.log"; then
+    echo "SELFTEST ok   desktop + self-hosted targets -> rc 0, no Vercel call, PUBLISHED status=artifact + HOSTING-SELF"
+  else echo "SELFTEST FAIL non-Vercel targets case: rc=$rc"; fails=1; fi
   exit "$fails"
 }
 
