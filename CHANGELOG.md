@@ -1,5 +1,68 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 9: findings that were reported but never fixed
+
+**A — the repair loop and the profile's routes (`references/pipeline.md`, `gauntlet.md`,
+`conductor.md`, `capacity.md`, `templates/workflows/build-wave.js`, `judge-wave.js`,
+`fix-wave.js`, `tools/project-profile.mjs`).** A unit that fails a judge goes back to its
+ORIGINAL builder seat with ONE repair packet holding every blocking finding from both judges
+(reproduction, expected and actual, location, diagnosis, ordered fix, exact verification). It
+never goes to a fresh builder and is never repaired one gap per round. After two failed
+corrections, or two rounds with an unchanged failure signature, ONE rescue runs by a different
+builder on the same seat route; then the unit is parked as a named blocker and never loops. One
+judging round (visual and technical together) counts as ONE QC verdict against a per-task budget,
+`policy.maxQCVerdicts`, and builder submissions against `policy.maxBuilderSubmissions` (4 each
+when absent), counted from the bound state or the ledger so the count survives a restart. A
+profile's `policy.builderRoute` and `policy.qcRoute` are the builder and judge seat routes and
+override the seat table; `project-profile.mjs fields` exposes both routes and both budgets. The
+build and judge waves carry the original builder's identity, and the fix wave repairs on that
+seat, names the rescue seat and refuses a unit whose budget is spent. The older 20-cycle and
+one-gap-per-round wording is retired in `PROMPT-QC-INSTRUCTIONS.md`, `workflows.md`, `loops.md`,
+`resume.md` and `project-profile.md` as well.
+
+**B — donor repositories: fork and combine instead of writing from scratch (`tools/donors.sh`
+new, `SKILL.md`, `references/research.md`, `references/build.md`).** `tools/donors.sh <project>
+--fetch|--check` reads the donor list from the profile's `donors`, else
+`docs/upstream-lock.json` (its `donors` or `repositories` array), else `<workdir>/donors.json`.
+`--fetch` shallow-clones each donor at its pinned commit into `<workdir>/donors/<name>`, outside
+the product source tree and git-ignored, proves the checked-out commit equals the pin, and
+records the license file's sha256 in `donors/receipt.json`. A donor with no pin is resolved once
+to its default branch's current commit and written back to `<workdir>/donors.json`, so it never
+floats. An AGPL or unlicensed donor is refused unless its entry carries `ownerApproved: true`.
+It prints `DONORS-READY: n=<k>`, or one `DONOR-FAILED: name=… reason=…` per failed donor with
+exit 3; `--check` verifies against the receipt without fetching. The run order gains step 8.5,
+"Donor repos", between the bar and the environment sweep: fetch the donors, map each donor path
+to the units that reuse it in WF01's blueprint, and have those builders adapt the donor code
+first. The reference-app survey now also lists license-compatible donor candidates. Its
+selftest uses local bare repositories (6 cases).
+
+**C — macOS privacy for the scheduled tick, and the hosting login (`tools/watch-tick.sh`,
+`scripts/common/watch-tick.mjs`, `tools/deploy-auth.sh`, `tools/publish.sh`,
+`nine-router-setup/scripts/setup-macos.sh`, `references/terminals.md`,
+`if-the-power-goes-out.md`, `environment-sweep.md`, `documents.md`, `SKILL.md`).** New projects
+default to `~/Projects/<slug>`: macOS privacy blocks background jobs such as cron from Desktop,
+Documents and Downloads. A folder the client supplies is never moved. The cron line now passes
+`--log` instead of a shell redirect, so a folder macOS refuses to cron is named instead of
+silently skipped: one `TICK-BLOCKED-BY-PRIVACY: path=… fix=…` line, recorded outside the
+project, never repeated, filed on the ledger and under the morning report's operator notes, and
+cleared by a cron tick that can read the folder (selftest cases 50–52). `setup-macos.sh` checks,
+read-only, whether cron has Full Disk Access (GRANTED, NOT GRANTED or UNDETERMINED), prints the
+one-step instruction and offers to open the settings page; it never changes a privacy setting.
+`deploy-auth.sh --check` reports `HOSTING-LOGIN: OK|MISSING|UNDETERMINED`; with neither a token
+nor a `vercel login` session, `publish.sh` names the single login step, and `setup-macos.sh` and
+the environment sweep report the missing login early, as an operator note.
+
+**D — the Windows PowerShell files.** A portable PowerShell 7.6.6, run from a scratch folder and
+removed afterwards, parsed all 10 PowerShell files shipped by nine-router-setup, spec-protocol
+and `launchers/windows` (`setup-windows.ps1`, the 7 helpers in `scripts/windows`,
+`install-hooks.ps1`, `claude-nine.ps1`). It found 0 syntax errors, so no file changed; the parser
+was first proven on a file broken on purpose, where it caught all 3 errors. None of the files
+uses the PowerShell-7-only operators (`??`, `?.`, `&&`, `||`, the ternary `?`) that Windows
+PowerShell 5.1 would reject. PSScriptAnalyzer did not run, because it is not in the portable
+build.
+
 ## [1.31.0] — 2026-09-24
 
 ### Round 8: the "<Name> pictures" Desktop folder and the half-read folder
