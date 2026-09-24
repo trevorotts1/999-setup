@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.32.1] — 2026-09-24
+
+- `tools/boss-cron`: its loop-bound summary line still said "20 cycles per finding". It now states the Round 9 rule: one judging round is one QC verdict against the per-task budget (`policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4), the original builder repairs, one rescue, then the unit is parked with its full history. No other change.
+
 ## [1.32.0] — 2026-09-24
 
 ### Round 9: findings that were reported but never fixed

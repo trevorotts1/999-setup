@@ -1427,7 +1427,7 @@ def main():
     checkpoint = last_clean_checkpoint() if violations else None
     ck_note = f"restart from last clean checkpoint: {checkpoint}" if checkpoint \
         else "restart from last clean checkpoint: none recorded in project_state.json (conductor names it)"
-    bound = "loop bound: QC protocol 20 cycles per finding, then escalation with full history"
+    bound = "loop bound: one judging round = one QC verdict; per-task budget policy.maxQCVerdicts/maxBuilderSubmissions (else 4); original builder repairs, one rescue, then parked with full history"
     if violations and not dry:
         # --check must never kill (read-only contract: "never writes, never
         # kills"); the kill authority runs in live cycles only.
