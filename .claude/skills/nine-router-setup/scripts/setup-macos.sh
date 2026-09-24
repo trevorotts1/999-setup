@@ -422,6 +422,36 @@ set_operator_key() {
   { if [ -f "$f" ]; then grep -v "^$2=" "$f" || true; fi; printf '%s=%s\n' "$2" "$3"; } > "$tmp" && mv "$tmp" "$f"
 }
 
+# The scheduled tick (spec-protocol's five-minute cron line) is a background
+# job: macOS privacy refuses it ~/Desktop, ~/Documents and ~/Downloads unless
+# cron has Full Disk Access. New projects live in ~/Projects, which needs none;
+# a client-supplied folder in a protected place does. The probe is a READ-ONLY
+# query of the system privacy list, which this shell can read only when the
+# terminal itself has Full Disk Access; otherwise the answer is UNDETERMINED.
+# Setup never changes a privacy setting: it names the one step and offers to
+# open the settings page.
+FDA_PANE="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+cron_privacy_check() {
+  local db="/Library/Application Support/com.apple.TCC/TCC.db" n v ans
+  n="$(sqlite3 -readonly "$db" 'SELECT count(*) FROM access' 2>/dev/null)" || n=""
+  case "$n" in
+    ''|0|*[!0-9]*) CRON_FDA_LINE="UNDETERMINED - this terminal cannot read the macOS privacy list" ;;
+    *)
+      if v="$(sqlite3 -readonly "$db" "SELECT auth_value FROM access WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='/usr/sbin/cron'" 2>/dev/null)"; then
+        [ "$v" = 2 ] && { CRON_FDA_LINE="GRANTED"; return 0; }
+        CRON_FDA_LINE="NOT GRANTED"
+      else
+        CRON_FDA_LINE="UNDETERMINED - the macOS privacy list could not be queried"
+      fi ;;
+  esac
+  CRON_FDA_LINE="$CRON_FDA_LINE - matters only for a project kept in Desktop, Documents or Downloads (new projects go to ~/Projects). One step: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on. Open that page with: open \"$FDA_PANE\""
+  if [ -t 0 ]; then
+    printf 'Scheduled tick: cron Full Disk Access is %s. Open that settings page now? [y/N] ' "${CRON_FDA_LINE%% - *}" >&2
+    read -r ans || ans=""
+    case "$ans" in [yY]*) open "$FDA_PANE" || log "WARNING: could not open the Full Disk Access settings page" ;; esac
+  fi
+}
+
 main() {
   # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
   # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
@@ -1117,6 +1147,24 @@ main() {
     });
   ' 2>/dev/null || true)"
   PASSWORD_NOTE=""
+  #     (e) The scheduled tick's macOS privacy (read-only probe; see
+  #     cron_privacy_check). Setup does not arm the tick (the skill does, per
+  #     project); this is where the machine is readied for it. Never fatal.
+  cron_privacy_check
+  log "Scheduled tick (cron) Full Disk Access: ${CRON_FDA_LINE%% - *}"
+
+  #     (f) Hosting login, reported NOW (an operator note at setup time) and
+  #     not first at publish time: spec-protocol's deploy-auth.sh --check runs
+  #     `vercel whoami` with the operator token when one is recorded, else the
+  #     machine's own `vercel login` session. Never fatal; no new auth flow.
+  if [ -n "$SPEC_SRC" ] && [ -f "$SPEC_SRC/tools/deploy-auth.sh" ]; then
+    HOSTING_LOGIN_LINE="$(NINE_ROUTER_NPM_PREFIX="$NINE_PREFIX" bash "$SPEC_SRC/tools/deploy-auth.sh" --check 2>/dev/null | tail -1)" || true
+    [ -n "$HOSTING_LOGIN_LINE" ] || HOSTING_LOGIN_LINE="HOSTING-LOGIN: UNDETERMINED reason=deploy-auth.sh --check printed nothing"
+  else
+    HOSTING_LOGIN_LINE="HOSTING-LOGIN: UNDETERMINED reason=spec-protocol tools/deploy-auth.sh not found"
+  fi
+  log "Hosting login: $HOSTING_LOGIN_LINE"
+
   if [ "$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.mustChangePassword?"true":"false")}catch{process.stdout.write("false")}})' 2>/dev/null || echo false)" = "true" ]; then
     PASSWORD_NOTE="
 Dashboard: the password is the default \`123456\`; change it yourself in the dashboard when you are ready."
@@ -1142,6 +1190,8 @@ Ultracode default: $ULTRACODE_DEFAULT_LINE
 spec-protocol hooks: $HOOKS_STATUS
 $HOOKS_DETAIL
 GitHub sign-in: $GH_AUTH_LINE
+Hosting login (operator note; publishing needs it): $HOSTING_LOGIN_LINE
+Scheduled tick (cron) Full Disk Access: $CRON_FDA_LINE
 Operator backup owner: $OPERATOR_REMOTE_LINE
 Operator keys recorded: $OPERATOR_KEYS_LINE
 Normal claude routing: UNCHANGED

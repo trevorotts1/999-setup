@@ -35,8 +35,15 @@ documents — v4 13.1 puts it there), and LOOPS/ is top-level (document 9 is one
 document per loop, not a CONTROL artifact — v4 13.1 puts it there). There is NO
 MERGE-LOG.md anywhere — its content is a section of the ledger (document 6).
 
+A new project lives in `~/Projects/<project-slug>/`. macOS privacy protection
+blocks background jobs such as the five-minute cron tick from reading
+`~/Desktop`, `~/Documents` and `~/Downloads`; `~/Projects` is not protected, so
+the tick can read it without any permission. A folder the client supplies is
+used where it is and never moved; if it sits in a protected folder, the tick
+names the block (`TICK-BLOCKED-BY-PRIVACY:`, `tools/watch-tick.sh`).
+
 ```
-~/Downloads/projects/<project-slug>/
+~/Projects/<project-slug>/
 ├── 00-INPUT/                              # human's raw material + brainstorm capture + research findings — untouched, NOT one of the seventeen
 │   └── CONTENT.md                         # the client's own business facts — INFRASTRUCTURE, not one of the seventeen
 ├── SPEC/
@@ -1088,7 +1095,7 @@ the research findings (it is the human's-and-inputs folder, not one of the
 seventeen).
 
 ```
-~/Downloads/projects/<project-slug>/
+~/Projects/<project-slug>/
 ├── 00-INPUT/                              # raw material, brainstorm capture, research findings — untouched
 ├── SPEC/
 │   ├── MASTER-SPEC-YYYY-MM-DD.md          # master specification (document 1)

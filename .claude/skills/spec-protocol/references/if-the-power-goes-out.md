@@ -37,7 +37,7 @@ So when you start up again, the new session reads that record, sees exactly wher
 The same sentence is written down for you in your project folder, in a file called `CONTROL/LAUNCH-COMMAND.md`:
 
 ```
-~/Downloads/projects/<your-project-name>/CONTROL/LAUNCH-COMMAND.md
+~/Projects/<your-project-name>/CONTROL/LAUNCH-COMMAND.md
 ```
 
 ---

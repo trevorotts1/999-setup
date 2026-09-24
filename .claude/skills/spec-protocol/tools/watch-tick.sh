@@ -15,7 +15,11 @@
 #     THE CRON HALF — this script, on the crontab line `--arm` writes and the
 #       skill announces at step 3 (step 21 proves it ran; it never re-arms):
 #         */5 * * * * bash <skill>/tools/watch-tick.sh <project> \
-#                     >> <project>/CONTROL/watch-tick.log 2>&1
+#                     --log <project>/CONTROL/watch-tick.log
+#       The script opens its own log (--log), never cron's shell: a `>>` the
+#       shell cannot open (macOS privacy on ~/Desktop, ~/Documents,
+#       ~/Downloads) would stop the tick before it ran, with nothing named.
+#       See 4h, TICK-BLOCKED-BY-PRIVACY.
 #       It runs whether or not a session is alive, whether or not the model is
 #       thinking, whether or not anybody is awake. It NEVER dispatches: scripts
 #       cannot call session tools. It reconciles, counts, and writes.
@@ -228,6 +232,9 @@
 # USAGE
 #   watch-tick.sh <project-home>
 #   watch-tick.sh <project-home> --cron-line     # PRINT the crontab line
+#   watch-tick.sh <project-home> --log <file>    # the tick, appending its own
+#                                                #   output to <file> (the cron
+#                                                #   line's form; 4h)
 #   watch-tick.sh --arm <project-home>           # WRITE it (step 3), idempotently:
 #                                                #   0 armed, 3 already present,
 #                                                #   2 crontab unavailable (named)
@@ -309,6 +316,9 @@
 #                               branch is STALE-UNMERGED (the orphan sweep, 4g)
 #   WATCH_MERGE_TRAIN_SH=<path>   selftest stub only: the merge train the batch runs
 #   WATCH_REFRESH_TIMEOUT=120   seconds one profile `commands.refresh` run may take
+#   WATCH_TICK_LS=<path>        selftest stub only: the program the privacy probe
+#                               (4h) lists the project folder with
+#   XDG_STATE_HOME              where 4h keeps its record (default ~/.local/state)
 #
 # PATHS WITH SPACES. Every path the crontab line carries (the skill folder, the
 # project home, the log) is single-quoted, so "My Project Folder" is one word to
@@ -359,6 +369,7 @@ DO_ARM=0
 DO_CHECK=0
 DO_RECORD=0
 DO_SWEEP=0
+LOG_FILE=""
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
 MERGE_STALE_MIN="${WATCH_MERGE_STALE_MIN:-20}"
@@ -776,7 +787,7 @@ cron_line() {  # cron_line <project-home> -> the */5 line; rc 2 when a profile c
   fi
   # Every path is ONE quoted word (sq): the skill folder, the project home and
   # the log may all carry spaces ("My Project Folder").
-  printf '*/5 * * * * bash %s %s >> %s 2>&1\n' \
+  printf '*/5 * * * * bash %s %s --log %s\n' \
     "$(sq "${SCRIPT_DIR}/watch-tick.sh")" "$(sq "$home")" "$(sq "${home}/${log}")"
 }
 
@@ -1563,6 +1574,50 @@ report_note() {  # report_note <line> -> appended under the newest morning repor
   printf -- '- %s\n' "$1" >> "$f"
 }
 
+#------------------------------------------------------------------------------
+# 4h. MACOS PRIVACY (TCC). cron is a background job: without Full Disk Access,
+#     macOS refuses it ~/Desktop, ~/Documents and ~/Downloads with "Operation
+#     not permitted", so the tick can read neither the project nor its log.
+#     It then writes ONE named line OUTSIDE the project, to
+#     ${XDG_STATE_HOME:-~/.local/state}/spec-protocol/tick-blocked/<key>, and
+#     exits 2; every later blocked tick finds that record and exits 2 silently —
+#     named once, never retried in a loop. A tick that CAN read the folder (the
+#     in-session one) prints the line, files it on the ledger once and under the
+#     morning report's Operator notes. A cron tick (--log, no session) that can
+#     read the folder again proves access came back and clears the record.
+#     "Permission denied" or a missing folder is NOT this block: those fall
+#     through to the tick's own named failures.
+#------------------------------------------------------------------------------
+PRIVACY_FIX="Give cron Full Disk Access: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on (or keep the project in ~/Projects, which needs no permission)"
+blocked_record() { printf '%s/spec-protocol/tick-blocked/%s' "${XDG_STATE_HOME:-$HOME/.local/state}" "$(printf '%s' "$1" | tr -s / | cksum | cut -d' ' -f1)"; }
+privacy_line() { printf 'TICK-BLOCKED-BY-PRIVACY: path=%s fix=%s' "$1" "$PRIVACY_FIX"; }
+
+privacy_gate() {  # privacy_gate <home> -> returns when readable; exit 2 when privacy refused it
+  local h="${1%/}" err rec
+  [[ "$h" == /* ]] || h="${PWD}/${h}"
+  err="$("${WATCH_TICK_LS:-ls}" "$h" 2>&1 >/dev/null)" && return 0
+  [[ "$err" == *"Operation not permitted"* ]] || return 0
+  rec="$(blocked_record "$h")"
+  [[ -f "$rec" ]] && exit 2
+  mkdir -p "$(dirname "$rec")" && privacy_line "$h" > "$rec"
+  privacy_line "$h"; printf '\n'
+  exit 2
+}
+
+privacy_pickup() {  # a readable home: surface, or clear, a record a blocked cron tick left
+  local rec line
+  rec="$(blocked_record "$HOME_DIR")"
+  [[ -f "$rec" ]] || return 0
+  bind_paths "$HOME_DIR"
+  if [[ -n "$LOG_FILE" && -z "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+    rm -f "$rec"; printf 'TICK-PRIVACY | cleared: cron can read %s again\n' "$HOME_DIR"; return 0
+  fi
+  line="$(cat "$rec")"
+  printf '%s\n' "$line"
+  "$GREP" -qF -- "$line" "${AREA}/LEDGER.md" 2>/dev/null || tick_ledger "$(iso_now) | ${line}"
+  report_note "$line"
+}
+
 claim_mint() {  # claim_mint <repo> <tag> <version> <commit> <local 0/1>
   local rn="$1" tag="$2" ver="$3" cm="$4" loc="$5" i=-1 j root out obj peeled why="" typ vre key line
   for (( j = 0; j < ${#RP_ROOT[@]}; j++ )); do
@@ -1642,6 +1697,8 @@ while (( $# )); do
     --check)     DO_CHECK=1; shift ;;
     --record-session) DO_RECORD=1; shift ;;
     --sweep)     DO_SWEEP=1; shift ;;
+    --log)       [[ $# -ge 2 && -n "$2" ]] || die_tool "--log needs a file path"
+                 LOG_FILE="$2"; shift 2 ;;
     -h|--help)   usage; exit 0 ;;
     --*)         die_tool "unknown option: $1" ;;
     *)
@@ -1755,6 +1812,12 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
 #==============================================================================
 run_tick() {
   [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: watch-tick.sh <project-home> [--cron-line|--arm]"
+  # The plain tick (4h): probe privacy BEFORE anything reads the home, then
+  # open the log the cron line names.
+  if (( ! DO_CRON_LINE && ! DO_ARM && ! DO_RECORD && ! DO_CHECK && ! DO_SWEEP )); then
+    privacy_gate "$HOME_DIR"
+    if [[ -n "$LOG_FILE" ]]; then exec >> "$LOG_FILE" 2>&1 || die_tool "cannot append to the log ${LOG_FILE}"; fi
+  fi
   [[ -d "$HOME_DIR" ]] || die_tool "project home does not exist: ${HOME_DIR}"
   HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 
@@ -1813,6 +1876,7 @@ run_tick() {
   fi
 
   self_prove
+  privacy_pickup
 
   # THE PROFILED TICK. self_prove runs FIRST on both paths: it proves this
   # script's own parser and label detector against embedded fixtures and reads
@@ -2752,6 +2816,8 @@ selftest() {
   # Nor may any case run the real merge train: the batch cadence (4e) runs this
   # no-op stub in every fixture.
   export WATCH_MERGE_TRAIN_SH=/usr/bin/true
+  # Nor may any case touch the real per-user state (4h's privacy record).
+  export XDG_STATE_HOME="$T/xdg"
 
   mk_home() {  # mk_home <dir>
     mkdir -p "$1/SPEC" "$1/CONTROL"
@@ -2968,7 +3034,7 @@ selftest() {
   ok=0
   if (( RC == 0 )) && [[ "$n13" == "1" && "$keep13" == "1" ]] \
      && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
-     && "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*watch-tick\.log' 2>&1\$" "$CF13"; then ok=1; fi
+     && "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' --log '.*watch-tick\.log'\$" "$CF13"; then ok=1; fi
   report 13 "arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n13} watch-tick.sh line (want 1) in the shape --cron-line prints, and still carries its ${keep13} pre-existing line (want 1)"
 
   # --- case 14: THE SECOND ARM, same fixture. The guard SKILL.md section 12
@@ -3391,7 +3457,7 @@ selftest() {
   runw "$T/c35" --cron-line
   ok=0
   if (( RC == 0 )) \
-     && printf '%s' "$OUT" | "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*/state/watch-tick\.log' 2>&1\$" \
+     && printf '%s' "$OUT" | "$GREP" -q "^\*/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' --log '.*/state/watch-tick\.log'\$" \
      && ! printf '%s' "$OUT" | "$GREP" -q 'CONTROL/watch-tick.log'; then ok=1; fi
   report 35 "profile-cron-line" "$ok" "rc=${RC} (want 0); the line logs to state/watch-tick.log beside the bound documents.state and names no CONTROL/ anywhere — line: [$(printf '%s' "$OUT" | tail -1)]"
 
@@ -3408,7 +3474,7 @@ selftest() {
   ok=0
   if (( RC == 0 )) && [[ "$n36" == "1" ]] \
      && printf '%s' "$OUT" | "$GREP" -q '^ARM | ARMED (exit 0)' \
-     && "$GREP" -q "/state/watch-tick.log' 2>&1\$" "$CF36"; then ok=1; fi
+     && "$GREP" -q "/state/watch-tick.log'\$" "$CF36"; then ok=1; fi
   report 36 "profile-arm-first" "$ok" "rc=${RC} (want 0); the fixture table carries ${n36} watch-tick.sh line (want 1) and it ends at the profile's own state/watch-tick.log"
 
   # --- case 37: THE SECOND ARM. The guard is the same one case 14 proves on
@@ -3482,9 +3548,9 @@ selftest() {
   runw "$T/c41"
   ok=0
   if (( prc41 == 0 )) && (( lrc41 == 0 )) && (( RC == 0 )) \
-     && printf '%s' "$prof41"     | "$GREP" -q "/state/watch-tick.log' 2>&1\$" \
+     && printf '%s' "$prof41"     | "$GREP" -q "/state/watch-tick.log'\$" \
      && printf '%s' "$proftick41" | "$GREP" -q '^PROFILE-TICK |' \
-     && printf '%s' "$leg41"      | "$GREP" -q "/CONTROL/watch-tick.log' 2>&1\$" \
+     && printf '%s' "$leg41"      | "$GREP" -q "/CONTROL/watch-tick.log'\$" \
      && printf '%s' "$OUT"        | "$GREP" -q 'S-CHECK | violations=0 | runnable=0 open=1 trees=1' \
      && ! printf '%s' "$OUT"      | "$GREP" -q 'PROFILE-TICK'; then ok=1; fi
   report 41 "profile-vs-legacy-control" "$ok" "one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${RC}, want 0) with no PROFILE-TICK anywhere"
@@ -3668,6 +3734,43 @@ selftest() {
      && "$GREP" -q "^p	unit/P1	merge-claim-false	" "$T/c49/state/spec-protocol/merge-train/requeue.tsv" 2>/dev/null \
      && [[ "$(cksum < "$T/c49/state/build-state.json")" == "$ck49" && ! -e "$T/c49/CONTROL" ]]; then ok=1; fi
   report 49 "repo-sweeps-profiled" "$ok" "rc=${RC} (want 3); the state's MERGED claim on an unmerged commit is MERGE-CLAIM-FALSE and re-queued under state/spec-protocol/, the state file byte-identical, no CONTROL/"
+
+  # --- cases 50-52: macOS privacy (4h). A stub `ls` stands in for TCC: it
+  #     answers "Operation not permitted" the way macOS answers a cron job
+  #     reading ~/Downloads without Full Disk Access.
+  mk_home "$T/c50"
+  printf '#!/bin/sh\necho "ls: $1: Operation not permitted" >&2\nexit 1\n' > "$T/c50.ls"
+  printf '#!/bin/sh\necho "ls: $1: Permission denied" >&2\nexit 1\n' > "$T/c51.ls"
+  chmod +x "$T/c50.ls" "$T/c51.ls"
+  local rec50 out50b; rec50="$(blocked_record "$T/c50")"
+  WATCH_TICK_LS="$T/c50.ls" runw "$T/c50" --log "$T/c50/CONTROL/watch-tick.log"
+  local rc50="$RC" out50="$OUT"
+  WATCH_TICK_LS="$T/c50.ls" runw "$T/c50" --log "$T/c50/CONTROL/watch-tick.log"
+  out50b="$OUT"
+  ok=0
+  if (( rc50 == 2 && RC == 2 )) && [[ -z "$out50b" ]] \
+     && printf '%s' "$out50" | "$GREP" -qxF -- "$(privacy_line "$T/c50")" \
+     && printf '%s' "$out50" | "$GREP" -q 'fix=Give cron Full Disk Access: System Settings > Privacy & Security > Full Disk Access' \
+     && [[ -f "$rec50" && ! -e "$T/c50/CONTROL/watch-tick.log" && ! -e "$T/c50/CONTROL/LEDGER.md" ]]; then ok=1; fi
+  report 50 "privacy-blocked-once" "$ok" "rc=${rc50} then ${RC} (want 2, 2); one TICK-BLOCKED-BY-PRIVACY line naming the path and the Full Disk Access fix, recorded outside the project; the second blocked tick printed nothing (got [${out50b}]) — never retried in a loop"
+
+  mk_home "$T/c51"
+  WATCH_TICK_LS="$T/c51.ls" runw "$T/c51" --log "$T/c51/CONTROL/watch-tick.log"
+  ok=0
+  if ! printf '%s' "$OUT" | "$GREP" -q 'TICK-BLOCKED-BY-PRIVACY' && [[ ! -e "$(blocked_record "$T/c51")" ]] \
+     && "$GREP" -q 'S-CHECK' "$T/c51/CONTROL/watch-tick.log" 2>/dev/null; then ok=1; fi
+  report 51 "privacy-negative-control" "$ok" "\"Permission denied\" is NOT the privacy block: no TICK-BLOCKED line, no record, and the tick ran into its own --log (rc=${RC})"
+
+  printf '# Report\n\nAll done.\n' > "$T/c50/MORNING-REPORT-2026-01-01.md"
+  CLAUDE_CODE_SESSION_ID=sess-52 runw "$T/c50"
+  local out52="$OUT"
+  set +e; OUT="$(env -u CLAUDE_CODE_SESSION_ID bash "$SELF" "$T/c50" --log "$T/c50/CONTROL/watch-tick.log" 2>&1)"; RC=$?; set -e
+  ok=0
+  if printf '%s' "$out52" | "$GREP" -qF -- "$(privacy_line "$T/c50")" \
+     && [[ "$("$GREP" -cF -- 'TICK-BLOCKED-BY-PRIVACY' "$T/c50/CONTROL/LEDGER.md" 2>/dev/null)" == 1 ]] \
+     && "$GREP" -A3 '^## Operator notes' "$T/c50/MORNING-REPORT-2026-01-01.md" | "$GREP" -qF -- "- $(privacy_line "$T/c50")" \
+     && [[ ! -e "$rec50" ]] && "$GREP" -q 'TICK-PRIVACY | cleared' "$T/c50/CONTROL/watch-tick.log"; then ok=1; fi
+  report 52 "privacy-pickup-and-clear" "$ok" "the in-session tick printed the line, ledgered it once and put it under the morning report's Operator notes; the next readable cron tick (--log) cleared the record"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"

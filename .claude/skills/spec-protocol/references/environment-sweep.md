@@ -240,7 +240,7 @@ once; fixing that now, once, is cheaper than discovering it per unit later.
 
 **Every capture lands under `<project>/captures/`, never the session working
 directory.** `<project>` is the project folder step 3 created
-(`~/Downloads/projects/<slug>/`); resolve every capture output path from it,
+(`~/Projects/<slug>/`); resolve every capture output path from it,
 never from `$PWD` and never from a bare relative name. A capture file found
 outside the project folder is a defect the run REPORTS through the tick —
 never a file it tidies away by moving.
@@ -676,6 +676,19 @@ question:
 The client's own Vercel or GitHub account is offered in the morning report only,
 never during the run. A missing operator credential is an OPERATOR finding (ledger
 plus the morning report's operator notes), never a client ask.
+
+**The hosting login is checked HERE, at the sweep, not first at publish.** Run
+`bash tools/deploy-auth.sh --check` for every hosted target. It runs `vercel whoami`
+with the operator's `VERCEL_TOKEN` when one is recorded, else with the machine's
+own `vercel login` session, and prints one line: `HOSTING-LOGIN: OK via=token|login`
+(exit 0), `HOSTING-LOGIN: MISSING next=<one plain step>` (exit 3: the CLI itself
+said there is no usable login), or `HOSTING-LOGIN: UNDETERMINED reason=…` (exit 2:
+no CLI, no network: never read as MISSING). A MISSING or UNDETERMINED line goes
+on the ledger and into the morning report's operator notes NOW, word for word, so
+the operator can sign in hours before the publish stage needs it. The build goes on
+and the client hears nothing. `nine-router-setup` prints the same line at setup
+time. At publish, with neither a token nor a login, `tools/publish.sh` writes
+`HOSTING-BLOCKED: no hosting login on this computer` with that same single step.
 
 Each of these checks fires only when the permutation actually requires the
 credential: a simple site going into GHL is never stopped for a missing

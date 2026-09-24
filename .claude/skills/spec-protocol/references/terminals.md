@@ -137,8 +137,8 @@ breaks. See `audience.md` for the full rules. Every instruction must:
 - Have a stated context for every line — what it does, why.
 - Have one line per step.
 - State its waits — "wait for this to finish before pasting the next one."
-- Use the shorter form of a path (`~/Downloads/projects/...`, not
-  `/Users/yourname/Downloads/projects/...`).
+- Use the shorter form of a path (`~/Projects/...`, not
+  `/Users/yourname/Projects/...`).
 
 ---
 
@@ -147,7 +147,7 @@ breaks. See `audience.md` for the full rules. Every instruction must:
 Each instruction the user pastes into a fresh terminal must include:
 
 1. **The working directory AND why that one** — "This terminal works in
-   ~/Downloads/projects/my-app because that is where the project files live."
+   ~/Projects/my-app because that is where the project files live."
 2. **The model** — spelled out with its alias and what the alias does. Set it as a
    flag in the command (`--model sonnet`), not as a menu step.
 3. **The reasoning or effort level** — set explicitly with `--effort` when the
@@ -263,7 +263,7 @@ Only the branch for THIS machine's platform is ever spoken — `references/platf
 §1 has already decided which, and the client never hears the other one.
 
 ```
-cd ~/Downloads/projects/<project-slug>
+cd ~/Projects/<project-slug>
 claude --model sonnet --effort high --name build \
   "Read LOOPS/<build-loop>.md and run it. \
 That file tells you exactly what to do, step by step."
@@ -294,7 +294,7 @@ pins its own model. Use the spelling the Capacity Ledger names for this seat.)
 > Return.
 
 ```
-cd ~/Downloads/projects/<project-slug>
+cd ~/Projects/<project-slug>
 claude --model fable --effort high --name qc \
   "Read LOOPS/<review-gate-loop>.md and run it. \
 That file tells you exactly what to do, step by step."
@@ -337,7 +337,7 @@ obey:
 > Return.
 
 ```
-cd ~/Downloads/projects/<project-slug>
+cd ~/Projects/<project-slug>
 claude --model haiku --name merge \
   "Read LOOPS/<merge-train-loop>.md and run it. \
 That file tells you exactly what to do, step by step."
