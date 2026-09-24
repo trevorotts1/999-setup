@@ -13,10 +13,13 @@ checked passes. The judge never sees or raises the relationship, and the
 visible record never leaks which blinded side was the candidate. A missing,
 non-finite, or out-of-range score is UNVERIFIED and cannot PASS; a high score
 cannot override a failed mandatory check or comparison.
-FAIL = looped to the builder with the critic's exact finding, using the project's
-bounded repair-attempt policy (legacy default: max 20 cycles per finding; an adopted profile
-uses its canonical root-bound submission/verdict counters instead), then escalation to the operator with the full finding
-history (Rule 3.22, operator ruling 2026-08-14). The non-success states
+FAIL = ONE repair packet holding every blocking finding from both judges, verbatim
+(reproduction, expected/actual, location, diagnosis, ordered fix, exact verification),
+back to the unit's ORIGINAL builder seat. Two failed corrections, or two rounds with an
+unchanged failure signature, earn ONE rescue by a different builder on the same seat
+route; then the unit is parked and escalated to the operator with the full finding
+history. One judging round (both judges) is ONE QC verdict; the budget is per task,
+`policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4 each (`references/pipeline.md` Stage 3). The non-success states
 BLOCKED / INFEASIBLE / LIMIT REACHED are never relabeled PASS (Law 50).
 `CLIENT-ACCEPTED` is the client's own acceptance of a unit that did not meet
 the relationship, carrying the one named gap; no judge ever writes it.
@@ -24,11 +27,11 @@ the relationship, carrying the one named gap; no judge ever writes it.
 The ten categories below are the critic's rubric surface — quoted proof
 beside every judgement. Each category's judgement maps to the binary
 verdict: any category that fails the frozen relationship against its bar is
-a FAIL, and its exact finding loops the item to the builder.
+a FAIL, and its exact finding goes into the unit's repair packet.
 
 **Law 50 — the bar wins by default (binding on every verdict).** A judge
-verdict is one of: PASS, FAIL (looped to the builder with the exact finding,
-the project's bounded repair cap), or the non-success states **BLOCKED / INFEASIBLE / LIMIT
+verdict is one of: PASS, FAIL (one repair packet back to the original builder,
+inside the per-task budget), or the non-success states **BLOCKED / INFEASIBLE / LIMIT
 REACHED** — which are NEVER relabeled PASS. If the comparison cannot run (bar
 unreachable, format mismatch, judge cannot render both sides), the item is
 BLOCKED, not passed: "could not compare" is a fail, not a pass. An operational
@@ -58,8 +61,8 @@ bar (Law 48); (3) `bar-fetch=` names a fetchable source (a bar that cannot be
 fetched is BLOCKED, Law 50); (4) `verdict=` is exactly one of the five values —
 binary for the loop, non-success states never relabeled PASS; (5) `outcome=`
 is PASSED, LOOPED `cycle n of <cap>`, ESCALATED, or ESCALATED-BLOCKED /
-ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason= (Rule 3.22 — 20
-cycles per finding; the 21st pass is ESCALATED with the full finding history;
+ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason= (<cap> is the
+per-task QC-verdict budget, else 4; a parked unit is ESCALATED with the full finding history;
 a Law-50 verdict with no ESCALATED-<STATE> reason= is a broken record); (6)
 `provenance=` is STRIPPED (Law 49 — the critic sees the work, never the
 effort: no timestamps, authorship, history, builder identity, builder

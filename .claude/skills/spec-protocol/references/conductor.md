@@ -60,7 +60,8 @@ free disk → the media threshold; network → provider reachability. Pool disco
 here too — `GET /v1/models` through the session's own gateway and auth, recording the
 count, the prefixes and the selected seats' ids only, never an enumeration. **The seats
 are the one seat table in `references/capacity.md` §11** — read them there, never
-restate them, and never name a model to the client. Every value carries a provenance
+restate them, and never name a model to the client. A profile's `policy.builderRoute`
+and `policy.qcRoute` override that table (§11, "Profile routes"). Every value carries a provenance
 mark; a value without one is ASSUMED and sized conservatively. Then run the RIG-FITNESS
 checks, once, while the full picture exists and nothing is in flight. The client has
 walked away by now (SKILL.md section 4), so a failed check is never asked: the run takes
@@ -232,15 +233,20 @@ of the work (Law 41). Full mechanics: `references/pipeline.md`.
    verdict, and the outcome from the closed list (PASSED, CLIENT-ACCEPTED with the
    one named gap, LOOPED n of <cap>, or one of the ESCALATED states with a reason) —
    whose six mechanical checks are `references/pipeline.md` Stage 2.
-3. **Fix loop.** Every FAIL returns to a NEW builder with the critic's exact
-   finding, verbatim, and the one largest gap; a NEW judge instance re-judges;
-   every round writes a `SCORE` line, and the plateau rule ends a unit honestly
-   rather than looping on a gap that has stopped closing (`references/gauntlet.md`
-   §5). An unprofiled loop is bounded at 20 cycles per finding, every cycle recorded, and the
-   twenty-first escalates with the full history. A supplied profile instead spends its canonical
-   root-bound builder/QC counters; its
-   packet refuses the next reservation at that bound. Neither path quietly gives up or relabels
-   a failure as PASS. Fixes run in parallel only within the applicable policy (Law 32).
+3. **Repair loop.** Every FAIL returns ONE repair packet — every blocking finding
+   from BOTH judges, verbatim, each with reproduction, expected/actual, location,
+   diagnosis, ordered fix and exact verification — to the unit's ORIGINAL builder
+   seat, never a fresh builder and never one gap per round; a NEW judge instance
+   re-judges. After two failed corrections, or two rounds with an unchanged failure
+   signature, ONE rescue by a different builder on the same seat route; then the unit
+   is parked as a named blocker and escalated with its full history — it never loops.
+   One judging round (both judges) is ONE QC verdict. The budget is per task:
+   `policy.maxQCVerdicts` and `policy.maxBuilderSubmissions` from the profile, else 4
+   each, read from the bound state or the live ledger so it survives a restart
+   (`references/pipeline.md` Stage 3). Every round writes a `SCORE` line, and the
+   plateau rule ends a unit honestly rather than looping on a gap that has stopped
+   closing (`references/gauntlet.md` §5). Nothing quietly gives up or relabels a
+   failure as PASS. Different units repair in parallel (Law 32).
 4. **Holding pen.** Passing work stages in a pen (one per repo) — a table in the
    execution plan, never a file (Law 39), and the pen has no writer.
 5. **Merge trains — one per repository, in BATCHES, never one at a time.** A project may

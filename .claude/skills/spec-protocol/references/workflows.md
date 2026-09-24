@@ -733,7 +733,8 @@ You did not build this and you may not fix it. Judge the ACTUAL OUTPUT against t
 written bar in the project's acceptance criteria - never against the builder's account
 of it. "The builder says it is fixed" is not evidence and is BANNED as a basis for a
 pass. Produce the evidence you relied on: commands run, output, screenshots, or test
-results. Return PASS or FAIL with the one largest gap named - or BLOCKED / INFEASIBLE /
+results. Return PASS or FAIL with EVERY blocking finding (repro, expected/actual, location,
+diagnosis, ordered fix, exact verify), largest first - or BLOCKED / INFEASIBLE /
 LIMIT-REACHED when the bar comparison cannot run or an operational limit ends
 the item (Law 50: never relabeled PASS).
 
@@ -741,8 +742,8 @@ Write the QC-RECORD (the one format every verdict is written in,
 references/pipeline.md Stage 2): your judge seat label in judge=, the bar you
 judged against - NAMED - in bar=, how you obtained the bar (URL / capture path /
 file path / answer-key reference) in bar_fetch, the verdict in verdict=, the
-outcome in outcome= (PASSED on PASS; LOOPED cycle n of <cap> on FAIL - the declared repair cap
-is legacy 20 cycles per finding, while an adopted profile uses its canonical root budget; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
+outcome in outcome= (PASSED on PASS; LOOPED cycle n of <cap> on FAIL - <cap> is the per-task
+QC-verdict budget, policy.maxQCVerdicts else 4, one round of both judges being one verdict; ESCALATED-BLOCKED / ESCALATED-INFEASIBLE /
 ESCALATED-LIMIT-REACHED with reason= on the three Law-50 non-success verdicts),
 and provenance in provenance= (STRIPPED -
 the package you received carried no timestamps, authorship, history, builder

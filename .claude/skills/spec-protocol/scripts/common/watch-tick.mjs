@@ -563,7 +563,11 @@ function cronLine(home) {
   // Every path is ONE single-quoted sh word ("My Project Folder"); a % is \%
   // because cron reads a bare % as a newline even inside quotes.
   const sq = (x) => `'${String(x).replace(/'/g, "'\\''").replace(/%/g, '\\%')}'`;
-  return `*/5 * * * * bash ${sq(`${TOOLS}/watch-tick.sh`)} ${sq(home)} >> ${sq(`${home}/${log}`)} 2>&1`;
+  // --log, never a shell `>>`: the bash tick opens its own log so a folder macOS
+  // privacy refuses to cron is NAMED (watch-tick.sh 4h, TICK-BLOCKED-BY-PRIVACY)
+  // instead of the shell dropping the tick before it runs. That check lives in
+  // the bash tick alone: macOS cron always runs bash, never this twin.
+  return `*/5 * * * * bash ${sq(`${TOOLS}/watch-tick.sh`)} ${sq(home)} --log ${sq(`${home}/${log}`)}`;
 }
 
 //-----------------------------------------------------------------------------
@@ -1151,7 +1155,7 @@ function selftest() {
   d = mkProfileHome('c11');
   r = run([d, '--cron-line']);
   report(11, 'profile-cron-line',
-    r.rc === 0 && /^\*\/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' >> '.*\/state\/watch-tick\.log' 2>&1$/m.test(r.out)
+    r.rc === 0 && /^\*\/5 \* \* \* \* bash '.*watch-tick\.sh' '.*' --log '.*\/state\/watch-tick\.log'$/m.test(r.out)
       && !/CONTROL\/watch-tick\.log/.test(r.out),
     `rc=${r.rc} (want 0); the line ends at state/watch-tick.log beside documents.state and names no CONTROL/ — line: [${r.out.trim()}]`);
 
@@ -1199,9 +1203,9 @@ function selftest() {
   const legCron = run([d, '--cron-line']);
   const legTick = run([d]);
   report(15, 'profile-vs-legacy-control',
-    profCron.rc === 0 && /\/state\/watch-tick\.log' 2>&1$/m.test(profCron.out)
+    profCron.rc === 0 && /\/state\/watch-tick\.log'$/m.test(profCron.out)
       && /^PROFILE-TICK \| /m.test(profTick.out)
-      && legCron.rc === 0 && /\/CONTROL\/watch-tick\.log' 2>&1$/m.test(legCron.out)
+      && legCron.rc === 0 && /\/CONTROL\/watch-tick\.log'$/m.test(legCron.out)
       && legTick.rc === 0 && /S-CHECK \| violations=0 \| runnable=0 open=1 trees=1/.test(legTick.out)
       && !/PROFILE-TICK/.test(legTick.out),
     `one home, one file: WITH .spec-protocol.json it printed the state/watch-tick.log line and a PROFILE-TICK; with that file removed the SAME home printed the CONTROL/watch-tick.log line and a legacy S-CHECK verdict (rc=${legTick.rc}, want 0) with no PROFILE-TICK anywhere`);

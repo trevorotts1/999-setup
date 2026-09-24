@@ -87,7 +87,7 @@ brainstorm and the confirmed feature list are the source of truth.
 ## Stage 1 — BUILD (parallel waves, one work item per subagent)
 
 **Model:** the builder seat from the seat table (`references/capacity.md` §11 —
-the one place seats are written). What that seat resolves to is a per-machine fact
+the one place seats are written; a profile's `policy.builderRoute` overrides it). What that seat resolves to is a per-machine fact
 read live at run time and recorded in the Capacity Ledger; no seat, lane, or model
 id is supplied by this page.
 
@@ -308,7 +308,8 @@ item's bar (Law 48 — the named, fetchable bar on the build card's QC section
 or the B2H) the way a customer would, and returns only `A` / `B` / `TIE` /
 `UNVERIFIABLE`, with comparison evidence. The private adjudicator maps the neutral
 side: its candidate side (`A` or `B`) or `TIE` passes; the mapped bar side fails and
-returns the single largest gap; `UNVERIFIABLE` is BLOCKED. The visible verdict does not disclose which
+returns every blocking gap, largest first, into the unit's repair packet (Stage 3);
+`UNVERIFIABLE` is BLOCKED. The visible verdict does not disclose which
 side was the candidate.
 "Meets the bar exactly" IS a pass under this relationship and is never sent
 back to "exceed it". Under **meet-all-requirements** the bar is an answer-key
@@ -337,7 +338,7 @@ override another failed condition. No client answer lowers the judge's standard
 in the QC RECORD below.
 
 **Model:** the technical-judge seat from the seat table (`references/capacity.md`
-§11 — the one place seats are written), resolved live and recorded in the Capacity
+§11 — the one place seats are written; a profile's `policy.qcRoute` overrides it), resolved live and recorded in the Capacity
 Ledger, never named by this page. It must be a DIFFERENT model from the builder
 (Law 7 — one model's blind spot cannot bless itself); the table's independence
 rule is the authority. Review streams as features land — not in a batch at the end
@@ -387,10 +388,10 @@ run against a QC RECORD without judging anything:
    else, and the non-success states are never relabeled PASS (Law 50).
 5. **`outcome=` must be PASSED, CLIENT-ACCEPTED with a `gap=`, LOOPED
    `cycle n of <cap>`, ESCALATED, or one of ESCALATED-BLOCKED /
-   ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the fix
-   loop's cap — legacy: 20 cycles per finding, operator ruling 2026-08-14;
-   profile: its canonical root-bound submission/verdict budget — and the next attempt after
-   that bound carries ESCALATED with the full finding history) — a FAIL
+   ESCALATED-INFEASIBLE / ESCALATED-LIMIT-REACHED with a reason=** (the repair
+   loop's per-task budget — `policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`,
+   else 4 each, Stage 3 — and a unit parked at that bound carries ESCALATED with the
+   full finding history) — a FAIL
    verdict with no LOOPED outcome line, an ESCALATED line with no finding
    history attached, or a Law-50 verdict (BLOCKED / INFEASIBLE /
    LIMIT-REACHED) with no ESCALATED-<STATE> reason= line, is a broken record.
@@ -430,10 +431,10 @@ send it back; do not invent a generic check and call it the card's rubric.
 
 QC is ONE way: a blind critic reviews the work; PASS = the
 frozen bar relationship met (wins-or-ties → private candidate-side `A` or `B`, or
-`TIE`, passes; meet-all-requirements → every requirement checked passes); FAIL = looped to
-the builder with the exact finding, the declared bounded repair cap (legacy default 20), then
-escalation to the operator with the full finding history (operator
-ruling 2026-08-14). **PASS is a verdict format, not a bypass.** It requires the
+`TIE`, passes; meet-all-requirements → every requirement checked passes); FAIL = ONE
+repair packet of every blocking finding back to the unit's ORIGINAL builder, inside the
+per-task budget, then one rescue, then parked and escalated to the operator with the
+full finding history (Stage 3). **PASS is a verdict format, not a bypass.** It requires the
 0–10 ten-category score floor of 8.5, the frozen bar relationship, mandatory
 behavior/scope/evidence checks, and an independent comparison. Missing scores
 are UNVERIFIED; a high score cannot override another failed condition. The
@@ -565,8 +566,9 @@ ADDITION TO the ten-category score, never as a replacement:
 - It strips labels (the critic never sees which side is ours), randomizes order,
   and makes a neutral decision: **A / B / TIE / UNVERIFIABLE**; only the
   adjudicator holds the private mapping to ours/bar.
-- On ITERATE it names the single largest gap between ours and the bar — one gap,
-  the biggest, stated as a fixable defect.
+- On ITERATE it names every blocking gap between ours and the bar it can evidence,
+  largest first, each stated as a fixable defect; they join the unit's ONE repair
+  packet (Stage 3), and the largest is the one gap the client hears.
 - It records evidence and any dissent into the verdict, in the same shape as every
   other Stage 2 finding.
 - **Law 50 — the bar wins by default.** A comparison the critic cannot run (bar
@@ -607,99 +609,121 @@ sits on top of it and never lowers or replaces it.
 
 Gate 1 (the ten-category score, the fail-closed rules, the mutation proof) and
 Gate 3 (the blind A/B against the frozen bar, `references/gauntlet.md`) can
-both fail on the same unit in the same cycle. Fixes fan out per finding
-(Law 32) and the Gauntlet returns exactly one largest gap per cycle (Section
-1.2) — two rules that would otherwise collide with no arbitration. One rule
-decides which drives:
+both fail on the same unit in the same round. They never become two loops:
 
-1. **Gate-1 findings fan out per finding (Law 32).** Every Gate-1 finding
-   dispatches its own fixer, in parallel, exactly as this stage already runs.
-2. **A Gate-3 BAR verdict contributes exactly ONE additional finding** — the
-   single largest gap (`references/gauntlet.md`, Section 1.2) — added to the
-   same fix list, under the SAME applicable repair bound. It is
-   one more row in the fix list, never a second, competing cycle counter.
-3. **Gate 3 re-runs only after that unit's Gate-1 fixes land.** Hard
-   correctness is the floor; re-judging a comparison against a build that has
-   not yet cleared Gate 1 wastes a critic on a moving target. The order is
-   always Gate-1 fixes first, then the next Gate-3 pass — never the reverse.
-
-Cycle counts are shared per finding, never per gate — a Gate-1 finding and the
-Gate-3 largest-gap finding each carry their own legacy 20-cycle counter because they are
-different findings, not because they are different gates. For an adopted profile, both findings
-spend the same canonical root builder/QC counters; no separate twenty-cycle counter exists.
+1. **Every blocking finding from both gates goes into the unit's ONE repair
+   packet** (Stage 3) — the Gate-1 findings, any Gate-2 off-brief finding, and
+   every Gate-3 gap the critic evidenced, largest first. It is one packet under one
+   budget, never a second, competing counter.
+2. **The packet's ordered fix puts Gate 1 first**, then Gate 2, then the Gate-3
+   gaps. Hard correctness is the floor; a comparison fix built on a unit that has
+   not cleared Gate 1 is a fix on a moving target.
+3. **The next round re-runs both judges together** on the repaired submission,
+   and that round is ONE QC verdict.
 
 ---
 
-## Stage 3 — FIX (parallel, one fixer per finding)
+## Stage 3 — REPAIR (the original builder, one packet, a per-task budget)
 
-**Model:** the builder model. Fixes run in parallel — one fixer per finding,
-dispatched concurrently (Law 32). The attempt bound is per finding, not per work
-item.
+**Model:** the unit's ORIGINAL builder seat — the seat that built it, carried on its
+build result as `builtBy` (on a profiled project that is `policy.builderRoute`,
+`references/capacity.md` §11). Never a fresh builder seat, never a judge's seat.
+Different units repair in parallel; one unit is repaired by one builder at a time.
 
-### The fix loop (bounded by the applicable project policy, and recorded)
+### The repair loop (binding)
 
-On FAIL: write the six-part finding — (1) which category and the finding, (2) the
-specific defect quoted with its path and line, (3) why it fails (the rule cited),
-(4) exactly what to change (a before-and-after for code), (5) how the fixer proves
-it is fixed (the command and expected result), (6) what a naive fix would break
-(Law 31). **The finding IS the loop-back payload:** the item returns to the
-builder WITH THE CRITIC'S EXACT FINDING — verbatim, never paraphrased, never
-summarized, never stripped of its evidence — and the builder fixes exactly that
-finding, never a different problem (the fix-versus-finding rule below). Re-dispatch a fixer (never the
-judge). **A NEW judge agent — the same SEAT, a FRESH CONTEXT — re-judges, and
-the previous verdict is not in its prompt.** It works from fresh proof and a
-fresh break-it pass, and it receives exactly what the first judge received:
-never the earlier verdict, never the earlier gap, never the earlier score,
-never the round number (`references/gauntlet.md` Section 5 — never reuse the
-previous verifier's judgment; a judge shown its own prior verdict anchors on it
-instead of re-judging). Earlier verdicts never carry. Every re-judge writes its
-own `SCORE` line through `tools/ledger.sh` — its five fields, in order, are a
-row of the LEDGER VOCABULARY table (`references/documents.md`), and `tools/ledger.sh` REFUSES the line if they are not all there
-(`references/gauntlet.md` Section 5; a PASS also requires score >=8.5), and
-three consecutive rounds whose `best` rose
-by less than 0.3 end the unit on the plateau rule — honestly, with its best
-checkpoint preserved and its one gap named — instead of running to the
-declared repair-cap cycle (legacy default: twentieth; profile: canonical root budget).
+1. **One judging round is ONE QC verdict.** The unit's blind visual judge and its
+   technical judge judge the same submission together. Their two verdicts are one
+   round and spend one QC verdict; the round passes only when both pass.
+2. **One repair packet holds EVERY blocking finding from BOTH judges.** On FAIL the
+   conductor merges them into one packet. Each finding in it carries six parts:
+   (1) **reproduction** — the exact steps or command that shows it; (2) **expected
+   and actual**; (3) **location** — path and line, or screen and viewport;
+   (4) **diagnosis** — why it fails, the rule cited; (5) **the fix, in order** —
+   a before-and-after for code, Gate-1 findings first, two findings touching the
+   same lines ordered (Law 19), and what a naive fix would break (Law 31);
+   (6) **exact verification** — the command and its expected result. Findings are
+   the judges' own words — verbatim, never paraphrased, never summarized, never
+   stripped of their evidence. Improvement notes are not blocking and stay out of
+   the packet (Stage 2: a note for the user, not a dispatch).
+3. **The packet goes back to the ORIGINAL builder.** The seat that built the unit —
+   and the same agent, when the harness can continue it (a named teammate is
+   messaged, never replaced) — repairs the WHOLE packet in one submission, in the
+   unit's own worktree. It never goes to a fresh builder, and the unit is never
+   repaired one gap per round. The builder fixes exactly what the packet names,
+   never a different problem (the fix-versus-finding rule below).
+4. **NEW judges re-judge.** **A NEW judge agent — the same SEAT, a FRESH CONTEXT —
+   re-judges, and the previous verdict is not in its prompt.** It works from fresh
+   proof and a fresh break-it pass, and it receives exactly what the first judge
+   received: never the earlier verdict, never the earlier gap, never the earlier
+   score, never the round number (`references/gauntlet.md` Section 5 — never reuse
+   the previous verifier's judgment; a judge shown its own prior verdict anchors on
+   it instead of re-judging). Every re-judge writes its own `SCORE` line through
+   `tools/ledger.sh` — its five fields, in order, are a row of the LEDGER VOCABULARY
+   table (`references/documents.md`), and `tools/ledger.sh` REFUSES the line if they
+   are not all there (a PASS also requires score >=8.5).
+5. **Rescue — once.** After TWO failed corrections, or TWO consecutive rounds whose
+   failure signature has not changed (the signature is the set of blocking findings'
+   category and location; the same set twice means the builder is not moving it),
+   the unit gets ONE rescue: a DIFFERENT builder on the SAME seat route — a new
+   agent labelled `rescue:<id>`, handed the card, the latest packet and the full
+   finding history, and told the earlier approach failed. The rescue seat is the
+   builder route, never a judge's seat and never an upgrade to another lane.
+6. **Then parked — it never loops.** When the rescue fails, or the budget below is
+   spent first, the unit is PARKED as a named blocker: ledger state
+   `blocked-repeated-fail`, its QC RECORD outcome `ESCALATED after <n>` carrying the
+   full finding history — every packet, fix commit and re-judge result — and the
+   unit named in the morning report's blockers. It is not dispatched again until the
+   operator or the client acts on it. The next unit dispatches immediately; a parked
+   unit never holds the queue. **Law 50 — the bar wins by default:** a parked unit
+   is LIMIT REACHED, a non-success state that ends it NOT PASSED, never PASS.
 
-**The loop is bounded and recorded (binding):**
-- **Bound:** the declared repair cap per finding (legacy default: 20). An adopted profile
-  instead uses its canonical root-wide `maxBuilderSubmissions` / `maxQCVerdicts` counters;
-  the one-largest-gap repair consumes that same root budget, never a second per-finding 20.
-- **Recorded:** every cycle appends to the finding's history — cycle number
-  (n of <cap>), the exact finding, the fix applied (commit/branch), the re-judge
-  result — written to the finding's verdict block in the live ledger (document
-  6) as it happens, so a session resuming cold reads which cycle a finding is
-  on and what has already been tried directly from the block (documents.md,
-  document 6).
-- **Escalation, never a quiet give-up:** after the final permitted attempt on one
-  finding, mark blocked-repeated-fail and ESCALATE TO THE OPERATOR WITH THE FULL
-  FINDING HISTORY — every cycle's finding, fix, and re-judge result. Never a
-  relabeled pass, never a silent move-on. Escalation feeds the Named Stops
-  (stop 8) and the restart from the last clean checkpoint.
-  **Law 50 — the bar wins by default:** hitting the cap is LIMIT REACHED, a
-  non-success state that ends the item NOT PASSED, never PASS.
+The plateau rule still applies inside the budget: three consecutive rounds whose
+`best` rose by less than 0.3 end the unit honestly, with its best checkpoint
+preserved and its one gap named (`references/gauntlet.md` Section 5).
+
+### The budget (per task, and it survives a restart)
+
+- **QC verdicts:** `policy.maxQCVerdicts` from the project profile, else **4** per
+  task. One judging round (both judges) spends one.
+- **Builder submissions:** `policy.maxBuilderSubmissions`, else **4** per task. The
+  first build, every correction and the rescue each spend one.
+- With 4 and 4 the path is: build, correction, correction, rescue — then parked. A
+  smaller budget parks the unit sooner. A dispatch that would spend past either
+  counter is never made.
+- **Counters are read from durable state, never kept in a head.** On a profiled
+  project the bound state holds them: the profile's packet writer reserves every
+  submission and verdict across every child of one root task and refuses one past
+  the bound. Unprofiled, they are read from the live ledger (document 6): QC
+  verdicts spent = the highest `round=` on the unit's `SCORE` lines (both judges of
+  one round share its number); builder submissions spent = that number, plus one
+  while a submission is waiting for its judges. A resumed session reads both before
+  it dispatches anything for the unit.
+- **Recorded:** every round appends to the unit's verdict block in the live ledger
+  (document 6) as it happens — the round (`n of <max>`), the packet, the fix
+  commit, the re-judge result — so a cold resume reads what has been tried.
 
 ### A finding is proved by running
 
 A finding is proved by running, and a fix that does not match its finding is itself
 a finding. A defect found by reading is a suspicion; a defect found by running is a
-finding. The fixer applies exactly the fix the finding named — never rediscover,
+finding. The builder applies exactly the fix the packet named — never rediscover,
 never fix a different problem. The review loop checks the fix-versus-finding
 comparison; a mismatch is itself a defect.
 
 ### Dependency DAG waves (inherit warfix)
 
-Build a dependency DAG from the fix list; schedule fixes in waves (topological sort,
-Kahn's algorithm). Order: agreements-first, critical → low. Fixing runs in parallel
-within each wave. Two findings touching the same lines are ordered (Law 19); a
-finding whose fix changes what a later finding means goes first; everything else
-goes at once.
+Build a dependency DAG across the units waiting for repair; schedule them in waves
+(topological sort, Kahn's algorithm). Order: agreements-first, critical → low. Units
+repair in parallel within each wave. Two units whose packets touch the same lines are
+ordered (Law 19); a unit whose fix changes what another unit's finding means goes
+first; everything else goes at once.
 
 ### Streaming self-repair (inherit warfix)
 
-Reviews arrive as fixes land — not batched at the end. Up to 5×5 = 25 concurrent
+Reviews arrive as repairs land — not batched at the end. Up to 5×5 = 25 concurrent
 reviewers. Self-repair: if the reviewer rejects, a higher-reasoning model confirms
-(within the applicable repair bound; legacy cap 20 cycles). A fix that clears review stages in the holding pen.
+(inside the unit's per-task budget). A repair that clears review stages in the holding pen.
 
 ---
 
@@ -1247,12 +1271,13 @@ autonomously and recorded.
    operator-provided remote — so it is never a Named Stop at merge time** (Stage 5,
    "GitHub is arranged at MINUTE ONE"). The stop covers access the skill has no way
    to arrange, not access it simply had not got round to arranging.
-8. **The applicable repair bound is exhausted on the same finding** (legacy: 20 cycles per
-   finding, operator ruling 2026-08-14; profile: canonical root submission/verdict budget). Not because the agent gave up — because
-   twenty independent attempts failing is information the human needs. The stop
-   escalates WITH THE FULL FINDING HISTORY — every cycle's finding, fix, and
-   re-judge result, never a quiet give-up and never a relabeled pass (the QC
-   protocol's loop mechanics, Stage 3 of this file).
+8. **A unit is parked** — its rescue failed, or its per-task budget is spent
+   (`policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4 each). Not because
+   the agent gave up — because the original builder and a rescue builder both failing
+   is information the human needs. The stop escalates WITH THE FULL FINDING HISTORY —
+   every packet, fix, and re-judge result, never a quiet give-up and never a relabeled
+   pass (the repair loop, Stage 3 of this file). It stops that unit only; the others
+   keep going.
 
 The list matters in both directions: nothing outside it may excuse a stall, and
 nothing on it may be decided by an agent at three in the morning.

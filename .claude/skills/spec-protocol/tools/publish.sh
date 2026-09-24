@@ -203,6 +203,11 @@ publish() { # publish <prod|draft> <project>
   else out="$(cd "$root" && vercel_run deploy --yes)"; rc=$?; fi
   if (( rc != 0 )); then
     printf '%s\n' "$out" | tail -5
+    # Neither a token nor a `vercel login` session: say that, with ONE step.
+    if [[ -z "$(_vercel_token)" ]] && { vercel_login_state; (( $? == 3 )); }; then
+      blocked 2 "no hosting login on this computer: no Vercel token and no vercel login session (CLI: $VERCEL_WHERE)" \
+        "$HOSTING_LOGIN_NEXT, then rerun tools/publish.sh"
+    fi
     blocked 2 "vercel deploy exited $rc in $root (CLI: $VERCEL_WHERE)" \
       "give this machine the operator's Vercel credential — VERCEL_TOKEN=... in ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/spec-protocol/operator.env, or \`vercel login\` — then rerun tools/publish.sh"
   fi
@@ -318,6 +323,16 @@ EOF
   if (( rc == 2 )) && grep -q 'HOSTING-BLOCKED: vercel deploy exited 1' "$L" && [[ "$out" == *"NEXT |"* ]]; then
     echo "SELFTEST ok   failed deploy -> rc 2, HOSTING-BLOCKED and a named next step"
   else echo "SELFTEST FAIL failed-deploy case: rc=$rc"; fails=1; fi
+
+  # case 5b: no token anywhere and no `vercel login` session -> the blocked line says
+  # so and the next step is the one plain login step
+  : > "$L"; printf '#!/bin/sh\necho "Error: No existing credentials found. Please run \\`vercel login\\` or pass --token"\nexit 1\n' > "$t/bin/vercel"
+  out="$(env -u VERCEL_TOKEN PATH="$t/bin:$PATH" CLAUDE_CONFIG_DIR="$t/nocfg" PUBLISH_VERCEL_CMD="$t/bin/vercel" \
+           PUBLISH_GUARD_CMD="$t/bin/guard" PUBLISH_WAIT=0 PUBLISH_TRIES=2 bash "$SELF" --draft "$t/p" 2>&1)"; rc=$?
+  if (( rc == 2 )) && grep -q 'HOSTING-BLOCKED: no hosting login on this computer' "$L" \
+     && [[ "$out" == *"NEXT | open Terminal on this computer, type vercel login"* ]]; then
+    echo "SELFTEST ok   no token and no login -> rc 2, HOSTING-BLOCKED names the one login step"
+  else echo "SELFTEST FAIL no-login case: rc=$rc"; fails=1; fi
 
   # case 6: a profiled project (a folder name with spaces) whose targets are desktop +
   # self-hosted: Vercel is never called; PUBLISHED status=artifact and HOSTING-SELF land

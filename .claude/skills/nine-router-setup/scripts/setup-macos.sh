@@ -422,6 +422,29 @@ set_operator_key() {
   { if [ -f "$f" ]; then grep -v "^$2=" "$f" || true; fi; printf '%s=%s\n' "$2" "$3"; } > "$tmp" && mv "$tmp" "$f"
 }
 
+# The scheduled tick (spec-protocol's five-minute cron line) is a background
+# job, and macOS privacy CAN refuse such a job ~/Desktop, ~/Documents and
+# ~/Downloads. It does not always: cron ticks have run inside ~/Downloads on a
+# Mac whose privacy list holds no entry for cron at all. So a missing entry is
+# NOT proof of a block, and the only proof is a cron-context read failing,
+# which setup never stages (it never writes the crontab). This check therefore
+# says GRANTED (cron holds an explicit Full Disk Access entry) or UNDETERMINED,
+# never "blocked"; a real block is named by the tick itself, on the actual
+# "Operation not permitted" (TICK-BLOCKED-BY-PRIVACY). The read is READ-ONLY and
+# setup never changes a privacy setting; the fix is printed, with the command
+# that opens its settings page.
+FDA_PANE="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+cron_privacy_check() {
+  local db="/Library/Application Support/com.apple.TCC/TCC.db" n v
+  n="$(sqlite3 -readonly "$db" 'SELECT count(*) FROM access' 2>/dev/null)" || n=""
+  case "$n" in
+    ''|0|*[!0-9]*) ;;
+    *) v="$(sqlite3 -readonly "$db" "SELECT auth_value FROM access WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='/usr/sbin/cron'" 2>/dev/null)" || v=""
+       [ "$v" = 2 ] && { CRON_FDA_LINE="GRANTED"; return 0; } ;;
+  esac
+  CRON_FDA_LINE="UNDETERMINED - no proof either way (no Full Disk Access entry for cron is not proof of a block); new projects go to ~/Projects, which needs none, and the tick names a real block itself (TICK-BLOCKED-BY-PRIVACY). If that line ever appears, the one step: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on. Open that page with: open \"$FDA_PANE\""
+}
+
 main() {
   # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
   # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
@@ -1117,6 +1140,24 @@ main() {
     });
   ' 2>/dev/null || true)"
   PASSWORD_NOTE=""
+  #     (e) The scheduled tick's macOS privacy (read-only probe; see
+  #     cron_privacy_check). Setup does not arm the tick (the skill does, per
+  #     project); this is where the machine is readied for it. Never fatal.
+  cron_privacy_check
+  log "Scheduled tick (cron) Full Disk Access: ${CRON_FDA_LINE%% - *}"
+
+  #     (f) Hosting login, reported NOW (an operator note at setup time) and
+  #     not first at publish time: spec-protocol's deploy-auth.sh --check runs
+  #     `vercel whoami` with the operator token when one is recorded, else the
+  #     machine's own `vercel login` session. Never fatal; no new auth flow.
+  if [ -n "$SPEC_SRC" ] && [ -f "$SPEC_SRC/tools/deploy-auth.sh" ]; then
+    HOSTING_LOGIN_LINE="$(NINE_ROUTER_NPM_PREFIX="$NINE_PREFIX" bash "$SPEC_SRC/tools/deploy-auth.sh" --check 2>/dev/null | tail -1)" || true
+    [ -n "$HOSTING_LOGIN_LINE" ] || HOSTING_LOGIN_LINE="HOSTING-LOGIN: UNDETERMINED reason=deploy-auth.sh --check printed nothing"
+  else
+    HOSTING_LOGIN_LINE="HOSTING-LOGIN: UNDETERMINED reason=spec-protocol tools/deploy-auth.sh not found"
+  fi
+  log "Hosting login: $HOSTING_LOGIN_LINE"
+
   if [ "$(printf '%s' "$CONFIG_REPORT" | "$NODE_BIN" -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const r=JSON.parse(s)||{};process.stdout.write(r.mustChangePassword?"true":"false")}catch{process.stdout.write("false")}})' 2>/dev/null || echo false)" = "true" ]; then
     PASSWORD_NOTE="
 Dashboard: the password is the default \`123456\`; change it yourself in the dashboard when you are ready."
@@ -1142,6 +1183,8 @@ Ultracode default: $ULTRACODE_DEFAULT_LINE
 spec-protocol hooks: $HOOKS_STATUS
 $HOOKS_DETAIL
 GitHub sign-in: $GH_AUTH_LINE
+Hosting login (operator note; publishing needs it): $HOSTING_LOGIN_LINE
+Scheduled tick (cron) Full Disk Access: $CRON_FDA_LINE
 Operator backup owner: $OPERATOR_REMOTE_LINE
 Operator keys recorded: $OPERATOR_KEYS_LINE
 Normal claude routing: UNCHANGED

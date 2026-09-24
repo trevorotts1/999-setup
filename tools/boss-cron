@@ -46,7 +46,7 @@ Carried forward from the interim boss:
            workstream, then re-dispatch it from its last clean checkpoint the
            RIGHT way. CONTROL/workflow-pids.json remains for out-of-process
            runs only.
-  ENTRY-MODE: every project folder under ~/Downloads/projects whose
+  ENTRY-MODE: every project folder under ~/Projects or ~/Downloads/projects whose
            CONTROL/project_state.json records a run (any truthy run_status)
            must carry an `ENTRY-MODE: interview|pointed` line in its
            CONTROL/LEDGER.md.
@@ -177,7 +177,20 @@ BOSS_EPOCH = os.path.join(STATE_DIR, "boss-cron-enforcement-epoch")
 # Env-overridable like the other paths (1.16.3 portability pattern) — this one
 # was missed, which left the entry-mode and RESEARCH-READY gates untestable
 # without writing fixtures into the operator's real projects folder.
-PROJECTS = os.environ.get("BOSS_PROJECTS") or os.path.expanduser("~/Downloads/projects")
+# New projects live in ~/Projects (macOS privacy can keep cron out of Downloads);
+# older ones stay in ~/Downloads/projects and are never orphaned, so BOTH are
+# scanned. BOSS_PROJECTS overrides with one or more roots joined by os.pathsep.
+PROJECT_ROOTS = (os.environ.get("BOSS_PROJECTS", "").split(os.pathsep)
+                 if os.environ.get("BOSS_PROJECTS")
+                 else [os.path.expanduser("~/Projects"), os.path.expanduser("~/Downloads/projects")])
+
+
+def project_dirs():
+    """Every project folder under every root that exists, root by root, by name."""
+    for root in PROJECT_ROOTS:
+        if os.path.isdir(root):
+            for name in sorted(os.listdir(root)):
+                yield name, os.path.join(root, name)
 SETTINGS_STORES = [
     os.path.expanduser("~/.claude/settings.json"),
     os.path.expanduser("~/.claude-nine/settings.json"),
@@ -1039,17 +1052,14 @@ def check_stages(lines):
 
 
 def check_entry_mode():
-    """Entry-mode gate enforcement: any project folder under ~/Downloads/projects whose
+    """Entry-mode gate enforcement: any project folder under ~/Projects or ~/Downloads/projects whose
     CONTROL/project_state.json records a run (any truthy run_status) must carry
     an ENTRY-MODE: interview|pointed line in its CONTROL/LEDGER.md. Folders
     never created by a spec-protocol run (no project_state.json, or no
     run_status field) are untouched."""
     missing = []
-    if not os.path.isdir(PROJECTS):
-        return missing
     entry_re = re.compile(r"^ENTRY-MODE:\s*(interview|pointed)\s*$")
-    for name in sorted(os.listdir(PROJECTS)):
-        pdir = os.path.join(PROJECTS, name)
+    for name, pdir in project_dirs():
         if not os.path.isdir(pdir):
             continue
         state = os.path.join(pdir, "CONTROL", "project_state.json")
@@ -1173,10 +1183,7 @@ def check_research_ready():
     current lines, is a violation. Projects never created by a spec-protocol run
     (no project_state.json, or a run_status explicitly not a run) are untouched."""
     bad = []
-    if not os.path.isdir(PROJECTS):
-        return bad
-    for name in sorted(os.listdir(PROJECTS)):
-        pdir = os.path.join(PROJECTS, name)
+    for name, pdir in project_dirs():
         if not os.path.isdir(pdir):
             continue
         state = os.path.join(pdir, "CONTROL", "project_state.json")

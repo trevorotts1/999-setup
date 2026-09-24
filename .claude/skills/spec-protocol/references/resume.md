@@ -126,7 +126,8 @@ verdicts, never trusted as state.
 
 3. RECONCILE THE VERDICTS, WITH A DENOMINATOR. Count: work items in the
    master spec; artifacts on disk; verdicts present; passed-but-unlanded
-   (feed the train); failed (fixers, one per finding); blocked (leave,
+   (feed the train); failed (one repair packet each, to the original builder,
+   within the budget read from the ledger or bound state); blocked (leave,
    list); branch-but-no-verdict (judges); items with neither (builders);
    holding-pen items ready-to-apply. Never report a bare number. Too many
    to read directly → dispatch a reader agent. Never grep.
@@ -256,8 +257,11 @@ verdicts, never trusted as state.
    completeness check (Rule 3.29) — a resumed dispatch is the easiest place
    to send an agent out short of context. Builders → the first unbuilt
    dispatchable item. Judges → the first unjudged pushed branch, never the
-   model that built it. Fixers → one per finding, in parallel, never the
-   judge that failed it. The train → anything passed-but-unlanded. Write
+   model that built it. Repairs → one packet per failed unit, every blocking
+   finding in it, to that unit's ORIGINAL builder seat (its rescue after two
+   failed corrections), units in parallel, never the judge that failed it; read
+   each unit's spent verdicts and submissions first (`references/pipeline.md`
+   Stage 3), and never re-fire a parked unit. The train → anything passed-but-unlanded. Write
    each dispatch to the dispatch log BEFORE it fires.
 
 10. CONFIRM NO NAMED STOP WAS CROSSED — by checking the EFFECT, not the

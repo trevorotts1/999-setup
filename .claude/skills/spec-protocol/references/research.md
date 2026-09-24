@@ -206,6 +206,15 @@ app:
    app gets BETTER than what exists.
 5. **The source** — a link the user can open.
 
+**Donor candidates — the least-work route.** The same reader also lists
+license-compatible open-source repositories whose code this build could adapt
+instead of writing it: per repository, its URL, its license (read from its
+LICENSE file, never guessed), its default branch's current commit, and the
+paths worth reusing. AGPL or unlicensed code is listed as refused unless the
+owner approves it. The accepted ones go into `<workdir>/donors.json` (or the
+profile's `donors`, or `docs/upstream-lock.json`) and are fetched at step 8.5
+by `tools/donors.sh` (SKILL.md section 6).
+
 **Where the findings go:**
 
 - **The master spec** — the "mirror" features that the user confirms belong in
