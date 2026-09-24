@@ -7,11 +7,14 @@ export const meta = {
 // NAME: replace the placeholder for every launch -- <program>-W<wave>-<phase>-<firstID>[..<lastID>]-<lanes>L
 // (references/workflows.md section 4): program = project slug, ids with dashes removed, lanes = units passed (one builder or judge per unit at a time).
 // agents: args.units.length * 2   (one builder + one judge per unit; read by the dispatch gate)
-// args: { project: "<home>", seats: { build: "<seat>", judge: "<seat>" },
+// args: { project: "<home>", seats: { build: "<seat>", judge: "<seat>" },   -- on a profiled project
+//         build = policy.builderRoute and judge = policy.qcRoute (tools/project-profile.mjs fields),
 //         units: [{ id: "UNIT-001", card: "SPEC/MASTER-SPEC-<date>.md#UNIT-001", branch: "unit/UNIT-001", repo: "<path>", base: "<frozen base ref>" }] }
 // Each builder works ONLY in its own worktree <repo>/.worktrees/<id> on its own branch;
 // tools/merge-train.sh merges those branches and removes the worktrees once landed.
 // One pipeline: each unit's judge fires as soon as THAT unit's build lands (no barrier).
+// Each result carries the builder's identity (builtBy = its seat, builder = its label):
+// a FAIL goes back to THAT builder seat in templates/workflows/fix-wave.js, never a fresh one.
 // Book the tree in CONTROL/dispatch-log.md before launching (SHAPE 7).
 const units = args.units
 const seats = args.seats
@@ -29,9 +32,18 @@ const RESULT = {
   properties: { id: { type: 'string' }, status: { type: 'string', enum: ['BUILT', 'BLOCKED'] }, commit: { type: 'string' }, note: { type: 'string' } },
   required: ['id', 'status'],
 }
+const FINDING = {
+  type: 'object',
+  properties: { repro: { type: 'string' }, expected: { type: 'string' }, actual: { type: 'string' }, location: { type: 'string' },
+    diagnosis: { type: 'string' }, fix: { type: 'string' }, verify: { type: 'string' } },
+  required: ['repro', 'expected', 'actual', 'location', 'diagnosis', 'fix', 'verify'],
+}
+// finding = the largest gap, one line; findings = EVERY blocking finding, which the
+// conductor merges with the other judge's into the unit's ONE repair packet.
 const VERDICT = {
   type: 'object',
-  properties: { id: { type: 'string' }, verdict: { type: 'string', enum: ['PASS', 'FAIL', 'BLOCKED'] }, score: { type: 'number' }, finding: { type: 'string' } },
+  properties: { id: { type: 'string' }, verdict: { type: 'string', enum: ['PASS', 'FAIL', 'BLOCKED'] }, score: { type: 'number' },
+    finding: { type: 'string' }, findings: { type: 'array', items: FINDING } },
   required: ['id', 'verdict'],
 }
 
@@ -44,9 +56,11 @@ return await pipeline(units,
     `cd into ${wt(u)} and do all work there. Touch only the paths your card lists. ` +
     `Run the card's VERIFY commands, commit on your branch (no AI trailers); do not push (the merge train publishes). Return id, status, commit sha.`,
     { model: seats.build, phase: 'Build', label: `build:${u.id}`, schema: RESULT }),
-  (built, u) => agent(
+  async (built, u) => ({ ...(await agent(
     `Judge unit ${u.id} blind: you are not told how it was built. ` + scratch(u) + `Card: ${u.card}. Branch ${u.branch} in ${u.repo}, checked out at ${wt(u)}` +
     (built && built.commit ? ` at ${built.commit}` : '') + `. Run the card's QC section (never its VERIFY), score it against ` +
-    `the ten categories in the QUALITY-CONTROL rulebook, quote the evidence. PASS needs 8.5+. Return id, verdict, score, finding.`,
-    { model: seats.judge, phase: 'Judge', label: `judge:${u.id}`, schema: VERDICT }),
+    `the ten categories in the QUALITY-CONTROL rulebook, quote the evidence. PASS needs 8.5+. Return id, verdict, score, finding (the largest gap), and findings: EVERY blocking finding, each with ` +
+    `repro, expected, actual, location, diagnosis, the ordered fix, and the exact verify command.`,
+    { model: seats.judge, phase: 'Judge', label: `judge:${u.id}`, schema: VERDICT })),
+    builtBy: seats.build, builder: `build:${u.id}`, commit: built && built.commit }),
 )

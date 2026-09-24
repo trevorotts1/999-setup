@@ -1135,7 +1135,7 @@ without any extra arrangement.
 |---|---|---|---|
 | Conductor (plans, dispatches, judges evidence, merges decisions) | Opus — the session model; the launcher starts the session on Opus and the skill reports if it is not | `opus` alias | none |
 | WF01 planners | Opus | `opus` alias | none |
-| Builders and repair agents | Opus (the strongest lane) | `opus` alias (DeepSeek V4 Flash on the operator's box) | sets the governing number |
+| Builders, integrators, repair and rescue agents | Opus (the strongest lane) | `opus` alias (DeepSeek V4 Flash on the operator's box) | sets the governing number |
 | Blind visual judges (unit and integrated) | Sonnet | `haiku` alias where it resolves to a vision-proven model (MiniMax on the operator's box), else `sonnet` alias | must differ from the builder by the family rule; vision proven by probe before the first verdict |
 | Technical judges | Sonnet | `sonnet` alias (DeepSeek V4 Pro on the operator's box) | must differ from the builder by the family rule |
 | Release council | Sonnet | `sonnet` alias | must differ from the builder |
@@ -1144,6 +1144,17 @@ without any extra arrangement.
 
 Every `agent()` call carries `model:`; a bare call is a defect the dispatch gate
 refuses.
+
+**Profile routes override this table.** When the project profile
+(`.spec-protocol.json`) carries `policy.builderRoute` and `policy.qcRoute` — read them
+with `tools/project-profile.mjs fields <project>` (`builderRoute`, `qcRoute`) — those
+ARE the seat routes: builders, integrators, repair agents and the rescue builder run on
+`builderRoute`; the blind visual judge, the technical judge and the release council run
+on `qcRoute`. The rows above then apply only to the seats a profile does not name
+(conductor, planners, readers, merge writer). The independence rule still binds: the two
+routes must resolve to different models by the family rule, and the visual judge's
+vision is still proven by probe on `qcRoute`; a profile whose two routes collapse onto one
+model is a PROFILE-DEFECT (`references/conductor.md`), never a silent self-judge.
 
 **The alias column is a lane, never a model id.** The parenthesised model names
 are what those aliases happened to resolve to on the operator's box and are
