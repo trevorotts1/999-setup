@@ -225,20 +225,21 @@ FAIL if: <exact condition> → incomplete because <reason>
   proof, merge record — the judge writes these; this is where the refused verdict
   tickets and digest live); (c) the restart steps (the literal resume procedure,
   verbatim with real paths; this is where the refused resume playbook lives).
-  **Every verdict block records the per-finding cycle count AND the finding's
-  full history** — which cycle this finding is on, of the legacy 20-cycle fix cap
-  (`references/pipeline.md`), as "cycle count: n of 20", plus every
-  prior cycle's exact finding, fix applied (commit/branch), and re-judge
-  result, appended as the loop runs — so a session resuming cold after a crash
-  or a compaction reads which cycle a finding is on AND what has already been
-  tried directly from the block instead of reconstructing it from ledger
-  history. The history IS the payload of the legacy escalation: after the 20th failed
-  loop, the item escalates to the operator with the full finding history, never
-  a relabeled pass (the QC protocol's loop mechanics). Recorded by whichever
-  role writes that verdict block (the judge on a Gate 1/2 finding; the critic
-  on a Gauntlet Gate 3 finding, `references/gauntlet.md` Section 5). An adopted profile
-  does not create this CONTROL ledger: its bound state records the root-budget count and
-  escalation evidence instead of a generic `n of 20` record.
+  **Every verdict block records the unit's repair round AND its full history** —
+  which round this is, against the per-task budget (`references/pipeline.md` Stage 3:
+  `policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4 each; one round of
+  both judges is one QC verdict), as "round: n of <max>", plus every prior round's
+  repair packet (every blocking finding from both judges), the fix applied
+  (commit/branch), who made it (the original builder, or the rescue builder), and the
+  re-judge result, appended as the loop runs — so a session resuming cold after a crash
+  or a compaction reads which round a unit is on AND what has already been tried
+  directly from the block instead of reconstructing it from ledger history. The history
+  IS the payload of the escalation: when the one rescue fails or the budget is spent,
+  the unit is parked and escalates to the operator with the full history, never a
+  relabeled pass. Recorded by whichever role writes that verdict block (the judge on a
+  Gate 1/2 finding; the critic on a Gauntlet Gate 3 finding, `references/gauntlet.md`
+  Section 5). An adopted profile does not create this CONTROL ledger: its bound state
+  records the spent submissions and verdicts and the escalation evidence instead.
   **Every verdict block opens with the QC RECORD** — the six-field format
   defined in `references/pipeline.md` Stage 2 and `PROMPT-QC-INSTRUCTIONS.md`,
   whose exact field order is the LEDGER VOCABULARY table in this file — read it
@@ -812,7 +813,7 @@ not count against the closed seventeen and never need the added-document ask:
     "locked": [ {"component":"<id>","files":["<path>"],"locked_at":"<ISO>",
                  "evidence":"<ledger anchor>","reopen_requires":
                  "dependency-change|proven-regression|approved-architecture-change"} ],
-    "defects_open": [ {"id":"<F-n>","unit":"<id>","cycle":"<n> of 20","summary":"<one line>"} ],
+    "defects_open": [ {"id":"<F-n>","unit":"<id>","round":"<n> of <maxQCVerdicts, else 4>","summary":"<one line>"} ],
     "tests": { "last_suite": {"ts":"<ISO>","result":"PASS|FAIL","failed":["<name>"]} },
     "tasks": { "snapshot_ts": "<ISO>",
                "counts": {"pending":<int>,"in_progress":<int>,"completed":<int>},
