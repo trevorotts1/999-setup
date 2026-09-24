@@ -342,9 +342,11 @@ install_launcher_support() {
     [ -f "$REPO_ROOT/launchers/macos/$f" ] || fail "launcher helper missing from the repo: launchers/macos/$f"
     install -m 755 "$REPO_ROOT/launchers/macos/$f" "$HOME/.local/bin/$f"
   done
-  # The launcher re-applies the 9Router catalog fix on every launch.
+  # The launcher re-applies the 9Router catalog and tool-name fixes on every
+  # launch. The tool-name fix imports the catalog fix, so they travel together.
   install -m 644 "$COMMON/fix-9router-catalog.mjs" "$HOME/.local/bin/fix-9router-catalog.mjs"
-  log "installed claude-code-lib.sh, get-9router-key.sh and fix-9router-catalog.mjs in $HOME/.local/bin"
+  install -m 644 "$COMMON/fix-9router-toolnames.mjs" "$HOME/.local/bin/fix-9router-toolnames.mjs"
+  log "installed claude-code-lib.sh, get-9router-key.sh, fix-9router-catalog.mjs and fix-9router-toolnames.mjs in $HOME/.local/bin"
 }
 
 # Create $HOME/.claude-nine/settings.json ONLY when absent (never overwrites a
