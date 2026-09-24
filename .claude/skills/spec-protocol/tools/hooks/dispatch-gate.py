@@ -52,9 +52,11 @@ description, or the first line of its prompt, carries "build" gets SHAPES 8, 9
 and 10 exactly as a Workflow build does; every other Agent call (reader,
 researcher, judge) passes in silence. Shapes 1-7 are facts about a Workflow
 script and do not apply to a single agent. A READER is never a build, whatever
-else its prompt says (round 7): its description or subagent_type says read,
-reader, research, explore or audit-read; or its prompt's first 200 characters
-say READ-ONLY / read-only / "You are a reader"; or subagent_type is Explore.
+else its prompt says (round 7): its prompt's first 200 characters say
+READ-ONLY / read-only / "You are a reader"; or subagent_type is Explore; or its
+description says read, reader, research, explore or audit-read AND names no
+build, implement, fix, repair, write, edit, code, merge or deploy (so "read the
+spec then build unit 3" is still a build).
 The skill owes a reader dispatch before the first confirm sentence, long before
 repo-anchor, so an incidental "build" ("a reader for a build run") must not
 hold it to SHAPES 8-10.
@@ -231,6 +233,8 @@ BUILD_LABEL_RE = re.compile(r"build", re.I)
 # label, so "You are a reader for a build run" stays a reader.
 READER_LABEL_RE = re.compile(r"\b(read(er|ers|ing|s)?|research\w*|explor\w*|audit-read)\b", re.I)
 READER_PROMPT_RE = re.compile(r"READ-ONLY|read-only|You are a reader")
+# A reader-worded description that also names work is a builder, not a reader.
+READER_VETO_RE = re.compile(r"\b(build|implement|fix|repair|write|edit|code|merge|deploy)\b", re.I)
 
 # The absolute per-project ceiling. A state file may lower it and may never
 # raise it, which is why the state value is taken only when it is SMALLER --
@@ -1008,8 +1012,8 @@ def is_reader_agent(ti):
     desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
     kind = ti.get("subagent_type") if isinstance(ti.get("subagent_type"), str) else ""
     prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
-    return (kind == "Explore" or bool(READER_LABEL_RE.search(desc + "\n" + kind))
-            or bool(READER_PROMPT_RE.search(prompt[:200])))
+    return (bool(READER_PROMPT_RE.search(prompt[:200])) or kind == "Explore"
+            or (bool(READER_LABEL_RE.search(desc)) and not READER_VETO_RE.search(desc)))
 
 
 def is_research_reader(code, declared):
@@ -2049,12 +2053,18 @@ def selftest():
         "Read every file and report."), readerdir)
     rc_ex, _ = _run_child(reader_event("scan units", "build nothing, list the files", "Explore"), readerdir)
     rc_bu, out_bu = _run_child(reader_event("Agent build unit", "build unit u01\nwrite the code"), readerdir)
+    # The loophole: a builder whose description merely starts with "read".
+    rc_lh, out_lh = _run_child(reader_event("read the spec then build unit 3",
+                                            "build unit u03\nwrite the code"), readerdir)
     report(43, "reader-never-a-build",
-           rc_rd == 0 and rc_ex == 0 and rc_bu == 2 and "SHAPE 9" in out_bu,
+           rc_rd == 0 and rc_ex == 0 and rc_bu == 2 and "SHAPE 9" in out_bu
+           and rc_lh == 2 and "SHAPE 9" in out_lh,
            "reader 'Read client packet docs' / 'READ-ONLY ... for a build run' -> rc=%d (want 0)%s; "
            "Explore -> rc=%d (want 0); 'Agent build unit' with no receipt -> rc=%d (want 2), "
-           "SHAPE 9 named: %s" % (rc_rd, "" if rc_rd == 0 else " -- " + out_rd.strip()[:200],
-                                  rc_ex, rc_bu, "yes" if "SHAPE 9" in out_bu else "NO"))
+           "SHAPE 9 named: %s; 'read the spec then build unit 3' -> rc=%d (want 2), SHAPE 9 named: %s"
+           % (rc_rd, "" if rc_rd == 0 else " -- " + out_rd.strip()[:200],
+              rc_ex, rc_bu, "yes" if "SHAPE 9" in out_bu else "NO",
+              rc_lh, "yes" if "SHAPE 9" in out_lh else "NO"))
 
     # 16 -- fix #6: a local-only receipt (no origin by design) is accepted.
     #       Its remote field names something origin does not: the old origin
