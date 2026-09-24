@@ -423,33 +423,26 @@ set_operator_key() {
 }
 
 # The scheduled tick (spec-protocol's five-minute cron line) is a background
-# job: macOS privacy refuses it ~/Desktop, ~/Documents and ~/Downloads unless
-# cron has Full Disk Access. New projects live in ~/Projects, which needs none;
-# a client-supplied folder in a protected place does. The probe is a READ-ONLY
-# query of the system privacy list, which this shell can read only when the
-# terminal itself has Full Disk Access; otherwise the answer is UNDETERMINED.
-# Setup never changes a privacy setting: it names the one step and offers to
-# open the settings page.
+# job, and macOS privacy CAN refuse such a job ~/Desktop, ~/Documents and
+# ~/Downloads. It does not always: cron ticks have run inside ~/Downloads on a
+# Mac whose privacy list holds no entry for cron at all. So a missing entry is
+# NOT proof of a block, and the only proof is a cron-context read failing,
+# which setup never stages (it never writes the crontab). This check therefore
+# says GRANTED (cron holds an explicit Full Disk Access entry) or UNDETERMINED,
+# never "blocked"; a real block is named by the tick itself, on the actual
+# "Operation not permitted" (TICK-BLOCKED-BY-PRIVACY). The read is READ-ONLY and
+# setup never changes a privacy setting; the fix is printed, with the command
+# that opens its settings page.
 FDA_PANE="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 cron_privacy_check() {
-  local db="/Library/Application Support/com.apple.TCC/TCC.db" n v ans
+  local db="/Library/Application Support/com.apple.TCC/TCC.db" n v
   n="$(sqlite3 -readonly "$db" 'SELECT count(*) FROM access' 2>/dev/null)" || n=""
   case "$n" in
-    ''|0|*[!0-9]*) CRON_FDA_LINE="UNDETERMINED - this terminal cannot read the macOS privacy list" ;;
-    *)
-      if v="$(sqlite3 -readonly "$db" "SELECT auth_value FROM access WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='/usr/sbin/cron'" 2>/dev/null)"; then
-        [ "$v" = 2 ] && { CRON_FDA_LINE="GRANTED"; return 0; }
-        CRON_FDA_LINE="NOT GRANTED"
-      else
-        CRON_FDA_LINE="UNDETERMINED - the macOS privacy list could not be queried"
-      fi ;;
+    ''|0|*[!0-9]*) ;;
+    *) v="$(sqlite3 -readonly "$db" "SELECT auth_value FROM access WHERE service='kTCCServiceSystemPolicyAllFiles' AND client='/usr/sbin/cron'" 2>/dev/null)" || v=""
+       [ "$v" = 2 ] && { CRON_FDA_LINE="GRANTED"; return 0; } ;;
   esac
-  CRON_FDA_LINE="$CRON_FDA_LINE - matters only for a project kept in Desktop, Documents or Downloads (new projects go to ~/Projects). One step: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on. Open that page with: open \"$FDA_PANE\""
-  if [ -t 0 ]; then
-    printf 'Scheduled tick: cron Full Disk Access is %s. Open that settings page now? [y/N] ' "${CRON_FDA_LINE%% - *}" >&2
-    read -r ans || ans=""
-    case "$ans" in [yY]*) open "$FDA_PANE" || log "WARNING: could not open the Full Disk Access settings page" ;; esac
-  fi
+  CRON_FDA_LINE="UNDETERMINED - no proof either way (no Full Disk Access entry for cron is not proof of a block); new projects go to ~/Projects, which needs none, and the tick names a real block itself (TICK-BLOCKED-BY-PRIVACY). If that line ever appears, the one step: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on. Open that page with: open \"$FDA_PANE\""
 }
 
 main() {

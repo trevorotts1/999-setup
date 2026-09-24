@@ -36,9 +36,9 @@ document per loop, not a CONTROL artifact — v4 13.1 puts it there). There is N
 MERGE-LOG.md anywhere — its content is a section of the ledger (document 6).
 
 A new project lives in `~/Projects/<project-slug>/`. macOS privacy protection
-blocks background jobs such as the five-minute cron tick from reading
-`~/Desktop`, `~/Documents` and `~/Downloads`; `~/Projects` is not protected, so
-the tick can read it without any permission. A folder the client supplies is
+can block background jobs such as the five-minute cron tick from reading
+`~/Desktop`, `~/Documents` and `~/Downloads` (not on every Mac); `~/Projects` is
+not protected, so the tick can read it without any permission. A folder the client supplies is
 used where it is and never moved; if it sits in a protected folder, the tick
 names the block (`TICK-BLOCKED-BY-PRIVACY:`, `tools/watch-tick.sh`).
 

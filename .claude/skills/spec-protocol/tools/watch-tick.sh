@@ -17,8 +17,9 @@
 #         */5 * * * * bash <skill>/tools/watch-tick.sh <project> \
 #                     --log <project>/CONTROL/watch-tick.log
 #       The script opens its own log (--log), never cron's shell: a `>>` the
-#       shell cannot open (macOS privacy on ~/Desktop, ~/Documents,
-#       ~/Downloads) would stop the tick before it ran, with nothing named.
+#       shell cannot open (where macOS privacy refuses cron ~/Desktop,
+#       ~/Documents or ~/Downloads) would stop the tick before it ran, with
+#       nothing named.
 #       See 4h, TICK-BLOCKED-BY-PRIVACY.
 #       It runs whether or not a session is alive, whether or not the model is
 #       thinking, whether or not anybody is awake. It NEVER dispatches: scripts
@@ -1575,9 +1576,11 @@ report_note() {  # report_note <line> -> appended under the newest morning repor
 }
 
 #------------------------------------------------------------------------------
-# 4h. MACOS PRIVACY (TCC). cron is a background job: without Full Disk Access,
-#     macOS refuses it ~/Desktop, ~/Documents and ~/Downloads with "Operation
-#     not permitted", so the tick can read neither the project nor its log.
+# 4h. MACOS PRIVACY (TCC). cron is a background job, and macOS CAN refuse it
+#     ~/Desktop, ~/Documents and ~/Downloads with "Operation not permitted" (not
+#     on every Mac: cron has read ~/Downloads on one with no Full Disk Access
+#     entry for cron). So only that actual error is the block; when it comes,
+#     the tick can read neither the project nor its log.
 #     It then writes ONE named line OUTSIDE the project, to
 #     ${XDG_STATE_HOME:-~/.local/state}/spec-protocol/tick-blocked/<key>, and
 #     exits 2; every later blocked tick finds that record and exits 2 silently —
