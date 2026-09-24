@@ -110,7 +110,7 @@ through a shell, validated by `project-profile.mjs` before any helper reads them
   present, each is the project's own CEILING. Width = `min(harness/provider width, the profile
   ceiling)`, read via `project-profile.mjs policy <project>` (JSON, only the keys the profile
   set) or the combined `project-profile.mjs fields <project>` (workDir, ceiling, refresh,
-  merged, repo). Never plan above the ceiling; when a key is absent, current (unprofiled)
+  merged, repo, builderRoute, qcRoute, maxBuilderSubmissions, maxQCVerdicts). Never plan above the ceiling; when a key is absent, current (unprofiled)
   behavior for that key.
 
 **The quality floor is universal.** Every profile retains the ten-category score floor of at
@@ -118,13 +118,14 @@ least 8.5 plus mandatory behavior, scope, evidence, and independent reference co
 Profiles cannot lower, disable, or replace any of those PASS conditions; their validator may
 add project-specific conditions.
 
-**Profile repair and delivery bounds are state-owned.** Do not apply the universal legacy
-twenty-cycle finding counter to an adopted profile. Its canonical state applies
+**Profile repair and delivery bounds are state-owned.** Its canonical state applies
 `policy.maxBuilderSubmissions` and `policy.maxQCVerdicts` across every child of one root task;
 for an adopted profile that is at most its declared builder deliveries for that root, not per
-child and not an additional twenty largest-gap retries. The one-largest-gap rule
-still determines the next repair payload, but it spends the same root-bound builder/QC budget
-and the packet writer rejects a further reservation. The profile may expose a different explicit
+child. The repair loop (`references/pipeline.md` Stage 3) is the same as everywhere: ONE
+repair packet of every blocking finding back to the ORIGINAL builder on `policy.builderRoute`,
+one rescue by a different builder on that route, then parked; one judging round on
+`policy.qcRoute` (both judges) is one QC verdict. Every submission and verdict spends the same
+root-bound budget, and the packet writer rejects a further reservation. The profile may expose a different explicit
 repair bound through its validator/state; if it does not, no universal default is inferred.
 
 Profiles are optional. Generic projects retain normal defaults. Record the profile path,

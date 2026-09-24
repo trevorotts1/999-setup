@@ -449,8 +449,8 @@ issues a verdict, never sees the artifact, and never ends a unit on its own.
 
 **The plateau rule — three flat rounds end the unit honestly.** A unit whose
 `best` rises by **less than 0.3 for three consecutive rounds** has PLATEAUED:
-the loop for that unit ENDS at that round, without a legacy twentieth cycle and
-without an escalation. The arithmetic is read straight off the SCORE lines —
+the loop for that unit ENDS at that round, without a rescue and without an
+escalation. The arithmetic is read straight off the SCORE lines —
 three consecutive rounds with `delta < 0.3`, counted from round 2 onward (round
 1 has no previous best, so the earliest a unit can plateau is round 4). On a
 plateau, in this order:
@@ -471,13 +471,13 @@ plateau, in this order:
    no judge may write it (`references/pipeline.md` Stage 2, check 5).
 4. **Move on.** The next unit dispatches immediately. A plateaued unit never
    holds the queue, never waits up for the client, and never converts into a
-   twenty-cycle escalation.
+   rescue or an escalation.
 
 The client keeps the three choices the promise gives them — accept it as it is,
 ask for one more round on just that one gap, or pick an easier example to
 measure against. A plateau is an HONEST STOP: not a pass, not a failure (Section
-9 gives it its obligations). It exists to replace most twenty-cycle escalations
-with a four-round truthful answer. The reference run this method comes from
+9 gives it its obligations). It exists so a unit that has stopped improving gets a
+truthful answer instead of spending the rest of its repair budget. The reference run this method comes from
 climbed for five rounds and then said plainly that the bar might be unrealistic
 and that the scores would plateau; saying the same thing at round four is the
 same honesty, bought four rounds earlier and for a fraction of the budget.
@@ -950,7 +950,7 @@ record. It is its own ending — an honest one — and its obligations are these
 - **Print the curve** in the morning report so the client can see the shape of
   the climb and where it flattened (`references/documents.md`, document 14).
 - **Move on immediately.** The next unit dispatches; the plateau never holds the
-  queue and never becomes a twenty-cycle escalation.
+  queue and never becomes a rescue or an escalation.
 - **Wait for the client on the record, never on the run.** The three choices
   belong to the client — accept it, one more round on that one gap, or an easier
   example to measure against — and only the client's answer writes
@@ -1256,14 +1256,13 @@ and never was: it is read off the SCORE lines every judge verdict writes
 table gives (`references/documents.md`). Per unit, three consecutive rounds with
 `delta < 0.3` is a PLATEAU: that unit's loop ends there, its best checkpoint is
 preserved, its one honest gap is written (Section 9), and the budget goes to the
-next unit instead of to rounds five through twenty of a climb that has stopped
-climbing. At the `warn` line the orchestrator records the analysis AS the
+next unit instead of to more rounds of a climb that has stopped climbing. At the `warn` line the orchestrator records the analysis AS the
 per-unit curves and their deltas — the answer to "is progress still occurring"
 is arithmetic, quoted from the ledger, never an impression. The arithmetic
 matters to the budget as much as to the client: `initial` assumes three
-executions per unit, a unit that plateaus at round four has spent about twelve,
-and the same unit run to the twenty-cycle fix cap would have spent several times
-that for a build that was already as good as it was going to get. The plateau
+executions per unit, and a unit that plateaus early hands the rest of its per-task
+repair budget back instead of spending it on a build that was already as good as it
+was going to get. The plateau
 rule is therefore a BUDGET mechanism as much as an honesty one — it is what
 keeps `first_pause` a real checkpoint instead of a wall the run hits after a
 long tail of flat rounds.

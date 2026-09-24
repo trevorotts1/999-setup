@@ -308,7 +308,8 @@ item's bar (Law 48 — the named, fetchable bar on the build card's QC section
 or the B2H) the way a customer would, and returns only `A` / `B` / `TIE` /
 `UNVERIFIABLE`, with comparison evidence. The private adjudicator maps the neutral
 side: its candidate side (`A` or `B`) or `TIE` passes; the mapped bar side fails and
-returns the single largest gap; `UNVERIFIABLE` is BLOCKED. The visible verdict does not disclose which
+returns every blocking gap, largest first, into the unit's repair packet (Stage 3);
+`UNVERIFIABLE` is BLOCKED. The visible verdict does not disclose which
 side was the candidate.
 "Meets the bar exactly" IS a pass under this relationship and is never sent
 back to "exceed it". Under **meet-all-requirements** the bar is an answer-key

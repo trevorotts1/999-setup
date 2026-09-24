@@ -214,7 +214,7 @@ not a new loop; only the register row's naming makes the B2H visible:
 
 | Loop | Trigger | Interval | Owns this transition | Stop condition |
 |---|---|---|---|---|
-| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else blocked-repeated-fail at the applicable repair bound (legacy 20 cycles; profile canonical root budget), reported NOT PASSED, never PASS |
+| **Review carrying the gate (Gauntlet-aware)** | a *built* item present | derived (9.4) | *built → reviewed* and *reviewed → passed or failed* | The final comparative gate (Gate 3) passes with evidence; else, after one rescue or a spent per-task budget (profile `maxQCVerdicts` / `maxBuilderSubmissions`, else 4 each), parked as blocked-repeated-fail, reported NOT PASSED, never PASS |
 
 ---
 
@@ -238,19 +238,19 @@ A loop's stop condition is a MEASURABLE SUCCESS, never a fixed number of rounds
 (Law 35, clause 4). The B2H is the success stop: the review/gate loop stops when the
 final comparative gate passes with evidence, however many rounds that takes. The
 applicable repair cap is NOT a competing success exit — it is an OPERATIONAL
-escalation trigger. On legacy projects it fires after twenty cycles on the same
-finding (operator ruling 2026-08-14); an adopted profile's canonical root budget fires
-instead. The item is marked blocked, NOT passed,
-and the finding ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every
-cycle's finding, fix, and re-judge result — never a quiet give-up, never a
+escalation trigger. It fires when a unit's one rescue fails or its per-task budget is
+spent (`policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4 each; one round
+of both judges is one verdict). The unit is parked as blocked, NOT passed,
+and ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every
+packet, fix, and re-judge result — never a quiet give-up, never a
 relabeled pass (the QC protocol's loop mechanics, `references/pipeline.md`).
 
 The two do not conflict:
 
 | | B2H success exit | applicable repair cap |
 |---|---|---|
-| What it is | The SUCCESS stop — what PASS means | An OPERATIONAL escalation trigger — when to stop spending on a stuck finding |
-| When it fires | The final comparative gate passes with evidence | Legacy: twenty cycles on one finding with no convergence. Profile: its canonical root budget is exhausted. The item escalates with the full finding history |
+| What it is | The SUCCESS stop — what PASS means | An OPERATIONAL escalation trigger — when to stop spending on a stuck unit |
+| When it fires | The final comparative gate passes with evidence | The rescue failed, or the per-task budget is spent (profile values, else 4 verdicts and 4 submissions). The unit is parked and escalates with the full finding history |
 | What the run reports | PASS | NOT PASSED, never PASS |
 
 A limit-hit run reports NOT PASSED, never PASS. Blocked-repeated-fail, infeasible,
@@ -300,7 +300,7 @@ Each row is a loop. Each owns exactly one transition and nothing else (Law 36).
 | **1. Spec** | Interviews (4.5), runs the current-state pass, writes each work item as a section of the master specification in the build-card shape. Runs before the others and normally finishes. | *nothing → specified* | Every work item is written in the build-card shape and passes the structural check. |
 | **2. Build** | Claims the first dispatchable item, builds it, pushes, marks it *built*. Pipeline not barrier — each item judged when IT finishes. | *unbuilt → built* | No dispatchable unbuilt item remains and nothing is in a fixing state. |
 | **3. Review** | Takes a *built* item and actually runs it — the break-it pass, the mutation proof, the end-to-end run. Opens the change for approval on the remote (Law 37). Records a link a human can open and the exact steps to test it. | *built → reviewed* | No *built*-and-unreviewed item remains. |
-| **4. Gate** | Judges a *reviewed* item against the QC rulebook: ten categories with a mandatory 8.5 floor, its frozen independent bar, mandatory behavior/scope/evidence, and fail-closed rules. On a fail, writes the six-part finding and fans out one fixer per finding, bounded by the declared repair cap (legacy default: twenty). | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
+| **4. Gate** | Judges a *reviewed* item against the QC rulebook: ten categories with a mandatory 8.5 floor, its frozen independent bar, mandatory behavior/scope/evidence, and fail-closed rules. On a fail, writes every blocking finding into ONE repair packet for the unit's ORIGINAL builder seat; two failed corrections earn one rescue, then the unit is parked, inside the per-task budget (profile `maxQCVerdicts` / `maxBuilderSubmissions`, else 4 each; `references/pipeline.md` Stage 3). | *reviewed → passed* or *reviewed → failed* | No *reviewed*-and-ungated item remains. |
 
 **The gate loop's verdict carries the three-gate B2H result — every work item
 carries a Bar to Hit (references/gauntlet.md, Section 12).** The durable verdict
