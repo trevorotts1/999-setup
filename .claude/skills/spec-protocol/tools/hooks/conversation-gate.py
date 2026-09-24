@@ -94,6 +94,7 @@ CONTRACT (identical to gate0-claim-gate.py, which is proven in service)
 import json
 import os
 import re
+import shlex
 import sys
 
 ANSWERS_REL = os.path.join("00-INPUT", "ANSWERS.md")
@@ -113,6 +114,9 @@ SPEECH_CANDIDATES = [
     os.path.expanduser("~/.claude/skills/spec-protocol/tools/speech-check.sh"),
 ]
 MAX_BLOCKS = 3
+# A2 -- every "record it" reason names the real command, so a weak model obeys it.
+ANSWERS_CANDIDATES = [os.path.join(os.path.dirname(p), "answers.sh") for p in SPEECH_CANDIDATES]
+DEFAULT_RECORD_CMD = "bash <skill>/tools/answers.sh <project>"
 
 
 def _speech_check(message, home):
@@ -612,7 +616,29 @@ def _matches_pending(message, pend):
     return False
 
 
+STOPWORDS = set("""the and you your for are but not with this that what which would will can
+could should have has had was were did does all any how who why when where there their them
+they about into from one just like want get got then than its our out also more most some very
+too yes okay sure""".split())
+
+
+def _norm(text):
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+def _sig_words(text):
+    return {w for w in _norm(text).split() if len(w) >= 3 and w not in STOPWORDS}
+
+
 def _recorded(question_text, answers_text):
+    """Is the question on the ledger? A run records a PARAPHRASE as often as the
+    exact words (2026-09-24: "Which would you rather do?" spoken, a longer
+    "Which would you rather do - tell me ..., or ...?" recorded), so an exact
+    40-character tail left J blocking a question that was on the ledger. Any of:
+    the exact tail; normalized containment either way; >= 80% of the question's
+    significant words in one Asked line; or the best-matching Asked entry is
+    already answered."""
+    question_text = MANDATED_TAILS.sub("", question_text)
     tail = re.sub(r"\s+", " ", question_text).strip()[-40:]
     flat = re.sub(r"\s+", " ", answers_text)
     if tail and tail in flat:
@@ -621,7 +647,27 @@ def _recorded(question_text, answers_text):
         asked = re.sub(r"\s+", " ", m.group(1)).strip().strip('"')
         if asked and (asked[-40:] in re.sub(r"\s+", " ", question_text)):
             return True
-    return False
+    q, qw = " %s " % _norm(question_text), _sig_words(question_text)
+    best, best_answered = 0.0, False
+    for block in re.split(r"\n(?=## )", answers_text):
+        m = ASKED_LINE.search(block)
+        asked = m.group(1).strip().strip('"').strip() if m else ""
+        if not asked or asked.startswith("_"):
+            continue                        # unspoken / stated / skipped placeholder
+        a = " %s " % _norm(asked)
+        if a.strip() and q.strip() and (q in a or a in q):
+            return True
+        score = len(qw & _sig_words(asked)) / len(qw) if qw else 0.0
+        if score >= 0.8:
+            return True
+        if score > best:
+            ans = re.search(r"^\*\*Answer:\*\*\s*(.*)$", block, re.M)
+            best = score
+            best_answered = bool(ans and ans.group(1).strip()
+                                 and not ANSWER_BLANK.search(ans.group(0)))
+    # ponytail: "related" = at least half the significant words shared; raise it
+    # if an unrelated answered entry is ever seen clearing J.
+    return best >= 0.5 and best_answered
 
 
 CATEGORY_NAMING = re.compile(
@@ -751,7 +797,19 @@ def _target_clash(clean, targets):
     return None
 
 
-def evaluate(message, answers_text, project_name=None, targets=None, prev_message=None):
+def _record_cmd(project, held):
+    """`bash <answers.sh> <project>` with the real paths, as far as they are known."""
+    sh = next((os.path.normpath(c) for c in ANSWERS_CANDIDATES if os.path.isfile(c)), None)
+    sh = shlex.quote(sh) if sh else "<skill>/tools/answers.sh"
+    if not project:
+        return "bash %s <project>" % sh
+    if held:
+        return "bash %s --hold %s" % (sh, shlex.quote(os.path.basename(project.rstrip(os.sep))))
+    return "bash %s %s" % (sh, shlex.quote(project))
+
+
+def evaluate(message, answers_text, project_name=None, targets=None, prev_message=None,
+             record_cmd=DEFAULT_RECORD_CMD):
     """Return a block reason, or None. Pure -- this is what the selftest drives."""
     message = ODD_QUESTION_MARK.sub("?", message or "")
     clean = _strip_quote_markers(message)
@@ -799,10 +857,11 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
                 and not _recorded(prev_q, answers_text):
             return ("QUESTION SPOKEN LAST TURN WAS NEVER RECORDED. Last turn you asked: \"%s\". "
                     "00-INPUT/ANSWERS.md carries no **Asked:** entry for it, so it was never "
-                    "on the re-ask list and it is about to be lost. Record it now under its "
-                    "key with the client's reply, or with a blank answer if they did not "
-                    "answer it, BEFORE asking anything else."
-                    % _ellipsis(re.sub(r"\s+", " ", prev_q).strip(), 80))
+                    "on the re-ask list and it is about to be lost. BEFORE asking anything else, "
+                    "Run: %s ask <key> \"<the question exactly as spoken>\" and, if they "
+                    "replied, %s answer <key> \"<their words>\". Recording the answer alone "
+                    "does not clear this."
+                    % (_ellipsis(re.sub(r"\s+", " ", prev_q).strip(), 80), record_cmd, record_cmd))
 
     # G5 -- a naming or status sentence after the final "?" in the same
     # paragraph; and more than two "?" in one paragraph (an either/or is two;
@@ -851,9 +910,9 @@ def evaluate(message, answers_text, project_name=None, targets=None, prev_messag
                                                           answers_text):
             return ("QUESTION SPOKEN BUT NOT RECORDED. You asked the client something and "
                     "00-INPUT/ANSWERS.md shows nothing awaiting an answer, so this question "
-                    "exists only in the conversation. Write it there under **Asked:** with a "
-                    "blank answer BEFORE yielding -- an interruption will otherwise lose it "
-                    "and it will never come back.")
+                    "exists only in the conversation. BEFORE yielding, Run: %s ask <key> "
+                    "\"<the question exactly as you asked it>\" -- an interruption will "
+                    "otherwise lose it and it will never come back." % record_cmd)
         return None
 
     # Did not end on a question.
@@ -943,7 +1002,8 @@ def _reason(payload):
             # A HELD ledger's folder is a run id, never the thing's name; then the
             # client's recorded name/idea answer supplies it (D1).
             name = (None if held else _project_name(project)) or _ledger_name(answers_text)
-            r = evaluate(message, answers_text, name, targets, _client_prose(tp, 1))
+            r = evaluate(message, answers_text, name, targets, _client_prose(tp, 1),
+                         _record_cmd(project, held))
             if r:
                 return r
     if answers_text is None:
@@ -1294,6 +1354,30 @@ def _selftest():
       PENDING_TABLE, False, None, None,
       "Do you picture people using this on their phones, or on a computer?")
     t2("J the previous turn's prose is reachable", _client_prose(spoke, 1), "PREVIOUS TURN statement.")
+
+    # A1 -- 2026-09-24: the question was recorded as a PARAPHRASE; J looped on it.
+    PARAPHRASED = ('# Answers\n\n## entry-mode\n**Asked:** "Which would you rather do - tell me '
+                   'about it in your own words, or drag notes and pictures into the Desktop '
+                   'folder?"\n**Answer:** _blank_\n')
+    UNRELATED = ('# Answers\n\n## name\n**Asked:** "What should we call it?"\n'
+                 '**Answer:** "Brightside"\n')
+    t2("A1 paraphrased Asked counts as recorded (control: an unrelated Asked does not)",
+       (_recorded("Which would you rather do?", PARAPHRASED),
+        _recorded("Which would you rather do?", UNRELATED)), (True, False))
+    t2("A1 >=80% significant words in one Asked line; best match already answered",
+       (_recorded("Do you want people to sign in with a password?",
+                  '## login\n**Asked:** "Should people sign in with a password, do you want that?"\n'
+                  '**Answer:** _blank_\n'),
+        _recorded("Would customers pay monthly or once?",
+                  '## pricing\n**Asked:** "How will customers pay you?"\n**Answer:** "monthly"\n'),
+        _recorded("Would customers pay monthly or once?",
+                  '## pricing\n**Asked:** "How will customers pay you?"\n**Answer:** _blank_\n')),
+       (True, True, False))
+    j = evaluate("Did I get that right?", UNRELATED, None, None, "Which would you rather do?",
+                 _record_cmd("/p/My Proj", False))
+    t2("A2 the J reason names the answers.sh ask command with the real project",
+       bool(j and "answers.sh" in j and " '/p/My Proj' ask <key> " in j
+            and "answer <key>" in j), True)
 
     # 9 -- the declared profile decides the surface (10:30).
     _CLAIM = "Got it. You want an app people can use on their phone. Did I get that right?"
