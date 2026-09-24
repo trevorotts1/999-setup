@@ -227,6 +227,18 @@ runs it on every launch, so after any 9Router update it re-applies the fix and r
 the router once to load it. `--check` reports without writing (0 correct, 3 needs
 fixing, 2 undetermined); `--selftest` proves it against a fixture.
 
+**The tool-name fix rides with it.** Some models answer a tool call with a namespaced
+name (`default.Bash`, `functions.Read`, `tools:Edit`), which Claude Code rejects ("No such
+tool available"). 9Router 0.5.86 has no setting for this, so
+`scripts/common/fix-9router-toolnames.mjs` patches its chunks: when the part after the last
+`.` or `:` is exactly a tool the request declared, the reply carries that name; anything
+else (`mcp__x__y`, an unknown `default.Nope`) is left alone. It patches the chat handler
+(the request's tool names ride on its tool-name map), the map applier every translated
+reply passes through, and the same-format stream passthrough. If any of the three is not
+found it writes nothing and exits 2. Setup installs it next to the catalog fix; the
+launcher runs it right after the catalog fix and shares that restart. Same flags and exit
+codes as the catalog fix.
+
 ## Combo definitions
 
 ```text

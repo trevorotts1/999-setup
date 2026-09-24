@@ -213,6 +213,8 @@ fi
 # finds whatever launchd job owns the listener (no hardcoded label); with no
 # launchd job it stops the listener and the start block below brings it back.
 # Exit 2 (undetermined) never blocks the launch.
+# The tool-name fix (a model answering `default.Bash` for `Bash`) sits next to
+# the catalog fix, is reverted the same way, and shares the same restart.
 _cat_fix=""
 for _f in "$SELF_DIR/fix-9router-catalog.mjs" \
           "$SELF_DIR/../../.claude/skills/nine-router-setup/scripts/common/fix-9router-catalog.mjs"; do
@@ -220,8 +222,12 @@ for _f in "$SELF_DIR/fix-9router-catalog.mjs" \
 done
 _cat_rc=0
 [ -z "$_cat_fix" ] || node "$_cat_fix" --quiet >/dev/null 2>&1 || _cat_rc=$?
+_tn_rc=0
+_tn_fix="${_cat_fix:+$(dirname "$_cat_fix")/fix-9router-toolnames.mjs}"
+[ -z "$_tn_fix" ] || [ ! -f "$_tn_fix" ] || node "$_tn_fix" --quiet >/dev/null 2>&1 || _tn_rc=$?
+[ "$_tn_rc" = 10 ] && _cat_rc=10
 if [ "$_cat_rc" = 10 ] && /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
-  echo "🔧 9router catalog corrected — restarting 9router to load it..." >&2
+  echo "🔧 9router catalog/tool-name fix applied — restarting 9router to load it..." >&2
   _lpid="$(/usr/sbin/lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1)"
   if [ -n "$_lpid" ]; then
     _ppid="$(ps -o ppid= -p "$_lpid" 2>/dev/null | tr -d ' ')"
@@ -241,7 +247,7 @@ if [ "$_cat_rc" = 10 ] && /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
   fi
   unset _lpid _ppid _label _now
 fi
-unset _cat_fix _cat_rc _f
+unset _cat_fix _cat_rc _tn_fix _tn_rc _f
 
 # resolve_nine_router — absolute path of the 9router binary. A bare `9router`
 # is not on a client's PATH after a reboot (setup installs it under its own npm

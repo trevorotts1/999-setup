@@ -115,16 +115,22 @@ try {
     #     so re-apply it every launch. Exit 10 = patched: restart the running
     #     router so it loads the fix. Any other exit never blocks the launch.
     #     EAP Continue: under 5.1, stderr from a native command with EAP Stop
-    #     would throw.
+    #     would throw. The tool-name fix (a model answering `default.Bash` for
+    #     `Bash`) sits next to it, is reverted the same way, shares the restart.
     $catFix = Join-Path $PSScriptRoot 'fix-9router-catalog.mjs'
     if ((Test-Path $catFix) -and (Get-Command node -ErrorAction SilentlyContinue)) {
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         & node $catFix --quiet 2>&1 | Out-Null
         $catRc = $LASTEXITCODE
+        $tnFix = Join-Path $PSScriptRoot 'fix-9router-toolnames.mjs'
+        if (Test-Path $tnFix) {
+            & node $tnFix --quiet 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 10) { $catRc = 10 }
+        }
         $ErrorActionPreference = $prevEap
         if ($catRc -eq 10 -and (Test-Health)) {
-            Write-Host '9Router catalog corrected - restarting 9Router to load it...' -ForegroundColor Yellow
+            Write-Host '9Router catalog/tool-name fix applied - restarting 9Router to load it...' -ForegroundColor Yellow
             $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($conn) { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue }
             for ($i = 0; $i -lt 20 -and (Test-Health); $i++) { Start-Sleep -Milliseconds 500 }

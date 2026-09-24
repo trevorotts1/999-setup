@@ -28,11 +28,11 @@ export const FIX = {
   'deepseek-flash': { contextWindow: '1e6', maxOutput: '384e3' },
 };
 
-const CHUNKS = path.join('app', '.next-cli-build', 'server', 'chunks');
+export const CHUNKS = path.join('app', '.next-cli-build', 'server', 'chunks');
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Every existing 9Router package dir, in priority order, de-duplicated.
-function findPkgs() {
+export function findPkgs() {
   const home = os.homedir();
   const c = [];
   if (process.env.NINE_ROUTER_NPM_PREFIX) c.push(path.join(process.env.NINE_ROUTER_NPM_PREFIX, 'lib', 'node_modules', '9router'));

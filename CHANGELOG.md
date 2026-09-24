@@ -1,5 +1,32 @@
 # Changelog
 
+## [nine-router-setup 1.20.0] — 2026-09-24
+
+### A namespaced tool name in a model's reply, and Claude Code rejects the call
+
+Some upstream models answer a tool call with a bogus namespace prefix (`default.Bash`,
+`functions.Read`, `tools:Edit`); Claude Code only knows the bare name and refuses the
+call ("No such tool available"). 9Router has no setting for this, so
+`scripts/common/fix-9router-toolnames.mjs` is new: it patches 9Router's built chunks the
+same way `fix-9router-catalog.mjs` patches the DeepSeek catalog. The rule: when the part
+after the last `.` or `:` is exactly a tool name the request declared, the reply carries
+that name instead; anything else (`mcp__x__y`, an unknown `default.Nope`) is left alone.
+It patches three sites — the chat handler that carries the request's declared tool names,
+the tool-name-map applier every translated reply passes through, and the same-format
+stream passthrough — and writes nothing unless all three are found and every patched
+chunk still compiles (exit 2, never a partial patch). `fix-9router-catalog.mjs` now
+exports `CHUNKS` and `findPkgs` so the new fix can reuse its chunk discovery instead of
+duplicating it. `launchers/macos/claude-nine` and `launchers/windows/claude-nine.ps1` run
+it right after the catalog fix and share its restart; `setup-macos.sh` and
+`setup-windows.ps1` install it alongside the catalog fix. `references/model-routing.md`
+documents it next to the catalog-fix section it rides with.
+
+**Undetermined, out of this pass's testing scope:** the `.ps1` launcher and setup files
+were never parsed (no PowerShell interpreter to check them against) — only their `.sh`
+and `.mjs` counterparts were verified. The stream-passthrough site is written against an
+Anthropic-format upstream talking to Claude Code; Gemini-format passthrough is not
+exercised by this fix's own selftest and was not separately verified here.
+
 ## [1.30.0] — 2026-09-24
 
 ### Round 7: the answer-recognition loop and the blocked reader
