@@ -29,7 +29,10 @@
 # init never overwrites: an existing file keeps every block and only gains the planned
 # keys it lacks. ask/answer on a key with no block append one. Words are kept on one
 # line (newlines become spaces). Every write is a temp file + mv in the same folder.
-# Exit 0 written, 2 bad usage / unwritable.
+# ask refuses words that still carry an unfilled template placeholder (<Name>,
+# <their job, in their words>): the question is recorded word for word as SPOKEN.
+# An angle-bracketed URL or email (<https://...>, <a@b.co>) is not a placeholder.
+# Exit 0 written, 2 bad usage / unwritable / unfilled placeholder.
 set -uo pipefail
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -38,6 +41,8 @@ die() { echo "ANSWERS | verdict=UNDETERMINED | $*" >&2; exit 2; }
 block() { printf '\n## %s\n**Asked:** _not yet spoken_\n**Answer:** _blank_\n' "$1"; }
 oneline() { printf '"%s"' "$(printf '%s' "$1" | tr '\r\n' '  ')"; }
 placeholder() { case "$1" in "_not yet spoken"*|_blank*|"") return 0 ;; esac; return 1; }
+# unfilled <words> — the first <...> with a letter inside that is not a URL or email.
+unfilled() { printf '%s' "$1" | grep -oE '<[^<>]*[A-Za-z][^<>]*>' | grep -vE '://|@' | head -n 1; }
 abspath() { printf '%s/%s' "$(cd "$(dirname "$1")" && pwd)" "$(basename "$1")"; }
 
 hold_file() {
@@ -121,7 +126,7 @@ do_flush() {
 }
 
 selftest() {
-  local T f fails=0 h out
+  local T f fails=0 h out rc
   T="$(mktemp -d)" || { echo "SELFTEST | UNDETERMINED | cannot mktemp"; exit 2; }
   T="$(cd "${T}" && pwd)"
   trap 'rm -rf "${T}"' EXIT
@@ -172,7 +177,14 @@ selftest() {
   ok "init old heading" "$([ "$(grep -c '^## idea' "${T}/o/00-INPUT/ANSWERS.md")" = 2 ] \
     && grep -qx '## idea-2' "${T}/o/00-INPUT/ANSWERS.md" && ! grep -qx '## idea' "${T}/o/00-INPUT/ANSWERS.md" \
     && [ "$(grep -c '"a bakery site"' "${T}/o/00-INPUT/ANSWERS.md")" = 1 ] && echo 1)"
-  [ "${fails}" = 0 ] && { echo "SELFTEST PASS | 7 cases"; exit 0; }
+  # ask with an unfilled placeholder: refused (rc 2, named), nothing written; a real
+  # angle-bracketed URL or email is kept.
+  out="$(bash "${SELF}" "${T}/p" ask confirm "You want a program for <their job, in their words>. Right?" 2>&1)"
+  rc=$?
+  bash "${SELF}" "${T}/p" ask url "Is it <https://example.com> or <me@example.com>?" >/dev/null 2>&1
+  ok "ask placeholder" "$([ "${rc}" = 2 ] && printf '%s' "${out}" | grep -q '<their job, in their words>' \
+    && ! grep -q '^## confirm' "${f}" && grep -q '<https://example.com> or <me@example.com>' "${f}" && echo 1)"
+  [ "${fails}" = 0 ] && { echo "SELFTEST PASS | 8 cases"; exit 0; }
   echo "SELFTEST FAIL | ${fails} case(s)"; exit 1
 }
 
@@ -180,7 +192,10 @@ verb() { # verb <file> <verb> [args...]
   local F="$1"; shift
   case "${1:-}" in
     init) if [ "${2:-}" = "--planned" ]; then do_init "${F}" "${3:-}"; else do_init "${F}" ""; fi ;;
-    ask) [ $# -eq 3 ] || die "usage: ask <key> \"<words>\""; do_set "${F}" Asked "$2" "$(oneline "$3")" ;;
+    ask) [ $# -eq 3 ] || die "usage: ask <key> \"<words>\""
+      ph="$(unfilled "$3")"
+      [ -z "${ph}" ] || die "ask ${2}: unfilled placeholder ${ph} -- record the question exactly as spoken, placeholders filled"
+      do_set "${F}" Asked "$2" "$(oneline "$3")" ;;
     answer) [ $# -eq 3 ] || die "usage: answer <key> \"<words>\""; do_set "${F}" Answer "$2" "$(oneline "$3")" ;;
     stated) [ $# -eq 3 ] || die "usage: stated <key> \"<words>\""
       do_set "${F}" Asked "$2" "_stated — read back from the client's documents_" >/dev/null
