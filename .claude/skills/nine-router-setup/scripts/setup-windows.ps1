@@ -601,9 +601,11 @@ else {
     # 10. Install launcher (Install-ClaudeNine.ps1 resolves the repo launcher path itself).
     & (Join-Path $Win 'Install-ClaudeNine.ps1')
     if ($LASTEXITCODE -ne 0) { Write-Blocker 'claude-nine launcher install failed.' }
-    # The launcher re-applies the 9Router catalog fix on every launch; it looks
-    # for the patcher next to itself (%LOCALAPPDATA%\BlackCEO\999\lib).
+    # The launcher re-applies the 9Router catalog and tool-name fixes on every
+    # launch; it looks for the patchers next to itself (%LOCALAPPDATA%\BlackCEO\999\lib).
+    # The tool-name fix imports the catalog fix, so they travel together.
     Copy-Item -Force (Join-Path $Common 'fix-9router-catalog.mjs') (Join-Path $StateDir 'lib\fix-9router-catalog.mjs')
+    Copy-Item -Force (Join-Path $Common 'fix-9router-toolnames.mjs') (Join-Path $StateDir 'lib\fix-9router-toolnames.mjs')
     Refresh-Path
 
     # 10.5 Enable Agent Teams (merge-only, backed up; never disturbs running work).
