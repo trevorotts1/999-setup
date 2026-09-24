@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.30.0] — 2026-09-24
 
 ### Round 7: the answer-recognition loop and the blocked reader
 
