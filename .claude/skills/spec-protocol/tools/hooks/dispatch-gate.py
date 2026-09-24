@@ -51,7 +51,15 @@ out plain Agent calls, which never reached this gate. An Agent/Task call whose
 description, or the first line of its prompt, carries "build" gets SHAPES 8, 9
 and 10 exactly as a Workflow build does; every other Agent call (reader,
 researcher, judge) passes in silence. Shapes 1-7 are facts about a Workflow
-script and do not apply to a single agent.
+script and do not apply to a single agent. A READER is never a build, whatever
+else its prompt says (round 7): its prompt's first 200 characters say
+READ-ONLY / read-only / "You are a reader"; or subagent_type is Explore; or its
+description says read, reader, research, explore or audit-read AND names no
+build, implement, fix, repair, write, edit, code, merge or deploy (so "read the
+spec then build unit 3" is still a build).
+The skill owes a reader dispatch before the first confirm sentence, long before
+repo-anchor, so an incidental "build" ("a reader for a build run") must not
+hold it to SHAPES 8-10.
 
 SHAPE 9 IS SCOPED TOO, but to BOTH project shapes: a marked legacy CONTROL/
 and a profiled `.spec-protocol.json` alike, because the promise it enforces is
@@ -220,6 +228,13 @@ SEAT_PROBE_RE = re.compile(
 # tools/dispatch-check.sh's is_build_label(), which is deliberately broad: any
 # label carrying "build" in any case is a build dispatch, "rebuild" included.
 BUILD_LABEL_RE = re.compile(r"build", re.I)
+
+# Round 7: an Agent/Task call that says it only reads. Checked BEFORE the build
+# label, so "You are a reader for a build run" stays a reader.
+READER_LABEL_RE = re.compile(r"\b(read(er|ers|ing|s)?|research\w*|explor\w*|audit-read)\b", re.I)
+READER_PROMPT_RE = re.compile(r"READ-ONLY|read-only|You are a reader")
+# A reader-worded description that also names work is a builder, not a reader.
+READER_VETO_RE = re.compile(r"\b(build|implement|fix|repair|write|edit|code|merge|deploy)\b", re.I)
 
 # The absolute per-project ceiling. A state file may lower it and may never
 # raise it, which is why the state value is taken only when it is SMALLER --
@@ -992,6 +1007,15 @@ def is_build_dispatch(code):
     return False
 
 
+def is_reader_agent(ti):
+    """True when an Agent/Task call is a reader: never a build, never SHAPES 8-10."""
+    desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
+    kind = ti.get("subagent_type") if isinstance(ti.get("subagent_type"), str) else ""
+    prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
+    return (bool(READER_PROMPT_RE.search(prompt[:200])) or kind == "Explore"
+            or (bool(READER_LABEL_RE.search(desc)) and not READER_VETO_RE.search(desc)))
+
+
 def is_research_reader(code, declared):
     """D3: one agent, a research phase or reader label, and no build label.
 
@@ -1282,6 +1306,9 @@ def main():
     if data.get("tool_name") != "Workflow":
         # fix #5: an Agent/Task call is a build dispatch when its description or
         # the first line of its prompt says "build"; it then owes SHAPES 8-10.
+        # A reader never does (round 7), whatever else its prompt says.
+        if is_reader_agent(ti):
+            allow()
         desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
         prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
         first = prompt.strip().splitlines()[0] if prompt.strip() else ""
@@ -2011,6 +2038,33 @@ def selftest():
     report(40, "agent-build-gated", rc_a1 == 2 and "SHAPE 8" in out_a1 and rc_a2 == 0,
            "Agent 'build unit u01' in a probe-less project -> rc=%d (want 2, SHAPE 8); "
            "Agent 'research reference apps' -> rc=%d (want 0)" % (rc_a1, rc_a2))
+
+    # 15b -- round 7: a reader is never a build. The real blocked call: its
+    #        prompt's first line says "build", and it must still pass. The
+    #        control, the SAME anchor-less project, still refuses a builder.
+    readerdir = log_dir("readercall", 3, anchor="none")
+
+    def reader_event(desc, prompt, kind="general-purpose"):
+        return json.dumps({"tool_name": "Agent", "cwd": readerdir, "tool_input": {
+            "description": desc, "prompt": prompt, "subagent_type": kind}})
+    rc_rd, out_rd = _run_child(reader_event(
+        "Read client packet docs",
+        "READ-ONLY task. You are a reader for a build run inside the project folder.\n"
+        "Read every file and report."), readerdir)
+    rc_ex, _ = _run_child(reader_event("scan units", "build nothing, list the files", "Explore"), readerdir)
+    rc_bu, out_bu = _run_child(reader_event("Agent build unit", "build unit u01\nwrite the code"), readerdir)
+    # The loophole: a builder whose description merely starts with "read".
+    rc_lh, out_lh = _run_child(reader_event("read the spec then build unit 3",
+                                            "build unit u03\nwrite the code"), readerdir)
+    report(43, "reader-never-a-build",
+           rc_rd == 0 and rc_ex == 0 and rc_bu == 2 and "SHAPE 9" in out_bu
+           and rc_lh == 2 and "SHAPE 9" in out_lh,
+           "reader 'Read client packet docs' / 'READ-ONLY ... for a build run' -> rc=%d (want 0)%s; "
+           "Explore -> rc=%d (want 0); 'Agent build unit' with no receipt -> rc=%d (want 2), "
+           "SHAPE 9 named: %s; 'read the spec then build unit 3' -> rc=%d (want 2), SHAPE 9 named: %s"
+           % (rc_rd, "" if rc_rd == 0 else " -- " + out_rd.strip()[:200],
+              rc_ex, rc_bu, "yes" if "SHAPE 9" in out_bu else "NO",
+              rc_lh, "yes" if "SHAPE 9" in out_lh else "NO"))
 
     # 16 -- fix #6: a local-only receipt (no origin by design) is accepted.
     #       Its remote field names something origin does not: the old origin
