@@ -1,8 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [1.32.0] — 2026-09-24
 
 ### Round 9: findings that were reported but never fixed
+
+spec-protocol 1.32.0; nine-router-setup 1.21.0, because C's Full Disk Access probe changed
+`nine-router-setup/scripts/setup-macos.sh`.
 
 **A — the repair loop and the profile's routes (`references/pipeline.md`, `gauntlet.md`,
 `conductor.md`, `capacity.md`, `templates/workflows/build-wave.js`, `judge-wave.js`,
