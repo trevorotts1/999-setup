@@ -82,9 +82,11 @@ standard (GL-001). That lives in THE BAR TO HIT only.
 BUILD → INSPECT → COMPARE → DECIDE
 ```
 
-DECIDE is either **PASS** or **the single largest gap** — exactly one gap, never
-a list. A list disperses the fix; one gap focuses the next cycle. That one gap is
-returned to the builder as the next instruction (Section 5, iteration protocol).
+DECIDE is either **PASS** or **every blocking gap, largest first**. They go into
+the unit's ONE repair packet, with every blocking finding of the technical judge,
+back to the ORIGINAL builder as the next instruction — never one gap per round
+(Section 5, iteration protocol; `references/pipeline.md` Stage 3). The largest gap is the one the client
+hears when a unit stops short of the bar.
 
 ### 1.3 THE BAR TO HIT (WHEN TO STOP)
 
@@ -382,12 +384,13 @@ Every verdict carries an **evidence package**: the specific dimension, the
 specific divergence, and the proof (a screenshot, a diff, a repro step). A
 verdict with no evidence is not a verdict.
 
-**On a decoded failure (ITERATE):** exactly ONE largest gap is returned to the builder (the
-single-largest-gap rule, Section 1.2) as the next build instruction. Not a list.
-The cycle repeats BUILD → INSPECT → COMPARE → DECIDE. **If this unit also has
+**On a decoded failure (ITERATE):** every blocking gap, largest first (Section 1.2),
+joins the technical judge's blocking findings in ONE repair packet that goes back
+to the unit's ORIGINAL builder seat as the next build instruction (the repair loop,
+`references/pipeline.md` Stage 3). The cycle repeats BUILD → INSPECT → COMPARE → DECIDE. **If this unit also has
 open Gate-1 findings**, the arbitration rule in `references/pipeline.md` (Stage
-2, "Arbitration when Gate 1 and Gate 3 both fail at once") governs the order:
-Gate-1 fixes land first, and this gap re-checks only after.
+2, "Arbitration when Gate 1 and Gate 3 both fail at once") orders the packet:
+Gate-1 fixes first, then the gaps, and the next round re-runs both judges.
 
 **A NEW judge instance for every re-judge — never the same one twice.** When a
 decoded failure sends the unit back and the builder returns it, the re-judge is a
@@ -509,8 +512,9 @@ into its stage prompts:
   exclusions, and completion package, lifted from the build cards of the units
   this tree carries. No other stream's units appear.
 - **THE BUILD METHOD** = the unit gauntlet itself (§13.1): build, blind visual
-  judge, technical judge, fix loop, one largest gap back to a NEW builder, a new
-  judge instance per re-judge, evidence from the harness only.
+  judge, technical judge, repair loop — one packet of every blocking finding back
+  to the ORIGINAL builder, one rescue, then parked — a new judge instance per
+  re-judge, evidence from the harness only.
 - **THE BAR TO HIT** = the BAR SLICE for those units — the frozen reference
   package (§4) narrowed to the pages or screens this stream owns, carrying the
   page mapping (our unit → the bar's matching page or screen at the matched
@@ -590,8 +594,8 @@ the completion package; the priority. NO iteration, critic, or stop language.>
 THE BUILD METHOD (HOW)
 <foundation lock; the units; the orchestration mode (parallel only if
 independent); the builder instructions; the critic instructions (fresh context,
-different alias, labels stripped); the iteration rule (one largest gap back to the
-builder); the integration, regression, evidence, and context rules; the
+different alias, labels stripped); the iteration rule (one packet of every blocking
+finding back to the original builder); the integration, regression, evidence, and context rules; the
 operational stop. NO benchmark and NO success-stop rule here.>
 
 THE BAR TO HIT (WHEN TO STOP)
@@ -656,17 +660,17 @@ on each before it is judged.
 Independent-critic instructions: the critic receives the Task requirement,
 the comparative dimensions, and the two artifacts only — never the builder's
 notes.
-Iteration protocol: one largest gap returns to the builder as the next
-instruction; never a list (Section 1.2).
+Iteration protocol: every blocking gap, largest first, returns to the original
+builder in one repair packet as the next instruction (Section 1.2).
 Integration protocol: the units merge into one page candidate.
 Regression protocol: every rebuild re-runs the toggle arithmetic and the
 mobile captures against the locked units.
 Evidence protocol: every claim carries a capture, a log line, or a diff.
 Context protocol: the frozen reference package and the Task travel; the build
 history does not (Law 5, Law 25).
-Operational stop / escalation: the project's declared bounded repair cap on one
-finding → blocked-repeated-fail, escalated with the
-full finding history; a missing source → BLOCKED (Section 9).
+Operational stop / escalation: two failed corrections → one rescue; a failed
+rescue or a spent per-task budget → parked, blocked-repeated-fail, escalated with
+the full finding history; a missing source → BLOCKED (Section 9).
 Final system review: one full-page pass against the traceability table
 (Section 8) before the comparative verdict.
 
@@ -720,10 +724,11 @@ per-month price on the card face, ours buries it behind the toggle; proof —
 `captures/gym-04/ours-desktop-c2.png` vs `captures/gym-04/bar-desktop.png` —
 `captures/` is the sanctioned infrastructure directory for evidence artifacts
 (`references/documents.md`, "Infrastructure that is NOT one of the seventeen
-documents"), one subfolder per unit — both at 1440×900. The ONE largest gap
-returned to the builder: "show the
-monthly price on the card face at first paint." Not a list — the next cycle
-fixes exactly this, then re-runs. An UNVERIFIABLE verdict or a thin gap
+documents"), one subfolder per unit — both at 1440×900. The largest gap, first in the
+repair packet: "show the
+monthly price on the card face at first paint." The packet carries every other
+blocking gap and finding too; the original builder fixes them all in one
+submission, then both judges re-run. An UNVERIFIABLE verdict or a thin gap
 earns a second critic (Section 5); two UNVERIFIABLE results mean the comparison
 conditions are at fault, not the build.
 
@@ -860,13 +865,13 @@ requirements hides a missing proof.
 
 Two stop mechanics exist and must never be confused:
 
-- **The unprofiled fix cap (20 cycles per finding, operator ruling 2026-08-14;
-  formerly 3)** is an OPERATIONAL escalation trigger. Twenty failed loops on one
-  finding → `blocked-repeated-fail`, history recorded, and the finding
-  ESCALATES to the operator WITH ITS FULL FINDING HISTORY — every cycle's
-  finding, fix, and re-judge result — never a quiet give-up, never a relabeled
-  pass (the QC protocol's loop mechanics, `references/pipeline.md`). It lives in
-  the pipeline (`references/pipeline.md`).
+- **The repair budget** is an OPERATIONAL escalation trigger: per task,
+  `policy.maxQCVerdicts` and `policy.maxBuilderSubmissions` from the profile, else
+  4 each (one judging round of both judges is one verdict). Two failed corrections
+  → one rescue; a failed rescue or a spent budget → the unit is parked,
+  `blocked-repeated-fail`, and ESCALATES to the operator WITH ITS FULL FINDING
+  HISTORY — every packet, fix, and re-judge result — never a quiet give-up, never
+  a relabeled pass. It lives in the pipeline (`references/pipeline.md` Stage 3).
 - **The B2H is the SUCCESS stop.** The successful stop rule in THE BAR TO HIT is
   the ONLY condition under which a work item reports PASS.
 
@@ -892,7 +897,7 @@ consistent:
 
 | Gauntlet state | Ledger state | Meaning |
 |---|---|---|
-| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop or the applicable repair cap stopped this item (legacy: 20 cycles per finding; profile: canonical root budget; `references/pipeline.md`). |
+| BLOCKED | `blocked-human` / `blocked-repeated-fail` | A Named Stop, or a failed rescue or spent per-task repair budget parked this item (profile `maxQCVerdicts` / `maxBuilderSubmissions`, else 4 each; `references/pipeline.md` Stage 3). |
 | INFEASIBLE | `blocked-infeasible` | The bar cannot be met or compared — conditions, not effort, are the wall. |
 | LIMIT REACHED | `blocked-timeout` / `blocked-limit` | An operational limit (budget, rate, session) ended the run for this item. |
 | USER STOPPED | `blocked-human` (user-initiated) | The human stopped the run — Law 8's second ending. |
@@ -964,7 +969,7 @@ The Gauntlet's portable text is harness-independent. Capability-based instructio
 come FIRST; verified platform syntax is attached per harness.
 
 - **Capability language is primary.** "Run independent builders and critics,"
-  "continue until the B2H passes," "one largest gap per cycle." These phrases are
+  "continue until the B2H passes," "one repair packet per round." These phrases are
   portable and carry the mechanism regardless of platform.
 - **Verified syntax per harness, attached not embedded.** Once a platform's
   verified command shape exists, attach it to the capability instruction for that
@@ -1122,8 +1127,10 @@ tree; more streams launch as more trees in the same turn. The first unit of the
 first tree is the evidence harness; page and screen units dispatch only after
 `HARNESS-READY:` is in the ledger. Every judge receives rendered evidence from
 the harness and the frozen bar package, labels stripped, order randomized; never
-builder reasoning. A FAIL returns the exact finding and one largest gap to a new
-builder; a new judge instance re-judges; `SCORE` lines are written every round
+builder reasoning. A FAIL returns ONE repair packet — every blocking finding from
+both judges — to the unit's ORIGINAL builder; after two failed corrections one
+rescue builder on the same route takes it, then it is parked
+(`references/pipeline.md` Stage 3); a new judge instance re-judges; `SCORE` lines are written every round
 and the plateau rule ends a unit honestly.
 
 **Integrated Visual Gauntlet.** After the units integrate, one workflow of blind
@@ -1138,7 +1145,10 @@ requires 4 of 4 PASS; FAIL or UNVERIFIED from any judge prevents release.
 
 **WF06 Selective Repair.** One workflow per repair wave,
 `pipeline(failedWorkstreams, repair, newBlindVerifier, affectedTechnicalJudge)`,
-at most twelve failed workstreams per wave, then the council again. Passing
+at most twelve failed workstreams per wave, then the council again. Each
+`repair` runs on the workstream's ORIGINAL builder seat with one packet of all its
+blocking findings; the rescue is a different builder on the same route (the repair
+loop, `references/pipeline.md` Stage 3). Passing
 workstreams are locked and never rerun.
 
 **WF06-FIX Apparatus Fix Pass — a NAMED VARIANT of WF06, not a sixth type.**
@@ -1334,15 +1344,16 @@ its own best known state.
 
 The two repair granularities compose rather than collide:
 
-- **FINDING-level repair** (`references/pipeline.md` Stage 3: one fixer per
-  finding, legacy 20-cycle cap) runs INSIDE a workstream; an adopted profile uses its
-  canonical root submission/verdict budget instead.
+- **UNIT-level repair** (`references/pipeline.md` Stage 3): one repair packet of every blocking
+  finding back to the unit's ORIGINAL builder, one rescue, then parked, inside the
+  per-task budget. It runs INSIDE a workstream.
 - **WORKSTREAM-level repair** (WF06: one repair agent per failed workstream,
-  ≤12 per wave) is the repair TASK's workflow, and the repair agent OWNS its
-  workstream — multiple findings inside it may still fan out per finding under
-  that ownership.
+  ≤12 per wave) is the repair TASK's workflow. The repair agent sits on the
+  workstream's original builder seat (the builder route) and OWNS its workstream,
+  taking all of its blocking findings as one packet; its rescue is a different
+  builder on the same route.
 
-**No two repairers ever share a workstream**, so the fix-loop fan-out rule and
+**No two repairers ever share a workstream or a unit**, so the packet rule and
 the ownership rule hold at the same time.
 
 **LOCK PASSING WORK.** A workstream that has passed its gates is LOCKED and is
@@ -1415,7 +1426,7 @@ order, one loop in both modes.
 | 10 | EVIDENCE CREATED | builders/judges | the §8 evidence types, named per task IN ADVANCE |
 | 11 | VERIFY (quality workflow; technical workflow when required) | blind/technical judges; commanders interpret / lead | WF03/WF04 + the three-gate stack; REQUIREMENT + ACTUAL OUTPUT + OBJECTIVE BAR → INDEPENDENT VERIFIER — "the builder says it's fixed" is BANNED. **The QC protocol binds this station (`references/pipeline.md` Stage 2):** the blind judge sees work with provenance stripped, never effort (Law 49), and returns A/B/TIE/UNVERIFIABLE; the adjudicator privately maps it. The judge never built the item (Law 7 — zero self-QC); PASS = the frozen bar relationship met (wins-or-ties → our mapped side or TIE; meet-all-requirements → every requirement checked passes), never "meets spec". Technical judges receive commit-bound code, tests, and repro evidence without builder history. Every verdict is written as a QC RECORD; a comparison that cannot run is BLOCKED, never passed (Law 50). |
 | 12 | COMMANDERS COMMUNICATE FINDINGS (the challenge station) | peer SendMessage + project_state record; lead adjudicates by requirements/evidence/tests/bar/state — never by siding with the builder / lead runs the same adjudication across its hats | references/agent-team.md (the disagreement protocol) |
-| 13 | REPAIR IF NECESSARY | failures>0 activates the repair task → WF06 | selective repair (Section 13) — targeted, never a rebuild. The repair loop follows the QC protocol: FAIL returns to the builder WITH THE CRITIC'S EXACT FINDING, bounded by the declared project repair policy (legacy default: 20 cycles; profile: its canonical root submission/verdict budget), then escalation with full history — never a quiet give-up or relabeled pass (`references/pipeline.md` Stage 3) |
+| 13 | REPAIR IF NECESSARY | failures>0 activates the repair task → WF06 | selective repair (Section 13) — targeted, never a rebuild. The repair loop follows the QC protocol: FAIL returns ONE repair packet of every blocking finding from both judges, verbatim, to the ORIGINAL builder seat; two failed corrections → one rescue by a different builder on the same route; then parked and escalated with full history, inside the per-task budget (profile `maxQCVerdicts` / `maxBuilderSubmissions`, else 4 each) — never a quiet give-up or relabeled pass (`references/pipeline.md` Stage 3) |
 | 14 | REGRESSION TEST | fresh blind re-verifiers; affected technical judges; batch suite | WF06 rules + the B2H regression gate |
 | 15 | UPDATE PROJECT STATE | lead / lead | project_state.json (§11's twelve questions current) |
 | 16 | RECONCILE NATIVE TASKS | lead runs tools/anchor.sh --mode reconcile; executes its ACTIONS | RECONCILE TASKS NOW (references/anti-drift.md) |

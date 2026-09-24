@@ -95,8 +95,12 @@ const workDir = resolve(dirname(resolve(root, profile.documents.state)), 'spec-p
 if (action === 'policy') { console.log(JSON.stringify(ceiling)); process.exit(0); }
 if (action === 'workdir') { console.log(workDir); process.exit(0); }
 if (action === 'fields') {
+  // builderRoute/qcRoute ARE the builder and judge seat routes (references/capacity.md
+  // section 11, "Profile routes"); the two budgets bound the repair loop per task.
+  const { builderRoute, qcRoute, maxBuilderSubmissions, maxQCVerdicts } = profile.policy;
   console.log(JSON.stringify({ workDir, ceiling, refresh: profile.commands.refresh ?? null,
-    merged: profile.commands.merged ?? null, repo: profile.repo ?? null }));
+    merged: profile.commands.merged ?? null, repo: profile.repo ?? null,
+    builderRoute, qcRoute, maxBuilderSubmissions, maxQCVerdicts }));
   process.exit(0);
 }
 if (!['bootstrap', 'validate', 'dispatch', 'release', 'resume-authorized'].includes(action)) fail(`unknown action: ${action}`);

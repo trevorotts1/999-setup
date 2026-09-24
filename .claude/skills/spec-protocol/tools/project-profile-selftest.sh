@@ -65,6 +65,7 @@ grep -q 'NOTE | profiled ledger line | writer=ledger.sh$' "$T/spec-protocol/LEDG
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('$T/.spec-protocol.json'));p.commands.refresh=['node','scripts/state.mjs','render'];p.commands.merged=['node','scripts/state.mjs','merged','{taskId}','{commit}','{branch}'];p.repo={createPrivate:'acme/my-project'};delete p.policy.maxWorkingAgents;fs.writeFileSync('$T/.spec-protocol.json',JSON.stringify(p));"
 [[ "$(node "$ROOT/project-profile.mjs" policy "$T")" == '{"maxActiveWorkflows":10,"maxAgentsPerWorkflow":10}' ]]
 node "$ROOT/project-profile.mjs" fields "$T" | grep -q '"merged":\["node","scripts/state.mjs","merged","{taskId}","{commit}","{branch}"\].*"repo":{"createPrivate":"acme/my-project"}'
+node "$ROOT/project-profile.mjs" fields "$T" | grep -q '"builderRoute":"opus-chain","qcRoute":"sonnet-chain","maxBuilderSubmissions":4,"maxQCVerdicts":4}$'
 for bad in "p.commands.refresh=['node','x','{taskId}']" "p.commands.merged=['node','x','{unit}']" "p.repo={createPrivate:'no-slash'}" "p.repo={remote:'https://u:secret@example.com/a.git'}" "p.policy.maxActiveWorkflows=0"; do
   cp "$T/.spec-protocol.json" "$T/good.json"
   node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('$T/.spec-protocol.json'));$bad;fs.writeFileSync('$T/.spec-protocol.json',JSON.stringify(p));"
@@ -77,4 +78,4 @@ if bash "$ROOT/gate0.sh" "$T" --check >/dev/null 2>&1; then exit 1; fi
 
 printf '%s\n' '{"schema":"wrong"}' > "$T/.spec-protocol.json"
 if node "$ROOT/project-profile.mjs" dispatch "$T" 1 1 label >/dev/null 2>&1; then exit 1; fi
-printf 'project-profile selftest: PASS (fresh/existing bootstrap, optional generic runtime without Ponytail, task-scoped dispatch, read-only check, resume binding, profiled ledger redirect, optional refresh/merged/repo/ceiling fields, legacy helper refusal, malformed refusal)\n'
+printf 'project-profile selftest: PASS (fresh/existing bootstrap, optional generic runtime without Ponytail, task-scoped dispatch, read-only check, resume binding, profiled ledger redirect, optional refresh/merged/repo/ceiling fields, seat routes and repair budget in fields, legacy helper refusal, malformed refusal)\n'
