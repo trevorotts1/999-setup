@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 7: the answer-recognition loop and the blocked reader
+
+A real run looped: a question recorded as a paraphrase was never recognized as recorded, the
+block message named no command, and recording the answer four times did not clear it. The
+client's pointed reply was treated as an instruction and never recorded; a reader dispatch was
+blocked as a build; and `/spec-protocol <description>` in a folder with saved state resumed
+instead of opening.
+
+**A — `tools/hooks/conversation-gate.py`.** `_recorded()` now counts a question as recorded when
+the normalized question and an Asked line contain one another, when at least 80% of the
+question's significant words appear in one Asked line, or when the best-matching Asked entry
+already has an answer; an unrelated Asked line still does not count. Every block reason that
+asks the model to record something carries the exact `answers.sh` command, with the real skill
+and project paths when known.
+
+**B — `tools/answers.sh`, `tools/hooks/dispatch-gate.py`.** `answers.sh … ask` refuses (exit 2)
+words that still hold an unfilled `<…>` placeholder; angle-bracketed URLs and emails are
+allowed. An `Agent`/`Task` call is a reader, never a build, when its description or
+subagent_type says read/reader/research/explore/audit-read, its prompt opens (first 200
+characters) with "READ-ONLY", "read-only" or "You are a reader", or its subagent_type is
+Explore; readers are never held to shapes 8–10, and an incidental "build" in a reader's prompt
+no longer makes it one.
+
+**C — `SKILL.md`.** Any reply to the entry-mode question that points at a folder, files or a
+path is the `pointed` answer, recorded with `answers.sh … answer entry-mode` and written as
+`ENTRY-MODE: pointed` in the same turn, before anything is read. `answers.sh … ask` records the
+question word for word as displayed, every placeholder filled. Resume happens only when the
+argument is exactly `resume`; a description or no argument is a new run that begins with the
+opening script, even in a folder with saved state.
+
 ## [1.29.0] — 2026-09-23
 
 ### Round 6: merge trains, proof of merge, cleanup, release hygiene
