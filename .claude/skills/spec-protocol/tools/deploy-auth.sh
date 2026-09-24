@@ -1,4 +1,6 @@
-# deploy-auth.sh — SOURCED by publish.sh and provision-db.sh; not run on its own.
+# deploy-auth.sh — SOURCED by publish.sh and provision-db.sh. Run on its own it
+# has one job: `bash deploy-auth.sh --check` (the environment sweep, and setup)
+# prints one HOSTING-LOGIN line — 0 signed in, 3 no login, 2 undetermined.
 #
 # Finds the Vercel CLI and the operator's Vercel credential, and runs the CLI
 # with that credential in THAT CHILD'S environment only.
@@ -7,6 +9,10 @@
 #   vercel_run <args...>      runs "${VERCEL_CMD[@]}" <args...> with VERCEL_TOKEN set
 #                             for that one process when a credential exists
 #   VERCEL_WHERE              after vercel_resolve: which source was used (for reports)
+#   vercel_login_state        after vercel_resolve: `vercel whoami` with the credential;
+#                             rc 0 signed in (HOSTING_LOGIN_VIA=token|login), 3 the CLI
+#                             said there is no usable login, 2 it answered anything else
+#   HOSTING_LOGIN_NEXT        the one plain next step when there is no login
 #
 # CLI, first that exists: $<seam var> (tests) -> `vercel` on PATH ->
 #   ${NINE_ROUTER_NPM_PREFIX:-~/.local/share/999/npm}/bin/vercel -> ~/.npm-global/bin/vercel
@@ -18,6 +24,8 @@
 
 VERCEL_CMD=()
 VERCEL_WHERE=""
+HOSTING_LOGIN_VIA=""
+HOSTING_LOGIN_NEXT="open Terminal on this computer, type vercel login, press Return and sign in to the Vercel account the sites go live on"
 
 vercel_resolve() { # vercel_resolve [seam-value]
   local c p
@@ -75,3 +83,29 @@ vercel_run() { # vercel_run <args...> — output is the CLI's, with the credenti
   printf '%s\n' "$out"
   return "$rc"
 }
+
+vercel_login_state() { # rc 0 signed in | 3 no usable login (the CLI said so) | 2 undetermined
+  local out rc
+  HOSTING_LOGIN_VIA="login"; [[ -n "$(_vercel_token)" ]] && HOSTING_LOGIN_VIA="token"
+  out="$(vercel_run whoami)"; rc=$?
+  (( rc == 0 )) && return 0
+  # "No existing credentials found. Please run `vercel login`" (none) and "The
+  # specified token is not valid. Use `vercel login`" (a refused token). Anything
+  # else — no network, a CLI crash — is not a fact about the login.
+  printf '%s' "$out" | grep -qE 'No existing credentials|vercel login' && return 3
+  return 2
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  [[ "${1:-}" == --check ]] || { echo "usage: bash deploy-auth.sh --check" >&2; exit 1; }
+  vercel_resolve "${PUBLISH_VERCEL_CMD:-}" \
+    || { echo "HOSTING-LOGIN: UNDETERMINED reason=no Vercel CLI (not on PATH, not in the 999 npm prefix, and no npx); re-run nine-router-setup"; exit 2; }
+  vercel_login_state; rc=$?
+  case "$rc" in
+    0) echo "HOSTING-LOGIN: OK via=$HOSTING_LOGIN_VIA" ;;
+    3) w=""; [[ "$HOSTING_LOGIN_VIA" == token ]] && w=" (the recorded token was refused)"
+       echo "HOSTING-LOGIN: MISSING${w} next=$HOSTING_LOGIN_NEXT" ;;
+    *) echo "HOSTING-LOGIN: UNDETERMINED reason=vercel whoami failed without saying whether this machine is signed in (CLI: $VERCEL_WHERE)" ;;
+  esac
+  exit "$rc"
+fi

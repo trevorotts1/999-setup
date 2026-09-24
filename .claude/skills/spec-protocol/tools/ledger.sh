@@ -97,7 +97,8 @@
 # exact timestamp and is never stamped a second time. It writes only into a
 # temporary directory it creates and removes.
 #
-# Includes iCloud pin-local mitigation for ~/Downloads.
+# Includes iCloud pin-local mitigation for any project home iCloud may evict
+# (run once per home, whichever folder it is in: ~/Projects or older homes).
 #
 # Forked from skill-warfix/tools/ledger.sh (that copy is untouched — this
 # one adds the lock and the upsert mode; the two are no longer identical).
