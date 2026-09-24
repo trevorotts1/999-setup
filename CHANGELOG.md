@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.31.0] — 2026-09-24
 
 ### Round 8: the "<Name> pictures" Desktop folder and the half-read folder
 
