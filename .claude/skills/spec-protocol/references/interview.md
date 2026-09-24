@@ -79,16 +79,31 @@ known. Spoken in this order, and **SKILL.md owns every word of it**:
    the gate written out below. The gate SPEECH and Checks 1 and 3 happen here; the
    three key asks (Check 2) wait until AFTER the entry-mode question, one per turn.
 5. **The entry-mode question** — SKILL.md owns the words. Its answer creates
-   the project folder and `00-INPUT/` immediately. **It is ALWAYS asked.** The
-   working directory is not an answer to it, a supplied folder is not an answer
-   to it, and the client is never told what they have already pointed at. They
-   may point at material anywhere on the machine, in any number of places, and
-   they may do both halves — tell you AND point. **Pointing never means typing a
-   path.** The folder called `<Name> pictures` on the client's Desktop is created
-   ONCE, at turn 3, from the naming line (SKILL.md), and the client drags files into
-   it and says done; the run copies
-   what lands there into `00-INPUT/`. A typed path is accepted when offered, never
-   asked for.
+   the project folder and `00-INPUT/` immediately. **It is ALWAYS asked, once,
+   and recorded through `tools/answers.sh`.** The working directory is not an
+   answer to it, and a supplied folder is not an answer to it. They may point at
+   material anywhere on the machine, in any number of places, and they may do
+   both halves — tell you AND point. **Pointing never means typing a path.**
+   - **A supplied folder** (the run starts in, or is pointed at, a folder that
+     already holds their documents or a `.spec-protocol.json`): NO Desktop folder
+     is created. The question names THAT folder by its own name — "I'll work from
+     everything in your '<folder name>' folder. Is there anything else you'd like
+     me to read as well, or shall I start with what's there?" "Start", "that's
+     all", "read what's there" and the like = `pointed`, with that folder as the
+     material; a named extra place is read too.
+   - **Otherwise** the folder called `<Name> files` on the client's Desktop
+     (never "pictures": it takes documents, notes and pictures) is created ONCE,
+     at turn 3, from the naming line (SKILL.md), and the client drags files into
+     it and says done; the run copies what lands there into `00-INPUT/`.
+
+   A typed path is accepted when offered, never asked for. **Pointed material is
+   read in full:** EVERY file in the folder and all its subfolders, recursively,
+   skipping only `.git/`, `node_modules/`, build output, and binary files other
+   than images and PDFs (images and PDFs are looked at). A large set is split
+   across several reader agents in one visible workflow — never skimmed, never
+   grepped. The confirm line states the true count read ("I've read all 52 files
+   in your folder, including the 10 in qc/"); a count below the folder's file
+   count, less the skipped kinds, is a defect.
 6. **The update offer**, only when `tools/check-update.sh` exited 1 — SKILL.md owns
    the words (turn 5, after entry mode and any funnel keys). Setup, asked once,
    UNCOUNTED: no count exists yet when it is spoken (section 6, rule 8).
@@ -467,10 +482,12 @@ help you with it."
 
 13. **Artwork, logo and photos (question 10 merged in):** "Would you like me to create the
     pictures we need, or do you already have a logo or pictures you want me to use?" When they
-    have some, the run points at the folder `<Name> pictures` already on the client's Desktop
+    have some, the run points at the folder `<Name> files` already on the client's Desktop
     (created ONCE at turn 3 from the naming line — never created again here), then says, as part of the same question: "If you
-    have a logo or photos, drag them into the folder called '<Name> pictures' on your Desktop,
-    then say done. If not, that's fine." The run copies what lands there into `00-INPUT/` and
+    have a logo or photos, drag them into the folder called '<Name> files' on your Desktop,
+    then say done. If not, that's fine." On a supplied folder there is no Desktop folder: the
+    run names that folder instead — "If you have a logo or photos, put them in your
+    '<folder name>' folder, then say done." The run copies what lands there into `00-INPUT/` and
     records each file in `00-INPUT/CONTENT.md`; the client never types a path. The client is
     NEVER asked which picture model to use — that
     is Candace's job, and `references/media-model-selection.md` owns how she decides and what
@@ -699,7 +716,8 @@ client.
 
 **Item 13 of the list is this block's opening**, spoken in the build's own words: "Would you
 like me to create the pictures we need, or do you already have a logo or pictures you want me
-to use?" (with the Desktop-folder half from section 3 when they have some)
+to use?" (with the folder half from section 3 — `<Name> files` on the Desktop, or the
+supplied folder by its own name — when they have some)
 Do not then ask it a second time.
 
 Then, and only these — and both are questions about MONEY and TASTE, never about technology.
