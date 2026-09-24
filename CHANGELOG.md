@@ -23,10 +23,15 @@ count, and a count lower than the folder's readable file count is a defect. The 
 selftest now checks that both entry-mode shapes pass (#22b), and its two "pictures" mentions
 now say "files".
 
-**B — `references/*.md`.** Every mention of the Desktop drop folder in the references now says
-`<Name> files`, the supplied-folder behaviour matches A, and wherever the references describe
-reading supplied material, they now say to read every file recursively. Mentions of pictures
-or images as media (media pipeline, design direction, image generation) are unchanged.
+**B — `references/interview.md`, `references/audience.md`, `references/conductor.md`.** Only
+these three references changed; no `tools/` script creates or names the Desktop folder, so none
+needed a fix. `interview.md` carries the drop-folder wording in three places — the entry-mode
+question (section 1, item 5), the artwork/logo/photos ask (item 13), and its restatement near
+the end of the block — all now `<Name> files`, and the supplied-folder behaviour matches A.
+`audience.md`'s confirm line now states the true count read, citing `interview.md` section 1,
+item 5. `conductor.md`'s working-directory rule now says supplied material is read in full,
+every file in every subfolder, split across reader agents when large. Mentions of pictures or
+images as media (media pipeline, design direction, image generation) are unchanged.
 
 ## [nine-router-setup 1.20.0] — 2026-09-24
 
