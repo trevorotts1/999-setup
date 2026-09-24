@@ -12,18 +12,18 @@ instead of opening.
 
 **A — `tools/hooks/conversation-gate.py`.** `_recorded()` now counts a question as recorded when
 the normalized question and an Asked line contain one another, when at least 80% of the
-question's significant words appear in one Asked line, or when the best-matching Asked entry
-already has an answer; an unrelated Asked line still does not count. Every block reason that
-asks the model to record something carries the exact `answers.sh` command, with the real skill
-and project paths when known.
+question's significant words appear in one Asked line, or when the best-matching Asked entry is
+at least 50% related and already has an answer; an unrelated Asked line still does not count.
+Block reasons J and D now carry the exact `answers.sh` command to run, with the real skill and
+project paths when known; H is unchanged.
 
 **B — `tools/answers.sh`, `tools/hooks/dispatch-gate.py`.** `answers.sh … ask` refuses (exit 2)
 words that still hold an unfilled `<…>` placeholder; angle-bracketed URLs and emails are
-allowed. An `Agent`/`Task` call is a reader, never a build, when its description or
-subagent_type says read/reader/research/explore/audit-read, its prompt opens (first 200
-characters) with "READ-ONLY", "read-only" or "You are a reader", or its subagent_type is
-Explore; readers are never held to shapes 8–10, and an incidental "build" in a reader's prompt
-no longer makes it one.
+allowed. An `Agent`/`Task` call is a reader, never a build, when its prompt opens (first 200
+characters) with "READ-ONLY", "read-only" or "You are a reader"; or its subagent_type is
+exactly Explore; or its description carries a reader word (read/reader/research/explore/
+audit-read) with none of the veto words (build/implement/fix/repair/write/edit/code/merge/
+deploy) also in that description. Readers are never held to shapes 8–10.
 
 **C — `SKILL.md`.** Any reply to the entry-mode question that points at a folder, files or a
 path is the `pointed` answer, recorded with `answers.sh … answer entry-mode` and written as
