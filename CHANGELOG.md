@@ -18,9 +18,13 @@ when absent), counted from the bound state or the ledger so the count survives a
 profile's `policy.builderRoute` and `policy.qcRoute` are the builder and judge seat routes and
 override the seat table; `project-profile.mjs fields` exposes both routes and both budgets. The
 build and judge waves carry the original builder's identity, and the fix wave repairs on that
-seat, names the rescue seat and refuses a unit whose budget is spent. The older 20-cycle and
-one-gap-per-round wording is retired in `PROMPT-QC-INSTRUCTIONS.md`, `workflows.md`, `loops.md`,
-`resume.md` and `project-profile.md` as well.
+seat, names the rescue seat (`rescue:<id>`, same route) and refuses a unit whose budget is
+spent. This replaces the 20-cycles-per-finding cap in `pipeline.md`, `gauntlet.md` and
+`conductor.md`; the older 20-cycles-per-finding and one-gap-per-round wording is also retired
+from `PROMPT-QC-INSTRUCTIONS.md`, `workflows.md`, `loops.md`, `resume.md`, `project-profile.md`
+and the `gauntlet.md` plateau passages, and `SKILL.md`'s Unit Gauntlet bullet states the rule.
+`tools/project-profile-selftest.sh` gains an assertion that fails on the old code, and a
+stub-harness check of the three templates passes and fails on the old templates.
 
 **B — donor repositories: fork and combine instead of writing from scratch (`tools/donors.sh`
 new, `SKILL.md`, `references/research.md`, `references/build.md`).** `tools/donors.sh <project>
@@ -42,17 +46,24 @@ selftest uses local bare repositories (6 cases).
 `scripts/common/watch-tick.mjs`, `tools/deploy-auth.sh`, `tools/publish.sh`,
 `nine-router-setup/scripts/setup-macos.sh`, `references/terminals.md`,
 `if-the-power-goes-out.md`, `environment-sweep.md`, `documents.md`, `SKILL.md`).** New projects
-default to `~/Projects/<slug>`: macOS privacy blocks background jobs such as cron from Desktop,
-Documents and Downloads. A folder the client supplies is never moved. The cron line now passes
-`--log` instead of a shell redirect, so a folder macOS refuses to cron is named instead of
-silently skipped: one `TICK-BLOCKED-BY-PRIVACY: path=… fix=…` line, recorded outside the
-project, never repeated, filed on the ledger and under the morning report's operator notes, and
-cleared by a cron tick that can read the folder (selftest cases 50–52). `setup-macos.sh` checks,
-read-only, whether cron has Full Disk Access (GRANTED, NOT GRANTED or UNDETERMINED), prints the
-one-step instruction and offers to open the settings page; it never changes a privacy setting.
-`deploy-auth.sh --check` reports `HOSTING-LOGIN: OK|MISSING|UNDETERMINED`; with neither a token
-nor a `vercel login` session, `publish.sh` names the single login step, and `setup-macos.sh` and
-the environment sweep report the missing login early, as an operator note.
+default to `~/Projects/<slug>`: macOS privacy protection can block background jobs such as cron
+from Desktop, Documents and Downloads, and `~/Projects` is not protected. A folder the client
+supplies is never moved, and `tools/boss-cron` scans both `~/Projects` and
+`~/Downloads/projects`, so existing projects are not orphaned. The cron line now passes `--log`
+instead of a shell `>>` redirect (`loops.md` and `enforcement.md` show it), so a folder macOS
+refuses to cron is named instead of silently skipped: on a real "Operation not permitted" the
+tick prints one `TICK-BLOCKED-BY-PRIVACY: path=… fix=<Full Disk Access steps>` line, keeps a
+record outside the project and exits 2, never retrying in a loop; the in-session tick files it
+on the ledger and under the morning report's operator notes, and a cron tick that can read the
+folder clears it. `setup-macos.sh` checks, read-only, whether cron has Full Disk Access and says
+only GRANTED or UNDETERMINED, never "blocked", because a missing privacy entry is not proof;
+it prints the one-step instruction and offers to open the settings page, and never changes a
+privacy setting. `deploy-auth.sh` already fell back to the machine's own `vercel login` session
+(confirmed); its new `--check` prints `HOSTING-LOGIN: OK|MISSING|UNDETERMINED`. With neither a
+token nor a login session, `publish.sh` writes `HOSTING-BLOCKED: no hosting login on this
+computer` and names the one step, `vercel login`; `setup-macos.sh` and the environment sweep
+report the missing login early, as an operator note. Selftests: `watch-tick.sh` 53/53 (new
+cases 50–52), `watch-tick.mjs` 19/19, `publish.sh` 7/7, `provision-db.sh` exit 0.
 
 **D — the Windows PowerShell files.** A portable PowerShell 7.6.6, run from a scratch folder and
 removed afterwards, parsed all 10 PowerShell files shipped by nine-router-setup, spec-protocol
