@@ -709,7 +709,7 @@ MAX_Q_PER_PARA = 2
 # G4 -- interview.md's lowering sentence: "Good news — it will be at most <C'> now".
 LOWERING = re.compile(r"it will be at most\s+(\d+)", re.I)
 # A mandated REQUEST is a yield too: the key asks end "Copy it, then say ready,
-# and I'll file it..." and the pictures ask ends "...then say done." The client
+# and I'll file it..." and the Desktop-files ask ends "...then say done." The client
 # has something to do and a word to reply with; that is not a stall.
 YIELD_REQUEST = re.compile(r"\bthen say (ready|done)\b", re.I)
 GENERIC_DIRS = {"projects", "downloads", "documents", "desktop", "tmp", "src", "work"}
@@ -1357,7 +1357,7 @@ def _selftest():
 
     # A1 -- 2026-09-24: the question was recorded as a PARAPHRASE; J looped on it.
     PARAPHRASED = ('# Answers\n\n## entry-mode\n**Asked:** "Which would you rather do - tell me '
-                   'about it in your own words, or drag notes and pictures into the Desktop '
+                   'about it in your own words, or drag notes and documents into the Desktop '
                    'folder?"\n**Answer:** _blank_\n')
     UNRELATED = ('# Answers\n\n## name\n**Asked:** "What should we call it?"\n'
                  '**Answer:** "Brightside"\n')
@@ -1497,6 +1497,18 @@ def _selftest():
            (len(scripts) >= 10, tripped), (True, []))
     else:
         print("SKIP  #22 mandated wordings (SKILL.md not beside this hook)")
+
+    # 22b -- round 8: entry mode has two shapes; both pass a fresh ledger.
+    ENTRY_SHAPES = (
+        "I'll work from everything in your 'Bakery Notes' folder. Is there anything else "
+        "you'd like me to read as well, or shall I start with what's there?",
+        "I can learn about your idea in one of two ways.\n\nYou can tell me about it in your "
+        "own words, or, if you already have notes, documents, pictures or something you've "
+        "started, drag them into the folder called 'Brightside files' on your Desktop and say "
+        "done. Either is fine, and you can do both.\n\nWhich would you rather do?")
+    t2("#22b both entry-mode shapes pass both ledger shapes",
+       [bool(evaluate(q, led)) for q in ENTRY_SHAPES
+        for led in (PLACEHOLDER_KV, PLACEHOLDER_TABLE)], [False] * 4)
 
     # 23 -- init ran in this session but the ledger file is missing.
     gone = os.path.join(d3, "Never Made")
