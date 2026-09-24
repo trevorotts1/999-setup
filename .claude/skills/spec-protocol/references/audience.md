@@ -150,7 +150,8 @@ report" below).
 
 When the user answers a question, confirm: "Got it. [one-line summary of what you
 heard]. Next question:" When they give you all the information (entry mode 2),
-confirm: "I have read everything. Here is what I understood: [one-paragraph
+confirm with the true count read (`interview.md` section 1, item 5): "I've read all
+[N] files in your folder, including the [n] in [subfolder]/. Here is what I understood: [one-paragraph
 summary]. If I got something wrong, tell me and I will fix it. Did I get that
 right?" — the confirm ends ON its question, like every client turn.
 
