@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 8: the "<Name> pictures" Desktop folder and the half-read folder
+
+A real run started inside a project folder that already held about 50 documents and a
+`.spec-protocol.json`, yet it still made an empty `~/Desktop/<Name> pictures/` folder and asked
+the client to drag material into it. The client read "pictures" as the wrong folder. The run
+then said it had read 5 documents when the folder held about 50 across several subfolders.
+
+**A — `SKILL.md`, `tools/hooks/conversation-gate.py`.** When the run starts in, or is pointed
+at, a folder that already holds the client's documents or a `.spec-protocol.json`, no Desktop
+folder is created. The entry-mode question names that folder instead: "I'll work from everything
+in your '<folder name>' folder. Is there anything else you'd like me to read as well, or shall I
+start with what's there?" "Start", "that's all" and similar replies count as `pointed`. The
+question is still asked once and recorded through `answers.sh`. Otherwise the drop folder is
+`~/Desktop/<Name> files/`, never "pictures", and the logo-and-photos question points at it. The
+supplied-material read covers every file in the folder and all its subfolders. It skips only
+`.git/`, `node_modules/`, build output, and binary files other than images and PDFs. A large set
+is split across several reader agents in one visible workflow. The confirm line states the true
+count, and a count lower than the folder's readable file count is a defect. The gate's
+selftest now checks that both entry-mode shapes pass (#22b), and its two "pictures" mentions
+now say "files".
+
+**B — `references/*.md`.** Every mention of the Desktop drop folder in the references now says
+`<Name> files`, the supplied-folder behaviour matches A, and wherever the references describe
+reading supplied material, they now say to read every file recursively. Mentions of pictures
+or images as media (media pipeline, design direction, image generation) are unchanged.
+
 ## [nine-router-setup 1.20.0] — 2026-09-24
 
 ### A namespaced tool name in a model's reply, and Claude Code rejects the call
