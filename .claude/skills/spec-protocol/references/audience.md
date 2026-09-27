@@ -353,6 +353,18 @@ plain language and what you can do about it]
 [ONLY for a served target published without a custom address — `publish.md`
 section 4 owns the words and the two rows. Optional; nothing is broken without it.]
 
+## Code we borrowed
+
+[ONLY when the run used donor code (step 8.5). One line per donor, read from the
+donor receipt: what the piece is in plain words, the kind of license it has, and
+the ONE sentence for that kind. Never a license id, a project address or a file name
+here; those go in the Operator notes.]
+  free-to-use:  The <piece> came from a free project with a free-to-use license. Free to use, just keep the credit.
+  share-alike:  The <piece> came from a project with a share-alike license. You can test with it freely; before you launch, either swap it for a freely usable alternative (I can do that) or share your own code as that license requires.
+  no license:   The <piece> came from a project with no license. Before you launch, swap it (I can do that) or get the author's written permission.
+[then, when any line above is not free-to-use:]
+To swap one, just tell me, for example: "swap the <piece>".
+
 ## How to see it
 
 Open <URL> in your web browser.
@@ -364,7 +376,9 @@ Your project's files are also in your own GitHub account at <link>.
 ## Operator notes
 
 [what only the operator acts on: a `DECISION-ENGINE: absent` result, a
-`HOOKS-ABSENT:` line, key and account notes, tool paths, the store-release and
+`HOOKS-ABSENT:` line, key and account notes, tool paths, every donor's name,
+commit, license id and `licenseClass` from the donor receipt with each
+`DONOR-LICENSE-NOTE:` line (license ids such as AGPL appear HERE only), the store-release and
 signing steps, and how much of the machine was used — peak and mean
 concurrency against the measured `clientCap` (Capacity Ledger,
 `references/capacity.md` §3), read off the run's `S-CHECK` lines' `open=<n>`

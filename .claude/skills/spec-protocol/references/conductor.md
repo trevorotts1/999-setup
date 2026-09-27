@@ -449,10 +449,12 @@ Its first line is ONE template (`references/audience.md` owns it), picked by cas
 Then: "Here's what got built, what I checked, and the one or two things only you can decide."
 
 Then what got built, what was checked and how, the run's score curve, what is blocked
-and why, and the one or two decisions only they can make — each written down so none of
-it waits up for them. Operator-only notes (a `DECISION-ENGINE: absent` result, a
-`HOOKS-ABSENT:` line, anything about keys or accounts the client never needs to act on) go
-in the report's operator notes, never in the client's opening lines. The operator notes
+and why, the code we borrowed (when donors were used: one plain line per donor — what
+it is, its kind of license, and what to do before launch; `references/audience.md` owns
+the words), and the one or two decisions only they can make — each written down so none
+of it waits up for them. Operator-only notes (a `DECISION-ENGINE: absent` result, a
+`HOOKS-ABSENT:` line, each `DONOR-LICENSE-NOTE:` with its license id, anything about keys
+or accounts the client never needs to act on) go in the report's operator notes, never in the client's opening lines. The operator notes
 always list every repository's released version and tag, copied from its `MINTED:` /
 `MINTED-LOCAL:` line, plus any `MINT-FAILED:`, `MINT-CLAIM-FALSE:` or
 `MERGE-CLAIM-FALSE:` line still open, and every `AUTO-RESUME-NOT-OPENED:` line with
