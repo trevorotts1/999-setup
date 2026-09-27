@@ -455,7 +455,10 @@ it waits up for them. Operator-only notes (a `DECISION-ENGINE: absent` result, a
 in the report's operator notes, never in the client's opening lines. The operator notes
 always list every repository's released version and tag, copied from its `MINTED:` /
 `MINTED-LOCAL:` line, plus any `MINT-FAILED:`, `MINT-CLAIM-FALSE:` or
-`MERGE-CLAIM-FALSE:` line still open.
+`MERGE-CLAIM-FALSE:` line still open, and every `AUTO-RESUME-NOT-OPENED:` line with
+its stall time and the restart sentence filled in. The tick's auto-resume opens a
+visible Terminal window, or leaves a morning-note line when it can't; it never starts
+a headless or `-p` session.
 
 ## 13. What you never do
 
