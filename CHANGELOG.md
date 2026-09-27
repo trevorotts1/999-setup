@@ -1,5 +1,58 @@
 # Changelog
 
+## [Unreleased]
+
+### Round 10: no hidden restarts, and donor code without an approval gate
+
+**A — auto-resume opens a visible window and never runs headless
+(`tools/watch-tick.sh`, `scripts/common/watch-tick.mjs`, `SKILL.md`,
+`references/resume.md`, `optional/agent-team.md`, `conductor.md` §12).** Before this change,
+`tools/watch-tick.sh` and `scripts/common/watch-tick.mjs` started a stalled run again with a
+hidden `nohup <launcher> -p ...`. Now the tick writes `<area>/auto-resume.command`. That file
+changes to the recorded launch folder, writes the marker `<area>/auto-resume.opened`
+(noclobber, so a second window exits straight away) and runs `<launcher> --permission-mode
+bypassPermissions --resume <id> "/spec-protocol resume"` as an ordinary interactive session.
+The tick opens it with `open -a Terminal`. If no marker appears within 20 seconds, it tries
+`osascript ... do script` once. On Windows the Node twin writes `auto-resume.cmd` and opens it
+with `cmd.exe /c start "spec-protocol resume"`. If no method produces the marker, nothing is
+started. The tick writes `AUTO-RESUME-NOT-OPENED: session=... reason=...` to the ledger, adds
+the stall time and the filled-in restart sentence under the morning report's Operator notes,
+and prints `AUTO-RESUME | not opened | ...`. The 30-minute lock and the firing conditions have
+not changed. Selftest overrides: `WATCH_TICK_OPEN_CMD`, `WATCH_TICK_OSASCRIPT_CMD`, plus
+`WATCH_TICK_START_CMD` and `WATCH_TICK_PLATFORM` in the Node twin. Both selftests set every
+opener to /usr/bin/false by default, so no real window ever opens. New cases: bash 53
+(osascript fallback) and 54 (neither opens, so nothing starts, with the ledger line and the
+morning note); mjs 20, 21 and 22 (the Windows visible path). Bash 43 and 45 and mjs 17 now
+expect no `-p` and an opened window. `references/optional/agent-team.md` no longer tells a lead
+to run `claude-nine -p`; it uses a visible interactive `claude-nine` window and says plainly
+that no headless or `-p` session is ever started. `references/resume.md` and
+`references/conductor.md` §12 say the tick opens a visible window or leaves a morning-note
+line, the morning report's operator notes list every `AUTO-RESUME-NOT-OPENED:` line, and
+`SKILL.md`'s resume paragraph states the same.
+
+**B — donor code is used automatically, the client is told, and every piece is tagged
+(`tools/donors.sh`, `SKILL.md` step 8.5, `references/build.md`, `research.md`,
+`audience.md`, `conductor.md` §12).** `donors.sh` no longer refuses an AGPL, copyleft or
+unlicensed donor, and `ownerApproved` is gone: every donor is fetched and used and nothing
+waits on a sign-off. The receipt records each donor's `license` (the declared SPDX id, else
+one read off its LICENSE file's heading, else "none found") and a `licenseClass` of
+`permissive`, `copyleft-network` (AGPL), `copyleft` or `none`; the stricter of the declared
+and the file's class wins, and a donor with no license file or an unknown license is `none`.
+Each non-permissive donor prints `DONOR-LICENSE-NOTE: name=… license=… class=…`. `--fetch`
+creates `<project>/BORROWED-CODE.md` with one section per donor and `<project>/LAUNCH-CHECKLIST.md`
+with one unchecked "swap it or comply" line per non-permissive donor; both only ever append
+sections or lines for new donors and never rewrite existing rows. Builders put
+`Borrowed from <repo>@<short-sha> (<license>). See BORROWED-CODE.md.` on every file holding
+donor code and add its row. The morning report gains a "Code we borrowed" section above the
+Operator notes, one plain line per donor with one of three sentences (free to use; test freely,
+swap or share before launch; swap or get written permission before launch), which passes
+`tools/speech-check.sh`; license ids stay in the Operator notes. The launch checklist is
+informational only: `release.sh`, `publish.sh`, `audit-gate.sh`, `dispatch-check.sh`/`.mjs`
+and `hooks/dispatch-gate.py` do not read it. A "swap <piece>" request runs through research
+(a permissive alternative) and the gauntlet. The donors selftest's AGPL case is now accepted
+with its note line, and adds a donor declared MIT whose LICENSE reads AGPL, plus a re-fetch
+that keeps a builder's row.
+
 ## [1.32.1] — 2026-09-24
 
 - `tools/boss-cron`: its loop-bound summary line still said "20 cycles per finding". It now states the Round 9 rule: one judging round is one QC verdict against the per-task budget (`policy.maxQCVerdicts` / `policy.maxBuilderSubmissions`, else 4), the original builder repairs, one rescue, then the unit is parked with its full history. No other change.
