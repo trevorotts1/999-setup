@@ -141,7 +141,7 @@ RE_backup_announcement='[Bb]ackups?[[:space:]]+at[[:space:]]+[^[:space:]]*[/\][^
 # "token" is here; the one standing exception (a label the client must FIND:
 # "Private Integration Token", "Firebase refresh token") is removed by
 # WHITELIST_SED before any class is matched.
-RE_jargon='(^|[^A-Za-z])([Dd]atabases?|[Dd]eploy(s|ed|ing|ments?)?|[Ss]ervers?|APIs?|[Rr]epositor(y|ies)|[Rr]epos|[Rr]epo|Git|[Ff]ront-?end|[Bb]ack-?end|CLI|[Rr]untimes?|[Ff]rameworks?|[Ee]ndpoints?|[Ww]orkflows?|[Cc]ontext window|[Aa]uthentication|OAuth|[Ww]ebhooks?|DNS|[Tt]okens?)([^A-Za-z]|$)'
+RE_jargon='(^|[^A-Za-z])([Dd]atabases?|[Dd]eploy(s|ed|ing|ments?)?|[Ss]ervers?|APIs?|[Rr]epositor(y|ies)|[Rr]epos|[Rr]epo|Git|[Ff]ront-?end|[Bb]ack-?end|CLI|[Rr]untimes?|[Ff]rameworks?|[Ee]ndpoints?|[Ww]orkflows?|[Cc]ontext window|[Aa]uthentication|OAuth|[Ww]ebhooks?|DNS|[Tt]okens?|[Aa][Gg][Pp][Ll]|[Ll][Gg][Pp][Ll]|[Gg][Pp][Ll]|[Ss][Pp][Dd][Xx]|[Cc]opyleft|[Mm][Ii][Tt][[:space:]]+[Ll]icense)([^A-Za-z]|$)'
 
 # Mandated sentences the classes above would refuse, neutralised before linting:
 # the GATE 0 refusal (SKILL.md: "Type `ultracode /spec-protocol`"), the restart
@@ -407,6 +407,15 @@ selftest() {
   # plus the integration-token exception. The mandated lines must pass CLEAN.
   _fixture banned-jargon 3 jargon \
     'I set up the database on the server and will deploy it through the API tonight.'
+
+  # --- #18b: license ids belong in the operator notes only (Round 10, B3) --
+  # the client's "Code we borrowed" line says "keep the credit" or "swap it",
+  # never AGPL/GPL/LGPL/SPDX/copyleft/"MIT license". "license" alone is
+  # everyday English and stays legal (proven by control-license-word below).
+  _fixture banned-license-jargon 3 jargon \
+    'The donor code carries an AGPL license, which is a form of copyleft; another piece uses GPL, a third LGPL, and the SPDX record differs from the MIT license terms on the last one.'
+  _fixture control-license-word 0 none \
+    'Before you launch, either swap this piece for a freely usable alternative or get the author'"'"'s written permission for the current license.'
   _fixture control-mandated-sentences 0 none \
     "One switch has to be on before I can start my helpers. Type \`ultracode /spec-protocol\` — the word \`ultracode\` first, then the command — and press Return; that's all.
 If your computer restarts or we get disconnected: open the Terminal app, type \`claude-nine --resume\`, press Return, pick this project from the list, and I carry on from where I was.
@@ -432,19 +441,19 @@ token', then 'Copy the token'.
 Look for a section called 'API Keys' (usually under your account settings).
 Open its integration settings, tick the Media permissions, and tell me when it's done."
 
-  # --- The ledger really was written: eighteen lines, five of them `clean`.
+  # --- The ledger really was written: twenty lines, six of them `clean`.
   local total clean
   total="$("${GREP}" -c 'SPEECH-CHECK: ' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
   clean="$("${GREP}" -c 'SPEECH-CHECK: clean' "${home}/CONTROL/LEDGER.md" 2>/dev/null || echo 0)"
-  if [ "${total}" = "18" ] && [ "${clean}" = "5" ]; then
-    echo "SELFTEST ok   | ledger-written | lines=18 clean=5"
+  if [ "${total}" = "20" ] && [ "${clean}" = "6" ]; then
+    echo "SELFTEST ok   | ledger-written | lines=20 clean=6"
   else
-    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 18) clean=${clean} (want 5)"
+    echo "SELFTEST FAIL | ledger-written | lines=${total} (want 20) clean=${clean} (want 6)"
     fails=$((fails + 1))
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    echo "SELFTEST PASS | ${n} fixtures (5 controls PASS, 13 banned lines caught) + ledger check"
+    echo "SELFTEST PASS | ${n} fixtures (6 controls PASS, 14 banned lines caught) + ledger check"
     exit 0
   fi
   echo "SELFTEST FAILED | ${fails} check(s) failed — this checker may not be believed until it is fixed" >&2

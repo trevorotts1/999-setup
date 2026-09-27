@@ -12,8 +12,7 @@
 #      (`reusedPaths` is read as `reuse`);
 #   3. <workdir>/donors.json — {"donors": [...]}.
 # workdir = <project>/CONTROL, or `project-profile.mjs workdir` on a profiled project.
-# An entry may also carry licenseFile, licenseSha256 (checked when present) and
-# ownerApproved (see LICENSES).
+# An entry may also carry licenseFile and licenseSha256 (checked when present).
 #
 # --fetch clones each donor into <workdir>/donors/<name> — outside the product source
 # tree, and donors/.gitignore keeps it out of any commit, so nothing is vendored by
@@ -24,10 +23,18 @@
 # never floats. --check proves the same against the receipt without fetching (an
 # unpinned donor fails it).
 #
-# LICENSES: an AGPL donor, or one with no license (declared empty, none, unknown,
-# unlicensed or proprietary, or no LICENSE/LICENCE/COPYING file in the checkout), is
-# refused unless its entry carries "ownerApproved": true. "Unlicense" (The Unlicense)
-# is a license and is allowed.
+# LICENSES never block and nothing waits on a sign-off: every donor is fetched and
+# used. The receipt records each one's license (the declared SPDX id, else one read
+# off its LICENSE file's heading, else "none found") and a licenseClass of
+# permissive | copyleft-network (AGPL) | copyleft | none. The stricter of the declared
+# and the file's class wins; a donor with no license file, or a license this tool does
+# not know, is class none. Each non-permissive donor prints
+# DONOR-LICENSE-NOTE: name=… license=… class=… and gets one unchecked line in
+# <project>/LAUNCH-CHECKLIST.md — informational only: no release, publish, audit or
+# dispatch tool reads that file, and none refuses on it.
+# --fetch also creates <project>/BORROWED-CODE.md (one section per donor, where builders
+# add a row per borrowed file) when it is missing, and only ever APPENDS sections for
+# new donors; existing rows and checklist lines are never rewritten.
 #
 # Prints DONORS-READY: n=<k> (exit 0), or one DONOR-FAILED: name=… reason=… line per
 # failed donor (exit 3). Exit 2 undetermined (no project folder, no git/python3, the
@@ -59,6 +66,37 @@ receipt_path = os.path.join(donors_dir, "receipt.json")
 FULL_SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 NO_LICENSE = {"", "none", "noassertion", "unknown", "unlicensed", "proprietary"}
 LICENSE_FILE = re.compile(r"^(licen[cs]e|copying)([.-].*)?$", re.I)
+# a LICENSE file's heading -> SPDX id; order matters (AGPL and LGPL before GPL)
+HEADINGS = [("affero general public", "AGPL-3.0"), ("server side public", "SSPL-1.0"),
+            ("lesser general public", "LGPL"), ("gnu general public", "GPL"),
+            ("mozilla public", "MPL-2.0"), ("eclipse public", "EPL"), ("european union public", "EUPL"),
+            ("apache license", "Apache-2.0"), ("mit license", "MIT"),
+            ("permission is hereby granted, free of charge", "MIT"),
+            ("free and unencumbered software", "Unlicense"), ("isc license", "ISC"),
+            ("redistribution and use in source and binary forms", "BSD")]
+RANK = {"permissive": 0, "copyleft": 1, "copyleft-network": 2, "none": 3}
+RULE = {"copyleft-network": "share your whole app's source code, under the same license, with everyone who uses it, even over the internet",
+        "copyleft": "share the source code of what you ship with it, under the same license",
+        "none": "get the author's written permission"}
+
+def license_class(spdx):
+    l = spdx.lower()
+    if l in NO_LICENSE or l == "none found":
+        return "none"
+    if "agpl" in l or "sspl" in l:
+        return "copyleft-network"
+    if re.search(r"(^|[^a-z])(l?gpl|mpl|epl|eupl|cddl|osl|cc-by-sa)", l):
+        return "copyleft"
+    if re.search(r"(^|[^a-z])(mit|apache|bsd|0bsd|isc|unlicense|zlib|cc0|bsl-1\.0|psf|python|wtfpl|x11)([^a-z]|$)", l):
+        return "permissive"
+    return "none"  # a license this tool does not know is treated as no license
+
+def append_missing(path, head, blocks):  # blocks: [(marker, text)]; adds only the missing ones
+    text = open(path).read() if os.path.exists(path) else head
+    add = [b for m, b in blocks if m not in text]
+    if add or not os.path.exists(path):
+        with open(path, "w") as f:
+            f.write(text + ("" if text.endswith("\n") else "\n") + "".join(add))
 
 def load(path):
     if not os.path.exists(path):
@@ -120,9 +158,6 @@ for d in donors:
     if re.match(r"^https?://[^/@]+@", url):
         fail(name, "url-has-embedded-credential"); continue
     license_name = str(d.get("license") or "").strip()
-    approved = d.get("ownerApproved") is True
-    if (license_name.lower() in NO_LICENSE or "agpl" in license_name.lower()) and not approved:
-        fail(name, f"license-refused:{license_name or 'none'} (needs ownerApproved:true)"); continue
 
     commit = str(d.get("commit") or "").strip().lower()
     if not commit:  # the pin this tool wrote back on an earlier run
@@ -160,21 +195,27 @@ for d in donors:
     lic_file = d.get("licenseFile") or next((f for f in sorted(os.listdir(dest))
                                             if LICENSE_FILE.match(f) and os.path.isfile(os.path.join(dest, f))), None)
     lic_path = os.path.join(dest, lic_file) if lic_file else None
-    lic_sha = None
+    lic_sha, lic, lic_class = None, "none found", "none"
     if lic_path and os.path.isfile(lic_path):
         with open(lic_path, "rb") as f:
-            lic_sha = hashlib.sha256(f.read()).hexdigest()
-    elif not approved:
-        fail(name, "no-license-file-in-checkout (needs ownerApproved:true)"); continue
+            raw = f.read()
+        lic_sha = hashlib.sha256(raw).hexdigest()
+        head_text = raw[:4096].decode("utf-8", "replace").lower()
+        found = next((i for k, i in HEADINGS if k in head_text), None)
+        picks = [(license_class(x), x) for x in (license_name, found) if x]
+        if picks:  # the stricter of the declared license and the file's heading wins
+            lic_class, lic = max(picks, key=lambda p: RANK[p[0]])
     if d.get("licenseSha256") and lic_sha != d["licenseSha256"]:
         fail(name, "license-sha256-differs-from-the-declared-one"); continue
     if mode == "check" and (name not in receipt or receipt[name].get("commit") != commit
                             or receipt[name].get("licenseSha256") != lic_sha):
         fail(name, "differs-from-receipt (license file changed, or never fetched with this pin)"); continue
-    ready.append({"name": name, "url": url, "commit": commit, "path": dest, "license": license_name or None,
-                  "ownerApproved": approved, "licenseFile": lic_file, "licenseSha256": lic_sha,
+    ready.append({"name": name, "url": url, "commit": commit, "path": dest, "license": lic,
+                  "licenseClass": lic_class, "licenseFile": lic_file, "licenseSha256": lic_sha,
                   "reuse": d.get("reuse", d.get("reusedPaths", []))})
-    print(f"DONOR: name={name} commit={commit[:12]} license={license_name or 'none'} path={dest}")
+    print(f"DONOR: name={name} commit={commit[:12]} license={lic} class={lic_class} path={dest}")
+    if lic_class != "permissive":
+        print(f"DONOR-LICENSE-NOTE: name={name} license={lic} class={lic_class}")
 
 if resolved:  # write the resolved pins back, so the next run reads them
     by_name = {r["name"]: r for r in resolved}
@@ -184,6 +225,19 @@ if resolved:  # write the resolved pins back, so the next run reads them
         print(f"DONOR-PINNED: name={r['name']} commit={r['commit']} written to {own_path}")
 if mode == "fetch" and donors:
     write_json(receipt_path, {"source": source, "donors": ready})
+    append_missing(os.path.join(home, "BORROWED-CODE.md"),
+        "# Borrowed code\n\nEvery file holding code adapted from a donor starts with the comment\n"
+        "`Borrowed from <repo>@<short-sha> (<license>). See BORROWED-CODE.md.` and has a row\n"
+        "in that donor's table below, so every borrowed piece is easy to find and swap.\n",
+        [(f"\n## {r['name']}\n", f"\n## {r['name']}\n\nDonor: {r['url']} @ {r['commit'][:12]}, "
+          f"license {r['license']} ({r['licenseClass']})\n\n| File or path | Donor commit | License | What was changed |\n"
+          "|---|---|---|---|\n") for r in ready])
+    notes = [r for r in ready if r["licenseClass"] != "permissive"]
+    if notes:
+        append_missing(os.path.join(home, "LAUNCH-CHECKLIST.md"),
+            "# Before launch\n\nReminders only: nothing here stops the build or the launch.\n\n",
+            [(f"(say 'swap {r['name']}')", f"- [ ] Before launch: swap {r['name']} for a freely usable "
+              f"alternative (say 'swap {r['name']}') or comply ({RULE[r['licenseClass']]})\n") for r in notes])
 if failed:
     sys.exit(3)
 print(f"DONORS-READY: n={len(ready)}")
@@ -237,16 +291,27 @@ selftest() {
     ok "unpinned donor pinned once in donors.json and held there after upstream moved"
   else no "unpinned pin rc=$rc"; fi
 
-  # 4. AGPL refused, then allowed with ownerApproved; a bogus pin fails with exit 3.
+  # 4. AGPL fetched and used with a note, never refused; a donor declared MIT whose LICENSE
+  #    file reads AGPL takes the stricter class; BORROWED-CODE.md and LAUNCH-CHECKLIST.md are
+  #    created, and a second fetch keeps a builder's row and adds no duplicate line.
   mkdir -p "$t/p3/CONTROL"
-  printf '{"donors":[{"name":"ag","url":"file://%s","commit":"%s","license":"AGPL-3.0"}]}\n' "$t/agpl.git" \
-    "$(git -C "$t/w-agpl" rev-parse HEAD)" > "$t/p3/CONTROL/donors.json"
+  printf '{"donors":[{"name":"ag","url":"file://%s","commit":"%s","license":"AGPL-3.0"},{"name":"mislabel","url":"file://%s","commit":"%s","license":"MIT"},{"name":"ok","url":"file://%s","commit":"%s","license":"MIT"}]}\n' \
+    "$t/agpl.git" "$(git -C "$t/w-agpl" rev-parse HEAD)" "$t/agpl.git" "$(git -C "$t/w-agpl" rev-parse HEAD)" \
+    "$t/mit.git" "$b" > "$t/p3/CONTROL/donors.json"
   out="$(bash "$SELF" "$t/p3" --fetch 2>&1)"; rc=$?
-  sed -i.bak 's/"license"/"ownerApproved":true,"license"/' "$t/p3/CONTROL/donors.json"
+  echo '| src/x.js | abc | AGPL-3.0 | renamed |' >> "$t/p3/BORROWED-CODE.md"
   bash "$SELF" "$t/p3" --fetch >/dev/null 2>&1; a=$?
-  if (( rc == 3 && a == 0 )) && grep -q 'reason=license-refused:AGPL-3.0' <<<"$out"; then
-    ok "AGPL refused (exit 3) until the owner approves it"
-  else no "AGPL rc=$rc approved-rc=$a: $out"; fi
+  if (( rc == 0 && a == 0 )) && grep -q '^DONORS-READY: n=3$' <<<"$out" \
+     && grep -q '^DONOR-LICENSE-NOTE: name=ag license=AGPL-3.0 class=copyleft-network$' <<<"$out" \
+     && grep -q '^DONOR-LICENSE-NOTE: name=mislabel license=AGPL-3.0 class=copyleft-network$' <<<"$out" \
+     && ! grep -q 'DONOR-LICENSE-NOTE: name=ok ' <<<"$out" \
+     && grep -q '"licenseClass": "copyleft-network"' "$t/p3/CONTROL/donors/receipt.json" \
+     && grep -q '"licenseClass": "permissive"' "$t/p3/CONTROL/donors/receipt.json" \
+     && [[ "$(grep -c '^## ' "$t/p3/BORROWED-CODE.md")" == 3 ]] && grep -q 'src/x.js' "$t/p3/BORROWED-CODE.md" \
+     && [[ "$(grep -c '^- \[ \] Before launch: swap ' "$t/p3/LAUNCH-CHECKLIST.md")" == 2 ]] \
+     && ! grep -q "swap ok " "$t/p3/LAUNCH-CHECKLIST.md"; then
+    ok "AGPL used with a DONOR-LICENSE-NOTE, stricter file class wins, both files append-only"
+  else no "AGPL rc=$rc refetch-rc=$a: $out"; fi
   mkdir -p "$t/p4/CONTROL"
   printf '{"donors":[{"name":"bad","url":"file://%s","commit":"%s","license":"MIT"}]}\n' "$t/mit.git" \
     0000000000000000000000000000000000000000 > "$t/p4/CONTROL/donors.json"
@@ -271,7 +336,7 @@ selftest() {
 
 case "${1:-}" in
   --selftest) selftest ;;
-  ""|-h|--help) sed -n '2,35p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  ""|-h|--help) sed -n '2,/^set -uo pipefail$/p' "$SELF" | sed '$d' | sed 's/^# \{0,1\}//'; exit 1 ;;
   *) case "${2:-}" in
        --fetch) run "$1" fetch ;;
        --check) run "$1" check ;;
