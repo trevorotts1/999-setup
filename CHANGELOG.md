@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.33.0] — 2026-09-27
 
 ### Round 10: no hidden restarts, and donor code without an approval gate
 
@@ -52,6 +52,13 @@ and `hooks/dispatch-gate.py` do not read it. A "swap <piece>" request runs throu
 (a permissive alternative) and the gauntlet. The donors selftest's AGPL case is now accepted
 with its note line, and adds a donor declared MIT whose LICENSE reads AGPL, plus a re-fetch
 that keeps a builder's row.
+
+**Seam — `tools/speech-check.sh`.** B's "Code we borrowed" line claimed to pass this checker,
+but nothing in its jargon list caught a license id leaking into client wording. AGPL, LGPL,
+GPL, SPDX, copyleft and "MIT license" (whole words, case insensitive) are added to the jargon
+class, on the same word-boundary shape every other jargon term uses; "license" alone stays
+legal English, proven by a new control fixture. One banned fixture and its control join the
+selftest, now 20 fixtures (6 controls, 14 banned).
 
 ## [1.32.1] — 2026-09-24
 
