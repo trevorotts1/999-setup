@@ -69,7 +69,7 @@
 //   4 CONTROL/TERMINAL-DRIFT.flag exists
 //=============================================================================
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -302,15 +302,25 @@ function ledgerWrite(home, relFile, line) {
 //-----------------------------------------------------------------------------
 // AUTO-RESUME (the port of tools/watch-tick.sh 4d, F1-F3) — so a machine with
 // no Git Bash also resumes a hung run. Same file (CONTROL/auto-resume.txt),
-// same 30-minute lock (CONTROL/auto-resume.lock), same command:
-//   <launcher> -p --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"
+// same 30-minute lock (CONTROL/auto-resume.lock), same command, run in a
+// VISIBLE window as an ordinary interactive session — never -p, never hidden
+// or detached:
+//   <launcher> --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"
+// macOS (and any non-Windows box): <area>/auto-resume.command, opened with
+// `open -a Terminal`, then `osascript … do script` once. Windows:
+// <area>\auto-resume.cmd, opened with `cmd.exe /c start "spec-protocol resume"`.
+// Each writes <area>/auto-resume.opened; no marker within 20 s of every method
+// -> nothing is started, AUTO-RESUME-NOT-OPENED goes to the ledger and the
+// restart sentence to the morning report's Operator notes (fallback B).
 // The launcher is claude-nine when this session is routed (a .claude-nine
 // config root on macOS; on Windows the launcher keeps the shared root and
 // points ANTHROPIC_BASE_URL at the loopback router), else claude. It is
 // resolved to an absolute path the way the shell does (PATH, plus PATHEXT on
 // Windows), and on Windows the installed claude-nine.cmd under
 // %LOCALAPPDATA%\BlackCEO\999\bin first — the path setup-windows.ps1 installs.
-// WATCH_TICK_LAUNCHER_CMD replaces the launcher (selftest stub only).
+// WATCH_TICK_LAUNCHER_CMD replaces the launcher; WATCH_TICK_OPEN_CMD,
+// WATCH_TICK_OSASCRIPT_CMD and WATCH_TICK_START_CMD replace open, osascript and
+// cmd.exe; WATCH_TICK_PLATFORM picks the macOS or Windows path (selftest only).
 //-----------------------------------------------------------------------------
 const STALLED_MIN = intEnv('WATCH_STALLED_MIN', 15);
 const IS_WIN = process.platform === 'win32';
@@ -458,7 +468,7 @@ function autoResume(home, elapsed, phase) {
   } catch { /* no lock yet */ }
   const cmd = process.env.WATCH_TICK_LAUNCHER_CMD || rec.launcher_path || rec.launcher || 'claude';
   const cwd = rec.cwd && fs.existsSync(rec.cwd) ? rec.cwd : home;
-  // PATH is set HERE on the resumed process (the scheduled line stays PATH-free),
+  // PATH is prefixed HERE, in the window's script (the scheduled line stays PATH-free),
   // same as watch-tick.sh's resume_path: a scheduler's PATH is minimal, and the
   // launcher's children need node (9Router's cli is `#!/usr/bin/env node`),
   // claude (~/.local/bin) and the 999 npm bin. The node running this tick is
@@ -474,23 +484,71 @@ function autoResume(home, elapsed, phase) {
     path.join(process.env.NINE_ROUTER_NPM_PREFIX || path.join(H, '.local', 'share', '999', 'npm'), 'bin'),
     ...(IS_WIN ? [process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : ''] : ['/opt/homebrew/bin', '/usr/local/bin']),
   ].filter((d) => { try { return d && fs.statSync(d).isDirectory(); } catch { return false; } });
-  const env = { ...process.env };
-  env.PATH = [...pre, process.env.PATH || ''].join(path.delimiter);
   fs.writeFileSync(lock, '');
-  const log = fs.openSync(path.join(b.area, 'auto-resume.log'), 'a');
-  // bypassPermissions: the run is unattended, a permission prompt would stall it forever.
-  const args = ['-p', '--permission-mode', 'bypassPermissions', '--resume', rec.session_id, '/spec-protocol resume'];
-  // A .cmd/.bat cannot be spawned without a shell on Windows; the only
-  // argument with a space is the fixed slash command, and the id is [A-Za-z0-9-].
-  const viaShell = IS_WIN && /\.(cmd|bat)$/i.test(cmd);
-  const child = viaShell
-    ? spawn(`"${cmd}" -p --permission-mode bypassPermissions --resume ${rec.session_id} "/spec-protocol resume"`, { cwd, env, shell: true, detached: true, windowsHide: true, stdio: ['ignore', log, log] })
-    : spawn(cmd, args, { cwd, env, detached: true, windowsHide: true, stdio: ['ignore', log, log] });
-  child.on('error', () => { /* recorded in the log by the absence of output; the ledger line names the attempt */ });
-  child.unref();
-  tickLedger(home,
-    `${isoNow()} | AUTO-RESUME | session=${rec.session_id} | launcher=${rec.launcher || 'claude'} | stalled ${elapsed}m in ${phase} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log ${b.areaRel}/auto-resume.log)`);
-  process.stdout.write(`AUTO-RESUME | launched | ${rec.launcher || 'claude'} -p --permission-mode bypassPermissions --resume ${rec.session_id} "/spec-protocol resume" (stalled ${elapsed}m in ${phase})\n`);
+  const log = path.join(b.area, 'auto-resume.log');
+  const mark = path.join(b.area, 'auto-resume.opened');
+  const win = (process.env.WATCH_TICK_PLATFORM || process.platform) === 'win32';
+  const sid = rec.session_id;
+  fs.rmSync(mark, { force: true });
+  // Every opener's output goes to the log; rc 0 still needs the marker.
+  const tryOpen = (label, prog, args, opts = {}) => {
+    const r = spawnSync(prog, args, { encoding: 'utf8', ...opts });
+    try { fs.appendFileSync(log, `${r.stdout || ''}${r.stderr || ''}`); } catch { /* the log is best effort */ }
+    if (r.error || r.status !== 0) return `${label} rc=${r.error ? 'spawn-error' : r.status}`;
+    for (let i = 0; i <= 20; i += 1) { if (fs.existsSync(mark)) return ''; if (i < 20) sleepMs(1000); }
+    return `${label}: no marker in 20s`;
+  };
+  let how = '';
+  const why = [];
+  if (win) {
+    // ponytail: a % in a path would expand inside the batch file; paths here are Windows folders the client made.
+    const file = path.join(b.area, 'auto-resume.cmd');
+    fs.writeFileSync(file, ['@echo off', `cd /d "${cwd}"`, `if exist "${mark}" exit /b 0`, `echo %DATE% %TIME%> "${mark}"`,
+      `set "PATH=${pre.join(';')};%PATH%"`,
+      `call "${cmd}" --permission-mode bypassPermissions --resume ${sid} "/spec-protocol resume"`, ''].join('\r\n'));
+    const e = tryOpen('start', process.env.WATCH_TICK_START_CMD || 'cmd.exe',
+      ['/c', 'start', '"spec-protocol resume"', `"${file}"`], { windowsVerbatimArguments: true });
+    if (e) why.push(e); else how = 'cmd.exe start';
+  } else {
+    const file = path.join(b.area, 'auto-resume.command');
+    fs.writeFileSync(file, ['#!/bin/bash', `cd ${shq(cwd)} || exit 1`,
+      `( set -C; date -u +%Y-%m-%dT%H:%M:%SZ > ${shq(mark)} ) 2>/dev/null || exit 0`,
+      `export PATH=${shq(pre.map((d) => `${d}:`).join(''))}"$PATH"`,
+      `exec ${shq(cmd)} --permission-mode bypassPermissions --resume ${shq(sid)} ${shq('/spec-protocol resume')}`, ''].join('\n'), { mode: 0o755 });
+    let e = tryOpen('open', process.env.WATCH_TICK_OPEN_CMD || '/usr/bin/open', ['-a', 'Terminal', file]);
+    if (!e) how = 'open -a Terminal';
+    else {
+      why.push(e);
+      e = tryOpen('osascript', process.env.WATCH_TICK_OSASCRIPT_CMD || '/usr/bin/osascript',
+        ['-e', 'on run argv', '-e', 'tell application "Terminal" to do script "bash " & quoted form of (item 1 of argv)', '-e', 'end run', file]);
+      if (e) why.push(e); else how = 'osascript do script';
+    }
+  }
+  const name = rec.launcher || 'claude';
+  if (how) {
+    tickLedger(home,
+      `${isoNow()} | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${elapsed}m in ${phase} — opened a visible ${win ? 'console' : 'Terminal'} window (${how}) running --permission-mode bypassPermissions --resume with /spec-protocol resume (${b.areaRel}/auto-resume.${win ? 'cmd' : 'command'})`);
+    process.stdout.write(`AUTO-RESUME | opened | ${name} --permission-mode bypassPermissions --resume ${sid} "/spec-protocol resume" in a visible ${win ? 'console' : 'Terminal'} window via ${how} (stalled ${elapsed}m in ${phase})\n`);
+    return;
+  }
+  const reason = why.join('; ');
+  tickLedger(home, `${isoNow()} | AUTO-RESUME-NOT-OPENED: session=${sid} reason=${reason}`);
+  reportNote(home, `AUTO-RESUME-NOT-OPENED: the run stalled ${elapsed}m in ${phase} at ${isoNow()} and no window could be opened (${reason}). To continue: If your computer restarts or we get disconnected: open the ${win ? 'PowerShell' : 'Terminal app'}, type \`${name} --resume\`, press Return, pick this project from the list, and I carry on from where I was.`);
+  process.stdout.write(`AUTO-RESUME | not opened | ${reason} (stalled ${elapsed}m in ${phase}); nothing started — the continue command is in the morning report's Operator notes\n`);
+}
+
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const shq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+// Appended under the newest MORNING-REPORT-*.md's Operator notes (watch-tick.sh report_note).
+function reportNote(home, line) {
+  try {
+    const n = fs.readdirSync(home).filter((f) => /^MORNING-REPORT-.*\.md$/.test(f)).sort().pop();
+    if (!n) return;
+    const f = path.join(home, n);
+    const txt = fs.readFileSync(f, 'utf8');
+    if (txt.includes(line)) return;
+    fs.appendFileSync(f, `${/^#+[ \t]*Operator notes/m.test(txt) ? '' : '\n## Operator notes\n\n'}- ${line}\n`);
+  } catch { /* no writable report yet: the ledger line is the record */ }
 }
 
 // The widened stall check (F2): build, or an open spec/apparatus/audit/merge/
@@ -1022,6 +1080,10 @@ function selftest() {
   // reaches runs a no-op unless the case names its own stub (on Windows the
   // path does not exist, so the spawn fails harmlessly — still never a session).
   process.env.WATCH_TICK_LAUNCHER_CMD = '/usr/bin/true';
+  // Nor open a real window: every opener fails unless a case names its stub.
+  process.env.WATCH_TICK_OPEN_CMD = '/usr/bin/false';
+  process.env.WATCH_TICK_OSASCRIPT_CMD = '/usr/bin/false';
+  process.env.WATCH_TICK_START_CMD = '/usr/bin/false';
   // Nor may any case run the real merge train (the batch cadence).
   process.env.WATCH_MERGE_TRAIN_SH = '/usr/bin/true';
   let passes = 0;
@@ -1228,8 +1290,17 @@ function selftest() {
 
   // 17 — AUTO-RESUME (F1-F3, the port of tools/watch-tick.sh case 45). A
   // pre-plan project whose session was recorded at interview end; the recorded
-  // cwd is the transcript's launch folder; a stale project resumes ONCE through
-  // the stubbed launcher with /spec-protocol resume, and a second tick is held.
+  // cwd is the transcript's launch folder; a stale project resumes ONCE, in a
+  // visible window (the stub `open -a Terminal` runs the .command), through the
+  // stubbed launcher with /spec-protocol resume and no -p; a second tick is held.
+  // The stub openers are sh scripts: cases 17 and 20-22 need a non-Windows host.
+  const unixHost = process.platform !== 'win32';
+  const stubOpen = path.join(T, 'open-ok.stub');
+  const stubOsa = path.join(T, 'osa-ok.stub');
+  const stubStart = path.join(T, 'start-ok.stub');
+  fs.writeFileSync(stubOpen, '#!/bin/sh\n/bin/bash "$3"\n', { mode: 0o755 });
+  fs.writeFileSync(stubOsa, '#!/bin/sh\nfor a; do f="$a"; done\n/bin/bash "$f"\n', { mode: 0o755 });
+  fs.writeFileSync(stubStart, `#!/bin/sh\necho "$*" >> "${T}/start.args"\nfor a; do f="$a"; done\nf="\${f#\\"}"; f="\${f%\\"}"\ndate > "$(dirname "$f")/auto-resume.opened"\n`, { mode: 0o755 });
   d = mkHome('c17');
   fs.rmSync(path.join(d, 'CONTROL', 'CHECKLIST.md'));
   fs.rmSync(path.join(d, 'CONTROL', 'TODO.md'));
@@ -1249,15 +1320,16 @@ function selftest() {
   const rec17 = run([d, '--record-session'], { CLAUDE_CODE_SESSION_ID: 'sess-17', CLAUDE_CONFIG_DIR: cfg17 });
   const old17 = new Date(Date.now() - 20 * 60000);
   fs.utimesSync(path.join(d, 'SPEC', 'GOAL.md'), old17, old17);
-  const t1 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17 });
-  for (let i = 0; i < 20 && !fs.existsSync(args17); i += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
-  const t2 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17 });
+  const t1 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17, WATCH_TICK_OPEN_CMD: stubOpen });
+  const t2 = run([d], { WATCH_TICK_LAUNCHER_CMD: wrap17, WATCH_TICK_OPEN_CMD: stubOpen });
   const rec17txt = (readLines(path.join(d, 'CONTROL', 'auto-resume.txt')) || []).join('\n');
   const got17 = (readLines(args17) || []).filter((l) => l);
-  report(17, 'auto-resume-post-interview',
+  if (!unixHost) process.stdout.write('SKIP | case 17 | auto-resume-post-interview | PLATFORM-SKIP: the stub opener is a sh script (never counted as a pass)\n');
+  else report(17, 'auto-resume-post-interview',
     rec17.rc === 0 && /^interview=done$/m.test(rec17txt) && rec17txt.includes(`cwd=${launch17}`)
-      && t1.rc === 3 && /AUTO-RESUME \| launched/.test(t1.out) && /AUTO-RESUME \| held/.test(t2.out)
-      && got17.length === 1 && got17[0].endsWith('|-p --permission-mode bypassPermissions --resume sess-17 /spec-protocol resume')
+      && t1.rc === 3 && /AUTO-RESUME \| opened .* via open -a Terminal/.test(t1.out) && /AUTO-RESUME \| held/.test(t2.out)
+      && fs.existsSync(path.join(d, 'CONTROL', 'auto-resume.opened'))
+      && got17.length === 1 && got17[0].endsWith('|--permission-mode bypassPermissions --resume sess-17 /spec-protocol resume')
       && fs.realpathSync(got17[0].split('|')[0]) === fs.realpathSync(launch17)
       && /phase=post-interview\(pre-plan\)/.test(led(d)),
     `record rc=${rec17.rc} (want 0); tick rc=${t1.rc} (want 3) then held; stub calls=${got17.length} (want 1): [${got17[0] || ''}]`);
@@ -1316,6 +1388,51 @@ function selftest() {
       `rc=${r.rc} (want 3); MERGE-CLAIM-FALSE + ACTION|requeue for unit/N1, re-queue line written, the proven N0 claim silent, S-CHECK carries sweeps=`);
   } else {
     process.stdout.write('SKIP | case 19 | repo-sweeps-via-bash-twin | PLATFORM-SKIP: no bash on this machine, so the sweep did not run (never counted as a pass)\n');
+  }
+
+  // 20-22 (r10 A1-A3) — the visible window's fallback, fallback B, and the
+  // Windows path. Each is the case-17 stall with a fresh legacy fixture.
+  const stall = (name, sid, env) => {
+    const h = mkHome(name);
+    const a = path.join(T, `${name}.args`);
+    const stub = path.join(T, `${name}-stub.mjs`);
+    fs.writeFileSync(stub, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(a)}, process.argv.slice(2).join(' ') + '\\n');\n`);
+    const wrap = path.join(T, `${name}-stub`);
+    fs.writeFileSync(wrap, `#!/bin/sh\nexec "${process.execPath}" "${stub}" "$@"\n`, { mode: 0o755 });
+    w(h, 'CONTROL/dispatch-log.md', `${stamp(1)} | U-01 build | build | [opus x10] WF01 builder | run-${sid}\n`);
+    w(h, 'CONTROL/HEARTBEAT.md', `${stamp(1)} | WF01 builder | U-01 | build\n`);
+    run([h, '--record-session'], { CLAUDE_CODE_SESSION_ID: sid, CLAUDE_CONFIG_DIR: '/x/.claude-nine' });
+    if (env.report) w(h, 'MORNING-REPORT-2026-01-01.md', '# Report\n\nAll done.\n');
+    const old = new Date(Date.now() - 20 * 60000);
+    for (const f of ['SPEC/GOAL.md', 'MORNING-REPORT-2026-01-01.md']) { try { fs.utimesSync(path.join(h, f), old, old); } catch { /* absent */ } }
+    const t = run([h], { WATCH_TICK_LAUNCHER_CMD: wrap, ...env.env });
+    return { h, t, got: (readLines(a) || []).filter((l) => l) };
+  };
+  if (!unixHost) {
+    process.stdout.write('SKIP | cases 20-22 | visible-window openers | PLATFORM-SKIP: the stub openers are sh scripts (never counted as a pass)\n');
+  } else {
+    const c20 = stall('c20', 'sess-20', { env: { WATCH_TICK_OSASCRIPT_CMD: stubOsa, WATCH_TICK_PLATFORM: 'darwin' } });
+    report(20, 'auto-resume-osascript-fallback',
+      c20.got.length === 1 && c20.got[0] === '--permission-mode bypassPermissions --resume sess-20 /spec-protocol resume'
+        && /AUTO-RESUME \| opened .* via osascript do script/.test(c20.t.out) && /\| AUTO-RESUME \| session=sess-20 .*osascript do script/.test(led(c20.h)),
+      `open failed, the stub osascript ran the .command: stub got [${c20.got.join(';')}] (want one --resume sess-20, no -p)`);
+    const c21 = stall('c21', 'sess-21', { report: true, env: { WATCH_TICK_PLATFORM: 'darwin' } });
+    const mr21 = fs.readFileSync(path.join(c21.h, 'MORNING-REPORT-2026-01-01.md'), 'utf8');
+    report(21, 'auto-resume-not-opened',
+      c21.got.length === 0 && !fs.existsSync(path.join(c21.h, 'CONTROL', 'auto-resume.opened'))
+        && /AUTO-RESUME \| not opened \| open rc=1; osascript rc=1/.test(c21.t.out)
+        && /\| AUTO-RESUME-NOT-OPENED: session=sess-21 reason=open rc=1; osascript rc=1/.test(led(c21.h))
+        && /## Operator notes\n\n- AUTO-RESUME-NOT-OPENED: the run stalled .*type `claude-nine --resume`, press Return, pick this project/.test(mr21),
+      `both openers failed: launcher stub calls=${c21.got.length} (want 0 — nothing hidden is started); AUTO-RESUME-NOT-OPENED on the ledger and the continue command under Operator notes`);
+    const c22 = stall('c22', 'sess-22', { env: { WATCH_TICK_START_CMD: stubStart, WATCH_TICK_PLATFORM: 'win32' } });
+    let cmd22 = '';
+    try { cmd22 = fs.readFileSync(path.join(c22.h, 'CONTROL', 'auto-resume.cmd'), 'utf8'); } catch { /* checked below */ }
+    const start22 = (readLines(path.join(T, 'start.args')) || []).filter((l) => l);
+    report(22, 'auto-resume-windows-visible',
+      start22.length === 1 && start22[0].startsWith('/c start "spec-protocol resume" "') && start22[0].endsWith('auto-resume.cmd"')
+        && / --permission-mode bypassPermissions --resume sess-22 "\/spec-protocol resume"\r\n/.test(cmd22) && !/ -p /.test(cmd22)
+        && /AUTO-RESUME \| opened .* via cmd\.exe start/.test(c22.t.out),
+      `start got [${start22.join(';')}] (want one /c start "spec-protocol resume" "<area>\\auto-resume.cmd"); the .cmd resumes sess-22 with no -p`);
   }
 
   fs.rmSync(T, { recursive: true, force: true });

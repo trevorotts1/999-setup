@@ -255,11 +255,15 @@
 #   watch-tick.sh <project-home> --sweep         # the repo sweeps (4g) ALONE: 0 nothing
 #                                                #   found, 3 findings (the Node twin runs this)
 #   watch-tick.sh --selftest
-#   A stalled-turn alarm also runs AUTO-RESUME: `<launcher> -p
-#   --permission-mode bypassPermissions --resume <id> "/spec-protocol resume"`
-#   (nobody is there to answer a permission prompt; the resumed process gets
-#   node + ~/.local/bin + the 999 npm bin on PATH — see resume_path, 4d; the
-#   cron line itself stays PATH-free) once, detached, lock-guarded for 30 minutes
+#   A stalled-turn alarm also runs AUTO-RESUME: it opens a VISIBLE Terminal
+#   window running `<launcher> --permission-mode bypassPermissions --resume
+#   <id> "/spec-protocol resume"` — an ordinary interactive session, never
+#   `-p`, never hidden or detached (nobody is there to answer a permission
+#   prompt; the session gets node + ~/.local/bin + the 999 npm bin on PATH —
+#   see resume_path, 4d; the cron line itself stays PATH-free), or, when no
+#   window opens, starts nothing and leaves AUTO-RESUME-NOT-OPENED on the
+#   ledger plus the continue command in the morning report's Operator notes.
+#   Once, lock-guarded for 30 minutes
 #   (CONTROL/auto-resume.lock; `<statedir>/spec-protocol/auto-resume.lock`
 #   on a profiled project), and writes an AUTO-RESUME ledger line. The
 #   alarm covers EVERY post-interview phase, not only build: an open build,
@@ -295,6 +299,11 @@
 #                               instead of the recorded launcher. The selftest
 #                               sets it for every case so no real session is
 #                               ever launched; nothing else should.
+#   WATCH_TICK_OPEN_CMD=<cmd>      selftest only: replaces /usr/bin/open (the
+#   WATCH_TICK_OSASCRIPT_CMD=<cmd> visible-window opener) and /usr/bin/osascript
+#                               (its one fallback). The selftest sets both to
+#                               /usr/bin/false unless a case names its stub, so
+#                               no real window ever opens.
 #   WATCH_STALLED_MIN=<n>       stalled-turn ceiling, minutes (default 15).
 #                               Same style as anchor.sh's BUDGET_TOL honored
 #                               through ANCHOR_BUDGET_TOL: the constant carries
@@ -1064,15 +1073,30 @@ resume_path() {  # resume_path <inherited-PATH>
   printf '%s%s' "$pre" "$1"
 }
 
-# Called by the stalled-turn check once it fires. Launches
-# `<launcher> -p --permission-mode bypassPermissions --resume <id>
-# "/spec-protocol resume"` detached, at most once per 30 minutes
-# (<area>/auto-resume.lock mtime). The run is unattended, so a permission
-# prompt would stall it forever. WATCH_TICK_LAUNCHER_CMD replaces the launcher
-# (selftest stub only; nothing else should).
+# Called by the stalled-turn check once it fires, at most once per 30 minutes
+# (<area>/auto-resume.lock mtime). It NEVER starts a hidden session (no -p, no
+# nohup, no detached child): it writes <area>/auto-resume.command, which cd's to
+# the recorded launch folder, creates <area>/auto-resume.opened (noclobber, so a
+# second window exits at once) and execs `<launcher> --permission-mode
+# bypassPermissions --resume <id> "/spec-protocol resume"` — an ordinary
+# interactive session — and opens it in a VISIBLE Terminal window:
+# `open -a Terminal <file>` first; no marker within 20 s, `osascript … do
+# script` once. Neither produced the marker (or no macOS): nothing is started,
+# AUTO-RESUME-NOT-OPENED goes to the ledger and the morning report's Operator
+# notes carries the stall time and the restart sentence. bypassPermissions: the
+# window is unattended until someone looks, and a permission prompt would stall
+# it. WATCH_TICK_LAUNCHER_CMD, WATCH_TICK_OPEN_CMD and WATCH_TICK_OSASCRIPT_CMD
+# replace the launcher, open and osascript (selftest stubs only).
+wait_marker() {  # wait_marker <file> <seconds>
+  local i
+  for (( i = 0; i <= $2; i++ )); do [[ -f "$1" ]] && return 0; (( i < $2 )) && sleep 1; done
+  return 1
+}
 auto_resume() {  # auto_resume <elapsed-minutes> [phase]
   local rec="${AREA}/auto-resume.txt" lock="${AREA}/auto-resume.lock"
-  local k v sid="" name="" lpath="" cwd="" cmd lm age p="$PATH"
+  local file="${AREA}/auto-resume.command" mark="${AREA}/auto-resume.opened"
+  local k v sid="" name="" lpath="" cwd="" cmd lm age pre how="" why="" rc
+  local open_cmd="${WATCH_TICK_OPEN_CMD:-/usr/bin/open}" osa_cmd="${WATCH_TICK_OSASCRIPT_CMD:-/usr/bin/osascript}"
   if [[ ! -f "$rec" ]]; then
     printf 'AUTO-RESUME | not run | no session recorded (%s/auto-resume.txt is written by --arm inside the conductor session)\n' "$AREA_REL"
     return 0
@@ -1091,14 +1115,39 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
     fi
   fi
   cmd="${WATCH_TICK_LAUNCHER_CMD:-${lpath:-$name}}"
-  p="$(resume_path "$PATH")"
-  [[ "$cmd" == */* ]] && p="$(dirname "$cmd"):$p"
+  pre="$(resume_path "")"
+  [[ "$cmd" == */* ]] && pre="$(dirname "$cmd"):$pre"
   [[ -d "$cwd" ]] || cwd="$HOME_DIR"
   touch "$lock"
-  ( cd "$cwd" && PATH="$p" nohup "$cmd" -p --permission-mode bypassPermissions --resume "$sid" "/spec-protocol resume" \
-      </dev/null >> "${AREA}/auto-resume.log" 2>&1 & )
-  tick_ledger "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — launched -p --permission-mode bypassPermissions --resume with /spec-protocol resume (log ${AREA_REL}/auto-resume.log)"
-  printf 'AUTO-RESUME | launched | %s -p --permission-mode bypassPermissions --resume %s "/spec-protocol resume" (stalled %sm in %s)\n' "$name" "$sid" "$1" "${2:-build}"
+  rm -f "$mark"
+  { printf '#!/bin/bash\n'
+    printf 'cd %q || exit 1\n' "$cwd"
+    printf '( set -C; date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ > %q ) 2>/dev/null || exit 0\n' "$mark"
+    printf 'export PATH=%q"$PATH"\n' "$pre"
+    printf 'exec %q --permission-mode bypassPermissions --resume %q %q\n' "$cmd" "$sid" "/spec-protocol resume"
+  } > "$file"
+  chmod +x "$file"
+  set +e
+  "$open_cmd" -a Terminal "$file" >> "${AREA}/auto-resume.log" 2>&1; rc=$?
+  set -e
+  if (( rc == 0 )) && wait_marker "$mark" 20; then how="open -a Terminal"
+  else
+    (( rc == 0 )) && why="open: no marker in 20s" || why="open rc=${rc}"
+    set +e
+    "$osa_cmd" -e 'on run argv' -e 'tell application "Terminal" to do script "bash " & quoted form of (item 1 of argv)' \
+      -e 'end run' "$file" >> "${AREA}/auto-resume.log" 2>&1; rc=$?
+    set -e
+    if (( rc == 0 )) && wait_marker "$mark" 20; then how="osascript do script"
+    else (( rc == 0 )) && why="${why}; osascript: no marker in 20s" || why="${why}; osascript rc=${rc}"; fi
+  fi
+  if [[ -n "$how" ]]; then
+    tick_ledger "$(iso_now) | AUTO-RESUME | session=${sid} | launcher=${name} | stalled ${1}m in ${2:-build} — opened a visible Terminal window (${how}) running --permission-mode bypassPermissions --resume with /spec-protocol resume (${AREA_REL}/auto-resume.command)"
+    printf 'AUTO-RESUME | opened | %s --permission-mode bypassPermissions --resume %s "/spec-protocol resume" in a visible Terminal window via %s (stalled %sm in %s)\n' "$name" "$sid" "$how" "$1" "${2:-build}"
+    return 0
+  fi
+  tick_ledger "$(iso_now) | AUTO-RESUME-NOT-OPENED: session=${sid} reason=${why}"
+  report_note "AUTO-RESUME-NOT-OPENED: the run stalled ${1}m in ${2:-build} at $(iso_now) and no window could be opened (${why}). To continue: If your computer restarts or we get disconnected: open the Terminal app, type \`${name:-claude} --resume\`, press Return, pick this project from the list, and I carry on from where I was."
+  printf 'AUTO-RESUME | not opened | %s (stalled %sm in %s); nothing started — the continue command is in the morning report'"'"'s Operator notes\n' "$why" "$1" "${2:-build}"
 }
 
 #------------------------------------------------------------------------------
@@ -2808,6 +2857,9 @@ run_tick() {
 #  48  THE SAME TICK AGAIN — every finding is written once: exit 0.
 #  49  THE PROFILED SWEEP — a state claiming MERGED on an unmerged commit is
 #      MERGE-CLAIM-FALSE and re-queued; the state file stays byte-identical.
+#  53  AUTO-RESUME'S FALLBACK — open fails, osascript opens the window.
+#  54  FALLBACK B — neither opens: nothing started, AUTO-RESUME-NOT-OPENED on
+#      the ledger and the continue command in the morning report.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -2816,6 +2868,12 @@ selftest() {
   # No selftest case may ever launch a real session: every AUTO-RESUME a
   # fixture reaches runs this no-op unless the case names its own stub.
   export WATCH_TICK_LAUNCHER_CMD=/usr/bin/true
+  # Nor may any case open a real Terminal window: the opener and its fallback
+  # fail unless a case names its own stub (the stubs run the .command in place).
+  export WATCH_TICK_OPEN_CMD=/usr/bin/false WATCH_TICK_OSASCRIPT_CMD=/usr/bin/false
+  printf '#!/bin/sh\necho "$*" >> "%s"\n/bin/bash "$3"\n' "$T/open.args" > "$T/open-ok.stub"
+  printf '#!/bin/sh\nfor a; do f="$a"; done\n/bin/bash "$f"\n' > "$T/osa-ok.stub"
+  chmod +x "$T/open-ok.stub" "$T/osa-ok.stub"
   # Nor may any case run the real merge train: the batch cadence (4e) runs this
   # no-op stub in every fixture.
   export WATCH_MERGE_TRAIN_SH=/usr/bin/true
@@ -3573,8 +3631,10 @@ selftest() {
 
   # --- case 43 (#48): AUTO-RESUME. Arm inside a (fake) claude-nine session,
   #     stall the build like case 32, tick twice: the stub launcher runs ONCE
-  #     with -p --permission-mode bypassPermissions --resume <id> /spec-protocol resume, the ledger says AUTO-RESUME,
-  #     and the second tick is held by the lock.
+  #     through the stub `open -a Terminal` (a visible window, never -p) with
+  #     --permission-mode bypassPermissions --resume <id> /spec-protocol resume,
+  #     the marker is written, the ledger says AUTO-RESUME, and the second tick
+  #     is held by the lock.
   mk_home "$T/c43"
   printf '%s | U-01 build | build | [opus x10] WF01 builder | run-043\n' "$(stamp 1)" > "$T/c43/CONTROL/dispatch-log.md"
   printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$T/c43/CONTROL/HEARTBEAT.md"
@@ -3582,18 +3642,17 @@ selftest() {
   printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/c43.args" > "$T/c43.stub"; chmod +x "$T/c43.stub"
   CLAUDE_CODE_SESSION_ID=sess-43 CLAUDE_CONFIG_DIR=/x/.claude-nine WATCH_TICK_CRONTAB_FILE="$T/c43.cron" runw --arm "$T/c43"
   TZ=UTC touch -t "${OUT22_OLD}" "$T/c43/work.txt" "$T/c43/SPEC/GOAL.md"
-  WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
-  local out43a="$OUT" i43
-  for i43 in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$T/c43.args" ]] && break; sleep 0.3; done
-  WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
-  sleep 0.5
+  WATCH_TICK_OPEN_CMD="$T/open-ok.stub" WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
+  local out43a="$OUT"
+  WATCH_TICK_OPEN_CMD="$T/open-ok.stub" WATCH_TICK_LAUNCHER_CMD="$T/c43.stub" runw "$T/c43"
   ok=0
   if "$GREP" -q '^launcher=claude-nine$' "$T/c43/CONTROL/auto-resume.txt" 2>/dev/null \
-     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "-p --permission-mode bypassPermissions --resume sess-43 /spec-protocol resume" ]] \
-     && printf '%s' "$out43a" | "$GREP" -q '^AUTO-RESUME | launched' \
+     && [[ "$(cat "$T/c43.args" 2>/dev/null)" == "--permission-mode bypassPermissions --resume sess-43 /spec-protocol resume" ]] \
+     && [[ -s "$T/c43/CONTROL/auto-resume.opened" ]] && "$GREP" -q -- '^-a Terminal /.*/c43/CONTROL/auto-resume.command$' "$T/open.args" \
+     && printf '%s' "$out43a" | "$GREP" -q '^AUTO-RESUME | opened .* via open -a Terminal' \
      && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | held' \
      && "$GREP" -q '| AUTO-RESUME | session=sess-43' "$T/c43/CONTROL/LEDGER.md"; then ok=1; fi
-  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '-p --permission-mode bypassPermissions --resume sess-43 /spec-protocol resume'); second tick held by the lock; AUTO-RESUME on the ledger"
+  report 43 "auto-resume-once" "$ok" "arm recorded launcher=claude-nine; stub got [$(tr '\n' ';' < "$T/c43.args" 2>/dev/null)] (want exactly one '--permission-mode bypassPermissions --resume sess-43 /spec-protocol resume', no -p, via open -a Terminal, marker written); second tick held by the lock; AUTO-RESUME on the ledger"
 
   # --- case 44 (#40): the unavailable-crontab reason survives a long path.
   #     sanitize() cuts at 160 chars; the rc must come BEFORE the command path
@@ -3617,16 +3676,14 @@ selftest() {
   CLAUDE_CODE_SESSION_ID=sess-45 CLAUDE_CONFIG_DIR="$T/cfg45" runw --record-session "$T/c45"
   local r45rec="$RC"
   TZ=UTC touch -t "${OUT22_OLD}" "$T/c45/SPEC/GOAL.md" "$T/c45/CONTROL/setup_progress.json"
-  WATCH_TICK_LAUNCHER_CMD="$T/c45.stub" runw "$T/c45"
-  local i45
-  for i45 in 1 2 3 4 5 6 7 8 9 10; do [[ -s "$T/c45.args" ]] && break; sleep 0.3; done
+  WATCH_TICK_OPEN_CMD="$T/open-ok.stub" WATCH_TICK_LAUNCHER_CMD="$T/c45.stub" runw "$T/c45"
   ok=0
   if (( r45rec == 0 && RC == 3 )) \
      && "$GREP" -qx 'interview=done' "$T/c45/CONTROL/auto-resume.txt" \
      && "$GREP" -qx "cwd=$T/launch45" "$T/c45/CONTROL/auto-resume.txt" \
-     && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume" ]] \
+     && [[ "$(cat "$T/c45.args" 2>/dev/null)" == *"launch45|--permission-mode bypassPermissions --resume sess-45 /spec-protocol resume" ]] \
      && "$GREP" -q 'stalled-turn | elapsed=.* | phase=post-interview(pre-plan)' "$T/c45/CONTROL/LEDGER.md"; then ok=1; fi
-  report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|-p --permission-mode bypassPermissions --resume sess-45 /spec-protocol resume)"
+  report 45 "resume-post-interview-pre-plan" "$ok" "record rc=${r45rec} (want 0), tick rc=${RC} (want 3); interview=done + transcript cwd recorded; stub got [$(tr '\n' ';' < "$T/c45.args" 2>/dev/null)] (want launch45|--permission-mode bypassPermissions --resume sess-45 /spec-protocol resume)"
 
   # --- case 46 (A2 fix): PROFILED TERMINAL STATUS. A profiled project whose
   #     bound state carries ONLY "status":"RELEASE_COMPLETE" (no run_status
@@ -3774,6 +3831,39 @@ selftest() {
      && "$GREP" -A3 '^## Operator notes' "$T/c50/MORNING-REPORT-2026-01-01.md" | "$GREP" -qF -- "- $(privacy_line "$T/c50")" \
      && [[ ! -e "$rec50" ]] && "$GREP" -q 'TICK-PRIVACY | cleared' "$T/c50/CONTROL/watch-tick.log"; then ok=1; fi
   report 52 "privacy-pickup-and-clear" "$ok" "the in-session tick printed the line, ledgered it once and put it under the morning report's Operator notes; the next readable cron tick (--log) cleared the record"
+
+  # --- cases 53-54 (r10 A1/A2): the visible window's fallback and fallback B.
+  #     53: open fails, the stub osascript opens the window -> opened.
+  #     54: both fail -> NOTHING started (the launcher stub never runs), an
+  #     AUTO-RESUME-NOT-OPENED ledger line and the continue command under the
+  #     morning report's Operator notes.
+  mk_stall() {  # mk_stall <home> <sid>
+    mk_home "$1"
+    printf '%s | U-01 build | build | [opus x10] WF01 builder | run-%s\n' "$(stamp 1)" "$2" > "$1/CONTROL/dispatch-log.md"
+    printf '%s | WF01 builder | U-01 | build\n' "$(stamp 1)" > "$1/CONTROL/HEARTBEAT.md"
+    printf 'build output\n' > "$1/work.txt"
+    printf '#!/bin/sh\necho "$*" >> "%s"\n' "$1.args" > "$1.stub"; chmod +x "$1.stub"
+    CLAUDE_CODE_SESSION_ID="$2" CLAUDE_CONFIG_DIR=/x/.claude-nine WATCH_TICK_CRONTAB_FILE="$1.cron" runw --arm "$1"
+    TZ=UTC touch -t "${OUT22_OLD}" "$1/work.txt" "$1/SPEC/GOAL.md"
+  }
+  mk_stall "$T/c53" sess-53
+  WATCH_TICK_OSASCRIPT_CMD="$T/osa-ok.stub" WATCH_TICK_LAUNCHER_CMD="$T/c53.stub" runw "$T/c53"
+  ok=0
+  if [[ "$(cat "$T/c53.args" 2>/dev/null)" == "--permission-mode bypassPermissions --resume sess-53 /spec-protocol resume" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | opened .* via osascript do script' \
+     && "$GREP" -q '| AUTO-RESUME | session=sess-53 .*osascript do script' "$T/c53/CONTROL/LEDGER.md"; then ok=1; fi
+  report 53 "auto-resume-osascript-fallback" "$ok" "open failed, the stub osascript ran the .command: stub got [$(cat "$T/c53.args" 2>/dev/null)] (want one --resume sess-53, no -p); AUTO-RESUME | opened via osascript on stdout and the ledger"
+
+  mk_stall "$T/c54" sess-54
+  printf '# Report\n\nAll done.\n' > "$T/c54/MORNING-REPORT-2026-01-01.md"
+  TZ=UTC touch -t "${OUT22_OLD}" "$T/c54/MORNING-REPORT-2026-01-01.md"
+  WATCH_TICK_LAUNCHER_CMD="$T/c54.stub" runw "$T/c54"
+  ok=0
+  if [[ ! -e "$T/c54.args" && ! -e "$T/c54/CONTROL/auto-resume.opened" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^AUTO-RESUME | not opened | open rc=1; osascript rc=1' \
+     && "$GREP" -q '| AUTO-RESUME-NOT-OPENED: session=sess-54 reason=open rc=1; osascript rc=1' "$T/c54/CONTROL/LEDGER.md" \
+     && "$GREP" -A3 '^## Operator notes' "$T/c54/MORNING-REPORT-2026-01-01.md" | "$GREP" -q '^- AUTO-RESUME-NOT-OPENED: the run stalled .*type `claude-nine --resume`, press Return, pick this project'; then ok=1; fi
+  report 54 "auto-resume-not-opened" "$ok" "open and osascript both failed: launcher stub ran=$([[ -e "$T/c54.args" ]] && echo yes || echo no) (want no — nothing hidden is started); AUTO-RESUME-NOT-OPENED on the ledger and the continue command under the morning report's Operator notes"
 
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
