@@ -1284,6 +1284,23 @@ project spends premium money only on the shots that need it. A cost guardrail st
 generation that materially exceeds what the client approved. The client approves MONEY; Candace
 chooses the technology.
 
+## [1.19.5] — 2026-09-19
+
+### GATE0 session signal, and the first pass at profiled projects
+
+A prior-turn `/effort ultracode` left no readable latch, so a fresh `/spec-protocol` turn later
+in the same session refused to start even though ultracode was already on. GATE 0 now tests
+four signals instead of three; the new signal 4 reads live session effort state (an env var or
+a config key) through the new `tools/gate0.sh --check-session`, and `--record` now accepts a
+`session` reason alongside its existing ones. `gate0.sh` gains fixtures for the new signal, and
+`SKILL.md` and `references/terminals.md` are updated to describe it.
+
+The same commit also introduced the project-profile concept: a folder holding
+`.spec-protocol.json` gets its own canonical state, dispatch-authorization and release path,
+described from here on as "profiled" versus "unprofiled." [1.20.0] found and fixed a regression
+this introduced — a profiled project was skipping the entire conversational pipeline (steps 3
+through 22) instead of only redirecting the three documented state/dispatch/release calls.
+
 ## [1.19.0] — 2026-09-07
 
 ### spec-protocol 1.19.0 — the Gauntlet Loop update

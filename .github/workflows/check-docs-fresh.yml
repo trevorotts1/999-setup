@@ -1,0 +1,31 @@
+name: check-docs-fresh
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*', 'nine-router-setup-v*']
+    paths:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '.claude/skills/*/VERSION'
+      - 'scripts/check-docs-fresh.sh'
+      - 'scripts/test-check-docs-fresh.sh'
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '.claude/skills/*/VERSION'
+      - 'scripts/check-docs-fresh.sh'
+      - 'scripts/test-check-docs-fresh.sh'
+
+jobs:
+  docs-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: README / VERSION / latest-tag agreement
+        run: bash scripts/check-docs-fresh.sh
+      - name: Self-test — the checker must actually discriminate
+        run: bash scripts/test-check-docs-fresh.sh

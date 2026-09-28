@@ -1,7 +1,9 @@
 #!/bin/bash
 # Run every Kaizen test suite and report a combined result.
-# Suites: core (7.1-7.13), fix01..fix14. Any suite missing is reported as
-# "SKIPPED (missing)" and the run fails: a skipped suite is a gap, not a pass.
+# Suites: core (7.1-7.13), walkthroughs (A-F), fix01..fix16 (18 total; fix15
+# and fix16 live in the sibling spec-protocol/nine-router-setup skill dirs).
+# Any suite missing is reported as "SKIPPED (missing)" and the run fails: a
+# skipped suite is a gap, not a pass.
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
