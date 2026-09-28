@@ -4,6 +4,8 @@
 #   2. The latest release tag (v*, and nine-router-setup-v* when present) disagrees
 #      with the corresponding VERSION file or with what README.md states.
 #   3. Any annotated release tag has no dated entry in CHANGELOG.md.
+#   4. CONTROL/bundled-components.json's recorded version per skill disagrees
+#      with that skill's VERSION file.
 # Read-only. Needs full tag history (`git fetch --tags` / `fetch-depth: 0` in CI).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -12,6 +14,10 @@ fail=0
 say() { printf '%s\n' "$*" >&2; }
 
 skill_version() { tr -d '[:space:]' < ".claude/skills/$1/VERSION" 2>/dev/null; }
+component_version() {
+  grep -A3 "\"$1\": \[" CONTROL/bundled-components.json 2>/dev/null \
+    | grep -o '"version"[^,}]*' | head -1 | sed -E 's/.*"([^"]+)"[[:space:]]*$/\1/'
+}
 
 # --- 1. README vs each skill's VERSION file -------------------------------
 for skill in spec-protocol nine-router-setup kaizen eli5 bro; do
@@ -26,6 +32,22 @@ for skill in spec-protocol nine-router-setup kaizen eli5 bro; do
     fail=1
   fi
 done
+
+# --- 1b. CONTROL/bundled-components.json vs each skill's VERSION file -----
+if [ -f CONTROL/bundled-components.json ]; then
+  for skill in spec-protocol nine-router-setup kaizen eli5 bro; do
+    ver="$(skill_version "$skill")"
+    [ -z "$ver" ] && continue  # already reported above
+    recorded="$(component_version "$skill")"
+    if [ -z "$recorded" ]; then
+      say "FAIL: CONTROL/bundled-components.json has no version recorded for $skill"
+      fail=1
+    elif [ "$recorded" != "$ver" ]; then
+      say "FAIL: CONTROL/bundled-components.json records $skill $recorded, VERSION file says $ver"
+      fail=1
+    fi
+  done
+fi
 
 # --- 2. Latest tag vs VERSION file / README --------------------------------
 latest_main_tag="$(git tag -l 'v[0-9]*' | sort -V | tail -1)"
