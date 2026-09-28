@@ -1,7 +1,7 @@
 {
   "schema": "bundled-components@1",
   "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (nine-router-setup, spec-protocol, kaizen, eli5, bro)",
-  "generatedAt": "2026-08-22T02:39:33.300Z",
+  "generatedAt": "2026-09-28T14:45:33.000Z",
   "channel": {
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
@@ -12,7 +12,7 @@
   "components": {
     "nine-router-setup": [
       {
-        "version": "1.17.0",
+        "version": "1.21.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/nine-router-setup",
@@ -21,7 +21,7 @@
     ],
     "spec-protocol": [
       {
-        "version": "1.19.0",
+        "version": "1.33.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/spec-protocol",

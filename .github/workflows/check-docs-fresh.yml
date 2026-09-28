@@ -7,6 +7,7 @@ on:
     paths:
       - 'README.md'
       - 'CHANGELOG.md'
+      - 'CONTROL/bundled-components.json'
       - '.claude/skills/*/VERSION'
       - 'scripts/check-docs-fresh.sh'
       - 'scripts/test-check-docs-fresh.sh'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'README.md'
       - 'CHANGELOG.md'
+      - 'CONTROL/bundled-components.json'
       - '.claude/skills/*/VERSION'
       - 'scripts/check-docs-fresh.sh'
       - 'scripts/test-check-docs-fresh.sh'

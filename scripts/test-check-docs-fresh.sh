@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Self-test for check-docs-fresh.sh. Proves the checker actually discriminates:
 # it must PASS on the real repo right now (the known-good control) and FAIL on
-# two known-bad mutations (a stale README version, a tag missing its
-# CHANGELOG entry) — a checker that passes everything is worthless.
+# three known-bad mutations (a stale README version, a tag missing its
+# CHANGELOG entry, a stale bundled-components.json version) — a checker that
+# passes everything is worthless.
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 CHECK="$REPO_ROOT/scripts/check-docs-fresh.sh"
@@ -46,6 +47,19 @@ if ! (cd "$wt" && bash "$CHECK") >/dev/null 2>&1 && printf '%s' "$out" | grep -q
   ok "tag missing its CHANGELOG entry ($latest_tag) is caught"
 else
   bad "missing CHANGELOG entry for $latest_tag was NOT caught (got: $out)"
+fi
+git -C "$REPO_ROOT" worktree remove --force "$wt"
+wt=""
+
+# 4. Known-bad: a stale CONTROL/bundled-components.json version must fail.
+wt="$(mktemp -d)/wt-stale-components"
+git -C "$REPO_ROOT" worktree add -q --detach "$wt" HEAD
+perl -0pi -e 's/("spec-protocol":\s*\[\s*\{\s*"version":\s*")[^"]+/${1}0.0.0/s' "$wt/CONTROL/bundled-components.json"
+out="$( (cd "$wt" && bash "$CHECK") 2>&1 || true )"
+if ! (cd "$wt" && bash "$CHECK") >/dev/null 2>&1 && printf '%s' "$out" | grep -q 'bundled-components.json records spec-protocol'; then
+  ok "stale bundled-components.json version is caught"
+else
+  bad "stale bundled-components.json version was NOT caught (got: $out)"
 fi
 git -C "$REPO_ROOT" worktree remove --force "$wt"
 wt=""
