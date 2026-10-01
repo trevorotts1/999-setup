@@ -1,7 +1,7 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (nine-router-setup, spec-protocol, kaizen, eli5, bro)",
-  "generatedAt": "2026-09-28T14:45:33.000Z",
+  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (nine-router-setup, spec-protocol, kaizen, eli5, bro, blackceo-signature-page)",
+  "generatedAt": "2026-10-01T12:25:38.000Z",
   "channel": {
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
@@ -21,7 +21,7 @@
     ],
     "spec-protocol": [
       {
-        "version": "1.33.0",
+        "version": "1.34.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/spec-protocol",
@@ -52,6 +52,15 @@
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/bro",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "blackceo-signature-page": [
+      {
+        "version": "1.0.1",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/blackceo-signature-page",
         "license": "MIT (repo license)"
       }
     ]
