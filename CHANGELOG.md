@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.34.0] — 2026-10-01
+
+### New bundled skill: blackceo-signature-page 1.0.1
+
+**A — new bundled skill `blackceo-signature-page` 1.0.1
+(`.claude/skills/blackceo-signature-page/`, `CONTROL/bundled-skills.txt`,
+`CONTROL/bundled-components.json`).** The repo now bundles a sixth skill: the
+BlackCEO Signature funnel-page skill. It builds, revises, QCs and hands off
+BlackCEO Signature pages — landing, opt-in, registration, challenge, sales and
+booking/webinar pages — through the BlackCEO page, image, Secret Super Sauce and
+visual-direction systems, with Standard or Long-Form copy, font/action plans,
+desktop and mobile wireframes, image intelligence and prompts, generated-image QC,
+image maps, responsive HTML, and GHL installation and testing. It registers like
+the other bundled skills: one name on its own line in
+`CONTROL/bundled-skills.txt` and a `bundled-components.json` entry
+(`"version": "1.0.1"`), and `scripts/check-docs-fresh.sh` now checks it alongside
+the five existing skills.
+
+**B — Apple Silicon compatibility fixes in the new skill.** Two fixes, no
+methodology, writing, visual, QC, threshold or production-order change. (1)
+`python` → `python3` in the three adapter READMEs
+(`adapters/claude-code/README.md`, `adapters/claude-nine/README.md`,
+`adapters/codex/README.md`) and `references/runtime-adapters.md`: on macOS only
+`python3` exists, so the documented `python` commands failed with exit 127. (2)
+`scripts/install_local.py` now knows both Codex skills roots —
+`DEFAULT_ROOTS["codex"]` was `~/.agents/skills` alone and now lists
+`~/.agents/skills` and `~/.codex/skills` — and the installer links into every
+root listed.
+
+**C — repo release bump.** `spec-protocol` 1.33.0 → 1.34.0
+(`.claude/skills/spec-protocol/VERSION`, the README version line and this entry),
+the repo release that ships the new skill and its fixes.
+
 ## [1.33.0] — 2026-09-27
 
 ### Round 10: no hidden restarts, and donor code without an approval gate
