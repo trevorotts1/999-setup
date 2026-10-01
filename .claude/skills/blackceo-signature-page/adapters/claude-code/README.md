@@ -10,8 +10,10 @@ python3 scripts/install_local.py --runtime claude-code --dry-run
 python3 scripts/install_local.py --runtime claude-code
 ```
 
+On Windows, run the same commands with `py scripts/install_local.py --runtime claude-code` (add `--dry-run` first).
+
 3. Confirm that the runtime discovers the skill and can load references/assets/scripts.
-4. Run `python3 tests/test_scripts.py`.
+4. Run `python3 tests/test_scripts.py` (the bundled PDF test needs Pillow: `python3 -m pip install --user Pillow` on macOS, `py -m pip install Pillow` on Windows).
 5. Record any compatibility-only changes in the evaluation report.
 
 Do not overwrite an existing target. Do not add credentials to the skill folder.

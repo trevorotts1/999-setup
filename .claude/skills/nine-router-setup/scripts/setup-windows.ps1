@@ -141,6 +141,31 @@ function Get-Concurrency([string]$plan) {
     switch ($plan) { 'free' { 1 } 'max' { 8 } default { 2 } }
 }
 
+# Ensure-Pillow - Pillow for the bundled blackceo-signature-page skill, whose
+# PDF review (scripts/combine_review_pdf.py, tests/test_scripts.py) imports it.
+# Order form: `py -m pip install Pillow` (the PEP 668 --break-system-packages
+# problem is macOS/Homebrew, not Windows, so it is never used here either).
+# Falls back to `python -m pip install Pillow` only when the `py` launcher is
+# absent, and never returns a status it did not prove by a real import.
+# Never fatal: a runtime without Pillow is reported BY NAME in the dependency
+# summary so the installing agent sees it before running the PDF test.
+function Ensure-Pillow {
+    if (Test-Runs 'python' @('-c', 'import PIL')) { return 'OK   already importable' }
+    $pipExe = $null
+    if (Test-Runs 'py' @('-m', 'pip', '--version')) { $pipExe = 'py' }
+    elseif (Test-Runs 'python' @('-m', 'pip', '--version')) { $pipExe = 'python' }
+    if (-not $pipExe) {
+        return 'MISSING - neither py nor python has pip; PDF review of blackceo-signature-page will fail until Pillow is installed'
+    }
+    & $pipExe -m pip install Pillow | Out-Host
+    Refresh-Path
+    # The import is the verdict, not the exit code: pip can exit 0 and still
+    # leave 'import PIL' failing (a shim, or a path this interpreter does not
+    # see), so say exactly that instead of reporting a status not proven.
+    if (Test-Runs 'python' @('-c', 'import PIL')) { return "OK   $pipExe -m pip install Pillow" }
+    return "MISSING - still not importable after '$pipExe -m pip install Pillow'; PDF review of blackceo-signature-page will fail until Pillow is installed"
+}
+
 # Bundled personal skills — the same list the macOS installer links. Source of
 # truth: CONTROL/bundled-skills.txt when running from a repo checkout;
 # standalone installs fall back to the hard-coded baseline. Junction links
@@ -380,6 +405,7 @@ try {
         Write-Blocker "Python is required (spec-protocol's enforcement hooks) and could not be installed. Run: winget install --id Python.Python.3.12 --exact, then re-run."
     }
     $DepSummary += "python          OK   $((Get-Command python).Source)"
+    $DepSummary += "pillow          $(Ensure-Pillow)"
     $ghOk = Ensure-WingetPackage 'GitHub.cli' 'gh'
     if ($ghOk) { $DepSummary += "gh              OK   $((Get-Command gh).Source)" }
     else { $DepSummary += 'gh              MISSING - winget GitHub.cli did not install; GitHub backup runs local-only until gh is installed (https://cli.github.com)' }
@@ -765,6 +791,34 @@ else {
     }
     $skillVisible = if ($skillMissing.Count -eq 0) { 'OK' } else { "MISSING: $($skillMissing -join ', ')" }
 
+    # Codex skill roots. Codex loads skills from BOTH ~/.agents/skills and
+    # ~/.codex/skills (the pair install_local.py lists under its "codex"
+    # runtime). Gated on ~/.codex existing: Codex itself is never conjured, and
+    # when it IS present both roots are linked so the bundled
+    # blackceo-signature-page skill loads either way. A skills/ subdirectory is
+    # created when absent - that is a container for the link, not a claim that
+    # Codex is installed. Same linker, same manifest, same idempotent rules.
+    $codexLinkStatus = 'not present (~\.codex absent; Codex skills roots not linked)'
+    $codexLinkDetail = @()
+    $codexRoot = Join-Path $env:USERPROFILE '.codex'
+    if (Test-Path $codexRoot) {
+        $codexLinkStatus = 'linked (~\.codex\skills, ~\.agents\skills)'
+        foreach ($cr in @($codexRoot, (Join-Path $env:USERPROFILE '.agents'))) {
+            try { New-Item -ItemType Directory -Path (Join-Path $cr 'skills') -Force -ErrorAction Stop | Out-Null }
+            catch { $codexLinkDetail += "  $cr\skills: could not create"; continue }
+            $codexLinkFailures = Link-BundledSkills $cr
+            if ($codexLinkFailures) { $skillLinkFailures += $codexLinkFailures }
+            $cMissing = @()
+            foreach ($s in (Get-BundledSkills)) {
+                if (-not (Test-Path (Join-Path $cr "skills\$s\SKILL.md"))) { $cMissing += $s }
+            }
+            if ($cMissing.Count -eq 0) { $codexLinkDetail += "  $cr\skills: OK" }
+            else { $codexLinkDetail += "  $cr\skills: MISSING $($cMissing -join ', ')" }
+        }
+        if ($skillLinkFailures -gt 0) { $skillLinkStatus = "WARNING: $skillLinkFailures skill link failure(s) - see 'skill ERROR' lines above" }
+        else { $skillLinkStatus = 'OK' }
+    }
+
     # 11b2. spec-protocol enforcement, operator remote, ultracode default,
     #       GitHub sign-in. All AFTER the claude-nine smoke probe above, so the
     #       probe runs exactly as before. None of these is fatal.
@@ -958,11 +1012,12 @@ Operating system: Windows
 Claude Code: OK
 Personal skills (normal claude and claude-nine share one config root): $skillVisible
 Bundled skill links: $skillLinkStatus
+Codex skill links: $codexLinkStatus
 Auto-compaction: settings 500k tokens - $autoCompactStatus; claude-nine compacts at 200k (launcher env, below the 256K fallback lane)
 Auto-compaction per root:
 $($autoCompactDetail -join "`n")
 Per-skill visibility:
-$($skillVisibleDetail -join "`n")
+$((@($skillVisibleDetail) + @($codexLinkDetail)) -join "`n")
 claude-nine launcher: OK
 claude-nine cold start (router stopped, launcher restarted it): $coldStartLine
 Ultracode default: $ultracodeDefaultLine

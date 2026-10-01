@@ -12,7 +12,7 @@
 | [Standard writing guide v6](BlackCEO-Signature-Landing-Page-Standard-v6.md) | The original twelve-section writing system and its compact length/CTA rules. |
 | [Long-form writing guide v6](BlackCEO-Signature-Landing-Page-Long-Form-v6.md) | Expanded writing with the three inserted solution sections and the long-form CTA map. |
 | **This production and QC SOP** | The order of work, checks, repairs, current-version handoffs, implementation and delivery. |
-| [Image Prompt Creation Guide v1](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md) | Repository-led prompt anatomy plus section-based camera, face, hair, tone, composition and color-grade intelligence. |
+| [Image Prompt Creation Guide v5](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md) | Repository-led prompt anatomy plus section-based camera, face, hair, tone, composition and color-grade intelligence. |
 
 Choose the writing guide for the requested page. Do not build both standard and long form by default. The image guide is required reading before image planning is finalized and before any image prompt is authored. The two writing guides point here so they do not carry competing copies of the entire production process.
 
@@ -193,7 +193,7 @@ Do not generate throwaway campaign photography just to fill this first mockup. E
 
 ### A. Use the image guide, not remembered shortcuts
 
-Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md). For every actual generated-asset entry, author one complete ten-element prompt, 5,000-20,000 characters each. Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
+Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md). For every actual generated-asset entry, author one complete ten-element prompt, 5,000-20,000 characters each. Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
 
 Keep numeric technical ratio/dimension fields in the request/manifest, matched to the prompt's composition. Put all actual rendering instructions, reference directives and negatives inside the counted prompt. Resolve alternatives before submission. No Midjourney flags, spintax, obsolete reference links, shortened generator summaries or blanket ratios.
 
@@ -307,7 +307,7 @@ Use the correct sub-account. Go to Sites -> Funnels -> correct named folder -> e
 
 ### B. Check in GHL Preview
 
-Confirm the correct current design, real hosted images and actual fonts. Click every CTA to confirm routing, but submit a shared form only once with a designated test contact. Check popup opening/closing, scroll return, mobile keyboard/scroll usability and orientation. If GHL delays critical custom initialization, apply its documented guidance rather than claiming the code works from a local screenshot. [W6]
+Confirm the correct current design, real hosted images and actual fonts. Click every CTA to confirm routing, but submit a shared form only once with a named test contact the owner approved for testing; never fire a live client automation. Check popup opening/closing, scroll return, mobile keyboard/scroll usability and orientation. If GHL delays critical custom initialization, apply its documented guidance rather than claiming the code works from a local screenshot. [W6]
 
 For sales, verify the intended product/price and supported checkout path using test mode where available. Do not make an unauthorized live charge. For signups, confirm a real submission/contact and the specified confirmation/access path. For booking/downloads, confirm the actual outcome. A button opening is not completion of the visitor journey.
 
@@ -393,7 +393,7 @@ A later repair updates the current artifact and only affected references. It doe
 
 The production order, universal scope, below-8 repair rule, failed-only three-attempt allowance, 5,000-20,000 per-image prompt requirement, Google Fonts preference, image naming, shared 20-per-15-second submission ceiling, and no-private-label rule are Trevor's current instructions. The specific action templates and stage deliverables implement those instructions.
 
-The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md#15-source-record-and-translation-boundaries). Those sources retain their separate independent roles, stricter 8.5 averages and current 19,000-character runtime cap. The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
+The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md#16-source-record-and-translation-boundaries). Those sources retain their separate independent roles, stricter 8.5 averages and current 19,000-character runtime cap. The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
 
 Public technical references checked September 30, 2026:
 

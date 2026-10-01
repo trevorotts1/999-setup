@@ -64,10 +64,26 @@ def main():
 
     print(f"Source: {source}")
     print(f"Mode: {args.mode}")
+    failures = 0
+    attempted = 0
     for root in roots:
+        # Order rule: Codex roots are linked only when the Codex runtime is present.
+        # Never create an absent runtime root; report the skip instead of inventing it.
+        if not args.target_root and args.runtime == "codex" and not (Path.home() / ".codex").exists():
+            print(f"SKIP: {root} (Codex runtime not present at {Path.home() / '.codex'}).")
+            continue
+        attempted += 1
         rc = install_one(root, source, args.mode, args.dry_run)
         if rc != 0:
-            return rc
+            # Keep going: one conflicting root must not abandon the remaining roots.
+            failures += 1
+    if attempted == 0:
+        print("FAIL: no applicable skills root for this runtime; nothing was linked.")
+        return 1
+    if failures:
+        print(f"FAIL: {failures} of {attempted} skill roots were not linked.")
+        return 1
+    print(f"PASS: {attempted} skill root(s) handled.")
     return 0
 
 
