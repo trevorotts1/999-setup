@@ -79,8 +79,10 @@ has_header() {
   grep -qE "^## \[([A-Za-z0-9_-]+ )?$(printf '%s' "$1" | sed 's/\./\\./g')\]" CHANGELOG.md
 }
 
-mapfile -t tags < <(git for-each-ref --format='%(refname:short) %(objecttype)' refs/tags \
-  | awk '$2=="tag"{print $1}')
+# ponytail: release tags only (v* / nine-router-setup-v*), annotated or lightweight
+# (tag-push checkouts rewrite the pushed ref as lightweight). Extend grep for new shapes.
+mapfile -t tags < <(git for-each-ref --format='%(refname:short)' refs/tags \
+  | grep -E '^(nine-router-setup-)?v[0-9]' || true)
 
 declare -A documented_commit
 for t in "${tags[@]}"; do
