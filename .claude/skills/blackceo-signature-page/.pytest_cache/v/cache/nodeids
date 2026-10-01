@@ -1,8 +1,0 @@
-[
-  "tests/test_scripts.py::test_image_manifest",
-  "tests/test_scripts.py::test_installer_dry_run",
-  "tests/test_scripts.py::test_pdf_pipeline",
-  "tests/test_scripts.py::test_prompts",
-  "tests/test_scripts.py::test_public_copy",
-  "tests/test_scripts.py::test_state"
-]
