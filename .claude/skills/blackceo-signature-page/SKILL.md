@@ -23,6 +23,8 @@ Load only the references needed for the current stage.
    - Visual artist: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
 6. Use `assets/BlackCEO-Master-Visual-Reference-Guide.png` as a visual companion, never as a substitute for the written style grammar.
 
+Note: the style libraries are large. Run the copy and image stages in separate sessions or subagents, and grep a style library by Style-ID (`VDL-nnn` photographic, `CIS-nn` cinematic, `ART-nn` visual artist) instead of reading it whole.
+
 Do not silently reconcile a conflict by inventing a new rule. Apply the authority order in `references/authority-map.md` and record unresolved conflicts.
 
 ## Operating principles
@@ -68,7 +70,10 @@ At minimum, resolve when missing:
 - hosting/implementation target when implementation is requested;
 - supplied materials and existing copy/assets;
 - real action URLs, embeds, checkout, booking, form, or delivery destination when required;
-- graphics engine preference when image generation is in scope.
+- graphics engine preference when image generation is in scope;
+- per-job image cap (count) when image generation is in scope; a cap, never an approval gate.
+
+Paid providers (Kie, Agnes, GHL, Vercel) use ONLY the client's own keys from that client's own secrets.env; never an operator's or another client's key; if absent, mark the stage BLOCKED.
 
 For image generation, ask whether the user has a preferred graphics engine. If no preference is given, recommend Kie.ai using the latest generally available GPT image-generation model available through Kie.ai at runtime. Do not hardcode a model version as permanent. Agnes or another configured engine may be used when selected. Verify actual runtime availability before claiming a model or engine can be called.
 

@@ -1,5 +1,53 @@
 # Changelog
 
+## [1.34.1] — 2026-10-01
+
+### blackceo-signature-page 1.0.2 — review and page-test fixes
+
+**A — `blackceo-signature-page` 1.0.2** (`.claude/skills/blackceo-signature-page/`,
+`CONTROL/bundled-components.json`). Compatibility, safety and documentation fixes
+found by the Opus review of the landing-page skill window and by the full page
+test. No methodology, writing, visual, QC, threshold or production-order change.
+
+1. **Keys and spend cap (`SKILL.md` intake).** Paid providers (Kie, Agnes, GHL,
+   Vercel) use ONLY the client's own keys from that client's own `secrets.env` —
+   never an operator's or another client's key; if a key is absent, the stage is
+   marked BLOCKED. The intake list also asks for a per-job image cap (count) — a
+   cap, never an approval gate.
+2. **Large references (`SKILL.md`).** The style libraries are large: run the copy
+   and image stages in separate sessions or subagents, and grep a style library by
+   Style-ID (`VDL-nnn` photographic, `CIS-nn` cinematic, `ART-nn` visual artist)
+   instead of reading it whole.
+3. **Adapter READMEs.** Each adapter README now carries the Windows command line
+   (`py scripts/...`) and the Pillow prerequisite where the PDF review test runs.
+4. **Dead links and missing repo rules (`references/`).** Five links to the removed
+   "Image Prompt Creation Guide v1" (`SOP-v1.md` three times, `Standard-v6.md`,
+   `Long-Form-v6.md`) are re-pointed to the v5 image guide. The image guide states
+   that when the onboarding repository is absent the rules in that guide apply and
+   nothing is fetched. The GHL test-form step in `SOP-v1.md` now requires a named
+   test contact the owner approved for testing and never fires a live client
+   automation.
+5. **Script fixes.** `scripts/install_local.py` continues past a Codex-root
+   conflict and creates absent roots instead of returning early on the first one.
+   `scripts/validate_state.py` no longer crashes on a non-object stage.
+   `scripts/validate_image_manifest.py` no longer crashes on an unhashable id and
+   no longer false-fails authoring manifests against the map dialect.
+   `scripts/validate_prompt.py` no longer false-fails on the ordinary English word
+   "placeholder"; the bracketed marker and the bare `PLACEHOLDER` token still fail.
+6. **999-setup installers** (`.claude/skills/nine-router-setup/scripts/`).
+   `setup-macos.sh` and `setup-windows.ps1` install Pillow the safe way
+   (`python3 -m pip install --user Pillow` on macOS CLT python, `py -m pip install
+   Pillow` on Windows; `--break-system-packages` is never used) and link the
+   bundled skills into `~/.codex/skills` and `~/.agents/skills` when `~/.codex`
+   exists.
+
+The page-test artifact also carries the wireframe Section 3 overlap fix: the image
+frame no longer covers the text column or the CTA in `desktop-part-B.png`.
+
+**B — repo release bump.** `spec-protocol` 1.34.0 → 1.34.1
+(`.claude/skills/spec-protocol/VERSION`, the README version line and this entry),
+the repo release that ships the skill fixes above.
+
 ## [1.34.0] — 2026-10-01
 
 ### New bundled skill: blackceo-signature-page 1.0.1

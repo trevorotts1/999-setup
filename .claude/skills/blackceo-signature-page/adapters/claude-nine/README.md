@@ -11,7 +11,9 @@ python3 scripts/install_local.py --runtime claude-nine --target-root /verified/s
 python3 scripts/install_local.py --runtime claude-nine --target-root /verified/skills/root
 ```
 
-4. Confirm discovery and run `python3 tests/test_scripts.py`.
+On Windows, run the same commands with `py scripts/install_local.py --runtime claude-nine --target-root /verified/skills/root` (add `--dry-run` first).
+
+4. Confirm discovery and run `python3 tests/test_scripts.py` (the bundled PDF test needs Pillow: `python3 -m pip install --user Pillow` on macOS, `py -m pip install Pillow` on Windows).
 5. Report exact path behavior and any compatibility-only changes.
 
 Do not invent a Claude-Nine path. Do not create a second independently maintained BlackCEO methodology copy when a safe shared core is possible.

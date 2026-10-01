@@ -73,7 +73,10 @@ def validate(data):
     if current not in ORDER:
         errors.append("current_stage must be one of the canonical stage names.")
     else:
-        first_not_ready = next((name for name in ORDER if stages.get(name, {}).get("status") != "ready"), None)
+        first_not_ready = next((
+            name for name in ORDER
+            if not isinstance(stages.get(name), dict) or stages[name].get("status") != "ready"
+        ), None)
         expected = first_not_ready or ORDER[-1]
         if current != expected:
             errors.append(f"current_stage is {current!r}; expected {expected!r} from stage statuses.")

@@ -184,6 +184,42 @@ require_clt() {
   probe_tool python3 python3 --version
 }
 
+# ensure_pillow — Pillow for the bundled blackceo-signature-page skill, whose
+# PDF review (tests/test_scripts.py, scripts/combine_review_pdf.py) imports it.
+# The CLT python is externally managed (PEP 668), so the ONLY safe form is
+# `--user`; --break-system-packages is never used. Never fatal: the rest of
+# setup (router, launcher, routing) is unaffected, and a runtime that cannot
+# import Pillow is reported BY NAME in the dependency summary so the agent that
+# installs the skill sees it before running the PDF test.
+ensure_pillow() {
+  local out rc
+  out="$(python3 -c 'import PIL' 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' pillow "already importable ($(python3 -c 'import PIL;print(PIL.__version__)' 2>/dev/null || echo '?')")")
+    return 0
+  fi
+  log "Installing Pillow (user install; needed by the blackceo-signature-page PDF review)..."
+  set +e
+  out="$(python3 -m pip install --user Pillow 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] && python3 -c 'import PIL' >/dev/null 2>&1; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' pillow "python3 -m pip install --user Pillow ($(python3 -c 'import PIL;print(PIL.__version__)' 2>/dev/null))")")
+    return 0
+  fi
+  # Report WHY, without claiming a status the run did not produce: pip can exit
+  # 0 and still leave 'import PIL' failing (a shim, or a path the interpreter
+  # does not see), so the import is the verdict and rc only explains it.
+  if [ "$rc" -eq 0 ]; then
+    PILLOW_WHY="pip exited 0 but 'import PIL' still fails"
+  else
+    PILLOW_WHY="python3 -m pip install --user Pillow failed (rc=$rc)"
+  fi
+  DEP_SUMMARY+=("$(printf '%-14s MISSING — %s; PDF review of blackceo-signature-page will fail until Pillow is installed' pillow "$PILLOW_WHY")")
+  log "WARNING: Pillow not importable after install ($PILLOW_WHY): $(printf '%s' "$out" | head -3)"
+  return 0
+}
+
 # ensure_gh (fix #33) — GitHub CLI, used for the one-click GitHub sign-in that
 # keeps a client's work backed up online. Homebrew when present, otherwise the
 # official release zip from github.com/cli/cli into $HOME/.local/bin (Homebrew
@@ -502,6 +538,7 @@ main() {
   probe_install
   require_clt
   ensure_gh
+  ensure_pillow
 
   # Node 20+ / npm 10+: install-node.sh installs/repairs ONLY when needed and
   # prints the ABSOLUTE path to a proven-working node binary on stdout. Never
@@ -978,6 +1015,44 @@ main() {
     fi
   done < <(bundled_skills)
 
+  # Codex skill roots — the bundled blackceo-signature-page skill ships Codex
+  # adapters, and Codex loads skills from BOTH ~/.agents/skills and
+  # ~/.codex/skills (the same pair install_local.py lists under DEFAULT_ROOTS
+  # ["codex"]). Gated on ~/.codex existing: Codex itself is never conjured, and
+  # when it IS present both roots are linked so the skill loads either way. A
+  # skills/ subdirectory is created when absent — that is a container for the
+  # link, not a claim that Codex is installed. Same linker, same manifest, same
+  # idempotent link rules; never fatal.
+  CODEX_LINK_STATUS="not present (~/.codex absent; Codex skills roots not linked)"
+  CODEX_LINK_DETAIL=""
+  if [ -d "$HOME/.codex" ]; then
+    CODEX_LINK_STATUS="linked (~/.codex/skills, ~/.agents/skills)"
+    for codex_root in "$HOME/.codex" "$HOME/.agents"; do
+      mkdir -p "$codex_root/skills" 2>/dev/null || { CODEX_LINK_DETAIL="${CODEX_LINK_DETAIL}  $codex_root/skills: could not create
+"; continue; }
+      link_skills_into_root "$codex_root" || SKILL_LINK_FAILURES=$((SKILL_LINK_FAILURES + $?))
+      codex_missing=""
+      while IFS= read -r s; do
+        [ -n "$s" ] || continue
+        [ -f "$codex_root/skills/$s/SKILL.md" ] || codex_missing="${codex_missing:+$codex_missing, }$s"
+      done < <(bundled_skills)
+      if [ -z "$codex_missing" ]; then
+        CODEX_LINK_DETAIL="${CODEX_LINK_DETAIL}  $codex_root/skills: OK
+"
+      else
+        CODEX_LINK_DETAIL="${CODEX_LINK_DETAIL}  $codex_root/skills: MISSING $codex_missing
+"
+      fi
+    done
+    # Re-derive the linker status now that the Codex roots were linked into, so
+    # the report line below covers every root, not just the Claude ones.
+    if [ "$SKILL_LINK_FAILURES" -gt 0 ]; then
+      SKILL_LINK_STATUS="WARNING: $SKILL_LINK_FAILURES skill link failure(s) - see 'skill ERROR' lines above"
+    else
+      SKILL_LINK_STATUS="OK"
+    fi
+  fi
+
   # 9.7 spec-protocol enforcement, operator remote, ultracode default, GitHub
   #     sign-in. All AFTER the claude-nine smoke probe above, so the probe runs
   #     exactly as before.
@@ -1171,11 +1246,12 @@ Claude Code: OK
 Personal skill in normal claude: $SKILL_VISIBLE
 Personal skill in claude-nine: $NINE_SKILL_VISIBLE
 Bundled skill links: $SKILL_LINK_STATUS
+Codex skill links: $CODEX_LINK_STATUS
 Auto-compaction: settings 500k tokens — $AUTO_COMPACT_STATUS; claude-nine compacts at 200k (launcher env, below the 256K fallback lane)
 Auto-compaction per root:
 $AUTO_COMPACT_DETAIL
 Per-skill visibility:
-$SKILL_VISIBLE_DETAIL
+$SKILL_VISIBLE_DETAIL${CODEX_LINK_DETAIL}
 claude-nine launcher: OK
 claude-nine cold start (router stopped, launcher restarted it): $COLD_START_LINE
 claude-codex launcher: $CODEX_LINE

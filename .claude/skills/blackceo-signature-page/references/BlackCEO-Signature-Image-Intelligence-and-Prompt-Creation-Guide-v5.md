@@ -5,6 +5,7 @@
 **Owner:** Trevor Otts / BlackCEO  
 **Use:** Detailed visual-intelligence, art-direction, prompt-authoring, and QC instructions for individual images and typography-as-image assets used in standard and long-form signature funnel pages.  
 **Primary technical authority:** The current onboarding repository's Graphics Image Protocol, Prompt Author, Prompt QC, and relevant Design Intelligence category rules.  
+If the onboarding repository is absent, use the rules stated in this guide; do not fetch.  
 **Companion:** [BlackCEO Signature Landing Page Production and QC SOP](BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md).
 **Creative Direction libraries:** `BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md`, `BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`, and `BlackCEO-Cinematic-Image-Style-Systems-v2.0.md`. These are governed references; select one family/style per page, never all three.
 

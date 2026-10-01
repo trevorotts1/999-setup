@@ -12,7 +12,11 @@ PLACEHOLDER_PATTERNS = [
     re.compile(r"\[\s*TODO\s*\]", re.I),
     re.compile(r"\{\{[^{}]+\}\}"),
     re.compile(r"<\s*(insert|replace|placeholder)[^>]*>", re.I),
-    re.compile(r"\bPLACEHOLDER\b", re.I),
+    re.compile(r"\[\s*placeholder\s*\]", re.I),
+    # Bare marker only in its authored uppercase form: the ordinary lowercase English
+    # word in a normal sentence (for example a negative-block instruction about not
+    # rendering the word "placeholder") is not an unresolved placeholder.
+    re.compile(r"\bPLACEHOLDER\b"),
 ]
 
 
