@@ -34,8 +34,8 @@ FFmpeg, headless Chromium, a Node frame driver (`playwright-core`), Fish Audio T
 
 Under nine-router, model choice is resolved against the live router catalog, never hardcoded and never left to a guess. At the start of every run, resolve the two roles this pipeline needs:
 
-- **Animation code** (code-strong): `ds-max/deepseek-v4-pro` with max thinking (preferred), or `ds/deepseek-v4-flash` via DeepSeek Direct, or `ollama/glm-5.2` via Ollama Cloud.
-- **Critique rounds** (vision, reads contact sheets and stills): `ollama/kimi-k2.6`, the vision auto-switch in the routing matrix, which must pass the image smoke test.
+- **Animation code** (code-strong): `ollama/glm-5.3-flash` with max reasoning (preferred), or `ds/deepseek-v4.1-flash` via DeepSeek Direct with the `(max)` reasoning suffix.
+- **Critique rounds** (vision, reads contact sheets and stills): `ollama/kimi-k3`, the vision auto-switch in the routing matrix, which must pass the image smoke test. Resolve both roles against the live catalog at the start of every run; model names rotate, and the stop-on-absence rule plus the smoke test are what keep the skill honest when they do.
 
 Full procedure, catalog endpoints, and the stop-on-absence law live in `references/router-model-guidance.md`. Record the resolved models in the run manifest. Never hardcode a model ID; if the live catalog does not carry a required model, stop with a precise error naming the model and the catalog checked. Never silently substitute another model.
 
@@ -63,7 +63,7 @@ Start with `references/authority-map.md`, then use:
 Each stage's detail lives in `INSTRUCTIONS.md`. The four hard gates:
 
 1. **Preview gate.** Low-res previews (960x540 at 15fps) for every scene must be approved by the operator before any full-quality render starts. Nobody iterates on a full render.
-2. **Critique gate.** A fresh critic (an agent that did not write the animation) scores the 8 criteria in `references/critique-protocol.md` with evidence. Minimum 3 rounds; every score must reach 8+ before the full render. The critic runs on the vision-capable routed model (`ollama/kimi-k2.6`).
+2. **Critique gate.** A fresh critic (an agent that did not write the animation) scores the 8 criteria in `references/critique-protocol.md` with evidence. Minimum 3 rounds; every score must reach 8+ before the full render. The critic runs on the vision-capable routed model (`ollama/kimi-k3`).
 3. **Determinism gate.** `scripts/verify-determinism.js` must pass for every scene: probe frames rendered cold must match the same frames rendered after seeking elsewhere. No pixel drift.
 4. **QC gate.** `scripts/qc.sh` must pass before delivery: frame counts match the manifest, no missing or zero-byte frames, blackdetect and freezedetect sweeps clean, determinism re-check, audio duration equals video duration, contact sheet plus per-beat sheet for the human 30-second review.
 

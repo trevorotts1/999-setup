@@ -17,15 +17,15 @@ Every run needs exactly two model roles:
 
 At the start of every run, in order:
 
-1. **DeepSeek Direct catalog.** Fetch `https://api.deepseek.com/models` and confirm it lists the DeepSeek IDs you intend to use. The IDs this skill expects are `deepseek-v4-pro` and `deepseek-v4-flash`. If either is absent, stop that provider configuration with a precise error. Never fall back to an older DeepSeek model on your own authority.
-2. **Ollama Cloud catalog.** Fetch `https://ollama.com/api/tags` and confirm it lists the exact IDs returned there. The IDs this skill expects are `glm-5.2` and `kimi-k2.6`. Use the exact IDs the live endpoint returns; do not assume a local CLI `:cloud` suffix, and do not trust a stale cached registry. If an ID is absent, stop with a precise error.
+1. **DeepSeek Direct catalog.** Fetch `https://api.deepseek.com/models` and confirm it lists the DeepSeek IDs you intend to use. The ID this skill expects is `deepseek-v4.1-flash`. If it is absent, stop that provider configuration with a precise error. Never fall back to an older DeepSeek model on your own authority.
+2. **Ollama Cloud catalog.** Fetch `https://ollama.com/api/tags` and confirm it lists the exact IDs returned there. The IDs this skill expects are `glm-5.3-flash` and `kimi-k3`. Use the exact IDs the live endpoint returns; do not assume a local CLI `:cloud` suffix, and do not trust a stale cached registry. If an ID is absent, stop with a precise error.
 3. Record the resolved route strings in the run manifest as `animation_model` and `critic_model`.
 
 ## Role assignments
 
-- **Animation code, preferred:** `ds-max/deepseek-v4-pro` (the DS Max custom node, provider-level forced max thinking). Deterministic reasoning control matters more than raw speed when the output must be a pure function of time.
-- **Animation code, alternatives:** `ds/deepseek-v4-flash` via DeepSeek Direct (faster, cheaper, still max reasoning), or `ollama/glm-5.2` via Ollama Cloud (very large context, useful when the script and brand bible are long).
-- **Critic, required:** `ollama/kimi-k2.6` via Ollama Cloud. This is the vision auto-switch in the routing matrix. It must pass the image smoke test before the first critique round; a critic that cannot reliably read the contact sheets is a failed gate, not a soft warning.
+- **Animation code, preferred:** `ollama/glm-5.3-flash` via Ollama Cloud with max reasoning. Deterministic reasoning control matters more than raw speed when the output must be a pure function of time, and GLM's very large cloud context is useful when the script and brand bible are long.
+- **Animation code, alternative:** `ds/deepseek-v4.1-flash` via DeepSeek Direct with the `(max)` reasoning suffix.
+- **Critic, required:** `ollama/kimi-k3` via Ollama Cloud. This is the vision auto-switch in the routing matrix. It must pass the image smoke test before the first critique round; a critic that cannot reliably read the contact sheets is a failed gate, not a soft warning.
 - **OpenRouter:** an optional selectable lane only (`openrouter/<vendor>/<model>`). It joins none of the default combos or lanes in this skill. Keep it out unless the operator explicitly asks for it.
 
 ## What stays identical
