@@ -189,6 +189,11 @@ launchers/                     platform-native claude-nine launchers
 .claude/skills/bro/
     SKILL.md                   the bro skill (direct developer talk)
     THIRD_PARTY_LICENSE.md     upstream MIT notice
+.claude/skills/hook-skill/
+    SKILL.md                   the Hook Skill (Claude Code hooks + disk auto-cleanup)
+    hooks/                     workflow-guard, hygiene, disk-cleanup, ask-before-backup, question-gate
+    scripts/                   macOS (bash) and Windows (PowerShell) installers and uninstallers
+    tests/                     unit tests and a fake-HOME install/uninstall smoke test
 CONTROL/bundled-skills.txt     the authoritative bundled-skills manifest
 templates/                     API docs.md template
 tests/                         smoke-test scaffolding
@@ -215,15 +220,20 @@ and `claude-nine`:
   built (app, website, funnel, process, automation, document). Invoke it with `/kaizen`.
 - **`eli5`** — explains complex topics in plain language. Invoke it with `/eli5`.
 - **`bro`** — direct, blunt developer talk. Invoke it with `/bro`.
+- **`hook-skill`** — Hook Skill: Claude Code hooks for `claude` and `claude-nine` (workflow
+  concurrency guard, post-merge cleanup of finished worktrees and clones, daily disk
+  auto-cleanup, plus opt-in ask-before-backup and question-gate). Install with
+  `bash .claude/skills/hook-skill/scripts/macos/install.sh` (Windows:
+  `scripts\windows\Install-HookSkill.ps1`); test with `bash .claude/skills/hook-skill/tests/run-all.sh`.
 
 The authoritative list lives in [`CONTROL/bundled-skills.txt`](CONTROL/bundled-skills.txt);
 the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) carry
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.34.1,
+Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.35.0,
 `nine-router-setup` 1.21.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
-`blackceo-signature-page` 1.0.2). At every
+`blackceo-signature-page` 1.0.2, `hook-skill` 1.0.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all six skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
 spec-protocol itself; the other four skills refresh by re-running the

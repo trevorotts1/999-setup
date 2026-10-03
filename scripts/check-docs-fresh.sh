@@ -20,7 +20,7 @@ component_version() {
 }
 
 # --- 1. README vs each skill's VERSION file -------------------------------
-for skill in spec-protocol nine-router-setup kaizen eli5 bro blackceo-signature-page; do
+for skill in spec-protocol nine-router-setup kaizen eli5 bro blackceo-signature-page hook-skill; do
   ver="$(skill_version "$skill")"
   if [ -z "$ver" ]; then
     say "FAIL: .claude/skills/$skill/VERSION is missing or empty"
@@ -35,7 +35,7 @@ done
 
 # --- 1b. CONTROL/bundled-components.json vs each skill's VERSION file -----
 if [ -f CONTROL/bundled-components.json ]; then
-  for skill in spec-protocol nine-router-setup kaizen eli5 bro blackceo-signature-page; do
+  for skill in spec-protocol nine-router-setup kaizen eli5 bro blackceo-signature-page hook-skill; do
     ver="$(skill_version "$skill")"
     [ -z "$ver" ] && continue  # already reported above
     recorded="$(component_version "$skill")"

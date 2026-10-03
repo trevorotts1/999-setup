@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.35.0] — 2026-10-02
+
+### New skill: `hook-skill` 1.0.0 ("Hook Skill")
+
+**`hook-skill`** (`.claude/skills/hook-skill/`, registered in `CONTROL/bundled-skills.txt` and
+`CONTROL/bundled-components.json`). Claude Code hooks packaged for anyone using `claude` or
+`claude-nine`, with installers, uninstallers, scheduled sweeps and tests.
+
+1. **Defaults ON:** `workflow-guard` (Workflow launch validation, running-at-once concurrency
+   limits, slot release, finished-run scratch cleanup, stop latch, watchdog tick), `hygiene`
+   (deletes merged worktrees and clones only after GitHub confirms; 15-minute sweep; test-data
+   folder cleanup) and `disk-cleanup` (daily Time Machine snapshot thinning on macOS, npm / pip /
+   Homebrew caches, report of the 10 largest home folders; never deletes user folders).
+2. **Opt-in (they prompt):** `ask-before-backup` (`--with-ask-before-backup`) and `question-gate`
+   (`--with-question-gate`); both skip in bypass-permissions mode.
+3. **Installers:** `scripts/macos/install.sh` (launchd jobs) and `scripts/windows/Install-HookSkill.ps1`
+   (Task Scheduler) copy the hooks to `~/.claude/hooks/<name>/` and append their entries to
+   `~/.claude/settings.json` and, when it exists, `~/.claude-nine/settings.json` — existing hook
+   entries are never edited or removed and JSON is validated after every write. Uninstallers remove
+   only what the installer added. `--dry-run` everywhere.
+4. **Safety:** every cleanup has `--dry-run` and writes a log; nothing with uncommitted or unpushed
+   work is ever deleted; the in-use check fails safe when `lsof` is missing.
+5. **Generalized** from single-machine hooks: no hard-coded home paths, no personal names in
+   user-facing text, no router model names, per-user `~/.claude/hooks/hook-skill.json` for protected
+   paths, tracked repos and scan roots, vendored parser (acorn 8.15.0, MIT) so no `npm install`.
+6. **Tests:** `bash .claude/skills/hook-skill/tests/run-all.sh` runs the portable hook unit tests plus
+   hygiene, disk-cleanup, gate and settings-merge tests and a fake-HOME install/uninstall smoke test;
+   CI workflow `.github/workflows/hook-skill-tests.yml` runs it on macOS and Ubuntu.
+7. **Repo:** `scripts/check-docs-fresh.sh` now also checks `hook-skill`; README and
+   `THIRD_PARTY_NOTICES.md` updated; `spec-protocol` VERSION bumped to 1.35.0 (the repo release version).
+
 ## [1.34.1] — 2026-10-01
 
 ### blackceo-signature-page 1.0.2 — review and page-test fixes

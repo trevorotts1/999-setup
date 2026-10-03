@@ -33,3 +33,8 @@ Files covered:
 
 All other skills in this repository (`nine-router-setup`, `spec-protocol`, `kaizen`) are
 original to this repository and covered by the repository `LICENSE` (MIT).
+
+## Vendored code inside `hook-skill`
+
+- `.claude/skills/hook-skill/hooks/workflow-guard/vendor/acorn.mjs` — [acorn](https://github.com/acornjs/acorn) 8.15.0, MIT,
+  licence text in `.claude/skills/hook-skill/hooks/workflow-guard/vendor/LICENSE`. Used only to parse (never run) workflow scripts.
