@@ -1,5 +1,9 @@
 # Changelog: motion-video-plus
 
+## [1.0.1] - 2026-10-03
+
+Critic role change: the critique gate now runs on `ollama/deepseek-v4.1-flash` (free on Ollama Cloud; Kimi K3 was dropped because it requires purchased tokens), which must pass the image smoke test before the first round. Fallback critic is `openrouter/meta/muse-spark-1.3-contributor` (vision-capable per the OpenRouter catalog) if the primary is absent or fails the smoke test. Animation routing unchanged: `ollama/glm-5.3-flash` preferred, `ds/deepseek-v4.1-flash` alternative.
+
 ## [1.0.0] - 2026-10-03
 
 Initial release: the nine-router variant of the motion-video-plus skill.

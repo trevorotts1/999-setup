@@ -39,7 +39,7 @@ Resolve per environment, never hardcode: Mac uses `~/Downloads/openclaw-master-f
 
 ### 4. Router model resolution (router-aware rule)
 
-Resolve both model roles against the LIVE router catalog before anything else, following `references/router-model-guidance.md`: animation code goes to `ollama/glm-5.3-flash` with max reasoning (preferred) or `ds/deepseek-v4.1-flash` via DeepSeek Direct with the `(max)` reasoning suffix, and the critique gate's critic goes to the vision-capable `ollama/kimi-k3` (must pass the image smoke test). Check the DeepSeek catalog at `https://api.deepseek.com/models` and the Ollama catalog at `https://ollama.com/api/tags`; use the exact IDs the live endpoints return. Record the resolved routes in `manifest.json` as `animation_model` and `critic_model`. If a required model is absent, STOP with a precise error naming the model and the catalog checked. Never hardcode a model ID, never silently substitute. Then hand the animation model `references/animation-contract.md`, `references/motion-grammar.md`, the brand bible, and the approved director's brief.
+Resolve both model roles against the LIVE router catalog before anything else, following `references/router-model-guidance.md`: animation code goes to `ollama/glm-5.3-flash` with max reasoning (preferred) or `ds/deepseek-v4.1-flash` via DeepSeek Direct with the `(max)` reasoning suffix, and the critique gate's critic goes to `ollama/deepseek-v4.1-flash` (must pass the image smoke test), with `openrouter/meta/muse-spark-1.3-contributor` as fallback if the primary is absent or fails the smoke test. Check the DeepSeek catalog at `https://api.deepseek.com/models`, the Ollama catalog at `https://ollama.com/api/tags`, and the OpenRouter catalog at `https://openrouter.ai/api/v1/models`; use the exact IDs the live endpoints return. Record the resolved routes in `manifest.json` as `animation_model` and `critic_model`. If a required model is absent, STOP with a precise error naming the model and the catalog checked. Never hardcode a model ID, never silently substitute. Then hand the animation model `references/animation-contract.md`, `references/motion-grammar.md`, the brand bible, and the approved director's brief.
 
 ### 5. Scene animation code (grammar-constrained)
 
@@ -79,7 +79,7 @@ Assemble a rough preview cut and get the operator's explicit approval per scene.
 
 ### 7. Critique gate (HARD GATE)
 
-Build the review bundle and hand it to a fresh critic: an agent that did NOT write the animation, running on the resolved vision-capable routed model (`ollama/kimi-k3`).
+Build the review bundle and hand it to a fresh critic: an agent that did NOT write the animation, running on the resolved vision-capable routed model (`ollama/deepseek-v4.1-flash`, fallback `openrouter/meta/muse-spark-1.3-contributor`).
 
 ```bash
 bash scripts/critique-bundle.sh --video work/preview-cut.mp4 --outdir review/r1 \
