@@ -1,0 +1,145 @@
+# Motion Video Plus operator / agent instructions (nine-router variant)
+
+## Trigger
+
+Use this skill when a client asks for a motion-graphics video: an animated promo, explainer, brand film, or kinetic-typography piece built from code-driven animation.
+
+Do not use it when the request clearly names AI video-model generation, documentary montage or VSL pipelines, or hands-on editing of existing footage.
+
+## Execution
+
+Follow these stages in order. Do not skip the four hard gates.
+
+### 1. Pre-production
+
+Work through `references/pre-production/` in order:
+
+1. **Studio setup** (`01-studio-setup.md`): toolchain and secrets check, once per machine.
+2. **House rules** (`02-house-rules.md`): the render contract, the look rules, the sound rules, the critique loop.
+3. **Brand assets** (`03-brand-assets.md`): collect the real logo, typefaces, palette, product UI, and voice reference. Fill the brand bible from `references/brand-bible-template.md`.
+4. **One-liner** (`04-the-one-liner.md`): one sentence the whole video must earn.
+5. **Steal the grammar** (`05-steal-the-grammar.md`): if the operator names a reference video, take its grammar, never its content, logos, or characters.
+6. **Director's brief** (`06-directors-brief.md`): write it from `references/directors-brief-template.md` and get the operator's explicit approval. No animation code, no voiceover, no renders until the brief is approved.
+
+Write the run folder now:
+
+`<storage-root>/<video-name>/` containing `manifest.json`, `script.txt`, `scenes/`, `audio/`, the brand bible, and the approved brief.
+
+### 2. Brand bible
+
+Load the filled `<brand>-brand-bible.md` on this run and every later run for the brand. Bright, human defaults: no dark-style designs, no generic AI-polished look.
+
+### 3. Storage root
+
+Resolve per environment, never hardcode: Mac uses `~/Downloads/openclaw-master-files/motion-videos/`; Docker VPS uses a persistent volume such as `/data/motion-videos`, never ephemeral container storage. Record the resolved path in the manifest.
+
+### 4. Router model resolution (router-aware rule)
+
+Resolve both model roles against the LIVE router catalog before anything else, following `references/router-model-guidance.md`: animation code goes to a code-strong routed model (`ds-max/deepseek-v4-pro` preferred, `ds/deepseek-v4-flash` or `ollama/glm-5.2` as alternatives), and the critique gate's critic goes to the vision-capable `ollama/kimi-k2.6` (must pass the image smoke test). Check the DeepSeek catalog at `https://api.deepseek.com/models` and the Ollama catalog at `https://ollama.com/api/tags`; use the exact IDs the live endpoints return. Record the resolved routes in `manifest.json` as `animation_model` and `critic_model`. If a required model is absent, STOP with a precise error naming the model and the catalog checked. Never hardcode a model ID, never silently substitute. Then hand the animation model `references/animation-contract.md`, `references/motion-grammar.md`, the brand bible, and the approved director's brief.
+
+### 5. Scene animation code (grammar-constrained)
+
+One HTML file per scene honoring `references/animation-contract.md` AND `references/motion-grammar.md`: `window.__setTime(t)` as a pure function of t, no CSS transitions, no timer-driven motion, seeded randomness only, springs-only motion using the named presets, visual hits 2 frames before the beat, masked-word typography, all assets local. Then lint every scene file:
+
+```bash
+python3 scripts/lint-grammar.py scenes/scene-01.html
+```
+
+The linter flags violations; it never auto-fixes. Fix what it flags before moving on.
+
+### 6. Preview gate (HARD GATE)
+
+Render every scene at 960x540, 15fps:
+
+```bash
+node scripts/render.js --manifest run/manifest.json --scene scene-01 --outdir work/preview/scene-01 --preview
+```
+
+Assemble a rough preview cut and get the operator's explicit approval per scene. Nobody iterates on a full render. Changes go back to step 5.
+
+### 7. Critique gate (HARD GATE)
+
+Build the review bundle and hand it to a fresh critic: an agent that did NOT write the animation, running on the resolved vision-capable routed model (`ollama/kimi-k2.6`).
+
+```bash
+bash scripts/critique-bundle.sh --video work/preview-cut.mp4 --outdir review/r1 \
+  --beats work/audio/beats.json
+```
+
+The critic follows `references/critique-protocol.md`: scores the 8 criteria with evidence, minimum 3 rounds, every score must reach 8+ before sign-off. The animation author fixes the 3 worst problems per round and re-renders the preview. The gate opens only on a SHIP verdict. No full render before it.
+
+### 8. Determinism gate (HARD GATE)
+
+Every scene's animation must be a pure function of t. Verify before the full render:
+
+```bash
+node scripts/verify-determinism.js --manifest run/manifest.json --scene scene-01
+```
+
+Probe frames rendered cold must match the same frames rendered after seeking elsewhere. On drift, fix the cause (timers, unseeded randomness, GPU-layer tricks) and re-verify. `scripts/qc.sh` re-checks this at the end as a backstop.
+
+### 9. Voiceover
+
+Write one TTS chunk per scene (2,000 to 4,000 chars, never mid-sentence). Then:
+
+```bash
+export FISH_AUDIO_API_KEY=...
+python3 scripts/tts.py --manifest run/manifest.json --outdir work/audio
+```
+
+Default model `s2.1-pro`. `drama-3-preview` is opt-in only; `tts.py` verifies the served model from response metadata and stops on mismatch (see `references/fish-audio-tts.md`). Sequential requests, exponential backoff on 429.
+
+### 10. Audio-first timing
+
+Read `work/audio/durations.json`. Set each scene's `duration_seconds` in the manifest to its chunk's measured duration. The animation renders to the audio, not the other way around. The beat grid is used INSIDE scenes for motion and SFX sync; the voiceover stays the master clock.
+
+### 11. Preflight
+
+```bash
+node scripts/preflight.js --manifest run/manifest.json --max-hours 8
+```
+
+It calibrates with 20 real frames and recommends the worker count and segment length (5-minute standard; 15-minute only on strong systems). If it refuses, follow its advice: free disk, shorten, or take the segment route. Never hardcode worker counts.
+
+### 12. Full render
+
+One `render.js` process per scene, in parallel up to the preflight worker count. Each process chunks its browser every few hundred frames and supports `--resume`:
+
+```bash
+node scripts/render.js --manifest run/manifest.json --scene scene-01 --outdir work/scenes/scene-01 --resume
+```
+
+Segments encode per scene; PNGs are deleted right after each segment encodes.
+
+### 13. Synthesized sound and assembly
+
+Unless the manifest names a supplied `music_bed` track, `assemble.sh` synthesizes an original score and the UI sounds itself, derives the beat grid, and mixes everything:
+
+```bash
+bash scripts/assemble.sh --manifest run/manifest.json --workdir work \
+  --voiceover work/audio/voiceover.mp3 --out <storage-root>/<video-name>/<video-name>.mp4
+```
+
+Crossfaded joins, one continuous score over the final assembly, sidechain ducking under the voiceover, beat-synced UI sounds, finished at -14 LUFS integrated. If only the mix changes later, re-mux without re-rendering:
+
+```bash
+node scripts/render.js --mux work/audio/mix2.mp3 --video final.mp4 --out final2.mp4
+```
+
+Review helpers: `node scripts/render.js --still 12.5 --manifest ... --scene ... --outdir work/review` for a timestamped still; `--cliprange 10,15` for a short motion-check clip; `--beatsheet --beats work/audio/beats.json --video final.mp4` for the per-beat sheet.
+
+### 14. QC gate (HARD GATE)
+
+```bash
+bash scripts/qc.sh --manifest run/manifest.json --workdir work --final <storage-root>/<video-name>/<video-name>.mp4
+```
+
+Frame counts, zero-byte sweep, blackdetect, freezedetect, determinism re-check, audio equals video duration, contact sheet plus per-beat sheet. Review the sheets yourself: the 30-second human review. Then `bash scripts/sweep-chromium.sh` to clear orphans.
+
+### 15. Delivery
+
+Deliver the MP4 from `<storage-root>/<video-name>/` along with the contact sheet. Keep the animation sources, voiceover audio, script text, manifest, beats.json, score params, and the review log in the folder. Frame PNGs are always deleted.
+
+## Maintenance check
+
+`bash verify.sh` is for installation/update verification. It is not part of every normal video job.
