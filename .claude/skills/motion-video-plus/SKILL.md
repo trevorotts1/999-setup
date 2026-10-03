@@ -16,6 +16,8 @@ A model writes deterministic HTML/JS animation for each scene. Every animation e
 
 Parallelize every stage, not just the frame render: scene animation files are built in parallel once the brief is locked, TTS chunks are fetched concurrently, spot-check stills render for all scenes at once, and the score and SFX synthesize while frames render. What stays sequential is the decision chain: script, voiceover durations, scene timing, animation. Measured on the reference box (12 CPU, 24GB RAM), a 5-minute video ran 85 minutes with only the frame render parallelized. With every stage parallelized the warm-pipeline target is about 30 minutes: script 5, TTS plus animation 7, render 10 to 11 at 8 workers (measured 0.56 seconds per frame per worker), assembly plus QC plus mux 5. Add about 4 minutes in a fresh environment.
 
+One honest note: the pipeline technique was proven on that 30-second promo. Treat your first full run through the 15 stages as this skill's shakedown run.
+
 ## Route boundaries first
 
 Use this skill when the request is a motion-graphics video: kinetic typography, animated explainers, brand promos, product films built from code-driven animation.
@@ -103,8 +105,10 @@ Frame ranges are independent units, so splitting a render across multiple machin
 1. The video script (or a brief the script is written from).
 2. The brand bible file for the brand (or the facts to build one from the template).
 3. Preview approval before full render.
-4. A Fish Audio API key in `FISH_AUDIO_API_KEY` and a voice reference id.
+4. The client's OWN Fish Audio API key, collected by the client's agent at first use into the client environment (`export FISH_AUDIO_API_KEY=...`), plus a voice reference id. It is never written into the repo or the skill files.
 5. A working nine-router installation with the DeepSeek Direct and Ollama Cloud providers verified (see the nine-router-setup skill).
+6. Node.js 18 or newer with `playwright-core` and a Chromium build: acquire once with `npx -y playwright@latest install --with-deps chromium` (browsers land in `~/.cache/ms-playwright`; or set `PLAYWRIGHT_BROWSERS_PATH`). Without this, `scripts/render.js` fails on `chromium.launch()`.
+7. Python 3 with `numpy` (`pip install numpy`); required by the synth scripts. FFmpeg with libx264.
 
 ## What the skill never does
 
