@@ -1,0 +1,27 @@
+name: hook-skill-tests
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '.claude/skills/hook-skill/**'
+      - '.github/workflows/hook-skill-tests.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/hook-skill/**'
+      - '.github/workflows/hook-skill-tests.yml'
+
+jobs:
+  hook-skill:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Hook Skill tests (unit + fake-HOME install/uninstall smoke)
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          bash .claude/skills/hook-skill/tests/run-all.sh
