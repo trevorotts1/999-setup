@@ -1,5 +1,9 @@
 # Changelog: motion-video-plus
 
+## [1.0.2] - 2026-10-03
+
+Reasoning effort rule: every model role (animation, critic, fallback critic) runs at max reasoning. Where a provider does not support `max`, the run probes down to the highest verified effort (`xhigh`, then `high`); effort is never assumed. The resolved effort is recorded in the run manifest as `animation_effort` and `critic_effort`.
+
 ## [1.0.1] - 2026-10-03
 
 Critic role change: the critique gate now runs on `ollama/deepseek-v4.1-flash` (free on Ollama Cloud; Kimi K3 was dropped because it requires purchased tokens), which must pass the image smoke test before the first round. Fallback critic is `openrouter/meta/muse-spark-1.3-contributor` (vision-capable per the OpenRouter catalog) if the primary is absent or fails the smoke test. Animation routing unchanged: `ollama/glm-5.3-flash` preferred, `ds/deepseek-v4.1-flash` alternative.

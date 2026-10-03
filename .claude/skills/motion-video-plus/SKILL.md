@@ -36,6 +36,7 @@ Under nine-router, model choice is resolved against the live router catalog, nev
 
 - **Animation code** (code-strong): `ollama/glm-5.3-flash` with max reasoning (preferred), or `ds/deepseek-v4.1-flash` via DeepSeek Direct with the `(max)` reasoning suffix.
 - **Critique rounds** (vision, reads contact sheets and stills): `ollama/deepseek-v4.1-flash`, which must pass the image smoke test before the first round. Fallback critic: `openrouter/meta/muse-spark-1.3-contributor` (vision-capable) if the primary is absent or fails the smoke test. Kimi K3 is not used: it requires purchased tokens on Ollama Cloud. Resolve all roles against the live catalog at the start of every run; model names rotate, and the stop-on-absence rule plus the smoke test are what keep the skill honest when they do.
+- **Reasoning effort:** every role above runs at max reasoning. If a provider does not support `max`, step down to the highest effort it verifies (`xhigh`, then `high`). Probe the route; never assume. Record the resolved effort in `manifest.json` next to each model route.
 
 Full procedure, catalog endpoints, and the stop-on-absence law live in `references/router-model-guidance.md`. Record the resolved models in the run manifest. Never hardcode a model ID; if the live catalog does not carry a required model, stop with a precise error naming the model and the catalog checked. Never silently substitute another model.
 
