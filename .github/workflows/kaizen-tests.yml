@@ -34,6 +34,8 @@ jobs:
           node-version: 20
       - name: Run all Kaizen test suites
         run: bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh
+      - name: nine-router-setup skills-only mode (fake HOME; fails if any 9Router path is written)
+        run: bash .claude/skills/nine-router-setup/tests/test-skills-only.sh
 
   windows-tests:
     runs-on: windows-latest
