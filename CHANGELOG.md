@@ -1,5 +1,27 @@
 # Changelog
 
+## [nine-router-setup 1.22.0] — 2026-10-04
+
+### `setup-macos.sh --skills-only [--check]` — update skills on a box that already runs 9Router, without touching 9Router
+
+The full installer rewrites the router (providers, combos, token), the `claude-nine`
+launcher, `settings.json` files and state. That is wrong for a box whose 9Router settings
+must not change. The new mode refreshes **bundled skill content only** and exits before
+the install path, so nothing router-related is reachable.
+
+- **`--skills-only --check`** is strictly read-only: it lists every file it WOULD add or
+  change, prints the paths it will and will not touch, and writes nothing (proven under a
+  kernel write-deny sandbox with a before/after snapshot of every path that matters).
+- **`--skills-only`** copies skill files into skills roots that already exist
+  (`$CLAUDE_CONFIG_DIR`, `~/.claude`, `~/.claude-nine`, `~/.codex`, `~/.agents`); a root is
+  never created. No backup directory, nothing moved or deleted. Idempotent.
+- **Guard rails:** refuses on a box that does not already run 9Router; `--check` needs
+  `--skills-only`; cannot be combined with `--operator-remote-owner`; skips
+  `nine-router-setup` itself, symlinks to elsewhere and symlinked files.
+- **Test:** `.claude/skills/nine-router-setup/tests/test-skills-only.sh` (fake HOME, shim
+  node/npm/brew/gh that fail the test if ever executed, canary files in every forbidden
+  path, snapshot-detects-change control). Passes under macOS bash 3.2 and bash 5.
+
 ## [1.36.0] — 2026-10-04
 
 ### New skill: `kiss` 1.0.0 ("Kiss")

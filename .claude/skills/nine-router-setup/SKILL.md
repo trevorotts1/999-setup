@@ -93,6 +93,28 @@ exact OS-resolved path and the template (from `templates/API docs.md` in this re
 Run the matching orchestrator. It performs the remaining steps; the skill verifies each
 outcome rather than duplicating the work.
 
+### Skills-only mode (macOS) — boxes that ALREADY run 9Router
+
+For a box whose 9Router settings must not change, use the skills-only mode instead of the
+full install. It refreshes bundled skill CONTENT only and never reaches the install path
+(no Node, 9Router, launcher, router configuration, token, settings.json or backup step).
+
+```bash
+# CHECK — strictly read-only: reports what WOULD be added or changed, writes nothing.
+bash <skill-dir>/scripts/setup-macos.sh --skills-only --check
+# APPLY — adds/refreshes skill files under skills roots that already exist.
+bash <skill-dir>/scripts/setup-macos.sh --skills-only
+```
+
+Run it from a fresh clone of this repo (the source of the skill files). Both modes print
+the box check (`already-9Router box: YES/NO`), a full list of the paths they will and will
+not touch, one line per skill, and a `RESULT` line. APPLY refuses on a box that does not
+already run 9Router; CHECK still reports (`NO`). `--check` is only valid with
+`--skills-only`, and `--skills-only` cannot be combined with `--operator-remote-owner`.
+It skips `nine-router-setup` itself, any skill dir that is a symlink to somewhere else and
+any destination file that is a symlink; it creates no backups and moves or deletes
+nothing; a second APPLY is a no-op. Test: `bash <skill-dir>/tests/test-skills-only.sh`.
+
 ## Step 4 — Node.js (only when needed)
 
 The orchestrator installs/repairs Node only if missing or below minimum (Node 20+, npm 10+).

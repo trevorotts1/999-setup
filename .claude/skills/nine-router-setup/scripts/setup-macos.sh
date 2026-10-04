@@ -481,6 +481,124 @@ cron_privacy_check() {
   CRON_FDA_LINE="UNDETERMINED - no proof either way (no Full Disk Access entry for cron is not proof of a block); new projects go to ~/Projects, which needs none, and the tick names a real block itself (TICK-BLOCKED-BY-PRIVACY). If that line ever appears, the one step: System Settings > Privacy & Security > Full Disk Access, click +, press Command-Shift-G, type /usr/sbin/cron, click Open and switch it on. Open that page with: open \"$FDA_PANE\""
 }
 
+# ---------------------------------------------------------------------------
+# --skills-only [--check]: for boxes that ALREADY run 9Router and whose router
+# settings must not change. Syncs bundled skill CONTENT only and NEVER reaches
+# the install path: main() calls skills_only_mode and exits.
+#
+#   --skills-only          APPLY: add/refresh skill files under EXISTING skills roots.
+#   --skills-only --check  CHECK: strictly read-only. No write command is reachable on
+#                          this path (no mkdir/cp/ln/rm/mktemp, no redirect to a file,
+#                          no here-doc - bash 3.2 here-docs create temp files); it only
+#                          reports what APPLY would add or change.
+#
+# Unlike link_one_skill: NO backup dir, NO moving or deleting anything. A real skill
+# dir is refreshed file by file in place; a symlink to somewhere else is left alone.
+# nine-router-setup itself is excluded: it is the installer, and replacing it is
+# exactly what must not happen on these boxes.
+# ponytail: content-only compare (exec-bit drift ignored), stale files in a skill are
+# kept, cp is not atomic (a re-run repairs); add a prune/mode/atomic pass if needed.
+# ---------------------------------------------------------------------------
+so_print_paths() {
+  printf '%s\n' \
+    "[skills-only] WILL touch (and only these):" \
+    "    <skills root>/<bundled skill>/** - add or refresh files; existing skills roots only" \
+    "    skills roots considered: \$CLAUDE_CONFIG_DIR/skills, ~/.claude/skills, ~/.claude-nine/skills," \
+    "      ~/.codex/skills, ~/.agents/skills (each only if it already exists; never created)" \
+    "[skills-only] WILL NOT touch:" \
+    "    9Router: ~/.9router (settings, database), the router process, its port, providers, combos, keys" \
+    "    claude-nine: ~/.local/bin/claude-nine, claude-codex, claude-code-lib.sh, get-9router-key.sh," \
+    "      fix-9router-*.mjs; ~/.claude-nine/settings.json and ~/.claude-nine/.last-effort" \
+    "    other config: any settings.json (hooks, Agent Teams, auto-compact, ultracode override), operator.env" \
+    "    state: Keychain token, ~/Library/Application Support/BlackCEO/999, ~/.local/share/999," \
+    "      ~/Library/Logs/BlackCEO-999, API docs.md" \
+    "    skipped: nine-router-setup (the installer itself); any skill dir that is a symlink elsewhere," \
+    "      a plain file, or has no source in this clone; any destination FILE that is a symlink" \
+    "    never: backups, ~/.claude-skill-backups, moving or deleting any file, installing Node/9Router/gh/Vercel"
+}
+
+so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_SAME SO_SKP SO_FAIL
+  local src="$1" dst="$2" check="$3" label="$4" rel st
+  SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_SKP=0; SO_FAIL=0
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    if [ -L "$dst/$rel" ]; then
+      printf '    SKIP (destination file is a symlink) %s/%s\n' "$label" "$rel"; SO_SKP=$((SO_SKP + 1)); continue
+    elif [ ! -e "$dst/$rel" ]; then st=NEW
+    elif cmp -s "$src/$rel" "$dst/$rel"; then SO_SAME=$((SO_SAME + 1)); continue
+    else st=CHANGED; fi
+    if [ "$check" = 1 ]; then
+      printf '    WOULD %s %s/%s\n' "$st" "$label" "$rel"
+    elif mkdir -p "$(dirname "$dst/$rel")" && cp -p "$src/$rel" "$dst/$rel"; then
+      :
+    else
+      printf '    ERROR could not write %s/%s\n' "$label" "$rel"; SO_FAIL=$((SO_FAIL + 1)); continue
+    fi
+    if [ "$st" = NEW ]; then SO_NEW=$((SO_NEW + 1)); else SO_CHG=$((SO_CHG + 1)); fi
+  done < <(cd "$src" && find . -type f ! -name .DS_Store | LC_ALL=C sort)
+}
+
+skills_only_mode() { # skills_only_mode <check:0|1>
+  local check="$1" markers="" roots="" r d s src src_real dst dst_real verb
+  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 skills_root="$SKILL_DIR/.."
+
+  # 9Router detection - read-only: two stats and one local GET on /api/health.
+  [ ! -d "$HOME/.9router" ] || markers="$markers ~/.9router"
+  [ ! -f "$HOME/.local/bin/claude-nine" ] || markers="$markers ~/.local/bin/claude-nine"
+  if curl -fsS -m 3 -o /dev/null "$BASE/api/health" 2>/dev/null; then markers="$markers router-answering:$PORT"; fi
+
+  # Skills roots: ONLY ones whose skills/ dir already exists (never created), de-duplicated by physical path.
+  for r in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.claude" "$HOME/.claude-nine" "$HOME/.codex" "$HOME/.agents"; do
+    [ -n "$r" ] && [ -d "$r/skills" ] || continue
+    d="$(cd -P "$r/skills" && pwd -P)"
+    case "
+$roots" in *"
+$d
+"*) ;; *) roots="$roots$d
+" ;; esac
+  done
+
+  if [ "$check" = 1 ]; then verb=WOULD; printf '[skills-only] mode: CHECK - read-only, nothing is written\n'
+  else verb=DONE; printf '[skills-only] mode: APPLY - bundled skill content only\n'; fi
+  printf '[skills-only] source clone: %s\n' "$(cd -P "$skills_root" && pwd -P)"
+  if [ -n "$markers" ]; then
+    printf '[skills-only] already-9Router box: YES (markers:%s)\n' "$markers"
+  else
+    printf '[skills-only] already-9Router box: NO (no ~/.9router, no claude-nine launcher, nothing answering on :%s)\n' "$PORT"
+    [ "$check" = 1 ] || fail "--skills-only is for boxes that already run 9Router; this box does not - use the full install instead. Nothing was written."
+  fi
+  so_print_paths
+
+  [ -n "$roots" ] || printf '[skills-only] no skills root exists on this box - nothing to do\n'
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    printf '[skills-only] root: %s\n' "$d"
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      src="$skills_root/$s"; dst="$d/$s"
+      if [ ! -f "$src/SKILL.md" ]; then printf '  SKIP %s: no source in this clone\n' "$s"; t_skip=$((t_skip + 1)); continue; fi
+      src_real="$(cd -P "$src" && pwd -P)"
+      if [ -L "$dst" ]; then
+        dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
+        if [ "$dst_real" = "$src_real" ]; then printf '  OK   %s: symlink already points at this clone\n' "$s"; t_same=$((t_same + 1))
+        else printf '  SKIP %s: symlink to somewhere else (%s) - left alone\n' "$s" "${dst_real:-broken link}"; t_skip=$((t_skip + 1)); fi
+        continue
+      fi
+      if [ -e "$dst" ] && [ ! -d "$dst" ]; then printf '  SKIP %s: %s is not a directory - left alone\n' "$s" "$dst"; t_skip=$((t_skip + 1)); continue; fi
+      if [ -d "$dst" ] && [ "$(cd -P "$dst" && pwd -P)" = "$src_real" ]; then
+        printf '  SKIP %s: source and destination are the same directory\n' "$s"; t_skip=$((t_skip + 1)); continue
+      fi
+      so_sync "$src" "$dst" "$check" "$dst"
+      t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_fail=$((t_fail + SO_FAIL))
+      printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP"
+    done < <(bundled_skills | grep -v -x nine-router-setup || true)
+  done < <(printf '%s' "$roots")
+  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d error(s)\n' \
+    "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
+    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_fail"
+  [ "$t_fail" -eq 0 ] || return 1
+}
+
 main() {
   # Optional: the operator's GitHub org for client backups (fix #6). Taken ONLY
   # from --operator-remote-owner <org> or SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER;
@@ -491,14 +609,19 @@ main() {
   # 600) only when supplied; never printed, never guessed.
   OPERATOR_GH_TOKEN="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
   OPERATOR_VERCEL_TOKEN="${VERCEL_TOKEN:-}"
+  SKILLS_ONLY=0; CHECK_ONLY=0; OPERATOR_FLAG=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --operator-remote-owner) OPERATOR_REMOTE_OWNER="${2:-}"; shift ;;
-      --operator-remote-owner=*) OPERATOR_REMOTE_OWNER="${1#*=}" ;;
-      *) fail "unknown argument: $1 (the only option is --operator-remote-owner <github-org>)" ;;
+      --operator-remote-owner) OPERATOR_REMOTE_OWNER="${2:-}"; OPERATOR_FLAG=1; shift ;;
+      --operator-remote-owner=*) OPERATOR_REMOTE_OWNER="${1#*=}"; OPERATOR_FLAG=1 ;;
+      --skills-only) SKILLS_ONLY=1 ;;
+      --check) CHECK_ONLY=1 ;;
+      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --skills-only [--check])" ;;
     esac
     shift
   done
+  [ "$CHECK_ONLY" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--check only applies with --skills-only (the full install has no dry-run). Nothing was written."
+  [ "$SKILLS_ONLY" = 0 ] || [ "$OPERATOR_FLAG" = 0 ] || fail "--skills-only never writes operator keys; do not combine it with --operator-remote-owner. Nothing was written."
   case "$OPERATOR_REMOTE_OWNER" in
     "") ;;
     -*|*[!A-Za-z0-9-]*) fail "--operator-remote-owner must be a GitHub user or org name (letters, digits, hyphens); got '$OPERATOR_REMOTE_OWNER'" ;;
@@ -510,6 +633,12 @@ main() {
   # 1. OS + arch
   [ "$(uname -s)" = "Darwin" ] || fail "This orchestrator is macOS-only (uname -s = $(uname -s))."
   [ "$(uname -m)" = "arm64" ] || fail "Unsupported Mac architecture $(uname -m); requires Apple Silicon (arm64)."
+
+  # --skills-only [--check]: skills content only, never the install path below.
+  if [ "$SKILLS_ONLY" = 1 ]; then
+    skills_only_mode "$CHECK_ONLY" || exit 1
+    exit 0
+  fi
 
   # 2. Claude Code
   CLAUDE_BIN="$(resolve_claude)"
