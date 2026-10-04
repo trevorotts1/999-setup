@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.36.0] — 2026-10-04
+
+### New skill: `kiss` 1.0.0 ("Kiss")
+
+**`kiss`** (`.claude/skills/kiss/`, registered in `CONTROL/bundled-skills.txt` and
+`CONTROL/bundled-components.json`). The one-message double answer. The user types `/kiss`
+at the START of a message, followed by a question or statement, and Claude answers THAT
+SAME message twice, in two labeled parts:
+
+1. **The friendly version** — the /bro style: casual and direct, like explaining to a
+   smart friend over a beer. Simpler, not necessarily shorter. Structure flattened, every
+   fact kept exactly.
+2. **The short version** — the same answer in plain language: plain full short sentences
+   (no fragments, no arrow or equals symbols, no dropped articles, every acronym spelled
+   out), no analogies unless the concept is genuinely non-obvious, filler cut, lead with
+   the answer.
+
+Unlike /bro, /kiss ANSWERS a new question and may use tools to get the answer — the style
+rules shape only how the final answer is written. It is one-shot: it answers the current
+message only (the /bro job is re-explaining the previous one; /eli5 is the persistent
+mode) and nothing stays switched on afterwards. Code blocks, exact error messages and
+commands stay verbatim in both parts; safety warnings and irreversible-action
+confirmations are stated plainly and fully in both parts. Kiss stands alone — it refers
+to /bro and /eli5 only to say what those are, and its rules are self-contained.
+
+1. **Files:** `.claude/skills/kiss/SKILL.md` and `.claude/skills/kiss/VERSION` (1.0.0).
+   Original work for this repository, MIT under the repo license — no third-party notice
+   needed.
+2. **Registered** in `CONTROL/bundled-skills.txt` and `CONTROL/bundled-components.json`;
+   README's folder map, bundled-skills list and version line updated;
+   `scripts/check-docs-fresh.sh` skill lists now include `kiss`.
+3. **Repo release bump.** `spec-protocol` VERSION 1.35.0 → 1.36.0 (the repo release
+   version), matching tag `v1.36.0`.
+
 ## [1.35.0] — 2026-10-02
 
 ### New skill: `hook-skill` 1.0.0 ("Hook Skill")
