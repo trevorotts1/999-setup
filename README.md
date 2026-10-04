@@ -194,6 +194,9 @@ launchers/                     platform-native claude-nine launchers
     hooks/                     workflow-guard, hygiene, disk-cleanup, ask-before-backup, question-gate
     scripts/                   macOS (bash) and Windows (PowerShell) installers and uninstallers
     tests/                     unit tests and a fake-HOME install/uninstall smoke test
+.claude/skills/kiss/
+    SKILL.md                   the kiss skill (one-message double answer: friendly, then short)
+    VERSION                    the kiss skill version marker
 CONTROL/bundled-skills.txt     the authoritative bundled-skills manifest
 templates/                     API docs.md template
 tests/                         smoke-test scaffolding
@@ -207,7 +210,7 @@ than duplicating providers, combos, PATH entries, or keys.
 
 ## Bundled skills
 
-This repository installs **five** personal Claude Code skills, all visible to `claude`
+This repository installs **six** personal Claude Code skills, all visible to `claude`
 and `claude-nine`:
 
 - **`nine-router-setup`** — provisions and repairs the 9Router / `claude-nine`
@@ -225,18 +228,21 @@ and `claude-nine`:
   auto-cleanup, plus opt-in ask-before-backup and question-gate). Install with
   `bash .claude/skills/hook-skill/scripts/macos/install.sh` (Windows:
   `scripts\windows\Install-HookSkill.ps1`); test with `bash .claude/skills/hook-skill/tests/run-all.sh`.
+- **`kiss`** — asks Claude to answer the current message twice: first a friendly, casual
+  version (the /bro style — simpler, not necessarily shorter), then a plain, brief short
+  version. Put `/kiss` at the start of a message; it is one-shot and leaves no mode on.
 
 The authoritative list lives in [`CONTROL/bundled-skills.txt`](CONTROL/bundled-skills.txt);
 the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) carry
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.35.0,
+Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.36.0,
 `nine-router-setup` 1.21.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
-`blackceo-signature-page` 1.0.2, `hook-skill` 1.0.0). At every
-spec-protocol launch, `tools/check-update.sh` checks all six skills (exit 0 = current,
+`blackceo-signature-page` 1.0.2, `hook-skill` 1.0.0, `kiss` 1.0.0). At every
+spec-protocol launch, `tools/check-update.sh` checks all bundled skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
-spec-protocol itself; the other four skills refresh by re-running the
+spec-protocol itself; the other skills refresh by re-running the
 nine-router-setup installer (`/nine-router-setup`). A skill whose `VERSION` cannot be
 read from `main` reports UNDETERMINED — by design, never a false "current".
 

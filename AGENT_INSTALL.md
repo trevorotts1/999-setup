@@ -89,6 +89,9 @@ hand-picked subset. The manifest currently bundles:
 - `kaizen` — Plan-Do-Check-Act improvement loop for things already built
 - `eli5` — plain-language explanation of complex topics
 - `bro` — direct, blunt developer talk
+- `blackceo-signature-page` — BlackCEO Signature landing pages, end to end
+- `hook-skill` — Claude Code hooks package (workflow guard, hygiene, disk cleanup)
+- `kiss` — one-message double answer: friendly version, then a plain short version
 
 ```text
 Source:  <repo>/.claude/skills/<skill-name>
