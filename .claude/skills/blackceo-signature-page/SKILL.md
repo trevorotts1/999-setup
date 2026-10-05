@@ -1,178 +1,156 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
+version: 1.1.0
 ---
 
-# BlackCEO Signature Page
+# BlackCEO Signature Page — Skill 71
 
-Build the page as a governed production workflow, not as a generic AI landing-page template. Preserve the BlackCEO writing, visual, image, QC, and public/private separation rules in the bundled references.
+This is the canonical BlackCEO **single-page** landing-page production skill for OpenClaw. It converts a client brief into a complete Standard or Long-Form BlackCEO Signature Page while preserving BlackCEO copy, design, visual intelligence, image-prompt, QC, and public/private separation rules.
 
-## Core authority
+## Route boundaries first
 
-Load only the references needed for the current stage.
+Use this skill for a focused single-page conversion experience: landing page, opt-in/squeeze page, event/registration page, challenge page, booking page, lead-generation page, or comparable page using the BlackCEO Standard or Long-Form system.
 
-1. Read `references/authority-map.md` first.
-2. Read `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md` for stage order, gates, repairs, implementation, and delivery.
-3. For copy, read exactly one writing guide unless the user explicitly requests both:
-   - Standard: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
-   - Long form: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
-4. Before image planning or prompt authoring, read `references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md`.
-5. If a page-level external Creative Direction is active, read only the selected family library and the selected style block:
-   - Photographic: `references/BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md`
-   - Cinematic/directorial: `references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md`
-   - Visual artist: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
-6. Use `assets/BlackCEO-Master-Visual-Reference-Guide.png` as a visual companion, never as a substitute for the written style grammar.
+Route elsewhere when the assignment is specifically:
 
-Note: the style libraries are large. Run the copy and image stages in separate sessions or subagents, and grep a style library by Style-ID (`VDL-nnn` photographic, `CIS-nn` cinematic, `ART-nn` visual artist) instead of reading it whole.
+- **Skill 49 `signature-funnel`** — multi-step 3/5/7 Signature Funnel with checkout / upsell / downsell / OTO chain.
+- **Skill 56 `sales-page-assets`** — Direct-Response / VSL / 8-section main / 9-section upsell / high-ticket / order-bump asset stack.
+- **Skill 62 `cinematic-web-funnel-engine`** — animated, immersive, scroll-controlled cinematic website/funnel.
+- **Website-craft** — ordinary multi-page marketing website whose governing copy contract is not this BlackCEO single-page system.
 
-Do not silently reconcile a conflict by inventing a new rule. Apply the authority order in `references/authority-map.md` and record unresolved conflicts.
+If the owner explicitly asks for this BlackCEO Signature Page skill, use it even when the page ultimately hands delivery to another rail.
 
-## Operating principles
+## OpenClaw ownership and seams
 
-- Refuse generic AI-template drift. Do not default to repetitive cards, identical image blocks, generic SaaS gradients, sterile stock-office scenes, repeated center-aligned sections, or one-size-fits-all visual rhythm.
-- Copy leads layout. Do not compress or summarize approved copy to make a template fit.
-- Keep private production labels out of all public copy, image pixels, mockups, shipped HTML, accessibility text, comments, tooltips, and public implementation names.
-- Latest explicit user/client direction wins over defaults.
-- Failed work cannot advance. Passing work advances immediately.
-- Do not invent completion. A submitted generation is not a finished image; a local test is not a GHL test; a promised file must exist before linking it.
-- Never put credentials or client secrets into this skill, generated artifacts, prompts, logs, or public code.
-- Do not publish, charge, send, or perform irreversible external actions without the authorization required by the current assignment.
+- **Primary department:** Web Development.
+- **Primary role:** Landing Page Specialist.
+- **Copy collaboration:** Marketing / Conversion Copywriter when the current execution assigns copy work there; this skill's writing references remain the page-specific authority.
+- **Images:** delegate execution to **Skill 66 `kie-image`** when Kie.ai is selected, or **Skill 63 `agnes-image`** when Agnes is explicitly selected/available. Do not hand-roll provider calls here.
+- **GHL delivery:** delegate media/page build to **Skill 6 `ghl-install-pages`**, the existing GHL delivery rail.
+- **Vercel:** use **Skill 8 `vercel-setup`** when that hosting target is selected and configured.
+- **Browser automation:** use the repo's managed browser path / Skill 3 conventions when graphical browser work is required.
 
-## Production state machine
+Do not duplicate another skill's provider client, browser manager, GHL builder, deployment client, or credential storage.
 
-Use these stages in order unless the SOP explicitly permits parallel independent work:
+## Read only what the current stage needs
 
-1. `intake`
-2. `copy`
-3. `font-action-plan`
-4. `desktop-wireframe`
-5. `mobile-tablet`
-6. `visual-mockup`
-7. `image-inventory-prompts`
-8. `image-generation-qc`
-9. `image-map-upload`
-10. `final-mockups`
-11. `responsive-html`
-12. `ghl-install-test`
-13. `publish-verify`
+- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages).
+- Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
+- Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
+- Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
+- Image planning / art direction / prompts / visual QC: `references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md`
+- Photographic direction: `references/BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md`
+- Cinematic/directorial direction: `references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md`
+- Visual-artist direction: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
+- Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png` — an image-style menu only, never a page-layout or page-color reference
+- Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`, `references/stage-contract.json`, `references/html-qc-rubric.md`
+- Swarm plan: `references/swarm-plan.md`
 
-Track stage status as `blocked`, `working`, `qc_failed`, or `ready`. A later stage must not become ready while a required earlier stage is not ready. Use `scripts/validate_state.py` against the private workflow-state JSON.
+Do not load all three style libraries at once. Load only the selected family/style when needed. The exact per-stage reading list is the `reads` field of `references/stage-contract.json` — agents carry only what their stage names, never the full 100-400 KB guides.
 
-## Intake
+### Design / wireframes / mockups
 
-Ask only for genuinely missing information needed to proceed. Reuse supplied files, copy, brand rules, links, references, and prior decisions.
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens.
 
-At minimum, resolve when missing:
+## Governing production order
 
-- page type/name/subject;
-- intended visitor action;
-- Standard versus Long-Form version;
-- hosting/implementation target when implementation is requested;
-- supplied materials and existing copy/assets;
-- real action URLs, embeds, checkout, booking, form, or delivery destination when required;
-- graphics engine preference when image generation is in scope;
-- per-job image cap (count) when image generation is in scope; a cap, never an approval gate.
+Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Before starting any stage run `stage_gate.py check <run_dir> <stage>`; a stage ends only when `stage_gate.py close <run_dir> <stage>` exits 0. A run order or prompt cannot remove or rename stages. If a run order lists fewer stages than `references/stage-contract.json`, follow the contract and record the order's omission in the report.
 
-Paid providers (Kie, Agnes, GHL, Vercel) use ONLY the client's own keys from that client's own secrets.env; never an operator's or another client's key; if absent, mark the stage BLOCKED.
+Stage IDs (canonical, from `references/stage-contract.json`):
 
-For image generation, ask whether the user has a preferred graphics engine. If no preference is given, recommend Kie.ai using the latest generally available GPT image-generation model available through Kie.ai at runtime. Do not hardcode a model version as permanent. Agnes or another configured engine may be used when selected. Verify actual runtime availability before claiming a model or engine can be called.
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify`
 
-## Copy workflow
+Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages.
 
-1. Choose Standard or Long-Form based on the assignment.
-2. Write the complete copy using that guide.
-3. Preserve the internal review manuscript with framework labels and counts.
-4. Derive a separate clean public-copy source with no private labels.
-5. Run qualitative QC against the writing guide and SOP.
-6. Repair only failed criteria, up to three focused repair attempts. Stop when the artifact passes.
-7. Run `scripts/validate_public_copy.py` on the intended public source before layout or shipment.
+### Copy
 
-Do not add a separate AI claim-auditing assignment. Missing factual inputs should remain marked privately for the human/client workflow rather than being fabricated.
+- Select **Standard** or **Long-Form**; do not silently merge both.
+- Copy leads layout; never shorten approved copy to fit a template.
+- Keep internal framework labels/counts in the private review source only.
+- Derive a clean publication source with no private production labels.
+- Use `scripts/validate_public_copy.py` before public HTML/handoff.
+- Repair only failed criteria. Maximum three focused repair attempts for failed work; passing work advances immediately.
 
-## Wireframe and mockup workflow
+### Design / wireframes / mockups
 
-- Establish font intelligence and the visitor-action plan before full wireframes.
-- Produce the complete desktop wireframe first.
-- Reflow intentionally for mobile; do not merely shrink desktop.
-- Define tablet behavior where needed.
-- Let copy length determine layout height.
-- Use visual rhythm, asymmetry, varied scale, negative space, typography, image ratios, section pacing, and intentional interruptions to avoid template sameness.
-- A section may use a person, environment, still life/object, conceptual visual, typography-as-image, or no generated image when that best serves the page.
-- Preserve exact approved copy in visual artifacts unless the user explicitly authorizes copy changes.
+- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
+- Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.
+- Resist generic AI-page patterns: repetitive cards, identical section geometry, generic SaaS gradients, sterile stock-office scenes, repeated center alignment, and same-ratio imagery everywhere.
+- Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
+- Keep exact approved copy unless the owner explicitly authorizes copy changes.
 
-### Review PDFs
+For multi-part review exports, keep individual PNGs and use ordered manifests with `scripts/combine_review_pdf.py` and `scripts/validate_review_pdf.py` for separate desktop/mobile wireframe/mockup PDFs.
 
-Keep the individual PNGs. When a wireframe or mockup contains multiple pages/parts, also create one ordered review PDF for each applicable category:
+## Page-level Creative Direction
 
-- `desktop-wireframes.pdf`
-- `mobile-wireframes.pdf`
-- `desktop-mockups.pdf`
-- `mobile-mockups.pdf`
+A page may use exactly one external Creative Direction family/style, or Secret-Sauce-only:
 
-Never mix desktop/mobile or wireframe/mockup pages in one review PDF. Use an explicit ordered manifest and run `scripts/combine_review_pdf.py`; then verify it with `scripts/validate_review_pdf.py`. A missing part blocks the review PDF from ready status.
+- one Photographic Direction; or
+- one Cinematic/Directorial Direction; or
+- one Visual-Artist Direction; or
+- no external direction, with the BlackCEO Secret Super Sauce primary.
 
-## Page-level Art Direction
+If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
 
-A page may use exactly one of these external Creative Direction families, or Secret-Sauce-only:
+Never mix external families on one page. The Secret Super Sauce is the adaptive BlackCEO house layer, not a second external style. Where a Sauce dimension conflicts with a defining trait of the selected style, the selected style wins for that dimension and compatible BlackCEO qualities remain active.
 
-- one Photographic Direction;
-- one Cinematic/Directorial Direction;
-- one Visual-Artist Direction;
-- no external direction, with the BlackCEO Secret Super Sauce as the primary aesthetic.
+## Image planning and generation
 
-Never mix the three external families on one page. Never stack multiple branded styles in this signature-page workflow unless the user explicitly changes this master rule in a later assignment.
+Read only what the stage contract's `reads` field names for image stages (the v5 image guide sections needed, brand law, the grade block), never the whole library bundle.
 
-The BlackCEO Secret Super Sauce is the only default blend layer. Apply it wherever compatible. If one Sauce dimension conflicts with a defining trait of the selected Creative Direction, the selected style controls that dimension while all compatible BlackCEO quality, representation, anti-generic, and material/skin standards remain active.
-
-Lock the selected direction for the whole page in a private Page Visual Bible. Maintain harmony while varying composition, shot/view scale, ratio, scene type, posture, environment, visual intensity, and typography-led interruptions.
-
-## Image intelligence and generation
-
-Before authoring prompts, read the complete image-intelligence guide and the current image-map entry.
-
-Non-negotiables include:
+Non-negotiables:
 
 - one image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file;
-- every production prompt is 5,000-20,000 meaningful characters inclusive;
-- default authoring target is 8,000-14,000 useful characters for compatibility with the known 19,000-character runtime ceiling described in the guide;
-- never silently truncate or disable a validator;
-- use camera, lens, aperture/depth, framing, positioning, lighting, body/expression, fashion, skin/hair, color-grade, text-zone, and layout intelligence where applicable;
-- use Black representation intelligence when Black/African-descended subjects are present, while preserving real-person identity and recurring-character continuity;
-- use typography-as-image when it strengthens page rhythm; do not force a person image into every section;
-- use varied supported aspect ratios, including wide cinematic ratios such as 21:9 when the layout and engine support them;
-- keep the selected page Art Direction coherent across the image set;
-- do not pass human research-source names from the style libraries downstream when the library says to use the branded style grammar instead.
+- production prompts: **5,000–20,000 meaningful characters** under the BlackCEO house rule;
+- default working target: **8,000–14,000 useful characters** because the current referenced runtime compatibility ceiling is 19,000;
+- never silently truncate a prompt or disable validation;
+- in `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim (`scripts/validate_prompt.py --sauce-only` enforces it);
+- use camera, lens, aperture/depth, composition, subject placement, lighting, posture/expression, fashion, skin/hair, color-grade, typography-as-image, and negative-space intelligence where applicable;
+- preserve real-person identity and recurring-character continuity;
+- use the Black representation intelligence in the image guide when Black/African-descended subjects are present;
+- keep one page-level Art Direction coherent while varying shot/view scale, ratio, environment, posture, scene type, and intensity;
+- never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 
-Run `scripts/validate_prompt.py` on each final prompt and `scripts/validate_image_manifest.py` on the image map. Qualitative prompt/image QC still requires an independent reviewer or equivalent separate review pass; the scripts do not replace visual judgment.
+Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map.
+
+### Image engine routing
+
+Ask whether the owner/client has an explicit image-engine preference when generation is in scope.
+
+- If **Kie.ai** is selected or no preference is given and Kie is available, hand the final prompt/payload requirements to **Skill 66 `kie-image`**, which owns current Kie model selection, payload validation, dispatch, and image QC. Do not hardcode a forever-model here. Skill 66 currently prefers the latest repo-approved GPT Image route when compatible.
+- If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
+- If another configured provider is explicitly selected, honor it if the current client environment supports it.
+
+Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
+
+## Swarm execution
+
+Run stages as `references/swarm-plan.md` defines: one agent per item, reviewers start when their item lands, never fixed-size chunks. Every agent writes its receipt to `private/receipts/` and its files to the run folder. The orchestrator learns results only from `stage_gate.py check/close` output, never from an agent's chat reply. No re-read or recovery lanes.
 
 ## QC and repair
 
 Read `references/qc-contract.md`.
 
-At every stage:
+- General page-stage criteria: each applicable criterion >=8/10 with no auto-fail (responsive-html is scored on `references/html-qc-rubric.md`).
+- Prompt/generated-image work: retain the stricter average >=8.5, each applicable criterion >=8, zero auto-fails where the governing references require it.
+- A failed artifact is repaired and rechecked before downstream use.
+- Do not rework passing artifacts without a dependency reason.
+- Do not invent completion: submitted generation is not completed imagery; local preview is not target-environment verification.
 
-1. QC the current artifact.
-2. If it passes, advance it immediately.
-3. If it fails, name the exact defect.
-4. Repair only the failed content and affected dependencies.
-5. Recheck the repaired content and affected dependencies.
-6. Stop as soon as it passes.
-7. Allow at most three focused repair attempts for failed work; if still blocked, report the exact blocker.
+## Delivery
 
-For general page-stage work, every applicable required criterion must be at least 8/10 with no automatic failure. Prompt and generated-image work retain the stricter average >=8.5, each applicable criterion >=8, and zero auto-fails described in the master references.
+- Build only from current QC-passed copy, visual plan, approved assets, image map, and action plan. The final mockups are the visual target; the HTML must match them section by section.
+- Preserve real forms, checkout, booking, URLs, embeds, and workflows; do not invent substitutes.
+- For GHL, hand the delivery bundle to Skill 6 rather than bypassing its rail.
+- Publish only when authorization is present under the current OpenClaw policy; otherwise deliver preview/staging artifacts and exact remaining action.
 
-## Implementation and handoff
+## Reporting
 
-- Build responsive HTML only from the current QC-passed copy, wireframes/mockups, image map, font/action plan, and approved assets.
-- Keep real forms, checkout, booking, links, embeds, and workflows intact; do not invent substitutes.
-- Test in the actual target environment before claiming target-environment success.
-- Publish only when authorized, then verify the public result.
-- Deliver only current passing versions; do not package rejected predecessors beside them.
+Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED.
 
-## Runtime and connector behavior
+## Installation / maintenance boundary
 
-Read `references/runtime-adapters.md` when installing or evaluating this skill in Claude Code, Claude-Nine, Codex, or another agent runtime.
+`verify.sh` is an **install/update maintenance check**, not a normal page-build step. Do not run the complete skill verification every time this skill is invoked.
 
-The skill contains workflow logic, references, validators, and local install helpers. It does not contain API keys or guarantee that Kie.ai, Agnes, GHL, Vercel, GitHub, a browser, image generation, or another service is connected. Detect available tools/connectors at runtime and report missing integration capability rather than fabricating an action.
-
-For local Phase-1 evaluation, follow `START-HERE.md` and `EVALUATION-CHECKLIST.md`. Do not redesign the BlackCEO methodology during compatibility evaluation.
+For onboarding-repo integration, read `REPO-INTEGRATION.md`. The repo's native-skill binding lives in `23-ai-workforce-blueprint/skill-department-map.json`; generated role blocks must be refreshed with the repo's stamper rather than hand-edited.
