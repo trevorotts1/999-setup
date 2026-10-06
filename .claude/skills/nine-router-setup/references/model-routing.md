@@ -59,7 +59,7 @@ glm-5.2
 kimi-k2.6
 minimax-m3
 gemma4:31b
-deepseek-v4-flash:0731   (only when the override is enabled)
+deepseek-v4.1-flash   (only when the override is enabled)
 ```
 
 ⚠️ Use the exact IDs returned by the live endpoint. Do not assume the local CLI `:cloud`
@@ -123,7 +123,7 @@ that is reported as an error — and even then it never blocks DeepSeek/Ollama/A
 ## The DeepSeek Flash 0731 correction
 
 - `deepseek-v4-flash` and `deepseek-v4-pro` are **DeepSeek Direct** API model IDs.
-- `deepseek-v4-flash:0731` is an **Ollama Cloud** catalog ID, not a documented DeepSeek
+- `deepseek-v4.1-flash` is an **Ollama Cloud** catalog ID, not a documented DeepSeek
   Direct model.
 
 Production default — DeepSeek Direct is the Flash lane:
@@ -142,7 +142,7 @@ Advanced override (only when deliberately enabled):
 DEEPSEEK_FLASH_VARIANT=ollama-0731
 ```
 
-which may use `ollama/deepseek-v4-flash:0731`. When enabled, recalculate concurrency
+which may use `ollama/deepseek-v4.1-flash`. When enabled, recalculate concurrency
 safety — do not silently violate the reserved-capacity policy.
 
 ## Reasoning effort rules

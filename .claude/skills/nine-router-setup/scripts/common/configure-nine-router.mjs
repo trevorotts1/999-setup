@@ -368,8 +368,8 @@ async function main() {
   if (!has(agIds, "agnes-2.5-flash")) {
     err("live Agnes catalog does not contain agnes-2.5-flash");
   }
-  if (OVERRIDE_0731 && !has(olIds, "deepseek-v4-flash:0731")) {
-    err("DEEPSEEK_FLASH_VARIANT=ollama-0731 is set but the live Ollama catalog lacks deepseek-v4-flash:0731");
+  if (OVERRIDE_0731 && !has(olIds, "deepseek-v4.1-flash")) {
+    err("DEEPSEEK_FLASH_VARIANT=ollama-0731 is set but the live Ollama catalog lacks deepseek-v4.1-flash");
   }
 
   // DS Light and DS Max: two custom OpenAI-compatible DeepSeek nodes for explicit
@@ -463,7 +463,7 @@ async function main() {
   const olGlm = `${olPrefix}/glm-5.2`;
   const olKimi = `${olPrefix}/kimi-k2.6`;
   const agFlash = `${agPrefix}/agnes-2.5-flash`;
-  const overrideFlash = `${olPrefix}/deepseek-v4-flash:0731`;
+  const overrideFlash = `${olPrefix}/deepseek-v4.1-flash`;
 
   // NVIDIA-free panel member via OpenRouter (custom node openrouter-nvidia-free),
   // built only when an OpenRouter key exists on the box. Thinking max.
@@ -693,7 +693,7 @@ async function main() {
   report.mustChangePassword = !!login.mustChangePassword;
   report.notes = [
     OVERRIDE_0731
-      ? "DEEPSEEK_FLASH_VARIANT=ollama-0731 enabled: Flash routed to Ollama Cloud deepseek-v4-flash:0731; concurrency recalculated."
+      ? "DEEPSEEK_FLASH_VARIANT=ollama-0731 enabled: Flash routed to Ollama Cloud deepseek-v4.1-flash; concurrency recalculated."
       : "Flash routed to DeepSeek Direct by default; Ollama Fusion panel holds 2 models.",
     "PDF auto-switch disabled (not verified end-to-end).",
     "Audio auto-switch disabled (Gemma 4 31B has no audio input).",

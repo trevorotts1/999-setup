@@ -36,7 +36,7 @@ leaving plain `claude` unchanged.
 13. **Setup is not complete until the platform and shared smoke tests pass.**
 14. **PDF and audio auto-routing must remain disabled** unless verified end-to-end.
 15. **DeepSeek Direct Flash is the default Flash route.** The Ollama Cloud
-    `deepseek-v4-flash:0731` variant is an explicit override (`DEEPSEEK_FLASH_VARIANT=ollama-0731`)
+    `deepseek-v4.1-flash` variant is an explicit override (`DEEPSEEK_FLASH_VARIANT=ollama-0731`)
     only, and enabling it recalculates Ollama concurrency safety.
 16. **Do not modify 9Router's persistence database directly.**
 17. **OpenRouter is an OPTIONAL fourth provider.** Wire it only when `OPENROUTER_API_KEY`
