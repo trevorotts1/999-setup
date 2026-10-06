@@ -57,16 +57,14 @@
 # interview; the skill presents the results in plain English.
 #
 # THE THREE AXES, NEVER CONFLATED:
-#   AXIS 1 WIDTH  — the MEASURED formula (S1, 2026-09-07):
-#                       harness_cap = min(16, cores − 2)
-#                       ram_cap     = floor((ram_gb − 6) / 1.5)
-#                       clientCap   = max(2, min(harness_cap, ram_cap))
-#                   Cores and RAM are MEASURED at run time on the machine the
-#                   build runs on; nothing is declared and nothing is asked. The
-#                   harness owns the CEILING (it queues everything above
-#                   min(16, cores−2)); this skill enforces only the FLOOR. If
-#                   cores cannot be measured, clientCap falls back to 4, the card
-#                   says so with an [ASSUMED …] mark, and the run KEEPS GOING.
+#   AXIS 1 WIDTH  — owner contract (2026-10-06): clientCap = 10, the per-workflow
+#                   ceiling, on every machine. A workflow runs agent_count =
+#                   min(10, its units) agents (references/swarm-plan.md); up to 50
+#                   workflows run concurrently (500 agents).
+#                   Cores and RAM are still MEASURED and printed, but they never
+#                   lower clientCap. If cores cannot be measured, clientCap is
+#                   still 10, the card says so with an [ASSUMED …] mark, and the
+#                   run KEEPS GOING.
 #                   Hard ceiling of 50 workflows per session (2026-08-16 operator
 #                   doctrine, supersedes the 30-workflow figure).
 #   AXIS 2 BUDGET — how many agents run EVER this session: the OPERATOR's session
@@ -80,8 +78,8 @@
 #                   figure either — the account is window-metered and opaque, so
 #                   the harness governs and the burn governor is the only
 #                   limiter.
-# The wave width is the SMALLER of AXIS 1 and AXIS 3; this script shows both
-# with the winner marked.
+# The wave width is AXIS 1 (up to 50 workflows x 10). A provider figure below one
+# workflow's agent_count is recorded on the card and never narrows the workflow.
 #
 # The concurrency numbers below are the operator's live-account DOCTRINE and stay
 # (see references/capacity.md). They are NOT to be web-researched away —
@@ -113,9 +111,9 @@ REPAIR_WAVE_CAP=12           # selective repair: N = failed workstreams, one rep
 #
 #   measure_cores   → "<n> <instrument>"   sysctl -n hw.ncpu | nproc | Windows
 #   measure_ram_gb  → "<gb> <instrument>"  sysctl -n hw.memsize | /proc/meminfo | Windows
-#   harness_cap_of  → min(16, cores − 2)
+#   harness_cap_of  → min(16, cores − 2)   (printed for the record only)
 #   ram_cap_of      → floor((ram_gb − 6) / 1.5)
-#   client_cap_of   → max(2, min(harness_cap, ram_cap))
+#   client_cap_of   → 10, always (the per-workflow ceiling)
 #   browser_cap_of  → floor((ram_gb − 6) / 1.5)   (each blind visual judge holds a Chromium)
 #
 # and PRINTS NOTHING when sourced. width.sh's WIDTH_FIXTURE_* test door is read
@@ -278,7 +276,7 @@ resolve() {
       cores_source="UNMEASURABLE"
       cores_instrument="none (sysctl and nproc both unavailable)"
       echo "NOTE: cores could not be measured (sysctl and nproc both unavailable)." >&2
-      echo "      clientCap falls back to 4, the card says so, and the run keeps going." >&2
+      echo "      clientCap is still 10, the card says so, and the run keeps going." >&2
     fi
   else
     if [[ ! "${CORES}" =~ ^[0-9]+$ ]] || (( CORES < 1 )); then
@@ -308,13 +306,12 @@ resolve() {
   fi
 
   # --- THE WIDTH FORMULA (S1) ------------------------------------------------
-  #   harness_cap = min(16, cores − 2)
-  #   ram_cap     = floor((ram_gb − 6) / 1.5)
-  #   clientCap   = max(2, min(harness_cap, ram_cap))
+  #   clientCap = 10 on every machine (owner contract 2026-10-06).
+  #   harness_cap and ram_cap are measured and printed; neither lowers clientCap.
   # Measured from THIS machine. Nothing declared, nothing asked, no env read.
   local CLIENT_CAP="" HARNESS_CAP_D="" RAM_CAP_D=""
   if (( CORES_UNMEASURABLE == 1 )); then
-    CLIENT_CAP=4
+    CLIENT_CAP=10
     HARNESS_CAP_D="UNDETERMINED"
     RAM_CAP_D="n/a (cores unmeasurable)"
   else
@@ -414,7 +411,7 @@ resolve() {
           ;;
       esac
       PROVIDER_NOTE="Agnes is request-rate limited, not concurrency limited. It carries LOW-FREQUENCY roles (blind critic verdicts, ~1–2 per unit) — never the builder swarm. WEB-RESEARCH agnes-ai.com's current rate rules FIRST; these figures are the FALLBACK, and the ledger records which source was used."
-      BURN_GOVERNOR="count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → lower N → drop planner frequency → drop tier"
+      BURN_GOVERNOR="count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → drop planner frequency → drop tier"
       ;;
     openrouter)
       PROVIDER_CEILING=8
@@ -442,6 +439,13 @@ resolve() {
   if (( PROVIDER_APPLIES == 1 )) && (( PROVIDER_USABLE < GOVERNING )); then
     GOVERNING="${PROVIDER_USABLE}"; GOVERN_SRC="provider ceiling − reserve"
   fi
+  # A provider figure below one workflow of ${PER_WORKFLOW} is recorded on the card;
+  # it never narrows a workflow below min(10, its units).
+  local PROVIDER_FIGURE_NOTE=""
+  if (( GOVERNING < PER_WORKFLOW )); then
+    PROVIDER_FIGURE_NOTE=" [provider figure ${GOVERNING} recorded; a workflow is never narrower than min(10, its units)]"
+    GOVERNING="${PER_WORKFLOW}"; GOVERN_SRC="one workflow of ${PER_WORKFLOW}"
+  fi
 
   # --- THE COMMANDER DEDUCTION ----------------------------------------------
   # A commander is a FULL session: its own context window, full-rate token
@@ -457,6 +461,7 @@ resolve() {
       WIDTH="${GOVERNING}"
     else
       WIDTH=$(( GOVERNING - PERSISTENT ))
+      if (( WIDTH < PER_WORKFLOW )); then WIDTH="${PER_WORKFLOW}"; GOVERNING=$(( WIDTH + PERSISTENT )); fi
     fi
   fi
 
@@ -464,8 +469,7 @@ resolve() {
   WORKFLOWS=$(( (WIDTH + PER_WORKFLOW - 1) / PER_WORKFLOW ))
   (( WORKFLOWS < 1 )) && WORKFLOWS=1
   if (( WORKFLOWS > WORKFLOW_CEILING )); then WORKFLOWS="${WORKFLOW_CEILING}"; fi
-  local AGENTS_PER_WF="${PER_WORKFLOW}"
-  if (( WIDTH < PER_WORKFLOW )); then AGENTS_PER_WF="${WIDTH}"; fi
+  local AGENTS_PER_WF="${PER_WORKFLOW}"   # the ceiling; a plan row runs min(10, its units)
 
   if [[ -z "${THROTTLE}" ]]; then
     if [[ "${BUILDER_PROVIDER}" == "deepseek-direct" ]]; then THROTTLE="full"; else THROTTLE="gentle"; fi
@@ -498,11 +502,11 @@ resolve() {
   # The cap carries its OWN mark: it is only as measured as its two inputs, and
   # the no-instrument fallback must never read as a measurement.
   if (( CORES_UNMEASURABLE == 1 )); then
-    CAP_MARK="[ASSUMED no-instrument — cores unmeasurable, clientCap fallback 4]"
+    CAP_MARK="[ASSUMED no-instrument — cores unmeasurable, clientCap is 10 regardless]"
   elif [[ "${cores_source}" == "MEASURED" && "${ram_source}" == "MEASURED" ]]; then
     CAP_MARK="[MEASURED ${cores_instrument}+${ram_instrument} ${NOW_UTC}]"
   elif [[ "${cores_source}" == "MEASURED" && "${RAM_UNMEASURABLE}" == "1" ]]; then
-    CAP_MARK="[MEASURED ${cores_instrument} ${NOW_UTC}; ram UNDETERMINED — harness cap governs]"
+    CAP_MARK="[MEASURED ${cores_instrument} ${NOW_UTC}; ram UNDETERMINED — clientCap is 10 regardless]"
   else
     CAP_MARK="[DERIVED cores=${cores_source} ram=${ram_source} ${NOW_UTC}]"
   fi
@@ -525,11 +529,11 @@ resolve() {
 Launcher: ${LAUNCHER}      Harness mode: ${HARNESS}
 ${FP_LINE}
 Cores: ${CORES:-UNDETERMINED} (${cores_source}) · RAM: ${RAM_GB:-UNDETERMINED} GB (${ram_source})
-clientCap = max(2, min(harness_cap, ram_cap)) = ${CLIENT_CAP}   ${CAP_MARK}
-  width formula (S1): harness_cap = min(16, cores−2) = ${HARNESS_CAP_D}; ram_cap = floor((ram_gb−6)/1.5) = ${RAM_CAP_D}
+clientCap = 10 (the per-workflow ceiling; a workflow runs min(10, its units)) = ${CLIENT_CAP}   ${CAP_MARK}
+  measured for the record, never lowering clientCap: harness_cap = min(16, cores−2) = ${HARNESS_CAP_D}; ram_cap = floor((ram_gb−6)/1.5) = ${RAM_CAP_D}
   inputs: cores ${CORES_MARK}; ram ${RAM_MARK}
   MEASURED on this machine — never declared, never asked, never an environment read
-  (unmeasurable cores → clientCap 4, marked ASSUMED, and the run keeps going)
+  (unmeasurable cores → clientCap is still 10, marked ASSUMED, and the run keeps going)
   per-workflow concurrency = clientCap = ${CLIENT_CAP}
 Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on \`cx/\` = ~372K real, NOT the profile's 900K)
 ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
@@ -542,7 +546,7 @@ ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved mod
   release-judge=$(role_or_unresolved "${ROLE_RELEASE}")
 Ceilings: ${PROVIDER_LABEL} | no policy wave cap on any path   ${PLAN_MARK}
 Reserve applied: ${RESERVE_PCT}%$( (( PROVIDER_APPLIES == 1 )) && echo " → provider usable ${PROVIDER_USABLE} of ${PROVIDER_CEILING}" || echo " (no numeric provider ceiling to reserve against)" )   ${RESERVE_MARK}
-Governing number: harness ${WORKFLOW_CEILING}×${PER_WORKFLOW}=${HARNESS_MAX} | provider $( (( PROVIDER_APPLIES == 1 )) && echo "${PROVIDER_USABLE}" || echo "n/a (subscription-metered — the burn governor is the only limiter)" ) → GOVERNS: ${GOVERNING} (${GOVERN_SRC})
+Governing number: harness ${WORKFLOW_CEILING}×${PER_WORKFLOW}=${HARNESS_MAX} | provider $( (( PROVIDER_APPLIES == 1 )) && echo "${PROVIDER_USABLE}" || echo "n/a (subscription-metered — the burn governor is the only limiter)" ) → GOVERNS: ${GOVERNING} (${GOVERN_SRC})${PROVIDER_FIGURE_NOTE}
 CARD
 
   if [[ "${MODE}" == "team" ]]; then
@@ -615,15 +619,14 @@ CARD
 
   cat <<'CARD'
 
-IMPORTANT CAPACITY RULE: "Provider capacity is NOT an instruction to maximize agent
-count. Do not spawn additional agents simply because DeepSeek or OpenRouter can
-support them. Every spawned agent must have: unique responsibility; evidence to
-inspect or work to perform; an explicit deliverable; an acceptance criterion. More
-agents are useful only when the work can actually be decomposed into independent
-valuable tasks. Quality per agent matters more than raw agent count."
+STAFFING RULE (owner contract 2026-10-06): a workflow runs agent_count = min(10, its units)
+agents and up to 50 workflows run concurrently (500 agents). The plan file
+(references/swarm-plan.md) states both numbers and the hooks enforce them. Provider figures
+and machine size are recorded on this card; they never narrow a workflow. Each agent owns one
+unit: a unit has a concrete output path, an acceptance criterion and a verdict file.
 
-Waves narrower than the ceiling run at the width the dependency graph allows (Law 45)
-— the ceiling only ever lowers the dispatch, never widens a wave.
+A workflow whose dependency is not yet met is held by not launching it. Every workflow that
+is ready launches now, up to max_active_workflows.
 CARD
 
   return 0
@@ -671,7 +674,7 @@ PROJECT=selftest-b
 EOF
   resolve "${tmp}/b.answers" > "${tmp}/b.out" 2>"${tmp}/b.err"
   echo "SCENARIO (b) — deepseek-direct, 12 cores, single session"
-  _assert "clientCap = max(2, min(10, 12)) = 10" "clientCap = max(2, min(harness_cap, ram_cap)) = 10" "${tmp}/b.out"
+  _assert "clientCap = 10" "(the per-workflow ceiling; a workflow runs min(10, its units)) = 10" "${tmp}/b.out"
   _assert "both halves of the width formula are shown" "harness_cap = min(16, cores−2) = 10; ram_cap = floor((ram_gb−6)/1.5) = 12" "${tmp}/b.out"
   _assert "width is measured, never declared" "MEASURED on this machine — never declared, never asked" "${tmp}/b.out"
   _assert "per-workflow = clientCap 10" "per-workflow concurrency = clientCap = 10" "${tmp}/b.out"
@@ -737,9 +740,9 @@ PROJECT=selftest-c
 EOF
   resolve "${tmp}/c.answers" > "${tmp}/c.out" 2>"${tmp}/c.err"
   echo "SCENARIO (c) — Ollama Cloud \$20 (ceiling 3, USE 2)"
-  _assert "GOVERNS: 2 (provider)" "GOVERNS: 2 (provider ceiling − reserve)" "${tmp}/c.out"
-  _assert "team mode refused by arithmetic" "REFUSED BY ARITHMETIC" "${tmp}/c.out"
-  _assert "1 workflow × 2 agents" "WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤2" "${tmp}/c.out"
+  _assert "provider figure 2 is recorded, one workflow governs" "provider figure 2 recorded" "${tmp}/c.out"
+  _refute "no refusal by arithmetic: a workflow is never narrowed by a provider figure" "REFUSED BY ARITHMETIC" "${tmp}/c.out"
+  _assert "1 workflow, ceiling 10" "WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤10" "${tmp}/c.out"
 
   # --- Scenario (d): Ollama Cloud $100 + Agnes $40/year request budget ------
   cat > "${tmp}/d.answers" <<'EOF'
@@ -753,8 +756,8 @@ PROJECT=selftest-d
 EOF
   resolve "${tmp}/d.answers" > "${tmp}/d.out" 2>"${tmp}/d.err"
   echo "SCENARIO (d) — Ollama Cloud \$100 (ceiling 10, USE 8)"
-  _assert "GOVERNS: 8" "GOVERNS: 8 (provider ceiling − reserve)" "${tmp}/d.out"
-  _assert "1 workflow × 8 agents" "WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤8" "${tmp}/d.out"
+  _assert "provider figure 8 is recorded, one workflow governs" "provider figure 8 recorded" "${tmp}/d.out"
+  _assert "1 workflow, ceiling 10" "WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤10" "${tmp}/d.out"
 
   cat > "${tmp}/d2.answers" <<'EOF'
 HARNESS=claude-nine
@@ -922,14 +925,14 @@ EOF
     fi
   }
   _width_case "operator Mac mini" 12 24 10
-  _width_case "8-core, 16 GB laptop" 8 16 6
-  _width_case "24-core, 64 GB Studio" 24 64 16
-  _width_case "tiny box floors at 2" 2 8 2
+  _width_case "8-core, 16 GB laptop" 8 16 10
+  _width_case "24-core, 64 GB Studio" 24 64 10
+  _width_case "tiny box still 10" 2 8 10
 
-  # --- NO INSTRUMENT: the run KEEPS GOING at clientCap 4, and says so --------
+  # --- NO INSTRUMENT: the run KEEPS GOING at clientCap 10, and says so --------
   # The control is the same call with the instrument present (every scenario
   # above): a checker that cannot tell the two apart proves nothing.
-  echo "NO INSTRUMENT — unmeasurable cores fall back to 4 and the run keeps going"
+  echo "NO INSTRUMENT — unmeasurable cores stay at clientCap 10 and the run keeps going"
   cat > "${tmp}/noinst.answers" <<'EOF'
 HARNESS=claude-nine
 BUILDER_PROVIDER=deepseek-direct
@@ -942,11 +945,11 @@ EOF
        resolve "${tmp}/noinst.answers" ) > "${tmp}/noinst.out" 2>"${tmp}/noinst.err"; then
     echo "  [PASS] a machine with no instrument still planned (never a stall)"
   else
-    echo "  [FAIL] a machine with no instrument refused to plan — it must fall back to 4 and keep going"
+    echo "  [FAIL] a machine with no instrument refused to plan — it must stay at clientCap 10 and keep going"
     fails=$(( fails + 1 ))
   fi
-  _assert "fallback width is 4" "clientCap = max(2, min(harness_cap, ram_cap)) = 4" "${tmp}/noinst.out"
-  _assert "the fallback is marked ASSUMED, never MEASURED" "[ASSUMED no-instrument — cores unmeasurable, clientCap fallback 4]" "${tmp}/noinst.out"
+  _assert "fallback width is 10" "= 10   [ASSUMED" "${tmp}/noinst.out"
+  _assert "the fallback is marked ASSUMED, never MEASURED" "[ASSUMED no-instrument — cores unmeasurable, clientCap is 10 regardless]" "${tmp}/noinst.out"
   _refute "an unmeasurable box never claims a measurement" "[MEASURED sysctl" "${tmp}/noinst.out"
 
   rm -rf "${tmp}"

@@ -9,9 +9,9 @@
 // WIDTH_FIXTURE_CORES / WIDTH_FIXTURE_RAM_GB / WIDTH_FIXTURE_NO_INSTRUMENT test
 // door. The formula is copied, not reinterpreted:
 //
-//     harness_cap = min(16, cores − 2)
-//     ram_cap     = floor((ram_gb − 6) / 1.5)
-//     CLIENT_CAP  = max(2, min(harness_cap, ram_cap))
+//     CLIENT_CAP  = 10   (owner contract 2026-10-06: the per-workflow ceiling on every
+//                         machine; cores and RAM never lower it)
+//     ram_cap     = floor((ram_gb − 6) / 1.5)   (feeds BROWSER_CAP only)
 //     BROWSER_CAP = floor((ram_gb − 6) / 1.5)
 //     WORKFLOW_CEILING = 50            operator doctrine 2026-08-16, hard
 //
@@ -138,11 +138,9 @@ export function ramCapOf(ramGb) {
   return Math.floor(((ramGb - 6) * 2) / 3);   // floor((ram_gb − 6) / 1.5)
 }
 
-export function clientCapOf(harnessCap, ramCap) {
-  let c = harnessCap;
-  if (ramCap !== null && ramCap !== undefined && ramCap !== '' && ramCap < c) c = ramCap;
-  if (c < 2) c = 2;
-  return c;
+export const CLIENT_CAP_FIXED = 10;
+export function clientCapOf() {
+  return CLIENT_CAP_FIXED;   // the per-workflow ceiling: 10, always
 }
 
 export function browserCapOf(ramGb) {
@@ -201,21 +199,21 @@ export function widthReport(env = process.env) {
     lines.push(`BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: ${ramInstr} ${now}]`);
     lines.push(`WORKFLOW_CEILING=${WORKFLOW_CEILING}   ${ceilingMark}`);
     notes.push(`NOTE: neither instrument answered — cores tried ${CORE_SOURCES}; ram tried ${RAM_SOURCES}.`);
-    notes.push('      The caller uses clientCap 4 AND SAYS SO in the ledger. It never stalls, and it never asks.');
+    notes.push('      The caller uses clientCap 10 AND SAYS SO in the ledger. It never stalls, and it never asks.');
     return { lines, notes, code: 2 };
   }
 
   let clientCap, capKind, capInstr;
   if (coresKind === 'UNDETERMINED') {
-    clientCap = 4;
+    clientCap = CLIENT_CAP_FIXED;
     capKind = 'ASSUMED';
-    capInstr = `no-instrument — cores unmeasurable (tried ${CORE_SOURCES}), clientCap fallback 4`;
+    capInstr = `no-instrument — cores unmeasurable (tried ${CORE_SOURCES}), clientCap is 10 regardless`;
   } else {
     const harnessCap = harnessCapOf(cores);
     if (ramKind === 'UNDETERMINED') {
       clientCap = clientCapOf(harnessCap, null);
       capKind = coresKind;
-      capInstr = `${coresInstr} ${now}; ram UNDETERMINED (tried ${RAM_SOURCES}) — harness cap governs`;
+      capInstr = `${coresInstr} ${now}; ram UNDETERMINED (tried ${RAM_SOURCES}) — clientCap is 10 regardless`;
     } else {
       clientCap = clientCapOf(harnessCap, ramCapOf(ram));
       capKind = (coresKind === 'FIXTURE' || ramKind === 'FIXTURE') ? 'FIXTURE' : 'MEASURED';
@@ -254,8 +252,8 @@ function selftest() {
   console.log('FIXTURES — the S1 worked values');
   for (const [label, c, r, wantC, wantB] of [
     ['operator Mac mini', 12, 24, '10', '12'],
-    ['8-core, 16 GB laptop', 8, 16, '6', '6'],
-    ['24-core, 64 GB Studio', 24, 64, '16', '38'],
+    ['8-core, 16 GB laptop', 8, 16, '10', '6'],
+    ['24-core, 64 GB Studio', 24, 64, '10', '38'],
   ]) {
     const out = widthReport({ WIDTH_FIXTURE_CORES: String(c), WIDTH_FIXTURE_RAM_GB: String(r) });
     const gotC = capOf(out.lines, 'CLIENT_CAP');
@@ -272,7 +270,7 @@ function selftest() {
 
   console.log('NO INSTRUMENT — neither answers → exit 2, and the sources are named');
   const ni = widthReport({ WIDTH_FIXTURE_NO_INSTRUMENT: '1' });
-  if (ni.code === 2) console.log('  [PASS] no instrument → exit 2 (the caller uses 4 and says so)');
+  if (ni.code === 2) console.log('  [PASS] no instrument → exit 2 (the caller uses 10 and says so)');
   else { console.log(`  [FAIL] no instrument → exit ${ni.code}, expected 2`); fails += 1; }
   if (capOf(ni.lines, 'CLIENT_CAP') === 'UNDETERMINED') console.log('  [PASS] no instrument → CLIENT_CAP=UNDETERMINED, never a silent number');
   else { console.log('  [FAIL] no instrument → CLIENT_CAP was not UNDETERMINED'); fails += 1; }
@@ -284,7 +282,7 @@ function selftest() {
   console.log('CONTROL — the live machine (if this fails, the CHECK is broken, not the box)');
   const live = widthReport({});
   const liveCap = capOf(live.lines, 'CLIENT_CAP');
-  if (live.code === 0 && /^\d+$/.test(liveCap) && Number(liveCap) >= 2
+  if (live.code === 0 && /^\d+$/.test(liveCap) && Number(liveCap) === 10
       && live.lines.some((l) => l.includes('[MEASURED '))) {
     console.log(`  [PASS] live: CLIENT_CAP=${liveCap} with a [MEASURED …] mark, exit 0`);
   } else {

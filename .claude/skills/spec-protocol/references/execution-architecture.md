@@ -270,11 +270,11 @@ step 12.7, a named section of the execution plan).
 
 **Never write vague instructions such as "Fan out some agents."** Write something
 measurable: "Spawn exactly 12 builder agents." "Spawn exactly one fresh verifier
-for every failed workstream." "Use a maximum of 16 concurrent agents in this
-workflow." Every count is an exact integer, and every integer cites the line of
-`CAPACITY-LEDGER.md` it derives from — the width formula `min(16, cores−2)` with
-the cores MEASURED at run time (10 on the operator's 12-core machine; re-measure
-per machine, never inherit the number), the governing number, and the agent-budget
+for every failed workstream." "Run 10 concurrent agents in this workflow."
+Every count is an exact integer, and every integer cites the swarm plan
+(`references/swarm-plan.md`: `agent_count = min(10, units)`) and the line of
+`CAPACITY-LEDGER.md` it derives from — `clientCap = 10` on every machine (cores are
+measured and recorded, never lowering it), the governing number, and the agent-budget
 declaration (`references/capacity.md`).
 
 **What every subagent class must declare (ten ownership fields, verbatim).**
@@ -282,8 +282,8 @@ AGENT NAME / NUMBER; MODEL ROLE; RESPONSIBILITY; SCOPE OF OWNERSHIP; INPUTS;
 DELIVERABLE; ACCEPTANCE CRITERIA; FILES OR COMPONENTS OWNED; CAN MODIFY CODE:
 YES / NO; CAN VERIFY ITS OWN WORK: YES / NO.
 
-Do not add agents merely because Claude Code can run many agents. Every subagent
-must have a distinct reason to exist. Parallel coding agents get explicit ownership
+A workflow runs `min(10, its units)` agents and every subagent owns one planned unit.
+Parallel coding agents get explicit ownership
 boundaries — isolation, worktrees, modules, branches, or file ownership — so that
 many agents are never modifying the same critical files simultaneously. The last
 two fields are load-bearing and are answered honestly: an agent that CAN MODIFY
@@ -516,11 +516,9 @@ dispatches (`references/capacity.md` §10); the gauntlet's execution budget — 
 initial-run shape, the analyse-progress threshold, and the hard stop that exits
 `STOPPED_CAP` — is in `references/gauntlet.md` §13.
 
-Do not assume MORE AGENTS = BETTER RESULT. Use additional agents only when work can
-be decomposed into genuinely independent responsibilities. Provider capacity is not
-an instruction to maximize agent count: every spawned agent must have a unique
-responsibility, evidence to inspect or work to perform, an explicit deliverable, and
-an acceptance criterion. Quality per agent matters more than raw agent count.
+Split the work into genuinely independent responsibilities, one planned unit each: every
+spawned agent has a unique responsibility, evidence to inspect or work to perform, an
+explicit deliverable (the unit's `owned_output`), and an acceptance criterion.
 
 **Model roles (seven, assigned deliberately).** ORCHESTRATOR; BUILDER;
 RESEARCHER; VISUAL VERIFIER; TECHNICAL JUDGE; SECURITY JUDGE; RELEASE JUDGE. If

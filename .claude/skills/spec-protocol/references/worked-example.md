@@ -33,8 +33,8 @@ GATE 0: ultracode ON (confirmed by system reminder). Harness: regular Claude Cod
 launcher `claude` (no `~/.claude-nine` signals). Cores: `sysctl -n hw.ncpu` → 12 →
 per-workflow cap 10.
 
-Cores are MEASURED, never inherited. 10 is this machine's value, not a constant: a
-24-core box gets 16, an 8-core box gets 6. The formula travels; the number does not.
+Cores are MEASURED and recorded. The per-workflow ceiling is 10 on every machine: a
+24-core box and an 8-core box both get 10, and a workflow runs `min(10, its units)`.
 
 ---
 
@@ -43,7 +43,7 @@ Cores are MEASURED, never inherited. 10 is this machine's value, not a constant:
 ```
 # CAPACITY LEDGER — recipe-box — 2026-08-12T14:00:00Z
 Launcher: claude (regular Claude Code)      Harness mode: regular
-Cores: 12 → per-workflow concurrency min(16,12−2) = 10
+Cores: 12 (recorded) → per-workflow ceiling clientCap = 10 on every machine
 Context ceiling (session): default (Anthropic)
 ROLE RESOLUTION: per the seat table (references/capacity.md §11) — conductor=session
   opus; WF01 planners + builders + repair=opus→opus; blind visual judges, technical
@@ -74,7 +74,7 @@ identical.)*
 
 The three axes are visibly separate on this page and never collapse into each other:
 
-- **WIDTH** — `min(16, cores−2)` = `min(16, 10)` = **10 agents at once per workflow**,
+- **WIDTH** — `clientCap` = **10 agents at once per workflow** at most (`min(10, units)`), on every machine,
   50 workflows maximum in a session, so the harness could deliver 50 × 10 = **500
   concurrently**.
 - **BUDGET** — **1,000 subagent executions for the whole session**, a lifetime count,
@@ -84,8 +84,7 @@ The three axes are visibly separate on this page and never collapse into each ot
   publishes no concurrency figure either, so the **burn governor** is the only
   limiter: it parks on 429/limit responses and resumes (Loop 6).
 
-The smallest number that actually exists governs. Here that is 500, the harness, and
-the ledger marks it. Nothing in this file ever writes 300 as a promise on this
+Here the width is 500, the harness, and the ledger marks it. Nothing in this file ever writes 300 as a promise on this
 machine, and nothing writes 1,000 as a width.
 
 ---
@@ -260,10 +259,10 @@ Where each number came from:
 
 | Number | Source |
 |---|---|
-| Unit Gauntlet A width 10 | `min(16, cores−2)` with cores measured at 12 — Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
+| Unit Gauntlet A width 10 | `min(10, units)` with 10 units — the swarm plan's `agent_count`; cores recorded at 12 on Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
 | 5 persistent slots | lead + 4 commanders = N+1, deducted BEFORE workflow width — ledger line `AGENT TEAM:` |
 | 495 workflow slots | 500 − 5 persistent — ledger line `WAVE SIZE:` (this build dispatches 15 of them) |
-| 500 governs | the harness — 50 workflows × clientCap 10; the only candidate that exists here, since no policy cap applies on any path and the subscription publishes no provider figure — ledger line `Governing number:` |
+| 500 governs | the harness — 50 workflows × 10; the only candidate that exists here, since no policy cap applies on any path and the subscription publishes no provider figure — ledger line `Governing number:` |
 | WF06 N | the selective-repair formula, N = failed workstreams, ≤12 per wave. This run: N = **2** |
 | ≈34 expected / 200 hard stop | agent-budget declaration — ledger line `AGENT BUDGET DECLARATION:` |
 | 4 commanders | a Gauntlet software build uses 4, inside the documented 3–5 band |
@@ -654,7 +653,7 @@ either cites a doctrine constant or shows the operation on one.
 | Quantity | Value | Where it comes from |
 |---|---|---|
 | Cores | 12 | `sysctl -n hw.ncpu`, measured at run time |
-| Per-workflow width | 10 | `min(16, cores−2)` = `min(16, 10)` = 10 |
+| Per-workflow width | 10 | `min(10, units)` = `min(10, 10)` = 10 |
 | Harness delivery ceiling | 500 | 50 workflows (hard session ceiling) × 10 |
 | Policy wave cap | none | the operator's ruling — no caps beyond the harness, on any path |
 | Provider ceiling | n/a | Anthropic subscription is window-metered and opaque; the rate-limit response is the meter, and the burn governor is the only limiter |

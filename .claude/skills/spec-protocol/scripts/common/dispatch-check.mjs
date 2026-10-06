@@ -245,16 +245,17 @@ export function runCheck(argv) {
     process.stderr.write(`DISPATCH-CHECK WARNING | label says x${labelN[1]} but agents=${agents} — the tree name will not match what ran\n`)
   }
 
+  // OWNER CONTRACT (2026-10-06): agent_count = min(10, units). 10 is the per-workflow
+  // ceiling on every machine (an old ledger's smaller CLIENT_CAP is read as 10), and a
+  // dep= reason does not narrow a workflow.
+  if (cap < 10) cap = 10
   const floor = Math.min(units, cap)
   if (agents < floor) {
-    if (!dep) {
-      process.stderr.write(
-        `DISPATCH-CHECK UNDER-WIDTH | units=${units} cap=${cap} floor=${floor} agents=${agents} | ` +
-        `pass every dispatchable unit: re-author this dispatch at ${floor} agents, or give the wave dependency that makes it narrower as dep=<reason> (a dependency is a reason; a hunch is not).\n`,
-      )
-      process.exit(3)
-    }
-    process.stderr.write(`DISPATCH-CHECK NOTE | narrower than the floor by a stated dependency | floor=${floor} agents=${agents} dep=${dep}\n`)
+    process.stderr.write(
+      `DISPATCH-CHECK UNDER-WIDTH | units=${units} cap=${cap} floor=${floor} agents=${agents} | ` +
+      `a workflow runs min(10, its units) agents: re-author this dispatch at ${floor} agents. A dep= reason does not narrow a workflow; a workflow whose dependency is unmet is not launched.\n`,
+    )
+    process.exit(3)
   }
 
   const padCeiling = units * stageN
@@ -348,11 +349,11 @@ function selftest() {
   report(4, 'padding-refused', r.rc === 5 && /PADDED/.test(r.out), `rc=${r.rc} (want 5; ceiling = 4 × 4 = 16)`)
 
   r = run([P, '10', '3', '[Opus x3] build wave-2', 'dep=WI-04 must land before the other 7 units unblock'])
-  report(5, 'dep-reason-allows', r.rc === 0 && total() === 13, `rc=${r.rc} (want 0); executions_total 10 → ${total()} (want 13)`)
+  report(5, 'dep-reason-does-not-excuse', r.rc === 3 && total() === 10, `rc=${r.rc} (want 3); executions_total stays ${total()} (want 10)`)
 
   const rows = fs.readFileSync(path.join(P, 'CONTROL', 'dispatch-log.md'), 'utf8')
     .split('\n').filter((l) => /^\s*(- )?\d{4}-\d{2}-\d{2}[^|]*\|[^|]*\|/.test(l)).length
-  report(6, 'rows-are-censusable', rows === 2, `anchor.sh's dispatch-census regex counts ${rows} rows (want 2)`)
+  report(6, 'rows-are-censusable', rows === 1, `anchor.sh's dispatch-census regex counts ${rows} rows (want 1)`)
 
   r = run([P, '10', '10', 'Opus x10 build wave-2'])
   report(7, 'bad-label-refused', r.rc === 4, `rc=${r.rc} (want 4)`)
@@ -399,9 +400,21 @@ function selftest() {
   report(14, 'profile-refuses-legacy-mutation', r.rc === 2 && /profile-owned project/.test(r.out),
     `rc=${r.rc} (want 2; legacy helper must not create CONTROL state)`)
 
+  const P7 = path.join(T, 'proj-mintenunits')
+  fs.mkdirSync(path.join(P7, 'CONTROL'), { recursive: true })
+  fs.writeFileSync(path.join(P7, 'CAPACITY-LEDGER.md'), 'CLIENT_CAP=4\n')
+  fs.writeFileSync(path.join(P7, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n\nwave 1.\n')
+  const r9 = run([P7, '12', '9', '[Opus x9] judge wave-1'])
+  report(15, 'ten-ceiling-beats-old-ledger', r9.rc === 3, `9 agents on 12 units rc=${r9.rc} (want 3): a CLIENT_CAP=4 ledger is read as 10`)
+  const r3 = run([P7, '3', '3', '[Opus x3] judge wave-1'])
+  const r10 = run([P7, '12', '10', '[Opus x10] judge wave-1'])
+  report(16, 'min-of-units-and-ten-passes', r3.rc === 0 && r10.rc === 0, `3 on 3 units rc=${r3.rc}, 10 on 12 units rc=${r10.rc} (want 0, 0)`)
+  const r2 = run([P7, '3', '2', '[Opus x2] judge wave-1'])
+  report(17, 'under-units-refused', r2.rc === 3, `2 agents on 3 units rc=${r2.rc} (want 3)`)
+
   process.stdout.write('\n')
   if (fails === 0) {
-    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (15 checks)\n')
+    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (18 checks)\n')
     return 0
   }
   process.stdout.write(`dispatch-check.mjs selftest: ${fails} FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n`)

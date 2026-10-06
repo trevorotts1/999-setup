@@ -1050,7 +1050,7 @@ why, in the execution plan (document 16).
   moves** from per-unit to per-batch. This is never a silent skip and never a
   reason to invent a fake per-unit bar.
 - **Concurrency cost.** The comparative critic is an ADDITIONAL concurrent
-  consumer. Count it against the agent ceiling in the 9.4 budget derivation
+  consumer. Count it among the concurrent consumers in the 9.4 budget derivation
   (`references/loops.md`) — one more concurrent agent, one more line in the
   spend-per-window arithmetic. Unbudgeted critics break the budget the same way
   unbudgeted builders do.
@@ -1081,23 +1081,21 @@ role → alias → resolved model, the three hops; or role → selected pool mod
 probed callable; resolution RECORDS, it never reroutes).
 
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
-are derived (Section 13.4) — **the five-type ORDER is the invariant.**
+come from the swarm plan (`references/swarm-plan.md`, Section 13.4): a workflow runs
+`agent_count = min(10, its units)` — **the five-type ORDER is the invariant.**
 
-**clientCap is MEASURED (S1, 2026-09-07).** clientCap =
-max(2, min(16, cores−2, floor((ram_gb−6)/1.5))), computed by the CLIENT-MACHINE PROBE at
-Capacity-Ledger time from the machine's own cores and RAM
-(`references/capacity.md` §3 AXIS 1, §4) — never declared, never asked of the
-client, and never read out of the environment
+**clientCap is 10 on every machine (owner contract 2026-10-06).** The CLIENT-MACHINE PROBE
+still measures cores and RAM at Capacity-Ledger time and records them
+(`references/capacity.md` §3 AXIS 1, §4), but they never lower clientCap — never declared,
+never asked of the client, and never read out of the environment
 (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` caps session subagents only, and workflow
 agents and agent-team teammates follow their own limits).
-**If cores cannot be measured, clientCap falls back to 4, the ledger says so,
-and the run keeps going.** **The BAR never shrinks with the machine — only the
-width does: a weak machine runs narrower and longer; it never ships to a lower
-standard.**
+**If cores cannot be measured, clientCap is still 10, the ledger says so, and the run
+keeps going.** **The BAR and the width are the same on every machine.**
 
 **Counts are SLICES, and every slice of a workflow is dispatched in ONE call.**
 Pass every slice of a workflow to a single `pipeline()` call. The harness runs
-`clientCap` of them at once and queues the rest; the queue is a rolling window,
+10 of them at once and queues the rest; the queue is a rolling window,
 never a batch. **Never split a workflow's slices into sequential batches by
 hand** — a hand-made batch adds a barrier at the slowest agent of the round, and
 the harness already starts the next queued agent the instant a slot frees.
@@ -1106,9 +1104,9 @@ the harness already starts the next queued agent the instant a slot frees.
 ### 13.1 The one swarm shape — five workflow types and no others
 
 **The gauntlet runs as five workflow types and no others.** Widths are the
-machine's, measured by `tools/width.sh` into the Capacity Ledger as
-`clientCap = min(16, cores−2)` bounded by RAM; the bar never changes with the
-machine, only the width.
+the swarm plan's: `agent_count = min(10, units)` per workflow, with `clientCap = 10` recorded
+by `tools/width.sh` in the Capacity Ledger; the bar and the width never change with the
+machine.
 
 **WF01 Blueprint Lock.** One workflow. `parallel()` over the planner agents
 (architecture, domain, the two personalization planners, visual world, UX and
@@ -1122,7 +1120,7 @@ production code.
 gauntlet).** One workflow per independent stream from the dependency graph.
 `pipeline(units, build, blindVisualJudge, technicalJudge, fixLoop)`, every stage
 seat-pinned (builder seat; blind visual judge seat, vision proven by probe;
-technical judge seat), no barrier between stages. Pass `clientCap` units per
+technical judge seat), no barrier between stages. Pass the workflow's `min(10, units)` units per
 tree; more streams launch as more trees in the same turn. The first unit of the
 first tree is the evidence harness; page and screen units dispatch only after
 `HARNESS-READY:` is in the ledger. Every judge receives rendered evidence from
@@ -1267,31 +1265,29 @@ rule is therefore a BUDGET mechanism as much as an honesty one — it is what
 keeps `first_pause` a real checkpoint instead of a wall the run hits after a
 long tail of flat rounds.
 
-### 13.3 THE IMPORTANT CAPACITY RULE (verbatim — the operator's own words)
+### 13.3 THE CAPACITY RULE (owner contract 2026-10-06)
 
-> "Provider capacity is NOT an instruction to maximize agent count. Do not spawn
-> additional agents simply because DeepSeek or OpenRouter can support them. Every
-> spawned agent must have: unique responsibility; evidence to inspect or work to
-> perform; an explicit deliverable; an acceptance criterion. More agents are useful
-> only when the work can actually be decomposed into independent valuable tasks.
-> Quality per agent matters more than raw agent count."
+A workflow runs `agent_count = min(10, its units)` agents, and every ready workflow launches at
+once, up to `max_active_workflows` (at most 50 workflows, 500 agents). Every spawned agent owns one
+unit: a unique responsibility; evidence to inspect or work to perform; an explicit deliverable
+(the unit's `owned_output`); an acceptance criterion. Units come from the real work breakdown, are
+independent of each other, and are never padded: the plan checker (`tools/swarm-plan.mjs`)
+refuses fake slices and also refuses a unit that lists several items.
 
-A wide ceiling is permission, never instruction. A workflow that cannot name what
-each of its agents owns is over-wide by definition — cut it to the agents that
-can be given the four things above.
+A workflow that cannot name what each of its agents owns is not finished planning: split the
+breakdown until every unit has an owner, an output and an acceptance line.
 
 ### 13.4 Scaling rule (the counts are derived, the order is not)
 
 The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
 9Router + DeepSeek direct, where the harness governs at 50 workflows ×
-clientCap = 50 × max(2, min(16, cores−2, floor((ram_gb−6)/1.5))). **The topology survives at
-any capacity; only the widths shrink**, per the Capacity Ledger:
+10 = 500. **The topology and the per-workflow width (`min(10, units)`) are the same at every
+capacity**, per the swarm plan and the Capacity Ledger:
 
-- At wave size W, a Unit Gauntlet tree passes `min(clientCap, W_units)` units and
-  more streams launch as more trees in the same turn — the type still completes,
-  it simply takes more trees or more passes.
+- A Unit Gauntlet tree passes `min(10, units)` units and more streams launch as more trees in
+  the same turn.
 - **ONE CALL PER WORKFLOW (S2).** Pass every slice of a workflow to a single
-  `pipeline()` call. The harness runs clientCap of them at once and queues the
+  `pipeline()` call over `args.units`. The harness runs 10 of them at once and queues the
   rest; the queue is a rolling window, never a batch. Never split a workflow's
   slices into sequential batches by hand. Worked example at clientCap 10: a Unit
   Gauntlet tree's 16 unit slices go in ONE call — 10 run, 6 queue, and each
@@ -1300,29 +1296,25 @@ any capacity; only the widths shrink**, per the Capacity Ledger:
   WF01 (8) and WF05 (4) are one call each; WF06's repair seats are capped at 12
   per wave (13.1) and go in one call per wave.
 - On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
-  reserve), the same five workflow types run at width 1–2, and the run says so plainly up
-  front: this will take longer.
-- Per-workflow width is **clientCap = max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))** —
-  MEASURED at run time by the CLIENT-MACHINE PROBE (`sysctl -n hw.ncpu` on
-  macOS, `nproc` on Linux; RAM via `sysctl -n hw.memsize` or `/proc/meminfo`,
-  with free disk and network probed alongside — `references/capacity.md` §3
-  AXIS 1), which is **10** on the operator's 12-core, 24 GB Mac Mini
-  (harness_cap 10, ram_cap 12). The `min(16, cores−2)` half IS the harness's own
-  ceiling — how many run in the same instant while the rest queue
-  (`SKILL.md`, `references/pipeline.md`); this skill enforces only the FLOOR,
-  that every dispatchable unit is passed. Never inherit that 10 as a constant
-  and never write "×16" as a promise. Nothing here is declared or asked, and
-  unmeasurable cores fall back to 4 with the ledger saying so.
+  reserve), the same five workflow types run at `min(10, units)` per workflow; the provider
+  figure is recorded on the ledger and the burn governor handles any 429.
+- Per-workflow ceiling is **clientCap = 10** on every machine. The CLIENT-MACHINE PROBE
+  (`sysctl -n hw.ncpu` on macOS, `nproc` on Linux; RAM via `sysctl -n hw.memsize` or
+  `/proc/meminfo`, with free disk and network probed alongside — `references/capacity.md` §3
+  AXIS 1) records cores and RAM and never lowers it. This skill and the hooks enforce
+  `agent_count = min(10, units)` (`tools/dispatch-check.sh` exit 3, `tools/swarm-plan.mjs`,
+  the staffing hook). Nothing here is declared or asked, and unmeasurable cores leave
+  clientCap at 10 with the ledger saying so.
 - On Anthropic-billed Claude Code there is **no wave cap**: total width is the
-  harness number, workflows-in-flight × clientCap, and the burn governor
+  harness number, the plan's workflows × `min(10, units)`, and the burn governor
   (`references/capacity.md` §6) is the only limiter on a subscription account —
   it parks on 429s and resumes, it never pre-shrinks a wave. When an Agent Team
   is active the lead plus each commander occupy persistent slots INSIDE that
   harness width before any workflow width is allocated (lead + 4 commanders = 5
   occupants, deducted first).
 
-**The five-type ORDER is the invariant; the widths are derived. THE BAR never
-shrinks with the machine — only the width does.**
+**The five-type ORDER is the invariant and the widths come from the plan. THE BAR and
+the width never change with the machine.**
 
 ### 13.5 The tasks that carry these workflows are DERIVED per project
 

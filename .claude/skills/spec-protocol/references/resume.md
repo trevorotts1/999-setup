@@ -342,8 +342,8 @@ and keep a run alive overnight:
 3. **Compaction checkpoint** — writes the working state to the tracker on a
    cadence shorter than the distance between compactions.
 4. **Budget watch** — reads consumption against the budget; if the
-   projection exceeds the allowance, throttle: raise the interval, lower
-   the agent ceiling, drop the planning tier's frequency, drop tiers.
+   projection exceeds the allowance, throttle: raise the interval, drop
+   the planning tier's frequency, drop tiers.
 5. **Swarm watch** — runs every S-check in SKILL.md RULE 5 (that table is
    the roster's only owner) against the live `/workflows`
    view, the dispatch log, the heartbeat, and the ledger; runs
