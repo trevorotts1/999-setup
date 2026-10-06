@@ -126,11 +126,11 @@ class GuardTests(unittest.TestCase):
   c.execute('INSERT INTO launches VALUES(?,?,?,?,?,?,?,?,?)',('l1','s1','',now,'h',launch_state,'n',1,json.dumps({'run_id':run})))
   c.commit();c.close();return now
  def test_terminal_launch_resolves_residue_watch(self):
-  g=self.load('guard_term');now=self.stage(g,'wf_terminal-01','RETURNED')
+  g=self.load('guard_term');now=self.stage(g,'wf_terminal-01','FAILED')
   self.assertEqual(g.tick(now),[])
   c=g.db();row=c.execute('SELECT state,detail FROM watches').fetchone();c.close()
   self.assertEqual(row[0],'RESOLVED');d=json.loads(row[1])
-  self.assertEqual(d['launch_state'],'RETURNED');self.assertEqual(d['prior_state'],'STALE_REVIEW_REQUIRED')
+  self.assertEqual(d['launch_state'],'FAILED');self.assertEqual(d['prior_state'],'STALE_REVIEW_REQUIRED')
   self.assertIn('seconds_without_journal_progress',d['prior_evidence'])
   os.environ.pop('WORKFLOW_GUARD_STATE',None)
  def test_cancelled_launch_resolves_residue_watch(self):
