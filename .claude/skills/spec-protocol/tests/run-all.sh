@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; SP="$HERE/.."; REPO="$SP/../../.."
 command -v python3 >/dev/null || { echo "FAIL: python3 not found" >&2; exit 1; }
 command -v node >/dev/null || { echo "FAIL: node not found (swarm-plan and width tests need Node.js 18+)" >&2; exit 1; }
 rc=0
-run() { echo "== $*"; "$@" >"${TMPDIR:-/tmp}/sp-test.out" 2>&1 && echo "   PASS" || { echo "   FAIL"; tail -30 "${TMPDIR:-/tmp}/sp-test.out"; rc=1; }; }
+run() { echo "== $*"; "$@" >"${TMPDIR:-/tmp}/sp-test.out" 2>&1 && echo "   PASS" || { echo "   FAIL"; grep -E "^FAIL|FAILED| FAIL " "${TMPDIR:-/tmp}/sp-test.out" | cut -c1-600; tail -15 "${TMPDIR:-/tmp}/sp-test.out" | cut -c1-300; rc=1; }; }
 run node "$SP/tools/swarm-plan.mjs" --selftest
 run python3 "$SP/tools/hooks/staffing.py" --selftest
 run python3 "$SP/tools/hooks/dispatch-gate.py" --selftest
