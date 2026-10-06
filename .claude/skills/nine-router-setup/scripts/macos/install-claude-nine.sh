@@ -3,7 +3,17 @@
 # $HOME/.local/bin (mode 700) and ensure $HOME/.local/bin is on PATH for new
 # login shells via a clearly marked, idempotent profile block. Preserves
 # unrelated profile content.
+#
+# Usage: install-claude-nine.sh [--check]
+#   --check   detection only: prints what WOULD be installed/changed and writes nothing.
+#   A bare run installs for real.
+# CLAUDE_NINE_BIN_DIR=<dir> installs the launcher + lib + key helper into <dir> instead of
+# ~/.local/bin (for a box whose active launcher lives elsewhere, e.g. ~/bin) and skips the
+# PATH-profile edit and the claude-codex install. Without it, behavior is unchanged.
 set -euo pipefail
+CHECK=0
+[ "${1:-}" = "--check" ] && CHECK=1
+BIN_DIR="${CLAUDE_NINE_BIN_DIR:-$HOME/.local/bin}"
 
 # Default launcher sources: the repo copies next to this script (this script
 # lives at <repo>/.claude/skills/nine-router-setup/scripts/macos/, and the
@@ -11,20 +21,45 @@ set -euo pipefail
 # CLAUDE_CODEX_SOURCE override them.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAUNCHER_SRC="${CLAUDE_NINE_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-nine}"
-LAUNCHER="$HOME/.local/bin/claude-nine"
+LAUNCHER="$BIN_DIR/claude-nine"
 CODEX_SRC="${CLAUDE_CODEX_SOURCE:-$SCRIPT_DIR/../../../../../launchers/macos/claude-codex}"
-CODEX_LAUNCHER="$HOME/.local/bin/claude-codex"
+CODEX_LAUNCHER="$BIN_DIR/claude-codex"
 
 log() { printf '[install-claude-nine] %s\n' "$*" >&2; }
 
+# Report one file: NEW / CHANGED / same, by sha256. Used by --check.
+report() {
+  local src="$1" dst="$2" st=NEW
+  if [ -f "$dst" ]; then
+    if [ "$(shasum -a 256 <"$src")" = "$(shasum -a 256 <"$dst")" ]; then st=same; else st=CHANGED; fi
+  fi
+  log "$st  $dst"
+}
+
+if [ "$CHECK" = 1 ]; then
+  H="$SCRIPT_DIR/../../../../../launchers/macos"
+  for pair in "$LAUNCHER_SRC:$LAUNCHER" "$H/claude-code-lib.sh:$BIN_DIR/claude-code-lib.sh" \
+              "$H/get-9router-key.sh:$HOME/.local/bin/get-9router-key.sh"; do
+    report "${pair%%:*}" "${pair#*:}"
+  done
+  log "--check: nothing written"
+  exit 0
+fi
+
 install_launcher() {
-  mkdir -p "$HOME/.local/bin"
+  mkdir -p "$BIN_DIR"
   if [ ! -f "$LAUNCHER_SRC" ]; then
     echo "launcher source not found at $LAUNCHER_SRC (set CLAUDE_NINE_SOURCE to override)." >&2
     exit 1
   fi
   install -m 700 "$LAUNCHER_SRC" "$LAUNCHER"
   log "installed $LAUNCHER (mode 700)"
+  # The launcher sources the lib from its own dir; the key helper is the settings.json apiKeyHelper.
+  # Key helper always lives in ~/.local/bin (settings.json points there).
+  install -m 755 "$SCRIPT_DIR/../../../../../launchers/macos/claude-code-lib.sh" "$BIN_DIR/claude-code-lib.sh"
+  mkdir -p "$HOME/.local/bin"
+  install -m 755 "$SCRIPT_DIR/../../../../../launchers/macos/get-9router-key.sh" "$HOME/.local/bin/get-9router-key.sh"
+  log "installed $BIN_DIR/claude-code-lib.sh and $HOME/.local/bin/get-9router-key.sh"
 }
 
 # claude-codex: claude-nine pinned to the Codex model with a 350K auto-compact
@@ -130,10 +165,10 @@ PY
 
 main() {
   install_launcher
-  install_codex_launcher
-  manage_profile
+  [ -n "${CLAUDE_NINE_BIN_DIR:-}" ] || install_codex_launcher
+  [ -n "${CLAUDE_NINE_BIN_DIR:-}" ] || manage_profile
   # Make launchers discoverable in the CURRENT process too.
-  export PATH="$HOME/.local/bin:$PATH"
+  export PATH="$BIN_DIR:$PATH"
   log "done — claude-nine is at $LAUNCHER"
   command -v claude-nine >/dev/null 2>&1 && log "resolves on PATH"
   if [ -x "$CODEX_LAUNCHER" ]; then

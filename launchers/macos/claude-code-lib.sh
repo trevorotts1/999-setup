@@ -15,13 +15,17 @@ if [ -z "$CC_NODE" ] || [ ! -x "$CC_NODE" ]; then
   CC_NODE="$(command -v node 2>/dev/null || true)"
 fi
 
-# Locate the installed claude-code package. Checks the known global prefix first
-# because `npm root -g` costs ~300ms and these wrappers must feel instant.
+# Locate the installed claude-code package. Checks likely global prefixes first
+# because `npm root -g` costs ~300ms and these wrappers must feel instant. The node
+# binary's own prefix (/opt/homebrew, /usr/local, ~/.npm-global, ...) is derived from
+# CC_NODE; `npm root -g` is the final authority.
 cc_pkg_dir() {
-  local d root
-  for d in "$HOME/.npm-global/lib/node_modules/@anthropic-ai/claude-code"; do
-    if [ -f "$d/install.cjs" ]; then
-      printf '%s\n' "$d"
+  local d root np=""
+  [ -n "$CC_NODE" ] && np="$(dirname "$(dirname "$CC_NODE")")/lib/node_modules"
+  for d in "$HOME/.npm-global/lib/node_modules" ${np:+"$np"} \
+           /opt/homebrew/lib/node_modules /usr/local/lib/node_modules; do
+    if [ -f "$d/@anthropic-ai/claude-code/install.cjs" ]; then
+      printf '%s\n' "$d/@anthropic-ai/claude-code"
       return 0
     fi
   done
@@ -86,14 +90,4 @@ cc_resolve_binary() {
   echo "claude: no native binary found under $pkg." >&2
   echo "  Reinstall with: npm install -g @anthropic-ai/claude-code" >&2
   return 1
-}
-
-# Strip proxy/router config that an installer wrote into ~/.claude/settings.json.
-# That file applies to EVERY claude run, so router config there silently hijacks
-# the real CLI. Delegates to the .cjs so the JSON edit is done properly.
-cc_scrub_router_settings() {
-  local helper="${1:-}"
-  [ -n "$CC_NODE" ] && [ -x "$CC_NODE" ] || return 0
-  [ -f "$helper" ] || return 0
-  "$CC_NODE" "$helper" || true
 }

@@ -728,6 +728,10 @@ main() {
   NINE_BIN="$(bash "$MACOS/install-nine-router.sh")" || exit 1
   [ -n "$NINE_BIN" ] && [ -x "$NINE_BIN" ] || fail "install-nine-router.sh did not return an executable path (got: '$NINE_BIN')."
   NINE_VER="$("$NINE_BIN" --version 2>&1)" || fail "9router at $NINE_BIN does not execute (--version failed): $NINE_VER"
+  # Deliver + apply the 9Router bundle guards (assets/guards). Re-run after every 9Router upgrade:
+  #   bash scripts/macos/install-9router-guards.sh [--upgrade [VERSION]]
+  # Not fatal here: it exits 1 naming each patch it could not prove present.
+  bash "$MACOS/install-9router-guards.sh" >&2 || log "WARNING: 9Router guards not all applied (see [guards] lines above); run install-9router-guards.sh --check"
   DEP_SUMMARY+=("$(printf '%-14s OK   v%s (%s)' 9router "$NINE_VER" "$NINE_BIN")")
   NINE_MODE_RAW="$(head -1 "${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}/last-install-mode" 2>/dev/null || true)"
   case "$NINE_MODE_RAW" in

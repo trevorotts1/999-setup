@@ -27,9 +27,54 @@ AND `claude-nine`.
   env value; `swarm-plan.mjs`, `staffing.py` and the packet checker are ONE ruleset (derived/leftover staffing keys
   rejected, `owned_output` overlap rejected, padding rejected) with a cross-validator agreement test; `dispatch-check`
   floor is `min(units, clientCap)`; docs swept for the flat-10 wording. New CI workflow `spec-protocol-tests`.
-- **nine-router-setup 1.23.0:** `enable-agent-teams.sh` / `Enable-AgentTeams.ps1` merge the measured
+- **nine-router-setup 1.25.0:** `enable-agent-teams.sh` / `Enable-AgentTeams.ps1` merge the measured
   `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` into each config root (skipped, and said so, when no probe can run).
 - **tools/windows-parity** brought to the same contract (no `min(systemConcurrentMax, cores-2)`, no hand-batching); the parity guard passes again.
+
+## [nine-router-setup 1.24.0] — 2026-10-06
+
+### 9Router bundle guards are now delivered by the repo, and re-applied after an upgrade
+
+The guards that repair the prebuilt 9Router bundle lived only on the operator Mac, so every
+other box lost them (or never had them) on `npm i -g 9router`. Found on a client box upgraded
+0.5.75 to 0.5.95 whose `opus-chain` answered HTTP 200 and then ended with `StreamTruncated`
+(its first member, the free OpenCode model, returns an empty or cut stream).
+
+- **`assets/guards/`**: dupfix, codex-terminal, nextserver, cachecontrol, glm53-thinking,
+  deepseek-effort, deepseek-openai-route, ollama-done, opencode-poll, opencode-toolargs (+ its
+  apply scripts), ping-keepalive, upstream-shape, and the GLM 5.3 regression check. All are
+  content-anchored and were run against a pristine 9Router 0.5.95: every one applies.
+  Not shipped: the operator-only Agnes 3.0 caps guard (keyed to one operator node id).
+- **`scripts/macos/install-9router-guards.sh [--check] [--upgrade [VER]] [--root DIR] [guard...]`**:
+  copies guards into `~/.local/bin` and patches into `~/.9router/patches`, applies them in the
+  required order, `node --check`s every chunk, proves each patch by content marker (a guard's
+  own exit code is not trusted: it can exit 0 when its anchor is gone), runs the GLM behavioural
+  suite, and restarts the launchd job only when the bundle changed. Exit 1 names anything missing.
+- `setup-macos.sh` calls it right after the 9Router proof (non-fatal, loud). The five older guards
+  now also search the 999 npm prefix. Test: `tests/test-9router-guards.sh [VERSION]`.
+- Does not touch keys, providers, combos, models or the database.
+
+## [nine-router-setup 1.23.0] — 2026-10-06
+
+### macOS `claude-nine` launcher made safe for hand-tuned and headless boxes
+
+- **Loopback only:** when the launcher starts 9Router itself it now passes `--host 127.0.0.1`
+  (the router's default bind is `0.0.0.0`, i.e. the LAN). If a `com.blackceo.9router-localhost`
+  LaunchAgent exists it is kickstarted instead.
+- **Headless-safe key:** `get-9router-key.sh` reads `~/.9router/gateway-key` first and falls back
+  to the Keychain item, so a locked login keychain cannot break cron/ssh launches. Boxes with no
+  key file behave exactly as before.
+- **npm prefix:** `claude-code-lib.sh` finds Claude Code under the node binary's own prefix
+  (`/opt/homebrew`, `/usr/local`, ...) before falling back to `npm root -g`; `9router` is also
+  looked up in `/opt/homebrew/bin` and `/usr/local/bin`.
+- **No settings.json edits:** the unused `cc_scrub_router_settings` (edited `~/.claude/settings.json`)
+  is removed from the lib.
+- **Per-box banner:** if `~/.claude-nine/launcher-banner.txt` exists the launcher prints it; the
+  file is box-owned and never written by setup.
+- **Installer:** `install-claude-nine.sh --check` (writes nothing) and `CLAUDE_NINE_BIN_DIR=<dir>`
+  (install launcher + lib there, key helper to `~/.local/bin`; no profile edit, no claude-codex).
+  The installer now installs the lib and key helper alongside the launcher.
+- **Test:** `tests/test-launcher-safe.sh` (fake HOME), wired into `kaizen-tests` CI.
 
 ## [nine-router-setup 1.22.0] — 2026-10-04
 
