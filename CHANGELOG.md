@@ -1,5 +1,17 @@
 # Changelog
 
+## [hook-skill] — 2026-10-06
+
+### Fix: a confirmed workflow launch stays RUNNING until its run finishes
+
+`tick()` treated launch state `RETURNED` (what PostToolUse sets on a confirmed launch, while the background run is
+still going) as a terminal parent, resolved the run's watch and let the launch be released as `COMPLETED` seconds
+in. `staffing.py status` then showed running (0) and the Stop hook demanded a relaunch of work already running.
+Now only CANCELLED, FAILED, COMPLETED and REAPED launches resolve a watch; a RETURNED launch completes when its
+own journal shows every agent returned. The Workflow tool's reported `Transcript dir` (receipt `transcript_dir`) is
+used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
+`test_returned_run_live.py`.
+
 ## [nine-router-setup 1.27.0] — 2026-10-06
 
 ### New guard: `9router-usage-stream-guard.sh` stops the dashboard usage page from freezing 9Router

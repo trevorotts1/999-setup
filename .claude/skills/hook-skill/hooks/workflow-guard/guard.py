@@ -188,6 +188,17 @@ def _run_id(receipt):
  try:return (json.loads(receipt or '{}') or {}).get('run_id')
  except (ValueError,AttributeError):return None
 
+def _wf_root(r):
+ # The workflows directory holding this launch's run journals: the Transcript dir the Workflow tool itself reported
+ # (receipt transcript_dir = .../workflows/<run id>), else the one the launching transcript implies. The tool's own
+ # report wins: a session started in one cwd and moved to another keeps its transcript under the START slug while
+ # the run lives elsewhere, so a slug derived from the launch cwd can point at the wrong tree.
+ try:td=(json.loads(r['receipt'] or '{}') or {}).get('transcript_dir')
+ except (ValueError,AttributeError):td=None
+ if td:return str(Path(td).parent)
+ if not r['transcript']:return None
+ p=Path(r['transcript']);return str(p.parent/p.stem/'subagents'/'workflows')
+
 def _own_watches(r,d,ws):
  # Only this launch's own journals, by RUN ID. A launch with no run id in its receipt owns no journal: no sibling
  # journal can ever finish it (a main session cannot forge a "finished" neighbour either).
@@ -201,8 +212,8 @@ def reap_finished(c):
  # only ever frees on positive evidence.
  freed=0;ws=c.execute('SELECT path,state FROM watches').fetchall()
  for r in c.execute("SELECT id,transcript,created,receipt FROM launches WHERE state IN (?,?,?)",LIVE_STATES).fetchall():
-  if not r['transcript']:continue
-  p=Path(r['transcript']);d=str(p.parent/p.stem/'subagents'/'workflows')
+  d=_wf_root(r)
+  if not d:continue
   rows=_own_watches(r,d,ws)
   if not rows:
    # No watch row yet: read the run's own journal directly so release is immediate.
@@ -217,9 +228,9 @@ def reap_finished(c):
 
 def journal_summary(r):
  # Summary of this launch's own journal, or None when it has none yet.
- rid=_run_id(r['receipt'])
- if not rid or not r['transcript']:return None
- p=Path(r['transcript']);j=p.parent/p.stem/'subagents'/'workflows'/rid/'journal.jsonl'
+ rid=_run_id(r['receipt']);d=_wf_root(r)
+ if not rid or not d:return None
+ j=Path(d)/rid/'journal.jsonl'
  try:return inspect_journal(j) if j.is_file() else None
  except Exception:return None
 
@@ -876,12 +887,12 @@ def _validate(data,ctx):
  print(json.dumps({'hookSpecificOutput':{'hookEventName':'PreToolUse','updatedInput':updated,'additionalContext':f"Workflow guard validated {result['conservativePeak']} maximum active lanes; cap {result['cap']}. Explicit phases checked.{argument_note} After launch verify the returned workflow ID and native /workflows tree. Workers must not spawn helpers. Poll no longer than 60 seconds at a time; read watchdog alerts and continue ready units. A validated file does not prove rendered visibility."}}))
  return 0
 
-def scan_watches(transcript,session,after):
+def scan_watches(transcript,session,after,root=None):
  # Filesystem scan only: no DB access, safe to run outside any transaction.
  found=[]
- if not transcript:return found
- p=Path(transcript)
- try:paths=list((p.parent/p.stem/'subagents/workflows').glob('*/journal.jsonl'))
+ if not transcript and not root:return found
+ p=Path(transcript or 'x/x')
+ try:paths=list((Path(root) if root else p.parent/p.stem/'subagents/workflows').glob('*/journal.jsonl'))
  except OSError:return found
  for j in paths:
   try:recent=j.stat().st_mtime>=after-5
@@ -934,7 +945,7 @@ def tick(now=None):
   if rid:run2state[rid]=l['state']
  discovered=[]
  for l in launches:
-  discovered.extend(scan_watches(l['transcript'],l['session'],l['created']))
+  discovered.extend(scan_watches(l['transcript'],l['session'],l['created'],_wf_root(l)))
  computed=[]
  for w in watches:
   if w['state'] in ('CANCELLED','RESOLVED'):continue
@@ -957,9 +968,11 @@ def tick(now=None):
    if summary['runtime_peak']>10 and state in ('OBSERVING','NO_RESULT_WARNING'):state='RUNTIME_CAP_EXCEEDED'
    detail=json.dumps({**summary,'seconds_without_journal_progress':round(age),'note':'Journal progress is a signal, not proof of useful work or wave/QC completion.'})
   # A terminal parent means this journal is residue, not a live stall. Preserve the
-  # pre-resolution state and evidence so the record stays auditable.
+  # pre-resolution state and evidence so the record stays auditable. RETURNED is NOT terminal: it is the state a
+  # confirmed launch holds while its background run is still going (the tool returns at once); resolving on it
+  # released the launch as COMPLETED seconds into a live run.
   owned=run2state.get(path.parent.name)
-  if owned in ('RETURNED','CANCELLED','FAILED') and state!='RESOLVED':
+  if owned in ('CANCELLED','FAILED','COMPLETED','REAPED') and state!='RESOLVED':
    prior=state
    try:prior_evidence=json.loads(detail)
    except ValueError:prior_evidence=detail
@@ -975,8 +988,8 @@ def tick(now=None):
   if now-l['created']>120 and l['state']=='VALIDATED':
    stmts.append(("UPDATE launches SET state='LAUNCH_UNVERIFIED' WHERE id=?",(l['id'],)))
  for l in launches:
-  if not l['transcript']:continue
-  tp=Path(l['transcript']);d=str(tp.parent/tp.stem/'subagents'/'workflows')
+  d=_wf_root(l)
+  if not d:continue
   own=_own_watches(l,d,watches)
   if own and all(w['state'] in ('AGENTS_RETURNED','RESOLVED','CANCELLED') for w in own):
    stmts.append(("UPDATE launches SET state='COMPLETED' WHERE id=?",(l['id'],)))
@@ -1265,9 +1278,12 @@ def hook(data):
   if row:
    text=response_text(data.get('tool_response',{}))
    task=re.search(r'(?:Task ID:\s*)?\b(w[a-z0-9]{8})\b',text);run=re.search(r'(?:Run ID:\s*)?\b(wf_[A-Za-z0-9-]+)\b',text)
-   receipt={'response_keys':list(data.get('tool_response',{})) if isinstance(data.get('tool_response'),dict) else [],'event':event,'task_id':task.group(1) if task else None,'run_id':run.group(1) if run else None,'visibility':'UNVERIFIED'}
+   resp=data.get('tool_response');tdir=resp.get('transcriptDir') if isinstance(resp,dict) else None
+   if not isinstance(tdir,str) or not tdir:
+    m=re.search(r'Transcript dir:\s*(\S+)',text);tdir=m.group(1) if m else None
+   receipt={'response_keys':list(data.get('tool_response',{})) if isinstance(data.get('tool_response'),dict) else [],'event':event,'task_id':task.group(1) if task else None,'run_id':run.group(1) if run else None,'transcript_dir':tdir,'visibility':'UNVERIFIED'}
    write_txn([('UPDATE launches SET state=?,receipt=? WHERE id=?',('FAILED' if failed else 'RETURNED' if task and run else 'LAUNCH_UNVERIFIED',json.dumps(receipt),row['id']))])
-   for found in scan_watches(row['transcript'],session,row['created']):
+   for found in scan_watches(row['transcript'],session,row['created'],_wf_root({'receipt':json.dumps(receipt),'transcript':row['transcript']})):
     write_txn([('INSERT OR IGNORE INTO watches VALUES(?,?,?,?,?,?)',found)])
   try:reap_now()
   except Exception:pass
