@@ -324,7 +324,7 @@ run_selftest() {
     mkdir -p "$1"
     {
       printf '# CAPACITY LEDGER — fixture — 2026-09-08T00:00:00Z\n'
-      printf 'clientCap = max(2, min(harness_cap, ram_cap)) = 4   [MEASURED fixture 2026-09-08T00:00:00Z]\n'
+      printf 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 4   [MEASURED fixture 2026-09-08T00:00:00Z]\n'
       printf 'SEAT | seat=builder | dispatched=opus | resolved=alpha-one | lane=opus | provider-node=alpha | ceiling-class=token-balance | governing-figure=100 | burn-meter=none | headroom-floor=600 | independence=n/a | proof=none\n'
       printf 'SEAT | seat=judge | dispatched=sonnet | resolved=beta-two | lane=sonnet | provider-node=beta | ceiling-class=token-balance | governing-figure=100 | burn-meter=none | headroom-floor=600 | independence=verified-differs-from alpha-one | proof=none\n'
     } > "$1/CAPACITY-LEDGER.md"

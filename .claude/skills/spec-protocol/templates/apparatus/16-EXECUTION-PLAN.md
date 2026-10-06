@@ -46,7 +46,7 @@ Freshness rule: <fill>
 Inequality and arithmetic: <fill>
 Resulting interval: <fill>
 
-Swarm plan: `SWARM-PLAN.json` (`references/swarm-plan.md`), checked with `node tools/swarm-plan.mjs check` — `agent_count = min(10, units)` per workflow, `policy.max_active_workflows` <fill>.
+Swarm plan: `SWARM-PLAN.json` (`references/swarm-plan.md`), checked with `node tools/swarm-plan.mjs check` — `agent_count = min(clientCap, units)` per workflow, `policy.max_active_workflows` <fill>.
 
 ## BAR-TO-HIT
 

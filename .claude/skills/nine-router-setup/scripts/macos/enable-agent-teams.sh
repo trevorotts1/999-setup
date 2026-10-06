@@ -142,6 +142,17 @@ TEAMMATE_MODE="tmux"
 # with the Capacity Ledger, the operator wave cap, and provider ceilings.
 WFSIZE_KEY="workflowSizeGuideline"
 WFSIZE_VALUE="unrestricted"
+# Per-workflow agent cap: MEASURED on this box by capacity_probe.py (RAM, logical
+# cores, container limits; the SAME file Hook Skill and spec-protocol ship) and
+# merged into env as CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS. It is never
+# typed by hand. No python3 or an unreadable probe -> CAP_VALUE stays empty, the
+# key is NOT written, and the run says so (a guessed number would be a lie).
+CAP_KEY="CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS"
+CAP_VALUE=""
+_probe="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common/capacity_probe.py"
+if [ -f "$_probe" ] && command -v python3 >/dev/null 2>&1; then
+  CAP_VALUE="$(python3 "$_probe" 2>/dev/null | python3 -c 'import json,sys; c=json.load(sys.stdin)["per_workflow_cap"]; print(c if isinstance(c,int) and 1<=c<=10 else "")' 2>/dev/null || true)"
+fi
 
 SETTINGS_PATH="${AGENT_TEAMS_SETTINGS:-$HOME/.claude/settings.json}"
 SETTINGS_OVERRIDE=0
@@ -403,7 +414,7 @@ build_root_set() {
 merge_settings() {
   SETTINGS_PATH="$1" WRITE_MODE="$2" FLAG_KEY="$FLAG_KEY" FLAG_VALUE="$FLAG_VALUE" \
   TEAMMATE_MODE="$TEAMMATE_MODE" WFSIZE_KEY="$WFSIZE_KEY" WFSIZE_VALUE="$WFSIZE_VALUE" \
-  "$NODE" -e '
+  CAP_KEY="$CAP_KEY" CAP_VALUE="$CAP_VALUE" "$NODE" -e '
     const fs = require("fs");
     const p = process.env.SETTINGS_PATH;
     const writeMode = process.env.WRITE_MODE === "1";
@@ -433,6 +444,8 @@ merge_settings() {
     const prevWfsize = hasOwn(obj, process.env.WFSIZE_KEY) ? obj[process.env.WFSIZE_KEY] : undefined;
     // MERGE: add/update ONLY these keys. Nothing else is touched.
     env[process.env.FLAG_KEY] = process.env.FLAG_VALUE;
+    // Measured per-workflow cap (capacity_probe.py); skipped when unmeasured.
+    if (process.env.CAP_VALUE) env[process.env.CAP_KEY] = process.env.CAP_VALUE;
     // Workflow width policy: remove the advisory size guideline so dynamic
     // workflows size to the work. Top-level key, same merge discipline.
     obj[process.env.WFSIZE_KEY] = process.env.WFSIZE_VALUE;
@@ -468,7 +481,7 @@ merge_settings() {
 validate_settings() {
   SETTINGS_PATH="$1" BACKUP_PATH="${2:-}" WRITE_MODE="${3:-1}" FLAG_KEY="$FLAG_KEY" \
   FLAG_VALUE="$FLAG_VALUE" TEAMMATE_MODE="$TEAMMATE_MODE" WFSIZE_KEY="$WFSIZE_KEY" \
-  WFSIZE_VALUE="$WFSIZE_VALUE" "$NODE" -e '
+  WFSIZE_VALUE="$WFSIZE_VALUE" CAP_KEY="$CAP_KEY" CAP_VALUE="$CAP_VALUE" "$NODE" -e '
     const fs = require("fs");
     const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     const readJson = (p) => JSON.parse(fs.readFileSync(p, "utf8").replace(/^\uFEFF/, ""));
@@ -485,6 +498,9 @@ validate_settings() {
     }
     if (cur[process.env.WFSIZE_KEY] !== process.env.WFSIZE_VALUE) {
       console.error("WFSIZE_NOT_CONFIRMED"); process.exit(4);
+    }
+    if (process.env.CAP_VALUE && cur.env[process.env.CAP_KEY] !== process.env.CAP_VALUE) {
+      console.error("CAP_NOT_CONFIRMED"); process.exit(4);
     }
     if (writeMode) {
       if (cur.teammateMode !== process.env.TEAMMATE_MODE) {
@@ -524,7 +540,7 @@ validate_settings() {
       const newMap = new Map(newLeaves);
       // Only the keys this script is allowed to touch may differ. teammateMode
       // is allowed to differ ONLY when it was actually written this run.
-      const allowed = new Set(["env." + flagKey, process.env.WFSIZE_KEY]);
+      const allowed = new Set(["env." + flagKey, process.env.WFSIZE_KEY, "env." + process.env.CAP_KEY]);
       if (writeMode) allowed.add("teammateMode");
       const lost = [];
       for (const [path, val] of oldLeaves) {
@@ -1364,6 +1380,7 @@ JSON
   if [ "$rc" -eq 0 ] && SETTINGS="$h1/.claude/settings.json" st_node '
       const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
       const ok = s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1"
+        && /^([1-9]|10)$/.test(s.env.CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS || "")  // measured cap merged
         && s.teammateMode === undefined
         && s.workflowSizeGuideline === "unrestricted"
         && s.env.EXISTING_VAR === "keep-me"

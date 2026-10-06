@@ -33,8 +33,8 @@ GATE 0: ultracode ON (confirmed by system reminder). Harness: regular Claude Cod
 launcher `claude` (no `~/.claude-nine` signals). Cores: `sysctl -n hw.ncpu` → 12 →
 per-workflow cap 10.
 
-Cores are MEASURED and recorded. The per-workflow ceiling is 10 on every machine: a
-24-core box and an 8-core box both get 10, and a workflow runs `min(10, its units)`.
+Cores and RAM are MEASURED and recorded. The per-workflow cap is measured on the box (a 12-core / 24 GB
+Mac mini gets 10; an 8 GB / 8-core VPS gets 5), and a workflow runs `min(clientCap, its units)`.
 
 ---
 
@@ -43,7 +43,7 @@ Cores are MEASURED and recorded. The per-workflow ceiling is 10 on every machine
 ```
 # CAPACITY LEDGER — recipe-box — 2026-08-12T14:00:00Z
 Launcher: claude (regular Claude Code)      Harness mode: regular
-Cores: 12 (recorded) → per-workflow ceiling clientCap = 10 on every machine
+Cores: 12, RAM: 24 GB (measured) → clientCap = 10 (clamp(1, 10, min(floor(24 / 1.5), 12)))
 Context ceiling (session): default (Anthropic)
 ROLE RESOLUTION: per the seat table (references/capacity.md §11) — conductor=session
   opus; WF01 planners + builders + repair=opus→opus; blind visual judges, technical
@@ -74,8 +74,8 @@ identical.)*
 
 The three axes are visibly separate on this page and never collapse into each other:
 
-- **WIDTH** — `clientCap` = **10 agents at once per workflow** at most (`min(10, units)`), on every machine,
-  50 workflows maximum in a session, so the harness could deliver 50 × 10 = **500
+- **WIDTH** — `clientCap` = the measured per-workflow cap (**10** on this 12-core / 24 GB machine; `min(clientCap, units)`
+  agents per workflow), 50 workflows maximum in a session, so the harness could deliver 50 × 10 = **500
   concurrently**.
 - **BUDGET** — **1,000 subagent executions for the whole session**, a lifetime count,
   not a simultaneity limit. This run declares ≈34 against it and spends 36.
@@ -259,7 +259,7 @@ Where each number came from:
 
 | Number | Source |
 |---|---|
-| Unit Gauntlet A width 10 | `min(10, units)` with 10 units — the swarm plan's `agent_count`; cores recorded at 12 on Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
+| Unit Gauntlet A width 10 | `min(clientCap, units)` with 10 units — the swarm plan's `agent_count`; cores recorded at 12 on Capacity Ledger line `Cores:`; the tree's item count is its UNITS, never pairs (S3) |
 | 5 persistent slots | lead + 4 commanders = N+1, deducted BEFORE workflow width — ledger line `AGENT TEAM:` |
 | 495 workflow slots | 500 − 5 persistent — ledger line `WAVE SIZE:` (this build dispatches 15 of them) |
 | 500 governs | the harness — 50 workflows × 10; the only candidate that exists here, since no policy cap applies on any path and the subscription publishes no provider figure — ledger line `Governing number:` |
@@ -653,7 +653,7 @@ either cites a doctrine constant or shows the operation on one.
 | Quantity | Value | Where it comes from |
 |---|---|---|
 | Cores | 12 | `sysctl -n hw.ncpu`, measured at run time |
-| Per-workflow width | 10 | `min(10, units)` = `min(10, 10)` = 10 |
+| Per-workflow width | 10 | `min(clientCap, units)` = `min(10, 10)` = 10 |
 | Harness delivery ceiling | 500 | 50 workflows (hard session ceiling) × 10 |
 | Policy wave cap | none | the operator's ruling — no caps beyond the harness, on any path |
 | Provider ceiling | n/a | Anthropic subscription is window-metered and opaque; the rate-limit response is the meter, and the burn governor is the only limiter |

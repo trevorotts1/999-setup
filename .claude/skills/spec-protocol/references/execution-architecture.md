@@ -272,9 +272,9 @@ step 12.7, a named section of the execution plan).
 measurable: "Spawn exactly 12 builder agents." "Spawn exactly one fresh verifier
 for every failed workstream." "Run 10 concurrent agents in this workflow."
 Every count is an exact integer, and every integer cites the swarm plan
-(`references/swarm-plan.md`: `agent_count = min(10, units)`) and the line of
-`CAPACITY-LEDGER.md` it derives from — `clientCap = 10` on every machine (cores are
-measured and recorded, never lowering it), the governing number, and the agent-budget
+(`references/swarm-plan.md`: `agent_count = min(clientCap, units)`) and the line of
+`CAPACITY-LEDGER.md` it derives from — `clientCap` as measured on the box (`capacity_probe.py`:
+RAM, cores and container limits), the governing number, and the agent-budget
 declaration (`references/capacity.md`).
 
 **What every subagent class must declare (ten ownership fields, verbatim).**
@@ -282,7 +282,7 @@ AGENT NAME / NUMBER; MODEL ROLE; RESPONSIBILITY; SCOPE OF OWNERSHIP; INPUTS;
 DELIVERABLE; ACCEPTANCE CRITERIA; FILES OR COMPONENTS OWNED; CAN MODIFY CODE:
 YES / NO; CAN VERIFY ITS OWN WORK: YES / NO.
 
-A workflow runs `min(10, its units)` agents and every subagent owns one planned unit.
+A workflow runs `min(clientCap, its units)` agents and every subagent owns one planned unit.
 Parallel coding agents get explicit ownership
 boundaries — isolation, worktrees, modules, branches, or file ownership — so that
 many agents are never modifying the same critical files simultaneously. The last

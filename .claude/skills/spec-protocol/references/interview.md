@@ -611,7 +611,7 @@ not taken. Anything still genuinely unknown stays priced in.
   `[MEASURED window-probe]`. DeepSeek: key presence plus a balance read already
   answers it. If all three probes fail, plan on the smallest tier, marked
   `[ASSUMED smallest-tier]` (`capacity.md` §8) — never asked.
-- **Everything else is decided and reported** — the helper count (`min(10, units)` per workflow, from the swarm plan), the three seats, the fallback table read from the router's own
+- **Everything else is decided and reported** — the helper count (`min(clientCap, units)` per workflow, from the swarm plan), the three seats, the fallback table read from the router's own
   wiring, the reserve, one new repository on `main` with the tool pushing, the
   standing loop shape, the project folder, where the work will live online
   (`environment-sweep.md`), the reference apps' borrowed ideas, and the

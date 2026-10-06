@@ -34,6 +34,13 @@ def files_of(src_comp):
 def install(a):
     comps = [c for c in a.components.split(",") if c]
     manifest = {"version": a.version, "components": comps, "files": []}
+    try:  # a re-install keeps what apply_capacity recorded about the settings it first touched
+        with open(os.path.join(a.dest, MANIFEST), encoding="utf-8") as f:
+            old = json.load(f)
+        if isinstance(old, dict) and old.get("env_prior"):
+            manifest["env_prior"] = old["env_prior"]
+    except (OSError, ValueError):
+        pass
     for c in comps:
         src = os.path.join(a.src, c)
         if not os.path.isdir(src):

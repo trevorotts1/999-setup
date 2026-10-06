@@ -1082,20 +1082,20 @@ probed callable; resolution RECORDS, it never reroutes).
 
 The agent counts below are the FULL-CAPACITY shape. Counts are widths, and widths
 come from the swarm plan (`references/swarm-plan.md`, Section 13.4): a workflow runs
-`agent_count = min(10, its units)` — **the five-type ORDER is the invariant.**
+`agent_count = min(clientCap, its units)` — **the five-type ORDER is the invariant.**
 
-**clientCap is 10 on every machine (owner contract 2026-10-06).** The CLIENT-MACHINE PROBE
-still measures cores and RAM at Capacity-Ledger time and records them
-(`references/capacity.md` §3 AXIS 1, §4), but they never lower clientCap — never declared,
-never asked of the client, and never read out of the environment
-(`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` caps session subagents only, and workflow
-agents and agent-team teammates follow their own limits).
-**If cores cannot be measured, clientCap is still 10, the ledger says so, and the run
-keeps going.** **The BAR and the width are the same on every machine.**
+**clientCap is the per-workflow cap measured on the box (owner contract 2026-10-06).** The CLIENT-MACHINE PROBE
+measures RAM, logical cores and container limits at Capacity-Ledger time (`tools/hooks/capacity_probe.py`;
+`references/capacity.md` §3 AXIS 1, §4) and `clientCap = clamp(1, 10, min(floor(effective_ram_gb /
+GB_PER_AGENT), effective_cores))` — 10 on the operator's Mac mini. Never declared, never asked of the
+client, and never read out of the environment (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` caps session
+subagents only, and workflow agents and agent-team teammates follow their own limits).
+**If no cap can be measured, clientCap is the conservative floor 4, the ledger says so, and the run
+keeps going.** **The BAR is the same on every machine; only the width follows the box.**
 
 **Counts are SLICES, and every slice of a workflow is dispatched in ONE call.**
 Pass every slice of a workflow to a single `pipeline()` call. The harness runs
-10 of them at once and queues the rest; the queue is a rolling window,
+clientCap of them at once and queues the rest; the queue is a rolling window,
 never a batch. **Never split a workflow's slices into sequential batches by
 hand** — a hand-made batch adds a barrier at the slowest agent of the round, and
 the harness already starts the next queued agent the instant a slot frees.
@@ -1104,9 +1104,8 @@ the harness already starts the next queued agent the instant a slot frees.
 ### 13.1 The one swarm shape — five workflow types and no others
 
 **The gauntlet runs as five workflow types and no others.** Widths are the
-the swarm plan's: `agent_count = min(10, units)` per workflow, with `clientCap = 10` recorded
-by `tools/width.sh` in the Capacity Ledger; the bar and the width never change with the
-machine.
+the swarm plan's: `agent_count = min(clientCap, units)` per workflow, with `clientCap` (the measured cap) recorded
+by `tools/width.sh` in the Capacity Ledger; the bar never changes with the machine.
 
 **WF01 Blueprint Lock.** One workflow. `parallel()` over the planner agents
 (architecture, domain, the two personalization planners, visual world, UX and
@@ -1120,7 +1119,7 @@ production code.
 gauntlet).** One workflow per independent stream from the dependency graph.
 `pipeline(units, build, blindVisualJudge, technicalJudge, fixLoop)`, every stage
 seat-pinned (builder seat; blind visual judge seat, vision proven by probe;
-technical judge seat), no barrier between stages. Pass the workflow's `min(10, units)` units per
+technical judge seat), no barrier between stages. Pass the workflow's `min(clientCap, units)` units per
 tree; more streams launch as more trees in the same turn. The first unit of the
 first tree is the evidence harness; page and screen units dispatch only after
 `HARNESS-READY:` is in the ledger. Every judge receives rendered evidence from
@@ -1267,7 +1266,7 @@ long tail of flat rounds.
 
 ### 13.3 THE CAPACITY RULE (owner contract 2026-10-06)
 
-A workflow runs `agent_count = min(10, its units)` agents, and every ready workflow launches at
+A workflow runs `agent_count = min(clientCap, its units)` agents, and every ready workflow launches at
 once, up to `max_active_workflows` (at most 50 workflows, 500 agents). Every spawned agent owns one
 unit: a unique responsibility; evidence to inspect or work to perform; an explicit deliverable
 (the unit's `owned_output`); an acceptance criterion. Units come from the real work breakdown, are
@@ -1281,10 +1280,10 @@ breakdown until every unit has an owner, an output and an acceptance line.
 
 The counts in 13.1 are the FULL-CAPACITY shape — the ledger's scenario (b),
 9Router + DeepSeek direct, where the harness governs at 50 workflows ×
-10 = 500. **The topology and the per-workflow width (`min(10, units)`) are the same at every
+10 = 500. **The topology and the per-workflow width (`min(clientCap, units)`) are the same at every
 capacity**, per the swarm plan and the Capacity Ledger:
 
-- A Unit Gauntlet tree passes `min(10, units)` units and more streams launch as more trees in
+- A Unit Gauntlet tree passes `min(clientCap, units)` units and more streams launch as more trees in
   the same turn.
 - **ONE CALL PER WORKFLOW (S2).** Pass every slice of a workflow to a single
   `pipeline()` call over `args.units`. The harness runs 10 of them at once and queues the
@@ -1296,17 +1295,15 @@ capacity**, per the swarm plan and the Capacity Ledger:
   WF01 (8) and WF05 (4) are one call each; WF06's repair seats are capped at 12
   per wave (13.1) and go in one call per wave.
 - On scenario (c) (Ollama Cloud $20: ceiling 3, **USE 2** — the operator's
-  reserve), the same five workflow types run at `min(10, units)` per workflow; the provider
+  reserve), the same five workflow types run at `min(clientCap, units)` per workflow; the provider
   figure is recorded on the ledger and the burn governor handles any 429.
-- Per-workflow ceiling is **clientCap = 10** on every machine. The CLIENT-MACHINE PROBE
-  (`sysctl -n hw.ncpu` on macOS, `nproc` on Linux; RAM via `sysctl -n hw.memsize` or
-  `/proc/meminfo`, with free disk and network probed alongside — `references/capacity.md` §3
-  AXIS 1) records cores and RAM and never lowers it. This skill and the hooks enforce
-  `agent_count = min(10, units)` (`tools/dispatch-check.sh` exit 3, `tools/swarm-plan.mjs`,
-  the staffing hook). Nothing here is declared or asked, and unmeasurable cores leave
-  clientCap at 10 with the ledger saying so.
+- Per-workflow cap is **clientCap**, measured on the box (RAM, cores, container limits through
+  `capacity_probe.py`, with free disk and network probed alongside — `references/capacity.md` §3
+  AXIS 1). This skill and the hooks enforce `agent_count = min(clientCap, units)`
+  (`tools/dispatch-check.sh` exit 3, `tools/swarm-plan.mjs`, the staffing hook). Nothing here is
+  declared or asked, and an unmeasurable box falls to the conservative floor 4 with the ledger saying so.
 - On Anthropic-billed Claude Code there is **no wave cap**: total width is the
-  harness number, the plan's workflows × `min(10, units)`, and the burn governor
+  harness number, the plan's workflows × `min(clientCap, units)`, and the burn governor
   (`references/capacity.md` §6) is the only limiter on a subscription account —
   it parks on 429s and resumes, it never pre-shrinks a wave. When an Agent Team
   is active the lead plus each commander occupy persistent slots INSIDE that

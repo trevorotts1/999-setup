@@ -7,10 +7,11 @@
 // IDENTICAL OUTPUT to tools/width.sh: the same three KEY=VALUE lines, the same
 // bracketed provenance marks, the same exit codes (0 / 2 / 64), the same
 // WIDTH_FIXTURE_CORES / WIDTH_FIXTURE_RAM_GB / WIDTH_FIXTURE_NO_INSTRUMENT test
-// door. The formula is copied, not reinterpreted:
+// door. THE CAP IS NOT COMPUTED HERE: CLIENT_CAP comes from tools/hooks/capacity_probe.py,
+// the one file that carries the formula and GB_PER_AGENT (the bash twin asks the same file):
 //
-//     CLIENT_CAP  = 10   (owner contract 2026-10-06: the per-workflow ceiling on every
-//                         machine; cores and RAM never lower it)
+//     CLIENT_CAP  = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores))
+//                   (owner contract 2026-10-06: machine-measured; a container limit beats the host)
 //     ram_cap     = floor((ram_gb − 6) / 1.5)   (feeds BROWSER_CAP only)
 //     BROWSER_CAP = floor((ram_gb − 6) / 1.5)
 //     WORKFLOW_CEILING = 50            operator doctrine 2026-08-16, hard
@@ -30,7 +31,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
-import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const WORKFLOW_CEILING = Number(process.env.WORKFLOW_CEILING || 50);
 
@@ -125,22 +127,38 @@ export function measureRamGb() {
   return null;
 }
 
-// --- THE WIDTH FORMULA (S1) — copied from tools/width.sh, arithmetic unchanged.
-export function harnessCapOf(cores) {
-  let w = cores - 2;
-  if (w > 16) w = 16;
-  if (w < 1) w = 1;
-  return w;
+// --- THE WIDTH RULE: the probe, not this file --------------------------------
+export const UNDETERMINED_CAP = 4;   // used (and named in the ledger) only when no cap could be measured
+const PROBE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'tools', 'hooks', 'capacity_probe.py');
+const PYTHONS = [['python3', []], ['python', []], ['py', ['-3']]];
+
+function py(args) {
+  for (const [bin, pre] of PYTHONS) {
+    const out = run(bin, [...pre, ...args]);
+    if (out) return out;
+  }
+  return '';
+}
+
+// measureCapacity() -> { cap, ramGb, cores, source } for THIS box (container limits applied) or null.
+export function measureCapacity() {
+  try {
+    const r = JSON.parse(py([PROBE]));
+    if (Number.isInteger(r.per_workflow_cap)) return { cap: r.per_workflow_cap, ramGb: r.ram_gb, cores: r.cores, source: r.source };
+  } catch { /* silence, not zero */ }
+  return null;
+}
+
+// clientCapOf(ramGb, cores) -> the cap for SUPPLIED inputs (fixtures), same formula, same file. null when the probe is unavailable.
+export function clientCapOf(ramGb, cores) {
+  const n = Number(py(['-c', 'import sys; sys.path.insert(0, sys.argv[1]); import capacity_probe as c; print(c.compute(float(sys.argv[2]), float(sys.argv[3]), "supplied")["per_workflow_cap"])',
+    path.dirname(PROBE), String(ramGb), String(cores)]));
+  return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
 export function ramCapOf(ramGb) {
   if (ramGb <= 6) return 0;
   return Math.floor(((ramGb - 6) * 2) / 3);   // floor((ram_gb − 6) / 1.5)
-}
-
-export const CLIENT_CAP_FIXED = 10;
-export function clientCapOf() {
-  return CLIENT_CAP_FIXED;   // the per-workflow ceiling: 10, always
 }
 
 export function browserCapOf(ramGb) {
@@ -193,32 +211,23 @@ export function widthReport(env = process.env) {
     }
   }
 
-  // --- NEITHER instrument answered: the only exit 2 --------------------------
-  if (coresKind === 'UNDETERMINED' && ramKind === 'UNDETERMINED') {
-    lines.push(`CLIENT_CAP=UNDETERMINED   [UNDETERMINED cores: ${coresInstr}; ram: ${ramInstr} ${now}]`);
-    lines.push(`BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: ${ramInstr} ${now}]`);
-    lines.push(`WORKFLOW_CEILING=${WORKFLOW_CEILING}   ${ceilingMark}`);
-    notes.push(`NOTE: neither instrument answered — cores tried ${CORE_SOURCES}; ram tried ${RAM_SOURCES}.`);
-    notes.push('      The caller uses clientCap 10 AND SAYS SO in the ledger. It never stalls, and it never asks.');
-    return { lines, notes, code: 2 };
+  // --- THE CAP: one probe, one formula (tools/hooks/capacity_probe.py) --------
+  let clientCap = null, capKind = '', capInstr = '';
+  if (coresKind === 'FIXTURE' || ramKind === 'FIXTURE') {
+    if (cores !== null && ram !== null) { clientCap = clientCapOf(ram, cores); capKind = 'FIXTURE'; capInstr = `${coresInstr}+${ramInstr} ${now}`; }
+  } else if (String(env.WIDTH_FIXTURE_NO_INSTRUMENT || '0') !== '1') {
+    const m = measureCapacity();
+    if (m) { clientCap = m.cap; capKind = 'MEASURED'; capInstr = `capacity_probe.py ${m.source} ${now}; effective ${m.ramGb} GB, ${m.cores} cores (a container limit beats the host total)`; }
   }
-
-  let clientCap, capKind, capInstr;
-  if (coresKind === 'UNDETERMINED') {
-    clientCap = CLIENT_CAP_FIXED;
-    capKind = 'ASSUMED';
-    capInstr = `no-instrument — cores unmeasurable (tried ${CORE_SOURCES}), clientCap is 10 regardless`;
-  } else {
-    const harnessCap = harnessCapOf(cores);
-    if (ramKind === 'UNDETERMINED') {
-      clientCap = clientCapOf(harnessCap, null);
-      capKind = coresKind;
-      capInstr = `${coresInstr} ${now}; ram UNDETERMINED (tried ${RAM_SOURCES}) — clientCap is 10 regardless`;
-    } else {
-      clientCap = clientCapOf(harnessCap, ramCapOf(ram));
-      capKind = (coresKind === 'FIXTURE' || ramKind === 'FIXTURE') ? 'FIXTURE' : 'MEASURED';
-      capInstr = `${coresInstr}+${ramInstr} ${now}`;
-    }
+  if (!Number.isInteger(clientCap)) {
+    lines.push(`CLIENT_CAP=UNDETERMINED   [UNDETERMINED capacity_probe.py unavailable or neither RAM nor cores answered (cores tried ${CORE_SOURCES}; ram tried ${RAM_SOURCES}; needs python3 3.8+) ${now}]`);
+    lines.push(ramKind === 'UNDETERMINED'
+      ? `BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: none (tried ${RAM_SOURCES}) ${now}]`
+      : `BROWSER_CAP=${browserCapOf(ram)}   [${ramKind} ${ramInstr} ${now}]`);
+    lines.push(`WORKFLOW_CEILING=${WORKFLOW_CEILING}   ${ceilingMark}`);
+    notes.push(`NOTE: no per-workflow cap could be measured — cores tried ${CORE_SOURCES}; ram tried ${RAM_SOURCES}; capacity_probe.py needs python3 3.8+.`);
+    notes.push(`      The caller uses UNDETERMINED_CAP=${UNDETERMINED_CAP} AND SAYS SO in the ledger. It never stalls, and it never asks.`);
+    return { lines, notes, code: 2 };
   }
 
   lines.push(`CLIENT_CAP=${clientCap}   [${capKind} ${capInstr}]`);
@@ -252,8 +261,11 @@ function selftest() {
   console.log('FIXTURES — the S1 worked values');
   for (const [label, c, r, wantC, wantB] of [
     ['operator Mac mini', 12, 24, '10', '12'],
-    ['8-core, 16 GB laptop', 8, 16, '10', '6'],
+    ['8-core, 16 GB laptop', 8, 16, '8', '6'],
     ['24-core, 64 GB Studio', 24, 64, '10', '38'],
+    ['2-core, 8 GB small box', 2, 8, '2', '1'],
+    ['8-core, 8 GB VPS', 8, 8, '5', '1'],
+    ['1-core, 2 GB micro box', 1, 2, '1', '0'],
   ]) {
     const out = widthReport({ WIDTH_FIXTURE_CORES: String(c), WIDTH_FIXTURE_RAM_GB: String(r) });
     const gotC = capOf(out.lines, 'CLIENT_CAP');
@@ -270,7 +282,7 @@ function selftest() {
 
   console.log('NO INSTRUMENT — neither answers → exit 2, and the sources are named');
   const ni = widthReport({ WIDTH_FIXTURE_NO_INSTRUMENT: '1' });
-  if (ni.code === 2) console.log('  [PASS] no instrument → exit 2 (the caller uses 10 and says so)');
+  if (ni.code === 2) console.log('  [PASS] no instrument → exit 2 (the caller uses UNDETERMINED_CAP 4 and says so)');
   else { console.log(`  [FAIL] no instrument → exit ${ni.code}, expected 2`); fails += 1; }
   if (capOf(ni.lines, 'CLIENT_CAP') === 'UNDETERMINED') console.log('  [PASS] no instrument → CLIENT_CAP=UNDETERMINED, never a silent number');
   else { console.log('  [FAIL] no instrument → CLIENT_CAP was not UNDETERMINED'); fails += 1; }
@@ -282,7 +294,7 @@ function selftest() {
   console.log('CONTROL — the live machine (if this fails, the CHECK is broken, not the box)');
   const live = widthReport({});
   const liveCap = capOf(live.lines, 'CLIENT_CAP');
-  if (live.code === 0 && /^\d+$/.test(liveCap) && Number(liveCap) === 10
+  if (live.code === 0 && /^\d+$/.test(liveCap) && Number(liveCap) >= 1 && Number(liveCap) <= 10
       && live.lines.some((l) => l.includes('[MEASURED '))) {
     console.log(`  [PASS] live: CLIENT_CAP=${liveCap} with a [MEASURED …] mark, exit 0`);
   } else {

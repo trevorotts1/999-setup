@@ -5,6 +5,15 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 STATE=Path(os.environ.get('WORKFLOW_GUARD_STATE',str(ROOT/'state')))
 NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+_STAFFING=[]
+
+def _staffing():
+ # The single implementation of the swarm-plan rules lives in staffing.py beside this file.
+ if not _STAFFING:
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('staffing_rules',ROOT/'staffing.py')
+  m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);_STAFFING.append(m)
+ return _STAFFING[0]
 
 def db():
  STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -12,7 +21,8 @@ def db():
  c.row_factory=sqlite3.Row
  try:c.execute('PRAGMA busy_timeout=10000')
  except sqlite3.Error:pass
- c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT);''')
+ c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS omission(session TEXT PRIMARY KEY,fingerprint TEXT,count INTEGER,updated REAL,alert TEXT); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT); CREATE TABLE IF NOT EXISTS plan_alerts(key TEXT PRIMARY KEY,session TEXT,workflow TEXT,state TEXT,detail TEXT,updated REAL);''')
+ _staffing().migrate(c)  # launch_tags (workflowId per launch), launch_attempts, session_plans: idempotent
  return c
 
 _LOCKED_RETRY_DELAYS=(0.05,0.1,0.2,0.4,0.8)
@@ -223,7 +233,7 @@ def occupancy(c,now=None,commit=True):
   agents+=peak if run is None else min(run,peak)
  return {'workflows':workflows,'per_program':per,'agents_total':agents}
 
-def admit_launch(row):
+def admit_launch(row,tag=None):
  # Record a validated launch only while it fits the operator caps, atomically.
  # Count, cap check and insert share one BEGIN IMMEDIATE transaction, so two
  # launches racing for the last slot cannot both be admitted. Returns None when
@@ -250,6 +260,9 @@ def admit_launch(row):
      c.execute('ROLLBACK')
      return ('Launching %d agents would reach %d concurrent agents, above the operator limit of %d total.'%(peak,occ['agents_total']+peak,lim['concurrent_agents_total']))
     c.execute('INSERT OR REPLACE INTO launches VALUES(?,?,?,?,?,?,?,?,?)',row)
+    if tag:
+     c.execute('INSERT OR REPLACE INTO launch_tags VALUES(?,?,?,?,?)',(row[0],session,tag[0],tag[1],now))
+     c.execute('INSERT OR REPLACE INTO session_plans VALUES(?,?,?)',(session,tag[1],now))
     c.execute('COMMIT')
     return None
    finally:c.close()
@@ -447,10 +460,28 @@ def user_prompt(data):
   # latch: subagents echo "Then stop." constantly and would disarm the operator.
   # Only a human stop counts. Machine traffic still never CLEARS it.
   return 0
- write_txn([('INSERT INTO continuations(session,count,latched,updated) VALUES(?,0,?,?) ON CONFLICT(session) DO UPDATE SET count=0,latched=excluded.latched,updated=excluded.updated',(session,stop,time.time()))])
+ write_txn([('INSERT INTO continuations(session,count,latched,updated) VALUES(?,0,?,?) ON CONFLICT(session) DO UPDATE SET count=0,latched=excluded.latched,updated=excluded.updated',(session,stop,time.time())),('UPDATE omission SET count=0 WHERE session=?',(session,))])
  return 0
 
+def plan_tag(data,ti):
+ # (workflowId, plan path) when this launch carries a workflowId under a plan governing the session.
+ try:
+  a=ti.get('args');wid=a.get('workflowId') if isinstance(a,dict) else None
+  if not (isinstance(wid,str) and wid):return None
+  f=_staffing().resolve_plan(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE)
+  return (wid,str(f[0])) if f else None
+ except Exception:return None
+
 def validate(data):
+ ctx={}
+ rc=_validate(data,ctx)
+ if rc==2 and ctx.get('tag'):
+  # a hook-denied launch attempt counts toward the stop check's release (c); one record per tool call
+  try:_staffing().record_attempt(STATE,data.get('session_id','unknown'),ctx['tag'][1],ctx['tag'][0],'denied','workflow guard denied the launch',data.get('tool_use_id'))
+  except Exception:pass
+ return rc
+
+def _validate(data,ctx):
  blocked=canary_denial(data.get('session_id','unknown'))
  if blocked is not None:return blocked
  ti=dict(data.get('tool_input') or {});s=ti.get('script');argument_note=''
@@ -486,6 +517,7 @@ def validate(data):
   # No Node.js on this machine: the static validator cannot run. Fail open (never block the user's launch) and say so.
   context('PreToolUse','Workflow guard: Node.js was not found, so the launch was not statically validated. Install Node.js 18+ to enable validation.')
   return 0
+ ctx['tag']=plan_tag(data,ti)
  try:
   out=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':ti.get('args')}),text=True,capture_output=True,timeout=15)
   result=json.loads(out.stdout)
@@ -493,7 +525,7 @@ def validate(data):
  if not result.get('ok'):return deny('\n'.join(result.get('errors',['Validation failed'])))
  sha=hashlib.sha256(s.encode()).hexdigest();snap=STATE/'scripts'/(sha+'.js');atomic(snap,s)
  ident=str(data.get('tool_use_id') or hashlib.sha256((str(data.get('session_id'))+sha+str(time.time_ns())).encode()).hexdigest())
- refusal=admit_launch((ident,data.get('session_id','unknown'),data.get('transcript_path',''),time.time(),sha,'VALIDATED',result.get('name'),result['conservativePeak'],''))
+ refusal=admit_launch((ident,data.get('session_id','unknown'),data.get('transcript_path',''),time.time(),sha,'VALIDATED',result.get('name'),result['conservativePeak'],''),ctx['tag'])
  if refusal:return deny(refusal)
  # Launch the exact bytes checked, retaining all other tool arguments and permission policy.
  updated=dict(ti);updated.pop('scriptPath',None);updated.pop('name',None);updated['script']=s
@@ -615,10 +647,13 @@ def tick(now=None):
  except Exception:pass
  try:cleanup_scratch(now)
  except Exception as e:log_cleanup({'action':'error','error':type(e).__name__})
+ try:
+  for o in read_rows('SELECT session,workflow,state,detail FROM plan_alerts'):alerts.append({'session':o['session'],'workflow':o['workflow'],'state':o['state'],'detail':o['detail']})
+ except Exception:pass
  alerts=dedupe_alerts(alerts)
  atomic(STATE/'alerts.json',json.dumps({'checked_at':now,'alerts':alerts},indent=2)+'\n')
  lines=['# Workflow watchdog status',f'Checked at epoch {now:.0f}.',f'Active alerts: {len(alerts)}.','This observer does not kill workers, restart sessions, or certify QC.','']
- for a in alerts:lines.append(f"- {a['state']}: {a['workflow']} ({a['session']}). Inspect actual worker progress, dependencies and provider status before any restart.")
+ for a in alerts:lines.append(f"- {a['state']}: {a['detail']}" if a['state'] in PLAN_ALERT_STATES else f"- {a['state']}: {a['workflow']} ({a['session']}). Inspect actual worker progress, dependencies and provider status before any restart.")
  atomic(STATE/'STATUS.md','\n'.join(lines)+'\n')
  return alerts
 
@@ -659,8 +694,8 @@ def register_scratch(session,workflow,run_root,paths):
  write_txn([('INSERT OR IGNORE INTO scratch(path,session,workflow,run_root,registered,ended,status) VALUES(?,?,?,?,?,NULL,NULL)',(os.path.normpath(str(p)),session,workflow,os.path.normpath(str(run_root)),now)) for p in paths])
 
 def cleanup_scratch(now=None,dry=False):
- # Delete only folders registered for a run that is terminal for CLEANUP_GRACE_S.
  # dry=True logs WOULD-DELETE and changes nothing (no rmtree, no state update).
+ # Delete only folders registered for a run that is terminal for CLEANUP_GRACE_S.
  now=time.time() if now is None else now
  rows=read_rows("SELECT * FROM scratch WHERE status IS NULL OR status='PENDING'")
  stmts=[]
@@ -690,12 +725,86 @@ def response_text(value):
  if isinstance(value,dict):return '\n'.join(response_text(v) for v in value.values())
  return ''
 
+# ---- Stop check: planned workflows owed by the swarm plan must not be left unlaunched ----
+# The plan decides the numbers (staffing.py holds the rules). A launch hook only sees what the
+# model launches; only a check at Stop sees what it never launched.
+QG_STATE=Path(os.environ.get('QUESTION_GATE_STATE',str(Path.home()/'.claude/hooks/question-gate/state')))
+PLAN_ALERT_STATES=('STOP_OMISSION_UNRESOLVED','WORKFLOW_HANDBACK')
+
+def _jload(p):
+ try:d=json.loads(Path(p).read_text());return d
+ except (OSError,ValueError):return None
+
+def question_only(session):
+ d=_jload(QG_STATE/(re.sub(r'[^A-Za-z0-9_.-]','_',str(session or 'nosession'))+'.json'))
+ return isinstance(d,dict) and d.get('mode')=='question'
+
+def raise_alert(key,session,workflow,state,detail):
+ # Durable (survives tick) and immediate: DB row, alerts.json and STATUS.md. Idempotent per key.
+ write_txn([('INSERT OR REPLACE INTO plan_alerts(key,session,workflow,state,detail,updated) VALUES(?,?,?,?,?,?)',(key,session,workflow,state,detail,time.time()))])
+ rep_=_jload(STATE/'alerts.json') or {'checked_at':time.time(),'alerts':[]}
+ rep_['alerts']=[a for a in rep_.get('alerts',[]) if not (a.get('state')==state and a.get('workflow')==workflow and a.get('session')==session)]+[{'session':session,'workflow':workflow,'state':state,'detail':detail}]
+ atomic(STATE/'alerts.json',json.dumps(rep_,indent=2)+'\n')
+ try:old=(STATE/'STATUS.md').read_text()
+ except OSError:old='# Workflow watchdog status\n'
+ line='- %s: %s'%(state,detail)
+ if line not in old:atomic(STATE/'STATUS.md',old.rstrip('\n')+'\n'+line+'\n')
+
+def clear_alerts(prefix,keep=()):
+ for r in read_rows('SELECT key FROM plan_alerts WHERE key LIKE ?',(prefix+'%',)):
+  if r['key'] not in keep:write_txn([('DELETE FROM plan_alerts WHERE key=?',(r['key'],))])
+
+def plan_snapshot(data,session):
+ # Plan governing this session (cwd-found, or pinned once armed), with its computed state; None if none/invalid.
+ try:
+  c=db()
+  try:occupancy(c)
+  finally:c.close()
+  snap=_staffing().snapshot(data.get('cwd') or os.getcwd(),STATE,session,reap=False)
+  return snap if snap and not snap['errors'] else None
+ except Exception:return None
+
+def stop_omission(data,session):
+ # Returns the block reason when the armed plan owes workflows that are unlaunched; None to allow.
+ # Releases, the only ones: (a) the user's stop latch (checked by the caller), (b) a question-only turn,
+ # (c) every owed workflow has >= 3 failed or hook-denied launch attempts this session (alert written).
+ if question_only(session):return None
+ snap=plan_snapshot(data,session)
+ if not snap or not snap['armed']:return None
+ st=snap['state'];plan=str(snap['path'])
+ hb_keys=[]
+ for wid in st['handback']:
+  k=plan+'|'+wid+'|HANDBACK';hb_keys.append(k)
+  raise_alert(k,session,wid,'WORKFLOW_HANDBACK','Workflow %s of plan %s was launched %d times without becoming done. It is not owed; the user must decide.'%(wid,plan,_staffing().HANDBACK_LAUNCHES))
+ clear_alerts(plan+'|',hb_keys)
+ owed=st['owed'];okey='owed|'+session
+ if not owed:
+  clear_alerts(okey);return None
+ failed=snap['view']['failed']
+ if all(failed.get(w,0)>=_staffing().RELEASE_ATTEMPTS for w in owed):
+  raise_alert(okey,session,'stop-omission','STOP_OMISSION_UNRESOLVED','Stop allowed: every owed workflow has at least %d failed or hook-denied launch attempts this session: %s (plan %s). Fix the launch and relaunch.'%(_staffing().RELEASE_ATTEMPTS,_staffing().describe_owed(st),plan))
+  return None
+ clear_alerts(okey)
+ return 'Owed now: %s. Launch each now with args.workflowId and its exact planned units. Do not end the turn while planned workflows are unlaunched.'%_staffing().describe_owed(st)
+
+def plan_line(data,session):
+ # One reminder line: the armed plan's own numbers, else the neutral ceilings.
+ lim=limits()
+ snap=plan_snapshot(data,session)
+ if snap and snap['armed']:
+  st=snap['state']
+  return 'Plan %s: owed now: %s; running %d/%d.'%(snap['path'],_staffing().describe_owed(st) or 'none',len(st['running']),st['max_active'])
+ return "Ceilings: %d workflows / %d agents per workflow / %d agents; a plan's own numbers govern when present."%(lim['concurrent_workflows_per_program'],lim['concurrent_agents_per_workflow'],lim['concurrent_agents_total'])
+
 def hook(data):
  event=data.get('hook_event_name','PreToolUse');tool=data.get('tool_name','');session=data.get('session_id','unknown')
  heartbeat(session)
  if event=='UserPromptSubmit':
-  try:return user_prompt(data)
-  except Exception:return 0
+  try:rc=user_prompt(data)
+  except Exception:rc=0
+  try:context(event,plan_line(data,session))
+  except Exception:pass
+  return rc
  if event=='PostToolUseFailure':
   # Decision 9: record a failure for every tool, not just Workflow, so the retry cap can see it.
   try:
@@ -769,16 +878,22 @@ def hook(data):
    finally:c.close()
    running='running now: workflows %d/%d, agents %d/%d'%(occ['workflows'],lim['concurrent_workflows_per_program'],occ['agents_total'],lim['concurrent_agents_total'])
   except Exception as e:running='running counts unavailable ('+type(e).__name__+')'
-  context(event,('For Workflow tools the local guard requires explicit model/label/declared phase and max %d concurrent agents per workflow. Operator limits read from '+str(LIMITS_FILE)+' (defaults 10 per workflow, 50 workflows per program, 500 agents total), counted running-at-once with finished and dead runs reaped; '+running+'. Use '+str(ROOT/'make-workflow.py')+'. Review '+str(STATE/'STATUS.md')+' for stale-run alerts. Caps are safety guards only; keep existing authorization/cancellation boundaries.')%lim['concurrent_agents_per_workflow'])
+  try:line=plan_line(data,session)
+  except Exception:line=''
+  context(event,('Workflow tools need explicit model/label/declared phase. Limits read from '+str(LIMITS_FILE)+', counted running-at-once with finished and dead runs reaped; '+running+'. Use '+str(ROOT/'make-workflow.py')+' (with --plan and --workflow-id under a swarm plan). Review '+str(STATE/'STATUS.md')+' for stale-run alerts. Caps are safety guards only; keep existing authorization/cancellation boundaries.\n'+line))
   return 0
  if event in ('PreToolUse','Stop'):
   continued,latched=continuation_state(session)
   # Decision 10: while the stop latch is set the Stop hook never blocks and says nothing.
   if event=='Stop' and latched:return 0
+  if event=='Stop':
+   try:owed=stop_omission(data,session)
+   except Exception:owed=None
+   if owed:print(json.dumps({'decision':'block','reason':owed}));return 0
   if not (STATE/'alerts.json').exists():return 0
   try:report=json.loads((STATE/'alerts.json').read_text())
   except (OSError,ValueError):return 0
-  alerts=[a for a in report['alerts'] if a['session']==session]
+  alerts=[a for a in report['alerts'] if a['session']==session and a.get('state') not in PLAN_ALERT_STATES]
   if time.time()-report.get('checked_at',0)>90:
    tracked=read_rows('SELECT 1 FROM launches WHERE session=? LIMIT 1',(session,))
    if tracked:alerts.append({'session':session,'workflow':'watchdog','state':'WATCHDOG_UNHEALTHY'})
@@ -826,7 +941,6 @@ def main():
  if a.command=='canary':
   if not a.session:p.error('--session required')
   print(json.dumps(canary(a.session)));return 0
- if a.command=='cleanup':cleanup_scratch(dry=a.dry_run);print(json.dumps({'cleanup':'dry-run' if a.dry_run else 'done','log':str(STATE/'cleanup.log')}));return 0
  if a.command=='tick':print(json.dumps({'alerts':len(tick())}));return 0
  if a.command=='status':print((STATE/'STATUS.md').read_text() if (STATE/'STATUS.md').exists() else 'Not checked');return 0
  if a.command=='watch':

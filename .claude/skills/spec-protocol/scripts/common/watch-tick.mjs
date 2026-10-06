@@ -1168,7 +1168,7 @@ function selftest() {
   // 7 — S5
   d = mkHome('c7');
   w(d, 'CONTROL/CHECKLIST.md', '- [ ] U-02 qc\n- [ ] U-03 build\n- [ ] U-04 build\n- [ ] U-05 build\n');
-  w(d, 'CAPACITY-LEDGER.md', 'clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n');
+  w(d, 'CAPACITY-LEDGER.md', 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n');
   w(d, 'CONTROL/dispatch-log.md', `${stamp(1)} | U-02 qc | qc | [opus x10] WF01 judge | run-007\n`);
   w(d, 'CONTROL/HEARTBEAT.md', `${stamp(1)} | WF01 judge | U-02 | qc\n`);
   r = run([d]);

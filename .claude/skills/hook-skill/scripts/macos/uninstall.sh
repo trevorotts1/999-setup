@@ -22,6 +22,7 @@ for label in com.hookskill.workflow-watchdog com.hookskill.hygiene-sweep com.hoo
   [ "${HOOK_SKILL_NO_LAUNCHD:-0}" = "1" ] || launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   rm -f "$f"; echo "removed $f"
 done
+"$PY" "$COMMON/apply_capacity.py" --restore --manifest "$HOOKS/hook-skill-install.json" ${DRYARG[@]+"${DRYARG[@]}"}
 PURGEARG=(); [ $PURGE = 1 ] && PURGEARG=(--purge)
 "$PY" "$COMMON/hookskill_files.py" uninstall --dest "$HOOKS" ${PURGEARG[@]+"${PURGEARG[@]}"} ${DRYARG[@]+"${DRYARG[@]}"}
 [ $DRY = 1 ] && echo "dry-run: nothing was removed." || echo "Hook Skill removed. Restart Claude Code to unload the hooks."

@@ -245,15 +245,16 @@ export function runCheck(argv) {
     process.stderr.write(`DISPATCH-CHECK WARNING | label says x${labelN[1]} but agents=${agents} — the tree name will not match what ran\n`)
   }
 
-  // OWNER CONTRACT (2026-10-06): agent_count = min(10, units). 10 is the per-workflow
-  // ceiling on every machine (an old ledger's smaller CLIENT_CAP is read as 10), and a
-  // dep= reason does not narrow a workflow.
-  if (cap < 10) cap = 10
+  // OWNER CONTRACT (2026-10-06): agent_count = min(clientCap, units), clientCap being the
+  // per-workflow cap MEASURED on this machine (tools/hooks/capacity_probe.py; 1..10) and
+  // recorded in the Capacity Ledger. 10 is a ceiling, never a floor; a dep= reason does
+  // not narrow a workflow.
+  if (cap > 10) cap = 10
   const floor = Math.min(units, cap)
   if (agents < floor) {
     process.stderr.write(
       `DISPATCH-CHECK UNDER-WIDTH | units=${units} cap=${cap} floor=${floor} agents=${agents} | ` +
-      `a workflow runs min(10, its units) agents: re-author this dispatch at ${floor} agents. A dep= reason does not narrow a workflow; a workflow whose dependency is unmet is not launched.\n`,
+      `a workflow runs min(clientCap, its units) agents: re-author this dispatch at ${floor} agents. A dep= reason does not narrow a workflow; a workflow whose dependency is unmet is not launched.\n`,
     )
     process.exit(3)
   }
@@ -333,8 +334,8 @@ function selftest() {
 
   // 0 — the parser's known-positive control, on both accepted shapes
   const capA = parseClientCap('CLIENT_CAP=10\n')
-  const capB = parseClientCap('clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
-  const capC = parseClientCap('clientCap = max(2, min(harness_cap, ram_cap)) = <k>   [MEASURED <i> <t>]\n')
+  const capB = parseClientCap('clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
+  const capC = parseClientCap('clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED <i> <t>]\n')
   report(0, 'cap-parser-controls', capA === 10 && capB === 10 && capC === null,
     `CLIENT_CAP=10 -> ${capA}; the measured template line -> ${capB}; the unfilled placeholder -> ${capC} (want 10, 10, null)`)
 
@@ -368,7 +369,7 @@ function selftest() {
   const P3 = path.join(T, 'proj-realledger')
   fs.mkdirSync(path.join(P3, 'CONTROL'), { recursive: true })
   fs.writeFileSync(path.join(P3, 'CAPACITY-LEDGER.md'),
-    '# CAPACITY LEDGER — fixture\nCores: 12 · RAM: 24 GB\nclientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
+    '# CAPACITY LEDGER — fixture\nCores: 12 · RAM: 24 GB\nclientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
   fs.writeFileSync(path.join(P3, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n\nwave 1.\n')
   r = run([P3, '10', '9', '[Opus x9] build wave-1'])
   report(9, 'template-line-parses', r.rc === 3, `rc=${r.rc} (want 3 — cap 10, floor 10 > 9; a mis-parse to 2 would have exited 0)`)
@@ -377,7 +378,7 @@ function selftest() {
 
   const P4 = path.join(T, 'proj-placeholder')
   fs.mkdirSync(path.join(P4, 'CONTROL'), { recursive: true })
-  fs.writeFileSync(path.join(P4, 'CAPACITY-LEDGER.md'), 'clientCap = max(2, min(harness_cap, ram_cap)) = <k>   [MEASURED <i> <t>]\n')
+  fs.writeFileSync(path.join(P4, 'CAPACITY-LEDGER.md'), 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED <i> <t>]\n')
   fs.writeFileSync(path.join(P4, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n')
   r = run([P4, '10', '10', '[Opus x10] build wave-2'])
   report(11, 'placeholder-undetermined', r.rc === 2 && /CLIENT_CAP does not parse/.test(r.out),
@@ -404,11 +405,11 @@ function selftest() {
   fs.mkdirSync(path.join(P7, 'CONTROL'), { recursive: true })
   fs.writeFileSync(path.join(P7, 'CAPACITY-LEDGER.md'), 'CLIENT_CAP=4\n')
   fs.writeFileSync(path.join(P7, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n\nwave 1.\n')
-  const r9 = run([P7, '12', '9', '[Opus x9] judge wave-1'])
-  report(15, 'ten-ceiling-beats-old-ledger', r9.rc === 3, `9 agents on 12 units rc=${r9.rc} (want 3): a CLIENT_CAP=4 ledger is read as 10`)
+  const r9 = run([P7, '12', '3', '[Opus x3] judge wave-1'])
+  report(15, 'measured-cap-sets-the-floor', r9.rc === 3, `3 agents on 12 units rc=${r9.rc} (want 3): a CLIENT_CAP=4 ledger makes the floor min(12,4)=4`)
   const r3 = run([P7, '3', '3', '[Opus x3] judge wave-1'])
-  const r10 = run([P7, '12', '10', '[Opus x10] judge wave-1'])
-  report(16, 'min-of-units-and-ten-passes', r3.rc === 0 && r10.rc === 0, `3 on 3 units rc=${r3.rc}, 10 on 12 units rc=${r10.rc} (want 0, 0)`)
+  const r10 = run([P7, '12', '4', '[Opus x4] judge wave-1'])
+  report(16, 'min-of-units-and-cap-passes', r3.rc === 0 && r10.rc === 0, `3 on 3 units rc=${r3.rc}, 4 on 12 units rc=${r10.rc} (want 0, 0)`)
   const r2 = run([P7, '3', '2', '[Opus x2] judge wave-1'])
   report(17, 'under-units-refused', r2.rc === 3, `2 agents on 3 units rc=${r2.rc} (want 3)`)
 

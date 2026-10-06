@@ -35,7 +35,7 @@ ignore.) Consequence worth building on: builders and their paired checkers can
 run inside ONE workflow on different brains — pin each half to its seat.
 
 **The canonical Unit Gauntlet tree (the dispatch template — S3, 2026-09-07,
-`references/gauntlet.md` §13.1):** up to 10 UNITS per tree (`min(10, units)`), each unit flowing
+`references/gauntlet.md` §13.1):** up to 10 UNITS per tree (`min(clientCap, units)`), each unit flowing
 through its own build, its own blind visual judge and its own technical judge as
 PIPELINE STAGES of that unit, every stage seat-pinned, each stage firing the
 instant that unit's previous stage lands (pipeline has no barrier between
@@ -52,8 +52,8 @@ const results = await pipeline(units,
 return results
 ```
 
-Item count = the UNITS passed, never pairs: a tree carries `min(10, units)` units (clientCap = 10 on every machine), so TEN units when ten exist, not five. The harness fills every slot with builders at the start and back-fills judges as builds land; the five gauntlet workflow types (step 12.7) carry SLICE counts, every slice passed to one `pipeline()` call.
-The width gate (SKILL.md) rejects a script that plans below `min(10, units)`.
+Item count = the UNITS passed, never pairs: a tree carries `min(clientCap, units)` units (clientCap = this box's measured per-workflow cap, 1..10), so a full cap's worth of units when that many exist, never half. The harness fills every slot with builders at the start and back-fills judges as builds land; the five gauntlet workflow types (step 12.7) carry SLICE counts, every slice passed to one `pipeline()` call.
+The width gate (SKILL.md) rejects a script that plans below `min(clientCap, units)`.
 
 ---
 
@@ -133,7 +133,7 @@ integers come from the Capacity Ledger (`references/capacity.md`), never from ta
 
 ### AGENT OWNERSHIP expands into ten fields per subagent class (§6)
 
-A workflow runs `agent_count = min(10, its units)` agents (`references/swarm-plan.md`), and
+A workflow runs `agent_count = min(clientCap, its units)` agents (`references/swarm-plan.md`), and
 every subagent owns one planned unit. **The four properties of the CAPACITY RULE
 (`references/gauntlet.md` §13.3) are the bar for each agent: a unique responsibility,
 evidence to inspect or work to perform, an explicit deliverable (the unit's
@@ -216,10 +216,10 @@ costs the whole set the tail of its slowest member.
   both — the script does not. A script therefore **cannot launch sibling workflow
   runs**; the CONDUCTOR launches multiple runs in one turn to scale width past one
   workflow's cap.
-- **Concurrency: 10 per workflow run, on every machine** (owner contract 2026-10-06;
-  `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=10`). A workflow runs `min(10, its units)`
-  agents. Cores are still measured at run time (`sysctl -n hw.ncpu` on macOS, `nproc` on
-  Linux) and recorded on the Capacity Ledger, and they never lower it.
+- **Concurrency: the measured per-workflow cap, at most 10** (owner contract 2026-10-06;
+  `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` is set to it by the installers). A workflow runs
+  `min(clientCap, its units)` agents. RAM, cores and container limits are measured at run time by
+  `tools/hooks/capacity_probe.py` and recorded on the Capacity Ledger.
 - **1,000 agents lifetime per workflow run.** This is a different counter from
   `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` (also 1,000) — a configuration record
   treated as **INERT** (`references/capacity.md` §3); the operator's budget is the
@@ -267,7 +267,7 @@ its fix.
 |---|---|---|
 | a | **`parallel(build)` followed by `parallel(qc)`** | `pipeline(units, build, qc)` — one chain per unit, no barrier between the stages, so a landed unit is judged while other units are still building. The two-barrier form idles the whole set twice: once at the slowest builder, once at the slowest judge. |
 | b | **a judge phase with fewer judges than landed units** | ONE judge per unit — the judge is a STAGE of its own unit's chain, so the judge count follows the unit count by construction. A "QC phase" of 2 agents over 10 landed units is this defect with eight slots idle. |
-| c | **any tree that passes fewer than `min(10, units)` units, or a launch whose `args.units` differ from the plan** | Pass every unit the plan lists for the workflow (at most 10 per tree) and launch the remainder as MORE TREES in the same turn. A `dep=` reason does not make a smaller tree legal: a workflow whose dependency is unmet is not launched. |
+| c | **any tree that passes fewer than `min(clientCap, units)` units, or a launch whose `args.units` differ from the plan** | Pass every unit the plan lists for the workflow (at most 10 per tree) and launch the remainder as MORE TREES in the same turn. A `dep=` reason does not make a smaller tree legal: a workflow whose dependency is unmet is not launched. |
 | d | **a merge agent inside a build tree** | The merge writer runs OUTSIDE every build tree, on its own trigger (Law 3 — one writer per repo). Inside the tree it holds a build slot while it waits, and while it runs one agent works and the rest of the width idles. |
 
 Shapes (a) and (b) are also rejected mechanically by the width gate
@@ -279,10 +279,10 @@ SKILL.md RULE 2 and RULE 3; (d) is Law 3.
 
 Every dispatchable stream is its OWN native `Workflow` tool run — visible in `/workflows` —
 and all of them are launched in the SAME turn, never one after another. Each run is filled up
-to its planned `agent_count = min(10, units)` (SKILL.md RULE 2) with its independent
+to its planned `agent_count = min(clientCap, units)` (SKILL.md RULE 2) with its independent
 units, launched with `args.workflowId` and `args.units` exactly as the swarm plan lists them. Work is never hidden inside plain `Agent` calls, where nobody can see or count it;
 reader dispatches are the only plain-`Agent` exception. A workflow carrying fewer agents than
-`min(10, its units)` is under-width — shape (c) above.
+`min(clientCap, its units)` is under-width — shape (c) above.
 
 Every tree filled from `templates/workflows/*.js` also carries, and keeps:
 
@@ -481,7 +481,7 @@ const results = await parallel(
 // Nothing downstream consumes all thirteen results together, so the barrier buys
 // nothing — and it teaches a barrier as the default, so the moment a second stage is
 // added every item waits for the slowest item of stage 1. The 13/13/12 split across
-// three files is folklore, not arithmetic: the width is `min(10, units)` per workflow.
+// three files is folklore, not arithmetic: the width is `min(clientCap, units)` per workflow.
 ```
 
 **The correct shape.** One script, authored once, launched FOUR times in the SAME turn
@@ -575,7 +575,7 @@ return {
 ```
 
 Note the three things that make it a rewrite and not a reformat: `pipeline` instead of
-`parallel`; the slice size of `min(10, units)` instead of a hand-picked
+`parallel`; the slice size of `min(clientCap, units)` instead of a hand-picked
 13; and `dropped` reported explicitly, because `agent()` resolving `null` would
 otherwise shrink the roster silently.
 
@@ -988,9 +988,9 @@ meanings and `CONTROL` files are not synthesized for it.
 | 5 | PADDED — `agents > units × stages` (stages default 4) |
 
 `CLIENT_CAP` is read from `<project>/CAPACITY-LEDGER.md` and nowhere else — never
-declared, never asked, never taken from the environment — and a value below 10 is read as 10.
+declared, never asked, never taken from the environment — and a value above 10 is read as 10 (10 is the ceiling).
 Two line shapes parse: `CLIENT_CAP=10` (what `tools/width.sh` prints) and the ledger's own
-`clientCap = 10 (the per-workflow ceiling; a workflow runs min(10, its units)) = 10   [MEASURED …]`. Anything
+`clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED …]`. Anything
 else, an unfilled template placeholder included, is UNDETERMINED and exits 2.
 
 `scripts/common/dispatch-check.mjs` is the Node twin for boxes without Git Bash;

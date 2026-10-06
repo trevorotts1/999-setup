@@ -72,7 +72,7 @@ effort inside the session instead — never hand over an unverified flag.
 
 | Launcher | Write the command as | Notes |
 |---|---|---|
-| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; no policy wave cap — width is the plan's workflows × `min(10, units)`, and the burn governor is the only limiter on a subscription account. |
+| Regular Claude Code | `claude --model sonnet …` | Anthropic tiers; no policy wave cap — width is the plan's workflows × `min(clientCap, units)`, and the burn governor is the only limiter on a subscription account. |
 | Claude-Nine | `claude-nine --model sonnet …` | Aliases route per 9Router; the Capacity Ledger's provider math governs — and the resolved model per alias is recorded there. Aliases are per-machine wiring, so RESOLVE THEM ON THE MACHINE YOU ARE ON and record what you read; never carry a resolution over from another box. (Dated example, authority expired — on one authoring machine `fable` resolved to the 372K Codex model. An example of the shape of the answer, never the answer.) |
 | Claude-Codex | `claude-codex …` (never pass `--model` — the launcher pins `cx/gpt-5.6-sol(high)` and `--autocompact 350k` itself) | 372K context ceiling; long conductor sessions compact at 350K by design. Use it for the CONDUCTOR seat only when the operator says so; subagent routing still follows the router. |
 
@@ -100,7 +100,7 @@ automatically and need no substitution.
 
 | Seat | What it does | Model | Starts |
 |---|---|---|---|
-| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 50 workflows, `min(10, units)` sub-agents each per the swarm plan (clientCap = 10 on every machine). Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
+| Seat 1 | **Build + QC + Fix + Stage** — the swarm. Multiple workflows run simultaneously in this one seat. Up to 50 workflows, `min(clientCap, units)` sub-agents each per the swarm plan (clientCap = the box's measured cap). Independent items flow through build->QC->fix->stage in parallel. | App-builder model for builds; QC model for reviews (launched as separate workflows in the same seat) | The swarm dispatch (N workflows at once), plus build and review loops |
 | Seat 2 | **Merge** — drains the pen in batches, ripples, pushes to GitHub. One merge train per repository. | Merger model | The merge-train loop |
 | Seat 3 | **SWARM WATCH** — the secondary loop (Loop 9) that enforces SWARM DOCTRINE. Checks utilization every 5 minutes, flags violations, auto-corrects. Also runs the survival loops (stall detection, budget watch). | Haiku (cheapest tier) | SWARM WATCH (Loop 9) + the survival loops |
 

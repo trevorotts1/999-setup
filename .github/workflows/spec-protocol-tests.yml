@@ -1,0 +1,36 @@
+name: spec-protocol-tests
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '.claude/skills/spec-protocol/**'
+      - '.claude/skills/hook-skill/hooks/workflow-guard/**'
+      - '.claude/skills/nine-router-setup/scripts/**'
+      - 'tools/windows-parity/**'
+      - '.github/workflows/spec-protocol-tests.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/spec-protocol/**'
+      - '.claude/skills/hook-skill/hooks/workflow-guard/**'
+      - '.claude/skills/nine-router-setup/scripts/**'
+      - 'tools/windows-parity/**'
+      - '.github/workflows/spec-protocol-tests.yml'
+
+jobs:
+  spec-protocol:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Spec Protocol enforcement tests (plan validators agree, capacity probe, gates, installers)
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          bash .claude/skills/spec-protocol/tests/run-all.sh

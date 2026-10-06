@@ -99,7 +99,7 @@ The arithmetic transfers; the figures do not. Run it with your own measurements.
 |---|---|---|
 | **W** | The capacity window, in minutes | MEASURED by the run, never asked — A6 deleted (`interview.md` §3, "Measured or defaulted — never asked"). Provider-determined: DeepSeek direct has no window (topped-up balance); Ollama Cloud and Agnes carry 5-hour windows (verified against live provider pages at run time); anything else the run's own watch measures. |
 | **A** | The allowance: how much agent work fits in one window, in agent-minutes of the cheapest execution model you will actually use | Measured — run one agent on real work for a timed stretch, read the fraction of the window's allowance it consumed, divide |
-| **N** | Agents running at once | The swarm plan's `max_working_agents` across the running workflows (each `min(10, units)`); the derivation solves for the interval I, never for N |
+| **N** | Agents running at once | The swarm plan's `max_working_agents` across the running workflows (each `min(clientCap, units)`); the derivation solves for the interval I, never for N |
 | **I** | The loop interval, in minutes | Derived below |
 | **D** | The duty cycle: minutes of real agent work one wake-up does | Measured over the first few ticks. Never larger than I |
 | **T** | The tier multiplier: what one minute of a tier costs relative to the cheapest execution tier | Measured. The cheapest execution tier is 1 by definition |

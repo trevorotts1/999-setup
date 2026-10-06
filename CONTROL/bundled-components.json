@@ -12,7 +12,7 @@
   "components": {
     "nine-router-setup": [
       {
-        "version": "1.22.0",
+        "version": "1.23.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/nine-router-setup",
@@ -21,7 +21,7 @@
     ],
     "spec-protocol": [
       {
-        "version": "1.36.0",
+        "version": "1.37.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/spec-protocol",
@@ -66,7 +66,7 @@
     ],
     "hook-skill": [
       {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/hook-skill",

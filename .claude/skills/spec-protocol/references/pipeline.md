@@ -95,9 +95,9 @@ id is supplied by this page.
 
 | Layer | The number | Source |
 |---|---|---|
-| Per workflow | `min(10, units)` truly concurrent; 10 is the ceiling on every machine (cores are recorded, never lowering it) | Owner contract 2026-10-06 (`references/swarm-plan.md`) |
+| Per workflow | `min(clientCap, units)` truly concurrent; clientCap is the box's measured cap (RAM, cores, container limits), at most 10 | Owner contract 2026-10-06 (`references/swarm-plan.md`) |
 | Per session | ≤ 50 workflows (operator hard ceiling); scale width with MORE workflows, never by wishing a workflow wider. The operator's 1,000-spawn session budget governs total spawns; the `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` setting (1000 in both profiles) is a configuration record treated as INERT (`references/capacity.md` §3). | Operator doctrine (the config key is not a platform cap) |
-| Anthropic Claude Code | **No wave cap.** Width is the plan's workflows × `min(10, units)`, exactly as on every other path; the burn governor (`references/capacity.md` §6) is the only limiter on a subscription account — it parks on 429s and resumes. In Agent-Team mode the lead + commanders occupy persistent slots inside the harness width first. | Operator ruling 2026-08-16 — no caps beyond the harness |
+| Anthropic Claude Code | **No wave cap.** Width is the plan's workflows × `min(clientCap, units)`, exactly as on every other path; the burn governor (`references/capacity.md` §6) is the only limiter on a subscription account — it parks on 429s and resumes. In Agent-Team mode the lead + commanders occupy persistent slots inside the harness width first. | Operator ruling 2026-08-16 — no caps beyond the harness |
 | Provider (9Router paths) | ceiling − reserve, per `references/capacity.md` (DeepSeek v4 Flash 2,500 / Pro 500 / Ollama $20 use 2 / $100 use 8 / Agnes verify-live) | Capacity Ledger |
 
 The swarm plan states the width; the project's CAPACITY-LEDGER.md records every layer's
@@ -160,12 +160,12 @@ disk to make one. If a slice is missing something, fix the slice.
 ### Worked example — swarm dispatch (the N-workflow launch)
 
 A project with 24 independent work items (no cross-item dependencies, no shared
-files), on the operator's 12-core machine. Per-workflow width is `min(10, units)` on
-every machine (`sysctl -n hw.ncpu` → 12 is recorded on the ledger and never lowers it).
+files), on the operator's 12-core / 24 GB machine. Per-workflow width is `min(clientCap, units)`
+where clientCap is measured on the box (12 cores / 24 GB → 10).
 
 **The shape is the ONE swarm shape** (`references/gauntlet.md` §13.1, S3
 2026-09-07 — five workflow types and no others). The 24 items are UNITS, and a
-Unit Gauntlet tree carries up to 10 UNITS (`min(10, units)`): build, blind visual judge and
+Unit Gauntlet tree carries up to 10 UNITS (`min(clientCap, units)`): build, blind visual judge and
 technical judge are pipeline STAGES of the same unit, never a separate QC tree
 and never a pair that halves the tree's width.
 

@@ -94,7 +94,7 @@ resolved Flash to 25; the operator's 2026-08-11 ruling is 2,500 and governs.
 **THE SWARM PLAN SETS THE STAFFING (BINDING — owner contract 2026-10-06, superseding the
 2026-08-16 ceiling wording).** The provider figures in this document are what the provider
 publishes. They are recorded on the Capacity Ledger and they never narrow a workflow: a workflow
-runs `agent_count = min(10, its units)` agents and up to 50 workflows run at once (500 agents),
+runs `agent_count = min(clientCap, its units)` agents and up to 50 workflows run at once (500 agents),
 exactly as the swarm plan states (`references/swarm-plan.md`). The limits are **per account**,
 regardless of which API key a request uses, and each request holds one concurrent slot from send
 until the response completes; a provider that returns HTTP 429 (verbatim from the DeepSeek docs:
@@ -124,7 +124,7 @@ two slots; a big plan keeps its quarter). The client's own tooling shares those
 accounts.
 
 **The staffing rule (owner contract 2026-10-06):** a workflow runs `agent_count =
-min(10, its units)` agents and every ready workflow launches at once, up to
+min(clientCap, its units)` agents and every ready workflow launches at once, up to
 `max_active_workflows`. Every agent owns one unit: a unique responsibility, evidence to inspect or
 work to perform, an explicit deliverable (the unit's `owned_output`) and an acceptance criterion.
 Units come from the real work breakdown; padding units are refused.
@@ -147,51 +147,59 @@ mark. Each probe value gates a named thing:
 
 | Probe | Instrument (per-platform) | Gates |
 |---|---|---|
-| Cores | `sysctl -n hw.ncpu` (macOS — the binary lives at /usr/sbin/sysctl; `/usr/bin/sysctl` returns rc=127, a shell abort, never an answer) or `nproc` (Linux) | **clientCap** (below) |
-| RAM | macOS: `sysctl -n hw.memsize`; Linux: `/proc/meminfo` `MemTotal`; Windows: `(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory` | **clientCap's RAM bound** (below) AND the **browser-agent count** — each live agent reserves ~1.5 GB; low RAM narrows both lanes |
+| Cores | macOS `sysctl -n hw.logicalcpu` (the binary lives at /usr/sbin/sysctl; `/usr/bin/sysctl` returns rc=127, a shell abort, never an answer); Linux `nproc`; Windows CIM/ctypes. Inside a container the cgroup CPU limit wins | **clientCap** (below) |
+| RAM | macOS: `sysctl -n hw.memsize`; Linux: `/proc/meminfo` `MemTotal`; Windows: `Win32_ComputerSystem.TotalPhysicalMemory`. Inside a container the cgroup memory limit wins | **clientCap's RAM bound** (below) AND the **browser-agent count** — each live agent reserves ~1.5 GB; low RAM narrows both lanes |
 | Free disk | macOS: `df -k /` (or `df -k <project-root>`); Linux: `df -k /` | **MEDIA-GAPS threshold** — below the threshold the media lane takes the without-media path |
 | Network | one cheap known-good request to the provider path in play (or the router's own health endpoint — §6.1's control rule) | **provider reachability gating** — an unreachable provider turns that lane off |
 
-**The clientCap — 10 on every machine (owner contract 2026-10-06, superseding the measured S1
-formula).** 10 is the per-workflow ceiling, and a workflow runs `agent_count = min(10, its units)`.
-The machine is still measured and every probe value is still written into the Capacity Ledger with
-its `[MEASURED <instrument> <ISO8601>]` mark, because RAM sets how many blind visual judges can each
-hold a browser (`BROWSER_CAP`), but cores and RAM never lower `clientCap`:
+**The clientCap — the per-workflow cap, MEASURED on this box (owner contract 2026-10-06, machine-measured).**
+`tools/hooks/capacity_probe.py` is the ONE place the formula and its constant are written; `tools/width.sh`,
+`scripts/common/width.mjs`, `tools/capacity-resolver.sh`, `tools/swarm-plan.mjs generate`, the installers and
+the staffing checks all ask it. A workflow runs `agent_count = min(clientCap, its units)`.
 
 ```
-cores   = sysctl -n hw.ncpu (macOS) | nproc (Linux) | $env:NUMBER_OF_PROCESSORS (Windows)
-ram_gb  = sysctl -n hw.memsize / 2^30 | /proc/meminfo MemTotal | (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
-clientCap   = 10                               # the per-workflow ceiling, every machine
+ram_gb  = sysctl -n hw.memsize / 2^30 (macOS) | /proc/meminfo MemTotal (Linux) | TotalPhysicalMemory (Windows)
+cores   = sysctl -n hw.logicalcpu (macOS) | nproc (Linux) | logical processors (Windows)
+container (Linux only): cgroup v2 /sys/fs/cgroup/memory.max + cpu.max, else cgroup v1 memory.limit_in_bytes +
+          cpu.cfs_quota_us / cpu.cfs_period_us; a container limit that is lower than the host total WINS
+clientCap   = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores))
+GB_PER_AGENT = 1.5                             # the calibration knob: ~1.5 GB of RAM per live agent session and its tools
+max_working_agents = min(500, clientCap * 50)
 BROWSER_CAP = floor((ram_gb − 6) / 1.5)        # ~1.5 GB per live browser after 6 GB for the OS and Claude itself
 ```
 
-No environment variable is read for the width at all. If cores cannot be measured (a broken shell, no
-`sysctl` and no `nproc`), `clientCap` is still **10**, the ledger says so in its own line with an
-`[ASSUMED …]` mark naming what was checked, and the run KEEPS GOING — a machine that cannot be
-measured is never a reason to stall a build, and it is never a reason to ask a non-technical client
-how many agents their computer supports. `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=10` is the
-native per-workflow setting; the harness queues whatever a workflow carries above its live window as a
-rolling window.
+Why 1.5: a headless agent session plus its tool processes holds roughly 1 to 1.5 GB resident, and a box
+that must also run the harness, a router and a browser needs the margin. It gives 10 on the operator's
+12-core / 24 GB Mac mini (floor(24 / 1.5) = 16, cores 12, clamped to 10), 8 on an 8-core / 16 GB laptop,
+5 on an 8 GB / 8-core VPS, 2 on a 2-core / 8 GB box, and the container's own numbers inside Docker.
+Change the constant in `capacity_probe.py` (and nowhere else) to recalibrate every consumer at once.
 
-**THE BAR AND THE WIDTH NEVER CHANGE WITH THE MACHINE.** Slice counts and the quality standard are
-the same on every machine.
+No environment variable is read for the width. The probe records which source answered (`macos-sysctl`,
+`linux-proc`, `windows-ctypes`, plus `+cgroup-v2` / `+cgroup-v1` when a container limit applied) and the
+ledger prints it with the `[MEASURED …]` mark. If no cap can be measured (no python3, a broken shell), the
+ledger says so with an `[UNDETERMINED …]` mark, `clientCap` falls to the conservative floor 4, and the run
+KEEPS GOING — a machine that cannot be measured is never a reason to stall a build, and never a reason to
+ask a non-technical client how many agents their computer supports. The installers write the measured cap
+into `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (`claude` and `claude-nine` settings) and into Hook Skill's
+`limits.json`; the harness queues whatever a workflow carries above its live window as a rolling window.
+
+**THE BAR NEVER CHANGES WITH THE MACHINE — ONLY THE WIDTH DOES.** Slice counts and the quality standard are
+the same on every machine; a weaker box runs fewer agents of each workflow at once, never lower standards.
 
 **Measure cores AND RAM at run time. Every run. Every machine.**
 
 ```bash
-sysctl -n hw.ncpu      # macOS cores   (binary lives at /usr/sbin/sysctl)
-nproc                  # Linux cores
-sysctl -n hw.memsize   # macOS RAM, bytes → ÷ 2^30 for GB
-awk '/MemTotal/{print $2}' /proc/meminfo   # Linux RAM, kB → ÷ 2^20 for GB
+python3 tools/hooks/capacity_probe.py   # {ram_gb, cores, source, per_workflow_cap, max_working_agents, measured_at}
+bash tools/width.sh                     # CLIENT_CAP / BROWSER_CAP / WORKFLOW_CEILING with their marks
 ```
 
-On the operator's Mac Mini, measured 2026-08-12: `hw.ncpu` = `hw.physicalcpu` = `hw.logicalcpu` =
-**12**, RAM **24 GB** → clientCap = **10**, BROWSER_CAP = 12. A 16 GB, 8-core laptop: clientCap =
-**10**, BROWSER_CAP = 6. A 24-core, 64 GB Studio: clientCap = **10**, BROWSER_CAP = 38.
+On the operator's Mac Mini, measured 2026-10-06: `hw.logicalcpu` = **12**, RAM **24 GB** → clientCap =
+**10**, BROWSER_CAP = 12. A 16 GB, 8-core laptop: clientCap = **8**, BROWSER_CAP = 6. A 24-core, 64 GB
+Studio: clientCap = **10**, BROWSER_CAP = 38.
 
 **50 workflows** is the operator's machine doctrine per session (2026-08-16 — operator doctrine, NOT a
 product limit: no product cap exists on concurrent workflow runs; supersedes the 30-workflow figure) →
-maximum truly-concurrent agents = 50 × 10 = **500**; the plan's `policy.max_active_workflows` and
+maximum truly-concurrent agents = 50 × clientCap (**500** at the ceiling of 10); the plan's `policy.max_active_workflows` and
 `max_working_agents` state how many of those run. A single pipeline call accepts up to **4,096
 items**, and every unit of a workflow goes into ONE such call over `args.units` — never a hand-made
 batch.
@@ -287,7 +295,7 @@ probe proves otherwise (section 12).
 ### AXIS 3 — POLICY (per provider class)
 
 - **Anthropic-billed Claude Code: NO wave cap.** Width is the plan's workflows ×
-  `min(10, units)` — and nothing in this skill narrows it. The
+  `min(clientCap, units)` — and nothing in this skill narrows it. The
   operator's standing ruling (2026-08-16) is that there are no caps beyond the
   harness. The **burn governor** (section 6) is the only limiter on a
   subscription account: the account is window-metered and opaque, so the runtime
@@ -304,25 +312,25 @@ probe proves otherwise (section 12).
   `policy.maxActiveWorkflows`, `policy.maxAgentsPerWorkflow` or `policy.maxWorkingAgents`, that number
   is the project's own enforced cap on that axis, and no plan or dispatch is ever above it (the swarm
   plan's `policy` block states the same numbers). A field that is absent changes nothing. Inside the
-  cap a workflow still runs `min(10, its units)` agents.
+  cap a workflow still runs `min(clientCap, its units)` agents.
 
 ### The reconciliation rule (state this verbatim wherever wave width is computed)
 
 > *"The wave width is the plan's ready workflows (up to `max_active_workflows`, at most 50) ×
-> `agent_count = min(10, units)`: the harness delivery capacity, 500 agents at 50 workflows.
-> `clientCap` is 10 on every machine (owner contract 2026-10-06); cores and RAM are measured
-> and recorded, never lowering it. The provider ceiling minus the reserve (Law 44) is recorded on the
+> `agent_count = min(clientCap, units)`: the harness delivery capacity, 500 agents at 50 workflows.
+> `clientCap` is this machine's measured per-workflow cap (1..10, owner contract 2026-10-06; cores, RAM and
+> container limits through `capacity_probe.py`). The provider ceiling minus the reserve (Law 44) is recorded on the
 > Capacity Ledger beside it, and the burn governor holds the run inside the window by parking on 429s
 > and resuming. This skill adds NO policy wave cap on any path; a supplied project profile's
 > `policy.maxActiveWorkflows` / `maxAgentsPerWorkflow` / `maxWorkingAgents`, when present, is the
 > project's own cap and is never exceeded. The Capacity Ledger records each number."*
 
-On Anthropic Claude Code the harness governs: ready workflows × `min(10, units)`, with the burn
+On Anthropic Claude Code the harness governs: ready workflows × `min(clientCap, units)`, with the burn
 governor parking on 429s and resuming — that is the only limiter on a subscription account. On
-9Router + DeepSeek direct, the harness (50 × 10 = 500) governs long before the provider (1,875).
+9Router + DeepSeek direct, the harness (50 × clientCap, 500 at a cap of 10) governs long before the provider (1,875).
 
 **Governing width and total spend are different questions.** The plan's ready
-workflows × `min(10, units)` governs WIDTH.
+workflows × `min(clientCap, units)` governs WIDTH.
 1,000 governs TOTAL SPEND, as a decrementing budget. Neither answers the other.
 
 ---
@@ -362,10 +370,10 @@ Harness mode: regular | claude-nine                  (signals that fired)
 Config fingerprint: <8-hex> (inputs: launcher, resolved role→model map,
   provider-key presence set — names and model ids only, never values; section 13)
 Cores: <n> · RAM: <g> GB
-clientCap = 10 (the per-workflow ceiling; a workflow runs min(10, its units))   [MEASURED <instrument(s)> <ISO8601>]
-  measured for the record, never lowering clientCap: harness_cap = min(16, cores−2) = <h>; ram_cap = floor((ram_gb−6)/1.5) = <r>
-  cores <n> [MEASURED <instrument> <ISO8601>]; ram <g> GB [MEASURED <instrument> <ISO8601>]
-  (unmeasurable cores → clientCap is still 10 [ASSUMED no-instrument …] and the run keeps going)
+clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED capacity_probe.py <instrument(s)> <ISO8601>]
+  effective <g> GB, <n> cores via <source> (container limits beat host totals)
+  inputs: cores <n> [MEASURED <instrument> <ISO8601>]; ram <g> GB [MEASURED <instrument> <ISO8601>]
+  (no measurable cap → clientCap is the conservative floor 4 [UNDETERMINED …] and the run keeps going)
 Context ceiling (session): <tokens> (claude-codex: 372K — autocompact 350K)   [RESEARCHED <url> <date>]
 Model pool: <count> models across <provider prefixes>  |  pool=anthropic-builtin (no router)
   [MEASURED gateway-/v1/models <ISO8601>] | [UNDETERMINED <what was checked>]
@@ -410,7 +418,7 @@ AGENT TEAM: mode=<team|single-session|refused-by-arithmetic|declined|probe-faile
   commanders=<n> (recommended band 3–5; a Gauntlet software build uses 4)
   persistent slots consumed = lead + commanders = <n+1>, deducted BEFORE workflow width
   teammate rate-bucket: UNDETERMINED → burn governor assumes SHARED (pessimistic) unless probed
-WAVE SIZE: <w>    WORKFLOW COUNT: <ready workflows, ≤ max_active_workflows ≤ 50>    AGENTS PER WORKFLOW: min(10, units) per the swarm plan
+WAVE SIZE: <w>    WORKFLOW COUNT: <ready workflows, ≤ max_active_workflows ≤ 50>    AGENTS PER WORKFLOW: min(clientCap, units) per the swarm plan
 DISPATCH SHAPE (S2 — the six gauntlet workflows): every slice of a workflow is passed
   to a SINGLE `pipeline()` call. The harness runs 10 of them at once and queues
   the rest; the queue is a rolling window, never a batch. Never split a workflow's
@@ -470,12 +478,11 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
    Linux), RAM (`sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`), free disk
    (`df -k /`), and network (one cheap known-good request to the provider path
    in play, or the router's own health endpoint — section 6.1's control rule).
-   The per-workflow ceiling is `clientCap = 10`; measured cores and RAM
-   (`harness_cap = min(16, cores−2)`, `ram_cap = floor((ram_gb−6)/1.5)`) are
-   recorded and never lower it. **Nothing is declared and nothing is asked** —
-   a client's machine has no declared number to give. Write every probe value
-   with its provenance mark. **If cores cannot be measured, clientCap is still
-   10, the ledger says so, and the run keeps going.** Each probe value gates its
+   The per-workflow cap is `clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT),
+   effective_cores))` from `capacity_probe.py` (container limits beat host totals). **Nothing is
+   declared and nothing is asked** — a client's machine has no declared number to give. Write every
+   probe value with its provenance mark. **If no cap can be measured, clientCap is the conservative
+   floor 4, the ledger says so, and the run keeps going.** Each probe value gates its
    named thing (AXIS 1): RAM → browser-agent count; free disk → the MEDIA-GAPS threshold (below
    it the media lane takes the without-media path); network → provider
    reachability gating.
@@ -492,7 +499,7 @@ layer (`references/execution-architecture.md`, `references/anti-drift.md`).
 5. **Apply the reserve.** 25% by default, two free slots as the floor on small
    plans. Usable = ceiling − reserve.
 6. **Compute the governing number.** Write the harness width (the plan's ready
-   workflows × `min(10, units)`, ≤50 workflows) and the provider usable figure beside
+   workflows × `min(clientCap, units)`, ≤50 workflows) and the provider usable figure beside
    it. The harness width governs: a provider figure below one workflow is recorded
    and never narrows a workflow. This skill adds no policy wave cap on any path, and
    on a metered Anthropic subscription there is no provider figure either, so the
@@ -522,13 +529,13 @@ Copy the arithmetic; never copy the answers into a different machine's plan.
 
 ### Scenario (a) — Plain Claude Code / Anthropic, 12-core machine
 
-Client probe: cores 12, RAM 24 GB [MEASURED] → clientCap = 10 on every machine.
-Per-workflow ceiling = clientCap = 10; a workflow runs min(10, its units). No policy wave cap. Provider ceiling:
+Client probe: cores 12, RAM 24 GB [MEASURED] → clientCap = 10 (a weaker box would measure lower).
+Per-workflow cap = clientCap = 10; a workflow runs min(clientCap, its units). No policy wave cap. Provider ceiling:
 subscription-metered and opaque — the runtime rate-limit response is the meter,
 so there is no provider figure to put in the arithmetic.
 
-**Governing number: harness (ready workflows × min(10, units)).** → the wave is every
-dispatchable unit, laid out as workflows × 10 agents up to the 50-workflow
+**Governing number: harness (ready workflows × min(clientCap, units)).** → the wave is every
+dispatchable unit, laid out as workflows × clientCap agents up to the 50-workflow
 doctrine; a five-stream build on this machine is 5 workflows × 10 = 50
 concurrent, and extra streams buy width by adding workflows, never by queueing
 behind a policy number.
@@ -559,9 +566,9 @@ shape is unchanged.
 ### Scenario (c) — Ollama Cloud $20
 
 Ceiling 3, **USE 2** (the operator's reserve), recorded on the ledger. **Governing number: the
-plan's workflows × `min(10, units)`.** The provider figure of 2 is written beside it, and the
+plan's workflows × `min(clientCap, units)`.** The provider figure of 2 is written beside it, and the
 run handles any 429 through the burn governor's park-and-resume, never by running a workflow
-narrower than `min(10, its units)`.
+narrower than `min(clientCap, its units)`.
 
 Builder and critic agents are allocated across the workflow's slots, and the Capacity Ledger shows
 which.
@@ -878,7 +885,7 @@ Before dispatch, the ledger DECLARES all eight quantities:
 | # | Quantity | How it is derived |
 |---|---|---|
 | 1 | Number of workflows | Wave size ÷ agents per workflow, capped at 50 (operator machine doctrine) |
-| 2 | Agents per workflow | `agent_count = min(10, units)` per the swarm plan; `clientCap = 10` on every machine (cores and RAM are measured and recorded, never an env read, never lowering it) |
+| 2 | Agents per workflow | `agent_count = min(clientCap, units)` per the swarm plan; `clientCap` is the box's measured cap (`capacity_probe.py`, 1..10; never an env read, never typed by hand) |
 | 3 | Maximum concurrency | The governing number, after the N+1 persistent occupants are deducted |
 | 4 | Model role per workflow | From the resolved role map (section 11) — by ROLE AND ALIAS, with the resolved model cited |
 | 5 | Expected total agent executions | Summed across the declared workflows and the repair reserve |
@@ -1292,7 +1299,7 @@ defaulted.
 | # | Capacity input | Class | Why |
 |---|---|---|---|
 | 1 | Harness + launcher (claude / claude-nine / claude-codex) | M-RUN | Filesystem and session-env checks, milliseconds. Wrong ⇒ the whole interview branch and the budget math are wrong. |
-| 2 | Cores + RAM → measured and recorded; clientCap = 10 regardless | M-RUN | `/usr/sbin/sysctl -n hw.ncpu` (note: `/usr/bin/sysctl` returns rc=127 — a shell abort, never an answer) or `nproc`; RAM: `sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`; free disk: `df -k /`; network: one cheap known-good request to the provider path in play (capacity.md §6.1's control rule). Never inherited, never remembered, never declared and never asked. Unmeasurable cores → clientCap 4, marked, and the run keeps going. |
+| 2 | Cores + RAM (+ container limits) → measured; clientCap = clamp(1, 10, min(floor(ram_gb / 1.5), cores)) | M-RUN | `python3 tools/hooks/capacity_probe.py`, which uses `/usr/sbin/sysctl -n hw.logicalcpu` (note: `/usr/bin/sysctl` returns rc=127 — a shell abort, never an answer) or `nproc`; RAM: `sysctl -n hw.memsize` / `/proc/meminfo` `MemTotal`; free disk: `df -k /`; network: one cheap known-good request to the provider path in play (capacity.md §6.1's control rule). Never inherited, never remembered, never declared and never asked. No measurable cap → clientCap 4, marked UNDETERMINED, and the run keeps going. |
 | 3 | Role→alias→model resolution | M-RUN | Read from the live session env / config (section 11). **This is exactly what the operator rewires between projects** — a cached copy is lying within one rewire. The profile may NEVER be a source for it. The alias map is one of TWO pool inputs, not the pool (row 21). |
 | 4 | Which providers are wired (key PRESENCE, by name) — **including the two media keys** (`KIE_API_KEY`/`KIE_AI_API_KEY`, `AGNES_AI_API_KEY`/`AGNES_API_KEY`) | M-RUN | `tools/env-sweep.sh`. Wrong ⇒ the interview asks about accounts that do not exist, or misses ones that do. **Media-key presence is this row's class and is FORBIDDEN in the profile**: it is re-taken at every decision it gates (13.5) — media planning, each media batch, and immediately when a user says they have just placed one. A key added mid-run to a store the sweep sources is found by re-running the sweep; a stale reading is never argued from. |
 | 5 | Key LIVENESS (GitHub, DeepSeek, Vercel, GHL) | M-RUN | Smoke tests, pass/fail only, never values. An expired key found at hour 6 costs a night; found at minute 1 costs a sentence. |

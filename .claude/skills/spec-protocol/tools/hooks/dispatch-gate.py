@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
 """PreToolUse gate for the Workflow tool -- refuses the forbidden swarm shapes.
 
-Why this exists: RULE 2's width floor and the forbidden shapes of SPEC 8.4.1
-were prose. A conductor that resolved the ambiguity conservatively dispatched
-"3 agents when 10 were possible" and nothing in the harness said no. This hook
-says no, at launch, in the one place the model cannot talk its way past.
+Why this exists: the forbidden shapes of SPEC 8.4.1 and the staffing numbers of a
+project's swarm plan were prose. Nothing in the harness said no to a launch that
+left the plan. This hook says no, at launch, in the one place the model cannot
+talk its way past. THE DOCUMENT DECIDES THE NUMBER: how many agents a workflow has
+and how many workflows run at once come from the swarm plan (schema
+blackceo.swarm-plan/v2); there is no flat per-workflow floor in this file. The only
+flat numbers anywhere are the maximums 10 agents per workflow / 50 workflows /
+500 agents.
 
 It reads the script the launch is about to run (inline `script` or `scriptPath`)
-and blocks (exit 2) nine shapes, naming the fix for each:
+and blocks (exit 2) ten shapes, naming the fix for each:
 
   1. parallel(build) followed by parallel(qc)      -> pipeline(units, build, qc)
   2. a judge stage with fewer items than the build stage  -> one judge per unit
   3. a bare agent() with no model:                 -> pin the seat (workflows.md 0.0)
-  4. an item count below min(dispatchable, CLIENT_CAP), when a CAPACITY-LEDGER.md
-     is found upward from cwd and the script carries no `dep=` reason
+  4. the LAUNCH CONTRACT of a found swarm plan (workflow-guard/staffing.py,
+     check_launch -- the single implementation). Plan discovery walks upward from
+     cwd: .spec-protocol.json "swarmPlan", SWARM-PLAN.json,
+     claude-nine-swarm/SWARM-PLAN.json. Under a found plan a Workflow call must
+     carry args.workflowId of a READY plan workflow, args.units whose unit_ids are
+     EXACTLY that workflow's planned units, and a script that fans out over
+     args.units in one stage; a launch that cannot be determined (no readable
+     script, name-only, no fan-out stage) is BLOCKED -- the one fail-closed rule
+     in this file. No plan found: no floor, only the ceilings. The same plan also
+     blocks HIDDEN BUILDS: an Agent/Task call classified as build work (the
+     description or first prompt line says build, and it is not a reader) is
+     refused -- "builds under this plan go through the planned Workflow launch".
+     Readers, research and QC-readers pass.
   5. a merge agent inside a build tree             -> Law 3: it runs outside the tree
   6. any launch at all while CONTROL/project_state.json (found upward from cwd)
      says the run is at or past its pause line or its ceiling -> the budget wall,
@@ -85,24 +100,26 @@ Workflow launches.
 PROFILED PROJECTS are detected before any CONTROL lookup. They have one narrow,
 read-only branch: the hook requires the actual Workflow `args.specProtocol`
 identity and asks the profile's packet checker for an exact `RESERVED` intent.
-It does not reserve, consume, increment a counter, or claim that launch equals
+SHAPE 4 (the plan launch contract) also runs on a profiled project. It does not reserve, consume, increment a counter, or claim that launch equals
 native receipt; the packet writer records consumption after its observed native
 receipt. A missing, malformed, mismatched, or already-consumed reservation
 fails closed. This branch deliberately does not read legacy CONTROL state --
 and tools/seat-probe.sh itself refuses a profiled project (PROFILE-OWNED), so
 SHAPE 8 never applies to one either.
 
-FAILS OPEN by design, exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
+FAILS OPEN by design (except the SHAPE 4 rule above), exactly like ~/.claude/hooks/workflow-syntax-gate.py: an
 unreadable input, an unparseable script, an undetermined item count, a state
 file it cannot find or whose budget keys are absent, any exception at all ->
 exit 0 and the launch proceeds. A gate that cannot see the
 shape says NOTHING about the shape; it never guesses. Two consequences the
-conductor owns: "the hook did not block" is never evidence that a tree is wide
-enough, and a launch by saved NAME has no local file to read, so it passes the
-gate unexamined.
+conductor owns: "the hook did not block" is never evidence that a tree is
+staffed as its plan says, and outside a plan a launch by saved NAME has no local
+file to read, so it passes the gate unexamined.
 
   --selftest   proves the instrument: the four fixtures the work item names.
-  --check FILE runs the same evaluation against a script file, for a human.
+  --check FILE [ARGS_JSON] runs the same evaluation against a script file, for a
+               human; when a plan is found from the file's directory it also runs
+               the plan launch contract with the given launch args.
 """
 import calendar
 import json
@@ -126,8 +143,8 @@ FIX_1 = (
     "  every stage carrying its own model: pin."
 )
 FIX_2 = (
-    "FIX: one judge per landed unit. A QC phase narrower than the build phase is the\n"
-    "  timid-dispatch pattern in its second form -- during it, most of the machine idles.\n"
+    "FIX: one judge per landed unit. A QC phase narrower than the build phase leaves\n"
+    "  built units unchecked and idles the slots their builders freed.\n"
     "  Pass the same item set to the judge stage, or make it a stage of the same pipeline()."
 )
 FIX_3 = (
@@ -279,13 +296,51 @@ def allow():
 
 def block(lines):
     sys.stderr.write(
-        "BLOCKED: this workflow tree is a forbidden dispatch shape (SPEC 8.4.1;\n"
-        "references/workflows.md forbidden shapes). It would have under-used the machine.\n\n"
+        "BLOCKED: this launch is outside the allowed dispatch shapes (SPEC 8.4.1;\n"
+        "references/workflows.md forbidden shapes; the project's swarm plan).\n\n"
         + "\n\n".join(lines)
-        + "\n\nRe-author the script and launch again. If the narrow shape is CORRECT because a\n"
-        "wave dependency forces it, say so in the script -- a comment containing `dep=<reason>`\n"
-        "-- and this gate stands down on the width check.\n"
+        + "\n\nFix the launch as stated and try again. There is no escape hatch for SHAPE 4:\n"
+        "the plan's workflowId, units and fan-out are checked on every launch.\n"
     )
+    sys.exit(2)
+
+
+def staffing_path():
+    """Locate staffing.py (the one implementation of the plan rules). Order: STAFFING_PATH env,
+    workflow-guard/staffing.py beside this file (installed layout ~/.claude/hooks/ or
+    ~/.claude-nine/hooks/, written by both spec-protocol's install-hooks and Hook Skill's installer),
+    staffing.py beside this file (the 999-setup checkout: tools/hooks/), then the config dirs."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands = [os.environ.get("STAFFING_PATH") or "",
+             os.path.join(here, "workflow-guard", "staffing.py"),
+             os.path.join(here, "staffing.py")]
+    for d in (os.environ.get("CLAUDE_CONFIG_DIR") or "", "~/.claude", "~/.claude-nine"):
+        if d:
+            cands.append(os.path.join(os.path.expanduser(d), "hooks", "workflow-guard", "staffing.py"))
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return cands[1]
+
+
+_STAFFING = []
+
+
+def staffing_module():
+    """staffing.py, imported by path (the one implementation of the plan rules)."""
+    if not _STAFFING:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("staffing", staffing_path())
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("staffing", mod)
+        spec.loader.exec_module(mod)
+        mod.GATE_PATH = __import__("pathlib").Path(os.path.abspath(__file__))  # staffing parses scripts with THIS file
+        _STAFFING.append(mod)
+    return _STAFFING[0]
+
+
+def plan_block(message):
+    sys.stderr.write("BLOCKED: " + message + "\n")
     sys.exit(2)
 
 
@@ -558,40 +613,6 @@ def classify(args):
 def option_values(args, key):
     """The bare-word values of `key:` options inside a call's argument text."""
     return [m.group(1).strip() for m in re.finditer(key + r"\s*:\s*([^,}\n]*)", args)]
-
-
-def find_capacity_ledger(start_dir):
-    d = os.path.abspath(start_dir)
-    seen = 0
-    while seen < 40:
-        p = os.path.join(d, "CAPACITY-LEDGER.md")
-        if os.path.isfile(p):
-            return p
-        nd = os.path.dirname(d)
-        if nd == d:
-            return None
-        d, seen = nd, seen + 1
-    return None
-
-
-def parse_client_cap(path):
-    try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            text = fh.read()
-    except Exception:
-        return None
-    m = re.search(r"^[ \t]*CLIENT_CAP[ \t]*=[ \t]*(\d+)", text, re.M)
-    if m:
-        n = int(m.group(1))
-        return n if 1 <= n <= 64 else None
-    stripped = re.sub(r"\[[^\]]*\]", "", text)
-    for line in stripped.splitlines():
-        if "clientcap" in line.lower():
-            m = re.search(r"=\s*(\d+)\s*$", line)
-            if m:
-                n = int(m.group(1))
-                return n if 1 <= n <= 64 else None
-    return None
 
 
 def find_state_file(start_dir):
@@ -1189,27 +1210,9 @@ def evaluate(script, cwd=None, profiled=False, run_args=None):
                 )
                 break
 
-    # --- 4. under-width against the machine's own measured cap ---------------
-    # A template launched by path cannot carry a dep= comment per launch, so
-    # args.dep (a non-empty reason string) stands the width check down the same way.
-    dep_arg = isinstance(run_args, dict) and isinstance(run_args.get("dep"), str) and run_args["dep"].strip()
-    if not profiled and not dep_arg and not re.search(r"dep\s*=", script):
-        ledger = find_capacity_ledger(cwd or os.getcwd())
-        cap = parse_client_cap(ledger) if ledger else None
-        counts = [s["items"] for s in stages if s["items"]]
-        if cap and counts:
-            widest = max(counts)
-            if widest < cap:
-                findings.append(
-                    "SHAPE 4 -- the widest stage passes %d items; this machine's measured\n"
-                    "  clientCap is %d (%s).\n"
-                    "FIX: pass every dispatchable unit to one pipeline() call and let the harness\n"
-                    "  queue the rest -- the queue is a rolling window, never a batch. If fewer\n"
-                    "  units are dispatchable because a wave dependency blocks them, write the\n"
-                    "  reason in the script as a `dep=<reason>` comment (or pass args.dep for a\n"
-                    "  template launched by path) and this check stands down."
-                    % (widest, cap, ledger)
-                )
+    # --- 4. the plan launch contract is checked in main() through
+    # staffing.check_launch (it needs the launch args and the guard journal);
+    # there is no flat width floor in evaluate().
 
     # --- 6. the budget wall: past the pause line, or at the ceiling ----------
     # The pause used to be decided in exactly ONE instrument, tools/anchor.sh,
@@ -1303,6 +1306,11 @@ def main():
     except Exception:
         pass
 
+    try:  # pin an ARMED plan to this session on every call, so a later cwd change cannot shed it
+        staffing_module().resolve_plan(event_cwd, data.get("session_id"))
+    except Exception:
+        pass
+
     if data.get("tool_name") != "Workflow":
         # fix #5: an Agent/Task call is a build dispatch when its description or
         # the first line of its prompt says "build"; it then owes SHAPES 8-10.
@@ -1314,6 +1322,18 @@ def main():
         first = prompt.strip().splitlines()[0] if prompt.strip() else ""
         if not BUILD_LABEL_RE.search(desc + "\n" + first):
             allow()
+        # HIDDEN BUILDS: under a found swarm plan a build is a planned Workflow launch.
+        try:
+            found = staffing_module().resolve_plan(event_cwd, data.get("session_id"))
+        except Exception:
+            found = None
+        if found:
+            plan_block("HIDDEN BUILD (plan %s): builds under this plan go through the planned "
+                       "Workflow launch. Launch the owed workflow with args.workflowId and its exact "
+                       "planned units (python3 %s status --cwd %s names them); an Agent/Task call may "
+                       "only read, research or QC-read." % (
+                           found[0], staffing_path(),
+                           event_cwd))
         try:
             findings = build_findings(event_cwd, bool(profile_project(event_cwd)))
         except Exception:
@@ -1331,6 +1351,16 @@ def main():
             problem = profile_reservation_check(profiled_root, identity)
             if problem:
                 profile_block(problem)
+
+    # SHAPE 4: the plan launch contract. Internal errors fail open; a launch that
+    # cannot be determined under a found plan is blocked inside check_launch.
+    try:
+        plan_ok, plan_msg = staffing_module().check_launch(
+            ti, event_cwd, session=data.get("session_id"), attempt_id=data.get("tool_use_id"))
+    except Exception:
+        plan_ok, plan_msg = True, ""
+    if not plan_ok:
+        plan_block("SHAPE 4 -- " + plan_msg)
 
     script = ti.get("script")
     if not script:
@@ -1473,6 +1503,8 @@ def selftest():
             fails += 1
 
     sandbox = tempfile.mkdtemp(prefix="dispatch-gate-selftest.")
+    # The plan check reads and records in the guard journal: point every child at a temp one.
+    os.environ["WORKFLOW_GUARD_STATE"] = os.path.join(sandbox, "guard-state")
     # SHAPE 10 must never read the operator's real crontab: every child sees a
     # stub watch-tick.sh (rc 0 = armed) unless a check swaps it for rc 3.
     tick_ok = os.path.join(sandbox, "tick-ok.sh")
@@ -1521,25 +1553,95 @@ def selftest():
     rc, _ = _run_child("", sandbox)
     report(6, "empty-stdin-fails-open", rc == 0, "rc=%d (want 0)" % rc)
 
-    # 4 -- the width check: same script, once without a ledger, once with one.
-    narrow = ("export const meta = { name: 'n', description: 'd' }\n"
-              "const UNITS = [ { id: 'u1' }, { id: 'u2' } ]\n"
-              "const r = await pipeline(UNITS, (u) => agent('build ' + u.id, "
-              "{ label: '[Opus x2] build', phase: 'Build', model: 'opus' }))\n"
-              "return r\n")
-    no_ledger = tempfile.mkdtemp(prefix="dispatch-gate-noledger.", dir=sandbox)
-    rc_a, _ = _run_child(payload(narrow), no_ledger)
-    with_ledger = tempfile.mkdtemp(prefix="dispatch-gate-ledger.", dir=sandbox)
-    with open(os.path.join(with_ledger, "CAPACITY-LEDGER.md"), "w", encoding="utf-8") as fh:
-        fh.write("CLIENT_CAP=10\n")
-    rc_b, out_b = _run_child(payload(narrow), with_ledger)
-    report(7, "width-needs-a-ledger", rc_a == 0 and rc_b == 2 and "SHAPE 4" in out_b,
-           "no ledger -> rc=%d (want 0, the gate claims nothing it cannot measure); "
-           "ledger CLIENT_CAP=10 -> rc=%d (want 2, 2 items < 10)" % (rc_a, rc_b))
+    # 4 -- SHAPE 4 is the plan launch contract (workflow-guard/staffing.py). The
+    #      document decides the numbers; with no plan there is no floor at all.
+    #      Children run against a temp guard journal, never the real one.
+    st = staffing_module()
+    plan_root = tempfile.mkdtemp(prefix="dispatch-gate-plan.", dir=sandbox)
+    st._mkplan(plan_root, {"W0-01": 8, "W0-02": 3}, maw=2)
+    eight = ["W0-01-U%d" % k for k in range(1, 9)]
 
-    # 4b -- the dep= escape hatch
-    rc_c, _ = _run_child(payload("// dep= only 2 units are unblocked until WI-04 lands\n" + narrow), with_ledger)
-    report(8, "dep-comment-stands-down", rc_c == 0, "rc=%d (want 0) with a dep= comment present" % rc_c)
+    def plan_payload(args, script=st.GOOD_SCRIPT, tool="Workflow", **extra):
+        ti = {"args": args}
+        if script is not None:
+            ti["script"] = script
+        ti.update(extra)
+        return json.dumps({"tool_name": tool, "tool_input": ti, "cwd": plan_root, "session_id": "selftest"})
+
+    plan_cases = [
+        (7, "plan-wrong-workflowid", plan_payload({"workflowId": "NOPE", "units": eight}), 2, ["SHAPE 4", "W0-01", "agent_count 8"]),
+        ("7a", "plan-missing-units", plan_payload({"workflowId": "W0-01"}), 2, ["SHAPE 4", "args.units", "W0-01-U8"]),
+        ("7b", "plan-7-of-8-units", plan_payload({"workflowId": "W0-01", "units": eight[:7]}), 2, ["SHAPE 4", "plans exactly 8"]),
+        ("7c", "plan-extra-unit", plan_payload({"workflowId": "W0-01", "units": eight + ["W0-01-U9"]}), 2, ["SHAPE 4", "plans exactly 8"]),
+        ("7d", "plan-name-only-launch", plan_payload({"workflowId": "W0-01", "units": eight}, script=None), 2, ["SHAPE 4", "undeterminable"]),
+        ("7e", "plan-no-fanout-stage", plan_payload({"workflowId": "W0-01", "units": eight},
+                                                     script=st.GOOD_SCRIPT.replace("args.units", "['a', 'b', 'c']")), 2, ["SHAPE 4", "fans out"]),
+        ("7f", "plan-exact-match-allowed", plan_payload({"workflowId": "W0-01", "units": eight}), 0, []),
+        ("7g", "plan-second-ready-allowed", plan_payload({"workflowId": "W0-02", "units": ["W0-02-U1", "W0-02-U2", "W0-02-U3"]}), 0, []),
+    ]
+    for n, name, pl, want_rc, needles in plan_cases:
+        rc_p, out_p = _run_child(pl, plan_root)
+        report(n, name, rc_p == want_rc and all(x in out_p for x in needles),
+               "rc=%d (want %d); names %s: %s" % (rc_p, want_rc, needles, "yes" if all(x in out_p for x in needles) else "NO -- " + out_p.strip()[:240]))
+
+    # 4b -- no plan: no floor. The same 3-item stage the old flat floor refused is allowed.
+    narrow = ("export const meta = { name: 'n', description: 'd' }\n"
+              "const UNITS = [ { id: 'u1' }, { id: 'u2' }, { id: 'u3' } ]\n"
+              "const r = await pipeline(UNITS, (u) => agent('build ' + u.id, "
+              "{ label: '[Opus x3] build', phase: 'Build', model: 'opus' }))\n"
+              "return r\n")
+    no_plan = tempfile.mkdtemp(prefix="dispatch-gate-noplan.", dir=sandbox)
+    rc_n, out_n = _run_child(payload(narrow), no_plan)
+    report(8, "no-plan-no-floor", rc_n == 0 and "SHAPE 4" not in out_n,
+           "no plan + 3-item stage -> rc=%d (want 0), SHAPE 4 not raised" % rc_n)
+    f4 = evaluate(narrow, no_plan, profiled=True)
+    report("8a", "no-flat-floor-left", not any(f.startswith("SHAPE 4") for f in f4),
+           "evaluate(profiled=True) + 3 items -> no SHAPE 4 finding: %s" % ("yes" if not any(f.startswith("SHAPE 4") for f in f4) else "NO"))
+    with open(os.path.join(no_plan, "CAPACITY-LEDGER.md"), "w", encoding="utf-8") as fh:
+        fh.write("CLIENT_CAP=10\n")
+    rc_l2, out_l2 = _run_child(payload(narrow), no_plan)
+    report("8b", "ledger-cap-ignored", rc_l2 == 0 and "SHAPE 4" not in out_l2,
+           "CAPACITY-LEDGER.md CLIENT_CAP=10 + 3 items -> rc=%d (want 0): the ledger is no second floor" % rc_l2)
+
+    # 4c -- HIDDEN BUILDS: under a plan an Agent/Task build is blocked; a reader passes.
+    def plan_agent(desc, prompt, kind="general-purpose", tool="Agent", cwd=None, sid="selftest"):
+        return json.dumps({"tool_name": tool, "cwd": cwd or plan_root, "session_id": sid,
+                           "tool_input": {"description": desc, "prompt": prompt, "subagent_type": kind}})
+    rc_h, out_h = _run_child(plan_agent("build unit u01", "build unit u01\nwrite it"), plan_root)
+    report("8c", "plan-hidden-build-blocked", rc_h == 2 and "HIDDEN BUILD" in out_h and "planned Workflow launch" in out_h,
+           "Agent 'build unit u01' under a plan -> rc=%d (want 2), names the planned Workflow launch" % rc_h)
+    rc_t2, _o = _run_child(plan_agent("build unit u02", "build unit u02", tool="Task"), plan_root)
+    report("8d", "plan-hidden-build-task-blocked", rc_t2 == 2, "Task 'build unit u02' under a plan -> rc=%d (want 2)" % rc_t2)
+    rc_r, out_r = _run_child(plan_agent("Read client packet docs", "READ-ONLY. read the files and report."), plan_root)
+    rc_r2, _o2 = _run_child(plan_agent("research reference apps", "survey and report"), plan_root)
+    rc_r3, _o3 = _run_child(plan_agent("scan units", "build nothing, list files", "Explore"), plan_root)
+    report("8e", "plan-reader-agent-allowed", rc_r == 0 and rc_r2 == 0 and rc_r3 == 0,
+           "reader / research / Explore under a plan -> rc=%d, %d, %d (want 0, 0, 0)" % (rc_r, rc_r2, rc_r3))
+    rc_h2, _o4 = _run_child(plan_agent("build unit u03", "build unit u03", cwd=no_plan), no_plan)
+    report("8f", "no-plan-build-agent-unaffected", rc_h2 == 0,
+           "Agent 'build unit u03' with no plan and no spec-protocol project -> rc=%d (want 0)%s" % (rc_h2, "" if rc_h2 == 0 else ": " + _o4.strip()[:300]))
+
+    # 4d -- an ARMED plan pins to the session and outlives a cwd change; an unarmed one does not.
+    armed_root = tempfile.mkdtemp(prefix="dispatch-gate-armed.", dir=sandbox)
+    st._mkplan(armed_root, {"R-01": 2}, status="running")
+    unarmed_root = tempfile.mkdtemp(prefix="dispatch-gate-unarmed.", dir=sandbox)
+    st._mkplan(unarmed_root, {"N-01": 2}, status="planned")
+    away = tempfile.mkdtemp(prefix="dispatch-gate-away.", dir=sandbox)
+    for sid, root in (("armedsess", armed_root), ("unarmedsess", unarmed_root)):
+        _run_child(plan_agent("read the docs", "READ-ONLY", cwd=root, sid=sid), root)  # session starts in the plan's cwd
+    unplanned = json.dumps({"tool_name": "Workflow", "cwd": away, "session_id": "armedsess",
+                            "tool_input": {"script": st.GOOD_SCRIPT, "args": {}}})
+    rc_u, out_u = _run_child(unplanned, away)
+    report("8g", "armed-session-cwd-away-workflow-blocked", rc_u == 2 and "SHAPE 4" in out_u and "R-01" in out_u,
+           "armed session, cwd moved away, Workflow with no workflowId -> rc=%d (want 2), names R-01" % rc_u)
+    rc_ab, out_ab = _run_child(plan_agent("build unit u09", "build unit u09", cwd=away, sid="armedsess"), away)
+    report("8h", "armed-session-cwd-away-build-blocked", rc_ab == 2 and "HIDDEN BUILD" in out_ab,
+           "armed session, cwd moved away, Agent 'build unit u09' -> rc=%d (want 2)" % rc_ab)
+    rc_un, out_un = _run_child(plan_agent("build unit u09", "build unit u09", cwd=away, sid="unarmedsess"), away)
+    rc_uw, out_uw = _run_child(json.dumps({"tool_name": "Workflow", "cwd": away, "session_id": "unarmedsess",
+                                           "tool_input": {"script": st.GOOD_SCRIPT, "args": {}}}), away)
+    report("8i", "unarmed-plan-cwd-away-no-enforcement", rc_un == 0 and rc_uw == 0,
+           "unarmed plan, cwd moved away -> build Agent rc=%d, Workflow rc=%d (want 0, 0)" % (rc_un, rc_uw))
 
     # 5 -- a merge agent inside a build tree
     merge_tree = FIXTURE_BAD_BARRIER.replace(
@@ -1916,7 +2018,7 @@ def selftest():
     #        labels carry no "build" anywhere -- three auditors, no ledger.
     nobuild = log_dir("nobuild", 3, ledger="none")
     rc_nb2, out_nb2 = _run_child(payload(FIXTURE_NO_BUILD_LABEL), nobuild)
-    report(30, "non-build-label-silent", rc_nb2 == 0 and "SHAPE 8" not in out_nb2,
+    report(30, "non-build-label-silent", (rc_nb2 == 0 or "SHAPE 4" in out_nb2) and "SHAPE 8" not in out_nb2,
            "an audit-labelled tree in the SAME ledger-less project -> rc=%d (want 0) and no "
            "SHAPE 8: %s" % (rc_nb2, "yes" if "SHAPE 8" not in out_nb2 else "NO -- refused"))
 
@@ -2021,7 +2123,7 @@ def selftest():
     #        the same negative case SHAPE 8 owes.
     nobuild9 = log_dir("nobuild9", 3, anchor="none")
     rc_r4, out_r4 = _run_child(payload(FIXTURE_NO_BUILD_LABEL), nobuild9)
-    report(39, "non-build-anchor-silent", rc_r4 == 0 and "SHAPE 9" not in out_r4,
+    report(39, "non-build-anchor-silent", (rc_r4 == 0 or "SHAPE 4" in out_r4) and "SHAPE 9" not in out_r4,
            "an audit-labelled tree in a project with NO repo-anchor receipt -> rc=%d (want 0) "
            "and no SHAPE 9: %s"
            % (rc_r4, "yes" if "SHAPE 9" not in out_r4 else "NO -- refused"))
@@ -2107,6 +2209,15 @@ if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "--check":
         with open(sys.argv[2], encoding="utf-8", errors="replace") as _fh:
             _found = evaluate(_fh.read(), os.path.dirname(os.path.abspath(sys.argv[2])))
+        try:
+            _args = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
+            _ok, _msg = staffing_module().check_launch(
+                {"scriptPath": os.path.abspath(sys.argv[2]), "args": _args},
+                os.path.dirname(os.path.abspath(sys.argv[2])), record=False)
+        except Exception as _e:
+            _ok, _msg = True, ""
+        if not _ok:
+            _found = ["SHAPE 4 -- " + _msg] + _found
         if _found:
             print("\n\n".join(_found))
             sys.exit(2)

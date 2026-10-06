@@ -83,12 +83,12 @@ try {
     const items=literal(n.arguments[0]);if(!Array.isArray(items))throw Error(typeof input.args === 'string' ? 'Workflow args is JSON encoded as text. Supply the actual JSON object, or regenerate a self-contained workflow with make-workflow.py.' : 'Cannot measure pipeline items: required unit data is missing or cannot be resolved. Legacy scripts using args.units need the entire launch JSON object. Regenerate with make-workflow.py for a self-contained scriptPath-only launch.');
     const stages=n.arguments.slice(1);
     if(stages.some(s=>!['ArrowFunctionExpression','FunctionExpression'].includes(s.type)))throw Error('Use explicit inline pipeline callbacks so agent capacity is verifiable.');
-    const sp=stages.map(s=>peak(s.body,stack));return items.length*(MODE==='peak'?Math.max(0,...sp):sp.reduce((a,b)=>a+b,0));
+    const sp=stages.map(s=>peak(s.body,stack));return (MODE==='peak'?Math.min(items.length,10):items.length)*(MODE==='peak'?Math.max(0,...sp):sp.reduce((a,b)=>a+b,0));
    }
    if(c.type==='MemberExpression'&&c.property.name==='map'){
     if(!hasWorker(n))return 0;
     const items=literal(c.object);if(!Array.isArray(items))throw Error('Cannot measure map fan-out. Use a literal array or args.units.');
-    return items.length*peak(n.arguments[0],stack);
+    return (MODE==='peak'?Math.min(items.length,10):items.length)*peak(n.arguments[0],stack);
    }
    if(c.type==='Identifier'&&funcs.has(c.name)){
     if(stack.includes(c.name))throw Error('Recursive spawning cannot be bounded.');
@@ -105,7 +105,8 @@ try {
  const TOTAL_CEILING=200;
  if(totalCalls>TOTAL_CEILING)errors.push(`Script makes ${totalCalls} agent calls in total, above the runaway backstop of ${TOTAL_CEILING}. Split into separate workflows.`);
  const envCap=Number.parseInt(process.env.WORKFLOW_GUARD_CAP??'',10);
- const cap=Number.isInteger(envCap)&&envCap>=1&&envCap<=10?envCap:Math.min(10,Math.max(1,os.cpus().length-2));
+ // owner order 2026-10-06: policy cap 10/workflow only; hardware clamp removed (the plan, then the 10-per-workflow ceiling, are the only guards)
+ const cap=Number.isInteger(envCap)&&envCap>=1&&envCap<=10?envCap:10;
  if(nameMatch&&Number(nameMatch[3])!==bound)errors.push(`name claims ${Number(nameMatch[3])} lanes, script has ${bound}`);
  if(bound>cap)errors.push(`Computed upper bound ${bound} concurrent agents exceeds effective cap ${cap} (hard ceiling 10). Use one pipeline with <=${cap} units and one agent per stage, or split into separate workflows.`);
  if(!agents)errors.push('No agent() calls: this is not a visible worker workflow.');

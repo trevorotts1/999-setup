@@ -151,6 +151,46 @@ class GeneratorTests(unittest.TestCase):
   self.assertFalse(verdict['ok'])
   self.assertIn('name claims 9 lanes, script has 2', verdict['errors'])
 
+
+ def plan_gen(self, specs, wid, extra=()):
+  import importlib.util
+  spec = importlib.util.spec_from_file_location('staffing_t', ROOT / 'staffing.py')
+  st = importlib.util.module_from_spec(spec); spec.loader.exec_module(st)
+  proj = self.path / 'planproj'; proj.mkdir(exist_ok=True)
+  st._mkplan(proj, specs)
+  argv = ['python3', str(ROOT / 'make-workflow.py'), '--plan', str(proj / 'SWARM-PLAN.json'), '--workflow-id', wid, '--out-dir', str(self.path / 'pg'), *extra]
+  return st, proj, subprocess.run(argv, capture_output=True, text=True, env=self.env())
+
+ def test_plan_mode_launch_satisfies_the_launch_contract(self):
+  st, proj, r = self.plan_gen({'W0-01': 12, 'W0-02': 3}, 'W0-01')
+  self.assertEqual(r.returncode, 0, r.stderr)
+  row = json.loads(r.stdout.splitlines()[0])
+  self.assertEqual((row['agentCount'], row['units']), (10, 12))
+  launch = json.loads((self.path / 'pg' / 'launch-W0-01.json').read_text())
+  self.assertEqual(launch['args']['workflowId'], 'W0-01')
+  self.assertEqual([u['unit_id'] for u in launch['args']['units']], ['W0-01-U%d' % k for k in range(1, 13)])
+  script = Path(launch['scriptPath']).read_text()
+  self.assertIn('pipeline(args.units', script)
+  self.assertIn("model:", script)
+  self.assertTrue(self.validate(script, launch['args'])['ok'])
+  state = self.path / 'gstate'; state.mkdir()
+  ok, msg = st.check_launch({'scriptPath': launch['scriptPath'], 'args': launch['args']}, proj, session='t', state_dir=state, reap=False)
+  self.assertTrue(ok, msg)
+  # a launch that drops a unit is refused by the same contract
+  short = dict(launch['args'], units=launch['args']['units'][:-1])
+  ok, msg = st.check_launch({'scriptPath': launch['scriptPath'], 'args': short}, proj, session='t', state_dir=state, reap=False)
+  self.assertFalse(ok); self.assertIn('plans exactly 12', msg)
+
+ def test_plan_mode_small_workflow_agent_count_is_unit_count(self):
+  st, proj, r = self.plan_gen({'W0-01': 3}, 'W0-01')
+  self.assertEqual(r.returncode, 0, r.stderr)
+  self.assertEqual(json.loads(r.stdout.splitlines()[0])['agentCount'], 3)
+
+ def test_plan_mode_rejects_unknown_workflow_id(self):
+  st, proj, r = self.plan_gen({'W0-01': 3}, 'W9-99')
+  self.assertNotEqual(r.returncode, 0); self.assertIn('not a workflow', r.stderr)
+  self.assertFalse((self.path / 'pg').exists())
+
  def test_mock_runtime_runs_from_a_path_containing_a_space(self):
   space = self.path / 'dir with space' / 'workflow-guard'
   space.mkdir(parents=True)

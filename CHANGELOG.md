@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.37.0] — 2026-10-06
+
+### Staffing enforcement for both launchers: swarm plan v2, measured per-workflow cap, one ruleset
+
+Owner contract (2026-10-06): the plan document decides how many agents a workflow runs
+(`agent_count = min(policy.max_agents_per_workflow, units)`) and how many workflows run at once; the
+only flat numbers are the ceilings 10 agents per workflow / 50 workflows / 500 agents. Shipped for `claude`
+AND `claude-nine`.
+
+- **Measured per-workflow cap (new).** `capacity_probe.py` is the one place the formula lives:
+  `per_workflow_cap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores))`,
+  `GB_PER_AGENT = 1.5`, `max_working_agents = min(500, cap * 50)`. It reads RAM and logical cores (macOS
+  `sysctl`, Linux `/proc/meminfo` + `nproc`, Windows) and the container's own limits (cgroup v2 `memory.max` +
+  `cpu.max`, cgroup v1 `memory.limit_in_bytes` + `cpu.cfs_*`), the container limit winning. 10 on the
+  operator's 12-core / 24 GB Mac mini. `width.sh`, `width.mjs`, `capacity-resolver.sh`, `swarm-plan.mjs
+  generate`, the installers and the windows-parity resolver all ask it; `swarm-plan.mjs` writes the cap and
+  `policy.capacity_probe` into the plan and every checker refuses a plan whose cap differs from its probe.
+- **Hook Skill 1.1.0:** workflow-guard ships `staffing.py` (plan rules, launch contract, Stop check for owed
+  workflows), `capacity_probe.py`, the generator's `--plan` mode and `test_stop_omission.py`; the installers
+  (macOS/Linux and Windows) write the measured cap into `limits.json` and into
+  `env.CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` of `~/.claude` and `~/.claude-nine` (merged, idempotent,
+  restored on uninstall).
+- **spec-protocol 1.37.0:** `dispatch-gate.py` enforces the plan launch contract (and blocks hidden builds under a plan);
+  `tools/install-hooks.sh` / `.ps1` ship `staffing.py` + `capacity_probe.py` to `hooks/workflow-guard/` and write the measured
+  env value; `swarm-plan.mjs`, `staffing.py` and the packet checker are ONE ruleset (derived/leftover staffing keys
+  rejected, `owned_output` overlap rejected, padding rejected) with a cross-validator agreement test; `dispatch-check`
+  floor is `min(units, clientCap)`; docs swept for the flat-10 wording. New CI workflow `spec-protocol-tests`.
+- **nine-router-setup 1.23.0:** `enable-agent-teams.sh` / `Enable-AgentTeams.ps1` merge the measured
+  `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` into each config root (skipped, and said so, when no probe can run).
+- **tools/windows-parity** brought to the same contract (no `min(systemConcurrentMax, cores-2)`, no hand-batching); the parity guard passes again.
+
 ## [nine-router-setup 1.22.0] — 2026-10-04
 
 ### `setup-macos.sh --skills-only [--check]` — update skills on a box that already runs 9Router, without touching 9Router
