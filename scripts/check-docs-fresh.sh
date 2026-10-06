@@ -75,8 +75,14 @@ fi
 # "## [<name> <version>]" header for it, OR it is co-tagged (same commit) with
 # another tag that already has such a header (e.g. a nine-router-setup-vX.Y.Z
 # cut on the exact commit a vA.B.C release already documents).
+# A nine-router-setup-v* tag needs the "[nine-router-setup X]" form: a bare "## [X]" belongs to the
+# main product line (nine-router-setup 1.25.0 once matched spec-protocol's old "## [1.25.0]" and so
+# documented, by version collision, the release it shared a commit with).
 has_header() {
-  grep -qE "^## \[([A-Za-z0-9_-]+ )?$(printf '%s' "$1" | sed 's/\./\\./g')\]" CHANGELOG.md
+  local ver pre='([A-Za-z0-9_-]+ )?'
+  ver="$(printf '%s' "$1" | sed 's/\./\\./g')"
+  [ "${2:-}" = "nrs" ] && pre='nine-router-setup '
+  grep -qE "^## \[${pre}${ver}\]" CHANGELOG.md
 }
 
 # ponytail: release tags only (v* / nine-router-setup-v*), annotated or lightweight
@@ -87,14 +93,16 @@ mapfile -t tags < <(git for-each-ref --format='%(refname:short)' refs/tags \
 declare -A documented_commit
 for t in "${tags[@]}"; do
   ver="${t#nine-router-setup-v}"; ver="${ver#v}"
-  if has_header "$ver"; then
+  kind=main; case "$t" in nine-router-setup-v*) kind=nrs ;; esac
+  if has_header "$ver" "$kind"; then
     documented_commit["$(git rev-list -n1 "$t")"]=1
   fi
 done
 
 for t in "${tags[@]}"; do
   ver="${t#nine-router-setup-v}"; ver="${ver#v}"
-  has_header "$ver" && continue
+  kind=main; case "$t" in nine-router-setup-v*) kind=nrs ;; esac
+  has_header "$ver" "$kind" && continue
   sha="$(git rev-list -n1 "$t")"
   [ "${documented_commit[$sha]:-0}" = "1" ] && continue
   say "FAIL: tag $t (version $ver) has no CHANGELOG.md entry"
