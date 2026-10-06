@@ -391,7 +391,7 @@ appear and the run to return.
   capped at 10, with the same BEFORE/AFTER ledger writes and the same per-item
   lifecycle. Record `degraded-to-agent-fanout` in the Capacity Ledger and the session
   log. **The same gates apply to Agent fan-out as to a Workflow.** `dispatch-gate` is
-  registered on `Workflow|Agent|Task` (`tools/install-hooks.sh`), so a BUILD-labelled
+  registered on `Workflow|Agent|Task|SendMessage` (`tools/install-hooks.sh`), so a BUILD-labelled
   `Agent` or `Task` call meets the same SHAPE 8 and SHAPE 9 checks a build Workflow
   meets; reader and research agents pass. Degrading changes the transport, never the
   gates — an Agent call is not a way around them.

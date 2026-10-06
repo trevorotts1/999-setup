@@ -28,6 +28,16 @@ AND `claude-nine`.
   workflow-level `verdict_file` rejected, a workflow is done when every unit verdict is PASS with a different reviewer,
   `args.attemptId` required, plan `status` planned-not-running/running, `owned_output` overlap rejected, padding rejected) with a cross-validator agreement test; `dispatch-check`
   floor is `min(units, clientCap)`; docs swept for the flat-10 wording. New CI workflow `spec-protocol-tests`.
+- **Final enforcement pass (live files ported verbatim, repo adaptations kept).** `guard.py` / `staffing.py` / `validate.mjs` /
+  `dispatch-gate.py` from the operator box: two-phase launch admission (PreToolUse reserves, PostToolUse confirms), a DONE needs a
+  verdict journaled from the checker's own Write (sha256) and different ACTUAL builder and checker model families, a subagent is
+  recognised by `agent_id` only, subagent write fences, no count-based Stop release (three admitted launches hand back, an armed
+  pin is never lease-released), the concurrency window must equal `min(cap, units)`, and `SendMessage` is checked by the dispatch
+  gate like `Agent`/`Task`. New tests `test_final_pass.py` and `test_final_staffing.py`.
+- **Registrations (both claude and claude-nine, written by the installers):** workflow-guard PreToolUse
+  `Workflow|Agent|Task|SendMessage|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash`, PostToolUse
+  `Workflow|TaskStop|Agent|Task|TaskOutput|Write`, PostToolUseFailure `.*`, 120 s timeouts; dispatch-gate PreToolUse
+  `Workflow|Agent|Task|SendMessage`, 120 s. `tools/install-hooks.sh` / `.ps1` now install into `~/.claude-nine` as well when it exists.
 - **nine-router-setup 1.25.0:** `enable-agent-teams.sh` / `Enable-AgentTeams.ps1` merge the measured
   `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` into each config root (skipped, and said so, when no probe can run).
 - **tools/windows-parity** brought to the same contract (no `min(systemConcurrentMax, cores-2)`, no hand-batching); the parity guard passes again.

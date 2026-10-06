@@ -95,8 +95,8 @@ class Apply(unittest.TestCase):
         _, entries = sm.COMPONENTS["workflow-guard"]
         got = {(e, m) for e, m, _t, _a in entries}
         self.assertEqual(got, {("SessionStart", None), ("Stop", None), ("UserPromptSubmit", None), ("PostToolUseFailure", ".*"),
-                               ("PreToolUse", "Workflow|Agent|Task|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash"),
-                               ("PostToolUse", "Workflow|TaskStop|Agent|Task|TaskOutput")})
+                               ("PreToolUse", "Workflow|Agent|Task|SendMessage|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash"),
+                               ("PostToolUse", "Workflow|TaskStop|Agent|Task|TaskOutput|Write")})
 
 
 if __name__ == "__main__":

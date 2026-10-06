@@ -7,7 +7,8 @@ Staffing enforcement and a measured per-workflow cap, for claude and claude-nine
 1. `workflow-guard` now ships `staffing.py` (the swarm-plan rules: plan discovery, `agent_count = min(policy.max_agents_per_workflow, units)`, owned-output overlap, padding and leftover-key rejection, launch contract, owed-workflow Stop check), `capacity_probe.py`, the generator's `--plan` mode, `test_stop_omission.py` and `WORKFLOW-RELIABILITY.md`. Merged from the live hooks without dropping the repo-only behaviour (portable Node lookup and fail-open, `cleanup --dry-run`, generic stop wording).
 2. The installers (`install.sh`, `Install-HookSkill.ps1`) measure the box (RAM, logical cores, container limits) and write `concurrent_agents_per_workflow` / `concurrent_agents_total` into `limits.json` and `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` into `~/.claude/settings.json` and `~/.claude-nine/settings.json` (merged, idempotent). The uninstallers restore the previous env value.
 3. Hook timeouts match the live registrations (120 s).
-4. Tests: `test_capacity.py`, `test_stop_omission.py`, the staffing and probe selftests, and smoke-install assertions for the cap.
+4. The live final-pass guard ported: two-phase admission, journaled verdict writes, `agent_id`-only subagent detection, subagent write fences; registrations now include `Write` on PostToolUse and `SendMessage` on PreToolUse, written for both claude and claude-nine. New tests `test_final_pass.py`, `test_final_staffing.py`.
+5. Tests: `test_capacity.py`, `test_stop_omission.py`, the staffing and probe selftests, and smoke-install assertions for the cap.
 
 ## 1.0.0 - 2026-10-02
 
