@@ -21,7 +21,7 @@ def db():
  c.row_factory=sqlite3.Row
  try:c.execute('PRAGMA busy_timeout=10000')
  except sqlite3.Error:pass
- c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS omission(session TEXT PRIMARY KEY,fingerprint TEXT,count INTEGER,updated REAL,alert TEXT); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT); CREATE TABLE IF NOT EXISTS plan_alerts(key TEXT PRIMARY KEY,session TEXT,workflow TEXT,state TEXT,detail TEXT,updated REAL); CREATE TABLE IF NOT EXISTS reservations(id TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,attempt TEXT,created REAL); CREATE TABLE IF NOT EXISTS human_prompts(session TEXT PRIMARY KEY,at REAL);''')
+ c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS omission(session TEXT PRIMARY KEY,fingerprint TEXT,count INTEGER,updated REAL,alert TEXT); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT); CREATE TABLE IF NOT EXISTS plan_alerts(key TEXT PRIMARY KEY,session TEXT,workflow TEXT,state TEXT,detail TEXT,updated REAL); CREATE TABLE IF NOT EXISTS reservations(id TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,attempt TEXT,created REAL); CREATE TABLE IF NOT EXISTS human_prompts(session TEXT PRIMARY KEY,at REAL); CREATE TABLE IF NOT EXISTS launch_units(id TEXT PRIMARY KEY,units INTEGER);''')
  _staffing().migrate(c)  # launch_tags (workflowId per launch), launch_attempts, session_plans: idempotent
  return c
 
@@ -206,6 +206,18 @@ def _own_watches(r,d,ws):
  if not rid:return []
  return [w for w in ws if w['path'].startswith(d+'/') and Path(w['path']).parent.name==rid]
 
+def expected_agents(launch_id,c=None):
+ # Agents a plan-tagged launch must see return: builder + checker per launched unit (make-workflow's pipeline(units,build,qc)
+ # starts each checker only AFTER its builder returns, so "nothing pending" alone is not "done"). None = legacy launch, or no
+ # units recorded: keep the old rule. The native journal has no run-level terminal line (checked over real journals).
+ try:
+  rows=(c.execute('SELECT units FROM launch_units WHERE id=?',(launch_id,)).fetchall() if c else read_rows('SELECT units FROM launch_units WHERE id=?',(launch_id,)))
+  return 2*int(rows[0][0]) if rows and rows[0][0] else None
+ except Exception:return None
+
+def run_done(summary,expected):
+ return bool(summary['results'] and not summary['pending'] and (not expected or summary['results']>=expected))
+
 def reap_finished(c):
  # A run is finished when every journal of its own has returned. A launch with no
  # journals yet stays live, and one journal still observing keeps it live, so this
@@ -218,7 +230,7 @@ def reap_finished(c):
   if not rows:
    # No watch row yet: read the run's own journal directly so release is immediate.
    m=journal_summary(r)
-   if m and m['events'] and m['results'] and not m['pending'] and not m['running']:
+   if m and m['events'] and not m['running'] and run_done(m,expected_agents(r['id'],c)):
     c.execute("UPDATE launches SET state='COMPLETED' WHERE id=?",(r['id'],));freed+=1
    continue
   if all(w['state'] in ('AGENTS_RETURNED','RESOLVED','CANCELLED') for w in rows):
@@ -309,6 +321,7 @@ def admit_launch(row,tag=None):
        c.execute('ROLLBACK')
        return 'args.attemptId %s was already used by an admitted launch of this plan; every launch needs a new unique attemptId.'%json.dumps(tag[2])
     c.execute('INSERT OR REPLACE INTO launches VALUES(?,?,?,?,?,?,?,?,?)',(row[0],row[1],row[2],row[3],row[4],RESERVED)+tuple(row[6:]))
+    if tag and len(tag)>3 and tag[3]:c.execute('INSERT OR REPLACE INTO launch_units VALUES(?,?)',(row[0],int(tag[3])))
     if tag:c.execute('INSERT OR REPLACE INTO reservations VALUES(?,?,?,?,?,?)',(row[0],session,tag[1],tag[0],str(tag[2]) if len(tag)>2 and tag[2] else None,now))
     c.execute('COMMIT')
     return None
@@ -824,7 +837,7 @@ def plan_tag(data,ti):
   if not (isinstance(wid,str) and wid):return None
   f=_staffing().plan_for_launch(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE,wid)
   aid=a.get('attemptId');aid=aid if isinstance(aid,str) and aid.strip() else None
-  return (wid,str(f[0]),aid) if f else None
+  u=a.get('units');return (wid,str(f[0]),aid,len(u) if isinstance(u,list) else 0) if f else None
  except Exception:return None
 
 def validate(data):
@@ -937,12 +950,12 @@ def tick(now=None):
  watches=read_rows('SELECT * FROM watches')
  # Terminal-launch index: a watch whose owning run already returned/cancelled/failed
  # is residue, not a live stall. Keyed by the run id recorded in the launch receipt.
- run2state={}
- for l in read_rows('SELECT state,receipt FROM launches'):
+ run2state={};run2exp={}
+ for l in read_rows('SELECT id,state,receipt FROM launches'):
   try:r=json.loads(l['receipt'] or '{}')
   except ValueError:continue
   rid=r.get('run_id')
-  if rid:run2state[rid]=l['state']
+  if rid:run2state[rid]=l['state'];run2exp[rid]=expected_agents(l['id'])
  discovered=[]
  for l in launches:
   discovered.extend(scan_watches(l['transcript'],l['session'],l['created'],_wf_root(l)))
@@ -962,7 +975,7 @@ def tick(now=None):
    except OSError:mt=now
    last=(min(now,mt) if not w['signature'] else now) if sig!=w['signature'] else w['last_change']
    age=now-last
-   state=('MALFORMED_JOURNAL' if summary['malformed_lines'] else 'AGENTS_RETURNED' if summary['pending']==0 and summary['results'] else 'STALE_REVIEW_REQUIRED' if age>=600 else 'NO_RESULT_WARNING' if age>=300 else 'OBSERVING')
+   state=('MALFORMED_JOURNAL' if summary['malformed_lines'] else 'AGENTS_RETURNED' if run_done(summary,run2exp.get(path.parent.name)) else 'STALE_REVIEW_REQUIRED' if age>=600 else 'NO_RESULT_WARNING' if age>=300 else 'OBSERVING')
    # Decision 14: runtime cap is an alert, never a block. It never hides a stall, a malformed
    # journal or a finished run, so it clears on its own once the run returns.
    if summary['runtime_peak']>10 and state in ('OBSERVING','NO_RESULT_WARNING'):state='RUNTIME_CAP_EXCEEDED'
