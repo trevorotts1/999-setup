@@ -47,10 +47,11 @@ if command -v python3 >/dev/null; then
   cp "$SP/../hook-skill/hooks/workflow-guard/guard.py" "$r/hooks/workflow-guard/"
   echo '{"model":"keep"}' > "$r/settings.json"; lock_it "$r/settings.json"
   out="$(bash "$SP/tools/install-hooks.sh" --root "$r" 2>&1)"; rc=$?
-  if [ $rc -eq 0 ] && is_locked "$r/settings.json" && printf '%s' "$out" | grep -q 'settings-lock: .* was locked' \
+  # rc 1 only means a copied hook failed ITS OWN selftest (unrelated to the lock); rc 2 would mean nothing was written
+  if [ $rc -ne 2 ] && printf '%s' "$out" | grep -q "settings=merged" && is_locked "$r/settings.json" && printf '%s' "$out" | grep -q 'settings-lock: .* was locked' \
      && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));assert d["model"]=="keep" and "hooks" in d' "$r/settings.json"; then
     ok "5. install-hooks.sh wrote through the lock and re-locked"
-  else no "5. install-hooks.sh over a locked file (rc=$rc)"; fi
+  else no "5. install-hooks.sh over a locked file (rc=$rc): $out"; fi
   unlock_all
 fi
 
