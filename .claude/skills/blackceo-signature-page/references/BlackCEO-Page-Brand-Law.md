@@ -16,6 +16,8 @@ Quoted verbatim from
 > 4. The masthead is a single-letter B. The logo is CEO bold plus BLACK white on a horizontal black bar through the E.
 > 5. Image generation defaults to KIE.ai. Text overlay defaults to PIL. Video defaults to KIE.ai gemini-omni-video. Voice defaults to Fish Audio s2-pro. OpenAI image generation is forbidden without Trevor's express, per-instance permission.
 
+Note on rule 5: the model names behind "Video defaults to KIE.ai ..." and "Voice defaults ..." are the owner's quoted words. Skill 71 never types a model id from them; the policy owners (Skill 66 images, Skill 67 video, Skill 68 audio) resolve the current model, and Skill 74 is the transport (`references/kie-generation-route.md`).
+
 ## Hex values
 
 From `~/.openclaw/workspace/departments/graphics/*/TOOLS.md:1073`:
@@ -70,6 +72,15 @@ Quoted verbatim from `SOURCE-FRAMEWORK.md:141`:
 If the brand file has any `TREVOR_MUST_SUPPLY` / `CLIENT_MUST_SUPPLY` value, the intake
 stage is BLOCKED and the run stops with the exact missing item named. Never invent a
 palette, font, logo, or photo.
+
+**Font carve-out:** missing brand fonts are the one exception. `font_policy` in the brand
+file sets `when_brand_fonts_missing: "derive-document"`: if the brand fonts are still
+`TREVOR_MUST_SUPPLY` / `CLIENT_MUST_SUPPLY`, the agent derives the best display/body/accent
+faces for the job, documents the rationale in the visual bible (`fonts_source: "derived"`,
+`font_rationale`, `font_reviewer`), and the reviewer approves — fonts are never blocked.
+Every other `MUST_SUPPLY` / `CLIENT_MUST_SUPPLY` value (palette, logo, masthead files,
+founder photos) still blocks intake until the owner supplies it. Derived fonts remain bound
+by `banned_fonts`: a derived face may never be a banned font.
 
 ## Signature Grade Block
 
