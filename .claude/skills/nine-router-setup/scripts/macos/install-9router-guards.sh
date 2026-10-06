@@ -3,7 +3,7 @@
 #
 # 9Router ships as a prebuilt Next bundle. The guards in ../../assets/guards fix defects in it
 # (doubled tool-call JSON, DeepSeek effort mapping + parallel-tool 400, GLM 5.3 thinking, Ollama
-# stream end, Anthropic keepalive, unscoped next-server kill, ...). Any `npm i -g 9router`
+# stream end, Anthropic keepalive, unscoped next-server kill, dashboard usage-stream freeze, ...). Any `npm i -g 9router`
 # replaces the bundle and silently reverts every one of them, so this script is the one command to
 # run after setup AND after every 9Router upgrade.
 #
@@ -32,7 +32,7 @@ LABEL="com.blackceo.9router-localhost"
 # Order matters: dupfix first, codex-terminal after it (it converts dupfix's flag), ollama-done
 # before toolargs, ping last (it wraps the handler export).
 ALL=(dupfix codex-terminal nextserver cachecontrol glm53-thinking deepseek-effort deepseek-openai-route \
-     ollama-done opencode-poll opencode-toolargs ping-keepalive upstream-shape)
+     ollama-done opencode-poll opencode-toolargs ping-keepalive upstream-shape usage-stream)
 
 CHECK=0; RESTART=1; ROOT=""; UPGRADE=0; VER="latest"; SEL=()
 while [ $# -gt 0 ]; do
@@ -61,6 +61,7 @@ if [ -z "$ROOT" ]; then
 fi
 [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ] || { echo "no 9Router install found (use --root DIR)" >&2; exit 2; }
 CHUNKS="$ROOT/app/.next-cli-build/server/chunks"
+STREAM="$ROOT/app/.next-cli-build/server/app/api/usage/stream/route.js"  # usage-stream guard patches the route, not a chunk
 
 NODE=""; for c in /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 2>/dev/null || true)"; do
   [ -n "$c" ] && [ -x "$c" ] && { NODE="$c"; break; }; done
@@ -77,7 +78,7 @@ fi
 [ -d "$CHUNKS" ] || { echo "9Router chunks dir not found at $CHUNKS" >&2; exit 2; }
 echo "[guards] 9Router $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1) at $ROOT"
 
-fingerprint() { cat "$CHUNKS"/*.js "$ROOT/cli.js" 2>/dev/null | /usr/bin/shasum | cut -d' ' -f1; }
+fingerprint() { cat "$CHUNKS"/*.js "$ROOT/cli.js" "$STREAM" 2>/dev/null | /usr/bin/shasum | cut -d' ' -f1; }
 
 if [ "$CHECK" = 0 ]; then
   mkdir -p "$BIN_DIR" "$PATCH_DIR"
@@ -99,7 +100,7 @@ if [ "$CHECK" = 0 ]; then
   after="$(fingerprint)"
   # node --check every file a guard may have touched, by absolute node path.
   bad=0
-  for f in "$CHUNKS"/*.js "$ROOT/cli.js"; do "$NODE" --check "$f" >/dev/null 2>&1 || { echo "[guards] SYNTAX FAIL: $f"; bad=1; }; done
+  for f in "$CHUNKS"/*.js "$ROOT/cli.js" "$STREAM"; do [ -f "$f" ] || continue; "$NODE" --check "$f" >/dev/null 2>&1 || { echo "[guards] SYNTAX FAIL: $f"; bad=1; }; done
   [ "$bad" = 0 ] || { echo "[guards] a patched file does not parse; NOT restarting" >&2; exit 1; }
 fi
 
@@ -107,6 +108,7 @@ fi
 CHUNKS="$CHUNKS" ROOT="$ROOT" SELECTED="${SEL[*]}" /usr/bin/python3 - <<'PY'
 import glob, os, re, sys
 chunks, root, sel = os.environ["CHUNKS"], os.environ["ROOT"], os.environ["SELECTED"].split()
+stream = os.path.join(root, "app/.next-cli-build/server/app/api/usage/stream/route.js")
 C = lambda s: s  # readability
 T = {  # guard -> [(label, marker, scope, min)]
  # codex-terminal rewrites dupfix's `!b.finishReason` flag to `!b.__cxTerm`; either spelling is the fix.
@@ -127,11 +129,12 @@ T = {  # guard -> [(label, marker, scope, min)]
                        ("tool id sanitize", "/*tool-id-sanitize-v1*/", "chunks", 1)],
  "ping-keepalive": [("anthropic keepalive", "/*ping-keepalive-v3*/", "chunks", 1)],
  "upstream-shape": [("malformed upstream 502", "Malformed upstream completion", "chunks", 1)],
+ "usage-stream": [("usage stream stats debounce", "__nrUsageStats", "stream", 1)],
 }
 txt = {}
 def text(scope):
     if scope not in txt:
-        fs = sorted(glob.glob(os.path.join(chunks, "*.js"))) if scope == "chunks" else [os.path.join(root, "cli.js")]
+        fs = sorted(glob.glob(os.path.join(chunks, "*.js"))) if scope == "chunks" else [stream] if scope == "stream" else [os.path.join(root, "cli.js")]
         txt[scope] = "".join(open(f, encoding="utf-8", errors="replace").read() for f in fs)
     return txt[scope]
 bad = 0

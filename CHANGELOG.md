@@ -1,5 +1,29 @@
 # Changelog
 
+## [nine-router-setup 1.27.0] — 2026-10-06
+
+### New guard: `9router-usage-stream-guard.sh` stops the dashboard usage page from freezing 9Router
+
+With `/dashboard/usage` open, 9Router 0.5.95 holds `GET /api/usage/stream` and, on every
+request-completion `update` event, re-ran the full usage-stats query synchronously on the single
+event-loop thread (a scan of the last days of `usageHistory`; ~2.5 s on a 1.1M-row table). On a busy
+box that pinned the main thread at 100%: `/api/health` timed out, the watchdog kickstarted into the
+same state, and `claude-nine` got `ECONNREFUSED` loops.
+
+- **`assets/guards/9router-usage-stream-guard.sh [--check] [--quiet] [root]`** patches the stream
+  route so the stats result is cached process-wide for 60 s with in-flight calls coalesced; a stream
+  served a cached result schedules one trailing refresh so totals still converge. Live
+  `activeRequests`/`recentRequests` still push on every event. Located by content (route state
+  `cachedStats:null` + the `await (0,X.Y)()` stats call), not by chunk number, so it survives
+  renumbering; exits 3 if the anchor is gone (never a silent success). Idempotent; `--check` is
+  read-only; the patched text is `node --check`ed as a temp file before an atomic rename (no backup
+  file is written; before/after sha256 printed). Proof marker: `__nrUsageStats`.
+- `install-9router-guards.sh` runs it last, proves the marker in `usage/stream/route.js`, includes
+  that file in the change fingerprint and the `node --check` sweep.
+- Measured on the operator Mac under a connected usage stream + 8 concurrent requests: `/api/health`
+  max 7.87 s unguarded, 0.99 s (median 0.04 s) guarded.
+- Does not touch keys, providers, combos, models or the database.
+
 ## [nine-router-setup 1.26.0] — 2026-10-06
 
 ### Optional Ollama Flash override points at deepseek-v4.1-flash
