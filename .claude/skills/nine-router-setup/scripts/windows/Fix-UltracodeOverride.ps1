@@ -171,7 +171,21 @@ function Write-TextAtomic([string]$text, [string]$path) {
     $tmp = "$path.999tmp.$PID"
     $enc = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tmp, $text, $enc)
-    Move-Item -LiteralPath $tmp -Destination $path -Force
+    # Lock-aware: a read-only (locked) settings file is unlocked for this write and ALWAYS re-locked (finally).
+    $lockedItem = $null
+    if (Test-Path -LiteralPath $path) {
+        $it = Get-Item -LiteralPath $path -Force
+        if ($it.IsReadOnly) {
+            $it.IsReadOnly = $false
+            $lockedItem = $path
+            Write-Host "settings-lock: $path was locked (read-only); unlocked for this write and re-locked after"
+        }
+    }
+    try {
+        Move-Item -LiteralPath $tmp -Destination $path -Force
+    } finally {
+        if ($lockedItem -and (Test-Path -LiteralPath $path)) { (Get-Item -LiteralPath $path -Force).IsReadOnly = $true }
+    }
 }
 
 # --------------------------------------------------------------------------

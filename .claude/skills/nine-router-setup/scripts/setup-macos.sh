@@ -30,6 +30,9 @@ SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
 COMMON="$SCRIPTS/common"
 MACOS="$SCRIPTS/macos"
+# Lock-aware settings writes: a locked settings file is unlocked for the write and always re-locked.
+# shellcheck source=common/settings-lock.sh
+. "$COMMON/settings-lock.sh"
 REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 
 # HELPER INVOCATION CONVENTION: every helper in $MACOS is called through an
@@ -399,6 +402,10 @@ install_launcher_support() {
 write_nine_settings() {
   local dir="$HOME/.claude-nine"
   if [ -f "$dir/settings.json" ]; then
+    if ! sl_unlock "$dir/settings.json"; then
+      log "WARNING: claude-nine settings.json is locked and could not be unlocked — permission mode not set"
+      return 0
+    fi
     SETTINGS="$dir/settings.json" "$NODE_BIN" -e '
       const fs = require("fs"), f = process.env.SETTINGS;
       let j;
@@ -413,6 +420,7 @@ write_nine_settings() {
     ' >/dev/null 2>&1 \
       && log "claude-nine settings.json already present — only permissions.defaultMode added if it was missing" \
       || log "WARNING: claude-nine settings.json unreadable — permission mode not set (unattended runs may stop at a permission prompt)"
+    sl_relock_all
     return 0
   fi
   mkdir -p "$dir"
@@ -1288,10 +1296,17 @@ main() {
   AUTO_COMPACT_DETAIL=""
   while IFS= read -r root; do
     [ -n "$root" ] || continue
+    SL_FAIL=0
+    sl_unlock "$root/settings.json" || SL_FAIL=1
     set +e
-    AUTO_COMPACT_OUT="$("$NODE_BIN" "$AUTO_COMPACT_HELPER" --settings "$root/settings.json" 2>&1)"
-    AUTO_COMPACT_RC=$?
+    if [ "$SL_FAIL" -eq 1 ]; then
+      AUTO_COMPACT_OUT="locked settings could not be unlocked"; AUTO_COMPACT_RC=1
+    else
+      AUTO_COMPACT_OUT="$("$NODE_BIN" "$AUTO_COMPACT_HELPER" --settings "$root/settings.json" 2>&1)"
+      AUTO_COMPACT_RC=$?
+    fi
     set -e
+    sl_relock_all
     case "$AUTO_COMPACT_OUT" in
       "already set: "*) AUTO_COMPACT_RESULT="already set" ;;
       "set: "*) AUTO_COMPACT_RESULT="set" ;;

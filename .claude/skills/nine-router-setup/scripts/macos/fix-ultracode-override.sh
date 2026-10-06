@@ -78,6 +78,9 @@
 #      automatically is still active; the exact command is in the report
 #   2  tooling failure — backups were restored where applicable
 set -euo pipefail
+# Lock-aware writes: a locked settings file is unlocked for the edit and always re-locked (settings-lock.sh).
+# shellcheck source=../common/settings-lock.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common/settings-lock.sh" || { echo "fix-ultracode-override: settings-lock.sh missing" >&2; exit 2; }
 
 VAR="CLAUDE_CODE_EFFORT_LEVEL"
 
@@ -176,6 +179,7 @@ make_backup() {
     n=$((n + 1))
   done
   cp -p "$src" "$b" || return 1
+  sl_unflag "$b"
   [ -f "$b" ] || return 1
   printf '%s' "$b"
 }
@@ -718,6 +722,7 @@ EOF
     settings_list="$SETTINGS_OVERRIDE"
   fi
   while IFS= read -r f; do
+    sl_relock_all   # the previous file (if it was locked) goes back to locked before the next one is opened
     [ -n "$f" ] || continue
     label="$(tilde "$f")"
     set +e
@@ -777,6 +782,14 @@ EOF
     log "backup: $backup"
 
     local rm_out rm_rc
+    if ! sl_unlock "$f"; then
+      TOOLING_FAILED=1
+      MANUAL_REQUIRED=1
+      R_SETTINGS="$R_SETTINGS
+  $(printf '%-36s' "$label")KEY PRESENT (=$val) -> NOT CHANGED: the file is locked and could not be unlocked"
+      add_manual "unlock $f, then rerun this script"
+      continue
+    fi
     set +e
     rm_out="$(settings_remove "$f" 2>&1)"; rm_rc=$?
     set -e
@@ -832,6 +845,7 @@ EOF
   done <<EOF
 $settings_list
 EOF
+  sl_relock_all
 
   # ---- P1f. SERVICE ENV FILES — DETECTED ONLY ------------------------------
   # Never edited: these are credential files, and clearing one only takes effect

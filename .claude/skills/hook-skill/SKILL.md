@@ -39,7 +39,7 @@ Windows (PowerShell):
 .\.claude\skills\hook-skill\scripts\windows\Install-HookSkill.ps1 -DryRun
 ```
 
-Other flags: `--no-workflow-guard`, `--no-hygiene`, `--no-disk-cleanup`, `--no-schedule` (PowerShell: `-NoWorkflowGuard`, `-NoHygiene`, `-NoDiskCleanup`, `-NoSchedule`).
+Other flags: `--lock-settings` / `--unlock-settings` (PowerShell: `-LockSettings` / `-UnlockSettings`; see Settings protection below), `--no-workflow-guard`, `--no-hygiene`, `--no-disk-cleanup`, `--no-schedule` (PowerShell: `-NoWorkflowGuard`, `-NoHygiene`, `-NoDiskCleanup`, `-NoSchedule`).
 
 The installer:
 
@@ -51,6 +51,12 @@ The installer:
 Requirements: Python 3.8+ (every hook is a Python script). Node.js 18+ is optional: without it workflow-guard cannot statically validate `Workflow` launches and says so instead of blocking them.
 
 Restart Claude Code (and claude-nine) after installing so the hooks load. The installer makes no backup files; the uninstaller restores your settings exactly.
+
+## Settings protection (self-check on, hard lock opt-in)
+
+- **Wiring self-check (always on).** At SessionStart the workflow guard compares the active config dir's `settings.json` with `hooks/workflow-guard/wiring-manifest.json` (required registrations, timeouts of at least 120 s, the `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` env value). A gap produces a loud warning in the session (`HOOK WIRING INCOMPLETE: ... Re-run the Hook Skill installer.`) and an alert in `state/STATUS.md` and `state/alerts.json`. It never edits settings.
+- **Hard lock (opt-in).** Default is no lock, so the box owner keeps `/model` and `/config`. `--lock-settings` locks the claude and claude-nine settings files after install: macOS `chflags uchg` (strong); Linux `chattr +i` as root, otherwise `chmod a-w` (weaker: the owner can undo it); Windows read-only attribute (`attrib +R`, weaker: the owner can clear it, some editors clear it). `--unlock-settings` removes it and exits. While locked, `/model`, `/config` saves and any other writer fail by design.
+- **Lock-aware installers.** The installer, the uninstaller and the other scripts in this repository that write a settings file unlock a locked file, write, validate the JSON and always re-lock it, printing one line saying so.
 
 ## Per-user settings
 

@@ -1,0 +1,20 @@
+{
+  "schema": "workflow-guard.wiring/v1",
+  "about": "Registrations the SessionStart self-check requires in the active config dir's settings.json. A script is matched by the path fragment inside the hook command; a tool is covered when the entry's matcher (a regex, or none) matches it.",
+  "min_timeout": 120,
+  "env": ["CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS"],
+  "hooks": [
+    {"event": "SessionStart", "script": "workflow-guard/guard.py"},
+    {"event": "UserPromptSubmit", "script": "workflow-guard/guard.py"},
+    {"event": "Stop", "script": "workflow-guard/guard.py"},
+    {"event": "PreToolUse", "script": "workflow-guard/guard.py",
+     "tools": ["Workflow", "Agent", "Task", "SendMessage", "TaskOutput", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"]},
+    {"event": "PostToolUse", "script": "workflow-guard/guard.py",
+     "tools": ["Workflow", "TaskStop", "Agent", "Task", "TaskOutput", "Write"]},
+    {"event": "PostToolUseFailure", "script": "workflow-guard/guard.py",
+     "tools": ["Workflow", "Agent", "Task", "Bash"]},
+    {"event": "PreToolUse", "script": "dispatch-gate.py",
+     "tools": ["Workflow", "Agent", "Task", "SendMessage"],
+     "only_if_installed": "hooks/dispatch-gate.py"}
+  ]
+}

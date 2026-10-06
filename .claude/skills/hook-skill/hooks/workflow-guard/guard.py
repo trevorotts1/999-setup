@@ -791,6 +791,58 @@ def plan_agent_block(data,session):
  except Exception as e:
   return refuse('HIDDEN BUILD check could not be completed under a plan (%s); refused, fail closed.'%type(e).__name__)
 
+# ---- Wiring self-check (Layer 3): at SessionStart the ACTIVE config dir's settings.json must still register this guard ----
+# Required registrations live in wiring-manifest.json beside this file. Read-only: it warns and records an alert, it never rewrites settings.
+MANIFEST=ROOT/'wiring-manifest.json'
+
+def _covers(matcher,tool):
+ if matcher in (None,'','*'):return True
+ try:return re.fullmatch(matcher,tool) is not None
+ except re.error:return tool in str(matcher).split('|')
+
+def active_settings():
+ d=os.environ.get('CLAUDE_CONFIG_DIR')
+ return (Path(d).expanduser() if d else Path.home()/'.claude')/'settings.json'
+
+def wiring_problems(settings=None,manifest=None):
+ """What the settings file is missing or has weaker than the manifest demands. [] means complete."""
+ settings=Path(settings) if settings else active_settings();manifest=Path(manifest) if manifest else MANIFEST
+ try:m=json.loads(manifest.read_text())
+ except (OSError,ValueError):return ['the wiring manifest %s is missing or unreadable'%manifest.name]
+ try:
+  s=json.loads(settings.read_text())
+  if not isinstance(s,dict):raise ValueError
+ except (OSError,ValueError):return ['%s is missing or not valid JSON'%settings]
+ probs=[];need=int(m.get('min_timeout',120))
+ env=s.get('env') if isinstance(s.get('env'),dict) else {}
+ for k in m.get('env',[]):
+  if k not in env:probs.append('env.%s is not set'%k)
+ hooks=s.get('hooks') if isinstance(s.get('hooks'),dict) else {}
+ for r in m.get('hooks',[]):
+  inst=r.get('only_if_installed')
+  if inst and not any((b/inst).is_file() for b in (settings.parent,Path.home()/'.claude')):continue
+  ev,script=r['event'],r['script']
+  mine=[(g.get('matcher'),h) for g in (hooks.get(ev) if isinstance(hooks.get(ev),list) else []) if isinstance(g,dict)
+        for h in (g.get('hooks') if isinstance(g.get('hooks'),list) else []) if isinstance(h,dict) and script in str(h.get('command','')).replace('\\','/')]
+  if not mine:probs.append('%s has no %s registration'%(ev,script));continue
+  gone=[t for t in r.get('tools',[]) if not any(_covers(mt,t) for mt,_ in mine)]
+  if gone:probs.append('%s matcher for %s is missing %s'%(ev,script,'|'.join(gone)))
+  for _,h in mine:
+   t=h.get('timeout')
+   if not isinstance(t,(int,float)) or t<need:probs.append('%s %s timeout is %s (needs >= %d)'%(ev,script,t,need))
+ return probs
+
+def wiring_check(session):
+ # Returns the loud warning text ('' when complete) and keeps alerts.json/STATUS.md in step. Never raises, never writes settings.
+ try:
+  settings=active_settings();probs=wiring_problems(settings);key='wiring|'+str(settings)
+  if not probs:
+   clear_alerts(key);return ''
+  msg='HOOK WIRING INCOMPLETE: '+'; '.join(probs)+' (in '+str(settings)+'). Enforcement is degraded. Re-run the Hook Skill installer.'
+  raise_alert(key,str(settings),'wiring','HOOK_WIRING_INCOMPLETE',msg)
+  return msg
+ except Exception:return ''
+
 def pre_checks(data,tool,session):
  # Runs for every PreToolUse the guard is registered for. Returns an exit code to deny, or None.
  ti=data.get('tool_input') if isinstance(data.get('tool_input'),dict) else {}
@@ -1118,7 +1170,7 @@ def response_text(value):
 # The plan decides the numbers (staffing.py holds the rules). A launch hook only sees what the
 # model launches; only a check at Stop sees what it never launched.
 QG_STATE=Path(os.environ.get('QUESTION_GATE_STATE',str(Path.home()/'.claude/hooks/question-gate/state')))
-PLAN_ALERT_STATES=('STOP_OMISSION_UNRESOLVED','WORKFLOW_HANDBACK','PLAN_ARM_FAILED')
+PLAN_ALERT_STATES=('STOP_OMISSION_UNRESOLVED','WORKFLOW_HANDBACK','PLAN_ARM_FAILED','HOOK_WIRING_INCOMPLETE')
 
 def _jload(p):
  try:d=json.loads(Path(p).read_text());return d
@@ -1337,7 +1389,8 @@ def hook(data):
   except Exception as e:running='running counts unavailable ('+type(e).__name__+')'
   try:line=plan_line(data,session)
   except Exception:line=''
-  context(event,('Workflow tools need explicit model/label/declared phase. Limits read from '+str(LIMITS_FILE)+', counted running-at-once with finished and dead runs reaped; '+running+'. Use '+str(ROOT/'make-workflow.py')+' (with --plan and --workflow-id under a swarm plan). Review '+str(STATE/'STATUS.md')+' for stale-run alerts. Caps are safety guards only; keep existing authorization/cancellation boundaries.\n'+line))
+  warn=wiring_check(session)
+  context(event,(warn+'\n' if warn else '')+('Workflow tools need explicit model/label/declared phase. Limits read from '+str(LIMITS_FILE)+', counted running-at-once with finished and dead runs reaped; '+running+'. Use '+str(ROOT/'make-workflow.py')+' (with --plan and --workflow-id under a swarm plan). Review '+str(STATE/'STATUS.md')+' for stale-run alerts. Caps are safety guards only; keep existing authorization/cancellation boundaries.\n'+line))
   return 0
  if event in ('PreToolUse','Stop'):
   try:continued,latched=continuation_state(session)

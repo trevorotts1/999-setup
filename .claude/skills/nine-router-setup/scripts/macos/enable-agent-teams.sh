@@ -129,6 +129,9 @@
 #   1  version-blocked — nothing was modified
 #   2  tooling failure — the settings backup was restored where applicable
 set -euo pipefail
+# Lock-aware writes: a locked settings file is unlocked for the merge and always re-locked (settings-lock.sh).
+# shellcheck source=../common/settings-lock.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common/settings-lock.sh" || { echo "enable-agent-teams: settings-lock.sh missing" >&2; exit 2; }
 
 TEAMS_MIN_VERSION="2.1.178"        # Agent Teams floor (the procedure's requirement)
 MAILBOX_MIN_VERSION="2.1.224"      # ListAgents / SendMessage floor
@@ -234,6 +237,7 @@ make_backup() {
     n=$((n + 1))
   done
   cp -p "$src" "$b"
+  sl_unflag "$b"
   printf '%s' "$b"
 }
 
@@ -1074,6 +1078,7 @@ merge_all_roots() {
   local i=0 MERGE_OUT MERGE_RC
   while [ "$i" -lt "$ROOT_COUNT" ]; do
     MERGE_RC=0
+    sl_unlock "${ROOT_PATH[$i]}" || { log "${ROOT_LABEL[$i]}: locked settings could not be unlocked; nothing written"; exit 2; }
     set +e
     MERGE_OUT="$(merge_settings "${ROOT_PATH[$i]}" "$WRITE_TEAMMATE_MODE" 2>&1)"
     MERGE_RC=$?
@@ -1088,9 +1093,11 @@ merge_all_roots() {
       ROOT_JSON[$i]="INVALID"
       R_JSON="INVALID"
       R_TEAMS="FAILED"
+      sl_relock_all
       print_report
       exit 2
     fi
+    sl_relock_all
 
     # teammateMode reporting, per root.
     if [ "$WRITE_TEAMMATE_MODE" -eq 1 ]; then
@@ -1314,7 +1321,7 @@ REPORT
 # ---------------------------------------------------------------------------
 
 selftest() {
-  local box fake nobin rc fails=0 total=9
+  local box fake nobin rc fails=0 total=10
   box="$(mktemp -d "${TMPDIR:-/tmp}/enable-agent-teams-selftest.XXXXXX")"
   fake="$box/bin"
   nobin="$box/nobin"
@@ -1690,6 +1697,25 @@ BROKENTMUX
       fails=$((fails + 1))
     fi
   fi
+
+  # 10. A LOCKED settings file (macOS user-immutable flag) is unlocked, merged, and ALWAYS re-locked; one line says so.
+  local h10="$box/case10"
+  mkdir -p "$h10/.claude"
+  printf '{ "env": { "SENTINEL": "ten" }, "model": "ten-model" }\n' > "$h10/.claude/settings.json"
+  chflags uchg "$h10/.claude/settings.json" 2>/dev/null || true
+  rc=0
+  st_run "$h10" || rc=$?
+  if [ "$rc" -eq 0 ] && /usr/bin/stat -f %Sf "$h10/.claude/settings.json" | grep -q uchg \
+     && grep -q "settings-lock: .* was locked" "$h10/report.txt" "$h10/log.txt" \
+     && SETTINGS="$h10/.claude/settings.json" st_node '
+        const s = JSON.parse(require("fs").readFileSync(process.env.SETTINGS, "utf8"));
+        process.exit(s.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === "1" && s.env.SENTINEL === "ten" && s.model === "ten-model" ? 0 : 1);'; then
+    printf 'PASS  10. a locked settings file is unlocked, merged and re-locked (exit 0)\n'
+  else
+    printf 'FAIL  10. locked settings file not merged and re-locked (exit %s) — see %s\n' "$rc" "$h10/log.txt"
+    fails=$((fails + 1))
+  fi
+  chflags nouchg "$h10/.claude/settings.json" 2>/dev/null || true
 
   printf '\nselftest: %s/%s passed\n' "$((total - fails))" "$total"
   if [ "$fails" -eq 0 ]; then

@@ -37,6 +37,8 @@
 set -uo pipefail
 
 STATUSLINE_SCRIPT="$HOME/.claude/statusline-command.sh"
+# Lock-aware writes: a locked settings file is unlocked for the write and always re-locked.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../tools/settings-lock.sh" || { echo "setup-statusline: tools/settings-lock.sh missing" >&2; exit 2; }
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CC9_SETTINGS="$HOME/.claude-nine/settings.json"
 STAMP_DIR="$HOME/.claude"
@@ -838,8 +840,10 @@ for f in "$CLAUDE_SETTINGS" "$CC9_SETTINGS"; do
     case "$f" in /*) ;; *) f="$(dirname "$orig")/$f" ;; esac
     [ -f "$f" ] || { bad "Symlink target missing: $f — skipped."; continue; }
   fi
+  sl_unlock "$f" || { bad "$(basename "$f") is locked and could not be unlocked — skipped."; continue; }
   backup_settings "$f"
   set_statusline_key "$f"
+  sl_relock_all
   ok "statusLine registered in $(basename "$f")"
   WROTE=$((WROTE+1))
 done
