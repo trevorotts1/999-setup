@@ -145,7 +145,7 @@ Using the authenticated management API and the shared helpers under `scripts/com
   `deepseek-v4-flash` and `deepseek-v4-pro` from `https://api.deepseek.com/models`.
 - **Ollama Cloud** (native provider, slug `ollama`): import `OLLAMA_API_KEY`; query
   `https://ollama.com/api/tags` and require `glm-5.2`, `kimi-k2.6`, `minimax-m3`,
-  `gemma4:31b` (plus `deepseek-v4-flash:0731` only when the override is enabled). Use the
+  `gemma4:31b` (plus `deepseek-v4.1-flash` only when the override is enabled). Use the
   exact returned IDs.
 - **Agnes AI** (custom OpenAI-compatible node): create the node
   `{name: "Agnes AI", prefix: "agnes", type: "openai-compatible", apiType: "chat",

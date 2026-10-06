@@ -1,5 +1,16 @@
 # Changelog
 
+## [nine-router-setup 1.26.0] — 2026-10-06
+
+### Optional Ollama Flash override points at deepseek-v4.1-flash
+
+Ollama Cloud retired `deepseek-v4-flash:0731` on 2026-09-25 (HTTP 410). The optional
+`DEEPSEEK_FLASH_VARIANT=ollama-0731` override (flag name unchanged for compatibility) now
+requires and routes to the live Ollama catalog id `deepseek-v4.1-flash`
+(`configure-nine-router.mjs`, `resolve-models.mjs`, SKILL.md, `references/model-routing.md`,
+CLAUDE.md). DeepSeek Direct ids (`ds/deepseek-v4-flash`, `ds-light/deepseek-v4-flash`) are a
+different provider and are unchanged.
+
 ## [1.37.0] — 2026-10-06
 
 ### Staffing enforcement for both launchers: swarm plan v2, measured per-workflow cap, one ruleset
