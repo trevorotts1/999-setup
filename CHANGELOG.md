@@ -2,6 +2,17 @@
 
 ## [hook-skill] — 2026-10-06
 
+### Fix: a plan launch finishes per unit, so a skipped checker no longer leaves it RUNNING forever
+
+`run_done()` required results for 2 x units (builder + checker each). The generated script skips a unit's checker when its
+builder returns non-PASS, and a builder can fail outright, so that count was never reached: the launch stayed RUNNING, the
+workflow was never owed again or relaunched. The guard now reads the run journal's agent labels (`build:<unit>`,
+`qc:<unit>`, joined to result/failed lines by agentId): a unit is finished when its checker returned or failed, or its
+builder failed or returned a non-PASS status. The launch finishes when every launched unit is finished, then the workflow is
+owed again for the not-yet-PASS units. Legacy and unlabeled journals keep the old rule. Tests: `test_plan_complete_all_agents.py`.
+
+## [hook-skill] — 2026-10-06
+
 ### Fix: a plan run is COMPLETED only when every builder and checker has returned
 
 The watch state `AGENTS_RETURNED` fired whenever the run journal showed nothing pending and at least one result. In a plan
