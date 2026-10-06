@@ -259,6 +259,20 @@ def admit_launch(row,tag=None):
     if occ['agents_total']+peak>lim['concurrent_agents_total']:
      c.execute('ROLLBACK')
      return ('Launching %d agents would reach %d concurrent agents, above the operator limit of %d total.'%(peak,occ['agents_total']+peak,lim['concurrent_agents_total']))
+    if tag:
+     # Plan rules re-checked INSIDE this write transaction, atomically with the insert: check_launch ran earlier, outside
+     # it, so two racing hooks could both pass it. (a) the workflow is not already live, (b) live workflows of the plan < max_active.
+     live_sql="FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND l.state IN (?,?,?) AND t.id!=?"
+     lp=(tag[1],)+LIVE_STATES+(row[0],)
+     if c.execute("SELECT 1 "+live_sql+" AND t.workflow_id=? LIMIT 1",lp+(tag[0],)).fetchone():
+      c.execute('ROLLBACK')
+      return 'workflow %s is already running (another launch of it was admitted first); do not launch it twice.'%tag[0]
+     mx=_staffing().plan_max_active(tag[1],STATE)
+     if mx:
+      live=c.execute("SELECT COUNT(DISTINCT t.workflow_id) "+live_sql,lp).fetchone()[0]
+      if live>=mx:
+       c.execute('ROLLBACK')
+       return 'the plan runs at most %d workflows at once and %d are running (admission re-check); launch %s when one finishes.'%(mx,live,tag[0])
     c.execute('INSERT OR REPLACE INTO launches VALUES(?,?,?,?,?,?,?,?,?)',row)
     if tag:
      if len(tag)>2 and tag[2]:
@@ -267,7 +281,7 @@ def admit_launch(row,tag=None):
        c.execute('ROLLBACK')
        return 'args.attemptId %s was already used by an admitted launch of this plan; every launch needs a new unique attemptId.'%json.dumps(tag[2])
      c.execute('INSERT OR REPLACE INTO launch_tags VALUES(?,?,?,?,?)',(row[0],session,tag[0],tag[1],now))
-     c.execute('INSERT OR REPLACE INTO session_plans VALUES(?,?,?)',(session,tag[1],now))
+     c.execute('INSERT OR IGNORE INTO session_pins VALUES(?,?,?)',(session,tag[1],now))
     c.execute('COMMIT')
     return None
    finally:c.close()
@@ -449,23 +463,114 @@ VERDICT_BASH_WRITE=[re.compile(p,re.I|re.S) for p in (
 )]
 
 def verdict_write_block(data,tool,ti,session):
- if data.get('agent_id') or data.get('agent_type'):return None
- hit=None
- if tool in FENCE_EDIT:
-  t=str(ti.get('file_path') or ti.get('notebook_path') or '')
-  if t.endswith('.verdict.json'):hit=t
- elif tool=='Bash':
-  cmd=str(ti.get('command') or '')
-  if '.verdict.json' in cmd and any(r.search(cmd) for r in VERDICT_BASH_WRITE):hit='a .verdict.json path in the command'
- if not hit:return None
- cwd=data.get('cwd') or os.getcwd()
- found=_staffing().resolve_plan(cwd,session,STATE)
+ # Bash only (Write/Edit are handled by protected_write_block): a shell command that writes a *.verdict.json under a plan.
+ if data.get('agent_id') or data.get('agent_type') or tool!='Bash':return None
+ cmd=str(ti.get('command') or '')
+ if '.verdict.json' not in cmd.lower() or not any(r.search(cmd) for r in VERDICT_BASH_WRITE):return None
+ found=_staffing().resolve_plan(data.get('cwd') or os.getcwd(),session,STATE)
  if not found:return None
+ return refuse(VERDICT_MSG%('a .verdict.json path in the command',found[0]))
+
+VERDICT_MSG='The conductor session may not write unit verdict files (%s, plan %s). A verdict is written only by the checker agent that judged the unit: dispatch that checker and let it write {"verdict","unit_id","attempt_id","builder_model","reviewer_model"} with the Write tool. Do not bypass hooks.'
+
+# ---- The governed session may not tamper with what governs it ----
+# Main-session Write/Edit/MultiEdit/NotebookEdit are refused for: any file whose lowercased basename ends .verdict.json (anywhere, no
+# plan condition), the armed/pinned plan file, its evidence/ tree, the guard state dir and the question-gate state dir. Every comparison is on
+# realpath, lowercased on both sides (APFS is case-insensitive, symlinks resolve). Bash is best effort: a command that names one of
+# those paths AND carries a write/move/delete verb is refused; `staffing.py start|status` is the one allowed invocation.
+# RESIDUAL (honest): Bash is text matching. A path assembled in a variable or by a script file the conductor wrote earlier, an
+# interpreter one-liner that builds the path, or a symlink created earlier can still reach these files.
+WRITE_VERB=re.compile(r'(?:^|[\s;&|(`])(?:mv|cp|rm|ln|tee|rsync|install|dd|truncate|touch|sqlite3|unzip|chmod|rmdir|patch)\b|>>?|\bsed\b[^|;&\n]*\s-[a-zA-Z]*i|\b(?:python3?|node|ruby|perl)\b[^\n]*(?:open|write|connect|unlink|remove|rename|replace|shutil|sqlite3|-i)|\btar\b[^\n]*\s-?[a-zA-Z]*x|\bgit\s+(?:checkout|restore)\b',re.I)
+QUIET_REDIRECT=re.compile(r'\d*>&\d+|&?\d*>\s*/dev/null')
+STAFFING_OK=re.compile(r'^\s*(?:\S*python[0-9.]*\s+)?\S*staffing\.py\s+(?:start|status)\b[^;&|<>`$()\n]*$')
+
+def _rl(p):
+ return os.path.realpath(os.path.expanduser(str(p))).lower()
+
+def _under_l(p,root):
+ return p==root or p.startswith(root.rstrip(os.sep)+os.sep)
+
+def _state_roots():
+ h=Path.home()
+ return {STATE,ROOT/'state',QG_STATE,h/'.claude/hooks/workflow-guard/state',h/'.claude/hooks/question-gate/state',h/'.claude-nine/hooks/workflow-guard/state',h/'.claude-nine/hooks/question-gate/state'}
+
+def protected_write_block(data,tool,ti,session):
+ if data.get('agent_id') or data.get('agent_type'):return None
+ cwd=data.get('cwd') or os.getcwd()
+ try:plans=_staffing().protected_plan_paths(cwd,session,STATE)
+ except Exception:plans=[]
  if tool in FENCE_EDIT:
-  p=Path(hit).expanduser()
-  p=p if p.is_absolute() else Path(cwd)/p
-  if not under(p,found[0].parent):return None
- return refuse('The conductor session may not write unit verdict files (%s, plan %s). A verdict is written only by the checker agent that judged the unit: dispatch that checker and let it write {"verdict","unit_id","attempt_id","builder_model","reviewer_model"}. Do not bypass hooks.'%(hit,found[0]))
+  t=ti.get('file_path') or ti.get('notebook_path')
+  if not t:return None
+  p=Path(str(t)).expanduser();p=p if p.is_absolute() else Path(cwd)/p
+  rp=_rl(p)
+  if os.path.basename(str(p)).lower().endswith('.verdict.json') or os.path.basename(rp).endswith('.verdict.json'):
+   return refuse(VERDICT_MSG%(t,plans[0] if plans else 'no plan needed: this rule holds everywhere'))
+  for r in _state_roots():
+   if _under_l(rp,_rl(r)):return refuse('The governed session may not write the guard or question-gate state (%s). That state is the owner\'s enforcement record. Do not bypass hooks.'%t)
+  for pp in plans:
+   if rp==_rl(pp):return refuse('The governed session may not write or rename the armed plan file %s; it governs this session. Use `staffing.py start|status`. Do not bypass hooks.'%pp)
+   if _under_l(rp,_rl(Path(pp).parent/'evidence')):return refuse('The governed session may not write the evidence tree of armed plan %s (%s); checker agents write verdicts. Do not bypass hooks.'%(pp,t))
+  return None
+ if tool=='Bash':
+  cmd=str(ti.get('command') or '')
+  if STAFFING_OK.match(QUIET_REDIRECT.sub(' ',cmd)):return None
+  low=cmd.lower();refs=[]
+  for r in _state_roots():refs+=[str(r).lower(),_rl(r),str(r).lower().replace(str(Path.home()).lower(),'~')]
+  refs+=['workflow-guard/state','question-gate/state','guard.sqlite3','workflow_guard_state','question_gate_state']
+  for pp in plans:refs+=[str(pp).lower(),Path(pp).name.lower(),str(Path(pp).parent/'evidence').lower(),'evidence/']
+  hit=next((x for x in refs if x and x in low),None)
+  if hit and WRITE_VERB.search(QUIET_REDIRECT.sub(' ',cmd)):
+   return refuse('This command writes, moves or deletes something that governs the session (%s: plan file, evidence tree, guard or question-gate state). The governed session may not do that. Only `staffing.py start|status` is allowed. Do not bypass hooks.'%hit)
+ return None
+
+# ---- DONE needs a journal record (defect 11) ----
+# When a SUBAGENT (hook payload carries agent_id) Writes a *.verdict.json, the guard journals {unit_id, attempt_id, sha256 of the
+# content, agent_id, launch_id} in verdict_records IF the agent provably belongs to a live or finished ADMITTED launch of that
+# workflow: the verdict's attempt_id must be the one admitted for that launch, and agent_id must appear in that launch's run (the
+# agent-<agent_id>.jsonl transcript or a journal.jsonl "agentId" under <launch transcript>/subagents/workflows/<run>/). staffing.is_done
+# requires the file's CURRENT sha256 to match such a record. PROVEN: a hand-written, conductor-written, later-edited or
+# unlinked-agent verdict never counts. NOT PROVEN: that the judging agent was an independent checker or really looked (any agent of
+# the run can write a PASS for any unit of that workflow), nor that the hook's agent_id equals the journal agentId in every Claude
+# Code build (verified only by the file naming of real runs: agent-<agentId>.jsonl); if they ever differ, verdicts are simply never
+# recorded and DONE is unreachable (fail closed), never forged.
+def _agent_in_run(transcript,receipt,agent_id,data):
+ if not transcript or not agent_id:return False
+ tp=Path(transcript);base=tp.parent/tp.stem/'subagents'/'workflows';rid=_run_id(receipt)
+ try:dirs=[base/rid] if rid else [d for d in base.glob('wf_*') if d.is_dir()]
+ except OSError:return False
+ for d in dirs:
+  if (d/('agent-%s.jsonl'%agent_id)).exists():return True
+  try:
+   if '"agentId":"%s"'%agent_id in (d/'journal.jsonl').read_text():return True
+  except OSError:pass
+ return False
+
+def record_subagent_verdict(data,tool,ti,session):
+ if not data.get('agent_id'):return None
+ t=ti.get('file_path') or ti.get('notebook_path')
+ if not t or not os.path.basename(str(t)).lower().endswith('.verdict.json'):return None
+ if tool!='Write':
+  return refuse('Write unit verdicts with the Write tool (full content) so the guard can journal them; %s edits are not recorded and would never count as DONE.'%tool)
+ content=ti.get('content')
+ if not isinstance(content,str):return None
+ try:d=json.loads(content)
+ except ValueError:return None
+ if not isinstance(d,dict):return None
+ cwd=data.get('cwd') or os.getcwd()
+ p=Path(str(t)).expanduser();p=p if p.is_absolute() else Path(cwd)/p
+ rp=_rl(p);sha=hashlib.sha256(content.encode('utf-8')).hexdigest()
+ st=_staffing()
+ for path,doc in st.resolve_plans(cwd,session,STATE):
+  for wf in st.workflows(doc or {}):
+   for u in wf.get('units') or []:
+    if not isinstance(u,dict) or u.get('unit_id')!=d.get('unit_id') or not u.get('verdict_file'):continue
+    if _rl(Path(path).parent/u['verdict_file'])!=rp:continue
+    for r in read_rows("SELECT l.id,l.transcript,l.receipt FROM launch_tags t JOIN launches l ON l.id=t.id JOIN attempt_ids a ON a.launch_id=l.id WHERE t.plan=? AND t.workflow_id=? AND a.plan=? AND a.attempt_id=? AND l.state IN (?,?,?,'COMPLETED')",(str(path),wf['workflow_id'],str(path),str(d.get('attempt_id')))+LIVE_STATES):
+     if _agent_in_run(r['transcript'],r['receipt'],data['agent_id'],data):
+      write_txn([('INSERT OR IGNORE INTO verdict_records VALUES(?,?,?,?,?,?,?,?)',(str(path),wf['workflow_id'],u['unit_id'],str(d.get('attempt_id')),sha,str(data['agent_id']),r['id'],time.time()))])
+      return None
+ return None
 
 def pre_checks(data,tool,session):
  # Runs for every PreToolUse the guard is registered for. Returns an exit code to deny, or None.
@@ -486,6 +591,12 @@ def pre_checks(data,tool,session):
  if tool in FENCE_EDIT or tool=='Bash':
   vb=verdict_write_block(data,tool,ti,session)
   if vb is not None:return vb
+  pb=protected_write_block(data,tool,ti,session)
+  if pb is not None:return pb
+  if tool in FENCE_EDIT:
+   try:rv=record_subagent_verdict(data,tool,ti,session)
+   except Exception:rv=None
+   if rv is not None:return rv
  if tool=='Bash' and PM2_ENV_DUMP.search(str(ti.get('command') or '')):
   return refuse('pm2 jlist/pm2 describe dump process environments (secrets). Use `pm2 list` (no env) instead.')
  root=program_root(session)
@@ -516,7 +627,7 @@ def plan_tag(data,ti):
  try:
   a=ti.get('args');wid=a.get('workflowId') if isinstance(a,dict) else None
   if not (isinstance(wid,str) and wid):return None
-  f=_staffing().resolve_plan(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE)
+  f=_staffing().plan_for_launch(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE,wid)
   aid=a.get('attemptId');aid=aid if isinstance(aid,str) and aid.strip() else None
   return (wid,str(f[0]),aid) if f else None
  except Exception:return None
@@ -568,8 +679,8 @@ def _validate(data,ctx):
  except Exception:pass
  ok,why=_staffing().check_launch(ti,cwd,session=sess,state_dir=STATE,attempt_id=data.get('tool_use_id'),reap=False,record=False)
  if not ok:return refuse(why)
- found=_staffing().resolve_plan(cwd,sess,STATE)
- if found and isinstance(found[1],dict):env['WORKFLOW_GUARD_CAP']=str(_staffing().launch_agent_cap(found[1],STATE))
+ a_=ti.get('args');found=_staffing().plan_for_launch(cwd,sess,STATE,a_.get('workflowId') if isinstance(a_,dict) else None)
+ if found and isinstance(found[1],dict):env['WORKFLOW_GUARD_CAP']=str(_staffing().launch_agent_cap(found[1],STATE,sess))
  try:
   out=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':ti.get('args'),'windowHelper':_staffing().WINDOW_HELPER}),text=True,capture_output=True,timeout=15,env=env)
   result=json.loads(out.stdout)
@@ -806,23 +917,34 @@ def clear_alerts(prefix,keep=()):
  for r in read_rows('SELECT key FROM plan_alerts WHERE key LIKE ?',(prefix+'%',)):
   if r['key'] not in keep:write_txn([('DELETE FROM plan_alerts WHERE key=?',(r['key'],))])
 
+def plan_snapshots(data,session):
+ # Every plan governing this session (cwd-found, and each pinned armed unfinished plan) with its computed state.
+ # Raises on journal trouble: the Stop caller turns that into a fail-closed block when a running plan is at stake.
+ c=db()
+ try:occupancy(c)
+ finally:c.close()
+ return [x for x in _staffing().snapshots(data.get('cwd') or os.getcwd(),STATE,session,reap=False) if x]
+
 def plan_snapshot(data,session):
- # Plan governing this session (cwd-found, or pinned once armed), with its computed state; None if none/invalid.
  try:
-  c=db()
-  try:occupancy(c)
-  finally:c.close()
-  snap=_staffing().snapshot(data.get('cwd') or os.getcwd(),STATE,session,reap=False)
-  return snap
+  r=plan_snapshots(data,session)
+  return r[0] if r else None
  except Exception:return None
 
 def stop_omission(data,session):
- # Returns the block reason when the armed plan owes workflows that are unlaunched or is invalid; None to allow.
+ # Block reason when ANY armed plan governing the session (cwd-found or pinned; several can be pinned) owes workflows that are
+ # unlaunched or is invalid; the owed list is the union. None to allow.
  # Releases, the only ones: (a) the user's stop latch (checked by the caller), (b) a question-only turn,
- # (c) every owed workflow has >= 3 ADMITTED launches that then FAILED this session (alert written); hook refusals never count.
+ # (c) per plan: every owed workflow has >= 3 ADMITTED launches that then FAILED this session (alert written); hook refusals never count.
  if question_only(session):return None
- snap=plan_snapshot(data,session)
- if not snap or not snap['armed']:return None
+ reasons=[];snaps=plan_snapshots(data,session)
+ for snap in snaps:
+  r=_stop_omission_one(snap,session)
+  if r:reasons.append(('[plan %s] '%snap['path'] if len(snaps)>1 else '')+r)
+ return '\n'.join(reasons) if reasons else None
+
+def _stop_omission_one(snap,session):
+ if not snap['armed']:return None
  if snap['errors']:
   return 'Plan %s is armed but INVALID, so nothing can be launched against it. Fix the plan (then continue the owed work):\n  - %s'%(snap['path'],'\n  - '.join(snap['errors'][:12]))
  st=snap['state'];plan=str(snap['path'])
@@ -831,7 +953,7 @@ def stop_omission(data,session):
   k=plan+'|'+wid+'|HANDBACK';hb_keys.append(k)
   raise_alert(k,session,wid,'WORKFLOW_HANDBACK','Workflow %s of plan %s was launched %d times without becoming done. It is not owed; the user must decide.'%(wid,plan,_staffing().HANDBACK_LAUNCHES))
  clear_alerts(plan+'|',hb_keys)
- owed=st['owed'];okey='owed|'+session
+ owed=st['owed'];okey='owed|'+session+'|'+plan
  if not owed:
   clear_alerts(okey);return None
  failed=snap['view']['failed']
@@ -841,19 +963,36 @@ def stop_omission(data,session):
  clear_alerts(okey)
  return 'Owed now: %s. Launch each now with args.workflowId and its exact planned units. Do not end the turn while planned workflows are unlaunched.'%_staffing().describe_owed(st)
 
+def stop_unavailable(data,session,err):
+ # Fail closed when the enforcement machinery breaks while a plan is RUNNING (status read straight from the plan file, journal-independent):
+ # the cwd-found plan, and every plan pinned to the session when the pin table is still readable. Other errors stay fail-open.
+ plans=[]
+ try:
+  f=_staffing().find_plan(data.get('cwd') or os.getcwd())
+  if f:plans.append(f[0])
+ except Exception:pass
+ try:plans+=[Path(r['plan']) for r in read_rows('SELECT plan FROM session_pins WHERE session=?',(session,))]
+ except Exception:pass
+ for p in plans:
+  d=_jload(p)
+  if isinstance(d,dict) and str(d.get('status') or '').lower()=='running':
+   return 'guard unavailable: %s: %s. Plan %s has status running, so Stop cannot be released while the enforcement journal is unreadable. Repair the guard state (the owner) and continue the owed work.'%(type(err).__name__,err,p)
+ return None
+
 def plan_line(data,session):
- # One reminder line: the armed plan's own numbers, else the neutral ceilings.
- lim=limits()
- snap=plan_snapshot(data,session)
- if snap and snap['errors']:
-  return 'Plan %s is %s and INVALID: %s'%(snap['path'],'armed (Stop will hold)' if snap['armed'] else 'found, not started',' | '.join(snap['errors'][:6]))
- if snap and not snap['armed']:
-  wfs=_staffing().workflows(snap['doc'])
-  if wfs and not all(_staffing().is_done(snap['path'].parent,w,snap['view']['attempts'].get(w.get('workflow_id'),())) for w in wfs):
-   return 'Plan %s found, not started. Start the build with: python3 ~/.claude/hooks/workflow-guard/staffing.py start --cwd %s'%(snap['path'],snap['path'].parent)
- if snap and snap['armed']:
+ # One reminder line: each governing plan's own numbers, else the neutral ceilings.
+ lim=limits();snaps=plan_snapshots(data,session);parts=[]
+ for snap in snaps:
+  if snap['errors']:
+   parts.append('Plan %s is %s and INVALID: %s'%(snap['path'],'armed (Stop will hold)' if snap['armed'] else 'found, not started',' | '.join(snap['errors'][:6])));continue
+  if not snap['armed']:
+   wfs=_staffing().workflows(snap['doc'])
+   if wfs and not all(_staffing().is_done(snap['path'].parent,w,snap['view']['attempts'].get(w.get('workflow_id'),()),snap['view']['records'].get(w.get('workflow_id'),())) for w in wfs):
+    parts.append('Plan %s found, not started. Start the build with: python3 ~/.claude/hooks/workflow-guard/staffing.py start --cwd %s'%(snap['path'],snap['path'].parent))
+   continue
   st=snap['state']
-  return 'Plan %s: owed now: %s; running %d/%d.'%(snap['path'],_staffing().describe_owed(st) or 'none',len(st['running']),st['max_active'])
+  parts.append('Plan %s: owed now: %s; running %d/%d.'%(snap['path'],_staffing().describe_owed(st) or 'none',len(st['running']),st['max_active']))
+ if parts:return ' | '.join(parts)
  return "Ceilings: %d workflows / %d agents per workflow / %d agents; a plan's own numbers govern when present."%(lim['concurrent_workflows_per_program'],lim['concurrent_agents_per_workflow'],lim['concurrent_agents_total'])
 
 def hook(data):
@@ -943,12 +1082,17 @@ def hook(data):
   context(event,('Workflow tools need explicit model/label/declared phase. Limits read from '+str(LIMITS_FILE)+', counted running-at-once with finished and dead runs reaped; '+running+'. Use '+str(ROOT/'make-workflow.py')+' (with --plan and --workflow-id under a swarm plan). Review '+str(STATE/'STATUS.md')+' for stale-run alerts. Caps are safety guards only; keep existing authorization/cancellation boundaries.\n'+line))
   return 0
  if event in ('PreToolUse','Stop'):
-  continued,latched=continuation_state(session)
+  try:continued,latched=continuation_state(session)
+  except Exception as e:
+   if event!='Stop':raise
+   un=stop_unavailable(data,session,e)
+   if un:print(json.dumps({'decision':'block','reason':un}))
+   return 0
   # Decision 10: while the stop latch is set the Stop hook never blocks and says nothing.
   if event=='Stop' and latched:return 0
   if event=='Stop':
    try:owed=stop_omission(data,session)
-   except Exception:owed=None
+   except Exception as e:owed=stop_unavailable(data,session,e)
    if owed:print(json.dumps({'decision':'block','reason':owed}));return 0
   if not (STATE/'alerts.json').exists():return 0
   try:report=json.loads((STATE/'alerts.json').read_text())

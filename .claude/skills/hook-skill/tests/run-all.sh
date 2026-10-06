@@ -11,7 +11,7 @@ for t in test_guard.py test_generator.py test_smart_guard.py test_a46_running_at
 done
 # test_stop_omission.py is a pytest file (fixtures); install pytest when it is missing rather than skipping the suite.
 python3 -c 'import pytest' 2>/dev/null || python3 -m pip install -q pytest 2>/dev/null || python3 -m pip install -q --break-system-packages pytest 2>/dev/null
-(cd "$HOOKS/workflow-guard" && run python3 -m pytest -q test_stop_omission.py)
+(cd "$HOOKS/workflow-guard" && run python3 -m pytest -q test_stop_omission.py test_enforcement.py test_enforcement_v22.py test_validate_hardening.py)
 (cd "$HOOKS/workflow-guard" && run python3 staffing.py --selftest)
 (cd "$HOOKS/workflow-guard" && run python3 capacity_probe.py --selftest)
 for t in test_hygiene.py test_disk_cleanup.py test_gates.py test_settings_merge.py test_capacity.py; do run python3 "$HERE/$t"; done

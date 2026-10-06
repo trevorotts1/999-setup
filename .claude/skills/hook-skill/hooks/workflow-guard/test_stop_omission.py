@@ -90,8 +90,10 @@ def test_done_is_decided_by_verdict_file_pass(env):
     st._verdict(env.proj, 'W0-01', 'PASS')
     assert stop(env).startswith('Owed now: W0-01 (2 agents).')  # PASS whose attempt_id the guard never admitted is not done
     admit(env, 'W0-01')
+    assert stop(env).startswith('Owed now: W0-01 (2 agents).')  # admitted, but a verdict file WITHOUT a journal record is not done
+    st._journal_verdicts(env.st, env.proj, 'W0-01')
     r = stop(env); assert r.startswith('Owed now: W0-02 (2 agents).')
-    st._verdict(env.proj, 'W0-02', 'PASS', attempt='A2'); admit(env, 'W0-02', 'A2')
+    st._verdict(env.proj, 'W0-02', 'PASS', attempt='A2'); admit(env, 'W0-02', 'A2'); st._journal_verdicts(env.st, env.proj, 'W0-02')
     assert stop(env) is None
 
 
@@ -104,7 +106,7 @@ def test_status_fields_never_decide_done(env):
 def test_no_count_based_release(env):
     plan(env.proj)
     for _ in range(12):
-        assert stop(env)
+        assert (stop(env) or '').startswith('Owed now:')
 
 
 def test_release_a_stop_latch(env, capsys):
@@ -121,13 +123,13 @@ def test_release_b_question_only(env):
 def test_hook_refusals_never_release_the_stop(env):
     plan(env.proj)
     denied(env, 'W0-01', 5); denied(env, 'W0-02', 5)
-    assert stop(env)  # refusals recorded by the old guard are not admitted launches and never count
+    assert (stop(env) or '').startswith('Owed now:')  # refusals recorded by the old guard are not admitted launches and never count
 
 
 def test_release_c_admitted_launches_that_failed(env):
     plan(env.proj, {'W0-01': 2, 'W0-02': 2})
     launch(env, 'W0-01', 'FAILED'); launch(env, 'W0-01', 'FAILED'); launch(env, 'W0-02', 'FAILED')
-    assert stop(env)  # two and one failures: still owed
+    assert (stop(env) or '').startswith('Owed now:')  # two and one failures: still owed
     launch(env, 'W0-02', 'FAILED'); launch(env, 'W0-02', 'FAILED')
     assert 'W0-01' in stop(env) and 'W0-02' not in stop(env).split('Launch each')[0]  # W0-02 reached handback (3 launches)
 
@@ -135,7 +137,7 @@ def test_release_c_admitted_launches_that_failed(env):
 def test_release_c_every_owed_workflow_has_three_failed_admitted_launches(env):
     plan(env.proj, {'W0-01': 2}, maw=1)
     for _ in range(2): launch(env, 'W0-01', 'FAILED')
-    assert stop(env)
+    assert (stop(env) or '').startswith('Owed now:')
     launch(env, 'W0-01', 'FAILED')
     assert stop(env) is None  # handback: not owed, alert written, the user decides
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
@@ -144,7 +146,7 @@ def test_release_c_every_owed_workflow_has_three_failed_admitted_launches(env):
 
 def test_failures_in_another_session_do_not_release(env):
     plan(env.proj, {'W0-01': 2}); launch(env, 'W0-01', 'FAILED', sid='other'); launch(env, 'W0-01', 'FAILED', sid='other')
-    assert stop(env, 's1')
+    assert (stop(env, 's1') or '').startswith('Owed now:')
 
 
 def test_handback_after_three_launches(env):
@@ -154,6 +156,8 @@ def test_handback_after_three_launches(env):
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
     assert any(a['state'] == 'WORKFLOW_HANDBACK' and a['workflow'] == 'W0-01' for a in alerts)
     st._verdict(env.proj, 'W0-02', 'PASS', attempt='A2'); admit(env, 'W0-02', 'A2')
+    assert stop(env).startswith('Owed now: W0-02')  # no journal record for the file: not done
+    st._journal_verdicts(env.st, env.proj, 'W0-02')
     assert stop(env) is None  # only the handback remains: not owed
 
 
@@ -201,7 +205,7 @@ def test_status_active_does_not_arm_and_is_invalid(env):
 
 def test_armed_plan_pins_to_session_after_cwd_moves(env):
     plan(env.proj)
-    assert stop(env)  # recorded against s1 while the cwd is the project
+    assert (stop(env) or '').startswith('Owed now:')  # recorded against s1 while the cwd is the project
     assert 'W0-01' in stop(env, cwd=env.away)
     assert stop(env, sid='s2', cwd=env.away) is None  # another session never entered the plan
 
@@ -244,6 +248,9 @@ def test_unarmed_plan_gets_the_not_started_line(env, capsys):
 def test_start_cli_validates_then_arms(env, capsys):
     p = plan(env.proj, status='planned-not-running')
     assert st.cmd_start(env.proj) == 0 and json.loads(p.read_text())['status'] == 'running'
-    assert stop(env)  # armed now: owed workflows block the Stop
+    assert (stop(env) or '').startswith('Owed now:')  # armed now: owed workflows block the Stop
     bad = json.loads(p.read_text()); bad['status'] = 'planned-not-running'; bad['policy']['max_active_workflows'] = 99; p.write_text(json.dumps(bad))
+    capsys.readouterr()
     assert st.cmd_start(env.proj) == 1 and json.loads(p.read_text())['status'] == 'planned-not-running'  # an invalid plan is not started
+    out = capsys.readouterr().out
+    assert 'INVALID, not started' in out and 'policy.max_active_workflows must be an integer 1..50' in out

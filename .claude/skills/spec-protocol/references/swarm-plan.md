@@ -67,9 +67,9 @@ the end of every turn. A document that states a different number is a defect: th
   whitespace and case ignored) are rejected. `swarm-plan.mjs` also WARNS (never refuses) when one unit
   lists three or more items: split them into units.
 - No checker-count or executions arithmetic exists: staffing is derived from units. The leftover keys
-  `builders`, `checkers`, `repair_extra_executions_max`, `max_total_executions`, `total_executions`,
-  `repair_reserve` and `executions_total` are refused with
-  `<wid>: leftover key <k> — staffing is derived from units`.
+  `builders`, `checkers`, `repair_extra_executions_max` and `max_total_executions` are refused with
+  `<wid>: leftover key <k> — staffing is derived from units`, and a workflow-level `verdict_file` with
+  `<wid>: leftover key verdict_file — a workflow is done when every unit has a valid PASS verdict`.
 
 ## One ruleset
 

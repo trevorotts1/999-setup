@@ -24,8 +24,9 @@ AND `claude-nine`.
   restored on uninstall).
 - **spec-protocol 1.37.0:** `dispatch-gate.py` enforces the plan launch contract (and blocks hidden builds under a plan);
   `tools/install-hooks.sh` / `.ps1` ship `staffing.py` + `capacity_probe.py` to `hooks/workflow-guard/` and write the measured
-  env value; `swarm-plan.mjs`, `staffing.py` and the packet checker are ONE ruleset (derived/leftover staffing keys
-  rejected, `owned_output` overlap rejected, padding rejected) with a cross-validator agreement test; `dispatch-check`
+  env value; `swarm-plan.mjs`, `staffing.py` and the packet checker are ONE ruleset (contract v2.1: leftover staffing keys and a
+  workflow-level `verdict_file` rejected, a workflow is done when every unit verdict is PASS with a different reviewer,
+  `args.attemptId` required, plan `status` planned-not-running/running, `owned_output` overlap rejected, padding rejected) with a cross-validator agreement test; `dispatch-check`
   floor is `min(units, clientCap)`; docs swept for the flat-10 wording. New CI workflow `spec-protocol-tests`.
 - **nine-router-setup 1.25.0:** `enable-agent-teams.sh` / `Enable-AgentTeams.ps1` merge the measured
   `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` into each config root (skipped, and said so, when no probe can run).

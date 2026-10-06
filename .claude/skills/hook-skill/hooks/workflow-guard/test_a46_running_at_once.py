@@ -82,6 +82,7 @@ def test_2_atomic_cap_thirty_threads():
     c = raw()
     rows = c.execute("SELECT COUNT(*) n FROM launches WHERE state='VALIDATED'").fetchone()['n']
     c.close()
+    assert all('already running %d workflows, the operator limit of %d' % (cap, cap) in r for r in refused), 'wrong refusal reason: %r' % set(refused)
     assert len(admitted) == cap, 'cap %d: exactly %d must be admitted, got %d' % (cap, cap, len(admitted))
     assert len(refused) == n - cap, 'exactly %d must be refused, got %d' % (n - cap, len(refused))
     assert rows == cap, 'ledger must hold exactly %d live rows, got %d' % (cap, rows)
@@ -155,6 +156,7 @@ def test_6_operator_limits_are_read_from_config():
         assert guard.admit_launch(launch_row('c%d' % i, 'cfg')) is None
     refusal = guard.admit_launch(launch_row('c3', 'cfg'))
     assert refusal, 'third launch must be refused under the operator cap of 2'
+    assert 'already running 2 workflows, the operator limit of 2' in refusal, 'wrong refusal reason: %r' % refusal
     assert occ()['workflows'] == 2, 'exactly 2 live under operator cap, got %r' % occ()
     print('PASS test_6_operator_limits_are_read_from_config: config wins over defaults; %r' % lim)
 

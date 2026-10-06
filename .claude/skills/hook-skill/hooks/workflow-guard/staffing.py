@@ -43,6 +43,7 @@ LAUNCH CONTRACT (check_launch) a Workflow call under a found plan must carry arg
 
 CLI:  staffing.py status --cwd DIR [--state-dir DIR] [--json]   |   staffing.py start --cwd DIR   |   staffing.py --selftest
 """
+import hashlib
 import json
 import os
 import re
@@ -273,10 +274,33 @@ def validate_plan(doc):
 
 
 # ---------------------------------------------------------------- done / ready / owed
-def unit_done(plan_dir, wf, u, attempts):
+_FAMILIES = ("opus", "sonnet", "haiku", "fable", "gpt", "gemini", "deepseek", "glm", "kimi", "qwen", "llama", "mistral",
+             "grok", "minimax", "nemotron", "gemma", "codex", "agnes")
+
+
+def model_family(name):
+    """Family of a model name: vendor prefix, version, date and case stripped ('anthropic/claude-opus-4-5-20251101' -> 'opus').
+    Unknown names compare as normalized lowercase with digits and separators removed."""
+    s = str(name or "").strip().lower().rsplit("/", 1)[-1].split(":", 1)[0]
+    for tok in re.split(r"[^a-z]+", s):
+        if tok in _FAMILIES:
+            return tok
+    return re.sub(r"[\d._\s-]+", "", s) or s
+
+
+def file_sha256(path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def unit_done(plan_dir, wf, u, attempts, records=None):
     """True iff u's verdict file is a valid PASS: verdict == "PASS" exactly, unit_id matches, attempt_id is an
-    ADMITTED launch of this workflow (attempts, recorded by the guard), builder_model and reviewer_model
-    nonempty and different."""
+    ADMITTED launch of this workflow (attempts, recorded by the guard), builder_model and reviewer_model nonempty and of
+    different model FAMILIES, AND the file's current sha256 matches a journal record (records: {(unit_id, attempt_id, sha256)})
+    the guard wrote when a subagent of that live/finished admitted launch wrote this very content. A file nobody
+    journaled (hand-written, edited afterwards, written by the conductor) is never DONE."""
     vf = u.get("verdict_file")
     if not _nonempty(vf):
         return False
@@ -284,7 +308,8 @@ def unit_done(plan_dir, wf, u, attempts):
         base = Path(plan_dir).resolve()
         target = (base / vf).resolve()
         target.relative_to(base)
-        d = json.loads(target.read_text(encoding="utf-8"))
+        raw = target.read_bytes()
+        d = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
         return False
     if not isinstance(d, dict) or d.get("verdict") != "PASS" or d.get("unit_id") != u.get("unit_id"):
@@ -292,22 +317,25 @@ def unit_done(plan_dir, wf, u, attempts):
     aid, b, r = d.get("attempt_id"), d.get("builder_model"), d.get("reviewer_model")
     if not (_nonempty(aid) and aid in (attempts or ())):
         return False
-    return _nonempty(b) and _nonempty(r) and b.strip().lower() != r.strip().lower()
+    if (u.get("unit_id"), aid, hashlib.sha256(raw).hexdigest()) not in (records or ()):
+        return False
+    return _nonempty(b) and _nonempty(r) and model_family(b) != model_family(r)
 
 
-def is_done(plan_dir, wf, attempts=()):
+def is_done(plan_dir, wf, attempts=(), records=None):
     """A workflow is DONE iff every one of its units has a valid PASS verdict (see unit_done)."""
     units = [u for u in (wf.get("units") or []) if isinstance(u, dict)]
-    return bool(units) and all(unit_done(plan_dir, wf, u, attempts) for u in units)
+    return bool(units) and all(unit_done(plan_dir, wf, u, attempts, records) for u in units)
 
 
-def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None):
+def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None, records=None):
     """Pure state computation. running: workflowIds with a live launch. launches: wid -> count."""
     launches = launches or {}
     attempts = attempts or {}
+    records = records or {}
     wfs = workflows(doc)
     order = [w["workflow_id"] for w in wfs]
-    done = {w["workflow_id"] for w in wfs if is_done(Path(plan_path).parent, w, attempts.get(w["workflow_id"], ()))}
+    done = {w["workflow_id"] for w in wfs if is_done(Path(plan_path).parent, w, attempts.get(w["workflow_id"], ()), records.get(w["workflow_id"], ()))}
     run = [i for i in order if i in set(running)]
     handback = [i for i in order if i not in done and i not in run and launches.get(i, 0) >= HANDBACK_LAUNCHES]
     ready = []
@@ -339,19 +367,26 @@ def describe_owed(state):
 
 # ---------------------------------------------------------------- journal (guard.sqlite3)
 def migrate(conn):
-    """Idempotent: tag table for workflowId on each launch, and denied/failed attempt table."""
+    """Idempotent: tag table for workflowId on each launch, denied/failed attempt table, session pins (many per session),
+    and verdict_records (the journal side of every DONE)."""
+    fresh = not conn.execute("SELECT 1 FROM sqlite_master WHERE name='session_pins'").fetchone()
     conn.executescript(
         "CREATE TABLE IF NOT EXISTS launch_tags(id TEXT PRIMARY KEY,session TEXT,workflow_id TEXT,plan TEXT,created REAL);"
         "CREATE TABLE IF NOT EXISTS session_plans(session TEXT PRIMARY KEY,plan TEXT,armed REAL);"
+        "CREATE TABLE IF NOT EXISTS session_pins(session TEXT,plan TEXT,armed REAL,PRIMARY KEY(session,plan));"
+        "CREATE TABLE IF NOT EXISTS verdict_records(plan TEXT,workflow_id TEXT,unit_id TEXT,attempt_id TEXT,sha256 TEXT,agent_id TEXT,launch_id TEXT,created REAL,PRIMARY KEY(plan,unit_id,attempt_id,sha256));"
         "CREATE TABLE IF NOT EXISTS attempt_ids(plan TEXT,attempt_id TEXT,workflow_id TEXT,launch_id TEXT,created REAL,PRIMARY KEY(plan,attempt_id));"
         "CREATE TABLE IF NOT EXISTS launch_attempts(attempt TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,outcome TEXT,detail TEXT,created REAL);")
+    if fresh:  # one-time carry-over of the old single-pin table; never again, or deleted pins would come back
+        conn.execute("INSERT OR IGNORE INTO session_pins SELECT session,plan,armed FROM session_plans")
+        conn.commit()
 
 
 def journal_view(conn, plan_path, ids, session=None):
     """Read the journal for one plan. Returns dict(running=set, launches={wid:n}, failed={wid:n}, any=bool,
     attempts={wid:set(attempt_id)}). Everything here is an ADMITTED launch: failed counts this session's admitted
     launches that then FAILED; hook refusals are never counted."""
-    out = {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}}
+    out = {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}, "records": {}}
     p = str(plan_path)
     idset = set(ids)
     try:
@@ -362,7 +397,9 @@ def journal_view(conn, plan_path, ids, session=None):
         for wid, n in conn.execute("SELECT workflow_id,COUNT(*) FROM launch_tags WHERE plan=? GROUP BY workflow_id", (p,)):
             if wid in idset:
                 out["launches"][wid] = n
-        out["any"] = bool(out["launches"])
+        out["any"] = bool(out["launches"]) or (not idset and bool(conn.execute("SELECT 1 FROM launch_tags WHERE plan=? LIMIT 1", (p,)).fetchone()))
+        for wid, uid, aid, sha in conn.execute("SELECT workflow_id,unit_id,attempt_id,sha256 FROM verdict_records WHERE plan=?", (p,)):
+            out["records"].setdefault(wid, set()).add((uid, aid, sha))
         for wid, aid in conn.execute("SELECT workflow_id,attempt_id FROM attempt_ids WHERE plan=?", (p,)):
             if wid in idset:
                 out["attempts"].setdefault(wid, set()).add(aid)
@@ -413,26 +450,68 @@ def program_cap(state_dir=None):
     return v if _int(v) and v > 0 else CEIL_WORKFLOWS
 
 
-def launch_agent_cap(doc, state_dir=None):
+PROBE_TTL = 600
+PROBE = None  # tests inject a callable returning {"per_workflow_cap": n}; None = capacity_probe.probe()
+
+
+def probed_cap(state_dir=None, session=None, now=None):
+    """The per-workflow cap measured on THIS box right now (capacity_probe.probe()), cached per session for 10 minutes in
+    <state>/capacity-probe-cache.json so every hook process of a session agrees. None when the probe fails (the plan cap then stands)."""
+    sd = Path(state_dir) if state_dir else default_state_dir()
+    now = time.time() if now is None else now
+    f, key = sd / "capacity-probe-cache.json", str(session or "-")
+    cache = _jload(f)
+    cache = cache if isinstance(cache, dict) else {}
+    e = cache.get(key)
+    if isinstance(e, dict) and _int(e.get("cap")) and isinstance(e.get("t"), (int, float)) and 0 <= now - e["t"] < PROBE_TTL:
+        return e["cap"]
+    try:
+        if PROBE is not None:
+            cap = PROBE()["per_workflow_cap"]
+        else:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("capacity_probe_for_staffing", HERE / "capacity_probe.py")
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            cap = m.probe()["per_workflow_cap"]
+        if not (_int(cap) and cap >= 1):
+            return None
+    except Exception:
+        return None
+    cache = {k: v for k, v in cache.items() if isinstance(v, dict) and isinstance(v.get("t"), (int, float)) and 0 <= now - v["t"] < PROBE_TTL}
+    cache[key] = {"cap": cap, "t": now}
+    try:
+        sd.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.name + ".%d.tmp" % os.getpid())
+        tmp.write_text(json.dumps(cache), encoding="utf-8")
+        os.replace(tmp, f)
+    except OSError:
+        pass
+    return cap
+
+
+def launch_agent_cap(doc, state_dir=None, session=None):
     """THE per-workflow cap: min(plan policy.max_agents_per_workflow, limits.json concurrent_agents_per_workflow,
-    plan policy.capacity_probe.per_workflow_cap when the plan carries one). Measured from the box (RAM, cores,
-    Docker/Hostinger limits via capacity_probe.py), max 10; 10 on the operator's Mac."""
+    plan policy.capacity_probe.per_workflow_cap when present, and a LIVE capacity_probe.probe() of this box cached 10
+    minutes per session). Max 10; 10 on the operator's Mac. The number typed into a plan can only lower the measured one."""
     sd = Path(state_dir) if state_dir else default_state_dir()
     d = _jload(sd / "limits.json")
     v = d.get("concurrent_agents_per_workflow") if isinstance(d, dict) else None
     cap = min(plan_cap(doc) or CEIL_AGENTS, v if _int(v) and v > 0 else CEIL_AGENTS)
     cp = policy(doc).get("capacity_probe")
     pc = cp.get("per_workflow_cap") if isinstance(cp, dict) else None
-    return min(cap, pc) if _int(pc) and pc > 0 else cap
+    cap = min(cap, pc) if _int(pc) and pc > 0 else cap
+    live = probed_cap(state_dir, session)
+    return min(cap, live) if live else cap
 
 
 def remember_session_plan(state_dir, session, plan_path):
-    """Pin an ARMED plan to a session so it keeps governing it after the cwd moves."""
+    """Pin an ARMED plan to a session so it keeps governing it after the cwd moves. Never replaces another pin."""
     conn = open_journal(state_dir)
     if not conn:
         return
     try:
-        conn.execute("INSERT OR REPLACE INTO session_plans VALUES(?,?,?)", (str(session), str(plan_path), time.time()))
+        conn.execute("INSERT OR IGNORE INTO session_pins VALUES(?,?,?)", (str(session), str(plan_path), time.time()))
         conn.commit()
     except sqlite3.Error:
         pass
@@ -440,73 +519,160 @@ def remember_session_plan(state_dir, session, plan_path):
         conn.close()
 
 
-def resolve_plan(cwd, session=None, state_dir=None):
-    """The plan governing this session: (path, doc) or None.
-    A plan found from cwd that is ARMED (status running, or the journal recorded a launch of
-    one of its workflows) is pinned to the session and keeps governing it wherever the cwd goes, until
-    every workflow is done or the user's stop latch is set. An unarmed plan stays cwd-scoped."""
+def _attempts_records(conn, p):
+    att, rec = {}, {}
+    for wid_, aid_ in conn.execute("SELECT workflow_id,attempt_id FROM attempt_ids WHERE plan=?", (str(p),)):
+        att.setdefault(wid_, set()).add(aid_)
+    for wid_, uid_, aid_, sha_ in conn.execute("SELECT workflow_id,unit_id,attempt_id,sha256 FROM verdict_records WHERE plan=?", (str(p),)):
+        rec.setdefault(wid_, set()).add((uid_, aid_, sha_))
+    return att, rec
+
+
+def resolve_plans(cwd, session=None, state_dir=None):
+    """Every plan governing this session: [(path, doc)], doc None when the file is missing/unreadable.
+    An ARMED plan (status running, or a launch of it recorded) found from cwd is pinned to the session; a pin is never
+    replaced by another (several armed plans may be pinned at once). Pinned plans keep governing wherever the cwd goes
+    until EVERY workflow of the plan is done (the pin is then deleted); the user's stop latch only SUSPENDS pins (they stay
+    and govern again after the next human message). A pinned plan whose file vanished or is unreadable while launches are
+    recorded is returned with doc None: armed and invalid ("plan file missing"), never "no plan". An unarmed cwd plan stays cwd-scoped."""
     found = find_plan(cwd)
     if not session:
-        return found
+        return [found] if found else []
     conn = open_journal(state_dir)
     if not conn:
-        return found
+        return [found] if found else []
+    out = []
     try:
         if found and found[1] is not None:
             path, doc = found
-            status = str(doc.get("status") or "").lower() == "running"
             launched = conn.execute("SELECT 1 FROM launch_tags WHERE plan=? LIMIT 1", (str(path),)).fetchone()
-            if status or launched:
-                conn.execute("INSERT OR REPLACE INTO session_plans VALUES(?,?,?)", (str(session), str(path), time.time()))
+            if str(doc.get("status") or "").lower() == "running" or launched:
+                conn.execute("INSERT OR IGNORE INTO session_pins VALUES(?,?,?)", (str(session), str(path), time.time()))
                 conn.commit()
-                return found
-        row = conn.execute("SELECT plan FROM session_plans WHERE session=?", (str(session),)).fetchone()
-        if row:
-            p = Path(row[0])
-            d = _jload(p) if p.is_file() else None
-            try:
-                latched = (conn.execute("SELECT latched FROM continuations WHERE session=?", (str(session),)).fetchone() or [0])[0]
-            except sqlite3.Error:
-                latched = 0
-            wfs = workflows(d) if isinstance(d, dict) else []
-            att = {}
-            for wid_, aid_ in conn.execute("SELECT workflow_id,attempt_id FROM attempt_ids WHERE plan=?", (str(p),)):
-                att.setdefault(wid_, set()).add(aid_)
-            finished = bool(wfs) and all(is_done(p.parent, w, att.get(w.get("workflow_id"), ())) for w in wfs)
-            if isinstance(d, dict) and not latched and not finished:
-                return p, d
-            conn.execute("DELETE FROM session_plans WHERE session=?", (str(session),))
-            conn.commit()
+                out.append(found)
+        try:
+            latched = (conn.execute("SELECT latched FROM continuations WHERE session=?", (str(session),)).fetchone() or [0])[0]
+        except sqlite3.Error:
+            latched = 0
+        if not latched:
+            have = {str(x[0]) for x in out}
+            for (plan,) in conn.execute("SELECT plan FROM session_pins WHERE session=? ORDER BY armed", (str(session),)).fetchall():
+                if plan in have:
+                    continue
+                p = Path(plan)
+                d = _jload(p) if p.is_file() else None
+                if not isinstance(d, dict):
+                    if conn.execute("SELECT 1 FROM launch_tags WHERE plan=? LIMIT 1", (plan,)).fetchone():
+                        out.append((p, None))
+                    else:
+                        conn.execute("DELETE FROM session_pins WHERE session=? AND plan=?", (str(session), plan))
+                        conn.commit()
+                    continue
+                wfs = workflows(d)
+                att, rec = _attempts_records(conn, p)
+                if wfs and all(is_done(p.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ())) for w in wfs):
+                    conn.execute("DELETE FROM session_pins WHERE session=? AND plan=?", (str(session), plan))
+                    conn.commit()
+                    continue
+                out.append((p, d))
     except sqlite3.Error:
         pass
     finally:
         conn.close()
-    return found
+    return out or ([found] if found else [])
 
 
-def snapshot(cwd, state_dir=None, session=None, reap=True):
-    """Everything a caller needs: plan, errors, journal view, computed state, armed flag. None if no plan."""
-    found = resolve_plan(cwd, session, state_dir)
+def resolve_plan(cwd, session=None, state_dir=None):
+    """The first plan governing this session (see resolve_plans), or None."""
+    r = resolve_plans(cwd, session, state_dir)
+    return r[0] if r else None
+
+
+def plan_for_launch(cwd, session, state_dir, wid):
+    """Of the plans governing the session, the one that owns workflow wid (else the first)."""
+    plans = resolve_plans(cwd, session, state_dir)
+    for path, doc in plans:
+        if isinstance(wid, str) and doc is not None and wid in [w.get("workflow_id") for w in workflows(doc)]:
+            return path, doc
+    return plans[0] if plans else None
+
+
+def protected_plan_paths(cwd, session, state_dir=None):
+    """Plan files the main session may not write: the armed cwd-found plan and every plan pinned to the session (even
+    one whose file is gone), as Paths. Read-only apart from opening the journal."""
+    out = []
+    found = find_plan(cwd)
+    conn = open_journal(state_dir)
+    try:
+        if found:
+            launched = conn.execute("SELECT 1 FROM launch_tags WHERE plan=? LIMIT 1", (str(found[0]),)).fetchone() if conn else None
+            if launched or (found[1] is not None and str(found[1].get("status") or "").lower() == "running"):
+                out.append(Path(found[0]))
+        if conn and session:
+            out += [Path(r[0]) for r in conn.execute("SELECT plan FROM session_pins WHERE session=?", (str(session),)).fetchall()]
+    except sqlite3.Error:
+        pass
+    finally:
+        if conn:
+            conn.close()
+    return out
+
+
+def _empty_view():
+    return {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}, "records": {}}
+
+
+def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
+    """Everything a caller needs: plan, errors, journal view, computed state, armed flag. None if no plan.
+    plan: a (path, doc) from resolve_plans to evaluate instead of the first governing plan."""
+    found = plan or resolve_plan(cwd, session, state_dir)
     if not found:
         return None
     path, doc = found
-    errs = validate_plan(doc)
+    errs = validate_plan(doc) if doc is not None else (
+        ["plan file missing: %s (a pinned plan with recorded launches cannot vanish; restore it, do not rename or rewrite it)" % path] if not Path(path).exists()
+        else ["plan file unreadable: %s" % path])
     snap = {"path": path, "doc": doc, "errors": errs, "view": None, "state": None, "armed": False}
     ids = [w["workflow_id"] for w in workflows(doc) if _nonempty(w.get("workflow_id"))]
     if reap and not errs:
         _reap(state_dir)
     conn = open_journal(state_dir)
     try:
-        view = journal_view(conn, path, ids, session) if conn else {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}}
+        view = journal_view(conn, path, ids, session) if conn else _empty_view()
     finally:
         if conn:
             conn.close()
     snap["view"] = view
-    snap["armed"] = is_armed(doc, view["any"])  # an INVALID armed plan is still armed (Stop must hold)
+    snap["armed"] = is_armed(doc or {}, view["any"])  # an INVALID armed plan is still armed (Stop must hold)
     if errs:
         return snap
-    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir), view["attempts"])
+    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"])
     return snap
+
+
+def snapshots(cwd, state_dir=None, session=None, reap=True):
+    """One snapshot per plan governing the session (armed pinned plans are all evaluated; Stop's owed list is their union)."""
+    return [snapshot(cwd, state_dir, session, reap=reap, plan=p) for p in resolve_plans(cwd, session, state_dir)]
+
+
+def pending_units(plan_path, doc, wf, state_dir=None):
+    """The wf's unit objects that are NOT yet PASS (journal-attested): the exact unit list of a repair relaunch."""
+    conn = open_journal(state_dir)
+    if not conn:
+        return list(wf.get("units") or [])
+    try:
+        att, rec = _attempts_records(conn, Path(plan_path).resolve())
+    finally:
+        conn.close()
+    wid = wf.get("workflow_id")
+    return [u for u in wf.get("units") or [] if not unit_done(Path(plan_path).parent, wf, u, att.get(wid, ()), rec.get(wid, ()))]
+
+
+def plan_max_active(plan_path, state_dir=None):
+    """Plan max_active_workflows (min with limits.json concurrent_workflows_per_program) for the plan file, or None."""
+    d = _jload(plan_path)
+    m = policy(d).get("max_active_workflows") if isinstance(d, dict) else None
+    return min(m, program_cap(state_dir)) if _int(m) and m > 0 else None
 
 
 def record_attempt(state_dir, session, plan_path, wid, outcome, detail, attempt_id=None):
@@ -656,24 +822,21 @@ def _first_arg(code, o, end):
 
 
 def unit_stage_problem(script):
-    """None when the script's work is ONE parallel()/pipeline() call over args.units that contains every agent()
-    call; else a sentence naming what is wrong. Bare agent() calls, extra stages, hard-coded arrays and sliced
-    unit lists are all refused."""
+    """None when the script's work is ONE pipeline() call whose first argument is exactly the expression args.units and
+    which contains every agent() call; else a sentence naming what is wrong. Bare agent() calls, extra stages,
+    hard-coded arrays, aliases and derived lists (.filter/.slice/.map/spread/concat/index) are all refused: a derived list
+    lets the script run FEWER units than the launch declares."""
     code = sanitize(script)
     stages = calls(code, "pipeline") + calls(code, "parallel")
     if len(stages) != 1:
-        return "the script must contain exactly ONE parallel()/pipeline() call, over args.units; it has %d" % len(stages)
+        return "the script must contain exactly ONE pipeline() call, over args.units; it has %d parallel()/pipeline() stage call(s)" % len(stages)
     st, o, end = stages[0]
     if end < 0:
         return "the stage call is unbalanced"
     arg = re.sub(r"\s+", "", _first_arg(code, o, end))
     kind = code[st:o].strip()
-    ok = arg == "args.units" if kind.startswith("pipeline") else (arg.startswith("args.units.map(") and _close(arg, len("args.units.map")) == len(arg))
-    if not ok and kind.startswith("pipeline"):
-        m = re.fullmatch(r"([A-Za-z_$][\w$]*)", arg)
-        ok = bool(m and re.search(r"(?:const|let|var)\s+" + re.escape(m.group(1)) + r"\s*=\s*args\s*\.\s*units\s*(?:[;\n]|$)", code))
-    if not ok:
-        return "the %s stage must take args.units itself (pipeline(args.units, ...) or parallel(args.units.map(...))), not %s" % (kind, arg[:60] or "nothing")
+    if not kind.startswith("pipeline") or arg != "args.units":
+        return "the %s stage must take args.units itself: its first argument must be exactly the expression args.units (pipeline(args.units, ...)), not %s (no .filter/.slice/.map/spread/concat/index, no alias, no parallel())" % (kind, arg[:60] or "nothing")
     outside = [a for a in calls(code, "agent") if not (st <= a[0] < end)]
     if outside:
         return "%d agent() call(s) sit outside the single args.units stage; all work must run inside it" % len(outside)
@@ -722,17 +885,7 @@ def _read_script(ti, cwd):
 
 def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None, reap=None, record=True):
     """The launch contract. Returns (ok, message). (True, '') when no plan is found."""
-    found = resolve_plan(cwd, session, state_dir)
-    if not found:
-        return True, ""
     ti = tool_input if isinstance(tool_input, dict) else {}
-    snap = snapshot(cwd, state_dir, session, reap=(state_dir is None) if reap is None else reap)
-    path = snap["path"]
-    head = "WORKFLOW LAUNCH CONTRACT (plan %s): " % path
-    if snap["errors"]:
-        return False, head + "the plan itself is invalid, so no launch can be checked against it. Fix the plan first:\n  - " + "\n  - ".join(snap["errors"][:12])
-    st, doc = snap["state"], snap["doc"]
-    wfs = {w["workflow_id"]: w for w in workflows(doc)}
     args = ti.get("args")
     if isinstance(args, str):
         try:
@@ -741,17 +894,27 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
             args = None
     args = args if isinstance(args, dict) else {}
     wid = args.get("workflowId")
+    found = plan_for_launch(cwd, session, state_dir, wid)
+    if not found:
+        return True, ""
+    snap = snapshot(cwd, state_dir, session, reap=(state_dir is None) if reap is None else reap, plan=found)
+    path = snap["path"]
+    head = "WORKFLOW LAUNCH CONTRACT (plan %s): " % path
+    if snap["errors"]:
+        return False, head + "the plan itself is invalid, so no launch can be checked against it. Fix the plan first:\n  - " + "\n  - ".join(snap["errors"][:12])
+    st, doc = snap["state"], snap["doc"]
+    wfs = {w["workflow_id"]: w for w in workflows(doc)}
     problems = []
 
-    cap_now = launch_agent_cap(doc, state_dir)
+    cap_now = launch_agent_cap(doc, state_dir, session)
 
     def fix_for(target):
         w = wfs[target]
-        return ("FIX: launch workflow %s with args.workflowId=%s, args.units = its %d planned unit_ids %s "
-                "(agent_count %d), a unique args.attemptId (e.g. \"%s-<epoch-ms>\"), and a script that fans out in ONE stage "
-                "over args.units: pipeline(args.units, build, check) with a model: pin on every agent() and every agent() inside "
+        return ("FIX: launch workflow %s with args.workflowId=%s, args.units = its %d planned unit objects exactly as in the plan (ids %s; "
+                "agent_count %d; a repair relaunch carries exactly the not-yet-PASS units), a unique args.attemptId (e.g. \"%s-<epoch-ms>\"), and a script that fans out in ONE stage "
+                "pipeline(args.units, build, check) with a model: pin on every agent() and every agent() inside "
                 "that stage. Never more than %d agents at once (the measured per-workflow cap). Generate the launch with "
-                "python3 %s --plan <SWARM-PLAN.json> --workflow-id %s --out-dir <dir>; do not add or drop units."
+                "python3 %s --plan <SWARM-PLAN.json> --workflow-id %s --out-dir <dir> (add --repair for a repair relaunch); do not add or drop units."
                 % (target, json.dumps(target), len(unit_ids(w)), json.dumps(unit_ids(w)), st["agents"][target], target, cap_now, HERE / "make-workflow.py", target))
 
     target = wid if isinstance(wid, str) and wid in wfs else None
@@ -779,11 +942,20 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
     if target and not problems:
         want = unit_ids(w)
         got = _unit_list(args.get("units"))
+        view = snap["view"]
+        pend = [u.get("unit_id") for u in (w.get("units") or []) if isinstance(u, dict)
+                and not unit_done(path.parent, w, u, view["attempts"].get(required, ()), view["records"].get(required, ()))]
+        repair = 0 < len(pend) < len(want)
         if got is None:
             problems.append("args.units is %s; it must be the list of this workflow's unit_ids" % ("missing" if "units" not in args else "malformed"))
-        elif sorted(got) != sorted(want) or len(got) != len(want):
-            problems.append("args.units has %d unit(s) %s; workflow %s plans exactly %d: %s" % (len(got), json.dumps(got), required, len(want), json.dumps(want)))
+        elif sorted(got) != sorted(pend if repair else want):
+            problems.append("args.units has %d unit(s) %s; workflow %s plans exactly %d: %s%s" % (len(got), json.dumps(got), required, len(want), json.dumps(want),
+                            (" (a repair relaunch must carry exactly the %d not-yet-PASS units %s)" % (len(pend), json.dumps(pend))) if repair else ""))
         else:
+            planned = {u.get("unit_id"): u for u in (w.get("units") or []) if isinstance(u, dict)}
+            altered = [x["unit_id"] for x in args["units"] if isinstance(x, dict) and x != planned.get(x.get("unit_id"))]
+            if altered:
+                problems.append("args.units entr%s %s differ%s from the plan's unit object (every field must be identical; rewritten work/acceptance/owned_output changes what the agents are told to build)" % ("ies" if len(altered) > 1 else "y", json.dumps(altered), "" if len(altered) > 1 else "s"))
             aid = args.get("attemptId")
             if not _nonempty(aid):
                 problems.append("args.attemptId is %s; it must be a non-empty unique string the conductor generates (e.g. \"%s-<epoch-ms>\")" % ("missing" if "attemptId" not in args else "empty or not a string", required))
@@ -795,14 +967,14 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
             else:
                 try:
                     stage = unit_stage_problem(script)
-                    win = None if stage else window_problem(script, cap_now, len(want))
+                    win = None if stage else window_problem(script, cap_now, len(got))
                 except Exception as e:  # parser trouble under a plan is undeterminable
                     problems.append("undeterminable launch (blocked, fail closed): %s while reading the script" % type(e).__name__)
                 else:
                     if stage:
                         problems.append(stage)
                     if win:
-                        problems.append("the script cannot be shown to respect the per-workflow cap of %d agents at once for %d units: %s" % (cap_now, len(want), win))
+                        problems.append("the script cannot be shown to respect the per-workflow cap of %d agents at once for %d units: %s" % (cap_now, len(got), win))
     if not problems:
         return True, ""
     msg = head + "; ".join(problems) + ".\n" + fix_for(required)
@@ -898,6 +1070,30 @@ def _verdict(root, wid, v="PASS", attempt="A1", builder="opus", reviewer="sonnet
         f.write_text(json.dumps({"verdict": v, "unit_id": u["unit_id"], "attempt_id": attempt, "builder_model": builder, "reviewer_model": reviewer}))
 
 
+def _file_records(root, wid):
+    """{wid: {(unit_id, attempt_id, sha256)}} for every verdict file on disk: what the guard journals when an attested subagent
+    Writes it (test helper; the real records come only from guard.record_subagent_verdict)."""
+    doc = json.loads((Path(root) / "SWARM-PLAN.json").read_text())
+    wf = next(w for w in workflows(doc) if w["workflow_id"] == wid)
+    out = set()
+    for u in wf["units"]:
+        f = Path(root) / u["verdict_file"]
+        if f.is_file():
+            out.add((u["unit_id"], json.loads(f.read_text()).get("attempt_id"), file_sha256(f)))
+    return {wid: out}
+
+
+def _journal_verdicts(state_dir, root, wid):
+    """Test helper: journal every verdict file of wid currently on disk, as the guard does for an attested subagent write."""
+    conn = open_journal(state_dir)
+    try:
+        for uid, aid, sha in _file_records(root, wid)[wid]:
+            conn.execute("INSERT OR IGNORE INTO verdict_records VALUES(?,?,?,?,?,?,?,?)", (str((Path(root) / "SWARM-PLAN.json").resolve()), wid, uid, aid, sha, "test-agent", "test-launch", time.time()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _windowed(script, n):
     """GOOD_SCRIPT-style script with the canonical rolling window around every agent() call."""
     return ("export const meta = { name: 'x', description: 'y' }\n" + window_helper(n)
@@ -910,6 +1106,8 @@ GOOD_SCRIPT = ("export const meta = { name: 'x', description: 'y' }\n"
 
 
 def selftest():
+    global PROBE
+    PROBE = lambda: {"per_workflow_cap": 10}  # deterministic: the live probe is exercised by its own fixtures below
     fails = []
 
     def check(name, cond, detail=""):
@@ -930,21 +1128,22 @@ def selftest():
     d6 = json.loads(_mkplan(tmp / "c6", c6, cap=6).read_text()) if (tmp / "c6").mkdir() is None else None
     check("cap 6, 8 units -> agent_count 6 accepted", d6["workflows"][0]["agent_count"] == 6 and validate_plan(d6) == [], validate_plan(d6))
     d6["workflows"][0]["agent_count"] = d6["workflows"][0]["concurrency"] = 8
-    check("cap 6, agent_count 8 rejected", any("agent_count" in x for x in validate_plan(d6)))
+    check("cap 6, agent_count 8 rejected", "W6-01: agent_count must be min(max_agents_per_workflow, len(units)) = 6" in validate_plan(d6) and "W6-01: concurrency must equal agent_count = 6" in validate_plan(d6), validate_plan(d6))
     d6 = json.loads(json.dumps(doc)); del d6["policy"]["max_agents_per_workflow"]
-    check("missing policy.max_agents_per_workflow rejected", any("max_agents_per_workflow" in x for x in validate_plan(d6)))
+    MAXMSG = "policy.max_agents_per_workflow must be an integer 1..10 (the measured per-workflow cap)"
+    check("missing policy.max_agents_per_workflow rejected", MAXMSG in validate_plan(d6), validate_plan(d6))
     d6["policy"]["max_agents_per_workflow"] = 11
-    check("policy cap 11 rejected", any("max_agents_per_workflow" in x for x in validate_plan(d6)))
+    check("policy cap 11 rejected", MAXMSG in validate_plan(d6), validate_plan(d6))
     d6 = json.loads(json.dumps(doc)); d6["policy"]["capacity_probe"] = {"per_workflow_cap": 10}
     check("capacity_probe matching cap accepted", validate_plan(d6) == [], validate_plan(d6))
     d6["policy"]["capacity_probe"]["per_workflow_cap"] = 6
-    check("capacity_probe differing cap rejected", any("capacity_probe" in x for x in validate_plan(d6)))
+    check("capacity_probe differing cap rejected", "policy.max_agents_per_workflow must equal policy.capacity_probe.per_workflow_cap" in validate_plan(d6), validate_plan(d6))
     def mut(f):
         d = json.loads(json.dumps(doc)); f(d); return validate_plan(d)
     check("padding 'slice N of M' rejected with the checker's message", '%s: %s work is "slice N of M" padding' % ("W0-01", "W0-01-U1") in mut(lambda d: d["workflows"][0]["units"][0].__setitem__("work", "Build Slice 3 of 8")))
     check("repeated work text (digits/whitespace/case ignored) rejected", "W0-01: W0-01-U2 work duplicates another unit (padding)" in mut(lambda d: d["workflows"][0]["units"][1].__setitem__("work", d["workflows"][0]["units"][0]["work"].upper() + " 7 ")))
     check("workflow-level verdict_file rejected as leftover", "W0-01: leftover key verdict_file \u2014 a workflow is done when every unit has a valid PASS verdict" in mut(lambda d: d["workflows"][0].__setitem__("verdict_file", "evidence/W0-01/verdict.json")))
-    check("status active rejected; running and planned-not-running accepted", bool(mut(lambda d: d.__setitem__("status", "active"))) and not mut(lambda d: d.__setitem__("status", "running")) and not mut(lambda d: d.__setitem__("status", "planned-not-running")))
+    check("status active rejected; running and planned-not-running accepted", any(x.startswith("plan status must be planned-not-running or running") for x in mut(lambda d: d.__setitem__("status", "active"))) and not mut(lambda d: d.__setitem__("status", "running")) and not mut(lambda d: d.__setitem__("status", "planned-not-running")))
     for k in LEFTOVER_KEYS:
         d6 = json.loads(json.dumps(doc)); d6["workflows"][0][k] = 1
         check("leftover key %s rejected" % k, "W0-01: leftover key %s \u2014 staffing is derived from units" % k in validate_plan(d6), validate_plan(d6))
@@ -955,7 +1154,7 @@ def selftest():
     bad["workflows"][1]["units"][0]["owned_output"] = bad["workflows"][1]["units"][1]["owned_output"]
     bad["policy"]["max_active_workflows"] = 51
     e = validate_plan(bad)
-    check("invalid plan reports agent_count, owned_output, max_active", len(e) >= 3 and any("agent_count" in x for x in e) and any("owned_output" in x for x in e), e)
+    check("invalid plan reports agent_count, owned_output, max_active", "W0-01: agent_count must be min(max_agents_per_workflow, len(units)) = 8" in e and any("owned_output" in x and "overlaps" in x for x in e) and "policy.max_active_workflows must be an integer 1..50" in e, e)
     def _oo(*vals):
         d = json.loads(json.dumps(doc)); us = d["workflows"][0]["units"]
         for u, v in zip(us, vals): u["owned_output"] = v
@@ -966,8 +1165,8 @@ def selftest():
     check("dir/file overlap rejected", ov(_oo("a/b/", "a/b/c.py")))
     check("equal owned rejected", ov(_oo("a/b.py", "a/b.py")))
     check("sibling prefix a/b vs a/bc.py accepted", not _oo("a/b", "a/bc.py"))
-    check("absolute owned rejected", bool(_oo("/etc/x.py", "t/b.py")))
-    check("dotdot owned rejected", bool(_oo("a/../x.py", "t/b.py")))
+    check("absolute owned rejected", "W0-01: W0-01-U1 owned_output must be repo-relative, not absolute: '/etc/x.py'" in _oo("/etc/x.py", "t/b.py"), _oo("/etc/x.py", "t/b.py"))
+    check("dotdot owned rejected", "W0-01: W0-01-U1 owned_output must not contain '..': 'a/../x.py'" in _oo("a/../x.py", "t/b.py"), _oo("a/../x.py", "t/b.py"))
     # discovery
     check("find_plan walks upward", find_plan(proj / "a" / "b")[0] == plan.resolve())
     nop = tmp / "noplan"
@@ -988,27 +1187,40 @@ def selftest():
     s = compute(plan, doc, running={"W0-01", "W0-02"})
     check("at max_active nothing owed", s["owed"] == [], s)
     A1 = {"W0-01": {"A1"}}
+    R = lambda: _file_records(proj, "W0-01")
     _verdict(proj, "W0-01", "FAIL")
-    check("FAIL verdict is not done", compute(plan, doc, attempts=A1)["done"] == [])
+    check("FAIL verdict is not done", compute(plan, doc, attempts=A1, records=R())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
     check("PASS without an admitted attempt id is not done", compute(plan, doc)["done"] == [] and compute(plan, doc, attempts={"W0-01": {"B9"}})["done"] == [])
+    _verdict(proj, "W0-01", "PASS")
+    check("control: PASS + admitted attempt + journal record + different families -> done", compute(plan, doc, attempts=A1, records=R())["done"] == ["W0-01"], compute(plan, doc, attempts=A1, records=R()))
+    check("PASS verdict with NO journal record is not done (a hand-written file never counts)", compute(plan, doc, attempts=A1)["done"] == [] and compute(plan, doc, attempts=A1, records={"W0-01": set()})["done"] == [])
+    rr = R(); rr["W0-01"] = {(u_, a_, "0" * 64) for (u_, a_, _s) in rr["W0-01"]}
+    check("journal sha256 differing from the file (edited after journaling) is not done", compute(plan, doc, attempts=A1, records=rr)["done"] == [])
+    rr = R(); rr["W0-01"] = {(u_, "A9", s_) for (u_, a_, s_) in rr["W0-01"]}
+    check("journal record under another attempt_id is not done", compute(plan, doc, attempts=A1, records=rr)["done"] == [])
+    for b_, r_ in (("claude-opus-4-5", "opus"), ("anthropic/claude-opus-4-5-20251101", "OPUS"), ("ds/deepseek-flash", "deepseek-v4-pro"), ("gpt-5", "openai/GPT-4o"), ("zz-model-7", "ZZ_MODEL 8")):
+        _verdict(proj, "W0-01", builder=b_, reviewer=r_)
+        check("same model family under two names is not done: %r vs %r" % (b_, r_), model_family(b_) == model_family(r_) and compute(plan, doc, attempts=A1, records=R())["done"] == [], (model_family(b_), model_family(r_)))
+    check("model_family normalizes vendor prefix, version, date, case", model_family("anthropic/claude-opus-4-5-20251101") == "opus" and model_family("Claude-3-5-Sonnet-20241022") == "sonnet" and model_family("ollama/glm-5.3:cloud") == "glm" and model_family("opus") != model_family("sonnet"))
+    _verdict(proj, "W0-01", "PASS")
     for label, kw in (("builder == reviewer", {"builder": "opus", "reviewer": "Opus"}), ("empty reviewer", {"reviewer": ""}), ("empty builder", {"builder": " "}), ("verdict 'pass'", {"v": "pass"}), ("verdict 'PASS '", {"v": "PASS "})):
         _verdict(proj, "W0-01", **kw)
-        check("unit verdict invalid: %s" % label, compute(plan, doc, attempts=A1)["done"] == [])
+        check("unit verdict invalid: %s" % label, compute(plan, doc, attempts=A1, records=R())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
     u1 = next(w for w in workflows(doc) if w["workflow_id"] == "W0-01")["units"][0]["verdict_file"]
     d_ = json.loads((proj / u1).read_text()); d_["unit_id"] = "W0-01-U2"; (proj / u1).write_text(json.dumps(d_))
-    check("unit verdict naming another unit is not done", compute(plan, doc, attempts=A1)["done"] == [])
+    check("unit verdict naming another unit is not done", compute(plan, doc, attempts=A1, records=R())["done"] == [])
     _verdict(proj, "W0-01", "FAIL")
     _verdict(proj, "W0-01", "PASS", unit_ids_={"W0-01-U1"})
-    check("a workflow is done only when EVERY unit has a PASS (7 of 8 -> not done)", compute(plan, doc, attempts=A1)["done"] == [])
+    check("a workflow is done only when EVERY unit has a PASS (7 of 8 -> not done)", compute(plan, doc, attempts=A1, records=R())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
-    s = compute(plan, doc, attempts=A1)
+    s = compute(plan, doc, attempts=A1, records=R())
     check("PASS verdict makes done and releases dependents", s["done"] == ["W0-01"] and s["ready"] == ["W0-02", "W0-03", "W0-04"] and s["owed"] == ["W0-02", "W0-03"], s)
     doc2 = json.loads(plan.read_text())
     doc2["status"] = "complete"
-    check("status field ignored for done", compute(plan, doc2, attempts=A1)["done"] == ["W0-01"] and compute(plan, doc2)["done"] == [])
-    s = compute(plan, doc, launches={"W0-02": 3}, attempts=A1)
+    check("status field ignored for done", compute(plan, doc2, attempts=A1, records=R())["done"] == ["W0-01"] and compute(plan, doc2)["done"] == [])
+    s = compute(plan, doc, launches={"W0-02": 3}, attempts=A1, records=R())
     check("handback after 3 launches, not owed", s["handback"] == ["W0-02"] and "W0-02" not in s["owed"] and s["owed"] == ["W0-03", "W0-04"], s)
     check("armed by status running or recorded launch; 'active' no longer arms", is_armed({"status": "running"}, False) and is_armed({"status": "planned-not-running"}, True) and not is_armed({"status": "planned-not-running"}, False) and not is_armed({"status": "active"}, False))
     # journal + launch contract (reap off: temp state)
@@ -1023,20 +1235,21 @@ def selftest():
     conn.execute("INSERT INTO attempt_ids VALUES(?,?,?,?,?)", (str(plan.resolve()), "A1", "W0-01", "t0", time.time()))
     conn.commit()
     conn.close()
+    _journal_verdicts(sd, proj, "W0-01")
     want = unit_ids(workflows(doc)[2])  # W0-03: 12 units; but agent_count 10
     w3 = {"workflowId": "W0-03", "units": want, "attemptId": "W0-03-1"}
     WIN10 = _windowed(GOOD_SCRIPT, 10)
     cases = [
-        ("wrong workflowId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "NOPE", "units": want}}, False, "W0-02"),
-        ("missing workflowId blocked", {"script": GOOD_SCRIPT, "args": {"units": want}}, False, "W0-02"),
-        ("missing units blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03"}}, False, "args.units"),
+        ("wrong workflowId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "NOPE", "units": want}}, False, 'args.workflowId is "NOPE"; it must equal a workflow_id of this plan'),
+        ("missing workflowId blocked", {"script": GOOD_SCRIPT, "args": {"units": want}}, False, "args.workflowId is missing; it must equal a workflow_id of this plan"),
+        ("missing units blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03"}}, False, "args.units is missing; it must be the list of this workflow's unit_ids"),
         ("11 of 12 units blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want[:-1], "attemptId": "a1"}}, False, "exactly 12"),
         ("extra unit blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want + ["W0-03-U13"], "attemptId": "a1"}}, False, "exactly 12"),
-        ("name-only launch blocked", {"args": w3}, False, "undeterminable"),
-        ("no fan-out stage blocked", {"script": GOOD_SCRIPT.replace("args.units", "['a','b','c']"), "args": w3}, False, "fans out"),
-        ("unreadable scriptPath blocked", {"scriptPath": str(tmp / "missing.js"), "args": w3}, False, "undeterminable"),
-        ("missing attemptId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want}}, False, "attemptId"),
-        ("empty attemptId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want, "attemptId": " "}}, False, "attemptId"),
+        ("name-only launch blocked", {"args": w3}, False, "a launch by saved name has no script this guard can read"),
+        ("no fan-out stage blocked", {"script": GOOD_SCRIPT.replace("args.units", "['a','b','c']"), "args": w3}, False, "must take args.units itself"),
+        ("unreadable scriptPath blocked", {"scriptPath": str(tmp / "missing.js"), "args": w3}, False, "missing.js cannot be read"),
+        ("missing attemptId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want}}, False, "args.attemptId is missing; it must be a non-empty unique string"),
+        ("empty attemptId blocked", {"script": GOOD_SCRIPT, "args": {"workflowId": "W0-03", "units": want, "attemptId": " "}}, False, "args.attemptId is empty or not a string"),
         ("12 units over cap 10 without a window blocked", {"script": GOOD_SCRIPT, "args": w3}, False, "per-workflow cap of 10"),
         ("window 12 > cap 10 blocked", {"script": _windowed(GOOD_SCRIPT, 12), "args": w3}, False, "per-workflow cap of 10"),
         ("altered window helper blocked", {"script": WIN10.replace("wg.active >= WG_WINDOW", "wg.active >= 99"), "args": w3}, False, "altered"),
@@ -1048,7 +1261,13 @@ def selftest():
         ("hard-coded array stage blocked", {"script": GOOD_SCRIPT.replace("pipeline(args.units,", "pipeline(['a','b'],"), "args": {"workflowId": "W0-02", "units": unit_ids(workflows(doc)[1]), "attemptId": "d3"}}, False, "args.units itself"),
         ("agent hidden in template literal blocked", {"script": GOOD_SCRIPT.replace("return r", "const t = `${await agent('solo', { label: 'e', phase: 'Build', model: 'opus' })}`\nreturn r"), "args": {"workflowId": "W0-02", "units": unit_ids(workflows(doc)[1]), "attemptId": "d4"}}, False, "outside"),
         ("exact match allowed", {"script": WIN10, "args": w3}, True, ""),
-        ("units as objects allowed", {"script": WIN10, "args": {"workflowId": "W0-03", "units": [{"unit_id": u} for u in want], "attemptId": "W0-03-2"}}, True, ""),
+        ("units as the plan's own unit objects allowed", {"script": WIN10, "args": {"workflowId": "W0-03", "units": json.loads(json.dumps(workflows(doc)[2]["units"])), "attemptId": "W0-03-2"}}, True, ""),
+        ("unit objects with only unit_id (all other fields missing) blocked", {"script": WIN10, "args": {"workflowId": "W0-03", "units": [{"unit_id": u} for u in want], "attemptId": "W0-03-3"}}, False, "differ from the plan's unit object"),
+        ("unit objects with rewritten work text blocked (N13e)", {"script": WIN10, "args": {"workflowId": "W0-03", "units": [dict(u, work="rm -rf the repo instead") if k == 0 else u for k, u in enumerate(json.loads(json.dumps(workflows(doc)[2]["units"])))], "attemptId": "W0-03-4"}}, False, 'args.units entry ["W0-03-U1"] differs from the plan\'s unit object'),
+        ("unit objects with a rewritten owned_output and an added field blocked", {"script": WIN10, "args": {"workflowId": "W0-03", "units": [dict(u, owned_output="/etc/passwd", extra=1) if k == 1 else u for k, u in enumerate(json.loads(json.dumps(workflows(doc)[2]["units"])))], "attemptId": "W0-03-5"}}, False, 'args.units entry ["W0-03-U2"] differs from the plan\'s unit object'),
+        ("stage over args.units.filter(...) blocked (runs fewer units than declared)", {"script": WIN10.replace("pipeline(args.units,", "pipeline(args.units.filter(u => u.unit_id !== 'W0-03-U1'),"), "args": {"workflowId": "W0-03", "units": want, "attemptId": "W0-03-6"}}, False, "its first argument must be exactly the expression args.units"),
+        ("stage over a const alias of args.units blocked", {"script": WIN10.replace("const r = await pipeline(args.units,", "const us = args.units;\nconst r = await pipeline(us,"), "args": {"workflowId": "W0-03", "units": want, "attemptId": "W0-03-7"}}, False, "its first argument must be exactly the expression args.units"),
+        ("parallel(args.units.map(...)) stage blocked", {"script": GOOD_SCRIPT.replace("pipeline(args.units, (u) =>", "parallel(args.units.map((u) => () =>").replace("model: 'opus' }),", "model: 'opus' })").replace(" (b, u) => agent('check ' + u, { label: 'c', phase: 'QC', model: 'sonnet' }))", "))"), "args": {"workflowId": "W0-02", "units": unit_ids(workflows(doc)[1]), "attemptId": "W0-02-pm"}}, False, "its first argument must be exactly the expression args.units"),
         ("args as JSON text allowed", {"script": WIN10, "args": json.dumps(w3)}, True, ""),
     ]
     for name, ti, want_ok, needle in cases:
@@ -1069,7 +1288,7 @@ def selftest():
     x8 = unit_ids(workflows(json.loads((c6d / "SWARM-PLAN.json").read_text()))[0])
     for label, scr, want_ok in (("cap 6 / 8 units, window 6 allowed", _windowed(GOOD_SCRIPT, 6), True), ("cap 6 / 8 units, no window blocked", GOOD_SCRIPT, False), ("cap 6 / 8 units, window 8 blocked", _windowed(GOOD_SCRIPT, 8), False)):
         ok, msg = check_launch({"script": scr, "args": {"workflowId": "X-01", "units": x8, "attemptId": "x-" + label[:12]}}, c6d, state_dir=sd, reap=False)
-        check(label, ok == want_ok and (ok or ("FIX" in msg and "make-workflow.py" in msg)), msg[:240])
+        check(label, ok == want_ok and (ok or ("per-workflow cap of 6 agents at once for 8 units" in msg and "FIX" in msg)), msg[:240])
     ok, msg = check_launch({"script": GOOD_SCRIPT, "args": {"workflowId": "W0-01", "units": unit_ids(workflows(doc)[0]), "attemptId": "W0-01-1"}}, proj, session="s1", state_dir=sd, reap=False)
     check("done W0-01 relaunch blocked", not ok and "already done" in msg, msg[:200])
     # session-pinned (armed) plans survive a cwd change; unarmed plans stay cwd-scoped
@@ -1093,7 +1312,68 @@ def selftest():
     c2.execute("INSERT OR REPLACE INTO continuations VALUES('sB',0,1,0)")
     c2.commit()
     c2.close()
-    check("the user's stop latch releases the pinned plan", resolve_plan(away, "sB", sd) is None)
+    check("the user's stop latch suspends the pinned plan", resolve_plan(away, "sB", sd) is None)
+    pins = lambda sess: [r[0] for r in sqlite3.connect(sd / "guard.sqlite3").execute("SELECT plan FROM session_pins WHERE session=?", (sess,)).fetchall()]
+    check("the pin ROW survives the latch (defect 6)", pins("sB") == [str((armed / "SWARM-PLAN.json").resolve())], pins("sB"))
+    c2 = open_journal(sd); c2.execute("UPDATE continuations SET latched=0 WHERE session='sB'"); c2.commit(); c2.close()
+    pb = resolve_plan(away, "sB", sd)
+    check("after the next human message clears the latch the pin governs again", pb is not None and pb[0] == (armed / "SWARM-PLAN.json").resolve(), pb)
+    # defect 7: a second armed plan never replaces the first pin; both are evaluated
+    armed2 = tmp / "armed2"; armed2.mkdir(); _mkplan(armed2, {"R2-01": 2}, status="running")
+    both = resolve_plans(armed2, "sB", sd)
+    check("a second armed plan is ADDED, the first pin is kept (defect 7)", [str(x[0]) for x in both] == [str((armed2 / "SWARM-PLAN.json").resolve()), str((armed / "SWARM-PLAN.json").resolve())] and len(pins("sB")) == 2, ([str(x[0]) for x in both], pins("sB")))
+    sn = snapshots(away, sd, "sB", reap=False)
+    check("snapshots() evaluates every pinned armed plan (owed = union of both)", sorted(x for q in sn for x in q["state"]["owed"]) == ["R-01", "R2-01"], [q["state"]["owed"] for q in sn])
+    ok, msg = check_launch({"script": GOOD_SCRIPT, "args": {"workflowId": "R2-01", "units": ["R2-01-U1", "R2-01-U2"], "attemptId": "r2-1"}}, away, session="sB", state_dir=sd, reap=False)
+    check("a launch of the second pinned plan's workflow is judged against THAT plan", ok, msg[:200])
+    _verdict(armed, "R-01", "PASS", attempt="RA")
+    c2 = open_journal(sd); c2.execute("INSERT INTO attempt_ids VALUES(?,?,?,?,?)", (str((armed / "SWARM-PLAN.json").resolve()), "RA", "R-01", "lr", time.time())); c2.commit(); c2.close()
+    _journal_verdicts(sd, armed, "R-01")
+    resolve_plans(away, "sB", sd)
+    check("a finished plan's pin is deleted (only when every workflow is DONE)", pins("sB") == [str((armed2 / "SWARM-PLAN.json").resolve())], pins("sB"))
+    # defect 5: a pinned plan whose file vanished while launches are recorded is armed + invalid, never "no plan"
+    van = tmp / "van"; van.mkdir(); vp = _mkplan(van, {"V-01": 2}, status="running")
+    resolve_plans(van, "sV", sd)
+    c2 = open_journal(sd); c2.execute("INSERT INTO launch_tags VALUES('lv','sV','V-01',?,?)", (str(vp.resolve()), time.time())); c2.commit(); c2.close()
+    vp.rename(van / "gone.bak")
+    rv = resolve_plans(away, "sV", sd)
+    sv = snapshot(away, sd, "sV", reap=False)
+    check("vanished pinned plan with launches -> governs as ARMED + INVALID 'plan file missing'", len(rv) == 1 and rv[0][1] is None and sv["armed"] and any(e.startswith("plan file missing: ") for e in sv["errors"]), (rv, sv and sv["errors"], sv and sv["armed"]))
+    van2 = tmp / "van2"; van2.mkdir(); vp2 = _mkplan(van2, {"V2-01": 2}, status="running")
+    resolve_plans(van2, "sV2", sd); vp2.unlink()
+    check("vanished pinned plan with NO launch recorded drops the pin (nothing was ever launched)", resolve_plans(away, "sV2", sd) == [] and pins("sV2") == [])
+    # defect 18: repair relaunch = exactly the not-yet-PASS units; first launch = all units
+    rep_ = tmp / "rep"; rep_.mkdir(); rp = _mkplan(rep_, {"Q-01": 4}, status="running", maw=1)
+    rdoc = json.loads(rp.read_text()); q4 = unit_ids(workflows(rdoc)[0])
+    _verdict(rep_, "Q-01", "PASS", attempt="QA1", unit_ids_=q4[:2]); _verdict(rep_, "Q-01", "FAIL", attempt="QA1", unit_ids_=q4[2:])
+    c2 = open_journal(sd); c2.execute("INSERT INTO attempt_ids VALUES(?,?,?,?,?)", (str(rp.resolve()), "QA1", "Q-01", "lq", time.time())); c2.commit(); c2.close()
+    _journal_verdicts(sd, rep_, "Q-01")
+    qobj = lambda ids_: [json.loads(json.dumps(u)) for u in workflows(rdoc)[0]["units"] if u["unit_id"] in ids_]
+    for label, units_, aid_, want_ok, needle in (
+            ("repair relaunch with exactly the 2 not-yet-PASS units (objects) allowed", qobj(q4[2:]), "q-r1", True, ""),
+            ("repair relaunch with the not-yet-PASS unit ids allowed", q4[2:], "q-r2", True, ""),
+            ("full relaunch of all 4 units while 2 already PASS blocked (repair = only the pending ones)", q4, "q-r3", False, "a repair relaunch must carry exactly the 2 not-yet-PASS units"),
+            ("repair relaunch re-running a PASS unit blocked", [q4[0], q4[2], q4[3]], "q-r4", False, "a repair relaunch must carry exactly the 2 not-yet-PASS units"),
+            ("repair relaunch with only 1 of the 2 pending units blocked", q4[3:], "q-r5", False, "a repair relaunch must carry exactly the 2 not-yet-PASS units")):
+        ok, msg = check_launch({"script": GOOD_SCRIPT, "args": {"workflowId": "Q-01", "units": units_, "attemptId": aid_}}, rep_, session="sQ", state_dir=sd, reap=False)
+        check(label, ok == want_ok and (ok or needle in msg), msg[:300])
+    check("pending_units() lists exactly the not-yet-PASS unit objects", [u["unit_id"] for u in pending_units(rp, rdoc, workflows(rdoc)[0], sd)] == q4[2:])
+    # defect 12: the cap is MEASURED at launch, not just typed in the plan; cached per session for 10 minutes
+    pr = tmp / "probe"; pr.mkdir()
+    PROBE = lambda: {"per_workflow_cap": 4}
+    c4 = launch_agent_cap(doc, pr, "sess1")
+    PROBE = lambda: {"per_workflow_cap": 9}
+    check("live probe lowers the plan cap (plan 10, probe 4 -> 4) and the result is cached per session", c4 == 4 and launch_agent_cap(doc, pr, "sess1") == 4, c4)
+    check("another session measures afresh; the probe can never RAISE the plan cap", launch_agent_cap(doc, pr, "sess2") == 9 and launch_agent_cap(json.loads(_mkplan(tmp / "c6", {"W6-01": 8}, cap=6).read_text()), pr, "sess3") == 6)
+    check("cache expires after 10 minutes", probed_cap(pr, "sess1", now=time.time() + 601) == 9 and probed_cap(pr, "sess1", now=time.time() + 30) == 9)
+    PROBE = lambda: (_ for _ in ()).throw(OSError("probe broke"))
+    check("a failing probe leaves the plan cap in force", launch_agent_cap(doc, tmp / "probe2", "x") == 10)
+    PROBE = lambda: {"per_workflow_cap": 10}
+    pc = tmp / "pcap"; pc.mkdir(); _mkplan(pc, {"P-01": 8}, maw=1)
+    PROBE = lambda: {"per_workflow_cap": 6}
+    ok, msg = check_launch({"script": GOOD_SCRIPT, "args": {"workflowId": "P-01", "units": unit_ids(workflows(json.loads((pc / "SWARM-PLAN.json").read_text()))[0]), "attemptId": "p1"}}, pc, state_dir=tmp / "probe3", reap=False)
+    check("8 units, plan cap 10, probe measures 6: unwindowed launch blocked by the MEASURED cap", not ok and "per-workflow cap of 6 agents at once for 8 units" in msg, msg[:300])
+    PROBE = lambda: {"per_workflow_cap": 10}
     print("staffing.py selftest: %s" % ("ALL PASS" if not fails else "%d FAILED: %s" % (len(fails), ", ".join(fails))))
     return 1 if fails else 0
 

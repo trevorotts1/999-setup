@@ -12,11 +12,19 @@ try {
  // exact helper text with __N__ for the window size; a script containing it byte-for-byte has that block removed from
  // analysis (it needs a loop and mutation), every agent() must then be written wgSlot(() => agent(...)), and the peak
  // is capped at the window. Any other loop/mutation is still refused below.
- let WINDOW=null,scriptText=input.script;
+ let WINDOW=null,helperSpan=null,scriptText=input.script;
  if(typeof input.windowHelper==='string'&&input.windowHelper.includes('__N__')){
   const re=new RegExp(input.windowHelper.split('__N__').map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('(\\d+)'));
   const m=re.exec(scriptText);
-  if(m&&Number(m[1])>=1){WINDOW=Number(m[1]);scriptText=scriptText.replace(m[0],m[0].replace(/[^\n]/g,' '));}
+  if(m&&Number(m[1])>=1){WINDOW=Number(m[1]);helperSpan=[m.index,m.index+m[0].length];scriptText=scriptText.replace(m[0],m[0].replace(/[^\n]/g,' '));}
+ }
+ // Hardened mode: a plan launch (guard cap / workflowId in args) or any script carrying the window helper.
+ const strict=WINDOW!==null||process.env.WORKFLOW_GUARD_CAP!==undefined||(input.args&&typeof input.args==='object'&&input.args.workflowId!==undefined);
+ if(WINDOW!==null){
+  // The helper must be four whole TOP-LEVEL statements (not inside a comment, string, function or block), byte-identical.
+  const top=parse(input.script,{ecmaVersion:'latest',sourceType:'module',allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true}).body;
+  const inside=top.filter(x=>x.start>=helperSpan[0]&&x.end<=helperSpan[1]);
+  if(!inside.length||inside[0].start!==helperSpan[0]||inside[inside.length-1].end<helperSpan[1]-1||inside.length!==input.windowHelper.split('\n').filter(l=>/^(const|async function)/.test(l)).length)errors.push('The rolling-window helper must appear byte-identical as top-level statements (not inside a comment, string, function or block).');
  }
  const tree=parse(scriptText,{ecmaVersion:'latest',sourceType:'module',allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true});
  const env=new Map([['args',input.args]]), funcs=new Map();
@@ -43,6 +51,47 @@ try {
  if(typeof meta?.name==='string'&&!nameMatch)errors.push(`meta.name ${JSON.stringify(meta.name)} does not match the required pattern ${NAME_RE.source} (example: ${NAME_EXAMPLE}). Regenerate with make-workflow.py --program <slug> --wave <n> --phase build+qc.`);
  const phases=meta?.phases?.map(p=>p.title)||[];
  if(!phases.length||phases.some(x=>typeof x!=='string'||!x.trim())||new Set(phases).size!==phases.length)errors.push('Declare unique nonempty meta.phases titles.');
+
+ // HARDENING (2026-10-06): names the window helper owns, runtime-escape primitives, and args growth.
+ const parents=new Map();walk(tree,(n,p)=>parents.set(n,p));
+ const HELPER_NAMES=['wgSlot','wg','WG_WINDOW'];
+ const idxNames=new Set();
+ walk(tree,n=>{if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&['map','filter','some','every','forEach'].includes(n.callee.property.name))for(const a of n.arguments)if(a.type==='ArrowFunctionExpression'&&a.params[1]?.type==='Identifier')idxNames.add(a.params[1].name);});
+ let stageUses=0;
+ const isId=(n,name)=>n?.type==='Identifier'&&n.name===name;
+ walk(tree,(n,parent)=>{
+  const t=n.type, L=n.loc?.start.line;
+  // always-on escape hatches
+  if(t==='ImportExpression')errors.push(`Line ${L}: dynamic import() is not allowed in workflow scripts.`);
+  if(t==='Identifier'&&['Function','eval','globalThis','require'].includes(n.name)&&!(parent?.type==='MemberExpression'&&parent.property===n&&!parent.computed)&&!(parent?.type==='Property'&&parent.key===n&&!parent.computed))errors.push(`Line ${L}: reference to ${n.name} is not allowed (dynamic code / global access).`);
+  if(!strict)return;
+  if(t==='ThisExpression')errors.push(`Line ${L}: 'this' is not allowed in a plan-mode script (global/this property writes).`);
+  if(t==='UnaryExpression'&&n.operator==='delete')errors.push(`Line ${L}: delete is not allowed in a plan-mode script.`);
+  if(t==='Identifier'&&['Reflect','Proxy','process','Atomics','WebAssembly','__proto__'].includes(n.name))errors.push(`Line ${L}: ${n.name} is not allowed in a plan-mode script.`);
+  if(t==='Identifier'&&n.name==='Object'&&!(parent?.type==='MemberExpression'&&parent.object===n&&!parent.computed&&['keys','values','entries','fromEntries','freeze'].includes(parent.property.name)))errors.push(`Line ${L}: Object may only be used as Object.keys/values/entries/fromEntries/freeze in a plan-mode script (no Object.assign/defineProperty/defineProperties/setPrototypeOf or aliasing).`);
+  if(t==='MemberExpression'&&!n.computed&&['constructor','prototype','__proto__','__defineGetter__','__defineSetter__','__lookupGetter__'].includes(n.property.name))errors.push(`Line ${L}: .${n.property.name} access is not allowed in a plan-mode script.`);
+  if(t==='MemberExpression'&&n.computed&&!(n.property.type==='Literal'&&typeof n.property.value==='number')&&!(n.property.type==='Identifier'&&idxNames.has(n.property.name)))errors.push(`Line ${L}: computed member access is not allowed in a plan-mode script (use dotted names or numeric indexes).`);
+  if(t==='Property'&&!n.computed&&['__proto__','constructor'].includes(key(n)))errors.push(`Line ${L}: ${key(n)} property is not allowed in a plan-mode script.`);
+  // window helper names: reserved for the canonical helper block (already blanked out of this tree)
+  if(t==='Identifier'&&HELPER_NAMES.includes(n.name)){
+   const isCall=n.name==='wgSlot'&&WINDOW!==null&&parent?.type==='CallExpression'&&parent.callee===n&&parent.arguments.length===1&&parent.arguments[0].type==='ArrowFunctionExpression';
+   if(!isCall)errors.push(`Line ${L}: '${n.name}' is reserved for the canonical rolling-window helper; it may only appear as wgSlot(() => agent(...)) calls (no rebinding, shadowing, parameters, properties, aliasing or references).`);
+  }
+  // args: only args.units (pipeline stage input / .length), args.attemptId, args.workflowId
+  if(t==='Identifier'&&n.name==='args'&&!(parent?.type==='MemberExpression'&&parent.property===n&&!parent.computed)&&!(parent?.type==='Property'&&parent.key===n&&!parent.computed&&!parent.shorthand)){
+   const bad=why=>errors.push(`Line ${L}: in a plan-mode script args may only be used as args.units (the single pipeline stage's first argument, or .length), args.attemptId or args.workflowId; found ${why}.`);
+   if(!(parent?.type==='MemberExpression'&&parent.object===n&&!parent.computed))return bad('a bare/aliased/destructured/rebound reference');
+   const pn=parent.property.name;
+   if(['attemptId','workflowId'].includes(pn)){if(parents.get(parent)?.type==='AssignmentExpression'&&parents.get(parent).left===parent)bad('a write');return;}
+   if(pn!=='units')return bad('args.'+pn);
+   const gp=parents.get(parent);
+   if(gp?.type==='CallExpression'&&isId(gp.callee,'pipeline')&&gp.arguments[0]===parent){stageUses++;return;}
+   if(gp?.type==='MemberExpression'&&gp.object===parent&&!gp.computed&&gp.property.name==='length')return;
+   if(gp?.type==='MemberExpression'&&gp.object===parent&&!gp.computed)return bad('args.units.'+gp.property.name+' (a derived unit list: the stage must run args.units itself, never a filtered, sliced, mapped or copied list)');
+   bad('args.units passed, aliased or modified outside the allowed forms');
+  }
+ });
+ if(strict&&stageUses>1)errors.push('args.units may feed only the single pipeline stage.');
  const hasWorker=n=>{let yes=false;walk(n,x=>{if(x.type==='CallExpression'&&x.callee.name==='agent')yes=true;});return yes;};
  let agents=0;
  const windowed=new Set();
@@ -138,4 +187,4 @@ try {
  if(slots!==undefined&&bound>slots)errors.push('Workflow exceeds declared available provider slots.');
  if(ready!==undefined&&slots!==undefined&&bound<Math.min(ready,slots,cap)&&!plan?.dependencyReason)errors.push('Unused ready capacity: fill available lanes or give guard.dependencyReason explaining the dependency/resource constraint.');
  console.log(JSON.stringify({ok:!errors.length,errors:[...new Set(errors)],name:meta?.name,phases,agentCallSites:agents,conservativePeak:bound,totalCalls,cap}));
-} catch(e){console.log(JSON.stringify({ok:false,errors:[e.message]}));}
+} catch(e){console.log(JSON.stringify({ok:false,errors:[...new Set([...errors,e.message])]}));}

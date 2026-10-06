@@ -47,11 +47,13 @@ def plan_template(windowed):
                          ("{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});", "{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT}));")):
             assert t.count(old) == 1, old
             t = t.replace(old, new)
+    # plan mode never derives a unit list from args.units (no .filter/.map/.slice): missing results are reported by position.
+    t = t.replace("const missing=INPUT.units.filter((u,i)=>!results[i]).map(u=>u.id);", "const missing=results.map((r,i)=>r?null:'unit #'+(i+1)).filter(Boolean);")
     t = t.replace('INPUT.guard.runRoot', 'RUN_ROOT').replace('INPUT.units', 'args.units')
     verdict = ("u.acceptance+' VERDICT FILE: write exactly this JSON to '+RUN_ROOT+'/'+u.verdict_file+' (create folders as needed): "
                "{\"verdict\":\"PASS\" or \"FAIL\" (PASS only when the acceptance is met on the actual files),\"unit_id\":\"'+u.unit_id+'\","
                "\"attempt_id\":\"'+args.attemptId+'\",\"builder_model\":\"'+BUILDER+'\",\"reviewer_model\":\"'+REVIEWER+'\"}. "
-               "You are the checker; the conductor may not write this file.'")
+               "Write it with the Write tool (not a shell command), exactly once, after judging the unit. You are the checker; the conductor may not write this file.'")
     t = t.replace('u.ownership', 'u.owned_output').replace('u.qcPrompt', verdict)
     t = t.replace('u.prompt', "'Work: '+u.work+' Source: '+u.source+'. Acceptance: '+u.acceptance").replace('u.id', 'u.unit_id')
     return t
@@ -67,6 +69,8 @@ def plan_main(argv):
     p.add_argument('--out-dir', dest='out_dir', required=True)
     p.add_argument('--builder', default='opus')
     p.add_argument('--reviewer', default='sonnet')
+    p.add_argument('--repair', action='store_true', help='Repair relaunch: emit only the units that are not yet PASS (journal-attested).')
+    p.add_argument('--state-dir', dest='state_dir', default=None, help='Guard state dir (default: the real one).')
     a = p.parse_args(argv)
     try:
         plan_path = Path(a.plan).expanduser().resolve()
@@ -77,11 +81,15 @@ def plan_main(argv):
         wf = next((w for w in staffing.workflows(doc) if w['workflow_id'] == a.workflow_id), None)
         if wf is None:
             raise ValueError(f'--workflow-id {a.workflow_id!r} is not a workflow of {plan_path}. Known: {", ".join(w["workflow_id"] for w in staffing.workflows(doc))}')
-        if not a.builder.strip() or not a.reviewer.strip() or a.builder == a.reviewer:
-            raise ValueError('Builder and independent reviewer must name different nonempty models.')
+        if not a.builder.strip() or not a.reviewer.strip() or staffing.model_family(a.builder) == staffing.model_family(a.reviewer):
+            raise ValueError('Builder and independent reviewer must name different nonempty model families.')
         units = wf['units']
-        cap = staffing.launch_agent_cap(doc)  # min(plan cap, limits.json, capacity_probe): the measured per-workflow cap
-        lanes = staffing.agent_count(wf, cap)
+        if a.repair:
+            units = staffing.pending_units(plan_path, doc, wf, a.state_dir)
+            if not units or len(units) == len(wf['units']):
+                raise ValueError('--repair needs a workflow with some, but not all, units already PASS (journal-attested); pending units: %d of %d.' % (len(units), len(wf['units'])))
+        cap = staffing.launch_agent_cap(doc, a.state_dir)  # min(plan cap, limits.json, capacity_probe): the measured per-workflow cap
+        lanes = staffing.agent_count({'units': units}, cap)
         windowed = len(units) > cap
         wave = re.search(r'W([0-9]{1,2})', a.workflow_id)
         span = 'WU001' if len(units) == 1 else f'WU001..WU{len(units):03}'
