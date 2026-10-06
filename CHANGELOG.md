@@ -2,6 +2,17 @@
 
 ## [hook-skill] — 2026-10-06
 
+### Fix: a plan run is COMPLETED only when every builder and checker has returned
+
+The watch state `AGENTS_RETURNED` fired whenever the run journal showed nothing pending and at least one result. In a plan
+run (`pipeline(units,build,qc)`) a unit's checker starts only after its builder returns, so a 1-unit run momentarily showed
+pending 0 / results 1 and was marked COMPLETED before its checker ran; Stop then demanded a relaunch of running work. The
+guard now records the launched unit count (`launch_units`) and a plan-tagged launch completes only at 2 x units results
+(builders + checkers; for a repair relaunch, the units actually launched). The native journal has no run-level terminal
+line, so the count is the rule. Legacy (non-plan) launches keep the old rule. Test: `test_plan_complete_all_agents.py`.
+
+## [hook-skill] — 2026-10-06
+
 ### Fix: a confirmed workflow launch stays RUNNING until its run finishes
 
 `tick()` treated launch state `RETURNED` (what PostToolUse sets on a confirmed launch, while the background run is
