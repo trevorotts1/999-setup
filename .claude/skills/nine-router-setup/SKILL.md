@@ -124,6 +124,7 @@ Homebrew-managed environment that satisfies the requirements.
 ## Step 5 — 9Router install and first-run security
 
 - Install `9router@latest` only when 9Router is absent or broken (proven by a real `--version` run); an existing working install is kept as-is — no reinstall, no upgrade. (npm global on Windows; user-local npm prefix on macOS.)
+- Guards: `scripts/macos/install-9router-guards.sh` delivers `assets/guards/*` to `~/.local/bin` and applies them to the installed bundle, then proves each patch by content marker (never by exit code). **Re-run it after every 9Router install/upgrade** (`--upgrade [VERSION]` does both); `--check` is read-only. Tested on 9Router 0.5.95.
 - Start, poll health at `http://localhost:20128` until healthy.
 - Bind to loopback only; disable tunnel/Tailscale dashboard exposure.
 - No dashboard password rotation is performed, ever. The user owns the dashboard

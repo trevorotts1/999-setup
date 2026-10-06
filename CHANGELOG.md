@@ -1,5 +1,28 @@
 # Changelog
 
+## [nine-router-setup 1.24.0] — 2026-10-06
+
+### 9Router bundle guards are now delivered by the repo, and re-applied after an upgrade
+
+The guards that repair the prebuilt 9Router bundle lived only on the operator Mac, so every
+other box lost them (or never had them) on `npm i -g 9router`. Found on a client box upgraded
+0.5.75 to 0.5.95 whose `opus-chain` answered HTTP 200 and then ended with `StreamTruncated`
+(its first member, the free OpenCode model, returns an empty or cut stream).
+
+- **`assets/guards/`**: dupfix, codex-terminal, nextserver, cachecontrol, glm53-thinking,
+  deepseek-effort, deepseek-openai-route, ollama-done, opencode-poll, opencode-toolargs (+ its
+  apply scripts), ping-keepalive, upstream-shape, and the GLM 5.3 regression check. All are
+  content-anchored and were run against a pristine 9Router 0.5.95: every one applies.
+  Not shipped: the operator-only Agnes 3.0 caps guard (keyed to one operator node id).
+- **`scripts/macos/install-9router-guards.sh [--check] [--upgrade [VER]] [--root DIR] [guard...]`**:
+  copies guards into `~/.local/bin` and patches into `~/.9router/patches`, applies them in the
+  required order, `node --check`s every chunk, proves each patch by content marker (a guard's
+  own exit code is not trusted: it can exit 0 when its anchor is gone), runs the GLM behavioural
+  suite, and restarts the launchd job only when the bundle changed. Exit 1 names anything missing.
+- `setup-macos.sh` calls it right after the 9Router proof (non-fatal, loud). The five older guards
+  now also search the 999 npm prefix. Test: `tests/test-9router-guards.sh [VERSION]`.
+- Does not touch keys, providers, combos, models or the database.
+
 ## [nine-router-setup 1.23.0] — 2026-10-06
 
 ### macOS `claude-nine` launcher made safe for hand-tuned and headless boxes
