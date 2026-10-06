@@ -1,5 +1,27 @@
 # Changelog
 
+## [nine-router-setup 1.23.0] — 2026-10-06
+
+### macOS `claude-nine` launcher made safe for hand-tuned and headless boxes
+
+- **Loopback only:** when the launcher starts 9Router itself it now passes `--host 127.0.0.1`
+  (the router's default bind is `0.0.0.0`, i.e. the LAN). If a `com.blackceo.9router-localhost`
+  LaunchAgent exists it is kickstarted instead.
+- **Headless-safe key:** `get-9router-key.sh` reads `~/.9router/gateway-key` first and falls back
+  to the Keychain item, so a locked login keychain cannot break cron/ssh launches. Boxes with no
+  key file behave exactly as before.
+- **npm prefix:** `claude-code-lib.sh` finds Claude Code under the node binary's own prefix
+  (`/opt/homebrew`, `/usr/local`, ...) before falling back to `npm root -g`; `9router` is also
+  looked up in `/opt/homebrew/bin` and `/usr/local/bin`.
+- **No settings.json edits:** the unused `cc_scrub_router_settings` (edited `~/.claude/settings.json`)
+  is removed from the lib.
+- **Per-box banner:** if `~/.claude-nine/launcher-banner.txt` exists the launcher prints it; the
+  file is box-owned and never written by setup.
+- **Installer:** `install-claude-nine.sh --check` (writes nothing) and `CLAUDE_NINE_BIN_DIR=<dir>`
+  (install launcher + lib there, key helper to `~/.local/bin`; no profile edit, no claude-codex).
+  The installer now installs the lib and key helper alongside the launcher.
+- **Test:** `tests/test-launcher-safe.sh` (fake HOME), wired into `kaizen-tests` CI.
+
 ## [nine-router-setup 1.22.0] — 2026-10-04
 
 ### `setup-macos.sh --skills-only [--check]` — update skills on a box that already runs 9Router, without touching 9Router
