@@ -3,8 +3,8 @@
 #
 # Config lives in its own dir, ~/.claude-nine, so the router's base URL, model
 # map and history stay completely separate from the real CLI's ~/.claude. The
-# router token is read from the macOS Keychain by the `apiKeyHelper` in
-# ~/.claude-nine/settings.json — never stored in plaintext here.
+# router token is read by the `apiKeyHelper` in ~/.claude-nine/settings.json
+# (~/.9router/gateway-key if present, else the macOS Keychain) — never stored here.
 #
 # Execs the native binary directly rather than calling `claude`, so it does not
 # matter which `claude` is first on PATH.
@@ -258,6 +258,7 @@ resolve_nine_router() {
   for c in "${NINEROUTER_BINARY:-}" \
            "$HOME/.local/share/999/npm/bin/9router" \
            "$HOME/.npm-global/bin/9router" \
+           /opt/homebrew/bin/9router /usr/local/bin/9router \
            "$(command -v 9router 2>/dev/null || true)"; do
     [ -n "$c" ] && [ -x "$c" ] && { printf '%s\n' "$c"; return 0; }
   done
@@ -272,9 +273,15 @@ if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
     exit 1
   }
   mkdir -p "$HOME/.9router"
+  # A hardened LaunchAgent (forces the 127.0.0.1 bind) wins when the box has one.
+  if /bin/launchctl print "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1; then
+    /bin/launchctl kickstart -k "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1 || true
+  else
   # </dev/null + --skip-update: 9Router's cli then runs in tray (background)
   # mode and never reads from or takes over this terminal.
-  nohup "$_nine_bin" -p "$PORT" --no-browser --skip-update </dev/null >"$HOME/.9router/cli-launch.log" 2>&1 &
+  # --host 127.0.0.1 is a security requirement: 9Router's default bind is 0.0.0.0.
+  nohup "$_nine_bin" -p "$PORT" --host 127.0.0.1 --no-browser --skip-update </dev/null >"$HOME/.9router/cli-launch.log" 2>&1 &
+  fi
   unset _nine_bin
   for _ in $(seq 1 40); do
     /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1 && break
@@ -287,6 +294,8 @@ if ! /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
 fi
 
 echo "🚀 Claude Code via 9Router (config: ~/.claude-nine)" >&2
+# Per-box banner/limits notice: a box keeps its own text in this file; never overwritten.
+[ -r "$CLAUDE_CONFIG_DIR/launcher-banner.txt" ] && cat "$CLAUDE_CONFIG_DIR/launcher-banner.txt" >&2
 
 CC_BIN="$(cc_resolve_binary)" || exit 1
 
