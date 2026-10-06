@@ -42,7 +42,7 @@
 #              absent, the state write failed. NEVER a verdict about the
 #              dispatch. An exit 2 is "UNDETERMINED", said out loud, with the
 #              exact path named — never a silent pass and never a silent block.
-#   3  UNDER-WIDTH — agents < min(units, 10). This is the timid dispatch,
+#   3  UNDER-WIDTH — agents < min(units, clientCap). This is the timid dispatch,
 #              refused; a dep= reason does not excuse it.
 #   4  REFUSED — the dispatch is malformed or its preconditions are missing:
 #              the label does not match [<model> x<N>], or CONTROL/EXECUTION-PLAN.md

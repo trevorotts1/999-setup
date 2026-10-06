@@ -126,7 +126,7 @@ def session_live(c,session,now=None):
  now=time.time() if now is None else now
  row=c.execute('SELECT last_seen FROM session_liveness WHERE session=?',(str(session),)).fetchone()
  if row is None:return True
- return (now-float(row['last_seen']))<=LEASE_S
+ return (now-float(row['last_seen']))<=lease_s()
 
 def _backfill_liveness(c):
  # Seed the plane from each launch's own creation time so a row written before
@@ -261,6 +261,11 @@ def admit_launch(row,tag=None):
      return ('Launching %d agents would reach %d concurrent agents, above the operator limit of %d total.'%(peak,occ['agents_total']+peak,lim['concurrent_agents_total']))
     c.execute('INSERT OR REPLACE INTO launches VALUES(?,?,?,?,?,?,?,?,?)',row)
     if tag:
+     if len(tag)>2 and tag[2]:
+      # attemptId is recorded only on admission; one id can be admitted once per plan.
+      if c.execute('INSERT OR IGNORE INTO attempt_ids VALUES(?,?,?,?,?)',(tag[1],str(tag[2]),tag[0],row[0],now)).rowcount==0:
+       c.execute('ROLLBACK')
+       return 'args.attemptId %s was already used by an admitted launch of this plan; every launch needs a new unique attemptId.'%json.dumps(tag[2])
      c.execute('INSERT OR REPLACE INTO launch_tags VALUES(?,?,?,?,?)',(row[0],session,tag[0],tag[1],now))
      c.execute('INSERT OR REPLACE INTO session_plans VALUES(?,?,?)',(session,tag[1],now))
     c.execute('COMMIT')
@@ -422,6 +427,46 @@ def fence(data,tool,root):
    if outside:return refuse('Mutating shell command touches '+outside[0]+', outside the program run root.'+note)
  return None
 
+# ---- Unit verdict files are written by checker SUBAGENTS only ----
+# The main (conductor) session may not write any *.verdict.json under a swarm plan's directory: Write/Edit/MultiEdit/
+# NotebookEdit are refused outright, and Bash commands that write such a path (redirect >, >>, tee, cp/mv/install/ln to it,
+# sed -i, dd of=, python open(..,'w')/write_text) are refused best-effort. A tool call from a subagent carries agent_id (and
+# agent_type) in the hook payload; those are allowed, because a verdict is the checker agent's act.
+# RESIDUAL BYPASS (honest): the Bash rule is a pattern match on the command text. A conductor that builds the path
+# indirectly (shell variables, base64/printf-assembled names, a script file it wrote first and then runs, git checkout/restore,
+# a tool that is not named above) can still write a verdict file. The in-file provenance (unit_id, an attempt_id the guard
+# recorded at admission, different builder and reviewer models) is what makes a forged file costly, not this check.
+VERDICT_TOKEN=r"[^\s'\"<>|;&()=]*\.verdict\.json"
+VERDICT_BASH_WRITE=[re.compile(p,re.I|re.S) for p in (
+ r">>?\s*['\"]?"+VERDICT_TOKEN,
+ r"\btee\b[^|;&\n]*"+VERDICT_TOKEN,
+ r"\b(?:cp|mv|install|ln|rsync)\b[^|;&\n]*"+VERDICT_TOKEN+r"['\"]?\s*(?:[;&|\n]|$)",
+ r"\bsed\b[^|;&\n]*\s-[a-zA-Z]*i[^|;&\n]*"+VERDICT_TOKEN,
+ r"\bof=['\"]?"+VERDICT_TOKEN,
+ r"open\s*\([^)]*\.verdict\.json[^)]*,\s*['\"][^'\"]*[wax+]",
+ r"\.verdict\.json['\"]?\s*\)\s*\.(?:write_text|write_bytes|open)\b",
+ r"\.verdict\.json[^\n]*\b(?:write_text|write_bytes|writeFileSync|writeFile)\b",
+)]
+
+def verdict_write_block(data,tool,ti,session):
+ if data.get('agent_id') or data.get('agent_type'):return None
+ hit=None
+ if tool in FENCE_EDIT:
+  t=str(ti.get('file_path') or ti.get('notebook_path') or '')
+  if t.endswith('.verdict.json'):hit=t
+ elif tool=='Bash':
+  cmd=str(ti.get('command') or '')
+  if '.verdict.json' in cmd and any(r.search(cmd) for r in VERDICT_BASH_WRITE):hit='a .verdict.json path in the command'
+ if not hit:return None
+ cwd=data.get('cwd') or os.getcwd()
+ found=_staffing().resolve_plan(cwd,session,STATE)
+ if not found:return None
+ if tool in FENCE_EDIT:
+  p=Path(hit).expanduser()
+  p=p if p.is_absolute() else Path(cwd)/p
+  if not under(p,found[0].parent):return None
+ return refuse('The conductor session may not write unit verdict files (%s, plan %s). A verdict is written only by the checker agent that judged the unit: dispatch that checker and let it write {"verdict","unit_id","attempt_id","builder_model","reviewer_model"}. Do not bypass hooks.'%(hit,found[0]))
+
 def pre_checks(data,tool,session):
  # Runs for every PreToolUse the guard is registered for. Returns an exit code to deny, or None.
  ti=data.get('tool_input') if isinstance(data.get('tool_input'),dict) else {}
@@ -438,6 +483,9 @@ def pre_checks(data,tool,session):
   return refuse('The user gave a stop order. Report status and end the turn.')
  if prior>=2:
   return refuse('Third identical attempt of a failed call. Change the input, change the approach, or dispatch a subagent to diagnose. Fingerprint '+fp[:8]+'.')
+ if tool in FENCE_EDIT or tool=='Bash':
+  vb=verdict_write_block(data,tool,ti,session)
+  if vb is not None:return vb
  if tool=='Bash' and PM2_ENV_DUMP.search(str(ti.get('command') or '')):
   return refuse('pm2 jlist/pm2 describe dump process environments (secrets). Use `pm2 list` (no env) instead.')
  root=program_root(session)
@@ -469,17 +517,13 @@ def plan_tag(data,ti):
   a=ti.get('args');wid=a.get('workflowId') if isinstance(a,dict) else None
   if not (isinstance(wid,str) and wid):return None
   f=_staffing().resolve_plan(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE)
-  return (wid,str(f[0])) if f else None
+  aid=a.get('attemptId');aid=aid if isinstance(aid,str) and aid.strip() else None
+  return (wid,str(f[0]),aid) if f else None
  except Exception:return None
 
 def validate(data):
- ctx={}
- rc=_validate(data,ctx)
- if rc==2 and ctx.get('tag'):
-  # a hook-denied launch attempt counts toward the stop check's release (c); one record per tool call
-  try:_staffing().record_attempt(STATE,data.get('session_id','unknown'),ctx['tag'][1],ctx['tag'][0],'denied','workflow guard denied the launch',data.get('tool_use_id'))
-  except Exception:pass
- return rc
+ # Refused launches are never recorded: only an ADMITTED launch (admit_launch) writes launch_tags/attempt_ids.
+ return _validate(data,{})
 
 def _validate(data,ctx):
  blocked=canary_denial(data.get('session_id','unknown'))
@@ -518,8 +562,16 @@ def _validate(data,ctx):
   context('PreToolUse','Workflow guard: Node.js was not found, so the launch was not statically validated. Install Node.js 18+ to enable validation.')
   return 0
  ctx['tag']=plan_tag(data,ti)
+ # Plan launch contract FIRST, without recording: nothing is journaled unless every check below passes.
+ sess=data.get('session_id','unknown');cwd=data.get('cwd') or os.getcwd();env=dict(os.environ)
+ try:reap_now()
+ except Exception:pass
+ ok,why=_staffing().check_launch(ti,cwd,session=sess,state_dir=STATE,attempt_id=data.get('tool_use_id'),reap=False,record=False)
+ if not ok:return refuse(why)
+ found=_staffing().resolve_plan(cwd,sess,STATE)
+ if found and isinstance(found[1],dict):env['WORKFLOW_GUARD_CAP']=str(_staffing().launch_agent_cap(found[1],STATE))
  try:
-  out=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':ti.get('args')}),text=True,capture_output=True,timeout=15)
+  out=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':ti.get('args'),'windowHelper':_staffing().WINDOW_HELPER}),text=True,capture_output=True,timeout=15,env=env)
   result=json.loads(out.stdout)
  except Exception as e:return deny('Validator unavailable; repair the checker before launch ('+type(e).__name__+').')
  if not result.get('ok'):return deny('\n'.join(result.get('errors',['Validation failed'])))
@@ -761,16 +813,18 @@ def plan_snapshot(data,session):
   try:occupancy(c)
   finally:c.close()
   snap=_staffing().snapshot(data.get('cwd') or os.getcwd(),STATE,session,reap=False)
-  return snap if snap and not snap['errors'] else None
+  return snap
  except Exception:return None
 
 def stop_omission(data,session):
- # Returns the block reason when the armed plan owes workflows that are unlaunched; None to allow.
+ # Returns the block reason when the armed plan owes workflows that are unlaunched or is invalid; None to allow.
  # Releases, the only ones: (a) the user's stop latch (checked by the caller), (b) a question-only turn,
- # (c) every owed workflow has >= 3 failed or hook-denied launch attempts this session (alert written).
+ # (c) every owed workflow has >= 3 ADMITTED launches that then FAILED this session (alert written); hook refusals never count.
  if question_only(session):return None
  snap=plan_snapshot(data,session)
  if not snap or not snap['armed']:return None
+ if snap['errors']:
+  return 'Plan %s is armed but INVALID, so nothing can be launched against it. Fix the plan (then continue the owed work):\n  - %s'%(snap['path'],'\n  - '.join(snap['errors'][:12]))
  st=snap['state'];plan=str(snap['path'])
  hb_keys=[]
  for wid in st['handback']:
@@ -782,7 +836,7 @@ def stop_omission(data,session):
   clear_alerts(okey);return None
  failed=snap['view']['failed']
  if all(failed.get(w,0)>=_staffing().RELEASE_ATTEMPTS for w in owed):
-  raise_alert(okey,session,'stop-omission','STOP_OMISSION_UNRESOLVED','Stop allowed: every owed workflow has at least %d failed or hook-denied launch attempts this session: %s (plan %s). Fix the launch and relaunch.'%(_staffing().RELEASE_ATTEMPTS,_staffing().describe_owed(st),plan))
+  raise_alert(okey,session,'stop-omission','STOP_OMISSION_UNRESOLVED','Stop allowed: every owed workflow has at least %d admitted launches that failed this session: %s (plan %s). Fix the launch and relaunch.'%(_staffing().RELEASE_ATTEMPTS,_staffing().describe_owed(st),plan))
   return None
  clear_alerts(okey)
  return 'Owed now: %s. Launch each now with args.workflowId and its exact planned units. Do not end the turn while planned workflows are unlaunched.'%_staffing().describe_owed(st)
@@ -791,6 +845,12 @@ def plan_line(data,session):
  # One reminder line: the armed plan's own numbers, else the neutral ceilings.
  lim=limits()
  snap=plan_snapshot(data,session)
+ if snap and snap['errors']:
+  return 'Plan %s is %s and INVALID: %s'%(snap['path'],'armed (Stop will hold)' if snap['armed'] else 'found, not started',' | '.join(snap['errors'][:6]))
+ if snap and not snap['armed']:
+  wfs=_staffing().workflows(snap['doc'])
+  if wfs and not all(_staffing().is_done(snap['path'].parent,w,snap['view']['attempts'].get(w.get('workflow_id'),())) for w in wfs):
+   return 'Plan %s found, not started. Start the build with: python3 ~/.claude/hooks/workflow-guard/staffing.py start --cwd %s'%(snap['path'],snap['path'].parent)
  if snap and snap['armed']:
   st=snap['state']
   return 'Plan %s: owed now: %s; running %d/%d.'%(snap['path'],_staffing().describe_owed(st) or 'none',len(st['running']),st['max_active'])
@@ -941,6 +1001,7 @@ def main():
  if a.command=='canary':
   if not a.session:p.error('--session required')
   print(json.dumps(canary(a.session)));return 0
+ if a.command=='cleanup':cleanup_scratch(dry=a.dry_run);print(json.dumps({'cleanup':'dry-run' if a.dry_run else 'done','log':str(STATE/'cleanup.log')}));return 0
  if a.command=='tick':print(json.dumps({'alerts':len(tick())}));return 0
  if a.command=='status':print((STATE/'STATUS.md').read_text() if (STATE/'STATUS.md').exists() else 'Not checked');return 0
  if a.command=='watch':

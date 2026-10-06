@@ -39,6 +39,13 @@ def launch(e, wid, state='VALIDATED', sid='s1', plan_path=None, lid=None):
     c.commit(); c.close()
 
 
+def admit(e, wid, aid='A1'):
+    """Record an admitted attempt id for wid (what guard.admit_launch does on admission)."""
+    c = guard.db()
+    c.execute('INSERT OR IGNORE INTO attempt_ids VALUES(?,?,?,?,?)', (str((e.proj / 'SWARM-PLAN.json').resolve()), aid, wid, 'l-' + aid, time.time()))
+    c.commit(); c.close()
+
+
 def denied(e, wid, n, sid='s1'):
     for i in range(n):
         st.record_attempt(e.st, sid, (e.proj / 'SWARM-PLAN.json').resolve(), wid, 'denied', 'x', '%s-a%d' % (wid, i))
@@ -81,8 +88,10 @@ def test_done_is_decided_by_verdict_file_pass(env):
     st._verdict(env.proj, 'W0-01', 'FAIL')
     assert 'W0-01' in stop(env)  # FAIL is not done
     st._verdict(env.proj, 'W0-01', 'PASS')
+    assert stop(env).startswith('Owed now: W0-01 (2 agents).')  # PASS whose attempt_id the guard never admitted is not done
+    admit(env, 'W0-01')
     r = stop(env); assert r.startswith('Owed now: W0-02 (2 agents).')
-    st._verdict(env.proj, 'W0-02', 'PASS')
+    st._verdict(env.proj, 'W0-02', 'PASS', attempt='A2'); admit(env, 'W0-02', 'A2')
     assert stop(env) is None
 
 
@@ -109,28 +118,32 @@ def test_release_b_question_only(env):
     plan(env.proj); (env.qg / 's1.json').write_text(json.dumps({'mode': 'question'})); assert stop(env) is None
 
 
-def test_release_c_three_failed_attempts_on_every_owed_workflow(env):
+def test_hook_refusals_never_release_the_stop(env):
     plan(env.proj)
-    denied(env, 'W0-01', 3); denied(env, 'W0-02', 2)
-    assert stop(env)  # W0-02 has only 2: still blocked
-    denied(env, 'W0-02', 2)  # same attempt ids collapse: still 2
+    denied(env, 'W0-01', 5); denied(env, 'W0-02', 5)
+    assert stop(env)  # refusals recorded by the old guard are not admitted launches and never count
+
+
+def test_release_c_admitted_launches_that_failed(env):
+    plan(env.proj, {'W0-01': 2, 'W0-02': 2})
+    launch(env, 'W0-01', 'FAILED'); launch(env, 'W0-01', 'FAILED'); launch(env, 'W0-02', 'FAILED')
+    assert stop(env)  # two and one failures: still owed
+    launch(env, 'W0-02', 'FAILED'); launch(env, 'W0-02', 'FAILED')
+    assert 'W0-01' in stop(env) and 'W0-02' not in stop(env).split('Launch each')[0]  # W0-02 reached handback (3 launches)
+
+
+def test_release_c_every_owed_workflow_has_three_failed_admitted_launches(env):
+    plan(env.proj, {'W0-01': 2}, maw=1)
+    for _ in range(2): launch(env, 'W0-01', 'FAILED')
     assert stop(env)
-    st.record_attempt(env.st, 's1', (env.proj / 'SWARM-PLAN.json').resolve(), 'W0-02', 'denied', 'x', 'W0-02-a9')
-    assert stop(env) is None
+    launch(env, 'W0-01', 'FAILED')
+    assert stop(env) is None  # handback: not owed, alert written, the user decides
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
-    assert any(a['state'] == 'STOP_OMISSION_UNRESOLVED' and 'W0-01' in a['detail'] and 'W0-02' in a['detail'] for a in alerts)
-    s = (env.st / 'STATUS.md').read_text(); assert 'STOP_OMISSION_UNRESOLVED' in s and 'W0-02' in s
-
-
-def test_release_c_counts_failed_launches_too(env):
-    plan(env.proj, {'W0-01': 2})
-    launch(env, 'W0-01', 'FAILED'); launch(env, 'W0-01', 'FAILED')
-    denied(env, 'W0-01', 1)
-    assert stop(env) is None
+    assert any(a['state'] == 'WORKFLOW_HANDBACK' for a in alerts)
 
 
 def test_failures_in_another_session_do_not_release(env):
-    plan(env.proj, {'W0-01': 2}); denied(env, 'W0-01', 3, sid='other')
+    plan(env.proj, {'W0-01': 2}); launch(env, 'W0-01', 'FAILED', sid='other'); launch(env, 'W0-01', 'FAILED', sid='other')
     assert stop(env, 's1')
 
 
@@ -140,7 +153,7 @@ def test_handback_after_three_launches(env):
     r = stop(env); assert r.startswith('Owed now: W0-02') and 'W0-01' not in r
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
     assert any(a['state'] == 'WORKFLOW_HANDBACK' and a['workflow'] == 'W0-01' for a in alerts)
-    st._verdict(env.proj, 'W0-02', 'PASS')
+    st._verdict(env.proj, 'W0-02', 'PASS', attempt='A2'); admit(env, 'W0-02', 'A2')
     assert stop(env) is None  # only the handback remains: not owed
 
 
@@ -153,14 +166,37 @@ def test_plan_not_armed_allows(env):
 
 
 def test_plan_armed_by_a_recorded_launch(env):
-    plan(env.proj, {'W0-01': 2, 'W0-02': 2}, status='planned', maw=2)
+    plan(env.proj, {'W0-01': 2, 'W0-02': 2}, status='planned-not-running', maw=2)
     launch(env, 'W0-01')
     assert stop(env).startswith('Owed now: W0-02')
 
 
-def test_invalid_plan_does_not_trap_the_stop(env):
+def test_armed_invalid_plan_blocks_stop_and_lists_errors(env, capsys):
     p = plan(env.proj); d = json.loads(p.read_text()); d['policy']['max_active_workflows'] = 99; p.write_text(json.dumps(d))
+    r = stop(env)
+    assert r and 'INVALID' in r and 'policy.max_active_workflows' in r
+    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0
+    assert json.loads(capsys.readouterr().out)['decision'] == 'block'
+    (env.qg / 's1.json').write_text(json.dumps({'mode': 'question'}))
+    assert stop(env) is None  # a question-only turn still releases
+    (env.qg / 's1.json').unlink()
+    guard.write_txn([("INSERT INTO continuations VALUES('s1',0,1,0)", None)])
+    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0 and capsys.readouterr().out == ''  # the user's pause releases
+
+
+def test_unarmed_invalid_plan_does_not_trap_the_stop(env):
+    p = plan(env.proj, status='planned-not-running'); d = json.loads(p.read_text()); d['policy']['max_active_workflows'] = 99; p.write_text(json.dumps(d))
     assert stop(env) is None
+
+
+def test_valid_plan_status_running_zero_launches_blocks_with_owed_list(env):
+    plan(env.proj, status='running')
+    r = stop(env); assert r.startswith('Owed now: W0-01 (8 agents), W0-02 (6 agents).')
+
+
+def test_status_active_does_not_arm_and_is_invalid(env):
+    p = plan(env.proj, status='active')
+    assert st.validate_plan(json.loads(p.read_text())) and stop(env) is None
 
 
 def test_armed_plan_pins_to_session_after_cwd_moves(env):
@@ -197,7 +233,17 @@ def test_reminder_lines_without_plan(env, capsys):
         assert 'every workflow runs' not in t
 
 
-def test_unarmed_plan_gets_the_neutral_line(env, capsys):
-    plan(env.proj, status='planned')
-    guard.hook({'hook_event_name': 'UserPromptSubmit', 'session_id': 's1', 'cwd': str(env.proj), 'prompt': 'hi', 'source': 'user'})
-    assert ctx(capsys).startswith('Ceilings: 50 workflows')
+def test_unarmed_plan_gets_the_not_started_line(env, capsys):
+    p = plan(env.proj, status='planned-not-running')
+    for ev in ('SessionStart', 'UserPromptSubmit'):
+        guard.hook({'hook_event_name': ev, 'session_id': 's1', 'cwd': str(env.proj), 'prompt': 'hi', 'source': 'user'})
+        t = ctx(capsys)
+        assert 'Plan %s found, not started. Start the build with: python3 ~/.claude/hooks/workflow-guard/staffing.py start --cwd %s' % (p.resolve(), p.resolve().parent) in t
+
+
+def test_start_cli_validates_then_arms(env, capsys):
+    p = plan(env.proj, status='planned-not-running')
+    assert st.cmd_start(env.proj) == 0 and json.loads(p.read_text())['status'] == 'running'
+    assert stop(env)  # armed now: owed workflows block the Stop
+    bad = json.loads(p.read_text()); bad['status'] = 'planned-not-running'; bad['policy']['max_active_workflows'] = 99; p.write_text(json.dumps(bad))
+    assert st.cmd_start(env.proj) == 1 and json.loads(p.read_text())['status'] == 'planned-not-running'  # an invalid plan is not started

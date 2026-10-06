@@ -8,7 +8,17 @@ const errors=[];
 const NAME_RE=/^[a-z0-9]{2,12}-W[0-9]{1,2}-(build\+qc|build|qc|repair|merge|test)-[A-Z]{2,5}[0-9]{3,}(\.\.[A-Z]{2,5}[0-9]{3,})?-([0-9]{1,2})L$/;
 const NAME_EXAMPLE='pres-W2-build+qc-SKR012..SKR019-8L';
 try {
- const tree=parse(input.script,{ecmaVersion:'latest',sourceType:'module',allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true});
+ // ROLLING WINDOW: the only concurrency limiter a script may carry. The caller (staffing.WINDOW_HELPER) supplies the
+ // exact helper text with __N__ for the window size; a script containing it byte-for-byte has that block removed from
+ // analysis (it needs a loop and mutation), every agent() must then be written wgSlot(() => agent(...)), and the peak
+ // is capped at the window. Any other loop/mutation is still refused below.
+ let WINDOW=null,scriptText=input.script;
+ if(typeof input.windowHelper==='string'&&input.windowHelper.includes('__N__')){
+  const re=new RegExp(input.windowHelper.split('__N__').map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('(\\d+)'));
+  const m=re.exec(scriptText);
+  if(m&&Number(m[1])>=1){WINDOW=Number(m[1]);scriptText=scriptText.replace(m[0],m[0].replace(/[^\n]/g,' '));}
+ }
+ const tree=parse(scriptText,{ecmaVersion:'latest',sourceType:'module',allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true});
  const env=new Map([['args',input.args]]), funcs=new Map();
  const children=n=>Object.values(n||{}).flatMap(v=>Array.isArray(v)?v.filter(x=>x?.type):v?.type?[v]:[]);
  const walk=(n,f,parent=null)=>{if(!n?.type)return;f(n,parent);children(n).forEach(c=>walk(c,f,n));};
@@ -35,6 +45,8 @@ try {
  if(!phases.length||phases.some(x=>typeof x!=='string'||!x.trim())||new Set(phases).size!==phases.length)errors.push('Declare unique nonempty meta.phases titles.');
  const hasWorker=n=>{let yes=false;walk(n,x=>{if(x.type==='CallExpression'&&x.callee.name==='agent')yes=true;});return yes;};
  let agents=0;
+ const windowed=new Set();
+ if(WINDOW!==null)walk(tree,n=>{if(n.type==='CallExpression'&&n.callee.type==='Identifier'&&n.callee.name==='wgSlot'&&n.arguments.length===1&&n.arguments[0].type==='ArrowFunctionExpression')windowed.add(n.arguments[0]);});
  walk(tree,(n,parent)=>{
   if(n.type==='Identifier'&&['agent','pipeline','parallel','workflow'].includes(n.name)&&!(parent?.type==='CallExpression'&&parent.callee===n))errors.push('Workflow primitives may only be called directly, not referenced/aliased as values.');
   if(['AssignmentExpression','UpdateExpression'].includes(n.type))errors.push('Mutable launch variables cannot be capacity-certified. Use immutable args and the generated template.');
@@ -43,7 +55,8 @@ try {
   if(n.type==='CallExpression'&&n.callee.type==='Identifier'&&n.callee.name==='parallel'&&!['ArrayExpression','CallExpression'].includes(n.arguments[0]?.type))errors.push('parallel requires an inline thunk array or a measurable .map expression.');
   if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&['forEach','reduce','flatMap','from','apply','call','bind'].includes(n.callee.property.name)&&hasWorker(n))errors.push('Opaque callback fan-out cannot be bounded. Use pipeline(args.units, inline stages).');
   if(n.type==='CallExpression'&&n.callee.type==='Identifier'&&n.callee.name==='agent'){
-   agents++;const opt=n.arguments[1];
+   agents++;
+   if(WINDOW!==null&&!(parent?.type==='ArrowFunctionExpression'&&parent.params.length===0&&parent.body===n&&windowed.has(parent)))errors.push(`Line ${n.loc.start.line}: with a rolling window every agent() must be written wgSlot(() => agent(...)).`);const opt=n.arguments[1];
    if(opt?.type!=='ObjectExpression'||opt.properties.some(p=>p.type!=='Property'||p.computed)) {errors.push(`Line ${n.loc.start.line}: agent options must be an explicit object without spreads/computed keys.`);return;}
    const props=Object.fromEntries(opt.properties.map(p=>[key(p),p.value]));
    for(const k of ['model','phase'])if(typeof literal(props[k])!=='string'||!literal(props[k]).trim())errors.push(`Line ${n.loc.start.line}: explicit nonempty ${k} required.`);
@@ -83,12 +96,12 @@ try {
     const items=literal(n.arguments[0]);if(!Array.isArray(items))throw Error(typeof input.args === 'string' ? 'Workflow args is JSON encoded as text. Supply the actual JSON object, or regenerate a self-contained workflow with make-workflow.py.' : 'Cannot measure pipeline items: required unit data is missing or cannot be resolved. Legacy scripts using args.units need the entire launch JSON object. Regenerate with make-workflow.py for a self-contained scriptPath-only launch.');
     const stages=n.arguments.slice(1);
     if(stages.some(s=>!['ArrowFunctionExpression','FunctionExpression'].includes(s.type)))throw Error('Use explicit inline pipeline callbacks so agent capacity is verifiable.');
-    const sp=stages.map(s=>peak(s.body,stack));return (MODE==='peak'?Math.min(items.length,10):items.length)*(MODE==='peak'?Math.max(0,...sp):sp.reduce((a,b)=>a+b,0));
+    const sp=stages.map(s=>peak(s.body,stack));return items.length*(MODE==='peak'?Math.max(0,...sp):sp.reduce((a,b)=>a+b,0));
    }
    if(c.type==='MemberExpression'&&c.property.name==='map'){
     if(!hasWorker(n))return 0;
     const items=literal(c.object);if(!Array.isArray(items))throw Error('Cannot measure map fan-out. Use a literal array or args.units.');
-    return (MODE==='peak'?Math.min(items.length,10):items.length)*peak(n.arguments[0],stack);
+    return items.length*peak(n.arguments[0],stack);
    }
    if(c.type==='Identifier'&&funcs.has(c.name)){
     if(stack.includes(c.name))throw Error('Recursive spawning cannot be bounded.');
@@ -100,15 +113,17 @@ try {
   // Conservative upper bound: sums concurrent expressions; sequential awaited statements and pipeline stages use max above.
   return children(n).reduce((sum,c)=>sum+peak(c,stack),0);
  }
- const bound=peak(tree);
+ // No script-level clamp: a stage over N items counts N concurrent agents unless the rolling window caps it.
+ const bound=WINDOW!==null?Math.min(peak(tree),WINDOW):peak(tree);
  MODE='total';const totalCalls=peak(tree);MODE='peak';
  const TOTAL_CEILING=200;
  if(totalCalls>TOTAL_CEILING)errors.push(`Script makes ${totalCalls} agent calls in total, above the runaway backstop of ${TOTAL_CEILING}. Split into separate workflows.`);
  const envCap=Number.parseInt(process.env.WORKFLOW_GUARD_CAP??'',10);
- // owner order 2026-10-06: policy cap 10/workflow only; hardware clamp removed (the plan, then the 10-per-workflow ceiling, are the only guards)
+ // Per-workflow cap: measured from the box (RAM, cores, Docker/Hostinger limits via capacity_probe.py), max 10, 10 on the
+ // operator's Mac. The guard passes the computed cap (plan, limits.json, capacity probe) in WORKFLOW_GUARD_CAP.
  const cap=Number.isInteger(envCap)&&envCap>=1&&envCap<=10?envCap:10;
  if(nameMatch&&Number(nameMatch[3])!==bound)errors.push(`name claims ${Number(nameMatch[3])} lanes, script has ${bound}`);
- if(bound>cap)errors.push(`Computed upper bound ${bound} concurrent agents exceeds effective cap ${cap} (hard ceiling 10). Use one pipeline with <=${cap} units and one agent per stage, or split into separate workflows.`);
+ if(bound>cap)errors.push(`Computed upper bound ${bound} concurrent agents exceeds effective cap ${cap} (measured per-workflow cap, hard ceiling 10). Use make-workflow.py, which emits a rolling window of <=${cap}, or split into separate workflows.`);
  if(!agents)errors.push('No agent() calls: this is not a visible worker workflow.');
  // SCRATCH ISOLATION : every lane of every
  // workflow is handed the SAME session scratchpad; sibling lanes writing a generic filename clobber each

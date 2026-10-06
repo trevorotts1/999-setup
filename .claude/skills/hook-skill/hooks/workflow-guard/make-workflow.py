@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -33,11 +34,25 @@ return {results,missing,complete:missing.length===0 && results.every(r=>r && r.s
 '''
 
 
-def plan_template():
-    """The plan-mode script: same prompts as TEMPLATE, but it fans out over the launch's own args.units
-    (plan unit objects) so staffing.check_launch accepts it. Concurrency is min(10, len(units)) via the native cap."""
-    t = TEMPLATE.replace('INPUT.guard.runRoot', 'RUN_ROOT').replace('INPUT.units', 'args.units')
-    t = t.replace('u.ownership', 'u.owned_output').replace('u.qcPrompt', "u.acceptance+' Write your verdict as JSON {\"verdict\":\"PASS\" or \"FAIL\"} to '+u.verdict_file+' (relative to the plan directory).'")
+def plan_template(windowed):
+    """The plan-mode script: same prompts as TEMPLATE, fanning out over the launch's own args.units (plan unit objects)
+    in ONE pipeline. When the plan has more units than the per-workflow cap, every agent() call runs inside wgSlot(),
+    the rolling window (a semaphore, not batch barriers) that keeps at most `cap` agents running at once; the
+    pipeline/parallel primitives have no concurrency option, so the window is the limiter."""
+    t = TEMPLATE
+    if windowed:
+        for old, new in (("(u) => agent('Unit '", "(u) => wgSlot(() => agent('Unit '"),
+                         ("{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT}),", "{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT})),"),
+                         ("return agent('Independently QC", "return wgSlot(() => agent('Independently QC"),
+                         ("{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});", "{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT}));")):
+            assert t.count(old) == 1, old
+            t = t.replace(old, new)
+    t = t.replace('INPUT.guard.runRoot', 'RUN_ROOT').replace('INPUT.units', 'args.units')
+    verdict = ("u.acceptance+' VERDICT FILE: write exactly this JSON to '+RUN_ROOT+'/'+u.verdict_file+' (create folders as needed): "
+               "{\"verdict\":\"PASS\" or \"FAIL\" (PASS only when the acceptance is met on the actual files),\"unit_id\":\"'+u.unit_id+'\","
+               "\"attempt_id\":\"'+args.attemptId+'\",\"builder_model\":\"'+BUILDER+'\",\"reviewer_model\":\"'+REVIEWER+'\"}. "
+               "You are the checker; the conductor may not write this file.'")
+    t = t.replace('u.ownership', 'u.owned_output').replace('u.qcPrompt', verdict)
     t = t.replace('u.prompt', "'Work: '+u.work+' Source: '+u.source+'. Acceptance: '+u.acceptance").replace('u.id', 'u.unit_id')
     return t
 
@@ -65,7 +80,9 @@ def plan_main(argv):
         if not a.builder.strip() or not a.reviewer.strip() or a.builder == a.reviewer:
             raise ValueError('Builder and independent reviewer must name different nonempty models.')
         units = wf['units']
-        lanes = staffing.agent_count(wf, staffing.plan_cap(doc) or staffing.CEIL_AGENTS)
+        cap = staffing.launch_agent_cap(doc)  # min(plan cap, limits.json, capacity_probe): the measured per-workflow cap
+        lanes = staffing.agent_count(wf, cap)
+        windowed = len(units) > cap
         wave = re.search(r'W([0-9]{1,2})', a.workflow_id)
         span = 'WU001' if len(units) == 1 else f'WU001..WU{len(units):03}'
         name = f'swarm-W{wave.group(1) if wave else 0}-build+qc-{span}-{lanes}L'
@@ -74,9 +91,10 @@ def plan_main(argv):
         meta = {'name': name, 'description': f'{a.workflow_id}: {len(units)} planned units', 'phases': [{'title': 'Build'}, {'title': 'QC'}]}
         script = ('// workflow-guard plan launch for ' + a.workflow_id + '; fans out over args.units (the plans own units).\n'
                   'export const meta = ' + json.dumps(meta) + ';\nconst RUN_ROOT = ' + json.dumps(str(plan_path.parent)) + ';\n'
-                  + plan_template().replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)))
-        launch_args = {'workflowId': a.workflow_id, 'units': units}
-        check = subprocess.run([NODE, str(ROOT / 'validate.mjs')], input=json.dumps({'script': script, 'args': launch_args}), text=True, capture_output=True, timeout=15)
+                  + (staffing.window_helper(cap) if windowed else '')
+                  + plan_template(windowed).replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)))
+        launch_args = {'workflowId': a.workflow_id, 'units': units, 'attemptId': f'{a.workflow_id}-{int(time.time() * 1000)}'}
+        check = subprocess.run([NODE, str(ROOT / 'validate.mjs')], input=json.dumps({'script': script, 'args': launch_args, 'windowHelper': staffing.WINDOW_HELPER}), text=True, capture_output=True, timeout=15, env={**os.environ, 'WORKFLOW_GUARD_CAP': str(cap)})
         try:
             verdict = json.loads(check.stdout)
         except ValueError as exc:
@@ -92,15 +110,16 @@ def plan_main(argv):
         (out / f'launch-{a.workflow_id}.json').write_text(json.dumps(launch, indent=2) + '\n', encoding='utf-8')
         target.write_text(script, encoding='utf-8')
         print(json.dumps({'launch': launch, 'launchInput': str(out / f'launch-{a.workflow_id}.json'), 'name': name, 'agentCount': lanes, 'units': len(units), 'status': 'VALIDATED_NOT_LAUNCHED'}))
-        print(f'LAUNCH: call the Workflow tool with exactly the JSON in {out / ("launch-" + a.workflow_id + ".json")} (scriptPath plus args.workflowId and the {len(units)} planned units). Concurrency is {lanes} agents.')
+        print(f'LAUNCH: call the Workflow tool with exactly the JSON in {out / ("launch-" + a.workflow_id + ".json")} (scriptPath plus args.workflowId, the {len(units)} planned units and args.attemptId). At most {cap} agents run at once (measured per-workflow cap{", enforced by the rolling window" if windowed else ""}). To relaunch after an admitted launch, change args.attemptId to a new unique value.')
         return 0
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         p.error(str(exc))
 
 
 def host_cap():
-    """Per-workflow cap: WORKFLOW_GUARD_CAP when an integer 1..10, otherwise the cap MEASURED on this box by
-    capacity_probe.py (RAM, logical cores, container limits; 10 on a strong box), otherwise the ceiling 10."""
+    """Per-workflow cap ceiling: measured from the box (RAM, cores, Docker/Hostinger limits via capacity_probe.py), max 10,
+    10 on the operator's Mac. WORKFLOW_GUARD_CAP env, when an integer 1..10, narrows it. Plan mode uses
+    staffing.launch_agent_cap (plan cap, limits.json, plan capacity_probe) instead."""
     raw = os.environ.get('WORKFLOW_GUARD_CAP')
     if raw is not None and raw.strip():
         try:
@@ -228,7 +247,7 @@ def main():
         run_root = run_root.resolve()
         if run_root.exists() and not run_root.is_dir():
             raise ValueError(f'--run-root is an existing file, not a directory: {run_root}.')
-        cap = min(10, host_cap(), a.provider_slots - a.reserve)  # owner order 2026-10-06: policy cap 10/workflow; host_cap() hardware clamp removed (env override only)
+        cap = min(10, host_cap(), a.provider_slots - a.reserve)  # non-plan mode: ceiling 10 (measured per-workflow cap max); host_cap() env override only
         if cap < 1:
             raise ValueError('No available provider slots remain after reserves.')
         if not a.builder.strip() or not a.reviewer.strip() or a.builder == a.reviewer:

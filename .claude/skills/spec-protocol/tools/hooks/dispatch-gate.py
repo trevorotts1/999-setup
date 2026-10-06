@@ -60,6 +60,14 @@ and blocks (exit 2) ten shapes, naming the fix for each:
      whose five-minute tick is not armed (tools/watch-tick.sh <project> --check
      rc 3). Any other rc, a missing tool, or a 5 s timeout fails open.
 
+PLAN-STRICT AGENT/TASK RULE (supersedes the reader exemption below WHILE A PLAN IS IN FORCE, found from
+cwd or armed/pinned to the session): an Agent/Task call is allowed only if the WHOLE prompt+description
+contains none of build, implement, fix, repair, write, edit, create, generate, code, commit, merge, deploy,
+refactor, patch, modify, install, delete, change (word-boundary, case-insensitive; the veto beats any
+READ-ONLY/reader marker) AND it is either a read-only type (Explore, Plan, claude-code-guide,
+statusline-setup) or a prompt that reads/researches/QC-reads. Everything else is the HIDDEN BUILD block.
+Outside a plan nothing below changed.
+
 AGENT / TASK CALLS (fix #5). The same hook is registered on
 "Workflow|Agent|Task" because the degrade path of references/workflows.md fans
 out plain Agent calls, which never reached this gate. An Agent/Task call whose
@@ -253,6 +261,26 @@ READER_PROMPT_RE = re.compile(r"READ-ONLY|read-only|You are a reader")
 # A reader-worded description that also names work is a builder, not a reader.
 READER_VETO_RE = re.compile(r"\b(build|implement|fix|repair|write|edit|code|merge|deploy)\b", re.I)
 
+# Under a found plan the reader exemption is gone: only a read-only subagent type
+# with NO write/build intent anywhere in prompt+description may run as an Agent/Task.
+PLAN_READONLY_TYPES = ("Explore", "Plan", "claude-code-guide", "statusline-setup")
+PLAN_WRITE_RE = re.compile(
+    r"\b(?:build|implement|fix|repair|write|edit|create|generate|code|commit|merge|deploy|refactor|patch|"
+    r"modify|install|delete|change)(?:s|es|ed|d|ing)?\b|\b(?:built|wrote|written|coding|creating|writing)\b", re.I)
+PLAN_READ_RE = re.compile(
+    r"\b(?:read\w*|research\w*|explor\w*|audit\w*|qc|judge|verif\w*|review\w*|survey|summari[sz]e|list)\b", re.I)
+
+
+def plan_agent_allowed(ti):
+    """Under a plan: an Agent/Task call passes only if it is demonstrably read-only. The write-intent
+    veto scans the WHOLE prompt+description and beats any READ-ONLY marker."""
+    text = "\n".join(ti.get(k) for k in ("description", "prompt") if isinstance(ti.get(k), str))
+    if PLAN_WRITE_RE.search(text):
+        return False
+    kind = ti.get("subagent_type") if isinstance(ti.get("subagent_type"), str) else ""
+    return kind in PLAN_READONLY_TYPES or bool(PLAN_READ_RE.search(text))
+
+
 # The absolute per-project ceiling. A state file may lower it and may never
 # raise it, which is why the state value is taken only when it is SMALLER --
 # the same clamp tools/anchor.sh applies in its budget audit.
@@ -307,13 +335,11 @@ def block(lines):
 
 def staffing_path():
     """Locate staffing.py (the one implementation of the plan rules). Order: STAFFING_PATH env,
-    workflow-guard/staffing.py beside this file (installed layout ~/.claude/hooks/ or
-    ~/.claude-nine/hooks/, written by both spec-protocol's install-hooks and Hook Skill's installer),
-    staffing.py beside this file (the 999-setup checkout: tools/hooks/), then the config dirs."""
+    workflow-guard/staffing.py beside this file (installed layout ~/.claude/hooks/ or ~/.claude-nine/hooks/, written by
+    both spec-protocol's install-hooks and Hook Skill's installer), staffing.py beside this file (the 999-setup
+    checkout: tools/hooks/), then the config dirs."""
     here = os.path.dirname(os.path.abspath(__file__))
-    cands = [os.environ.get("STAFFING_PATH") or "",
-             os.path.join(here, "workflow-guard", "staffing.py"),
-             os.path.join(here, "staffing.py")]
+    cands = [os.environ.get("STAFFING_PATH") or "", os.path.join(here, "workflow-guard", "staffing.py"), os.path.join(here, "staffing.py")]
     for d in (os.environ.get("CLAUDE_CONFIG_DIR") or "", "~/.claude", "~/.claude-nine"):
         if d:
             cands.append(os.path.join(os.path.expanduser(d), "hooks", "workflow-guard", "staffing.py"))
@@ -334,7 +360,8 @@ def staffing_module():
         mod = importlib.util.module_from_spec(spec)
         sys.modules.setdefault("staffing", mod)
         spec.loader.exec_module(mod)
-        mod.GATE_PATH = __import__("pathlib").Path(os.path.abspath(__file__))  # staffing parses scripts with THIS file
+        if hasattr(mod, "GATE_PATH"):
+            mod.GATE_PATH = __import__("pathlib").Path(os.path.abspath(__file__))  # staffing parses scripts with THIS file
         _STAFFING.append(mod)
     return _STAFFING[0]
 
@@ -1315,21 +1342,23 @@ def main():
         # fix #5: an Agent/Task call is a build dispatch when its description or
         # the first line of its prompt says "build"; it then owes SHAPES 8-10.
         # A reader never does (round 7), whatever else its prompt says.
-        if is_reader_agent(ti):
-            allow()
-        desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
-        prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
-        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
-        if not BUILD_LABEL_RE.search(desc + "\n" + first):
-            allow()
-        # HIDDEN BUILDS: under a found swarm plan a build is a planned Workflow launch.
         try:
             found = staffing_module().resolve_plan(event_cwd, data.get("session_id"))
         except Exception:
             found = None
+        if found and plan_agent_allowed(ti):
+            allow()
+        if not found and is_reader_agent(ti):
+            allow()
+        desc = ti.get("description") if isinstance(ti.get("description"), str) else ""
+        prompt = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
+        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+        if not found and not BUILD_LABEL_RE.search(desc + "\n" + first):
+            allow()
+        # HIDDEN BUILDS: under a found swarm plan every Agent/Task call that is not provably read-only is refused.
         if found:
             plan_block("HIDDEN BUILD (plan %s): builds under this plan go through the planned "
-                       "Workflow launch. Launch the owed workflow with args.workflowId and its exact "
+                       "Workflow launch (any Agent/Task call under a plan must be read-only: no build/implement/fix/write/edit/etc. anywhere in prompt or description). Launch the owed workflow with args.workflowId and its exact "
                        "planned units (python3 %s status --cwd %s names them); an Agent/Task call may "
                        "only read, research or QC-read." % (
                            found[0], staffing_path(),
@@ -1614,9 +1643,26 @@ def selftest():
     report("8d", "plan-hidden-build-task-blocked", rc_t2 == 2, "Task 'build unit u02' under a plan -> rc=%d (want 2)" % rc_t2)
     rc_r, out_r = _run_child(plan_agent("Read client packet docs", "READ-ONLY. read the files and report."), plan_root)
     rc_r2, _o2 = _run_child(plan_agent("research reference apps", "survey and report"), plan_root)
-    rc_r3, _o3 = _run_child(plan_agent("scan units", "build nothing, list files", "Explore"), plan_root)
+    rc_r3, _o3 = _run_child(plan_agent("scan units", "list files", "Explore"), plan_root)
     report("8e", "plan-reader-agent-allowed", rc_r == 0 and rc_r2 == 0 and rc_r3 == 0,
            "reader / research / Explore under a plan -> rc=%d, %d, %d (want 0, 0, 0)" % (rc_r, rc_r2, rc_r3))
+    # 4c2 -- strict plan rule: five hidden-build bypasses blocked; genuine readers allowed; no-plan unchanged.
+    bypass = [
+        ("read-only-then-implement", "READ-ONLY reader. Read the spec. Then implement unit W0-02-U1.", "scan", "general-purpose"),
+        ("desc-reader-then-implement", "do it", "read-only reader then implement", "general-purpose"),
+        ("implement-no-build-word", "Implement unit W0-02-U1", "unit", "general-purpose"),
+        ("fix-failing-test", "Fix failing test", "test", "general-purpose"),
+        ("explore-told-to-write", "Explore the repo, then write the code for unit 1 using Bash", "explore", "Explore"),
+    ]
+    for i, (nm, pr, de, kd) in enumerate(bypass):
+        rc_b, out_b = _run_child(plan_agent(de, pr, kd), plan_root)
+        report("8c%d" % (i + 2), "plan-bypass-" + nm, rc_b == 2 and "HIDDEN BUILD" in out_b, "rc=%d (want 2)" % rc_b)
+    rc_g, _o = _run_child(plan_agent("Read evidence", "READ-ONLY. Read the docs and report."), plan_root)
+    rc_q, _o2 = _run_child(plan_agent("QC read", "Read evidence/W0-01 and report PASS/FAIL"), plan_root)
+    rc_np, _o3 = _run_child(plan_agent("read-only reader then implement", "READ-ONLY reader. Then implement unit 1.", cwd=no_plan), no_plan)
+    report("8c7", "plan-genuine-reader-and-qc-read-allowed", rc_g == 0 and rc_q == 0, "rc=%d, %d (want 0, 0)" % (rc_g, rc_q))
+    report("8c8", "no-plan-reader-prompt-unchanged", rc_np == 0, "no plan, READ-ONLY+implement -> rc=%d (want 0, old behaviour)" % rc_np)
+
     rc_h2, _o4 = _run_child(plan_agent("build unit u03", "build unit u03", cwd=no_plan), no_plan)
     report("8f", "no-plan-build-agent-unaffected", rc_h2 == 0,
            "Agent 'build unit u03' with no plan and no spec-protocol project -> rc=%d (want 0)%s" % (rc_h2, "" if rc_h2 == 0 else ": " + _o4.strip()[:300]))

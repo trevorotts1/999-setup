@@ -12,7 +12,7 @@ class GuardTests(unittest.TestCase):
   p=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':args}),capture_output=True,text=True,check=True)
   return json.loads(p.stdout)
  def name(self,lanes=10):return 'tg-W1-build+qc-SKR001..SKR099-%dL'%lanes
- def script(self,lanes=10):return "export const meta={name:'"+self.name(lanes)+"',description:'test',phases:[{title:'Build'},{title:'QC'}]};\nlog('SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/');\nconst r=await pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'build:'+u.id}), (b,u)=>agent(u.prompt,{model:'sonnet',phase:'QC',label:'qc:'+u.id}));return r;"
+ def script(self,lanes=10):return "// SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/\nexport const meta={name:'"+self.name(lanes)+"',description:'test',phases:[{title:'Build'},{title:'QC'}]};\nconst r=await pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'build:'+u.id}), (b,u)=>agent(u.prompt,{model:'sonnet',phase:'QC',label:'qc:'+u.id}));return r;"
  def args(self,n=10):return {'units':[{'id':'SKR-%03d'%i,'prompt':'test'} for i in range(n)]}
  def hook(self,payload):return subprocess.run(['python3',str(ROOT/'guard.py'),'hook'],input=json.dumps(payload),capture_output=True,text=True,env=self.env)
  def test_ten_parallel_lanes_twenty_lifetime_calls(self):
@@ -189,7 +189,8 @@ class GuardTests(unittest.TestCase):
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'carry on','source':'user'})
   self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'please stop now','source':'loop_wakeup'})
-  self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)  # machine traffic never arms the latch
+  # machine-injected messages never arm the latch (removed 2026-09-22)
+  self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)
  def test_continuation_cap_stops_blocking_at_three(self):
   for n,w in enumerate(('w1','w2','w3'),start=1):
    self.alerts_file('cont',w)

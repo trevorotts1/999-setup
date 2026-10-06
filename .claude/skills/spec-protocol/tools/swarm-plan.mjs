@@ -32,8 +32,8 @@ export const MAX_WORKFLOWS = 50;
 export const MAX_WORKING = 500;
 export const MAX_REPAIR_CYCLES = 2;
 // Contract v2.1: a workflow has no verdict_file of its own (it is DONE when every unit verdict is PASS).
-// Leftover staffing arithmetic: staffing is derived from units, so these keys never appear (same list as staffing.py LEFTOVER_KEYS).
-const LEFTOVER_KEYS = ['verdict_file', 'builders', 'checkers', 'repair_extra_executions_max', 'max_total_executions', 'total_executions', 'repair_reserve', 'executions_total'];
+// Leftover staffing arithmetic: staffing is derived from units, so these keys never appear (same list as staffing.py and swarm_plan_check.py).
+const LEFTOVER_KEYS = ['builders', 'checkers', 'repair_extra_executions_max', 'max_total_executions'];
 // Padding (same two rules as staffing.py and swarm_plan_check.py): "slice N of M" text, or the same work text twice in a workflow (digits, whitespace and case ignored).
 const SLICE_TEXT = /slice \d+ of \d+/i;
 const PLACEHOLDER = /slices\/|[<>*]|TBD|TODO/i;
@@ -72,6 +72,7 @@ export function validate(plan) {
   const e = (m) => errs.push(m);
   if (!plan || typeof plan !== 'object') return ['plan is not a JSON object'];
   if (plan.schema !== SCHEMA) e(`schema must be "${SCHEMA}"`);
+  if (plan.status !== 'planned-not-running' && plan.status !== 'running') e('plan status must be planned-not-running or running (staffing.py start); other claims need actual census evidence');
   const pol = plan.policy || {};
   if (!isInt(pol.max_active_workflows) || pol.max_active_workflows < 1 || pol.max_active_workflows > MAX_WORKFLOWS) e(`policy.max_active_workflows must be an integer 1..${MAX_WORKFLOWS}`);
   const cap = planCap(plan);
@@ -91,6 +92,7 @@ export function validate(plan) {
     const units = w.units;
     if (!Array.isArray(units) || !units.length) { e(`${wid}: units must be a non-empty array`); continue; }
     for (const k of LEFTOVER_KEYS) if (k in w) e(`${wid}: leftover key ${k} \u2014 staffing is derived from units`);
+    if ('verdict_file' in w) e(`${wid}: leftover key verdict_file \u2014 a workflow is done when every unit has a valid PASS verdict`);
     const want = Math.min(cap === null ? MAX_AGENTS : cap, units.length);
     if (w.agent_count !== want) e(`${wid}: agent_count must be min(max_agents_per_workflow, len(units)) = ${want}`);
     if (w.concurrency !== want) e(`${wid}: concurrency must equal agent_count = ${want}`);
@@ -202,7 +204,7 @@ export function buildPlan(breakdown, capacity) {
     };
   });
   const active = Math.min(MAX_WORKFLOWS, breakdown.max_active_workflows || workflows.length);
-  return { schema: SCHEMA,
+  return { schema: SCHEMA, status: 'planned-not-running',
     policy: { max_active_workflows: active, max_agents_per_workflow: cap, max_working_agents: capacity.max_working_agents,
       max_repair_cycles: MAX_REPAIR_CYCLES,
       capacity_probe: { ram_gb: capacity.ram_gb, cores: capacity.cores, source: capacity.source, per_workflow_cap: cap, max_working_agents: capacity.max_working_agents, measured_at: capacity.measured_at } },
@@ -239,6 +241,9 @@ function selftest() {
   t('max_agents_per_workflow-11-refused', mut(10, (p) => { p.policy.max_agents_per_workflow = 11; }).length > 0);
   t('max_agents_per_workflow-0-refused', mut(10, (p) => { p.policy.max_agents_per_workflow = 0; }).length > 0);
   t('max_agents_per_workflow-missing-refused', mut(10, (p) => { delete p.policy.max_agents_per_workflow; }).length > 0);
+  t('plan-status-active-refused', mut(10, (p) => { p.status = 'active'; }).length > 0);
+  t('plan-status-running-accepted', mut(10, (p) => { p.status = 'running'; }).length === 0);
+  t('plan-status-missing-refused', mut(10, (p) => { delete p.status; }).length > 0);
   t('max_active_workflows-51-refused', mut(10, (p) => { p.policy.max_active_workflows = 51; }).length > 0);
   t('max_working_agents-501-refused', mut(10, (p) => { p.policy.max_working_agents = 501; }).length > 0);
   for (const k of LEFTOVER_KEYS) t(`leftover-key-${k}-refused`, mut(10, (p) => { p.workflows[0][k] = 1; }).some((m) => m === `W1: leftover key ${k} — staffing is derived from units`));

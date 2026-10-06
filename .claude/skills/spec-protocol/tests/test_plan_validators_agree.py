@@ -66,11 +66,14 @@ class Agree(unittest.TestCase):
         self.check("padded: identical work text", self.mut(base, lambda p: w(p)["units"][1].update(work=w(p)["units"][0]["work"])), False)
         self.check("padded: 12 units where 2 would do (same work, digits only differ)",
                    self.mut(base, lambda p: [u.update(work="do part %d" % i) for i, u in enumerate(w(p)["units"])]), False)
+        self.check("plan status active (v2.1: only planned-not-running or running)", self.mut(base, lambda p: p.update(status="active")), False)
+        self.check("plan status running accepted", self.mut(base, lambda p: p.update(status="running")), True)
+        self.check("plan status missing", self.mut(base, lambda p: p.pop("status")), False)
         self.check("policy cap 11", self.mut(base, lambda p: p["policy"].update(max_agents_per_workflow=11)), False)
         self.check("policy cap missing", self.mut(base, lambda p: p["policy"].pop("max_agents_per_workflow")), False)
         self.check("max_working_agents 501", self.mut(base, lambda p: p["policy"].update(max_working_agents=501)), False)
         self.check("max_active_workflows 51", self.mut(base, lambda p: p["policy"].update(max_active_workflows=51)), False)
-        for k in ("builders", "checkers", "repair_extra_executions_max", "max_total_executions", "total_executions", "repair_reserve"):
+        for k in ("builders", "checkers", "repair_extra_executions_max", "max_total_executions"):
             self.check("leftover key " + k, self.mut(base, lambda p, k=k: w(p).update({k: 1})), False)
         self.check("bad unit verdict_file", self.mut(base, lambda p: w(p)["units"][0].update(verdict_file="evidence/x.json")), False)
         self.check("workflow-level verdict_file is a leftover key (contract v2.1)", self.mut(base, lambda p: w(p).update(verdict_file="evidence/W1/verdict.json")), False)

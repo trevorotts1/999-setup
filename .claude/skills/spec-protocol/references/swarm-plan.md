@@ -34,6 +34,7 @@ the end of every turn. A document that states a different number is a defect: th
 ```json
 {
   "schema": "blackceo.swarm-plan/v2",
+  "status": "planned-not-running",
   "policy": { "max_active_workflows": 6, "max_agents_per_workflow": 10,
               "max_working_agents": 500, "max_repair_cycles": 2,
               "capacity_probe": { "ram_gb": 24, "cores": 12, "source": "macos-sysctl",
@@ -46,7 +47,7 @@ the end of every turn. A document that states a different number is a defect: th
                 "acceptance": "renders at 390px and 1440px; login.test.tsx passes",
                 "source": "SPEC section 4.2",
                 "verdict_file": "evidence/W1/W1-U1.verdict.json" }],
-    "agent_count": 1, "concurrency": 1, "verdict_file": "evidence/W1/verdict.json"
+    "agent_count": 1, "concurrency": 1
   }]
 }
 ```
@@ -80,8 +81,12 @@ difference in accept/reject.
 
 ## Done and ready
 
-**Done = the `verdict_file` says `"verdict": "PASS"`.** Status fields, ledger lines and prose never decide
-readiness. **Ready = not done, not running, and every dependency done.**
+**A unit is done when its `verdict_file` is JSON `{"verdict": "PASS", "unit_id": <this unit>, "attempt_id":
+<an admitted launch of this workflow>, "builder_model", "reviewer_model"}` with the reviewer different from the
+builder; a workflow is done when EVERY unit is done** (a workflow has no verdict file of its own: the key is
+refused as a leftover). The plan's `status` is `planned-not-running` or `running` (`staffing.py start --cwd <dir>`
+validates the plan and sets it when the build starts) and never decides readiness; ledger lines and prose
+never do either. **Ready = not done, not running, and every dependency done.**
 
 ## Discovery
 
@@ -92,8 +97,8 @@ enforce the ceilings only.
 
 ## The exact launch shape (under a found plan)
 
-- `Workflow` with `args.workflowId` = a READY workflow and `args.units` = exactly that workflow's
-  planned unit ids. The script fans out over `args.units` in one stage:
+- `Workflow` with `args.workflowId` = a READY workflow, `args.units` = exactly that workflow's
+  planned unit ids, and a unique non-empty `args.attemptId` (unit verdicts cite it). The script fans out over `args.units` in one stage:
   `pipeline(args.units, build, check)`. Anything else is BLOCKED.
 - Building through plain `Agent` calls under a plan is BLOCKED (readers are the only exception).
 - Every ready workflow launches in the same turn, up to `max_active_workflows`.

@@ -897,9 +897,10 @@ this second hook closes. Two hooks, same matcher, different questions:
 1. `parallel(build)` followed by `parallel(qc)` → `pipeline(units, build, qc)`.
 2. A judge stage passing fewer items than the build stage → one judge per landed unit.
 3. A bare `agent()` with no `model:` → pin the seat (§0.0).
-4. A widest stage below `min(units, 10)` (the plan's `agent_count`, or the per-workflow cap of
-   10 when no plan exists) → pass every planned unit to one `pipeline()` call. No off-switch:
-   a missing `CAPACITY-LEDGER.md`, a profiled project and a `dep=` comment all still gate.
+4. Under a found swarm plan: a launch that leaves the plan's launch contract (`args.workflowId` of a READY
+   workflow, `args.units` exactly that workflow's planned units, a script fanning out over `args.units` in one
+   `pipeline()` stage) → pass every planned unit to one `pipeline()` call. No off-switch: a profiled project and
+   a `dep=` comment still gate. With no plan there is no floor, only the ceilings (10 / 50 / 500).
 5. A merge agent inside a build tree → Law 3's single writer runs OUTSIDE the tree,
    so it never holds a build slot.
 6. A legacy run at its pause wall or execution ceiling → the budget wall holds.
@@ -983,7 +984,7 @@ meanings and `CONTROL` files are not synthesized for it.
 |---|---|
 | 0 | PASS — the dispatch-log row is written through `ledger.sh` and `agents.executions_total` in `CONTROL/project_state.json` is incremented by `<agents>`, atomically |
 | 2 | TOOLING FAILURE — the gate could not run, with the exact path named. UNDETERMINED, never a verdict |
-| 3 | UNDER-WIDTH — `agents < min(units, 10)`; a `dep=` reason does not excuse it |
+| 3 | UNDER-WIDTH — `agents < min(units, clientCap)`; a `dep=` reason does not excuse it |
 | 4 | REFUSED — the label carries no `[<model> x<N>]`, or `CONTROL/EXECUTION-PLAN.md` has no "Parallelism Plan" heading (no plan, no dispatch) |
 | 5 | PADDED — `agents > units × stages` (stages default 4) |
 
