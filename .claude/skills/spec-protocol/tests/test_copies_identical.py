@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The one-implementation files ship in more than one skill. They must stay byte-identical:
   staffing.py        hook-skill/hooks/workflow-guard  ==  spec-protocol/tools/hooks
-  capacity_probe.py  hook-skill/hooks/workflow-guard  ==  spec-protocol/tools/hooks  ==  nine-router-setup/scripts/common"""
+  capacity_probe.py  hook-skill/hooks/workflow-guard  ==  spec-protocol/tools/hooks  ==  nine-router-setup/scripts/common
+  settings-lock.sh   spec-protocol/tools  ==  nine-router-setup/scripts/common"""
 import hashlib, os, unittest
 
 SK = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -9,6 +10,7 @@ GROUPS = {
     "staffing.py": ["hook-skill/hooks/workflow-guard/staffing.py", "spec-protocol/tools/hooks/staffing.py"],
     "capacity_probe.py": ["hook-skill/hooks/workflow-guard/capacity_probe.py", "spec-protocol/tools/hooks/capacity_probe.py",
                           "nine-router-setup/scripts/common/capacity_probe.py"],
+    "settings-lock.sh": ["spec-protocol/tools/settings-lock.sh", "nine-router-setup/scripts/common/settings-lock.sh"],
 }
 
 

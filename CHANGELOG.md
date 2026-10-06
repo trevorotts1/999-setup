@@ -2,6 +2,18 @@
 
 ## [hook-skill] — 2026-10-06
 
+### Add: wiring self-check on every box, opt-in settings lock, lock-aware settings writers
+
+A stale session saving its in-memory settings (for example after `/model`) can silently drop the hook registrations. Three layers, none of which blocks an AI agent from anything:
+
+1. **Wiring self-check (on by default).** `hooks/workflow-guard/wiring-manifest.json` lists the required registrations (`guard.py` on SessionStart, UserPromptSubmit, Stop, PreToolUse, PostToolUse, PostToolUseFailure with the required tool matchers; `dispatch-gate.py` on PreToolUse when installed; timeouts of at least 120 s; `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`). At SessionStart `guard.py` reads the active config dir's `settings.json` (`CLAUDE_CONFIG_DIR`, else `~/.claude`) and, when anything is missing or weaker, adds `HOOK WIRING INCOMPLETE: <what is missing>. Enforcement is degraded. Re-run the Hook Skill installer.` to the session and records `HOOK_WIRING_INCOMPLETE` in `state/alerts.json` and `state/STATUS.md`. It never rewrites settings. Tests: `test_wiring_check.py`.
+2. **Hard file lock (opt-in, default off).** `install.sh --lock-settings` / `Install-HookSkill.ps1 -LockSettings` lock the claude and claude-nine settings files (macOS `chflags uchg`; Linux `chattr +i` as root, else `chmod a-w`, weaker; Windows read-only attribute, weaker); `--unlock-settings` / `-UnlockSettings` undo it. New `scripts/common/settings_lock.py`. The box owner keeps `/model` and `/config` unless the flag is given.
+3. **Lock-aware writers.** `settings_merge.py` (so install, uninstall and `apply_capacity.py`), spec-protocol `install-hooks.sh`, `compact-guard.sh` and `setup-statusline.sh`, nine-router-setup `setup-macos.sh`, `enable-agent-teams.sh`, `fix-ultracode-override.sh` and the Windows `Enable-AgentTeams.ps1`, `Fix-UltracodeOverride.ps1`, `setup-windows.ps1` detect a locked settings file, unlock it, write, validate the JSON and always re-lock it (trap or `finally`), printing one line. Backups made with `cp -p` of a locked file no longer inherit the lock flag. Shared helper `settings-lock.sh` (identical copies in `spec-protocol/tools` and `nine-router-setup/scripts/common`, enforced by `test_copies_identical.py`). Tests: `test_settings_lock.py`, `spec-protocol/tests/test-settings-lock.sh`, `enable-agent-teams.sh --selftest` case 10, `smoke-install.sh`.
+
+No skill VERSION bump (same convention as the recent guard fixes); no release tag.
+
+## [hook-skill] — 2026-10-06
+
 ### Fix: a plan launch finishes per unit, so a skipped checker no longer leaves it RUNNING forever
 
 `run_done()` required results for 2 x units (builder + checker each). The generated script skips a unit's checker when its

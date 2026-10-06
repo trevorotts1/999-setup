@@ -12,7 +12,9 @@
 param(
   [switch]$WithAskBeforeBackup, [switch]$WithQuestionGate,
   [switch]$NoWorkflowGuard, [switch]$NoHygiene, [switch]$NoDiskCleanup,
-  [switch]$NoSchedule, [switch]$DryRun
+  [switch]$NoSchedule, [switch]$DryRun,
+  [switch]$LockSettings,    # opt-in: read-only attribute (attrib +R) on the settings files. WEAKER than macOS: the owner can clear it.
+  [switch]$UnlockSettings   # undo that and exit (installs nothing)
 )
 $ErrorActionPreference = 'Stop'
 $Skill   = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -31,6 +33,12 @@ foreach ($cand in @($env:PYTHON, 'python', 'py')) {
   if ($LASTEXITCODE -eq 0 -and $exe) { $Py = $exe.Trim(); break }
 }
 if (-not $Py) { Write-Error 'Hook Skill needs Python 3.8+ (python or py on PATH). Install it and re-run.'; exit 1 }
+$lockTargets = @((Join-Path $HOME '.claude\settings.json'))
+if (Test-Path (Join-Path $HOME '.claude-nine')) { $lockTargets += (Join-Path $HOME '.claude-nine\settings.json') }
+if ($UnlockSettings) {
+  foreach ($s in ($lockTargets | Select-Object -Unique)) { if (Test-Path $s) { & $Py (Join-Path $Common 'settings_lock.py') unlock $s } }
+  exit 0
+}
 $HaveNode = [bool](Get-Command node -ErrorAction SilentlyContinue)
 
 $WG = -not $NoWorkflowGuard; $HY = -not $NoHygiene; $DC = -not $NoDiskCleanup
@@ -61,6 +69,11 @@ if ($comps.Count -gt 0) {
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
   }
+}
+
+# Opt-in hard lock (default: none, so the box owner keeps /model and /config). settings_merge.py above already unlocks, writes and re-locks any file that was locked.
+if ($LockSettings -and -not $DryRun) {
+  foreach ($s in ($lockTargets | Select-Object -Unique)) { if (Test-Path $s) { & $Py (Join-Path $Common 'settings_lock.py') lock $s } }
 }
 
 function New-HookSkillTask($Name, $Trigger, $Script, $ScriptArgs) {

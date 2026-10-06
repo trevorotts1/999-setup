@@ -40,6 +40,8 @@ SELF_SRC="${BASH_SOURCE[0]}"
 SCRIPT_DIR="$(cd "$(dirname "${SELF_SRC}")" && pwd)"
 SELF="${SCRIPT_DIR}/$(basename "${SELF_SRC}")"
 SRC_HOOKS="${SCRIPT_DIR}/hooks"
+# Lock-aware writes: a locked settings file is unlocked for the merge and always re-locked.
+. "${SCRIPT_DIR}/settings-lock.sh" || { echo "INSTALL-HOOKS UNDETERMINED | settings-lock.sh missing" >&2; exit 2; }
 PY="${INSTALL_HOOKS_PYTHON:-python3}"   # install-hooks.ps1 passes the Windows interpreter
 HOOK_FILES="conversation-gate.py gate0-claim-gate.py workflow-syntax-gate.py dispatch-gate.py"
 # staffing.py (the plan rules) and capacity_probe.py (the measured cap) live in hooks/workflow-guard/ beside Hook Skill's guard.
@@ -62,6 +64,7 @@ install_root() {
     cp "${SRC_HOOKS}/${f}" "${root}/hooks/${f}" && chmod 755 "${root}/hooks/${f}" || return 2
   done
   bak="${root}/settings.json.bak-spec-protocol-$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  sl_unlock "${root}/settings.json" || { echo "INSTALL-HOOKS UNDETERMINED | ${root}/settings.json is locked and could not be unlocked — nothing written" >&2; return 2; }
   "${PY}" - "${root}" "${bak}" "${PY}" <<'PYEOF'
 import json, os, shlex, shutil, sys
 root, bak, py = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -146,6 +149,8 @@ if json.dumps(data, sort_keys=True) == before:
     sys.exit(0)
 if os.path.exists(path) and not os.path.exists(bak):  # never overwrite an earlier backup
     shutil.copy2(path, bak)
+    if hasattr(os, "chflags"):  # a copy of a locked file inherits the lock flag; the backup must stay deletable
+        os.chflags(bak, os.stat(bak).st_flags & ~0x2)
 tmp = path + ".tmp.%d" % os.getpid()
 with open(tmp, "w", encoding="utf-8") as fh:
     json.dump(data, fh, indent=2)
@@ -154,6 +159,7 @@ os.replace(tmp, path)
 print("INSTALL-HOOKS | root=%s | settings=merged | backup=%s" % (root, bak if os.path.exists(bak) else "none (no prior file)"))
 PYEOF
   rc=$?
+  sl_relock_all
   [ "${rc}" = "0" ] || return 2
   rc=0
   for f in ${HOOK_FILES}; do

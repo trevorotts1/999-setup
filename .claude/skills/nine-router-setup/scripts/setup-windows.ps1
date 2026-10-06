@@ -47,6 +47,19 @@ $StateDir = "$env:LOCALAPPDATA\BlackCEO\999"
 $StateFile = Join-Path $StateDir 'router-session.json'
 
 function Write-Log([string]$m) { Write-Host "[setup-windows] $m" }
+# Lock-aware settings writes. A read-only settings file (the opt-in Hook Skill lock) is unlocked for the write and
+# ALWAYS re-locked by the caller's finally block. Returns $true when it had to unlock (so the caller re-locks).
+function Unlock-SettingsFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $it = Get-Item -LiteralPath $Path -Force
+    if (-not $it.IsReadOnly) { return $false }
+    $it.IsReadOnly = $false
+    Write-Host "settings-lock: $Path was locked (read-only); unlocked for this write and re-locked after"
+    return $true
+}
+function Restore-SettingsLock([string]$Path, [bool]$WasLocked) {
+    if ($WasLocked -and (Test-Path -LiteralPath $Path)) { (Get-Item -LiteralPath $Path -Force).IsReadOnly = $true }
+}
 
 # Set-OperatorKey <root> <key> <value>: merge ONE key into
 # <root>\spec-protocol\operator.env. Other keys are kept, an older value of
@@ -915,8 +928,12 @@ else {
     foreach ($root in $autoCompactRoots) {
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        $autoCompactOut = (& $NodeBin $autoCompactHelper --settings (Join-Path $root 'settings.json') 2>&1 | Out-String).Trim()
-        $autoCompactRc = $LASTEXITCODE
+        $acSettings = Join-Path $root 'settings.json'
+        $acLocked = Unlock-SettingsFile $acSettings
+        try {
+            $autoCompactOut = (& $NodeBin $autoCompactHelper --settings $acSettings 2>&1 | Out-String).Trim()
+            $autoCompactRc = $LASTEXITCODE
+        } finally { Restore-SettingsLock $acSettings $acLocked }
         $ErrorActionPreference = $prevEap
         if ($autoCompactOut -like 'already set:*') {
             $autoCompactDetail += "  settings.json ($root): already set"
@@ -960,7 +977,11 @@ console.log('set');
     foreach ($root in $autoCompactRoots) {
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        $permOut = (& $NodeBin -e $permJs (Join-Path $root 'settings.json') 2>&1 | Out-String).Trim()
+        $permSettings = Join-Path $root 'settings.json'
+        $permLocked = Unlock-SettingsFile $permSettings
+        try {
+            $permOut = (& $NodeBin -e $permJs $permSettings 2>&1 | Out-String).Trim()
+        } finally { Restore-SettingsLock $permSettings $permLocked }
         $ErrorActionPreference = $prevEap
         $permDetail += "  settings.json ($root): $permOut"
     }

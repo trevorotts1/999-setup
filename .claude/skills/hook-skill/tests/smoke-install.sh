@@ -4,7 +4,8 @@
 set -euo pipefail
 SKILL="$(cd "$(dirname "$0")/.." && pwd)"
 FAKE="$(mktemp -d "${TMPDIR:-/tmp}/hookskill-smoke.XXXXXX")"
-trap 'rm -rf "$FAKE"' EXIT
+# a locked fake settings file would stop rm -rf, so unlock before cleanup
+trap '"$PY" "$SKILL/scripts/common/settings_lock.py" unlock "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json" >/dev/null 2>&1; rm -rf "$FAKE"' EXIT
 export HOME="$FAKE" USERPROFILE="$FAKE" HOOK_SKILL_NO_LAUNCHD=1 HOOK_SKILL_TMP_ROOTS="$FAKE/no-tmp"
 PY="$(command -v python3)"
 fail() { echo "SMOKE FAIL: $*" >&2; exit 1; }
@@ -63,6 +64,8 @@ fi
 # 2. installed hooks actually run
 OUT="$("$PY" "$FAKE/.claude/hooks/workflow-guard/guard.py" hook <<<'{"hook_event_name":"SessionStart","session_id":"smoke"}')"
 "$PY" -c 'import json,sys; json.loads(sys.argv[1])["hookSpecificOutput"]' "$OUT" || fail "installed guard SessionStart output invalid"
+case "$OUT" in *"HOOK WIRING INCOMPLETE"*) fail "wiring self-check warns right after a clean install: $OUT" ;; esac
+[ -f "$FAKE/.claude/hooks/workflow-guard/wiring-manifest.json" ] || fail "wiring manifest not installed"
 "$PY" "$FAKE/.claude/hooks/hygiene/post_merge_hygiene.py" sweep --dry-run --root "$FAKE/lanes" >/dev/null || fail "installed hygiene sweep --dry-run failed"
 "$PY" "$FAKE/.claude/hooks/disk-cleanup/disk_cleanup.py" --dry-run >/dev/null 2>&1 || fail "installed disk cleanup --dry-run failed"
 ok "installed hooks run"
@@ -72,6 +75,26 @@ cp "$FAKE/.claude/settings.json" "$FAKE/after1.json"
 "$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate >/dev/null 2>&1 || fail "re-install failed"
 cmp -s "$FAKE/.claude/settings.json" "$FAKE/after1.json" || fail "re-install changed settings"
 ok "re-install is idempotent"
+
+# 3b. no hard lock by default; --lock-settings is opt-in; installers write through a lock and re-lock; --unlock-settings undoes it
+LK="$PY $SKILL/scripts/common/settings_lock.py"
+$LK status "$FAKE/.claude/settings.json" | grep -q ': unlocked' || fail "settings were locked without --lock-settings"
+"$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate --lock-settings >"$FAKE/lock.out" 2>&1 || { cat "$FAKE/lock.out"; fail "install --lock-settings failed"; }
+for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
+  $LK status "$s" | grep -q ': locked' || fail "--lock-settings did not lock $s"
+done
+cp "$FAKE/.claude/settings.json" "$FAKE/locked-before.json"
+"$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate >"$FAKE/relock.out" 2>&1 || { cat "$FAKE/relock.out"; fail "install over a locked file failed"; }
+grep -q 'settings-lock: .* was locked' "$FAKE/relock.out" || fail "install did not report unlocking the locked file"
+for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
+  $LK status "$s" | grep -q ': locked' || fail "installer left $s unlocked"
+done
+cmp -s "$FAKE/.claude/settings.json" "$FAKE/locked-before.json" || fail "idempotent install over a lock changed settings"
+"$SKILL/scripts/macos/install.sh" --unlock-settings >/dev/null 2>&1 || fail "--unlock-settings failed"
+for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
+  $LK status "$s" | grep -q ': unlocked' || fail "--unlock-settings left $s locked"
+done
+ok "lock is opt-in, installer writes through a lock and re-locks, --unlock-settings undoes it"
 
 # 4. uninstall restores the original
 "$SKILL/scripts/macos/uninstall.sh" >/dev/null 2>&1 || fail "uninstall failed"

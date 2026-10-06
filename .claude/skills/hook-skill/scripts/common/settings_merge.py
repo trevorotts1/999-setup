@@ -12,6 +12,9 @@ Our entries are recognised by the absolute script path inside the command, so un
 """
 import argparse, json, os, shlex, subprocess, sys, tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import settings_lock  # noqa: E402
+
 TOOLS_BIG = ("Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|Workflow|SendMessage|CronCreate|CronDelete|"
              "TaskStop|Artifact|ArtifactData|mcp__.*")
 # component -> script (relative to hooks dir) and [(event, matcher or None, timeout, extra args)]
@@ -63,6 +66,11 @@ DRY = False
 def save(path, doc):
     if DRY:
         return
+    with settings_lock.unlocked(path):  # a locked settings file is unlocked, written, validated and always re-locked
+        _save(path, doc)
+
+
+def _save(path, doc):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".settings-", suffix=".tmp", dir=os.path.dirname(os.path.abspath(path)))
     try:

@@ -155,6 +155,8 @@ SELF_SRC="${BASH_SOURCE[0]}"
 SCRIPT_DIR="$(cd "$(dirname "${SELF_SRC}")" && pwd)"
 SELF="${SCRIPT_DIR}/$(basename "${SELF_SRC}")"
 READER="${SCRIPT_DIR}/compact-check.sh"
+# Lock-aware writes: a locked settings file is unlocked for the rename and always re-locked.
+. "${SCRIPT_DIR}/settings-lock.sh" || { echo "COMPACT-GUARD UNDETERMINED | settings-lock.sh missing" >&2; exit 2; }
 
 SETTINGS_BASENAME="settings.json"
 KEY="autoCompactWindow"
@@ -410,6 +412,7 @@ run_guard() {
 
   cp -p "${path}" "${backup}" 2>/dev/null \
     || und "${absroot}" "${live}" "${target}" "could not write the backup ${backup}; a write without a proven backup does not happen"
+  sl_unflag "${backup}"
   s0="$(sha_file "${path}")"
   s1="$(sha_file "${backup}")"
   if ! is_sha "${s0}" || [ "${s0}" != "${s1}" ]; then
@@ -431,6 +434,7 @@ run_guard() {
     esac
   fi
 
+  sl_unlock "${path}" || { rm -f "${tmp}"; und "${absroot}" "${live}" "${target}" "${path} is locked and could not be unlocked; the file is untouched and the backup is ${backup}"; }
   mv -f "${tmp}" "${path}" 2>/dev/null || {
     rm -f "${tmp}"
     und "${absroot}" "${live}" "${target}" "could not rename the proven candidate over ${path}; the file is untouched and the backup is ${backup}"
@@ -442,6 +446,7 @@ run_guard() {
     und "${absroot}" "${live}" "${target}" "after the write the reader did not report the target from ${path}, so the backup was restored from ${backup}"
   fi
 
+  sl_relock_all
   ledger_line "${absroot}" "${live}" "${target}" "raised"
   printf 'COMPACT-GUARD backup=%s\n' "${backup}"
   printf 'COMPACT-GUARD | %s raised to the target by the %s writer (%s); every other key was proven unmoved before the rename.\n' \

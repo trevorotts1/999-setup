@@ -91,6 +91,7 @@ hand-picked subset. The manifest currently bundles:
 - `bro` — direct, blunt developer talk
 - `blackceo-signature-page` — BlackCEO Signature landing pages, end to end
 - `hook-skill` — Claude Code hooks package (workflow guard, hygiene, disk cleanup)
+  (opt-in `--lock-settings` / `-LockSettings` hard-locks the claude and claude-nine settings files; default is no lock; every settings writer in this repo unlocks, writes, validates and re-locks a locked file; a SessionStart wiring self-check warns when hook registrations go missing)
 - `kiss` — one-message double answer: friendly version, then a plain short version
 
 ```text

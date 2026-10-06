@@ -3,12 +3,14 @@
 #   install.sh [--with-ask-before-backup] [--with-question-gate]
 #              [--no-workflow-guard] [--no-hygiene] [--no-disk-cleanup]
 #              [--no-schedule] [--dry-run]
+#              [--lock-settings]    opt-in: hard-lock the claude/claude-nine settings files after install
+#              [--unlock-settings]  undo that lock and exit (installs nothing)
 # Defaults ON: workflow-guard, hygiene (with test cleanup), disk-cleanup.
 # Opt-in (they prompt you): ask-before-backup, question-gate.
 # Never removes existing hook entries; appends ours. Validates JSON after every settings write.
 set -euo pipefail
 
-WG=1 HY=1 DC=1 AB=0 QG=0 SCHED=1 DRY=0
+WG=1 HY=1 DC=1 AB=0 QG=0 SCHED=1 DRY=0 LOCK=0 UNLOCK=0
 for arg in "$@"; do
   case "$arg" in
     --with-ask-before-backup) AB=1 ;;
@@ -18,7 +20,9 @@ for arg in "$@"; do
     --no-disk-cleanup) DC=0 ;;
     --no-schedule) SCHED=0 ;;
     --dry-run) DRY=1 ;;
-    -h|--help) sed -n 2,8p "$0"; exit 0 ;;
+    --lock-settings) LOCK=1 ;;
+    --unlock-settings) UNLOCK=1 ;;
+    -h|--help) sed -n 2,10p "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 64 ;;
   esac
 done
@@ -38,6 +42,12 @@ for cand in "${PYTHON:-}" python3 python; do
   fi
 done
 [ -n "$PY" ] || { echo "Hook Skill needs Python 3.8+ on PATH (python3). Install it and re-run." >&2; exit 1; }
+SETTINGS=("$HOME/.claude/settings.json")
+[ -d "$HOME/.claude-nine" ] && SETTINGS+=("$HOME/.claude-nine/settings.json")
+if [ $UNLOCK = 1 ]; then  # standalone action: remove the opt-in hard lock, install nothing
+  for s in "${SETTINGS[@]}"; do if [ -f "$s" ]; then "$PY" "$COMMON/settings_lock.py" unlock "$s"; fi; done
+  exit 0
+fi
 HAVE_NODE=0; command -v node >/dev/null 2>&1 && HAVE_NODE=1
 
 COMPONENTS=""
@@ -57,8 +67,6 @@ echo "Hook Skill $VERSION: installing [$FILES] into $HOOKS (python: $PY)"
 "$PY" "$COMMON/hookskill_files.py" install --src "$SKILL/hooks" --dest "$HOOKS" --components "$FILES" --version "$VERSION" ${DRYARG[@]+"${DRYARG[@]}"}
 
 # ---- 2. register in settings (claude, and claude-nine when its folder exists) ----
-SETTINGS=("$HOME/.claude/settings.json")
-[ -d "$HOME/.claude-nine" ] && SETTINGS+=("$HOME/.claude-nine/settings.json")
 seen=""
 for s in "${SETTINGS[@]}"; do
   real="$(cd "$(dirname "$s")" 2>/dev/null && pwd -P)/$(basename "$s")"
@@ -72,6 +80,11 @@ for s in "${SETTINGS[@]}"; do
     "$PY" "$COMMON/apply_capacity.py" --probe "$SKILL/hooks/workflow-guard/capacity_probe.py" --limits "$HOOKS/workflow-guard/state/limits.json" --settings "$s" --manifest "$HOOKS/hook-skill-install.json" ${DRYARG[@]+"${DRYARG[@]}"}
   fi
 done
+
+# ---- 2b. opt-in hard lock (default: none, so the box owner keeps /model and /config) ----
+if [ $LOCK = 1 ] && [ $DRY = 0 ]; then
+  for s in "${SETTINGS[@]}"; do if [ -f "$s" ]; then "$PY" "$COMMON/settings_lock.py" lock "$s"; fi; done
+fi
 
 # ---- 3. scheduled sweeps (launchd) ----
 plist() { # label, interval-xml, program args...
