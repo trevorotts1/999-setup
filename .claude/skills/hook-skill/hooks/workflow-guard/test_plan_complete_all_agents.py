@@ -60,3 +60,52 @@ def test_legacy_launch_unchanged(env, capsys):
     j(jr, *_ev('started', 'b'), *_ev('result', 'b'))
     _tick(); _tick()
     assert _state() == 'COMPLETED'
+
+
+# ---- per-unit completion from agent labels: a skipped checker must not leave the launch RUNNING forever ----
+def _s(aid, label): return {'type': 'started', 'key': 'k' + aid, 'agentId': aid, 'label': label}
+def _r(aid, status=None):
+    return {'type': 'result', 'key': 'k' + aid, 'agentId': aid, 'result': ({'status': status} if status else {'x': 1})}
+def _f(aid): return {'type': 'failed', 'key': 'k' + aid, 'agentId': aid}
+
+
+def test_builder_failed_completes_and_owes_again(env, capsys):
+    jr = _launch(env, capsys, 1)
+    j(jr, _s('a', 'build:ABC-001'), _f('a'))
+    _tick(); _tick()
+    assert _state() == 'COMPLETED'
+    assert guard.stop_omission({'cwd': str(env.proj), 'session_id': SID}, SID) is not None  # unit still pending: owed again
+
+
+def test_builder_blocked_completes(env, capsys):
+    jr = _launch(env, capsys, 1)
+    j(jr, _s('a', 'build:ABC-001'), _r('a', 'BLOCKED'))
+    _tick(); _tick()
+    assert _state() == 'COMPLETED'
+
+
+def test_builder_pass_checker_not_started_stays_running(env, capsys):
+    jr = _launch(env, capsys, 1)
+    j(jr, _s('a', 'build:ABC-001'), _r('a', 'PASS'))
+    _tick(); _tick()
+    assert _state() == 'RETURNED'
+
+
+def test_builder_pass_checker_result_completes(env, capsys):
+    jr = _launch(env, capsys, 1)
+    j(jr, _s('a', 'build:ABC-001'), _r('a', 'PASS'), _s('b', 'qc:ABC-001'), _r('b', 'PASS'))
+    _tick(); _tick()
+    assert _state() == 'COMPLETED'
+
+
+def test_mixed_three_units(env, capsys):
+    jr = _launch(env, capsys, 3)
+    ev = [_s('a1', 'build:U-001'), _r('a1', 'PASS'), _s('b1', 'qc:U-001'), _r('b1', 'FAIL'),   # unit 1 finished via qc
+          _s('a2', 'build:U-002'), _f('a2'),                                                  # unit 2 finished via builder failure
+          _s('a3', 'build:U-003'), _r('a3', 'PASS')]                                          # unit 3 waiting on its checker
+    j(jr, *ev)
+    _tick(); _tick()
+    assert _state() == 'RETURNED'
+    j(jr, *ev, _s('b3', 'qc:U-003'), _f('b3'))
+    _tick(); _tick()
+    assert _state() == 'COMPLETED'

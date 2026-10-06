@@ -216,7 +216,14 @@ def expected_agents(launch_id,c=None):
  except Exception:return None
 
 def run_done(summary,expected):
- return bool(summary['results'] and not summary['pending'] and (not expected or summary['results']>=expected))
+ # Plan launch: decided per unit from the journal's agent labels (see inspect_journal 'units_finished'). make-workflow skips a
+ # unit's checker when its builder is non-PASS or failed, so 2*units results can never arrive for such a unit. Legacy / unlabeled
+ # journals keep the old count rule.
+ if summary['pending'] or not (summary['results'] or summary.get('units_finished')):return False
+ if not expected:return True
+ uf=summary.get('units_finished')
+ if uf is None:return summary['results']>=expected
+ return uf>=expected//2
 
 def reap_finished(c):
  # A run is finished when every journal of its own has returned. A launch with no
@@ -918,12 +925,16 @@ def inspect_journal(path):
  # Journals are append-only with only type/key/agentId/result lines, so the sweep must stay in
  # order: started is +1, result or failed is -1, and the high-water mark is the runtime peak.
  pending=set();results=set();failed=set();bad=0;total=0;live=0;peak=0
+ lab={};res={}  # agentId -> label; agentId -> result value (None for failed)
  with path.open() as f:
   for line in f:
    total+=1
    try:e=json.loads(line)
    except json.JSONDecodeError:bad+=1;continue
-   key=e.get('key');kind=e.get('type')
+   key=e.get('key');kind=e.get('type');aid=e.get('agentId')
+   if kind=='started' and aid and isinstance(e.get('label'),str):lab[aid]=e['label']
+   if kind=='result' and aid:res[aid]=e.get('result')
+   if kind=='failed' and aid:res[aid]=None
    if kind=='started' and key:
     pending.add(key);live+=1
     if live>peak:peak=live
@@ -931,7 +942,17 @@ def inspect_journal(path):
    if kind=='result' and key:results.add(key)
    if kind=='failed' and key:failed.add(key)
  pending-=results|failed
- return {'started':len(pending|results),'results':len(results),'pending':len(pending),'runtime_peak':peak,'running':max(0,live),'malformed_lines':bad,'events':total,'event_identity_hash':hashlib.sha256(json.dumps([sorted(pending),sorted(results)]).encode()).hexdigest()}
+ # Per-unit finish: qc agent returned/failed, or build agent failed / returned a non-PASS status (its checker is then never started).
+ fin=set();units=set()
+ for a,l in lab.items():
+  k,_,u=l.partition(':')
+  if k not in ('build','qc') or not u:continue
+  units.add(u)
+  if k=='qc' and a in res:fin.add(u)
+  if k=='build' and a in res:
+   v=res[a]
+   if v is None or (isinstance(v,dict) and v.get('status') not in (None,'PASS')):fin.add(u)
+ return {'units_finished':len(fin) if units else None,'started':len(pending|results),'results':len(results),'pending':len(pending),'runtime_peak':peak,'running':max(0,live),'malformed_lines':bad,'events':total,'event_identity_hash':hashlib.sha256(json.dumps([sorted(pending),sorted(results)]).encode()).hexdigest()}
 
 def dedupe_alerts(alerts):
  # The same run can be journaled under more than one project root (Claude Code and
@@ -969,7 +990,7 @@ def tick(now=None):
   else:
    # runtime_peak is excluded from the signature: it is a monotonic high-water mark, so
    # including it would reset the stall clock on history rather than on new progress.
-   sig=json.dumps({k:v for k,v in summary.items() if k not in ('events','malformed_lines','runtime_peak','running')},sort_keys=True)
+   sig=json.dumps({k:v for k,v in summary.items() if k not in ('events','malformed_lines','runtime_peak','running','units_finished')},sort_keys=True)
    # First observation preserves last event time so existing multi-hour stalls are caught.
    try:mt=path.stat().st_mtime
    except OSError:mt=now
