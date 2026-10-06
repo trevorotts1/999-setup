@@ -283,6 +283,11 @@ def admit_launch(row,tag=None):
      c.execute('INSERT OR REPLACE INTO launch_tags VALUES(?,?,?,?,?)',(row[0],session,tag[0],tag[1],now))
      c.execute('INSERT OR IGNORE INTO session_pins VALUES(?,?,?)',(session,tag[1],now))
     c.execute('COMMIT')
+    if tag:
+     # Single arming definition: armed <=> plan status "running". The first ADMITTED launch of a planned-not-running plan flips
+     # it (atomic file write). The guard itself writes the plan here; the protected-path rule only binds tool calls.
+     try:_staffing().set_running(tag[1])
+     except Exception as e:print('WORKFLOW GUARD WARNING: admitted launch but could not set plan %s status running (%s: %s); Stop will not hold for it until `staffing.py start` is run.'%(tag[1],type(e).__name__,e),file=sys.stderr)
     return None
    finally:c.close()
   except sqlite3.OperationalError as e:
@@ -442,10 +447,11 @@ def fence(data,tool,root):
  return None
 
 # ---- Unit verdict files are written by checker SUBAGENTS only ----
-# The main (conductor) session may not write any *.verdict.json under a swarm plan's directory: Write/Edit/MultiEdit/
-# NotebookEdit are refused outright, and Bash commands that write such a path (redirect >, >>, tee, cp/mv/install/ln to it,
-# sed -i, dd of=, python open(..,'w')/write_text) are refused best-effort. A tool call from a subagent carries agent_id (and
-# agent_type) in the hook payload; those are allowed, because a verdict is the checker agent's act.
+# The main (conductor) session may not write any *.verdict.json ANYWHERE (no plan condition, same as Write/Edit): Write/Edit/
+# MultiEdit/NotebookEdit are refused outright, and Bash commands that write such a path (redirect >, >>, tee, cp/mv/install/ln
+# to it, sed -i, dd of=, python open(..,'w')/write_text) are refused best-effort. A tool call from a subagent carries agent_id
+# (and agent_type) in the hook payload; those are allowed for Write/Edit AND Bash alike (the existing subagent rule: every
+# check here and in protected_write_block returns None for a subagent), because a verdict is the checker agent's act.
 # RESIDUAL BYPASS (honest): the Bash rule is a pattern match on the command text. A conductor that builds the path
 # indirectly (shell variables, base64/printf-assembled names, a script file it wrote first and then runs, git checkout/restore,
 # a tool that is not named above) can still write a verdict file. The in-file provenance (unit_id, an attempt_id the guard
@@ -463,14 +469,14 @@ VERDICT_BASH_WRITE=[re.compile(p,re.I|re.S) for p in (
 )]
 
 def verdict_write_block(data,tool,ti,session):
- # Bash only (Write/Edit are handled by protected_write_block): a shell command that writes a *.verdict.json under a plan.
+ # Bash only (Write/Edit are handled by protected_write_block): a shell command that writes a *.verdict.json, with or without a plan.
  if data.get('agent_id') or data.get('agent_type') or tool!='Bash':return None
  cmd=str(ti.get('command') or '')
  if '.verdict.json' not in cmd.lower() or not any(r.search(cmd) for r in VERDICT_BASH_WRITE):return None
  found=_staffing().resolve_plan(data.get('cwd') or os.getcwd(),session,STATE)
- if not found:return None
- return refuse(VERDICT_MSG%('a .verdict.json path in the command',found[0]))
+ return refuse(VERDICT_MSG%('a .verdict.json path in the command',found[0] if found else NO_PLAN_NOTE))
 
+NO_PLAN_NOTE='no plan needed: this rule holds everywhere'
 VERDICT_MSG='The conductor session may not write unit verdict files (%s, plan %s). A verdict is written only by the checker agent that judged the unit: dispatch that checker and let it write {"verdict","unit_id","attempt_id","builder_model","reviewer_model"} with the Write tool. Do not bypass hooks.'
 
 # ---- The governed session may not tamper with what governs it ----
@@ -505,7 +511,7 @@ def protected_write_block(data,tool,ti,session):
   p=Path(str(t)).expanduser();p=p if p.is_absolute() else Path(cwd)/p
   rp=_rl(p)
   if os.path.basename(str(p)).lower().endswith('.verdict.json') or os.path.basename(rp).endswith('.verdict.json'):
-   return refuse(VERDICT_MSG%(t,plans[0] if plans else 'no plan needed: this rule holds everywhere'))
+   return refuse(VERDICT_MSG%(t,plans[0] if plans else NO_PLAN_NOTE))
   for r in _state_roots():
    if _under_l(rp,_rl(r)):return refuse('The governed session may not write the guard or question-gate state (%s). That state is the owner\'s enforcement record. Do not bypass hooks.'%t)
   for pp in plans:

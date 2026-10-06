@@ -169,10 +169,17 @@ def test_plan_not_armed_allows(env):
     plan(env.proj, status='planned-not-running'); assert stop(env) is None
 
 
-def test_plan_armed_by_a_recorded_launch(env):
-    plan(env.proj, {'W0-01': 2, 'W0-02': 2}, status='planned-not-running', maw=2)
-    launch(env, 'W0-01')
+def test_plan_armed_by_the_first_admitted_launch(env):
+    # single arming definition: only status "running" arms; guard.admit_launch flips planned-not-running -> running
+    p = plan(env.proj, {'W0-01': 2, 'W0-02': 2}, status='planned-not-running', maw=2)
+    assert stop(env) is None
+    row = ('L1', 's1', '', time.time(), 'h', 'VALIDATED', 'n', 8, '')
+    assert guard.admit_launch(row, ('W0-01', str(p.resolve()), 'A1')) is None
+    assert json.loads(p.read_text())['status'] == 'running'
     assert stop(env).startswith('Owed now: W0-02')
+    # a recorded launch alone (status reverted to planned-not-running) does not arm
+    d = json.loads(p.read_text()); d['status'] = 'planned-not-running'; p.write_text(json.dumps(d))
+    assert stop(env) is None
 
 
 def test_armed_invalid_plan_blocks_stop_and_lists_errors(env, capsys):

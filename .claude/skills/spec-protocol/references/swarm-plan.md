@@ -82,8 +82,9 @@ difference in accept/reject.
 ## Done and ready
 
 **A unit is done when its `verdict_file` is JSON `{"verdict": "PASS", "unit_id": <this unit>, "attempt_id":
-<an admitted launch of this workflow>, "builder_model", "reviewer_model"}` with the reviewer different from the
-builder; a workflow is done when EVERY unit is done** (a workflow has no verdict file of its own: the key is
+<an admitted launch of this workflow>, "builder_model", "reviewer_model"}` with the reviewer of a different model
+family than the builder, and its sha256 matches the guard journal's record of a subagent Write in that admitted
+run (a verdict the main session wrote is refused everywhere); a workflow is done when EVERY unit is done** (a workflow has no verdict file of its own: the key is
 refused as a leftover). The plan's `status` is `planned-not-running` or `running` (`staffing.py start --cwd <dir>`
 validates the plan and sets it when the build starts) and never decides readiness; ledger lines and prose
 never do either. **Ready = not done, not running, and every dependency done.**

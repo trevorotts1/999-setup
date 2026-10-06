@@ -81,6 +81,15 @@ class Apply(unittest.TestCase):
         r = subprocess.run([sys.executable, PROBE, "--selftest"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    def test_claude_nine_gets_the_same_120s_guard_timeouts_as_claude(self):
+        import settings_merge as sm
+        for name in ("claude", "nine"):
+            f = os.path.join(self.d, name, "register.json")
+            sm.register(f, sys.executable, os.path.join(self.d, "hooks"), ["workflow-guard"])
+            with open(f) as fh:
+                doc = json.load(fh)
+            self.assertEqual({h["timeout"] for g in sum(doc["hooks"].values(), []) for h in g["hooks"]}, {120})
+
     def test_registrations_match_the_live_guard(self):
         import settings_merge as sm
         _, entries = sm.COMPONENTS["workflow-guard"]

@@ -23,20 +23,25 @@ PLAN SCHEMA     "blackceo.swarm-plan/v2": policy.max_active_workflows (1..50),
   and case ignored) -- the same rules as swarm_plan_check.py.
 DONE      a UNIT is done iff its verdict file (relative to the plan file's directory) parses as
           {"verdict":"PASS" (exactly), "unit_id": this unit, "attempt_id": an ADMITTED launch of this workflow
-          recorded by the guard, "builder_model" and "reviewer_model": nonempty and different}.
+          recorded by the guard, "builder_model" and "reviewer_model": nonempty and of different model FAMILIES},
+          AND the file's current sha256 matches a guard journal verdict record (verdict_records), which the guard
+          writes only when a SUBAGENT of that admitted run Writes this very content. A file nobody journaled
+          (hand-written, edited afterwards, written by the conductor) is never done.
           A workflow is DONE iff every one of its units is done. A plan's own "status" never decides completion.
 RUNNING   the guard journal has a live launch tagged with that workflowId (and this plan).
 READY     not done, not running, every dependency done, not in handback.
 OWED      required_running = min(max_active_workflows, program cap, running + ready);
           owed = the first (required_running - running) ready workflows in plan order.
 HANDBACK  launched 3 times (recorded) without becoming done: not owed, an alert is written.
-ARMED     plan found AND (status == "running" OR the journal recorded an ADMITTED launch
-          carrying a workflowId of this plan). `staffing.py start --cwd DIR` validates the plan and
-          sets status "running" (the build-start act).
+ARMED     plan found AND its status is "running" -- the single definition. `staffing.py start --cwd DIR`
+          validates the plan and sets status "running" (the build-start act); and when the guard ADMITS the
+          first launch of a plan whose status is "planned-not-running" it sets status "running" itself
+          (set_running), so every plan with an admitted launch is armed. (A recorded launch still pins the plan
+          to the session -- resolve_plans -- but pinning is not arming.)
 LAUNCH CONTRACT (check_launch) a Workflow call under a found plan must carry args.workflowId
           of a READY workflow, args.units with exactly that workflow's unit_ids, and a script
-          that fans out over args.units in ONE parallel()/pipeline() call containing every agent()
-          call, and a unique non-empty args.attemptId. The script may never run more than the
+          that fans out over args.units in exactly ONE pipeline(args.units, ...) call (parallel() is refused)
+          containing every agent() call, and a unique non-empty args.attemptId. The script may never run more than the
           per-workflow cap at once (min of plan cap, limits.json, plan capacity_probe): above it the
           script must carry the rolling window helper (WINDOW_HELPER) make-workflow.py emits.
           Undeterminable -> blocked.
@@ -356,9 +361,24 @@ def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOW
             "max_active": maw, "agents": counts}
 
 
-def is_armed(doc, any_launch):
-    """status == "running" (set by `staffing.py start`) OR an admitted launch of the plan is recorded."""
-    return str(doc.get("status") or "").lower() == "running" or bool(any_launch)
+def is_armed(doc):
+    """The single arming definition: status == "running" (set by `staffing.py start`, or by the guard when it admits the
+    plan's first launch)."""
+    return str((doc or {}).get("status") or "").lower() == "running"
+
+
+def set_running(path):
+    """Flip a plan file's status "planned-not-running" -> "running" (atomic, indent 2, trailing newline). True when it
+    wrote. Never touches a plan that is not exactly planned-not-running or that does not parse as an object."""
+    path = Path(path)
+    doc = _jload(path)
+    if not isinstance(doc, dict) or doc.get("status") != "planned-not-running":
+        return False
+    doc["status"] = "running"
+    tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return True
 
 
 def describe_owed(state):
@@ -452,6 +472,8 @@ def program_cap(state_dir=None):
 
 PROBE_TTL = 600
 PROBE = None  # tests inject a callable returning {"per_workflow_cap": n}; None = capacity_probe.probe()
+if os.environ.get("STAFFING_TEST_PROBE_CAP", "").isdigit() and 1 <= int(os.environ["STAFFING_TEST_PROBE_CAP"]) <= 10:
+    PROBE = lambda: {"per_workflow_cap": int(os.environ["STAFFING_TEST_PROBE_CAP"])}  # test-only door (999-setup repo adaptation)
 
 
 def probed_cap(state_dir=None, session=None, now=None):
@@ -530,7 +552,7 @@ def _attempts_records(conn, p):
 
 def resolve_plans(cwd, session=None, state_dir=None):
     """Every plan governing this session: [(path, doc)], doc None when the file is missing/unreadable.
-    An ARMED plan (status running, or a launch of it recorded) found from cwd is pinned to the session; a pin is never
+    A plan found from cwd that is ARMED (status running) or has a recorded launch is pinned to the session; a pin is never
     replaced by another (several armed plans may be pinned at once). Pinned plans keep governing wherever the cwd goes
     until EVERY workflow of the plan is done (the pin is then deleted); the user's stop latch only SUSPENDS pins (they stay
     and govern again after the next human message). A pinned plan whose file vanished or is unreadable while launches are
@@ -643,7 +665,9 @@ def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
         if conn:
             conn.close()
     snap["view"] = view
-    snap["armed"] = is_armed(doc or {}, view["any"])  # an INVALID armed plan is still armed (Stop must hold)
+    # An INVALID armed plan is still armed (Stop must hold). A pinned plan whose file vanished (doc None) has no status to
+    # read, so its recorded launches stand in (they only exist because the guard admitted them, which set status running).
+    snap["armed"] = is_armed(doc) if doc is not None else bool(view["any"])
     if errs:
         return snap
     snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"])
@@ -1031,10 +1055,7 @@ def cmd_start(cwd):
     if doc.get("status") == "running":
         print("plan %s is already running" % path)
         return 0
-    doc["status"] = "running"
-    tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
-    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    set_running(path)
     print("plan %s started: status is now running; the floor applies" % path)
     return 0
 
@@ -1222,7 +1243,10 @@ def selftest():
     check("status field ignored for done", compute(plan, doc2, attempts=A1, records=R())["done"] == ["W0-01"] and compute(plan, doc2)["done"] == [])
     s = compute(plan, doc, launches={"W0-02": 3}, attempts=A1, records=R())
     check("handback after 3 launches, not owed", s["handback"] == ["W0-02"] and "W0-02" not in s["owed"] and s["owed"] == ["W0-03", "W0-04"], s)
-    check("armed by status running or recorded launch; 'active' no longer arms", is_armed({"status": "running"}, False) and is_armed({"status": "planned-not-running"}, True) and not is_armed({"status": "planned-not-running"}, False) and not is_armed({"status": "active"}, False))
+    check("armed iff status running; a recorded launch alone does not arm; 'active' does not arm", is_armed({"status": "running"}) and not is_armed({"status": "planned-not-running"}) and not is_armed({"status": "active"}))
+    sr = tmp / "setrun"; sr.mkdir(); srp = _mkplan(sr, {"S-01": 2})
+    srp.write_text(json.dumps(json.loads(srp.read_text()), indent=2, ensure_ascii=False) + "\n")
+    check("set_running flips planned-not-running -> running (indent 2, trailing newline) once", set_running(srp) and json.loads(srp.read_text())["status"] == "running" and srp.read_text().endswith("}\n") and "\n  \"status\": \"running\"" in srp.read_text() and not set_running(srp))
     # journal + launch contract (reap off: temp state)
     conn = open_journal(sd)
     conn.executescript("CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT);")

@@ -25,11 +25,11 @@ and blocks (exit 2) ten shapes, naming the fix for each:
      args.units in one stage; a launch that cannot be determined (no readable
      script, name-only, no fan-out stage) is BLOCKED -- the one fail-closed rule
      in this file. No plan found: no floor, only the ceilings. The same plan also
-     blocks HIDDEN BUILDS: an Agent/Task call classified as build work (the
-     description or first prompt line says build, and it is not a reader) is
+     blocks HIDDEN BUILDS: under a plan every Agent/Task call that is not
+     subagent_type Explore, Plan or claude-code-guide with no write intent is
      refused -- "builds under this plan go through the planned Workflow launch" --
-     by the PLAN-STRICT AGENT/TASK RULE below (a read-only type or a read/QC-read prompt with no
-     write verb passes; nothing else does).
+     by the PLAN-STRICT AGENT/TASK RULE below (any other subagent_type is
+     blocked even for a read-only prompt).
   5. a merge agent inside a build tree             -> Law 3: it runs outside the tree
   6. any launch at all while CONTROL/project_state.json (found upward from cwd)
      says the run is at or past its pause line or its ceiling -> the budget wall,
@@ -70,8 +70,8 @@ save, add, replace, set, append, put, store, record, populate, rename, move, rem
 apply, emit, produce, forge, "output to"; inflections and re-/over- prefixes included, so "rewrite" and
 "overwrite" count), does not name a guard-owned artefact (.verdict.json, evidence/, SWARM-PLAN.json,
 guard.sqlite3, question-gate) next to a shell writer (>, cp, mv, tee, dd, rsync, ln, sed, echo, printf),
-AND is either subagent_type Explore, Plan or claude-code-guide, or a prompt that reads/researches/QC-reads.
-The veto beats any READ-ONLY marker. Everything else is the HIDDEN BUILD block. Outside a plan the rules
+AND subagent_type is Explore, Plan or claude-code-guide. Any other subagent_type (general-purpose,
+statusline-setup, unset, ...) is blocked under a plan even when the prompt is read-only. The veto beats any READ-ONLY marker. Everything else is the HIDDEN BUILD block. Outside a plan the rules
 below apply.
 
 SHAPE 9 IS SCOPED TOO, but to BOTH project shapes: a marked legacy CONTROL/
@@ -253,8 +253,9 @@ READER_PROMPT_RE = re.compile(r"READ-ONLY|read-only|You are a reader")
 READER_VETO_RE = re.compile(r"\b(build|implement|fix|repair|write|edit|code|merge|deploy)\b", re.I)
 
 # Under a found plan the reader exemption is gone: only a read-only subagent type
-# (or a prompt that reads/researches/QC-reads) with NO write/build intent anywhere in
-# prompt+description may run as an Agent/Task. statusline-setup has Edit, so it is not read-only.
+# (Explore, Plan, claude-code-guide) with NO write/build intent anywhere in
+# prompt+description may run as an Agent/Task. Any other type (general-purpose, statusline-setup, ...)
+# is blocked even for a read-only prompt: it has write tools.
 PLAN_READONLY_TYPES = ("Explore", "Plan", "claude-code-guide")
 PLAN_WRITE_VERBS = (
     "build implement fix repair write edit create generate code commit merge deploy refactor patch modify "
@@ -306,7 +307,7 @@ def plan_agent_allowed(ti):
     if any(s in text for s in PLAN_SENSITIVE) and PLAN_SHELL_WRITE_RE.search(text):
         return False
     kind = ti.get("subagent_type") if isinstance(ti.get("subagent_type"), str) else ""
-    return kind in PLAN_READONLY_TYPES or bool(PLAN_READ_RE.search(text))
+    return kind in PLAN_READONLY_TYPES
 
 
 # The absolute per-project ceiling. A state file may lower it and may never
@@ -1563,6 +1564,7 @@ def selftest():
     sandbox = tempfile.mkdtemp(prefix="dispatch-gate-selftest.")
     # The plan check reads and records in the guard journal: point every child at a temp one.
     os.environ["WORKFLOW_GUARD_STATE"] = os.path.join(sandbox, "guard-state")
+    os.environ["STAFFING_TEST_PROBE_CAP"] = "10"  # hermetic: the fixture plans assume a cap-10 box (999-setup repo adaptation)
     # SHAPE 10 must never read the operator's real crontab: every child sees a
     # stub watch-tick.sh (rc 0 = armed) unless a check swaps it for rc 3.
     tick_ok = os.path.join(sandbox, "tick-ok.sh")
@@ -1671,10 +1673,10 @@ def selftest():
     rc_t2, _o = _run_child(plan_agent("build unit u02", "build unit u02", tool="Task"), plan_root)
     report("8d", "plan-hidden-build-task-blocked", rc_t2 == 2 and "HIDDEN BUILD" in _o, "Task 'build unit u02' under a plan -> rc=%d (want 2)" % rc_t2)
     rc_r, out_r = _run_child(plan_agent("Read client packet docs", "READ-ONLY. read the files and report."), plan_root)
-    rc_r2, _o2 = _run_child(plan_agent("research reference apps", "survey and report"), plan_root)
+    rc_r2, out_r2 = _run_child(plan_agent("research reference apps", "survey and report"), plan_root)
     rc_r3, _o3 = _run_child(plan_agent("scan units", "list files", "Explore"), plan_root)
-    report("8e", "plan-reader-agent-allowed", rc_r == 0 and rc_r2 == 0 and rc_r3 == 0,
-           "reader / research / Explore under a plan -> rc=%d, %d, %d (want 0, 0, 0)" % (rc_r, rc_r2, rc_r3))
+    report("8e", "plan-reader-agent-allowed", rc_r == 2 and "HIDDEN BUILD" in out_r and rc_r2 == 2 and "HIDDEN BUILD" in out_r2 and rc_r3 == 0,
+           "general-purpose reader / researcher under a plan -> rc=%d, %d (want 2, 2, HIDDEN BUILD); Explore reader -> rc=%d (want 0)" % (rc_r, rc_r2, rc_r3))
     # 4c2 -- strict plan rule: five hidden-build bypasses blocked; genuine readers allowed; no-plan unchanged.
     bypass = [
         ("read-only-then-implement", "READ-ONLY reader. Read the spec. Then implement unit W0-02-U1.", "scan", "general-purpose"),
@@ -1710,9 +1712,9 @@ def selftest():
                ("scan", "Find where the dataset loader lives and summarize it.", "Explore"),
                ("plan", "Outline the approach for unit 3.", "Plan")]
     rcs = [_run_child(plan_agent(de, pr, kd), plan_root)[0] for de, pr, kd in readers]
-    report("8y", "plan-genuine-readers-allowed", rcs == [0, 0, 0, 0], "readers (evidence/verdict read+report, Explore, Plan) -> rc=%s (want all 0)" % rcs)
+    report("8y", "plan-genuine-readers-allowed", rcs == [2, 2, 0, 0], "general-purpose readers blocked, Explore/Plan readers allowed -> rc=%s (want [2, 2, 0, 0])" % rcs)
     rc_np, _o3 = _run_child(plan_agent("read-only reader then implement", "READ-ONLY reader. Then implement unit 1.", cwd=no_plan), no_plan)
-    report("8c7", "plan-genuine-reader-and-qc-read-allowed", rc_g == 0 and rc_q == 0, "rc=%d, %d (want 0, 0)" % (rc_g, rc_q))
+    report("8c7", "plan-general-purpose-reader-and-qc-read-blocked", rc_g == 2 and rc_q == 2, "general-purpose reader/QC-read under a plan -> rc=%d, %d (want 2, 2)" % (rc_g, rc_q))
     report("8c8", "no-plan-reader-prompt-unchanged", rc_np == 0, "no plan, READ-ONLY+implement -> rc=%d (want 0, old behaviour)" % rc_np)
 
     rc_h2, _o4 = _run_child(plan_agent("build unit u03", "build unit u03", cwd=no_plan), no_plan)

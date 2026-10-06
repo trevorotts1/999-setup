@@ -378,3 +378,40 @@ def test_make_workflow_plan_output_never_derives_a_unit_list(env):
     text = Path(env.gen('W0-01')['scriptPath']).read_text()
     assert 'pipeline(args.units,' in text
     assert 'args.units.' not in text.replace('args.units.length', '') and '.filter(' not in text.replace('.filter(Boolean)', '')
+
+
+# ------------------------------------------------------------------ single arming definition: armed <=> status "running"
+@pytest.mark.parametrize('cmd', ['echo x > a.verdict.json', 'cat > A.VERDICT.JSON', 'tee evidence/z.Verdict.Json < /tmp/x'])
+def test_bash_verdict_write_refused_with_no_plan(env, cmd):
+    noplan = env.tmp / 'noplan'; noplan.mkdir()
+    rc, out = env.pre('Bash', {'command': cmd}, cwd=noplan)
+    assert rc == 2 and 'may not write unit verdict files' in out and 'this rule holds everywhere' in out, out
+    # subagent semantics (unchanged): any call carrying agent_id/agent_type skips the verdict and protected-path rules, Bash included
+    rc, out = env.pre('Bash', {'command': cmd}, cwd=noplan, agent_id='a1', agent_type='general-purpose')
+    assert rc == 0, out
+
+
+def test_first_admission_flips_status_then_broken_journal_blocks_stop(env):
+    plan = st._mkplan(env.proj, {'W0-01': 2}, status='planned-not-running')
+    assert env.snap()['armed'] is False
+    assert env.launch('W0-01', 'FLIP1')[0] == 0
+    text = plan.read_text()
+    assert json.loads(text)['status'] == 'running' and text.endswith('}\n') and '\n  "status": "running"' in text
+    assert env.snap()['armed'] is True
+    for f in env.sd.glob('guard.sqlite3*'):
+        f.unlink()
+    (env.sd / 'guard.sqlite3').write_bytes(b'this is not a database' * 100)
+    r = env.stop()
+    assert r and r.startswith('guard unavailable: ') and 'status running' in r, r
+    pkt = ROOT.parents[2] / 'Downloads/CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_BUILD_PACKET/claude-nine-swarm'
+    if (pkt / 'SWARM-PLAN.json').is_file():  # the real plan, copied to temp and flipped by the same helper the guard uses
+        cp = env.tmp / 'realcopy.json'; cp.write_text((pkt / 'SWARM-PLAN.json').read_text())
+        assert st.set_running(cp) and json.loads(cp.read_text())['status'] == 'running'
+        p = subprocess.run([PY, str(pkt / 'swarm_plan_check.py'), '--plan', str(cp)], capture_output=True, text=True)
+        assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_refused_launch_does_not_flip_status(env):
+    plan = st._mkplan(env.proj, {'W0-01': 2}, status='planned-not-running')
+    rc, out = env.pre('Workflow', {'script': 'x', 'args': {'workflowId': 'W0-01'}})
+    assert rc == 2 and json.loads(plan.read_text())['status'] == 'planned-not-running'

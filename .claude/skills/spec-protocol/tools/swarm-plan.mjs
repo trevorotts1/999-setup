@@ -140,14 +140,22 @@ export function validate(plan) {
   return errs;
 }
 
-// A unit verdict (contract v2.1) is JSON {verdict, unit_id, attempt_id, builder_model, reviewer_model}: PASS only
-// counts when it names the unit, an attempt, and a reviewer that is not the builder. (That attempt_id is an
-// ADMITTED launch is the guard journal's check, not this file's.)
+// Model family (same rule as staffing.py model_family): vendor prefix, version, date and case stripped.
+const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable', 'gpt', 'gemini', 'deepseek', 'glm', 'kimi', 'qwen', 'llama', 'mistral', 'grok', 'minimax', 'nemotron', 'gemma', 'codex', 'agnes'];
+export function modelFamily(name) {
+  const s = String(name || '').trim().toLowerCase().split('/').pop().split(':')[0];
+  for (const tok of s.split(/[^a-z]+/)) if (FAMILIES.includes(tok)) return tok;
+  return s.replace(/[\d._\s-]+/g, '') || s;
+}
+// A unit verdict (contract v2.2) is JSON {verdict, unit_id, attempt_id, builder_model, reviewer_model}: PASS only
+// counts when it names the unit, an attempt, and a reviewer of a different model FAMILY than the builder. (That
+// attempt_id is an ADMITTED launch, and that the file's sha256 matches a guard-journal record of a subagent Write,
+// are the guard journal's checks, not this file's: this tool only reads the plan directory.)
 export function unitPassed(root, u) {
   try {
     const d = JSON.parse(fs.readFileSync(path.join(root, u.verdict_file), 'utf8'));
     return d.verdict === 'PASS' && d.unit_id === u.unit_id && isStr(d.attempt_id) && isStr(d.builder_model)
-      && isStr(d.reviewer_model) && d.reviewer_model !== d.builder_model;
+      && isStr(d.reviewer_model) && modelFamily(d.reviewer_model) !== modelFamily(d.builder_model);
   } catch { return false; }
 }
 // A workflow is DONE when every one of its units passed.
@@ -277,8 +285,8 @@ function selftest() {
   w1.forEach((u) => verdict(u));
   fs.writeFileSync(path.join(root, 'evidence/W1/verdict.json'), '{"verdict":"PASS"}');  // a workflow-level file decides nothing
   w1.slice(1).forEach((u) => verdict(u));
-  verdict(w1[0], { reviewer_model: 'opus' });
-  t('self-review-(reviewer == builder)-is-not-done', readiness(two, root).ready.join() === 'W1');
+  verdict(w1[0], { builder_model: 'anthropic/claude-opus-4-5-20251101', reviewer_model: 'opus' });
+  t('self-review-(same model family under two names)-is-not-done', readiness(two, root).ready.join() === 'W1');
   verdict(w1[0], { attempt_id: '' });
   t('verdict-without-attempt_id-is-not-done', readiness(two, root).ready.join() === 'W1');
   verdict(w1[0], { unit_id: 'W1-U9' });
