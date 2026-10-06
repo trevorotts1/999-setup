@@ -75,6 +75,23 @@ $FlagValue = '1'
 # operator wave cap, and provider ceilings.
 $WfsizeKey = 'workflowSizeGuideline'
 $WfsizeValue = 'unrestricted'
+# Per-workflow agent cap: MEASURED on this box by capacity_probe.py (RAM, logical
+# cores, container limits; the same file Hook Skill and spec-protocol ship) and
+# merged into env. Never typed by hand. No python or an unreadable probe ->
+# $CapValue stays empty and the key is NOT written (a guess would be a lie).
+$CapKey = 'CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS'
+$CapValue = ''
+$probe = Join-Path $PSScriptRoot '..\common\capacity_probe.py'
+foreach ($pyName in @('python', 'py')) {
+    $pyCmd = Get-Command $pyName -ErrorAction SilentlyContinue
+    if (-not $pyCmd -or -not (Test-Path $probe)) { continue }
+    try {
+        $pyArgs = @(); if ($pyName -eq 'py') { $pyArgs = @('-3') }
+        $capJson = & $pyCmd.Source @pyArgs $probe 2>$null | Out-String
+        $capN = [int]((ConvertFrom-Json $capJson).per_workflow_cap)
+        if ($LASTEXITCODE -eq 0 -and $capN -ge 1 -and $capN -le 10) { $CapValue = [string]$capN; break }
+    } catch { continue }
+}
 $NineProfile = Join-Path $env:USERPROFILE '.claude-nine\settings.json'
 
 # Report fields (procedure Phase 13). NOT CHECKED, never a bare negative: a phase
@@ -509,6 +526,7 @@ try {
     }
     # MERGE: add or update ONLY these keys. Nothing else is touched.
     $settings.env | Add-Member -NotePropertyName $FlagKey -NotePropertyValue $FlagValue -Force
+    if ($CapValue) { $settings.env | Add-Member -NotePropertyName $CapKey -NotePropertyValue $CapValue -Force }
     # Workflow width policy: top-level key, same merge discipline. An
     # overwritten different value is recoverable from the backup above.
     $prevWfsize = if ($settings.PSObject.Properties.Name -contains $WfsizeKey) { $settings.$WfsizeKey } else { $null }
@@ -532,6 +550,7 @@ try {
         $cur = Read-SettingsObject $SettingsPath
         if ($cur.env.$FlagKey -ne $FlagValue) { $valid = $false; $reason = 'FLAG_NOT_CONFIRMED' }
         if ($valid -and $cur.$WfsizeKey -ne $WfsizeValue) { $valid = $false; $reason = 'WFSIZE_NOT_CONFIRMED' }
+        if ($valid -and $CapValue -and $cur.env.$CapKey -ne $CapValue) { $valid = $false; $reason = 'CAP_NOT_CONFIRMED' }
         if ($valid -and $backup) {
             $old = Read-SettingsObject $backup
             $oldLeaves = New-Object System.Collections.ArrayList
@@ -540,7 +559,7 @@ try {
             Get-JsonLeaves -node $cur -prefix '' -acc $newLeaves
             $newMap = New-Object 'System.Collections.Generic.Dictionary[System.String,System.String]'
             foreach ($leaf in $newLeaves) { $newMap[$leaf.Path] = [string]$leaf.Value }
-            $allowed = @("env.$FlagKey", $WfsizeKey)
+            $allowed = @("env.$FlagKey", $WfsizeKey, "env.$CapKey")
             $lost = @()
             foreach ($leaf in $oldLeaves) {
                 if ($allowed -contains $leaf.Path) { continue }

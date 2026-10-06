@@ -489,7 +489,7 @@ FAIL if: <exact condition> → incomplete because <reason>
   three-question core rule, answered in writing with the ledger arithmetic);
   and the budget — the SEVEN QUANTITIES of the 9.4
   derivation (W, A, N, I, D, T, P), where each came from, the spend-per-window
-  inequality, the arithmetic, and the resulting interval and agent ceiling, each
+  inequality, the arithmetic, and the resulting interval, each
   with its derivation beside it. The full derivation is carried in
   `references/loops.md` ("The budget derivation — v4 9.4"); a derived number with
   no arithmetic beside it is indistinguishable from a guess, and by Law 14 it is one.
@@ -1063,7 +1063,7 @@ lives in `references/pipeline.md`.
 | 35 — Work runs as loops, not as prompts | A loop wakes on an interval derived from capacity, re-reads the tracker from scratch, does one piece of work, writes state back, sleeps. It carries a written stop condition. |
 | 36 — Loops never talk to each other | Every state transition is owned by exactly one loop. Loops coordinate through the tracker only. |
 | 37 — A hosted remote is mandatory | Local-only is not a project. Every project has a version-control remote that accepts branches, holds a trunk, and resolves annotated tags. |
-| 38 — Nobody's capacity is assumed | Every rate in the plan (interval, agent ceiling, model split) is derived from the capacity you actually have, never copied from another project. A stronger model plans; a cheaper model executes. |
+| 38 — Nobody's capacity is assumed | Every rate in the plan (interval, model split) is derived from the capacity you actually have, never copied from another project. A stronger model plans; a cheaper model executes. |
 | 39 — The document list is closed at seventeen | Creating an eighteenth requires permission first (the seventeenth, PROJECT-MANIFEST.md, was ratified through this same gate on 2026-08-11). A refused artifact does not return under a new name. Work items are sections, never files. Never cite a document you wrote as authority. |
 | 40 — Never use persuasion on the client | Present options, evidence, and a recommendation, then stop. No manufactured urgency, scarcity, or flattery. This holds even when your recommendation is correct. |
 | 41 — The orchestrator dispatches, does not perform | Subagents do all work (money AND throughput). Never send a subagent out with partial context — a failed subagent is the dispatcher's defect first. The one narrow exception: a single command to verify one subagent claim before repeating it. |

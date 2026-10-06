@@ -80,8 +80,9 @@ def test_2_atomic_cap_thirty_threads():
     admitted = [r for r in out if r is None]
     refused = [r for r in out if r]
     c = raw()
-    rows = c.execute("SELECT COUNT(*) n FROM launches WHERE state='VALIDATED'").fetchone()['n']
+    rows = c.execute("SELECT COUNT(*) n FROM launches WHERE state='RESERVED'").fetchone()['n']  # two-phase admission: PreToolUse reserves, PostToolUse confirms
     c.close()
+    assert all('already running %d workflows, the operator limit of %d' % (cap, cap) in r for r in refused), 'wrong refusal reason: %r' % set(refused)
     assert len(admitted) == cap, 'cap %d: exactly %d must be admitted, got %d' % (cap, cap, len(admitted))
     assert len(refused) == n - cap, 'exactly %d must be refused, got %d' % (n - cap, len(refused))
     assert rows == cap, 'ledger must hold exactly %d live rows, got %d' % (cap, rows)
@@ -127,7 +128,7 @@ def test_5_finished_run_reaped_from_its_own_journals():
     d = t.parent / 'transcript' / 'subagents' / 'workflows' / 'wf_run1' / 'journal.jsonl'
     c = raw()
     c.execute('INSERT INTO launches VALUES(?,?,?,?,?,?,?,?,?)',
-              ('fin', 's-fin', str(t), time.time(), 'sha-fin', 'VALIDATED', 'wf-fin', 2, ''))
+              ('fin', 's-fin', str(t), time.time(), 'sha-fin', 'VALIDATED', 'wf-fin', 2, '{"run_id": "wf_run1"}'))  # a launch owns only the journal of ITS run id
     # No journal yet: the run stays live, because absence is not evidence.
     assert occ()['workflows'] == 1, 'a launch with no journal yet must stay live, got %r' % occ()
     c.execute('INSERT INTO watches VALUES(?,?,?,?,?,?)', (str(d), 's-fin', time.time(), '', 'AGENTS_RETURNED', ''))
@@ -155,6 +156,7 @@ def test_6_operator_limits_are_read_from_config():
         assert guard.admit_launch(launch_row('c%d' % i, 'cfg')) is None
     refusal = guard.admit_launch(launch_row('c3', 'cfg'))
     assert refusal, 'third launch must be refused under the operator cap of 2'
+    assert 'already running 2 workflows, the operator limit of 2' in refusal, 'wrong refusal reason: %r' % refusal
     assert occ()['workflows'] == 2, 'exactly 2 live under operator cap, got %r' % occ()
     print('PASS test_6_operator_limits_are_read_from_config: config wins over defaults; %r' % lim)
 

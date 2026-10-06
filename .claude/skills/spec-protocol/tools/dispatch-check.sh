@@ -25,10 +25,10 @@
 # alone, every time, under no instrument. This is the instrument. It is called
 # BEFORE a wave fires, it answers in an exit code, and it leaves a row behind.
 #
-#   floor   = min(units, CLIENT_CAP)      — the skill enforces the FLOOR
-#   ceiling = units × stages (default 4)  — the harness owns the real ceiling
+#   floor   = min(units, clientCap)      — agent_count of the plan contract (references/swarm-plan.md); clientCap is the measured cap in the ledger, at most 10
+#   ceiling = units × stages (default 4)  — more than that is padding
 #
-# The harness caps a workflow at min(16, cores−2) and queues the rest, so a
+# clientCap (measured on the box, at most 10) is the per-workflow ceiling; the harness queues the rest, so a
 # script can only ever pass FEWER items than it should. That is the only defect
 # this gate can see, and the only one it claims to.
 #
@@ -42,8 +42,8 @@
 #              absent, the state write failed. NEVER a verdict about the
 #              dispatch. An exit 2 is "UNDETERMINED", said out loud, with the
 #              exact path named — never a silent pass and never a silent block.
-#   3  UNDER-WIDTH — agents < min(units, CLIENT_CAP) and no dep= reason was
-#              given. This is the timid dispatch, refused.
+#   3  UNDER-WIDTH — agents < min(units, clientCap). This is the timid dispatch,
+#              refused; a dep= reason does not excuse it.
 #   4  REFUSED — the dispatch is malformed or its preconditions are missing:
 #              the label does not match [<model> x<N>], or CONTROL/EXECUTION-PLAN.md
 #              carries no "Parallelism Plan" heading ("no Parallelism Plan, no
@@ -221,7 +221,7 @@
 # asked, never inherited from the environment (finding S1). Two shapes are
 # accepted, in this order:
 #   1.  CLIENT_CAP=10                                     (tools/width.sh output)
-#   2.  clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED …]
+#   2.  clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED …]
 # A line whose value is still the template placeholder (`= <k>`) parses as
 # NOTHING, not as a number — an unfilled ledger is undetermined (exit 2), never
 # a cap of 2 read out of `max(2, …)`.
@@ -1311,17 +1311,19 @@ run_check() {
   budget_gate "${state_json}" "${project}"
 
   # --- The floor (S4). The only number this skill controls. -----------------
+  # OWNER CONTRACT (2026-10-06): a workflow runs agent_count = min(clientCap, its
+  # units) agents, clientCap being the per-workflow cap MEASURED on this machine
+  # (tools/hooks/capacity_probe.py; 1..10) and recorded in the Capacity Ledger.
+  # 10 is a ceiling, never a floor. A dep= reason does not narrow a workflow: a
+  # workflow whose dependency is unmet is not launched at all.
+  (( cap > 10 )) && cap=10
   local floor="${units}"
   (( cap < floor )) && floor="${cap}"
   if (( agents < floor )); then
-    if [[ -z "${dep}" ]]; then
-      printf 'DISPATCH-CHECK UNDER-WIDTH | units=%s cap=%s floor=%s agents=%s | %s\n' \
-        "${units}" "${cap}" "${floor}" "${agents}" \
-        "pass every dispatchable unit: re-author this dispatch at ${floor} agents, or give the wave dependency that makes it narrower as dep=<reason> (a dependency is a reason; a hunch is not)." >&2
-      exit 3
-    fi
-    printf 'DISPATCH-CHECK NOTE | narrower than the floor by a stated dependency | floor=%s agents=%s dep=%s\n' \
-      "${floor}" "${agents}" "${dep}" >&2
+    printf 'DISPATCH-CHECK UNDER-WIDTH | units=%s cap=%s floor=%s agents=%s | %s\n' \
+      "${units}" "${cap}" "${floor}" "${agents}" \
+      "a workflow runs min(clientCap, its units) agents: re-author this dispatch at ${floor} agents. A dep= reason does not narrow a workflow; a workflow whose dependency is unmet is not launched." >&2
+    exit 3
   fi
 
   # --- The padding ceiling --------------------------------------------------
@@ -1527,17 +1529,18 @@ run_selftest() {
   printf '%s' "${out}" | "${GREP}" -q 'PADDED' || ok=0
   report 4 "padding-refused" "${ok}" "rc=${rc} (want 5; ceiling = 4 units × 4 stages = 16); ${out}"
 
-  # --- 4: the dep= escape hatch ---------------------------------------------
+  # --- 4: dep= is NOT an escape hatch any more -----------------------------
   out="$(bash "${SELF}" "${P}" 10 3 '[Opus x3] build wave-2' 'dep=WI-04 must land before the other 7 units unblock' 2>&1)"; rc=$?
   total="$(read_total)"
-  ok=0; [[ "${rc}" == "0" && "${total}" == "13" ]] && ok=1
-  report 5 "dep-reason-allows" "${ok}" "rc=${rc} (want 0); executions_total 10 → ${total} (want 13)"
+  ok=0; [[ "${rc}" == "3" && "${total}" == "10" ]] && ok=1
+  printf '%s' "${out}" | "${GREP}" -q 'UNDER-WIDTH' || ok=0
+  report 5 "dep-reason-does-not-excuse" "${ok}" "rc=${rc} (want 3); executions_total stays ${total} (want 10): a dep= reason no longer narrows a workflow"
 
   # --- 5: the dispatch-log rows are shaped so anchor.sh can census them ------
   local rows
   rows="$("${GREP}" -cE '^[[:space:]]*(- )?[0-9]{4}-[0-9]{2}-[0-9]{2}[^|]*\|[^|]*\|' "${P}/CONTROL/dispatch-log.md" 2>/dev/null)"
-  ok=0; [[ "${rows}" == "2" ]] && ok=1
-  report 6 "rows-are-censusable" "${ok}" "anchor.sh's own dispatch-census regex counts ${rows} rows (want 2 — one per PASS, none for the two refusals)"
+  ok=0; [[ "${rows}" == "1" ]] && ok=1
+  report 6 "rows-are-censusable" "${ok}" "anchor.sh's own dispatch-census regex counts ${rows} rows (want 1 — one per PASS, none for the three refusals)"
 
   # --- 6: a bad label is refused (exit 4) -----------------------------------
   out="$(bash "${SELF}" "${P}" 10 10 'Opus x10 build wave-2' 2>&1)"; rc=$?
@@ -1559,7 +1562,7 @@ run_selftest() {
   {
     printf '# CAPACITY LEDGER — fixture — 2026-09-07T00:00:00Z\n'
     printf 'Cores: 12 · RAM: 24 GB\n'
-    printf 'clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n'
+    printf 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n'
   } > "${P3}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n\nwave 1.\n' > "${P3}/CONTROL/EXECUTION-PLAN.md"
   printf '2026-09-08T00:00:00Z | OVER-ENGINEERING-CHECK: units=10 apparatus_kb=40 budget_kb=60 removed=0 verdict=PASS\n' > "${P3}/CONTROL/LEDGER.md"
@@ -1585,7 +1588,7 @@ run_selftest() {
   # --- 9: an unfilled template placeholder is UNDETERMINED, never cap 2 -----
   local P4="${T}/proj-placeholder"
   mkdir -p "${P4}/CONTROL"
-  printf 'clientCap = max(2, min(harness_cap, ram_cap)) = <k>   [MEASURED <instrument> <ISO8601>]\n' > "${P4}/CAPACITY-LEDGER.md"
+  printf 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED <instrument> <ISO8601>]\n' > "${P4}/CAPACITY-LEDGER.md"
   printf '## Parallelism Plan\n' > "${P4}/CONTROL/EXECUTION-PLAN.md"
   out="$(bash "${SELF}" "${P4}" 10 10 '[Opus x10] build wave-2' 2>&1)"; rc=$?
   ok=0; [[ "${rc}" == "2" ]] && ok=1
@@ -2241,10 +2244,30 @@ run_selftest() {
   report 56 "frozen-audit-and-malformed-newer-block" "${ok}" "current clean binding rc=${frozen_ok} (want 0); unchanged findings with changed spec rc=${stale_rc} (want 12); newer malformed audit row rc=${rc} (want 12)"
 
 
+  # --- 58-60: agent_count = min(clientCap, units), the ledger's measured cap --
+  # A pass/fail pair at each edge on a CLIENT_CAP=4 ledger (a weak box: floor min(12,4) = 4).
+  local P30="${T}/proj-mintenunits"
+  mkdir -p "${P30}/CONTROL"
+  printf 'CLIENT_CAP=4\n' > "${P30}/CAPACITY-LEDGER.md"
+  printf '## Parallelism Plan\n\nwave 1.\n' > "${P30}/CONTROL/EXECUTION-PLAN.md"
+  write_state "${P30}/CONTROL/project_state.json" 0 200 0 2000
+  local f9 f3 f10 t30
+  out="$(bash "${SELF}" "${P30}" 12 3 '[Opus x3] judge wave-1' 2>&1)"; f9=$?
+  t30="$(read_state_total "${P30}/CONTROL/project_state.json")"
+  ok=0; [[ "${f9}" == "3" && "${t30}" == "0" ]] && ok=1
+  report 58 "measured-cap-sets-the-floor" "${ok}" "3 agents on 12 units rc=${f9} (want 3), counter ${t30} (want 0): a CLIENT_CAP=4 ledger makes the floor min(12,4)=4"
+  out="$(bash "${SELF}" "${P30}" 3 3 '[Opus x3] judge wave-1' 2>&1)"; f3=$?
+  out="$(bash "${SELF}" "${P30}" 12 4 '[Opus x4] judge wave-1' 2>&1)"; f10=$?
+  ok=0; [[ "${f3}" == "0" && "${f10}" == "0" ]] && ok=1
+  report 59 "min-of-units-and-cap-passes" "${ok}" "3 agents on 3 units rc=${f3} (want 0); 4 agents on 12 units rc=${f10} (want 0): agent_count = min(clientCap 4, units)"
+  out="$(bash "${SELF}" "${P30}" 3 2 '[Opus x2] judge wave-1' 2>&1)"; f3=$?
+  ok=0; [[ "${f3}" == "3" ]] && ok=1
+  report 60 "under-units-refused" "${ok}" "2 agents on 3 units rc=${f3} (want 3): fewer agents than min(clientCap, units) is under-staffing"
+
 
   printf '\n'
   if (( FAILS == 0 )); then
-    printf 'dispatch-check.sh selftest: ALL PASS (58 checks)\n'
+    printf 'dispatch-check.sh selftest: ALL PASS (61 checks)\n'
     exit 0
   fi
   printf 'dispatch-check.sh selftest: %s FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n' "${FAILS}"

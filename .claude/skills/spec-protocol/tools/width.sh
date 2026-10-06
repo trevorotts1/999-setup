@@ -5,17 +5,22 @@
 #        . width.sh            source it: defines the measure/formula functions
 #                              and prints NOTHING (capacity-resolver.sh does this)
 #
-# THE FORMULA (S1, 2026-09-07) — one formula, everywhere, measured:
-#     harness_cap = min(16, cores − 2)         the Workflow tool's own per-workflow
-#                                              limit; it queues everything above this
-#     ram_cap     = floor((ram_gb − 6) / 1.5)  ~1.5 GB per live agent after 6 GB for
-#                                              the OS, the browser, and Claude itself
-#     CLIENT_CAP  = max(2, min(harness_cap, ram_cap))
-#                 = max(2, min(16, cores−2, floor((ram_gb−6)/1.5)))
-#     BROWSER_CAP = floor((ram_gb − 6) / 1.5)  each blind visual judge holds a Chromium
+# THE RULE (owner contract, 2026-10-06; machine-measured per the owner's ruling):
+#     CLIENT_CAP  = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores))
+#                                              the per-workflow cap, MEASURED on THIS box
+#                                              by hooks/capacity_probe.py -- the ONE place the
+#                                              formula and GB_PER_AGENT (1.5 GB of RAM per
+#                                              agent: a headless agent session plus its
+#                                              tools) are written. A container (cgroup)
+#                                              limit beats the host total. A workflow runs
+#                                              agent_count = min(CLIENT_CAP, its units)
+#                                              agents (references/swarm-plan.md); 10 is a
+#                                              ceiling, never a floor.
 #     WORKFLOW_CEILING = 50                    operator doctrine 2026-08-16, hard
-# Worked values: 12 cores / 24 GB → 10 · 8 cores / 16 GB → 6 · 24 cores / 64 GB → 16.
-# THE BAR NEVER CHANGES WITH THE MACHINE — ONLY THE WIDTH DOES.
+#                                              (50 workflows x CLIENT_CAP, at most 500 agents)
+#     BROWSER_CAP = floor((ram_gb - 6) / 1.5)  each blind visual judge holds a Chromium
+# Worked values: 12 cores / 24 GB -> 10 (the operator Mac mini) | 8 cores / 8 GB -> 5 |
+# 2 cores / 8 GB -> 2 | 24 cores / 64 GB -> 10 | a 4 GB / 2-core container -> 2.
 #
 # INSTRUMENTS, in the order they are tried (the mark names the one that answered):
 #   cores  macOS/BSD  sysctl -n hw.ncpu          Linux  nproc
@@ -25,9 +30,10 @@
 #
 # EXIT CODES:
 #   0   a width was printed (measured, or the marked fallback below)
-#   2   NEITHER instrument answered — no cores AND no RAM. The caller then uses
-#       clientCap 4 AND SAYS SO in the ledger; it never stalls and never asks a
-#       client how many agents their computer supports.
+#   2   NEITHER instrument answered (or python3 / the probe is missing) — no cap
+#       could be measured. The caller then uses UNDETERMINED_CAP (4, the
+#       conservative floor) AND SAYS SO in the ledger; it never stalls and never
+#       asks a client how many agents their computer supports.
 #   64  a malformed WIDTH_FIXTURE_* value (test-door misuse). That is a usage
 #       error, never a fact about the machine.
 #
@@ -37,7 +43,6 @@
 #   [FIXTURE  <env names> <ISO8601>]    a WIDTH_FIXTURE_* override answered — the
 #                                        selftest's door, and it can never read as
 #                                        a measurement
-#   [ASSUMED  …]                        cores unmeasurable → the fallback 4
 #   [UNDETERMINED …]                    nothing answered; the sources tried are named
 #   WORKFLOW_CEILING carries [DEFAULT-CONFIRMED operator-doctrine-2026-08-16 …]
 #   because 50 is an operator ruling, not an instrument reading. A constant that
@@ -51,7 +56,8 @@
 # reporting layer below, and every value they produce prints [FIXTURE …].
 #
 # Bash 3.2 compatible: no `declare -A`, no `mapfile`, no `${var^^}`.
-# The Node twin is scripts/common/width.mjs and prints the same three lines.
+# The Node twin is scripts/common/width.mjs and prints the same three lines (it asks the
+# same capacity_probe.py, so the two can never compute different caps).
 
 set -u
 
@@ -133,37 +139,37 @@ measure_ram_gb() {
   echo "${gb} ${instrument}"
 }
 
-# --- THE WIDTH FORMULA (S1) ---------------------------------------------------
-# harness_cap = min(16, cores − 2)          the Workflow tool's own limit; it
-#                                           queues everything above this itself
-# ram_cap     = floor((ram_gb − 6) / 1.5)   ~1.5 GB per live agent after 6 GB for
-#                                           the OS, the browser, and Claude
-# clientCap   = max(2, min(harness_cap, ram_cap))
-# An unmeasurable RAM figure drops ram_cap from the min() and says so — it never
-# invents one. THE BAR NEVER SHRINKS; only the width does.
-harness_cap_of() {
-  local cores="$1" w
-  w=$(( cores - 2 ))
-  (( w > 16 )) && w=16
-  (( w < 1 )) && w=1
-  echo "${w}"
+# --- THE WIDTH RULE -----------------------------------------------------------
+# clientCap = clamp(1, 10, min(floor(ram_gb / GB_PER_AGENT), cores)), computed by
+# hooks/capacity_probe.py and by nothing else: this file carries NO copy of the
+# formula or of GB_PER_AGENT.
+UNDETERMINED_CAP=4   # used (and named in the ledger) only when no cap could be measured
+WIDTH_PROBE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hooks"
+WIDTH_PY=""
+for _py in python3 python; do
+  if command -v "${_py}" >/dev/null 2>&1 && "${_py}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then WIDTH_PY="${_py}"; break; fi
+done
+
+# measure_capacity -> "<cap> <ram_gb> <cores> <source>" for THIS box, container limits applied. rc 1 = no answer.
+measure_capacity() {
+  [[ -n "${WIDTH_PY}" && -r "${WIDTH_PROBE_DIR}/capacity_probe.py" ]] || return 1
+  "${WIDTH_PY}" "${WIDTH_PROBE_DIR}/capacity_probe.py" 2>/dev/null \
+    | "${WIDTH_PY}" -c 'import json,sys; r=json.load(sys.stdin); print(r["per_workflow_cap"], r["ram_gb"], r["cores"], r["source"])' 2>/dev/null
+}
+
+# client_cap_of <ram_gb> <cores> -> the cap for SUPPLIED inputs (fixtures, answers files); same formula, same file.
+client_cap_of() {
+  [[ -n "${WIDTH_PY}" && -r "${WIDTH_PROBE_DIR}/capacity_probe.py" ]] || return 1
+  "${WIDTH_PY}" -c 'import sys; sys.path.insert(0, sys.argv[1]); import capacity_probe as c; print(c.compute(float(sys.argv[2]), float(sys.argv[3]), "supplied")["per_workflow_cap"])' \
+    "${WIDTH_PROBE_DIR}" "$1" "$2" 2>/dev/null
 }
 
 ram_cap_of() {
-  # floor((ram_gb − 6) / 1.5) in integer arithmetic: ((ram_gb − 6) * 2) / 3
+  # floor((ram_gb - 6) / 1.5) in integer arithmetic: ((ram_gb - 6) * 2) / 3
   local ram_gb="$1" r
   if (( ram_gb <= 6 )); then echo 0; return 0; fi
   r=$(( ( (ram_gb - 6) * 2 ) / 3 ))
   echo "${r}"
-}
-
-client_cap_of() {
-  # client_cap_of <harness_cap> [<ram_cap|"">]  — an empty ram_cap means
-  # UNDETERMINED RAM: the harness cap governs alone.
-  local h="$1" r="${2:-}" c="$1"
-  if [[ -n "${r}" ]] && (( r < c )); then c="${r}"; fi
-  (( c < 2 )) && c=2
-  echo "${c}"
 }
 
 browser_cap_of() {
@@ -228,45 +234,36 @@ width_report() {
 
   local ceiling_mark="[DEFAULT-CONFIRMED operator-doctrine-2026-08-16 ${now}]"
 
-  # --- NEITHER instrument answered: the only exit 2 ---------------------------
-  if [[ "${cores_kind}" == "UNDETERMINED" && "${ram_kind}" == "UNDETERMINED" ]]; then
-    echo "CLIENT_CAP=UNDETERMINED   [UNDETERMINED cores: ${cores_instr}; ram: ${ram_instr} ${now}]"
-    echo "BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: ${ram_instr} ${now}]"
-    echo "WORKFLOW_CEILING=${WORKFLOW_CEILING}   ${ceiling_mark}"
-    echo "NOTE: neither instrument answered — cores tried ${WIDTH_CORE_SOURCES}; ram tried ${WIDTH_RAM_SOURCES}." >&2
-    echo "      The caller uses clientCap 4 AND SAYS SO in the ledger. It never stalls, and it never asks." >&2
-    return 2
-  fi
-
-  # --- The two caps -----------------------------------------------------------
-  local harness_cap="" ram_cap="" client_cap="" browser_cap="" cap_kind="" cap_instr=""
-  if [[ "${cores_kind}" == "UNDETERMINED" ]]; then
-    # Cores unmeasurable but RAM answered: the harness cap is unknown, so the
-    # width is the marked fallback 4 — the same fallback capacity-resolver.sh
-    # uses — and it is ASSUMED, never MEASURED.
-    client_cap=4
-    cap_kind="ASSUMED"
-    cap_instr="no-instrument — cores unmeasurable (tried ${WIDTH_CORE_SOURCES}), clientCap fallback 4"
-  else
-    harness_cap="$(harness_cap_of "${cores}")"
-    if [[ "${ram_kind}" == "UNDETERMINED" ]]; then
-      client_cap="$(client_cap_of "${harness_cap}" "")"
-      cap_kind="${cores_kind}"
-      cap_instr="${cores_instr} ${now}; ram UNDETERMINED (tried ${WIDTH_RAM_SOURCES}) — harness cap governs"
-    else
-      ram_cap="$(ram_cap_of "${ram}")"
-      client_cap="$(client_cap_of "${harness_cap}" "${ram_cap}")"
-      if [[ "${cores_kind}" == "FIXTURE" || "${ram_kind}" == "FIXTURE" ]]; then
-        cap_kind="FIXTURE"
-      else
-        cap_kind="MEASURED"
-      fi
-      cap_instr="${cores_instr}+${ram_instr} ${now}"
+  # --- THE CAP: one probe, one formula (hooks/capacity_probe.py) ---------------
+  local client_cap="" cap_kind="" cap_instr="" probe_out=""
+  if [[ "${cores_kind}" == "FIXTURE" || "${ram_kind}" == "FIXTURE" ]]; then
+    # A fixture supplies the inputs; the cap is still the probe's formula on them.
+    if [[ -n "${cores}" && -n "${ram}" ]]; then
+      client_cap="$(client_cap_of "${ram}" "${cores}")" || client_cap=""
+      cap_kind="FIXTURE"; cap_instr="${cores_instr}+${ram_instr} ${now}"
+    fi
+  elif [[ "${WIDTH_FIXTURE_NO_INSTRUMENT:-0}" != "1" ]]; then
+    probe_out="$(measure_capacity)" || probe_out=""
+    if [[ -n "${probe_out}" ]]; then
+      client_cap="${probe_out%% *}"
+      cap_kind="MEASURED"; cap_instr="capacity_probe.py ${probe_out##* } ${now}; effective $(echo "${probe_out}" | awk '{print $2" GB, "$3" cores"}') (a container limit beats the host total)"
     fi
   fi
-
+  if [[ ! "${client_cap}" =~ ^[0-9]+$ ]]; then
+    echo "CLIENT_CAP=UNDETERMINED   [UNDETERMINED capacity_probe.py unavailable or neither RAM nor cores answered (cores tried ${WIDTH_CORE_SOURCES}; ram tried ${WIDTH_RAM_SOURCES}; needs python3 3.8+) ${now}]"
+    if [[ "${ram_kind}" == "UNDETERMINED" ]]; then
+      echo "BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: none (tried ${WIDTH_RAM_SOURCES}) ${now}]"
+    else
+      echo "BROWSER_CAP=$(browser_cap_of "${ram}")   [${ram_kind} ${ram_instr} ${now}]"
+    fi
+    echo "WORKFLOW_CEILING=${WORKFLOW_CEILING}   ${ceiling_mark}"
+    echo "NOTE: no per-workflow cap could be measured — cores tried ${WIDTH_CORE_SOURCES}; ram tried ${WIDTH_RAM_SOURCES}; capacity_probe.py needs python3 3.8+." >&2
+    echo "      The caller uses UNDETERMINED_CAP=${UNDETERMINED_CAP} AND SAYS SO in the ledger. It never stalls, and it never asks." >&2
+    return 2
+  fi
   echo "CLIENT_CAP=${client_cap}   [${cap_kind} ${cap_instr}]"
 
+  local browser_cap=""
   if [[ "${ram_kind}" == "UNDETERMINED" ]]; then
     echo "BROWSER_CAP=UNDETERMINED   [UNDETERMINED ram: none (tried ${WIDTH_RAM_SOURCES}) ${now}]"
   else
@@ -293,7 +290,7 @@ width_selftest() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/width-selftest.XXXXXX")" || {
     echo "SELFTEST: FAIL — could not create temp dir" >&2; return 1; }
 
-  echo "SELFTEST — width.sh"
+  echo "SELFTEST — width.sh (the cap comes from hooks/capacity_probe.py; this file holds no formula)"
   echo
 
   _w_case() {   # _w_case <label> <cores> <ram_gb> <want_client> <want_browser>
@@ -330,14 +327,17 @@ width_selftest() {
 
   echo "FIXTURES — the S1 worked values"
   _w_case "operator Mac mini"        12 24 10 12
-  _w_case "8-core, 16 GB laptop"      8 16  6  6
-  _w_case "24-core, 64 GB Studio"    24 64 16 38
+  _w_case "8-core, 16 GB laptop"      8 16  8  6
+  _w_case "24-core, 64 GB Studio"    24 64 10 38
+  _w_case "2-core, 8 GB small box"    2  8  2  1
+  _w_case "8-core, 8 GB VPS"          8  8  5  1
+  _w_case "1-core, 2 GB micro box"    1  2  1  0
 
   echo "NO INSTRUMENT — neither answers → exit 2, and the sources are named"
   local rc=0
   ( WIDTH_FIXTURE_NO_INSTRUMENT=1 width_report ) > "${tmp}/noinst.out" 2>"${tmp}/noinst.err" || rc=$?
   if (( rc == 2 )); then
-    echo "  [PASS] no instrument → exit 2 (the caller uses 4 and says so)"
+    echo "  [PASS] no instrument → exit 2 (the caller uses UNDETERMINED_CAP ${UNDETERMINED_CAP} and says so)"
   else
     echo "  [FAIL] no instrument → exit ${rc}, expected 2"; fails=$(( fails + 1 ))
   fi
@@ -362,7 +362,7 @@ width_selftest() {
   width_report > "${tmp}/live.out" 2>"${tmp}/live.err" || rc=$?
   local livecap
   livecap="$(/usr/bin/grep -m1 '^CLIENT_CAP=' "${tmp}/live.out" | sed 's/^CLIENT_CAP=//; s/ .*$//')"
-  if (( rc == 0 )) && [[ "${livecap}" =~ ^[0-9]+$ ]] && (( livecap >= 2 )) \
+  if (( rc == 0 )) && [[ "${livecap}" =~ ^[0-9]+$ ]] && (( livecap >= 1 && livecap <= 10 )) \
      && /usr/bin/grep -qF -- '[MEASURED ' "${tmp}/live.out"; then
     echo "  [PASS] live: CLIENT_CAP=${livecap} with a [MEASURED …] mark, exit 0"
   else

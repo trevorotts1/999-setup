@@ -30,7 +30,7 @@ ok "dry-run changes nothing"
 
 # 1. install with both opt-ins
 "$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate >"$FAKE/install.out" 2>&1 || { cat "$FAKE/install.out"; fail "install exited non-zero"; }
-for f in workflow-guard/guard.py workflow-guard/validate.mjs workflow-guard/vendor/acorn.mjs hygiene/post_merge_hygiene.py \
+for f in workflow-guard/guard.py workflow-guard/staffing.py workflow-guard/capacity_probe.py workflow-guard/validate.mjs workflow-guard/vendor/acorn.mjs hygiene/post_merge_hygiene.py \
          ask-before-backup/ask_before_backup.py question-gate/gate_actions.py question-gate/classify_prompt.py disk-cleanup/disk_cleanup.py; do
   [ -f "$FAKE/.claude/hooks/$f" ] || fail "missing installed file $f"
 done
@@ -45,6 +45,11 @@ for need in ("workflow-guard/guard.py", "post_merge_hygiene.py", "ask_before_bac
 assert set(h) >= {"SessionStart","Stop","PreToolUse","UserPromptSubmit","PostToolUse","PostToolUseFailure"}
 ' || fail "registration check failed in $s"
 done
+for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
+  json_check "$s" 'c = int(d["env"]["CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS"]); assert 1 <= c <= 10, c' || fail "measured cap env missing in $s"
+done
+json_check "$FAKE/.claude/hooks/workflow-guard/state/limits.json" 'import json as j; e = j.load(open(sys.argv[1].rsplit("/", 5)[0] + "/.claude/settings.json"))["env"]["CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS"]; assert d["concurrent_agents_per_workflow"] == int(e) and d["concurrent_agents_total"] == min(500, int(e) * 50), d' || fail "limits.json does not carry the measured cap"
+ok "measured per-workflow cap written to limits.json and to both settings files"
 json_check "$FAKE/.claude/settings.json" 'assert d["model"] == "keep-me"; assert d["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "foreign-hook --x"' || fail "existing settings/hook not preserved"
 ok "registered in .claude and .claude-nine, existing entries preserved, JSON valid"
 

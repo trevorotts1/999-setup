@@ -245,16 +245,18 @@ export function runCheck(argv) {
     process.stderr.write(`DISPATCH-CHECK WARNING | label says x${labelN[1]} but agents=${agents} — the tree name will not match what ran\n`)
   }
 
+  // OWNER CONTRACT (2026-10-06): agent_count = min(clientCap, units), clientCap being the
+  // per-workflow cap MEASURED on this machine (tools/hooks/capacity_probe.py; 1..10) and
+  // recorded in the Capacity Ledger. 10 is a ceiling, never a floor; a dep= reason does
+  // not narrow a workflow.
+  if (cap > 10) cap = 10
   const floor = Math.min(units, cap)
   if (agents < floor) {
-    if (!dep) {
-      process.stderr.write(
-        `DISPATCH-CHECK UNDER-WIDTH | units=${units} cap=${cap} floor=${floor} agents=${agents} | ` +
-        `pass every dispatchable unit: re-author this dispatch at ${floor} agents, or give the wave dependency that makes it narrower as dep=<reason> (a dependency is a reason; a hunch is not).\n`,
-      )
-      process.exit(3)
-    }
-    process.stderr.write(`DISPATCH-CHECK NOTE | narrower than the floor by a stated dependency | floor=${floor} agents=${agents} dep=${dep}\n`)
+    process.stderr.write(
+      `DISPATCH-CHECK UNDER-WIDTH | units=${units} cap=${cap} floor=${floor} agents=${agents} | ` +
+      `a workflow runs min(clientCap, its units) agents: re-author this dispatch at ${floor} agents. A dep= reason does not narrow a workflow; a workflow whose dependency is unmet is not launched.\n`,
+    )
+    process.exit(3)
   }
 
   const padCeiling = units * stageN
@@ -332,8 +334,8 @@ function selftest() {
 
   // 0 — the parser's known-positive control, on both accepted shapes
   const capA = parseClientCap('CLIENT_CAP=10\n')
-  const capB = parseClientCap('clientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
-  const capC = parseClientCap('clientCap = max(2, min(harness_cap, ram_cap)) = <k>   [MEASURED <i> <t>]\n')
+  const capB = parseClientCap('clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
+  const capC = parseClientCap('clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED <i> <t>]\n')
   report(0, 'cap-parser-controls', capA === 10 && capB === 10 && capC === null,
     `CLIENT_CAP=10 -> ${capA}; the measured template line -> ${capB}; the unfilled placeholder -> ${capC} (want 10, 10, null)`)
 
@@ -348,11 +350,11 @@ function selftest() {
   report(4, 'padding-refused', r.rc === 5 && /PADDED/.test(r.out), `rc=${r.rc} (want 5; ceiling = 4 × 4 = 16)`)
 
   r = run([P, '10', '3', '[Opus x3] build wave-2', 'dep=WI-04 must land before the other 7 units unblock'])
-  report(5, 'dep-reason-allows', r.rc === 0 && total() === 13, `rc=${r.rc} (want 0); executions_total 10 → ${total()} (want 13)`)
+  report(5, 'dep-reason-does-not-excuse', r.rc === 3 && total() === 10, `rc=${r.rc} (want 3); executions_total stays ${total()} (want 10)`)
 
   const rows = fs.readFileSync(path.join(P, 'CONTROL', 'dispatch-log.md'), 'utf8')
     .split('\n').filter((l) => /^\s*(- )?\d{4}-\d{2}-\d{2}[^|]*\|[^|]*\|/.test(l)).length
-  report(6, 'rows-are-censusable', rows === 2, `anchor.sh's dispatch-census regex counts ${rows} rows (want 2)`)
+  report(6, 'rows-are-censusable', rows === 1, `anchor.sh's dispatch-census regex counts ${rows} rows (want 1)`)
 
   r = run([P, '10', '10', 'Opus x10 build wave-2'])
   report(7, 'bad-label-refused', r.rc === 4, `rc=${r.rc} (want 4)`)
@@ -367,7 +369,7 @@ function selftest() {
   const P3 = path.join(T, 'proj-realledger')
   fs.mkdirSync(path.join(P3, 'CONTROL'), { recursive: true })
   fs.writeFileSync(path.join(P3, 'CAPACITY-LEDGER.md'),
-    '# CAPACITY LEDGER — fixture\nCores: 12 · RAM: 24 GB\nclientCap = max(2, min(harness_cap, ram_cap)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
+    '# CAPACITY LEDGER — fixture\nCores: 12 · RAM: 24 GB\nclientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED sysctl-hw.ncpu 2026-09-07T00:00:00Z]\n')
   fs.writeFileSync(path.join(P3, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n\nwave 1.\n')
   r = run([P3, '10', '9', '[Opus x9] build wave-1'])
   report(9, 'template-line-parses', r.rc === 3, `rc=${r.rc} (want 3 — cap 10, floor 10 > 9; a mis-parse to 2 would have exited 0)`)
@@ -376,7 +378,7 @@ function selftest() {
 
   const P4 = path.join(T, 'proj-placeholder')
   fs.mkdirSync(path.join(P4, 'CONTROL'), { recursive: true })
-  fs.writeFileSync(path.join(P4, 'CAPACITY-LEDGER.md'), 'clientCap = max(2, min(harness_cap, ram_cap)) = <k>   [MEASURED <i> <t>]\n')
+  fs.writeFileSync(path.join(P4, 'CAPACITY-LEDGER.md'), 'clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = <k>   [MEASURED <i> <t>]\n')
   fs.writeFileSync(path.join(P4, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n')
   r = run([P4, '10', '10', '[Opus x10] build wave-2'])
   report(11, 'placeholder-undetermined', r.rc === 2 && /CLIENT_CAP does not parse/.test(r.out),
@@ -399,9 +401,21 @@ function selftest() {
   report(14, 'profile-refuses-legacy-mutation', r.rc === 2 && /profile-owned project/.test(r.out),
     `rc=${r.rc} (want 2; legacy helper must not create CONTROL state)`)
 
+  const P7 = path.join(T, 'proj-mintenunits')
+  fs.mkdirSync(path.join(P7, 'CONTROL'), { recursive: true })
+  fs.writeFileSync(path.join(P7, 'CAPACITY-LEDGER.md'), 'CLIENT_CAP=4\n')
+  fs.writeFileSync(path.join(P7, 'CONTROL', 'EXECUTION-PLAN.md'), '## Parallelism Plan\n\nwave 1.\n')
+  const r9 = run([P7, '12', '3', '[Opus x3] judge wave-1'])
+  report(15, 'measured-cap-sets-the-floor', r9.rc === 3, `3 agents on 12 units rc=${r9.rc} (want 3): a CLIENT_CAP=4 ledger makes the floor min(12,4)=4`)
+  const r3 = run([P7, '3', '3', '[Opus x3] judge wave-1'])
+  const r10 = run([P7, '12', '4', '[Opus x4] judge wave-1'])
+  report(16, 'min-of-units-and-cap-passes', r3.rc === 0 && r10.rc === 0, `3 on 3 units rc=${r3.rc}, 4 on 12 units rc=${r10.rc} (want 0, 0)`)
+  const r2 = run([P7, '3', '2', '[Opus x2] judge wave-1'])
+  report(17, 'under-units-refused', r2.rc === 3, `2 agents on 3 units rc=${r2.rc} (want 3)`)
+
   process.stdout.write('\n')
   if (fails === 0) {
-    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (15 checks)\n')
+    process.stdout.write('dispatch-check.mjs selftest: ALL PASS (18 checks)\n')
     return 0
   }
   process.stdout.write(`dispatch-check.mjs selftest: ${fails} FAILED — this gate is a BROKEN INSTRUMENT; do the width arithmetic by hand and say so in the ledger\n`)

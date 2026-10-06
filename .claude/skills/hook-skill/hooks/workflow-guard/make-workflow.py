@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -33,8 +34,100 @@ return {results,missing,complete:missing.length===0 && results.every(r=>r && r.s
 '''
 
 
+def plan_template(windowed):
+    """The plan-mode script: same prompts as TEMPLATE, fanning out over the launch's own args.units (plan unit objects)
+    in ONE pipeline. When the plan has more units than the per-workflow cap, every agent() call runs inside wgSlot(),
+    the rolling window (a semaphore, not batch barriers) that keeps at most `cap` agents running at once; the
+    pipeline/parallel primitives have no concurrency option, so the window is the limiter."""
+    t = TEMPLATE
+    if windowed:
+        for old, new in (("(u) => agent('Unit '", "(u) => wgSlot(() => agent('Unit '"),
+                         ("{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT}),", "{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT})),"),
+                         ("return agent('Independently QC", "return wgSlot(() => agent('Independently QC"),
+                         ("{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});", "{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT}));")):
+            assert t.count(old) == 1, old
+            t = t.replace(old, new)
+    # plan mode never derives a unit list from args.units (no .filter/.map/.slice): missing results are reported by position.
+    t = t.replace("const missing=INPUT.units.filter((u,i)=>!results[i]).map(u=>u.id);", "const missing=results.map((r,i)=>r?null:'unit #'+(i+1)).filter(Boolean);")
+    t = t.replace('INPUT.guard.runRoot', 'RUN_ROOT').replace('INPUT.units', 'args.units')
+    verdict = ("u.acceptance+' VERDICT FILE: write exactly this JSON to '+RUN_ROOT+'/'+u.verdict_file+' (create folders as needed): "
+               "{\"verdict\":\"PASS\" or \"FAIL\" (PASS only when the acceptance is met on the actual files),\"unit_id\":\"'+u.unit_id+'\","
+               "\"attempt_id\":\"'+args.attemptId+'\",\"builder_model\":\"'+BUILDER+'\",\"reviewer_model\":\"'+REVIEWER+'\"}. "
+               "Write it with the Write tool (not a shell command), exactly once, after judging the unit. You are the checker; the conductor may not write this file.'")
+    t = t.replace('u.ownership', 'u.owned_output').replace('u.qcPrompt', verdict)
+    t = t.replace('u.prompt', "'Work: '+u.work+' Source: '+u.source+'. Acceptance: '+u.acceptance").replace('u.id', 'u.unit_id')
+    return t
+
+
+def plan_main(argv):
+    """make-workflow.py --plan SWARM-PLAN.json --workflow-id W0-01 --out-dir DIR: emit a launch that satisfies the LAUNCH CONTRACT."""
+    sys.path.insert(0, str(ROOT))
+    import staffing
+    p = argparse.ArgumentParser(prog='make-workflow.py --plan', description=plan_main.__doc__)
+    p.add_argument('--plan', required=True, help='Path to a blackceo.swarm-plan/v2 SWARM-PLAN.json.')
+    p.add_argument('--workflow-id', dest='workflow_id', required=True)
+    p.add_argument('--out-dir', dest='out_dir', required=True)
+    p.add_argument('--builder', default='opus')
+    p.add_argument('--reviewer', default='sonnet')
+    p.add_argument('--repair', action='store_true', help='Repair relaunch: emit only the units that are not yet PASS (journal-attested).')
+    p.add_argument('--state-dir', dest='state_dir', default=None, help='Guard state dir (default: the real one).')
+    a = p.parse_args(argv)
+    try:
+        plan_path = Path(a.plan).expanduser().resolve()
+        doc = json.loads(plan_path.read_text(encoding='utf-8'))
+        errors = staffing.validate_plan(doc)
+        if errors:
+            raise ValueError('plan is invalid: ' + '; '.join(errors[:8]))
+        wf = next((w for w in staffing.workflows(doc) if w['workflow_id'] == a.workflow_id), None)
+        if wf is None:
+            raise ValueError(f'--workflow-id {a.workflow_id!r} is not a workflow of {plan_path}. Known: {", ".join(w["workflow_id"] for w in staffing.workflows(doc))}')
+        if not a.builder.strip() or not a.reviewer.strip() or staffing.model_family(a.builder) == staffing.model_family(a.reviewer):
+            raise ValueError('Builder and independent reviewer must name different nonempty model families.')
+        units = wf['units']
+        if a.repair:
+            units = staffing.pending_units(plan_path, doc, wf, a.state_dir)
+            if not units or len(units) == len(wf['units']):
+                raise ValueError('--repair needs a workflow with some, but not all, units already PASS (journal-attested); pending units: %d of %d.' % (len(units), len(wf['units'])))
+        cap = staffing.launch_agent_cap(doc, a.state_dir)  # min(plan cap, limits.json, capacity_probe): the measured per-workflow cap
+        lanes = staffing.agent_count({'units': units}, cap)
+        windowed = len(units) > cap
+        wave = re.search(r'W([0-9]{1,2})', a.workflow_id)
+        span = 'WU001' if len(units) == 1 else f'WU001..WU{len(units):03}'
+        name = f'swarm-W{wave.group(1) if wave else 0}-build+qc-{span}-{lanes}L'
+        if not NAME_RE.match(name):
+            raise ValueError(f'Computed workflow name {name!r} does not match {NAME_RE.pattern}.')
+        meta = {'name': name, 'description': f'{a.workflow_id}: {len(units)} planned units', 'phases': [{'title': 'Build'}, {'title': 'QC'}]}
+        script = ('// workflow-guard plan launch for ' + a.workflow_id + '; fans out over args.units (the plans own units).\n'
+                  'export const meta = ' + json.dumps(meta) + ';\nconst RUN_ROOT = ' + json.dumps(str(plan_path.parent)) + ';\n'
+                  + (staffing.window_helper(cap) if windowed else '')
+                  + plan_template(windowed).replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)))
+        launch_args = {'workflowId': a.workflow_id, 'units': units, 'attemptId': f'{a.workflow_id}-{int(time.time() * 1000)}'}
+        check = subprocess.run([NODE, str(ROOT / 'validate.mjs')], input=json.dumps({'script': script, 'args': launch_args, 'windowHelper': staffing.WINDOW_HELPER}), text=True, capture_output=True, timeout=15, env={**os.environ, 'WORKFLOW_GUARD_CAP': str(cap)})
+        try:
+            verdict = json.loads(check.stdout)
+        except ValueError as exc:
+            raise ValueError('Validator did not return a JSON verdict. Check Node and the installed Acorn dependency.') from exc
+        if check.returncode or not verdict.get('ok'):
+            raise ValueError('Generated workflow failed preflight: ' + '; '.join(verdict.get('errors', [])))
+        out = Path(a.out_dir).expanduser().resolve()
+        if out.exists() and not out.is_dir():
+            raise ValueError(f'Output path is an existing file: {out}.')
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / f'workflow-{a.workflow_id}.js'
+        launch = {'scriptPath': str(target), 'args': launch_args}
+        (out / f'launch-{a.workflow_id}.json').write_text(json.dumps(launch, indent=2) + '\n', encoding='utf-8')
+        target.write_text(script, encoding='utf-8')
+        print(json.dumps({'launch': launch, 'launchInput': str(out / f'launch-{a.workflow_id}.json'), 'name': name, 'agentCount': lanes, 'units': len(units), 'status': 'VALIDATED_NOT_LAUNCHED'}))
+        print(f'LAUNCH: call the Workflow tool with exactly the JSON in {out / ("launch-" + a.workflow_id + ".json")} (scriptPath plus args.workflowId, the {len(units)} planned units and args.attemptId). At most {cap} agents run at once (measured per-workflow cap{", enforced by the rolling window" if windowed else ""}). To relaunch after an admitted launch, change args.attemptId to a new unique value.')
+        return 0
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        p.error(str(exc))
+
+
 def host_cap():
-    """Host ceiling: WORKFLOW_GUARD_CAP when it is an integer 1..10, otherwise cpu_count - 2."""
+    """Per-workflow cap ceiling: measured from the box (RAM, cores, Docker/Hostinger limits via capacity_probe.py), max 10,
+    10 on the operator's Mac. WORKFLOW_GUARD_CAP env, when an integer 1..10, narrows it. Plan mode uses
+    staffing.launch_agent_cap (plan cap, limits.json, plan capacity_probe) instead."""
     raw = os.environ.get('WORKFLOW_GUARD_CAP')
     if raw is not None and raw.strip():
         try:
@@ -43,7 +136,12 @@ def host_cap():
             requested = 0
         if 1 <= requested <= 10:
             return requested
-    return max(1, (os.cpu_count() or 1) - 2)
+    try:
+        sys.path.insert(0, str(ROOT))
+        import capacity_probe
+        return capacity_probe.probe()['per_workflow_cap']
+    except Exception:
+        return 10
 
 
 def load_units(path):
@@ -126,6 +224,8 @@ def register_program(run_root, program, slices=()):
 
 
 def main():
+    if '--plan' in sys.argv[1:]:
+        return plan_main([x for x in sys.argv[1:]])
     if any(arg == '--name' or arg.startswith('--name=') for arg in sys.argv[1:]):
         print('make-workflow.py: error: --name is a removed legacy flag; use --program/--wave/--phase. The workflow name is computed as <program>-W<wave>-<phase>-<firstID>..<lastID>-<lanes>L.', file=sys.stderr)
         return 2
@@ -155,7 +255,7 @@ def main():
         run_root = run_root.resolve()
         if run_root.exists() and not run_root.is_dir():
             raise ValueError(f'--run-root is an existing file, not a directory: {run_root}.')
-        cap = min(10, host_cap(), a.provider_slots - a.reserve)
+        cap = min(10, host_cap(), a.provider_slots - a.reserve)  # non-plan mode: ceiling 10 (measured per-workflow cap max); host_cap() env override only
         if cap < 1:
             raise ValueError('No available provider slots remain after reserves.')
         if not a.builder.strip() or not a.reviewer.strip() or a.builder == a.reviewer:

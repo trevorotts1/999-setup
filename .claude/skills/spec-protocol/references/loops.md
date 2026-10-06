@@ -88,8 +88,9 @@ never after it returns.
 
 ## The budget derivation — v4 9.4 (carried here so it is never cited and missing)
 
-Every loop interval and every agent ceiling in this project comes from this
-derivation — never chosen, never carried from another project (Law 38).
+Every loop interval in this project comes from this derivation — never chosen,
+never carried from another project (Law 38). The number of agents is not an output of
+it: the swarm plan sets it (`references/swarm-plan.md`).
 The arithmetic transfers; the figures do not. Run it with your own measurements.
 
 **The seven quantities.** Take the first three from the interview; measure the rest.
@@ -98,7 +99,7 @@ The arithmetic transfers; the figures do not. Run it with your own measurements.
 |---|---|---|
 | **W** | The capacity window, in minutes | MEASURED by the run, never asked — A6 deleted (`interview.md` §3, "Measured or defaulted — never asked"). Provider-determined: DeepSeek direct has no window (topped-up balance); Ollama Cloud and Agnes carry 5-hour windows (verified against live provider pages at run time); anything else the run's own watch measures. |
 | **A** | The allowance: how much agent work fits in one window, in agent-minutes of the cheapest execution model you will actually use | Measured — run one agent on real work for a timed stretch, read the fraction of the window's allowance it consumed, divide |
-| **N** | Agents running at once | Derived below, then capped by the platform caps — the smaller always wins |
+| **N** | Agents running at once | The swarm plan's `max_working_agents` across the running workflows (each `min(clientCap, units)`); the derivation solves for the interval I, never for N |
 | **I** | The loop interval, in minutes | Derived below |
 | **D** | The duty cycle: minutes of real agent work one wake-up does | Measured over the first few ticks. Never larger than I |
 | **T** | The tier multiplier: what one minute of a tier costs relative to the cheapest execution tier | Measured. The cheapest execution tier is 1 by definition |
@@ -126,47 +127,43 @@ Rearranged — solve for the interval when you know how many agents you want:
 I  >=  [ W * N_exec * D_exec * T_exec  +  (W / P) * N_plan * D_plan * T_plan ]  /  A
 ```
 
-Or solve for the agent ceiling when the interval is fixed:
+N is set by the plan and is not solved for. When the allowance A is small, the
+interval I widens, and so does the planning cadence P; the agent count stays as planned.
+
+**Round the interval UP. Always.** Rounding the other way spends capacity you do not
+have, and the failure is not gradual.
+
+**Worked example.** Ten executing agents (one workflow of 10 units), cheapest execution
+tier, a stronger planner once every sixth tick. PLACEHOLDER inputs (replace every one with
+your own measurement): `W=300`, `A=500`, `N_exec=10`, `D_exec=4`, `T_exec=1`, `N_plan=1`,
+`D_plan=2`, `T_plan=5`, `P=6`.
 
 ```
-N_exec  <=  [ A  -  (W / (I * P)) * N_plan * D_plan * T_plan ]  /  [ (W / I) * D_exec * T_exec ]
-```
-
-**Round the interval UP and the ceiling DOWN. Always.** Rounding the other way spends
-capacity you do not have, and the failure is not gradual.
-
-**Worked example — a small plan.** Two executing agents, cheapest execution tier,
-a stronger planner once every sixth tick. PLACEHOLDER inputs (replace
-every one with your own measurement): `W=300`, `A=120`, `N_exec=2`, `D_exec=4`,
-`T_exec=1`, `N_plan=1`, `D_plan=2`, `T_plan=5`, `P=6`.
-
-```
-numerator = (300 * 2 * 4 * 1) + ((300 / 6) * 1 * 2 * 5)
-          =  2400             +  500
-          =  2900
-I  >=  2900 / 120  =  24.1667  ->  round up to  25 minutes
+numerator = (300 * 10 * 4 * 1) + ((300 / 6) * 1 * 2 * 5)
+          =  12000            +  500
+          =  12500
+I  >=  12500 / 500  =  25  ->  25 minutes
 
 Check at I = 25:  ticks = 300 / 25 = 12
-                  executing spend = 12 * 2 * 4 * 1        = 96
+                  executing spend = 12 * 10 * 4 * 1       = 480
                   planning  spend = (12 / 6) * 1 * 2 * 5  = 20
-                  total 116, against an allowance of 120.  Fits.
+                  total 500, against an allowance of 500.  Fits.
 ```
 
 And the same inputs against an unbudgeted five-minute interval: ticks = 60,
-executing spend = 480 against an allowance of 120 — four times the allowance; the
-window exhausts after 15 ticks = 75 minutes of a 300-minute window. **A five-minute
-loop on a small plan does not run slowly — it stops a quarter of the way in.** That
-is the whole reason Law 38 exists.
+executing spend = 2400 against an allowance of 500 — nearly five times the allowance;
+the window exhausts after 12 ticks = 60 minutes of a 300-minute window. **A
+five-minute loop on a small plan does not run slowly — it stops a fifth of the way in.**
+That is the whole reason Law 38 exists.
 
 **Record all of it in the execution plan's budget section** (document 16): the seven
-quantities, where each came from, the arithmetic, and the resulting interval and
-ceiling. **Re-derive when any input moves** — a plan change, a different effort
+quantities, where each came from, the arithmetic, and the resulting interval. **Re-derive when any input moves** — a plan change, a different effort
 setting, a measured duty cycle that turns out wrong. The budget-watch loop is what
 notices; this is what it re-runs.
 
 **The comparative critic is counted here too.** Every review tick carries the
 comparative sub-stage (`references/gauntlet.md`), and its fresh-context critic is
-an ADDITIONAL concurrent consumer: count it against the agent ceiling N like a
+an ADDITIONAL concurrent consumer: count it among the concurrent consumers like a
 builder — one more concurrent agent, one more line in the spend-per-window
 arithmetic. Unbudgeted critics break the budget the same way unbudgeted builders
 do. That makes FOUR roles that concurrently consume budget on a review tick —
@@ -381,8 +378,8 @@ watches something it is not part of.
 | Property | Value |
 |---|---|
 | **Why it exists** | Throttling after a window is exhausted is not throttling. By then the choice is gone. The only useful moment to slow down is while there is still capacity to slow down with. |
-| **The tick** | Read consumption against the budget. Project it forward to the end of the window. If the projection exceeds the allowance, throttle in this order, cheapest first: (1) raise the interval, (2) lower the agent ceiling, (3) drop the planning tier's frequency, (4) drop tiers on execution work that can take it. Warn loop 6 at a stated fraction of the allowance — written in the budget file, never improvised. |
-| **Owns** | The current interval and agent ceiling. Every other loop reads those from the budget file and never sets them. |
+| **The tick** | Read consumption against the budget. Project it forward to the end of the window. If the projection exceeds the allowance, throttle in this order, cheapest first: (1) raise the interval, (2) drop the planning tier's frequency, (3) drop tiers on execution work that can take it. A workflow's agent count is not a throttle lever. Warn loop 6 at a stated fraction of the allowance — written in the budget file, never improvised. |
+| **Owns** | The current interval. Every other loop reads it from the budget file and never sets it. |
 | **Stop condition** | Same as loop 6. |
 | **The trap** | Re-deriving from assumed inputs instead of measured ones. The duty cycle is the input that most often turns out to be wrong. Measure it again before re-deriving. |
 

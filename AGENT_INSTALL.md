@@ -12,11 +12,11 @@ this procedure exactly. Do not skip steps. Do not stop early.
 - ⛔ **Never touch the user's normal Claude Code configuration** (`settings.json`,
   `.claude.json`, environment). Plain `claude` must stay Anthropic-direct and non-routed.
   **One exception, owner-authorized:** the orchestrator runs spec-protocol's
-  `tools/install-hooks.sh` (Windows: `tools/install-hooks.ps1`), which backs `settings.json`
+  `tools/install-hooks.sh` (Windows: `tools/install-hooks.ps1`), which (with no argument, for `claude` and, when it exists, `claude-nine`) backs `settings.json`
   up to `settings.json.bak-spec-protocol-<timestamp>` first and then MERGES exactly four hook
   registrations into it (Stop → `conversation-gate.py`, `gate0-claim-gate.py`; PreToolUse
-  `Workflow` → `workflow-syntax-gate.py`; PreToolUse `Workflow|Agent|Task` →
-  `dispatch-gate.py`), keeping every existing key and entry. Nothing else in the file changes.
+  `Workflow` → `workflow-syntax-gate.py`; PreToolUse `Workflow|Agent|Task|SendMessage` →
+  `dispatch-gate.py`, timeout 120), keeping every existing key and entry. Nothing else in the file changes.
 - ⛔ **Never infer the operating system from the current shell.** Detect it from the OS.
 - ⛔ **Prefer the bundled deterministic scripts** over improvising shell commands.
 - ⛔ **Do not stop until the validation suite passes, or you can name exactly one blocker**

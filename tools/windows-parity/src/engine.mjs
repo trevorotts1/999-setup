@@ -6,9 +6,11 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, copyFileSync, statSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { IS_WINDOWS, probeCores } from './platform.mjs';
+// The width instrument and the ONE cap formula live in the spec-protocol skill (capacity_probe.py via width.mjs); this tool carries no copy.
+import { measureRamGb, measureCapacity, clientCapOf } from '../../../.claude/skills/spec-protocol/scripts/common/width.mjs';
 
 export const WORKFLOW_CEILING = 50;
-export const OPERATOR_WAVE_CAP = 20;
+export const UNDETERMINED_CAP = 4;   // conservative floor, used (and named on the card) only when no cap could be measured
 export const SESSION_AGENT_BUDGET = 1000;
 export const GAUNTLET_EXPECTED = 52;
 export const GAUNTLET_SOFT_LOW = 75;
@@ -102,14 +104,11 @@ export function resolveCapacity(answers, opts = {}) {
     return { error: `RESERVE_PCT must be a whole number 0–100 (got: ${answers.RESERVE_PCT})`, exit: 2, lines: [] };
   }
 
-  // AXIS 1: WIDTH — cores
-  // A SUPPLIED CORES that is not a positive whole number is an ERROR (exit 3,
-  // never a fallback measurement) — identical to the Bash tool. Measurement
-  // happens only when CORES was absent.
+  // AXIS 1: WIDTH — cores and RAM, MEASURED, never declared (S1)
+  // A SUPPLIED CORES / RAM_GB that is not a positive whole number is an ERROR (exit 3,
+  // never a fallback measurement) — identical to the Bash tool.
   const coresSupplied = answers.CORES !== undefined && answers.CORES !== '';
-  let cores;
-  let coresSource;
-  let coresInstrument = '';
+  let cores = null, coresSource, coresInstrument = '';
   if (coresSupplied) {
     cores = Number(answers.CORES);
     coresSource = 'SUPPLIED';
@@ -121,27 +120,40 @@ export function resolveCapacity(answers, opts = {}) {
       ? { cores: opts.cores, instrument: 'test-fixture' }
       : probeCores();
     if (measured.cores === null || measured.cores === undefined || !Number.isInteger(measured.cores) || measured.cores < 1) {
-      return {
-        error: 'ERROR: could not measure cores (sysctl/nproc both unavailable).\n       UNDETERMINED — ASK the operator for the core count and rerun\n       with CORES=<n> in the answers file. Never assume a width.',
-        exit: 3, lines: []
-      };
+      coresSource = 'UNMEASURABLE';
+      coresInstrument = 'none (sysctl and nproc both unavailable)';
+    } else {
+      cores = measured.cores; coresInstrument = measured.instrument; coresSource = 'MEASURED';
     }
-    cores = measured.cores;
-    coresInstrument = measured.instrument;
-    coresSource = 'MEASURED';
+  }
+  const ramSupplied = answers.RAM_GB !== undefined && answers.RAM_GB !== '';
+  let ramGb = null, ramSource, ramInstrument = '';
+  if (ramSupplied) {
+    ramGb = Number(answers.RAM_GB);
+    ramSource = 'SUPPLIED';
+    if (!Number.isInteger(ramGb) || ramGb < 1) {
+      return { error: `ERROR: RAM_GB must be a positive whole number of GB (got: ${answers.RAM_GB})`, exit: 3, lines: [] };
+    }
+  } else {
+    const m = (opts.ramGb !== undefined && opts.ramGb !== null) ? { gb: opts.ramGb, instrument: 'test-fixture' } : measureRamGb();
+    if (m && Number.isInteger(m.gb) && m.gb >= 1) { ramGb = m.gb; ramInstrument = m.instrument; ramSource = 'MEASURED'; }
+    else { ramSource = 'UNMEASURABLE'; ramInstrument = 'none (hw.memsize and /proc/meminfo both unavailable)'; }
   }
 
-  // CLIENT CAP: min(systemConcurrentMax, cores-2); never 16 default.
-  const sysMaxRaw = answers.SYSTEM_CONCURRENT_MAX ?? '';
-  const sysMax = sysMaxRaw === '' ? NaN : Number(sysMaxRaw);
-  if (sysMaxRaw === '') {
-    return { error: 'ERROR: systemConcurrentMax UNDETERMINED — no declared SYSTEM_CONCURRENT_MAX\n       supplied. The run refuses to plan (it never defaults to 16).\n       Ask one plain question for the machine\'s declared max and rerun.', exit: 3, lines: [] };
+  // THE WIDTH RULE: clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)),
+  // computed by capacity_probe.py (container limits beat host totals) and by nothing in this file.
+  let clientCap = null, capDetail = '', capUndetermined = false;
+  if (coresSource === 'MEASURED' && ramSource === 'MEASURED' && opts.cores == null && opts.ramGb == null) {
+    const m = measureCapacity();
+    if (m) { clientCap = m.cap; capDetail = `effective ${m.ramGb} GB, ${m.cores} cores via ${m.source} (container limits beat host totals)`; }
+  } else if (cores !== null && ramGb !== null) {
+    clientCap = clientCapOf(ramGb, cores); capDetail = 'formula applied to the supplied cores/RAM';
   }
-  if (!Number.isInteger(sysMax) || sysMax < 1) {
-    return { error: `ERROR: SYSTEM_CONCURRENT_MAX must be a positive whole number (got: ${sysMaxRaw}) — refusing to plan`, exit: 3, lines: [] };
+  if (!Number.isInteger(clientCap)) {
+    clientCap = UNDETERMINED_CAP;
+    capDetail = `UNDETERMINED: cores/RAM/capacity_probe.py unavailable (needs python3 3.8+); the conservative floor ${UNDETERMINED_CAP} is used and the run keeps going`;
+    capUndetermined = true;
   }
-  const coresMinus2 = Math.max(cores - 2, 1);
-  const clientCap = Math.min(sysMax, coresMinus2);
   const perWorkflow = clientCap;
   const harnessMax = WORKFLOW_CEILING * perWorkflow;
 
@@ -211,7 +223,7 @@ export function resolveCapacity(answers, opts = {}) {
         return { error: `ERROR: AGNES_PLAN must be free, 40 or 100 (got: ${plan})`, exit: 2, lines: [] };
       }
       providerNote = 'Agnes is request-rate limited, not concurrency limited. It carries LOW-FREQUENCY roles (blind critic verdicts, ~1–2 per unit) — never the builder swarm. WEB-RESEARCH agnes-ai.com\'s current rate rules FIRST; these figures are the FALLBACK, and the ledger records which source was used.';
-      burnGovernor = 'count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → lower N → drop planner frequency → drop tier';
+      burnGovernor = 'count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → drop planner frequency → drop tier';
       providerApplies = 1;
       break;
     }
@@ -226,11 +238,16 @@ export function resolveCapacity(answers, opts = {}) {
       return { error: `ERROR: BUILDER_PROVIDER must be anthropic|deepseek-direct|deepseek-ollama|ollama-cloud|agnes|openrouter (got: ${builderProvider})`, exit: 2, lines: [] };
   }
 
-  const operatorApplies = builderProvider === 'anthropic' ? 1 : 0;
+  // THE RECONCILIATION RULE: the smaller of the harness (50 x clientCap) and the provider ceiling minus
+  // its reserve; there is NO policy wave cap on any path.
   let governing = harnessMax;
   let governSrc = 'harness';
-  if (operatorApplies === 1 && OPERATOR_WAVE_CAP < governing) { governing = OPERATOR_WAVE_CAP; governSrc = 'operator cap'; }
   if (providerApplies === 1 && providerUsable < governing) { governing = providerUsable; governSrc = 'provider ceiling − reserve'; }
+  let providerFigureNote = '';
+  if (governing < perWorkflow) {
+    providerFigureNote = ` [provider figure ${governing} recorded; a workflow is never narrower than min(clientCap, its units)]`;
+    governing = perWorkflow; governSrc = `one workflow of ${perWorkflow}`;
+  }
 
   let persistent = 0, width = governing, teamRefused = 0;
   if (mode === 'team') {
@@ -239,20 +256,23 @@ export function resolveCapacity(answers, opts = {}) {
       teamRefused = 1; persistent = 0; width = governing;
     } else {
       width = governing - persistent;
+      if (width < perWorkflow) { width = perWorkflow; governing = width + persistent; }
     }
   }
 
   let workflows = Math.max(1, Math.ceil(width / perWorkflow));
   if (workflows > WORKFLOW_CEILING) workflows = WORKFLOW_CEILING;
-  let agentsPerWf = perWorkflow;
-  if (width < perWorkflow) agentsPerWf = width;
+  const agentsPerWf = perWorkflow;   // the cap; a plan row runs min(clientCap, its units)
 
   let throttle = answers.THROTTLE || (builderProvider === 'deepseek-direct' ? 'full' : 'gentle');
 
-  const scmMark = provenanceMark(answers.SYSTEM_CONCURRENT_MAX_SOURCE);
-  const coresMark = coresSource === 'MEASURED'
-    ? `[MEASURED ${coresInstrument} ${now}]`
-    : provenanceMark(answers.CORES_SOURCE);
+  const ramMark = ramSource === 'MEASURED' ? `[MEASURED ${ramInstrument} ${now}]`
+    : ramSource === 'UNMEASURABLE' ? `[UNDETERMINED ${ramInstrument}]` : provenanceMark(answers.RAM_GB_SOURCE);
+  const coresMark = coresSource === 'MEASURED' ? `[MEASURED ${coresInstrument} ${now}]`
+    : coresSource === 'UNMEASURABLE' ? `[UNDETERMINED ${coresInstrument}]` : provenanceMark(answers.CORES_SOURCE);
+  const capMark = capUndetermined ? `[UNDETERMINED no cap could be measured — conservative floor ${UNDETERMINED_CAP} ${now}]`
+    : (coresSource === 'MEASURED' && ramSource === 'MEASURED') ? `[MEASURED capacity_probe.py ${coresInstrument}+${ramInstrument} ${now}]`
+    : `[DERIVED cores=${coresSource} ram=${ramSource} ${now}]`;
   const reserveMark = provenanceMark(answers.RESERVE_PCT_SOURCE);
   const planMark = provenanceMark(answers.OLLAMA_PLAN_SOURCE || answers.AGNES_PLAN_SOURCE || answers.DEEPSEEK_TIER_SOURCE || '');
   const fpLine = answers.CONFIG_FP
@@ -265,9 +285,13 @@ export function resolveCapacity(answers, opts = {}) {
   lines.push(`# CAPACITY LEDGER — ${project} — ${now}`);
   lines.push(`Launcher: ${launcher}      Harness mode: ${harness}`);
   lines.push(fpLine);
-  lines.push(`Cores: ${cores} (${coresSource}) → clientCap = min(systemConcurrentMax, cores−2) = ${clientCap}`);
-  lines.push(`  clientCap provenance: systemConcurrentMax=${sysMax} (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [${scmMark}]; cores ${coresMark}`);
-  lines.push(`  per-workflow concurrency = clientCap = ${clientCap}`);
+  lines.push(`Cores: ${cores ?? 'UNDETERMINED'} (${coresSource}) · RAM: ${ramGb ?? 'UNDETERMINED'} GB (${ramSource})`);
+  lines.push(`clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = ${clientCap}   ${capMark}`);
+  lines.push(`  ${capDetail}`);
+  lines.push(`  inputs: cores ${coresMark}; ram ${ramMark}`);
+  lines.push('  MEASURED on this machine by tools/hooks/capacity_probe.py — never declared, never asked, never an environment read');
+  lines.push(`  (no measurable cap → clientCap is the conservative floor ${UNDETERMINED_CAP}, marked UNDETERMINED, and the run keeps going)`);
+  lines.push(`  per-workflow concurrency = agent_count = min(clientCap, the workflow's units) = ${clientCap} at most`);
   lines.push('Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on `cx/` = ~372K real, NOT the profile\'s 900K)');
   lines.push('ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):');
   lines.push('  orchestrator=lead seat');
@@ -277,9 +301,9 @@ export function resolveCapacity(answers, opts = {}) {
   lines.push(`  technical-judge=${roleOrUnresolved(answers.ROLE_TECHNICAL)}`);
   lines.push(`  security-judge=${roleOrUnresolved(answers.ROLE_SECURITY)}`);
   lines.push(`  release-judge=${roleOrUnresolved(answers.ROLE_RELEASE)}`);
-  lines.push(`Ceilings: ${providerLabel} | operator cap ${operatorApplies === 1 ? `${OPERATOR_WAVE_CAP}/wave` : 'n/a (own provider keys)'}   ${planMark}`);
+  lines.push(`Ceilings: ${providerLabel} | no policy wave cap on any path   ${planMark}`);
   lines.push(`Reserve applied: ${reservePct}%${providerApplies === 1 ? ` → provider usable ${providerUsable} of ${providerCeiling}` : ' (no numeric provider ceiling to reserve against)'}   ${reserveMark}`);
-  lines.push(`Governing number: harness ${WORKFLOW_CEILING}×${perWorkflow}=${harnessMax} | operator-cap ${operatorApplies === 1 ? OPERATOR_WAVE_CAP : 'n/a'} | provider ${providerApplies === 1 ? providerUsable : 'n/a'} → GOVERNS: ${governing} (${governSrc})`);
+  lines.push(`Governing number: harness ${WORKFLOW_CEILING}×${perWorkflow}=${harnessMax} | provider ${providerApplies === 1 ? providerUsable : 'n/a (subscription-metered — the burn governor is the only limiter)'} → GOVERNS: ${governing} (${governSrc})${providerFigureNote}`);
   if (mode === 'team') {
     if (teamRefused === 1) {
       lines.push(`AGENT TEAM: mode=team REFUSED BY ARITHMETIC — lead+${commanders} commanders = ${commanders + 1} persistent slots > governing number ${governing}.`);
@@ -297,18 +321,13 @@ export function resolveCapacity(answers, opts = {}) {
     lines.push('AGENT TEAM: mode=single — no persistent commanders; the commander stations collapse onto the lead.');
   }
   lines.push(`WAVE SIZE: ${width}${mode === 'team' && teamRefused === 0 ? ` (workflow width) + ${persistent} persistent = ${governing}` : ''}    WORKFLOW COUNT: ${workflows}    AGENTS PER WORKFLOW: ≤${agentsPerWf} (= clientCap ${clientCap})`);
-  // batch scaling worked example (16 builder slices)
-  const batchCount = Math.ceil(16 / clientCap);
-  const parts = [];
-  let n = 16;
-  while (n > 0) {
-    const take = Math.min(n, clientCap);
-    parts.push(take);
-    n -= take;
-  }
-  lines.push(`BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, \`references/gauntlet.md\` §13):`);
-  lines.push(`  batch size = clientCap (${clientCap}); batches = ceil(slice count / clientCap); wave count unchanged.`);
-  lines.push(`  Worked example: 16 builder slices at clientCap ${clientCap} → ${batchCount} batch${batchCount > 1 ? 'es' : ''} (${parts.join(' + ')}). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.`);
+  lines.push(`DISPATCH SHAPE (S2 — the six gauntlet workflows, \`references/gauntlet.md\` §13):`);
+  lines.push('  every slice of a workflow is passed to a SINGLE pipeline() call; the harness runs');
+  lines.push(`  clientCap (${clientCap}) of them at once and queues the rest as a rolling window.`);
+  lines.push("  Never split a workflow's slices into sequential batches by hand.");
+  lines.push(`  Worked example: 16 builder slices at clientCap ${clientCap} → ONE pipeline() call of 16 items,`);
+  lines.push(`  ${clientCap} live and ${Math.max(16 - clientCap, 0)} queued, each queued item starting the instant a slot frees.`);
+  lines.push('  THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.');
   lines.push('AGENT BUDGET DECLARATION (all eight §17 quantities):');
   lines.push(`  1. number of workflows: ${workflows}`);
   lines.push(`  2. agents per workflow: ≤${agentsPerWf}`);
@@ -341,14 +360,15 @@ export function resolveCapacity(answers, opts = {}) {
   lines.push('   trigger=<measured|429-cluster|balance-check|tripwire|resume-remeasure> | source-mark=<new mark>)');
   if (providerNote) lines.push(`NOTE: ${providerNote}`);
   lines.push('');
-  lines.push('IMPORTANT CAPACITY RULE: "Provider capacity is NOT an instruction to maximize agent');
-  lines.push('count. Do not spawn additional agents simply because DeepSeek or OpenRouter can');
-  lines.push('support them. Every spawned agent must have: unique responsibility; evidence to');
-  lines.push('inspect or work to perform; an explicit deliverable; an acceptance criterion. More');
-  lines.push('agents are useful only when the work can actually be decomposed into independent');
-  lines.push('valuable tasks. Quality per agent matters more than raw agent count."');
+  lines.push('STAFFING RULE (owner contract 2026-10-06): a workflow runs agent_count = min(clientCap, its units)');
+  lines.push("agents, clientCap being this box's measured per-workflow cap above (1..10), and up to 50");
+  lines.push('workflows run concurrently (at most 500 agents). The plan file');
+  lines.push('(references/swarm-plan.md) states both numbers and the hooks enforce them. Provider figures');
+  lines.push('are recorded on this card; they never narrow a workflow. Only the measured clientCap (this box\'s');
+  lines.push('RAM, cores and container limits) sets how many agents a workflow runs at once. Each agent owns one');
+  lines.push('unit: a unit has a concrete output path, an acceptance criterion and a verdict file.');
   lines.push('');
-  lines.push('Waves narrower than the ceiling run at the width the dependency graph allows (Law 45)');
-  lines.push('— the ceiling only ever lowers the dispatch, never widens a wave.');
+  lines.push('A workflow whose dependency is not yet met is held by not launching it. Every workflow that');
+  lines.push('is ready launches now, up to max_active_workflows.');
   return { exit: 0, lines, error: null };
 }

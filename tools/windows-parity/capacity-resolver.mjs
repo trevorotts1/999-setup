@@ -14,14 +14,15 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parseAnswers, resolveCapacity } from './src/engine.mjs';
 import { probeCores } from './src/platform.mjs';
+import { measureCapacity } from '../../.claude/skills/spec-protocol/scripts/common/width.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------- selftest
 // Proves the instrument before any run is believed: known-good scenario cards
 // match their golden fixture; known-bad inputs fail closed with plain errors
-// and the exact exit codes; live cores measure and feed the formula; missing
-// systemConcurrentMax refuses to plan (never 16). No network, no writes.
+// and the exact exit codes; live cores and RAM measure and feed the ONE formula
+// (capacity_probe.py: clientCap = clamp(1, 10, min(floor(ram / GB_PER_AGENT), cores))). No network, no writes.
 function selftest() {
   const failures = [];
   const assert = (ok, name, extra) => {
@@ -31,7 +32,7 @@ function selftest() {
   const goldenDir = path.join(__dirname, 'tests', 'golden');
   const run = (answersPath, cores) => {
     const answers = parseAnswers(readFileSync(answersPath, 'utf8'));
-    return resolveCapacity(answers, { cores, nowIso: '2026-08-21T00:00:00Z' });
+    return resolveCapacity(answers, { cores, ramGb: 24, nowIso: '2026-08-21T00:00:00Z' });
   };
 
   process.stdout.write('SELFTEST — capacity-resolver.mjs (windows-parity)\n\n');
@@ -56,31 +57,38 @@ function selftest() {
   }
 
   // Instrument checks
-  const bad = parseAnswers('BUILDER_PROVIDER=not-a-provider\nHARNESS=claude-nine\nSYSTEM_CONCURRENT_MAX=10\n');
+  const bad = parseAnswers('BUILDER_PROVIDER=not-a-provider\nHARNESS=claude-nine\n');
   const badRes = resolveCapacity(bad, { cores: 12 });
   assert(badRes.exit === 2, 'known-bad provider rejected (exit 2)', badRes.error);
   assert(badRes.error.includes('BUILDER_PROVIDER'), 'known-bad provider names the field');
 
-  const badHarness = parseAnswers('HARNESS=nope\nBUILDER_PROVIDER=anthropic\nSYSTEM_CONCURRENT_MAX=10\n');
+  const badHarness = parseAnswers('HARNESS=nope\nBUILDER_PROVIDER=anthropic\n');
   assert(resolveCapacity(badHarness, { cores: 12 }).exit === 2, 'known-bad harness rejected (exit 2)');
 
-  const missing = resolveCapacity(parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\n'), { cores: 12 });
-  assert(missing.exit === 3 && missing.error.includes('systemConcurrentMax UNDETERMINED'), 'missing systemConcurrentMax refused to plan (exit 3, never 16)');
-  assert(missing.error.includes('never defaults to 16'), 'refusal names the never-16 rule');
+  const badRam = resolveCapacity(parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\nCORES=12\nRAM_GB=lots\n'), {});
+  assert(badRam.exit === 3 && badRam.error.includes('RAM_GB must be a positive whole number'), 'non-numeric RAM_GB rejected fail-closed (exit 3)');
 
-  const badCores = parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\nSYSTEM_CONCURRENT_MAX=10\nCORES=banana\n');
+  // The cap is the probe's formula on the supplied numbers: 12 cores / 24 GB -> 10; 6 cores / 9 GB -> 6; 8 cores / 8 GB -> 5.
+  for (const [c, r, want] of [[12, 24, 10], [6, 9, 6], [8, 8, 5], [2, 8, 2]]) {
+    const res = resolveCapacity(parseAnswers(`HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\nCORES=${c}\nRAM_GB=${r}\n`), {});
+    const line = (res.lines || []).find((l) => l.startsWith('clientCap = '));
+    assert(res.exit === 0 && line && line.includes(`effective_cores)) = ${want}`), `${c} cores / ${r} GB -> clientCap ${want}`, line || res.error);
+  }
+  const six = resolveCapacity(parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=deepseek-direct\nCORES=6\nRAM_GB=9\n'), {});
+  assert(six.lines.some((l) => l.includes('harness 50×6=300')) && six.lines.some((l) => l.includes('AGENTS PER WORKFLOW: ≤6 (= clientCap 6)')), 'a cap-6 box narrows the whole card (50 x 6 = 300)');
+  assert(!six.lines.join('\n').includes('cores−2') && !six.lines.join('\n').includes('batches = ceil'), 'no cores-minus-two or hand-batch statement survives on the card');
+
+  const badCores = parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\nCORES=banana\n');
   assert(resolveCapacity(badCores, {}).exit === 3, 'non-numeric CORES rejected fail-closed (exit 3)');
 
-  // Live cores measurement (same instrument the Bash tool uses)
+  // Live measurement (same instruments the Bash tool uses; the cap comes from capacity_probe.py)
   const live = probeCores();
   assert(live.cores !== null && live.cores > 0, `live cores measured (${live.cores}, instrument=${live.instrument})`);
-  if (live.cores !== null) {
-    const capExpected = Math.min(10, Math.max(live.cores - 2, 1));
-    const liveRes = resolveCapacity(parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\nSYSTEM_CONCURRENT_MAX=10\n'), {});
-    assert(liveRes.exit === 0, 'live resolve succeeds');
-    const capLine = liveRes.lines.find((l) => l.startsWith('Cores: '));
-    assert(capLine && capLine.includes(`clientCap = min(systemConcurrentMax, cores−2) = ${capExpected}`), `live cores → clientCap=${capExpected} = min(10, ${live.cores}−2)`, capLine || 'no Cores line');
-  }
+  const cap = measureCapacity();
+  assert(cap !== null && cap.cap >= 1 && cap.cap <= 10, `live capacity probe answers (cap=${cap && cap.cap}, ${cap && cap.ramGb} GB, ${cap && cap.cores} cores, ${cap && cap.source})`);
+  const liveRes = resolveCapacity(parseAnswers('HARNESS=claude-nine\nBUILDER_PROVIDER=anthropic\n'), {});
+  const capLine = (liveRes.lines || []).find((l) => l.startsWith('clientCap = '));
+  assert(liveRes.exit === 0 && cap && capLine && capLine.includes(`effective_cores)) = ${cap.cap}`), `live resolve: clientCap = the probe's cap ${cap && cap.cap}`, capLine || liveRes.error);
 
   process.stdout.write('\n');
   if (failures.length) {

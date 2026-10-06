@@ -29,6 +29,7 @@ foreach ($t in 'HookSkill-Watchdog', 'HookSkill-Hygiene', 'HookSkill-DiskCleanup
     if ($DryRun) { Write-Host "would remove scheduled task $t" } else { Unregister-ScheduledTask -TaskName $t -Confirm:$false; Write-Host "removed scheduled task $t" }
   }
 }
+& $Py (Join-Path $Common 'apply_capacity.py') --restore --manifest (Join-Path $Hooks 'hook-skill-install.json') @dry
 $purgeArg = @(); if ($Purge) { $purgeArg = @('--purge') }
 & $Py (Join-Path $Common 'hookskill_files.py') uninstall --dest $Hooks @purgeArg @dry
 if ($DryRun) { Write-Host 'dry-run: nothing was removed.' } else { Write-Host 'Hook Skill removed. Restart Claude Code to unload the hooks.' }

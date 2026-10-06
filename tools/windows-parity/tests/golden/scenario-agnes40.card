@@ -1,9 +1,13 @@
 # CAPACITY LEDGER — golden-fixture — 2026-08-21T00:00:00Z
 Launcher: claude-nine      Harness mode: claude-nine
 Config fingerprint: UNDETERMINED (not supplied — compute it per capacity.md section 13.4 step 3; a resume compares worlds against it, and a missing one fails toward ASKING)
-Cores: 12 (MEASURED) → clientCap = min(systemConcurrentMax, cores−2) = 10
-  clientCap provenance: systemConcurrentMax=10 (declared, authoritative — never an env read; an env read is REPORTING ONLY, never for computing) [[ASSUMED no-source-given]]; cores [MEASURED test-fixture 2026-08-21T00:00:00Z]
-  per-workflow concurrency = clientCap = 10
+Cores: 12 (MEASURED) · RAM: 24 GB (MEASURED)
+clientCap = clamp(1, 10, min(floor(effective_ram_gb / GB_PER_AGENT), effective_cores)) = 10   [MEASURED capacity_probe.py test-fixture+test-fixture 2026-08-21T00:00:00Z]
+  formula applied to the supplied cores/RAM
+  inputs: cores [MEASURED test-fixture 2026-08-21T00:00:00Z]; ram [MEASURED test-fixture 2026-08-21T00:00:00Z]
+  MEASURED on this machine by tools/hooks/capacity_probe.py — never declared, never asked, never an environment read
+  (no measurable cap → clientCap is the conservative floor 4, marked UNDETERMINED, and the run keeps going)
+  per-workflow concurrency = agent_count = min(clientCap, the workflow's units) = 10 at most
 Context ceiling (session): per resolved model — see ROLE RESOLUTION (claude-codex on `cx/` = ~372K real, NOT the profile's 900K)
 ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved model; RECORD it, never reroute):
   orchestrator=lead seat
@@ -13,18 +17,22 @@ ROLE RESOLUTION (three hops: doctrine role → configured alias → resolved mod
   technical-judge=UNRESOLVED(resolve from live config)
   security-judge=UNRESOLVED(resolve from live config)
   release-judge=UNRESOLVED(resolve from live config)
-Ceilings: Agnes AI, $40/year plan — 1,500 requests / 5 hours (VERIFY-LIVE) | operator cap n/a (own provider keys)   [ASSUMED no-source-given]
+Ceilings: Agnes AI, $40/year plan — 1,500 requests / 5 hours (VERIFY-LIVE) | no policy wave cap on any path   [ASSUMED no-source-given]
 Reserve applied: 25% → provider usable 1 of 1   [ASSUMED no-source-given]
-Governing number: harness 50×10=500 | operator-cap n/a | provider 1 → GOVERNS: 1 (provider ceiling − reserve)
+Governing number: harness 50×10=500 | provider 1 → GOVERNS: 10 (one workflow of 10) [provider figure 1 recorded; a workflow is never narrower than min(clientCap, its units)]
 AGENT TEAM: mode=single — no persistent commanders; the commander stations collapse onto the lead.
-WAVE SIZE: 1    WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤1 (= clientCap 10)
-BATCH SCALING (Issue 19 FIX step 6 — the six gauntlet workflows, `references/gauntlet.md` §13):
-  batch size = clientCap (10); batches = ceil(slice count / clientCap); wave count unchanged.
-  Worked example: 16 builder slices at clientCap 10 → 2 batches (10 + 6). THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
+WAVE SIZE: 10    WORKFLOW COUNT: 1    AGENTS PER WORKFLOW: ≤10 (= clientCap 10)
+DISPATCH SHAPE (S2 — the six gauntlet workflows, `references/gauntlet.md` §13):
+  every slice of a workflow is passed to a SINGLE pipeline() call; the harness runs
+  clientCap (10) of them at once and queues the rest as a rolling window.
+  Never split a workflow's slices into sequential batches by hand.
+  Worked example: 16 builder slices at clientCap 10 → ONE pipeline() call of 16 items,
+  10 live and 6 queued, each queued item starting the instant a slot frees.
+  THE BAR NEVER SHRINKS WITH THE MACHINE — ONLY THE WIDTH DOES.
 AGENT BUDGET DECLARATION (all eight §17 quantities):
   1. number of workflows: 1
-  2. agents per workflow: ≤1
-  3. maximum concurrency: 1 (provider ceiling − reserve)
+  2. agents per workflow: ≤10
+  3. maximum concurrency: 10 (one workflow of 10)
   4. model role per workflow: from ROLE RESOLUTION above — by role and alias, resolved model cited
   5. expected total agent executions: 52 for the initial gauntlet run (8+16+16+8+4), scaled to this task graph
   6. selective-repair formula: N = failed workstreams, one repairer each, ≤12/wave
@@ -37,7 +45,7 @@ Session agent budget (AXIS 2 — the OPERATOR's policy, a LIFETIME COUNT, never 
   dispatch. Commander sessions are separate processes — whether they draw from the same
   1000 is UNDETERMINED; budget pessimistically as if they do until probed.
 Request budget per 5h window: 1,125 requests / 5h (1,500 − 25%) = 3.75/min sustained; at ~25 API requests per agent-task → 45 Agnes agent-tasks per 5-hour window (state the assumption, measure it over the first 5 tasks, re-derive)
-Burn governor: count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → lower N → drop planner frequency → drop tier
+Burn governor: count requests per 5-hour window; when projected window spend > budget, throttle in order: raise interval → drop planner frequency → drop tier
 Throttle: gentle
 Fallback: builder/QC/merger/critic each fall back one tier — never onto the tier that produced the work being judged.
 SEAT lines: the conductor completes one SEAT line per seat in CAPACITY-LEDGER.md
@@ -53,12 +61,13 @@ REVISIONS (append-only; the card above is never edited in place):
    trigger=<measured|429-cluster|balance-check|tripwire|resume-remeasure> | source-mark=<new mark>)
 NOTE: Agnes is request-rate limited, not concurrency limited. It carries LOW-FREQUENCY roles (blind critic verdicts, ~1–2 per unit) — never the builder swarm. WEB-RESEARCH agnes-ai.com's current rate rules FIRST; these figures are the FALLBACK, and the ledger records which source was used.
 
-IMPORTANT CAPACITY RULE: "Provider capacity is NOT an instruction to maximize agent
-count. Do not spawn additional agents simply because DeepSeek or OpenRouter can
-support them. Every spawned agent must have: unique responsibility; evidence to
-inspect or work to perform; an explicit deliverable; an acceptance criterion. More
-agents are useful only when the work can actually be decomposed into independent
-valuable tasks. Quality per agent matters more than raw agent count."
+STAFFING RULE (owner contract 2026-10-06): a workflow runs agent_count = min(clientCap, its units)
+agents, clientCap being this box's measured per-workflow cap above (1..10), and up to 50
+workflows run concurrently (at most 500 agents). The plan file
+(references/swarm-plan.md) states both numbers and the hooks enforce them. Provider figures
+are recorded on this card; they never narrow a workflow. Only the measured clientCap (this box's
+RAM, cores and container limits) sets how many agents a workflow runs at once. Each agent owns one
+unit: a unit has a concrete output path, an acceptance criterion and a verdict file.
 
-Waves narrower than the ceiling run at the width the dependency graph allows (Law 45)
-— the ceiling only ever lowers the dispatch, never widens a wave.
+A workflow whose dependency is not yet met is held by not launching it. Every workflow that
+is ready launches now, up to max_active_workflows.

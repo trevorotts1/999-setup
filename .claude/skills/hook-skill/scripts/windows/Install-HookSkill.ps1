@@ -55,6 +55,11 @@ if ($comps.Count -gt 0) {
   foreach ($s in ($settings | Select-Object -Unique)) {
     & $Py (Join-Path $Common 'settings_merge.py') register --settings $s --python $Py --hooks-dir $Hooks --components ($comps -join ',') @dry
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    # Measured per-workflow cap (RAM, cores, container limits) -> limits.json + the env value, merged, idempotent.
+    if ($WG) {
+      & $Py (Join-Path $Common 'apply_capacity.py') --probe (Join-Path $Skill 'hooks\workflow-guard\capacity_probe.py') --limits (Join-Path $Hooks 'workflow-guard\state\limits.json') --settings $s --manifest (Join-Path $Hooks 'hook-skill-install.json') @dry
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
   }
 }
 

@@ -16,10 +16,10 @@ class Static(unittest.TestCase):
         self.assertTrue(r['ok'],r);self.assertEqual((r['conservativePeak'],r['totalCalls']),(10,20))
     def test_unawaited_overlap_sums(self):
         r=validate("const a=parallel(args.units.map(u=>()=>%s));\nconst b=parallel(args.units.map(u=>()=>%s));\nawait a;await b;return 1;"%(A,B),20)
-        self.assertFalse(r['ok']);self.assertEqual(r['conservativePeak'],20)
+        self.assertFalse(r['ok']);self.assertEqual(r['conservativePeak'],20);self.assertTrue(any('Computed upper bound 20 concurrent agents exceeds effective cap 10' in e for e in r['errors']),r['errors'])
     def test_concurrent_extras_count(self):
         r=validate("await Promise.all([parallel(args.units.map(u=>()=>%s)),agent('v',{model:'o',phase:'B',label:'v1'}),agent('v',{model:'o',phase:'B',label:'v2'})]);return 1;"%A,12)
-        self.assertFalse(r['ok']);self.assertEqual(r['conservativePeak'],12)
+        self.assertFalse(r['ok']);self.assertEqual(r['conservativePeak'],12);self.assertTrue(any('Computed upper bound 12 concurrent agents exceeds effective cap 10' in e for e in r['errors']),r['errors'])
     def test_pipeline_two_stages_is_ten_not_twenty(self):
         r=validate("return await pipeline(args.units,u=>%s,(r,u)=>%s);"%(A,B))
         self.assertTrue(r['ok'],r);self.assertEqual(r['conservativePeak'],10)

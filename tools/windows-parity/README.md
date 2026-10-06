@@ -20,7 +20,7 @@ proposals in `PROPOSALS.md` — never applied directly by this toolset.
 
 | Tool | Parity of | Contract |
 |---|---|---|
-| `capacity-resolver.mjs` | `tools/capacity-resolver.sh` | answers file → Capacity Ledger card; exit 0/2/3; cores measured (`[Environment]::ProcessorCount` on Windows, sysctl/nproc on POSIX) |
+| `capacity-resolver.mjs` | `tools/capacity-resolver.sh` | answers file → Capacity Ledger card; exit 0/2/3; cores and RAM measured (`[Environment]::ProcessorCount` on Windows, sysctl/nproc on POSIX); `clientCap` is the spec-protocol probe's cap (`tools/hooks/capacity_probe.py`: clamp(1, 10, min(floor(ram / GB_PER_AGENT), cores)), container limits first), never `min(systemConcurrentMax, cores-2)` and never hand-batched |
 | `capacity-profile.mjs` | `tools/capacity-profile.sh` | read/write/fingerprint; allowlist + deny-list (secrets/measured/client) enforced identically; UNDETERMINED never fabricated |
 | `env-sweep.mjs` | `tools/env-sweep.sh` | key-status-only report (values never printed); Windows Known-Folder stores; sentinel leak-proof selftest |
 | `ledger.mjs` | `tools/ledger.sh` | locked atomic append + upsert + tail verification; mkdir lock with jitter + stale reclaim (atomic on NTFS) |
@@ -48,7 +48,7 @@ The guard runs every tool's selftest, then the **cross-implementation golden
 check**: each of the five pinned scenario answers runs through BOTH the Bash
 reference and the node implementation, and the cards must be byte-identical
 (modulo the measured-core timestamp). That is the "golden fixtures match macOS
-semantics" proof — currently green 13/13 on macOS; the same guard runs on
+semantics" proof — green on macOS; the same guard runs on
 Windows where the native probes take the PowerShell path.
 
 ## Shell matrix

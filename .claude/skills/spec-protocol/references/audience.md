@@ -380,7 +380,7 @@ Your project's files are also in your own GitHub account at <link>.
 commit, license id and `licenseClass` from the donor receipt with each
 `DONOR-LICENSE-NOTE:` line (license ids such as AGPL appear HERE only), the store-release and
 signing steps, and how much of the machine was used — peak and mean
-concurrency against the measured `clientCap` (Capacity Ledger,
+concurrency against the plan's width (Capacity Ledger,
 `references/capacity.md` §3), read off the run's `S-CHECK` lines' `open=<n>`
 (peak = largest, mean = arithmetic mean), e.g. "at its busiest the run used
 6 of its 10 seats, 3 on average — 17% of the machine's width". A run that used

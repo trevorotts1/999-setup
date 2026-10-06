@@ -11,31 +11,34 @@ class GuardTests(unittest.TestCase):
  def validate(self,s,args=None):
   p=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':args}),capture_output=True,text=True,check=True)
   return json.loads(p.stdout)
+ def bad(self,s,args,text):
+  r=self.validate(s,args);self.assertFalse(r['ok'],r);self.assertTrue(any(text in e for e in r['errors']),(text,r['errors']));return r
  def name(self,lanes=10):return 'tg-W1-build+qc-SKR001..SKR099-%dL'%lanes
- def script(self,lanes=10):return "export const meta={name:'"+self.name(lanes)+"',description:'test',phases:[{title:'Build'},{title:'QC'}]};\nlog('SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/');\nconst r=await pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'build:'+u.id}), (b,u)=>agent(u.prompt,{model:'sonnet',phase:'QC',label:'qc:'+u.id}));return r;"
+ def script(self,lanes=10):return "// SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/\nexport const meta={name:'"+self.name(lanes)+"',description:'test',phases:[{title:'Build'},{title:'QC'}]};\nconst r=await pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'build:'+u.id}), (b,u)=>agent(u.prompt,{model:'sonnet',phase:'QC',label:'qc:'+u.id}));return r;"
  def args(self,n=10):return {'units':[{'id':'SKR-%03d'%i,'prompt':'test'} for i in range(n)]}
  def hook(self,payload):return subprocess.run(['python3',str(ROOT/'guard.py'),'hook'],input=json.dumps(payload),capture_output=True,text=True,env=self.env)
  def test_ten_parallel_lanes_twenty_lifetime_calls(self):
   r=self.validate(self.script(),self.args());self.assertTrue(r['ok'],r);self.assertEqual(r['conservativePeak'],10)
- def test_eleven_rejected(self):self.assertFalse(self.validate(self.script(11),self.args(11))['ok'])
- def test_missing_phase(self):self.assertFalse(self.validate(self.script().replace("phase:'Build',",''),self.args())['ok'])
- def test_mismatched_phase(self):self.assertFalse(self.validate(self.script().replace("phase:'Build'","phase:'Hidden'"),self.args())['ok'])
- def test_missing_model(self):self.assertFalse(self.validate(self.script().replace("model:'opus',",''),self.args())['ok'])
- def test_syntax_error(self):self.assertFalse(self.validate(self.script()+'log((; ',self.args())['ok'])
+ def test_eleven_rejected(self):self.bad(self.script(11),self.args(11),'Computed upper bound 11 concurrent agents exceeds effective cap 10')
+ def test_missing_phase(self):self.bad(self.script().replace("phase:'Build',",''),self.args(),'explicit nonempty phase required')
+ def test_mismatched_phase(self):self.bad(self.script().replace("phase:'Build'","phase:'Hidden'"),self.args(),'phase must match a declared meta.phases title exactly')
+ def test_missing_model(self):self.bad(self.script().replace("model:'opus',",''),self.args(),'explicit nonempty model required')
+ def test_syntax_error(self):self.bad(self.script()+'log((; ',self.args(),'Unexpected token')
  def test_string_decoy(self):self.assertTrue(self.validate(self.script()+"log('agent(bad phase: bad)');",self.args())['ok'])
- def test_unknown_items(self):self.assertFalse(self.validate(self.script(),{})['ok'])
- def test_two_parallel_pipelines_sum(self):self.assertFalse(self.validate(self.script().replace('return r;','')+"const t=pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'b'}));",self.args())['ok'])
- def test_nested_workflow(self):self.assertFalse(self.validate(self.script()+"await workflow('child');",self.args())['ok'])
- def test_opaque_callback(self):self.assertFalse(self.validate(self.script()+"args.units.forEach(u=>agent('x',{model:'opus',phase:'Build',label:'b'}));",self.args())['ok'])
+ def test_unknown_items(self):self.bad(self.script(),{},'Cannot measure pipeline items')
+ def test_two_parallel_pipelines_sum(self):self.bad(self.script().replace('return r;','')+"const t=pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'b'}));",self.args(),'Computed upper bound 20 concurrent agents exceeds effective cap 10')
+ def test_nested_workflow(self):self.bad(self.script()+"await workflow('child');",self.args(),'Nested workflow() is not statically bounded')
+ def test_opaque_callback(self):self.bad(self.script()+"args.units.forEach(u=>agent('x',{model:'opus',phase:'Build',label:'b'}));",self.args(),'Opaque callback fan-out cannot be bounded')
  def test_underfill(self):
-  args=self.args(2);args['guard']={'readyUnits':10,'providerSlots':10};self.assertFalse(self.validate(self.script(2),args)['ok'])
+  args=self.args(2);args['guard']={'readyUnits':10,'providerSlots':10};self.bad(self.script(2),args,'Unused ready capacity')
   args['guard']['dependencyReason']='Eight units depend on these two';self.assertTrue(self.validate(self.script(2),args)['ok'])
  def test_provider_cap(self):
-  args=self.args(4);args['guard']={'providerSlots':3};self.assertFalse(self.validate(self.script(4),args)['ok'])
+  args=self.args(4);args['guard']={'providerSlots':3};self.bad(self.script(4),args,'exceeds declared available provider slots')
  def test_snapshot_matches_validation_and_preserves_input(self):
   r=self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'test','tool_use_id':'test1'})
   self.assertEqual(r.returncode,0,r.stderr);o=json.loads(r.stdout)['hookSpecificOutput'];self.assertEqual(o['updatedInput']['script'],self.script());self.assertEqual(o['updatedInput']['args'],self.args());self.assertNotIn('permissionDecision',o)
- def test_missing_file_rejected(self):self.assertEqual(self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':'/does-not-exist'}}).returncode,2)
+ def test_missing_file_rejected(self):
+  r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':'/does-not-exist'}});self.assertEqual(r.returncode,2);self.assertIn('scriptPath cannot be read',r.stderr)
  def test_non_workflow_untouched(self):self.assertEqual(self.hook({'tool_name':'Read','tool_input':{}}).stdout,'')
  def test_watchdog_stale_recovery_and_resolution(self):
   os.environ['WORKFLOW_GUARD_STATE']=str(self.path/'state')
@@ -52,7 +55,7 @@ class GuardTests(unittest.TestCase):
  def test_stop_loop_guard(self):
   d=self.path/'state';d.mkdir();(d/'alerts.json').write_text(json.dumps({'alerts':[{'session':'test','workflow':'w1','state':'STALE_REVIEW_REQUIRED'}]}))
   p={'hook_event_name':'Stop','session_id':'test','stop_hook_active':False}
-  r=self.hook(p);self.assertEqual(json.loads(r.stdout)['decision'],'block');self.assertEqual(self.hook(p).stdout,'')
+  r=self.hook(p);o=json.loads(r.stdout);self.assertEqual(o['decision'],'block');self.assertIn('w1 STALE_REVIEW_REQUIRED',o['reason']);self.assertEqual(self.hook(p).stdout,'')
  def test_verified_cancellation_is_terminal(self):
   self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'test','tool_use_id':'test1'})
   self.hook({'hook_event_name':'PostToolUse','tool_name':'Workflow','session_id':'test','tool_use_id':'test1','tool_response':{'taskId':'wka7c9bxn','runId':'wf_60e1d071-a35'}})
@@ -68,9 +71,9 @@ class GuardTests(unittest.TestCase):
   import sqlite3
   c=sqlite3.connect(self.path/'state/guard.sqlite3');state,receipt=c.execute('SELECT state,receipt FROM launches').fetchone();self.assertEqual(state,'RETURNED');self.assertEqual(json.loads(receipt)['task_id'],'wka7c9bxn')
  def test_roster_mutation_rejected(self):
-  self.assertFalse(self.validate(self.script()+"args.units.push({id:'extra'});",self.args())['ok'])
+  self.bad(self.script()+"args.units.push({id:'extra'});",self.args(),'Do not mutate worker rosters')
  def test_helper_alias_rejected(self):
-  self.assertFalse(self.validate(self.script()+"const a=agent;",self.args())['ok'])
+  self.bad(self.script()+"const a=agent;",self.args(),'Do not alias workflow primitives')
  def test_factory_partitions_and_validates(self):
   u=[{'id':'SKR-%03d'%i,'prompt':'build','qcPrompt':'check','ownership':f'file-{i}'} for i in range(23)];f=self.path/'units.json';f.write_text(json.dumps(u))
   r=subprocess.run(['python3',str(ROOT/'make-workflow.py'),'--units',str(f),'--out',str(self.path/'out'),'--provider-slots','10',*self.program_flags()],capture_output=True,text=True)
@@ -93,7 +96,7 @@ class GuardTests(unittest.TestCase):
   self.assertNotEqual(r.returncode,0);self.assertIn('Cannot read',r.stderr);self.assertNotIn('Traceback',r.stderr)
  def test_generator_preserves_different_existing_artifacts(self):
   self.assertEqual(self.generate(self.good_units()).returncode,0);f=self.path/'generated/workflow-01.js';before=f.read_text();u=self.good_units();u[0]['prompt']='different'
-  r=self.generate(u);self.assertNotEqual(r.returncode,0);self.assertEqual(f.read_text(),before)
+  r=self.generate(u);self.assertNotEqual(r.returncode,0);self.assertIn('Refusing to overwrite a different existing artifact',r.stderr);self.assertEqual(f.read_text(),before)
  def test_generator_idempotent_repeat(self):
   self.assertEqual(self.generate(self.good_units()).returncode,0);self.assertEqual(self.generate(self.good_units()).returncode,0)
  def test_legacy_string_arguments_normalized(self):
@@ -107,7 +110,7 @@ class GuardTests(unittest.TestCase):
   r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}});self.assertEqual(r.returncode,0,r.stderr)
   self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['args'],self.args())
   side.write_text(json.dumps({'scriptPath':str(self.path/'different.js'),'args':self.args()}))
-  self.assertEqual(self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}}).returncode,2)
+  r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}});self.assertEqual(r.returncode,2);self.assertIn('Cannot measure pipeline items',r.stderr)
  def load(self,name):
   os.environ['WORKFLOW_GUARD_STATE']=str(self.path/'state')
   spec=importlib.util.spec_from_file_location(name,ROOT/'guard.py');g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
@@ -189,12 +192,13 @@ class GuardTests(unittest.TestCase):
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'carry on','source':'user'})
   self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'please stop now','source':'loop_wakeup'})
-  self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)  # machine traffic never arms the latch
+  # machine-injected messages never arm the latch (removed 2026-09-22)
+  self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)
  def test_continuation_cap_stops_blocking_at_three(self):
   for n,w in enumerate(('w1','w2','w3'),start=1):
    self.alerts_file('cont',w)
    r=self.hook({'hook_event_name':'Stop','session_id':'cont','stop_hook_active':False})
-   self.assertEqual(json.loads(r.stdout)['decision'],'block',w)
+   o=json.loads(r.stdout);self.assertEqual(o['decision'],'block',w);self.assertIn(w+' STALE_REVIEW_REQUIRED',o['reason'])
    c=sqlite3.connect(self.path/'state/guard.sqlite3')
    self.assertEqual(c.execute("SELECT count FROM continuations WHERE session='cont'").fetchone()[0],n);c.close()
   self.alerts_file('cont','w4')
@@ -215,9 +219,9 @@ class GuardTests(unittest.TestCase):
  def test_orchestrator_fence_bash(self):
   root=self.register('bashprog')
   self.assertEqual(self.pre('Bash',{'command':'git status'},'bashprog').returncode,0)
-  self.assertEqual(self.pre('Bash',{'command':'git commit -am x'},'bashprog').returncode,2)
+  r=self.pre('Bash',{'command':'git commit -am x'},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('Mutating shell command with no absolute path',r.stderr);self.assertIn('Orchestrator fence',r.stderr)
   self.assertEqual(self.pre('Bash',{'command':'rm %s/tmpfile'%root},'bashprog').returncode,0)
-  self.assertEqual(self.pre('Bash',{'command':'rm /etc/hosts'},'bashprog').returncode,2)
+  r=self.pre('Bash',{'command':'rm /etc/hosts'},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('/etc/hosts, outside the program run root',r.stderr)
  def test_orchestrator_fence_blocks_fleet_unless_test_mode(self):
   self.register('fleetprog')
   r=self.pre('Bash',{'command':'ssh remote-host ls'},'fleetprog')
@@ -246,12 +250,12 @@ class GuardTests(unittest.TestCase):
   r=self.hook({'hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':'not-a-dict','session_id':'x'})
   self.assertEqual((r.returncode,r.stdout),(0,''),r.stderr)
   self.assertEqual(self.raw_hook('{not json at all').returncode,0)
-  self.assertEqual(self.raw_hook('{"tool_name":"Workflow"').returncode,2)
+  r=self.raw_hook('{"tool_name":"Workflow"');self.assertEqual(r.returncode,2);self.assertIn('Invalid hook JSON',r.stderr)
  def test_fail_open_when_guard_state_is_unusable(self):
   broken={**self.env,'WORKFLOW_GUARD_STATE':'/dev/null/state'}
   r=self.hook_env({'hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'ls'},'session_id':'x'},broken)
   self.assertEqual((r.returncode,r.stdout),(0,''),r.stderr)
   w=self.hook_env({'hook_event_name':'PreToolUse','tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'x'},broken)
-  self.assertEqual(w.returncode,2)
+  self.assertEqual(w.returncode,2);self.assertIn('Workflow guard operational error',w.stderr)
 
 if __name__=='__main__':unittest.main(verbosity=2)

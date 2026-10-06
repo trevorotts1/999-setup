@@ -67,6 +67,10 @@ for s in "${SETTINGS[@]}"; do
   if [ -n "$COMPONENTS" ]; then
     "$PY" "$COMMON/settings_merge.py" register --settings "$s" --python "$PY" --hooks-dir "$HOOKS" --components "$COMPONENTS" ${DRYARG[@]+"${DRYARG[@]}"}
   fi
+  # Measured per-workflow cap (RAM, cores, container limits) -> limits.json + the env value, merged, idempotent.
+  if [ $WG = 1 ]; then
+    "$PY" "$COMMON/apply_capacity.py" --probe "$SKILL/hooks/workflow-guard/capacity_probe.py" --limits "$HOOKS/workflow-guard/state/limits.json" --settings "$s" --manifest "$HOOKS/hook-skill-install.json" ${DRYARG[@]+"${DRYARG[@]}"}
+  fi
 done
 
 # ---- 3. scheduled sweeps (launchd) ----

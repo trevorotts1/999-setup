@@ -3,7 +3,7 @@
 # Windows Python interpreter, so both platforms register the hooks one way.
 # Registered commands read `"<python path>" "<root>/hooks/<hook>.py"` (both quoted).
 #
-# Usage: install-hooks.ps1 [-Root <config-root>]   (default: $env:CLAUDE_CONFIG_DIR, else %USERPROFILE%\.claude)
+# Usage: install-hooks.ps1 [-Root <config-root>]   (default: $env:CLAUDE_CONFIG_DIR, else %USERPROFILE%\.claude and, when it exists, %USERPROFILE%\.claude-nine)
 # Exit codes are install-hooks.sh's: 0 ok, 1 a hook selftest failed, 2 UNDETERMINED.
 # ASCII-only (Windows PowerShell 5.1 reads non-ASCII bytes as ANSI).
 #Requires -Version 5.1
@@ -40,5 +40,11 @@ $script = (Join-Path $PSScriptRoot 'install-hooks.sh') -replace '\\', '/'
 $env:INSTALL_HOOKS_PYTHON = $python -replace '\\', '/'
 & $bash $script --root ($Root -replace '\\', '/')
 $rc = $LASTEXITCODE
+# Default root (no -Root, no CLAUDE_CONFIG_DIR): claude-nine too, when its folder exists - same registrations in both.
+$nine = Join-Path $env:USERPROFILE '.claude-nine'
+if (-not $PSBoundParameters.ContainsKey('Root') -and -not $env:CLAUDE_CONFIG_DIR -and (Test-Path $nine)) {
+    & $bash $script --root ($nine -replace '\\', '/')
+    if ($rc -ne 2 -and $LASTEXITCODE -ne 0) { $rc = $LASTEXITCODE }
+}
 Remove-Item Env:INSTALL_HOOKS_PYTHON -ErrorAction SilentlyContinue
 exit $rc
