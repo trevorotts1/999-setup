@@ -19,9 +19,9 @@ COMPONENTS = {
     "workflow-guard": ("workflow-guard/guard.py", [
         ("SessionStart", None, 120, "hook"),
         ("Stop", None, 120, "hook"),
-        ("PreToolUse", "Workflow|Agent|Task|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash", 120, "hook"),
+        ("PreToolUse", "Workflow|Agent|Task|SendMessage|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash", 120, "hook"),
         ("UserPromptSubmit", None, 120, "hook"),
-        ("PostToolUse", "Workflow|TaskStop|Agent|Task|TaskOutput", 120, "hook"),
+        ("PostToolUse", "Workflow|TaskStop|Agent|Task|TaskOutput|Write", 120, "hook"),
         ("PostToolUseFailure", ".*", 120, "hook")]),
     "hygiene": ("hygiene/post_merge_hygiene.py", [("PostToolUse", "Bash", 30, "")]),
     "ask-before-backup": ("ask-before-backup/ask_before_backup.py", [

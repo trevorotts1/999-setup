@@ -44,11 +44,22 @@ class Env:
         assert r.returncode == 0, r.stderr
         return json.loads((out / ('launch-%s.json' % wid)).read_text())
 
-    def launch(self, wid, aid, proj=None, sid='S1', transcript=''):
+    def post(self, tool, ti, sid='S1', cwd=None, tuid=None, response='', event='PostToolUse', **extra):
+        return self.hook({'hook_event_name': event, 'tool_name': tool, 'tool_input': ti, 'cwd': str(cwd or self.proj), 'session_id': sid,
+                          'tool_use_id': tuid or 'tu-%d' % time.time_ns(), 'transcript_path': extra.pop('transcript_path', ''), 'tool_response': response, **extra})
+
+    def confirm(self, tuid, sid='S1', cwd=None, run='wf_L', transcript=''):
+        """PostToolUse of a launch (phase two of the two-phase admission): confirms the reservation made by the PreToolUse."""
+        return self.post('Workflow', {}, sid=sid, cwd=cwd, tuid=tuid, response='Task ID: wabcdefgh Run ID: %s' % run, transcript_path=transcript)
+
+    def launch(self, wid, aid, proj=None, sid='S1', transcript='', run='wf_L', confirm=True):
         proj = proj or self.proj
         g = self.gen(wid, proj)
         a = dict(g['args']); a['attemptId'] = aid
-        return self.pre('Workflow', {'scriptPath': g['scriptPath'], 'args': a}, sid=sid, cwd=proj, tuid='L-' + aid, transcript_path=transcript)
+        r = self.pre('Workflow', {'scriptPath': g['scriptPath'], 'args': a}, sid=sid, cwd=proj, tuid='L-' + aid, transcript_path=transcript)
+        if r[0] == 0 and confirm:
+            self.confirm('L-' + aid, sid=sid, cwd=proj, run=run, transcript=transcript)
+        return r
 
     def q(self, sql, *params):
         c = sqlite3.connect(self.sd / 'guard.sqlite3')
@@ -79,7 +90,7 @@ def test_N22a_concurrent_launches_never_exceed_max_active(tmp_path, rnd):
         return e.pre('Workflow', {'scriptPath': gs[wid]['scriptPath'], 'args': a}, sid=sid, tuid='race-' + wid)
     with cf.ThreadPoolExecutor(3) as ex:
         res = list(ex.map(go, [('W0-01', 'SA'), ('W0-02', 'SB'), ('W0-03', 'SC')]))
-    live = e.q("SELECT COUNT(DISTINCT t.workflow_id) FROM launch_tags t JOIN launches l ON l.id=t.id WHERE l.state IN ('VALIDATED','RETURNED','LAUNCH_UNVERIFIED')")[0][0]
+    live = e.q("SELECT COUNT(DISTINCT r.workflow_id) FROM reservations r JOIN launches l ON l.id=r.id WHERE l.state='RESERVED'")[0][0]  # reserved in PreToolUse; no tag until PostToolUse
     assert live == 2, (live, res)
     assert sorted(rc for rc, _ in res) == [0, 0, 2]
     refusal = [out for rc, out in res if rc == 2][0]
@@ -98,7 +109,7 @@ def test_N22b_same_workflow_launched_twice_concurrently_admits_one(tmp_path, rnd
         return e.pre('Workflow', {'scriptPath': g['scriptPath'], 'args': a}, sid=sid, tuid='dup-' + aid)
     with cf.ThreadPoolExecutor(2) as ex:
         res = list(ex.map(go, [('d1', 'SA'), ('d2', 'SB')]))
-    assert e.q("SELECT COUNT(*) FROM launch_tags WHERE workflow_id='W0-01'")[0][0] == 1, res
+    assert e.q("SELECT COUNT(*) FROM reservations WHERE workflow_id='W0-01'")[0][0] == 1, res
     assert sorted(rc for rc, _ in res) == [0, 2]
     assert 'workflow W0-01 is already running' in [out for rc, out in res if rc == 2][0] or 'already running' in [out for rc, out in res if rc == 2][0]
 
@@ -208,10 +219,12 @@ def test_staffing_start_cannot_be_chained_with_a_write(env):
 def test_subagent_is_not_blocked_from_ordinary_writes_and_unarmed_plan_is_editable(env):
     st._mkplan(env.proj, {'W0-01': 2}, status='planned-not-running')
     rc, out = env.pre('Write', {'file_path': str(env.proj / 'SWARM-PLAN.json'), 'content': '{}'})
-    assert rc == 0, out  # an unarmed plan is still being authored
-    armed(env)
+    assert rc == 0, out  # an unarmed plan is still being authored by the main session
+    rc, out = env.pre('Write', {'file_path': str(env.proj / 'out.md'), 'content': 'x'}, agent_id='a1', agent_type='general-purpose')
+    assert rc == 0, out  # ordinary subagent work is untouched
+    # Rule change (final pass): a subagent may never write a plan file, armed or not.
     rc, out = env.pre('Write', {'file_path': str(env.proj / 'SWARM-PLAN.json'), 'content': '{}'}, agent_id='a1', agent_type='general-purpose')
-    assert rc == 0, out
+    assert rc == 2 and 'subagent may not write' in out.lower(), out
 
 
 # ------------------------------------------------------------------ defect 5: vanished plan
@@ -266,6 +279,19 @@ def test_N25_corrupt_journal_blocks_stop_only_when_a_plan_is_running(env):
 
 
 # ------------------------------------------------------------------ defect 11: DONE needs a journal record
+def mk_run_files(run, units_agents, builder='opus', checker='sonnet'):
+    """Real-shaped run folder: journal.jsonl 'started' lines + agent-<id>.meta.json (ACTUAL model). units_agents: [(unit_id, checker_agent_id)];
+    the unit's builder is agent B-<unit_id>. staffing requires the verdict writer to be the qc:<unit> agent and the actual families to differ."""
+    run.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for uid, chk in units_agents:
+        for aid, label, model in (('B-' + uid, 'build:' + uid, builder), (chk, 'qc:' + uid, checker)):
+            lines.append(json.dumps({'type': 'started', 'key': 'k' + aid + uid, 'agentId': aid, 'label': label, 'phase': 'x'}))
+            (run / ('agent-%s.meta.json' % aid)).write_text(json.dumps({'model': model}))
+            (run / ('agent-%s.jsonl' % aid)).write_text('{}\n')
+    (run / 'journal.jsonl').write_text('\n'.join(lines) + '\n')
+
+
 class Attested:
     def __init__(self, env):
         self.e = env
@@ -273,13 +299,18 @@ class Attested:
         self.tp = env.tmp / 'main.jsonl'
         self.run = env.tmp / 'main' / 'subagents' / 'workflows' / 'wf_abc'
         self.run.mkdir(parents=True)
-        (self.run / 'agent-AGENTX1.jsonl').write_text('{}\n')
-        assert env.launch('W0-01', 'AID1', transcript=str(self.tp))[0] == 0
+        mk_run_files(self.run, [('W0-01-U1', 'AGENTX1')])
+        assert env.launch('W0-01', 'AID1', transcript=str(self.tp), run='wf_abc')[0] == 0
         self.vf = env.proj / 'evidence/W0-01/W0-01-U1.verdict.json'
         self.body = json.dumps({'verdict': 'PASS', 'unit_id': 'W0-01-U1', 'attempt_id': 'AID1', 'builder_model': 'opus', 'reviewer_model': 'sonnet'})
 
     def sub_write(self, agent_id, content=None, tool='Write'):
-        return self.e.pre(tool, {'file_path': str(self.vf), 'content': self.body if content is None else content}, agent_id=agent_id, agent_type='general-purpose', transcript_path=str(self.run / ('agent-%s.jsonl' % agent_id)))
+        ti = {'file_path': str(self.vf), 'content': self.body if content is None else content}
+        kw = dict(agent_id=agent_id, agent_type='general-purpose', transcript_path=str(self.run / ('agent-%s.jsonl' % agent_id)))
+        r = self.e.pre(tool, ti, **kw)
+        if r[0] == 0:
+            self.e.post(tool, ti, **kw)  # the journal record is written by the PostToolUse (the write succeeded), never before
+        return r
 
     def disk(self, content=None):
         self.vf.parent.mkdir(parents=True, exist_ok=True)
@@ -295,7 +326,7 @@ def test_verdict_counts_only_with_journal_record_from_a_linked_agent(env):
     a.disk()
     assert a.done() == [], 'a verdict file nobody journaled (hand-written) must not count'
     rc, out = a.sub_write('AGENTXOTHER'); a.disk()
-    assert rc == 0 and a.done() == [], 'an agent that is not part of the admitted run must not produce a DONE'
+    assert rc == 2 and 'not part of the admitted run' in out and a.done() == [], 'an agent that is not part of the admitted run may not write the verdict, let alone produce a DONE'
     assert env.q('SELECT COUNT(*) FROM verdict_records')[0][0] == 0
     rc, out = a.sub_write('AGENTX1'); a.disk()
     assert rc == 0 and env.q('SELECT unit_id,attempt_id,agent_id FROM verdict_records') == [('W0-01-U1', 'AID1', 'AGENTX1')]
@@ -308,7 +339,7 @@ def test_verdict_counts_only_with_journal_record_from_a_linked_agent(env):
 
 def test_verdict_with_unadmitted_attempt_or_conductor_write_is_not_recorded(env):
     a = Attested(env)
-    rc, out = a.sub_write('AGENTX1', a.body.replace('AID1', 'forged-attempt')); a.disk(a.body.replace('AID1', 'forged-attempt'))
+    rc, out = a.sub_write('AGENTX1', a.body.replace('AID1', 'forged-attempt')); a.disk(a.body.replace('AID1', 'forged-attempt'))  # allowed (run member) but never recorded
     assert rc == 0 and env.q('SELECT COUNT(*) FROM verdict_records')[0][0] == 0 and a.done() == []
     rc, out = env.pre('Write', {'file_path': str(a.vf), 'content': a.body})  # conductor: blocked outright
     assert rc == 2 and 'may not write unit verdict files' in out
@@ -346,11 +377,13 @@ def test_repair_make_workflow_emits_only_not_yet_pass_units_and_hook_admits_it(e
     a = dict(g['args']); a['attemptId'] = 'first-1'
     rc, out = env.pre('Workflow', {'scriptPath': g['scriptPath'], 'args': a}, tuid='first', transcript_path=str(tp))
     assert rc == 0, out
-    run = env.tmp / 'main' / 'subagents' / 'workflows' / 'wf_r'; run.mkdir(parents=True); (run / 'agent-AG9.jsonl').write_text('{}\n')
+    env.confirm('first', run='wf_r', transcript=str(tp))
+    run = env.tmp / 'main' / 'subagents' / 'workflows' / 'wf_r'; mk_run_files(run, [('W0-01-U1', 'AG1'), ('W0-01-U2', 'AG2')])
     for u in ('W0-01-U1', 'W0-01-U2'):
         body = json.dumps({'verdict': 'PASS', 'unit_id': u, 'attempt_id': 'first-1', 'builder_model': 'opus', 'reviewer_model': 'sonnet'})
         f = env.proj / 'evidence/W0-01' / (u + '.verdict.json')
-        assert env.pre('Write', {'file_path': str(f), 'content': body}, agent_id='AG9', agent_type='general-purpose')[0] == 0
+        assert env.pre('Write', {'file_path': str(f), 'content': body}, agent_id='AG' + f.name[7], agent_type='general-purpose', transcript_path=str(tp))[0] == 0
+        env.post('Write', {'file_path': str(f), 'content': body}, agent_id='AG' + f.name[7], agent_type='general-purpose', transcript_path=str(tp))
         f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
     env.q("SELECT 1")
     c = sqlite3.connect(env.sd / 'guard.sqlite3'); c.execute("UPDATE launches SET state='COMPLETED'"); c.commit(); c.close()
@@ -360,6 +393,7 @@ def test_repair_make_workflow_emits_only_not_yet_pass_units_and_hook_admits_it(e
     ra = dict(rg['args']); ra['attemptId'] = 'repair-1'
     rc, out = env.pre('Workflow', {'scriptPath': rg['scriptPath'], 'args': ra}, tuid='repair', transcript_path=str(tp))
     assert rc == 0, out
+    env.confirm('repair', run='wf_r2', transcript=str(tp))
     bad = dict(ra, attemptId='repair-2', units=[u for u in g['args']['units']])
     c = sqlite3.connect(env.sd / 'guard.sqlite3'); c.execute("UPDATE launches SET state='COMPLETED'"); c.commit(); c.close()
     rc, out = env.pre('Workflow', {'scriptPath': rg['scriptPath'], 'args': bad}, tuid='repair-bad')
@@ -368,6 +402,7 @@ def test_repair_make_workflow_emits_only_not_yet_pass_units_and_hook_admits_it(e
     c = sqlite3.connect(env.sd / 'guard.sqlite3'); c.execute("UPDATE launches SET state='COMPLETED'"); c.commit(); c.close()
     ra3 = dict(ra, attemptId='repair-3')
     assert env.pre('Workflow', {'scriptPath': rg['scriptPath'], 'args': ra3}, tuid='repair3')[0] == 0
+    env.confirm('repair3', run='wf_r3')
     c = sqlite3.connect(env.sd / 'guard.sqlite3'); c.execute("UPDATE launches SET state='COMPLETED'"); c.commit(); c.close()
     s = env.snap()
     assert s['state']['handback'] == ['W0-01']
@@ -386,9 +421,12 @@ def test_bash_verdict_write_refused_with_no_plan(env, cmd):
     noplan = env.tmp / 'noplan'; noplan.mkdir()
     rc, out = env.pre('Bash', {'command': cmd}, cwd=noplan)
     assert rc == 2 and 'may not write unit verdict files' in out and 'this rule holds everywhere' in out, out
-    # subagent semantics (unchanged): any call carrying agent_id/agent_type skips the verdict and protected-path rules, Bash included
+    # Rule change (final pass): a subagent is refused the same Bash verdict writes (only the Write tool is journaled)
     rc, out = env.pre('Bash', {'command': cmd}, cwd=noplan, agent_id='a1', agent_type='general-purpose')
-    assert rc == 0, out
+    assert rc == 2 and 'may not write unit verdict files' in out, out
+    # ...while agent_type ALONE (the main thread of `claude --agent`) is not a subagent: it is refused too
+    rc, out = env.pre('Bash', {'command': cmd}, cwd=noplan, agent_type='general-purpose')
+    assert rc == 2, out
 
 
 def test_first_admission_flips_status_then_broken_journal_blocks_stop(env):

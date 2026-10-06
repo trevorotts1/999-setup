@@ -27,12 +27,20 @@ DONE      a UNIT is done iff its verdict file (relative to the plan file's direc
           AND the file's current sha256 matches a guard journal verdict record (verdict_records), which the guard
           writes only when a SUBAGENT of that admitted run Writes this very content. A file nobody journaled
           (hand-written, edited afterwards, written by the conductor) is never done.
+          WHO WROTE IT / WHICH MODEL RAN (#6): the labels and models INSIDE the verdict JSON are claims, not proof. The
+          run folder (<launch transcript>/subagents/workflows/<run>/) holds ground truth: journal.jsonl "started" lines
+          {agentId,label,phase} and agent-<agentId>.meta.json {model}. The journal record's writer agent_id must be an
+          agent labelled "qc:<unit_id>" (make-workflow emits that label; the builder is "build:<unit_id>"), and the ACTUAL
+          model families (from meta.json) of that unit's builder(s) and checker must differ. A builder writing its own PASS,
+          or builder and checker running the same family, is never done; unreadable run files or models -> not done.
+          At launch, a script whose builder (non-QC phase) and checker (QC phase) agent() model pins share a family is refused.
           A workflow is DONE iff every one of its units is done. A plan's own "status" never decides completion.
 RUNNING   the guard journal has a live launch tagged with that workflowId (and this plan).
 READY     not done, not running, every dependency done, not in handback.
 OWED      required_running = min(max_active_workflows, program cap, running + ready);
           owed = the first (required_running - running) ready workflows in plan order.
-HANDBACK  launched 3 times (recorded) without becoming done: not owed, an alert is written.
+HANDBACK  launched 3 times (recorded) without becoming done: not owed, an alert is written. (No release path
+          after admitted-then-failed launches: only handback stops the loop.)
 ARMED     plan found AND its status is "running" -- the single definition. `staffing.py start --cwd DIR`
           validates the plan and sets status "running" (the build-start act); and when the guard ADMITS the
           first launch of a plan whose status is "planned-not-running" it sets status "running" itself
@@ -42,8 +50,11 @@ LAUNCH CONTRACT (check_launch) a Workflow call under a found plan must carry arg
           of a READY workflow, args.units with exactly that workflow's unit_ids, and a script
           that fans out over args.units in exactly ONE pipeline(args.units, ...) call (parallel() is refused)
           containing every agent() call, and a unique non-empty args.attemptId. The script may never run more than the
-          per-workflow cap at once (min of plan cap, limits.json, plan capacity_probe): above it the
-          script must carry the rolling window helper (WINDOW_HELPER) make-workflow.py emits.
+          per-workflow cap at once (min of plan cap, limits.json, plan capacity_probe).
+          CONCURRENCY WINDOW (#5, "fewer agents than units is a violation"): the agents running at once must EQUAL
+          min(live cap, len(units)) exactly. len(units) <= cap: the rolling window helper is FORBIDDEN (the plain
+          pipeline already runs every unit at once; validate.mjs's computed peak must equal agent_count). len(units) > cap:
+          the script must carry the helper (WINDOW_HELPER) with a window of exactly cap (not smaller, not larger).
           Undeterminable -> blocked.
 
 CLI:  staffing.py status --cwd DIR [--state-dir DIR] [--json]   |   staffing.py start --cwd DIR   |   staffing.py --selftest
@@ -62,7 +73,6 @@ SCHEMA = "blackceo.swarm-plan/v2"
 CEIL_AGENTS, CEIL_WORKFLOWS, CEIL_TOTAL = 10, 50, 500
 MAX_WALK = 40
 HANDBACK_LAUNCHES = 3
-RELEASE_ATTEMPTS = 3
 LIVE_STATES = ("VALIDATED", "RETURNED", "LAUNCH_UNVERIFIED")
 STATUS_OK = ("planned-not-running", "running")
 _SLICE_TEXT = re.compile(r"slice \d+ of \d+", re.I)
@@ -300,12 +310,62 @@ def file_sha256(path):
         return None
 
 
-def unit_done(plan_dir, wf, u, attempts, records=None):
+def run_dirs(transcript, receipt):
+    """Run folders of a launch: <transcript dir>/<transcript stem>/subagents/workflows/<run_id>, or every wf_* when the
+    receipt has no run_id (agent ids are globally unique, so that is still unambiguous). [] when unknowable."""
+    if not transcript:
+        return []
+    tp = Path(transcript)
+    base = tp.parent / tp.stem / "subagents" / "workflows"
+    try:
+        rid = (json.loads(receipt or "{}") or {}).get("run_id")
+    except (ValueError, AttributeError):
+        rid = None
+    try:
+        return [str(base / rid)] if isinstance(rid, str) and rid else [str(d) for d in base.glob("wf_*") if d.is_dir()]
+    except OSError:
+        return []
+
+
+def run_agents(dirs):
+    """{agentId: (label, ACTUAL model)} read from the run folders: journal.jsonl 'started' lines give agentId+label, and
+    agent-<agentId>.meta.json gives the model the agent really ran on. Model is "" when unreadable."""
+    out = {}
+    for d in dirs or ():
+        try:
+            lines = (Path(d) / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for ln in lines:
+            try:
+                j = json.loads(ln)
+            except ValueError:
+                continue
+            if isinstance(j, dict) and j.get("type") == "started" and _nonempty(j.get("agentId")):
+                m = _jload(Path(d) / ("agent-%s.meta.json" % j["agentId"]))
+                out[j["agentId"]] = (j.get("label"), m.get("model") if isinstance(m, dict) and _nonempty(m.get("model")) else "")
+    return out
+
+
+def actual_roles_ok(unit_id, writer, dirs):
+    """True iff the verdict's journaled writer is an agent labelled qc:<unit_id>, the unit has at least one build:<unit_id>
+    agent, every one of them has a readable ACTUAL model, and no builder shares the checker's model family."""
+    ag = run_agents(dirs)
+    chk = ag.get(writer)
+    builders = [v for k, v in ag.items() if v[0] == "build:%s" % unit_id]
+    if not chk or chk[0] != "qc:%s" % unit_id or not chk[1] or not builders or any(not b[1] for b in builders):
+        return False
+    return all(model_family(b[1]) != model_family(chk[1]) for b in builders)
+
+
+def unit_done(plan_dir, wf, u, attempts, records=None, proof=None):
     """True iff u's verdict file is a valid PASS: verdict == "PASS" exactly, unit_id matches, attempt_id is an
     ADMITTED launch of this workflow (attempts, recorded by the guard), builder_model and reviewer_model nonempty and of
     different model FAMILIES, AND the file's current sha256 matches a journal record (records: {(unit_id, attempt_id, sha256)})
     the guard wrote when a subagent of that live/finished admitted launch wrote this very content. A file nobody
-    journaled (hand-written, edited afterwards, written by the conductor) is never DONE."""
+    journaled (hand-written, edited afterwards, written by the conductor) is never DONE. proof ({(unit,attempt,sha): (writer
+    agent_id, run folders)}) must show the writer is that unit's qc:<unit_id> agent and that its ACTUAL model family (meta.json)
+    differs from every build:<unit_id> agent's; the verdict JSON's own model/label fields are never trusted for that."""
     vf = u.get("verdict_file")
     if not _nonempty(vf):
         return False
@@ -322,25 +382,30 @@ def unit_done(plan_dir, wf, u, attempts, records=None):
     aid, b, r = d.get("attempt_id"), d.get("builder_model"), d.get("reviewer_model")
     if not (_nonempty(aid) and aid in (attempts or ())):
         return False
-    if (u.get("unit_id"), aid, hashlib.sha256(raw).hexdigest()) not in (records or ()):
+    key = (u.get("unit_id"), aid, hashlib.sha256(raw).hexdigest())
+    if key not in (records or ()):
+        return False
+    writer, dirs = (proof or {}).get(key, (None, []))
+    if not _nonempty(writer) or not actual_roles_ok(u.get("unit_id"), writer, dirs):
         return False
     return _nonempty(b) and _nonempty(r) and model_family(b) != model_family(r)
 
 
-def is_done(plan_dir, wf, attempts=(), records=None):
+def is_done(plan_dir, wf, attempts=(), records=None, proof=None):
     """A workflow is DONE iff every one of its units has a valid PASS verdict (see unit_done)."""
     units = [u for u in (wf.get("units") or []) if isinstance(u, dict)]
-    return bool(units) and all(unit_done(plan_dir, wf, u, attempts, records) for u in units)
+    return bool(units) and all(unit_done(plan_dir, wf, u, attempts, records, proof) for u in units)
 
 
-def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None, records=None):
+def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None, records=None, proof=None):
     """Pure state computation. running: workflowIds with a live launch. launches: wid -> count."""
     launches = launches or {}
     attempts = attempts or {}
     records = records or {}
+    proof = proof or {}
     wfs = workflows(doc)
     order = [w["workflow_id"] for w in wfs]
-    done = {w["workflow_id"] for w in wfs if is_done(Path(plan_path).parent, w, attempts.get(w["workflow_id"], ()), records.get(w["workflow_id"], ()))}
+    done = {w["workflow_id"] for w in wfs if is_done(Path(plan_path).parent, w, attempts.get(w["workflow_id"], ()), records.get(w["workflow_id"], ()), proof.get(w["workflow_id"]))}
     run = [i for i in order if i in set(running)]
     handback = [i for i in order if i not in done and i not in run and launches.get(i, 0) >= HANDBACK_LAUNCHES]
     ready = []
@@ -403,10 +468,10 @@ def migrate(conn):
 
 
 def journal_view(conn, plan_path, ids, session=None):
-    """Read the journal for one plan. Returns dict(running=set, launches={wid:n}, failed={wid:n}, any=bool,
-    attempts={wid:set(attempt_id)}). Everything here is an ADMITTED launch: failed counts this session's admitted
-    launches that then FAILED; hook refusals are never counted."""
-    out = {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}, "records": {}}
+    """Read the journal for one plan. Returns dict(running=set, launches={wid:n}, any=bool, attempts={wid:set(attempt_id)},
+    records={wid:{(unit,attempt,sha)}}, proof={wid:{(unit,attempt,sha):(writer agent_id, [run folders])}}).
+    Everything here is an ADMITTED launch; hook refusals are never counted."""
+    out = {"running": set(), "launches": {}, "any": False, "attempts": {}, "records": {}, "proof": {}}
     p = str(plan_path)
     idset = set(ids)
     try:
@@ -418,14 +483,10 @@ def journal_view(conn, plan_path, ids, session=None):
             if wid in idset:
                 out["launches"][wid] = n
         out["any"] = bool(out["launches"]) or (not idset and bool(conn.execute("SELECT 1 FROM launch_tags WHERE plan=? LIMIT 1", (p,)).fetchone()))
-        for wid, uid, aid, sha in conn.execute("SELECT workflow_id,unit_id,attempt_id,sha256 FROM verdict_records WHERE plan=?", (p,)):
-            out["records"].setdefault(wid, set()).add((uid, aid, sha))
+        out["records"], out["proof"] = _records_proof(conn, p)
         for wid, aid in conn.execute("SELECT workflow_id,attempt_id FROM attempt_ids WHERE plan=?", (p,)):
             if wid in idset:
                 out["attempts"].setdefault(wid, set()).add(aid)
-        if session is not None:
-            for wid, n in conn.execute("SELECT t.workflow_id,COUNT(*) FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND t.session=? AND l.state='FAILED' GROUP BY t.workflow_id", (p, session)):
-                out["failed"][wid] = out["failed"].get(wid, 0) + n
     except sqlite3.Error:
         pass
     return out
@@ -541,13 +602,23 @@ def remember_session_plan(state_dir, session, plan_path):
         conn.close()
 
 
+def _records_proof(conn, p):
+    """(records, proof) from verdict_records joined to the launch that journaled them (guard records
+    {unit_id, attempt_id, sha256, agent_id, launch_id}; launches holds that launch's transcript and receipt run_id)."""
+    rec, proof = {}, {}
+    for wid_, uid_, aid_, sha_, agent_, tr_, rc_ in conn.execute(
+            "SELECT v.workflow_id,v.unit_id,v.attempt_id,v.sha256,v.agent_id,l.transcript,l.receipt FROM verdict_records v LEFT JOIN launches l ON l.id=v.launch_id WHERE v.plan=?", (str(p),)):
+        rec.setdefault(wid_, set()).add((uid_, aid_, sha_))
+        proof.setdefault(wid_, {})[(uid_, aid_, sha_)] = (agent_, run_dirs(tr_, rc_))
+    return rec, proof
+
+
 def _attempts_records(conn, p):
-    att, rec = {}, {}
+    att = {}
     for wid_, aid_ in conn.execute("SELECT workflow_id,attempt_id FROM attempt_ids WHERE plan=?", (str(p),)):
         att.setdefault(wid_, set()).add(aid_)
-    for wid_, uid_, aid_, sha_ in conn.execute("SELECT workflow_id,unit_id,attempt_id,sha256 FROM verdict_records WHERE plan=?", (str(p),)):
-        rec.setdefault(wid_, set()).add((uid_, aid_, sha_))
-    return att, rec
+    rec, proof = _records_proof(conn, p)
+    return att, rec, proof
 
 
 def resolve_plans(cwd, session=None, state_dir=None):
@@ -591,8 +662,8 @@ def resolve_plans(cwd, session=None, state_dir=None):
                         conn.commit()
                     continue
                 wfs = workflows(d)
-                att, rec = _attempts_records(conn, p)
-                if wfs and all(is_done(p.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ())) for w in wfs):
+                att, rec, proof = _attempts_records(conn, p)
+                if wfs and all(is_done(p.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ()), proof.get(w.get("workflow_id"))) for w in wfs):
                     conn.execute("DELETE FROM session_pins WHERE session=? AND plan=?", (str(session), plan))
                     conn.commit()
                     continue
@@ -641,7 +712,7 @@ def protected_plan_paths(cwd, session, state_dir=None):
 
 
 def _empty_view():
-    return {"running": set(), "launches": {}, "failed": {}, "any": False, "attempts": {}, "records": {}}
+    return {"running": set(), "launches": {}, "any": False, "attempts": {}, "records": {}}
 
 
 def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
@@ -670,7 +741,7 @@ def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
     snap["armed"] = is_armed(doc) if doc is not None else bool(view["any"])
     if errs:
         return snap
-    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"])
+    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"], view["proof"])
     return snap
 
 
@@ -685,11 +756,11 @@ def pending_units(plan_path, doc, wf, state_dir=None):
     if not conn:
         return list(wf.get("units") or [])
     try:
-        att, rec = _attempts_records(conn, Path(plan_path).resolve())
+        att, rec, proof = _attempts_records(conn, Path(plan_path).resolve())
     finally:
         conn.close()
     wid = wf.get("workflow_id")
-    return [u for u in wf.get("units") or [] if not unit_done(Path(plan_path).parent, wf, u, att.get(wid, ()), rec.get(wid, ()))]
+    return [u for u in wf.get("units") or [] if not unit_done(Path(plan_path).parent, wf, u, att.get(wid, ()), rec.get(wid, ()), proof.get(wid))]
 
 
 def plan_max_active(plan_path, state_dir=None):
@@ -874,20 +945,42 @@ def fans_out_over_units(script, run_args=None):
 
 
 def window_problem(script, cap, n_units):
-    """None when the script cannot run more than cap agents at once: n_units <= cap, or it carries the canonical
-    rolling window (N <= cap) with every agent() call written as wgSlot(() => agent(...))."""
-    if n_units <= cap:
-        return None
+    """None when the agents running at once EQUAL min(cap, n_units) exactly ("fewer agents than units is a violation").
+    n_units <= cap: the rolling window helper is FORBIDDEN (the plain pipeline already runs every unit at once).
+    n_units > cap: the canonical helper with a window of exactly cap, every agent() written wgSlot(() => agent(...))."""
     code = sanitize(script)
     m = re.search(r"const WG_WINDOW = (\d+);", code)
-    if not m or not (1 <= int(m.group(1)) <= cap):
-        return "no recognised concurrency window <= %d" % cap
+    if n_units <= cap:
+        if m or "wgSlot" in code or "WG_WINDOW" in code:
+            return "the rolling window helper is forbidden when units (%d) <= cap (%d): the plain pipeline already runs all %d at once, a window would run fewer agents than units" % (n_units, cap, n_units)
+        return None
+    if not m or int(m.group(1)) != cap:
+        return "the concurrency window must be exactly %d (min of the live cap and %d units); found %s" % (cap, n_units, m.group(1) if m else "none")
     if sanitize(window_helper(int(m.group(1)))) not in code:
         return "the window helper was altered; it must be byte-for-byte the one make-workflow.py emits"
     for a in calls(code, "agent"):
         if not re.search(r"wgSlot\s*\(\s*\(\s*\)\s*=>\s*$", code[:a[0]]):
             return "an agent() call is not wrapped as wgSlot(() => agent(...))"
     return None
+
+
+def family_pin_problem(script):
+    """None unless a builder (non-QC phase) and a checker (phase QC) agent() model pin of the script share a model family."""
+    code, pins = sanitize(script), {"b": set(), "c": set()}
+    for st, o, end in calls(code, "agent"):
+        if end < 0:
+            continue
+        def pin(key):  # key found in CODE (not inside a prompt string); its string value read from the raw script at the same offset
+            k = re.search(r"\b" + key + r"\s*:\s*['\"]", code[o:end])
+            if not k:
+                return None
+            v = re.match(r"([^'\"]*)['\"]", script[o + k.end():end])
+            return v.group(1) if v else None
+        mv, pv = pin("model"), pin("phase")
+        if mv is not None:
+            pins["c" if (pv or "").strip().lower() == "qc" else "b"].add(model_family(mv))
+    both = pins["b"] & pins["c"]
+    return ("builder and checker model pins share the family %s; the checker must be a different model family from the builder" % sorted(both)[0]) if both else None
 
 
 def _read_script(ti, cwd):
@@ -968,7 +1061,7 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
         got = _unit_list(args.get("units"))
         view = snap["view"]
         pend = [u.get("unit_id") for u in (w.get("units") or []) if isinstance(u, dict)
-                and not unit_done(path.parent, w, u, view["attempts"].get(required, ()), view["records"].get(required, ()))]
+                and not unit_done(path.parent, w, u, view["attempts"].get(required, ()), view["records"].get(required, ()), view["proof"].get(required))]
         repair = 0 < len(pend) < len(want)
         if got is None:
             problems.append("args.units is %s; it must be the list of this workflow's unit_ids" % ("missing" if "units" not in args else "malformed"))
@@ -992,11 +1085,14 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
                 try:
                     stage = unit_stage_problem(script)
                     win = None if stage else window_problem(script, cap_now, len(got))
+                    fam = None if stage else family_pin_problem(script)
                 except Exception as e:  # parser trouble under a plan is undeterminable
                     problems.append("undeterminable launch (blocked, fail closed): %s while reading the script" % type(e).__name__)
                 else:
                     if stage:
                         problems.append(stage)
+                    if fam:
+                        problems.append(fam)
                     if win:
                         problems.append("the script cannot be shown to respect the per-workflow cap of %d agents at once for %d units: %s" % (cap_now, len(got), win))
     if not problems:
@@ -1104,12 +1200,40 @@ def _file_records(root, wid):
     return {wid: out}
 
 
-def _journal_verdicts(state_dir, root, wid):
+def _mkrun(root, wid, builder="opus", checker="sonnet"):
+    """Test helper: a real-shaped run folder (journal.jsonl 'started' lines + agent-<id>.meta.json with the ACTUAL model) for every
+    unit of wid: build:<unit> on `builder`, qc:<unit> on `checker`. Returns (transcript path, run folder)."""
+    doc = json.loads((Path(root) / "SWARM-PLAN.json").read_text())
+    wf = next(w for w in workflows(doc) if w["workflow_id"] == wid)
+    tx = Path(root) / ".tx" / "sess.jsonl"
+    run = tx.parent / "sess" / "subagents" / "workflows" / ("wf_" + wid)
+    run.mkdir(parents=True, exist_ok=True)
+    tx.write_text("")
+    lines = ['{"type":"launched"}']
+    for u in wf["units"]:
+        for pre, ph, model in (("bu", "Build", builder), ("qc", "QC", checker)):
+            aid = "%s-%s" % (pre, u["unit_id"])
+            lines.append(json.dumps({"type": "started", "key": "k" + aid, "agentId": aid, "label": ("build:" if pre == "bu" else "qc:") + u["unit_id"], "phase": ph}))
+            (run / ("agent-%s.meta.json" % aid)).write_text(json.dumps({"agentType": "workflow-subagent", "description": "x", "model": model}))
+    (run / "journal.jsonl").write_text("\n".join(lines) + "\n")
+    return tx, run
+
+
+def _proof(root, wid, writer_prefix="qc"):
+    """{wid: {(unit,attempt,sha): (writer agent_id, [run folder])}} for every verdict file on disk, as journal_view builds it."""
+    _tx, run = _mkrun(root, wid) if not (Path(root) / ".tx" / "sess" / "subagents" / "workflows" / ("wf_" + wid)).exists() else (None, Path(root) / ".tx" / "sess" / "subagents" / "workflows" / ("wf_" + wid))
+    return {wid: {k: ("%s-%s" % (writer_prefix, k[0]), [str(run)]) for k in _file_records(root, wid)[wid]}}
+
+
+def _journal_verdicts(state_dir, root, wid, writer_prefix="qc"):
     """Test helper: journal every verdict file of wid currently on disk, as the guard does for an attested subagent write."""
     conn = open_journal(state_dir)
     try:
         for uid, aid, sha in _file_records(root, wid)[wid]:
-            conn.execute("INSERT OR IGNORE INTO verdict_records VALUES(?,?,?,?,?,?,?,?)", (str((Path(root) / "SWARM-PLAN.json").resolve()), wid, uid, aid, sha, "test-agent", "test-launch", time.time()))
+            conn.execute("INSERT OR IGNORE INTO verdict_records VALUES(?,?,?,?,?,?,?,?)", (str((Path(root) / "SWARM-PLAN.json").resolve()), wid, uid, aid, sha, "%s-%s" % (writer_prefix, uid), "test-launch-" + wid, time.time()))
+        tx, _run = _mkrun(root, wid)
+        conn.execute("CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT)")
+        conn.execute("INSERT OR REPLACE INTO launches VALUES(?,?,?,?,?,?,?,?,?)", ("test-launch-" + wid, "s", str(tx), time.time(), "h", "COMPLETED", "n", 1, json.dumps({"run_id": "wf_" + wid})))
         conn.commit()
     finally:
         conn.close()
@@ -1209,39 +1333,40 @@ def selftest():
     check("at max_active nothing owed", s["owed"] == [], s)
     A1 = {"W0-01": {"A1"}}
     R = lambda: _file_records(proj, "W0-01")
+    P = lambda: _proof(proj, "W0-01")
     _verdict(proj, "W0-01", "FAIL")
-    check("FAIL verdict is not done", compute(plan, doc, attempts=A1, records=R())["done"] == [])
+    check("FAIL verdict is not done", compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
     check("PASS without an admitted attempt id is not done", compute(plan, doc)["done"] == [] and compute(plan, doc, attempts={"W0-01": {"B9"}})["done"] == [])
     _verdict(proj, "W0-01", "PASS")
-    check("control: PASS + admitted attempt + journal record + different families -> done", compute(plan, doc, attempts=A1, records=R())["done"] == ["W0-01"], compute(plan, doc, attempts=A1, records=R()))
+    check("control: PASS + admitted attempt + journal record + different families -> done", compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == ["W0-01"], compute(plan, doc, attempts=A1, records=R(), proof=P()))
     check("PASS verdict with NO journal record is not done (a hand-written file never counts)", compute(plan, doc, attempts=A1)["done"] == [] and compute(plan, doc, attempts=A1, records={"W0-01": set()})["done"] == [])
     rr = R(); rr["W0-01"] = {(u_, a_, "0" * 64) for (u_, a_, _s) in rr["W0-01"]}
-    check("journal sha256 differing from the file (edited after journaling) is not done", compute(plan, doc, attempts=A1, records=rr)["done"] == [])
+    check("journal sha256 differing from the file (edited after journaling) is not done", compute(plan, doc, attempts=A1, records=rr, proof=P())["done"] == [])
     rr = R(); rr["W0-01"] = {(u_, "A9", s_) for (u_, a_, s_) in rr["W0-01"]}
-    check("journal record under another attempt_id is not done", compute(plan, doc, attempts=A1, records=rr)["done"] == [])
+    check("journal record under another attempt_id is not done", compute(plan, doc, attempts=A1, records=rr, proof=P())["done"] == [])
     for b_, r_ in (("claude-opus-4-5", "opus"), ("anthropic/claude-opus-4-5-20251101", "OPUS"), ("ds/deepseek-flash", "deepseek-v4-pro"), ("gpt-5", "openai/GPT-4o"), ("zz-model-7", "ZZ_MODEL 8")):
         _verdict(proj, "W0-01", builder=b_, reviewer=r_)
-        check("same model family under two names is not done: %r vs %r" % (b_, r_), model_family(b_) == model_family(r_) and compute(plan, doc, attempts=A1, records=R())["done"] == [], (model_family(b_), model_family(r_)))
+        check("same model family under two names is not done: %r vs %r" % (b_, r_), model_family(b_) == model_family(r_) and compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [], (model_family(b_), model_family(r_)))
     check("model_family normalizes vendor prefix, version, date, case", model_family("anthropic/claude-opus-4-5-20251101") == "opus" and model_family("Claude-3-5-Sonnet-20241022") == "sonnet" and model_family("ollama/glm-5.3:cloud") == "glm" and model_family("opus") != model_family("sonnet"))
     _verdict(proj, "W0-01", "PASS")
     for label, kw in (("builder == reviewer", {"builder": "opus", "reviewer": "Opus"}), ("empty reviewer", {"reviewer": ""}), ("empty builder", {"builder": " "}), ("verdict 'pass'", {"v": "pass"}), ("verdict 'PASS '", {"v": "PASS "})):
         _verdict(proj, "W0-01", **kw)
-        check("unit verdict invalid: %s" % label, compute(plan, doc, attempts=A1, records=R())["done"] == [])
+        check("unit verdict invalid: %s" % label, compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
     u1 = next(w for w in workflows(doc) if w["workflow_id"] == "W0-01")["units"][0]["verdict_file"]
     d_ = json.loads((proj / u1).read_text()); d_["unit_id"] = "W0-01-U2"; (proj / u1).write_text(json.dumps(d_))
-    check("unit verdict naming another unit is not done", compute(plan, doc, attempts=A1, records=R())["done"] == [])
+    check("unit verdict naming another unit is not done", compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [])
     _verdict(proj, "W0-01", "FAIL")
     _verdict(proj, "W0-01", "PASS", unit_ids_={"W0-01-U1"})
-    check("a workflow is done only when EVERY unit has a PASS (7 of 8 -> not done)", compute(plan, doc, attempts=A1, records=R())["done"] == [])
+    check("a workflow is done only when EVERY unit has a PASS (7 of 8 -> not done)", compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [])
     _verdict(proj, "W0-01", "PASS")
-    s = compute(plan, doc, attempts=A1, records=R())
+    s = compute(plan, doc, attempts=A1, records=R(), proof=P())
     check("PASS verdict makes done and releases dependents", s["done"] == ["W0-01"] and s["ready"] == ["W0-02", "W0-03", "W0-04"] and s["owed"] == ["W0-02", "W0-03"], s)
     doc2 = json.loads(plan.read_text())
     doc2["status"] = "complete"
-    check("status field ignored for done", compute(plan, doc2, attempts=A1, records=R())["done"] == ["W0-01"] and compute(plan, doc2)["done"] == [])
-    s = compute(plan, doc, launches={"W0-02": 3}, attempts=A1, records=R())
+    check("status field ignored for done", compute(plan, doc2, attempts=A1, records=R(), proof=P())["done"] == ["W0-01"] and compute(plan, doc2)["done"] == [])
+    s = compute(plan, doc, launches={"W0-02": 3}, attempts=A1, records=R(), proof=P())
     check("handback after 3 launches, not owed", s["handback"] == ["W0-02"] and "W0-02" not in s["owed"] and s["owed"] == ["W0-03", "W0-04"], s)
     check("armed iff status running; a recorded launch alone does not arm; 'active' does not arm", is_armed({"status": "running"}) and not is_armed({"status": "planned-not-running"}) and not is_armed({"status": "active"}))
     sr = tmp / "setrun"; sr.mkdir(); srp = _mkplan(sr, {"S-01": 2})
@@ -1398,6 +1523,37 @@ def selftest():
     ok, msg = check_launch({"script": GOOD_SCRIPT, "args": {"workflowId": "P-01", "units": unit_ids(workflows(json.loads((pc / "SWARM-PLAN.json").read_text()))[0]), "attemptId": "p1"}}, pc, state_dir=tmp / "probe3", reap=False)
     check("8 units, plan cap 10, probe measures 6: unwindowed launch blocked by the MEASURED cap", not ok and "per-workflow cap of 6 agents at once for 8 units" in msg, msg[:300])
     PROBE = lambda: {"per_workflow_cap": 10}
+    # #5 exact concurrency window: min(cap, units), helper forbidden when units fit
+    for label, scr, cap_, n_, needle in (
+            ("window 1 with 7 units cap 10 refused (fewer agents than units)", _windowed(GOOD_SCRIPT, 1), 10, 7, "forbidden"),
+            ("window helper with 7 units cap 10 refused (units fit the cap)", _windowed(GOOD_SCRIPT, 10), 10, 7, "forbidden"),
+            ("window helper with 10 units cap 10 refused (units == cap)", _windowed(GOOD_SCRIPT, 10), 10, 10, "forbidden"),
+            ("12 units cap 10 window 10 allowed", _windowed(GOOD_SCRIPT, 10), 10, 12, None),
+            ("12 units cap 10 window 9 refused (window < cap)", _windowed(GOOD_SCRIPT, 9), 10, 12, "exactly 10"),
+            ("12 units cap 10 window 1 refused", _windowed(GOOD_SCRIPT, 1), 10, 12, "exactly 10"),
+            ("8 units cap 6 window 6 allowed", _windowed(GOOD_SCRIPT, 6), 6, 8, None),
+            ("8 units cap 6 window 5 refused", _windowed(GOOD_SCRIPT, 5), 6, 8, "exactly 6"),
+            ("7 units cap 10 plain pipeline allowed", GOOD_SCRIPT, 10, 7, None)):
+        wp = window_problem(scr, cap_, n_)
+        check(label, (wp is None) if needle is None else (wp is not None and needle in wp), wp)
+    # #6 actual model families and who wrote the verdict
+    fx = tmp / "fam"; fx.mkdir(); fp = _mkplan(fx, {"F-01": 2}); fdoc = json.loads(fp.read_text()); fwf = workflows(fdoc)[0]
+    _verdict(fx, "F-01"); FA = {"F-01": {"A1"}}
+    fr = lambda: _file_records(fx, "F-01")
+    _tx, frun = _mkrun(fx, "F-01")
+    fproof = lambda w="qc": _proof(fx, "F-01", w)
+    check("control: qc agent writes, builder opus vs checker sonnet (actual meta.json) -> done", compute(fp, fdoc, attempts=FA, records=fr(), proof=fproof())["done"] == ["F-01"])
+    check("builder agent writing its own PASS is not done (writer label is build:, not qc:)", compute(fp, fdoc, attempts=FA, records=fr(), proof=fproof("bu"))["done"] == [])
+    check("proof missing -> not done (fail closed)", compute(fp, fdoc, attempts=FA, records=fr())["done"] == [])
+    _mkrun(fx, "F-01", builder="opus", checker="claude-opus-4-5")
+    check("builder and checker ACTUALLY both opus -> not done even though the verdict JSON claims opus vs sonnet", compute(fp, fdoc, attempts=FA, records=fr(), proof=fproof())["done"] == [])
+    _mkrun(fx, "F-01")
+    for f_ in frun.glob("agent-qc-*.meta.json"):
+        f_.unlink()
+    check("checker actual model unreadable (no meta.json) -> not done", compute(fp, fdoc, attempts=FA, records=fr(), proof=fproof())["done"] == [])
+    _mkrun(fx, "F-01")
+    PIN = lambda b, c: GOOD_SCRIPT.replace("model: 'opus'", "model: '%s'" % b).replace("model: 'sonnet'", "model: '%s'" % c)
+    check("launch script with builder and checker pins of the same family refused", family_pin_problem(PIN("opus", "claude-opus-4-5")) is not None and family_pin_problem(PIN("opus", "sonnet")) is None)
     print("staffing.py selftest: %s" % ("ALL PASS" if not fails else "%d FAILED: %s" % (len(fails), ", ".join(fails))))
     return 1 if fails else 0
 

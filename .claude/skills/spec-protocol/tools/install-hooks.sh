@@ -10,10 +10,11 @@
 # finds them -- the same place Hook Skill puts its workflow-guard, so both
 # installers agree) and MERGES their
 # registrations into <root>/settings.json. <root> defaults to
-# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}. The registrations:
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}; with no argument and no CLAUDE_CONFIG_DIR it ALSO installs into
+# $HOME/.claude-nine when that folder exists (same registrations in both). The registrations:
 #   Stop                                 -> conversation-gate.py, gate0-claim-gate.py
 #   PreToolUse matcher "Workflow"        -> workflow-syntax-gate.py
-#   PreToolUse matcher "Workflow|Agent|Task" -> dispatch-gate.py
+#   PreToolUse matcher "Workflow|Agent|Task|SendMessage" -> dispatch-gate.py (timeout 120)
 #   env CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS = this box's MEASURED
 #       per-workflow cap (capacity_probe.py: RAM, cores, container limits).
 #
@@ -69,7 +70,8 @@ hooks_dir = os.path.join(root, "hooks")
 WANT = [("Stop", None, "conversation-gate.py"),
         ("Stop", None, "gate0-claim-gate.py"),
         ("PreToolUse", "Workflow", "workflow-syntax-gate.py"),
-        ("PreToolUse", "Workflow|Agent|Task", "dispatch-gate.py")]
+        ("PreToolUse", "Workflow|Agent|Task|SendMessage", "dispatch-gate.py")]
+TIMEOUT = {"dispatch-gate.py": 120}  # the gate reads the plan and the guard journal: 120 s, same as the workflow-guard hooks
 if os.path.exists(path):
     try:
         with open(path, encoding="utf-8") as fh:
@@ -121,7 +123,7 @@ for event, matcher, fname in WANT:
         if found:
             break
     if found is None:
-        new = {"hooks": [{"type": "command", "command": cmd_for(fname), "timeout": 30}]}
+        new = {"hooks": [{"type": "command", "command": cmd_for(fname), "timeout": TIMEOUT.get(fname, 30)}]}
         if matcher is not None:
             new = {"matcher": matcher, **new}
         entries.append(new)
@@ -130,6 +132,8 @@ for event, matcher, fname in WANT:
     p = cmd_path(str(h.get("command", "")), fname)
     if not p or not os.path.isfile(os.path.expanduser(p)):
         h["command"] = cmd_for(fname)
+    if fname in TIMEOUT and h.get("timeout") != TIMEOUT[fname]:
+        h["timeout"] = TIMEOUT[fname]
     if matcher is not None and entry.get("matcher") != matcher:
         if len(entry.get("hooks") or []) == 1:
             entry["matcher"] = matcher
@@ -194,7 +198,8 @@ assert any(c["command"] == "echo mine" for e in h["Stop"] for c in e["hooks"])
 for f in ("conversation-gate.py", "gate0-claim-gate.py"):
     assert len(where(f)) == 1 and where(f)[0][0] is None, f
 assert len(where("workflow-syntax-gate.py")) == 1 and where("workflow-syntax-gate.py")[0][0] == "Workflow"
-assert len(where("dispatch-gate.py")) == 1 and where("dispatch-gate.py")[0][0] == "Workflow|Agent|Task"
+assert len(where("dispatch-gate.py")) == 1 and where("dispatch-gate.py")[0][0] == "Workflow|Agent|Task|SendMessage"
+assert all(c.get("timeout") == 120 for e in h["PreToolUse"] for c in e["hooks"] if "dispatch-gate.py" in c["command"])
 assert "/nonexistent/" not in json.dumps(d)
 PYEOF
   [ "${c1}" = "${c2}" ] || ok=0
@@ -204,7 +209,7 @@ PYEOF
   [ "$(ls "${T}/root" | grep -c '^settings.json.bak-spec-protocol-')" = "1" ] || ok=0
   case "${out}" in *DECOY*) ok=0 ;; esac
   if [ "${ok}" = "1" ]; then
-    echo "install-hooks.sh selftest: PASS (merge kept foreign keys/hooks, moved dispatch-gate to Workflow|Agent|Task, one backup, re-run byte-identical; first-run rc=${rc})"
+    echo "install-hooks.sh selftest: PASS (merge kept foreign keys/hooks, moved dispatch-gate to Workflow|Agent|Task|SendMessage (timeout 120), one backup, re-run byte-identical; first-run rc=${rc})"
     exit 0
   fi
   echo "install-hooks.sh selftest: FAIL"
@@ -216,6 +221,11 @@ case "${1:-}" in
   --selftest) run_selftest ;;
   --root) install_root "${2:?--root needs a path}"; exit $? ;;
   -h|--help) sed -n '2,30p' "${SELF}"; exit 0 ;;
-  "") install_root "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; exit $? ;;
+  "")  # no argument: claude (or CLAUDE_CONFIG_DIR) AND, when the folder exists, claude-nine -- same registrations in both
+    rc=0; install_root "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" || rc=$?
+    if [ -z "${CLAUDE_CONFIG_DIR:-}" ] && [ -d "$HOME/.claude-nine" ]; then
+      install_root "$HOME/.claude-nine" || { r=$?; [ "$rc" = "2" ] || rc=$r; }
+    fi
+    exit "$rc" ;;
   *) echo "install-hooks.sh: unknown argument $1" >&2; exit 2 ;;
 esac

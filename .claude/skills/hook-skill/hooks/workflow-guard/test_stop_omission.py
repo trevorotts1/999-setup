@@ -116,8 +116,26 @@ def test_release_a_stop_latch(env, capsys):
     assert capsys.readouterr().out == ''
 
 
+def human_prompt(sid='s1', source='user'):
+    guard.user_prompt({'session_id': sid, 'prompt': 'what is the status?', 'source': source})
+
+
 def test_release_b_question_only(env):
-    plan(env.proj); (env.qg / 's1.json').write_text(json.dumps({'mode': 'question'})); assert stop(env) is None
+    # Only the most recent HUMAN prompt may set question-only: the question-gate state must be stamped right after it.
+    plan(env.proj); human_prompt(); (env.qg / 's1.json').write_text(json.dumps({'mode': 'question', 'at': int(time.time())}))
+    assert stop(env) is None
+
+
+def test_release_b_question_state_without_a_human_prompt_does_not_release(env):
+    # A machine prompt (agent report, wakeup) is classified by the question-gate too, but the guard never saw a human prompt for it.
+    plan(env.proj); (env.qg / 's1.json').write_text(json.dumps({'mode': 'question', 'at': int(time.time())}))
+    assert (stop(env) or '').startswith('Owed now:')
+    human_prompt(source='schedule_wakeup')  # machine source: not recorded as human
+    assert (stop(env) or '').startswith('Owed now:')
+    human_prompt()
+    assert stop(env) is None
+    (env.qg / 's1.json').write_text(json.dumps({'mode': 'question', 'at': int(time.time()) + 3600}))  # a stale/other stamp is not that human prompt
+    assert (stop(env) or '').startswith('Owed now:')
 
 
 def test_hook_refusals_never_release_the_stop(env):
@@ -139,7 +157,7 @@ def test_release_c_every_owed_workflow_has_three_failed_admitted_launches(env):
     for _ in range(2): launch(env, 'W0-01', 'FAILED')
     assert (stop(env) or '').startswith('Owed now:')
     launch(env, 'W0-01', 'FAILED')
-    assert stop(env) is None  # handback: not owed, alert written, the user decides
+    assert stop(env) is None  # handback: not owed, alert written, the owner decides
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
     assert any(a['state'] == 'WORKFLOW_HANDBACK' for a in alerts)
 
@@ -175,11 +193,15 @@ def test_plan_armed_by_the_first_admitted_launch(env):
     assert stop(env) is None
     row = ('L1', 's1', '', time.time(), 'h', 'VALIDATED', 'n', 8, '')
     assert guard.admit_launch(row, ('W0-01', str(p.resolve()), 'A1')) is None
+    assert json.loads(p.read_text())['status'] == 'planned-not-running'  # phase one only reserves; nothing is armed yet
+    assert stop(env) is None
+    guard.confirm_launch(guard.read_rows("SELECT * FROM launches WHERE id='L1'")[0])  # phase two (PostToolUse)
     assert json.loads(p.read_text())['status'] == 'running'
     assert stop(env).startswith('Owed now: W0-02')
-    # a recorded launch alone (status reverted to planned-not-running) does not arm
+    # Rule change (final pass): a plan with a CONFIRMED launch of this session is re-armed at Stop if its status was reverted out of band
     d = json.loads(p.read_text()); d['status'] = 'planned-not-running'; p.write_text(json.dumps(d))
-    assert stop(env) is None
+    assert stop(env).startswith('Owed now: W0-02')
+    assert json.loads(p.read_text())['status'] == 'running'
 
 
 def test_armed_invalid_plan_blocks_stop_and_lists_errors(env, capsys):
@@ -188,11 +210,11 @@ def test_armed_invalid_plan_blocks_stop_and_lists_errors(env, capsys):
     assert r and 'INVALID' in r and 'policy.max_active_workflows' in r
     assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0
     assert json.loads(capsys.readouterr().out)['decision'] == 'block'
-    (env.qg / 's1.json').write_text(json.dumps({'mode': 'question'}))
-    assert stop(env) is None  # a question-only turn still releases
+    human_prompt(); (env.qg / 's1.json').write_text(json.dumps({'mode': 'question', 'at': int(time.time())}))
+    assert stop(env) is None  # a question-only HUMAN turn still releases
     (env.qg / 's1.json').unlink()
-    guard.write_txn([("INSERT INTO continuations VALUES('s1',0,1,0)", None)])
-    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0 and capsys.readouterr().out == ''  # the user's pause releases
+    guard.write_txn([("INSERT OR REPLACE INTO continuations VALUES('s1',0,1,0)", None)])
+    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0 and capsys.readouterr().out == ''  # the owner's pause releases
 
 
 def test_unarmed_invalid_plan_does_not_trap_the_stop(env):

@@ -39,6 +39,16 @@ class Merge(unittest.TestCase):
         self.assertEqual(sm.register(self.f, sys.executable, self.hd, ["workflow-guard"]), 0)
         self.assertEqual(self.read(), first)
 
+    def test_workflow_guard_matchers_and_timeouts_match_the_live_registrations(self):
+        sm.register(self.f, sys.executable, self.hd, ["workflow-guard"])
+        h = self.read()["hooks"]
+        by = {e: [(g.get("matcher"), x["timeout"]) for g in gs for x in g["hooks"]] for e, gs in h.items()}
+        self.assertEqual(by["PreToolUse"], [("Workflow|Agent|Task|SendMessage|TaskOutput|Edit|Write|MultiEdit|NotebookEdit|Bash", 120)])
+        self.assertEqual(by["PostToolUse"], [("Workflow|TaskStop|Agent|Task|TaskOutput|Write", 120)])
+        self.assertEqual(by["PostToolUseFailure"], [(".*", 120)])
+        for e in ("SessionStart", "Stop", "UserPromptSubmit"):
+            self.assertEqual(by[e], [(None, 120)])
+
     def test_question_gate_registers_both_events(self):
         sm.register(self.f, sys.executable, self.hd, ["question-gate"])
         h = self.read()["hooks"]

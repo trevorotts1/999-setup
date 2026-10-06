@@ -80,7 +80,7 @@ def test_2_atomic_cap_thirty_threads():
     admitted = [r for r in out if r is None]
     refused = [r for r in out if r]
     c = raw()
-    rows = c.execute("SELECT COUNT(*) n FROM launches WHERE state='VALIDATED'").fetchone()['n']
+    rows = c.execute("SELECT COUNT(*) n FROM launches WHERE state='RESERVED'").fetchone()['n']  # two-phase admission: PreToolUse reserves, PostToolUse confirms
     c.close()
     assert all('already running %d workflows, the operator limit of %d' % (cap, cap) in r for r in refused), 'wrong refusal reason: %r' % set(refused)
     assert len(admitted) == cap, 'cap %d: exactly %d must be admitted, got %d' % (cap, cap, len(admitted))
@@ -128,7 +128,7 @@ def test_5_finished_run_reaped_from_its_own_journals():
     d = t.parent / 'transcript' / 'subagents' / 'workflows' / 'wf_run1' / 'journal.jsonl'
     c = raw()
     c.execute('INSERT INTO launches VALUES(?,?,?,?,?,?,?,?,?)',
-              ('fin', 's-fin', str(t), time.time(), 'sha-fin', 'VALIDATED', 'wf-fin', 2, ''))
+              ('fin', 's-fin', str(t), time.time(), 'sha-fin', 'VALIDATED', 'wf-fin', 2, '{"run_id": "wf_run1"}'))  # a launch owns only the journal of ITS run id
     # No journal yet: the run stays live, because absence is not evidence.
     assert occ()['workflows'] == 1, 'a launch with no journal yet must stay live, got %r' % occ()
     c.execute('INSERT INTO watches VALUES(?,?,?,?,?,?)', (str(d), 's-fin', time.time(), '', 'AGENTS_RETURNED', ''))

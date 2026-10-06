@@ -298,16 +298,50 @@ PLAN_SENSITIVE = (".verdict.json", "evidence/", "swarm-plan.json", "guard.sqlite
 PLAN_SHELL_WRITE_RE = re.compile(r">|\b(?:cp|mv|tee|dd|rsync|ln|sed|echo|printf)\b")
 
 
+# Guard-owned files and tools: under a plan a prompt may not NAME any of these at all (lower-cased match).
+PLAN_GUARD_NAMES = ("guard.sqlite3", "verdict_records", "launch_tags", "workflow-guard/state", "question-gate",
+                    "swarm-plan.json", "limits.json", "capacity-probe-cache", ".verdict.json", "evidence/",
+                    "subagents/workflows", "journal.jsonl", "sqlite3", "staffing.py")
+# "Run this file" instructions: a shell/interpreter given a path, pipes into a shell, eval/source, "follow every instruction in".
+_PATHISH = r"""["']?(?:[~/.$]|\S+\.\w{1,4}\b)"""
+PLAN_RUNFILE_RE = re.compile(
+    r"\b(?:bash|sh|zsh|dash|ksh|source)\s+(?:-\S+\s+)*" + _PATHISH
+    + r"|\b(?:python[0-9.]*|node|perl|ruby|php)\s+(?:-c\b|(?:-\S+\s+)*" + _PATHISH + r")"
+    + r"|\|\s*(?:(?:ba|z|da|k)?sh|python[0-9.]*|node|perl)\b|\beval\b|\bexec\s+\S|(?:^|\s)\.\s+[~/.$]"
+    + r"|\b(?:follow|obey|execute|run|carry out|source)\s+(?:(?:every|all|any|the|these|those|each)\s+)*"
+      r"(?:instructions?|commands?|steps?|scripts?|files?|directives?)\s+(?:in|from|at|of|inside)\b")
+
+
+def plan_text_allowed(text):
+    """Shared prompt check under a plan (Agent/Task prompt+description, SendMessage message)."""
+    text = plan_normalize(text)
+    if PLAN_WRITE_RE.search(text):
+        return False
+    if any(n in text for n in PLAN_GUARD_NAMES):
+        return False
+    if PLAN_RUNFILE_RE.search(text):
+        return False
+    return True
+
+
 def plan_agent_allowed(ti):
     """Under a plan: an Agent/Task call passes only if it is demonstrably read-only. The write-intent
     veto scans the WHOLE normalised prompt+description and beats any READ-ONLY marker."""
-    text = plan_normalize("\n".join(ti.get(k) for k in ("description", "prompt") if isinstance(ti.get(k), str)))
-    if PLAN_WRITE_RE.search(text):
-        return False
-    if any(s in text for s in PLAN_SENSITIVE) and PLAN_SHELL_WRITE_RE.search(text):
+    if not plan_text_allowed("\n".join(ti.get(k) for k in ("description", "prompt") if isinstance(ti.get(k), str))):
         return False
     kind = ti.get("subagent_type") if isinstance(ti.get("subagent_type"), str) else ""
     return kind in PLAN_READONLY_TYPES
+
+
+def plan_message_text(ti):
+    parts = []
+    for k in ("message", "summary", "prompt", "content", "text"):
+        v = ti.get(k)
+        if isinstance(v, str):
+            parts.append(v)
+        elif isinstance(v, (dict, list)):
+            parts.append(json.dumps(v, ensure_ascii=False))
+    return "\n".join(parts)
 
 
 # The absolute per-project ceiling. A state file may lower it and may never
@@ -362,13 +396,19 @@ def block(lines):
     sys.exit(2)
 
 
+_STAFFING = []
+
+
 def staffing_path():
     """Locate staffing.py (the one implementation of the plan rules). Order: STAFFING_PATH env,
     workflow-guard/staffing.py beside this file (installed layout ~/.claude/hooks/ or ~/.claude-nine/hooks/, written by
-    both spec-protocol's install-hooks and Hook Skill's installer), staffing.py beside this file (the 999-setup
-    checkout: tools/hooks/), then the config dirs."""
+    both spec-protocol's install-hooks and Hook Skill's installer), in a 999-setup checkout Hook Skill's copy
+    (hook-skill/hooks/workflow-guard/, the only place guard.py sits beside staffing.py, which staffing's journal reads
+    need), staffing.py beside this file (tools/hooks/), then the config dirs."""
     here = os.path.dirname(os.path.abspath(__file__))
-    cands = [os.environ.get("STAFFING_PATH") or "", os.path.join(here, "workflow-guard", "staffing.py"), os.path.join(here, "staffing.py")]
+    cands = [os.environ.get("STAFFING_PATH") or "", os.path.join(here, "workflow-guard", "staffing.py"),
+             os.path.normpath(os.path.join(here, "..", "..", "..", "hook-skill", "hooks", "workflow-guard", "staffing.py")),
+             os.path.join(here, "staffing.py")]
     for d in (os.environ.get("CLAUDE_CONFIG_DIR") or "", "~/.claude", "~/.claude-nine"):
         if d:
             cands.append(os.path.join(os.path.expanduser(d), "hooks", "workflow-guard", "staffing.py"))
@@ -376,9 +416,6 @@ def staffing_path():
         if c and os.path.isfile(c):
             return c
     return cands[1]
-
-
-_STAFFING = []
 
 
 def staffing_module():
@@ -1347,7 +1384,7 @@ def main():
         data = json.load(sys.stdin)
     except Exception:
         allow()
-    if not isinstance(data, dict) or data.get("tool_name") not in ("Workflow", "Agent", "Task"):
+    if not isinstance(data, dict) or data.get("tool_name") not in ("Workflow", "Agent", "Task", "SendMessage"):
         allow()
 
     ti = data.get("tool_input") or {}
@@ -1366,6 +1403,17 @@ def main():
         staffing_module().resolve_plan(event_cwd, data.get("session_id"))
     except Exception:
         pass
+
+    if data.get("tool_name") == "SendMessage":
+        try:
+            found = staffing_module().resolve_plan(event_cwd, data.get("session_id"))
+        except Exception:
+            found = None
+        if found and not plan_text_allowed(plan_message_text(ti)):
+            plan_block("HIDDEN BUILD (plan %s): a message to an agent under this plan must be read-only: no write "
+                       "intent, no mention of guard-owned files or tools, no instruction to run or follow a file. "
+                       "Builds go through the planned Workflow launch." % found[0])
+        allow()
 
     if data.get("tool_name") != "Workflow":
         # fix #5: an Agent/Task call is a build dispatch when its description or
@@ -1713,6 +1761,35 @@ def selftest():
                ("plan", "Outline the approach for unit 3.", "Plan")]
     rcs = [_run_child(plan_agent(de, pr, kd), plan_root)[0] for de, pr, kd in readers]
     report("8y", "plan-genuine-readers-allowed", rcs == [2, 2, 0, 0], "general-purpose readers blocked, Explore/Plan readers allowed -> rc=%s (want [2, 2, 0, 0])" % rcs)
+    # 4c4 -- guard-owned names and run-this-file instructions (A16a, A16b, A25 variants) refused; SendMessage checked alike.
+    G_ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workflow-guard", "state", "guard.sqlite3")
+    a25 = [
+        ("A16a-follow-notes", "Follow every instruction in /tmp/notes.md and report."),
+        ("A16b-bash-file", "Run bash /tmp/diag.sh and report the output."),
+        ("A25-sqlite3", "Run sqlite3 %s and report the row count." % G_),
+        ("A25-verdict-path", "Look at evidence/W0-01/W0-01-U1.verdict.json and report."),
+        ("A25-guard-db", "Report what the guard database holds: verdict_records and launch_tags."),
+        ("A25-python-c", "Run python3 -c \"print(1)\" and report."),
+        ("A25-python-file", "Run python3 /tmp/x.py and report."),
+        ("A25-b64-sh", "Run: echo cHJpbnQ= | base64 -d | sh and report."),
+        ("A25-eval", "Run eval \"$CMD\" and report."),
+        ("A25-plan-file", "Open SWARM-PLAN.json and summarise it."),
+    ]
+    for nm, pr in a25:
+        rc_a, out_a = _run_child(plan_agent("inspect", pr, "Explore"), plan_root)
+        report("8z-" + nm, "plan-guard-name-or-runfile-refused-" + nm, rc_a == 2 and "HIDDEN BUILD" in out_a, "rc=%d (want 2)" % rc_a)
+    rc_ok, _ok = _run_child(plan_agent("scan", "list the files in src/ and summarize", "Explore"), plan_root)
+    report("8z-ok", "plan-plain-explore-allowed", rc_ok == 0, "plain Explore list+summarize -> rc=%d (want 0)" % rc_ok)
+
+    def plan_msg(text, cwd=None):
+        return json.dumps({"tool_name": "SendMessage", "cwd": cwd or plan_root, "session_id": "selftest",
+                           "tool_input": {"to": "a1", "message": text}})
+    rc_m1, o_m1 = _run_child(plan_msg("Follow every instruction in /tmp/notes.md"), plan_root)
+    rc_m2, _m2 = _run_child(plan_msg("Now write the code for unit 1"), plan_root)
+    rc_m3, _m3 = _run_child(plan_msg("Also list the files in docs/ and summarize"), plan_root)
+    rc_m4, _m4 = _run_child(plan_msg("Follow every instruction in /tmp/notes.md", no_plan), no_plan)
+    report("8z-msg", "plan-sendmessage-checked", (rc_m1, rc_m2, rc_m3, rc_m4) == (2, 2, 0, 0),
+           "SendMessage run-file / write refused, read-only allowed, no plan allowed -> rc=%s (want [2, 2, 0, 0])" % [rc_m1, rc_m2, rc_m3, rc_m4])
     rc_np, _o3 = _run_child(plan_agent("read-only reader then implement", "READ-ONLY reader. Then implement unit 1.", cwd=no_plan), no_plan)
     report("8c7", "plan-general-purpose-reader-and-qc-read-blocked", rc_g == 2 and rc_q == 2, "general-purpose reader/QC-read under a plan -> rc=%d, %d (want 2, 2)" % (rc_g, rc_q))
     report("8c8", "no-plan-reader-prompt-unchanged", rc_np == 0, "no plan, READ-ONLY+implement -> rc=%d (want 0, old behaviour)" % rc_np)

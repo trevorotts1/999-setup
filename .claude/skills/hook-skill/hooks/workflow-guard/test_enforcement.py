@@ -35,6 +35,12 @@ def hook(e, ti, tuid, sid='s1', tool='Workflow', **extra):
     return guard.hook({'hook_event_name': 'PreToolUse', 'tool_name': tool, 'tool_input': ti, 'cwd': str(e.proj), 'session_id': sid, 'tool_use_id': tuid, 'transcript_path': '', **extra})
 
 
+def confirm(e, tuid, sid='s1', run='wf_conf1', failure=False):
+    """PostToolUse of a launch: phase two of the admission."""
+    return guard.hook({'hook_event_name': 'PostToolUseFailure' if failure else 'PostToolUse', 'tool_name': 'Workflow', 'tool_input': {}, 'cwd': str(e.proj), 'session_id': sid,
+                       'tool_use_id': tuid, 'transcript_path': '', 'tool_response': 'Task ID: wabcdefgh Run ID: %s' % run})
+
+
 def rows(e, table):
     c = guard.db()
     try:
@@ -50,6 +56,9 @@ def test_refused_launch_records_nothing_then_correct_relaunch_is_admitted(env, c
     assert 'plans exactly 3' in capsys.readouterr().err
     assert rows(env, 'launches') == [] and rows(env, 'launch_tags') == [] and rows(env, 'attempt_ids') == []
     assert hook(env, dict(L), 'good1') == 0
+    # two-phase admission: the PreToolUse only RESERVES (no tag, no attempt id, plan not armed); the PostToolUse confirms
+    assert [r['state'] for r in rows(env, 'launches')] == ['RESERVED'] and rows(env, 'launch_tags') == [] and rows(env, 'attempt_ids') == []
+    confirm(env, 'good1')
     assert len(rows(env, 'launches')) == 1 and [r['workflow_id'] for r in rows(env, 'launch_tags')] == ['W0-01']
     assert [r['attempt_id'] for r in rows(env, 'attempt_ids')] == [L['args']['attemptId']]
     snap = st.snapshot(str(env.proj), env.sd, 's1', reap=False)
@@ -116,9 +125,12 @@ def test_main_session_cannot_write_verdict_files(env, tool, ti, rc, capsys):
 
 def test_subagent_may_write_verdict_files_and_main_session_is_refused_everywhere(env, capsys):
     st._mkplan(env.proj, {'W0-01': 2}, status='running')
-    assert hook(env, {'file_path': VERDICT, 'content': '{}'}, 'v', tool='Write', agent_id='a1', agent_type='general-purpose') == 0
-    assert hook(env, {'command': "echo '{}' > " + VERDICT}, 'v2', tool='Bash', agent_id='a1') == 0
-    capsys.readouterr()
+    # Rule change (final pass): a subagent that is not part of the admitted run of the owning workflow may NOT write the verdict,
+    # and a subagent verdict by Bash is refused (only the Write tool is journaled). The positive case is in test_final_pass.py.
+    assert hook(env, {'file_path': VERDICT, 'content': '{}'}, 'v', tool='Write', agent_id='a1', agent_type='general-purpose') == 2
+    assert 'not part of the admitted run' in capsys.readouterr().err
+    assert hook(env, {'command': "echo '{}' > " + VERDICT}, 'v2', tool='Bash', agent_id='a1') == 2
+    assert 'may not write unit verdict files' in capsys.readouterr().err
     for tool in ('Edit', 'MultiEdit'):  # subagent edits are not journaled, so they are refused
         assert hook(env, {'file_path': VERDICT, 'content': '{}'}, 've' + tool, tool=tool, agent_id='a1') == 2
         assert 'Write unit verdicts with the Write tool' in capsys.readouterr().err

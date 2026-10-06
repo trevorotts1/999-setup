@@ -163,7 +163,8 @@ try {
   return children(n).reduce((sum,c)=>sum+peak(c,stack),0);
  }
  // No script-level clamp: a stage over N items counts N concurrent agents unless the rolling window caps it.
- const bound=WINDOW!==null?Math.min(peak(tree),WINDOW):peak(tree);
+ const rawPeak=peak(tree);
+ const bound=WINDOW!==null?Math.min(rawPeak,WINDOW):rawPeak;
  MODE='total';const totalCalls=peak(tree);MODE='peak';
  const TOTAL_CEILING=200;
  if(totalCalls>TOTAL_CEILING)errors.push(`Script makes ${totalCalls} agent calls in total, above the runaway backstop of ${TOTAL_CEILING}. Split into separate workflows.`);
@@ -171,10 +172,16 @@ try {
  // Per-workflow cap: measured from the box (RAM, cores, Docker/Hostinger limits via capacity_probe.py), max 10, 10 on the
  // operator's Mac. The guard passes the computed cap (plan, limits.json, capacity probe) in WORKFLOW_GUARD_CAP.
  const cap=Number.isInteger(envCap)&&envCap>=1&&envCap<=10?envCap:10;
+ // CONCURRENCY WINDOW (owner rule: fewer agents than units is a violation): the peak must EQUAL min(cap, units).
+ // Units fit the cap -> the window helper is forbidden (the plain pipeline runs them all at once); more units than the
+ // cap -> the window must be exactly the cap. Plan launches (args.units is a list) are held to peak === agent_count.
+ if(WINDOW!==null&&rawPeak<=cap)errors.push(`The rolling window helper is forbidden when units (${rawPeak}) <= cap (${cap}): the plain pipeline already runs all ${rawPeak} at once; a window of ${WINDOW} would run fewer agents than units.`);
+ if(WINDOW!==null&&rawPeak>cap&&WINDOW!==cap)errors.push(`The concurrency window must be exactly the cap ${cap} (min of cap and ${rawPeak} units), not ${WINDOW}.`);
+ if(strict&&Array.isArray(input.args?.units)&&bound!==Math.min(cap,input.args.units.length))errors.push(`Computed peak ${bound} must equal agent_count ${Math.min(cap,input.args.units.length)} = min(cap ${cap}, ${input.args.units.length} units).`);
  if(nameMatch&&Number(nameMatch[3])!==bound)errors.push(`name claims ${Number(nameMatch[3])} lanes, script has ${bound}`);
  if(bound>cap)errors.push(`Computed upper bound ${bound} concurrent agents exceeds effective cap ${cap} (measured per-workflow cap, hard ceiling 10). Use make-workflow.py, which emits a rolling window of <=${cap}, or split into separate workflows.`);
  if(!agents)errors.push('No agent() calls: this is not a visible worker workflow.');
- // SCRATCH ISOLATION : every lane of every
+ // SCRATCH ISOLATION (owner rule): every lane of every
  // workflow is handed the SAME session scratchpad; sibling lanes writing a generic filename clobber each
  // other and read another box's results as their own. A multi-lane script must carry the per-lane rule
  // in its prompts (a private <scratchpad>/lanes/<unit>-<box>/ folder; box-side /tmp/<box>-<unit>- prefix).
