@@ -5,7 +5,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; HOOKS="$HERE/../hooks"
 command -v python3 >/dev/null || { echo "FAIL: python3 not found" >&2; exit 1; }
 command -v node >/dev/null || { echo "FAIL: node not found (workflow-guard tests need Node.js 18+)" >&2; exit 1; }
 rc=0
-run() { echo "== $*"; "$@" >"${TMPDIR:-/tmp}/hookskill-test.out" 2>&1 && echo "   PASS" || { echo "   FAIL"; tail -25 "${TMPDIR:-/tmp}/hookskill-test.out"; rc=1; }; }
+# workflow-guard's validate.mjs imports bare acorn (live operator guard); node_modules/ is
+# gitignored, so a fresh checkout — local or CI — has none. Install it BEFORE the first suite:
+# node-dependent suites must not run against a checkout that has never been installed.
+if [ -f "$HOOKS/workflow-guard/package.json" ] && [ ! -d "$HOOKS/workflow-guard/node_modules/acorn" ]; then
+  (cd "$HOOKS/workflow-guard" && npm ci --no-audit --no-fund) || rc=1
+fi
+# rc=1 set inside run() dies with every suite invoked as `(cd ... && run ...)` — those are
+# subshells. run() therefore also writes a marker file; the final gate reads the marker, so a
+# failing suite can never be reported as "ALL HOOK SKILL TESTS PASSED".
+RCF="${TMPDIR:-/tmp}/hookskill-fail.$$"; rm -f "$RCF"
+run() { echo "== $*"; "$@" >"${TMPDIR:-/tmp}/hookskill-test.out" 2>&1 && echo "   PASS" || { echo "   FAIL"; tail -25 "${TMPDIR:-/tmp}/hookskill-test.out"; rc=1; echo fail >>"$RCF"; }; }
 for t in test_guard.py test_generator.py test_smart_guard.py test_a46_running_at_once.py; do
   (cd "$HOOKS/workflow-guard" && run python3 "$t")
 done
@@ -17,5 +27,7 @@ python3 -c 'import pytest' 2>/dev/null || python3 -m pip install -q pytest 2>/de
 for t in test_hygiene.py test_disk_cleanup.py test_gates.py test_settings_merge.py test_settings_lock.py test_capacity.py; do run python3 "$HERE/$t"; done
 run bash "$HERE/smoke-install.sh"
 find "$HOOKS" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null
+[ -s "$RCF" ] && rc=1
+rm -f "$RCF"
 [ $rc = 0 ] && echo "ALL HOOK SKILL TESTS PASSED" || echo "HOOK SKILL TESTS FAILED"
 exit $rc

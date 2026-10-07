@@ -1,5 +1,5 @@
 """Final staffing rules: #5 exact concurrency window (min(cap, units)), #6 actual-model/writer proof, release (c) removal."""
-import importlib.util, json, os, re, shutil, subprocess, sys
+import importlib.util, json, os, re, subprocess, sys
 from pathlib import Path
 import pytest
 
@@ -7,7 +7,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import staffing as st
 
-NODE = os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE = os.environ.get('WORKFLOW_GUARD_NODE') or '/opt/homebrew/bin/node'
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-NODE = os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE = os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or '/opt/homebrew/bin/node'
 PROGRAM_RE = re.compile(r'^[a-z0-9]{2,12}$')
 UNIT_ID_RE = re.compile(r'^[A-Z]{2,5}-[0-9]{3,}$')
 NAME_RE = re.compile(r'^[a-z0-9]{2,12}-W[0-9]{1,2}-(build\+qc|build|qc|repair|merge|test)-[A-Z]{2,5}[0-9]{3,}(\.\.[A-Z]{2,5}[0-9]{3,})?-[0-9]{1,2}L$')
@@ -21,11 +21,11 @@ const RESULT = {type:'object', properties:{id:{type:'string'},status:{type:'stri
 log('lanes='+INPUT.units.length+' builder='+BUILDER+' reviewer='+REVIEWER+' overlap=per-unit');
 log('Starting '+INPUT.units.length+' independent unit lanes; each unit moves directly from Build to QC.');
 const results = await pipeline(INPUT.units,
- (u) => agent('Unit '+u.id+'. Exclusive ownership: '+u.ownership+'. Do not spawn any helpers, agents or workflows. Do not merge or publish. Produce artifact/commit and test evidence, never self-approve. NEVER run `pm2 jlist` or `pm2 describe` (they dump process environments); `pm2 list` only. SCRATCH ISOLATION: write only inside your private lane folder <scratchpad>/lanes/<UNIT-ID>-<box-slug>/ (this lane: lanes/'+u.id+'-lane/; when working inside the run root use '+INPUT.guard.runRoot+'/lanes/'+u.id+'-lane/, which the guard registers and removes after the run ends) and prefix box temp files /tmp/<box-slug>-<UNIT-ID>- . HYGIENE (standing rule): once your work is merged and released on origin/main (after an explicit reconcile confirming the merge commit is preserved on a branch keep-ref), clean up: remove your own git worktree with git worktree remove <path> (never --force), delete the now-merged local branch with git branch -d (never --force), run git worktree prune, and delete your /tmp lane folders prefixed /tmp/<box-slug>-<UNIT-ID>-. Do the worktree, branch and /tmp cleanup ONLY after the merged reconcile confirms the commit is preserved by the keep-ref. NEVER remove unmerged or dirty work. Hygiene cleanup only, never --force. '+u.prompt,
+ (u) => agent('Unit '+u.id+'. Exclusive ownership: '+u.ownership+'. Do not spawn any helpers, agents or workflows. Do not merge or publish. Produce artifact/commit and test evidence, never self-approve. NEVER run `pm2 jlist` or `pm2 describe` (they dump process environments); `pm2 list` only. SCRATCH ISOLATION: write only inside your private lane folder <scratchpad>/lanes/<UNIT-ID>-<box-slug>/ (this lane: lanes/'+u.id+'-lane/; when working inside the run root use '+INPUT.guard.runRoot+'/lanes/'+u.id+'-lane/, which the guard registers and removes after the run ends) and prefix box temp files /tmp/<box-slug>-<UNIT-ID>- . HYGIENE (Trevor standing rule): once your work is merged and released on origin/main (after an explicit reconcile confirming the merge commit is preserved on a branch keep-ref), clean up: remove your own git worktree with git worktree remove <path> (never --force), delete the now-merged local branch with git branch -d (never --force), run git worktree prune, and delete your /tmp lane folders prefixed /tmp/<box-slug>-<UNIT-ID>-. Do the worktree, branch and /tmp cleanup ONLY after the merged reconcile confirms the commit is preserved by the keep-ref. NEVER remove unmerged or dirty work. Hygiene cleanup only, never --force. '+u.prompt,
  {model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT}),
  async (built,u) => {
   if (!built || built.status !== 'PASS') return {id:u.id,status:'BLOCKED',evidence:built ? built.evidence : 'Builder returned no result'};
-  return agent('Independently QC unit '+u.id+'. Do not spawn helpers. Verify actual files and the exact revision, not the builder narrative. Return FAIL/BLOCKED when evidence is missing. HYGIENE (standing rule): also verify the builder left nothing behind — after merge and release on origin/main (with explicit reconcile confirming the merge commit is preserved on a branch keep-ref) the builder removes its own git worktree (git worktree remove <path>, never --force), deletes its now-merged local branch (git branch -d, never --force), runs git worktree prune, and deletes its /tmp lane folders; NEVER unmerged or dirty work. Flag FAIL in evidence when the builder performed destructive cleanup (--force branch/worktree removal or removal of unmerged work). '+u.qcPrompt+' Builder receipt: '+JSON.stringify(built),
+  return agent('Independently QC unit '+u.id+'. Do not spawn helpers. Verify actual files and the exact revision, not the builder narrative. Return FAIL/BLOCKED when evidence is missing. HYGIENE (Trevor standing rule): also verify the builder left nothing behind — after merge and release on origin/main (with explicit reconcile confirming the merge commit is preserved on a branch keep-ref) the builder removes its own git worktree (git worktree remove <path>, never --force), deletes its now-merged local branch (git branch -d, never --force), runs git worktree prune, and deletes its /tmp lane folders; NEVER unmerged or dirty work. Flag FAIL in evidence when the builder performed destructive cleanup (--force branch/worktree removal or removal of unmerged work). '+u.qcPrompt+' Builder receipt: '+JSON.stringify(built),
    {model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});
  });
 const missing=INPUT.units.filter((u,i)=>!results[i]).map(u=>u.id);
@@ -75,7 +75,7 @@ def plan_main(argv):
     try:
         plan_path = Path(a.plan).expanduser().resolve()
         doc = json.loads(plan_path.read_text(encoding='utf-8'))
-        errors = staffing.validate_plan(doc)
+        errors = staffing.validate_plan(doc, plan_path.parent)
         if errors:
             raise ValueError('plan is invalid: ' + '; '.join(errors[:8]))
         wf = next((w for w in staffing.workflows(doc) if w['workflow_id'] == a.workflow_id), None)
@@ -136,12 +136,7 @@ def host_cap():
             requested = 0
         if 1 <= requested <= 10:
             return requested
-    try:
-        sys.path.insert(0, str(ROOT))
-        import capacity_probe
-        return capacity_probe.probe()['per_workflow_cap']
-    except Exception:
-        return 10
+    return 10
 
 
 def load_units(path):

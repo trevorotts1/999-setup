@@ -157,7 +157,7 @@ def test_release_c_every_owed_workflow_has_three_failed_admitted_launches(env):
     for _ in range(2): launch(env, 'W0-01', 'FAILED')
     assert (stop(env) or '').startswith('Owed now:')
     launch(env, 'W0-01', 'FAILED')
-    assert stop(env) is None  # handback: not owed, alert written, the owner decides
+    assert stop(env) is None  # handback: not owed, alert written, Trevor decides
     alerts = json.loads((env.st / 'alerts.json').read_text())['alerts']
     assert any(a['state'] == 'WORKFLOW_HANDBACK' for a in alerts)
 
@@ -214,7 +214,7 @@ def test_armed_invalid_plan_blocks_stop_and_lists_errors(env, capsys):
     assert stop(env) is None  # a question-only HUMAN turn still releases
     (env.qg / 's1.json').unlink()
     guard.write_txn([("INSERT OR REPLACE INTO continuations VALUES('s1',0,1,0)", None)])
-    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0 and capsys.readouterr().out == ''  # the owner's pause releases
+    assert guard.hook({'hook_event_name': 'Stop', 'session_id': 's1', 'cwd': str(env.proj)}) == 0 and capsys.readouterr().out == ''  # Trevor's pause releases
 
 
 def test_unarmed_invalid_plan_does_not_trap_the_stop(env):

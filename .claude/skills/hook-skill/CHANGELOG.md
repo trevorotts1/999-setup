@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.2.0 - 2026-10-07
+
+Live operator guard sync. The shipped `workflow-guard` core in this repo is now byte-identical to the live operator guard at `~/.claude/hooks/workflow-guard/`:
+
+1. `guard.py`, `staffing.py`, `make-workflow.py` and `validate.mjs` refreshed to the live operator versions.
+2. `bash_targets.py` added — live target enumeration used by the guard's bash tooling.
+3. Test suite synced with the live guard: added `test_bash_targets.py`, `test_cancel.py`, `test_census_staffing.py`, `test_pin_run_root_plan.py`, `test_retire_addplan.py`, `test_tamper.py`, `test_tamper_git.py`, and refreshed `test_enforcement_v22.py`, `test_final_staffing.py`, `test_generator.py`, `test_guard.py`, `test_smart_guard.py`, `test_stop_omission.py`.
+4. `package.json` / `package-lock.json` shipped with the guard (byte-identical to the live operator guard): the live `validate.mjs` imports bare `acorn`, and the live `test_generator.py` symlinks `node_modules/`, so a checkout runs the suite after `npm ci` (or after copying the live `node_modules/`, which stays gitignored). The repo's `vendor/acorn.mjs` is left in place — `tests/smoke-install.sh` still asserts it ships.
+5. `VERSION` bumped to 1.2.0.
+
 ## 1.1.0 - 2026-10-06
 
 Staffing enforcement and a measured per-workflow cap, for claude and claude-nine.
