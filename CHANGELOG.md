@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+- unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
+- unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
+- unit/W3-03-U5-helper-deps: W3-03-U5: helper dependency install with pinned versions/hashes + preflight gate (merge 468f6c284301)
+- unit/W3-03-U6-package-core: drama-song-factory W3-03-U6: package_core.py generates 999 core from onboarding canonical + single-config-root test (merge 814c3fd83314)
+- unit/W3-03-U7-installer-smoke-test: smoke_test.sh — installer smoke for drama-song-ad-factory (W3-03-U7) (merge d4a081fc3da3)
+- unit/A1B-U2-skill-md-fix: drama-song-ad-factory: repoint SKILL.md dead build-tree ref to in-skill test (merge 01e5c4b1b359)
+- DTS-W3-03-U2-adapters-docs: drama-song-factory W3-03-U2: adapters + 7 directive docs for 999 skill (merge 8bd326cff61c)
+- w3-03-u4-installer-registration: W3-03-U4: installer-registration entry + clean-install proof for drama-song-ad-factory (merge a1210dcc5205)
+- merge/dts-batch-a1b-999: Merge branch 'unit/W3-03-U7-installer-smoke-test' into merge/dts-batch-a1b-999 (merge 963419f38221)
+
 ## [hook-skill] — 2026-10-06
 
 ### Add: wiring self-check on every box, opt-in settings lock, lock-aware settings writers
