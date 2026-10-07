@@ -2,7 +2,7 @@
 import importlib.util,json,os,shutil,subprocess,sys,tempfile,time,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
-NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or '/opt/homebrew/bin/node'
 ISO="// SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/\n"
 A="agent('x',{model:'opus',phase:'A',label:'a'+u.id})"
 B="agent('x',{model:'opus',phase:'B',label:'b'+u.id})"

@@ -1,5 +1,5 @@
 // Parse only. Never evaluate a submitted workflow or its prompts.
-import {parse} from './vendor/acorn.mjs';
+import {parse} from 'acorn';
 import fs from 'node:fs';
 import os from 'node:os';
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
@@ -181,7 +181,7 @@ try {
  if(nameMatch&&Number(nameMatch[3])!==bound)errors.push(`name claims ${Number(nameMatch[3])} lanes, script has ${bound}`);
  if(bound>cap)errors.push(`Computed upper bound ${bound} concurrent agents exceeds effective cap ${cap} (measured per-workflow cap, hard ceiling 10). Use make-workflow.py, which emits a rolling window of <=${cap}, or split into separate workflows.`);
  if(!agents)errors.push('No agent() calls: this is not a visible worker workflow.');
- // SCRATCH ISOLATION (owner rule): every lane of every
+ // SCRATCH ISOLATION (2026-09-18, Trevor: "fix it so this mistake doesn't happen"): every lane of every
  // workflow is handed the SAME session scratchpad; sibling lanes writing a generic filename clobber each
  // other and read another box's results as their own. A multi-lane script must carry the per-lane rule
  // in its prompts (a private <scratchpad>/lanes/<unit>-<box>/ folder; box-side /tmp/<box>-<unit>- prefix).

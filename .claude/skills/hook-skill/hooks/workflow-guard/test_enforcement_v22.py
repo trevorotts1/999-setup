@@ -210,6 +210,26 @@ def test_bash_staffing_and_reads_allowed(env, cmd):
     assert rc == 0, (cmd, out)
 
 
+@pytest.mark.parametrize('cmd', [
+    'python3 {root}/make-workflow.py --plan {plan} --workflow-id W3-06 --out-dir {proj}/run/w3-06-repair',  # `-i` inside --workflow-id is not a write flag
+    "python3 -c \"print(1 >= 0)\" # {plan}",  # >= is a comparison, not a redirect
+    "python3 -c \"print(2 > 1)\" {plan}",  # a bare > inside a quoted expression, target is not governed
+])
+def test_bash_flag_lookalikes_allowed(env, cmd):
+    plan = armed(env)
+    rc, out = env.pre('Bash', {'command': cmd.format(plan=plan, proj=env.proj, root=ROOT)})
+    assert rc == 0, (cmd, out)
+
+
+@pytest.mark.parametrize('cmd', [
+    'sed -i s/a/b/ {plan}', 'echo x > {plan}', 'echo x >> {plan}', 'perl -pi -e s/a/b/ {plan}', 'perl -i.bak -e 1 {plan}', 'echo x >{proj}/evidence/W0-01/a.md',
+])
+def test_bash_real_mutations_still_refused(env, cmd):
+    plan = armed(env)
+    rc, out = env.pre('Bash', {'command': cmd.format(plan=plan, proj=env.proj)})
+    assert rc == 2 and 'governs the session' in out, (cmd, out)
+
+
 def test_staffing_start_cannot_be_chained_with_a_write(env):
     plan = armed(env)
     rc, out = env.pre('Bash', {'command': 'python3 %s/staffing.py status --cwd %s; rm %s' % (ROOT, env.proj, plan)})
@@ -453,3 +473,48 @@ def test_refused_launch_does_not_flip_status(env):
     plan = st._mkplan(env.proj, {'W0-01': 2}, status='planned-not-running')
     rc, out = env.pre('Workflow', {'script': 'x', 'args': {'workflowId': 'W0-01'}})
     assert rc == 2 and json.loads(plan.read_text())['status'] == 'planned-not-running'
+
+
+# ---- false-block fixes (2026-10-07): interpreter READS and `staffing.py status` are not writes ----
+@pytest.mark.parametrize('cmd', [
+    "python3 - <<'EOF'\nimport json\nt = json.load(open('{plan}'))\nn = dict(t)\njson.dump(n, open('/private/tmp/new-plan.json', 'w'))\nEOF",
+    "python3 -c \"import json;print(len(json.load(open('{plan}', 'rb'))))\"",
+    "python3 -c \"import sqlite3;sqlite3.connect('file:{sd}/guard.sqlite3?mode=ro', uri=True).execute('select 1')\"",
+    "python3 -c \"print(open('{plan}', encoding='utf-8').read().replace('a','b'))\"",
+    'python3 {root}/staffing.py status --cwd {proj} 2>&1 | head -10; echo ===STATUS===; stat -f "%m" {sd}/STATUS.md',
+])
+def test_bash_interpreter_reads_and_staffing_status_allowed(env, cmd):
+    plan = armed(env)
+    rc, out = env.pre('Bash', {'command': cmd.format(plan=plan, proj=env.proj, sd=env.sd, root=ROOT)})
+    assert rc == 0, (cmd, out)
+
+
+@pytest.mark.parametrize('cmd', [
+    "python3 -c \"import shutil;shutil.copyfile('/tmp/n.json','{plan}')\"",
+    "python3 -c \"import shutil;shutil.copy('/tmp/n.json','{plan}')\"",
+    "python3 -c \"import shutil;shutil.move('{plan}','/tmp/x')\"",
+    "python3 -c \"import shutil;shutil.rmtree('{proj}/evidence')\"",
+    "python3 -c \"open('{plan}','w').write('x')\"",
+    "python3 -c \"open('{plan}','a').write('x')\"",
+    "python3 -c \"open('{plan}','x')\"",
+    "python3 -c \"open('{plan}','w+')\"",
+    "python3 -c \"open('{plan}','r+')\"",
+    "python3 -c \"open('{plan}',mode='w')\"",
+    "python3 -c \"m='w';open('{plan}',m)\"",
+    "python3 -c \"from pathlib import Path;Path('{plan}').write_text('x')\"",
+    "python3 -c \"from pathlib import Path;Path('{plan}').write_bytes(b'x')\"",
+    "python3 -c \"import os;os.remove('{plan}')\"",
+    "python3 -c \"import os;os.unlink('{plan}')\"",
+    "python3 -c \"import os;os.rename('{plan}','/tmp/x')\"",
+    "python3 -c \"import os;os.replace('/tmp/x','{plan}')\"",
+    "python3 -c \"import json;json.dump({{}}, open('{plan}','w'))\"",
+    "python3 -c \"import sqlite3;sqlite3.connect('{sd}/guard.sqlite3').execute('delete from launches')\"",
+    "python3 -c \"import shutil;p='{plan}';shutil.copyfile('/tmp/n.json',p)\"",
+    'python3 {root}/staffing.py reset --plan {plan}',
+    'python3 {root}/staffing.py status --plan {plan}; python3 {root}/staffing.py finish --plan {plan}',
+    'perl -pi -e s/a/b/ {plan}',
+])
+def test_bash_interpreter_real_writes_still_refused(env, cmd):
+    plan = armed(env)
+    rc, out = env.pre('Bash', {'command': cmd.format(plan=plan, proj=env.proj, sd=env.sd, root=ROOT)})
+    assert rc == 2 and 'governs the session' in out, (cmd, out)

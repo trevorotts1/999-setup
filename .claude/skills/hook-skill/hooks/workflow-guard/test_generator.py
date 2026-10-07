@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-NODE = os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE = os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or '/opt/homebrew/bin/node'
 
 
 class GeneratorTests(unittest.TestCase):
@@ -241,7 +241,7 @@ class GeneratorTests(unittest.TestCase):
   space.mkdir(parents=True)
   for name in ('make-workflow.py', 'validate.mjs', 'test-runtime.mjs'):
    shutil.copy2(ROOT / name, space / name)
-  shutil.copytree(ROOT / 'vendor', space / 'vendor')
+  os.symlink(ROOT / 'node_modules', space / 'node_modules')
   r = subprocess.run([NODE, str(space / 'test-runtime.mjs')], capture_output=True, text=True, cwd=str(space), env=self.env())
   self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
   self.assertEqual(r.stdout.count('PASS mock runtime'), 2)

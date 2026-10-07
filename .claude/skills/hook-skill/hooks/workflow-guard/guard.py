@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Workflow launch validation and independent journal stall detection. No worker killing."""
-import argparse, hashlib, json, os, re, shlex, shutil, sqlite3, subprocess, sys, time, unicodedata
+import argparse, glob, hashlib, json, os, re, shlex, shutil, sqlite3, subprocess, sys, time, unicodedata
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 STATE=Path(os.environ.get('WORKFLOW_GUARD_STATE',str(ROOT/'state')))
-NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or '/opt/homebrew/bin/node'
 _STAFFING=[]
 
 def _staffing():
@@ -14,6 +14,11 @@ def _staffing():
   spec=importlib.util.spec_from_file_location('staffing_rules',ROOT/'staffing.py')
   m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);_STAFFING.append(m)
  return _STAFFING[0]
+
+def _sanction_plan(path):
+ # The guard's own plan writes (planned-not-running -> running) are expected changes to the protected set: record the sha256 it wrote.
+ try:_staffing().sanction(path,STATE)
+ except Exception:pass
 
 def db():
  STATE.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -341,12 +346,12 @@ def admit_launch(row,tag=None):
 def confirm_launch(row):
  # PHASE TWO (PostToolUse success, same tool_use_id). Arming FIRST: the plan status must read "running" before any tag,
  # attempt id or pin is written, so there is never an admitted launch on an unarmed plan. If the flip fails the launch
- # (which really ran) stays counted live but untagged, and a PLAN_ARM_FAILED alert is raised for the owner.
+ # (which really ran) stays counted live but untagged, and a PLAN_ARM_FAILED alert is raised for Trevor.
  rs=read_rows('SELECT * FROM reservations WHERE id=?',(row['id'],));r=rs[0] if rs else None
  armed=True
  if r:
   try:
-   _staffing().set_running(r['plan'])
+   _staffing().set_running(r['plan']);_sanction_plan(r['plan'])
    d=_jload(r['plan']);armed=isinstance(d,dict) and str(d.get('status') or '').lower()=='running'
   except Exception:armed=False
  now=time.time();stmts=[("UPDATE launches SET state='VALIDATED' WHERE id=? AND state IN (?,?)",(row['id'],RESERVED,UNCONFIRMED))]
@@ -357,7 +362,7 @@ def confirm_launch(row):
  if r:stmts.append(('DELETE FROM reservations WHERE id=?',(row['id'],)))
  write_txn(stmts)
  if r and not armed:
-  try:raise_alert('armfail|'+row['id'],r['session'],r['workflow_id'],'PLAN_ARM_FAILED','Launch of %s ran but plan %s could not be set to running; the launch is counted live but NOT recorded against the plan. Run `staffing.py start` (the owner).'%(r['workflow_id'],r['plan']))
+  try:raise_alert('armfail|'+row['id'],r['session'],r['workflow_id'],'PLAN_ARM_FAILED','Launch of %s ran but plan %s could not be set to running; the launch is counted live but NOT recorded against the plan. Run `staffing.py start` (Trevor).'%(r['workflow_id'],r['plan']))
   except Exception:pass
   print('WORKFLOW GUARD WARNING: launch ran but plan %s could not be armed; not recorded against the plan.'%r['plan'],file=sys.stderr)
 
@@ -386,7 +391,7 @@ UNPARSED_KEY='__unparsedToolInput'
 SECRET=re.compile(r'sk-[A-Za-z0-9_\-]{3,}|token[A-Za-z0-9_\-]*\s*[=:]\s*\S+|key=\S+',re.I)
 FENCE_EDIT=('Edit','Write','MultiEdit','NotebookEdit')
 FENCE_MUTATE=re.compile(r'git (commit|push|merge|rebase|cherry-pick)|sed -i|>[^&]|>>|\bmv |\bcp |\brm |npm (install|publish)|pip install')
-FENCE_FLEET=re.compile(r'\bssh\b|scp\b|rsync\b')
+FENCE_FLEET=re.compile(r'\bssh\b|update-skills\.sh|fleet-roll|scp\b|rsync\b')
 PM2_ENV_DUMP=re.compile(r'\bpm2\b(?:\s+-{1,2}[A-Za-z-]+)*\s+(?:jlist|describe)\b',re.I)
 ABSPATH=re.compile(r'(/[^\s\'"]+)')
 HUMAN_PROMPT_SOURCES=('user','sdk')
@@ -551,12 +556,33 @@ VERDICT_MSG='The conductor session may not write unit verdict files (%s, plan %s
 
 # ---- The governed session may not tamper with what governs it ----
 # Main-session Write/Edit/MultiEdit/NotebookEdit are refused for: any file whose lowercased basename ends .verdict.json (anywhere, no
-# plan condition), the armed/pinned plan file, its evidence/ tree, the guard state dir and the question-gate state dir. Every comparison is on
-# realpath, lowercased on both sides (APFS is case-insensitive, symlinks resolve). Bash is best effort: a command that names one of
-# those paths AND carries a write/move/delete verb is refused; `staffing.py start|status` is the one allowed invocation.
-# RESIDUAL (honest): Bash is text matching. A path assembled in a variable or by a script file the conductor wrote earlier, an
-# interpreter one-liner that builds the path, or a symlink created earlier can still reach these files.
-WRITE_VERB=re.compile(r'(?:^|[\s;&|(`])(?:mv|cp|rm|ln|tee|rsync|install|dd|truncate|touch|sqlite3|unzip|chmod|rmdir|patch)\b|>>?|\bsed\b[^|;&\n]*\s-[a-zA-Z]*i|\b(?:python3?|node|ruby|perl)\b[^\n]*(?:open|write|connect|unlink|remove|rename|replace|shutil|sqlite3|-i)|\btar\b[^\n]*\s-?[a-zA-Z]*x|\bgit\s+(?:checkout|restore)\b',re.I)
+# plan condition), the armed/pinned plan file, its evidence tree, the guard state dir and the question-gate state dir. Every comparison is on
+# realpath, lowercased on both sides (APFS is case-insensitive, symlinks resolve).
+# Bash is judged by the WRITE TARGET (bash_targets.py): each simple command is parsed, and only a mutating verb whose target operand
+# resolves (~, $VAR, relative to the cwd, symlinks) to a governed path is refused: cp/rsync/ditto/install/ln destination, mv source and
+# destination, rm/rmdir/truncate/touch/tee/sed -i/perl -i/chmod operands, redirects, find -delete, sqlite3 without -readonly, tar/unzip
+# extraction dir, and python/node/ruby/perl code whose mutation call has a LITERAL governed target. Reading a governed path (cp FROM it,
+# cat, ls, open(p), sqlite3 -readonly) is never refused. `staffing.py start|status|retire|add-plan` is the one allowed staffing invocation.
+# NOT guessed at: a target that is not a literal (variable, env var the command did not supply, exec/eval built at run time). Such a
+# command runs, and the TAMPER snapshot below (tamper_before/tamper_after) catches any change it makes to the protected set.
+STAFFING_VERBS=('start','status','retire','add-plan','from-census')  # the only staffing.py verbs a governed session may run
+_BT=[]
+def _bt():
+ if not _BT:
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('bash_targets',ROOT/'bash_targets.py')
+  m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);_BT.append(m)
+ return _BT[0]
+def _staffing_bad(cmd):
+ # Whole-text form: every `staffing.py` mention is THIS guard's own staffing.py (absolute, resolved) followed by an allowed verb.
+ # The Bash write check itself judges staffing.py per simple command (bash_targets); this stays for callers that ask about a string.
+ n=cmd.lower().count('staffing.py');good=0
+ for m in re.finditer(r"""(\S*staffing\.py)['"]?\s+['"]?(\w+)""",cmd):
+  if m.group(2) not in STAFFING_VERBS:continue
+  try:
+   if os.path.realpath(os.path.expanduser(m.group(1).strip('\'"')))==os.path.realpath(str(ROOT/'staffing.py')) and os.path.isabs(os.path.expanduser(m.group(1).strip('\'"'))):good+=1
+  except (OSError,ValueError):pass
+ return good<n
 QUIET_REDIRECT=re.compile(r'\d*>&\d+|&?\d*>\s*/dev/null')
 def _staffing_ok(cmd):
  # Only THIS guard's own staffing.py (resolved real path), `start` or `status`, with no shell metacharacters.
@@ -565,9 +591,28 @@ def _staffing_ok(cmd):
  try:t=shlex.split(c)
  except ValueError:return False
  if t and 'python' in os.path.basename(t[0]).lower():t=t[1:]
- if len(t)<2 or t[1] not in ('start','status'):return False
+ if len(t)<2 or t[1] not in STAFFING_VERBS or t[1]=='from-census':return False  # from-census names a write target (--out): bash_targets judges it
  try:return os.path.realpath(os.path.expanduser(t[0]))==os.path.realpath(str(ROOT/'staffing.py'))
  except (OSError,ValueError):return False
+
+OPERATOR_VERBS=('cancel','clear-tamper')
+def _operator_verb_ok(cmd,cwd,session):
+ # `staffing.py cancel|clear-tamper` (this guard's own staffing.py, no shell metacharacters) is allowed ONLY to a main session that
+ # governs nothing: no armed/pinned plan for its cwd or session and no launch or program on record. A governed build session never
+ # qualifies, so it still cannot clear its own TAMPER alert or cancel its own work.
+ c=QUIET_REDIRECT.sub(' ',cmd)
+ if re.search(r'[;&|<>`$()\n]',c):return False
+ try:t=shlex.split(c)
+ except ValueError:return False
+ if t and 'python' in os.path.basename(t[0]).lower():t=t[1:]
+ if len(t)<2 or t[1] not in OPERATOR_VERBS:return False
+ try:
+  if os.path.realpath(os.path.expanduser(t[0]))!=os.path.realpath(str(ROOT/'staffing.py')):return False
+  if _staffing().protected_plan_paths(cwd,session,STATE):return False
+  for q in ('SELECT 1 FROM launches WHERE session=? LIMIT 1','SELECT 1 FROM programs WHERE session=? LIMIT 1','SELECT 1 FROM session_pins WHERE session=? LIMIT 1'):
+   if read_rows(q,(str(session),)):return False
+  return True
+ except Exception:return False
 
 def _rl(p):
  return os.path.realpath(os.path.expanduser(str(p))).lower()
@@ -581,7 +626,32 @@ def _state_roots():
 
 JOURNAL_SEG='/subagents/workflows/'
 SUB_NAMES=('guard.sqlite3','limits.json','capacity-probe-cache.json','swarm-plan.json')
-EXTRA_BASH_REFS=['subagents/workflows','limits.json','capacity-probe-cache']
+
+def _journals_below(rp):
+ # A directory that CONTAINS a run journal tree (<dir>/subagents/workflows or <dir>/<session>/subagents/workflows): deleting it deletes journals.
+ try:return os.path.isdir(rp+'/subagents/workflows') or bool(glob.glob(glob.escape(rp)+'/*/subagents/workflows'))
+ except OSError:return False
+
+def _gov_fn(plans,sub):
+ # gov(real_path_lowercase, destructive) -> label or None: is this path something that governs the session?
+ # destructive=True (rm, mv source, find -delete, rmtree) also counts a path that CONTAINS a governed one.
+ roots=[_rl(r) for r in _state_roots()];dbf=_rl(ROOT/'guard.sqlite3')
+ pdirs={_rl(Path(p).parent) for p in plans}
+ pl=[_rl(p) for p in plans];evs=[_rl(Path(p).parent/'evidence') for p in plans]
+ def gov(rp,destructive=False):
+  if rp==dbf or rp.startswith(dbf+'-'):return 'guard state db'
+  for r in roots:
+   if _under_l(rp,r) or (destructive and _under_l(r,rp)):return 'guard or question-gate state'
+  if JOURNAL_SEG in rp+'/':return 'workflow run journal'
+  if destructive and _journals_below(rp):return 'workflow run journal'
+  for p in pl:
+   if rp==p or (destructive and _under_l(p,rp)):return 'armed plan file'
+  if os.path.basename(rp).endswith('swarm-plan.json') and os.path.dirname(rp) in pdirs:return 'plan file in a governed plan folder'
+  for e in evs:
+   if _under_l(rp,e) or (destructive and _under_l(e,rp)):return 'plan evidence tree'
+  if sub and (os.path.basename(rp)=='swarm-plan.json' or '/evidence/' in rp+'/'):return 'plan file or evidence tree'
+  return None
+ return gov
 
 def _plan_of_evidence(real):
  # The plan file whose evidence/ tree contains this real path, found by walking up (any plan on disk), or None.
@@ -621,10 +691,10 @@ def protected_write_block(data,tool,ti,session):
   isv=os.path.basename(str(p)).lower().endswith('.verdict.json') or base.endswith('.verdict.json')
   if isv and not sub:return refuse(VERDICT_MSG%(t,plans[0] if plans else NO_PLAN_NOTE))
   for r in _state_roots():
-   if _under_l(rp,_rl(r)):return refuse('%s may not write the guard or question-gate state (%s). That state is the owner\'s enforcement record. Do not bypass hooks.'%(who,t))
+   if _under_l(rp,_rl(r)):return refuse('%s may not write the guard or question-gate state (%s). That state is Trevor\'s enforcement record. Do not bypass hooks.'%(who,t))
   if JOURNAL_SEG in rp:return refuse('%s may not write a workflow run journal (%s): only the runtime writes <transcript>/subagents/workflows/**. Do not bypass hooks.'%(who,t))
   for pp in plans:
-   if rp==_rl(pp):return refuse('%s may not write or rename the armed plan file %s; it governs this session. Use `staffing.py start|status`. Do not bypass hooks.'%(who,pp))
+   if rp==_rl(pp):return refuse('%s may not write or rename the armed plan file %s; it governs this session. Use `staffing.py start|status|retire|add-plan`. Do not bypass hooks.'%(who,pp))
    if not sub and _under_l(rp,_rl(Path(pp).parent/'evidence')):return refuse('The governed session may not write the evidence tree of armed plan %s (%s); checker agents write verdicts. Do not bypass hooks.'%(pp,t))
   if sub:
    if base in SUB_NAMES:return refuse('A subagent may not write %s (guard limits, state, capacity cache or a plan file). Do not bypass hooks.'%t)
@@ -641,14 +711,10 @@ def protected_write_block(data,tool,ti,session):
  if tool=='Bash':
   cmd=str(ti.get('command') or '')
   if _staffing_ok(cmd):return None
-  low=cmd.lower();refs=[]
-  for r in _state_roots():refs+=[str(r).lower(),_rl(r),str(r).lower().replace(str(Path.home()).lower(),'~')]
-  refs+=['workflow-guard/state','question-gate/state','guard.sqlite3','workflow_guard_state','question_gate_state']+EXTRA_BASH_REFS
-  if sub:refs+=['swarm-plan.json','evidence/']
-  for pp in plans:refs+=[str(pp).lower(),Path(pp).name.lower(),str(Path(pp).parent/'evidence').lower(),'evidence/']
-  hit=next((x for x in refs if x and x in low),None)
-  if hit and (WRITE_VERB.search(QUIET_REDIRECT.sub(' ',cmd)) or 'staffing.py' in low):  # a staffing.py that _staffing_ok did not vouch for, aimed at a governed path, may do anything
-   return refuse('This command writes, moves or deletes something that governs the session (%s: plan file, evidence tree, run journal, guard or question-gate state). %s may not do that. Only `staffing.py start|status` is allowed. Do not bypass hooks.'%(hit,who))
+  if not sub and _operator_verb_ok(cmd,cwd,session):return None  # operator verbs from a NON-governed main session (Trevor's operator window)
+  hit=_bt().find_hit(cmd,cwd,_gov_fn(plans,sub),os.environ)  # target-aware: only a mutating verb whose TARGET is governed
+  if hit:
+   return refuse('This command writes, moves or deletes something that governs the session (%s: %s; plan file, evidence tree, run journal, guard or question-gate state). %s may not do that. Only `staffing.py start|status|retire|add-plan|from-census` is allowed. Do not bypass hooks.'%(hit[0],hit[1],who))
  return None
 
 # ---- DONE needs a journal record (defect 11) ----
@@ -843,8 +909,170 @@ def wiring_check(session):
   return msg
  except Exception:return ''
 
+# ---- TAMPER detection: the backstop for what the Bash write check cannot see ----
+# A governed MAIN-session Bash call can still change a plan file, a verdict or a sibling plan through a target the command text never
+# names (a variable, an env var, exec/base64 built at run time). So the guard snapshots the PROTECTED SET (every armed/pinned plan, its
+# plan folder's *SWARM-PLAN.json files, every *.verdict.json under those plans' evidence trees; size, mtime_ns, sha256 for files up to 2 MB)
+# at PreToolUse of each such Bash call, keyed by tool_use_id (table tamper_snap), and re-snapshots at the first later hook event of the
+# session: PostToolUse / PostToolUseFailure of that same Bash call when the harness delivers them, else the NEXT PreToolUse of any
+# guarded tool, UserPromptSubmit or Stop. Anything created, modified or deleted that no sanctioned writer explains is a TAMPER alert
+# (table tamper_alerts + a TAMPER line in STATUS.md naming file and command). Sanctioned: the guard's own plan status flip and the
+# staffing.py start|retire|add-plan|cancel writers (table sanctioned_writes: path + sha256 of what they wrote) and a verdict whose sha256
+# a subagent's Write journaled (verdict_records). While an alert is open the session's Workflow launches are refused and Stop is blocked;
+# only an operator clears it: `staffing.py clear-tamper --session ID --reason TEXT` (not in the governed allowlist, like `cancel`).
+# The guard state DB is NOT hashed (the hook writes it); it stays protected by the target-aware Bash rule. Hashing trouble never blocks.
+TAMPER_HASH_MAX=2*1024*1024;TAMPER_VERDICT_CAP=5000;TAMPER_KEEP_S=86400
+
+def _tamper_paths(cwd,session):
+ files=set()
+ for pp in _staffing().protected_plan_paths(cwd,session,STATE):
+  pp=Path(pp);files.add(os.path.realpath(str(pp)))
+  try:files.update(os.path.realpath(str(x)) for x in pp.parent.glob('*SWARM-PLAN.json'))
+  except OSError:pass
+  n=0
+  for root,_dirs,fs in os.walk(pp.parent/'evidence'):
+   for f in fs:
+    if f.lower().endswith('.verdict.json'):
+     files.add(os.path.realpath(os.path.join(root,f)));n+=1
+   if n>=TAMPER_VERDICT_CAP:break
+ return files
+
+def _tamper_snapshot(paths):
+ out={}
+ for p in paths:
+  try:
+   s=os.stat(p)
+   if not os.path.isfile(p):continue
+   sha=None
+   if s.st_size<=TAMPER_HASH_MAX:
+    with open(p,'rb') as f:sha=hashlib.sha256(f.read()).hexdigest()
+   out[p]=[s.st_size,s.st_mtime_ns,sha]
+  except OSError:continue
+ return out
+
+def _born_after(p,taken):
+ # True when p did not exist yet when the before-snapshot was taken (birth time >= taken-2s). Unknown birth time => True (fail toward alerting).
+ try:
+  s=os.stat(p);b=getattr(s,'st_birthtime',None) or min(s.st_ctime,s.st_mtime)
+  return b>=taken-2
+ except OSError:return True
+
+def _tamper_changes(prev,cur):
+ # [(kind,path,sha)] for every file created, modified (content, or size/mtime when too big to hash) or deleted between two snapshots.
+ out=[]
+ for p in sorted(set(prev)|set(cur)):
+  a,b=prev.get(p),cur.get(p)
+  if a==b:continue
+  if a is None:out.append(('created',p,b[2]))
+  elif b is None:out.append(('deleted',p,None))
+  elif a[2] is not None and a[2]==b[2]:continue  # same bytes (a touch): nothing governed changed
+  else:out.append(('modified',p,b[2]))
+ return out
+
+GIT_STATE_CMDS=('merge','pull','checkout','switch','rebase','reset','stash','cherry-pick','revert','am','restore','apply','read-tree','clean')
+
+def _git_only(cmd):
+ # True when every simple command of cmd is `git <state-changing subcommand>` and nothing else (no substitutions, no other program).
+ try:
+  cmds,subs=_bt().lex(cmd)
+  if subs or not cmds:return False
+  for k in cmds:
+   w=list(k.words)
+   if not w or os.path.basename(w[0])!='git' or k.redirs:return False
+   w=w[1:];i=0
+   while i<len(w) and w[i].startswith('-'):i+=2 if w[i] in ('-C','-c','--git-dir','--work-tree') else 1
+   if i>=len(w) or w[i] not in GIT_STATE_CMDS:return False
+  return True
+ except Exception:return False
+
+def _git_explains(kind,path):
+ # After a git-only command, a protected file that is byte-identical to its blob in HEAD (or, when deleted, absent from HEAD) is repository state
+ # (a merge, checkout, rebase ...), not a forgery: a forged edit is never equal to what is committed. Any git trouble means "not explained".
+ def g(*a,cwd=None):
+  r=subprocess.run(['git']+list(a),cwd=cwd,capture_output=True,text=True,timeout=8);return r.returncode,r.stdout.strip()
+ try:
+  d=os.path.dirname(path)
+  while d and not os.path.isdir(d):d=os.path.dirname(d)
+  rc,top=g('rev-parse','--show-toplevel',cwd=d)
+  if rc:return False
+  rel=os.path.relpath(path,os.path.realpath(top))
+  rc,blob=g('rev-parse','HEAD:'+rel,cwd=top)
+  if kind=='deleted':return rc!=0
+  if rc:return False
+  rc,own=g('hash-object',path,cwd=top)
+  return rc==0 and own==blob
+ except Exception:return False
+
+def _tamper_explained(kind,path,sha,cmd=''):
+ try:
+  if kind!='deleted' and sha:
+   if read_rows('SELECT 1 FROM sanctioned_writes WHERE path=? AND sha256=? LIMIT 1',(path,sha)):return True
+   if path.lower().endswith('.verdict.json') and read_rows('SELECT 1 FROM verdict_records WHERE sha256=? LIMIT 1',(sha,)):return True
+  if cmd and _git_only(cmd) and _git_explains(kind,path):return True
+ except Exception:return False
+ return False
+
+def _status_line(line):
+ try:old=(STATE/'STATUS.md').read_text()
+ except OSError:old='# Workflow watchdog status\n'
+ if line not in old:atomic(STATE/'STATUS.md',old.rstrip('\n')+'\n'+line+'\n')
+
+def tamper_before(data,session):
+ # PreToolUse of a governed MAIN-session Bash call that was allowed: store the pre-call snapshot. Never raises.
+ try:
+  cmd=str((data.get('tool_input') or {}).get('command') or '')
+  if _staffing_ok(cmd):return  # a sanctioned staffing call: its writes are expected
+  paths=_tamper_paths(data.get('cwd') or os.getcwd(),session)
+  if not paths:return
+  write_txn([('INSERT OR REPLACE INTO tamper_snap(session,tool_use_id,taken,command,snap) VALUES(?,?,?,?,?)',(str(session),str(data.get('tool_use_id') or ''),time.time(),redact(cmd)[:2000],json.dumps(_tamper_snapshot(paths))))])
+ except Exception:pass
+
+def tamper_after(data,session):
+ # Compare every stored snapshot of this session with the protected set as it is NOW; record alerts. Never raises, never blocks.
+ try:
+  rows=read_rows('SELECT tool_use_id,command,snap,taken FROM tamper_snap WHERE session=? ORDER BY taken',(str(session),))
+  if not rows:return
+  cwd=data.get('cwd') or os.getcwd()
+  now_paths=_tamper_paths(cwd,session)
+  stmts=[('DELETE FROM tamper_snap WHERE session=?',(str(session),)),('DELETE FROM tamper_snap WHERE taken<?',(time.time()-TAMPER_KEEP_S,))]
+  for r in rows:
+   prev=json.loads(r['snap'])
+   def snap_now(prev=prev,taken=r['taken']):  # a path outside prev counts only if created after the before-snapshot (not merely newly covered by a later cwd)
+    return _tamper_snapshot({p for p in now_paths|set(prev) if p in prev or _born_after(p,taken)})
+   cur=snap_now()
+   bad=[c for c in _tamper_changes(prev,cur) if not _tamper_explained(*c,cmd=r['command'])]
+   if any(k!='deleted' and p.lower().endswith('.verdict.json') for k,p,_ in bad):  # a subagent's verdict is journaled just AFTER it is written: give it a moment
+    for _ in range(8):
+     time.sleep(0.25);cur=snap_now()
+     bad=[c for c in _tamper_changes(prev,cur) if not _tamper_explained(*c,cmd=r['command'])]
+     if not any(k!='deleted' and p.lower().endswith('.verdict.json') for k,p,_ in bad):break
+   for kind,p,_sha in bad:
+    stmts.append(('INSERT OR IGNORE INTO tamper_alerts(key,session,tool_use_id,path,change,command,at,cleared) VALUES(?,?,?,?,?,?,?,0)',('%s|%s|%s|%s'%(session,r['tool_use_id'],p,kind),str(session),r['tool_use_id'],p,kind,r['command'],time.time())))
+    try:_status_line('- TAMPER: session %s: %s %s by Bash call %s: %s'%(session,kind,p,r['tool_use_id'],str(r['command']).replace('\n',' ')[:200]))
+    except Exception:pass
+  write_txn(stmts)
+ except Exception:pass
+
+def tamper_open(session):
+ try:return read_rows('SELECT path,change,command,tool_use_id FROM tamper_alerts WHERE session=? AND cleared=0 ORDER BY at',(str(session),))
+ except Exception:return []
+
+def tamper_message(session,rows):
+ first=rows[0]
+ return 'TAMPER: a Bash call of this session (%s) %s the protected governance file %s (%d protected change%s in all) and no sanctioned writer explains it. Command: %s. This session may not launch workflows or stop until Trevor reviews it and runs `python3 %s clear-tamper --session %s --reason "<why>"`. Do not bypass hooks.'%(first['tool_use_id'],first['change'],first['path'],len(rows),'' if len(rows)==1 else 's',str(first['command']).replace('\n',' ')[:160],ROOT/'staffing.py',session)
+
 def pre_checks(data,tool,session):
  # Runs for every PreToolUse the guard is registered for. Returns an exit code to deny, or None.
+ main_session=not data.get('agent_id')
+ if main_session:tamper_after(data,session)  # what the previous Bash call did to the protected set
+ if tool=='Workflow' and main_session:
+  t=tamper_open(session)
+  if t:return refuse(tamper_message(session,t))
+ rc=_pre_checks(data,tool,session)
+ if rc is None and tool=='Bash' and main_session:tamper_before(data,session)
+ return rc
+
+def _pre_checks(data,tool,session):
  ti=data.get('tool_input') if isinstance(data.get('tool_input'),dict) else {}
  fp=call_fingerprint(tool,ti)
  unparsed=UNPARSED_KEY in ti
@@ -856,14 +1084,21 @@ def pre_checks(data,tool,session):
  write_txn(stmts)
  count,latched=continuation_state(session)
  if latched and tool in ('Workflow','Agent','Task'):
-  return refuse('The user gave a stop order. Report status and end the turn.')
+  return refuse('Trevor said stop. Report status and end the turn.')
  if prior>=2:
   return refuse('Third identical attempt of a failed call. Change the input, change the approach, or dispatch a subagent to diagnose. Fingerprint '+fp[:8]+'.')
  if tool in FENCE_EDIT or tool=='Bash':
+  # A refusal counts toward the "Third identical attempt" rule: a retried identical refused call is stopped with the change-approach message.
   vb=verdict_write_block(data,tool,ti,session)
-  if vb is not None:return vb
+  if vb is not None:
+   try:write_txn([bump(session,fp,tool,'guard refusal')])
+   except Exception:pass
+   return vb
   pb=protected_write_block(data,tool,ti,session)
-  if pb is not None:return pb
+  if pb is not None:
+   try:write_txn([bump(session,fp,tool,'guard refusal')])
+   except Exception:pass
+   return pb
  if tool=='Bash' and PM2_ENV_DUMP.search(str(ti.get('command') or '')):
   return refuse('pm2 jlist/pm2 describe dump process environments (secrets). Use `pm2 list` (no env) instead.')
  root=program_root(session)
@@ -894,10 +1129,27 @@ def plan_tag(data,ti):
  try:
   a=ti.get('args');wid=a.get('workflowId') if isinstance(a,dict) else None
   if not (isinstance(wid,str) and wid):return None
-  f=_staffing().plan_for_launch(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE,wid)
+  f=_staffing().plan_for_launch(data.get('cwd') or os.getcwd(),data.get('session_id','unknown'),STATE,wid,ti.get('script'))
   aid=a.get('attemptId');aid=aid if isinstance(aid,str) and aid.strip() else None
   u=a.get('units');return (wid,str(f[0]),aid,len(u) if isinstance(u,list) else 0) if f else None
  except Exception:return None
+
+def _pin_run_root_plan(data,ti,s):
+ # A launch made by make-workflow.py --plan names its plan's folder in `const RUN_ROOT`. When the session's cwd is elsewhere and
+ # the plan was armed by `staffing.py start` (which pins nothing), no plan governed the launch: it was admitted untagged, so its
+ # agents could never write verdicts and the plan owed the workflow forever. Pin that plan when it is armed and owns
+ # args.workflowId, so the launch is checked, tagged and linked like any other plan launch. Only ever ADDS governance.
+ try:
+  a=ti.get('args');wid=a.get('workflowId') if isinstance(a,dict) else None
+  m=re.search(r'^const RUN_ROOT = ("(?:[^"\\]|\\.)*");',s,re.M)
+  if not (isinstance(wid,str) and wid and m):return
+  st=_staffing();sess=data.get('session_id','unknown')
+  for gp,gd in st.resolve_plans(data.get('cwd') or os.getcwd(),sess,STATE):
+   if isinstance(gd,dict) and wid in [w.get('workflow_id') for w in st.workflows(gd)]:return
+  # the plan this launch belongs to: the ONE plan file in RUN_ROOT that owns wid (named *SWARM-PLAN.json, planned-not-running or running)
+  r=st.run_root_plan(s,wid)
+  if r:st.remember_session_plan(STATE,sess,r[0])
+ except Exception:pass
 
 def validate(data):
  # Refused launches are never recorded: only an ADMITTED launch (admit_launch) writes launch_tags/attempt_ids.
@@ -936,6 +1188,7 @@ def _validate(data,ctx):
   except ValueError:return deny('args contains invalid JSON text. Pass a JSON object/array or regenerate a self-contained script. Do not escape Python inside a shell one-liner.')
   if not isinstance(decoded,(dict,list)):return deny('Decoded args must be a JSON object or array, not another string or scalar.')
   ti['args']=decoded;argument_note+=' Converted legacy JSON text args to a structured JSON value.'
+ _pin_run_root_plan(data,ti,s)
  ctx['tag']=plan_tag(data,ti)
  # Plan launch contract FIRST, without recording: nothing is journaled unless every check below passes.
  sess=data.get('session_id','unknown');cwd=data.get('cwd') or os.getcwd();env=dict(os.environ)
@@ -943,7 +1196,7 @@ def _validate(data,ctx):
  except Exception:pass
  ok,why=_staffing().check_launch(ti,cwd,session=sess,state_dir=STATE,attempt_id=data.get('tool_use_id'),reap=False,record=False)
  if not ok:return refuse(why)
- a_=ti.get('args');found=_staffing().plan_for_launch(cwd,sess,STATE,a_.get('workflowId') if isinstance(a_,dict) else None)
+ a_=ti.get('args');found=_staffing().plan_for_launch(cwd,sess,STATE,a_.get('workflowId') if isinstance(a_,dict) else None,s)
  if found and isinstance(found[1],dict):env['WORKFLOW_GUARD_CAP']=str(_staffing().launch_agent_cap(found[1],STATE,sess))
  try:
   out=subprocess.run([NODE,str(ROOT/'validate.mjs')],input=json.dumps({'script':s,'args':ti.get('args'),'windowHelper':_staffing().WINDOW_HELPER}),text=True,capture_output=True,timeout=15,env=env)
@@ -1016,6 +1269,11 @@ def dedupe_alerts(alerts):
   seen.add(k);out.append(a)
  return out
 
+def _agent_activity(d):
+ # Newest mtime of agent-*.jsonl transcripts beside the journal: a long-running agent writes these, not the journal.
+ try:return max((p.stat().st_mtime for p in d.glob('agent-*.jsonl')),default=0)
+ except OSError:return 0
+
 def tick(now=None):
  now=now or time.time();alerts=[]
  # Short reads first; all filesystem scans happen outside any transaction.
@@ -1047,6 +1305,7 @@ def tick(now=None):
    try:mt=path.stat().st_mtime
    except OSError:mt=now
    last=(min(now,mt) if not w['signature'] else now) if sig!=w['signature'] else w['last_change']
+   last=max(last,_agent_activity(path.parent))
    age=now-last
    state=('MALFORMED_JOURNAL' if summary['malformed_lines'] else 'AGENTS_RETURNED' if run_done(summary,run2exp.get(path.parent.name)) else 'STALE_REVIEW_REQUIRED' if age>=600 else 'NO_RESULT_WARNING' if age>=300 else 'OBSERVING')
    # Decision 14: runtime cap is an alert, never a block. It never hides a stall, a malformed
@@ -1207,7 +1466,9 @@ def _rearm_launched(session):
  # A plan with an admitted (confirmed) launch of this session is armed. If its status was put back to planned-not-running by
  # something outside the tool fence (the tools themselves are refused), put it back to running before Stop reads it.
  for r in read_rows('SELECT DISTINCT plan FROM launch_tags WHERE session=?',(str(session),)):
-  try:_staffing().set_running(r['plan'])
+  try:
+   if _staffing().plan_settled(r['plan'],STATE):continue  # all workflows done-or-cancelled: never re-armed
+   _staffing().set_running(r['plan']);_sanction_plan(r['plan'])
   except Exception:pass
 
 def plan_snapshots(data,session):
@@ -1228,7 +1489,7 @@ def plan_snapshot(data,session):
 def stop_omission(data,session):
  # Block reason when ANY armed plan governing the session (cwd-found or pinned; several can be pinned) owes workflows that are
  # unlaunched or is invalid; the owed list is the union. None to allow.
- # Releases, the only ones: (a) the user's stop latch (checked by the caller), (b) a question-only HUMAN turn,
+ # Releases, the only ones: (a) Trevor's stop latch (checked by the caller), (b) a question-only HUMAN turn,
  # There is no count-based release: three failed launches hand the workflow back (alert), they never free the Stop.
  if question_only(session):return None
  reasons=[];snaps=plan_snapshots(data,session)
@@ -1245,7 +1506,7 @@ def _stop_omission_one(snap,session):
  hb_keys=[]
  for wid in st['handback']:
   k=plan+'|'+wid+'|HANDBACK';hb_keys.append(k)
-  raise_alert(k,session,wid,'WORKFLOW_HANDBACK','Workflow %s of plan %s was launched %d times without becoming done. It is not owed; the owner must decide.'%(wid,plan,_staffing().HANDBACK_LAUNCHES))
+  raise_alert(k,session,wid,'WORKFLOW_HANDBACK','Workflow %s of plan %s was launched %d times without becoming done. It is not owed; Trevor must decide.'%(wid,plan,_staffing().HANDBACK_LAUNCHES))
  clear_alerts(plan+'|',hb_keys)
  owed=st['owed'];okey='owed|'+session+'|'+plan
  if not owed:
@@ -1266,7 +1527,7 @@ def stop_unavailable(data,session,err):
  for p in plans:
   d=_jload(p)
   if isinstance(d,dict) and str(d.get('status') or '').lower()=='running':
-   return 'guard unavailable: %s: %s. Plan %s has status running, so Stop cannot be released while the enforcement journal is unreadable. Repair the guard state (the owner) and continue the owed work.'%(type(err).__name__,err,p)
+   return 'guard unavailable: %s: %s. Plan %s has status running, so Stop cannot be released while the enforcement journal is unreadable. Repair the guard state (Trevor) and continue the owed work.'%(type(err).__name__,err,p)
  return None
 
 def plan_line(data,session):
@@ -1277,7 +1538,7 @@ def plan_line(data,session):
    parts.append('Plan %s is %s and INVALID: %s'%(snap['path'],'armed (Stop will hold)' if snap['armed'] else 'found, not started',' | '.join(snap['errors'][:6])));continue
   if not snap['armed']:
    wfs=_staffing().workflows(snap['doc'])
-   if wfs and not all(_staffing().is_done(snap['path'].parent,w,snap['view']['attempts'].get(w.get('workflow_id'),()),snap['view']['records'].get(w.get('workflow_id'),())) for w in wfs):
+   if wfs and not all(w.get('workflow_id') in snap['view'].get('cancelled',{}) or _staffing().is_done(snap['path'].parent,w,snap['view']['attempts'].get(w.get('workflow_id'),()),snap['view']['records'].get(w.get('workflow_id'),())) for w in wfs):
     parts.append('Plan %s found, not started. Start the build with: python3 ~/.claude/hooks/workflow-guard/staffing.py start --cwd %s'%(snap['path'],snap['path'].parent))
    continue
   st=snap['state']
@@ -1289,6 +1550,7 @@ def hook(data):
  event=data.get('hook_event_name','PreToolUse');tool=data.get('tool_name','');session=data.get('session_id','unknown')
  heartbeat(session)
  if event=='UserPromptSubmit':
+  tamper_after(data,session)
   try:rc=user_prompt(data)
   except Exception:rc=0
   try:context(event,plan_line(data,session))
@@ -1300,7 +1562,11 @@ def hook(data):
    ti=data.get('tool_input') if isinstance(data.get('tool_input'),dict) else {}
    write_txn([bump(session,call_fingerprint(tool,ti),tool,response_text(data.get('tool_response',{})) or 'Tool reported failure with no text.')])
   except Exception:pass
+  if tool=='Bash' and not data.get('agent_id'):tamper_after(data,session)
   if tool!='Workflow':return 0
+ if event=='PostToolUse' and tool=='Bash':  # not in the shipped matcher; handled if it is ever wired. The next guarded event reconciles otherwise.
+  if not data.get('agent_id'):tamper_after(data,session)
+  return 0
  if event=='PreToolUse' and tool in ('Agent','Task'):
   b=plan_agent_block(data,session)
   if b is not None:return b
@@ -1402,6 +1668,9 @@ def hook(data):
   # Decision 10: while the stop latch is set the Stop hook never blocks and says nothing.
   if event=='Stop' and latched:return 0
   if event=='Stop':
+   tamper_after(data,session)
+   t=tamper_open(session)
+   if t:print(json.dumps({'decision':'block','reason':tamper_message(session,t)}));return 0
    try:owed=stop_omission(data,session)
    except Exception as e:owed=stop_unavailable(data,session,e)
    if owed:print(json.dumps({'decision':'block','reason':owed}));return 0

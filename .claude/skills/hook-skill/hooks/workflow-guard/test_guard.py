@@ -1,7 +1,7 @@
 import importlib.util,json,os,shutil,sqlite3,subprocess,tempfile,time,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
-NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or ''
+NODE=os.environ.get('WORKFLOW_GUARD_NODE') or shutil.which('node') or '/opt/homebrew/bin/node'
 class GuardTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.path=Path(self.tmp.name)
@@ -138,6 +138,16 @@ class GuardTests(unittest.TestCase):
   self.assertEqual(g.tick(now),[])
   c=g.db();self.assertEqual(c.execute('SELECT state FROM watches').fetchone()[0],'RESOLVED');c.close()
   os.environ.pop('WORKFLOW_GUARD_STATE',None)
+ def test_recent_agent_transcript_counts_as_progress(self):
+  os.environ['WORKFLOW_GUARD_STATE']=str(self.path/'state')
+  spec=importlib.util.spec_from_file_location('guard_agent',ROOT/'guard.py');g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
+  j=self.path/'journal.jsonl';j.write_text(json.dumps({'type':'started','key':'a'})+'\n');now=time.time();os.utime(j,(now-700,now-700))
+  a=self.path/'agent-x.jsonl';a.write_text('{}\n')
+  with g.db() as c:c.execute('INSERT INTO watches VALUES(?,?,?,?,?,?)',(str(j),'test',now,'','OBSERVING',''))
+  self.assertNotEqual(g.tick(now)[0]['state'] if g.tick(now) else 'OBSERVING','STALE_REVIEW_REQUIRED')
+  os.utime(a,(now-700,now-700));c=g.db();c.execute("UPDATE watches SET signature='',last_change=?",(now-700,));c.commit();c.close()
+  self.assertEqual(g.tick(now)[0]['state'],'STALE_REVIEW_REQUIRED')
+  os.environ.pop('WORKFLOW_GUARD_STATE',None)
  def test_active_launch_still_alerts(self):
   g=self.load('guard_act');now=self.stage(g,'wf_active-01','VALIDATED')
   self.assertEqual(g.tick(now)[0]['state'],'STALE_REVIEW_REQUIRED')
@@ -188,7 +198,7 @@ class GuardTests(unittest.TestCase):
   s=self.hook({'hook_event_name':'Stop','session_id':'latch','stop_hook_active':False})
   self.assertEqual((s.returncode,s.stdout),(0,''))
   r=self.pre('Agent',{'prompt':'go'},'latch')
-  self.assertEqual(r.returncode,2);self.assertIn('stop order',r.stderr)
+  self.assertEqual(r.returncode,2);self.assertIn('Trevor said stop',r.stderr)
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'carry on','source':'user'})
   self.assertEqual(self.pre('Agent',{'prompt':'go'},'latch').returncode,0)
   self.hook({'hook_event_name':'UserPromptSubmit','session_id':'latch','prompt':'please stop now','source':'loop_wakeup'})
@@ -224,9 +234,9 @@ class GuardTests(unittest.TestCase):
   r=self.pre('Bash',{'command':'rm /etc/hosts'},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('/etc/hosts, outside the program run root',r.stderr)
  def test_orchestrator_fence_blocks_fleet_unless_test_mode(self):
   self.register('fleetprog')
-  r=self.pre('Bash',{'command':'ssh remote-host ls'},'fleetprog')
+  r=self.pre('Bash',{'command':'ssh karen-mini ls'},'fleetprog')
   self.assertEqual(r.returncode,2);self.assertIn('Remote-host and fleet commands',r.stderr)
-  allowed=self.hook_env({'hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'ssh remote-host ls'},'session_id':'fleetprog'},{**self.env,'SKILL_REVIEW_TEST_MODE':'1'})
+  allowed=self.hook_env({'hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'ssh karen-mini ls'},'session_id':'fleetprog'},{**self.env,'SKILL_REVIEW_TEST_MODE':'1'})
   self.assertEqual(allowed.returncode,0,allowed.stderr)
  def test_runtime_peak_recorded_and_cap_alert(self):
   g=self.load('guard_peak');now=time.time()
