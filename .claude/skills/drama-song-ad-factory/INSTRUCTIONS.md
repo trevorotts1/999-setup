@@ -89,6 +89,9 @@ same entrypoint, intake rules, evidence gates and durable state contract.
 - Hold credentials, API keys or tokens in this folder.
 - Treat a successful diagnostic exit as proof that paid submission occurred.
 - Report an unavailable check as a pass.
+- Compute or hard-code a price; every figure on the choice card comes from
+  Skill 74 `price`.
+- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model outside the approved Kling-avatar-first order (Volcengine is dropped).
 
 ## 6. Keeping parity (required whenever the core changes)
 
@@ -103,3 +106,57 @@ layer. When the canonical core changes:
 
 A one-sided core change is a lockstep defect (directive 2.3), not a
 style difference.
+
+## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
+
+Shared with the OpenClaw twin. Field rules:
+`references/choice-card-spec.md`; human price snapshot:
+`references/price-menu.md`.
+
+1. **One card, all defaults pre-selected** - a client approves with one
+   click. Directive 24.3 still caps intake at three questions in one message
+   (offer + optional product image; audience and action; approve the price).
+   Quick mode is the default; Concept mode takes the client's own story.
+2. **Length:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, **10-minute
+   long version**. Each length is its own song and timing map.
+3. **Shape:** 9:16, 16:9 or both, each generated natively.
+4. **Clips:** automatic 60- or 90-second clips are offered for the
+   **5-minute and 10-minute lengths only**; cutting is free, the AI that
+   picks the moments runs on the client's own AI plan.
+5. **Five looks:** Lifelike 3D (default), 2D Hand-Painted, Sketch to Life,
+   Canvas to Life, Canvas to 3D - each with its own style-bible block,
+   switching rules and QC. Hybrids switch on matched poses with a 0.3-0.4 s
+   dissolve, hold each style at least 3 seconds, never flicker and lock
+   identity; golden realism carries the transformation. No lip-sync on
+   sketch shots; Canvas to 3D lip-syncs only on lifelike 3D close-ups.
+6. **Music:** Soul Ballad (default), R&B Flow, Soul Rise.
+7. **Voice:** All Suno (default) or **Velvet Voiceover** - Google
+   text-to-speech for the spoken lines, one distinct voice per character,
+   the sung version of each line playing softly underneath with the music
+   bed dipped, **no echo effect, no reverb**. The option was renamed from
+   its earlier echo-flavoured spelling; that earlier string is forbidden. Per-character voice packs mean
+   no two characters share a voice.
+8. **Lip-sync (decision 33):** selected lines only - pain peak, product
+   line, call to action, chorus hook; about 15 to 20 seconds per ad, listed
+   on the approval card. Kling avatar `kling/ai-avatar-standard` first
+   (front-facing close-up image plus that character's own isolated line),
+   InfiniTalk `infinitalk/from-audio` as backup, **Volcengine dropped**.
+   Tight close-ups only; the input clip holds only the on-screen speaker's
+   line; narrator and device voices are never lip-synced onto a person.
+   QC measures pitch against the character's gender range with an
+   octave-error guard, and checks the picture shows the speaker.
+9. **Suno extend** only to hit an exact length or repair a section.
+10. **Unknown KIE job results** are resolved by querying KIE task status,
+    never left open, never blindly re-submitted.
+11. **Book campaigns and batch mode:** the cover is the product image; one
+    choice card for the whole batch; one ad per book with its own campaign
+    folder, receipt, spend-ledger run and Command Center deliverable; books
+    and authors are never mixed; the card shows the batch total.
+12. **Prices:** video, both shapes, lip-sync close-ups, voice packs, clips
+    and the batch total all come from Skill 74 `price`. The OpenClaw
+    distribution's department lead role is
+    `vsl-video-sales-letter-specialist`, and its pipeline SOP is
+    `23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`
+    (that repository path does not exist in 999-setup; this distribution
+    reads the SOP from the OpenClaw copy).
+
