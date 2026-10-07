@@ -1,0 +1,252 @@
+╔══════════════════════════════════════════════════════════════╗
+  MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
+  DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
+╚══════════════════════════════════════════════════════════════╝
+
+STEP 1: CHECK IF YOU HAVE BEEN TAUGHT THE TEACH YOURSELF PROTOCOL (TYP)
+
+Before you read, learn, or execute ANY instruction in this document, you must
+verify that you have already been taught the Teach Yourself Protocol (TYP).
+
+HOW TO CHECK:
+- Look in your AGENTS.md, TOOLS.md, or MEMORY.md for any mention of:
+  "Teach Yourself Protocol" or "TYP"
+- Look in your session context for prior TYP training
+- Look for a tab called "Teach Yourself Protocol" in this same document
+
+IF YOU HAVE BEEN TAUGHT TYP:
+Proceed to the instructions below. Follow the TYP file storage structure.
+
+IF YOU HAVE NOT BEEN TAUGHT TYP:
+STOP IMMEDIATELY. Do not read further. Do not attempt to learn or execute
+anything in this document. Tell the user exactly this:
+
+  "I have not been taught the Teach Yourself Protocol yet. I cannot safely
+   learn or execute these instructions until I have been taught TYP first.
+   Please share the Teach Yourself Protocol tab with me before we proceed.
+   Without TYP, I will bloat your core .md files and waste your tokens."
+
+DO NOT PROCEED PAST THIS POINT WITHOUT TYP CONFIRMED.
+
+══════════════════════════════════════════════════════════════════
+KIE IMAGE - HOW TO USE IT (DAILY USAGE GUIDE)
+══════════════════════════════════════════════════════════════════
+
+This document explains the KIE Image day-to-day workflow: route, select,
+validate, dispatch, wait, QC. If the credential is not confirmed yet, go to
+INSTALL.md first. For the full parameter contracts, see references/api-patterns.md;
+for prompt policy, references/prompt-policy.md; for the human model matrix,
+references/models.md.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE BIG PICTURE — EVERY TASK IS ASYNCHRONOUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The KIE.ai Market API is CREATE-THEN-POLL:
+
+1. POST https://api.kie.ai/api/v1/jobs/createTask  (model + input)
+2. The 200 response means the task was CREATED, NOT completed — it carries a
+   taskId, never an image.
+3. Wait: callBackUrl (Skill 46 relay) or recordInfo polling:
+   GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID>
+4. state enum: waiting -> queuing -> generating -> success | fail.
+5. On success, `data.resultJson` (a JSON STRING) holds {"resultUrls":[...]}; `data.response.resultUrls`
+   is the same list already parsed (prefer it). Download IMMEDIATELY. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
+6. Visually QC the downloaded asset. See references/qc.md.
+
+Do not write "the image is at data[0].url" after createTask — that is the Agnes
+Image 63 synchronous pattern and it does NOT apply here.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE ENDPOINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  POST https://api.kie.ai/api/v1/jobs/createTask
+  GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID>
+
+Headers on every call:
+
+  Authorization: Bearer $KIE_API_KEY
+  Content-Type: application/json
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: NORMALIZE THE ALIAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Users say "Quinn", "Kling", "Idiogram", "Imagine 4", "GPT-img2", "C Dream".
+Run the normalizer before anything else:
+
+  python3 scripts/normalize_alias.py "<model mention from the request>"
+
+Mappings (spec 13): Cling->Kling, Quinn->Qwen, C Dream/Seed Dream->Seedream,
+Idiogram->Ideogram, Imagine 4->Imagen 4, GPT-img2 / GPT-image 2.0 / "gpt image 2"
+->legacy GPT Image 2 (owner correction 2026-10-06: a name that carries version 2
+is the legacy family, used with its own N43 ratio rules), "gpt image" / "gpt-image" /
+"openai image" (no version) -> the fleet default, which follows the newest
+generation,
+Nano Banana Light->Nano Banana 2 Lite. Z-Image is its OWN family and is NEVER
+merged into Qwen (even when the user says "Z Image by Quinn" — the two are
+different providers' models on the same market).
+
+Syntax check, no output:
+
+  python3 scripts/normalize_alias.py --self-test   (must print PASS, exit 0)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2: SELECT THE MODEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 scripts/select_image_model.py "<natural-language request>"
+
+Exit 0: prints the selected canonical model + task id. Exit 1: no good match
+(prints valid alternatives). Flag `--json` for machine-readable output.
+
+Routing policy (spec 7.5), in order:
+1. Explicit user pick wins — capability match, never "fixed" into something else.
+2. Else the GPT Image default: the NEWEST GPT Image generation in KIE's live catalog
+   (owner order 2026-10-05, resolved by Skill 74 `latest-family`; models.json default
+   when the adapter is absent or unreachable; today GPT Image 2.5 Sunburst) is the
+   preferred default (operator ruling 2026-09-09,
+   supersedes GPT Image 2; high-fidelity general generation/editing,
+   product/brand, detailed long-form creative) when compatible — mind the
+   ratio/resolution exclusions (2K/4K exclude 27:16, 16:27, 9:8, 8:9 — 1K
+   only). GPT Image 2 (legacy) is RETAINED, not retired: the selector routes
+   aspect ratios 3:1, 1:3, 9:21 to it automatically (it does not serve those
+   on 2.5), and applies its OWN separate, unchanged exclusion rules (2K/4K
+   exclude 5:4, 4:5, 3:1, 1:3, 9:21; "auto" -> 1K only; 1:1 cannot convert to
+   4K) whenever that legacy route is used.
+3. Else by capability: Nano Banana Pro / 2 (general, multi-ref), Seedream 5.0 Pro
+   (complex/controlled), Ideogram V3 (typography/design), Qwen 3.0 (structured
+   layouts, multilingual), Wan 2.7 (bbox control, gallery), Lite/Fast (volume).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3: SIZE THE PROMPT (BEFORE VALIDATION)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prompt budget (owner order 2026-10-05, supersedes the old 5,000 / 9,000 / 19,000 house band):
+a prompt uses 95-100% of the model's character max and is NEVER below 80% of it.
+
+  python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id> --json
+
+gives the field, max, floor (80%) and target (95-100%) from the live schema (registry
+snapshot as fallback). validate_prompt.py applies it for you: below the floor is
+REJECTED with the exact number of characters to ADD; above the max is REJECTED with
+the exact number to CUT; 80-95% passes with a warning to expand. Unknown limit:
+UNKNOWN warning, no floor. Verbatim content (spoken text, lyrics) has no floor.
+Without the adapter the limit is the models.json cap. Per-model figures today:
+
+- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the live
+  schema, which is the hard limit (KIE rejects longer prompts); the 25,000 that N43 recorded
+  as owner-confirmed is superseded by KIE's live schema as of 2026-10-05, and the validator
+  prints a warning saying so.
+- Wan 2.7 Image, Ideogram V3, Imagen 4 family: 5,000 (floor 4,000, target 4,750+).
+- Qwen Image 3.0/Pro: docs advertise 4.5K TOKENS (rule D: never a fake char cap);
+  the live schema states 5,000 chars.
+- Others: the live schema figure; none stated means UNKNOWN.
+
+A short user prompt ("make me a futuristic Black woman CEO...") is expanded into the
+full production prompt (15 dimensions in references/prompt-policy.md section 9) BEFORE
+validation; the expanded prompt must land in the 80-100% range. Cron jobs store
+creative INTENT and compose at execution time (spec 5.5).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 scripts/validate_prompt.py "<prompt text>" --model <model-id> [--strict]
+  python3 scripts/validate_prompt.py --prompt-file <file> --model <model-id> [--strict]
+  python3 scripts/validate_payload.py <payload.json> [--model <model-id>]
+  (validate_prompt reads stdin with "-" as the prompt; validate_payload reads
+  stdin with "-" as the payload and takes the model from payload.model unless
+  --model overrides it. validate_payload has no --strict flag.)
+
+- validate_prompt: exit 0 acceptable; exit 1 invalid (below the 80% floor, unknown
+  model, or a --strict warning); exit 2 above the max.
+- validate_payload: reference counts, MB/format, ratio/resolution enums,
+  per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
+  for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
+  1K-only exclusion list for the default route; Wan n 1–4 / gallery 1–12
+  with enable_sequential, bbox <=2 per image, inputs min 240px and max 10MB;
+  Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image T2I-only; Ideogram
+  strength 0.01–1; Seedream 4.5 has no output_format).
+
+Bad payloads NEVER reach the API. Validation happens before charging provider
+credits (spec 14).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5: DISPATCH THROUGH SKILL 74 (validate, preflight, submit, then QC)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This skill owns the policy: which model, the prompt, the ratio and reference rules.
+Skill 74 owns the mechanics: live schema, price, balance, the createTask call. Every
+dispatch path runs these four commands in order, from this skill's folder
+(A = python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py):
+
+  1. A validate --model <id> --payload input.json --json
+     Live schema first, the generated registry snapshot as fallback. State must be
+     "validated"; fix every listed error. This is in addition to Steps 3 and 4, never
+     instead of them (models.json caps and per-family rules still run first).
+  2. A preflight --model <id> --units <images> --json
+     Balance must cover price x 1.30. state "fail" with code insufficient_credits:
+     stop and report the shortfall; do not submit.
+  3. A submit --request req.json --mode active [--callback-url <Skill 46 relay URL>] --json
+     req.json is {"model": "<id>", "input": {...}}. Skill 74 never picks or changes the
+     model; the id is the one this skill selected. Production batches (decks, many
+     images) pass the Skill 46 relay URL (see 46-kie-callback-relay SUBMITTER-SOP.md,
+     "Production route via Skill 74"). One-off jobs wait with `A wait --task-id <id>`
+     and save with `A save --task-id <id> --save-dir <dir>`.
+  4. This skill's own QC (Step 6) on the saved file.
+
+If submit returns state "skipped" with fallback_used true, the adapter is off or in
+shadow mode and sent nothing: dispatch with the curl bodies in EXAMPLES.md exactly as
+before (steps 1 and 2 already ran). If the adapter is absent, steps 1 and 2 are
+skipped with a one-line note and the curl path is used.
+
+A model that is not in models.json (for example a newer generation KIE added) is
+DISCOVERED, never auto-default: only the GPT Image default follows `latest-family`
+(owner order 2026-10-05, Step 2). Any other new live model is used only when the
+requester names it; validate_payload.py then checks it against Skill 74's live schema.
+
+Wait strategies (both unchanged): callBackUrl via the Skill 46 relay (HMAC-SHA256
+signature base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey)),
+X-Webhook-Timestamp and X-Webhook-Signature headers, ack with
+{"code":200,"msg":"success"}; handle idempotently and keep polling as fallback), or
+recordInfo polling (initial delay 2-3s, stepped backoff, respect 429, stop after
+10-15 min).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 6: QC — LOOK AT THE IMAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+state == "success" is proof the provider returned bytes, nothing more. Download
+resultUrls and INSPECT: dimensions match requested enum (on the retained
+legacy GPT Image 2 route: auto->1K only, 1:1 cannot be 4K; on the GPT Image
+2.5 default route: 27:16/16:27/9:8/8:9 are 1K only — either way, excluded
+ratios never silently returned); reference
+fidelity (faces, product geometry, logo exactness); edit preservation; colors/
+lighting/typography; anatomy and subject count; ratio per family enum.
+
+Mandatory: any client logo/brand-mark generation MUST be image-to-image with the
+logo as a reference (never text-to-image); any style-reference attachment MUST
+carry the directive: "Use the attached images only as style reference for color
+grading, lighting, and composition -- do not copy their subjects, faces, or
+text."
+
+Failures follow the 5-step retry ladder (references/qc.md section 4): same model
+corrected -> same model alternate encoding -> another same-provider model (only
+if selection was automatic/permitted) -> another provider (only if permitted) ->
+stop and report. Never silently burn credits.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRACTICAL NUMBERS (from models.json, verified 2026-08-26)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Rate: 20 new generation requests / 10 seconds; 100+ concurrent per account.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
+- GPT Image 2 / GPT Image 2.5 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
+  forward unchanged on 2.5); resolution 1K/2K/4K.
+- Qwen refs: max 3, 10MB each, six formats; resolution 1K/2K only.
+- Wan refs: max 9, 10MB, min 240px per side; resolution 1K/2K (Pro +4K, T2I only).
+- Legacy nano-banana refs: 10MB (not 30MB).
+
+Full table: models.json and references/models.md.
