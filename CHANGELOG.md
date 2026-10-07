@@ -11,6 +11,7 @@
 - DTS-W3-03-U2-adapters-docs: drama-song-factory W3-03-U2: adapters + 7 directive docs for 999 skill (merge 8bd326cff61c)
 - w3-03-u4-installer-registration: W3-03-U4: installer-registration entry + clean-install proof for drama-song-ad-factory (merge a1210dcc5205)
 - merge/dts-batch-a1b-999: Merge branch 'unit/W3-03-U7-installer-smoke-test' into merge/dts-batch-a1b-999 (merge 963419f38221)
+- unit/A4-U2-hook-skill-1.2.0: hook-skill tests: install acorn before the first suite; stop run-all.sh losing failures (merge 833a1594a62f)
 
 ## [hook-skill] — 2026-10-06
 
