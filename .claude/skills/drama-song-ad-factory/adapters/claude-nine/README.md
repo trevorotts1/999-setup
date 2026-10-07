@@ -29,5 +29,6 @@ independently maintained copy of this skill.
    `python3 tests/test_cli_smoke.py` and
    `python3 tests/test_parity_layout.py`, then one `preflight` against the
    approved storage root, and record the envelopes as evidence.
-7. Keep credentials out of this skill folder. Record compatibility-only
-   changes; never overwrite an existing target.
+7. Keep credentials out of this skill folder, and never print or log a
+   credential value — preflight checks presence by name only (directive 5.3).
+   Record compatibility-only changes; never overwrite an existing target.
