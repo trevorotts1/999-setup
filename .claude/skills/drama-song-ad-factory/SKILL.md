@@ -63,8 +63,8 @@ python3 scripts/core/intake_preflight/factory.py preflight --root "$STORAGE"
 | `rejected` | 4 | refused on policy, trust or authorization |
 
 Full field list, argument list and reason codes:
-`references/cli-contract.md` (mirrors `docs/operating-and-recovery/OPERATING.md`
-in the build tree).
+`references/cli-contract.md`, asserted in-skill by
+`tests/test_cli_smoke.py`.
 
 ## What the model does vs what the code owns
 
