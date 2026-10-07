@@ -12,6 +12,7 @@
 - w3-03-u4-installer-registration: W3-03-U4: installer-registration entry + clean-install proof for drama-song-ad-factory (merge a1210dcc5205)
 - merge/dts-batch-a1b-999: Merge branch 'unit/W3-03-U7-installer-smoke-test' into merge/dts-batch-a1b-999 (merge 963419f38221)
 - unit/A4-U2-hook-skill-1.2.0: hook-skill tests: install acorn before the first suite; stop run-all.sh losing failures (merge 833a1594a62f)
+- unit/A2-U2: A2-R2-U2: re-package kie_dispatch from the FIXED canonical core (sha cb19f18b) (merge 1e894280f214)
 
 ## [hook-skill] — 2026-10-06
 
