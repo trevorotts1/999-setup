@@ -95,6 +95,21 @@ The packaged control layer lives in `scripts/core/`:
 `delivery_verify.py` and `release_check.py` are named in the directive and
 are not in this package yet; treat any claim of them as unimplemented.
 
+## Packaged production modules (14)
+
+`scripts/core/` also ships the fourteen production modules, copied
+byte-identical from the canonical source `drama-song-factory-build/core/`
+(regenerate from that source on core changes; never hand-edit the copy):
+
+`research_engine`, `story_arc`, `lyric_writer`, `music_director`,
+`music_qc`, `character_continuity`, `product_style_bible`,
+`style_bible_integration`, `shot_planner`, `storyboard_director`,
+`video_router`, `final_assembler`, `delivery_variants`, `retake_manager`.
+
+Cross-distribution sha256 equality with the OpenClaw packaging is checked by
+`tests/test_parity_layout.py` and the workspace parity suite; when the
+canonical tree is absent the result is `PARITY UNDETERMINED`, not a pass.
+
 ## Creative doctrine (shared, not adapter-specific)
 
 - Twelve-stage arc, in order: Ordinary World; Humiliation / Emotional Wound;
