@@ -96,6 +96,15 @@
       "satisfy": "Install the helpers (registration lives in installer-registration/helper-dependencies.json with pinned versions and hashes). If one is absent, preflight fails with module-unavailable naming it - install the helper, never bypass the check and never substitute a static provider path."
     },
     {
+      "id": "kie-dispatch-transport",
+      "type": "skill",
+      "label": "Skill 74 (74-kie-live-adapter) installed as the one KIE transport for kie_dispatch",
+      "check": {"skills": ["74-kie-live-adapter"], "repository": "openclaw-onboarding", "entrypoint": "scripts/kie_live_adapter.py", "dispatcher": "scripts/core/kie_dispatch/kie_dispatch.py"},
+      "severity": "required",
+      "when": "media-generation",
+      "satisfy": "scripts/core/kie_dispatch/kie_dispatch.py holds no KIE client of its own: it resolves kie_live_adapter.py and runs Skill 74 as a single subprocess, so Skill 74 must be installed before the dispatcher is used or it stops with adapter-not-found (there is deliberately no private KIE fallback). This distribution does not ship Skill 74 as an installed skill, so install it with the steps below. (1) python3 installer-registration/helper-deps.py preflight - exits 1 and names 74-kie-live-adapter when it is absent or its tree hash differs. (2) python3 installer-registration/helper-deps.py install - verifies the vendored copy at installer-registration/helpers/74-kie-live-adapter against its pinned tree sha256 and copies it to <config-root>/skills/74-kie-live-adapter (an existing differing copy is backed up, never deleted), then re-runs preflight. (3) Inside that installed skill folder run bash qc-74-kie-live-adapter.sh (offline, no network and no key; must exit 0) and then bash wire.sh (idempotent; a second run reports no change). (4) Leave the adapter in shadow mode: only an operator runs bash scripts/live_smoke.sh and deliberately switches that box to active. python3 must be on PATH and KIE_API_KEY must be present by name (never printed). Set KIE_LIVE_ADAPTER_PATH only when the adapter sits outside every location the dispatcher searches."
+    },
+    {
       "id": "helper-kie-callback-relay",
       "type": "skill",
       "label": "Provider callback relay skill 46",
