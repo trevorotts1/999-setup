@@ -1,0 +1,9 @@
+# W3-03-U4 owned artifact — installer/bundled-skill registry entry.
+# Registry actually read by both installers (repo checkout):
+#   setup-macos.sh   -> bundled_skills()      reads CONTROL/bundled-skills.txt
+#   setup-windows.ps1 -> Get-BundledSkills()  reads CONTROL\bundled-skills.txt
+# The registry line below must appear in CONTROL/bundled-skills.txt; the
+# committed entry is proven by a clean-install run of the real installer
+# functions in installer-registration/verify-registration.sh (registry-driven,
+# not source-presence-driven).
+drama-song-ad-factory

@@ -1,0 +1,103 @@
+{
+  "schema": "blackceo.helper-dependencies/v1",
+  "unit": "W3-03-U5",
+  "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
+  "generatedBy": "installer-registration/helper-deps.py repin",
+  "generatedAt": "2026-10-07T09:27:30Z",
+  "hash": {
+    "algorithm": "sha256",
+    "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
+    "file": "sha256 of the raw file bytes"
+  },
+  "install": {
+    "command": "python3 installer-registration/helper-deps.py install",
+    "windowsCommand": "py installer-registration\\helper-deps.py install",
+    "target": "<config root>/skills/<name>",
+    "configRoot": "CLAUDE_CONFIG_DIR when set, otherwise ~/.claude (read only; never assigned by this tool)",
+    "backupDir": "~/.claude-skill-backups/<name>.<timestamp> (existing differing copies are moved there, never deleted)",
+    "wiredInto": "AGENT_INSTALL.md section 5"
+  },
+  "preflight": {
+    "command": "python3 installer-registration/helper-deps.py preflight",
+    "exitOk": 0,
+    "exitFail": 1,
+    "rule": "a required helper that is absent, lacks SKILL.md, or does not match its pinned treeSha256 fails the preflight with the helper name and the repair command"
+  },
+  "helpers": [
+    {
+      "id": "66",
+      "name": "66-kie-image",
+      "skillName": "kie-image",
+      "role": "KIE image model selection, prompt constraints, domain QC",
+      "required": true,
+      "version": "v2.2.1",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/66-kie-image",
+      "installPath": "skills/66-kie-image",
+      "fileCount": 21,
+      "sizeBytes": 340880,
+      "treeSha256": "bd9038cc898b0cc3e587c1bd7bfbe3817b4510056278ea6bef4d355c09877f04",
+      "skillMdSha256": "057394703e092d00da1add36c5fc75e292709fb2cafadb153c7605ce547c2a4f"
+    },
+    {
+      "id": "67",
+      "name": "67-kie-video",
+      "skillName": "kie-video",
+      "role": "KIE video routing (no hardcoded model registry)",
+      "required": true,
+      "version": "v2.1.2",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/67-kie-video",
+      "installPath": "skills/67-kie-video",
+      "fileCount": 21,
+      "sizeBytes": 322395,
+      "treeSha256": "973d9be85f6eef14bd014d07c099cfca65de2f200a399758d4e38ffc8ebedc65",
+      "skillMdSha256": "a701f0ff8694068a8bcacdefa75a5040620cfe75c6f00f8237d08358db24cd77"
+    },
+    {
+      "id": "68",
+      "name": "68-kie-audio",
+      "skillName": "kie-audio",
+      "role": "KIE/Suno audio request contract, model selection, domain QC",
+      "required": true,
+      "version": "v2.3.0",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/68-kie-audio",
+      "installPath": "skills/68-kie-audio",
+      "fileCount": 21,
+      "sizeBytes": 243136,
+      "treeSha256": "d38e61ea0ccffc3d73e7b15924a3d098800d9a61bf326bdb5d5244ac7314593a",
+      "skillMdSha256": "c925576acde5b0c4afed07491e53fadf41034e3bd19db847279dea27ed3dcf3c"
+    },
+    {
+      "id": "74",
+      "name": "74-kie-live-adapter",
+      "skillName": "kie-live-adapter",
+      "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
+      "required": true,
+      "version": "v1.1.2",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
+      "installPath": "skills/74-kie-live-adapter",
+      "fileCount": 32,
+      "sizeBytes": 726017,
+      "treeSha256": "6c8de370c730450f3cc94c495f338efd066a939a06aad865dac34eca57823055",
+      "skillMdSha256": "3d5b3adc9ee4db71eb55e8d4be76a4d6066deda2192b640b93079f368564f365"
+    },
+    {
+      "id": "46",
+      "name": "46-kie-callback-relay",
+      "skillName": "kie-callback-relay",
+      "role": "Callback relay (webhook-primary result path for paid generations)",
+      "required": true,
+      "version": "v2.1.0",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/46-kie-callback-relay",
+      "installPath": "skills/46-kie-callback-relay",
+      "fileCount": 12,
+      "sizeBytes": 169310,
+      "treeSha256": "249badb74629aca0c11da58348f8357fe3a47637431bc39780071f73db1c9ee5",
+      "skillMdSha256": "20b19e814c778b6f0832b34533854d9c788f8d3680b4c769968e6bbb9688d50f"
+    }
+  ]
+}

@@ -1,0 +1,428 @@
+/**
+ * Kie Callback KV Poller -- runs on the client box (Mac or Docker)
+ *
+ * Transport B2: the box polls Cloudflare KV for the verified callback result.
+ * This means ZERO inbound public route on the box and ZERO Cloudflare Access bypass.
+ *
+ * Usage: called by the slide submitter after each batch of createTask submits.
+ *   const poller = new KieKvPoller({
+ *     clientSlug, kvWorkerUrl, workspaceDir,
+ *     kvReadToken  -- bearer token for /kv-read authentication (KVREAD_TOKEN, fix B)
+ *   });
+ *   const result = await poller.waitForTask(submitId, taskId, perTaskSecret, { timeoutMs });
+ *
+ * Required env vars on the box (in ~/clawd/secrets/.env or /docker/<project>/.env):
+ *   KIE_KV_BASE_URL   -- Worker base URL, e.g. https://kie-callback.<your-cf-zone>
+ *   KIE_CLIENT_SLUG   -- this box's client identifier (e.g. "operator-demo")
+ *   KVREAD_TOKEN      -- bearer token shared with the Worker (fix B); name only, never in docs
+ *
+ * Security:
+ *   - Fix B: every /kv-read request carries Authorization: Bearer <KVREAD_TOKEN>.
+ *   - Fix C/G: the raw perTaskSecret preimage is sent in the X-Kie-Preimage request header on
+ *     /kv-read (NOT a query param) so the Worker can validate the stored HMAC. The Worker
+ *     validates in constant time and NEVER returns perTaskSecret.
+ *     The box validates the result by comparing its local registry copy of perTaskSecret
+ *     against what was submitted (unchanged from before -- belt-and-suspenders).
+ *   - Result URLs are allowlisted to Kie-owned domains before any download.
+ *   - No webhookHmacKey on the box -- it lives only in the Worker.
+ *
+ * Rate note: polling our own KV endpoint does NOT consume Kie's 10-req/s query budget.
+ */
+
+const fs   = require('fs');
+const path = require('path');
+const https = require('https');
+const crypto = require('crypto');
+
+// Allowed Kie result CDN hosts. These are the hosts Kie's docs describe; capture the EXACT
+// host(s) from a live callback and OVERRIDE via the KIE_RESULT_HOSTS env var (comma-separated)
+// so a changed/unexpected Kie CDN host can be corrected WITHOUT a code edit + redeploy. A wrong
+// allowlist silently converts every genuine result into a failure fleet-wide, so a mismatch is
+// surfaced loudly at check time (see the ALLOWLIST-MISMATCH branch in waitForTask).
+const DEFAULT_KIE_RESULT_HOSTS = [
+  'tempfile.redpandaai.co',
+  'tempfileb.aiquickdraw.com',
+  'static.aiquickdraw.com',
+  'tempfile.aiquickdraw.com',
+  // Veo 4K callback result host, documented in 07-kie-setup/kie-setup-full.md (file.aiquickdraw.com/v/...).
+  'file.aiquickdraw.com',
+];
+const KIE_RESULT_HOSTS = (process.env.KIE_RESULT_HOSTS
+  ? process.env.KIE_RESULT_HOSTS.split(',').map(h => h.trim()).filter(Boolean)
+  : DEFAULT_KIE_RESULT_HOSTS);
+
+class KieKvPoller {
+  /**
+   * @param {object} opts
+   * @param {string} opts.clientSlug        -- client identifier
+   * @param {string} opts.kvWorkerUrl       -- base URL of the Worker, e.g. https://kie-callback.<your-cf-zone>
+   * @param {string} opts.workspaceDir      -- path to workspace, e.g. /data or ~/clawd
+   * @param {string} opts.kvReadToken       -- per-client bearer token for /kv-read auth
+   *                                            (fix B/F). Required ONLY when callbacks are
+   *                                            enabled; small decks (fix 33) poll Kie directly.
+   * @param {boolean} [opts.callbacksEnabled] -- when false (small deck, fix 33), the KV phase
+   *                                            is skipped entirely and results come from a
+   *                                            direct Kie recordInfo poll; no Worker secret needed.
+   * @param {number} [opts.pollIntervalMs]  -- ms between KV polls (default 2000)
+   */
+  constructor(opts) {
+    this.clientSlug       = opts.clientSlug;
+    this.kvWorkerUrl      = (opts.kvWorkerUrl || '').replace(/\/$/, '');
+    this.workspaceDir     = opts.workspaceDir;
+    this.kvReadToken      = opts.kvReadToken || '';
+    this.callbacksEnabled = opts.callbacksEnabled !== false; // default true (large-deck path)
+    this.pollIntervalMs   = opts.pollIntervalMs || 2000;
+    this.registryDir      = path.join(this.workspaceDir, '.kie', 'registry');
+    this.doneDir          = path.join(this.workspaceDir, '.kie', 'done');
+    fs.mkdirSync(this.registryDir, { recursive: true });
+    fs.mkdirSync(this.doneDir,     { recursive: true });
+
+    // Fix 33: the KV bearer token is only needed on the callback path. Below the
+    // callback threshold the box never touches the Worker, so the secret is optional.
+    if (this.callbacksEnabled && !this.kvReadToken) {
+      throw new Error('[kie-poller] opts.kvReadToken is required when callbacksEnabled (KVREAD_TOKEN)');
+    }
+  }
+
+  /**
+   * Wait for a task result via KV polling with a single-poll Kie fallback.
+   *
+   * @param {string} submitId     -- the local submit ID used in the callback URL
+   * @param {string} taskId       -- returned by Kie createTask
+   * @param {string} perTaskSecret -- the per-task secret from the task registry
+   * @param {object} [opts]
+   * @param {number} [opts.timeoutMs]       -- total wait before fallback (default: 120000)
+   * @param {string} [opts.kieApiKey]       -- Kie API key (for fallback poll only)
+   * @param {string} [opts.fallbackPollIntervalMs] -- ms between fallback Kie polls (default: 5000)
+   *
+   * @returns {Promise<{status: 'done'|'failed'|'timeout', resultUrls: string[], code: number}>}
+   */
+  async waitForTask(submitId, taskId, perTaskSecret, opts = {}) {
+    const timeoutMs = opts.timeoutMs || 120000;
+    const deadline  = Date.now() + timeoutMs;
+
+    // Check if already done (crash-safe resume)
+    const existingDone = this._readDoneMarker(taskId);
+    if (existingDone) {
+      console.log(`[kie-poller] task ${taskId} already done (marker exists)`);
+      return existingDone;
+    }
+
+    // Fix 33: small-deck path. When callbacks are disabled the box never sent a
+    // callBackUrl, so nothing will ever land in KV. Skip the KV phase entirely and
+    // poll Kie's recordInfo directly (batch backoff) instead of burning the timeout.
+    if (!this.callbacksEnabled) {
+      if (!opts.kieApiKey) {
+        const marker = { taskId, submitId, status: 'timeout', resultUrls: [], code: 0,
+                         source: 'no-callbacks-no-key' };
+        this._writeDoneMarker(taskId, marker);
+        return marker;
+      }
+      console.log(`[kie-poller] task ${taskId}: callbacks disabled -- direct Kie recordInfo poll`);
+      return await this._kieRecordInfoFallback(taskId, submitId, opts.kieApiKey,
+        opts.fallbackPollIntervalMs || 5000);
+    }
+
+    console.log(`[kie-poller] waiting for task ${taskId} via KV (timeout ${timeoutMs}ms)`);
+
+    // Phase 1: poll our Worker KV endpoint (free, not Kie's query budget)
+    while (Date.now() < deadline) {
+      await this._sleep(this.pollIntervalMs);
+
+      // Fix B + C + G: pass perTaskSecret to _pollKv (sent in the X-Kie-Preimage header)
+      // for auth + HMAC validation on the Worker. The Worker validates the HMAC
+      // server-side and never returns the secret. The local _validatePerTaskSecret
+      // check below is belt-and-suspenders defense-in-depth.
+      const kvResult = await this._pollKv(submitId, perTaskSecret);
+      if (kvResult) {
+        // Fix 34: confused-deputy defense. Confirm the returned result's submitId is
+        // exactly the one we asked for; a wrong-task result must never land on this slide.
+        if (!this._validatePerTaskSecret(kvResult, submitId)) {
+          console.warn(`[kie-poller] submitId mismatch for task ${taskId} -- dropping`);
+          continue;
+        }
+        // Fix 35 / ONB-46-001: the ONE shared outcome rule -- a "success" with zero
+        // downloadable URLs is NOT done. Both resolution paths call _resolveOutcome.
+        // A Worker that predates the Market-shape fix returns resultUrls: [] for a real
+        // success, so re-derive from the raw callback data before applying the rule.
+        const kvUrls = (Array.isArray(kvResult.resultUrls) && kvResult.resultUrls.length > 0)
+          ? kvResult.resultUrls : this._extractTaskUrls(kvResult.rawData);
+        const { status, resultUrls: safeUrls, extra } =
+          this._resolveOutcome(kvUrls, kvResult.code, taskId, 'callback-kv');
+        const marker = { taskId, submitId, status, resultUrls: safeUrls, code: kvResult.code,
+                         receivedAt: kvResult.receivedAt, source: 'callback-kv', ...extra };
+        this._writeDoneMarker(taskId, marker);
+        console.log(`[kie-poller] task ${taskId} resolved via callback-kv: ${status}`);
+        return marker;
+      }
+    }
+
+    // Phase 2: callback missed -- single reconciling Kie recordInfo poll (fallback)
+    console.warn(`[kie-poller] callback timeout for task ${taskId} -- falling back to Kie poll`);
+    if (!opts.kieApiKey) {
+      const marker = { taskId, submitId, status: 'timeout', resultUrls: [], code: 0,
+                       source: 'timeout-no-key' };
+      this._writeDoneMarker(taskId, marker);
+      return marker;
+    }
+
+    return await this._kieRecordInfoFallback(taskId, submitId, opts.kieApiKey,
+      opts.fallbackPollIntervalMs || 5000);
+  }
+
+  /**
+   * Poll the Worker's /kv-read endpoint for a result keyed by submitId.
+   *
+   * Fix B: sends Authorization: Bearer <kvReadToken> on every request.
+   *   Returns null (treat as not-yet-available) on 401/403 to avoid crashing the poll loop,
+   *   but logs an error so misconfiguration is visible.
+   *
+   * Fix C + G: sends the raw perTaskSecret in the X-Kie-Preimage header (NOT a query
+   *   param -- query params are captured in edge access logs on every 2s poll) so the
+   *   Worker can validate the stored HMAC. The perTaskSecret is only sent over TLS to
+   *   our own Worker -- it never traverses Kie.
+   *
+   * @param {string} submitId      -- the 128-bit random submitId (fix A)
+   * @param {string} perTaskSecret -- the per-task secret from the local task registry
+   * @returns {Promise<object|null>} result object or null
+   */
+  async _pollKv(submitId, perTaskSecret) {
+    // Fix G: only c= and j= travel in the URL; the secret preimage rides in a header.
+    const url = `${this.kvWorkerUrl}/kv-read` +
+      `?c=${encodeURIComponent(this.clientSlug)}` +
+      `&j=${encodeURIComponent(submitId)}`;
+    try {
+      const res  = await this._fetch(url, {
+        headers: {
+          Authorization:    `Bearer ${this.kvReadToken}`, // Fix B/F: per-client bearer token
+          'X-Kie-Preimage': perTaskSecret                 // Fix G: preimage out of the query string
+        }
+      });
+      if (res.status === 401 || res.status === 403) {
+        console.error(`[kie-poller] /kv-read auth error ${res.status} for ${submitId} -- check KVREAD_TOKEN`);
+        return null; // non-fatal for poll loop; will retry; surfaced by error log
+      }
+      const text = await res.text();
+      if (res.status === 404 || text === 'null' || !text) return null;
+      const data = JSON.parse(text);
+      return data.found ? data.result : null;
+    } catch (err) {
+      // Transient network errors during KV poll are non-fatal; retry next interval
+      console.warn(`[kie-poller] KV poll error for ${submitId}:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Fallback: poll Kie's recordInfo endpoint with backoff until done/fail/timeout.
+   * Respects the 10-req/s Kie query limit (token-bucket via sleep).
+   *
+   * Source: https://docs.kie.ai/market/common/get-task-detail (in-repo reference)
+   * State enum: waiting, queuing, generating, success, fail
+   */
+  async _kieRecordInfoFallback(taskId, submitId, kieApiKey, intervalMs) {
+    const FALLBACK_CEILING_MS = 10 * 60 * 1000; // 10 minutes max fallback
+    const deadline = Date.now() + FALLBACK_CEILING_MS;
+    let delay = intervalMs;
+
+    while (Date.now() < deadline) {
+      await this._sleep(delay);
+      try {
+        const res  = await this._fetch(
+          `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
+          { headers: { Authorization: `Bearer ${kieApiKey}` } }
+        );
+        const body = await res.json();
+        const data = body?.data || {};
+        const state = data.state;
+
+        if (state === 'success') {
+          // Real Market shape: data.resultJson is a JSON STRING {"resultUrls":[...]} and
+          // data.response is the parsed copy; Suno puts tracks at response.data[].audio_url.
+          const resultUrls = this._extractTaskUrls(data);
+          // ONB-46-001: this branch used to hard-code status:'done' regardless of how many
+          // URLs survived -- a run that produced NOTHING was permanently recorded complete
+          // while the KV path ~90 lines above already refused exactly that. Both paths now
+          // resolve through the SAME _resolveOutcome, so the rule cannot diverge again.
+          const { status, resultUrls: safeUrls, extra } =
+            this._resolveOutcome(resultUrls, 200, taskId, 'kie-poll');
+          const marker = { taskId, submitId, status, resultUrls: safeUrls, code: 200,
+                           fallbackPolledAt: new Date().toISOString(), source: 'kie-poll', ...extra };
+          this._writeDoneMarker(taskId, marker);
+          console.log(`[kie-poller] task ${taskId} resolved via Kie fallback poll: ${status}`);
+          return marker;
+        }
+
+        if (state === 'fail') {
+          const marker = { taskId, submitId, status: 'failed', resultUrls: [], code: body.code || 0,
+                           failCode: data.failCode, failMsg: data.failMsg,
+                           fallbackPolledAt: new Date().toISOString(), source: 'kie-poll' };
+          this._writeDoneMarker(taskId, marker);
+          console.error(`[kie-poller] task ${taskId} failed via Kie poll:`, data.failMsg);
+          return marker;
+        }
+
+        // waiting | queuing | generating -- backoff
+        delay = Math.min(delay * 1.5, 30000);
+        console.log(`[kie-poller] Kie poll state=${state} for ${taskId}, next in ${delay}ms`);
+      } catch (err) {
+        console.warn(`[kie-poller] Kie recordInfo error for ${taskId}:`, err.message);
+        delay = Math.min(delay * 2, 30000);
+      }
+    }
+
+    const marker = { taskId, submitId, status: 'timeout', resultUrls: [], code: 0,
+                     source: 'kie-poll-timeout' };
+    this._writeDoneMarker(taskId, marker);
+    console.error(`[kie-poller] task ${taskId} timed out after 10 minutes of fallback polling`);
+    return marker;
+  }
+
+  /**
+   * THE SINGLE OUTCOME RULE (fix 35 + ONB-46-001).
+   *
+   * "Did this task actually produce something we can download?" is asked in exactly
+   * ONE place. A provider-side success that yields ZERO allowlisted URLs is NOT done:
+   * there is no file to fetch, so recording it as complete would permanently, durably
+   * mark a run that produced nothing as finished. Every resolution path (the callback
+   * KV read AND the Kie recordInfo fallback) MUST route its status through here --
+   * the ONB-46-001 defect was one branch honouring this rule and the other ignoring
+   * it, so the rule now has no second copy to drift from.
+   *
+   * Failure is LOUD (console.error, distinct tag) and NEVER silent: a status this
+   * function cannot justify as 'done' is returned as 'failed', never skipped.
+   *
+   * @param {string[]|undefined} rawUrls -- result URLs as reported, pre-allowlist
+   * @param {number} code    -- provider result code (200 == provider-side success)
+   * @param {string} taskId  -- for the log line
+   * @param {string} source  -- 'callback-kv' | 'kie-poll' (for the log line)
+   * @returns {{status: 'done'|'failed', resultUrls: string[], extra: object}}
+   */
+  _resolveOutcome(rawUrls, code, taskId, source) {
+    const raw      = Array.isArray(rawUrls) ? rawUrls : [];
+    const safeUrls = this._filterSafeUrls(raw);
+
+    if (code !== 200) {
+      return { status: 'failed', resultUrls: safeUrls, extra: {} };
+    }
+
+    if (safeUrls.length === 0) {
+      if (raw.length > 0) {
+        // A code-200 result that CARRIED URLs yet had EVERY one dropped is almost always a
+        // stale/misconfigured KIE_RESULT_HOSTS allowlist, not a genuine failure -- and left
+        // unnoticed it fails every slide fleet-wide. Distinct LOUD tag so monitoring pages
+        // on it and the operator sets KIE_RESULT_HOSTS to the real host.
+        console.error(`[kie-poller] ALLOWLIST-MISMATCH task ${taskId} (${source}): code 200 carried ` +
+          `${raw.length} result URL(s) but ALL were rejected by the allowlist ` +
+          `(KIE_RESULT_HOSTS=${KIE_RESULT_HOSTS.join(',')}). Verify the real Kie CDN host from ` +
+          `a live callback and set the KIE_RESULT_HOSTS env var.`);
+      } else {
+        console.error(`[kie-poller] EMPTY-RESULT task ${taskId} (${source}): reported success but ` +
+          `carried 0 result URL(s) -- the run produced nothing, marking failed (NEVER 'done')`);
+      }
+      return { status: 'failed', resultUrls: [],
+               extra: { reason: 'allowlist-rejected', rawUrlCount: raw.length } };
+    }
+
+    return { status: 'done', resultUrls: safeUrls, extra: {} };
+  }
+
+  /** Extract URLs from a Kie recordInfo resultJson structure (object or JSON string) */
+  _extractResultJsonUrls(resultJson) {
+    if (typeof resultJson === 'string') {
+      try { resultJson = JSON.parse(resultJson); } catch (_) { return []; }
+    }
+    if (!resultJson || typeof resultJson !== 'object') return [];
+    // Standard images array: resultJson.images[].url
+    // When every item is null/empty it yields nothing, so fall through to resultUrls below.
+    const urls = [];
+    if (Array.isArray(resultJson.images)) {
+      const imgUrls = resultJson.images.map(i => i && i.url).filter(Boolean);
+      if (imgUrls.length > 0) return imgUrls;
+    }
+    // Market success shape: resultJson.resultUrls
+    if (Array.isArray(resultJson.resultUrls)) urls.push(...resultJson.resultUrls.filter(Boolean));
+    // Flux: resultJson.resultImageUrl or similar
+    if (resultJson.resultImageUrl) urls.push(resultJson.resultImageUrl);
+    if (resultJson.result_urls) urls.push(...[].concat(resultJson.result_urls));
+    // Suno audio tasks: response.data[].audio_url
+    if (Array.isArray(resultJson.data)) {
+      for (const t of resultJson.data) if (t && t.audio_url) urls.push(t.audio_url);
+    }
+    return urls;
+  }
+
+  /**
+   * All result URLs from a recordInfo `data` object (or a callback's rawData): the parsed
+   * `response` copy, the `resultJson` string, legacy `info`, and `data` itself (Suno callbacks).
+   * De-duplicated; the allowlist is applied later by _resolveOutcome.
+   */
+  _extractTaskUrls(data) {
+    if (!data || typeof data !== 'object') return [];
+    const urls = [];
+    for (const src of [data.response, data.resultJson, data.info, data]) {
+      for (const u of this._extractResultJsonUrls(src)) if (!urls.includes(u)) urls.push(u);
+    }
+    return urls;
+  }
+
+  /** Allowlist result URLs to known Kie CDN domains. Logs and drops unlisted hosts. */
+  _filterSafeUrls(urls) {
+    return urls.filter(u => {
+      try {
+        const host = new URL(u).hostname;
+        const ok   = KIE_RESULT_HOSTS.some(h => host === h || host.endsWith('.' + h));
+        if (!ok) console.warn(`[kie-poller] result URL host not allowlisted: ${host}`);
+        return ok;
+      } catch (_) {
+        return false;
+      }
+    });
+  }
+
+  /**
+   * Fix 34: confused-deputy defense. Verify the submitId embedded in the KV result is
+   * EXACTLY the submitId we requested. The Worker has already validated the perTaskSecret
+   * preimage HMAC (fix C/G) server-side; this is the box-side structural binding that
+   * guarantees a result for a different task can never be accepted onto this slide.
+   *
+   * The previous implementation accepted ANY non-empty submitId, so the claimed
+   * confused-deputy defense did not actually exist -- a wrong-task result would pass.
+   *
+   * @param {object} kvResult          -- result object from the Worker /kv-read response
+   * @param {string} expectedSubmitId  -- the submitId this call is waiting on
+   * @returns {boolean} true only when kvResult.submitId === expectedSubmitId
+   */
+  _validatePerTaskSecret(kvResult, expectedSubmitId) {
+    return kvResult.submitId === expectedSubmitId;
+  }
+
+  /** Read done-marker file if it exists */
+  _readDoneMarker(taskId) {
+    const p = path.join(this.doneDir, `${taskId}.json`);
+    try {
+      return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Write done-marker (create-if-absent -- idempotent) */
+  _writeDoneMarker(taskId, data) {
+    const p = path.join(this.doneDir, `${taskId}.json`);
+    if (!fs.existsSync(p)) {
+      fs.writeFileSync(p, JSON.stringify(data, null, 2));
+    }
+  }
+
+  _sleep(ms) {
+    return new Promise(res => setTimeout(res, ms));
+  }
+
+  /** Minimal fetch wrapper (uses native fetch available in Node 18+) */
+  async _fetch(url, opts = {}) {
+    return fetch(url, opts);
+  }
+}
+
+module.exports = { KieKvPoller };

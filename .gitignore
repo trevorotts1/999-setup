@@ -34,3 +34,5 @@ CONTROL/boss-config.json
 # Boss liveness marker: rewritten every cycle, telemetry not a work record.
 CONTROL/boss-heartbeat
 CONTROL/stop-workstream
+# Hook Skill runtime state (written by the guard and its tests, never source)
+.claude/skills/hook-skill/hooks/workflow-guard/state/
