@@ -85,3 +85,39 @@ python3 tests/test_parity_layout.py
 A missing helper must surface as `tool-unavailable` /
 `module-unavailable` with the exact missing name — install the helper
 rather than bypassing the check.
+
+## Stated prerequisite: Skill 74 (`74-kie-live-adapter`)
+
+`scripts/core/kie_dispatch/kie_dispatch.py` is this skill's only media
+dispatcher (plan section 5.4). It carries no KIE client of its own: it
+resolves `kie_live_adapter.py` and runs Skill 74 as a single subprocess.
+**Skill 74 is a stated prerequisite of this skill and is not installed by
+this skill folder**, so install it first — otherwise `kie_dispatch` stops
+with `adapter-not-found`, and there is deliberately no private KIE fallback
+and no second transport.
+
+Install steps (run from the `999-setup` repository root):
+
+```bash
+# 1. check the vendored helper against its pinned tree sha256
+python3 installer-registration/helper-deps.py preflight
+
+# 2. install it into the shared skills root (one root, shared by
+#    claude and claude-nine): <config-root>/skills/74-kie-live-adapter
+python3 installer-registration/helper-deps.py install
+
+# 3. inside the installed skill folder: offline QC, then wire
+cd <config-root>/skills/74-kie-live-adapter
+bash qc-74-kie-live-adapter.sh    # no network, no key; must exit 0
+bash wire.sh                      # idempotent; second run changes nothing
+
+# 4. mode stays shadow until an operator activates it on purpose
+bash scripts/live_smoke.sh        # free calls only; operator account
+```
+
+Also required: `python3` on PATH and `KIE_API_KEY` present by name (its
+value is never printed). `kie_dispatch` reads the adapter mode with Skill 74
+`health` at preflight; in shadow or off it stops before the approval card
+and tells the client generation is not switched on for this box. Set
+`KIE_LIVE_ADAPTER_PATH` only when the adapter sits outside every location
+the dispatcher searches.
