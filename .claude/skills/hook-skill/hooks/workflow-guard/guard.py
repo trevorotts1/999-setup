@@ -581,7 +581,26 @@ def _state_roots():
 
 JOURNAL_SEG='/subagents/workflows/'
 SUB_NAMES=('guard.sqlite3','limits.json','capacity-probe-cache.json','swarm-plan.json')
-EXTRA_BASH_REFS=['subagents/workflows','limits.json','capacity-probe-cache']
+EXTRA_BASH_REFS=['subagents/workflows']
+
+def _bash_state_hit(cmd,cwd):
+ # Path-like tokens of a shell command (~ and $VARS expanded, relative ones resolved against the payload cwd and any `cd`),
+ # realpath'd and compared with the realpaths of the LIVE guard / question-gate state dirs. Text that resolves elsewhere is no hit.
+ roots=[_rl(r) for r in _state_roots()];files={_rl(ROOT/'guard.sqlite3')}
+ cur=os.path.realpath(os.path.expanduser(str(cwd)))
+ for seg in re.split(r'&&|\|\||[;\n|]',cmd):
+  seg=seg.replace('(',' ').replace(')',' ')
+  try:t=shlex.split(seg)
+  except ValueError:t=seg.split()
+  if t and t[0] in ('cd','pushd'):
+   if len(t)>1 and t[1]!='-':cur=os.path.realpath(os.path.join(cur,os.path.expandvars(os.path.expanduser(t[1]))))
+   continue
+  for tok in t:
+   for c in set(re.findall(r'''[^\s'"`,;()<>|&=]+''',tok))|{tok}:
+    if not c:continue
+    rp=os.path.realpath(os.path.join(cur,os.path.expandvars(os.path.expanduser(c)))).lower()
+    if rp in files or any(_under_l(rp,r) for r in roots):return rp
+ return None
 
 def _plan_of_evidence(real):
  # The plan file whose evidence/ tree contains this real path, found by walking up (any plan on disk), or None.
@@ -642,11 +661,11 @@ def protected_write_block(data,tool,ti,session):
   cmd=str(ti.get('command') or '')
   if _staffing_ok(cmd):return None
   low=cmd.lower();refs=[]
-  for r in _state_roots():refs+=[str(r).lower(),_rl(r),str(r).lower().replace(str(Path.home()).lower(),'~')]
-  refs+=['workflow-guard/state','question-gate/state','guard.sqlite3','workflow_guard_state','question_gate_state']+EXTRA_BASH_REFS
+  # Live state is matched by RESOLVED path (see _bash_state_hit), never by text: a repo path that merely contains the words is allowed.
+  refs+=['workflow_guard_state','question_gate_state']+EXTRA_BASH_REFS
   if sub:refs+=['swarm-plan.json','evidence/']
   for pp in plans:refs+=[str(pp).lower(),Path(pp).name.lower(),str(Path(pp).parent/'evidence').lower(),'evidence/']
-  hit=next((x for x in refs if x and x in low),None)
+  hit=next((x for x in refs if x and x in low),None) or _bash_state_hit(cmd,cwd)
   if hit and (WRITE_VERB.search(QUIET_REDIRECT.sub(' ',cmd)) or 'staffing.py' in low):  # a staffing.py that _staffing_ok did not vouch for, aimed at a governed path, may do anything
    return refuse('This command writes, moves or deletes something that governs the session (%s: plan file, evidence tree, run journal, guard or question-gate state). %s may not do that. Only `staffing.py start|status` is allowed. Do not bypass hooks.'%(hit,who))
  return None
