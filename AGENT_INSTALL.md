@@ -122,6 +122,36 @@ set it.
 - Copy each whole skill directory, including `references/`, `scripts/`, `tools/`, and
   `PROMPT-QC-INSTRUCTIONS.md`.
 
+### 5.1 Install the KIE helper skills (required — do not skip)
+
+The bundled `drama-song-ad-factory` skill invokes five onboarding helper skills
+(KIE image/video/audio model selection, the KIE paid transport, and the callback
+relay). Naming them does **not** install them. They ship in this repository under
+`installer-registration/helpers/`, pinned by version and sha256 tree hash in
+`installer-registration/helper-dependencies.json`. After step 5's skill copies,
+run from the repository root:
+
+- macOS:   `python3 installer-registration/helper-deps.py install`
+- Windows: `py installer-registration\helper-deps.py install`
+
+This copies each helper into the same `<Claude config root>/skills/` used above
+(a differing pre-existing copy is first moved to
+`$HOME/.claude-skill-backups/`, never deleted), verifies every vendored tree
+against its pin, and finishes by running the helper preflight. Treat a nonzero
+exit as a BLOCKER and follow the printed repair line; the output names the
+helper that failed and the exact command that fixes it. Never set
+`CLAUDE_CONFIG_DIR` yourself — read the root the machine already uses.
+
+Then, at step 11, add this check to the test run:
+
+```text
+python3 installer-registration/helper-deps.py preflight
+```
+
+It exits 0 only when all five helpers are present at their pinned hashes, and
+exits 1 with an actionable per-helper error otherwise (directive 2.4: a clean
+install must receive the helpers; a missing one fails preflight).
+
 ## 6. Read SKILL.md files fully
 
 Read `<Claude config root>/skills/nine-router-setup/SKILL.md` in full before running
