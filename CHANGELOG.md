@@ -14,6 +14,14 @@
 - unit/A4-U2-hook-skill-1.2.0: hook-skill tests: install acorn before the first suite; stop run-all.sh losing failures (merge 833a1594a62f)
 - unit/A2-U2: A2-R2-U2: re-package kie_dispatch from the FIXED canonical core (sha cb19f18b) (merge 1e894280f214)
 - merge/a2-kie-999: changelog: merge batch, 1 unit(s) [999-setup] (merge cd3e9826a40b)
+- unit/AF-ECHO-U1: AF-ECHO-U1: core/audio_c3/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge fb4ac19c0f29)
+- unit/AF-ECHO-U2: AF-ECHO-U2: core/qc_reverb_tail — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 63694bea4b77)
+- unit/AF-ECHO-U3: AF-ECHO-U3: core/qc_voice_match/pitch_ban — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 203f80778b18)
+- unit/AF-SHARE-U1: AF-SHARE-U1: core/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 931c1b9aeacf)
+- unit/AF-SHARE-U2: AF-SHARE-U2: core/spoken_share_card_docs — audio-fix wave D36-D38 (owner order 2026-10-07) (merge eba1665926b5)
+- unit/AF-STL-U1: AF-STL-U1: core/choice_card/stl_voice_guard — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 21ea89f680e3)
+- unit/AF-SMP-U1: AF-SMP-U1: core/smp/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 9d309c6b9c2a)
+- unit/AF-SMP-U2: AF-SMP-U2: core/smp/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 58533b9ffd44)
 
 ## [hook-skill] — 2026-10-06
 
