@@ -33,3 +33,13 @@ section 35.2 (999 distribution process).
 - Runtime: Claude-Nine adapter follows router laws and live catalog
   resolution with no hardcoded model table; plain Claude Code adapter keeps
   `claude` non-routed and never sets a separate config directory.
+- Directive doc set complete (directive 2.1/2.2): `INSTALL.md` (registry-based
+  install, verification, update and removal contract), `EXAMPLES.md`
+  (intake/preflight/resume/injection-verified examples with exit codes),
+  `QC.md` (shape, registry, parity, envelope, adapter hygiene, secrets and
+  change-control checklist), `CORE_UPDATES.md` (regenerate `scripts/core/` from
+  canonical, never hand-edit, contract-bump migration notes, lockstep rule),
+  `PREREQS.json` (machine-readable prerequisites: Python 3 stdlib-only, shared
+  config root, registry entry, approved storage root, authorization receipt,
+  presence-only credentials, helper skills 46/66/67/68/74, FFmpeg, live model
+  discovery, no committed secrets).

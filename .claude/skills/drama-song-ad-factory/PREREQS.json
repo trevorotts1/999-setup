@@ -1,0 +1,135 @@
+{
+  "skill": "drama-song-ad-factory",
+  "distribution": "999-setup (Claude-Nine / Claude Code)",
+  "schema": "blackceo.skill-prereqs/v1",
+  "version": "1.0.0",
+  "notes": "Machine-readable prerequisites for install and first run. Checks are presence/identity only: nothing here executes a provider call, prints a credential, or stands in for an authorization receipt. Satisfy each entry before the work it gates.",
+  "prerequisites": [
+    {
+      "id": "python3",
+      "type": "tool",
+      "label": "Python 3 interpreter on PATH",
+      "check": {"command": "python3"},
+      "severity": "required",
+      "when": "always",
+      "satisfy": "Install Python 3 from python.org (macOS/Windows) or your package manager. The control layer is standard library only - no third-party packages to install."
+    },
+    {
+      "id": "skill-package",
+      "type": "filesystem",
+      "label": "Skill folder complete (SKILL.md + control entrypoint)",
+      "check": {"paths": ["SKILL.md", "scripts/core/intake_preflight/factory.py", "VERSION", "PREREQS.json"]},
+      "severity": "required",
+      "when": "always",
+      "satisfy": "Reinstall from the repository via CONTROL/bundled-skills.txt (see INSTALL.md). Do not copy a partial folder by hand."
+    },
+    {
+      "id": "bundled-registry",
+      "type": "filesystem",
+      "label": "Skill registered in the installer manifest",
+      "check": {"path": "../../CONTROL/bundled-skills.txt", "contains": "drama-song-ad-factory"},
+      "severity": "required",
+      "when": "install",
+      "satisfy": "Keep the line 'drama-song-ad-factory' in CONTROL/bundled-skills.txt without removing pre-existing entries. Source presence alone is not installation (directive 2.4)."
+    },
+    {
+      "id": "shared-config-root",
+      "type": "runtime",
+      "label": "One shared Claude config root for claude and claude-nine",
+      "check": {"env_var_unset": "CLAUDE_CONFIG_DIR"},
+      "severity": "required",
+      "when": "always",
+      "satisfy": "Install one skill folder into the existing config-root skills directory and link it once; both runtimes read it. Never point either runtime at its own config directory and never create a second claude-nine skills root (repository rule 10)."
+    },
+    {
+      "id": "runtime-discovery",
+      "type": "runtime",
+      "label": "Skill discoverable in both runtimes",
+      "check": {"skills_root": "shared", "runtimes": ["claude", "claude-nine"]},
+      "severity": "required",
+      "when": "install",
+      "satisfy": "Confirm the skill appears under plain claude and under claude-nine and loads references/, scripts/, assets/ and tests/. Plain claude stays non-routed (repository rule 9)."
+    },
+    {
+      "id": "self-tests",
+      "type": "test",
+      "label": "Skill smoke + parity tests pass",
+      "check": {"commands": ["python3 tests/test_cli_smoke.py", "python3 tests/test_parity_layout.py"]},
+      "severity": "required",
+      "when": "install",
+      "satisfy": "Both print ALL PASS. PARITY UNDETERMINED (canonical core tree absent) is recorded as undetermined, never as a pass; re-run where the canonical tree exists before claiming parity."
+    },
+    {
+      "id": "approved-storage-root",
+      "type": "environment",
+      "label": "Writable approved storage root for campaign artifacts",
+      "check": {"preflight": "--root <approved-storage-root>"},
+      "severity": "required",
+      "when": "any-run",
+      "satisfy": "Choose one approved root for campaign state and artifacts and pass it to preflight. References outside that root are rejected (reference-outside-approved-storage)."
+    },
+    {
+      "id": "authorization-receipt",
+      "type": "authorization",
+      "label": "Recorded authorization scope before paid work",
+      "check": {"preflight": "--auth-file <authorization-receipt>"},
+      "severity": "required",
+      "when": "paid-work",
+      "satisfy": "Record the authorization scope (ceiling, currency, expiry, allowed repair behavior) and pass it to preflight. Without it preflight exits 4 / approval-missing. A supplied maximum is NOT an approval receipt; never invent a ceiling or an approval."
+    },
+    {
+      "id": "provider-credential-presence",
+      "type": "credential",
+      "label": "KIE API credential present by name (presence-only check)",
+      "check": {"envVar": "KIE_API_KEY"},
+      "severity": "required",
+      "when": "paid-media",
+      "satisfy": "Set KIE_API_KEY in the host environment (never in this folder, never in the repository). Preflight verifies presence by name only and never prints the value; values are masked to at most first 3 and last 3 characters if a diagnostic must reference them."
+    },
+    {
+      "id": "helper-kie-media",
+      "type": "skill",
+      "label": "Provider helper skills 66 (image), 67 (video), 68 (audio), 74 (live adapter)",
+      "check": {"skills": ["66-kie-image", "67-kie-video", "68-kie-audio", "74-kie-live-adapter"], "repository": "openclaw-onboarding"},
+      "severity": "required",
+      "when": "paid-media",
+      "satisfy": "Install the helpers (registration lives in installer-registration/helper-dependencies.json with pinned versions and hashes). If one is absent, preflight fails with module-unavailable naming it - install the helper, never bypass the check and never substitute a static provider path."
+    },
+    {
+      "id": "helper-kie-callback-relay",
+      "type": "skill",
+      "label": "Provider callback relay skill 46",
+      "check": {"skills": ["46-kie-callback-relay"], "repository": "openclaw-onboarding"},
+      "severity": "required",
+      "when": "provider-callbacks",
+      "satisfy": "Install 46-kie-callback-relay for asynchronous provider completion callbacks. Do not assume it handles every new payload type without auditing; audit before relying on it for a new callback family (directive 5.1)."
+    },
+    {
+      "id": "tool-ffmpeg",
+      "type": "tool",
+      "label": "FFmpeg on PATH for assembly/export",
+      "check": {"command": "ffmpeg"},
+      "severity": "required",
+      "when": "assembly-export",
+      "satisfy": "Install FFmpeg. Request it explicitly with preflight --require-tool ffmpeg so absence surfaces as tool-unavailable instead of a late failure."
+    },
+    {
+      "id": "live-model-catalog",
+      "type": "policy",
+      "label": "Model/provider discovery is live, never a hardcoded table",
+      "check": {"policy": "no-hardcoded-model-table"},
+      "severity": "required",
+      "when": "always",
+      "satisfy": "Resolve model and role choices against the live catalog/rules of the current runtime mode. A required model absent from the live catalog stops with a precise error naming the model - never silently downgrade (repository rule 6)."
+    },
+    {
+      "id": "no-secrets-in-tree",
+      "type": "policy",
+      "label": "No key material inside the skill folder or repository",
+      "check": {"policy": "no-committed-secrets"},
+      "severity": "required",
+      "when": "always",
+      "satisfy": "Keep credentials outside the repository. Never commit API docs.md, .env files with real values, router tokens or passwords (repository rules 4 and 5); never print a secret into a transcript or log."
+    }
+  ]
+}
