@@ -46,6 +46,7 @@
 - fix/partH-H9: Merge origin/main into fix/partH-H9 (merge 7c34518ce7dc)
 - fix/partH-H9-changelog-markers: Fix: remove merge conflict markers from root CHANGELOG.md left by H9 merge (merge b40854e61227)
 - fix/partH-H3: Merge origin/main into fix/partH-H3; bump skill to 2.7.1; keep H8 smp no_echo/spoken_share; combine F7+H7 in music_director; keep H9 card CLI (merge 63f97d3b0cc9)
+- fix/sunorecipe-SNR001: G12: Suno song recipe is the default for every Suno music style (drama-song-ad-factory 2.7.2) (merge 7b5d72eae421)
 
 ## [hook-skill] — 2026-10-06
 
