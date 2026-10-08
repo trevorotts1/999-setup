@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.6] - 2026-10-08 - Part H H5: pictures match the words
+
+- New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
+  `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
+  above 1.15x and picture/line mismatches before any render.
+- INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
