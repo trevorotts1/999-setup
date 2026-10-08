@@ -30,6 +30,8 @@ shared Node.js management-API helpers are under `<skill-dir>/scripts/common/`.
 
 ## Non-negotiable laws
 
+0. **Main window orchestrates only; nothing fails silently.** In `claude-nine` the main session only operates and orchestrates; ALL work is done by visible workflows and agents. Anything wrong, broken or not working is reported by name and never fails silently.
+
 1. **Never print an API key, local router token, or dashboard password.** Report names,
    sources, and HTTP status codes only. Mask diagnostics to at most the first 3 and last 3
    characters.

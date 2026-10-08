@@ -81,6 +81,9 @@ same entrypoint, intake rules, evidence gates and durable state contract.
 
 ## 5. What this skill must never do
 
+- Do hands-on work in the main window (it only orchestrates; all work runs in
+  visible workflows and agents), or let anything wrong, broken or skipped fail
+  silently: it must be a named `failures`/`warnings` entry in the final receipt.
 - Force 9Router routing for plain `claude`, or persist any router base URL
   into global Claude settings or shell startup files.
 - Set a separate `CLAUDE_CONFIG_DIR`, or install a second copy of itself.
