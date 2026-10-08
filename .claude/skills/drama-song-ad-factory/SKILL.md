@@ -338,6 +338,8 @@ reason. Never run a "test batch first" unless the owner orders one. Only a provi
 passes as `max_concurrency` limits the pass, and the receipt names that cap. The stage order stays
 reference images, then keyframes, then clips; the single clips pass is the last one.
 
+- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
+
 ## Provider policy (KIE first, not KIE lock-in)
 
 ```text
