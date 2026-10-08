@@ -1,5 +1,16 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
+
+`scripts/core/spoken_share/` (the constants module) now holds the single
+singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
+singing was chosen) and Trevor's band (`ACCEPT_PTS=5`, `FLAG_PTS=10`):
+within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
+`check_share`, `check_first_sung` and `check_plan` use it and return `flags`.
+Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
+lip-sync coverage modules are not in this distribution yet; they pick the
+band up when they are ported.
+
 ## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
 
 - New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,

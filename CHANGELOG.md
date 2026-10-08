@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
 - unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
 - unit/W3-03-U5-helper-deps: W3-03-U5: helper dependency install with pinned versions/hashes + preflight gate (merge 468f6c284301)
