@@ -70,7 +70,8 @@ const EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh", "max", "ultraco
 //   ds-max/    DeepSeek Direct max — always max thinking, "(max)" optional
 //   ollama/    Ollama Cloud (haiku/vision lanes; never max)
 //   agnes/     Agnes AI, custom OpenAI-compatible node (fallback target only)
-const ALLOWED_ROUTE_PREFIXES = ["ds/", "ds-light/", "ds-max/", "ollama/", "agnes/"];
+//   openrouter/ OpenRouter DeepSeek route (NINE_DEEPSEEK_ROUTE=openrouter)
+const ALLOWED_ROUTE_PREFIXES = ["ds/", "ds-light/", "ds-max/", "ollama/", "agnes/", "openrouter/"];
 
 // Validate the route map against the schema. Returns an array of warning
 // strings (empty when the map is clean). Never throws — this is advisory.
@@ -97,7 +98,7 @@ function validateRoutes(routes) {
 
   const subagent = routes.subagent;
   if (typeof subagent === "string") {
-    if (!subagent.includes("(max)")) {
+    if (!subagent.includes("(max)") && !subagent.startsWith("openrouter/")) {
       warnings.push(`subagent route "${subagent}" lacks the "(max)" suffix — subagents will lose max thinking; verify upstream`);
     }
   } else if (subagent !== undefined) {

@@ -42,4 +42,9 @@ leaving plain `claude` unchanged.
 17. **OpenRouter is an OPTIONAL fourth provider.** Wire it only when `OPENROUTER_API_KEY`
     exists in `API docs.md`; absence or a placeholder is a skip, never an error; its
     failures never block DeepSeek/Ollama/Agnes; it never joins the default combos or
-    Claude lanes.
+    Claude lanes. Exception: an explicit `--deepseek-route openrouter` /
+    `NINE_DEEPSEEK_ROUTE=openrouter` (owner order, 2026-10-08) makes
+    `openrouter/deepseek/deepseek-v4.1-flash` the DeepSeek member of every lane, with no
+    DeepSeek Direct provider. DeepSeek Direct and Agnes keys are otherwise optional; a
+    missing key omits that provider from every combo.
+18. **Setup never overwrites a combo that already exists** unless `--update-combos` is given.

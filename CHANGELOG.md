@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
 - fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt
 - fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
 - fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
@@ -93,6 +94,23 @@ Now only CANCELLED, FAILED, COMPLETED and REAPED launches resolve a watch; a RET
 own journal shows every agent returned. The Workflow tool's reported `Transcript dir` (receipt `transcript_dir`) is
 used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
 `test_returned_run_live.py`.
+
+## [nine-router-setup 1.28.0] — 2026-10-08
+
+### DeepSeek and Agnes keys optional; OpenRouter DeepSeek route; combos no longer overwritten
+
+Owner order for the Christy Staples installer: use OpenRouter DeepSeek V4.1 Flash, no Agnes.
+
+- `setup-macos.sh`: `DEEPSEEK_API_KEY`, `AGNES_API_KEY` and `OLLAMA_API_KEY` are optional (placeholder
+  text counts as absent). Required: `OLLAMA_API_KEY` or `OPENROUTER_API_KEY`, plus a DeepSeek source.
+  New `--deepseek-route direct|openrouter` / `NINE_DEEPSEEK_ROUTE`: `openrouter` routes every DeepSeek
+  lane to `openrouter/deepseek/deepseek-v4.1-flash` (exact id checked in the live catalog). No Agnes
+  key: Agnes provider not created, members omitted from every combo. Smoke tests skip absent lanes.
+- `configure-nine-router.mjs`: existing combos (and their strategies) are never touched; missing ones
+  are created; created vs kept is logged and in the report. New `--update-combos` rewrites existing
+  ones. `NINEROUTER_CLI_TOKEN` is preferred over the default dashboard password (password stays as
+  fallback). No key or token value is printed.
+- Tests: `tests/test-nin001.sh` and `tests/nin001-configure.test.mjs` (fake 9Router).
 
 ## [nine-router-setup 1.27.0] — 2026-10-06
 
