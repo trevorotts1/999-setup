@@ -1,5 +1,18 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.1] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+
+`scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
+and H12 master-provenance code in `final_assembler/assembler.py` and the H2
+lip_gate, H14 song_files, qc_gate.py and qc-schema.json changes are kept.
+
+- Master 30 fps; Kling clips pass through untouched; MiniMax H3 24 fps
+  clips motion-interpolated to 30 (never the plain `fps` filter); per-segment
+  mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
+  now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
+- `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
+  frontmatter `version:` 2.6.11 -> 2.7.1 (follows onboarding `skill-version.txt`).
+
 ## [2.6.11] - 2026-10-08 - H9 readable intake card
 
 - New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw

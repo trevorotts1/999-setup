@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import music_qc
 import protected_names
 import spend_ledger as L
+import words_match
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -47,8 +48,22 @@ _cat = None
 
 
 def workcopy_paths():
-    """Locate the W1-06 work copy from this file's position."""
-    root = Path(__file__).resolve().parents[2]
+    """Locate the W1-06 work copy from this file's position.
+
+    The catalog lives at 68-kie-audio/models.json at the REPO ROOT (tracked
+    tree), i.e. parents[4] of this file under the repackaged skill layout
+    (75-drama-song-ad-factory/scripts/core/music_director). Legacy checkouts
+    kept it under <root>/onboarding/68-kie-audio — try that first so the
+    operator's existing tree keeps working, then fall back to the tracked
+    repo-root copy found by walking ancestors.
+    """
+    here = Path(__file__).resolve()
+    for anc in here.parents:
+        for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
+            if (cand / "models.json").is_file():
+                return {"root": anc, "models": cand / "models.json",
+                        "validator": cand / "scripts" / "validate_audio_request.py"}
+    root = here.parents[2]
     base = root / "onboarding" / "68-kie-audio"
     return {"root": root, "models": base / "models.json",
             "validator": base / "scripts" / "validate_audio_request.py"}
@@ -94,13 +109,20 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            packet_lines=None, protected=()):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
-    H7: when ``packet_lines`` and ``protected`` names are given, the sheet may
-    not change a protected name or rewrite a packet line (the "Stale" ->
-    "still" request files); a bad sheet raises ValueError and no payload is
-    built.
+    F7 (words match the script exactly): when ``packet_lines`` is given, the
+    lyric text is word-checked against the packet before any payload is
+    built; a rewritten word or an invented line raises ValueError
+    ``(CAPTION_WORD_MISMATCH ...)`` and the master request is never built.
+    H7: when ``protected`` names are given (instead of the F7 check), the sheet may not change a
+    protected name or rewrite a packet line. ``packet_lines=None`` keeps the
+    old behavior (packet binding happens upstream in lyric QC).
     """
-    if packet_lines is not None and protected:
-        errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+    errors = []
+    if packet_lines is not None:
+        if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
+            errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+        else:
+            errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
     ver = _checked_version(version)

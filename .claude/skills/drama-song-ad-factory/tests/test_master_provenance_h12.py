@@ -85,8 +85,9 @@ class T(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             clip = os.path.join(tmp, "c.mp4")
             subprocess.run(["ffmpeg", "-v", "error", "-threads", "2", "-f",
-                            "lavfi", "-i", "testsrc=s=64x64:r=30:d=1.6",
-                            "-pix_fmt", "yuv420p", clip], check=True)
+                            "lavfi", "-i", "color=c=gray:s=64x64:r=30,noise=alls=100:allf=t",
+                            "-t", "1.6", "-pix_fmt", "yuv420p", clip],
+                           check=True)
             tl = os.path.join(tmp, "timeline.json")
             with open(tl, "w") as f:
                 json.dump({"schema_version": "blackceo.timeline/v1",

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.6.11
+version: 2.7.1
 ---
 
 # Drama Song Ad Factory
@@ -146,6 +146,13 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   **10-minute long version**. Each length is its own song and timing map.
 - **Shapes:** 9:16, 16:9, or both, each generated natively - never a crop of
   the other.
+- **Frame rate (Part H H3, replaces the old "output = the clips' native
+  rate" line):** the master is always 30 fps. Kling clips are native 30 and
+  pass through with no conform filter (every lip-sync frame kept); MiniMax H3
+  clips are native 24 and are motion-interpolated to 30 (never the plain
+  `fps` filter). The assembler refuses any other timeline rate unless the
+  choice card sets it, and checks every segment with mpdecimate (at most 2%
+  duplicated frames; a deliberate still is marked `hold`).
 - **Clips:** automatic 60- or 90-second clips are offered for the **5-minute
   and 10-minute lengths only**. Cutting a clip is free (FFmpeg); the AI that
   picks the moments runs on the client's own AI plan.

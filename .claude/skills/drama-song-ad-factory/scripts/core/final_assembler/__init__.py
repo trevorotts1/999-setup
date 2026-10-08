@@ -1,14 +1,38 @@
 """final_assembler package: timeline.json -> frame-exact ffmpeg render."""
 from .assembler import (
+    DEFAULT_TRANSITION,
     EXIT,
+    HARD_CUT_UNMARKED,
+    LAST_LINE_OVER_ENDCARD,
+    NICE_LEVEL,
     SCHEMA_VERSION,
     TIMELINE_SCHEMA,
     TOOL_NAME,
     TOOL_VERSION,
+    TRANSITION_DURATION,
     assemble,
     build_argv,
+    check_last_line_before_endcard,
     load_timeline,
     plan_timeline,
+    qc_transitions,
+    size_ffmpeg,
+    validate_lipsync_atomic,
+)
+from .frame_text import (
+    GARBLED_TEXT_FRAME,
+    TOOL_NAME as FRAME_TEXT_TOOL_NAME,
+    TOOL_VERSION as FRAME_TEXT_TOOL_VERSION,
+    register_extractor,
+    sample_frames_for_text,
+)
+from .lipsync_coverage import (
+    CHECK,
+    COVERAGE_SHORT as LIPSYNC_COVERAGE_SHORT,
+    LINES_TOO_FEW as LIPSYNC_LINES_TOO_FEW,
+    TOOL_VERSION as LIPSYNC_TOOL_VERSION,
+    check_lipsync_coverage,
+    to_qc_record,
 )
 from .master_provenance import (
     check_master_provenance,
@@ -16,15 +40,34 @@ from .master_provenance import (
 )
 
 __all__ = [
+    "DEFAULT_TRANSITION",
     "check_master_provenance",
     "master_provenance_qc_record",
     "EXIT",
+    "FRAME_TEXT_TOOL_NAME",
+    "FRAME_TEXT_TOOL_VERSION",
+    "GARBLED_TEXT_FRAME",
+    "HARD_CUT_UNMARKED",
+    "LAST_LINE_OVER_ENDCARD",
+    "NICE_LEVEL",
     "SCHEMA_VERSION",
     "TIMELINE_SCHEMA",
     "TOOL_NAME",
     "TOOL_VERSION",
+    "TRANSITION_DURATION",
     "assemble",
     "build_argv",
+    "check_last_line_before_endcard",
+    "check_lipsync_coverage",
     "load_timeline",
+    "LIPSYNC_COVERAGE_SHORT",
+    "LIPSYNC_LINES_TOO_FEW",
+    "LIPSYNC_TOOL_VERSION",
     "plan_timeline",
+    "qc_transitions",
+    "register_extractor",
+    "sample_frames_for_text",
+    "size_ffmpeg",
+    "to_qc_record",
+    "validate_lipsync_atomic",
 ]
