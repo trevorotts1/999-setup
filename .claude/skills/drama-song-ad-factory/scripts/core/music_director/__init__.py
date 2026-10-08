@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import music_qc
+import protected_names
 import spend_ledger as L
 import words_match
 
@@ -105,18 +106,23 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
-                           packet_lines=None):
+                           packet_lines=None, protected=()):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
     lyric text is word-checked against the packet before any payload is
-    built — a rewritten word ("gonna" where the packet says "going to") or
-    an invented line raises ValueError ``(CAPTION_WORD_MISMATCH ...)`` and
-    the master request is never built. ``packet_lines=None`` keeps the old
-    behavior (packet binding happens upstream in lyric QC).
+    built; a rewritten word or an invented line raises ValueError
+    ``(CAPTION_WORD_MISMATCH ...)`` and the master request is never built.
+    H7: when ``protected`` names are given (instead of the F7 check), the sheet may not change a
+    protected name or rewrite a packet line. ``packet_lines=None`` keeps the
+    old behavior (packet binding happens upstream in lyric QC).
     """
+    errors = []
     if packet_lines is not None:
-        errors = words_match.validate_words_match(lyrics_text, packet_lines)
+        if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
+            errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+        else:
+            errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
     ver = _checked_version(version)

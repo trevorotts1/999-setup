@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
 - fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
 - unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
@@ -40,6 +41,9 @@
 - fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
 - fix/partH-H1: Merge origin/main into fix/partH-H1 (rebump skill) (merge 233404c6eacf)
 - fix/partH-H4: Merge main into fix/partH-H4; renumber skill to 2.6.9 (merge 37c6e518b1a9)
+- fix/partH-H7: changelog: correct onboarding version reference (merge c24fb3ee8020)
+- fix/partH-H9: Merge origin/main into fix/partH-H9 (merge 7c34518ce7dc)
+- fix/partH-H9-changelog-markers: Fix: remove merge conflict markers from root CHANGELOG.md left by H9 merge (merge b40854e61227)
 
 ## [hook-skill] — 2026-10-06
 

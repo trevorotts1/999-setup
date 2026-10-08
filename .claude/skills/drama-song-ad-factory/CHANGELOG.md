@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.0] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+## [2.7.1] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
 
 `scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
 and H12 master-provenance code in `final_assembler/assembler.py` and the H2
@@ -11,7 +11,28 @@ lip_gate, H14 song_files, qc_gate.py and qc-schema.json changes are kept.
   mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
   now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
 - `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
-  frontmatter `version:` 2.6.9 -> 2.7.0 (follows onboarding `skill-version.txt`).
+  frontmatter `version:` 2.6.11 -> 2.7.1 (follows onboarding `skill-version.txt`).
+
+## [2.6.11] - 2026-10-08 - H9 readable intake card
+
+- New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw
+  copy): the six intake questions, one block per question, one numbered option
+  per line, RECOMMENDED marked, blank line between questions, closing "how to
+  answer" line; plain text; split under Telegram's limit; exact
+  `openclaw message send` argv and Bot API body.
+- `factory.py card` prints the raw card; intake `question_message` uses the
+  same layout. Test: `choice_card/intake_card/test_intake_card_h9.py`.
+
+## [2.6.10] - 2026-10-08 - Part H H7: captions use the approved words + protected names
+
+Same fix as onboarding Skill 75 v2.6.4 (Kiesett "Stale" captioned "still").
+New `scripts/core/protected_names.py` + `test_protected_names_h7.py`: sheet
+build gate, sung-take words check, sheet-text captions timed from Suno
+timestamps, caption QC. Wired into `lyric_writer`, `music_qc`,
+`delivery_variants` (byte-identical to canonical) and `music_director`
+(`build_generate_request(packet_lines=, protected=)`; this packaged copy still
+predates the F7 `words_match` guard, a full re-package from canonical is a
+separate step).
 
 ## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
 
