@@ -35,6 +35,13 @@ import shutil
 import subprocess
 import sys
 
+# H12: receipt provenance stamp (same package).
+try:
+    from . import master_provenance
+except ImportError:                     # direct-script fallback
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import master_provenance  # noqa: E402
+
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
@@ -116,6 +123,57 @@ def _seg_transition(tl, seg):
     return t
 
 
+def _h5_core():
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.timestamp_plan as tp
+    return tp
+
+
+def _h5_stretch(seg):
+    return _h5_core().stretch_of(seg)
+
+
+def h5_gates(plan):
+    """Part H H5: no slow motion above 1.15x (SLOWMO_OVER_LIMIT) and, when
+    the timeline carries line windows and segments name the line they show,
+    every picture matches the line heard in its window
+    (PICTURE_LINE_MISMATCH). Returns (_fail or None, evidence rows)."""
+    tp = _h5_core()
+    segs = plan["segments"]
+    rows = tp.check_stretch(segs)
+    ev = {"stretch": rows}
+    bad = [r for r in rows if not r["ok"]]
+    if bad:
+        return _fail(tp.SLOWMO, next_action=(
+            "segment(s) %s are slowed above %.2fx; generate the picture at "
+            "the shot window's length instead of stretching it"
+            % (",".join(str(r["index"]) for r in bad), tp.MAX_SLOWMO)),
+            evidence=ev), ev
+    if plan.get("lines") and any(s.get("shows_line_ids") for s in segs):
+        fps = plan["fps"]
+        shots = [{"shot_id": "seg%d" % i,
+                  "song_start": s["offset_frames"] / fps,
+                  "song_end": (s["offset_frames"] + s["frames"]) / fps,
+                  "shows_line_ids": s.get("shows_line_ids", [])}
+                 for i, s in enumerate(segs)]
+        try:
+            gate = tp.pictures_match_gate(shots, [
+                {"line_id": l["line_id"], "start": l["start_s"],
+                 "end": l["end_s"], "text": l.get("text", "")}
+                for l in plan["lines"]])
+        except (KeyError, TypeError, AttributeError, tp.PlanError) as exc:
+            return _fail("TIMELINE_BAD_LINES", next_action=str(exc),
+                         evidence=ev), ev
+        ev["pictures_match"] = gate
+        if gate["outcome"] != "ok":
+            return _fail(gate["reason_code"], next_action=(
+                "pictures do not match the words in " + ",".join(gate["mismatches"])),
+                evidence=ev), ev
+    return None, ev
+
+
 def plan_timeline(tl, base_dir=".", probe=None):
     """Pure frame plan: snap durations once, accumulate integer frames.
 
@@ -149,14 +207,20 @@ def plan_timeline(tl, base_dir=".", probe=None):
                 xd = cap
                 if xd == 0:
                     trans = "none"
-        items.append({"src": s["src"], "frames": frames,
-                      "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd,
-                      "lip_sync": bool(s.get("lip_sync")),
-                      "lip_sync_line_ids": list(
-                          s.get("lip_sync_line_ids") or []),
-                      **({"first_word_s": float(fw)} if fw is not None
-                         else {})})
+        item = {"src": s["src"], "frames": frames,
+                "snapped_dur": frames / fps, "transition": trans,
+                "xfade_dur": xd,
+                "lip_sync": bool(s.get("lip_sync")),
+                "lip_sync_line_ids": list(s.get("lip_sync_line_ids") or []),
+                # Part H H5: slow-motion factor + the line this picture shows
+                "stretch": round(_h5_stretch({**s, "dur": dur}), 3)}
+        if fw is not None:
+            item["first_word_s"] = float(fw)
+        if s.get("shows_line_ids"):
+            item["shows_line_ids"] = list(s["shows_line_ids"])
+        if isinstance(s.get("lip_lead_s"), (int, float)):   # Part H H1
+            item["lip_lead_s"] = float(s["lip_lead_s"])
+        items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -220,6 +284,36 @@ def check_long_gap_hold(plan):
         if not held:
             return [LONG_GAP_CUTAWAY]
     return []
+
+
+def validate_lipsync_placement(plan, tl):
+    """Part H H1 gate: a lip-sync clip sits at its line's real Suno start
+    minus its lead-in (segment key "lip_lead_s", written by the lip stage),
+    within one frame -- never re-timed. Segments without "lip_lead_s" are
+    not checked (legacy timelines). Raises ValueError LIPSYNC_RETIMED.
+    Returns the checked count."""
+    fps, n = plan["fps"], 0
+    starts = {ln["line_id"]: float(ln["start"])
+              for sec in (tl.get("timing") or {}).get("sections", [])
+              for ln in sec.get("lyrics", [])}
+    for s in plan["segments"]:
+        lids = s.get("lip_sync_line_ids")
+        if not lids or "lip_lead_s" not in s:
+            continue
+        if lids[0] not in starts:
+            raise ValueError("LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r "
+                             "missing from the timing map" % (lids[0],))
+        want = starts[lids[0]] - s["lip_lead_s"]
+        got = s["offset_frames"] / fps
+        if abs(got - want) > 1 / fps + 1e-9:
+            raise ValueError(
+                "LIPSYNC_RETIMED: %r placed at %.3fs but line %r starts at "
+                "%.3fs with %.2fs lead-in (want %.3fs); a lip-sync clip is "
+                "placed at its real Suno timestamp, never re-timed (Part H "
+                "H1)" % (s["src"], got, lids[0], starts[lids[0]],
+                         s["lip_lead_s"], want))
+        n += 1
+    return n
 
 
 def build_argv(plan, output, ffmpeg="ffmpeg"):
@@ -322,6 +416,11 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         s["src"] = abspath(s["src"])
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    try:
+        validate_lipsync_placement(plan, tl)     # Part H H1
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
     # H13: fades finish before the first word; long in-line gaps are held.
     for gate, why in (
             (check_fade_before_first_word, "shorten the fade or add "
@@ -331,13 +430,18 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         bad = gate(plan)
         if bad:
             return _fail(bad[0], next_action=why, evidence={})
+    # Part H H5: slow motion cap + pictures-match-words, before any spend.
+    h5_fail, h5_ev = h5_gates(plan)
+    if h5_fail:
+        return h5_fail
     argv = build_argv(plan, output, ffmpeg)
     if dry_run:
         return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                 "tool_version": TOOL_VERSION, "command": "assemble",
                 "outcome": "ok", "reason_code": "DRY_RUN",
                 "next_action": "rerun without dry_run to render",
-                "evidence": {"argv": argv, "plan": plan}, "state_version": 0}
+                "evidence": {"argv": argv, "plan": plan, "h5": h5_ev},
+                "state_version": 0}
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -355,7 +459,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      evidence={"output": str(output)})
     frame = 1.0 / plan["fps"]
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
-            "total_frames": plan["total_frames"], "argv": argv}
+            "total_frames": plan["total_frames"], "argv": argv,
+            "h5": h5_ev}
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
@@ -374,7 +479,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",
                "next_action": "QC per directive 17.5 (independent reviewer)",
-               "evidence": evid, "state_version": 0}
+               "evidence": evid, "state_version": 0,
+               # H12: QC fails any master this receipt does not vouch for.
+               "produced_by": master_provenance.producer_stamp(),
+               "master_sha256": master_provenance.sha256_file(output)}
     try:
         with open(str(output) + ".receipt.json", "w",
                   encoding="utf-8") as fh:

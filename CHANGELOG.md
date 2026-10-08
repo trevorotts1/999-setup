@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 - fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.4.6)
 
+=======
+- fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
+>>>>>>> origin/main
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
 - unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
 - unit/W3-03-U5-helper-deps: W3-03-U5: helper dependency install with pinned versions/hashes + preflight gate (merge 468f6c284301)
@@ -35,6 +39,13 @@
 - fix/partH-H14: fix(drama-song): H14 delivery folder carries the finished song as MP3 320 + WAV (+ instrumental), listed in receipt and README, QC song_files check (merge 66ab89f8ec36)
 - fix/partH-H2: Merge origin/main into fix/partH-H2 (keep H14 changelog, skill v2.6.2) (merge 70177ece7ea3)
 - fix/partH-H13: fix(skill75 H13): cross-fades finish before the first word; long gaps held on the speaking face (2.6.3) (merge e77d4b320704)
+- fix/partH-H12: Merge remote-tracking branch 'origin/main' into fix/partH-H12 (merge 648dcf64b8d4)
+- fix/partH-H11: Merge origin/main into fix/partH-H11; skill 2.6.5 (merge 007cc3f06247)
+- fix/partH-H5: Merge origin/main into fix/partH-H5 (H11/H12), skill v2.6.6 (merge 255131a0eac4)
+- fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
+- fix/partH-H1: Merge origin/main into fix/partH-H1 (rebump skill) (merge 233404c6eacf)
+- fix/partH-H4: Merge main into fix/partH-H4; renumber skill to 2.6.9 (merge 37c6e518b1a9)
+- fix/partH-H7: changelog: correct onboarding version reference (merge c24fb3ee8020)
 
 ## [hook-skill] — 2026-10-06
 

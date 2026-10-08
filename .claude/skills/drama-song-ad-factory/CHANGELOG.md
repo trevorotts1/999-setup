@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.4] - 2026-10-08 - H9 readable intake card
+## [2.6.11] - 2026-10-08 - H9 readable intake card
 
 - New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw
   copy): the six intake questions, one block per question, one numbered option
@@ -9,6 +9,75 @@
   `openclaw message send` argv and Bot API body.
 - `factory.py card` prints the raw card; intake `question_message` uses the
   same layout. Test: `choice_card/intake_card/test_intake_card_h9.py`.
+
+## [2.6.10] - 2026-10-08 - Part H H7: captions use the approved words + protected names
+
+Same fix as onboarding Skill 75 v2.6.4 (Kiesett "Stale" captioned "still").
+New `scripts/core/protected_names.py` + `test_protected_names_h7.py`: sheet
+build gate, sung-take words check, sheet-text captions timed from Suno
+timestamps, caption QC. Wired into `lyric_writer`, `music_qc`,
+`delivery_variants` (byte-identical to canonical) and `music_director`
+(`build_generate_request(packet_lines=, protected=)`; this packaged copy still
+predates the F7 `words_match` guard, a full re-package from canonical is a
+separate step).
+
+## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+
+Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
+lists every shot where a face is visibly speaking and fails
+`FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
+line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
+grace) and `check_coverage_band` measures it. Test:
+`shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
+ships with the onboarding core; this copy's assembler predates Part E, so it
+lands with the next core resync.
+
+## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
+
+- New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
+  measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
+  Kiesett +0.066 s) and cuts/places lip-sync clips compensated, at the
+  line's real Suno timestamp, never re-timed. Same files as onboarding
+  skill 75 v2.6.1.
+- `final_assembler`: plan carries `lip_sync_line_ids` / `lip_lead_s`; new
+  gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
+- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
+  `final_assembler/test_lipsync_placement_h1.py`.
+
+## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
+
+`scripts/core/spoken_share/` (the constants module) now holds the single
+singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
+singing was chosen) and Trevor's band (`ACCEPT_PTS=5`, `FLAG_PTS=10`):
+within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
+`check_share`, `check_first_sung` and `check_plan` use it and return `flags`.
+Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
+lip-sync coverage modules are not in this distribution yet; they pick the
+band up when they are ported.
+
+## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
+
+- New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
+  `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
+  above 1.15x and picture/line mismatches before any render.
+- INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
+
+## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
+
+Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
+`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
+`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
+(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
+measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
+Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
+accept with a flag shown in the receipt; over 10 redo).
+
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
 
 ## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
 

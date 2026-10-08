@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import music_qc
+import protected_names
 import spend_ledger as L
 
 TOOL_NAME = "music_director"
@@ -89,8 +90,19 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
 
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
-                           duration=None, callback_url="https://example.invalid/cb"):
-    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt)."""
+                           duration=None, callback_url="https://example.invalid/cb",
+                           packet_lines=None, protected=()):
+    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
+
+    H7: when ``packet_lines`` and ``protected`` names are given, the sheet may
+    not change a protected name or rewrite a packet line (the "Stale" ->
+    "still" request files); a bad sheet raises ValueError and no payload is
+    built.
+    """
+    if packet_lines is not None and protected:
+        errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+        if errors:
+            raise ValueError("; ".join(errors))
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),
