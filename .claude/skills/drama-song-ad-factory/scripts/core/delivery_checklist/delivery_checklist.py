@@ -32,8 +32,9 @@ What evaluate() does per question, measured from the receipt only:
   1 SUNG      -- receipt singing detector numbers on the vocal stem
                  (sung_pct / spoken_pct present, sung style required).
                  Sung share must be > 0 for a sung ad. Detector field
-                 (receipt.detector) must name the stem-based detector --
-                 labels/section names are never evidence (G5).
+                 (receipt.detector) must name core/singing_detector (G3,
+                 any separator form); labels/section names and any
+                 share_source other than "measured" are never evidence.
   2 ON TARGET -- every share and the length within CHECKLIST_TOLERANCE_PCT
                  (5.0) points of its target in the receipt.
   3 WORDS     -- receipt word coverage: words_present / words_total == 100%
@@ -44,7 +45,9 @@ What evaluate() does per question, measured from the receipt only:
                  (music_gaps_s == 0.0), no reverb tail (tail verdict), and
                  every line's delivery matches its mode (sung lines sung).
   6 MODELS    -- every asset's model is in the locked set (exact strings
-                 from the checklist, compared case-insensitively).
+                 from the checklist, compared case-insensitively), AND
+                 every delivered clip used the video model the card locked
+                 (F16: model_lock.check_video_model_delivery, fail-closed).
   7 HONEST    -- every receipt number names its source (non-empty
                  "source"/"source_ref" next to each measured value);
                  anything unmeasured must be written "UNMEASURED" and an
@@ -59,8 +62,19 @@ Run: python3 core/delivery_checklist/test_delivery_checklist.py
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# F16 delivery gate: the video-model lock lives in the sibling kie_dispatch
+# package. Same core/ tree, the same sys.path pattern kie_dispatch.py uses;
+# no file is opened and no provider is called -- the receipt stays data.
+_CORE = Path(__file__).resolve().parents[1]
+if str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
+
 TOOL_NAME = "delivery_checklist"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
 QC_SCHEMA_VERSION = "1.0.0"       # core/qc_gate.py
 CHECK = "delivery_checklist"      # new required check ON gate 4 (17.5 Final)
@@ -229,6 +243,18 @@ def _source_named(ans, codes, q):
     codes.append("%s:%s answer names no source" % (CHECKLIST_NO_MEASUREMENT, q))
     return None
 
+def _is_singing_detector(name):
+    """G3: the sung share must come from core/singing_detector.
+
+    Normalizes separators, so "singing-detector(vocal-stem)",
+    "singing_detector" and "singing detector v2" all count; "section
+    labels", "verse/chorus time" and bare "manual" do not.
+    """
+    if not isinstance(name, str):
+        return False
+    return "singingdetector" in "".join(ch for ch in name.lower()
+                                        if ch.isalnum())
+
 
 # ------------------------------------------------------------------ Q1 SUNG
 def _q1_sung(receipt, ans, codes, details):
@@ -246,6 +272,18 @@ def _q1_sung(receipt, ans, codes, details):
     if not isinstance(detector, str) or not detector.strip():
         codes.append("%s:SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: a named-but-wrong instrument (labels, ears, "manual") is the
+        # fake-number path; only core/singing_detector measures sung share.
+        codes.append("%s:SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
+        return False
+    share_source = ans.get("share_source") or receipt.get("share_source")
+    if isinstance(share_source, str) and share_source.strip() \
+            and share_source.strip().lower() != "measured":
+        codes.append("%s:SUNG share_source=%s (need measured)"
+                     % (CHECKLIST_NO_MEASUREMENT, share_source.strip()))
         return False
     is_sung_style = isinstance(style, str) and \
         style.strip().lower() in ("sung", "all_suno", "all-suno", "suno")
@@ -464,15 +502,81 @@ def _q5_voice_music(receipt, ans, codes, details):
 
 
 # ----------------------------------------------------------------- Q6 MODELS
+#: keys a delivery receipt / MODELS answer uses for clip provenance and for
+#: the card-locked video model (F16). They are NOT per-asset model names.
+_CLIP_KEYS = ("clips", "video_clips")
+_LOCK_KEYS = ("locked_video_model", "video_model_locked", "locked")
+
+
+def _clip_list(receipt, ans):
+    """The receipt's per-clip video provenance, or None when it has none.
+
+    Clip rows may ride the receipt itself or the MODELS answer. None means
+    this receipt records no clip list, so the video-model gate has nothing
+    to check -- the per-asset `used` check below still governs Q6.
+    """
+    for source in (receipt, ans):
+        if not isinstance(source, dict):
+            continue
+        for key in _CLIP_KEYS:
+            value = source.get(key)
+            if isinstance(value, list):
+                return value
+    return None
+
+
+def _locked_video_model(receipt, ans):
+    """The card-locked video model the receipt records, else None (unproven)."""
+    for source in (receipt, ans):
+        if not isinstance(source, dict):
+            continue
+        for key in _LOCK_KEYS:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _q6_video_gate(receipt, ans, codes, details):
+    """F16: every delivered clip used the video model the card locked.
+
+    This is the wiring of model_lock.check_video_model_delivery into the
+    delivery path. A mismatch fails Q6, and with it the delivery gate. A
+    receipt that lists clips but records no lock fails too (G7: a claim
+    with no measurement is a "no") -- it is never silently judged against
+    a default the run never proved. No clip list -> nothing to check here.
+    """
+    clips = _clip_list(receipt, ans)
+    if clips is None:
+        return True
+    locked = _locked_video_model(receipt, ans)
+    bad = model_lock.check_video_model_delivery({"clips": clips}, locked)
+    ok = True
+    if locked is None:
+        codes.append("%s:MODELS the receipt lists clips but records no "
+                     "locked video model" % CHECKLIST_NO_MEASUREMENT)
+        ok = False
+    if bad:
+        codes.append("%s:MODELS %s"
+                     % (CHECKLIST_WRONG_MODEL, "; ".join(bad[:10])))
+        ok = False
+    details["video_model"] = {"locked": locked or "",
+                              "clips": len(clips),
+                              "mismatches": len(bad),
+                              "lock_recorded": locked is not None}
+    return ok
+
+
 def _q6_models(receipt, ans, codes, details):
-    """Only the locked models were used."""
+    """Only the locked models were used -- clip by clip (F16), asset by asset."""
+    ok = _q6_video_gate(receipt, ans, codes, details)
     used = ans.get("used") if isinstance(ans.get("used"), dict) else \
-        {k: v for k, v in ans.items() if k != "used"}
+        {k: v for k, v in ans.items() if k not in _CLIP_KEYS + _LOCK_KEYS
+         and k != "used"}
     if not isinstance(used, dict) or not used:
         codes.append("%s:MODELS no per-asset model list in the receipt"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
-    ok = True
     wrong = []
     for kind, value in sorted(used.items()):
         if not isinstance(value, str) or not value.strip():
@@ -617,6 +721,12 @@ def _q9_first_sung(receipt, ans, codes, details):
     if not (isinstance(detector, str) and detector.strip()):
         codes.append("%s:FIRST_SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: first-sung position is measured on the vocal stem by
+        # core/singing_detector, never read off section labels.
+        codes.append("%s:FIRST_SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
         return False
     delta = abs(got - want)
     details["first_sung_pct"] = got
@@ -827,8 +937,15 @@ def _measurement_line(q, ans, qdetails):
             ("reverb tail %.3f s" % d["reverb_tail_s"])
             if "reverb_tail_s" in d and d["reverb_tail_s"] is not None else "")
     if q == "MODELS":
-        return ", ".join("%s=%s" % (k, v)
-                         for k, v in d.get("models", {}).items())
+        parts = ["%s=%s" % (k, v)
+                 for k, v in d.get("models", {}).items()]
+        vm = d.get("video_model")          # F16 clip gate evidence
+        if isinstance(vm, dict):
+            parts.append("video clips=%d locked=%s mismatches=%d" % (
+                vm.get("clips", 0),
+                vm.get("locked") or "UNMEASURED",
+                vm.get("mismatches", 0)))
+        return ", ".join(parts)
     if q == "LIP_SYNC":
         return "%d clip(s), worst offset %.3fs, worst corr %.2f" % (
             d.get("lipsync_clips", 0), d.get("lipsync_worst_offset_s", 0.0),

@@ -68,6 +68,18 @@ def _timing(sung_s, total=60.0, spoken_s=0.0, start=0.0):
             "sections": secs}
 
 
+def _share(pct=61.0, source="measured", detector="singing_detector"):
+    """Fixture for singing_detector.share_for_stem's record (G3-WIRE): the
+    measured share the QC gate requires on a PASS sung claim."""
+    return {"sung_share": round(pct / 100.0, 6), "sung_pct": pct,
+            "sung_pct_of_voiced": pct, "confidence": 0.9,
+            "method": "pitch-stability+voicing+note-alignment",
+            "detector": detector, "detector_version": "2.0.0",
+            "schema_version": "blackceo.singing-detector/v1",
+            "share_source": source, "runtime_s": 60.0,
+            "sung_s": round(60.0 * pct / 100.0, 1), "voiced_s": 60.0}
+
+
 class SungVocalE7(unittest.TestCase):
 
     # ------------------------------------------------------- acceptance ---
@@ -76,7 +88,69 @@ class SungVocalE7(unittest.TestCase):
                                    profile="all_suno", target=0.75)
         self.assertEqual(out["outcome"], "PASS")
         self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
-        self.assertAlmostEqual(out["sung_coverage"], 0.75, places=3)
+        # G5: timing-map time is LABELLED time, never a sung %.
+        self.assertEqual(out["share_basis"], "planned")
+        self.assertAlmostEqual(out["labelled_coverage_pct"], 75.0, places=2)
+        self.assertIn("NOT measured", out["labelled_source"])
+
+    def test_g5_labelled_time_never_reported_as_sung(self):
+        """G5: without a measured detector run, no sung % may be printed."""
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno")
+        for field in ("sung_pct", "sung_share", "sung_share_pct"):
+            self.assertNotIn(field, out)
+        rec = SVG.record_for_gate(out, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("LABELLED", rec["evidence"]["summary"])
+        self.assertIn("not measured", rec["evidence"]["summary"])
+        self.assertNotIn("MEASURED", rec["evidence"]["summary"])
+
+    def test_g5_measured_detector_drives_verdict_and_receipt(self):
+        """G5: with a G3 detector record, the sung % is source=measured."""
+        det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
+               "sung_share": 0.02, "spoken_share": 0.98, "rap_share": 0.0,
+               "no_voice_share": 0.0, "runtime_s": 60.0,
+               "confidence": 0.95, "measured": True}
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno",
+                                   detector_result=det)
+        # 2% measured sung < 70% floor -> FAIL even though labels say 75%.
+        self.assertEqual(out["outcome"], "FAIL")
+        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_LOW")
+        self.assertEqual(out["sung_pct"]["source"], "measured")
+        self.assertEqual(out["sung_pct"]["detector"], "singing_detector.v1")
+        self.assertEqual(out["sung_pct"]["confidence"], 0.95)
+        # G5 amend (order 1150): all four measured deliveries, with seconds
+        self.assertEqual(out["sung_pct"]["rap_pct"], 0.0)
+        self.assertEqual(out["sung_pct"]["no_voice_pct"], 0.0)
+        self.assertEqual(out["sung_pct"]["sung_seconds"], 1.2)
+        self.assertEqual(out["sung_pct"]["spoken_seconds"], 58.8)
+        rec = SVG.record_for_gate(out, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("MEASURED", rec["evidence"]["summary"])
+        self.assertIn("singing_detector.v1", rec["evidence"]["summary"])
+
+    def test_g5_measured_all_spoken_fails_vocal_missing(self):
+        """The failed-ad shape, measured honestly: labels say 75% sung,
+        detector says 0% -> VOCAL_MISSING, never the label number."""
+        det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
+               "sung_share": 0.0, "spoken_share": 1.0, "rap_share": 0.0,
+               "no_voice_share": 0.0, "runtime_s": 60.0,
+               "confidence": 0.95, "measured": True}
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno",
+                                   detector_result=det)
+        self.assertEqual(out["outcome"], "FAIL")
+        self.assertEqual(out["reason_code"], "VOCAL_MISSING")
+        self.assertEqual(out["sung_pct"]["sung_pct"], 0.0)
+
+    def test_g5_labelled_fields_boxed_on_verdict(self):
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno")
+        self.assertIn("labelled_source", out)
+        self.assertIn("labelled_sung_seconds", out)
+        self.assertIn("labelled_coverage_pct", out)
+        self.assertAlmostEqual(out["labelled_sung_seconds"], 45.0, places=2)
 
     def test_no_absolute_floor_exists(self):
         """Trevor: not an absolute 55%. 50% against a 50% target passes."""
@@ -205,14 +279,48 @@ class SungVocalE7(unittest.TestCase):
     # ------------------------------------------------- gate wiring (QC) ---
     def test_pass_record_validates_and_gate_passes(self):
         ver = _chk(timing=_timing(45.0, 60.0, 15.0),
-                                   profile="all_suno", target=0.75)
+                                   profile="all_suno", target=0.75,
+                                   detector_share=_share(75.0))
         rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
                                   "sess-e7", "qc-checker")
         self.assertIsNone(qc_gate.validate_record(rec))
+        self.assertIn("detector=singing_detector", rec["evidence"]["summary"])
         res = qc_gate.evaluate(
             RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
             ["audio"])
-        self.assertEqual(res["gate"], "PASS")
+        self.assertEqual(res["gate"], "PASS", res)
+
+    def test_pass_record_without_detector_share_is_blocked(self):
+        """G3-WIRE: sung_coverage on a PASS record with no measured share
+        (the label-derived number) can never advance the stage."""
+        ver = _chk(timing=_timing(45.0, 60.0, 15.0),
+                                   profile="all_suno", target=0.75)
+        rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("share_source=timing_map (unmeasured)",
+                      rec["evidence"]["summary"])
+        res = qc_gate.evaluate(
+            RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
+            ["audio"])
+        self.assertEqual(res["gate"], "BLOCKED")
+        self.assertIn("SUNG_CLAIM_UNMEASURED",
+                      {f["code"] for f in res["failures"]})
+        self.assertEqual(res["repair_scope"], ["final:audio:sung_vocal"])
+
+    def test_non_measured_share_does_not_provenance_the_claim(self):
+        """A share dict from a non-measured source is not the detector."""
+        ver = _chk(timing=_timing(45.0, 60.0, 15.0),
+                                   profile="all_suno", target=0.75,
+                                   detector_share=_share(75.0,
+                                                         source="planned"))
+        rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        res = qc_gate.evaluate(
+            RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
+            ["audio"])
+        self.assertEqual(res["gate"], "BLOCKED")
+        self.assertIn("SUNG_CLAIM_UNMEASURED",
+                      {f["code"] for f in res["failures"]})
 
     def test_fail_record_fails_final_edit_gate(self):
         ver = _chk(timing=_timing(0.0, 60.0),
