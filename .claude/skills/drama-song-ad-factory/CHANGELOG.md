@@ -2,7 +2,7 @@
 
 ## [2.6.10] - 2026-10-08 - Part H H7: captions use the approved words + protected names
 
-Same fix as onboarding Skill 75 v2.6.10 (Kiesett "Stale" captioned "still").
+Same fix as onboarding Skill 75 v2.6.4 (Kiesett "Stale" captioned "still").
 New `scripts/core/protected_names.py` + `test_protected_names_h7.py`: sheet
 build gate, sung-take words check, sheet-text captions timed from Suno
 timestamps, caption QC. Wired into `lyric_writer`, `music_qc`,
