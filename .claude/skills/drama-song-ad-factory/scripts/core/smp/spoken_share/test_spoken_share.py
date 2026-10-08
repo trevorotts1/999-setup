@@ -76,11 +76,11 @@ def seg(delivery, seconds, start=None):
 
 
 def in_band_ad():
-    """45.0% spoken-style, first sung at 5.0s -- the exact target, in band."""
+    """45.0% spoken-style, first real singing at 15% of runtime -- both targets exact."""
     return [
-        seg("spoken", 5, 0.0),
-        seg("sung", 55, 5.0),
-        seg("spoken", 40, 60.0),
+        seg("spoken", 15, 0.0),
+        seg("sung", 55, 15.0),
+        seg("spoken", 30, 70.0),
     ], 100.0
 
 
@@ -259,19 +259,20 @@ class ShareCheckTests(unittest.TestCase):
 
     def test_band_boundaries_are_inclusive(self):
         self.assertEqual(M.check_share(0.40)["verdict"], "PASS")
-        self.assertEqual(M.check_share(0.55)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.50)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.55)["verdict"], "FLAG")
 
     def test_below_the_floor_fails(self):
         out = M.check_share(0.20)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("below the floor 40%", out["reasons"][0])
+        self.assertIn("past 10: redo", out["reasons"][0])
 
     def test_above_the_ceiling_fails(self):
         out = M.check_share(0.60)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("above the ceiling 55%", out["reasons"][0])
+        self.assertIn("past 10: redo", out["reasons"][0])
 
     def test_rag_is_counted_so_a_rap_heavy_ad_is_not_under_the_floor(self):
         # 5 spoken + 45 rap + 5 spoken = 55% spoken-style: in band
@@ -280,14 +281,14 @@ class ShareCheckTests(unittest.TestCase):
         measured = M.measure_share(lines)
         self.assertEqual(measured["spoken_style_seconds"], 55.0)
         self.assertEqual(measured["share_pct"], 55.0)
-        self.assertEqual(M.check_share(measured["share"])["verdict"], "PASS")
+        self.assertEqual(M.check_share(measured["share"])["verdict"], "FLAG")
         # the identical ad with rap sung instead measures 10%: under the floor
         no_rap = [lines[0], lines[1],
                   {"delivery": "sung", "seconds": 45, "start": 50},
                   lines[3]]
         below = M.check_share(M.measure_share(no_rap)["share"])
         self.assertEqual(below["verdict"], "FAIL")
-        self.assertTrue(any("below the floor" in r
+        self.assertTrue(any("past 10" in r
                             for r in below["reasons"]), below["reasons"])
 
     def test_refusal_text_is_compact_and_empty_when_passing(self):

@@ -620,17 +620,27 @@ main() {
   # 600) only when supplied; never printed, never guessed.
   OPERATOR_GH_TOKEN="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
   OPERATOR_VERCEL_TOKEN="${VERCEL_TOKEN:-}"
-  SKILLS_ONLY=0; CHECK_ONLY=0; OPERATOR_FLAG=0
+  SKILLS_ONLY=0; CHECK_ONLY=0; OPERATOR_FLAG=0; UPDATE_COMBOS=0
+  # DeepSeek route: direct (DEEPSEEK_API_KEY) or openrouter (OPENROUTER_API_KEY,
+  # openrouter/deepseek/deepseek-v4.1-flash). Flag wins over NINE_DEEPSEEK_ROUTE.
+  NINE_DEEPSEEK_ROUTE="${NINE_DEEPSEEK_ROUTE:-}"
   while [ $# -gt 0 ]; do
     case "$1" in
       --operator-remote-owner) OPERATOR_REMOTE_OWNER="${2:-}"; OPERATOR_FLAG=1; shift ;;
       --operator-remote-owner=*) OPERATOR_REMOTE_OWNER="${1#*=}"; OPERATOR_FLAG=1 ;;
+      --deepseek-route) NINE_DEEPSEEK_ROUTE="${2:-}"; shift ;;
+      --deepseek-route=*) NINE_DEEPSEEK_ROUTE="${1#*=}" ;;
+      --update-combos) UPDATE_COMBOS=1 ;;
       --skills-only) SKILLS_ONLY=1 ;;
       --check) CHECK_ONLY=1 ;;
-      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --skills-only [--check])" ;;
+      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --deepseek-route direct|openrouter | --update-combos | --skills-only [--check])" ;;
     esac
     shift
   done
+  case "$NINE_DEEPSEEK_ROUTE" in
+    ""|direct|openrouter) ;;
+    *) fail "--deepseek-route / NINE_DEEPSEEK_ROUTE must be direct or openrouter (got '$NINE_DEEPSEEK_ROUTE'). Nothing was written." ;;
+  esac
   [ "$CHECK_ONLY" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--check only applies with --skills-only (the full install has no dry-run). Nothing was written."
   [ "$SKILLS_ONLY" = 0 ] || [ "$OPERATOR_FLAG" = 0 ] || fail "--skills-only never writes operator keys; do not combine it with --operator-remote-owner. Nothing was written."
   case "$OPERATOR_REMOTE_OWNER" in
@@ -789,14 +799,20 @@ main() {
   API_DOCS="$(bash "$MACOS/get-api-docs.sh")" || exit 1
   log "Credential file: $API_DOCS"
   parse_api_docs "$API_DOCS"
+  # Every provider key is optional on its own; what is required is a usable set:
+  #   - OLLAMA_API_KEY or OPENROUTER_API_KEY (at least one), and
+  #   - a DeepSeek source: DEEPSEEK_API_KEY (direct) or OPENROUTER_API_KEY with the
+  #     openrouter route. A missing key skips that provider (never a dead provider);
+  #     placeholder text counts as absent (the lane is skipped, logged).
   for k in OLLAMA_API_KEY DEEPSEEK_API_KEY AGNES_API_KEY; do
-    [ -n "${!k:-}" ] || fail "Missing $k in $API_DOCS"
-    case "${!k}" in
-      ""|replace_with_real_key|changeme|your-key-here) fail "$k is set to placeholder text in $API_DOCS" ;;
+    case "${!k:-}" in
+      replace_with_real_key|changeme|your-key-here) log "$k is placeholder text in API docs.md - treated as absent"; export "$k="  ;;
     esac
   done
-  validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"
-  validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"
+  # Plans are only meaningful (and only validated) for a provider that has a key.
+  if [ -n "${OLLAMA_API_KEY:-}" ]; then validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"; fi
+  if [ -n "${AGNES_API_KEY:-}" ]; then validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"; fi
+  OLLAMA_PLAN="${OLLAMA_PLAN:-pro}"; AGNES_PLAN="${AGNES_PLAN:-starter}"
 
   # OPENROUTER_API_KEY is OPTIONAL: absent/placeholder = skip the lane, never a blocker.
   case "${OPENROUTER_API_KEY:-}" in
@@ -807,6 +823,24 @@ main() {
   else
     log "OpenRouter: no OPENROUTER_API_KEY in API docs.md - lane will be skipped"
   fi
+
+  # DeepSeek route. Default = direct when a DeepSeek key exists; with no DeepSeek key
+  # but an OpenRouter key the openrouter route is used (logged, never silent).
+  if [ -z "$NINE_DEEPSEEK_ROUTE" ]; then
+    if [ -n "${DEEPSEEK_API_KEY:-}" ]; then NINE_DEEPSEEK_ROUTE=direct
+    elif [ -n "${OPENROUTER_API_KEY:-}" ]; then NINE_DEEPSEEK_ROUTE=openrouter; log "No DEEPSEEK_API_KEY: DeepSeek lanes use the OpenRouter route"
+    fi
+  fi
+  case "$NINE_DEEPSEEK_ROUTE" in
+    direct) [ -n "${DEEPSEEK_API_KEY:-}" ] || fail "DeepSeek route is direct but DEEPSEEK_API_KEY is missing in $API_DOCS (or use --deepseek-route openrouter with OPENROUTER_API_KEY)" ;;
+    openrouter)
+      [ -n "${OPENROUTER_API_KEY:-}" ] || fail "DeepSeek route is openrouter but OPENROUTER_API_KEY is missing in $API_DOCS"
+      DEEPSEEK_API_KEY="" ;;  # no direct DeepSeek provider on this route
+    *) fail "No DeepSeek source: set DEEPSEEK_API_KEY, or OPENROUTER_API_KEY with --deepseek-route openrouter (in $API_DOCS)" ;;
+  esac
+  [ -n "${OLLAMA_API_KEY:-}" ] || [ -n "${OPENROUTER_API_KEY:-}" ] || fail "Need at least one of OLLAMA_API_KEY or OPENROUTER_API_KEY in $API_DOCS"
+  export NINE_DEEPSEEK_ROUTE
+  log "DeepSeek route: $NINE_DEEPSEEK_ROUTE; Ollama: $([ -n "${OLLAMA_API_KEY:-}" ] && echo wired || echo skipped); Agnes: $([ -n "${AGNES_API_KEY:-}" ] && echo wired || echo skipped)"
 
   # 5. Start + health + first-run security
   # SETUP_ROUTER_PID is set ONLY when this run started the router; the smoke
@@ -850,7 +884,9 @@ main() {
     AGNES_PLAN="$AGNES_PLAN" \
     DEEPSEEK_FLASH_VARIANT="${DEEPSEEK_FLASH_VARIANT:-}" \
     RESOLVED_MODELS="$RESOLVED_JSON" \
-    "$NODE_BIN" "$COMMON/configure-nine-router.mjs" 2>&1
+    NINEROUTER_CLI_TOKEN="${NINEROUTER_CLI_TOKEN:-}" \
+    NINE_DEEPSEEK_ROUTE="$NINE_DEEPSEEK_ROUTE" \
+    "$NODE_BIN" "$COMMON/configure-nine-router.mjs" $([ "$UPDATE_COMBOS" = 1 ] && echo --update-combos) 2>&1
   )" || fail "9Router configuration failed"
   # The helper emits a sentinel line followed by ONE compact JSON line. Extract
   # exactly that line (never sed-range over braces — nested JSON truncates).
@@ -1028,6 +1064,10 @@ main() {
   NINEROUTER_BASE="$BASE" NINEROUTER_TOKEN="$(bash "$MACOS/protect-local-state.sh" get-token)" \
     OLLAMA_PLAN="$OLLAMA_PLAN" \
     OPENROUTER_PROBE_ROUTE="$OPENROUTER_PROBE_ROUTE" \
+    SKIP_OLLAMA="$([ -n "${OLLAMA_API_KEY:-}" ] || echo 1)" \
+    SKIP_AGNES="$([ -n "${AGNES_API_KEY:-}" ] || echo 1)" \
+    SKIP_DEEPSEEK="$([ "$NINE_DEEPSEEK_ROUTE" = direct ] || echo 1)" \
+    DEEPSEEK_PROBE_ROUTE="$([ "$NINE_DEEPSEEK_ROUTE" = direct ] || echo openrouter/deepseek/deepseek-v4.1-flash)" \
     "$NODE_BIN" "$COMMON/test-nine-router.mjs" || fail "Smoke tests failed"
 
   # COLD START. A router that setup itself started would mask a launcher that
@@ -1418,8 +1458,8 @@ Normal claude routing: UNCHANGED
 Node.js: OK
 npm: OK
 9Router: OK - $BASE ($NINE_MODE, v$NINE_VER)
-DeepSeek Direct: $V_FABLE
-Ollama Cloud: $V_OLLAMA_LINE
+DeepSeek ($NINE_DEEPSEEK_ROUTE route): $V_FABLE
+Ollama Cloud: $([ -n "${OLLAMA_API_KEY:-}" ] && echo "$V_OLLAMA_LINE" || echo "skipped - no OLLAMA_API_KEY")
 Agnes AI: $V_AGNES
 OpenRouter (optional): $V_OPENROUTER
 
@@ -1431,7 +1471,7 @@ Haiku -> $R_HAIKU (thinking off)
 Vision -> $R_VISION
 
 Fallback:
-Haiku -> $R_HAIKU, then agnes/agnes-2.5-flash: configured
+Haiku -> $R_HAIKU$([ -n "${AGNES_API_KEY:-}" ] && echo ", then agnes/agnes-2.5-flash: configured" || echo " (no Agnes fallback: no AGNES_API_KEY)")
 $THINKING_LINES${PASSWORD_NOTE}
 Ollama plan: $OLLAMA_PLAN
 Ollama Claude/9Router concurrency budget: $CONCURRENCY

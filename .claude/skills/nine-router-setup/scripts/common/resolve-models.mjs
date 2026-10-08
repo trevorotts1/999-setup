@@ -109,7 +109,7 @@ export async function resolveAgnes(apiKey) {
 /**
  * Resolve OpenRouter (OPTIONAL provider). Validates the key via /auth/key,
  * then live-discovers the catalog and its :free models. Never hardcodes IDs.
- * @returns {Promise<{free:string[], total:number}>}
+ * @returns {Promise<{free:string[], total:number, ids:string[]}>}
  */
 export async function resolveOpenRouter(apiKey) {
   const auth = await fetch(`${OPENROUTER_BASE}/auth/key`, { headers: { Authorization: `Bearer ${apiKey}` } });
@@ -117,8 +117,8 @@ export async function resolveOpenRouter(apiKey) {
   const data = await fetchJson(`${OPENROUTER_BASE}/models`, { Authorization: `Bearer ${apiKey}` });
   const ids = (data?.data || []).map((m) => m.id).filter(Boolean);
   const free = ids.filter((id) => id.endsWith(":free"));
-  if (free.length === 0) throw new Error("live OpenRouter catalog returned no :free models");
-  return { free, total: ids.length };
+  // ids lets the caller prove an exact model (e.g. the OpenRouter DeepSeek route) is live.
+  return { free, total: ids.length, ids };
 }
 
 /**

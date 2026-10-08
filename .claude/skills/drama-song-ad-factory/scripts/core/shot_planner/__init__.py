@@ -14,11 +14,30 @@ from .shot_planner import (
     TREATMENTS,
     SCHEMA_VERSION,
     TOOL_VERSION,
+    MIN_SHOT_S,
+    BEAT_CUT_MIN_SHOT_S,
     PlanError,
     validate_shot,
     validate_contract,
     load_timing_map,
+    plan_shot_floor,
+    validate_timeline_min_shot,
     bind_plan as _bind_plan,
+    TARGET_SHOT_SECONDS,
+    E4_REASONS,
+    E4_GATE_STEPS,
+    validate_no_reuse,
+    plan_generation_count,
+    validate_story_order,
+    e4_final_checks,
+    to_e4_qc_record,
+)
+from .timestamp_plan import (  # Part H H5
+    MAX_SLOWMO,
+    plan_from_timestamps,
+    match_table,
+    pictures_match_gate,
+    check_stretch,
 )
 
 try:
@@ -71,7 +90,27 @@ def bind_plan(shots, timing, contracts=None, prompts=None):
 
 __all__ = [
     "SHOT_FIELDS", "CONTRACT_KEYS", "PRODUCT_VISIBILITY", "STATUSES",
-    "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "PlanError",
+    "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "MIN_SHOT_S",
+    "BEAT_CUT_MIN_SHOT_S", "PlanError",
     "validate_shot", "validate_contract", "load_timing_map", "bind_plan",
+    "plan_shot_floor", "validate_timeline_min_shot",
     "intake_image_prompt", "intake_shot_prompts", "require_compiled",
+    "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
+    "validate_no_reuse", "plan_generation_count", "validate_story_order",
+    "e4_final_checks", "to_e4_qc_record",
+    "MOTION_SCORE_LOW", "CLIP_LOW_MOTION", "MotionScoreError",
+    "gate_clip_motion",
 ]
+
+# Part F F12: clips must move. motion_score is its own module
+# (shot_planner/motion_score.py); reach it directly:
+#   from shot_planner.motion_score import motion_score, gate_clips, ...
+# No re-export here on purpose: the module and the function share the
+# name, and a package-level re-export of the function would shadow
+# `import shot_planner.motion_score as ms` with the function object.
+from .motion_score import (  # noqa: E402,F401
+    MOTION_SCORE_LOW,
+    CLIP_LOW_MOTION,
+    MotionScoreError,
+    gate_clips as gate_clip_motion,
+)

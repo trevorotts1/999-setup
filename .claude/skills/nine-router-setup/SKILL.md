@@ -74,13 +74,27 @@ Read `<Documents>/API docs.md`. Accept `KEY=value` lines; trim whitespace; ignor
 lines and Markdown headings/comments. Require and validate:
 
 ```text
-OLLAMA_API_KEY      (required, non-empty, not placeholder)
-DEEPSEEK_API_KEY    (required, non-empty, not placeholder)
-AGNES_API_KEY       (required, non-empty, not placeholder)
+OLLAMA_API_KEY      (OPTIONAL, but OLLAMA_API_KEY or OPENROUTER_API_KEY is required)
+DEEPSEEK_API_KEY    (OPTIONAL: absent/placeholder = no DeepSeek Direct; needs a DeepSeek source, see below)
+AGNES_API_KEY       (OPTIONAL: absent/placeholder = no Agnes provider, Agnes members omitted from every combo)
 OPENROUTER_API_KEY  (OPTIONAL: real key wires OpenRouter; absent or placeholder skips it — never a blocker)
-OLLAMA_PLAN         (required: free | pro | max)
-AGNES_PLAN          (required: starter | plus | pro)
+OLLAMA_PLAN         (required with OLLAMA_API_KEY: free | pro | max)
+AGNES_PLAN          (required with AGNES_API_KEY: starter | plus | pro)
 ```
+
+**DeepSeek route** (`--deepseek-route direct|openrouter` or `NINE_DEEPSEEK_ROUTE`): `direct`
+(default when `DEEPSEEK_API_KEY` exists) uses DeepSeek Direct. `openrouter` sends every
+DeepSeek lane (Fable fusion member, Opus, Sonnet, Haiku, subagent, judge) to
+`openrouter/deepseek/deepseek-v4.1-flash` with `OPENROUTER_API_KEY`, checks that exact id in
+the live OpenRouter catalog (no substitution), and creates no DeepSeek Direct provider or
+`ds-light`/`ds-max` nodes. With no `DEEPSEEK_API_KEY` but an `OPENROUTER_API_KEY`, the
+openrouter route is chosen and logged. Owner order 2026-10-08 (Christy Staples box).
+
+**Combos are never overwritten.** `configure-nine-router.mjs` creates missing combos and
+leaves existing ones (models and strategy) untouched, logging created vs kept. Pass
+`--update-combos` to `setup-macos.sh` to rewrite existing combos. With no Agnes key, Agnes
+is omitted from every combo. `NINEROUTER_CLI_TOKEN` (if set and accepted) is used instead
+of the dashboard password; the default-password login stays as the fallback.
 
 Keep values in memory only. Never echo them. If the file is missing, tell the user the
 exact OS-resolved path and the template (from `templates/API docs.md` in this repo).

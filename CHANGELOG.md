@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
+
+- fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
+- fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
+
+- fix/partI-I1: drama-song-ad-factory 2.7.7: captions spell-checked, exact website asked at intake and kept verbatim
+- fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
+- fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt
+- fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
+- fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
 - unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
 - unit/W3-03-U5-helper-deps: W3-03-U5: helper dependency install with pinned versions/hashes + preflight gate (merge 468f6c284301)
@@ -32,6 +42,28 @@
 - fix/kiefix-KEF001-999: fix(models): KEF001 retire deepseek-v4-pro for deepseek-v4.1-flash in nine-router-setup, launcher defaults, docs; add grep guard test (merge 17d17c90ff2d)
 - fix/partH-H14: fix(drama-song): H14 delivery folder carries the finished song as MP3 320 + WAV (+ instrumental), listed in receipt and README, QC song_files check (merge 66ab89f8ec36)
 - fix/partH-H2: Merge origin/main into fix/partH-H2 (keep H14 changelog, skill v2.6.2) (merge 70177ece7ea3)
+- fix/partH-H13: fix(skill75 H13): cross-fades finish before the first word; long gaps held on the speaking face (2.6.3) (merge e77d4b320704)
+- fix/partH-H12: Merge remote-tracking branch 'origin/main' into fix/partH-H12 (merge 648dcf64b8d4)
+- fix/partH-H11: Merge origin/main into fix/partH-H11; skill 2.6.5 (merge 007cc3f06247)
+- fix/partH-H5: Merge origin/main into fix/partH-H5 (H11/H12), skill v2.6.6 (merge 255131a0eac4)
+- fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
+- fix/partH-H1: Merge origin/main into fix/partH-H1 (rebump skill) (merge 233404c6eacf)
+- fix/partH-H4: Merge main into fix/partH-H4; renumber skill to 2.6.9 (merge 37c6e518b1a9)
+- fix/partH-H7: changelog: correct onboarding version reference (merge c24fb3ee8020)
+- fix/partH-H9: Merge origin/main into fix/partH-H9 (merge 7c34518ce7dc)
+- fix/partH-H9-changelog-markers: Fix: remove merge conflict markers from root CHANGELOG.md left by H9 merge (merge b40854e61227)
+- fix/partH-H3: Merge origin/main into fix/partH-H3; bump skill to 2.7.1; keep H8 smp no_echo/spoken_share; combine F7+H7 in music_director; keep H9 card CLI (merge 63f97d3b0cc9)
+- fix/sunorecipe-SNR001: G12: Suno song recipe is the default for every Suno music style (drama-song-ad-factory 2.7.2) (merge 7b5d72eae421)
+- fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos (merge e71a6ede72bd)
+- fix/partI-I5: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), drama-song-ad-factory 2.7.3 (merge 4f64488f6bad)
+- fix/partI-I6: drama-song-ad-factory I6: character library (save approved character, reuse via Use a saved character?); v2.7.4 (merge 020b98110d14)
+- fix/partI-I2: Merge origin/main; renumber I2 to 2.7.5 (I6 took 2.7.4) (merge 933b79feff35)
+- fix/partI-I7: Merge origin/main; renumber I7 to 2.7.6 (I2 took 2.7.5) (merge 24a4483bac5c)
+- fix/partI-I1: Merge origin/main; renumber I1 to 2.7.7 (I7 took 2.7.6) (merge 7b35987dd4f2)
+- fix/headless-NHL001: Merge origin/main into fix/headless-NHL001 (changelog conflict) (merge de835cfc9649)
+- fix/partI-I3: I3: merge main, renumber skill to 2.7.8 (merge 9608ecd8bfff)
+- fix/hook-HK001: I8: renumber changelog headers to 2.7.9 (merge e1563a2aa191)
+- fix/partI-I4: I4: merge main, renumber skill to 2.7.10 (merge c686f150f495)
 
 ## [hook-skill] — 2026-10-06
 
@@ -78,6 +110,23 @@ Now only CANCELLED, FAILED, COMPLETED and REAPED launches resolve a watch; a RET
 own journal shows every agent returned. The Workflow tool's reported `Transcript dir` (receipt `transcript_dir`) is
 used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
 `test_returned_run_live.py`.
+
+## [nine-router-setup 1.28.0] — 2026-10-08
+
+### DeepSeek and Agnes keys optional; OpenRouter DeepSeek route; combos no longer overwritten
+
+Owner order for the Christy Staples installer: use OpenRouter DeepSeek V4.1 Flash, no Agnes.
+
+- `setup-macos.sh`: `DEEPSEEK_API_KEY`, `AGNES_API_KEY` and `OLLAMA_API_KEY` are optional (placeholder
+  text counts as absent). Required: `OLLAMA_API_KEY` or `OPENROUTER_API_KEY`, plus a DeepSeek source.
+  New `--deepseek-route direct|openrouter` / `NINE_DEEPSEEK_ROUTE`: `openrouter` routes every DeepSeek
+  lane to `openrouter/deepseek/deepseek-v4.1-flash` (exact id checked in the live catalog). No Agnes
+  key: Agnes provider not created, members omitted from every combo. Smoke tests skip absent lanes.
+- `configure-nine-router.mjs`: existing combos (and their strategies) are never touched; missing ones
+  are created; created vs kept is logged and in the report. New `--update-combos` rewrites existing
+  ones. `NINEROUTER_CLI_TOKEN` is preferred over the default dashboard password (password stays as
+  fallback). No key or token value is printed.
+- Tests: `tests/test-nin001.sh` and `tests/nin001-configure.test.mjs` (fake 9Router).
 
 ## [nine-router-setup 1.27.0] — 2026-10-06
 

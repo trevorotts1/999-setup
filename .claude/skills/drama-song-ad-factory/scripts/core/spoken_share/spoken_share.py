@@ -70,6 +70,58 @@ DELIVERIES = ("spoken", "rap", "sung")
 #: what stops a rap-heavy cut from measuring under the floor by accident.
 SPOKEN_STYLE_DELIVERIES = frozenset({"spoken", "rap"})
 
+# ---- H8: ONE singing rule + ONE tolerance band (Trevor, 2026-10-08) --------
+# Trevor: "We always want to try to be within 5% of the goal. Once you get
+# past 5%, 5% to 7% gets a flag. Once you get past 10%, it's got to be
+# redone." Every share / first-sung / length / lip-sync-seconds goal in the
+# skill is judged by judge_gap() below; no check keeps its own tolerance.
+ACCEPT_PTS = 5      # within this many points of the goal: accept
+FLAG_PTS = 10       # past ACCEPT_PTS up to this: accept WITH A FLAG
+VERDICT_PASS = "PASS"
+VERDICT_FLAG = "FLAG"    # accepted, but the receipt must carry the flag
+VERDICT_FAIL = "FAIL"    # past FLAG_PTS: REDO (never keep the closest)
+
+#: The only hard reject when singing was chosen: no real singing, i.e. no
+#: sung stretch this long (seconds). Same number as the singing detector's.
+NO_REAL_SINGING_STRETCH_S = 6.0
+#: Sung segments closer together than this are one stretch.
+SUNG_STRETCH_JOIN_S = 0.25
+
+
+def judge_gap(gap_points, target_pct=None):
+    """Trevor's 5/10 band: ACCEPT within 5, FLAG over 5 up to 10, REDO over 10.
+
+    ``judge_gap(gap_points)`` -> VERDICT_PASS | VERDICT_FLAG | VERDICT_FAIL
+    for a gap in percentage points (sign ignored).
+    ``judge_gap(measured_pct, target_pct)`` -> {"gap_pts", "band"} with the
+    band ACCEPT | FLAG | REDO, for the target engine (first real singing).
+    """
+    if target_pct is not None:
+        gap = round(abs(float(gap_points) - float(target_pct)), 6)
+        return {"gap_pts": gap,
+                "band": (BAND_ACCEPT if gap <= TARGET_ACCEPT_PCT
+                         else BAND_FLAG if gap <= TARGET_FLAG_PCT
+                         else BAND_REDO)}
+    gap = round(abs(float(gap_points)), 6)
+    if gap <= ACCEPT_PTS:
+        return VERDICT_PASS
+    if gap <= FLAG_PTS:
+        return VERDICT_FLAG
+    return VERDICT_FAIL
+
+
+def judge_seconds(actual_s, goal_s, base_s, only=None):
+    """Band for a goal in seconds; the gap is points of ``base_s`` (the
+    runtime, or the goal itself for a length goal). ``only="short"`` counts
+    just a shortfall (lip-sync seconds: more is fine), ``only="late"`` just
+    an excess (first-sung: earlier is fine). Returns {verdict, gap_pts}.
+    """
+    diff = float(actual_s) - float(goal_s)
+    if (only == "short" and diff > 0) or (only == "late" and diff < 0):
+        diff = 0.0
+    gap = abs(diff) / float(base_s) * 100.0
+    return {"verdict": judge_gap(gap), "gap_pts": round(gap, 3)}
+
 
 class SpokenShareError(ValueError):
     """Malformed input -- a caller bug, never a domain verdict."""
@@ -252,19 +304,26 @@ def check_share(share, segments=None):
     reasons = []
     if share < 0.0 or share > 1.0:
         reasons.append("share %r is not a fraction in 0..1" % share)
-    if share < FLOOR:
-        reasons.append("spoken share %.1f%% below the floor %.0f%%"
-                       % (share_pct(share), SPOKEN_MIN_PCT))
-    if share > CAP:
-        reasons.append("spoken share %.1f%% above the ceiling %.0f%% "
-                       "(target %.0f%%, rap counts as spoken-style delivery)"
-                       % (share_pct(share), SPOKEN_MAX_PCT,
-                          SPOKEN_TARGET_PCT))
+    gap = round((share - TARGET) * 100.0, 6)
+    verdict = VERDICT_FAIL if reasons else judge_gap(gap)
+    if verdict == VERDICT_FAIL and not reasons:
+        reasons.append("spoken share %.1f%% is %.1f points from the %.0f%% "
+                       "goal, past %d: redo (rap counts as spoken-style "
+                       "delivery)" % (share_pct(share), abs(gap),
+                                      SPOKEN_TARGET_PCT, FLAG_PTS))
+    flags = []
+    if verdict == VERDICT_FLAG:
+        flags.append("spoken share %.1f%% is %.1f points from the %.0f%% "
+                     "goal (past %d, within %d): accepted with a flag"
+                     % (share_pct(share), abs(gap), SPOKEN_TARGET_PCT,
+                        ACCEPT_PTS, FLAG_PTS))
     result.update({
-        "verdict": "FAIL" if reasons else "PASS",
-        "in_band": FLOOR <= share <= CAP,
+        "verdict": verdict,
+        "in_band": abs(gap) <= ACCEPT_PTS,
+        "gap_pts": abs(gap),
         "delta_from_target": round(share - TARGET, 6),
         "reasons": reasons,
+        "flags": flags,
     })
     return result
 
@@ -272,24 +331,43 @@ def check_share(share, segments=None):
 def refusal(share, segments=None):
     """Compact refusal text for a FAILED share; empty string when it passes."""
     result = check_share(share, segments)
-    if result["verdict"] == "PASS":
+    if result["verdict"] != VERDICT_FAIL:
         return ""
     return "REFUSED spoken share %.1f%%: %s" % (
         result["share_pct"], "; ".join(result["reasons"]))
 
 
-def judge_gap(measured_pct, target_pct):
-    """The owner's 5/10 band for ONE measured goal, in percentage points:
-    ACCEPT within 5, FLAG over 5 up to 10, REDO over 10. Reusable by the
-    target engine for every numeric goal."""
-    gap = round(abs(float(measured_pct) - float(target_pct)), 6)
-    if gap <= TARGET_ACCEPT_PCT:
-        band_ = BAND_ACCEPT
-    elif gap <= TARGET_FLAG_PCT:
-        band_ = BAND_FLAG
-    else:
-        band_ = BAND_REDO
-    return {"gap_pts": gap, "band": band_}
+def longest_sung_stretch_s(segments):
+    """Longest unbroken sung stretch in the plan, in seconds."""
+    sung = sorted((st, en) for d, st, en, _s in _segments(segments)
+                  if d == "sung")
+    best = cur = 0.0
+    prev_end = None
+    for st, en in sung:
+        if prev_end is not None and st - prev_end <= SUNG_STRETCH_JOIN_S:
+            cur += en - max(st, prev_end)
+        else:
+            cur = en - st
+        prev_end = max(en, prev_end if prev_end is not None else en)
+        best = max(best, cur)
+    return round(best, 6)
+
+
+def check_real_singing(segments):
+    """THE singing rule, used by every check: singing was chosen, so the
+    take must hold one sung stretch of NO_REAL_SINGING_STRETCH_S. Nothing
+    else about singing is a hard reject; shares and timing use the band."""
+    stretch = longest_sung_stretch_s(segments)
+    ok = stretch + 1e-9 >= NO_REAL_SINGING_STRETCH_S
+    return {
+        "verdict": VERDICT_PASS if ok else VERDICT_FAIL,
+        "real_singing": ok,
+        "longest_sung_stretch_s": stretch,
+        "required_stretch_s": NO_REAL_SINGING_STRETCH_S,
+        "reasons": [] if ok else [
+            "no real singing: longest sung stretch %.1f s, needs %.0f s; "
+            "regenerate" % (stretch, NO_REAL_SINGING_STRETCH_S)],
+    }
 
 
 def segments_from_sung_stretches(stretches, total_s):
@@ -426,17 +504,32 @@ def seconds_for(length_s):
 
 
 def check_plan(length_s, segments, basis="planned"):
-    """QC verdict for one cut: the band AND the first-sung-line rule.
-
-    Both halves must pass. Returns their verdicts plus the measurement, so a
-    caller can refuse early with one readable sentence.
+    """QC verdict for one cut: the band, the first-sung target, the length
+    goal, and the one singing rule. All judged by Trevor's band; FAIL means
+    redo, FLAG means accepted with the flags in the receipt.
     """
     measured = measure_share(segments)
     share_check = check_share(measured["share"], segments)
     first_sung = check_first_sung(segments, basis)
+    real = check_real_singing(segments)
+    length_check = judge_seconds(measured["total_seconds"], length_s, length_s)
+    parts = (share_check, first_sung, length_check, real)
     reasons = list(share_check["reasons"]) + list(first_sung["reasons"])
+    flags = list(share_check["flags"]) + list(first_sung["flags"])
+    if length_check["verdict"] == VERDICT_FAIL:
+        reasons.append("cut runs %.1f s against a %.1f s goal (%.1f points "
+                       "off): redo" % (measured["total_seconds"],
+                                       float(length_s),
+                                       length_check["gap_pts"]))
+    elif length_check["verdict"] == VERDICT_FLAG:
+        flags.append("cut runs %.1f s against a %.1f s goal (%.1f points "
+                     "off): accepted with a flag"
+                     % (measured["total_seconds"], float(length_s),
+                        length_check["gap_pts"]))
+    verdict = (VERDICT_FAIL if any(p["verdict"] == VERDICT_FAIL for p in parts)
+               else VERDICT_FLAG if flags else VERDICT_PASS)
     return {
-        "verdict": "FAIL" if reasons else "PASS",
+        "verdict": verdict,
         "share": measured["share"],
         "share_pct": measured["share_pct"],
         "floor": FLOOR,
@@ -446,9 +539,11 @@ def check_plan(length_s, segments, basis="planned"):
         "measurement": measured,
         "share_check": share_check,
         "first_sung": first_sung,
-        "flags": list(first_sung["flags"]),
+        "length_check": length_check,
+        "real_singing": real,
         "rap_counts_as_spoken": True,
         "reasons": reasons,
+        "flags": flags,
         "checker_version": TOOL_VERSION,
         "source": SOURCE,
     }
@@ -457,13 +552,23 @@ def check_plan(length_s, segments, basis="planned"):
 def plan_refusal(length_s, segments, basis="planned"):
     """Compact refusal text for a FAILED plan; empty string when it passes."""
     result = check_plan(length_s, segments, basis)
-    if result["verdict"] == "PASS":
+    if result["verdict"] != VERDICT_FAIL:
         return ""
     return "REFUSED %ss plan: %s" % (length_s, "; ".join(result["reasons"]))
 
 
 __all__ = [
+    "ACCEPT_PTS",
     "CAP",
+    "FLAG_PTS",
+    "NO_REAL_SINGING_STRETCH_S",
+    "VERDICT_FAIL",
+    "VERDICT_FLAG",
+    "VERDICT_PASS",
+    "check_real_singing",
+    "judge_gap",
+    "judge_seconds",
+    "longest_sung_stretch_s",
     "DELIVERIES",
     "BAND_ACCEPT",
     "BAND_FLAG",
@@ -488,7 +593,6 @@ __all__ = [
     "check_plan",
     "check_share",
     "is_spoken_style",
-    "judge_gap",
     "measure_share",
     "plan_refusal",
     "refusal",

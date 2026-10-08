@@ -107,7 +107,34 @@ layer. When the canonical core changes:
 A one-sided core change is a lockstep defect (directive 2.3), not a
 style difference.
 
+## 6b. Pictures match the words (Part H H5)
+
+Stage order: audio, then timestamps, then shot plan, then pictures. Never
+generate pictures before the song exists. Plan shots with
+`shot_planner.plan_from_timestamps` from the REAL Suno timestamps; every shot
+names the line it shows (`shows_line_ids`) and its picture is generated at its
+window's length. No slow motion above 1.15x (`SLOWMO_OVER_LIMIT`). QC lists
+shot / time / line / match (`pictures_match_gate`) and fails any mismatch
+(`PICTURE_LINE_MISMATCH`); the assembler enforces both before any render.
+Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
+
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
+
+**Asking the six intake questions (H9).** Build them with
+`python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
+show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
+run each argv without a shell). Never type them free hand or send them as one
+line: one block per question, one numbered option per line, a blank line
+between questions. See `references/choice-card-spec.md` section 2.1.
+
+**Ask them one at a time (I7).** Do not send the whole card. Run
+`factory.py card --step` (add one `--reply <what the client said>` per answer so
+far, in order), show only the one message it prints, wait for the client's
+answer, run it again with that reply added, and repeat until it prints the
+recap. When the client replies yes to the recap, the command prints "Locked
+in" and you start. Each message holds one question, a one-sentence why,
+numbered options, and the RECOMMENDED option with its reason. See spec
+section 2.2.
 
 Shared with the OpenClaw twin. Field rules:
 `references/choice-card-spec.md`; human price snapshot:
