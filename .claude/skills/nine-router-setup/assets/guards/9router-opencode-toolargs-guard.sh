@@ -19,7 +19,22 @@
 set -uo pipefail
 CHECK=""; QUIET=0; ROOT=""
 for a in "$@"; do case "$a" in --check) CHECK="--check" ;; --quiet) QUIET=1 ;; *) ROOT="$a" ;; esac; done
-ROOT="${ROOT:-$HOME/.npm-global/lib/node_modules/9router}"
+# Resolve the 9Router install: npm root -g, then the running process, then known prefixes
+# (Homebrew /opt/homebrew, /usr/local, ~/.npm-global). NINE_KNOWN_PREFIXES overrides the list (tests).
+_resolve_9router_root() {
+  local d npmbin
+  for npmbin in /opt/homebrew/bin/npm /usr/local/bin/npm "$(command -v npm 2>/dev/null)"; do
+    [ -x "$npmbin" ] || continue
+    d="$("$npmbin" root -g 2>/dev/null)/9router"; [ -f "$d/package.json" ] && { echo "$d"; return; }
+  done
+  d="$(ps -axo command= 2>/dev/null | grep -o '/[^ ]*/node_modules/9router/' | head -1)"; d="${d%/}"
+  [ -n "$d" ] && [ -f "$d/package.json" ] && { echo "$d"; return; }
+  for d in ${NINE_KNOWN_PREFIXES:-/opt/homebrew/lib/node_modules /usr/local/lib/node_modules "$HOME/.npm-global/lib/node_modules"}; do
+    [ -f "$d/9router/package.json" ] && { echo "$d/9router"; return; }
+  done
+  echo "$HOME/.npm-global/lib/node_modules/9router"
+}
+ROOT="${ROOT:-$(_resolve_9router_root)}"
 P="$HOME/.9router/patches/opencode-toolargs"
 say(){ [ "$QUIET" = 1 ] || echo "$@"; }
 
@@ -53,7 +68,7 @@ if ! "$NODE" "$P/regression.cjs" "$ROOT" >/dev/null 2>&1 || ! "$NODE" "$P/failov
   echo "9router-toolargs-guard: re-applied fixes FAILED their regression tests — rolled back to the unpatched files." >&2
   exit 1
 fi
-if [ "$ROOT" = "$HOME/.npm-global/lib/node_modules/9router" ] && /usr/bin/nc -z 127.0.0.1 20128 >/dev/null 2>&1; then   # restart only the live install
+if [ "$ROOT" = "$(_resolve_9router_root)" ] && /usr/bin/nc -z 127.0.0.1 20128 >/dev/null 2>&1; then   # restart only the live install
   launchctl kickstart -k "gui/$(id -u)/com.blackceo.9router-localhost" >/dev/null 2>&1 \
     && say "9router-toolargs-guard: fixes re-applied and tested; router restarted to load them."
 fi
