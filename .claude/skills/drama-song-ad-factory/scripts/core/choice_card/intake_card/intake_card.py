@@ -273,14 +273,22 @@ def main(argv=None):
                     help="text: raw card for the Claude Code chat. "
                          "openclaw-json / telegram-json: one send payload per message.")
     ap.add_argument("--target", default="", help="Telegram chat id (send formats)")
+    ap.add_argument("--client-dir", default="",
+                    help="Client data folder: add 'Use a saved character?' when characters are saved (I6).")
     ap.add_argument("--step", action="store_true",
                     help="one question at a time: print only the NEXT message, "
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
     a = ap.parse_args(argv)
+    qs = list(QUESTIONS)
+    if a.client_dir:
+        from character_library import character_library as _cl
+        sq = _cl.saved_character_question(a.client_dir)
+        if sq:
+            qs.insert(0, sq)
     if a.step:
-        st = conversation(a.reply)
+        st = conversation(a.reply, qs)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:
@@ -289,9 +297,9 @@ def main(argv=None):
                 {"done": st["done"], "send": send(a.target, st["message"])}, indent=2) + "\n")
         return 0
     if a.format == "text":
-        sys.stdout.write(render_card() + "\n")      # raw newlines, no JSON escaping
+        sys.stdout.write(render_card(qs) + "\n")      # raw newlines, no JSON escaping
         return 0
-    msgs = render_messages()
+    msgs = render_messages(qs)
     if a.format == "openclaw-json":
         out = [openclaw_send_argv(a.target, m) for m in msgs]
     else:

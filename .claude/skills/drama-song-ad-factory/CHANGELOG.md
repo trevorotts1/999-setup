@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.3] - 2026-10-08 - I7 intake asked one question at a time
+## [2.7.5] - 2026-10-08 - I7 intake asked one question at a time
 
 - `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
   test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
@@ -8,6 +8,20 @@
   sixth answer, a recap and a request for "yes"; a line number reopens just that question.
 - `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
   this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
+
+## [2.7.4] - 2026-10-08 - Part I I6 character library
+
+- New `scripts/core/character_library/`: after a character is approved, one question ("Do you want to save <character> to your character library so you can reuse them in future ads?"), then a name; saves reference images, description and voice notes under the client's own data folder; later cards list "Use a saved character?".
+- `factory.py character` subcommand (ask, save, list, use, card); `card --client-dir` adds the saved-character question where the H9 intake card exists.
+- Test: `scripts/core/character_library/test_character_library_i6.py` (save + reuse round trip).
+
+## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+
+- New `scripts/core/ending_qc/` (same module and test as OpenClaw skill 75 v2.6.1): every sung
+  song request gets an `[Outro]`, a `[Resolve on final chord]` tag and resolved-ending style
+  words (`music_director.build_generate_request`); `check_ending` measures the last 2 s of the
+  master (level decays, last word not cut, picture fades to the end card, 4-5 s end card done by
+  target length minus 2 s). Test: `python3 scripts/core/ending_qc/test_ending_qc.py`.
 
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
