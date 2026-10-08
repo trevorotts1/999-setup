@@ -28,7 +28,22 @@ for a in "$@"; do
     *) ROOT="$a" ;;
   esac
 done
-ROOT="${ROOT:-$HOME/.npm-global/lib/node_modules/9router}"
+# Resolve the 9Router install: npm root -g, then the running process, then known prefixes
+# (Homebrew /opt/homebrew, /usr/local, ~/.npm-global). NINE_KNOWN_PREFIXES overrides the list (tests).
+_resolve_9router_root() {
+  local d npmbin
+  for npmbin in /opt/homebrew/bin/npm /usr/local/bin/npm "$(command -v npm 2>/dev/null)"; do
+    [ -x "$npmbin" ] || continue
+    d="$("$npmbin" root -g 2>/dev/null)/9router"; [ -f "$d/package.json" ] && { echo "$d"; return; }
+  done
+  d="$(ps -axo command= 2>/dev/null | grep -o '/[^ ]*/node_modules/9router/' | head -1)"; d="${d%/}"
+  [ -n "$d" ] && [ -f "$d/package.json" ] && { echo "$d"; return; }
+  for d in ${NINE_KNOWN_PREFIXES:-/opt/homebrew/lib/node_modules /usr/local/lib/node_modules "$HOME/.npm-global/lib/node_modules"}; do
+    [ -f "$d/9router/package.json" ] && { echo "$d/9router"; return; }
+  done
+  echo "$HOME/.npm-global/lib/node_modules/9router"
+}
+ROOT="${ROOT:-$(_resolve_9router_root)}"
 SUITE="$HOME/.9router/patches/glm-5.3-thinking/regression-v2.cjs"
 GUARD="$HOME/.local/bin/9router-glm53-thinking-guard.sh"
 [ -x "$GUARD" ] || GUARD="$HOME/.9router/patches/glm-5.3-thinking/9router-glm53-thinking-guard.sh"

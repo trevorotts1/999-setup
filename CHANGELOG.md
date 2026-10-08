@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
+
 - fix/partI-I1: drama-song-ad-factory 2.7.7: captions spell-checked, exact website asked at intake and kept verbatim
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
 - fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt

@@ -8,6 +8,14 @@ STATE_FILE="$STATE_DIR/router-session.json"
 KEYCHAIN_SERVICE="BlackCEO-999"
 KEYCHAIN_ACCOUNT="9router-api-token"
 
+KEY_FILE="$HOME/.9router/gateway-key"
+
+store_token_file() {
+  ( umask 077; mkdir -p "$(dirname "$KEY_FILE")" && chmod 700 "$(dirname "$KEY_FILE")" \
+      && printf '%s' "$1" > "$KEY_FILE" ) || { echo "protect-local-state: cannot write $KEY_FILE" >&2; exit 1; }
+  chmod 600 "$KEY_FILE"
+}
+
 log() { printf '[protect-local-state] %s\n' "$*" >&2; }
 
 # Usage: protect-local-state.sh set-token <token>
@@ -34,10 +42,10 @@ set_token() {
        -w "$token" -U -T /usr/bin/security >/dev/null 2>&1; then
     log "Keychain item stored in the default login keychain."
   else
-    # Surface the real error this time (no stderr suppression) so the caller
-    # gets one precise Keychain blocker instead of a silent failure.
-    security add-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" \
-         -w "$token" -U -T /usr/bin/security
+    # Keychain locked / no user interaction (SSH, cron, fleet rollout). Fall back
+    # to the owner-only file the launcher key helper already reads first.
+    store_token_file "$token"
+    log "Keychain unavailable (locked or no user interaction); token stored in $KEY_FILE (mode 600) instead."
   fi
   # Drop the token from the environment immediately.
   unset token
@@ -55,6 +63,11 @@ get_token() {
   out="$(security find-generic-password -a "$KEYCHAIN_ACCOUNT" -s "$KEYCHAIN_SERVICE" -w 2>&1)" || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '%s' "$out"
+    return 0
+  fi
+  # Keychain unreadable (locked / not found): the file token is the headless fallback.
+  if [ -s "$KEY_FILE" ]; then
+    /usr/bin/tr -d '\n' < "$KEY_FILE"
     return 0
   fi
   if [ "$rc" -eq 44 ]; then
