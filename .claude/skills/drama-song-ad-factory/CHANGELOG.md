@@ -1,5 +1,16 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.10] - 2026-10-08 - Part H H7: captions use the approved words + protected names
+
+Same fix as onboarding Skill 75 v2.6.4 (Kiesett "Stale" captioned "still").
+New `scripts/core/protected_names.py` + `test_protected_names_h7.py`: sheet
+build gate, sung-take words check, sheet-text captions timed from Suno
+timestamps, caption QC. Wired into `lyric_writer`, `music_qc`,
+`delivery_variants` (byte-identical to canonical) and `music_director`
+(`build_generate_request(packet_lines=, protected=)`; this packaged copy still
+predates the F7 `words_match` guard, a full re-package from canonical is a
+separate step).
+
 ## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
 
 Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
