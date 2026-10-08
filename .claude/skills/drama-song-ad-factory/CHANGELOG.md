@@ -1,5 +1,33 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.7] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+
+- `core/protected_names.py` gains `check_spelling` (every caption word is a real word or a protected
+  word; unknown word fails `CAPTION_MISSPELLED` with the word shown) and `check_website` (the exact
+  address verbatim in lyrics, captions and end card). Bundled `core/english_words.txt.gz`.
+- `delivery_variants.checks.check_captions` runs the spelling check.
+- Intake asks "What is the exact website address you want people to go to?" when the ad sends people
+  to a website; stored as `website` and as a protected word.
+- Test: `core/test_caption_spelling_i1.py` (same module and test as OpenClaw skill 75 v2.6.5).
+
+## [2.7.6] - 2026-10-08 - I7 intake asked one question at a time
+
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
+  test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
+  numbered options one per line, the RECOMMENDED option with its reason, then waits. After the
+  sixth answer, a recap and a request for "yes"; a line number reopens just that question.
+- `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
+  this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
+
+## [2.7.5] - 2026-10-08 - I2 scenes must match the song and the faces
+
+- New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
+  line, meaning, place and action, face emotion at storyboard time; after clips exist, sampled
+  frames are checked against them (off-topic scene or a smile under a pain line fails) and only
+  the failing shots are regenerated.
+- Adds `scripts/core/face_emotion/` (Part G G6), which `scene_match` builds on.
+- `SKILL.md` gains the "Scenes must match the song and the faces" section.
+
 ## [2.7.4] - 2026-10-08 - Part I I6 character library
 
 - New `scripts/core/character_library/`: after a character is approved, one question ("Do you want to save <character> to your character library so you can reuse them in future ads?"), then a name; saves reference images, description and voice notes under the client's own data folder; later cards list "Use a saved character?".
