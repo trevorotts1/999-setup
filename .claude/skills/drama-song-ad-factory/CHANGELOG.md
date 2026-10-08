@@ -1,5 +1,17 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
+
+- New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
+  measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
+  Kiesett +0.066 s) and cuts/places lip-sync clips compensated, at the
+  line's real Suno timestamp, never re-timed. Same files as onboarding
+  skill 75 v2.6.1.
+- `final_assembler`: plan carries `lip_sync_line_ids` / `lip_lead_s`; new
+  gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
+- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
+  `final_assembler/test_lipsync_placement_h1.py`.
+
 ## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
 
 `scripts/core/spoken_share/` (the constants module) now holds the single
