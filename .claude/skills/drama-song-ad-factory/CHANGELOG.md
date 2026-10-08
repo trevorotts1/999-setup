@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.6] - 2026-10-08 - H10 voice matches the character on screen
+
+- `scripts/core/qc_voice_match/line_voice_fit.py` (+ test): each line's median pitch is measured in the vocal stem against the declared band of the character shown; Trevor's 5/10 target rule (<=5 accept, 5-10 accept with flag, >10 `VOICE_FACE_MISMATCH` -> regenerate that take, never keep the closest); numbers in the receipt. Mirrors onboarding skill 75 v2.6.2.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
