@@ -21,17 +21,16 @@ from __future__ import annotations
 import array
 import subprocess
 
+try:                                   # package import
+    from . import image_gate
+except ImportError:                    # script import (tests run from here)
+    import image_gate
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
 _gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..', '..'))
 if _gcore not in _gsys.path:
     _gsys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
-
-try:                                   # package import
-    from . import image_gate
-except ImportError:                    # script import (tests run from here)
-    import image_gate
 
 TOOL_NAME = "lip_gate"
 SCHEMA_VERSION = "1.0.0"
