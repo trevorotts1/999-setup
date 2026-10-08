@@ -319,6 +319,19 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
   source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
+- **Close-up picture gate, enforced in the dispatcher (LPG001, 2026-10-08):** the 30-Day
+  Reset close-up (face 28% of frame, smile) and the Perfect Daughter close-up (34%, teeth,
+  roll -7.8) went to paid lip-sync unmeasured. Now `lip_gate/picture_gate.gate_picture()`
+  MEASURES every close-up with mediapipe FaceLandmarker (face height 35-45% of frame, roll
+  and yaw, smile, jawOpen, teeth, sharpness, exactly one face), crops a too-small face
+  locally for free and re-measures, then (only if smile/teeth/tilt fail) regenerates it
+  (gpt-image-2 image-to-image from the 3D character, "neutral expression, lips closed,
+  facing camera, head level"; paid, counts against the author's cap, max 2). Every picture
+  tried gets a receipt (`<dir>/.lipgate/<sha256>.json`: numbers + PASS/FAIL).
+  `kie_dispatch.dispatch` REFUSES any `ai-avatar` (Kling lip-sync) job with
+  `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]` has a PASS receipt for
+  its exact bytes. No receipt, FAIL, changed file, or mediapipe/face model missing
+  (`LIPSYNC_FACE_MODEL` or `assets/face_landmarker.task`) = refused, never a silent pass.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)

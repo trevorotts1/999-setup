@@ -112,6 +112,26 @@ def card_gate_refusal(request):
                                "answers before any paid job."}
     return None
 
+
+def lipsync_picture_refusal(model, request):
+    """LPG001 hard block: a kling/ai-avatar (lip-sync) job needs a PASS picture-
+    gate receipt for the exact bytes (sha256) of request["lipsync_image_path"].
+    -> None (not lip-sync, or receipt PASS) else the refusal text. Fail-closed:
+    a missing path, receipt, or an unimportable gate is a refusal."""
+    if "ai-avatar" not in str(model or "").lower():
+        return None
+    req = request if isinstance(request, dict) else {}
+    try:
+        lg = str(Path(__file__).resolve().parents[1] / "lip_sync" / "lip_gate")
+        if lg not in sys.path:
+            sys.path.insert(0, lg)
+        import picture_gate as _PG
+        _PG.require_receipt(req.get("lipsync_image_path"),
+                            req.get("lipsync_receipt_dir"))
+    except Exception as exc:                                # noqa: BLE001
+        return str(exc) or type(exc).__name__
+    return None
+
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
@@ -592,6 +612,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
     Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
     """
+    pic = lipsync_picture_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
+        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
+                        pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
