@@ -1,5 +1,22 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.22] - 2026-10-08 - Skill 75 parity with onboarding v2.8.4 (PAR001 batch)
+
+Port of onboarding main 3aff3fa1 (skill v2.8.4), per `15-SKILL75-999-PARITY.md`. This entry is the release record for the whole PAR001 batch; each unit lands in its own PR (branches `port/par001-*`) and is described by its own line below. This unit (9, docs and release) carries the docs, VERSION, SKILL.md version and this changelog.
+
+- Unit 1 (G1 delivery map): music_styles delivery map and contradicting-tag gate, `no_echo` contradiction gate, suno_recipe spoken-once exemption.
+- Unit 2 (G5 receipts, H4 wiring): `singing_detector/receipt_evidence.py`, measured sung/spoken/rap/no-voice receipts in `sung_vocal_guard`, assembler `_receipt_evidence`/`_attach_evidence`, assembler `face_speaks_gate` wiring.
+- Units 3-4 (G8 target engine, G2 lyric structure, G9 words-fit): `target_engine` package, `lyric_writer/lyric_structure.py`, `words_fit/` preflight and the 15% Suno duration headroom.
+- Units 5-6 (F16 delivery video-model gate, F3 lipsync_cuts, H10 line_voice_fit): `delivery_checklist` calls `model_lock.check_video_model_delivery`, `audio_c3/lipsync_cuts.py`, `qc_voice_match/line_voice_fit.py`.
+- Units 7-8 (W4-PROOF, CI): `scripts/proof_run/run_proof.py`, workflows that run the skill 75 tests, `qc-operator-path-leak.sh`, PREREQS faster-whisper and numpy.
+- Unit 9 (this PR, docs only):
+  - `QC.md`: new H4 (speaking faces and lip-sync coverage), I5 (clean ending), H7 (protected names and captions) and H10 (voice fits the character) sections; the master-provenance receipt wording (`produced_by.module`, `master_sha256`, builders call the skill's modules); the I1 website rule now says the address is stored as a protected word.
+  - `SKILL.md`: new "Captions and protected names (Part H, H7)" section.
+  - `references/stage-runbook.md`: onboarding's runbook with 999 paths (Suno `music` stage runs `kie_dispatch` with full flags, qc_gate commands for continuity-bible, final-qc and delivery, the H14 song-files note). `test_factory_next.py` still parses it.
+  - `references/choice-card-spec.md`: All Suno voice wording (spoken words are performed inside the one Suno track) and the E6 lip-sync floor wording.
+  - `INSTRUCTIONS.md` and `references/price-menu.md`: checked against onboarding, no content gap (999's INSTRUCTIONS is its own layout; price-menu is byte-identical).
+  - VERSION and SKILL.md frontmatter: 2.7.21 to 2.7.22.
+
 ## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
 
 Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.
