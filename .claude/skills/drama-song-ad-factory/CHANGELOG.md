@@ -1,5 +1,16 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
+
+- New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
+  text carries the sung/spoken map, the lyric sheet needs a repeated sung hook built from the
+  client's own words, singing starts early (15% of runtime, 5/10 band), takes are judged from
+  measured segments only, never labels.
+- `music_director.build_generate_request` takes `style_id` and `client_text` and refuses a raw
+  Suno style prompt that skipped the recipe (kept alongside the H7 `protected` check).
+- Only the Velvet Voiceover id (`velvet_voiceover`) is exempt.
+- `SKILL.md` and `references/choice-card-spec.md` gain the "Suno song recipe" section.
+
 ## [2.7.1] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
 
 `scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
