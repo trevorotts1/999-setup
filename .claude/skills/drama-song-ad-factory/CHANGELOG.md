@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.9] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+## [2.7.0] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
 
 `scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
 and H12 master-provenance code in `final_assembler/assembler.py` and the H2
@@ -11,7 +11,18 @@ lip_gate, H14 song_files, qc_gate.py and qc-schema.json changes are kept.
   mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
   now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
 - `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
-  frontmatter `version:` 2.6.8 -> 2.6.9 (follows onboarding `skill-version.txt`).
+  frontmatter `version:` 2.6.9 -> 2.7.0 (follows onboarding `skill-version.txt`).
+
+## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+
+Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
+lists every shot where a face is visibly speaking and fails
+`FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
+line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
+grace) and `check_coverage_band` measures it. Test:
+`shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
+ships with the onboarding core; this copy's assembler predates Part E, so it
+lands with the next core resync.
 
 ## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
 
