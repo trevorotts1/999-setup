@@ -352,7 +352,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   measures mouth opening (mediapipe face landmarks, through the load governor) against
   the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
   ACCEPT_WITH_FLAG (WEAK: accepted and used, note in the receipt); FAIL (NOT_SYNCED on
-  a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
+  a SPOKEN line: the take is kept and flagged, see the process bullet below, never
+  re-rolled by the checker); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
   person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
   no face model, cartoon face, silent audio, too short) is reported, never a pass. At
   most 2 paid lip-sync jobs per segment, then the best-measured take is kept
@@ -378,9 +379,9 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   (placed with `stem_offset.cut_plan`). The prompt says SINGS on sung lines and SAYS on spoken ones, one emotion,
   minimal head movement, steady camera (`lip_gate.kling_prompt`). **At most 2 paid Kling jobs per segment,
   every name variant of the segment counted; the code refuses a 3rd** (`lip_gate.run_gate`, `lipsync_clips.count_jobs`).
-  Try 2 runs ONLY on a hard defect (a FAIL on a spoken line, frozen or garbled face, text across the chest,
-  hand over the mouth, wrong face), never on ACCEPT_WITH_FLAG, UNDETERMINED or UNMEASURABLE, and ONLY with a changed input (the next-best
-  window); an identical resubmit is refused. After the tries the best-measured take is kept and the receipt says
+  Try 2 runs ONLY on a PERSON'S call (rule 4 of the lip-sync process bullet below: a person marks a visible
+  defect such as frozen or garbled face, text across the chest, hand over the mouth, wrong face), never on a checker verdict
+  (FAIL included), and ONLY with a changed input (the next-best window or a new close-up); an identical resubmit is refused. After the tries the best-measured take is kept and the receipt says
   `KEPT_BEST_OF_2 (tN)` with the verdict, the numbers, the flag and an 8-frame mouth strip. Every paid call goes through
   `load_governor.kie_request(generation=True)`; the landmark extraction goes through `heavy_slot`. The price card is worst case
   seconds x the Skill 74 rate x 2 tries. **Sync is measured by `sync_check`** (the calibrated gate, sync-check bullet above); `event_sync` is advisory only.
@@ -391,6 +392,33 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   never another character, never a mixed vocal stem. Narrator, phone, voicemail
   and laptop voices may play as voice-over but are never lip-synced onto a
   person.
+- **Lip-sync process (Trevor approved, 2026-10-08, first used on the Stephanie Brown
+  ads; LSP001, built on LSC001).** Every run follows these six rules
+  (`lip_sync/lip_gate/lip_process.py`):
+  1. **Reuse first.** Before any paid lip-sync job, re-measure every take already on
+     disk for the segment with the sync check and keep the best: SYNCED, then WEAK,
+     then NOT_SYNCED, then by correlation; a take with a visible defect flag is dropped.
+     No new job where a usable take exists (`pick_kept`, `retry_allowed`).
+  2. **Keep the best.** A SUNG line the checker cannot confirm keeps its best take,
+     tagged `KEPT_BEST (UNDETERMINED, sung)`. A borderline spoken line is kept, flagged
+     (`KEPT_BEST (spoken, margin)`). A WEAK take is kept with the WEAK flag.
+  3. **Mouth strips.** Every UNDETERMINED or flagged segment gets an 8-frame mouth strip
+     image at `<delivery folder>/mouth-strips/<segment>.png` (`mouth_strip_argv`), and
+     the receipt lists every strip path for a person to look at.
+  4. **Retry only on a person's call.** A paid retry happens only when a person marks a
+     visible defect on that segment (a defects file, or a receipt field
+     `person_verdict` = "DEFECT"), AND the segment has had fewer than 2 jobs (all name
+     variants counted), AND the retry uses a CHANGED input (a new phrase-boundary cut or
+     a new close-up). No automatic paid retry on any checker verdict.
+  5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
+     tail); place it at the Suno word timestamp, corrected by the measured stem offset
+     (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
+     conform to the native fps by DROPPING frames, never inventing them (no
+     minterpolate on lip-sync clips); all ffmpeg through `load_governor` (`heavy_slot`,
+     bounded threads) (`edit_plan`).
+  6. **QC.** Checklist items 8 and 11 accept `KEPT_BEST` and flagged rows that carry a
+     strip path (`lip_gate.qc_check`). A receipt row lists the take kept, jobs used
+     (n of 2), the verdict and numbers, the flag and the strip path (`receipt_row`).
 - **Speaker contract:** the person visible while a line plays is the one
   speaking it, or the voice's source device. QC checks the picture for every
   spoken line, and measures pitch against the character's gender range with
