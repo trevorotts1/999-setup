@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.6] - 2026-10-08 - H8: one singing rule, one tolerance band
+## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
 
 `scripts/core/spoken_share/` (the constants module) now holds the single
 singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
@@ -10,6 +10,13 @@ within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
 Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
 lip-sync coverage modules are not in this distribution yet; they pick the
 band up when they are ported.
+
+## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
+
+- New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
+  `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
+  above 1.15x and picture/line mismatches before any render.
+- INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
 
 ## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
 
