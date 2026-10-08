@@ -51,6 +51,7 @@
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos (merge e71a6ede72bd)
 - fix/partI-I5: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), drama-song-ad-factory 2.7.3 (merge 4f64488f6bad)
 - fix/partI-I6: drama-song-ad-factory I6: character library (save approved character, reuse via Use a saved character?); v2.7.4 (merge 020b98110d14)
+- fix/partI-I2: Merge origin/main; renumber I2 to 2.7.5 (I6 took 2.7.4) (merge 933b79feff35)
 
 ## [hook-skill] — 2026-10-06
 
