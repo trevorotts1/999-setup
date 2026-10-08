@@ -8,6 +8,10 @@ measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
 better input, then a one-time single-line InfiniTalk A/B keeping whichever
 measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
 
+## [2.4.6] - 2026-10-08 - H14 song files in every delivery
+
+- Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
