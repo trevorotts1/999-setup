@@ -107,15 +107,19 @@ async function main() {
   //    must route to Kimi K2.6. 1x1 transparent PNG.
   const onePxPng =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-  const vision = await client.chat("ds/deepseek-v4-flash", {
-    maxTokens: 32,
-    prompt: "describe this image",
-    images: [{ type: "image", source: { type: "base64", media_type: "image/png", data: onePxPng } }],
-  });
-  // A 200 means capacity adapter succeeded (may or may not have redirected, but the
-  // request was satisfied). We additionally require that a text-only lane accepted
-  // the image — if the adapter were broken we'd get a 4xx modality error.
-  check("Vision auto-switch smoke", vision.status === 200, `HTTP ${vision.status}`);
+  if (skipOl) {
+    console.log("SKIP  Vision auto-switch (no Ollama lane to route images to)");
+  } else {
+    const vision = await client.chat(process.env.DEEPSEEK_PROBE_ROUTE || "ds/deepseek-v4-flash", {
+      maxTokens: 32,
+      prompt: "describe this image",
+      images: [{ type: "image", source: { type: "base64", media_type: "image/png", data: onePxPng } }],
+    });
+    // A 200 means capacity adapter succeeded (may or may not have redirected, but the
+    // request was satisfied). We additionally require that a text-only lane accepted
+    // the image — if the adapter were broken we'd get a 4xx modality error.
+    check("Vision auto-switch smoke", vision.status === 200, `HTTP ${vision.status}`);
+  }
 
   // 4. Fallback chains — DeepSeek -> Agnes, one per lane. Non-destructive: we can't
   //    force an upstream failure without corrupting the real key, so we verify each

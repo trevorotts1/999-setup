@@ -70,6 +70,14 @@ Valid `OLLAMA_PLAN`: `free`, `pro`, `max`. Valid `AGNES_PLAN`: `starter`, `plus`
 `OPENROUTER_API_KEY` is optional — leave the placeholder (or omit the line) and setup
 skips OpenRouter; add a real key and setup wires it.
 
+`DEEPSEEK_API_KEY` and `AGNES_API_KEY` are optional too (delete the line or leave the
+placeholder to skip). You need `OLLAMA_API_KEY` or `OPENROUTER_API_KEY`, plus a DeepSeek source:
+a DeepSeek key, or `OPENROUTER_API_KEY` with `--deepseek-route openrouter` (or
+`NINE_DEEPSEEK_ROUTE=openrouter`), which routes every DeepSeek lane to
+`openrouter/deepseek/deepseek-v4.1-flash`. No Agnes key means Agnes is left out of every
+combo. Re-running setup never overwrites combos that already exist; add `--update-combos`
+to `setup-macos.sh` to rewrite them. Test: `bash .claude/skills/nine-router-setup/tests/test-nin001.sh`.
+
 Your keys never leave this machine. They are read once, loaded into the local router,
 and never printed.
 
@@ -238,7 +246,7 @@ their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.37.0,
-`nine-router-setup` 1.27.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
+`nine-router-setup` 1.28.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
 `blackceo-signature-page` 1.2.5, `hook-skill` 1.2.0, `kiss` 1.0.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all bundled skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
