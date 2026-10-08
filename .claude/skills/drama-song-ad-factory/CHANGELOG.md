@@ -1,5 +1,19 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.10] - 2026-10-08 - Part I I4: masters end 2 seconds early
+
+- New `scripts/core/master_length/` (same module and tests as OpenClaw skill 75 v2.6.1): a chosen
+  length L delivers a master of at most L-2 seconds (60 to 58, 30 to 28, 90 to 88, 120 to 118).
+  Hard maximum, not a band. Song, shot plan and end card are planned to L-2; QC (`final_edit`
+  record, reason `MASTER_TOO_LONG`) fails any longer master.
+- Intake summary now carries `master_max_s`.
+- Enforcement (repair): `qc_gate.evaluate(..., master={chosen_length_s, measured_s})` is mandatory
+  whenever `final_edit` is required (CLI `--chosen-length-s`, `--master-s`); a 62 s master on a 60 s
+  video fails `MASTER_TOO_LONG`, a missing master is `MASTER_LENGTH_MISSING`.
+  `final_assembler.assemble(chosen_length_s=)` (or timeline key `chosen_length_s`) refuses an over-long
+  plan, an end card at or after L-2, and an over-long rendered file. `shot_planner.bind_plan(chosen_length_s=)`
+  rejects a song or shot past L-2.
+
 ## [2.7.9] - 2026-10-08 - I8 sung hook and repeat formula
 
 - New `scripts/core/sung_hook/` (same module and test as OpenClaw skill 75 v2.6.7). Every sung

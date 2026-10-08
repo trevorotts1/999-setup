@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.9
+version: 2.7.10
 ---
 
 # Drama Song Ad Factory
@@ -222,6 +222,12 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
   **10-minute long version**. Each length is its own song and timing map.
+- **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
+  at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
+  becomes 118), because a 60-second video that runs to 1:02 cannot be used in
+  Stories, Reels or a Facebook ad. This is a hard maximum, not a band: the
+  song, the shot plan and the end card are all planned to L-2, and final QC
+  fails any master longer than that (`core/master_length`).
 - **Shapes:** 9:16, 16:9, or both, each generated natively - never a crop of
   the other.
 - **Frame rate (Part H H3, replaces the old "output = the clips' native

@@ -48,6 +48,8 @@ MAKERS = {dc.CHECK_ID: "final_assembler/1.0.0",
 # gate 4 "Final" required list with the G7 checker on it (the wiring the
 # run's Final edit QC uses from now on)
 FINAL_GATE_REQUIRED = ["final_edit", "delivery_checklist"]
+# Part I I4: final_edit needs the master length (60 s video, 58 s master)
+GOOD_MASTER = {"chosen_length_s": 60, "measured_s": 58}
 
 
 def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
@@ -191,7 +193,8 @@ class G7DoneWhen(unittest.TestCase):
         # final_edit record passes, so the FAIL is the checklist alone
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED,
+                                master=GOOD_MASTER)
         self.assertEqual(gate["gate"], "FAIL")
         self.assertEqual(gate["repair_scope"], [dc.CHECK_ID])
         self.assertNotEqual(gate["gate"], "BLOCKED")
@@ -355,7 +358,8 @@ class G7DoneWhen(unittest.TestCase):
         err = qc_gate.validate_record(rec)
         self.assertIsNone(err, err)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED,
+                                master=GOOD_MASTER)
         self.assertEqual(gate["gate"], "PASS", gate["failures"])
 
     def test_final_edit_gate_4_requires_the_checklist(self):
@@ -375,7 +379,8 @@ class G7DoneWhen(unittest.TestCase):
         res = dc.evaluate(receipt)
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED,
+                                master=GOOD_MASTER)
         self.assertEqual(gate["gate"], "FAIL")
         self.assertIn(dc.CHECK_ID, gate["repair_scope"])
 
@@ -385,7 +390,8 @@ class G7DoneWhen(unittest.TestCase):
         makers = {dc.CHECK_ID: REVIEWER["identity"],
                   "final-edit-e2e": "final_qc/1.0.0"}
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                makers, FINAL_GATE_REQUIRED)
+                                makers, FINAL_GATE_REQUIRED,
+                                master=GOOD_MASTER)
         self.assertEqual(gate["gate"], "BLOCKED")
         codes = {f["code"] for f in gate["failures"]}
         self.assertIn("MAKER_SELF_REVIEW", codes)
