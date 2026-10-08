@@ -18,10 +18,15 @@ independently maintained copy of this skill.
    table in this skill. If a required role or model is absent from the live
    catalog, stop with a precise error naming the model and the catalog
    checked; never silently substitute.
+   The user's own choice always wins: use the session's model or the aliases
+   the user configured, never a model or agent this skill picked. Say loudly
+   what is missing and let the user pick.
 4. Orchestrate: Claude-Nine dispatches the build through workflows and
    subagents within the repository's staffing ceilings instead of performing
    the whole production personally. Every dispatched worker invokes the same
    control entrypoint; a worker's prompt cannot bypass a failed shared guard.
+   The main window only orchestrates; all work runs in visible workflows and
+   agents, and a broken one is reported at once, never allowed to fail silently.
 5. Before any paid work: `intake` then `preflight` must exit 0 (or an
    understood `waiting`/`parked` that a human resolves). Read the envelope's
    `reason_code`; do not reinterpret prose around a nonzero exit.
