@@ -88,6 +88,10 @@
 - unit/F15-999: Merge F14-999 into F15-999: keep both sides' content (merge 80d8a8000c42)
 - fix/mgb005-integration: drama-song-ad-factory 2.7.21: song_dispatch through the load governor, VERSION/SKILL agreement (merge 049a4c49b1f4)
 - merge/mgb007-999: Fix merge of pr85: music_director/__init__ = onboarding bytes (G9 words_fit + G4 target engine) (merge a4719b4ef6a5)
+- fix/lipsync-consolidated-LSC001: SKILL.md: name the real job counter (merge 30b228d3bd9d)
+- fix/lipsync-process-LSP001: skill 75: approved lip-sync process (LSP001) - reuse first, KEPT_BEST, mouth strips, retry only on a person's call, edit placement, QC (merge 29752ab7f7ab)
+- fix/par003-final-assembler-parity: skill 75 final_assembler: byte parity with onboarding main (PAR003) (merge 89417e6ad835)
+- port/par002-G3-WIRE: Merge main (#81 G5 receipts + H4 gate) into port/par002-G3-WIRE (merge 9231c8bacd09)
 
 ## [hook-skill] — 2026-10-06
 
