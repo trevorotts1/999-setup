@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.20] - 2026-10-08 - F14 video model lock ported from onboarding main
+
+Video jobs are locked to the choice-card model: only models on references/price-menu.md dispatch (seedance-1.5-pro refused), a different menu model is VIDEO_MODEL_MISMATCH, no lock is VIDEO_MODEL_LOCK_MISSING fail-closed, and a definite submit error is VIDEO_MODEL_DOWN with no automatic fallback. New core/kie_dispatch/model_lock.py plus scripts/qc-no-direct-kie.sh; dispatch runs the gate before any ledger row.
+
 ## [2.7.19] - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
 
 Measured bug (detector check 1536): a sung share built on the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100% sung, 10 of 13 say voices 74-100%, a rap control 91.7%). Real Suno sung hooks read 96% sung and real Suno spoken lines read spoken, so the old numbers looked fine on stems with natural pauses.
