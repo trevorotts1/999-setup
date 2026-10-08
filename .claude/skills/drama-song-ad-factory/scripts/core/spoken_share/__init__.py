@@ -1,5 +1,5 @@
 """spoken_share package: the D15 spoken-share retarget (45% target, 40-55
-band, every length and every style, first sung line within about 10 seconds).
+band, every length and every style, first real singing targeted at 15% of runtime).
 Stdlib only, no network, no spend."""
 from .spoken_share import (  # noqa: F401
     ACCEPT_PTS,
@@ -14,7 +14,13 @@ from .spoken_share import (  # noqa: F401
     longest_sung_stretch_s,
     CAP,
     DELIVERIES,
-    FIRST_SUNG_WITHIN_SECONDS,
+    BAND_ACCEPT,
+    BAND_FLAG,
+    BAND_REDO,
+    FIRST_SUNG_TARGET_PCT,
+    REAL_SINGING_STRETCH_S,
+    TARGET_ACCEPT_PCT,
+    TARGET_FLAG_PCT,
     FLOOR,
     SCHEMA_VERSION,
     SOURCE,
@@ -31,11 +37,14 @@ from .spoken_share import (  # noqa: F401
     check_plan,
     check_share,
     is_spoken_style,
+    judge_gap,
     measure_share,
     plan_refusal,
     refusal,
     seconds_for,
+    segments_from_sung_stretches,
     share_pct,
+    steer_first_sung,
 )
 
 __all__ = [
@@ -51,7 +60,13 @@ __all__ = [
     "longest_sung_stretch_s",
     "CAP",
     "DELIVERIES",
-    "FIRST_SUNG_WITHIN_SECONDS",
+    "BAND_ACCEPT",
+    "BAND_FLAG",
+    "BAND_REDO",
+    "FIRST_SUNG_TARGET_PCT",
+    "REAL_SINGING_STRETCH_S",
+    "TARGET_ACCEPT_PCT",
+    "TARGET_FLAG_PCT",
     "FLOOR",
     "SCHEMA_VERSION",
     "SOURCE",
@@ -68,9 +83,12 @@ __all__ = [
     "check_plan",
     "check_share",
     "is_spoken_style",
+    "judge_gap",
     "measure_share",
     "plan_refusal",
     "refusal",
     "seconds_for",
+    "segments_from_sung_stretches",
     "share_pct",
+    "steer_first_sung",
 ]
