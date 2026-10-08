@@ -69,3 +69,12 @@ preflight; in shadow or off it stops before the approval card and tells the
 client generation is not switched on for this box — orchestration must not
 route around that stop. Set `KIE_LIVE_ADAPTER_PATH` only when the adapter
 sits outside every location the dispatcher searches.
+
+## Main window orchestrates only; nothing fails silently
+
+In Claude-Nine (and Claude Code) the MAIN window only operates and
+orchestrates. ALL work is done by VISIBLE workflows and agents (the Workflow
+tool, or named agents shown in /workflows); the main session reads their
+verdicts and reports them. Anything wrong, broken or not working is NEVER
+allowed to fail silently: it is a named entry in the final receipt and in the
+message to the user. The user picks the agents and models; this skill does not.
