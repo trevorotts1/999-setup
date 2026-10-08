@@ -1,5 +1,15 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+
+- `core/protected_names.py` gains `check_spelling` (every caption word is a real word or a protected
+  word; unknown word fails `CAPTION_MISSPELLED` with the word shown) and `check_website` (the exact
+  address verbatim in lyrics, captions and end card). Bundled `core/english_words.txt.gz`.
+- `delivery_variants.checks.check_captions` runs the spelling check.
+- Intake asks "What is the exact website address you want people to go to?" when the ad sends people
+  to a website; stored as `website` and as a protected word.
+- Test: `core/test_caption_spelling_i1.py` (same module and test as OpenClaw skill 75 v2.6.5).
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style

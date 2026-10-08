@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/partI-I1: drama-song-ad-factory 2.7.3: captions spell-checked, exact website asked at intake and kept verbatim
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
 - fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt
 - fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
