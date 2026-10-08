@@ -115,8 +115,8 @@ def card_gate_refusal(request):
 
 def lipsync_picture_refusal(model, request):
     """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
-    needs a PASS picture-gate receipt for the exact bytes (sha256) of
-    request["lipsync_image_path"], AND request["input"]["image_url"] must be the
+    needs a PASS or ACCEPT_WITH_FLAG picture-gate receipt for the exact bytes
+    (sha256) of request["lipsync_image_path"], AND request["input"]["image_url"] must be the
     upload of those exact bytes (picture_gate.upload_measured).
     -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
     a missing path, receipt, binding, or an unimportable gate is a refusal."""
@@ -617,17 +617,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
     Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
     """
-    pic = lipsync_picture_refusal(model, request)
-    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
-        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
-                        pic + " Nothing was reserved and nothing was sent.",
-                        run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, evidence={"generated": False})
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
-    is_video = (bool(video_job) or _is_menu_video(model)
-                or _modality(model) == "video")
+    # The locked lip-sync model (kling/ai-avatar-standard) is not a menu video
+    # model: it skips the video lock and is held to the picture gate below.
+    is_video = (not ML.is_locked_lipsync(model)
+                and (bool(video_job) or _is_menu_video(model)
+                     or _modality(model) == "video"))
     locked = None
     if is_video:
         try:
@@ -657,6 +654,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id,
                 evidence={"locked_model": locked, "requested_model": model})
+    pic = lipsync_picture_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
+        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
+                        pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",

@@ -19,19 +19,48 @@ import install_face_model as IM                        # noqa: E402
 import kie_dispatch.kie_dispatch as D                  # noqa: E402
 import spend_ledger as L                               # noqa: E402
 
-# the real numbers measured on 2026-10-08
-GOOD = {"face_count": 1, "face_h_pct": 37.8, "roll_deg": -4.3, "yaw_proxy": -0.045,
-        "smile": 0.36, "jaw_open": 0.0, "inner_gap_pct": 0.03, "sharp_face_256": 375.1}
-RESET_28 = dict(GOOD, face_h_pct=28.1, roll_deg=2.3, smile=0.62, inner_gap_pct=0.33)
-RESET_CROP = dict(GOOD, face_h_pct=36.8, roll_deg=2.3, smile=0.59, inner_gap_pct=0.33)
-DAUGHTER = dict(GOOD, face_h_pct=34.4, roll_deg=-7.8, smile=0.83, inner_gap_pct=1.65)
+# Measured 2026-10-08 with the mediapipe face landmarker (pic_check.py, read-only).
+def N(h, roll, yaw, smile, gap, sharp, jaw=0.0):
+    return {"face_count": 1, "face_h_pct": h, "roll_deg": roll, "yaw_proxy": yaw,
+            "smile": smile, "jaw_open": jaw, "inner_gap_pct": gap, "sharp_face_256": sharp}
+
+
+# Trevor-APPROVED lip-sync pictures: every one must PASS or ACCEPT_WITH_FLAG.
+APPROVED = {
+    "LeAnne CUa": N(26.3, 4.9, 0.067, 0.00, 0.05, 130.4),
+    "LeAnne CUb": N(26.7, 5.2, 0.057, 0.11, 3.55, 119.8),
+    "LeAnne CUc": N(26.0, 10.5, 0.070, 0.82, 0.24, 133.3),
+    "Kiesett HO1": N(21.4, -14.8, -0.145, 0.00, 0.00, 258.1, 0.001),
+    "Kiesett HO2": N(23.4, -13.5, -0.142, 0.00, 0.00, 455.0, 0.001),
+    "Kiesett HO3": N(23.4, -13.8, -0.106, 0.01, 0.06, 541.9, 0.001),
+    "Kiesett ST1 cartoon": N(28.4, -1.4, 0.011, 0.94, 1.66, 1711.1),
+}
+# today's BSW evidence pictures (30-Day Reset original + crop, Perfect Daughter original + fix)
+GOOD = N(37.8, -4.3, -0.045, 0.36, 0.03, 375.1)               # Perfect Daughter fix
+RESET_28 = N(28.1, 2.3, 0.018, 0.62, 0.33, 369.3)             # 30-Day Reset original
+RESET_CROP = N(36.8, 3.1, 0.020, 0.59, 0.38, 279.5)           # 30-Day Reset crop
+DAUGHTER = N(34.4, -7.8, -0.069, 0.83, 1.65, 519.7)           # Perfect Daughter original
+BSW = {"BSW 30-Day original": RESET_28, "BSW 30-Day crop": RESET_CROP,
+       "BSW Perfect Daughter original": DAUGHTER, "BSW Perfect Daughter fix": GOOD}
+# clear problems: each must FAIL
+BAD = dict(
+    two_faces=dict(GOOD, face_count=2), no_face=dict(GOOD, face_count=0),
+    tiny_face=dict(GOOD, face_h_pct=15.0), side_profile=dict(GOOD, yaw_proxy=0.40),
+    strong_tilt=dict(GOOD, roll_deg=25.0), wide_mouth=dict(GOOD, jaw_open=0.55),
+    very_soft=dict(GOOD, sharp_face_256=30.0))
 CARD = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
                     "length": 60, "video_model": "MiniMax H3 768P"},
         "who": "test", "at": "2026-10-08T09:00:00Z"}
 
 
+def verdict(n):
+    fails, flags = G.check_numbers(n)
+    return G.FAIL if fails else G.FLAGGED if flags else G.PASS
+
+
 def codes(n):
-    return {c for c, _ in G.check_numbers(n)}
+    fails, flags = G.check_numbers(n)
+    return {c for c, _ in fails}, {c for c, _ in flags}
 
 
 def pic(d, name="a.png", data=b"x"):
@@ -50,36 +79,69 @@ def refused(fn, *a, **k):
 
 def test_one_rule_set():
     assert (G.REQUIRED_FACE_COUNT, G.MIN_FACE_HEIGHT_PCT, G.MAX_FACE_HEIGHT_PCT,
-            G.MAX_ABS_ROLL_DEG, G.MAX_ABS_YAW, G.MAX_SMILE, G.MAX_JAW_OPEN,
-            G.MAX_LIP_GAP_PCT, G.MIN_SHARPNESS, G.MAX_FREE_CROPS, G.MAX_PAID_REGENS) == \
-        (1, 35.0, None, 5.0, 0.12, 0.60, 0.15, 1.0, 100.0, 1, 2)
+            G.MAX_ABS_ROLL_DEG, G.MAX_ABS_YAW, G.MAX_JAW_OPEN, G.MIN_SHARPNESS,
+            G.FLAG_FACE_HEIGHT_PCT, G.FLAG_ABS_ROLL_DEG, G.FLAG_ABS_YAW, G.FLAG_SMILE,
+            G.FLAG_JAW_OPEN, G.FLAG_LIP_GAP_PCT, G.FLAG_SHARPNESS,
+            G.MAX_FREE_CROPS, G.MAX_PAID_REGENS) == \
+        (1, 20.0, None, 20.0, 0.25, 0.30, 60.0, 25.0, 5.0, 0.12, 0.60, 0.15, 1.0,
+         100.0, 1, 2)
     assert G.REGEN_PROMPT == "neutral expression, lips closed, facing camera, head level"
     assert G.REGEN_MODEL == "gpt-image-2-image-to-image"
 
 
-def test_numbers_on_the_real_pictures():
-    assert codes(GOOD) == set() and codes(RESET_CROP) == set()
-    assert {"FACE_SIZE", "SMILE"} <= codes(RESET_28)
-    assert {"FACE_SIZE", "HEAD_ROLL", "SMILE", "TEETH"} <= codes(DAUGHTER)
-    assert codes(dict(GOOD, face_h_pct=70.0)) == set()            # no upper limit
-    assert codes(dict(GOOD, face_h_pct=35.0)) == set()
-    assert "FACE_SIZE" in codes(dict(GOOD, face_h_pct=34.9))
-    assert codes(dict(GOOD, smile=0.60)) == set() and "SMILE" in codes(dict(GOOD, smile=0.61))
-    assert codes(dict(GOOD, yaw_proxy=0.12)) == set() and "HEAD_YAW" in codes(dict(GOOD, yaw_proxy=0.13))
-    assert codes(dict(GOOD, roll_deg=-5.0)) == set() and "HEAD_ROLL" in codes(dict(GOOD, roll_deg=-5.1))
-    assert codes(dict(GOOD, jaw_open=0.15)) == set() and "MOUTH_OPEN" in codes(dict(GOOD, jaw_open=0.16))
-    assert codes(dict(GOOD, inner_gap_pct=1.0)) == set() and "TEETH" in codes(dict(GOOD, inner_gap_pct=1.01))
-    assert codes(dict(GOOD, sharp_face_256=100)) == set() and "SOFT" in codes(dict(GOOD, sharp_face_256=99))
-    assert codes(dict(GOOD, face_count=2)) == {"FACE_COUNT"}
-    assert codes(dict(GOOD, face_count=0)) == {"FACE_COUNT"}
-    assert "UNMEASURED" in codes({k: v for k, v in GOOD.items() if k != "smile"})
+def test_every_approved_picture_passes_or_flags():
+    for name, n in APPROVED.items():
+        assert verdict(n) in G.ACCEPTED, (name, G.check_numbers(n))
+    assert verdict(APPROVED["LeAnne CUa"]) == G.PASS
+    assert codes(APPROVED["LeAnne CUc"]) == (set(), {"HEAD_ROLL", "SMILE"})
+    assert codes(APPROVED["LeAnne CUb"]) == (set(), {"HEAD_ROLL", "TEETH"})
+    assert codes(APPROVED["Kiesett HO1"]) == (set(), {"FACE_SIZE", "HEAD_ROLL", "HEAD_YAW"})
 
 
-def test_small_face_one_free_crop_then_passes():
+def test_bsw_evidence_pictures():
+    assert verdict(GOOD) == G.PASS and verdict(RESET_CROP) == G.PASS
+    assert codes(RESET_28) == (set(), {"SMILE"})               # 28.1% is no longer a failure
+    assert codes(DAUGHTER) == (set(), {"HEAD_ROLL", "SMILE", "TEETH"})
+
+
+def test_only_clear_problems_fail():
+    want = dict(two_faces="FACE_COUNT", no_face="FACE_COUNT", tiny_face="FACE_SIZE",
+                side_profile="HEAD_YAW", strong_tilt="HEAD_ROLL", wide_mouth="MOUTH_OPEN",
+                very_soft="SOFT")
+    for k, n in BAD.items():
+        assert codes(n)[0] == {want[k]}, (k, G.check_numbers(n))
+    # smile and teeth are flags at any size, never a fail
+    assert codes(dict(GOOD, smile=1.0, inner_gap_pct=9.0)) == (set(), {"SMILE", "TEETH"})
+    # the lines are exact
+    assert codes(dict(GOOD, face_h_pct=20.0)) == (set(), {"FACE_SIZE"})
+    assert codes(dict(GOOD, face_h_pct=19.9))[0] == {"FACE_SIZE"}
+    assert codes(dict(GOOD, face_h_pct=25.0)) == (set(), set())
+    assert codes(dict(GOOD, face_h_pct=70.0)) == (set(), set())    # no upper limit
+    assert codes(dict(GOOD, roll_deg=-20.0))[0] == set() and codes(dict(GOOD, roll_deg=-20.1))[0]
+    assert codes(dict(GOOD, yaw_proxy=0.25))[0] == set() and codes(dict(GOOD, yaw_proxy=0.26))[0]
+    assert codes(dict(GOOD, jaw_open=0.30))[0] == set() and codes(dict(GOOD, jaw_open=0.31))[0]
+    assert codes(dict(GOOD, sharp_face_256=60))[0] == set() and codes(dict(GOOD, sharp_face_256=59))[0]
+    assert codes(dict(GOOD, jaw_open=0.16)) == (set(), {"MOUTH_OPEN"})
+    assert codes(dict(GOOD, sharp_face_256=99)) == (set(), {"SOFT"})
+    assert "UNMEASURED" in codes({k: v for k, v in GOOD.items() if k != "smile"})[0]
+
+
+def test_flagged_picture_goes_through_with_flags_and_no_paid_call():
+    with tempfile.TemporaryDirectory() as d:
+        a = pic(d, "a.png", b"flagged")
+        boom = lambda p, q: (_ for _ in ()).throw(AssertionError("paid"))
+        res = G.gate_picture(a, measure=lambda p: DAUGHTER, regenerate=boom,
+                             crop=lambda p, o: (_ for _ in ()).throw(AssertionError("crop")))
+        assert res["verdict"] == "ACCEPT_WITH_FLAG" and res["image"] == a, res
+        assert {c for c, _ in res["flags"]} == {"HEAD_ROLL", "SMILE", "TEETH"}
+        assert G.require_receipt(a)["verdict"] == "ACCEPT_WITH_FLAG"
+
+
+def test_tiny_face_one_free_crop_then_passes():
     with tempfile.TemporaryDirectory() as d:
         a = pic(d, "a.png", b"small")
-        meas = lambda p: RESET_CROP if p.endswith("-crop.png") else RESET_28 if p == a else None
-        # 28.1% + smile .62 -> crop makes 36.8% / smile .59 -> PASS, no paid call
+        tiny = BAD["tiny_face"]
+        meas = lambda p: RESET_CROP if p.endswith("-crop.png") else tiny if p == a else None
         res = G.gate_picture(a, measure=meas, crop=lambda p, o: pic(d, os.path.basename(o), b"crop"),
                              regenerate=lambda p, q: (_ for _ in ()).throw(AssertionError("paid")))
         assert res["verdict"] == "PASS" and res["image"].endswith("-crop.png"), res
@@ -94,30 +156,35 @@ def test_only_one_free_crop():
         def crop(p, o):
             n.append(1)
             return pic(d, os.path.basename(o), b"crop")
-        res = G.gate_picture(a, measure=lambda p: RESET_28, crop=crop)
+        res = G.gate_picture(a, measure=lambda p: BAD["tiny_face"], crop=crop)
         assert res["verdict"] == "FAIL" and len(n) == 1
 
 
-def test_smile_teeth_tilt_get_two_paid_regens_then_refuse():
+def test_paid_regen_only_for_a_fail_a_crop_cannot_fix_max_two():
     with tempfile.TemporaryDirectory() as d:
-        a = pic(d, "a.png", b"smile")
-        res = G.gate_picture(a, measure=lambda p: DAUGHTER)       # no paid fix: FAIL
+        a = pic(d, "a.png", b"tilt")
+        tilt = BAD["strong_tilt"]
+        res = G.gate_picture(a, measure=lambda p: tilt)           # no paid fix wired: FAIL
         assert res["verdict"] == "FAIL"
         refused(G.require_receipt, a)
         calls = []
         def regen(p, prompt):
             calls.append(prompt)
             return pic(d, "r%d.png" % len(calls), b"r%d" % len(calls))
-        meas = lambda p: GOOD if p.endswith("r2.png") else DAUGHTER
+        meas = lambda p: GOOD if p.endswith("r2.png") else tilt
         res = G.gate_picture(a, measure=meas, crop=lambda p, o: None, regenerate=regen)
         assert res["verdict"] == "PASS" and calls == [G.REGEN_PROMPT] * 2, calls
         calls.clear()                                             # never passes: capped at 2
-        res = G.gate_picture(a, measure=lambda p: DAUGHTER, crop=lambda p, o: None, regenerate=regen)
+        res = G.gate_picture(a, measure=lambda p: tilt, crop=lambda p, o: None, regenerate=regen)
         assert res["verdict"] == "FAIL" and len(calls) == 2, calls
-        # a size-only failure is never worth a paid regen
+        # a tiny face the crop cannot fix IS a paid regen (crop returned None)
         calls.clear()
-        G.gate_picture(a, measure=lambda p: dict(GOOD, face_h_pct=30.0),
-                       crop=lambda p, o: None, regenerate=regen)
+        G.gate_picture(a, measure=lambda p: BAD["tiny_face"], crop=lambda p, o: None, regenerate=regen)
+        assert len(calls) == 2
+        # flags (smile, teeth, tilt under 20, small face over 20) never spend
+        calls.clear()
+        for flagged in (DAUGHTER, RESET_28, APPROVED["Kiesett HO1"], APPROVED["LeAnne CUc"]):
+            G.gate_picture(a, measure=lambda p: flagged, crop=lambda p, o: None, regenerate=regen)
         assert calls == []
 
 
@@ -225,7 +292,7 @@ def test_default_regenerate_goes_through_dispatch_ledger_and_cap():
         assert "submit" not in [c[1] for c in calls]
         # and gate_picture turns that failure into a refusal, not a pass
         a = pic(d, "a.png", b"smile")
-        res = G.gate_picture(a, measure=lambda p: DAUGHTER, regenerate=regen2)
+        res = G.gate_picture(a, measure=lambda p: BAD["strong_tilt"], regenerate=regen2)
         assert res["verdict"] == "FAIL" and res["reasons"][-1][0] == "REGEN_FAILED"
 
 
@@ -285,18 +352,23 @@ def _req(a=None, url=None, **kw):
     return dict(r, **kw)
 
 
+def _dispatch(d, model, request, **kw):
+    return D.dispatch(model=model, request=request, save_dir=d,
+                      ledger_db=os.path.join(d, "l.db"), run_id="r", logical_key="k",
+                      attempt_id="a", estimated_cost=1, **kw)
+
+
 def test_dispatcher_hard_block():
     with tempfile.TemporaryDirectory() as d:
         a = pic(d)
-        for model in ("kling/ai-avatar-standard", "kling/ai-avatar-pro", "infinitalk/from-audio"):
-            env = D.dispatch(model=model, request=_req(a, "https://k/a.png"), save_dir=d,
-                             ledger_db=os.path.join(d, "l.db"), run_id="r", logical_key="k",
-                             attempt_id="a", estimated_cost=1)
-            assert env["reason_code"] == "LIPSYNC_PICTURE_NOT_GATED", env
-            assert env["outcome"] == "rejected" and env["evidence"]["generated"] is False
-        m = "kling/ai-avatar-pro"
+        env = _dispatch(d, "kling/ai-avatar-standard", _req(a, "https://k/a.png"))
+        assert env["reason_code"] == "LIPSYNC_PICTURE_NOT_GATED", env
+        assert env["outcome"] == "rejected" and env["evidence"]["generated"] is False
+        m = "kling/ai-avatar-standard"
+        for other in ("kling/ai-avatar-pro", "infinitalk/from-audio"):   # same block, called directly
+            assert D.lipsync_picture_refusal(other, _req(a, "https://k/a.png"))
         assert D.lipsync_picture_refusal(m, _req())                       # no path at all
-        G.gate_picture(a, measure=lambda p: RESET_28)                     # FAIL receipt
+        G.gate_picture(a, measure=lambda p: BAD["tiny_face"])             # FAIL receipt
         assert D.lipsync_picture_refusal(m, _req(a, "https://k/a.png"))
         G.gate_picture(a, measure=lambda p: GOOD)                         # PASS receipt
         assert D.lipsync_picture_refusal(m, _req(a, "https://k/a.png"))   # but not uploaded/bound
@@ -305,6 +377,33 @@ def test_dispatcher_hard_block():
         assert D.lipsync_picture_refusal(m, _req(a, "https://k/evil.png"))  # some other image
         assert D.lipsync_picture_refusal(m, _req(a))                      # no image_url
         assert D.lipsync_picture_refusal("kling-3.0/video", _req()) is None   # not lip-sync
+        G.gate_picture(a, measure=lambda p: DAUGHTER)                     # ACCEPT_WITH_FLAG receipt
+        url = G.upload_measured(a, lambda f: "https://k/b.png")
+        assert D.lipsync_picture_refusal(m, _req(a, url)) is None         # a flagged picture goes
+
+
+def test_f14_real_lipsync_dispatch_reaches_the_picture_gate():
+    """F14 treated kling/ai-avatar-* as an off-menu VIDEO model (MODEL_NOT_ON_MENU).
+    Nothing is stubbed: the real model lock, the real price-menu.md, the real dispatch."""
+    import kie_dispatch.model_lock as ML
+    m = "kling/ai-avatar-standard"
+    assert ML.is_locked_lipsync(m) and not ML.is_locked_lipsync("kling/ai-avatar-pro")
+    with tempfile.TemporaryDirectory() as d:
+        a = pic(d)
+        # 1. no receipt: the picture gate answers, not the menu lock
+        env = _dispatch(d, m, _req(a, "https://k/a.png"))
+        assert env["reason_code"] == "LIPSYNC_PICTURE_NOT_GATED", env
+        # 2. gated + bound: it gets past F14 and the picture gate (never MODEL_NOT_ON_MENU,
+        #    VIDEO_MODEL_LOCK_MISSING or the picture gate); it stops later, in front of no runner
+        G.gate_picture(a, measure=lambda p: GOOD)
+        url = G.upload_measured(a, lambda f: "https://k/a.png")
+        env = _dispatch(d, m, _req(a, url), runner=lambda argv: (1, {}, "stop"))
+        assert env["reason_code"] not in ("MODEL_NOT_ON_MENU", "VIDEO_MODEL_LOCK_MISSING",
+                                          "VIDEO_MODEL_MISMATCH", "LIPSYNC_PICTURE_NOT_GATED"), env
+        # 3. the lock is still shut for every other off-menu video model
+        for other in ("kling/ai-avatar-pro", "bytedance/seedance-1.5-pro"):
+            env = _dispatch(d, other, _req(a, "https://k/a.png"))
+            assert env["reason_code"] == "MODEL_NOT_ON_MENU", (other, env)
 
 
 if __name__ == "__main__":
