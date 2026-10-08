@@ -2,6 +2,7 @@ name: kaizen-tests
 
 on:
   push:
+    branches: [main]
     paths:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
@@ -19,6 +20,10 @@ on:
       - '.claude/skills/spec-protocol/**'
       - 'CONTROL/bundled-skills.txt'
       - 'THIRD_PARTY_NOTICES.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unix-tests:

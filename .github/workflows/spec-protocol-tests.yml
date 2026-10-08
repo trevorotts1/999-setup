@@ -2,7 +2,7 @@ name: spec-protocol-tests
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - '.claude/skills/spec-protocol/**'
       - '.claude/skills/hook-skill/hooks/workflow-guard/**'
@@ -16,6 +16,10 @@ on:
       - '.claude/skills/nine-router-setup/scripts/**'
       - 'tools/windows-parity/**'
       - '.github/workflows/spec-protocol-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   spec-protocol:

@@ -13,11 +13,23 @@
 //   OLLAMA_API_KEY             (optional — skips Ollama if absent)
 //   AGNES_API_KEY              (optional — skips Agnes if absent)
 //   OPENROUTER_API_KEY         (optional — skips OpenRouter if absent; failures never block the other providers)
+//   NINE_DEEPSEEK_ROUTE        direct (default) | openrouter. openrouter routes every DeepSeek
+//                              lane to openrouter/deepseek/deepseek-v4.1-flash with
+//                              OPENROUTER_API_KEY; no direct DeepSeek provider is created.
+//   NINEROUTER_CLI_TOKEN       (optional) machine-local x-9r-cli-token; preferred over the
+//                              dashboard password when it works, password is the fallback
 //   OLLAMA_PLAN                free|pro|max
 //   AGNES_PLAN                 starter|plus|pro
 //   DEEPSEEK_FLASH_VARIANT     (optional) ollama-0731 override
 //
 // Outputs a JSON report on stdout with NO secrets.
+//
+// Flags:
+//   --update-combos            overwrite the model list of combos that already exist.
+//                              Without it an existing combo (and its strategy) is NEVER
+//                              touched; only missing combos are created.
+//
+// Members with no key are omitted from every combo (no Agnes key = no Agnes member).
 
 import { execFileSync } from "node:child_process";
 import { NineRouterClient } from "./nine-router-api.mjs";
@@ -27,6 +39,10 @@ const PLAN = process.env.OLLAMA_PLAN || "pro";
 const AGNES_PLAN = process.env.AGNES_PLAN || "starter";
 const FLASH_VARIANT = process.env.DEEPSEEK_FLASH_VARIANT || "";
 const OVERRIDE_0731 = FLASH_VARIANT === "ollama-0731";
+const DS_ROUTE = process.env.NINE_DEEPSEEK_ROUTE || "direct";
+const OR_DS = DS_ROUTE === "openrouter";
+const OR_DS_MODEL = "deepseek/deepseek-v4.1-flash";
+const UPDATE_COMBOS = process.argv.includes("--update-combos");
 
 const RESOLVED_ROUTES = {};
 
@@ -136,19 +152,39 @@ async function main() {
   const client = new NineRouterClient(BASE);
 
   // 1. Login with the dashboard password.
-  const pw = process.env.NINEROUTER_DASHBOARD_PW;
-  if (!pw) err("NINEROUTER_DASHBOARD_PW not set");
-  const login = await client.login(pw).catch((e) =>
-    err(`dashboard login failed: ${e.message}. If you changed the dashboard password, re-run with NINEROUTER_DASHBOARD_PW=<your password>.`)
-  );
-  if (!login.success) err("dashboard login rejected");
+  if (!["direct", "openrouter"].includes(DS_ROUTE)) err(`NINE_DEEPSEEK_ROUTE must be direct or openrouter (got '${DS_ROUTE}')`);
+  if (OR_DS && !process.env.OPENROUTER_API_KEY) err("NINE_DEEPSEEK_ROUTE=openrouter needs OPENROUTER_API_KEY");
+
+  // Prefer the machine-local CLI token when one is supplied and accepted; fall back
+  // to the dashboard password (default path, unchanged).
+  let login = null;
+  let authPath = "dashboard-password";
+  if (process.env.NINEROUTER_CLI_TOKEN) {
+    client.useCliToken(process.env.NINEROUTER_CLI_TOKEN);
+    try {
+      await client.getSettings();
+      login = { success: true, mustChangePassword: false };
+      authPath = "cli-token";
+    } catch {
+      client.useCliToken(null);
+      console.error("configure-nine-router: CLI token not accepted - falling back to the dashboard password");
+    }
+  }
+  if (!login) {
+    const pw = process.env.NINEROUTER_DASHBOARD_PW;
+    if (!pw) err("NINEROUTER_DASHBOARD_PW not set");
+    login = await client.login(pw).catch((e) =>
+      err(`dashboard login failed: ${e.message}. If you changed the dashboard password, re-run with NINEROUTER_DASHBOARD_PW=<your password>.`)
+    );
+    if (!login.success) err("dashboard login rejected");
+  }
 
   // No password rotation: the user owns the dashboard password and manages it
   // themselves. mustChangePassword stays an ADVISORY flag only — the completion
   // message tells the user the default stays and they change it themselves in
   // the dashboard.
 
-  const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN } };
+  const report = { providers: {}, combos: {}, capacity: {}, routes: {}, plan: { ollama: PLAN, agnes: AGNES_PLAN }, auth: authPath, deepseekRoute: DS_ROUTE };
   const settings = await client.getSettings();
 
   // 2. Create/reuse the local API key.
@@ -209,7 +245,15 @@ async function main() {
   const ollamaKey = process.env.OLLAMA_API_KEY;
   const agnesKey = process.env.AGNES_API_KEY;
 
-  if (deepseekKey) {
+  // DeepSeek Direct only when a key exists AND the route is not openrouter.
+  const dsDirect = !!deepseekKey && !OR_DS;
+  if (!dsDirect) {
+    report.providers.deepseek = OR_DS ? "skipped (DeepSeek route = openrouter)" : "skipped (no DEEPSEEK_API_KEY)";
+  }
+  if (!ollamaKey) report.providers.ollama = "skipped (no OLLAMA_API_KEY)";
+  if (!agnesKey) report.providers.agnes = "skipped (no AGNES_API_KEY)";
+
+  if (dsDirect) {
     const existing = providers.find((p) => p.provider === "deepseek");
     if (existing) {
       // Real repair-on-rerun (README: "running it again repairs and
@@ -359,14 +403,21 @@ async function main() {
   const olIds = resolved.ollama || ["glm-5.2", "kimi-k2.6", "minimax-m3", "gemma4:31b"];
   const agIds = resolved.agnes || ["agnes-2.5-flash"];
 
-  if (!has(dsIds, "deepseek-v4-flash") || !has(dsIds, "deepseek-v4.1-flash")) {
+  if (dsDirect && (!has(dsIds, "deepseek-v4-flash") || !has(dsIds, "deepseek-v4.1-flash"))) {
     err("live DeepSeek catalog does not contain deepseek-v4-flash / deepseek-v4.1-flash");
   }
-  if (!has(olIds, "glm-5.2") || !has(olIds, "kimi-k2.6")) {
+  if (ollamaKey && (!has(olIds, "glm-5.2") || !has(olIds, "kimi-k2.6"))) {
     err("live Ollama catalog does not contain glm-5.2 / kimi-k2.6");
   }
-  if (!has(agIds, "agnes-2.5-flash")) {
+  if (agnesKey && !has(agIds, "agnes-2.5-flash")) {
     err("live Agnes catalog does not contain agnes-2.5-flash");
+  }
+  if (OR_DS) {
+    // Never substitute: the exact OpenRouter id must be in the live catalog.
+    if (openrouterResolveError) err("OpenRouter DeepSeek route: " + openrouterResolveError);
+    if (!has(resolved.openrouter?.ids, OR_DS_MODEL)) {
+      err(`live OpenRouter catalog does not contain ${OR_DS_MODEL}`);
+    }
   }
   if (OVERRIDE_0731 && !has(olIds, "deepseek-v4.1-flash")) {
     err("DEEPSEEK_FLASH_VARIANT=ollama-0731 is set but the live Ollama catalog lacks deepseek-v4.1-flash");
@@ -404,7 +455,7 @@ async function main() {
     return conn;
   };
 
-  if (deepseekKey) {
+  if (dsDirect) {
     dsLightNode = await ensureCustomNode({ name: "DS Light", prefix: dsLightPrefix });
     dsMaxNode = await ensureCustomNode({ name: "DS Max", prefix: dsMaxPrefix });
     await ensureCustomConnection(dsLightNode);
@@ -473,13 +524,25 @@ async function main() {
   // Opus = DS Max (Flash+max), Sonnet = Agnes 2.5 Flash, Haiku = DS Light (off).
   const fableLane = OVERRIDE_0731 ? overrideFlash : "fusion-chain";
 
+  // DeepSeek members per lane. openrouter route: every DeepSeek member is the same
+  // OpenRouter route. No DeepSeek source at all: null, filtered out of every combo.
+  const orDs = `openrouter/${OR_DS_MODEL}`;
+  const pick = (direct) => (OR_DS ? orDs : dsDirect ? direct : null);
+  const mDsHeavy = pick(dsFlashMax);
+  const mDsMax = pick(dsMaxFlash);
+  const mDsLight = pick(dsLightFlash);
+  const mJudge = pick(dsProMax);
+  // No Agnes key = no Agnes member anywhere (never a dead provider in a combo).
+  const mAgnes = agnesKey ? agFlash : null;
+  const members = (...m) => [...new Set(m.filter(Boolean))];
+
   RESOLVED_ROUTES.fable = fableLane;  // the fusion combo
   RESOLVED_ROUTES.opus = "opus-chain";  // Opus → opus-chain (primary: DS Max = DeepSeek v4 FLASH, thinking MAX; fallback: Agnes 2.5 Flash)
   RESOLVED_ROUTES.sonnet = "sonnet-chain";  // Sonnet → sonnet-chain (primary: Agnes 2.5 Flash; fallback: DS Flash+max)
   RESOLVED_ROUTES.haiku = "haiku-chain";  // Haiku → haiku-chain (primary: DS Light = DeepSeek v4 Flash, thinking OFF; fallback: Agnes 2.5 Flash)
-  RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : dsFlashMax;
-  RESOLVED_ROUTES.vision = olKimi;  // keep
-  RESOLVED_ROUTES.haikuFallback = agFlash;  // Haiku fallback lane (Agnes AI), carried through to routing state
+  RESOLVED_ROUTES.subagent = OVERRIDE_0731 ? overrideFlash : mDsHeavy;
+  if (ollamaKey) RESOLVED_ROUTES.vision = olKimi;  // keep
+  if (mAgnes) RESOLVED_ROUTES.haikuFallback = agFlash;  // Haiku fallback lane (Agnes AI), carried through to routing state
   report.resolvedRoutes = RESOLVED_ROUTES;
 
   // 6. Combos.
@@ -495,36 +558,45 @@ async function main() {
     const bb = Array.isArray(b) ? b : [];
     return aa.length === bb.length && aa.every((m, i) => m === bb[i]);
   };
+  // Combos this run wrote (created, or updated under --update-combos). Only these get
+  // a strategy patch below; an existing combo and its strategy are left as found.
+  const touchedCombos = [];
   const upsertCombo = async (name, models) => {
+    if (models.length === 0) err(`combo ${name} would have no members (need a DeepSeek source: DEEPSEEK_API_KEY or NINE_DEEPSEEK_ROUTE=openrouter)`);
     comboNames.push(name);
     const existing = combos.find((c) => c.name === name);
     if (existing) {
-      // Real repair-on-rerun: PUT the current model list when it differs
-      // from what is stored — a corrected combo must not be silently
-      // ignored just because a combo with that name already exists.
-      if (!sameModels(existing.models, models)) {
+      if (UPDATE_COMBOS && !sameModels(existing.models, models)) {
         await client.updateCombo(existing.id, { name, models, kind: existing.kind ?? null });
-        report.combos[name] = "reused (models updated)";
+        report.combos[name] = "updated (--update-combos)";
+        touchedCombos.push(name);
+      } else if (UPDATE_COMBOS) {
+        report.combos[name] = "kept (already current)";
+        touchedCombos.push(name);
       } else {
-        report.combos[name] = "reused";
+        report.combos[name] = "kept (existing, untouched)";
       }
     } else {
       await client.createCombo({ name, models, kind: null });
       report.combos[name] = "created";
+      touchedCombos.push(name);
     }
   };
 
-  await upsertCombo("sonnet-chain", [agFlash, dsFlashMax]);
-  await upsertCombo("opus-chain", [dsMaxFlash, agFlash]);
-  await upsertCombo("haiku-chain", [dsLightFlash, agFlash]);
+  await upsertCombo("sonnet-chain", members(mAgnes, mDsHeavy));
+  await upsertCombo("opus-chain", members(mDsMax, mAgnes));
+  await upsertCombo("haiku-chain", members(mDsLight, mAgnes));
   // The standard fleet fusion combo — panels: DS Max (Flash+max), GLM 5.2
   // (Ollama Cloud), NVIDIA-free (OpenRouter) — judge: DeepSeek v4 Pro max.
   // The NVIDIA panel member is only included when an OpenRouter key exists;
   // otherwise the combo still builds with the two panels it has.
-  const fusionModels = openrouterKey
-    ? [dsMaxFlash, olGlm, nvidiaFree]
-    : [dsMaxFlash, olGlm];
+  const fusionModels = members(mDsMax, ollamaKey && olGlm, openrouterKey && nvidiaFree);
   await upsertCombo("fusion-chain", fusionModels);
+  const created = Object.keys(report.combos).filter((n) => report.combos[n] === "created");
+  const kept = Object.keys(report.combos).filter((n) => report.combos[n].startsWith("kept"));
+  report.combosCreated = created;
+  report.combosKept = kept;
+  console.error(`configure-nine-router: combos created: ${created.join(", ") || "none"}; kept: ${kept.join(", ") || "none"}${UPDATE_COMBOS ? " (--update-combos on)" : ""}`);
 
   // Assert each ROUTE resolves to something real (defense in depth, the combo-name
   // twin of the model-id assertions above, which never checked this): every value
@@ -537,7 +609,8 @@ async function main() {
   // because they only ever look at provider model ids, never combo names. This
   // is that missing check.
   for (const [lane, route] of Object.entries(RESOLVED_ROUTES)) {
-    if (typeof route === "string" && route.includes("/")) continue; // raw provider model — covered above
+    if (typeof route !== "string") continue;
+    if (route.includes("/")) continue; // raw provider model — covered above
     if (comboNames.includes(route)) continue; // matches a combo created this run
     err(
       `route "${lane}" resolves to "${route}", which is neither a provider model nor a combo created this run (combos created: ${comboNames.join(", ") || "none"})`
@@ -545,21 +618,25 @@ async function main() {
   }
 
   // 7. Combo strategies + capacity adapter + security defaults via PATCH /api/settings.
+  const wantStrategies = {
+    "sonnet-chain": { fallbackStrategy: "fallback" },
+    "opus-chain": { fallbackStrategy: "fallback" },
+    "haiku-chain": { fallbackStrategy: "fallback" },
+    "fusion-chain": {
+      fallbackStrategy: "fusion",
+      judgeModel: mJudge,
+      fusionTuning: { minPanel: 2, stragglerGraceMs: 8000, panelHardTimeoutMs: 90000 },
+    },
+  };
+  // Merge into what the router already holds: strategies of kept combos stay as found.
+  const comboStrategies = { ...((await client.getSettings()).comboStrategies || {}) };
+  for (const n of touchedCombos) comboStrategies[n] = wantStrategies[n];
   const patch = {
     comboStrategy: "fallback",
     comboStickyRoundRobinLimit: 1,
-    comboStrategies: {
-      "sonnet-chain": { fallbackStrategy: "fallback" },
-      "opus-chain": { fallbackStrategy: "fallback" },
-      "haiku-chain": { fallbackStrategy: "fallback" },
-      "fusion-chain": {
-        fallbackStrategy: "fusion",
-        judgeModel: dsProMax,
-        fusionTuning: { minPanel: 2, stragglerGraceMs: 8000, panelHardTimeoutMs: 90000 },
-      },
-    },
+    comboStrategies,
     capacityAdapter: {
-      vision: { enabled: true, roundRobin: false, models: [olKimi] },
+      vision: ollamaKey ? { enabled: true, roundRobin: false, models: [olKimi] } : { enabled: false, roundRobin: false, models: [] },
       pdf: { enabled: false, roundRobin: false, models: [] },
       audioInput: { enabled: false, roundRobin: false, models: [] },
       videoInput: { enabled: false, roundRobin: false, models: [] },
@@ -577,7 +654,9 @@ async function main() {
   //    Uses the providerThinking settings map: {"deepseek": {"mode": "max"}}.
   const settingsAfter = await client.getSettings();
   const providerThinking = settingsAfter.providerThinking || {};
-  if (!providerThinking.deepseek || providerThinking.deepseek.mode !== "max") {
+  if (!dsDirect) {
+    report.providerThinking = { deepseek: "skipped" };
+  } else if (!providerThinking.deepseek || providerThinking.deepseek.mode !== "max") {
     await client.patchSettings({ providerThinking: { ...providerThinking, deepseek: { mode: "max" } } });
     report.providerThinking = { deepseek: "max" };
   } else {
@@ -595,8 +674,9 @@ async function main() {
     ["opus", RESOLVED_ROUTES.opus],
     ["sonnet", RESOLVED_ROUTES.sonnet],
     ["haiku", RESOLVED_ROUTES.haiku],
-    ["agnes", `${agPrefix}/agnes-2.5-flash`],
   ];
+  if (agnesKey) probes.push(["agnes", `${agPrefix}/agnes-2.5-flash`]);
+  else report.verified.agnes = "skipped - no AGNES_API_KEY (Agnes members omitted from every combo)";
   for (const [name, route] of probes) {
     try {
       const r = await client.chat(route, { maxTokens: 16, prompt: "ok" });
@@ -620,7 +700,8 @@ async function main() {
     ["sonnet", RESOLVED_ROUTES.sonnet, "max"],
     ["fable", RESOLVED_ROUTES.fable, "max"],
     // no-thinking lane — must respond WITHOUT thinking
-    ["haiku", RESOLVED_ROUTES.haiku, "off"],
+    // (openrouter route has no thinking-off lane: haiku is a content check there)
+    ["haiku", RESOLVED_ROUTES.haiku, OR_DS ? "max" : "off"],
   ];
   for (const [name, route, expected] of thinkingProbes) {
     try {
@@ -697,8 +778,12 @@ async function main() {
       : "Flash routed to DeepSeek Direct by default; Ollama Fusion panel holds 2 models.",
     "PDF auto-switch disabled (not verified end-to-end).",
     "Audio auto-switch disabled (Gemma 4 31B has no audio input).",
-    "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success.",
-    "haiku-chain: ds-light/deepseek-v4-flash (thinking OFF) → agnes/agnes-2.5-flash.",
+    agnesKey
+      ? "Agnes is a custom OpenAI-compatible node (agnes/agnes-2.5-flash) — if its lane shows non-OK, re-check AGNES_API_KEY before claiming success."
+      : "No Agnes key: Agnes provider not created and omitted from every combo.",
+    OR_DS
+      ? `DeepSeek route = openrouter: every DeepSeek lane is ${orDs} (OPENROUTER_API_KEY); no DeepSeek Direct provider.`
+      : "haiku-chain: ds-light/deepseek-v4-flash (thinking OFF) → agnes/agnes-2.5-flash.",
   ];
   if (openrouterKey) {
     report.notes.push(
