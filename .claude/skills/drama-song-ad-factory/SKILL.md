@@ -377,7 +377,7 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   from the Suno word timestamps (`lipsync_clips.choose_window`) with 0.30 s lead-in and 0.20 s tail from try 1
   (placed with `stem_offset.cut_plan`). The prompt says SINGS on sung lines and SAYS on spoken ones, one emotion,
   minimal head movement, steady camera (`lip_gate.kling_prompt`). **At most 2 paid Kling jobs per segment,
-  every name variant of the segment counted; the code refuses a 3rd** (`lip_gate.run_gate`, `segment_key`).
+  every name variant of the segment counted; the code refuses a 3rd** (`lip_gate.run_gate`, `lipsync_clips.count_jobs`).
   Try 2 runs ONLY on a hard defect (a FAIL on a spoken line, frozen or garbled face, text across the chest,
   hand over the mouth, wrong face), never on ACCEPT_WITH_FLAG, UNDETERMINED or UNMEASURABLE, and ONLY with a changed input (the next-best
   window); an identical resubmit is refused. After the tries the best-measured take is kept and the receipt says
