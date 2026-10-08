@@ -40,6 +40,7 @@
 - fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
 - fix/partH-H1: Merge origin/main into fix/partH-H1 (rebump skill) (merge 233404c6eacf)
 - fix/partH-H4: Merge main into fix/partH-H4; renumber skill to 2.6.9 (merge 37c6e518b1a9)
+- fix/partH-H7: changelog: correct onboarding version reference (merge c24fb3ee8020)
 
 ## [hook-skill] — 2026-10-06
 
