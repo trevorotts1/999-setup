@@ -26,14 +26,17 @@
 # Never prints API keys, the router token, or the dashboard password.
 set -euo pipefail
 
-SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Real scripts dir: NINE_SETUP_SCRIPT_DIR wins (callers that source a temp copy under
+# bash -c, where $0 is "bash"); else this file's own path, never the caller's $0.
+_SELF_DIR="${NINE_SETUP_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)}"
+SKILL_DIR="$(cd "$_SELF_DIR/.." && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
 COMMON="$SCRIPTS/common"
 MACOS="$SCRIPTS/macos"
 # Lock-aware settings writes: a locked settings file is unlocked for the write and always re-locked.
 # shellcheck source=common/settings-lock.sh
 . "$COMMON/settings-lock.sh"
-REPO_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+REPO_ROOT="$(cd "$_SELF_DIR/../../../.." && pwd)"
 
 # HELPER INVOCATION CONVENTION: every helper in $MACOS is called through an
 # explicit `bash` prefix, never executed directly. The repo's shell scripts are
@@ -1091,7 +1094,7 @@ main() {
   # $HOME/.claude-nine as the secondary root below. A CLAUDE_CONFIG_DIR in the
   # live environment is honored as the primary root.
   CLAUDE_SKILLS_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  REPO_SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  REPO_SKILL_DIR="$(cd "$_SELF_DIR/.." && pwd)"
   # The config dir the shipped claude-nine launcher uses.
   NINE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude-nine}"
 
