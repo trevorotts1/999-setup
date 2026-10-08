@@ -22,6 +22,7 @@
 - unit/AF-STL-U1: AF-STL-U1: core/choice_card/stl_voice_guard — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 21ea89f680e3)
 - unit/AF-SMP-U1: AF-SMP-U1: core/smp/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 9d309c6b9c2a)
 - unit/AF-SMP-U2: AF-SMP-U2: core/smp/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 58533b9ffd44)
+- unit/V2-W4R-U1: drama-song-factory V2-W4R-U1: package v2 into the Claude-Nine copy (merge 57738fe0466b)
 
 ## [hook-skill] — 2026-10-06
 
