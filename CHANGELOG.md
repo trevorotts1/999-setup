@@ -24,6 +24,9 @@
 - unit/AF-SMP-U2: AF-SMP-U2: core/smp/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 58533b9ffd44)
 - unit/V2-W4R-U1: drama-song-factory V2-W4R-U1: package v2 into the Claude-Nine copy (merge 57738fe0466b)
 - unit/DOCS-999-U1: docs: hook-skill 1.1.0 -> 1.2.0 in README and bundled-components.json (merge 65428bc671f8)
+- fix/w1-e-u1-prereqs-honest: W1-E-U1: make 999 drama-song PREREQS honest for Claude Code (manual M3) (merge 4067c84202b1)
+- fix/w1-e-u2-single-config-root: 999 W1-E-U2: test_single_config_root compare adapter claim case-insensitively with backticks stripped + always clean /tmp fixture (merge 3fe06cd635d9)
+- fix/w1-e-u3-version-link: unit/W1-E-U3-version-link: 999 VERSION 1.0.0 -> 2.4.5, packaged_from c73637ddf (manual M5) (merge d81e45ab5047)
 
 ## [hook-skill] — 2026-10-06
 
