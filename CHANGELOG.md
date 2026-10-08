@@ -71,6 +71,7 @@
 - fix/lipclose-LPC001: LPC001: lip-sync close-up in every character reference set, default lip-sync source image, QC; drama-song-ad-factory 2.7.13 (merge b7d5d1cfc6c4)
 - fix/ciopt-CIO002: ci(CIO002): push main-only + per-PR concurrency so each check runs once per commit (merge abe168ef15e0)
 - fix/bandfix-BND001: BND001: sung share judged only by Trevor's band, no absolute floor; G10 constants; drama-song-ad-factory 2.7.14 (merge 487429c7b3ee)
+- fix/partG-G3: G3: calibrated sung detector (core/singing_detector); drama-song-ad-factory 2.7.15 (merge cee36a4f26c3)
 
 ## [hook-skill] — 2026-10-06
 
