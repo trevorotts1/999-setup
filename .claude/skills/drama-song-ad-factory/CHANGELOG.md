@@ -1,14 +1,23 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.17] - 2026-10-08 - Re-sync shared core and references from onboarding main (W3-A-U1)
+## [2.7.18] - 2026-10-08 - Re-sync shared core and references from onboarding main (W3-A-U1)
 
 Packaging parity with onboarding main `ac8a43fd4` (`75-drama-song-ad-factory`), done file by file instead of a wholesale mirror. Rule: a 999 file is replaced only when its bytes equal an older onboarding-main version (onboarding is strictly newer); every 999 file that carries a newer 999-only fix (H6/H8 band engine, I-series intake and master length, spoken_share, sung_vocal_guard, lip-sync close-up, singing_detector) is kept. `installer-registration/package_core.py` was not run in mirror mode because it would overwrite those fixes.
 
-- Added from onboarding: `audio_c3/soundtrack.py` + `test_soundtrack_f1.py`, `target_engine/` (module + test), `references/style-bibles/`, `references/client-messages.md`.
+- Added from onboarding: `audio_c3/soundtrack.py` + `test_soundtrack_f1.py`, `references/style-bibles/`, `references/client-messages.md`.
 - Updated from onboarding: `audio_c3/voice_packs`, `final_assembler/lipsync_coverage` (+ test), `smp/no_echo` (3 files), `suno_recipe/test_suno_recipe.py`, `references/cli-contract.md`.
-- NOT synced, still differ (onboarding copies need the F6/F15 gates and the F4/F5/F10/F14/F15 set that 999 does not have; copying them turned suites red): `kie_dispatch/*` + `model_lock.py` + `test_model_lock_f14.py`, `style_defaults/*` + `card_gate.py` + `test_card_gate_f15.py`, `intake_preflight/preflight.py` + test, `intake_book/test_never_invent_f6.py`, `final_assembler/test_master_provenance_h12.py` (fails against 999's I4 assembler), `references/price-menu.md`, `references/choice-card-spec.md`, `references/stage-runbook.md`, and every 999-newer file (spoken_share, sung_vocal_guard, lip_gate, lyric_writer, music_styles, intake/factory, assembler, catalog_calculator).
+- NOT synced, still differ (`target_engine/`: its test assumes the old spoken target and fails against SPK001 spoken share 20-25%, so it needs the onboarding spoken25 PR first; onboarding copies need the F6/F15 gates and the F4/F5/F10/F14/F15 set that 999 does not have; copying them turned suites red): `kie_dispatch/*` + `model_lock.py` + `test_model_lock_f14.py`, `style_defaults/*` + `card_gate.py` + `test_card_gate_f15.py`, `intake_preflight/preflight.py` + test, `intake_book/test_never_invent_f6.py`, `final_assembler/test_master_provenance_h12.py` (fails against 999's I4 assembler), `references/price-menu.md`, `references/choice-card-spec.md`, `references/stage-runbook.md`, and every 999-newer file (spoken_share, sung_vocal_guard, lip_gate, lyric_writer, music_styles, intake/factory, assembler, catalog_calculator).
 - Carry to onboarding (999 is ahead): spoken_share + sung_vocal_guard band rule (onboarding PR 1655, open), lip-sync close-up (PR 1654, open), I3 to I8 intake and master-length work, singing_detector.
 - Suites: every skill 75 suite passes except `tests/test_parity_layout.py`, which fails on main too whenever the onboarding canonical core is reachable (pre-existing divergence; skipped otherwise).
+
+## [2.7.17] - 2026-10-08 - Spoken share cut to 20-25%, singing judged against voice time (SPK001)
+
+Owner order (Trevor, 2026-10-08): "Okay, let's go to your recommendation that cut it to about 20-25%." Why: Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40% of runtime plus a music-only intro and end card left at most about 50% for singing, never the 55-60% goal). Six chapter songs came back 15-30% sung.
+
+- `core/spoken_share` (the one G10 constants set): `SPOKEN_TARGET_PCT` 45 -> 22.5 (band 20-25); redo edges `SPOKEN_MIN_PCT` / `SPOKEN_MAX_PCT` 12.5 / 32.5 (target -/+ 10, reporting only, no absolute floor); `SUNG_TARGET_PCT` = 77.5 (75-80), now a share of VOICE time; new `LYRIC_SPOKEN_WORD_PCT` = (15, 18). New `sung_of_voice_pct`, `check_sung_of_voice` (sung / (sung + spoken), rap counts as spoken, intro / gaps / end card never counted), `spoken_word_budget`, `check_spoken_word_budget`; `check_plan` also judges sung-of-voice.
+- `final_assembler/sung_vocal_guard`: sung coverage is sung / (sung + spoken) from the 12.4 timing map (`spoken_section_ids` names the spoken sections); default target 77.5; new `sung_voice_seconds_from_timing`. Only other hard reject stays: no sung stretch of 6 s.
+- `lyric_writer.spoken_word_budget`: spoken lines budgeted at about 15-18% of the lyric words. `suno_recipe.score_take` judges sung-of-voice and passes the spoken-share flag through. `music_styles` share rule text, `spoken_share_card_docs` card line and docs wording, `intake_book` spoken-share menu range, SKILL.md, choice-card spec and QC checklist carry the new numbers.
+- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a 10 s intro plus 5 s end card is not penalized. Same rule in onboarding skill 75 (PR fix/spoken25-SPK001, built on bandfix PR 1655).
 
 ## [2.7.16] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
 
