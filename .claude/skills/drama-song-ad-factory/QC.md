@@ -6,9 +6,32 @@
   length (`shot_planner/face_speaks.py`, `final_assembler/lipsync_coverage.py`,
   numbers in `core/lipsync_clips.py`); below the band fails
   `LIPSYNC_COVERAGE_BELOW_BAND` / `LIPSYNC_COVERAGE_SHORT`.
-- Every lip-sync source picture passes `lip_gate.image_gate` before any paid
-  job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
+- Every lip-sync source picture passes `lip_gate.image_gate` before the first paid
+  job (face 24-45% of frame height, roll within 12, yaw and pitch within 15,
+  smile refused only at 0.90 or more with teeth, at least 720x1280); a refusal
+  lists every `LIPSYNC_IMAGE_*` reason and a measurement that
   could not be made is a refusal, never a pass.
+
+## H4: lip-sync verdicts and the two-try keep-best rule (2026-10-08)
+
+- Sync is measured by `lip_gate.event_sync` on the lead-vocal span, never by
+  loudness correlation or against the final mix. Events: onset after a rest,
+  offset before a rest, every word with p, b or m; tolerance 0.2 s; controls are
+  the events shifted +/-0.5 s and +/-1.0 s and the other lines' events.
+- Verdicts: SYNCED (hit 0.70 or more, margin 0.20 or more); WEAK (keep, flag, no
+  redo); UNMEASURABLE (fewer than 4 events, or face in under 90% of frames: goes
+  to the human mouth strip, never a redo); NOT_SYNCED (hard defects only: still
+  mouth while voiced, mouth shut through more than 0.5 s of voice, mouth moving
+  through a rest over 0.5 s, or hit 0.40 or less with 6 or more events).
+- A sung WEAK or UNMEASURABLE is UNDETERMINED, never bad, until the 10-take
+  human-scored set exists. `python3 lip_gate.py` is the control battery and exits
+  non-zero if ANY negative control (shifted audio, wrong audio, still face)
+  reads SYNCED; run it before the first real verdict.
+- At most 2 paid Kling standard jobs per segment, every name variant counted. Try 2
+  only on a hard defect and only with a changed input. After that the best take is
+  kept: receipt row `KEPT_BEST_OF_2 (tN)` with verdict, numbers, flag, jobs used and a
+  mouth-strip path; `lip_gate.qc_check` accepts that row. A third job, or a second
+  job with the same input, is a QC failure. No InfiniTalk A/B.
 
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung

@@ -1,5 +1,20 @@
 # Changelog: drama-song-ad-factory
 
+## [Unreleased] - Lip-sync best practice: event_sync gate, two-try keep-best rule (LSR001, review 13, 2026-10-08)
+
+No version bump in this unit. Design: review 13 (Opus), after the BSW Power in the Climb diagnosis (loudness correlation could not measure singing; the redo loop re-rolled verdicts no new take could change).
+
+- `lip_gate.py`: `measure`/`judge` and `MAX_OFFSET_S`/`MIN_CORR`/`MIN_CONTROL_MARGIN` replaced by `event_sync` (onset, offset and p/b/m closure events, 0.2 s tolerance, shifted and other-line controls). Verdicts SYNCED / WEAK / UNMEASURABLE / NOT_SYNCED; only hard defects are NOT_SYNCED and only they trigger try 2.
+- Mouth signal is the mediapipe inner-lip gap / face height (`mouth_series`, inside `heavy_slot`); `envelope` takes the lead-vocal stem span; new `events()`.
+- Two-try rule in code: `run_gate` allows at most 2 Kling standard jobs per segment (every name variant counted by `segment_key`; a 3rd raises `LipsyncTryLimit`); try 2 needs a changed input; the InfiniTalk A/B is removed; every paid call goes through `kie_request(generation=True)`. `_row` returns `KEPT_BEST_OF_2` with a flag; `score` ranks no-defect, tier, hit, margin, |lag|; `qc_check` accepts flagged keep-best rows with a mouth-strip path.
+- `IMPROVED_INPUT` (0.30 s lead-in, 0.20 s tail) is now the default for try 1. New `kling_prompt` (sings / says, one emotion, steady camera). New `selftest` / `python3 lip_gate.py`: fails if any negative control reads SYNCED.
+- `image_gate.py`: face share 0.24-0.45 (landmark 10 to 152), roll 12, yaw/pitch 15, smile refused only at 0.90 with teeth (0.60-0.90 flagged), minimum 720x1280, passing crops allowed; `closeup_prompt` says "lips relaxed and very slightly parted".
+- `lipsync_clips.py`: `choose_window` (phrase-boundary cuts from Suno stamps, 0.30/0.20 s padding, 4-6 s, at least 1.5 onsets/s, no held word over 1.2 s, p/b/m/f/v/w preferred, different hook lines); `MAX_TRIES = 2`, `estimate_cost_usd`/`check_budget` default to `attempts=2`.
+- `delivery_checklist` Q8 reads event_sync rows (SYNCED / WEAK / UNMEASURABLE / flagged keep-best) instead of offset and correlation numbers.
+- Docs: SKILL.md, INSTRUCTIONS.md, QC.md (new H4 section), QC checklist items 8 and 11 (lip-sync keep-best carve-out), choice card and price menu notes. The InfiniTalk-backup sentence is marked OPEN for Trevor to decide; the code does not call it.
+- Tests: `test_lip_gate_h2.py`, `test_image_gate.py`, `test_lipsync_closeup.py`, `test_lipsync_clips.py`, `test_delivery_checklist.py` updated; new `test_event_sync.py`, `test_choose_window.py`.
+- No change to `stem_offset.py` or `load_governor.py` (the new code uses both). Thresholds are uncalibrated on real sung clips until the 10-take human-scored set exists.
+
 ## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
 
 Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.

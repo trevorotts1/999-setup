@@ -46,14 +46,15 @@ def test_check_clips():
 
 def test_cost_is_doubled_and_cap_refuses_loudly():
     rate = 0.04                                      # 720P Kling, from Skill 74
-    one = C.estimate_cost_usd(17.5, rate)            # old midpoint
-    two = C.estimate_cost_usd(35, rate)
+    one = C.estimate_cost_usd(17.5, rate, attempts=1)   # old midpoint, one try
+    two = C.estimate_cost_usd(35, rate, attempts=1)
     assert abs(two - 2 * one) < 1e-9 and two == 1.4
-    assert C.estimate_cost_usd(35, rate, shapes=2) == 2.8
-    ok = C.check_budget(35, rate, 2.0)
-    assert ok["pass"] and ok["cost_usd"] == 1.4
+    assert C.estimate_cost_usd(35, rate) == 2.8              # default = 2 tries
+    assert C.estimate_cost_usd(35, rate, shapes=2, attempts=1) == 2.8
+    ok = C.check_budget(35, rate, 3.0)
+    assert ok["pass"] and ok["cost_usd"] == 2.8              # priced at attempts=2
     raises(C.OVER_CAP, C.check_budget, 35, rate, 1.0)      # not trimmed, refused
-    raises(C.OVER_CAP, C.check_budget, 35, rate, 2.0, 1, 2)  # worst case, 2 attempts
+    raises(C.OVER_CAP, C.check_budget, 35, rate, 2.0)        # 1 try fits, 2 do not
     raises(C.PRICE_UNKNOWN, C.check_budget, 35, None, 2.0)
     raises(C.PRICE_UNKNOWN, C.check_budget, 35, 0, 2.0)
     raises(C.CAP_UNKNOWN, C.check_budget, 35, rate, None)

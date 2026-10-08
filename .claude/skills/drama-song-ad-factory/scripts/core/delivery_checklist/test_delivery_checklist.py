@@ -101,11 +101,12 @@ def full_answered_receipt():
         "HONEST_RECEIPT": {"measured_fields": 14, "unmeasured_fields": 0,
                            "source_measured_fields": "receipt audit",
                            "source_unmeasured_fields": "receipt audit"},
-        "LIP_SYNC": {"source": "lipsync_gate(H2) envelope xcorr", "clips": [
-            {"clip": "ls1", "offset_s": 0.02, "correlation": 0.71,
-             "control_correlation": 0.20, "frozen_s": 0.3},
-            {"clip": "ls2", "offset_s": -0.04, "correlation": 0.60,
-             "control_correlation": 0.30, "frozen_s": 0.0},
+        "LIP_SYNC": {"source": "lip_gate.event_sync (lead-vocal stem)", "clips": [
+            {"clip": "ls1", "lip_verdict": "SYNCED", "n_events": 10,
+             "hit": 0.9, "margin": 0.4, "verdict": "PASS"},
+            {"clip": "ls2", "lip_verdict": "WEAK", "n_events": 12,
+             "hit": 0.6, "margin": 0.1, "verdict": "KEPT_BEST_OF_2",
+             "flag": "WEAK", "jobs_used": 2, "mouth_strip": "ls2-strip.png"},
         ]},
         "FIRST_SUNG": {"source": "singing-detector vocal stem",
                        "detector": "singing-detector(vocal-stem)",
@@ -275,22 +276,27 @@ class G7DoneWhen(unittest.TestCase):
             dc.evaluate(None)
 
     # ---- H11: Q8-Q11 --------------------------------------------------
-    def test_h11_q8_shifted_clip_fails_good_passes(self):
+    def test_h11_q8_weak_kept_passes_hard_defect_unflagged_fails(self):
         receipt = full_answered_receipt()
-        self.assertTrue(dc.evaluate(receipt)["pass"])
-        receipt["LIP_SYNC"]["clips"][1]["offset_s"] = 0.20     # shifted
+        self.assertTrue(dc.evaluate(receipt)["pass"])      # SYNCED + flagged WEAK
+        clips = receipt["LIP_SYNC"]["clips"]
+        clips[1].update(lip_verdict="NOT_SYNCED", verdict="FAIL_REPLACE")
         res = dc.evaluate(receipt)
         self.assertEqual(res["repair_scope"], ["LIP_SYNC"])
         self.assertIn("ls2", res["detail"])
-        self.assertIn("0.200s", res["detail"])
+        clips[1].update(verdict="KEPT_BEST_OF_2")          # flagged keep-best
+        self.assertTrue(dc.evaluate(receipt)["pass"])
 
-    def test_h11_q8_control_gap_and_frozen_face_fail(self):
-        for k, v in (("control_correlation", 0.50), ("frozen_s", 1.0),
-                     ("correlation", 0.40)):
+    def test_h11_q8_old_numbers_no_longer_fail_and_gaps_do(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0].update(offset_s=0.20, correlation=0.1)
+        self.assertTrue(dc.evaluate(receipt)["pass"], "no correlation or offset rule")
+        for mutate in (lambda c: c.pop("lip_verdict"), lambda c: c.pop("n_events"),
+                       lambda c: c.update(jobs_used=3),
+                       lambda c: c.update(lip_verdict="UNMEASURABLE", mouth_strip=None)):
             receipt = full_answered_receipt()
-            receipt["LIP_SYNC"]["clips"][0][k] = v
-            self.assertEqual(dc.evaluate(receipt)["repair_scope"],
-                             ["LIP_SYNC"], k)
+            mutate(receipt["LIP_SYNC"]["clips"][1])
+            self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
 
     def test_h11_q9_first_sung_band(self):
         for pct, want in ((10.0, "ACCEPT"), (20.0, "ACCEPT"),

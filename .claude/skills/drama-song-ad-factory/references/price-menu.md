@@ -200,7 +200,8 @@ more pieces, not longer ones, scaled linearly with ad length, no clip over 6 s.
 
 Every clip is its own paid job, so the lip-sync line is about twice what it was.
 Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
-shapes, attempts)` multiplies seconds x the Skill 74 rate x shapes x attempts and
+shapes, attempts)` multiplies seconds x the Skill 74 rate x shapes x attempts (attempts defaults to 2, the
+two-try rule: worst case is double the snapshot below) and
 REFUSES loudly (`LIPSYNC_OVER_CAP`, `LIPSYNC_PRICE_UNKNOWN`, `LIPSYNC_CAP_UNKNOWN`)
 rather than trimming the plan or running past the cap. The card also refuses a
 plan with a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`).
