@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.12
+version: 2.7.13
 ---
 
 # Drama Song Ad Factory
@@ -258,6 +258,13 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   all-Suno rule.
 - **Per-character voice packs:** no two characters share a voice, in any look
   or music style.
+- **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
+  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
+  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
+  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
+  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
+  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
+  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
