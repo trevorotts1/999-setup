@@ -216,8 +216,15 @@ def test_no_approval_refuses_animation():
     check("approved fixture passes the 14.1 gate",
           SD.video_spend_allowed(shots, review)["allowed"] is True)
 
+    # F15: every paid dispatch carries the recorded choice-card receipt.
     req = {"model": "kling-3.0/video", "request_kind": "video",
-           "input": {"prompt": "p" * 200}}
+           "input": {"prompt": "p" * 200},
+           "card_receipt": {"answers": {"video_style": "Lifelike 3D",
+                                        "audio_style": "Soul Ballad",
+                                        "length": 60,
+                                        "video_model": "MiniMax H3 768P"},
+                            "who": "w8 merge test",
+                            "at": "2026-10-08T09:00:00Z"}}
 
     def _never(*_a, **_k):
         raise AssertionError("no provider call may happen before approval")

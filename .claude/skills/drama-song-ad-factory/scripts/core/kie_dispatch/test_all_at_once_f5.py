@@ -101,7 +101,14 @@ def _approved_storyboard():
     }}
 
 def make_jobs(n, inputs=None, model="kling-3.0/video"):
+    # F15: every paid dispatch carries the recorded choice-card receipt.
     req = {"model": model, "input": {"prompt": "p" * 200},
+           "card_receipt": {"answers": {"video_style": "Lifelike 3D",
+                                        "audio_style": "Soul Ballad",
+                                        "length": 60,
+                                        "video_model": "MiniMax H3 768P"},
+                            "who": "w8 merge test",
+                            "at": "2026-10-08T09:00:00Z"},
            **_approved_storyboard()}
     jobs = []
     for i in range(n):
