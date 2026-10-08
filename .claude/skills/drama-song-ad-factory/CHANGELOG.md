@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.4] - 2026-10-08 - Part H H1 lip-sync stem offset
+## [2.6.5] - 2026-10-08 - Part H H1 lip-sync stem offset
 
 - New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
   measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
@@ -11,6 +11,13 @@
   gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
 - Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
   `final_assembler/test_lipsync_placement_h1.py`.
+
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
 
 ## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
 
