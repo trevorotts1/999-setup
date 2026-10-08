@@ -1,8 +1,12 @@
 # Changelog: drama-song-ad-factory
 
-## [Unreleased] - LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
+## [2.7.23] - 2026-10-08 - Batch MGB008: LSC001 + LSP001 + PAR003 + G3-WIRE
 
-No version bump. Replaces 999-setup #72, #86 (and builds on #73, already merged by train MGB007); onboarding #1697, #1698, #1699 carry the same change.
+Landed together by merge-train (one gate run): #88 consolidated lip-sync (LSC001), #90 approved lip-sync process (LSP001, rewords Downloads in install_face_model.py for the leak check), #89 final_assembler byte parity (PAR003), #87 G3-WIRE port (onboarding #1692). Waiting on onboarding: #1700, #1701, #1695 (MGB007) and #1702.
+
+### LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
+
+Replaces 999-setup #72, #86 (and builds on #73, already merged by train MGB007); onboarding #1697, #1698, #1699 carry the same change.
 - **Sync gate = `sync_check` (LSL001, calibrated on real controls).** `lip_gate.judge` maps SYNCED / WEAK / NOT_SYNCED to PASS / ACCEPT_WITH_FLAG / FAIL, a sung line that is WEAK or NOT_SYNCED to UNDETERMINED (held for a person, no paid redo), UNMEASURABLE never a pass. LSR001's `event_sync` moved to `lip_gate/event_sync.py` as an ADVISORY measure recorded as `advisory_event_sync`, never gating (`calibrate_events.py` prints its real-control table, see the PR body).
 - **Picture gate = `picture_gate` (LPG001, calibrated, enforced in the dispatcher).** `image_gate.check_image` has no close-up thresholds of its own: `picture_gate.check_numbers` judges the close-up numbers; `image_gate` adds only size (720x1280, 9:16), occlusion, mouth shadow, light, background, same character and provenance. ONE rule set.
 - **LSR001 non-gate improvements kept:** `choose_window`, `MAX_TRIES = 2`, `count_jobs`, `check_try_limit`, cost default `attempts=2`; `kling_prompt` ("sings" / "says"); padded cut (0.30 s / 0.20 s) is the default input of try 1; try 2 only on a hard defect and only with a changed input (`retry_input`); `KEPT_BEST_OF_2` receipt rows with flag and mouth-strip path; every paid submit through `load_governor.kie_request`; QC.md H4, QC checklist items 8 and 11, `delivery_checklist` Q8 aligned to the sync_check verdicts.
