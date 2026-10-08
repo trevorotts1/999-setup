@@ -62,11 +62,6 @@ import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 
-try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
-    import audio_c3.sfx_off as _sfx_off  # noqa: E402
-except ImportError:  # pragma: no cover - flat script path
-    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
-
 #: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
 #: paid job for a run whose state lacks all four choice-card answers. The
 #: import is soft -- the module must keep working when style_defaults is not
@@ -81,6 +76,18 @@ except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
 #: non-None. Run state is read from ``request["card_receipt"]`` (the
 #: recorded receipt block from style_defaults.card_gate.answered_stamped)
 #: or from ``request["run_state"]["card_receipt"]``.
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def card_gate_refusal(request):
     """-> None when the card is answered and stamped, else the refusal dict
     with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
@@ -111,6 +118,11 @@ def card_gate_refusal(request):
                 "next_action": "Show the choice card and record all four "
                                "answers before any paid job."}
     return None
+
+try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
+    import audio_c3.sfx_off as _sfx_off  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -150,18 +162,6 @@ _MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
 # contain "<" as prose every day.
 _PLACEHOLDER_CI = ("{{", "}}", "<todo", "<placeholder")
 _PLACEHOLDER_CS = ("TODO", "PLACEHOLDER", "KEYFRAME:")
-
-
-def _loud(kind, code, detail):
-    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
-    import os as _os, sys as _sys
-    d = _os.path.dirname(_os.path.abspath(__file__))
-    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
-        d = _os.path.dirname(d)
-    if d not in _sys.path:
-        _sys.path.insert(0, d)
-    import loud_failure
-    getattr(loud_failure, kind)(code, detail)
 
 
 def _walk_str_leaves(obj, path=""):
@@ -631,6 +631,15 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "name the model id; this module never picks one",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    refusal = card_gate_refusal(request)
+    if refusal is not None:                 # F15: no paid job on an unanswered card
+        return envelope("dispatch", "waiting", refusal["reason_code"],
+                        refusal.get("next_action", ""),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"missing_card_fields": refusal["missing"],
+                                  "generated": False})
+
     # F4 gate: a Suno sound-effects job is refused unless the request itself
     # carries the run's explicit manual order (``sound_effects: [...]``).
     # The catalog's suno-sounds surface is NEVER auto-queued: default runs
@@ -646,14 +655,6 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "explicit manual order (manual Part F F4)",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
-    refusal = card_gate_refusal(request)
-    if refusal is not None:                 # F15: no paid job on an unanswered card
-        return envelope("dispatch", "waiting", refusal["reason_code"],
-                        refusal.get("next_action", ""),
-                        run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id,
-                        evidence={"missing_card_fields": refusal["missing"],
-                                  "generated": False})
     if not isinstance(estimated_cost, int) or estimated_cost < 0:
         return envelope("dispatch", "rejected", "UNKNOWN_PRICE",
                         "record an estimated cost before dispatch",

@@ -85,12 +85,15 @@ def job_row(db, logical_key, attempt_id):
 
 def run_case(script, label, adapter_path=None, prompt=None, cost=100,
              model="gpt-image-2-5-sunburst-text-to-image", request=None,
-             no_card=False, lock_model="unset"):
+             lock_model="unset", no_card=False):
     """One dispatch against a fake Skill 74.
 
     lock_model: F14 pre-lock for video jobs, by default the menu default
-    (MiniMax H3 768P); pass None to leave the run un-locked (lock-missing
-    cases).
+    (MiniMax H3 768P) so F15 card flow is assumed; pass None to leave the
+    run un-locked (lock-missing cases).
+
+    no_card: F15 card-gate refusal case; pass True for a request without
+    the recorded choice-card receipt.
     """
     tmp = tempfile.mkdtemp(prefix="kie-dispatch-test-")
     db = os.path.join(tmp, "spend.db")
