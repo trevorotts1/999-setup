@@ -327,16 +327,15 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   another character, never a mixed vocal stem. Narrator, phone, voicemail
   and laptop voices may play as voice-over but are never lip-synced onto a
   person.
-- **Lip-sync sync check (LSL001, Trevor 2026-10-08, looser):** every lip-sync clip is
-  measured by `lip_sync/lip_gate/sync_check.py` (mediapipe face landmarks, heavy work in
-  `load_governor.heavy_slot`). Correlation counts only frames where the voice or the mouth is
-  changing, so held sung notes do not fail a clip that looks right. Three verdicts: **PASS**
-  (clearly matches); **ACCEPT_WITH_FLAG** (borderline: accepted and used, the flags are written
-  in the receipt); **FAIL** (clearly wrong: timing off by more than about 8 frames, the WRONG
-  audio matches better than its own, or the face is still or not found). A missing mediapipe or
-  face model gives **UNMEASURED**, reported, never a pass. **2-try rule:** at most 2 paid
-  lip-sync jobs per segment (first try, one retry with better input), then keep the best-measured
-  take; PASS or ACCEPT_WITH_FLAG stops at once; the automatic third (InfiniTalk A/B) try is gone.
+- **Lip-sync sync check (LSL002, Trevor 2026-10-08, looser):** every lip-sync clip is
+  measured by `lip_sync/lip_gate/sync_check.py` (the validated fixer algorithm; mediapipe face
+  landmarks, heavy work in `load_governor.heavy_slot`; the face model is the same file as the
+  picture gate: `$LIPSYNC_FACE_MODEL` or `assets/face_landmarker.task`). Verdicts: **PASS** (SYNCED);
+  **ACCEPT_WITH_FLAG** (WEAK on a spoken line: used, flag written in the receipt); **FAIL**
+  (NOT_SYNCED on a SPOKEN line); **UNDETERMINED** (WEAK or NOT_SYNCED on a SUNG line: held for a
+  person to look at a mouth strip, NO automatic paid redo); **UNMEASURABLE** (reported, never a
+  pass). **2-try rule:** at most 2 paid lip-sync jobs per segment, then keep the best-measured take;
+  only a spoken FAIL earns the second job; the automatic third (InfiniTalk A/B) try is gone.
   Cut-offs live in `sync_check.py` and are re-proved by `calibrate_sync.py`.
 - **Speaker contract:** the person visible while a line plays is the one
   speaking it, or the voice's source device. QC checks the picture for every

@@ -1,16 +1,17 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
-## Lip-sync sync check: three verdicts (LSL001, 2026-10-08)
+## Lip-sync sync check: validated algorithm, looser verdicts (LSL002, 2026-10-08)
 
-- `lip_gate/sync_check.py` replaces the old all-four-tests-at-once rule. Verdicts: PASS /
-  ACCEPT_WITH_FLAG (accepted, flags in the receipt) / FAIL (timing off by more than about 8
-  frames, wrong audio matches better than its own, face still or not found). UNMEASURED
-  (mediapipe or model missing) is reported and never counts as a pass. Correlation uses
-  changing frames only, so held sung notes are not penalised.
+- `lip_gate/sync_check.py` is the fixer window's validated checker (lag +-10 frames, clip cut to the
+  audio length, chance test by rolled audio, repeated-hook lines dropped from the wrong-audio control;
+  corr floor 0.40, margin floor 0, SYNCED at margin >= 0.05, minimum 45 frames).
+- Verdicts: SYNCED = PASS. WEAK = ACCEPT_WITH_FLAG (used, flag in the receipt). NOT_SYNCED on a
+  SPOKEN line = FAIL. On a SUNG line WEAK or NOT_SYNCED = UNDETERMINED: held for a person to look at
+  a mouth strip, NO automatic paid redo. UNMEASURABLE (no face model, still face, short clip, silent
+  audio, fewer than 2 other lines) is reported and never a pass.
 - At most 2 paid lip-sync jobs per segment, then keep the best-measured take.
-- Cut-offs are proved on known-good controls by `lip_gate/calibrate_sync.py` (approved sung and
-  spoken clips PASS, same clips with wrong audio FAIL, still face FAIL). Re-run it after any
-  threshold change.
+- Controls are re-proved by `lip_gate/calibrate_sync.py` (approved spoken PASS, approved sung flagged or
+  undetermined, wrong audio never PASS, still face not PASS). Re-run it after any threshold change.
 
 ## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
 
