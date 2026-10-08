@@ -266,6 +266,20 @@ def openclaw_send_argv(target, text):
             "--target", str(target), "--message", text]
 
 
+def _with_saved_character(client_dir):
+    """QUESTIONS, with the saved-character question first when the client has
+    saved characters (Part I, I6); otherwise the plain six."""
+    if not client_dir:
+        return QUESTIONS
+    from character_library import character_library as CL
+    q = CL.saved_character_question(client_dir)
+    if not q:
+        return QUESTIONS
+    q = dict(q, why="A saved character keeps the same face across your ads.",
+             reason="you can still pick a new character if you prefer.")
+    return [q] + QUESTIONS
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Print the six-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
@@ -273,20 +287,16 @@ def main(argv=None):
                     help="text: raw card for the Claude Code chat. "
                          "openclaw-json / telegram-json: one send payload per message.")
     ap.add_argument("--target", default="", help="Telegram chat id (send formats)")
-    ap.add_argument("--client-dir", default="",
-                    help="Client data folder: add 'Use a saved character?' when characters are saved (I6).")
     ap.add_argument("--step", action="store_true",
                     help="one question at a time: print only the NEXT message, "
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--client-dir", default="",
+                    help="client data folder; when it holds saved characters the "
+                         "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
-    qs = list(QUESTIONS)
-    if a.client_dir:
-        from character_library import character_library as _cl
-        sq = _cl.saved_character_question(a.client_dir)
-        if sq:
-            qs.insert(0, sq)
+    qs = _with_saved_character(a.client_dir)
     if a.step:
         st = conversation(a.reply, qs)
         if a.format == "text":

@@ -87,6 +87,7 @@
 - feat/skill75-load-governor: skill 75: KIE limiter charges only new generation requests; polls use a separate gentle limiter; 429 resubmits (merge 33c257db30c2)
 - unit/F15-999: Merge F14-999 into F15-999: keep both sides' content (merge 80d8a8000c42)
 - fix/mgb005-integration: drama-song-ad-factory 2.7.21: song_dispatch through the load governor, VERSION/SKILL agreement (merge 049a4c49b1f4)
+- merge/mgb007-999: Fix merge of pr85: music_director/__init__ = onboarding bytes (G9 words_fit + G4 target engine) (merge a4719b4ef6a5)
 
 ## [hook-skill] — 2026-10-06
 

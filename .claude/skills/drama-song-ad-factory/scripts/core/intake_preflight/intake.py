@@ -426,26 +426,34 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                 "next_stage": resume_state.get("next_stage"),
                 "next_action": resume_state.get("next_stage") or "Proceed to preflight."}
     qs = missing_essentials(fields, prov)
-    if not qs:
-        # F15: a complete brief (zero questions) is not a launch -- the choice
-        # card must still be shown and its four answers recorded before any
-        # paid job, whichever entry path filled the brief.
-        card_refusal = _card_refusal(resume_state)
-        if card_refusal is not None:
-            reason, next_action = card_refusal
-            return {"outcome": "waiting", "reason_code": reason,
-                    "questions": [], "question_message": None, "summary": summary,
-                    "digest": digest, "provenance": prov, "auth_status": status,
-                    "approval_invalidated": False, "changes": [],
-                    "next_action": next_action}
-        return {"outcome": "ok", "reason_code": "complete-brief-zero-questions",
+    if qs:
+        # The <=3 story questions are asked first; the choice card comes at
+        # the approval step, not instead of them (directive 24.3 note: the
+        # cap applies to the story questions only).
+        return {"outcome": "waiting", "reason_code": "missing-essentials",
+                "questions": qs,
+                "question_message": _fmt([q["question"] for q in qs]),
+                "summary": summary, "digest": digest, "provenance": prov,
+                "auth_status": status, "approval_invalidated": False,
+                "changes": [],
+                "next_action": ("Answer the bundled questions in one reply; "
+                                "nothing else is asked.")}
+    # F15: a complete brief (zero questions) is not a launch -- the choice
+    # card must still be shown and its four answers recorded before any
+    # paid job, whichever entry path filled the brief.
+    card_refusal = _card_refusal(resume_state)
+    if card_refusal is not None:
+        reason, next_action = card_refusal
+        return {"outcome": "waiting", "reason_code": reason,
+                "questions": [], "question_message": None, "summary": summary,
+                "digest": digest, "provenance": prov, "auth_status": status,
+                "approval_invalidated": False, "changes": [],
+                "next_action": next_action}
+    return {"outcome": "ok", "reason_code": "complete-brief-zero-questions",
                 "questions": [], "question_message": None, "summary": summary,
                 "digest": digest, "provenance": prov, "auth_status": status,
                 "approval_invalidated": False, "changes": [],
                 "next_action": "Record summary digest + auth scope, then run preflight before paid work."}
-    # The <=3 story questions are asked first; the choice card comes at
-    # the approval step, not instead of them (directive 24.3 note: the
-    # cap applies to the story questions only).
     return {"outcome": "waiting", "reason_code": "missing-essentials",
             "questions": qs,
             "question_message": _fmt([q["question"] for q in qs]),

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.21
+version: 2.7.22
 ---
 
 # Drama Song Ad Factory
@@ -236,6 +236,21 @@ detector): count met = accept, one short = accept with a flag, two or more
 short = regenerate. The receipt shows hook text, target, measured count and
 times. The Velvet Voiceover version is exempt.
 
+## Caption and lyric QC on measured timing
+
+- **Caption and lyric QC run on measured timing (Part F F18):** word timings
+  come from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`,
+  F17 — Suno alignedWords → faster-whisper local → client cloud STT). Pass
+  that receipt as `timing=` and the caption check builds its cue clock from
+  the measured timestamps (text still the sheet's own, `caption_timing.captions`,
+  reported as "cue timing measured from <source>") while the lyric check
+  judges coverage, critical words and ad-libs from the measured words
+  (`caption_timing.lyric_observed`, `lyric_diff.observed_source =
+  "measured-timing:<source>"`). Timing the check cannot use is UNAVAILABLE,
+  never a PASS; without a `timing` argument each check keeps its text
+  comparison, and a run measures first via `caption_timing.captions(sheet)` /
+  `lyric_observed(approved_lines)`.
+
 ## Creative doctrine (shared, not adapter-specific)
 
 - Twelve-stage arc, in order: Ordinary World; Humiliation / Emotional Wound;
@@ -319,6 +334,14 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
   source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
+- **Lip-sync sync check (owner order 2026-10-08, looser):** `lip_sync/lip_gate`
+  measures mouth opening (mediapipe face landmarks, through the load governor) against
+  the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
+  ACCEPT_WITH_FLAG (WEAK: accepted and used, note in the receipt); FAIL (NOT_SYNCED on
+  a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
+  person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
+  no face model, cartoon face, silent audio, too short) is reported, never a pass. At
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
@@ -376,6 +399,23 @@ returns `tool-unavailable` / `module-unavailable` with an actionable error
 instead of a silent substitution. Model/role selection for agent work is
 resolved by the live runtime rules of the current mode, never by a hardcoded
 table in this skill.
+
+## Captions and protected names (Part H, H7)
+
+Captions are the approved lyric sheet's own words, timed by the Suno
+timestamps. Speech-to-text is never a caption text source. Character and
+brand names (for example Stale, Stop Stale) are protected words:
+
+- When the lyric sheet is BUILT, the lyric writer may not change a protected
+  name or rewrite a packet line (`core/protected_names.py::check_sheet`,
+  called by `lyric_writer.validate_lyrics` and by
+  `music_director.build_generate_request(packet_lines=..., protected=...)`,
+  so no Suno request is built from a bad sheet).
+- The words check rejects a take where Suno sang a protected name wrong
+  (`music_qc.check_song_qc(..., protected=...)`).
+- Build captions with `protected_names.build_captions(sheet, aligned_words)`;
+  QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
+  protected=...)`): "the house went still" for "Stale" is a FAIL.
 
 ## No hand-written pipeline scripts (Part H H12)
 
