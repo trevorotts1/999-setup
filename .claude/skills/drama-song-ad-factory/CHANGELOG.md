@@ -1,5 +1,16 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.3] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+
+Same change as onboarding Skill 75 v2.6.3: `scripts/core/shot_planner/face_speaks.py`
+lists every shot where a face is visibly speaking and fails
+`FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
+line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
+grace) and `check_coverage_band` measures it. Test:
+`shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
+ships with the onboarding core; this copy's assembler predates Part E, so it
+lands with the next core resync.
+
 ## [2.4.6] - 2026-10-08 - H14 song files in every delivery
 
 - Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
