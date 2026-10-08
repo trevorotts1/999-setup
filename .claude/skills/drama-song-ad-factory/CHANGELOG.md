@@ -1,5 +1,17 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
+
+`VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
+`skill-version.txt` version of the onboarding skill it was packaged from
+(leading `v` dropped), so the fleet roll and the parity test can tell which
+onboarding release a 999 user has.
+
+packaged_from: c73637ddf1b59dda8f0e3168b3b904b1281f2b18
+
+- `SKILL.md` frontmatter `version:` follows `VERSION` (change-control rule in
+  `INSTALL.md` / `CORE_UPDATES.md`; asserted by `tests/test_parity_layout.py`).
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
