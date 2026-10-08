@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.6] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
