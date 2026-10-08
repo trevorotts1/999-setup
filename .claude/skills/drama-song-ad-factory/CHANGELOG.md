@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - Part I I4: masters end 2 seconds early
+
+- New `scripts/core/master_length/` (same module and tests as OpenClaw skill 75 v2.6.1): a chosen
+  length L delivers a master of at most L-2 seconds (60 to 58, 30 to 28, 90 to 88, 120 to 118).
+  Hard maximum, not a band. Song, shot plan and end card are planned to L-2; QC (`final_edit`
+  record, reason `MASTER_TOO_LONG`) fails any longer master.
+- Intake summary now carries `master_max_s`.
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
