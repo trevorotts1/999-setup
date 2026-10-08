@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
+measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
+>= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
+better input, then a one-time single-line InfiniTalk A/B keeping whichever
+measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
