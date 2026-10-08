@@ -36,3 +36,6 @@ CONTROL/boss-heartbeat
 CONTROL/stop-workstream
 # Hook Skill runtime state (written by the guard and its tests, never source)
 .claude/skills/hook-skill/hooks/workflow-guard/state/
+
+# LPG003: downloaded mediapipe face model (installed by lip_gate/install_face_model.py, never committed)
+.claude/skills/drama-song-ad-factory/assets/face_landmarker.task
