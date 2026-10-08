@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.3] - 2026-10-08 - I2 scenes must match the song and the faces
+## [2.7.4] - 2026-10-08 - I2 scenes must match the song and the faces
 
 - New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
   line, meaning, place and action, face emotion at storyboard time; after clips exist, sampled
@@ -8,6 +8,14 @@
   the failing shots are regenerated.
 - Adds `scripts/core/face_emotion/` (Part G G6), which `scene_match` builds on.
 - `SKILL.md` gains the "Scenes must match the song and the faces" section.
+
+## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+
+- New `scripts/core/ending_qc/` (same module and test as OpenClaw skill 75 v2.6.1): every sung
+  song request gets an `[Outro]`, a `[Resolve on final chord]` tag and resolved-ending style
+  words (`music_director.build_generate_request`); `check_ending` measures the last 2 s of the
+  master (level decays, last word not cut, picture fades to the end card, 4-5 s end card done by
+  target length minus 2 s). Test: `python3 scripts/core/ending_qc/test_ending_qc.py`.
 
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 

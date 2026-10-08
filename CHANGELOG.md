@@ -49,6 +49,7 @@
 - fix/partH-H3: Merge origin/main into fix/partH-H3; bump skill to 2.7.1; keep H8 smp no_echo/spoken_share; combine F7+H7 in music_director; keep H9 card CLI (merge 63f97d3b0cc9)
 - fix/sunorecipe-SNR001: G12: Suno song recipe is the default for every Suno music style (drama-song-ad-factory 2.7.2) (merge 7b5d72eae421)
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos (merge e71a6ede72bd)
+- fix/partI-I5: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), drama-song-ad-factory 2.7.3 (merge 4f64488f6bad)
 
 ## [hook-skill] — 2026-10-06
 
