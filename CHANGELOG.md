@@ -76,6 +76,10 @@
 - fix/spoken25-SPK001: SPK001: spoken share 20-25%, singing judged against voice time (77.5); G10 constants; drama-song-ad-factory 2.7.17 (merge 22b4e12fc6b2)
 - fix/w3a-u1-sync-core: Merge origin/main into fix/w3a-u1-sync-core; drop target_engine (needs spoken25), rebump 2.7.18 (merge 9dcabe4892a6)
 - unit/singing-detector-v2: singing_detector 2.0.0: sung needs melody on a scale, not pitched-voice density; control table test; drama-song-ad-factory 2.7.19 (merge e3e123ccdede)
+- fix/skill75-users-model-choice-wins: drama-song-ad-factory + claude-nine: the user's model and agent choice wins; no --model fable pin (merge 2009a8273412)
+- feat/skill75-orchestrate-only-no-silent-failure: skill 75: main window orchestrates only; no silent failure (loud_failure + receipt failures/warnings) (merge b0dece628d78)
+- unit/G8-999-guard: G8 port: sung_vocal_guard measured-path + audio-only share gate (review G1) (merge 0f2cbaa1f019)
+- feat/lipsync-doubled-image-gate: drama-song-ad-factory: double the lip-sync (6-8 clips of 4-6 s per 60 s ad) and add the lip-sync image gate (merge f9f2baee4d19)
 
 ## [hook-skill] — 2026-10-06
 
