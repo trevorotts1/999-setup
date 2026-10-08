@@ -1,5 +1,16 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+
+Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
+lists every shot where a face is visibly speaking and fails
+`FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
+line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
+grace) and `check_coverage_band` measures it. Test:
+`shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
+ships with the onboarding core; this copy's assembler predates Part E, so it
+lands with the next core resync.
+
 ## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
 
 - New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
