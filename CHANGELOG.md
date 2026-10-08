@@ -62,6 +62,7 @@
 - fix/partI-I1: Merge origin/main; renumber I1 to 2.7.7 (I7 took 2.7.6) (merge 7b35987dd4f2)
 - fix/headless-NHL001: Merge origin/main into fix/headless-NHL001 (changelog conflict) (merge de835cfc9649)
 - fix/partI-I3: I3: merge main, renumber skill to 2.7.8 (merge 9608ecd8bfff)
+- fix/hook-HK001: I8: renumber changelog headers to 2.7.9 (merge e1563a2aa191)
 
 ## [hook-skill] — 2026-10-06
 
