@@ -1,5 +1,34 @@
 # Changelog: drama-song-ad-factory
 
+## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
+
+Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
+build core (`<build>/core/`) so this copy carries the version 2 BUILD-OUT
+outputs, byte-identical to the OpenClaw copy; entrypoint, exit map and the
+14 production modules unchanged.
+
+Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
+
+### Added (BUILD-OUT owned outputs, whole modules)
+- `audio_c3/extend/`, `audio_c3/voice_packs/`, `batch_mode/`,
+  `catalog_calculator/extensions/`, `choice_card/looks/`, `intake_book/`,
+  `kie_dispatch/unknown_resolution/`, `shot_planner/speaker_check/`,
+  `style_bibles/canvas_to_3d/`, `style_bibles/canvas_to_life/`
+- import closure those modules need to load: `audio_c3/voice_casting.py`,
+  `choice_card/stl_voice_guard/`, `lip_sync/narrator_rule/`, `music_styles/`,
+  `qc_voice_match/` (root package only), `spoken_share/`, `style_bibles/hybrid/`,
+  `style_defaults/`, `voice_velvet_echo/`
+
+### Not shipped here, on record
+- `core/docs_rename_velvet_voiceover/` — build-tree sweep tool carrying
+  operator absolute paths; build tooling, never client skill code.
+- `core/lip_sync/kling_first/`, `core/qc_voice_match/octave_guard/` — not yet
+  present in build core (unit outputs still in their lanes).
+- `core/kie_dispatch/kie_dispatch.py` — packaging owned by unit `A2-R2-U2`,
+  whose canonical module is under fix; shipped only from the fixed core.
+
+`VERSION` stays `1.0.0`: the release bump belongs to the V2-W4 ship lane.
+
 ## [1.0.0] - 2026-10-06
 
 Initial release: the Claude-Nine / Claude Code distribution of the BlackCEO
@@ -14,8 +43,7 @@ section 35.2 (999 distribution process).
   no independently maintained duplicate.
 - Same CLI as the OpenClaw distribution (W3-02): `scripts/core/` is a
   byte-identical packaged copy of
-  `onboarding/75-drama-song-ad-factory/scripts/core/` — 15 files, tree
-  sha256 `ccaacbfedc4d33cf47408fc1f7cdbb696b40e6be0341e0652294153a2fab419d`
+  `onboarding/75-drama-song-ad-factory/scripts/core/` — 15 files, tree sha256 `ccaacbfedc4d33cf47408fc1f7cdbb696b40e6be0341e0652294153a2fab419d`
   on both sides at packaging time (`__pycache__` excluded). Entrypoint:
   `scripts/core/intake_preflight/factory.py` (`intake` / `preflight`,
   JSON envelope, exit codes 0/1/2/3/4).
