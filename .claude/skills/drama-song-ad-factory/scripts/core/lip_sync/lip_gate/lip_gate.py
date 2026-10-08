@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""lip_gate.py: measured lip-sync gate (Part H H2, Kiesett Stop Stale root cause 05).
+"""lip_gate.py: measured lip-sync gate (Part H H2; looser three-verdict check LSL001).
 
-Kling ai-avatar mouths followed the voice weakly (corr 0.43-0.73, mouth up to
-0.17 s early) and nothing measured it. Every lip-sync clip is now measured
-against the FINAL MIX envelope and must pass ALL of:
+Every lip-sync clip is measured against the FINAL MIX envelope by sync_check.py:
+correlation only on frames where the voice (or mouth) is changing, so held sung
+notes do not fail a clip that looks right. Three verdicts (Trevor's 5/10 band shape):
 
-  * |offset| <= 0.05 s            (negative offset = mouth BEFORE the sound)
-  * corr >= 0.55 AND corr - wrong-audio-control corr >= 0.25
-  * no frozen face (still mouth inside the line) longer than 0.75 s
+  PASS              clearly matches
+  ACCEPT_WITH_FLAG  borderline: accepted and used, flags written in the receipt
+  FAIL              clearly wrong: timing off by more than ~8 frames, the WRONG
+                    audio matches better than its own, or the face is still / not found
+  UNMEASURED        could not be measured (e.g. no mediapipe): reported, never a pass
 
-Below it: regenerate once with better input (single clean line, front-facing
-tight face crop, still image, 0.35 s lead-in / 0.2 s tail); then InfiniTalk
-only through a ONE-TIME single-line A/B (keep whichever MEASURES better); a
-clip that still fails is flagged FAIL_REPLACE (swap for a non-face shot).
-All numbers go in the receipt row. Pure stdlib; providers are injected so
-tests run at $0. ffmpeg helpers (-threads 4) are optional.
+Trevor's 2-try rule: at most 2 paid lip-sync jobs per segment (first try, then one
+retry with better input), then keep the best-measured take. PASS or
+ACCEPT_WITH_FLAG ends the segment at once. The old strict rule (|offset| <= 0.05 s,
+corr >= .55, margin >= .25, frozen <= .75 s, all at once) is gone. Pure stdlib;
+providers are injected so tests run at $0. ffmpeg helpers run through the load governor.
 """
 from __future__ import annotations
 
@@ -29,24 +30,17 @@ if _gcore not in _gsys.path:
 import load_governor as _LG  # noqa: E402
 
 try:                                   # package import
-    from . import image_gate
+    from . import image_gate, sync_check
 except ImportError:                    # script import (tests run from here)
     import image_gate
+    import sync_check
 
 TOOL_NAME = "lip_gate"
 SCHEMA_VERSION = "1.0.0"
 
-# Calibrated on 3 clips (n=3); tune on first real runs.
-MAX_OFFSET_S = 0.05
-MIN_CORR = 0.55
-MIN_CONTROL_MARGIN = 0.25
-MAX_FROZEN_S = 0.75
-MAX_LAG_S = 0.6
-
-LIP_OFFSET = "LIP_OFFSET"
-LIP_CORR_LOW = "LIP_CORR_LOW"
-LIP_CONTROL_MARGIN = "LIP_CONTROL_MARGIN"
-LIP_FROZEN_FACE = "LIP_FROZEN_FACE"
+MAX_PAID_ATTEMPTS = 2          # Trevor's 2-try rule: paid lip-sync jobs per segment
+PASS, FLAG, FAIL, UNMEASURED = (sync_check.PASS, sync_check.FLAG, sync_check.FAIL,
+                                sync_check.UNMEASURED)
 LIP_UNMEASURED = "LIP_UNMEASURED"
 
 # What "better input" means on the regenerate attempt.
@@ -57,35 +51,6 @@ IMPROVED_INPUT = {
     "lead_in_s": 0.35,
     "tail_s": 0.2,
 }
-
-
-def _pearson(a, b):
-    n = len(a)
-    if n < 3 or n != len(b):
-        return 0.0
-    ma, mb = sum(a) / n, sum(b) / n
-    da = [x - ma for x in a]
-    db = [x - mb for x in b]
-    va, vb = sum(x * x for x in da), sum(x * x for x in db)
-    if va <= 1e-12 or vb <= 1e-12:
-        return 0.0
-    return sum(x * y for x, y in zip(da, db)) / (va * vb) ** 0.5
-
-
-def _xcorr(mouth, voice, max_lag):
-    """Return (best_corr, best_k). k>0 = voice sample k frames AFTER the
-    mouth sample matches -> mouth is early."""
-    best, bk = -2.0, 0
-    for k in range(-max_lag, max_lag + 1):
-        if k >= 0:
-            m, v = mouth[:len(mouth) - k], voice[k:]
-        else:
-            m, v = mouth[-k:], voice[:len(voice) + k]
-        n = min(len(m), len(v))
-        c = _pearson(m[:n], v[:n])
-        if c > best:
-            best, bk = c, k
-    return best, bk
 
 
 def frozen_seconds(mouth, voice, fps):
@@ -102,40 +67,28 @@ def frozen_seconds(mouth, voice, fps):
     return longest / fps
 
 
-def measure(mouth, voice, control_voice, fps):
-    """Measure one clip. mouth/voice/control_voice: equal-rate series at fps."""
+def measure(mouth, voice, control_voice, fps, face_found=1.0):
+    """Measure one clip. mouth/voice: equal-rate series at fps; control_voice:
+    one other line's envelope or a list of them (the wrong-audio control)."""
     if not mouth or not voice or not control_voice or fps <= 0:
         raise ValueError(LIP_UNMEASURED)
-    ml = int(MAX_LAG_S * fps)
-    corr, k = _xcorr(mouth, voice, ml)
-    ctrl, _ = _xcorr(mouth, control_voice, ml)
-    return {"offset_s": round(-k / fps, 4), "corr": round(corr, 4),
-            "control_corr": round(ctrl, 4),
-            "margin": round(corr - ctrl, 4),
-            "frozen_s": round(frozen_seconds(mouth, voice, fps), 4),
-            "fps": fps}
+    m = sync_check.measure_sync(mouth, voice, control_voice, fps, face_found)
+    m["frozen_s"] = round(frozen_seconds(mouth, voice, fps), 4)
+    return m
 
 
 def judge(m):
-    """Pass/fail a measurement; adds verdict, reasons, shift_s (delay the
-    clip by this to zero the offset; positive = move clip later)."""
-    reasons = []
-    if abs(m["offset_s"]) > MAX_OFFSET_S:
-        reasons.append(LIP_OFFSET)
-    if m["corr"] < MIN_CORR:
-        reasons.append(LIP_CORR_LOW)
-    if m["margin"] < MIN_CONTROL_MARGIN:
-        reasons.append(LIP_CONTROL_MARGIN)
-    if m["frozen_s"] > MAX_FROZEN_S:
-        reasons.append(LIP_FROZEN_FACE)
-    return dict(m, verdict="PASS" if not reasons else "FAIL",
-                reasons=reasons, shift_s=round(-m["offset_s"], 4))
+    """PASS / ACCEPT_WITH_FLAG / FAIL; adds reasons (FAIL), flags (receipt note)
+    and shift_s (delay the clip by this to zero the offset)."""
+    return dict(sync_check.judge_sync(m), shift_s=round(-m["offset_s"], 4))
 
 
 def score(j):
-    """Higher is better; any passing clip beats any failing clip."""
-    s = j["margin"] - abs(j["offset_s"]) - j["frozen_s"] / 10
-    return s + (10 if j["verdict"] == "PASS" else 0)
+    """Higher is better: PASS > ACCEPT_WITH_FLAG > FAIL > UNMEASURED."""
+    if j["verdict"] == UNMEASURED:
+        return -100
+    rank = {PASS: 20, FLAG: 10, FAIL: 0}[j["verdict"]]
+    return rank + j["margin"] - abs(j["offset_s"])
 
 
 def run_gate(line_id, generate, measure_clip, ab_state, source_image=None,
@@ -169,35 +122,37 @@ def run_gate(line_id, generate, measure_clip, ab_state, source_image=None,
             line_id)
     src = {"source_image": source_image}
     improved = dict(IMPROVED_INPUT, **src)
-    plan = [("kling", src), ("kling", improved)]
+    plan = [("kling", src), ("kling", improved)][:MAX_PAID_ATTEMPTS]
     attempts = []
     for provider, spec in plan:
         attempts.append(_attempt(provider, spec, generate, measure_clip))
-        if attempts[-1]["judge"]["verdict"] == "PASS":
-            return _row(line_id, attempts, False)
-    ab = False
-    if not ab_state.get("infinitalk_used"):
-        ab_state["infinitalk_used"] = True
-        ab = True
-        attempts.append(_attempt("infinitalk", improved, generate,
-                                 measure_clip))
-    return _row(line_id, attempts, ab)
+        if attempts[-1]["judge"]["verdict"] in (PASS, FLAG, UNMEASURED):
+            break                       # accepted, or unmeasurable: no more paid retries
+    return _row(line_id, attempts, False)
 
 
 def _attempt(provider, spec, generate, measure_clip):
     clip = generate(provider, spec)
-    return {"provider": provider, "input": spec or "base", "clip": clip,
-            "judge": judge(measure_clip(clip))}
+    try:
+        j = judge(measure_clip(clip))
+    except (ValueError, RuntimeError) as e:     # missing mediapipe etc.: report, never pass
+        j = sync_check.unmeasured(e)
+    return {"provider": provider, "input": spec or "base", "clip": clip, "judge": j}
 
 
 def _row(line_id, attempts, ab):
     kept = max(attempts, key=lambda a: score(a["judge"]))
-    ok = kept["judge"]["verdict"] == "PASS"
-    return {"tool": TOOL_NAME, "line_id": line_id, "attempts": attempts,
-            "infinitalk_ab": ab, "kept": kept["provider"],
-            "kept_clip": kept["clip"], "verdict": "PASS" if ok else
-            "FAIL_REPLACE", "numbers": {k: kept["judge"][k] for k in (
-                "offset_s", "corr", "control_corr", "margin", "frozen_s")}}
+    j = kept["judge"]
+    ok = j["verdict"] in (PASS, FLAG)
+    row = {"tool": TOOL_NAME, "line_id": line_id, "attempts": attempts,
+           "paid_attempts": len(attempts), "infinitalk_ab": ab,
+           "kept": kept["provider"], "kept_clip": kept["clip"],
+           "verdict": j["verdict"] if ok or j["verdict"] == UNMEASURED else "FAIL_REPLACE",
+           "flags": j.get("flags", []), "reasons": j.get("reasons", [])}
+    if "corr" in j:
+        row["numbers"] = {k: j[k] for k in (
+            "offset_s", "corr", "control_corr", "margin", "frozen_s")}
+    return row
 
 
 LIPSYNC_VIEW = "lipsync-closeup"
@@ -228,9 +183,11 @@ def check_reference_set(reference_set, characters, mouth_clear):
 
 
 def qc_check(rows):
-    """Receipt-level check: every lip clip has a PASS row with numbers."""
+    """Receipt-level check: every lip clip has a PASS or ACCEPT_WITH_FLAG row with
+    numbers (a flagged row must carry its flags). UNMEASURED and FAIL_REPLACE fail."""
     bad = [r.get("line_id") for r in rows
-           if r.get("verdict") != "PASS" or "numbers" not in r]
+           if r.get("verdict") not in (PASS, FLAG) or "numbers" not in r
+           or (r.get("verdict") == FLAG and not r.get("flags"))]
     return {"pass": not bad, "failed_lines": bad,
             "reason_code": None if not bad else "LIP_SYNC_GATE_FAILED"}
 

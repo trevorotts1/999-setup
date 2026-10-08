@@ -1,5 +1,17 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
+## Lip-sync sync check: three verdicts (LSL001, 2026-10-08)
+
+- `lip_gate/sync_check.py` replaces the old all-four-tests-at-once rule. Verdicts: PASS /
+  ACCEPT_WITH_FLAG (accepted, flags in the receipt) / FAIL (timing off by more than about 8
+  frames, wrong audio matches better than its own, face still or not found). UNMEASURED
+  (mediapipe or model missing) is reported and never counts as a pass. Correlation uses
+  changing frames only, so held sung notes are not penalised.
+- At most 2 paid lip-sync jobs per segment, then keep the best-measured take.
+- Cut-offs are proved on known-good controls by `lip_gate/calibrate_sync.py` (approved sung and
+  spoken clips PASS, same clips with wrong audio FAIL, still face FAIL). Re-run it after any
+  threshold change.
+
 ## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
 
 - Coverage: 30-40 s and 6-8 clips of 4-6 s in a 60 s ad, scaled linearly with

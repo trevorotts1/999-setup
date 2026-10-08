@@ -50,35 +50,23 @@ def test_good_passes():
     assert j["verdict"] == "PASS" and j["offset_s"] == 0 and j["corr"] > .9, j
 
 
-def test_shifted_fails_and_shift_fixes():
-    j = judged(lead(VOICE, 6))                 # 0.2 s early
-    assert j["verdict"] == "FAIL" and L.LIP_OFFSET in j["reasons"], j
-    assert abs(j["offset_s"] + 0.2) < 1e-6 and abs(j["shift_s"] - 0.2) < 1e-6
-    fixed = ([.05] * 6) + lead(VOICE, 6)[:-6]          # delay clip by shift_s
+def test_shifted_far_fails_and_shift_fixes():
+    j = judged(lead(VOICE, 12))                # 0.4 s early: clearly wrong timing
+    assert j["verdict"] == "FAIL" and L.sync_check.REASON_LAG in j["reasons"], j
+    assert abs(j["offset_s"] + 0.4) < 1e-6 and abs(j["shift_s"] - 0.4) < 1e-6
+    fixed = ([.05] * 12) + lead(VOICE, 12)[:-12]       # delay clip by shift_s
     assert judged(fixed)["verdict"] == "PASS"
 
 
-def test_random_mouth_fails_corr():
-    r = random.Random(9)
-    j = judged([r.random() for _ in VOICE])
-    assert j["verdict"] == "FAIL" and L.LIP_CORR_LOW in j["reasons"], j
-
-
-def test_wrong_audio_control_margin():
-    # mouth follows the CONTROL audio: correlates with itself but the
-    # wrong-audio control matches as well -> margin fails.
+def test_wrong_audio_fails():
+    # mouth follows the CONTROL audio: the wrong audio matches better than its own.
     j = L.judge(L.measure(CONTROL, VOICE, CONTROL, FPS))
-    assert L.LIP_CONTROL_MARGIN in j["reasons"] and j["verdict"] == "FAIL", j
+    assert j["verdict"] == "FAIL" and L.sync_check.REASON_WRONG_AUDIO in j["reasons"], j
 
 
-def test_frozen_face_fails():
-    v = speech(1, gap=(60, 90))                # 1.0 s pause inside the line
-    mouth = [0.0 if 60 <= i < 90 else x for i, x in enumerate(v)]
-    j = L.judge(L.measure(mouth, v, CONTROL, FPS))
-    assert j["frozen_s"] > L.MAX_FROZEN_S and L.LIP_FROZEN_FACE in j["reasons"], j
-    short = speech(1, gap=(60, 70))            # 0.33 s pause is fine
-    m2 = [0.0 if 60 <= i < 70 else x for i, x in enumerate(short)]
-    assert L.measure(m2, short, CONTROL, FPS)["frozen_s"] < L.MAX_FROZEN_S
+def test_still_face_fails():
+    j = L.judge(L.measure([0.01] * len(VOICE), VOICE, CONTROL, FPS))
+    assert j["verdict"] == "FAIL" and L.sync_check.REASON_STILL in j["reasons"], j
 
 
 def _mock(table):
@@ -93,41 +81,55 @@ def _mock(table):
 
 PIC = {"source_image": "closeup.png",
        "image_check": lambda img: {"pass": True}}   # picture gate has its own test
-GOOD, BAD, BAD2 = VOICE, lead(VOICE, 6), lead(VOICE, 9)
+GOOD, BAD, BAD2 = VOICE, lead(VOICE, 12), lead(VOICE, 11)
 
 
-def test_regenerate_once_then_pass_no_infinitalk():
+def test_pass_on_first_try_stops():
+    calls, gen, meas = _mock({"kling-base": GOOD})
+    row = L.run_gate("L1", gen, meas, {}, **PIC)
+    assert row["verdict"] == "PASS" and calls == [("kling", "base")]
+
+
+def test_retry_once_then_pass():
     calls, gen, meas = _mock({"kling-base": BAD, "kling-improved": GOOD})
     row = L.run_gate("L1", gen, meas, {}, **PIC)
-    assert row["verdict"] == "PASS" and row["kept"] == "kling"
+    assert row["verdict"] == "PASS" and row["paid_attempts"] == 2
     assert calls == [("kling", "base"), ("kling", "improved")]
-    assert not row["infinitalk_ab"]
     assert set(row["numbers"]) == {"offset_s", "corr", "control_corr",
                                    "margin", "frozen_s"}
 
 
-def test_infinitalk_one_time_ab_keeps_better():
-    state = {}
-    t = {"kling-base": BAD2, "kling-improved": BAD,
-         "infinitalk-improved": GOOD}
-    calls, gen, meas = _mock(t)
-    row = L.run_gate("L1", gen, meas, state, **PIC)
-    assert row["infinitalk_ab"] and row["kept"] == "infinitalk"
-    assert row["verdict"] == "PASS"
-    # second failing line: the A/B is spent, InfiniTalk is not called again
-    calls.clear()
-    row2 = L.run_gate("L2", gen, meas, state, **PIC)
-    assert [c[0] for c in calls] == ["kling", "kling"] and not row2["infinitalk_ab"]
-    assert row2["verdict"] == "FAIL_REPLACE" and row2["kept"] == "kling"
-    assert row2["numbers"]["offset_s"] == -0.2     # kept the better of the two
-
-
-def test_ab_keeps_kling_when_infinitalk_measures_worse():
-    t = {"kling-base": BAD, "kling-improved": BAD,
-         "infinitalk-improved": BAD2}
-    _, gen, meas = _mock(t)
+def test_two_try_cap_keeps_best_measured():
+    calls, gen, meas = _mock({"kling-base": BAD, "kling-improved": BAD2})
     row = L.run_gate("L1", gen, meas, {}, **PIC)
-    assert row["kept"] == "kling" and row["verdict"] == "FAIL_REPLACE"
+    assert len(calls) == L.MAX_PAID_ATTEMPTS == 2          # never a third paid job
+    assert row["paid_attempts"] == 2 and not row["infinitalk_ab"]
+    assert row["verdict"] == "FAIL_REPLACE" and row["reasons"]
+    assert abs(row["numbers"]["offset_s"] + 11 / FPS) < 1e-3            # kept the better-measured take (11 frames)
+
+
+def test_flag_is_accepted_and_stops():
+    flagged = {"verdict": "ACCEPT_WITH_FLAG", "offset_s": 0, "corr": .3,
+               "control_corr": .2, "margin": .1, "frozen_s": 0, "flags": ["corr 0.30 < 0.33"],
+               "reasons": []}
+    row = L.lip_gate._row("L1", [{"provider": "kling", "input": "base", "clip": "c", "judge": flagged}], False)
+    assert row["verdict"] == "ACCEPT_WITH_FLAG" and row["flags"]
+    assert L.qc_check([row])["pass"]
+    assert not L.qc_check([dict(row, flags=[])])["pass"]   # a flag must be written down
+
+
+def test_unmeasured_is_reported_not_passed_and_no_retry():
+    calls = []
+
+    def gen(provider, spec):
+        calls.append(provider)
+        return "c"
+
+    def boom(clip):
+        raise RuntimeError("SYNC_UNMEASURED: mediapipe/opencv unavailable")
+    row = L.run_gate("L1", gen, boom, {}, **PIC)
+    assert row["verdict"] == "UNMEASURED" and len(calls) == 1
+    assert not L.qc_check([row])["pass"]
 
 
 def test_qc_check_fails_replaced_or_unnumbered():
@@ -135,6 +137,7 @@ def test_qc_check_fails_replaced_or_unnumbered():
     assert L.qc_check([ok])["pass"]
     assert not L.qc_check([ok, {"line_id": "b", "verdict": "FAIL_REPLACE",
                                "numbers": {}}])["pass"]
+    assert not L.qc_check([{"line_id": "u", "verdict": "UNMEASURED"}])["pass"]
     assert not L.qc_check([{"line_id": "c", "verdict": "PASS"}])["pass"]
 
 
