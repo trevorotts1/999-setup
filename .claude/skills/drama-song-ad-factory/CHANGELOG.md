@@ -1,5 +1,19 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.5] - 2026-10-08 - Part H H6 first real singing is a measured 15% target
+
+Same change as onboarding Skill 75 v2.6.5: `core/spoken_share` replaces the
+fixed-seconds `FIRST_SUNG_WITHIN_SECONDS = 10` label check with
+`FIRST_SUNG_TARGET_PCT = 15`, measured on the vocal stem (first sung stretch of
+at least 6 s) and judged with the owner's 5/10 band: within 5 points accept,
+over 5 up to 10 accept with a FLAG line for the receipt, over 10 redo.
+`steer_first_sung` / `lyric_writer.steer_opening` steer the lyric-sheet builder.
+Tests: `spoken_share/test_spoken_share.py`, `lyric_writer/test_steer_opening.py`.
+`core/smp/spoken_share` becomes the same thin re-export of core `spoken_share`
+that the onboarding copy already is (its old 999-only copy kept its own
+`FIRST_SUNG_WITHIN_SECONDS = 10` and shadowed the canonical names, which broke
+`music_styles`); its test follows.
+
 ## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
 
 Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
