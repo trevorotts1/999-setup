@@ -1,5 +1,15 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.17] - 2026-10-08 - Re-sync shared core and references from onboarding main (W3-A-U1)
+
+Packaging parity with onboarding main `ac8a43fd4` (`75-drama-song-ad-factory`), done file by file instead of a wholesale mirror. Rule: a 999 file is replaced only when its bytes equal an older onboarding-main version (onboarding is strictly newer); every 999 file that carries a newer 999-only fix (H6/H8 band engine, I-series intake and master length, spoken_share, sung_vocal_guard, lip-sync close-up, singing_detector) is kept. `installer-registration/package_core.py` was not run in mirror mode because it would overwrite those fixes.
+
+- Added from onboarding: `audio_c3/soundtrack.py` + `test_soundtrack_f1.py`, `target_engine/` (module + test), `references/style-bibles/`, `references/client-messages.md`.
+- Updated from onboarding: `audio_c3/voice_packs`, `final_assembler/lipsync_coverage` (+ test), `smp/no_echo` (3 files), `suno_recipe/test_suno_recipe.py`, `references/cli-contract.md`.
+- NOT synced, still differ (onboarding copies need the F6/F15 gates and the F4/F5/F10/F14/F15 set that 999 does not have; copying them turned suites red): `kie_dispatch/*` + `model_lock.py` + `test_model_lock_f14.py`, `style_defaults/*` + `card_gate.py` + `test_card_gate_f15.py`, `intake_preflight/preflight.py` + test, `intake_book/test_never_invent_f6.py`, `final_assembler/test_master_provenance_h12.py` (fails against 999's I4 assembler), `references/price-menu.md`, `references/choice-card-spec.md`, `references/stage-runbook.md`, and every 999-newer file (spoken_share, sung_vocal_guard, lip_gate, lyric_writer, music_styles, intake/factory, assembler, catalog_calculator).
+- Carry to onboarding (999 is ahead): spoken_share + sung_vocal_guard band rule (onboarding PR 1655, open), lip-sync close-up (PR 1654, open), I3 to I8 intake and master-length work, singing_detector.
+- Suites: every skill 75 suite passes except `tests/test_parity_layout.py`, which fails on main too whenever the onboarding canonical core is reachable (pre-existing divergence; skipped otherwise).
+
 ## [2.7.16] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
 
 Four port commits from onboarding 75-drama-song-ad-factory (origin/main 1c5d829f), merged onto main. Where the port and main overlapped, main wins (BND001 band, H3 30 fps, LPC001 lip-sync close-up); the port's own additions stay.
