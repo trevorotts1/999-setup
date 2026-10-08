@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.4] - 2026-10-08 - I2 scenes must match the song and the faces
+## [2.7.5] - 2026-10-08 - I2 scenes must match the song and the faces
 
 - New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
   line, meaning, place and action, face emotion at storyboard time; after clips exist, sampled
@@ -8,6 +8,12 @@
   the failing shots are regenerated.
 - Adds `scripts/core/face_emotion/` (Part G G6), which `scene_match` builds on.
 - `SKILL.md` gains the "Scenes must match the song and the faces" section.
+
+## [2.7.4] - 2026-10-08 - Part I I6 character library
+
+- New `scripts/core/character_library/`: after a character is approved, one question ("Do you want to save <character> to your character library so you can reuse them in future ads?"), then a name; saves reference images, description and voice notes under the client's own data folder; later cards list "Use a saved character?".
+- `factory.py character` subcommand (ask, save, list, use, card); `card --client-dir` adds the saved-character question where the H9 intake card exists.
+- Test: `scripts/core/character_library/test_character_library_i6.py` (save + reuse round trip).
 
 ## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
 

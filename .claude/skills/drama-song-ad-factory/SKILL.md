@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.4
+version: 2.7.5
 ---
 
 # Drama Song Ad Factory
@@ -109,6 +109,21 @@ byte-identical from the canonical source `drama-song-factory-build/core/`
 Cross-distribution sha256 equality with the OpenClaw packaging is checked by
 `tests/test_parity_layout.py` and the workspace parity suite; when the
 canonical tree is absent the result is `PARITY UNDETERMINED`, not a pass.
+
+## Character library (Part I, I6)
+
+When the client approves a character, ask exactly one question, in plain words:
+"Do you want to save <character> to your character library so you can reuse
+them in future ads?" On yes, ask "What name should I save <character> under?",
+then save the approved reference images, the description and the voice notes
+with `python3 scripts/core/intake_preflight/factory.py character --client-dir
+<client data folder> save --name <name> --description <text> --image <file>
+[--image ...] --voice-notes <text>`. The library lives inside that client's own
+data folder (`character-library/<name>/`), never shared between clients. Later
+intake cards list saved characters under "Use a saved character?" (`character
+--client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
+intake card exists). `character --client-dir <dir> use --name <name>` prints
+the brief fields (name, description, reference images, voice notes) to reuse.
 
 ## Suno song recipe (read this first when you build audio)
 
