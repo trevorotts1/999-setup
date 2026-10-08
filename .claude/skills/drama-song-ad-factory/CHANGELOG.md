@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - I7 intake asked one question at a time
+
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
+  test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
+  numbered options one per line, the RECOMMENDED option with its reason, then waits. After the
+  sixth answer, a recap and a request for "yes"; a line number reopens just that question.
+- `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
+  this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
