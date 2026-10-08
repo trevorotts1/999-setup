@@ -107,6 +107,17 @@ layer. When the canonical core changes:
 A one-sided core change is a lockstep defect (directive 2.3), not a
 style difference.
 
+## 6b. Pictures match the words (Part H H5)
+
+Stage order: audio, then timestamps, then shot plan, then pictures. Never
+generate pictures before the song exists. Plan shots with
+`shot_planner.plan_from_timestamps` from the REAL Suno timestamps; every shot
+names the line it shows (`shows_line_ids`) and its picture is generated at its
+window's length. No slow motion above 1.15x (`SLOWMO_OVER_LIMIT`). QC lists
+shot / time / line / match (`pictures_match_gate`) and fails any mismatch
+(`PICTURE_LINE_MISMATCH`); the assembler enforces both before any render.
+Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
+
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
 Shared with the OpenClaw twin. Field rules:
