@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.15] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
+
+Four port commits from onboarding 75-drama-song-ad-factory (origin/main 1c5d829f), merged onto 2.7.14. Where the port and main overlapped, main wins (BND001 band, H3 30 fps, LPC001 lip-sync close-up); the port's own additions stay.
+
+- Ported: `final_assembler` E2-E7/M7 pieces main lacked, `shot_planner` E2/E4 (shot beats, no-reuse), `kie_dispatch` submit/wait/save + modality budgets + resolver zero-settle evidence, `smp/initial_questions`, and operator paths removed from 6 core files.
+- Tests: `final_assembler/conftest.py` supplies the `tmp_root` fixture so `test_assemble_timeout_default_and_override`, `test_gate_wiring` and `test_marker_validation` run under pytest as well as as scripts.
+
 ## [2.7.14] - 2026-10-08 - Sung share judged only by Trevor's band, no absolute floor (BND001)
 
 Owner order (Trevor, 2026-10-08): "It's not an absolute 55% or 20% ... within about 5 percentage points" and "Once you get past 10%, it's got to be redone."
