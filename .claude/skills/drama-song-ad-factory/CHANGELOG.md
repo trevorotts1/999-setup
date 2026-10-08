@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.6] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
 
 Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
 lists every shot where a face is visibly speaking and fails
@@ -10,6 +10,24 @@ grace) and `check_coverage_band` measures it. Test:
 `shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
 ships with the onboarding core; this copy's assembler predates Part E, so it
 lands with the next core resync.
+
+## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
+
+`scripts/core/spoken_share/` (the constants module) now holds the single
+singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
+singing was chosen) and Trevor's band (`ACCEPT_PTS=5`, `FLAG_PTS=10`):
+within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
+`check_share`, `check_first_sung` and `check_plan` use it and return `flags`.
+Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
+lip-sync coverage modules are not in this distribution yet; they pick the
+band up when they are ported.
+
+## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
+
+- New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
+  `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
+  above 1.15x and picture/line mismatches before any render.
+- INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
 
 ## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
 

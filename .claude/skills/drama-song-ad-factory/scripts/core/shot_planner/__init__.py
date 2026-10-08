@@ -20,6 +20,13 @@ from .shot_planner import (
     load_timing_map,
     bind_plan as _bind_plan,
 )
+from .timestamp_plan import (  # Part H H5
+    MAX_SLOWMO,
+    plan_from_timestamps,
+    match_table,
+    pictures_match_gate,
+    check_stretch,
+)
 
 try:
     from style_bible_integration import (

@@ -123,6 +123,57 @@ def _seg_transition(tl, seg):
     return t
 
 
+def _h5_core():
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.timestamp_plan as tp
+    return tp
+
+
+def _h5_stretch(seg):
+    return _h5_core().stretch_of(seg)
+
+
+def h5_gates(plan):
+    """Part H H5: no slow motion above 1.15x (SLOWMO_OVER_LIMIT) and, when
+    the timeline carries line windows and segments name the line they show,
+    every picture matches the line heard in its window
+    (PICTURE_LINE_MISMATCH). Returns (_fail or None, evidence rows)."""
+    tp = _h5_core()
+    segs = plan["segments"]
+    rows = tp.check_stretch(segs)
+    ev = {"stretch": rows}
+    bad = [r for r in rows if not r["ok"]]
+    if bad:
+        return _fail(tp.SLOWMO, next_action=(
+            "segment(s) %s are slowed above %.2fx; generate the picture at "
+            "the shot window's length instead of stretching it"
+            % (",".join(str(r["index"]) for r in bad), tp.MAX_SLOWMO)),
+            evidence=ev), ev
+    if plan.get("lines") and any(s.get("shows_line_ids") for s in segs):
+        fps = plan["fps"]
+        shots = [{"shot_id": "seg%d" % i,
+                  "song_start": s["offset_frames"] / fps,
+                  "song_end": (s["offset_frames"] + s["frames"]) / fps,
+                  "shows_line_ids": s.get("shows_line_ids", [])}
+                 for i, s in enumerate(segs)]
+        try:
+            gate = tp.pictures_match_gate(shots, [
+                {"line_id": l["line_id"], "start": l["start_s"],
+                 "end": l["end_s"], "text": l.get("text", "")}
+                for l in plan["lines"]])
+        except (KeyError, TypeError, AttributeError, tp.PlanError) as exc:
+            return _fail("TIMELINE_BAD_LINES", next_action=str(exc),
+                         evidence=ev), ev
+        ev["pictures_match"] = gate
+        if gate["outcome"] != "ok":
+            return _fail(gate["reason_code"], next_action=(
+                "pictures do not match the words in " + ",".join(gate["mismatches"])),
+                evidence=ev), ev
+    return None, ev
+
+
 def plan_timeline(tl, base_dir=".", probe=None):
     """Pure frame plan: snap durations once, accumulate integer frames.
 
@@ -156,14 +207,18 @@ def plan_timeline(tl, base_dir=".", probe=None):
                 xd = cap
                 if xd == 0:
                     trans = "none"
-        items.append({"src": s["src"], "frames": frames,
-                      "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd,
-                      "lip_sync": bool(s.get("lip_sync")),
-                      "lip_sync_line_ids": list(
-                          s.get("lip_sync_line_ids") or []),
-                      **({"first_word_s": float(fw)} if fw is not None
-                         else {})})
+        item = {"src": s["src"], "frames": frames,
+                "snapped_dur": frames / fps, "transition": trans,
+                "xfade_dur": xd,
+                "lip_sync": bool(s.get("lip_sync")),
+                "lip_sync_line_ids": list(s.get("lip_sync_line_ids") or []),
+                # Part H H5: slow-motion factor + the line this picture shows
+                "stretch": round(_h5_stretch({**s, "dur": dur}), 3)}
+        if fw is not None:
+            item["first_word_s"] = float(fw)
+        if s.get("shows_line_ids"):
+            item["shows_line_ids"] = list(s["shows_line_ids"])
+        items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -338,13 +393,18 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         bad = gate(plan)
         if bad:
             return _fail(bad[0], next_action=why, evidence={})
+    # Part H H5: slow motion cap + pictures-match-words, before any spend.
+    h5_fail, h5_ev = h5_gates(plan)
+    if h5_fail:
+        return h5_fail
     argv = build_argv(plan, output, ffmpeg)
     if dry_run:
         return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                 "tool_version": TOOL_VERSION, "command": "assemble",
                 "outcome": "ok", "reason_code": "DRY_RUN",
                 "next_action": "rerun without dry_run to render",
-                "evidence": {"argv": argv, "plan": plan}, "state_version": 0}
+                "evidence": {"argv": argv, "plan": plan, "h5": h5_ev},
+                "state_version": 0}
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -362,7 +422,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      evidence={"output": str(output)})
     frame = 1.0 / plan["fps"]
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
-            "total_frames": plan["total_frames"], "argv": argv}
+            "total_frames": plan["total_frames"], "argv": argv,
+            "h5": h5_ev}
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
