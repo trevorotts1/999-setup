@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.5] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+## [2.6.6] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
 
 Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
 lists every shot where a face is visibly speaking and fails
@@ -10,6 +10,16 @@ grace) and `check_coverage_band` measures it. Test:
 `shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
 ships with the onboarding core; this copy's assembler predates Part E, so it
 lands with the next core resync.
+
+## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
+
+Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
+`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
+`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
+(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
+measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
+Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
+accept with a flag shown in the receipt; over 10 redo).
 
 ## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
 
