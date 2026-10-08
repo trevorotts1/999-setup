@@ -16,7 +16,7 @@ that retarget, plus the reference note the owner asked for:
 
   * the owner-approved **5-minute** reference ad measures **57.0% spoken**
     (170.9 s of 300 s, ``qualification/hybrid-one-check-chanel/
-    storyboard-5min.md``) -- that is **over the new 55% limit**, so it does
+    storyboard-5min.md``) -- that is **over the new 32.5% redo limit**, so it does
     not set the spoken share and no new ad may copy that number;
   * its **recipe still stands for everything else** -- story, beats, look,
     timing map, voices, the C3 audio method.
@@ -84,8 +84,8 @@ DOCS_STATEMENT = (
     "spoken), target %g%% (%d-%d%%); a music-only intro, gaps and the end "
     "card never count against it. Both are judged by Trevor's band: within 5 "
     "points accept, 5 to 10 accept with a flag, past 10 redo. The lyric "
-    "writer budgets spoken lines at about 15-18%% of the lyric words because "
-    "Suno stretches spoken parts. Same for every length and every music "
+    "writer's spoken word share is derived from the ad's own spoken target "
+    "and the length formula's measured word rates, not a fixed number. Same for every length and every music "
     "style -- rap counts as spoken. The spoken opener stays short and the "
     "first real singing, measured on the vocal stem, is targeted at %d%% of "
     "the runtime. This replaces the earlier %d percent target and the "

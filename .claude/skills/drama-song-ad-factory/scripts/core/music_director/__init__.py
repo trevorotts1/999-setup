@@ -120,7 +120,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     protected name or rewrite a packet line. ``packet_lines=None`` keeps the
     old behavior (packet binding happens upstream in lyric QC).
     """
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
     errors = []
     if packet_lines is not None:
         if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
