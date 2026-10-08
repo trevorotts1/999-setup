@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt
 - fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
 - fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
