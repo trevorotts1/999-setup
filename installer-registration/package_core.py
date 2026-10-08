@@ -19,11 +19,19 @@ Scope: this tool writes only the packaged tree inside the repository. It never
 writes into a Claude config root — packaging must not create a second skills
 copy under a personal config root (directive 2.2 / 2.4).
 
+Unit W1-A-U2 (skill 75 C3): after the core mirror, also mirror the skill's
+references/style-bibles/ directory (realism-cinematic.md ships with the skill).
+refs live NEXT TO scripts/core, never inside it, so the core file-set parity
+test stays exact. If the canonical skill has no references/style-bibles yet,
+refs are skipped (staging/wave timing) — core packaging is unaffected.
+
 Modes:
   (default)  mirror source -> dest: copy every canonical file, drop files the
-             source no longer ships (runtime __pycache__/*.pyc exempt)
+             source no longer ships (runtime __pycache__/*.pyc exempt); also
+             mirror references/style-bibles when the canonical skill has it
   --check    compare only; exit 1 on any drift, 0 when dest matches source
-             exactly (file set AND per-file sha256)
+             exactly (file set AND per-file sha256; refs checked only when
+             canonical refs exist)
 
 Exit codes: 0 ok / match, 1 drift under --check, 2 usage or source error.
 stdlib only, no network.
@@ -43,6 +51,8 @@ SKILL_NAME = "drama-song-ad-factory"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DEST = REPO_ROOT / ".claude" / "skills" / SKILL_NAME / "scripts" / "core"
 CANONICAL_SUBPATH = Path("onboarding") / ("75-" + SKILL_NAME) / "scripts" / "core"
+#: skill-relative refs path (sibling of scripts/, never inside scripts/core)
+REFS_SUBPATH = Path("references") / "style-bibles"
 
 
 def resolve_source(arg):
@@ -58,6 +68,16 @@ def resolve_source(arg):
         if cand.is_dir():
             return cand
     return REPO_ROOT.parent / CANONICAL_SUBPATH
+
+
+def skill_root(core_dir):
+    """<skill>/scripts/core -> <skill> (parents[1])."""
+    return Path(core_dir).resolve().parents[1]
+
+
+def resolve_refs_dirs(src_core, dst_core):
+    """(src_refs, dst_refs) under each side's skill root. Both may be absent."""
+    return skill_root(src_core) / REFS_SUBPATH, skill_root(dst_core) / REFS_SUBPATH
 
 
 def collect(root):
@@ -143,9 +163,13 @@ def main(argv=None):
         raise SystemExit("package_core: source/destination overlap: %s vs %s" % (src, dst))
 
     src_files = collect(src)
+    src_refs, dst_refs = resolve_refs_dirs(src, dst)
+    refs_active = src_refs.is_dir()
 
     if a.check:
         problems = drift(src_files, dst)
+        if refs_active:
+            problems += ["refs " + p for p in drift(collect(src_refs), dst_refs)]
         if problems:
             print("package_core --check: %d problem(s), dest=%s" % (len(problems), dst))
             for p in problems:
@@ -153,10 +177,17 @@ def main(argv=None):
             return 1
         print("package_core --check: OK  %d files match canonical" % len(src_files))
         print("  tree sha256 packaged=%s canonical=%s" % (digest(collect(dst)), digest(src_files)))
+        if refs_active:
+            print("  refs: %s files match canonical %s" % (len(collect(src_refs)), src_refs))
         return 0
 
     written, removed = sync(src, dst, src_files)
     problems = drift(src_files, dst)
+    if refs_active:
+        ref_written, ref_removed = sync(src_refs, dst_refs, collect(src_refs))
+        written += ref_written
+        removed += ref_removed
+        problems += ["refs " + p for p in drift(collect(src_refs), dst_refs)]
     if problems:
         print("package_core: post-write verification FAILED")
         for p in problems:
@@ -167,6 +198,10 @@ def main(argv=None):
         % (len(src_files), written, removed, src, dst)
     )
     print("  tree sha256 packaged=%s canonical=%s" % (digest(src_files), digest(src_files)))
+    if refs_active:
+        print("  refs mirrored %s -> %s" % (src_refs, dst_refs))
+    else:
+        print("  refs: canonical %s absent — skipped (core packaging unaffected)" % src_refs)
     print("  packaged tree only — no Claude config root was read or written")
     return 0
 
