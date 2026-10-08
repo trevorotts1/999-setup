@@ -3,11 +3,17 @@
 
 Stage order (never reordered, never partially skipped):
 
+  0. placeholder check   request JSON may carry no unfilled placeholder (F10);
+                         refused before the ledger or Skill 74 is touched
   1. ledger reserve      ``spend_ledger.plan`` + ``reserve`` (directive 18/24.4)
   2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
   3. Skill 74 preflight  balance must cover price x 1.30
   4. prompt-budget check exit 4 = over max, exit 3 = under floor
-  5. run / save          one Skill 74 ``run`` call, files saved immediately
+  5. submit/wait/save    Skill 74 ``submit`` (task id persisted immediately),
+                         ``wait`` with a modality budget (video 1200 / music
+                         600 / image 300, or request["timeout"]), outer
+                         subprocess W+120 so the inner wait always returns
+                         first, then ``save`` files on success
   6. ledger reconcile    succeeded/failed settle; unknown retains reservation
 
 Shadow / off: stop **before the approval card**. The client is told generation
@@ -16,10 +22,19 @@ transport - Skill 74 is the one KIE path - and a skip is recorded as
 *not generated*: the reservation is released at zero cost, never settled as a
 generation.
 
-Unknown: a ``run`` answer whose ``state`` is not a known adapter state, an
-unparsable ``run`` answer, or an exception raised while ``run`` was in flight,
-marks the reservation ``unknown`` and STOPS. No retry, no resubmit; reconcile
-from provider records or operator evidence first.
+Unknown: a wait timeout (``state`` running plus ``error.code`` timeout), an
+unparsable submit/wait answer, or an exception raised while either was in
+flight, marks the reservation ``unknown`` and STOPS - with the remote task id
+already stored when submit produced one. No retry, no resubmit; reconcile from
+provider records or operator evidence first.
+
+F10 (manual 02): a request whose JSON still carries an unfilled placeholder
+(``{{``, ``}}``, ``<TODO``, ``<PLACEHOLDER`` - any case - or the bare tokens
+``TODO``, ``PLACEHOLDER``, ``KEYFRAME:`` from the Kiesett incident) is refused
+at submission with reason ``REQUEST_PLACEHOLDER`` before anything is reserved
+or sent. Any failed task is reported within one poll: the wait path fails on
+the FIRST poll answer reading ``fail`` (stage evidence row + ``failure_poll``
+in the envelope), never after retries or silent skips.
 
 This module carries no HTTP client of its own: the adapter path comes from
 ``KIE_LIVE_ADAPTER_PATH`` or a search relative to this file, and every call is
@@ -34,14 +49,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
+
+try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
+    import audio_c3.sfx_off as _sfx_off  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -66,6 +88,274 @@ RUN_OK = "success"
 RUN_SKIPPED = "skipped"
 RUN_FAILED = "fail"
 RUN_PENDING = ("queued", "running")
+
+# Outer wait budget per modality (manual C2). request["timeout"] wins.
+_WAIT_S = {"video": 1200, "music": 600, "image": 300}
+_VIDEO_CUES = ("video", "veo", "kling", "seedance", "hailuo", "pixverse",
+               "runway", "wan2", "i2v", "t2v")
+_MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
+               "voice")
+
+# F10 placeholder tokens. Case-insensitive: {{ }} and the bracketed TODO /
+# PLACEHOLDER markers a template leaves behind. Case-sensitive: the bare
+# Kiesett-incident tokens, so ordinary prose ("todo list", "Keyframe: 12")
+# never trips them. The bare "<" is deliberately excluded - real prompts
+# contain "<" as prose every day.
+_PLACEHOLDER_CI = ("{{", "}}", "<todo", "<placeholder")
+_PLACEHOLDER_CS = ("TODO", "PLACEHOLDER", "KEYFRAME:")
+
+
+def _walk_str_leaves(obj, path=""):
+    """Every string leaf of request JSON with its JSON path."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _walk_str_leaves(v, "%s/%s" % (path, k))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk_str_leaves(v, "%s[%d]" % (path, i))
+    elif isinstance(obj, str):
+        yield path, obj
+
+
+def _find_placeholder(request):
+    """First unfilled placeholder in a request payload -> (path, token), or
+    None. Scans the whole request (model/timeout included), not just input -
+    a template can hide in any field."""
+    for path, value in _walk_str_leaves(request):
+        low = value.lower()
+        for tok in _PLACEHOLDER_CI:
+            if tok in low:
+                return path, tok
+        for tok in _PLACEHOLDER_CS:
+            if tok in value:
+                return path, tok
+    return None
+
+
+def _registry_entry(model, adapter=None):
+    """Skill 74 registry row for model, or None. Path is relative to adapter."""
+    path = adapter or resolve_adapter()
+    if not path:
+        return None
+    reg = (Path(path).resolve().parent.parent / "references"
+           / "kie-model-registry.json")
+    try:
+        data = json.loads(Path(reg).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    for m in models:
+        if isinstance(m, dict) and m.get("id") == model:
+            return m
+    return None
+
+
+def _modality(model, adapter=None):
+    entry = _registry_entry(model, adapter)
+    if entry:
+        ttypes = " ".join(entry.get("taskType") or []).lower()
+        if "video" in ttypes:
+            return "video"
+        if "music" in ttypes or "audio" in ttypes or "speech" in ttypes:
+            return "music"
+        if "image" in ttypes:
+            return "image"
+    mid = (model or "").lower()
+    if any(c in mid for c in _VIDEO_CUES):
+        return "video"
+    if any(c in mid for c in _MUSIC_CUES):
+        return "music"
+    return "image"
+
+
+def _wait_budget_s(request, model, adapter=None):
+    """W for Skill 74 wait; the outer subprocess runs with W+120."""
+    t = request.get("timeout") if isinstance(request, dict) else None
+    if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
+        return int(t)
+    return _WAIT_S[_modality(model, adapter)]
+
+
+def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
+                           status="fail", task_id="", error=None,
+                           adapter_state=""):
+    """Dispatch evidence for the resolver (events kind='dispatch'). Best-effort."""
+    payload = {"stage": stage, "adapter_state": adapter_state,
+               "error": error or {}, "task_id": task_id or None,
+               "remote_task_id": task_id or None}
+    try:
+        conn = sqlite3.connect(db, timeout=10)
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO events("
+                "run_id,logical_key,attempt_id,kind,provider_event_id,"
+                "provider_seq,status,payload_json,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (run_id, logical_key, attempt_id, "dispatch", stage, 0, status,
+                 json.dumps(payload, sort_keys=True), L._now_iso()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
+def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
+                     runner=None, timeout=300):
+    """Part F F5: submit EVERY ready job in ONE pass. Returns a receipt dict.
+
+    A job is 'ready' when its model, request, estimated_cost and every input
+    path are present. All ready jobs go out together - the owner rule: 17
+    clips at once; no 'test batch first' unless the owner orders one. The
+    stage order callers follow stays reference images -> keyframes -> clips;
+    this is the single clips pass at the end of that order.
+
+    jobs: each a dict with a unique logical_key, the exact model id (this
+          module never picks one), a request dict, an estimated_cost and
+          input paths under 'inputs' (a path or a list; every one must
+          exist on disk). submit_all_ready never invents a missing field -
+          an incomplete job is excluded and NAMED in the receipt.
+    ledger: optional spend_ledger DB passed through to each dispatch() so
+          every submit lands reserve/reconcile rows; run/logical/attempt
+          ids come from the job itself (job['request_ids'] or defaults).
+    max_concurrency: None means submit all ready jobs at once. A positive
+          int NAMES the provider cap: at most that many run in flight, and
+          the receipt says the cap bound the pass (max_at_once and
+          capped_by). 0, negative or a non-int is refused in the receipt,
+          never treated as unlimited.
+
+    Receipt (always a plain dict, never an exception):
+      {submitted, excluded: [{logical_key, reason}], max_at_once,
+       capped_by, envelopes, errors, submission_errors}
+    All keys always present, on every path, so callers can read one shape.
+    """
+    if max_concurrency is not None and (
+            not isinstance(max_concurrency, int)
+            or isinstance(max_concurrency, bool) or max_concurrency <= 0):
+        return _receipt(outcome="rejected",
+                        reason="max_concurrency must be a positive int or "
+                               "None (got %r)" % (max_concurrency,))
+    ready, excluded = [], []
+    jobs = jobs if isinstance(jobs, list) else ([] if jobs is None
+                                                else list(jobs))
+    for j in jobs:
+        key = (j or {}).get("logical_key") if isinstance(j, dict) else None
+        key = key or "unnamed-job"
+        try:
+            reason = _not_ready_reason(j)
+        except Exception as e:                              # noqa: BLE001
+            reason = "bad-input-spec: %s" % str(e)[:160]
+        if reason:
+            excluded.append({"logical_key": key, "reason": reason})
+        else:
+            ready.append(j)
+
+    cap = None
+    if max_concurrency is not None and len(ready) > max_concurrency:
+        cap = max_concurrency
+
+    envelopes, errors, sub_errs = [], [], []
+    ok_count = 0
+    if ready:
+        pool = ThreadPoolExecutor(max_workers=(cap or len(ready)))
+        try:
+            futs = {pool.submit(_one_submit, j, ledger, timeout): j
+                    for j in ready}
+            for fu in as_completed(futs):
+                env, j = fu.result()
+                envelopes.append(env)
+                if env["outcome"] == "ok":
+                    ok_count += 1
+                else:
+                    sub_errs.append(
+                        {"logical_key": j["logical_key"],
+                         "outcome": env["outcome"],
+                         "reason_code": env["reason_code"]})
+        finally:
+            pool.shutdown(wait=True)
+
+    # The pass takes every ready job in one go; when a cap binds, the receipt
+    # names it and max_at_once records the cap, not the ready count.
+    return _receipt(excluded=excluded, submitted=ok_count,
+                    max_at_once=(cap if cap is not None else len(ready)),
+                    capped_by=cap,
+                    envelopes=envelopes, errors=errors,
+                    submission_errors=sub_errs)
+
+
+def _receipt(excluded=None, submitted=0, max_at_once=0, capped_by=None,
+             envelopes=None, errors=None, submission_errors=None,
+             outcome=None, reason=None):
+    """One receipt shape everywhere; optional rejected marker."""
+    rec = {"submitted": submitted, "excluded": list(excluded or []),
+           "max_at_once": max_at_once, "capped_by": capped_by,
+           "envelopes": list(envelopes or []), "errors": list(errors or []),
+           "submission_errors": list(submission_errors or [])}
+    if outcome:
+        rec["outcome"] = outcome
+        rec["reason"] = reason
+    return rec
+
+
+def _not_ready_reason(job):
+    """'' when ready to submit; the exclusion reason otherwise."""
+    if not isinstance(job, dict):
+        return "not-a-dict"
+    if not job.get("model"):
+        return "no-model"
+    if not job.get("request"):
+        return "no-request"
+    cost = job.get("estimated_cost")
+    if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
+        return "no-estimated-cost"
+    spec = job.get("inputs")
+    paths = ([spec] if isinstance(spec, (str, os.PathLike))
+             else list(spec if spec is not None else []))
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            return "bad-input-spec"
+        if not os.path.exists(p):
+            return "inputs-missing: %s" % str(p)
+    return ""
+
+
+def _one_submit(job, ledger, timeout):
+    """One ready job through dispatch(); returns (envelope, job).
+
+    Wraps job['request_ids'] (run_id/logical_key/attempt_id - defaults
+    'run-all-ready'/'batch-n'/'att-n') so a caller controls its ledger rows.
+    No exception ever escapes; an exception becomes an 'error' envelope.
+    """
+    rid = (job.get("request_ids") or {}) if isinstance(job, dict) else {}
+    ids = {
+        "run_id": rid.get("run_id") or "run-all-ready",
+        "logical_key": rid.get("logical_key") or job.get("logical_key")
+        or "batch-job",
+        "attempt_id": rid.get("attempt_id") or ""
+    }
+    if not ids["attempt_id"]:
+        # One attempt per job inside the pass; logical key keeps rows apart.
+        ids["attempt_id"] = "att-" + ids["logical_key"]
+    try:
+        env = dispatch(
+            model=job["model"], request=job["request"],
+            save_dir=job.get("save_dir")
+            or job.get("request", {}).get("save_dir") or tempfile.gettempdir(),
+            ledger_db=ledger or ":memory:",
+            run_id=ids["run_id"], logical_key=ids["logical_key"],
+            attempt_id=ids["attempt_id"],
+            estimated_cost=job["estimated_cost"],
+            prompt=job.get("prompt", ""),
+            units=job.get("units", 1), stage=job.get("stage", "kie"),
+            owner=job.get("owner", "kie-dispatch"),
+            adapter_path=job.get("adapter_path"), runner=job.get("runner"),
+            timeout=timeout)
+        return env, job
+    except Exception as e:                                  # noqa: BLE001
+        return envelope("dispatch", "error", "SUBMIT_ALL_READY-EXCEPTION",
+                        str(e)[:300]), job
 
 
 class DispatchError(Exception):
@@ -163,6 +453,48 @@ def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
         evidence=ev, state_version=unk.get("state_version", 0))
 
 
+# ---- F6: no animation before storyboard approval -------------------------
+try:
+    import storyboard_director as _SD                     # sibling core/ pkg
+except ImportError as _e:
+    if "storyboard_director" not in str(_e):
+        raise
+    _SD = None
+
+
+def check_storyboard_approval(shots, review, request=None):
+    """Part F F6 shot-generation entry check. Returns the refusal dict or
+    None.
+
+    A video job (the animation stage) for a shot plan must come through
+    directive 14.1's gate: every shot storyboard_approved AND the
+    adversarial review passed. Callers pass the run's bound shot list and
+    the recorded review result via request["storyboard"] =
+    {"shots": [...], "review": {...}}; anything missing or malformed
+    refuses (fail-closed: a run with no approval record cannot animate).
+    Non-video jobs (music/image) are untouched.
+    """
+    if _SD is None:
+        return {"reason_code": "storyboard-gate-unavailable",
+                "detail": "storyboard_director not importable; refusing "
+                          "fail-closed"}
+    req = request if isinstance(request, dict) else {}
+    if req.get("request_kind") != "video" and _modality(req.get("model")) != "video":
+        return None
+    sb = (request or {}).get("storyboard")
+    if not isinstance(sb, dict) or not isinstance(sb.get("shots"), list) \
+            or not sb["shots"]:
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": "no storyboard record in the request; a run cannot "
+                          "animate before storyboard approval is recorded"}
+    gate = _SD.video_spend_allowed(sb["shots"], sb.get("review"))
+    if not gate.get("allowed"):
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": gate.get("reason_code", "storyboard-gate-closed"),
+                "gate": gate}
+    return None
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
@@ -173,11 +505,48 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "name the model id; this module never picks one",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # F4 gate: a Suno sound-effects job is refused unless the request itself
+    # carries the run's explicit manual order (``sound_effects: [...]``).
+    # The catalog's suno-sounds surface is NEVER auto-queued: default runs
+    # make zero sound-effect jobs (manual Part F F4).
+    request_orders_sfx = _sfx_off.sfx_ordered(request)
+    if _sfx_off._is_sfx_job({"model": model, "route": model,
+                             "endpoint": (request or {}).get("endpoint", "")}) \
+            and not request_orders_sfx:
+        return envelope("dispatch", "rejected", "SFX_JOB_NOT_ORDERED",
+                        "no automatic Suno sound effects: a default run "
+                        "makes zero sound-effect jobs; carry "
+                        "`sound_effects: [...]` in the run config for an "
+                        "explicit manual order (manual Part F F4)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
     if not isinstance(estimated_cost, int) or estimated_cost < 0:
         return envelope("dispatch", "rejected", "UNKNOWN_PRICE",
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # F6: a run cannot animate before storyboard approval is recorded.
+    sb_refusal = check_storyboard_approval(None, None, request)
+    if sb_refusal:
+        return envelope("dispatch", "rejected", sb_refusal["reason_code"],
+                        sb_refusal.get("detail", "")
+                        + " (directive 14.1: approve the storyboard and pass "
+                          "adversarial review first)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"gate": sb_refusal.get("gate"),
+                                  "generated": False})
+    # ---- 0. placeholder check (F10) ---------------------------------------
+    # Before the ledger: a refused request reserves nothing and calls nothing.
+    ph = _find_placeholder(request)
+    if ph:
+        return envelope(
+            "dispatch", "rejected", "REQUEST_PLACEHOLDER",
+            "fill the placeholder at %s (%r) in the request file and dispatch "
+            "again; nothing was reserved and nothing was sent" % (ph[0], ph[1]),
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
+                      "generated": False})
     run = runner or make_runner(timeout)
 
     # ---- 1. ledger reserve -------------------------------------------------
@@ -300,98 +669,183 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         {"exit_code": b_rc, "raw": (b_raw or "")[-400:],
                          "generated": False})
 
-        # ---- 5. run / save -------------------------------------------------
+        # ---- 5. submit / wait / save ---------------------------------------
+        # Split of the old single `run` call (manual C2): the outer subprocess
+        # timer used to fire before Skill 74's own wait, so a long video left
+        # an unknown row with no task id and the resolver zero-settled spend.
         req_file = os.path.join(tmp, "request.json")
         with open(req_file, "w", encoding="utf-8") as f:
             json.dump(request, f, sort_keys=True)
         os.makedirs(save_dir, exist_ok=True)
-        try:
-            r_rc, r, r_raw = _call(run, adapter,
-                                   ["run", "--request", req_file,
-                                    "--save-dir", save_dir, "--json"])
-        except Exception as e:                              # pragma: no cover
+
+        wait_s = _wait_budget_s(request, model, adapter)
+        # Injected runners (tests) already stand in for Skill 74; the real
+        # wait subprocess gets W+120 so the inner wait always returns first.
+        wait_run = run if runner is not None else make_runner(wait_s + 120)
+
+        def _unknown_at(stage, extra, task=""):
+            ev = {"stage": stage, "wait_timeout_s": wait_s}
+            ev.update(extra)
+            if task:
+                ev["task_id"] = task
+                ev["remote_task_id"] = task
             return _hold_unknown(ledger_db, run_id, logical_key, attempt_id,
-                                 owner, {"stage": "run", "error": str(e)})
-        if r is None:
-            return _hold_unknown(
-                ledger_db, run_id, logical_key, attempt_id, owner,
-                {"stage": "run", "rc": r_rc, "raw": (r_raw or "")[-400:]})
-        state = r.get("state")
-        task_id = r.get("task_id") or ""
-        if state == RUN_OK:
-            credits = r.get("credits_consumed")
-            if isinstance(credits, (int, float)) and not isinstance(credits, bool):
-                actual = int(credits)
-                warn = []
-            else:
-                actual = int(estimated_cost)
-                warn = ["ACTUAL_COST_UNREPORTED"]
-            rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
-                          "reserved", "succeeded", actual, task_id=task_id,
-                          provider_ref="kie", evidence_ref=task_id)
-            if rec["outcome"] not in ("ok", "parked"):
-                return envelope("dispatch", rec["outcome"],
-                                rec.get("reason_code", "ledger-settle-failed"),
-                                rec.get("next_action", ""),
-                                run_id=run_id, logical_key=logical_key,
-                                attempt_id=attempt_id,
-                                evidence={"task_id": task_id,
-                                          "saved_paths": r.get("saved_paths") or []},
-                                state_version=rec.get("state_version", 0))
-            return envelope(
-                "dispatch", "ok", "KIE_DISPATCH_OK",
-                "files saved before the links expire; record the receipt",
-                run_id=run_id, logical_key=logical_key,
-                attempt_id=attempt_id,
-                evidence={"adapter_mode": mode, "generated": True,
-                          "task_id": task_id,
-                          "saved_paths": r.get("saved_paths") or [],
-                          "credits_consumed": credits,
-                          "actual_cost": actual, "warnings": warn,
-                          "retries": 0},
-                state_version=rec.get("state_version", 0))
-        if state == RUN_SKIPPED:
+                                 owner, ev)
+
+        # (1) submit --------------------------------------------------------
+        try:
+            s_rc, s, s_raw = _call(run, adapter,
+                                   ["submit", "--request", req_file, "--json"])
+        except Exception as e:                              # pragma: no cover
+            return _unknown_at("submit", {"error": str(e)})
+        if s is None:
+            return _unknown_at("submit",
+                               {"rc": s_rc, "raw": (s_raw or "")[-400:]})
+
+        s_state = s.get("state")
+        task_id = s.get("task_id") or ""
+        s_err = s.get("error") if isinstance(s.get("error"), dict) else {}
+
+        if s_state == RUN_SKIPPED:
             return stop(
                 "waiting", "generation-skipped-not-generated",
-                "Skill 74 skipped the run; skipped is not generated. Do not "
+                "Skill 74 skipped the submit; skipped is not generated. Do not "
                 "fall back to a private KIE client - activate mode=active.",
-                {"adapter_state": state, "generated": False,
-                 "approval_card": None, "fallback_used": False,
-                 "disposition": "not-generated"})
-        if state == RUN_FAILED:
-            err = r.get("error") or {}
-            credits = r.get("credits_consumed")
+                {"stage": "submit", "adapter_state": s_state,
+                 "generated": False, "approval_card": None,
+                 "fallback_used": False, "disposition": "not-generated"})
+        if s_state == RUN_FAILED:
+            # Definite submit error: settle now. Never leave an unknown row
+            # that the resolver could zero-settle without asking KIE.
+            credits = s.get("credits_consumed")
             cost = (int(credits) if isinstance(credits, (int, float))
                     and not isinstance(credits, bool) else 0)
-            return stop("rejected", "kie-run-failed",
-                        "Skill 74 reported a failed run (%s); reconcile the "
-                        "charge, then retry with a new attempt id"
-                        % (err.get("code") or "unknown"),
-                        {"adapter_state": state, "error": err,
-                         "task_id": task_id, "actual_cost": cost,
-                         "generated": False},
-                        final="failed", cost=cost)
-        if state in RUN_PENDING:
-            if not task_id:
-                return _hold_unknown(
-                    ledger_db, run_id, logical_key, attempt_id, owner,
-                    {"stage": "run", "adapter_state": state,
-                     "remote_task_id": None})
+            _record_stage_evidence(
+                ledger_db, run_id, logical_key, attempt_id, "submit",
+                status="fail", task_id=task_id, error=s_err,
+                adapter_state=s_state)
+            return stop(
+                "rejected", "kie-submit-failed",
+                "Skill 74 submit refused the job (%s); nothing was generated"
+                % (s_err.get("code") or "unknown"),
+                {"stage": "submit", "adapter_state": s_state, "error": s_err,
+                 "task_id": task_id or None, "actual_cost": cost,
+                 "generated": False},
+                final="failed", cost=cost)
+
+        if s_state == RUN_OK and not task_id:
+            # Sync family already finished inside submit; no pollable id.
+            task_id = "sync-" + L.digest_request(request)[:12]
+
+        if task_id:
             sub = L.mark_submitted(ledger_db, run_id, logical_key, attempt_id,
                                    task_id, owner=owner)
-            return envelope(
-                "dispatch", "waiting", "kie-run-incomplete",
-                "poll this job; polling is not resubmitting",
-                run_id=run_id, logical_key=logical_key,
-                attempt_id=attempt_id,
-                evidence={"adapter_state": state, "task_id": task_id,
-                          "generated": False},
-                state_version=sub.get("state_version", 0))
-        return _hold_unknown(ledger_db, run_id, logical_key, attempt_id, owner,
-                             {"stage": "run", "adapter_state": state,
-                              "task_id": task_id,
-                              "known_states": [RUN_OK, RUN_SKIPPED,
-                                               RUN_FAILED] + list(RUN_PENDING)})
+            if sub.get("outcome") == "ok":
+                job_state = "submitted"
+        elif s_state in RUN_PENDING:
+            return _unknown_at("submit",
+                               {"adapter_state": s_state,
+                                "remote_task_id": None})
+        elif s_state != RUN_OK:
+            return _unknown_at(
+                "submit",
+                {"adapter_state": s_state, "task_id": task_id or None,
+                 "remote_task_id": task_id or None,
+                 "known_states": [RUN_OK, RUN_FAILED, RUN_SKIPPED]
+                 + list(RUN_PENDING)})
+
+        # (2) wait (async only; sync submit already answered) ---------------
+        src = s
+        if s_state in RUN_PENDING:
+            try:
+                w_rc, wj, w_raw = _call(
+                    wait_run, adapter,
+                    ["wait", "--task-id", task_id,
+                     "--timeout", str(wait_s), "--json"])
+            except Exception as e:                          # pragma: no cover
+                return _unknown_at("wait", {"error": str(e)}, task_id)
+            if wj is None:
+                return _unknown_at("wait",
+                                   {"rc": w_rc, "raw": (w_raw or "")[-400:]},
+                                   task_id)
+            w_state = wj.get("state")
+            w_err = wj.get("error") if isinstance(wj.get("error"), dict) else {}
+            task_id = wj.get("task_id") or task_id
+            if w_state == RUN_FAILED:
+                credits = wj.get("credits_consumed")
+                cost = (int(credits) if isinstance(credits, (int, float))
+                        and not isinstance(credits, bool) else 0)
+                # F10: a failed task is reported within ONE poll - this poll.
+                # The evidence row and the rejected envelope carry the task id,
+                # the outcome and the receipt, and the ledger settles failed
+                # immediately; no further polling, no silent skip.
+                _record_stage_evidence(
+                    ledger_db, run_id, logical_key, attempt_id, "wait",
+                    status="fail", task_id=task_id, error=w_err,
+                    adapter_state=w_state)
+                return stop(
+                    "rejected", "kie-run-failed",
+                    "Skill 74 reported a failed run (%s); reconcile the "
+                    "charge, then retry with a new attempt id"
+                    % (w_err.get("code") or "unknown"),
+                    {"stage": "wait", "adapter_state": w_state, "error": w_err,
+                     "task_id": task_id, "actual_cost": cost,
+                     "failure_poll": 1, "generated": False},
+                    final="failed", cost=cost)
+            if w_state != RUN_OK:
+                # wait timeout (running + error.code == timeout) and any other
+                # non-terminal answer: hold unknown WITH the task id so the
+                # resolver queries KIE instead of settling at zero.
+                return _unknown_at(
+                    "wait",
+                    {"adapter_state": w_state, "error": w_err,
+                     "wait_timeout_s": wait_s,
+                     "timed_out": (w_state == "running"
+                                   and w_err.get("code") == "timeout")},
+                    task_id)
+            src = wj
+
+        # (3) save ----------------------------------------------------------
+        try:
+            v_rc, v, v_raw = _call(run, adapter,
+                                   ["save", "--task-id", task_id,
+                                    "--save-dir", save_dir, "--json"])
+        except Exception as e:                              # pragma: no cover
+            v, v_raw, v_rc = None, str(e), -1
+        saved = (v.get("saved_paths") or []) if isinstance(v, dict) else []
+        credits = src.get("credits_consumed")
+        if isinstance(credits, (int, float)) and not isinstance(credits, bool):
+            actual = int(credits)
+            warn = []
+        else:
+            actual = int(estimated_cost)
+            warn = ["ACTUAL_COST_UNREPORTED"]
+        if not saved:
+            warn.append("SAVE_FAILED")
+
+        rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
+                      job_state, "succeeded", actual, task_id=task_id,
+                      provider_ref="kie", evidence_ref=task_id)
+        if rec["outcome"] not in ("ok", "parked"):
+            return envelope("dispatch", rec["outcome"],
+                            rec.get("reason_code", "ledger-settle-failed"),
+                            rec.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id,
+                            evidence={"task_id": task_id,
+                                      "saved_paths": saved},
+                            state_version=rec.get("state_version", 0))
+        return envelope(
+            "dispatch", "ok", "KIE_DISPATCH_OK",
+            "files saved before the links expire; record the receipt",
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"adapter_mode": mode, "generated": True,
+                      "task_id": task_id,
+                      "saved_paths": saved,
+                      "credits_consumed": credits,
+                      "actual_cost": actual, "warnings": warn,
+                      "wait_timeout_s": wait_s, "retries": 0},
+            state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001
         return stop("error", "dispatch-internal-error",
                     str(e)[:300], {"error": str(e)[:300], "generated": False})
@@ -408,7 +862,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="kie_dispatch.py",
         description="Plan 5.4 KIE dispatch: reserve -> Skill 74 health -> "
-                    "preflight -> prompt-budget -> run/save -> reconcile.")
+                    "preflight -> prompt-budget -> submit/wait/save -> reconcile.")
     d = ap.add_subparsers(dest="cmd", required=True)
     x = d.add_parser("dispatch", help="Run one reserved KIE generation.")
     x.add_argument("--model", required=True, help="Exact model id (never picked here).")

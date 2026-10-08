@@ -1,5 +1,21 @@
 # Changelog: drama-song-ad-factory
 
+## [2.6.1] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+
+`scripts/core/` regenerated from the fixed onboarding canonical core (branch
+`fix/partH-H3`, commit 4685158b7400148d9dd19ea8c9dcf7ab43b31758); this copy
+was stale (no `fps_conform.py`, 333-line assembler) and now matches it
+byte for byte (`tests/test_parity_layout.py`).
+
+- Master 30 fps; Kling clips pass through untouched; MiniMax H3 24 fps
+  clips motion-interpolated to 30 (never the plain `fps` filter); per-segment
+  mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
+  now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
+- `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
+  frontmatter `version:` 2.4.5 -> 2.6.1 (follows onboarding `skill-version.txt`).
+
+packaged_from: 4685158b7400148d9dd19ea8c9dcf7ab43b31758
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
