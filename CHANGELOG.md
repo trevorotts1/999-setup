@@ -54,6 +54,7 @@
 - fix/partI-I6: drama-song-ad-factory I6: character library (save approved character, reuse via Use a saved character?); v2.7.4 (merge 020b98110d14)
 - fix/partI-I2: Merge origin/main; renumber I2 to 2.7.5 (I6 took 2.7.4) (merge 933b79feff35)
 - fix/partI-I7: Merge origin/main; renumber I7 to 2.7.6 (I2 took 2.7.5) (merge 24a4483bac5c)
+- fix/partI-I1: Merge origin/main; renumber I1 to 2.7.7 (I7 took 2.7.6) (merge 7b35987dd4f2)
 
 ## [hook-skill] — 2026-10-06
 
