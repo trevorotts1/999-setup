@@ -64,6 +64,8 @@
 - fix/partI-I3: I3: merge main, renumber skill to 2.7.8 (merge 9608ecd8bfff)
 - fix/hook-HK001: I8: renumber changelog headers to 2.7.9 (merge e1563a2aa191)
 - fix/partI-I4: I4: merge main, renumber skill to 2.7.10 (merge c686f150f495)
+- fix/partH-H6: Merge origin/main into fix/partH-H6; bump skill to 2.7.11; keep H6 first-sung 15% target and H8/I band engine (check_real_singing, length goal, judge_gap both forms) (merge b7820e127492)
+- fix/n999-N99001: N99001: weekly_step test loads the module by file path (package dir shadowed it under pytest) and exposes a pytest entry; no behavior change (merge aac38546a451)
 
 ## [hook-skill] — 2026-10-06
 
