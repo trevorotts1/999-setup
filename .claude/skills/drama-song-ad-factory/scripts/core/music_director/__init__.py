@@ -28,9 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ending_qc
 import music_qc
 import suno_recipe
-import protected_names
 import spend_ledger as L
+import protected_names
 import words_match
+import words_fit
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -114,19 +115,39 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
     lyric text is word-checked against the packet before any payload is
-    built; a rewritten word or an invented line raises ValueError
-    ``(CAPTION_WORD_MISMATCH ...)`` and the master request is never built.
-    H7: when ``protected`` names are given (instead of the F7 check), the sheet may not change a
-    protected name or rewrite a packet line. ``packet_lines=None`` keeps the
-    old behavior (packet binding happens upstream in lyric QC).
+    built — a rewritten word ("gonna" where the packet says "going to") or
+    an invented line raises ValueError ``(CAPTION_WORD_MISMATCH ...)`` and
+    the master request is never built. ``packet_lines=None`` keeps the old
+    behavior (packet binding happens upstream in lyric QC).
+
+    G9 (words-fit, order 2026-10-08 11:50): when ``length_s`` is given, the
+    word mix is checked against the carded length at measured delivery speed
+    BEFORE any payload is built (and before the recipe guard, so the three
+    options always reach the person). Infeasible raises
+    ``words_fit.WordsFitError`` carrying longer ad / lower sung target /
+    fewer words. A feasible plan stamps ``input.duration`` with planned
+    time + 15% headroom unless the caller already set ``duration``.
     """
+    fit = None
+    if length_s is not None:
+        fit = words_fit.preflight_sheet(length_s, lyrics_text)
+        if fit["outcome"] != "ok":
+            raise words_fit.WordsFitError(
+                fit["reason_code"],
+                fit["detail"] + " | options: "
+                + "; ".join("%s -> %s" % (k, v.get("detail", v))
+                            for k, v in (fit.get("options") or {}).items()))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
-    errors = []
-    if packet_lines is not None:
-        if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
-            errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
-        else:
-            errors = words_match.validate_words_match(lyrics_text, packet_lines)
+    if packet_lines is not None and protected:
+        # H7 (supersedes the F7 whole-text match, which forbids any sung
+        # line beyond the packet): every packet line verbatim and every
+        # protected name intact, extra lines allowed. This is what stops
+        # the "Stale" -> "still" request files.
+        errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+        if errors:
+            raise ValueError("; ".join(errors))
+    elif packet_lines is not None:
+        errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
@@ -142,6 +163,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         req["input"]["vocal_gender"] = vocal_gender
     if duration is not None:
         req["input"]["duration"] = duration
+    elif fit is not None:  # G9: plan + >=15% Suno headroom when length was carded
+        req["input"]["duration"] = words_fit.max_suno_duration(fit["plan_s"])
     return req
 
 
