@@ -70,6 +70,7 @@
 - fix/red75-R75001: R75001: repair five red skill 75 suites (F17 asr scan script, stage runbook, F5 SKILL.md rule, repo-only launcher test, I4-aware H12 test); drama-song-ad-factory 2.7.12 (merge a96185c8698d)
 - fix/lipclose-LPC001: LPC001: lip-sync close-up in every character reference set, default lip-sync source image, QC; drama-song-ad-factory 2.7.13 (merge b7d5d1cfc6c4)
 - fix/ciopt-CIO002: ci(CIO002): push main-only + per-PR concurrency so each check runs once per commit (merge abe168ef15e0)
+- fix/bandfix-BND001: BND001: sung share judged only by Trevor's band, no absolute floor; G10 constants; drama-song-ad-factory 2.7.14 (merge 487429c7b3ee)
 
 ## [hook-skill] — 2026-10-06
 
