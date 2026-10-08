@@ -1,11 +1,15 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.3] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
 
 - New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
   carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
   run whose master has no matching skill receipt or whose run folder holds an
   ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
+
+## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
+
+`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
 
 ## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
 
