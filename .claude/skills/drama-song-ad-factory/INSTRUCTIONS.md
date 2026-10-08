@@ -164,8 +164,8 @@ Shared with the OpenClaw twin. Field rules:
    its earlier echo-flavoured spelling; that earlier string is forbidden. Per-character voice packs mean
    no two characters share a voice.
 8. **Lip-sync (decision 33):** selected lines only - pain peak, product
-   line, call to action, chorus hook; about 15 to 20 seconds per ad, listed
-   on the approval card. Kling avatar `kling/ai-avatar-standard` first
+   line, call to action, chorus hook; DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`). Listed
+   on the approval card. Every lip-sync source picture passes the lip-sync image gate first (straight at the camera, head and shoulders 9:16, face 35-40% of the frame height, mouth closed or slightly parted, nothing over mouth or jaw, soft even light, same character as the storyboard, sharp, at least 1080x1920). Kling avatar `kling/ai-avatar-standard` first
    (front-facing close-up image plus that character's own isolated line),
    InfiniTalk `infinitalk/from-audio` as backup, **Volcengine dropped**.
    Tight close-ups only; the input clip holds only the on-screen speaker's

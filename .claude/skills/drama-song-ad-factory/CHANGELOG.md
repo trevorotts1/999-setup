@@ -1,5 +1,18 @@
 # Changelog: drama-song-ad-factory
 
+## [Unreleased] - Doubled lip-sync and the lip-sync image gate (owner order 2026-10-08)
+
+Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
+
+- A 60 s ad carries 6-8 lip-sync clips of 4-6 s (30-40 s, was 15-20 s), scaled linearly, no clip
+  over 6 s. New `core/lipsync_clips.py` is the one source; `face_speaks` (band + planner: sung
+  hooks, spoken opener and closing first) and `lipsync_coverage` (E6) follow it.
+- `lipsync_clips.check_budget` refuses loudly past the cap; the price card refuses a clip over 6 s.
+- Lip-sync image gate `lip_sync/lip_gate/image_gate.py` runs before any paid job (`run_gate` now
+  requires `source_image` and `image_check`); prompt template `closeup_prompt()`.
+- Tests: `test_lipsync_clips.py`, `lip_gate/test_image_gate.py`, `extensions/test_lipsync_cap.py`;
+  H2, H4, E6, F8, F9 tests updated.
+
 ## [2.7.19] - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
 
 Measured bug (detector check 1536): a sung share built on the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100% sung, 10 of 13 say voices 74-100%, a rap control 91.7%). Real Suno sung hooks read 96% sung and real Suno spoken lines read spoken, so the old numbers looked fine on stems with natural pauses.

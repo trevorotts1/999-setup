@@ -174,9 +174,11 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 Owner decision D10, superseded 2026-10-07, plan 6.3 and decision 33.
 
-Lip-sync is applied to **selected lines only** - three to four lines, about
-15 to 20 seconds per ad, chosen by the factory and listed on the approval
-card:
+Lip-sync is applied to **selected lines only** - doubled 2026-10-08, more
+pieces and not longer ones: 6 to 8 clips of 4 to 6 seconds per 60 s ad (30 to
+40 seconds), scaled linearly with the ad length, no clip over 6 seconds,
+chosen by the factory and listed on the approval card. Clips go first on every
+sung hook, the spoken opener and the spoken closing line, then on:
 
 1. the most painful moment (`pain_peak` on the highest-scoring wound beat),
 2. the product line,
